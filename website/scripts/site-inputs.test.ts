@@ -702,6 +702,7 @@ function readPaths(files: string[], sources: Map<string, string>) {
   expect(unused).toEqual([]);
   expect(paths).toContain("plugin/skills/audit/profiles.yaml");
   expect(paths).toContain("plugin/EXTENDING.md");
+  expect(paths).toContain("plugin/MECHANISMS.md");
   const globbed = globs.map((g) =>
     files.filter((f) => new Bun.Glob(g).match(f)),
   );

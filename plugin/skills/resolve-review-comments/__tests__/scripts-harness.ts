@@ -5,6 +5,7 @@
  * that stub with. A test file calls `useStubForge()` once at top level.
  */
 
+import { Database } from "bun:sqlite";
 import { afterAll, beforeAll } from "bun:test";
 import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import {
@@ -13,11 +14,10 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 
 export const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const SHARED = join(import.meta.dir, "..", "..", "..", "shared");
@@ -127,10 +127,9 @@ function setUpStubForge(): void {
   binDir = join(tmpRoot, "bin");
   mkdirSync(binDir);
 
-  // The probes run from a THROWAWAY git repo, never the real one:
-  // await-round.ts keeps its round counter in `git rev-parse --git-dir`, and a
-  // probe that ran from the repo root would write counters into — and delete
-  // them from — the actual .git of whoever runs the suite.
+  // The probes run from a THROWAWAY git repo, never the real one: the
+  // scripts read and write through `git rev-parse`, and a probe that ran from
+  // the repo root would act on the actual .git of whoever runs the suite.
   repoDir = join(tmpRoot, "repo");
   mkdirSync(repoDir);
   checkedSpawn("git", ["init", "-q", repoDir], {
@@ -505,29 +504,43 @@ export function runScript(
     PATH: `${binDir}${delimiter}${process.env.PATH}`,
     RRC_FIX: fix.dir,
     GH_CALL_TIMEOUT: "20",
+    // The review loops count rounds into /drive-pr's database: a throwaway
+    // one, never the machine's.
+    ...(COUNTING_SCRIPTS.has(script)
+      ? { DRIVE_PR_STATE_DIR: driveStateDir() }
+      : {}),
     ...opts.env,
   };
-  // The state-dir OVERRIDE requires its on-disk identity beside it:
+  // The state-dir OVERRIDE requires its database's identity beside it:
   // `$DRIVE_PR_STATE_DIR` without `$DRIVE_PR_STATE_DIR_IDENTITY` can only come
-  // from a driver predating that change, and the fence refuses it rather than
-  // keeping a compatibility path alive. Derived here, once, from whatever state
-  // dir the caller passed — rather than at each of the call sites — so a test
-  // that sets an override cannot forget it and then fail for a reason it is not
-  // about. A caller that wants a STALE or ABSENT identity sets one explicitly
-  // and wins, since `opts.env` is spread above.
+  // from a driver predating it, and the fence refuses it. Read here, once,
+  // from the database beside whatever state dir the caller passed, so a test
+  // that sets an override cannot forget it and then fail for a reason it is
+  // not about. A caller that wants a STALE or ABSENT identity sets one
+  // explicitly and wins, since `opts.env` is spread above.
   //
-  // Computed inline from `statSync` rather than imported from `/drive-pr`'s
-  // `lease.ts`: this suite covers the skill in its STANDALONE shape, and a
-  // test-time import would make it depend on the sibling skill being
-  // installed — the very coupling the fence's own skip logic exists to
-  // tolerate. `statSync`, following symlinks, matching the producer.
+  // Read with `bun:sqlite` rather than imported from `/drive-pr`: this suite
+  // covers the skill in its STANDALONE shape, and a test-time import would
+  // make it depend on the sibling skill being installed.
   if (env.DRIVE_PR_STATE_DIR && env.DRIVE_PR_STATE_DIR_IDENTITY === undefined) {
+    const dir = env.DRIVE_PR_STATE_DIR;
+    const db = join(
+      /^[0-9a-f]{16}$/.test(basename(dir)) ? dirname(dir) : dir,
+      "state.sqlite",
+    );
     try {
-      const st = statSync(env.DRIVE_PR_STATE_DIR);
-      env.DRIVE_PR_STATE_DIR_IDENTITY = `${st.dev}:${st.ino}`;
+      const conn = new Database(db, { readonly: true });
+      try {
+        const row = conn
+          .query("SELECT instance FROM db_meta WHERE id = 1")
+          .get() as { instance: string } | null;
+        if (row !== null) env.DRIVE_PR_STATE_DIR_IDENTITY = row.instance;
+      } finally {
+        conn.close();
+      }
     } catch {
-      // Unreadable: leave it unset and let the script decide, which is what a
-      // test staging that condition is asking for.
+      // No database yet: leave it unset and let the script decide, which is
+      // what a test staging that condition is asking for.
     }
   }
   const r = spawnSync(
@@ -547,5 +560,50 @@ export function runScript(
   };
 }
 
-export const roundsFile = (pr: string) =>
-  join(repoDir, ".git", `resolve-review-rounds-${pr}`);
+/** The scripts that count review rounds, which a probe points at the suite's throwaway drive database. */
+const COUNTING_SCRIPTS = new Set(["await-round.ts", "converge.ts"]);
+
+/** The suite's throwaway drive database root, where the counting scripts' rounds go. */
+function driveStateDir(): string {
+  return join(tmpRoot, "drive-state");
+}
+
+const DRIVE_STATE = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "drive-pr",
+  "scripts",
+  "drive-state.ts",
+);
+
+/** `drive-state.ts <args>` against the suite's throwaway drive database, from the probes' repo. */
+function driveState(args: string[]): string {
+  const r = spawnSync(process.execPath, [DRIVE_STATE, ...args], {
+    encoding: "utf8",
+    cwd: repoDir,
+    env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: driveStateDir() },
+  });
+  if (r.status !== 0)
+    throw new Error(
+      `drive-state.ts ${args[0]} exited ${r.status}: ${r.stderr}`,
+    );
+  return (r.stdout ?? "").trim();
+}
+
+/** The PR's review round and the rounds since its loop last converged. */
+export function rounds(pr: string): { round: number; open: number } {
+  return {
+    round: Number(driveState(["rounds", pr])),
+    open: Number(driveState(["open-rounds", pr])),
+  };
+}
+
+/**
+ * Count `n` review rounds of `pr` at distinct heads, as a loop that worked
+ * them would have; `tag` keeps one call's heads apart from another's.
+ */
+export function countRounds(pr: string, n: number, tag = "c"): void {
+  for (let i = 1; i <= n; i++)
+    driveState(["count-round", pr, "--head", String(i).padStart(40, tag)]);
+}

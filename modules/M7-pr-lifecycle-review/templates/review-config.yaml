@@ -107,6 +107,20 @@ lenses:
       A changed exported signature / API shape has a migration note or a
       compatibility shim, or is flagged as breaking.
 
-# Higher-tier "semantic" lenses that need full LLM reasoning (not a checklist
-# bullet) are grown locally, not shipped here — see
+  # A lens kept as a lens file is referenced rather than restated: `file:`
+  # names a lens file in the repository, and a seed lens's `id` names one
+  # Jig ships. The file holds the lens's prompt, trigger and evidence field;
+  # the entry here holds only this reviewer's posture for it.
+  - id: jig.swallowed-failure     # a seed lens, read from Jig at a release tag
+    posture: comment
+    lever: ~
+
+  - file: .config/review-lenses/LENS-003.md
+    posture: comment
+
+# Higher-tier "semantic" lenses that need full model reasoning ship as seed
+# lenses with Jig's review skill, one lens file each
+# (plugin/skills/review/lenses/<id>.md at a release tag, such as
+# jig.swallowed-failure for M15's rules on failures); a repository grows the
+# rest locally in the same file format — see
 # https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md#left-out-by-design

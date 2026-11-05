@@ -1,158 +1,94 @@
-/** Lease types, identity resolution, paths and timing policy shared by admission and mutation fences. */
-import { LOCK_ACQUIRE_MAX_SEC } from "./lock.ts";
-
-import { isDigits, fail } from "../cli.ts";
-
-import { join } from "node:path";
-
-import { pidAlive } from "../proc.ts";
-
+/**
+ * The session lease's model: its records, where they live, who "a session"
+ * is, and the timing every admission and fence shares.
+ *
+ * Two records, both rows of the drive's database (`db.ts`):
+ *
+ * - the per-PR lease (`leases`), one per (clone, PR, working tree): which
+ *   session drives this PR from this tree. At most one live session per
+ *   tree and PR, and at most one tree per PR;
+ * - the tree lease (`tree_leases`), one per (clone, working tree): which
+ *   session works this tree, whichever PR, so two sessions driving two
+ *   different PRs cannot both edit one checkout.
+ *
+ * Each carries the holder's process identity (`shared/liveness.ts`'s
+ * `ProcessIdentity`: host id, host name, boot id, pid and start time), so
+ * whether the holder still runs is judged the way every other lock and claim
+ * in the plugin judges it, and the lease shape that module defines: a
+ * generation, when it was taken, when it was last renewed and when it
+ * expires. The generation is drawn from a counter that only grows
+ * (`db.ts`'s `nextCount`): kept across one session's renewals, and raised by
+ * every new admission and takeover, so a command admitted on one generation
+ * can tell, at the moment it mutates, that its lease was cleared or taken
+ * over while it waited (`assertLeaseUnchanged`, through `liveness.ts`'s
+ * `fence`).
+ *
+ * Why a lease and not a lock: there is no long-lived process behind a
+ * `drive-state.ts` invocation to hold a lock, so the session renews its
+ * lease on every mutating command, and a lease nobody renews expires.
+ */
 import { hostname } from "node:os";
-
+import { SESSION_LEASE_MIN } from "../../../../../shared/liveness.ts";
+import { fail, isDigits } from "../cli.ts";
+import { pidAlive } from "../proc.ts";
 import { outOfBandExitCode } from "../status/terminal-states.ts";
+import { createLock, LOCK_ACQUIRE_MAX_SEC } from "./lock.ts";
 
-/** The persisted record. Every field is required; a partial record is debris. */
+/** A session lease as the drive reads it. Every field is required. */
 export interface Lease {
   /**
-   * WHO holds this record, and therefore how its liveness may be tested
-   *.
+   * WHO holds it, and therefore how its liveness may be tested:
    *
-   *   - `session` — the ordinary case, every tier-1/tier-2 lease. A pid holds
-   *     it, so liveness is the two-part test `leaseAlive` has always applied:
-   *     the pid answers AND the record has been renewed inside the window.
-   *   - `worktree` — the tier-3 PRESENCE record. No session could be
-   *     identified, so there is no pid to record and none to test; the WORKING
-   *     TREE is the holder, and freshness is the only liveness it has.
-   *
-   * A discriminant rather than "`pid === 0` means sessionless", because every
-   * reader that must treat the two differently should have to name which one it
-   * is looking at. `parseLease` enforces the correspondence in both directions,
-   * so the pid field can never disagree with this one.
+   * - `session`: a pid holds it, so liveness is the pid's (judged by its
+   *   recorded identity) AND a renewal inside the window;
+   * - `worktree`: the presence record a sessionless resolver writes (ladder
+   *   tier 3). No session could be identified, so the WORKING TREE is the
+   *   holder and freshness is the only liveness it has; its pid is `0`.
    */
   holder: "session" | "worktree";
-  /** The session's pid — see the ladder above. `0` for a `worktree` holder. */
+  /** The session's pid; `0` for a `worktree` holder. */
   pid: number;
-  /** Where that pid lives, because a pid alone is only meaningful per host. */
+  /** Where that pid lives: its host name, for a person and for a record without a host id. */
   host: string;
-  /**
-   * `process.platform` of the session that wrote this, so a refusal on ANOTHER
-   * machine can name a liveness check that host can actually run.
-   *
-   * Recorded rather than inferred: the reader's platform says nothing about the
-   * writer's, and inferring it handed a Windows holder an `ssh <host> ps -p`
-   * that cannot run there.
-   */
+  /** The host's stable id (`liveness.ts`'s `thisHost`); empty when it could not be read. */
+  hostId: string;
+  /** The host's boot id; empty where the platform has none. */
+  bootId: string;
+  /** The session's start time as the process table reports it; empty when it could not be read. */
+  start: string;
+  /** `process.platform` of the session that wrote it, so a refusal can name a check that host can run. */
   platform: string;
-  /** The working tree the lease is scoped to (`actor.ts`'s id), for readers. */
+  /** The working tree it is scoped to (`actor.ts`'s id). */
   actor: string;
-  /**
-   * That tree's PATH — diagnostics only, never compared (`actor` is the id).
-   *
-   * A cross-worktree refusal has to name a place a human can go: the actor is
-   * a sha256 prefix, so a refusal that carried only `wt-3f9c…` told the reader
-   * which tree holds the PR in the one form they cannot act on. Recorded by the
-   * writer rather than derived by the reader for the same reason `platform` is
-   * — the reader is in a DIFFERENT tree by construction here, so it has no way
-   * to resolve someone else's path.
-   */
+  /** That tree's path, for a refusal a person must act on; never compared. */
   worktree: string;
-  /** When this session first took the lease. */
+  /** When this session first took it. */
   startedAt: string;
-  /** When it last ran a mutating command — the renewal this lease lives by. */
+  /** When it last ran a mutating command: the renewal this lease lives by. */
   lastSeen: string;
-  /** Which command that was. Diagnostics only; never compared. */
+  /** When it expires unless renewed, by the window of the session that renewed it last. */
+  expiresAt: string;
+  /** Which command renewed it last. Diagnostics only. */
   command: string;
+  /** The admission generation: kept across renewals, raised by every new admission or takeover. */
+  generation: number;
   /**
-   * The GENERATION token the admission fence compares (`assertLeaseUnchanged`).
-   *
-   * Preserved across one session's renewals and regenerated by every takeover,
-   * so it answers "is this still the lease my command was admitted on" rather
-   * than "has anything been rewritten".
-   *
-   * A random nonce rather than a timestamp. `startedAt` was the obvious
-   * candidate and is wrong: ISO text has millisecond resolution, so a
-   * `clear-lease` plus a same-session reclaim inside one millisecond produces
-   * an identical `(pid, host, startedAt)` tuple and the fence would accept a
-   * lease that had genuinely been revoked and recreated. An identity must not
-   * be derived from a clock it can tie on.
-   */
-  generation: string;
-  /**
-   * The writing session's OWN acquisition token — `$DRIVE_PR_SESSION_STARTED`,
-   * minted once by `drive.ts` (`diag.started`) and inherited unchanged by
-   * every pass it spawns — or `''` when that session carried none.
-   *
-   * `generation` cannot serve here: it identifies an ADMISSION EPOCH on THIS
-   * lease record, which presupposes a lease this caller already claimed.
-   * `isMine` (below) has no such thing to compare against — the external-
-   * mutation fence never admits — and its (pid, host) comparison alone is
-   * exactly as recyclable as the pid it reads: if this session's own driver
-   * dies and the OS later hands its exact pid to an unrelated NEW drive-pr
-   * session, that session's fresh lease matches (pid, host) alone and reads
-   * as "ours" — skipping the `leaseAlive` check that would otherwise have
-   * refused a live, genuinely foreign session. `sessionStarted` is the
-   * identical instance-token correlation `drives.ts`'s `ownParentDriver`
-   * already uses for the same hazard on `claims.ts`'s admission locks —
-   * ported here, not reimplemented; see that function's doc comment for the
-   * exact fallback semantics `isMine` mirrors.
-   *
-   * REQUIRED in `readLease` like every other field — the KEY must be present
-   * and a string. The VALUE `''` is legal and is what a session carrying no
-   * token writes, so the case that actually needs to keep working does.
-   *
-   * An earlier revision read this leniently (missing → `''`) to keep
-   * pre-field leases parsing. That is an accepts-both-shapes parser and the
-   * pre-release stance against backward-compatibility shims rules it out;
-   * worse, it quietly kept the weaker pid/host-only ownership decision alive
-   * for exactly the records that omitted the key. Lease state is ephemeral —
-   * it expires on its own and `clear-lease` drops it — so a superseded record
-   * failing to parse is a rollout detail, not a migration.
+   * The writing session's own acquisition token
+   * (`$DRIVE_PR_SESSION_STARTED`, minted once by `drive.ts` and inherited by
+   * every pass it spawns), or `''` when it carries none: what tells a
+   * recycled pid apart from the session that once had it (`isMine`).
    */
   sessionStarted: string;
 }
 
-/**
- * The TREE-WIDE session lease: admits at most one live session per
- * WORKING TREE, whichever PR it is driving.
- *
- * `Lease` above answers "who may mutate (this tree, this PR)"; nothing
- * answered "who may mutate this tree at all", so two interactive sessions
- * driving two DIFFERENT PRs resolved two different `leasePathFor` files, each
- * saw no conflict, and both were admitted to the SAME checkout — which they
- * can then edit, commit, and push over one another. `drive.ts`'s
- * worktree-wide single-instance lock (`store.ts`'s `worktreeLockName`) gives
- * the unattended path exactly this guarantee already; this is its interactive
- * counterpart, built the same way `Lease` itself was — as a LEASE, not a lock,
- * because there is no long-lived process behind a `drive-state.ts` invocation
- * to hold one for (see this module's header, "Why a lease rather than a
- * lock").
- *
- * Same shape as `Lease`, plus the one thing a per-tree record needs that a
- * per-PR one gets for free from its own filename: `pr` names which PR this
- * session is CURRENTLY (or most recently) driving, so a refusal can say what
- * the tree is busy with. Diagnostics only, exactly like `Lease.worktree`, and
- * never compared — ownership of the tree lease turns on (pid, host,
- * sessionStarted) alone, via the same `isMine` every per-PR lease uses, so one
- * session juggling several PRs from one tree renews its OWN tree lease on
- * every one of them without ever refusing itself.
- */
+/** The tree lease: a `Lease` plus the PR the tree currently drives and a token fresh on every write. */
 export interface TreeLease extends Lease {
+  /** The PR this session is currently, or most recently, driving: diagnostics only. */
   pr: string;
   /**
-   * A FRESH random token minted on every single write to this path — never
-   * preserved across a renewal, unlike `generation` — so two writes can never
-   * be mistaken for one another even when every OTHER field coincides.
-   * `lastSeen` only has millisecond resolution: two writes from the SAME
-   * session, for the SAME pr and command, with `generation` preserved by a
-   * renewal, can tie on it and produce byte-for-byte identical JSON. Round
-   * 1/2's rollback compared the raw serialized bytes for exactly this reason
-   * — to tell "the write THIS call made" apart from a sibling's — and that
-   * comparison silently stopped working the moment two such writes collide,
-   * letting one sibling's rollback revert or delete a LATER, successful
-   * sibling admission that merely happened to serialize identically
-   *. `rollbackTreeLease` now compares
-   * THIS field specifically rather than relying on whole-record byte
-   * equality.
+   * A token minted on every write, never kept across a renewal, so a
+   * rollback can tell the write it made from a later one that happened to
+   * carry the same fields (`rollbackTreeLease`).
    */
   revision: string;
 }
@@ -160,65 +96,131 @@ export interface TreeLease extends Lease {
 export interface Session {
   pid: number;
   host: string;
-  /** Which tier of the ladder answered, for the "no session" case and docs. */
+  /** Which tier of the ladder answered. */
   source: "DRIVE_PR_SESSION" | "CLAUDE_PID" | "none";
   /**
-   * This session's own `$DRIVE_PR_SESSION_STARTED`, or `''` when it carries
-   * none. Populated ONLY for `source === 'DRIVE_PR_SESSION'`, mirroring
-   * `drives.ts`'s `ownParentDriver`, which checks pid+host BEFORE ever
-   * consulting the token — the token is meaningless without that
-   * precondition, and reading it for a `CLAUDE_PID`-tier session would risk
-   * trusting a value left stale in the shell from an unrelated `drive.ts` run
-   * earlier in the same session. See `Lease.sessionStarted` for what this
-   * closes.
+   * This session's own `$DRIVE_PR_SESSION_STARTED`, or `''`. Read only for
+   * the `DRIVE_PR_SESSION` tier: for a `CLAUDE_PID` session it could be a
+   * value left in the shell by an unrelated earlier `drive.ts` run.
    */
   sessionStarted: string;
 }
 
-/**
- * How long a lease whose owner pid still ANSWERS may go un-renewed before it
- * counts as abandoned.
- *
- * The same quantity, for the same reason, as `drive.ts`'s
- * `HEARTBEAT_STALE_MIN_DEFAULT`: a pid that answers proves some process exists,
- * not that the DRIVER exists, and after a session dies the OS may hand its
- * number to an unrelated long-lived process that would otherwise refuse every
- * later start forever. A real session renews on every mutating command; a
- * recycled pid never does.
- *
- * Generous on purpose. Renewal here is driven by the WORK — an agent may think,
- * run gates, or wait on a Testbox for a long time between two mutating calls —
- * so unlike `drive.ts`, which renews on a timer of its own, there is no floor
- * this can be tightened against. Guessing too eagerly costs the two concurrent
- * drivers this exists to prevent; guessing too slowly costs a refusal a human
- * clears in one command, which the refusal itself names.
- */
-const LEASE_STALE_MIN_DEFAULT = 360;
+/** A per-PR lease's place: the clone's state directory, the PR and the tree. */
+export interface LeaseRef {
+  readonly stateDir: string;
+  /** The PR, canonical. */
+  readonly pr: string;
+  readonly actor: string;
+}
 
-/** The renewal cap in `renewAfterMs` — the oldest a lease can be on admission. */
+/** A tree lease's place: the clone's state directory and the tree. */
+export interface TreeLeaseRef {
+  readonly stateDir: string;
+  readonly actor: string;
+}
+
+/**
+ * The ONE spelling of a PR used to key a lease, for readers and writers
+ * alike: `0999` and `999` are the same PR, and a writer and a fence that
+ * spelled it differently would miss each other's lease. `BigInt`, since
+ * `Number` is lossy past `MAX_SAFE_INTEGER`. A non-digit string passes
+ * through untouched; every caller validates with `isDigits` first.
+ */
+export function canonicalLeasePr(pr: string): string {
+  return isDigits(pr) ? BigInt(pr).toString() : pr;
+}
+
+/** The per-PR lease of one (working tree, PR) pair in a clone. */
+export function leaseRef(
+  stateDir: string,
+  pr: string,
+  actor: string,
+): LeaseRef {
+  return { stateDir, pr: canonicalLeasePr(pr), actor };
+}
+
+/** The tree lease of one working tree in a clone. */
+export function treeLeaseRef(stateDir: string, actor: string): TreeLeaseRef {
+  return { stateDir, actor };
+}
+
+/** A lease's place as a person reads it. */
+export function leaseLabel(ref: LeaseRef | TreeLeaseRef): string {
+  return "pr" in ref
+    ? `the session lease of PR #${ref.pr} for ${ref.actor}`
+    : `the tree lease of ${ref.actor}`;
+}
+
+/** The name of the PR-wide remote-mutation lock: one per PR, contended by every tree driving it. */
+export function remoteLockName(pr: string): string {
+  return `drive-pr-remote-lock-${canonicalLeasePr(pr)}`;
+}
+
+/** The name of a tree lease's own lock, which the tree guards hold through a mutation. */
+export function treeLeaseLockName(actor: string): string {
+  return `drive-tree-lease-${actor}`;
+}
+
+/**
+ * The tree lease's own lock: claiming the tree lease, and every guard that
+ * must hold the tree through a mutation (`acquireIdentifiedTreeGuardNow`,
+ * `acquireSessionlessTreeGuardNow`, `assertTreeMutationAllowed`), take it,
+ * so a takeover cannot land between the check and the mutation.
+ */
+export function treeLeaseLock(stateDir: string, actor: string) {
+  return createLock(
+    stateDir,
+    treeLeaseLockName(actor),
+    "drive-state.ts (tree lease)",
+    "tree",
+  );
+}
+
+/**
+ * The PR-wide remote-mutation lock: at most one irreversible remote
+ * mutation (a `guarded-push.ts` push, an `answer-summary-finding.ts` post)
+ * per PR at a time, whichever tree makes it, and no new tree admitted to the
+ * PR while one is in flight.
+ *
+ * Lock order, the same for every caller that holds more than one:
+ *
+ *   `claimLease` (a takeover or a renewal past the margin):
+ *     remote-mutation lock → the store's per-PR lock → the lease row
+ *   `guarded-push.ts`, `answer-summary-finding.ts`:
+ *     remote-mutation lock → tree-lease lock
+ *
+ * Nothing takes the remote-mutation lock after the tree-lease lock, so no two
+ * callers can wait on each other in a cycle.
+ */
+export function prRemoteMutationLock(stateDir: string, pr: string) {
+  return createLock(
+    stateDir,
+    remoteLockName(pr),
+    "drive-state.ts (pr remote mutation)",
+    pr,
+  );
+}
+
+/**
+ * How long a lease whose holder still runs may go un-renewed before it
+ * counts as abandoned, by default the shared session lease
+ * (`SESSION_LEASE_MIN`). Generous on purpose: renewal is driven by the work,
+ * and an agent may think or wait on a test machine for a long time between
+ * two mutating calls. Too eager costs two concurrent drivers; too slow costs
+ * a refusal a person clears in one command.
+ */
+const LEASE_STALE_MIN_DEFAULT = SESSION_LEASE_MIN;
+
+/** The renewal cap in `renewAfterMs`: the oldest a lease can be on admission. */
 const RENEW_AFTER_MAX_MS = 30_000;
 
 /**
  * The smallest staleness window that cannot expire a lease out from under a
- * command that is already ADMITTED.
- *
- * `claimLease` always leaves the lease fresh — the locked path writes
- * `lastSeen: now`, and the fast path returns only within `renewAfterMs` — so a
- * lease is at most `RENEW_AFTER_MAX_MS` old the moment its command is admitted.
- * That command then waits on the state mutex, for at most
- * `LOCK_ACQUIRE_MAX_SEC` (the clamp in `lock.ts`). So the oldest a lease can be
- * when a concurrent `reset` reaches `clearAllLeases`'s `leaseAlive` check is the
- * sum of those two, and a window below it lets `reset` sweep a lease whose
- * command has not run yet.
- *
- * That is not a cosmetic ordering: `clearAllLeases` preserves a live foreign
- * lease precisely so a second session in that tree cannot claim an absent one
- * and mutate beside the admitted command under a single actor. An
- * expired-by-the-clock lease defeats that preservation while the command it
- * belongs to is still in flight — so the window is floored here rather than
- * left to whoever sets the env var. Flooring is enough on its own; no admission
- * token is needed, because the quantity the token would fence against is
- * bounded and can simply be out-waited by construction.
+ * command already admitted: at most `RENEW_AFTER_MAX_MS` old when admitted,
+ * then waiting at most `LOCK_ACQUIRE_MAX_SEC` for the store's lock. A
+ * concurrent `reset` that read it as expired in that gap would sweep a lease
+ * whose command has not run yet.
  */
 function leaseStaleFloorMs(): number {
   return LOCK_ACQUIRE_MAX_SEC * 1000 + RENEW_AFTER_MAX_MS;
@@ -233,106 +235,22 @@ export function leaseStaleMs(): number {
   );
 }
 
-/** The staleness window in minutes — named in every refusal that depends on it. */
+/** The staleness window in minutes, named in every refusal that depends on it. */
 export function leaseStaleMin(): number {
   return Math.round(leaseStaleMs() / 60_000);
 }
 
-/** The `pr-drive-lease-<pr>-<actor>.json` prefix every lease path is built on. */
-export const LEASE_PREFIX = "pr-drive-lease-";
-
-/** The lease file for one (working tree, PR) pair. */
 /**
- * The ONE spelling of a PR used in a lease filename, for readers and writers
- * alike.
- *
- * Canonicalizing only the reader left the producer free to persist a
- * noncanonical spelling: `resolvePr()` preserves whatever it was given and
- * `drive-state.ts` accepts it on `isDigits` alone, so an explicit `0999`
- * wrote `pr-drive-lease-0999-*` while a posting caller canonicalized its own
- * target to `999` and filtered on that prefix — missing the live lease
- * entirely and authorizing an irreversible reply (fresh evidence after the
- * earlier reader-only leading-zero fix). Normalizing at the shared boundary
- * is what makes the two sides agree by construction rather than by both
- * remembering to.
- *
- * `BigInt`, matching `assertRemoteMutationAllowed`: `Number` is lossy past
- * `MAX_SAFE_INTEGER` and `Infinity` past `MAX_VALUE`, either of which would
- * reintroduce the same mismatch from the other end.
- *
- * A non-digit string passes through untouched. Every caller validates with
- * `isDigits` upstream, so this is unreachable in practice; passing it through
- * keeps this helper from being a second, silent place a malformed PR could
- * change meaning.
+ * How long a lease this session already holds may go un-rewritten before the
+ * next mutating command renews it: a quarter of the window, capped.
  */
-export function canonicalLeasePr(pr: string): string {
-  return isDigits(pr) ? BigInt(pr).toString() : pr;
-}
-
-export function leasePathFor(
-  stateDir: string,
-  pr: string,
-  actor: string,
-): string {
-  return join(stateDir, `${LEASE_PREFIX}${canonicalLeasePr(pr)}-${actor}.json`);
+export function renewAfterMs(): number {
+  return Math.min(RENEW_AFTER_MAX_MS, Math.floor(leaseStaleMs() / 4));
 }
 
 /**
- * The `drive-tree-lease-<actor>.json` prefix the TREE lease's path is built
- * on — deliberately OUTSIDE the `pr-drive-lease-` namespace
- * `LEASE_PREFIX` owns, so neither `filterLeaseFilesFor` nor
- * `filterLeaseFilesForActor` — both of which gate on that exact prefix, for
- * the PR-wide admission and the external-mutation fence — can ever mistake a
- * tree lease for a per-PR one, even if either filter is widened. Those two
- * mechanisms read only the per-PR lease files.
- */
-const TREE_LEASE_PREFIX = "drive-tree-lease-";
-
-/** The lease file for one working tree, whichever PR it is currently driving. */
-export function treeLeasePathFor(stateDir: string, actor: string): string {
-  return join(stateDir, `${TREE_LEASE_PREFIX}${actor}.json`);
-}
-
-/**
- * The `drive-pr-remote-lock-<pr>` prefix `prRemoteMutationLock`'s path is
- * built on — deliberately outside BOTH `LEASE_PREFIX` and
- * `TREE_LEASE_PREFIX`'s namespaces, for the identical reason `TREE_LEASE_PREFIX`
- * itself gives: neither `filterLeaseFilesFor` nor `filterLeaseFilesForActor`
- * may ever mistake this lock's directory for a lease file, now or after
- * either filter is later widened. It carries no persisted content at all
- * (unlike every OTHER path in this module) — it exists purely as a mutex
- * anchor, never read as a lease or a tree lease.
- */
-const PR_REMOTE_MUTATION_LOCK_PREFIX = "drive-pr-remote-lock-";
-
-/**
- * Where `assertRemoteMutationAllowed`'s own PR-wide lock lives —
- * ONE file per PR, contended by EVERY worktree driving it, unlike
- * `leasePathFor`'s one file per (PR, actor). Exported so a probe can acquire
- * it directly, mirroring `treeLeasePathFor`'s own export for the identical
- * purpose.
- */
-export function prRemoteMutationLockPathFor(
-  stateDir: string,
-  pr: string,
-): string {
-  return join(
-    stateDir,
-    `${PR_REMOTE_MUTATION_LOCK_PREFIX}${canonicalLeasePr(pr)}`,
-  );
-}
-
-/**
- * A pid, or `null` when `raw` is not one.
- *
- * `isDigits` alone is not enough, and the gap is not cosmetic: it admits `0`
- * and it admits digit strings too long to survive `Number.parseInt` (400 nines
- * parse to `Infinity`). Either one is written into the lease file and then
- * bounces off `readLease`'s own shape check — `0` fails its `> 0` test, and
- * `Infinity` serialises as JSON `null` — so the session ends up holding NO
- * lease while believing it holds one, and the next session is free to mutate
- * alongside it. That is exactly the concurrency this module exists to refuse,
- * reached by a path that reports nothing. Both env vars go through here.
+ * A pid, or `null` when `raw` is not one: `0`, and digit strings too long to
+ * be exact, are not pids, and a lease under one would exclude nobody.
  */
 function parsePid(raw: string): number | null {
   if (!isDigits(raw)) return null;
@@ -341,31 +259,22 @@ function parsePid(raw: string): number | null {
 }
 
 /**
- * Resolve this invocation's session — see the ladder in the header.
+ * This invocation's session, by a ladder:
  *
- * `label` names the script in the refusals below. The external-mutation
- * fence resolves the session from `reply-to-thread.ts`'s process too, and a
- * refusal that says `drive-state.ts` there sends the reader to a command they
- * never ran. Exported for that fence and for nothing else — the LEASE is still
- * taken only through `claimLease`.
+ * 1. `$DRIVE_PR_SESSION`: the driver's pid, exported to its passes. A value
+ *    that is not a live pid is refused, since the caller named this session
+ *    deliberately and a silent fallback would be another identity.
+ * 2. `$CLAUDE_PID`: the agent harness's process, when it is alive.
+ * 3. none: no lease identity; the sessionless path writes a presence record
+ *    held by the working tree.
+ *
+ * `label` names the script in the refusals, since the external-mutation
+ * fence resolves the session from other scripts too.
  */
 export function resolveSession(label = "drive-state.ts"): Session {
   const explicit = process.env.DRIVE_PR_SESSION ?? "";
   const explicitPid = parsePid(explicit);
   if (explicitPid !== null) {
-    // Syntactically a pid is not yet a SESSION. A lease whose owner is already
-    // dead is takeover-able by anyone the moment it is written (`leaseAlive`
-    // fails on the pid half however young the lease), so admitting one hands
-    // this command an exclusion that excludes nobody — while it believes it is
-    // protected. Reached when `drive.ts` is killed and a detached pass outlives
-    // it still carrying the dead driver's pid: a replacement driver takes the
-    // lease over as abandoned, and both passes go on working.
-    //
-    // Refused rather than downgraded to tier 3, for the same reason a
-    // non-numeric value is: the caller named this session deliberately, so a
-    // silent fallback would give them a different identity than the one they
-    // asked for. The host is always local here, so `pidAlive` is a real answer
-    // rather than the foreign-host "assume alive".
     if (!pidAlive(explicitPid, hostname())) {
       fail(
         2,
@@ -384,15 +293,9 @@ export function resolveSession(label = "drive-state.ts"): Session {
       pid: explicitPid,
       host: hostname(),
       source: "DRIVE_PR_SESSION",
-      // Only this tier ever reads the token — see `Session.sessionStarted`'s
-      // own doc for why the other two tiers must not.
       sessionStarted: process.env.DRIVE_PR_SESSION_STARTED ?? "",
     };
   }
-  // A non-empty value that is not a pid is a caller mistake, not a reason to
-  // fall through: it would silently downgrade to a DIFFERENT session identity
-  // than the one they meant to set, which is the failure this whole module is
-  // about. Refuse instead of guessing.
   if (explicit !== "") {
     fail(
       2,
@@ -402,19 +305,7 @@ export function resolveSession(label = "drive-state.ts"): Session {
       "agent process.",
     );
   }
-  // An unusable `$CLAUDE_PID` falls THROUGH to tier 3 rather than failing: the
-  // harness sets that one, so a caller has nothing to correct, and tier 3's
-  // "no lease, status quo" is the documented answer for a runtime this ladder
-  // cannot identify. `$DRIVE_PR_SESSION` above refuses because a caller who
-  // set it deliberately meant a specific session.
   const agentPid = parsePid(process.env.CLAUDE_PID ?? "");
-  // A DEAD agent pid is unusable in the same way a malformed one is — a lease
-  // under it excludes nobody — so it takes the same route: through to tier 3,
-  // where no lease is claimed and nothing is falsely reported as held. Not a
-  // refusal, because the caller did not set this variable and has nothing to
-  // correct; tier 3's "no lease, status quo" is the documented answer for a
-  // runtime this ladder cannot identify, and an unidentifiable session and a
-  // dead one are the same thing to every reader of the lease.
   if (agentPid !== null && pidAlive(agentPid, hostname())) {
     return {
       pid: agentPid,
@@ -427,73 +318,24 @@ export function resolveSession(label = "drive-state.ts"): Session {
 }
 
 /**
- * The exit code every PER-TREE lease refusal in this module uses: another live
- * SESSION in THIS working tree holds the drive lease for this PR.
- *
- * Distinct from `DRIVE_HELD_ELSEWHERE_EXIT` below, because the two are
- * different situations with different remedies and a caller must be able to
- * tell them apart without parsing prose. `11` says "another session in YOUR
- * tree" and points at `clear-lease`, which the reader can run where they
- * stand. `13` says "another tree entirely" — the reader is very likely not
- * the person who should clear it, and the correct response is almost always
- * to stop rather than to take over. `drive-status.ts` reports them as
- * `SESSION_LEASE_HELD` and `DRIVE_HELD_BY_OTHER_WORKTREE` for the same
- * reason.
- *
- * Derived from `TERMINAL_STATES` via `outOfBandExitCode` rather
- * than an independent literal — the same binding `DRIVE_HELD_ELSEWHERE_EXIT`
- * below already had. Consumed by `drive-status.ts`'s own `case 0` sites and
- * by `finish-round.ts`'s `isLeaseExit`, neither of which hand-writes `11`
- * anymore. This module's OWN internal per-tree refusals (`fail(11, ...)` at
- * several sites below) are NOT threaded through this constant — that is a
- * separate, much larger residual (a `fail` call argument, not a `return`
- * statement, at every one of those sites), out of this issue's scope and
- * tracked instead as its own follow-up rather than silently folded in here.
+ * The exit every PER-TREE lease refusal uses: another live SESSION in THIS
+ * working tree holds the lease, and `clear-lease`, which the reader can run
+ * where they stand, is the remedy. Bound to `TERMINAL_STATES`.
  */
 export const SESSION_LEASE_HELD_EXIT = outOfBandExitCode("SESSION_LEASE_HELD");
 
 /**
- * The exit code a PR-WIDE refusal carries: another WORKING TREE is driving this
- * PR.
- *
- * Distinct from `SESSION_LEASE_HELD_EXIT` above — see its own doc comment for
- * why the two must stay tellable apart.
- *
- * Derived from `TERMINAL_STATES` via `outOfBandExitCode` rather
- * than an independent literal that merely happened to match — the same
- * reasoning `finish-round.ts`'s own comment on this constant's import
- * already states for why it is imported here rather than hand-written at
- * each call site.
+ * The exit a PR-WIDE refusal carries: another WORKING TREE drives this PR,
+ * and the reader is very likely not the person who should clear it.
  */
 export const DRIVE_HELD_ELSEWHERE_EXIT = outOfBandExitCode(
   "DRIVE_HELD_BY_OTHER_WORKTREE",
 );
 
 /**
- * How long a lease this session already holds may go un-rewritten before the
- * next mutating command bothers to renew it. A quarter of the staleness window,
- * capped, so a renewal is always many times more frequent than the expiry it
- * defends against.
- */
-export function renewAfterMs(): number {
-  return Math.min(RENEW_AFTER_MAX_MS, Math.floor(leaseStaleMs() / 4));
-}
-
-/**
- * What `claimLease` grants: the per-PR lease (`Lease`)
- * and the tree-wide lease (`TreeLease`) together — every session that claims
- * one claims the other in the SAME admission, identified or not.
- *
- * Ladder tier 3 (no session identity) is no exception: alongside its durable
- * PER-PR presence record (`holder: 'worktree'`) it claims a `holder:
- * 'worktree'` TREE lease too (`claimSessionlessTreeLease`), so every
- * admission is either BOTH non-null or BOTH null, and the two fields never
- * need checking independently.
- *
- * The one remaining `{ lease: null; treeLease: null }` case is narrower than
- * "sessionless": it is tier 3 finding this tree's OWN per-PR lease already
- * belongs to a live IDENTIFIED session, and deferring to it rather than
- * writing anything — see `claimLease`'s own tier-3 branch.
+ * What `claimLease` grants: the per-PR lease and the tree lease together,
+ * both or neither. Neither only when a sessionless resolver finds its tree's
+ * own per-PR lease held by a live identified session and defers to it.
  */
 export type LeaseAdmission =
   | { lease: Lease; treeLease: TreeLease }

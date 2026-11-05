@@ -1,9 +1,6 @@
 /**
- * drive-pr suite: arming a drive from a session (`scripts/arm-drive.ts`,
- * `lib/arm.ts`): the way `do_item.arm_drive` and the session choose, the
- * command that starts the drive and how it is quoted, and the terminal tab
- * Orca opens, with a stand-in for Orca's command line: no test opens a real
- * tab.
+ * Drive arming: command quoting, runtime selection, configuration forwarding,
+ * tab confirmation, and background fallback. Orca calls use a stand-in.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -243,17 +240,19 @@ describe("the way a drive is armed", () => {
     });
   });
 
-  it("prints the command only for print, and in a session that is not Claude Code's", () => {
+  it("prints the command only for print, and in a session of no agent tool with a documented pass", () => {
     expect(chooseWay("print", IN_ORCA, "linux")).toMatchObject({
       way: "print",
     });
-    const codex = chooseWay(
+    const none = chooseWay(
       "auto",
-      { CODEX_HOME: "/x", ORCA_CLI_COMMAND: "/opt/orca/bin/orca" },
+      { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" },
       "linux",
     );
-    expect(codex).toMatchObject({ way: "print" });
-    expect(JSON.stringify(codex)).toContain("this session runs codex");
+    expect(none).toMatchObject({ way: "print" });
+    expect(JSON.stringify(none)).toContain(
+      "the documented pass commands are Claude Code's and Codex's",
+    );
   });
 });
 
@@ -666,6 +665,48 @@ describe("arm-drive.ts", () => {
     ]);
   });
 
+  it("arms Codex in the background with its strategic model and forwards the override", async () => {
+    const run = await runArm(
+      scratchTree(),
+      ["42", "--pass-model", "strategic"],
+      {
+        CODEX_HOME: "/unused/codex",
+        JIG__ROUTING__MODELS__CODEX__EXECUTION: "gpt-small",
+        JIG__ROUTING__MODELS__CODEX__STRATEGIC: "gpt-large",
+      },
+    );
+    expectSpawnExit(run, 0);
+    const answer = report(run);
+    expect(answer).toMatchObject({
+      status: "spawn",
+      way: "background",
+      model: "gpt-large",
+    });
+    const separator = answer.argv.indexOf("--");
+    expect(answer.argv.slice(5, separator)).toEqual([
+      "--bots-only",
+      "--pass-model",
+      "strategic",
+    ]);
+    expect(answer.argv.slice(separator + 1, separator + 5)).toEqual([
+      "codex",
+      "exec",
+      "-m",
+      "gpt-large",
+    ]);
+  });
+
+  it("refuses a Codex tier without its routing row rather than using Claude's", async () => {
+    const run = await runArm(
+      scratchTree(),
+      ["42", "--pass-model", "strategic"],
+      { CODEX_HOME: "/unused/codex" },
+    );
+    expectSpawnExit(run, 1);
+    expect(report(run)).toMatchObject({ status: "failed", model: null });
+    expect(report(run).reason).toContain("no codex row");
+  });
+
   it("reads do_item.arm_drive and drive.pass_model from the configuration", async () => {
     const tree = scratchTree();
     const run = await runArm(tree, ["42"], {
@@ -943,9 +984,11 @@ describe("arm-drive.ts", () => {
       const prefix = shellWords(typed.slice(0, -command.length - 1));
       expect(prefix.slice(0, LOGIN_PREFIX.length)).toEqual(LOGIN_PREFIX);
       const rest = prefix.slice(LOGIN_PREFIX.length);
-      expect(rest.filter((word) => word.includes("=")).sort()).toEqual(
-        carried.sort(),
+      const words = rest.filter((word) => word.includes("="));
+      const due = words.map((w) =>
+        w.replace(/^(JIG_ORCA_TAB_PENDING=)\d+$/, "$1_"),
       );
+      expect(due.sort()).toEqual([...carried, "JIG_ORCA_TAB_PENDING=_"].sort());
       expect(rest.filter((word) => word === "-u").length).toBe(
         ["JIG_HOME", "JIG_OVERLAY", "JIG_USER_LAYER"].filter(
           (key) => !carried.some((entry) => entry.startsWith(`${key}=`)),

@@ -13,7 +13,7 @@ import {
 import { dirname } from "node:path";
 
 /** Random suffix for a unique temp path beside its target (mktemp XXXXXX). */
-export function tempSuffix(): string {
+function tempSuffix(): string {
   return randomBytes(3).toString("hex");
 }
 
@@ -28,13 +28,11 @@ export function tempSuffix(): string {
  * retried, since nothing in this loop's contract says a THIRD call would behave
  * any differently from the second.
  *
- * `content` accepts raw bytes as well as a string: every caller until
- * `migrate-legacy-state.ts` wrote its own JSON/text, so a `utf8`-encoded
- * string was the whole contract. Copying an arbitrary legacy state file
+ * `content` accepts raw bytes as well as a string: content copied
  * byte-for-byte cannot round-trip through a `utf8` string without risking
- * mangling content that is not valid UTF-8 (round-tripping through `utf8`
- * is lossy for invalid sequences), so a caller doing that passes the bytes
- * it already read straight through instead.
+ * mangling bytes that are not valid UTF-8 (round-tripping through `utf8` is
+ * lossy for invalid sequences), so a caller copying passes the bytes it
+ * already read straight through instead.
  */
 export function writeAllSync(fd: number, content: string | Uint8Array): void {
   const buf =
@@ -112,46 +110,6 @@ export function fsyncDirectoryBestEffort(dirPath: string): void {
   let closeFailed = false;
   try {
     closeSync(dirFd);
-  } catch (e) {
-    closeFailed = true;
-    closeError = e;
-  }
-  if (primaryFailed) throw primaryError;
-  if (closeFailed) throw closeError;
-}
-
-/**
- * Fsync a file this caller has already written and closed, by re-opening it
- * read-only — the same "did the bytes survive a crash" step `atomicWrite`
- * takes inline on its own write fd, split out for a caller that lands
- * content through some OTHER path (`copyFileSync`, in `migrate-legacy-state.ts`)
- * and only needs the durability half.
- *
- * No ENOTSUP/EOPNOTSUPP/EINVAL carve-out here, unlike
- * `fsyncDirectoryBestEffort`: that allowlist exists because some
- * filesystems genuinely cannot fsync a DIRECTORY, a real platform gap, not
- * "best-effort" as a synonym for "ignore failures". A plain file's fsync has
- * no equivalent unsupported-operation case worth swallowing, so any error
- * here propagates.
- *
- * Capture-then-rethrow OUTSIDE a `finally`, for the same reason
- * `fsyncDirectoryBestEffort` documents: a `throw` inside `finally` would
- * silently replace whatever `fsyncSync` was already propagating.
- */
-export function fsyncFileSync(path: string): void {
-  const fd = openSync(path, "r");
-  let primaryError: unknown;
-  let primaryFailed = false;
-  try {
-    fsyncSync(fd);
-  } catch (e) {
-    primaryFailed = true;
-    primaryError = e;
-  }
-  let closeError: unknown;
-  let closeFailed = false;
-  try {
-    closeSync(fd);
   } catch (e) {
     closeFailed = true;
     closeError = e;
@@ -250,7 +208,7 @@ export class ExclusiveDurabilityUnconfirmed extends Error {
  * race-safety argument depends on. `link`, not `rename`, is what keeps both
  * properties at once.
  *
- * Same capture-then-rethrow discipline as `atomicWrite`/`fsyncFileSync`, and
+ * Same capture-then-rethrow discipline as `atomicWrite`, and
  * the same reasoning: a masked secondary error would hide the actual
  * ENOSPC/EIO durability failure a caller needs to see. Every failure after
  * the temp file's own `wx` open succeeds — the write, the fsync, the close,
@@ -385,18 +343,9 @@ export function createExclusiveDurable(path: string, content: string): void {
  * whatever directory entry currently occupies `target` — including a
  * symlink — without ever opening or following it, unlike a direct
  * `writeFileSync`/`copyFileSync` onto `target`, both of which follow a
- * symlink there and write through to its external destination.
- * `migrate-legacy-state.ts` is the worked case: two of its own
- * writes went straight to `copyFileSync`/`writeFileSync` on a path it did
- * not hold exclusively between check and write, each independently
- * vulnerable to exactly that substitution — closed by routing both
- * through this already-reviewed primitive instead of adding another
- * check-then-write gap that would only narrow the window. That file's own
- * header already records the general lesson for the analogous `src`-side
- * race (three rounds of narrowing a read-before-delete window, still
- * closable one read later every time): a race that is real, not
- * theoretical, is closed by an operation with no window at all, not by
- * one more check.
+ * symlink there and write through to its external destination. A race that
+ * is real, not theoretical, is closed by an operation with no window at all,
+ * not by one more check.
  */
 export function atomicWrite(
   target: string,

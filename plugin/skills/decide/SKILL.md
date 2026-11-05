@@ -257,7 +257,22 @@ leaves underdetermined, or that needs more than the round has, is
 lacked, and a guess is not evidence. Say in the record that
 the evidence was gathered unattended and what it was. Under a drive, add the
 ruling to the drive's decisions taken unattended (drive-pr § 8) with its
-record's link. The escalate rows do not change with the level.
+record's link. The sensitivity row does not change with the level.
+
+**The last row depends on the level too, at `wide` only.** Under `wide` (a
+drive's pass where the repository's `max_level` allows it, often inside an
+`autonomy.off_hours` window), a call that reaches **Anything else** with no
+sensitivity flag, no `hitl:<stakeholder>` category, and no persisted-data or
+published-contract consequence is decided by the architect agent and marked
+**provisional**: the decision-record comment says so in its first line,
+names the level and how to reverse it (a comment on the pull request with a
+line `answer <key>: …` from an owner, member or collaborator, where `<key>`
+is the short slug you give the ruling), and the drive records it as
+`decide-provisional` with that key (drive-pr § 8), which only `wide`
+accepts. A person's answer reverses it, and the drive parks it for them.
+Under `attended` and `unattended` the row stands: escalate. A call the
+evidence could not settle stays `escalated` at `wide` too: this row decides
+only a call whose evidence is in hand.
 
 `hitl` marks a human-in-the-loop decision; `hitl:<stakeholder>` names whose
 call it is (the label conventions `/jig:do-item` reads). A repository
@@ -265,7 +280,9 @@ that names the label differently sets it in `issue_tracker.labels.hitl`; read
 `hitl` throughout as that label.
 
 The last row is the important one: **the ladder fails closed.** A dilemma that
-does not clearly fit `decided` is escalated, not decided confidently.
+does not clearly fit `decided` is escalated, not decided confidently; at
+`wide`, decided only provisionally, where a person reverses it with one
+comment and the merge is still theirs.
 
 Why reversibility rather than importance: a choice that one pull request can
 unwind is genuinely cheap to reverse, and exactly that class is safe for an

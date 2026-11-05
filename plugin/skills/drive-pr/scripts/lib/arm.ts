@@ -12,21 +12,27 @@
  *   background  the session's background execution, as before tabs
  *   print       the command only, for a person to run
  *
- * Whatever the setting, a session that is not Claude Code's prints the
- * command only: `claude` is the one documented pass command, and a guessed
- * one for another agent tool is worse than one left for a person to run.
+ * The pass command is the session's own agent tool's documented one
+ * (`pass-command.ts`): Claude Code's in a Claude Code session, Codex's in a
+ * Codex session, with the bypass only on a host that set
+ * `drive.codex_bypass`. Both use a tab where available, otherwise the
+ * session's managed background execution. A session of any other tool,
+ * or one no harness can be read for, prints Claude Code's command only: a guessed one for another agent
+ * tool is worse than one left for a person to run.
  *
  * In a tab the drive outlives the session and has a window a person can
  * watch, and the session that implemented the item ends without a drive
  * running beside it. The tab is a fresh login shell of the user's: `bun`,
- * `claude` and the Claude account come from it, not from the session. The
+ * the agent's CLI and its account come from it, not from the session. The
  * tab only starts the drive: the command it types is the one this module
  * builds, quoted for a POSIX shell. On a Windows host Orca's tab can be
  * `cmd.exe` or PowerShell, which that quoting is not written for, so a
  * Windows host opens no tab. Under `auto` a tab that cannot be opened, or
  * whose drive `drives.ts` does not list in time, falls back to the
  * background, saying why (a drive the tab did start refuses the second on
- * its lock); under `tab` that is the answer.
+ * its lock); under `tab` that is the answer. The tab is recorded as a run
+ * tab (`shared/orca-tabs.ts`): the drive closes it when it ends with nothing
+ * for a person, and arming the PR again closes its earlier idle run tabs.
  */
 import { resolve } from "node:path";
 import { shellQuote } from "../../../../shared/cli.ts";
@@ -44,11 +50,31 @@ import {
 } from "../../../../shared/orca.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { driveTs, drives } from "./driver/paths.ts";
+import type { AccountVendor } from "./identity.ts";
 import type { ArmDriveMode } from "./overlay.ts";
-import { type PassArgs, permissionMode } from "./pass-args.ts";
-import type { PassModel } from "./pass-model.ts";
+import { codexPermission, type PassArgs, permissionMode } from "./pass-args.ts";
+import { runTabEnv } from "../../../../shared/orca-tabs.ts";
+import { passCommand } from "./pass-command.ts";
+import { withCodexModel } from "./pass-model.ts";
 
 type Env = Record<string, string | undefined>;
+
+/** The model a drive's passes run on and where it came from; `null` when the pass command's tool decides. */
+export interface ArmModel {
+  model: string | null;
+  source: string;
+}
+
+/**
+ * The agent tool whose pass command a session arms: Claude Code's in a
+ * Claude Code session, Codex's in a Codex session; `null` for any other.
+ */
+export function sessionVendor(env: Env): AccountVendor | null {
+  const harness = detectHarness(env)?.name ?? null;
+  if (harness === "claude-code") return "claude";
+  if (harness === "codex") return "codex";
+  return null;
+}
 
 /** The way a drive is armed once the setting meets the session. */
 export type ArmWay = "tab" | "background" | "print";
@@ -133,13 +159,41 @@ export function sessionOverrides(
 }
 
 /**
+ * The pass command `vendor` runs on `model`: Claude Code's with `passArgs`
+ * before its `-p`; Codex's with `-m` after `exec` (none when `model` is
+ * `null`, so Codex's own configuration decides) and the bypass when
+ * `codexBypass` says the host opted in.
+ */
+function passArgv(
+  vendor: AccountVendor,
+  pr: string,
+  model: string | null,
+  passArgs: readonly string[],
+  codexBypass: boolean,
+): string[] {
+  const pass = passCommand(vendor, pr, codexBypass);
+  if (vendor === "codex")
+    return model === null ? pass : withCodexModel(pass, model);
+  const [claude, ...prompt] = pass;
+  return [
+    claude as string,
+    ...(model === null ? [] : ["--model", model]),
+    ...passArgs,
+    ...prompt,
+  ];
+}
+
+/**
  * The argument list that starts the drive: `drive.ts` in the tree, its pass
- * on `model`, with `passArgs` before the pass's `-p`.
+ * (`vendor`'s documented pass command) on `model`, with `passArgs` before a
+ * Claude Code pass's `-p` and, on a host that opted in, a Codex pass's bypass.
  */
 export function driveArgv(
   request: ArmRequest,
-  model: string,
+  model: string | null,
   passArgs: readonly string[] = [],
+  vendor: AccountVendor = "claude",
+  codexBypass = false,
 ): string[] {
   const { pr, tree, forward } = request;
   return [
@@ -151,12 +205,7 @@ export function driveArgv(
     "--bots-only",
     ...forward,
     "--",
-    "claude",
-    "--model",
-    model,
-    ...passArgs,
-    "-p",
-    `/jig:drive-pr --bots-only ${pr}`,
+    ...passArgv(vendor, pr, model, passArgs, codexBypass),
   ];
 }
 
@@ -206,12 +255,21 @@ export function chooseWay(
 ): WayChoice | { error: string } {
   if (setting === "print")
     return { way: "print", reason: "arm_drive is print: the command only" };
-  const harness = detectHarness(env)?.name ?? null;
-  if (harness !== "claude-code")
+  const vendor = sessionVendor(env);
+  if (vendor === null)
     return {
       way: "print",
-      reason: `the pass command is Claude Code's, and this session runs ${harness ?? "no agent harness this can identify"}: the command only, for a person to run`,
+      reason: `the documented pass commands are Claude Code's and Codex's, and this session runs ${detectHarness(env)?.name ?? "no agent harness this can identify"}: Claude Code's command only, for a person to run`,
     };
+  return tabOrBackground(setting, env, platform);
+}
+
+/** The way to arm from a session that can open a tab or run in the background. */
+function tabOrBackground(
+  setting: Exclude<ArmDriveMode, "print">,
+  env: Env,
+  platform: NodeJS.Platform,
+): WayChoice | { error: string } {
   const orca = orcaTabCommand(env);
   if (setting === "background")
     return { way: "background", reason: "arm_drive is background" };
@@ -269,6 +327,16 @@ export interface TabDeps {
   /** How long to wait for the drive to be listed once the tab is open. */
   confirmMs: number;
   pollMs: number;
+  /**
+   * Record the tab `terminal create` answered `result` for, so the drive
+   * closes it when it ends, and close the PR's earlier run tabs; it never
+   * fails the arm. Without it the tab is not recorded and stays open.
+   */
+  runTab?: (
+    result: Record<string, unknown>,
+    orca: string,
+    request: ArmRequest,
+  ) => Promise<void>;
 }
 
 /** How the tab flow ended. */
@@ -311,6 +379,44 @@ async function tabTail(
     : [];
 }
 
+/** Record the opened tab through `deps.runTab`; a failure is reported and never stops the arm. */
+async function recordTabSafely(
+  deps: TabDeps,
+  result: Record<string, unknown>,
+  orca: string,
+  request: ArmRequest,
+): Promise<void> {
+  try {
+    await deps.runTab?.(result, orca, request);
+  } catch (error) {
+    console.error(
+      `arm: the drive's tab is not recorded and stays open (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+}
+
+/** Poll until the clone lists a drive on the PR that started after the tab opened, or `confirmMs` passes. */
+async function awaitDrive(
+  request: ArmRequest,
+  opened: number,
+  deps: TabDeps,
+): Promise<LiveDrive | null> {
+  const deadline = opened + deps.confirmMs;
+  for (;;) {
+    const left = deadline - deps.now();
+    if (left <= 0) return null;
+    const drive = await deps.liveDrive(request, Math.ceil(left / 1000));
+    if (
+      drive !== null &&
+      drive !== "unreadable" &&
+      Date.parse(drive.started ?? "") >= opened - STARTED_SLACK_MS
+    )
+      return drive;
+    if (deadline - deps.now() <= 0) return null;
+    await deps.sleep(deps.pollMs);
+  }
+}
+
 /**
  * Open the drive's tab and wait, polling up to `confirmMs`, until the
  * clone's drives list a drive on the PR that started after the tab opened.
@@ -339,20 +445,9 @@ export async function armInTab(
       why: `orca terminal create failed ${orcaFailure(done)}`,
     };
   const terminal = terminalHandle(result);
-  const deadline = opened + deps.confirmMs;
-  for (;;) {
-    const left = deadline - deps.now();
-    if (left <= 0) break;
-    const drive = await deps.liveDrive(request, Math.ceil(left / 1000));
-    if (
-      drive !== null &&
-      drive !== "unreadable" &&
-      Date.parse(drive.started ?? "") >= opened - STARTED_SLACK_MS
-    )
-      return { status: "armed", terminal, drive };
-    if (deadline - deps.now() <= 0) break;
-    await deps.sleep(deps.pollMs);
-  }
+  await recordTabSafely(deps, result, orca, request);
+  const drive = await awaitDrive(request, opened, deps);
+  if (drive !== null) return { status: "armed", terminal, drive };
   const tail = terminal === null ? [] : await tabTail(orca, terminal, deps);
   return { status: "unconfirmed", terminal, tail };
 }
@@ -400,7 +495,8 @@ export interface ArmReport {
   reason: string;
   /** Set when `auto` meant a tab and the drive goes to the background instead: why. */
   fallback: string | null;
-  model: string;
+  /** `null` when the pass command's tool decides (a Codex pass with no model configured). */
+  model: string | null;
   modelSource: string;
   /** The extra words the pass command carries before `-p`, and their source. */
   passArgs: string[];
@@ -422,19 +518,33 @@ export interface ArmReport {
  * the extra pass arguments or the working tree could not be read. `command`
  * is built on `model` (the default where the configured one could not be
  * read) and `passArgs` (none where they could not be read) once the tree is
- * known.
+ * known, for `vendor`'s pass command (Claude Code's when none is named), with
+ * a Codex pass's bypass only when `codexBypass` says the host opted in.
  */
 export function failedReport(
   request: { pr: string; tree: string | null; forward: string[] },
   setting: ArmReport["armDrive"],
-  pass: { model: PassModel; passArgs: PassArgs },
+  pass: {
+    model: ArmModel;
+    passArgs: PassArgs;
+    vendor?: AccountVendor;
+    codexBypass?: boolean;
+  },
   reason: string,
 ): ArmReport {
   const { model, passArgs } = pass;
+  const vendor = pass.vendor ?? "claude";
+  const codexBypass = pass.codexBypass === true;
   const tree = request.tree;
   const known = tree === null ? null : { ...request, tree };
   const argv =
-    known === null ? [] : driveArgv(known, model.model, passArgs.words);
+    known === null
+      ? []
+      : driveArgv(known, model.model, passArgs.words, vendor, codexBypass);
+  const permission =
+    vendor === "codex"
+      ? codexPermission(passArgv(vendor, request.pr, null, [], codexBypass))
+      : permissionMode(["claude", ...passArgs.words]);
   return {
     pr: request.pr,
     tree,
@@ -447,8 +557,7 @@ export function failedReport(
     modelSource: model.source,
     passArgs: passArgs.words,
     passArgsSource: passArgs.source,
-    permissionMode:
-      permissionMode(["claude", ...passArgs.words]).mode ?? "default",
+    permissionMode: permission.mode ?? "default",
     command: known === null ? null : commandLine(argv),
     argv,
     tab: null,
@@ -462,8 +571,11 @@ export function failedReport(
 export interface ArmInputs {
   request: ArmRequest;
   setting: { value: ArmDriveMode; source: string };
-  model: PassModel;
+  /** The model of the session's agent tool's pass (`sessionVendor(env)`; Claude Code's for any other session). */
+  model: ArmModel;
   passArgs: PassArgs;
+  /** Whether a Codex pass carries the bypass: the host's `drive.codex_bypass`. */
+  codexBypass?: boolean;
   env: Env;
   platform?: NodeJS.Platform;
 }
@@ -473,8 +585,14 @@ export async function arm(
   inputs: ArmInputs,
   deps: TabDeps,
 ): Promise<{ report: ArmReport; exit: number }> {
-  const { request, setting, model, passArgs, env } = inputs;
-  const base = failedReport(request, setting, { model, passArgs }, "");
+  const { request, setting, model, passArgs, env, codexBypass } = inputs;
+  const vendor = sessionVendor(env) ?? "claude";
+  const base = failedReport(
+    request,
+    setting,
+    { model, passArgs, vendor, codexBypass: codexBypass === true },
+    "",
+  );
   const choice = chooseWay(setting.value, env, inputs.platform);
   if ("error" in choice)
     return { report: { ...base, reason: choice.error }, exit: 1 };
@@ -491,13 +609,15 @@ export async function arm(
   const outcome = await armInTab(
     choice.orca,
     request,
-    commandLine([...sessionOverrides(env), ...base.argv]),
+    commandLine([...sessionOverrides(env), ...runTabEnv(env), ...base.argv]),
     deps,
   );
   return tabReport(chosen, outcome, setting.value === "auto");
 }
 
-/** `report` sent to the background instead of a tab, saying why. */
+/**
+ * `report` sent to the session's background execution instead of a tab, saying why.
+ */
 function fallBack(
   report: ArmReport,
   why: string,

@@ -32,7 +32,7 @@ import { ExitError, fail, isDigits, sleep } from "./../cli.ts";
 
 import { helperTimeoutSeconds, pidAlive, run, tsArgv } from "./../proc.ts";
 
-import type { ClaimDiag } from "./../claim.ts";
+import { type ClaimDiag, samePidNamespace } from "./../claim.ts";
 
 import { accountHash, formatAccountIdentity } from "./../identity.ts";
 
@@ -68,6 +68,8 @@ interface DoctorRowJson {
   state: string;
   pid: number | null;
   host: string | null;
+  hostId?: string | undefined;
+  platform?: string | null;
   diag: ClaimDiag | null;
   doctor: { verdict: string; reason: string; recovery: string | null } | null;
 }
@@ -225,7 +227,10 @@ export async function decideTakeover(
 
 /** A stale lock admits a takeover only when its process is confirmed gone. */
 function requireProcessGone(pr: string, row: DoctorRowJson): void {
-  if (row.pid !== null && !pidAlive(row.pid, row.host ?? "")) return;
+  // A claim from this machine under an earlier host name is checked here, by
+  // its host id; one from another machine or pid namespace is never confirmed gone.
+  if (row.pid !== null && samePidNamespace(row) && !pidAlive(row.pid, ""))
+    return;
   refuse(
     pr,
     row,
@@ -296,7 +301,7 @@ export function settleTakeover(): void {
 async function stopWedgedHolder(
   plan: TakeoverPlan,
   pr: string,
-  prLockDir: string,
+  prLock: DriveLock,
   rearm: string,
 ): Promise<void> {
   // Read again right before the stop: a holder that spawned a pass since the
@@ -347,9 +352,9 @@ async function stopWedgedHolder(
       `drive.ts --take-over: drives.ts --stop ${pr} exited ${stop.code}; the holder may still be running. Not taking over.`,
     );
   // The stopped driver releases its locks on the way out; a forced one leaves
-  // a claim whose pid is gone, which the acquisition recovers.
+  // a lock whose holder is gone, which the acquisition recovers.
   const deadline = Date.now() + helperTimeoutSeconds() * 1000;
-  while (liveHolder(prLockDir) !== null) {
+  while (liveHolder(prLock.stateDir, prLock.name) !== null) {
     if (Date.now() >= deadline)
       fail(
         SINGLE_INSTANCE_LOCK_EXIT,
@@ -370,7 +375,7 @@ async function stopWedgedHolder(
 export async function holdTreeAroundTakeover(
   plan: TakeoverPlan | null,
   pr: string,
-  locks: { tree: string; pr: string },
+  locks: { tree: DriveLock; pr: DriveLock },
   holdTree: () => Promise<void>,
   rearm: string,
 ): Promise<void> {
@@ -378,7 +383,8 @@ export async function holdTreeAroundTakeover(
     plan !== null &&
     plan.verdict === "WEDGED" &&
     plan.holderStarted !== null &&
-    liveHolder(locks.tree)?.diag?.started === plan.holderStarted;
+    liveHolder(locks.tree.stateDir, locks.tree.name)?.diag?.started ===
+      plan.holderStarted;
   if (plan !== null && stopFirst)
     await stopWedgedHolder(plan, pr, locks.pr, rearm);
   await holdTree();
@@ -404,7 +410,7 @@ export async function explainHolder(
   botsOnly: boolean,
   own: OwnPass,
 ): Promise<void> {
-  const holder = liveHolder(lock.dir);
+  const holder = liveHolder(lock.stateDir, lock.name);
   const pr = holder?.diag?.pr ?? "";
   if (!isDigits(pr)) return;
   const row = await doctorRowFor(pr);

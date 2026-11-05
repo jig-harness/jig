@@ -1,12 +1,13 @@
 import { prBaseGh, addOrigin, realGitForShell } from "./round-plan-fixtures.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { editState } from "./state-rows.ts";
 /**
  * drive-pr suite: announce-merge-ready.ts, marker overrides, round-delta.ts, round-plan.ts, the PR-target channel and guarded-push.ts.
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
 import { beforeAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 
 import {
@@ -399,7 +400,7 @@ ${second}
       expect(plan.testboxDecision.note).toContain(bogus.slice(0, 12));
     });
 
-    // A corrupted state file can carry a SYMBOLIC ref (e.g. `HEAD`) instead of
+    // A corrupted state can carry a SYMBOLIC ref (e.g. `HEAD`) instead of
     // a 40-character SHA and still pass `isUsableState`'s bare `typeof ===
     // 'string'` check —
     // `set-verified`'s own CLI validation refuses this shape outright, so the
@@ -416,10 +417,10 @@ ${second}
         repo,
       );
       await setVerified(stateDir, "f".repeat(40));
-      const statePath = join(stateDir, "drive-pr-999.json");
-      const state = JSON.parse(readFileSync(statePath, "utf8"));
-      state.verifiedSha = "HEAD";
-      writeFileSync(statePath, JSON.stringify(state));
+      editState(stateDir, "999", (state) => ({
+        ...state,
+        verifiedSha: "HEAD",
+      }));
 
       const { stdout } = await planIn(stateDir, resolverShim());
       const plan = JSON.parse(stdout);

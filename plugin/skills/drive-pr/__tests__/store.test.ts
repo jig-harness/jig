@@ -1,6 +1,7 @@
 /**
  * store.test.ts — `resolveStateDir`'s default: a path outside the repository
- * tree, keyed per clone, gated by the legacy-migration guard.
+ * tree, keyed per clone, and the root refused when it holds a drive's files
+ * directly.
  *
  * Verified through a real subprocess and a real git repository, the same way
  * `actor.test.ts` verifies `worktreeRoot` — the function under test IS the
@@ -11,15 +12,9 @@
  */
 
 import { afterAll, describe, expect, it } from "bun:test";
-import {
-  existsSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 /**
  * `process.env` minus every `GIT_*` pointer — a git hook exports `GIT_DIR`/
@@ -121,10 +116,9 @@ const peekProbeScript = join(probeDir, "peek-probe.ts");
 writeFileSync(
   peekProbeScript,
   [
-    `import { peekStateDir, resolveLegacyStateDir } from ${JSON.stringify(STORE_MODULE)};`,
+    `import { peekResolvedStateDir } from ${JSON.stringify(STORE_MODULE)};`,
     "try {",
-    "  const legacyDir = await resolveLegacyStateDir();",
-    '  console.log("PEEK:" + peekStateDir(legacyDir));',
+    '  console.log("PEEK:" + (await peekResolvedStateDir()));',
     "} catch (e) {",
     "  const code = e && typeof e === 'object' && 'code' in e ? e.code : 1;",
     '  console.log("ERR:" + code);',
@@ -184,104 +178,74 @@ describe("resolveStateDir", () => {
     expect(rA.stdout).not.toBe(rB.stdout);
   });
 
-  it("preserves the clone key under an override without running the Git legacy guard", () => {
+  it("preserves the clone key under an override", () => {
     const override = mkdtempSync(join(tmpdir(), "store-test-override-"));
-    // A fresh $HOME, never `homeA`: the tests above already ran a clean
-    // `probeResolveStateDir(repoA, { HOME: homeA })` call, which writes
-    // `.migrated-from-legacy` for repoA under homeA. If `resolveStateDir`
-    // ran `ensureMigratedFromLegacy` BEFORE checking `DRIVE_PR_STATE_DIR`,
-    // that marker would make the legacy guard return early on its own —
-    // this test would still pass, proving nothing about the override
-    // actually short-circuiting it.
     const homeOverride = mkdtempSync(
       join(tmpdir(), "store-test-home-override-"),
     );
     try {
-      // Plant an unmigrated legacy footprint in the repo's real git dir —
-      // if the override did not short-circuit the guard, this would refuse.
-      writeFileSync(join(repoA, ".git", "drive-pr-4172.json"), "{}");
       const r = probeResolveStateDir(repoA, {
         HOME: homeOverride,
         DRIVE_PR_STATE_DIR: override,
       });
       expect(r.code).toBe(0);
       expect(dirname(r.stdout.slice(3))).toBe(override);
+      const plain = probeResolveStateDir(repoA, { HOME: homeA });
+      expect(basename(r.stdout)).toBe(basename(plain.stdout));
     } finally {
-      rmSync(join(repoA, ".git", "drive-pr-4172.json"), { force: true });
       rmSync(override, { recursive: true, force: true });
       rmSync(homeOverride, { recursive: true, force: true });
     }
   });
 
-  it("refuses (exit 2) when the legacy git-common-dir holds an unmigrated footprint", () => {
+  it("refuses (exit 2) an override root that holds a drive's files directly", () => {
+    const override = mkdtempSync(join(tmpdir(), "store-test-flat-"));
+    const homeFlat = mkdtempSync(join(tmpdir(), "store-test-home-flat-"));
+    try {
+      writeFileSync(join(override, "drive-pr-4172.json"), "{}");
+      const r = probeResolveStateDir(repoA, {
+        HOME: homeFlat,
+        DRIVE_PR_STATE_DIR: override,
+      });
+      expect(r.code).toBe(2);
+      expect(r.stdout).toBe("ERR:2");
+      expect(r.stderr).toContain("drive-pr-4172.json");
+    } finally {
+      rmSync(override, { recursive: true, force: true });
+      rmSync(homeFlat, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores state an older layout left in the Git common directory", () => {
     const repoC = makeRepo("legacy-dirty");
     const homeC = mkdtempSync(join(tmpdir(), "store-test-home-c-"));
     try {
       writeFileSync(join(repoC, ".git", "drive-pr-4172.json"), "{}");
       const r = probeResolveStateDir(repoC, { HOME: homeC });
-      expect(r.code).toBe(2);
-      expect(r.stdout).toBe("ERR:2");
-      expect(r.stderr).toContain("drive-pr-4172.json");
-      expect(r.stderr).toContain("migrate-legacy-state.ts");
+      expect(r.code).toBe(0);
+      expect(r.stdout).toStartWith(
+        `OK:${join(homeC, ".local", "state", "jig", "drive-pr")}`,
+      );
     } finally {
       rmSync(repoC, { recursive: true, force: true });
       rmSync(homeC, { recursive: true, force: true });
     }
   });
-
-  it("proceeds when the legacy git-common-dir has nothing but ordinary git contents", () => {
-    const repoD = makeRepo("legacy-clean");
-    const homeD = mkdtempSync(join(tmpdir(), "store-test-home-d-"));
-    try {
-      const r = probeResolveStateDir(repoD, { HOME: homeD });
-      expect(r.code).toBe(0);
-      expect(r.stdout).toStartWith(
-        `OK:${join(homeD, ".local", "state", "jig", "drive-pr")}`,
-      );
-    } finally {
-      rmSync(repoD, { recursive: true, force: true });
-      rmSync(homeD, { recursive: true, force: true });
-    }
-  });
-
-  it("does not refuse on a second call once this clone has migrated", () => {
-    const repoE = makeRepo("migrate-once");
-    const homeE = mkdtempSync(join(tmpdir(), "store-test-home-e-"));
-    try {
-      // First call with a clean legacy dir writes the per-clone marker.
-      const r1 = probeResolveStateDir(repoE, { HOME: homeE });
-      expect(r1.code).toBe(0);
-      // A legacy write appears afterwards (e.g. a lingering old-code
-      // process) — the marker-gated guard does not catch this window (see
-      // legacy-state.ts's own doc comment on the residual it accepts), so
-      // the second call must still succeed rather than crash.
-      writeFileSync(join(repoE, ".git", "drive-pr-4172.json"), "{}");
-      const r2 = probeResolveStateDir(repoE, { HOME: homeE });
-      expect(r2.code).toBe(0);
-      expect(r2.stdout).toBe(r1.stdout);
-    } finally {
-      rmSync(repoE, { recursive: true, force: true });
-      rmSync(homeE, { recursive: true, force: true });
-    }
-  });
 });
 
-describe("peekStateDir", () => {
-  it("returns legacyDir, with NO side effects, when no clone identity has ever been minted", () => {
-    // `reap-state.ts`'s dry-run mode must be able to ask "where does state
-    // live" without itself minting a clone identity, creating the new
-    // directory, or writing the migration marker — exactly the three side
-    // effects the ordinary `resolveStateDir()` has on a fresh clone.
+describe("peekResolvedStateDir", () => {
+  it("answers null, with NO side effects, when no clone identity has ever been minted", () => {
+    // `reap-state.ts`'s dry-run mode and the `drives.ts` listing must be able
+    // to ask "where does state live" without minting a clone identity or
+    // creating anything: a clone with no identity has no state.
     const repoF = makeRepo("peek-fresh");
     const homeF = mkdtempSync(join(tmpdir(), "store-test-home-f-"));
     try {
       const r = probePeekStateDir(repoF, { HOME: homeF });
       expect(r.code).toBe(0);
-      // `resolveLegacyStateDir()` resolves through `git rev-parse`, which
-      // canonicalises the path (e.g. macOS's /var -> /private/var symlink);
-      // `repoF` itself is not, so compare against the resolved form.
-      expect(r.stdout).toBe(`PEEK:${join(realpathSync(repoF), ".git")}`);
+      expect(r.stdout).toBe("PEEK:null");
       expect(existsSync(join(homeF, ".local"))).toBe(false);
+      expect(existsSync(join(repoF, ".git", "drive-pr-clone-id"))).toBe(false);
     } finally {
       rmSync(repoF, { recursive: true, force: true });
       rmSync(homeF, { recursive: true, force: true });
@@ -296,12 +260,14 @@ describe("peekStateDir", () => {
     const repoOther = makeRepo("peek-other");
     const homeH = mkdtempSync(join(tmpdir(), "store-test-home-h-"));
     try {
+      const own = probeResolveStateDir(repoOwn, { HOME: homeH });
+      probeResolveStateDir(repoOther, { HOME: homeH });
       const r = probePeekStateDir(repoOwn, {
         HOME: homeH,
         GIT_DIR: join(repoOther, ".git"),
       });
       expect(r.code).toBe(0);
-      expect(r.stdout).toBe(`PEEK:${join(realpathSync(repoOwn), ".git")}`);
+      expect(r.stdout).toBe(`PEEK:${own.stdout.slice("OK:".length)}`);
     } finally {
       rmSync(repoOwn, { recursive: true, force: true });
       rmSync(repoOther, { recursive: true, force: true });
@@ -325,14 +291,9 @@ describe("peekStateDir", () => {
   });
 });
 
-// `probeDir` is a MODULE-level fixture (created once above, outside any
-// describe block) shared by both describe blocks above — its cleanup
-// belongs at module level too. It used to live inside `resolveStateDir`'s
-// own `afterAll`, which deleted it as soon as that describe block's tests
-// finished — before `peekStateDir`'s tests, declared later in this file,
-// ever ran (confirmed empirically: "Module not found ... probe.ts"). A
-// per-describe `afterAll` is only safe for a fixture that describe block
-// alone owns.
+// `probeDir` is a MODULE-level fixture shared by both describe blocks above,
+// so its cleanup belongs at module level too: a per-describe `afterAll` is
+// only safe for a fixture that describe block alone owns.
 afterAll(() => {
   rmSync(probeDir, { recursive: true, force: true });
 });

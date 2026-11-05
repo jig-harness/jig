@@ -3,21 +3,43 @@
  * Every item or pull request gets at most one action, naming the record
  * that wants it and its evidence. A target the tick cannot place (a record
  * it could not read, a runtime answer it cannot trust, a workspace whose
- * terminals the runtime cannot read) is reported and never planned.
+ * terminals the runtime cannot read) is reported and never planned. The
+ * pickups' part is `plan-pickups.ts`, the follow-ups' `plan-followups.ts`.
+ *
+ * A notification is planned whatever sessions run for its target: telling
+ * a person never competes with a session, so only a runtime answer it
+ * cannot trust leaves it out.
+ *
+ * A pull request a person's `hold` label stands the dispatcher down from
+ * gets no action of any stage: each one the records want is reported as
+ * held instead, and planned again once the label is gone.
+ *
+ * A pull request held behind another in a serialized change area
+ * (`contention.ts`) gets no re-arm, takeover or re-drive: each is reported
+ * as `held: serialized behind #N in <area>`, and the group's leader is
+ * planned as any pull request is. A pull request whose place in a group
+ * cannot be told this tick gets none either, reported as unplaced. Its
+ * notifications go on: a hold keeps the dispatcher's own launches off,
+ * not a person's view of the pull request.
  */
-import { driveHold, factsOf } from "./actions/drive-hold.ts";
-import type { ReadRecord } from "./launches.ts";
-import {
-  RUNNING_STATES,
-  type SessionsReport,
-  type Workspace,
-} from "./runtime/port.ts";
+import { type DriveHold, driveHold, factsOf } from "./actions/drive-hold.ts";
+import { type Contention, heldReason } from "./contention.ts";
+import { holding, liveAgents } from "./holding.ts";
+import type { FollowupOutcome } from "./followup-outcomes.ts";
+import { planDrift } from "./expectations.ts";
+import { isDrive, type ReadRecord } from "./launches.ts";
+import { parkNotice, stopNotice } from "./notices.ts";
+import { planFollowups } from "./plan-followups.ts";
+import { planPickups } from "./plan-pickups.ts";
+import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
   Action,
+  ClaimedItem,
   DispatchSection,
   DrivenPr,
   LedgerClass,
-  MergedPr,
+  MarkedPr,
+  NotifyCause,
   RepoReport,
   Running,
   Stage,
@@ -25,16 +47,44 @@ import type {
 } from "./types.ts";
 
 export interface PlanInput {
+  /** The repository's `owner/name`. */
+  slug: string;
   section: DispatchSection;
   pickups: WantedItem[];
+  /** The items the factory identity claimed; `null` when they could not be read. */
+  claimed: ClaimedItem[] | null;
   drives: DrivenPr[];
-  merged: MergedPr[];
+  merged: MarkedPr[];
+  /** The follow-ups' outcome records, by pull request. */
+  outcomes: ReadonlyMap<number, FollowupOutcome>;
   sessions: SessionsReport;
+  /** Each pull request's creation time; a pickup's pull request is one created after its launch. */
+  created?: ReadonlyMap<number, string>;
   /** This machine's launch records for the repository. */
   launches: ReadRecord[];
+  /** Since when each claimed item has been idle (the idle clock). */
+  idleSince: ReadonlyMap<string, number>;
+  /** The pull requests that carry a person's `hold` label. */
+  held?: ReadonlySet<number>;
+  /** Under `only_labeled`: the pull requests read and found labelled. An action on any other pull request is withheld. */
+  inScope?: ReadonlySet<number>;
+  /** The pull requests serialization holds, or cannot place, this tick. */
+  serialized?: Pick<Contention, "held" | "unplaced">;
+  nowMs: number;
 }
 
-type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet">;
+type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
+  /** The claimed items idle this tick, for the idle clock. */
+  idleNow: string[];
+  /** The claimed items whose clock is left as it is. */
+  idleKeep: string[];
+  /** The actions a `hold` label kept off. */
+  held: Array<{ target: string; stage: Stage; reason: string }>;
+  /** The targets `only_labeled` withheld actions from: their notice records stand. */
+  withheld: string[];
+  /** The re-arms, takeovers and re-drives a serialized area's hold kept off. */
+  serialHeld: Array<{ target: string; stage: Stage; reason: string }>;
+};
 
 /** The ledger classes that need nothing from the tick but a line in the report. */
 const QUIET: ReadonlySet<LedgerClass> = new Set([
@@ -46,70 +96,20 @@ const QUIET: ReadonlySet<LedgerClass> = new Set([
 ]);
 
 /** The ledger classes a person must settle: notified, never re-armed. */
-const NOTIFY: ReadonlySet<LedgerClass> = new Set([
-  "stopped-unknown",
-  "parked",
-  "needs-person",
-]);
-
-type Holding =
-  | { kind: "free"; evidence: string | null }
-  | { kind: "running"; workspaces: Workspace[] }
-  | { kind: "unknown"; reason: string };
-
-/** Whether a running session holds the target, from the workspaces joined to it. */
-function holding(
-  sessions: SessionsReport,
-  joined: (w: Workspace) => boolean,
-): Holding {
-  if (!sessions.ok) return { kind: "unknown", reason: sessions.reason };
-  const mine = sessions.workspaces.filter(joined);
-  const unreadable = mine.find((w) => w.unverifiableTerminals > 0);
-  if (unreadable !== undefined)
-    return {
-      kind: "unknown",
-      reason: `workspace ${unreadable.path} has ${unreadable.unverifiableTerminals} terminal(s) whose agents the runtime cannot report`,
-    };
-  const live = mine.filter((w) =>
-    w.agents.some((a) => RUNNING_STATES.has(a.state)),
-  );
-  if (live.length > 0) return { kind: "running", workspaces: live };
-  const finished = mine.flatMap((w) =>
-    w.agents.map((a) => `${w.branch || w.path}: ${a.state}`),
-  );
-  return {
-    kind: "free",
-    evidence: finished.length > 0 ? finished.join("; ") : null,
-  };
-}
-
-function runningCount(held: Holding): number {
-  return held.kind === "running" ? liveAgentCount(held.workspaces) : 0;
-}
-
-/** The running agents across workspaces. */
-function liveAgentCount(workspaces: Workspace[]): number {
-  return workspaces.reduce(
-    (n, w) => n + w.agents.filter((a) => RUNNING_STATES.has(a.state)).length,
-    0,
-  );
-}
-
-function liveAgents(workspaces: Workspace[]): string {
-  return workspaces
-    .map(
-      (w) =>
-        `${w.branch || w.path} (${w.agents
-          .filter((a) => RUNNING_STATES.has(a.state))
-          .map((a) => a.state)
-          .join(", ")})`,
-    )
-    .join("; ");
-}
+const NOTIFY: ReadonlyMap<LedgerClass, NotifyCause> = new Map([
+  ["stopped-unknown", "stopped-unknown"],
+  ["parked", "parked"],
+  ["needs-person", "needs-person"],
+] as const);
 
 export function planTick(input: PlanInput): Plan {
-  const plan: Plan = { actions: [], running: [], unplaced: [], quiet: [] };
   const { sessions } = input;
+  const plan: Plan = {
+    ...planPickups(input),
+    held: [],
+    withheld: [],
+    serialHeld: [],
+  };
 
   /** One wanted stage for one target, minus what is running. */
   function want(action: Action, joined: (w: Workspace) => boolean): void {
@@ -122,7 +122,7 @@ export function planTick(input: PlanInput): Plan {
       });
       return;
     }
-    if (held.kind === "running") {
+    if (held.kind === "running" && action.stage !== "notify") {
       plan.running.push({
         target: action.target,
         stage: action.stage,
@@ -131,45 +131,16 @@ export function planTick(input: PlanInput): Plan {
       } satisfies Running);
       return;
     }
+    const evidence =
+      held.kind === "running"
+        ? { runningSessions: liveAgents(held.workspaces) }
+        : held.evidence === null
+          ? null
+          : { finishedSessions: held.evidence };
     plan.actions.push(
-      held.evidence === null
+      evidence === null
         ? action
-        : {
-            ...action,
-            evidence: { ...action.evidence, finishedSessions: held.evidence },
-          },
-    );
-  }
-
-  for (const item of input.pickups) {
-    const joined = (w: Workspace) => w.items.includes(item.key);
-    const held = holding(sessions, joined);
-    const liveCount = runningCount(held);
-    if (held.kind === "running" && liveCount > 1) {
-      plan.actions.push({
-        stage: "notify",
-        target: item.key,
-        record: "runtime",
-        reason: `double claim: ${liveCount} running sessions join to it, so nothing starts for it`,
-        evidence: { workspaces: liveAgents(held.workspaces) },
-      });
-      continue;
-    }
-    want(
-      {
-        stage: "pickup",
-        target: item.key,
-        record: "tracker",
-        reason: `assigned to ${item.assignee} by ${item.assignedBy}, in ${item.state}, with no running session`,
-        evidence: {
-          title: item.title,
-          url: item.url,
-          state: item.state,
-          assignee: item.assignee,
-          assignedBy: item.assignedBy,
-        },
-      },
-      joined,
+        : { ...action, evidence: { ...action.evidence, ...evidence } },
     );
   }
 
@@ -177,27 +148,187 @@ export function planTick(input: PlanInput): Plan {
   // merged state wins, so it gets its follow-up and no re-arm.
   const mergedNumbers = new Set(input.merged.map((m) => m.number));
   for (const pr of input.drives.filter((d) => !mergedNumbers.has(d.number)))
-    planDrive(pr, input.launches, plan, want);
+    planDrive(input.slug, pr, input.launches, plan, want);
 
-  if (input.section.followupCommand !== null)
-    for (const pr of input.merged)
-      want(
-        {
-          stage: "followup",
-          target: `PR #${pr.number}`,
-          record: "forge",
-          reason: `merged ${pr.mergedAt}; run ${input.section.followupCommand} ${pr.number}`,
-          evidence: { url: pr.url, head: pr.head, mergedAt: pr.mergedAt },
-        },
-        (w) => w.prs.includes(pr.number),
-      );
+  const command = input.section.followupCommand;
+  if (command !== null)
+    planFollowups(
+      {
+        slug: input.slug,
+        command,
+        merged: input.merged,
+        launches: input.launches,
+        outcomes: input.outcomes,
+        nowMs: input.nowMs,
+      },
+      plan,
+      want,
+    );
+
+  // The running stages that drift from their expectation, once the waiting
+  // notifications are known: one stands in for the other.
+  const drift = planDrift({
+    slug: input.slug,
+    section: input.section,
+    launches: input.launches,
+    sessions,
+    created: input.created ?? new Map(),
+    itemStates: new Map([
+      ...input.pickups.map((p) => [p.key, p.state] as const),
+      ...(input.claimed ?? []).map((c) => [c.key, c.state] as const),
+    ]),
+    waiting: new Set(
+      plan.actions
+        .filter((a) => a.cause === "waiting")
+        .map((a) => String(a.evidence.record)),
+    ),
+    nowMs: input.nowMs,
+  });
+  plan.actions.push(...drift.actions);
+  plan.running.push(...drift.running);
+  holdBack(plan, input.held ?? new Set(), input.inScope);
+  if (input.serialized !== undefined) serialBack(plan, input.serialized);
   return plan;
+}
+
+/**
+ * Move each drive's re-arm (a takeover and a re-drive among them) on a pull
+ * request serialization holds out of the plan, into its report; one on a
+ * pull request whose place serialization cannot tell this tick is unplaced.
+ */
+function serialBack(
+  plan: Pick<Plan, "actions" | "serialHeld" | "unplaced">,
+  serialized: Pick<Contention, "held" | "unplaced">,
+): void {
+  const kept: Action[] = [];
+  for (const action of plan.actions) {
+    const pr = /^PR #(\d+)$/.exec(action.target);
+    const n = pr === null || action.stage !== "rearm" ? null : Number(pr[1]);
+    const why = n === null ? undefined : serialized.unplaced.get(n);
+    const hold = n === null ? undefined : serialized.held.get(n);
+    if (why !== undefined)
+      plan.unplaced.push({
+        target: action.target,
+        record: "forge",
+        reason: why,
+      });
+    else if (hold !== undefined)
+      plan.serialHeld.push({
+        target: action.target,
+        stage: action.stage,
+        reason: `${heldReason(hold)}; without it the tick would ${action.takeover === undefined ? "rearm" : "take over"}: ${action.reason}`,
+      });
+    else kept.push(action);
+  }
+  plan.actions = kept;
+}
+
+/**
+ * Move every action on a pull request a `hold` label carries out of the
+ * plan, into its report. Under `only_labeled` (`inScope` given) an action
+ * on a pull request not positively known to be labelled is withheld, so a
+ * listing that failed or never held the pull request leaves it alone.
+ */
+export function holdBack(
+  plan: Pick<Plan, "actions" | "held"> & { withheld?: string[] },
+  held: ReadonlySet<number>,
+  inScope?: ReadonlySet<number>,
+): void {
+  if (held.size === 0 && inScope === undefined) return;
+  const targets = new Set([...held].map((n) => `PR #${n}`));
+  const scoped =
+    inScope === undefined ? null : new Set([...inScope].map((n) => `PR #${n}`));
+  const kept: Action[] = [];
+  for (const action of plan.actions)
+    if (
+      scoped !== null &&
+      /^PR #\d+$/.test(action.target) &&
+      !scoped.has(action.target)
+    )
+      plan.withheld?.push(action.target);
+    else if (targets.has(action.target)) {
+      plan.held.push({
+        target: action.target,
+        stage: action.stage,
+        reason: `a person's hold label stands the dispatcher down from it; without it the tick would ${action.stage}: ${action.reason}`,
+      });
+      plan.withheld?.push(action.target);
+    } else kept.push(action);
+  plan.actions = kept;
 }
 
 type Want = (action: Action, joined: (w: Workspace) => boolean) => void;
 
+/** A re-arm's ledger facts, or a notification's cause and message. */
+function stageFields(
+  slug: string,
+  pr: DrivenPr,
+  cause: NotifyCause | undefined,
+  launches: ReadRecord[],
+): Pick<Action, "facts" | "redrive" | "cause" | "notice" | "launched"> {
+  if (cause === undefined)
+    return {
+      facts: factsOf(pr),
+      ...(pr.stale === undefined ? {} : { redrive: pr.stale }),
+    };
+  return {
+    cause,
+    notice: cause === "parked" ? parkNotice(slug, pr) : stopNotice(slug, pr),
+    ...(stoppedOurs(pr, launches) ? { launched: true as const } : {}),
+  };
+}
+
+/** How long after its ledger's last write a stopped driver's wrapper may still be recorded exiting. */
+const EXIT_SLACK_MS = 60_000;
+
+/**
+ * Whether this machine's latest drive of the pull request produced the stop
+ * its ledger shows: it ended with the ledger's exit, and the ledger was last
+ * written between its launch and its exit, so its ended row holds the stop.
+ * A stop written after the exit is another driver's.
+ */
+function stoppedOurs(pr: DrivenPr, launches: ReadRecord[]): boolean {
+  const latest = launches
+    .filter((r) => isDrive(r.record) && r.record.pr === pr.number)
+    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
+    .at(-1);
+  if (
+    latest === undefined ||
+    latest.state.kind !== "ended" ||
+    latest.state.exit.code !== (pr.evidence.exit ?? null)
+  )
+    return false;
+  const beat = Date.parse(String(pr.evidence.heartbeat));
+  return (
+    Number.isFinite(beat) &&
+    beat >= Date.parse(latest.record.createdAt) &&
+    beat <= Date.parse(latest.state.exit.at) + EXIT_SLACK_MS
+  );
+}
+
+/** The launch-record holds that leave a drive quiet, by the class the report gives it. */
+const QUIET_HOLDS: ReadonlyMap<DriveHold["kind"], LedgerClass> = new Map([
+  ["refused", "refused"],
+  ["redriven", "stale"],
+  ["armed", "unarmed"],
+]);
+
+/** Why the plan wants a drive's action, in one sentence. */
+function wantReason(pr: DrivenPr, takeover: string | null): string {
+  if (takeover !== null)
+    return `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`;
+  const source =
+    pr.class !== "unarmed"
+      ? "drive ledger"
+      : typeof pr.evidence.adopted === "string"
+        ? "adoption rule"
+        : "drive label";
+  return `${source} ${pr.class}: ${pr.why}`;
+}
+
 /** One driven pull request: quiet, unplaced, held by a launch record, or wanted. */
 function planDrive(
+  slug: string,
   pr: DrivenPr,
   launches: ReadRecord[],
   plan: Plan,
@@ -214,8 +345,9 @@ function planDrive(
     });
     return;
   }
-  if (hold.kind === "refused") {
-    plan.quiet.push({ target, class: "refused", why: hold.why });
+  const quiet = QUIET_HOLDS.get(hold.kind);
+  if (quiet !== undefined && "why" in hold) {
+    plan.quiet.push({ target, class: quiet, why: hold.why });
     return;
   }
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
@@ -227,18 +359,16 @@ function planDrive(
     plan.unplaced.push({ target, record: "forge", reason: pr.why });
     return;
   }
-  const stage: Stage = NOTIFY.has(pr.class) ? "notify" : "rearm";
+  const cause = NOTIFY.get(pr.class);
+  const stage: Stage = cause === undefined ? "rearm" : "notify";
   want(
     {
       stage,
       target,
       record: "forge",
-      reason:
-        takeover === null
-          ? `drive ledger ${pr.class}: ${pr.why}`
-          : `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`,
+      reason: wantReason(pr, takeover),
       evidence: { url: pr.url, head: pr.head, ...pr.evidence },
-      ...(stage === "rearm" ? { facts: factsOf(pr) } : {}),
+      ...stageFields(slug, pr, cause, launches),
       ...(takeover === null ? {} : { takeover }),
     },
     (w) => w.prs.includes(pr.number),

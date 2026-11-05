@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { QUOTA_PARKED_EXIT } from "../scripts/drive";
 
@@ -16,6 +16,7 @@ import {
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 import { lockDirs } from "./drive-loop-harness.ts";
+import { readState } from "./state-rows.ts";
 import { loginAccount, loginEnv } from "./drive-pr-pickup-fixtures.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
@@ -101,9 +102,9 @@ describe("drive.ts records a quota wall", () => {
     ]);
     expectSpawnExit({ exitCode, stdout: null, stderr }, QUOTA_PARKED_EXIT);
     expect(stderr).toContain("The wall belongs to billed@example.invalid");
-    const saved = JSON.parse(
-      readFileSync(join(stateDir, "drive-pr-999.json"), "utf8"),
-    );
+    const saved = readState(stateDir, "999") as {
+      quotaPark: { account: string };
+    };
     expect(saved.quotaPark.account).toBe(
       loginAccount("billed@example.invalid"),
     );

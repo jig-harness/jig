@@ -78,7 +78,12 @@ cause was right when a sample was checked by hand. With reflection on, the
 into a [reflection](../reflect/README.md) finding whose class is its cause,
 so a cause that recurs across files reaches one tracker issue through the
 same escalation as every other finding; measuring again updates a finding
-rather than adding one. The
+rather than adding one. With `--propose-serialize` it prints, instead of
+the report, the areas of the
+[change-area catalog](../change-areas/README.md#the-catalog) a hotspot lies
+in alone, as the `serialize: true` lines a person would add so the
+[dispatcher](../../README.md#the-dispatcher) drives their pull requests one
+at a time; it writes nothing. The
 [agent procedure](SKILL.md#where-past-merges-conflicted-the-history-report)
 has the flags and the causes, and
 [the commands that pass the hotspots on](SKILL.md#hotspots-into-the-learning-loop).

@@ -12,8 +12,9 @@ here reaches every repository at once.
   copy outside this repository with no `node_modules`: skill-relative paths
   (`${CLAUDE_SKILL_DIR}/…` in `SKILL.md`, `<skill-dir>/…` in reference files),
   the consumer repository as the working directory, Bun's built-ins (its own
-  APIs and the `node:` modules it provides) or a vendored single-file build
-  only. The details are in
+  APIs and the `node:` modules it provides) or vendored code only, such as a
+  library's own single-file build or a bundle Jig builds from the pinned
+  package. The details are in
   [CONTRIBUTING.md § Adding or changing a plugin skill](../CONTRIBUTING.md#adding-or-changing-a-plugin-skill);
   `tools/plugin/plugin.test.ts` checks the whole plugin from a copy built the
   way the channels ship it. That copy leaves out `__tests__/`, `AGENTS.md`
@@ -55,6 +56,19 @@ here reaches every repository at once.
   links to it ([modules/AGENTS.md](../modules/AGENTS.md#the-module-contract)). A
   template in a skill is licensed MIT No Attribution and listed in the root
   NOTICE (copied here as [NOTICE](NOTICE): `cp NOTICE plugin/`).
+- **The `jig` command's components** (`gc/`, `dispatch/`) each implement
+  `runtime/component.ts` and are registered in `jig.ts`; the lifecycle
+  verbs (`runtime/verbs.ts`) reach them only through that interface, and
+  the scheduler and launcher code the components share lives in
+  `runtime/`. Installed jobs and the `jig` command run copies of
+  `runtime/launcher.ts` that earlier releases wrote, so `jig.ts`,
+  `gc/bunfig.toml` and the jobs' command lines (`gc --scheduled`,
+  `dispatch --apply`) keep their place and meaning. `jig upgrade` of one
+  release runs the next release's `jig upgrade --jobs-only --json` and
+  reads the `jobs` list it prints, so that command line and that report
+  keep their meaning too, and a job is rewritten only from what
+  `runtime/installed-job.ts` reads back from the form `jobFiles` writes:
+  change one, change the other.
 - **Skills call each other by sibling path** (`../<skill>/scripts/…`), never
   through a path in the consumer repository.
 - **A runtime-specific capability names its fallback**
@@ -136,7 +150,8 @@ plugin/skills/drive-pr`; the root `bunfig.toml` supplies the preloads), never
 from the plugin cache, and
 the `skills/drive-pr/__tests__/terminal-states*.test.ts` suites
 check that every terminal state's exit code agrees across `scripts/`,
-`SKILL.md`, the README and `skills/drive-pr/references/terminal-states.md`. When a script's
+`SKILL.md`, the README and `skills/drive-pr/references/terminal-states.md`,
+and that the dispatcher reads each from the registry rather than restating it. When a script's
 behaviour changes, search `SKILL.md` and `references/` for sentences that
 state the old behaviour, in the same edit.
 

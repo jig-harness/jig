@@ -15,12 +15,14 @@
  * them byte for byte.
  *
  * The linter is advisory. The last describe blocks pin that no wiring file
- * names it, and that the canonical writing rules live in one file.
+ * names it, that a script which does is a ratchet counter the suite lists,
+ * and that the canonical writing rules live in one file.
  */
 
 import { describe, expect, it } from "bun:test";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -38,6 +40,7 @@ import {
   splitlines,
   upstreamLint,
 } from "../scripts/ste-lint/ste-lint.ts";
+import { parseJsonc } from "../../../../modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet-config.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../../..");
@@ -514,14 +517,34 @@ describe("a decision text and its plain rewrite", () => {
 });
 
 describe("advisory only", () => {
-  // The guarantee is narrow on purpose: no wiring file NAMES the linter. A
-  // script that a wiring file delegates to is not followed, so a helper that
-  // runs the linter without the name appearing here is out of this scan's reach.
-  /** Files that wire CI, hooks, gates or validation plans. None may mention the linter. */
+  // No wiring file names the linter. A script outside the skill that names it
+  // is one of RATCHET_CALLERS, each run as a json counter of the ratchet
+  // wiring: a count over named documents that refuses growth and never blocks
+  // on a single finding (the linter's README, § Advisory only).
+  /** The ratchet wiring, whose counters may run a listed caller. */
+  const RATCHET_WIRING = "tools/quality/ratchet.jsonc";
+  /** The scripts that may run the linter on authored text, each with the ratchet counter that runs it. */
+  const RATCHET_CALLERS: Record<string, string> = {
+    "scripts/check-voice.ts": "voice",
+  };
+  /** Where Jig keeps the scripts its wiring runs. */
+  const SCRIPT_ROOTS = ["scripts", "tools", "lib", "modules", "plugin"];
+  const SCRIPT_SKIP = new Set([
+    "node_modules",
+    "__tests__",
+    "fixtures",
+    "fixture",
+    "seeds",
+    "dist",
+    "vendor",
+  ]);
+
+  /** Files that wire CI, hooks, gates, the ratchet or validation plans. None may mention the linter. */
   function wiringFiles(): string[] {
     const required = [
       "package.json",
       "scripts/gates.ts",
+      RATCHET_WIRING,
       ".config/jig.yaml",
       ".claude-plugin/marketplace.json",
       "plugin/.claude-plugin/plugin.json",
@@ -546,17 +569,286 @@ describe("advisory only", () => {
     return files;
   }
 
-  it("reads a non-empty set of CI, gate and hook files (so a clean scan is real)", () => {
-    const files = wiringFiles();
-    expect(files.length).toBeGreaterThanOrEqual(7);
-    for (const file of files) expect(statSync(file).isFile()).toBe(true);
+  /** The code under SCRIPT_ROOTS, tests left out: they run the linter on fixtures or to pin it. */
+  function scripts(root = REPO_ROOT): string[] {
+    const found: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (
+            !SCRIPT_SKIP.has(entry.name) &&
+            path !== join(root, "plugin/skills/decide/scripts/ste-lint")
+          )
+            walk(path);
+        } else if (
+          /\.(ts|tsx|js|mjs|cjs|sh)$/.test(entry.name) &&
+          !entry.name.endsWith(".test.ts")
+        )
+          found.push(path);
+      }
+    };
+    for (const directory of SCRIPT_ROOTS) walk(join(root, directory));
+    return found;
+  }
+
+  /** Relative module dependencies, apart from the gates' report-only import. */
+  function imports(file: string, source: string, root: string): string[] {
+    // Remove only the report-only edge; every other import and command remains.
+    if (file === join(root, "scripts/gates.ts"))
+      source = source.replace(
+        /import\s*\{\s*checkVoice\s*\}\s*from\s*["']\.\/check-voice\.ts["']\s*;?/g,
+        "",
+      );
+    const executablePaths = [
+      ...source.matchAll(
+        /(?:\.{1,2}\/)?(?:[\w.-]+\/)+[\w.-]+\.(?:tsx?|[cm]?js|sh)\b/g,
+      ),
+    ].flatMap(([path]) => [resolve(root, path), resolve(file, "..", path)]);
+    if (!/\.[cm]?[jt]sx?$/.test(file)) return executablePaths;
+    const scanner = new Bun.Transpiler({
+      loader: file.endsWith("tsx") ? "tsx" : "ts",
+    });
+    return [
+      ...executablePaths,
+      ...scanner
+        .scanImports(source.replace(/^#![^\n]*\n/, ""))
+        .flatMap((dependency) => {
+          if (!dependency.path.startsWith(".")) return [];
+          const target = join(file, "..", dependency.path);
+          return [target, `${target}.ts`, join(target, "index.ts")];
+        }),
+    ];
+  }
+
+  /** Scripts that reach individual findings, including delegated imports. */
+  function callers(root = REPO_ROOT): string[] {
+    const files = scripts(root);
+    const sources = new Map(
+      files.map((file) => [file, readFileSync(file, "utf8")]),
+    );
+    const reached = new Set(
+      files.filter((file) => /ste-lint/.test(sources.get(file) as string)),
+    );
+    const dependencies = new Map(
+      [...sources].map(([file, source]) => [file, imports(file, source, root)]),
+    );
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const file of sources.keys()) {
+        if (reached.has(file)) continue;
+        if (dependencies.get(file)?.some((target) => reached.has(target))) {
+          reached.add(file);
+          changed = true;
+        }
+      }
+    }
+    return [...reached]
+      .map((file) => relative(root, file).split(sep).join("/"))
+      .sort();
+  }
+
+  /** Read the same JSON-with-comments grammar as the ratchet. */
+  function counters(
+    source = readFileSync(join(REPO_ROOT, RATCHET_WIRING), "utf8"),
+  ): { name: string; format: string; command?: string[]; per?: string }[] {
+    return (
+      parseJsonc(source) as {
+        counters: {
+          name: string;
+          format: string;
+          command?: string[];
+          per?: string;
+        }[];
+      }
+    ).counters;
+  }
+
+  /** The support paths of the ratchet wiring: implementations the base is measured with. */
+  function support(
+    source = readFileSync(join(REPO_ROOT, RATCHET_WIRING), "utf8"),
+  ): string[] {
+    return (parseJsonc(source) as { support?: string[] }).support ?? [];
+  }
+
+  function isCounter(
+    counter: { format: string; command?: string[]; per?: string },
+    script: string,
+  ): boolean {
+    return (
+      counter.format === "json" &&
+      counter.per !== "file" &&
+      JSON.stringify(counter.command) ===
+        JSON.stringify(["bun", script, "--json"])
+    );
+  }
+
+  function invalidCounters(wired: ReturnType<typeof counters>): string[] {
+    return Object.entries(RATCHET_CALLERS).flatMap(([script, name]) => {
+      const executing = wired.filter((c) =>
+        c.command?.some((arg) => arg.includes(script)),
+      );
+      return [
+        ...(executing.some((c) => c.name === name) ? [] : [name]),
+        ...executing.filter((c) => !isCounter(c, script)).map((c) => c.name),
+      ];
+    });
+  }
+
+  it("rejects an extra differently named counter that enforces entries", () => {
+    expect(
+      invalidCounters([
+        ...counters(),
+        {
+          name: "voice-strict",
+          format: "json",
+          per: "file",
+          command: ["bun", "scripts/check-voice.ts", "--json"],
+        },
+      ]),
+    ).toContain("voice-strict");
   });
 
-  it("no workflow, gate, package script, plugin manifest or hook names the linter", () => {
-    const offenders = wiringFiles().filter((file) =>
-      /ste-lint/.test(readFileSync(file, "utf8")),
-    );
+  it("rejects per-entry enforcement of a document counter", () => {
+    expect(
+      isCounter(
+        {
+          format: "json",
+          per: "file",
+          command: ["bun", "scripts/check-voice.ts", "--json"],
+        },
+        "scripts/check-voice.ts",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a decoy that names the checker without executing it", () => {
+    expect(
+      isCounter(
+        {
+          format: "json",
+          command: [
+            "bun",
+            "-e",
+            "console.log(JSON.stringify({counts:{}}))",
+            "scripts/check-voice.ts",
+          ],
+        },
+        "scripts/check-voice.ts",
+      ),
+    ).toBe(false);
+  });
+
+  it("reads inline and block comments and trailing commas in counter wiring", () => {
+    expect(
+      counters(
+        '{ /* counters */ "counters": [ { "name": "voice", // name\n "format": "json", "command": ["bun", "scripts/check-voice.ts", "--json",], }, ], }',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("finds a hook that delegates through another wrapper consumer", () => {
+    const root = mkdtempSync(join(tmpdir(), "ste-wrapper-"));
+    try {
+      for (const directory of SCRIPT_ROOTS)
+        mkdirSync(join(root, directory), { recursive: true });
+      writeFileSync(
+        join(root, "scripts/check-voice.ts"),
+        'export { lint as voiceFindings } from "../plugin/skills/decide/scripts/ste-lint/ste-lint.ts";',
+      );
+      writeFileSync(
+        join(root, "scripts/delegate.ts"),
+        'export { voiceFindings } from "./check-voice.ts";',
+      );
+      writeFileSync(
+        join(root, "scripts/hook.ts"),
+        'import { voiceFindings } from "./delegate.ts"; process.exit(voiceFindings("seamless").hard.length ? 1 : 0);',
+      );
+      expect(callers(root)).toEqual([
+        "scripts/check-voice.ts",
+        "scripts/delegate.ts",
+        "scripts/hook.ts",
+      ]);
+      writeFileSync(
+        join(root, "scripts/gates.ts"),
+        'import { checkVoice } from "./check-voice.ts"; import { voiceFindings as findings } from "./check-voice.ts"; process.exit(findings("seamless").hard.length ? 1 : 0);',
+      );
+      expect(callers(root)).toContain("scripts/gates.ts");
+      for (const extra of [
+        'import * as voice from "./check-voice.ts"; voice.sentences("text");',
+        'import { sentences } from "./check-voice.ts"; sentences("text");',
+        'const voice = await import("./check-voice.ts"); voice.sentences("text");',
+      ]) {
+        writeFileSync(
+          join(root, "scripts/gates.ts"),
+          'import { checkVoice } from "./check-voice.ts"; ' + extra,
+        );
+        expect(callers(root), extra).toContain("scripts/gates.ts");
+      }
+      for (const command of [
+        'Bun.spawnSync(["bun", "scripts/check-voice.ts", "--json"]);',
+        'execSync("bun scripts/check-voice.ts --json");',
+        "#!/bin/sh\nbun scripts/check-voice.ts --json",
+      ]) {
+        const hook = command.startsWith("#!")
+          ? "scripts/hook.sh"
+          : "scripts/hook.ts";
+        writeFileSync(join(root, hook), command);
+        expect(callers(root), command).toContain(hook);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("finds a delegated plugin hook that imports the linter", () => {
+    const root = mkdtempSync(join(tmpdir(), "ste-hook-"));
+    try {
+      for (const directory of [...SCRIPT_ROOTS, "plugin/hooks"])
+        mkdirSync(join(root, directory), { recursive: true });
+      writeFileSync(
+        join(root, "plugin/hooks/voice.ts"),
+        'import { lint } from "../skills/decide/scripts/ste-lint/ste-lint.ts"; process.exit(lint("seamless")[0].length ? 1 : 0);',
+      );
+      expect(
+        scripts(root).map((p) => relative(root, p).split(sep).join("/")),
+      ).toContain("plugin/hooks/voice.ts");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads a non-empty set of CI, gate, ratchet and hook files and scripts (so a clean scan is real)", () => {
+    const files = wiringFiles();
+    expect(files.length).toBeGreaterThanOrEqual(8);
+    for (const file of files) expect(statSync(file).isFile()).toBe(true);
+    expect(scripts().length).toBeGreaterThan(100);
+  });
+
+  it("no workflow, gate, package script, ratchet wiring, plugin manifest or hook names the linter", () => {
+    const offenders = wiringFiles().filter((file) => {
+      // Support paths supply the implementation to historical measurements;
+      // only a counter command can execute it.
+      const text =
+        relative(REPO_ROOT, file).split(sep).join("/") === RATCHET_WIRING
+          ? JSON.stringify(counters().map((c) => c.command))
+          : readFileSync(file, "utf8");
+      return /ste-lint/.test(text);
+    });
     expect(offenders.map((f) => relative(REPO_ROOT, f))).toEqual([]);
+  });
+
+  it("a script that names the linter is a listed ratchet caller, and every listed caller names it", () => {
+    expect(callers()).toEqual(Object.keys(RATCHET_CALLERS).sort());
+  });
+
+  it("each listed caller runs as a json counter of the ratchet wiring", () => {
+    expect(invalidCounters(counters())).toEqual([]);
+  });
+
+  it("the linter is a support path of the ratchet wiring, so the base is measured with the head's rules", () => {
+    expect(support()).toContain("plugin/skills/decide/scripts/ste-lint");
   });
 });
 

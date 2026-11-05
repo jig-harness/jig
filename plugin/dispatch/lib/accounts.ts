@@ -12,14 +12,39 @@
  * no wall. With no account free the action waits, and the reason names
  * every account's slots.
  *
+ * The account's vendor chooses the agent a session runs in, so an account
+ * is admitted only for a vendor the drive documents a pass command for
+ * (`pass-command.ts`); an account of any other vendor is accepted by the
+ * machine file, reported, and never admitted. A vendor whose pass has no
+ * turn cap of its own (Codex) is admitted for a drive's pass only while the
+ * pass deadline the launch runs under is positive, since nothing else would
+ * bound a pass that runs on. A Codex account is admitted for any launch only
+ * on a host that set `drive.codex_bypass`: a pass needs that bypass to push
+ * and write its worktree's git directory, a pickup's session goes on to arm
+ * such a pass, and the dispatcher starts them with nobody there to approve.
+ * The tick reads that setting once, and a drive's launch record keeps what
+ * was judged, so its wrapper never reads it again.
+ *
  * Before a launch the tick resolves, with the drive's own resolver, the
  * identity the wrapper's environment yields for the admitted account
  * (`passEnvironment`), and compares it with the account's `identity`; a
  * mismatch, or an identity that does not resolve, starts nothing.
  */
 import { resolve } from "node:path";
-import { isMapping } from "../../shared/config-layers.ts";
+import {
+  isMapping,
+  sourceOf,
+  userConfigPath,
+  valueAt,
+} from "../../shared/config-layers.ts";
+import { layeredConfig } from "../../shared/consumer.ts";
+import { Defect } from "../../shared/errors.ts";
 import { run } from "../../shared/proc.ts";
+import type { AccountVendor } from "../../skills/drive-pr/scripts/lib/identity.ts";
+import {
+  isPassVendor,
+  onlyDeadlineBounds,
+} from "../../skills/drive-pr/scripts/lib/pass-command.ts";
 import { holds, type ReadRecord, unrecordedWalls } from "./launches.ts";
 import type { MachineAccount } from "./machine-config.ts";
 import { accountWall, type Wall } from "./walls.ts";
@@ -33,22 +58,122 @@ const CREDENTIAL_VARIABLES = [
 
 type Env = Record<string, string | undefined>;
 
+/** The variable that names each vendor's configuration directory. */
+const DIRECTORY_VARIABLE: Record<AccountVendor, string> = {
+  claude: "CLAUDE_CONFIG_DIR",
+  codex: "CODEX_HOME",
+};
+
 /**
  * The environment a pass billed to `account` runs in: `base` with the
- * credential variables removed and the account's configuration directory
- * set, so the drive's resolver and quota adapters read that account.
+ * credential variables, every vendor's directory variable and the harness
+ * markers (`CLAUDECODE`, `CODEX_…`) removed, and the account's configuration
+ * directory set, so the drive's resolver and quota adapters read that
+ * account and no other, and the session detects its own agent rather than
+ * the wrapper's.
  */
 export function passEnvironment(
   base: Env,
-  account: { vendor: "claude" | "codex"; configDir: string },
+  account: { vendor: AccountVendor; configDir: string },
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(base))
     if (value !== undefined) env[key] = value;
   for (const name of CREDENTIAL_VARIABLES) delete env[name];
-  if (account.vendor === "claude") env.CLAUDE_CONFIG_DIR = account.configDir;
-  else env.CODEX_HOME = account.configDir;
+  for (const name of Object.keys(env))
+    if (name === "CLAUDECODE" || name.startsWith("CODEX_")) delete env[name];
+  for (const name of Object.values(DIRECTORY_VARIABLE)) delete env[name];
+  env[DIRECTORY_VARIABLE[account.vendor]] = account.configDir;
   return env;
+}
+
+/** Whether this host opted in to Codex's bypass, and why not when it did not. */
+export type CodexOptIn = { on: true } | { on: false; why: string };
+
+/**
+ * This host's opt-in: `drive.codex_bypass` in its user file or the tick's
+ * environment, read without any repository's file. A value that cannot be
+ * read is no opt-in, and says why.
+ */
+export function hostCodexOptIn(env: Env = process.env): CodexOptIn {
+  try {
+    const config = layeredConfig(process.cwd(), env, null);
+    const value = valueAt(config.values, "drive.codex_bypass");
+    if (value === true) return { on: true };
+    return value === undefined || value === null || value === false
+      ? {
+          on: false,
+          why: `this host has not opted in to Codex's bypass (drive.codex_bypass: true in ${userConfigPath(env)}), and without it an unattended Codex session cannot push or write its git directory and has nobody to approve`,
+        }
+      : {
+          on: false,
+          why: `drive.codex_bypass must be true or false: ${sourceOf(config, "drive.codex_bypass")}`,
+        };
+  } catch (error) {
+    return {
+      on: false,
+      why: `drive.codex_bypass could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/** What a launch starts, on a host's opt-in: a drive's headless pass under its deadline (seconds, `0` for none), or an interactive session. */
+export type LaunchKind = { codex: CodexOptIn } & (
+  | { kind: "pass"; deadlineSec: number }
+  | { kind: "interactive" }
+);
+
+/**
+ * Why an account of `vendor` is never admitted for `launch`, whatever its
+ * slots; `null` when it may be.
+ */
+function vendorRefusal(vendor: string, launch: LaunchKind): string | null {
+  if (!isPassVendor(vendor))
+    return `the drive documents no pass command for its vendor ${vendor}, so it is accepted and not admitted`;
+  if (vendor === "codex" && !launch.codex.on)
+    return `${launch.codex.why}: not admitted`;
+  if (
+    launch.kind === "pass" &&
+    launch.deadlineSec === 0 &&
+    onlyDeadlineBounds(vendor)
+  )
+    return `a ${vendor} pass has no turn cap of its own and the pass deadline (DRIVE_PR_PASS_TIMEOUT) is 0, so nothing would bound it: not admitted for a drive's pass`;
+  return null;
+}
+
+/** The vendor of an account a launch was admitted on, which admission only allows for a vendor with a documented pass command. */
+export function admittedVendor(account: MachineAccount): AccountVendor {
+  const vendor = account.vendor;
+  if (!isPassVendor(vendor))
+    throw new Defect(
+      `${account.name} was admitted with the vendor ${vendor}, which has no documented pass command`,
+    );
+  return vendor;
+}
+
+/** An account the machine file lists that a drive's pass is never admitted on, and why. */
+export interface NotAdmitted {
+  account: string;
+  vendor: string;
+  reason: string;
+}
+
+/** The accounts a drive's pass under the pass deadline `deadlineSec`, on this host's opt-in, is never admitted on. */
+export function notAdmitted(
+  accounts: MachineAccount[],
+  deadlineSec: number,
+  codex: CodexOptIn,
+): NotAdmitted[] {
+  return accounts.flatMap((account) => {
+    const reason = vendorRefusal(account.vendor, {
+      kind: "pass",
+      deadlineSec,
+      codex,
+    });
+    return reason === null
+      ? []
+      : [{ account: account.name, vendor: account.vendor, reason }];
+  });
 }
 
 /** One account's slots as a tick sees them. */
@@ -169,21 +294,22 @@ export function refreshWalls(
   }
 }
 
-/** Every account's slots, in one line for a report. */
-function describeSlots(table: Slots[]): string {
+/** Every account's slots, in one line for a report, an account `launch` is never admitted on named so. */
+function describeSlots(table: Slots[], launch: LaunchKind): string {
   if (table.length === 0) return "the machine file lists no accounts";
   return table
-    .map(
-      (s) =>
-        `${s.account.name} ${s.held}/${s.account.maxPerAccount}${s.wall === null ? "" : ` (walled until ${s.wall.resetAt})`}${s.wallUnrecorded ? " (wall not recorded)" : ""}`,
-    )
+    .map((s) => {
+      const refused = vendorRefusal(s.account.vendor, launch);
+      if (refused !== null) return `${s.account.name} (${refused})`;
+      return `${s.account.name} ${s.held}/${s.account.maxPerAccount}${s.wall === null ? "" : ` (walled until ${s.wall.resetAt})`}${s.wallUnrecorded ? " (wall not recorded)" : ""}`;
+    })
     .join(", ");
 }
 
-/** Why an account cannot take a headless drive pass now; `null` when it can. */
-function closed(slots: Slots): string | null {
-  if (slots.account.vendor !== "claude")
-    return "no headless drive pass is documented for its vendor";
+/** Why an account cannot take `launch` now; `null` when it can. */
+function closed(slots: Slots, launch: LaunchKind): string | null {
+  const refused = vendorRefusal(slots.account.vendor, launch);
+  if (refused !== null) return refused;
   if (slots.wallUnrecorded)
     return "its wall was not recorded; it stays closed until that launch record is cleared";
   if (slots.wall !== null) return `walled until ${slots.wall.resetAt}`;
@@ -192,32 +318,39 @@ function closed(slots: Slots): string | null {
 
 export type Admission = { admitted: Slots } | { waits: string };
 
-/** The account a re-arm runs on, taken in turn after `last`. */
+/** The account a re-arm (or an interactive session) runs on, taken in turn after `last`. */
 export function admitRearm(
   table: Slots[],
   last: string | null,
+  launch: LaunchKind,
   excluded: ReadonlySet<string> = new Set(),
 ): Admission {
   const start = table.findIndex((s) => s.account.name === last) + 1;
   for (let i = 0; i < table.length; i++) {
     const slots = table[(start + i) % table.length] as Slots;
-    if (!excluded.has(slots.account.name) && closed(slots) === null)
+    if (!excluded.has(slots.account.name) && closed(slots, launch) === null)
       return { admitted: slots };
   }
-  return { waits: `no account has a free slot: ${describeSlots(table)}` };
+  return {
+    waits: `no account has a free slot: ${describeSlots(table, launch)}`,
+  };
 }
 
-/** The slot a takeover runs in: the replaced record's, on its account. */
-export function admitTakeover(table: Slots[], replaced: ReadRecord): Admission {
+/** The slot a takeover runs in under the pass deadline `deadlineSec`, on this host's opt-in: the replaced record's, on its account. */
+export function admitTakeover(
+  table: Slots[],
+  replaced: ReadRecord,
+  deadlineSec: number,
+  codex: CodexOptIn,
+): Admission {
   const slots = slotsOf(table, replaced.record);
   if (slots === undefined)
     return {
       waits: `the record it replaces bills ${replaced.record.account}, which the machine file no longer lists`,
     };
-  if (slots.account.vendor !== "claude" || replaced.record.vendor !== "claude")
-    return {
-      waits: `${slots.account.name}: no headless drive pass is documented for its vendor`,
-    };
+  const launch: LaunchKind = { kind: "pass", deadlineSec, codex };
+  const refused = vendorRefusal(slots.account.vendor, launch);
+  if (refused !== null) return { waits: `${slots.account.name}: ${refused}` };
   if (slots.wallUnrecorded)
     return {
       waits: `${slots.account.name}, whose slot it takes, ended on a wall that was not recorded`,
@@ -228,7 +361,9 @@ export function admitTakeover(table: Slots[], replaced: ReadRecord): Admission {
     };
   // A record that no longer holds its slot gave it back: the takeover needs a free one.
   if (!holds(replaced.state) && slots.held >= slots.account.maxPerAccount)
-    return { waits: `no free slot on ${describeSlots([slots])}` };
+    return {
+      waits: `no free slot on ${describeSlots([slots], launch)}`,
+    };
   return { admitted: slots };
 }
 
@@ -256,6 +391,12 @@ export async function checkIdentity(
   account: MachineAccount,
   timeoutSec: number,
 ): Promise<IdentityCheck> {
+  const vendor = account.vendor;
+  if (!isPassVendor(vendor))
+    return {
+      ok: false,
+      reason: `the drive documents no pass command for the vendor ${vendor}`,
+    };
   const done = await run(
     [
       process.execPath,
@@ -263,9 +404,15 @@ export async function checkIdentity(
       `--config=${BUNFIG}`,
       RUN_TS,
       "identity",
-      account.vendor,
+      vendor,
     ],
-    { timeoutSec, env: passEnvironment(process.env, account) },
+    {
+      timeoutSec,
+      env: passEnvironment(process.env, {
+        vendor,
+        configDir: account.configDir,
+      }),
+    },
   );
   if (done.code !== 0)
     return {

@@ -77,13 +77,34 @@ function unfaithful(
 // YAML's own infinity and not-a-number literals.
 const NON_FINITE_LITERAL = /^[-+]?\.(?:inf|nan)$/i;
 
-/** A core-schema number type that refuses, as it constructs it, a number
- * `unfaithful` names. Checking at construction covers a mapping key too:
+// Finite-number spellings from the vendored js-yaml core schema. Its resolvers
+// reject overflow, so recognize the grammar before asking them to resolve it.
+const INTEGER_LITERAL = /^[-+]?(?:[0-9]+|0b[01]+|0o[0-7]+|0x[0-9a-fA-F]+)$/;
+const FLOAT_LITERAL =
+  /^(?:[-+]?[0-9]+(?:\.[0-9]*)?(?:[eE][-+]?[0-9]+)?|\.[0-9]+(?:[eE][-+]?[0-9]+)?)$/;
+
+/** A core-schema number type that refuses, while resolving or constructing,
+ * a number `unfaithful` names. Checking before key conversion covers a mapping key too:
  * the parser turns a key into its string afterwards, so two keys past 2^53
  * would otherwise become one key and nothing later could see it. */
-function faithful(type: Type): Type {
+function faithful(type: Type, numericLiteral: RegExp): Type {
   return new Type(type.tag, {
     ...type.options,
+    resolve: (data: string) => {
+      // Refuse overflow before resolution can keep the literal as a string.
+      // Quoted scalars never reach an implicit resolver.
+      if (numericLiteral.test(data)) {
+        const value = type.construct(data);
+        if (typeof value === "number" && !Number.isFinite(value))
+          throw new InputError(
+            unfaithful(
+              value,
+              data.length > 40 ? `${data.slice(0, 37)}...` : data,
+            ),
+          );
+      }
+      return type.resolve(data);
+    },
     construct: (data: string) => {
       const value = type.construct(data);
       if (typeof value !== "number") return value;
@@ -100,7 +121,10 @@ function faithful(type: Type): Type {
 }
 
 const DATA_SCHEMA = CORE_SCHEMA.extend({
-  implicit: [faithful(types.int), faithful(types.float)],
+  implicit: [
+    faithful(types.int, INTEGER_LITERAL),
+    faithful(types.float, FLOAT_LITERAL),
+  ],
 });
 
 /** Each list and mapping in `value`, with how many times the data refers to

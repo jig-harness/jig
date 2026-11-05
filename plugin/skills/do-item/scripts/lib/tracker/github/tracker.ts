@@ -47,6 +47,7 @@ import {
 } from "./read.ts";
 import { keyOf, repoOf, slug } from "./refs.ts";
 import { assignerOperations } from "./assigner.ts";
+import { claimOperations } from "./claim.ts";
 import { reportOperations } from "./reports.ts";
 import { GitHubApiError, pageAll } from "./transport.ts";
 
@@ -593,6 +594,7 @@ export function gitHubTracker(client: Client): Tracker {
 
     ...reportOperations(client, { comments, children }),
     ...assignerOperations(client),
+    ...claimOperations(client),
 
     async createIssue(issue) {
       requireTitle(issue.title);

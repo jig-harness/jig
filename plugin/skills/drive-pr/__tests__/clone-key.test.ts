@@ -360,9 +360,9 @@ describe("peekCloneKey", () => {
   });
 
   it("also refuses a corrupted persisted identity, rather than reporting it as unminted", () => {
-    // The dry-run preview path (migrate-legacy-state.ts) must not read
-    // corruption as "nothing to migrate yet" — that would hide exactly the
-    // failure this validation exists to surface.
+    // A read-only caller (the drive listing, the post fence) must not read
+    // corruption as "this clone has no state yet" — that would hide exactly
+    // the failure this validation exists to surface.
     const dir = mkdtempSync(join(tmpdir(), "clone-key-peek-corrupt-"));
     try {
       createExclusiveDurable(join(dir, "drive-pr-clone-id"), "garbage\n");

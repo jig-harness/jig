@@ -15,10 +15,28 @@ gc:
   kinds: [tool-state, worktrees]
   worktree_roots:
     - ../../orca/workspaces/jig
-    - ../../worktrees/jig # Herdr-era worktrees, until none remain
+    - .claude/worktrees # Claude Code's isolated subagent worktrees, inside the clone
 dispatch:
   # What `jig dispatch` wants after a merge here: Jig's own post-merge pass.
   followup_command: /followup
+  # The dispatcher's state on every pull request it manages (`jig:driving`,
+  # `jig:converged`, `jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up`), and a
+  # person's commands: `jig:drive` arms a drive on a pull request with
+  # no ledger, `jig:hold` keeps every stage off one. The host's
+  # `jig install dispatch --repo <clone> --yes` creates the labels.
+  labels:
+    enabled: true
+design_brief:
+  # Where finished design bundles land, one folder per flow, and what the
+  # design-handback landing check needs. The browser script finds the
+  # machine's Chromium; `JIG_CHROMIUM`, or the environment layer's
+  # `JIG__design_brief__handback__browser_executable`, names another.
+  prototypes: design/prototypes
+  handback:
+    widths: [390, 1440]
+    rubric: design/prototypes/rubric.md
+    scorecard: design/prototypes/dispatch-dashboard.scorecard.md
+    browser_executable: tools/design/chromium.sh
 gates:
   command: bun run gates
 review:
@@ -71,11 +89,6 @@ drive:
   # drive-pr marks them Ready after the first round
   # (CONTRIBUTING.md § Pull-request lifecycle).
   reviews_drafts: true
-  # Jig's pull requests edit its own skills under .claude/skills/**, and a
-  # pass started without a terminal is denied every write there unless its
-  # permission prompts are off. With them off, only the drive's instructions
-  # (guarded-push.ts, the bots-only rule) steer a pass, not a mechanism.
-  pass_args: [--permission-mode, bypassPermissions]
 ci:
   # The check main's ruleset requires; the drive waits for it on the
   # converged head.

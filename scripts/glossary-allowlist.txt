@@ -9,6 +9,7 @@ AGENTS
 FEATURES
 CLAUDE
 GLOSSARY
+VOICE
 # the code marker, as in a TODO comment
 TODO
 # emphasis-caps words, not acronyms
@@ -56,7 +57,6 @@ BASE
 # terms of art (which is what GLOSSARY.md is for)
 URL
 CLI
-IDE
 UI
 LLM
 SDK
@@ -94,6 +94,7 @@ FastAPI
 MongoDB
 CircleCI
 SWC
+NATS
 # the .NET platform
 NET
 # remote procedure call, the industry's name for the interface style

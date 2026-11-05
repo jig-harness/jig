@@ -25,7 +25,7 @@ open question, and what it finds goes back into that item or design.
 | Research spike | a research note in this folder, `<topic>-research.md`, when a plan item or its design hangs on an open question; it leaves when its item is finished | M6's [research-note template](../modules/M6-feature-delivery-pipeline/templates/research-note-template.md) |
 | [PRD](../GLOSSARY.md) (product requirements document) | the plan item: what will be built, for whom, and when it is done, with its short form on the roadmap | the items in [plan.md](plan.md): a summary, what the item builds, and a "Done when" line |
 | Architecture | the design in this folder | the skeleton in [§ Starting a design](#starting-a-design) |
-| Design-prototype loop | for a browser interface, a design brief for an external design session, whose result may reopen the design | [`/jig:design-brief-builder`](../plugin/skills/design-brief-builder/SKILL.md) |
+| Design-prototype loop | for a browser interface, a design brief for an external design session, whose result may reopen the design; the returned round lands under [`prototypes/`](prototypes/rubric.md) with its scorecard, and `tools/design/unpack-export.ts` writes the pages the landing check renders | [`/jig:design-brief-builder`](../plugin/skills/design-brief-builder/SKILL.md) |
 | Epic decomposition | the design's build order, one pull request per step | the design's Build order section |
 
 Small items skip the design: their plan item goes straight to pull
@@ -67,6 +67,10 @@ with the review.
 | [Routing work to an agent, a model and an effort](agent-routing.md) | 31 |
 | [Driving any pull request from anywhere, with autonomy that fits the hour](dark-factory-driving.md) | 32 |
 | [The dispatcher, a tick that starts the execution line's stages](dark-factory-dispatch.md) | 33 |
+| [Jig in the Orca ecosystem](orca-integration.md) | 34 |
+| [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 38; Later: a repository's theme |
+| [The dispatch board, what is driven and what is ready to merge](dispatch-board.md) | 36 |
+| [Records: one envelope, one registry, records shared across hosts](records.md) | 37 |
 
 ## Starting a design
 

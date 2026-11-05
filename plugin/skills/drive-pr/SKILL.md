@@ -163,9 +163,21 @@ consumer polling `--json` for one of these states will never see it there.
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are. The driver **restarts** from a witnessed kill, leaving what the pass left in the tree for the next pass, up to `drive.pass_deadline_retries` (default 2) per drive (§ Running it); this exit is the deadline recurring past that budget, and says so, or a kill that could not be witnessed, which exits here at once with the locks held and spends no budget |
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
-| `MAILBOX_STOPPED` | 18 | A mailbox `stop` ended `drive.ts` at a round boundary, after any running pass completed. Resume the stop directive before re-arming |
+| `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
+
+In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
+person must settle on the workspace card: a park, a usage-limit stop and
+every failure stop (an operational failure, a usage error, the round budget
+spent, a failed reviewer check, an unworkable conflict, an unclean converged
+worktree, a stall, a recurring pass deadline) mark the card unread with the
+stop's one-line reason as its comment, the park's question first among them;
+on a card still unread, the reason is appended to the comment a person has
+not read yet. A converged drive, a closed pull request, a stop a person asked
+for and a drive another driver holds move nothing
+(`scripts/lib/driver/orca-card.ts`). Outside Orca nothing is called, and an
+Orca failure only warns; the exit is the stop's own either way.
 
 `CONVERGED` on a PR that is **still an unmarked draft** is not returned as-is:
 `drive.ts` marks it Ready first and re-gates once (§ Drafts are driven). Its
@@ -240,15 +252,30 @@ PR-global `verifiedSha` or exits 0.
 With a hold label, the PR-open head runs full CI. Before the first
 intermediate fix push, `finish-round.ts` waits until every required check has
 completed, adds the label, and records the resulting GitHub timeline-event id.
+When no hold label is live or owned and the checks the hold waits for have
+not completed, `ensure` reads the PR's mergeability. GitHub runs no
+`pull_request` CI on a PR that conflicts with its base, so on a `CONFLICTING`
+answer `ensure` prints `conflicting` and the push goes ahead without the
+label; the push that clears the conflict runs full CI. An `UNKNOWN` or
+unreadable answer keeps the wait (exit `4`), and a label that is live or mid-recovery
+is handled before that read.
+The hold label is a CI cost setting, not a signal to the drive. A live label
+this drive holds no record of (one an earlier run lost track of, a drive that
+died left, or anyone else added) is adopted: `ensure` records its newest
+`labeled` event as the drive's own and prints `adopted` on retries too.
+Adoption needs no check runs; release captures its own watermark. The push goes
+ahead under it. A person stops a running drive with
+`bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>`.
+The dispatcher's `jig:hold` label prevents new launches and re-arms;
+the CI hold label only saves CI.
 The repository's synchronize workflows are expected to honour the label: they
 skip their expensive jobs while a required check fails or is cancelled, so the
 held head is visibly non-green rather than falsely mergeable; the posting
 reviewer continues independently.
 
 At reviewer convergence, `drive.ts` removes the label only when that same
-labelled event is still the newest transition of the label. A human
-remove/re-add therefore transfers control: the drive leaves the label
-untouched. Removing the owned label fires every workflow's `unlabeled`
+labelled event is still the newest transition of the label; a label someone
+re-added since is adopted the same way first, then removed. Removing the owned label fires every workflow's `unlabeled`
 trigger. The drive waits for successful exact-head required checks whose
 starts are no earlier than that server-side unlabeled-event timestamp and whose
 run ids exceed the pre-unlabel watermark. It then requires the overall
@@ -260,11 +287,24 @@ non-reviewer CI verdict to be green before it writes the PR-global
 `ci-repair` pass (§ 0) and re-gates from the top afterwards, because a repair
 that pushed moved the head and staled every piece of evidence gathered under
 the old one — the reviewer's stamp included. Only a verdict naming failing
-checks positively (`failing: …`) spends budget: `unknown:` and an unreadable
-report are absences of evidence, not evidence of failure, and a CI-repair pass
-handed neither a run nor a check name has nothing to work from. Once the budget
-is spent — or on the first red if it is `0` — the drive takes the original
-exit-`1` stop and hands the red CI back for repair.
+checks positively (`failing: …`) spends budget: `cancelled:`, `unknown:` and an
+unreadable report are absences of evidence, not evidence of failure, and a
+CI-repair pass handed neither a run nor a check name has nothing to work from.
+Once the budget is spent — or on the first red if it is `0` — the drive takes
+the original exit-`1` stop and hands the red CI back for repair.
+
+**A cancelled check is waited for, never repaired and never passed.** It says
+nothing about the code, so the verdict reads `cancelled: …`. That covers only a
+check concluded `cancelled`; another failed job in the same cancelled run
+still counts as failing. Once a run of the same workflow on this head, started no
+earlier, has completed with a result, the cancelled run's checks no longer
+count, under whatever name they carry, except that an unsuccessful check stays
+when the replacing runs report its name only as skipped. The event that started
+either run does not matter. A failure beside a cancelled check is still a failure, and
+reads `failing: …`. Until something replaces it the drive waits, on the bound
+below, and if nothing does it exits `4`: not judgeable, and retry-safe. An older
+passing run never answers a cancelled check, which is what keeps a held run
+that cancels itself blocking the merge.
 
 **The "still waiting for a witness" poll is bounded**, at
 `DRIVE_PR_FINAL_CI_WITNESS_POLLS` × 10s — 30 minutes by default, `0` to wait
@@ -309,8 +349,28 @@ it, or read `state` from the `--json` report, which is unambiguous either way.
 bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- claude -p "/jig:drive-pr --bots-only 123"
 ```
 
+That is Claude Code's pass command. Codex's is the other documented one: it
+names the skill in its prompt, since Codex runs a skill the prompt names:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- codex exec "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 123"
+```
+
+A pass pushes, calls the forge and has nobody to ask, so on a host that set
+`drive.codex_bypass: true` in its user file an arm writes
+`--dangerously-bypass-approvals-and-sandbox` after `exec`, and that pass runs
+without a sandbox or approvals. Without it Codex's own configuration decides.
+`drive.ts` runs a Codex pass command as given, so the command above carries no
+bypass: `arm-drive.ts` is the entry point that reads the setting, and a
+command typed by hand names `--dangerously-bypass-approvals-and-sandbox`
+after `exec` itself.
+
 Each round is a **fresh agent process**, so a long converge never depends on one
-session's context surviving. That is the preferred unattended mode.
+session's context surviving. That is the preferred unattended mode. A Codex
+pass has no turn cap of its own (§ Handing off before you degrade): the pass
+deadline (`DRIVE_PR_PASS_TIMEOUT`, `--pass-timeout`, 90 minutes by default)
+is what ends one that runs on, so do not switch the deadline off (`0`) for a
+Codex drive.
 
 **The pass model.** A Claude Code pass (`claude …`) runs on the model the
 driver decides: `--pass-model <model>` for this run, else the pass command's
@@ -321,8 +381,12 @@ routing tier (`execution`, `strategic`, resolved through
 and where it came from (an own `--model` the configuration resolves to is
 named as that setting's; one that names no model is reported as none), the
 `drives.ts` row names it, and every re-arm or takeover command the driver
-prints carries it. Another agent tool's pass command chooses its own model,
-and `--pass-model` is refused for it (exit `2`).
+prints carries it. A Codex pass (`codex …`) runs on its own `-m`, else the
+execution tier of `routing.models.codex`, added after `exec`, else Codex's
+own configured model; `drive.pass_model` is Claude Code's and is not read for
+it. `--pass-model` overrides either vendor's model; a Codex tier resolves
+through `routing.models.codex`. Any other pass command chooses its own
+model and refuses `--pass-model` (exit `2`).
 
 **The pass arguments.** A Claude Code pass command can carry extra words
 before `-p`, such as `--permission-mode bypassPermissions`, without which a
@@ -332,12 +396,18 @@ some). They come from `--pass-args "<words>"` for this run
 (one value, split on spaces; empty for none), else `drive.pass_args`, which
 `drive.ts` adds only to a pass command with no arguments of its own; a
 command that carries its own, as an arm command or a printed re-arm or
-takeover command does, runs as written. The driver log's `pass args:` and
+takeover command does, runs as written. `drive.pass_args` is the host's: only
+its user file or one run's environment sets it. A repository's file that sets
+it, an empty list included, stops the drive (exit `1`), naming the field, since
+a drive reads that file from the pull request's own checkout. The driver log's `pass args:` and
 `permission mode:` lines and the `drives.ts` row name them (`inherited` when
 the command sets no mode: Claude Code's own settings then decide). Another agent tool's pass command ignores
 `drive.pass_args`, and the log says so; `--pass-args` is refused for it
-(exit `2`). A `drive.pass_args` that is not a list of words stops the drive
-(exit `1`), naming the field.
+(exit `2`). A Codex pass's `permission mode:` is read from its own words:
+`no sandbox, no approvals` with the bypass, `inherited` without it. A `drive.pass_args` that is not a list of words stops the drive
+(exit `1`), naming the field. A list that ends in an option left without its
+value, such as `--permission-mode`, stops the drive naming `drive.pass_args`:
+exit `1` from the field, exit `2` from `--pass-args`.
 
 **The attach.** Once it holds the tree's driver lock and the PR's,
 `drive.ts` attaches the PR to the tree it runs in
@@ -441,11 +511,15 @@ an already-driven PR refuses on the single-instance lock (exit `11`) — arming
 is idempotent in the only way that matters.
 
 **Where a running drive is visible.** A drive armed in a terminal tab
-shows its passes there. One armed in the background outlives the session
-that spawned it, so its console is not where you look:
+shows its passes there while it runs. The tab closes once the drive ends
+with nothing for a person (any exit but a park or a failure; `0`, `4`,
+`5`, `11`, `13`, `16`, `18`, `19`, `20`), and arming the pull request again
+closes an earlier tab that is idle, so a finished drive is read from what
+follows, as one armed in the background is. One armed in the background
+outlives the session that spawned it, so its console is not where you look:
 
 - **Driver log** — every line the driver prints is also appended to
-  `<state dir>/drive-pr-<PR>.log`, next to the per-PR state, each line
+  `<state dir>/drive-pr-<PR>.log`, in the clone's directory, each line
   starting with its time in UTC (`2026-01-02T03:04:05.006Z`) and a level
   (`INFO` for standard output, `WARN` for standard error). Before it grows
   past 10 megabytes (10,485,760 bytes) the file moves to
@@ -476,14 +550,15 @@ that spawned it, so its console is not where you look:
   for machines. Each row's `repository` names the owner/repository of the drive's remote,
   falling back to the clone's Git common directory when that remote is unavailable
   or yields no plain owner/repository pair; the remote's URL is never printed.
-  `--stop <PR>` requests that a live driver stop its pass
-  tree and then release its locks. Process identity is verified through the
-  platform process table (`ps` on POSIX, PowerShell on Windows), and a
-  cooperative stop request lets a Windows driver run its own cleanup.
-  Confirmed cleanup publishes a receipt for that acquisition before releasing
-  claims. A matching receipt and disappearance of captured identities can
-  confirm shutdown after a temporary cancellation marker made the registry
-  uncertain; registry disappearance alone cannot.
+  `--stop <PR>` asks a live driver to stop its pass
+  tree and then release its locks, by a mailbox `stop` addressed to the
+  driver generation its claim names (§ The drive mailbox). Process identity is
+  verified through the platform process table (`ps` on POSIX, PowerShell on
+  Windows), and the driver polls its mailbox for the stop, so a Windows
+  driver runs its own cleanup. Confirmed cleanup appends an `ack` of the stop
+  to the outbox before releasing claims. That `ack` and disappearance of
+  captured identities can confirm shutdown after a temporary cancellation
+  marker made the registry uncertain; registry disappearance alone cannot.
   `--expect-started <ISO>` stops only the claim acquired at that time and
   exits `3` for any other holder.
   A stale lock stays the next acquire's to recover.
@@ -498,15 +573,14 @@ that spawned it, so its console is not where you look:
   `lib/state/schema.ts`) and `quotaPark` (recorded by `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts"
   quota-park`, cleared by the next progress event). `bun
   "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --doctor` sweeps every drive in
-  the state universe — every *lock* `drives.ts` already enumerates, plus every
-  lock-less `drive-pr-<PR>.json` state file that is either *unreadable* or
-  *actionable* (a recorded `quotaPark`, or a non-empty `parked` list) — never an
-  exhaustive union with every state file that exists: a readable, inert one
-  (no park, nothing parked) has no verdict this sweep can reach other than
-  `UNKNOWN`, and including it would bury the actionable rows under hundreds
-  of `UNKNOWN` ones (`drive.ts` `rmdir`s its lock slot
-  on every normal exit, including both quota-park exits and the HITL-park
-  exit, so a parked drive that exited cleanly leaves no lock behind — see
+  the clone — every *lock* `drives.ts` already enumerates, plus every
+  lock-less PR state that is either *unreadable* or *actionable* (a recorded
+  `quotaPark`, or a non-empty `parked` list) — never every state there is: a
+  readable, inert one (no park, nothing parked) has no verdict this sweep can
+  reach other than `UNKNOWN`, and including it would bury the actionable rows
+  under hundreds of `UNKNOWN` ones (`drive.ts` releases its locks on every
+  normal exit, including both quota-park exits and the HITL-park exit, so a
+  parked drive that exited cleanly leaves no lock behind — see
   `listStateOnlyRows` in `drives.ts`) — and
   classifies each one — `HEALTHY`, `WEDGED`, `DEAD_WITH_LEFTOVERS`,
   `QUOTA_PARKED`, `NEEDS_HUMAN` or `UNKNOWN` (never a false `HEALTHY` — see
@@ -529,99 +603,60 @@ that spawned it, so its console is not where you look:
   machine's own scheduler (cron, launchd, a scheduled task) — a per-machine
   install the skill does not ship.
 
-  **A state file missing these fields is refused, not migrated** — `DriveState`
+  **A state missing these fields is refused, not migrated** — `DriveState`
   has no optional-and-defaulted tier (see that interface's own header), so an
-  older file stops at its next state read with the ordinary "not usable drive
-  state" refusal, naming the file. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" reset <PR>` is the recovery;
+  older one stops at its next state read with the ordinary "not usable drive
+  state" refusal, naming the PR. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" reset <PR>` is the recovery;
   re-arming afterwards restarts the round budget. Defaulting the silence would
   make "never progressed" indistinguishable from "predates the field" — the
   false reading `--doctor` exists to prevent.
 - **State reaping** — `bun "${CLAUDE_SKILL_DIR}/scripts/reap-state.ts"`
-  (dry-run by default, `--delete` to act) bounds the *inodes* this skill leaves
-  in its state dir (see below) — not, on its own, the entry count that drives
-  every enumeration of it. `lock.ts` mints a permanent quarantine entry per lock
-  generation on the *happy* path, so the state dir's entry count grows without
-  bound even though `sweepLockQuarantine` compacts each one to a single inode
-  on POSIX systems
-  — in a directory the lease and census reads enumerate several times per
-  round. It compacts
-  (`sweepLockQuarantine`) anything still in use on POSIX systems, and deletes
-  a family outright only on the *lifecycle* predicate: PR
-  merged (or gone from GitHub — a genuinely nonexistent PR number, never a
-  repository/auth/transport error) with no live lease, or a tree lease whose
-  worktree no longer exists. A closed-but-unmerged PR is deliberately
-  excluded — GitHub permits reopening it with no time limit — so its family is
-  only ever compacted. **Compaction shrinks inodes, not directory
-  entries**: `sweepLockQuarantine` collapses a quarantine directory into a
-  single empty file at the same path, because that file is the fence a later
-  `rename(2)` has to fail against. Windows keeps the nonempty
-  [directory fence](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
-  a directory rename there can replace a regular file. The sweep upgrades older
-  empty file fences by publishing a complete directory fence atomically;
-  staging is retained until the canonical path is a real nonempty directory.
-  An empty directory Windows refuses to replace remains unfinished and reuses
-  its staged fence; nonempty files and symbolic links remain untouched.
-  A family still in use therefore keeps every
-  entry it has ever minted, and only *retire* removes any — so a
-  `drive-tree-lease-wt-*` family whose worktree still exists never shrinks at
-  all. On a clone with many long-lived worktrees the entry count grows without
-  bound even when this reaper runs correctly every week, until a single
-  `readdir` of the directory takes seconds — and an IDE or other tool
-  watching that directory pays the same cost. Every gate
-  fails closed, and the idle guard (`--min-age-days`, default 7) is an extra
-  bound on top of the lifecycle predicate, never a substitute — a pure age
-  sweep here is unsafe. Run it with `--delete` on a schedule (weekly is
-  enough) from the machine's own scheduler; that schedule is what deletes.
-  Resource collection's `tool-state` kind reports the same families with
-  receipts across configured clones once a repository lists it in `gc.kinds`
-  and runs `bun --no-env-file --config="${CLAUDE_SKILL_DIR}/../../gc/bunfig.toml" "${CLAUDE_SKILL_DIR}/../../jig.ts" gc install --repo <repository>`,
+  (dry-run by default, `--delete` to act) removes files from the clone's
+  directory beside the database: a PR's logs, kept answers, notices and arm
+  output only when the PR is merged (or gone from GitHub — a genuinely
+  nonexistent PR number, never a repository/auth/transport error), no lease
+  is live on it, and nothing in the family was touched for `--min-age-days`
+  (default 7); and the files an earlier release kept there, once the
+  database's import of them is 30 days old. A closed-but-unmerged PR is
+  deliberately kept — GitHub permits reopening it with no time limit. A name
+  it does not recognise is never removed, and every gate fails closed. It
+  also expires trace days older than 14 days. The database's rows are not
+  its business: a lock's release deletes its row. Run it with `--delete` on a
+  schedule (weekly is enough) from the machine's own scheduler; that
+  schedule is what deletes. Resource collection's `tool-state` kind reports
+  the same families with receipts across configured clones once a
+  repository lists it in `gc.kinds` and runs `bun --no-env-file --config="${CLAUDE_SKILL_DIR}/../../gc/bunfig.toml" "${CLAUDE_SKILL_DIR}/../../jig.ts" gc install --repo <repository>`,
   which previews, then the same command with `--yes` to confirm. It never
   passes `--delete`, so keep the reaper's own schedule beside it.
   The [collection reference](../../gc/README.md) describes its confirmed
   bounds.
-- **Windows filesystem access** — state writes and lock moves retry sharing
-  errors (`EPERM`, `EACCES`, `EBUSY`) for up to two seconds. Exclusive directory
-  creation also retries a pending deletion; an actual occupant still refuses
-  the claim. Worktree keys resolve the filesystem's canonical path before
-  hashing, including Windows path aliases. When upgrading from raw-path keys,
-  follow [Upgrading worktree identity](README.md#upgrading-worktree-identity)
-  before starting a new-version participant: old actor stamps are not migrated.
-  The state volume must support
-  hard links; a refusal names `$DRIVE_PR_STATE_DIR` so it can be relocated.
-- **State directory** — `resolveStateDir()` (`lib/state/store.ts`) defaults to
-  `~/.local/state/jig/drive-pr/<clone-key>/`, one directory per clone
-  (`<clone-key>` is a SHA-256 hash of a persisted per-clone identifier in
-  `--git-common-dir`, so two worktrees of one clone share it and two separate
-  clones never collide; `--git-dir` would fragment state per worktree
-  instead) — *deliberately* outside the repository tree, because the
-  unbounded quarantine growth above inside `--git-common-dir` (`.git`) lands
-  in the very directory every git-aware tool on the machine walks. The legacy
-  layout kept state in `--git-common-dir` itself. A clone whose
-  `--git-common-dir` still holds state from that layout refuses (exit 2,
-  naming the found entries) rather than silently starting a fresh drive over
-  it, which would leave two sessions resolving different directories with
-  neither error surfacing. Run the one-time fix: `bun
-  "${CLAUDE_SKILL_DIR}/scripts/migrate-legacy-state.ts" --apply` — bare,
-  with no `--apply`, it only reports what it would do and changes nothing (same
-  dry-run-by-default posture as `reap-state.ts`'s `--delete`). Idempotent,
-  copies (never moves) durable content, refuses if a live driver is still
-  using the legacy location, and leaves inert lock/quarantine debris behind
-  (reported, safe to remove manually once confident — see the script's own
-  header for why it does not delete that itself). State that already lives in
-  some other directory outside the repository (another default location, or
-  a previous `$DRIVE_PR_STATE_DIR`) moves with `bun "${CLAUDE_SKILL_DIR}/scripts/migrate-state-dir.ts" --from <old
-  dir>` instead: [README.md § Relocating the state
-  dir](README.md#relocating-the-state-dir).
+- **The drive's database** — `lib/state/db.ts`: one SQLite file per
+  machine, `~/.local/state/jig/drive-pr/state.sqlite`, every row keyed by
+  the clone (`<clone-key>`, a SHA-256 hash of a persisted per-clone
+  identifier in `--git-common-dir`, so two worktrees of one clone share it
+  and two separate clones never collide). It holds the drive state, the
+  locks, the leases, the claims, the review round record and the driver record;
+  the clone's directory beside it (`resolveStateDir()`, `lib/state/store.ts`)
+  keeps the driver log and the files handed to a pass. A database a newer
+  plugin needs a newer reader for stops a command with exit 2, naming both
+  versions. A clone's directory an earlier release filled with state files
+  is read in once at the first open and left in place
+  ([README.md § Upgrading from a release that kept files](README.md#upgrading-from-a-release-that-kept-files)).
+  Worktree keys resolve the filesystem's canonical path before hashing,
+  including Windows path aliases.
 - **The drive ledger** — the state's resumable subset, mirrored into one
   hidden-marker comment on the PR (`<!-- drive-pr-ledger -->`,
-  `lib/state/ledger.ts`): `ledgerVersion` and a monotonic `generation`, the
+  `lib/state/ledger.ts`): the record envelope (kind `drive-ledger`, its
+  version `v`, the PR as its key, the writer with its host and boot as
+  digests, the time), `ledgerVersion` and a monotonic `generation`, the
   round, phase, last counted and verified heads, the Ready mark, every parked
   item with its decision, every held item by key, outcome and pushed commit,
   the quota park (without its account), the takeover records (without
-  theirs) and the claims in force, the decisions taken unattended (an empty
-  list, which no drive writes to), the driver's tree, clone and heartbeat, and the handoff narrative's
-  last twenty lines. No account hash is posted, and email-shaped text in the
-  narrative and the parked reasons is replaced with `<redacted>`; seeding
+  theirs) and the claims in force, the decisions taken unattended (§ 8),
+  the driver's tree, clone and heartbeat, and the handoff narrative's
+  last twenty lines. No account hash is posted, and email-shaped text and
+  account identifiers (`acct-…`, `token:…`, `api-key:…`) in the narrative,
+  the parked reasons and the held answers are replaced with `<redacted>`; seeding
   keeps this clone's own quota park, so a re-arm from another clone simply
   meets the wall again if it is still there. A driver writes
   it on the path that regenerates the handoff file — `drive-state.ts`'s `handoff`
@@ -635,8 +670,9 @@ that spawned it, so its console is not where you look:
   login or an owner, member or collaborator; any other comment carrying the
   marker is ignored and reported. A drive that starts with no state for the
   PR, or with state older than the ledger's generation, seeds its state from
-  the ledger (`drive-state.ts`'s `seed-ledger`); a `ledgerVersion` it does not
-  read refuses with exit `1`, naming the version. The locks stay per clone:
+  the ledger (`drive-state.ts`'s `seed-ledger`); a `ledgerVersion` or envelope
+  version it does not read refuses with exit `1`, naming the version, and a
+  ledger written before the envelope still reads. The locks stay per clone:
   the ledger seeds and arbitrates (§ Picking up a stopped drive), it does not
   lock. `DRIVE_PR_LEDGER=off` and `--dry-run` drive without it. A driver
   stopped by `drives.ts` `--stop` or a signal cannot write its last ledger
@@ -646,29 +682,39 @@ that spawned it, so its console is not where you look:
   the ledger still names that driver. A driver that kept its locks, over a
   pass it could not witness gone or killed outright, leaves its ledger
   running.
-- **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state root,
-  preserving one `<clone-key>/` directory per clone (the hash of its persisted
-  [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved leaf;
-  a pass must not change it. Unscoped flat artifacts cause a refusal: their old
-  schema has no repository binding, so never adopt or relocate them by guessing.
-  Stop all participants and have a human establish ownership first. The inherited
-  identity guard tolerates device-number drift only with matching inode,
-  nonzero birth time, canonical target path and the same macOS volume UUID;
-  unavailable volume proof keeps device comparison strict. Replacement still refuses.
-  A workspace manager that launches sessions must forward the setting too. **Every
-  participant in one clone must resolve the same directory**: two drivers that
-  disagree do not share the lease mutex, and each silently restarts the drive
-  at round 0. So if you find it set and did not set it yourself, leave it
-  alone — never unset or override it for one session, worktree or command.
-  Relocating it is a human, machine-wide procedure (quiesce every driver and
-  any scheduled reaper, run `bun "${CLAUDE_SKILL_DIR}/scripts/migrate-state-dir.ts"`, then export everywhere at
-  once): [README.md § Relocating the state
+- **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
+  root: the database and one `<clone-key>/` directory per clone (the hash of
+  its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved
+  clone directory and its database's identity; a pass must not change
+  either, and the fence refuses a post when the database is not the one the
+  driver opened. A root holding a drive's files directly causes a refusal:
+  those files have no repository binding, so never adopt or relocate them
+  by guessing. Stop all participants and have a human establish ownership
+  first. A workspace manager that launches sessions must forward the setting
+  too. **Every participant in one clone must resolve the same root**: two
+  drivers that disagree open two databases, and each silently restarts the
+  drive at round 0. So if you find it set and did not set it yourself, leave
+  it alone — never unset or override it for one session, worktree or
+  command. Relocating it is a human, machine-wide procedure (quiesce every
+  driver and any scheduled reaper, move the root whole, then export
+  everywhere at once): [README.md § Relocating the state
   dir](README.md#relocating-the-state-dir).
 - **Session banner** — `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --here` reports whether a live driver is
   working the worktree it runs in. Its silence means "checked, and clear"; a
   read failure prints a warning rather than nothing. A repository can run it
   from its agent tool's session-start hook so that a session opening in a
   driven worktree is warned.
+- **Morning report** — `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --report [--since <time>] [--json]`
+  is what a person reads after an unattended night: every pull request this
+  clone's state has news of, every open one the signed-in account drove
+  (found through the drive ledger) and every other open one it authored
+  (found by author, for its deferred entries), since the last report
+  (remembered in the state directory only by a report with no `--since`
+  that read everything; the last day for a first one) or
+  `--since` (a time such as `2026-10-29T06:00Z`, or a span such as `12h`). For each: its
+  terminal state and what it means for the person, the provisional
+  decisions first, the takeovers and re-arms, the parked decisions framed in
+  full, the issues filed and the deferred entries not yet filed.
 
 An exit-`11` refusal names the holder's pid/host and, when its claim carries
 the diagnostics line, the PR it is driving, its worktree, its log, its
@@ -724,7 +770,11 @@ stops admit it on a mechanical state:
   A comment the drive itself writes (one opening
   with an outcome token, or carrying a hidden marker) is never an answer.
   With any item unanswered nothing is unparked, and the drive stops `8` at
-  its first gate again, naming what it still waits on.
+  its first gate again, naming what it still waits on; at the `wide`
+  autonomy level, except where every unanswered item has the class
+  `escalated`: the re-arm then unparks them with the answered ones and
+  hands them to the first round to decide provisionally (§ Autonomy). One
+  unanswered item of any other class refuses it, at every level.
 
 Replacing a driver that still holds its locks is a **takeover**:
 
@@ -761,8 +811,10 @@ heartbeat (the time of its last write) is older than the lease window, the
 doctor's stall threshold (`DRIVE_PR_STALL_MIN`, floor 240 minutes); a fresher
 one is refused with exit `11`. Once it holds its locks the taker posts an
 append-only claim on the PR (`<!-- drive-pr-takeover-claim -->`: its tree,
-clone, the ledger generation it read, the time) and reads the claims back; a
-read-back that fails refuses the takeover (exit `1`). Of the claims on one
+clone, the ledger generation it read, the time), a claim of the shared
+forge-claims module, and reads the claims back, again a few times while the
+listing does not show its own; a read-back that fails, or never lists the
+claim, refuses the takeover (exit `1`). Of the claims on one
 generation the earliest comment id wins, and a later claimant stands down
 with exit `20` (`TAKEN_OVER`): at once when it sees the earlier claim, and at
 its next round boundary when a lagging read hid it. The winner seeds this clone's
@@ -839,6 +891,9 @@ could forge or forget.
      past it.
    - exit `11` → a live driver already holds that tree or the PR: report it
      with its details, as step 5 does for a refused spawn, and stop.
+   - exit `4` → `$DRIVE_PR_TARGET` names this PR: you are a pass of its
+     running drive, not an arm. Go to § Driver pass and work the round; never
+     stand down for that driver, which is your own.
    - exit `5` → the PR is not open; exit `1` → a read failed. Report either.
 
    Placing comes before the checkpoint below because the checkpoint is read in
@@ -883,8 +938,8 @@ could forge or forget.
    It reads `do_item.arm_drive` (default `auto`: a terminal tab of the
    PR's workspace where this session can open one, in Orca on a macOS or
    Linux host; the session's background execution elsewhere, Windows hosts
-   included), `drive.pass_model` (default `sonnet`) and `drive.pass_args`
-   (default none) in that tree, and
+   included), `drive.pass_model` (default `sonnet`) and, from the host's
+   user file or environment, `drive.pass_args` (default none) in that tree, and
    prints one JSON object: `command`, the driver's start command in the
    portable one-line form,
    `bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR>"`,
@@ -904,7 +959,11 @@ could forge or forget.
      printed, once, as step 5 reads a spawned driver's output. Open no
      second tab and spawn nothing.
    - `spawn` → spawn `command` with the harness's background execution
-     (Bash `run_in_background`), never blocking the session on it. When
+     (Claude Code: Bash `run_in_background`; Codex: `exec_command` with a
+     short `yield_time_ms`, keeping the returned `session_id` for
+     `write_stdin`). If the host exposes neither managed background tool,
+     print the command with that limitation and stop. Never claim it was started
+     without a handle or a completed command result. When
      `fallback` is set, `auto` meant a tab and the driver goes to the
      background instead: say why (Orca refused the tab, a Windows host, or
      a tab whose drive `drives.ts` did not list in time, whose `tail` to
@@ -917,7 +976,7 @@ could forge or forget.
      Orca, on a Windows host, or a tab Orca refused) or a setting, the model
      or the working tree cannot be read; exit `2`: a malformed command line.
 
-   **exact** — For `spawn`, pass the Bash call's `timeout` of `28800000` (8 hours) with
+   **exact** — For `spawn` in Claude Code, pass the Bash call's `timeout` of `28800000` (8 hours) with
    `run_in_background`; a drive runs up to `--max-rounds` rounds of up to 90
    minutes each, so it outlives the harness's default. Eight hours does not
    cover every drive: a quota sleep (up to `DRIVE_PR_QUOTA_MAX_SLEEP_SEC`,
@@ -992,7 +1051,9 @@ could forge or forget.
      captured output.
    - exit `0` inside the window → the drive already reached a terminal state;
      report its own reason.
-   - still running → armed. Do not poll.
+   - still running → armed. Go on to step 6 and report; poll only after
+     that report, and only if keeping a Codex host session alive is
+     required for the command to continue (below).
 6. **Name the workspace, report and stop.** When step 4 found the drive
    `armed`, or step 5 found it still running (not refused, failed or already
    finished), name the workspace for the driving stage, in `<tree>`, with the
@@ -1024,14 +1085,24 @@ could forge or forget.
    and can be opened for append with `bun "${CLAUDE_SKILL_DIR}/scripts/portable.ts" check-log <path>` before
    quoting it — `drive.ts` prints the path before taking its locks and its log
    writes are best effort — never a `<state dir>` template), and the handles
-   `handles.list` (list) and `handles.stop` (stop). Then end the turn. After handing over, do
+   `handles.list` (list) and `handles.stop` (stop). End the turn only when doing
+   so preserves the driver (see the Codex session lifetime below). After handing over, do
    not touch the drive's state, threads, or worktree: the driver owns them.
 
-Today the one documented pass command is Claude Code's `claude -p`. In
-another agent tool (Codex, for one), do not arm: `arm-drive.ts` answers
-`print` there, so print the command and say why, as `/jig:do-item` does,
-and do not substitute a guessed pass command. A person can put their own
-tool's command after the `--` and run it.
+The documented pass commands are Claude Code's `claude -p` and Codex's
+`codex exec` (§ Running it), and `arm-drive.ts` builds the one of the agent
+tool this session runs in. A Codex session opens a terminal tab where
+Orca can and otherwise receives `spawn`. Poll its command handle once for
+the arm check. If the host ends child processes with the session, keep the
+session alive and poll until the drive ends, or use an external terminal;
+a command handle alone does not prove the drive survives session exit.
+`--pass-model` supports either vendor; `--pass-args` remains Claude Code's
+and is refused for Codex (exit `2`). A Codex pass carries the bypass only on a
+host that set `drive.codex_bypass`; `permissionMode` says `inherited` on any
+other. In any other agent tool, do not arm:
+`arm-drive.ts` answers `print` with Claude Code's command, so print it, say
+why, and do not substitute a guessed pass command. A person can put their
+own tool's command after the `--` and run it.
 
 ### Driver pass: you are headless and one-shot
 
@@ -1123,6 +1194,7 @@ state directory holding all of it: read that file before acting.
 | `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14` | Act on the open work; if you decide not to, end the handoff narrative with one paragraph saying what you decided and why — the stop prints it |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
+| `RE-ARMED TO DECIDE PROVISIONALLY` | At the `wide` level, parked items of the class `escalated` that nobody answered are unparked, one `[kind] key` line each | Check each again first: the level read afresh (an off-hours window may have closed), and `decide`'s `wide` conditions (no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence; for a thread, a recorded `escalate` ruling of the class `escalated`). Where one fails, park the item again under its class (§ 4). Otherwise decide it this round, provisionally and with a reply outcome only: a thread with `provisional-reply.ts`, a finding with `decide`'s ruling recorded as `decide-provisional` (§ 8) |
 
 ### Autonomy: what the pass decides without a person
 
@@ -1138,21 +1210,59 @@ bun "${CLAUDE_SKILL_DIR}/../../shared/autonomy.ts"
 
 It prints the effective level and where it came from: the repository's
 `level`, a person's own layer or the environment, capped by the repository's
-`max_level`. A session with a person in it (no `$DRIVE_PR_TARGET`) reads
-`attended` unless that person chose a level. `wide` is accepted by the
-configuration and acts as `unattended`.
+`max_level`. Inside one of the `autonomy.off_hours` schedule's windows (the
+machine's local time) a driver pass runs at the off-hours level instead,
+capped the same way, and the line tags it: `autonomy: wide (off_hours) (…)`.
+A session with a person in it (no `$DRIVE_PR_TARGET`) reads `attended`
+unless that person chose a level, and never runs at the off-hours level.
 
-| Decision | `attended` | `unattended` |
-|---|---|---|
-| File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | `file-issue` confirms first | File it: the body says which skill filed it, from which pull request and why |
-| Defer a finding where no adapter can file | Record it in the pull request's `## Deferred` section ([deferral protocol](../resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker)) | Same |
-| A technical choice `decide` rules reversible inside one pull request | Decide and record | Same |
-| A technical choice `decide` would rule underdetermined | Rule it `underdetermined`: name the missing evidence in a spike issue, or a comment on the existing issue | Gather the missing evidence within the round's budget, then apply the ladder; a call it still cannot settle is escalated |
-| A bot-review thread the arbiter rules `escalate` | Park under its `class:` (§ 4) | Same |
+| Decision | `attended` | `unattended` | `wide` |
+|---|---|---|---|
+| File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | `file-issue` confirms first | File it: the body says which skill filed it, from which pull request and why | Same |
+| Defer a finding where no adapter can file | Record it in the pull request's `## Deferred` section ([deferral protocol](../resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker)) | Same | Same |
+| A technical choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
+| A technical choice `decide` would rule underdetermined | Rule it `underdetermined`: name the missing evidence in a spike issue, or a comment on the existing issue | Gather the missing evidence within the round's budget, then apply the ladder; a call it still cannot settle is escalated | Same |
+| A technical choice `decide`'s last row would escalate: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional: record it as `decide-provisional` (§ 8) |
+| A bot-review thread the arbiter rules `escalate` with `class: escalated` and no recorded human decision behind it | Park under `escalated` (§ 4) | Same | Reply provisionally with a reply outcome, resolve and record it (below) |
+| A bot-review thread the arbiter rules `escalate` with any other class | Park under its `class:` (§ 4) | Same | Same |
+| Re-arm after `HITL_PARKED` with parked items unanswered | Never | Never | The re-arm hands the unanswered `escalated` items to the first round to decide provisionally; one item of any other class refuses it |
 
 The registry's classes are on no row: no level decides them, and a park
 outside them is refused (§ 4). Every decision taken is recorded where a
 person can reverse it (§ 8).
+
+**A provisional reply** answers a thread with `rejected`, `wont-fix` or
+`deferred` and the rationale, never a fix, so it never grows the diff.
+Write the reply as § 3 does, then post, record and resolve it in one call:
+
+**exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/provisional-reply.ts" <THREAD_NODE_ID> [PR] --class escalated --what "<what was decided, one line>"
+```
+
+It refuses (exit `3`) below `wide`, and unless the arbiter's ruling you
+recorded for the thread (its `rule` record, § 4) is `escalate` with the
+class `escalated` and no person's decision behind it: park the thread under
+its class instead (§ 4). A re-run completes a reply already posted, with
+its posted outcome and at any level, and refuses (exit `3`) one a person
+commented after. The reply carries
+`**provisional**` after its outcome token and says how to reverse it. A
+thread standing on a provisional reply is never triaged again:
+`triage-thread.ts` refuses it (exit `3`), `reconcile-replied-threads.ts`
+skips it, and the gate counts it as no work even when a person unresolved
+it. A person reverses it by commenting on the thread (or, for a `decide`
+ruling, on the pull request with a line `answer <key>: …`) as an owner,
+member or collaborator, whatever the comment says: before the next gate,
+the driver records the reversal, unresolves the thread and parks the item
+under `human-thread`, so it waits for that person. Once they answer and the
+drive is re-armed, supersede the provisional reply with the outcome their
+answer leads to (`reply-to-thread.ts`), then triage the thread as usual;
+`triage-thread.ts` refuses only while the provisional reply stands. A
+`**deferred**` provisional reply links the follow-up issue or the pull
+request's `## Deferred` section, as any deferral does. An unresolve alone
+changes nothing. The morning report (§ Running it)
+lists every provisional decision first.
 
 ## One round
 
@@ -1170,7 +1280,7 @@ carries the specifics.
 
 | `$DRIVE_PR_ROUND_TASK` | `…_DETAIL` | What this round is |
 |---|---|---|
-| `ci-repair` | the failing check names, as CI reported them | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
+| `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
 | `conflict-resolve` | the PR's base ref name | The PR conflicts with its base and has **no** workable finding. Merge the base in and resolve. |
 
 **Expect § 1's gate to answer `CONVERGED` (exit 3) on a `ci-repair` round, and
@@ -1193,11 +1303,25 @@ exit does, so the driver's own next gate read decides what to dispatch next.
 Then:
 
 - **`ci-repair`** — repair CI on this PR, with the repository's CI-repair
-  skill if it has one: read the failing runs' logs, reproduce locally where
-  possible, fix the cause. Fix every failing check, not only the first. Then
-  pick up at **§ 5**: sync the base, resolve and run the round's validation
-  plan over the cumulative tree, and **§ 6** to commit and push. §§ 2–4 have
-  nothing to enumerate — the review converged before you were dispatched.
+  skill if it has one: read the logs of the runs `$DRIVE_PR_ROUND_FAILED_RUNS`
+  names, reproduce locally where possible, fix the cause. Fix every failing
+  check, not only the first. Then pick up at **§ 5**: sync the base, resolve and
+  run the round's validation plan over the cumulative tree, and **§ 6** to
+  commit and push. §§ 2–4 have nothing to enumerate — the review converged
+  before you were dispatched.
+
+  When the log shows the failure is not in the code (a lost runner, a network
+  error), re-run the failed runs instead of committing:
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run rerun <id> --failed`,
+  for the ids that variable names and no other run on the head. A run with only
+  cancelled checks has no failure to repair; re-running it leaves a sibling
+  failed run on the head's check list. A cancelled run containing failed jobs
+  can be named in the variable and re-run. **Never re-run a run the variable
+  leaves out.** A re-run
+  replays the run's event, so one created while the CI hold's label was on meets
+  the hold again; the variable omits those, and is empty or unset when no run
+  could be named safely. Then re-run nothing, and read the failing checks' runs
+  from `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run list --commit <head>`.
 - **`conflict-resolve`** — run § 5's `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`, which will report exit
   `9`; merge the base and resolve the conflict with
   [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), starting
@@ -1213,9 +1337,18 @@ Then:
   rest of § 5 and § 6 as normal. A conflict it records as `escalate` is the human hand-off below: it
   aborts the merge, verifies the tree is clean, and exits non-zero.
 
+  `base-sync.ts` exiting `3` on `MERGE_HEAD` means the tree held that merge
+  before this pass started. Run that skill's Step 2 and Step 5 over it: where
+  its check passes and `MERGE_HEAD` is still the base's tip, the merge is
+  resolved, so go on from its Step 6. Otherwise abort it as its Step 8 does,
+  verify the tree is clean, and start from its Step 1. A merge this round
+  started and does not conclude is aborted for you when the pass ends, and the
+  round has achieved nothing.
+
 Either way **push, or the round achieved nothing the driver can observe** —
 the driver re-gates from the top afterwards and reads the remote head, not
-your worktree. Do not mark the PR Ready from a repair round (§ 7 is a
+your worktree. A re-run of the named runs is the one other thing it observes,
+through their checks. Do not mark the PR Ready from a repair round (§ 7 is a
 completed-review-round duty), and do not resolve threads you did not answer.
 
 If the repair turns out to need a human — a conflict whose correct resolution
@@ -1997,7 +2130,7 @@ repeated `--fingerprint` flags and answer in a single comment.
 
 The **fix-dependent** outcomes — `accepted` and `moot` — are **held exactly like
 an accepted thread**, with one difference: a thread's reply is already posted
-to GitHub by hold time, so its text survives independently of this state file.
+to GitHub by hold time, so its text survives independently of this state.
 A finding's is not — `bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts" --pushed-sha` can't legally run
 until step 6, after the push, so at hold time the reasoning exists nowhere but
 your own context. `hold` needs it on stdin, not just `--outcome` — and that
@@ -2258,10 +2391,10 @@ loop cannot see, such as converging and wanting the local gates and the
 |---|---|---|
 | `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which — do not infer it from the code. Continue |
 | `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge <remote>/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
-| `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
+| `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For an open merge in a `conflict-resolve` round, § 0 says what to do. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
 | `11` | Another live session holds this working tree's tree lease (never under `--check`) | Stop, as for `finish-round.ts`'s `11` below |
-| `2` / `1` | Usage error, including a worktree that drives a branch other than the PR's head branch (a detached tree drives the branch its attach recorded) / a step failed | Fix the invocation, or read the step's diagnostic. For the branch mismatch in a driver pass (`$DRIVE_PR_TARGET` set), stop the round and report it: the attach that repairs it runs only when the PR is re-armed, since a standalone attach refuses (exit `11`) while this pass's own driver holds the tree. With no live driver, attach the PR (`bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`), which checks out its head branch or, when another tree holds it, its head commit detached; if the attach refuses, stop and report it for a human. Never rename the workspace's branch, create a branch with another name, or move another worktree to make the check pass |
+| `2` / `1` | Usage error, including a worktree that drives a branch other than the PR's head branch (a detached tree drives the branch its attach recorded) / a step failed | Fix the invocation, or read the step's diagnostic. For the branch mismatch in a driver pass (`$DRIVE_PR_TARGET` set), attach the PR (`bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`): run by this pass, under the environment its driver handed it, the attach takes its driver's locks as its own and repairs the tree as the driver's attach does; if it refuses, stop the round and report it. With no live driver, attach the PR (`bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`), which checks out its head branch or, when another tree holds it, its head commit detached; if the attach refuses, stop and report it for a human. Never rename the workspace's branch, create a branch with another name, or move another worktree to make the check pass |
 
 You do not have to remember to ask: § 1's gate already measured the drift and
 printed it (`base.drift` in its JSON, a `BASE:` line on stderr) whenever there
@@ -2517,7 +2650,10 @@ That is the whole of step 6. It performs, in this exact order:
    refused to reply to (e.g. `commentsTruncated` — § 4 below);
 2. `bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure` — in a repository with a hold label, after observing
    all required PR-open checks, adds or confirms this drive's durable
-   ownership of the label (without one, prints `disabled`);
+   ownership of the label, adopting a live label it holds no record of
+   (`adopted`), which a failed push does not roll back (without one, prints `disabled`; with the label
+   absent, those checks incomplete and the PR reading `CONFLICTING`, where
+   they cannot run, prints `conflicting` and holds nothing);
 3. `bun "${CLAUDE_SKILL_DIR}/scripts/guarded-push.ts"` — the push, with the PR's liveness re-checked at the
    instant of the push and an explicit refspec at its own head branch;
 4. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" stamp-held` — stamps the pushed SHA onto the holds *this*
@@ -2554,7 +2690,7 @@ returned, which is the case this rule covers.
 |---|---|---|
 | `0` | Pushed, stamped, head-synced, batch drained | Continue to step 7 |
 | `3` | Refused *before* pushing: dirty tree, unconcluded git operation, unreadable tree | Commit or discard the leftovers, resolve or abort the reported Git operation, then re-run |
-| `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the PR-open required checks have not completed, the head moved, an interrupted hold release is still waiting for its full CI, or a hold label someone else owns is present | Read the `ci-hold:` line, wait for the checks it names, then re-run; leave an externally owned hold label to whoever added it |
+| `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the required checks the hold waits for have not completed on a PR not read as conflicting with its base (an unreadable mergeability included), the head moved, an interrupted hold release is still waiting for its full CI, or the timeline does not yet show a label change | Read the `ci-hold:` line, wait for the checks it names, then re-run |
 | `5` | The PR is no longer open | Two cases, both terminal: `guarded-push.ts` itself refused because the PR was already closed/merged (nothing was pushed), or the push succeeded and the PR closed/merged during the head-sync wait that follows it (`report.pushed` is `true`). Either way, stop — do not resolve anything against it. See [terminal-states.md](references/terminal-states.md) |
 | `2` | Usage error: an unknown flag, an extra argument, or no PR could be resolved | Fix the invocation and re-run; nothing ran |
 | `6` | Pushed and stamped, but at least one held item was **refused** | Each refusal is named with the refusing script's own exit code and diagnostic. Reconcile it via § 3 — re-hold if the reply still stands, resolve under whatever outcome actually applies if it does not — then re-run |
@@ -2635,6 +2771,14 @@ bun "${CLAUDE_SKILL_DIR}/scripts/mark-ready.ts" [PR] --round N --reason "round N
 or when the repository marks Ready only at convergence or never, it prints
 `not-due` and does nothing.
 
+When it prints `marked`, move the Orca workspace card to the review stage with
+the pull request linked, as `drive.ts` does itself; outside Orca it does
+nothing, and an Orca failure only warns (exit `0`):
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-review --pr <PR>
+```
+
 **At convergence, in an interactive round.** When § 1's gate answers
 `CONVERGED` (exit 3) on a PR that is still a draft, there is no round to work,
 but the transition may still be owed: under `pull_requests.mark_ready:
@@ -2681,9 +2825,11 @@ request's `## Deferred` section. A thread's outcome reply is its whole
 record. Add each of the others to the drive's
 `## Decisions taken unattended` when you take the decision, not when you
 report, one JSON object on stdin with its class
-(`file-issue`, `defer-without-tracker`, `decide-reversible` or
-`decide-underdetermined`), what was decided, the record's url and how to
-reverse it, in one line each:
+(`file-issue`, `defer-without-tracker`, `decide-reversible`,
+`decide-underdetermined`, or at `wide` `decide-provisional` with the `key`
+a person answers it on), what was decided, the record's url and how to
+reverse it, in one line each. A provisional reply is recorded by
+`provisional-reply.ts` itself, as `provisional-reply`:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
@@ -3004,7 +3150,8 @@ Under Claude Code, the plugin's turn-budget hook
 round-trips off the transcript and injects a wrap-up instruction some turns
 short of the cap. Under Codex it counts nothing: Codex's transcript is not in
 the format it reads, so it reports could not check and no warning ever comes
-([plugin README § Codex notes](../../README.md#codex-notes)). **When such a
+([plugin README § Codex notes](../../README.md#codex-notes)): a Codex pass
+has no turn cap, and the pass deadline is what ends one that runs on. **When such a
 warning fires, finish only the step in flight, run `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" handoff
 [PR]`, report, and end the turn** — do not open another triage-fix-validate
 cycle inside that margin. Why the counting is an approximation:
@@ -3202,11 +3349,14 @@ clean-tree gate exists because the first two are claims about the remote:
 neither sees an edit no round shipped, and a merge is exactly when an unshipped
 local edit dies silently with the worktree.
 
-It posts once per head. The pre-post sweep settles every sequential re-run; the
-concurrent case it cannot (two drivers both pass the sweep before either posts)
-is settled afterwards instead — comment ids are monotonic, so the lowest id
-carrying the head's marker wins and every other driver withdraws its **own**
-comment.
+It posts once per head: the announcement is a claim per pull request and head
+of the shared forge-claims module, posted only while its merge-readiness checks
+hold. The pre-post sweep settles every sequential re-run; the concurrent case
+it cannot (two drivers both pass the sweep before either posts) is settled by
+the claim's read-back instead — comment ids are monotonic, so the earliest
+trusted announcement of the head wins and every other driver withdraws its
+**own** comment. A read-back that never lists the comment it posted withdraws
+it and exits `1`.
 
 It re-reads the PR's `state` **and** head at each of the points below, and the
 same condition means the same thing at every one: a PR that is no longer `OPEN`
@@ -3356,13 +3506,14 @@ is the whole tree: a nested script's own `spawnSync` grandchild dies with it.
 **judgment** — Choose the authorized note/directive for the situation; directive enforcement and the exact CLI forms are fixed.
 
 `lib/state/mailbox.ts` and its CLI (`mailbox.ts`) are a small, one-way-per-file
-channel from a live session — a human, or the orchestrating session that
-spawned this drive — toward a running `drive.ts`, in the same working tree.
-It is the only way to get a message *into* a running headless drive short of
-`bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop` (which also stops the active pass). Append-only JSON Lines logs live
+channel from a live session — a human, the orchestrating session that
+spawned this drive, or `drives.ts`'s stop — toward a running `drive.ts`, in
+the same working tree: the one way to steer or stop a running headless drive.
+Append-only JSON Lines logs live
 under the gitignored `.context/drive-mailbox/`: `inbox.jsonl` (any sender may
-append a `note` or a `directive`) and `outbox.jsonl` (the driver alone appends
-acks and responses to it). `drive.ts` folds directive state at round
+append a `note` or a `directive`) and `outbox.jsonl` (the drive's side appends
+acknowledgements and responses to it, and the driver an `ack` of each
+directive it acted on). `drive.ts` folds directive state at round
 boundaries. Notes stay in the inbox until a pass chooses to read them with
 `bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" check` (§ below); they do not control the drive.
 
@@ -3402,7 +3553,13 @@ bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send <pr> --kind directive --from <
 **`pause` and `stop` control the driver's round loop, from `drive.ts` itself.**
 `pause` holds the driver's locks and heartbeat while it polls for
 `resume --target pause`; `stop` takes precedence and exits at the next
-checkpoint. A running pass is allowed to complete, including its post-round
+checkpoint. A `stop` may name a **driver generation**: the number each
+driver draws at its start, prints (`driver generation <n>`) and carries in
+its lock's claim, which `drives.ts` lists. A stop naming a generation ends
+that driver alone, and a later driver ignores it. A stop naming none ends
+every later driver in the tree too, until `resume --target stop`, which also
+withdraws every addressed stop. The driver appends an `ack` of the stop or
+pause it acted on to the outbox, which the `outbox` command below prints. A running pass is allowed to complete, including its post-round
 Ready transition, before the next checkpoint — the driver checks before a
 status gate, after that gate, immediately before any pass dispatch, during a
 quota wait, after every completed pass regardless of its outcome (including a
@@ -3413,8 +3570,19 @@ remain one in-flight phase; use `hold-push` for a push gate. An unreadable
 mailbox stops the drive with exit `1`, never treating unknown directives as
 clear. The pause wait is bounded by `$DRIVE_PR_PAUSE_MAX_SEC` (default 1800
 seconds, valid range 1–86400); on expiry the drive exits `19` and releases its
-locks. A graceful stop exits `18`. `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>` requests immediate cancellation of the active
-pass, followed by lock release only once termination is witnessed.
+locks. A graceful stop exits `18`. `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>` sends the live driver a `stop` addressed to
+its generation and marked `now`: the driver cancels its active pass at once,
+acknowledges the stop, and releases its locks only once termination is
+witnessed.
+
+**exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send <pr> --kind directive --from <you> --command stop --generation <n>
+bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send <pr> --kind directive --from <you> --command stop
+bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send <pr> --kind directive --from <you> --command resume --target stop
+bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" outbox <pr>
+```
 
 A pass may run `bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" check <pr>` to read unseen notes — optional,
 advisory, and never a reason to change what a round does on its own; it
@@ -3457,7 +3625,7 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   `drive-status.ts` gate runs, so a push that lands without one reads as a
   match even though it was never the push the hold was waiting on — the stamp
   is what actually closes that. Per-hold rather than PR-global because this
-  state file is shared by every driver of the PR, so one pointer vouched for
+  state is shared by every driver of the PR, so one pointer vouched for
   holds whose fix a push never contained. The raw mutation has
   no notion of which push justifies it either way. Just before resolving, it
   re-reads the thread and refuses (restoring the hold) when anything landed

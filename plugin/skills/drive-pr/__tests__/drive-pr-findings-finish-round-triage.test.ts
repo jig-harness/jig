@@ -20,6 +20,7 @@ import {
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
+import { writeState } from "./state-rows.ts";
 
 useDrivePrSuite();
 describe("finish-round.ts", () => {
@@ -186,7 +187,7 @@ describe("finish-round.ts", () => {
     // `roundBase`, the FIRST drive-state.ts read this guard makes) swallowed
     // its own subprocess failure into `''` — indistinguishable from "no round
     // has verified yet" — and silently fell back to the cumulative
-    // merge-base, so a fully corrupt state file sailed straight past
+    // merge-base, so a fully corrupt stored state sailed straight past
     // `roundBase` and was only ever caught later, at the `parked-keys` read.
     // Now the SAME corruption is caught here first, before either of those
     // later reads is even attempted.
@@ -197,12 +198,9 @@ describe("finish-round.ts", () => {
         },
         seedState: async ({ stateDir }) => {
           // Malformed from the start — no well-formed write precedes this
-          // one. `drive-pr-999.json` is the exact per-PR state file every
+          // one. PR 999's state row is the exact per-PR state every
           // `drive-state.ts` subcommand against PR 999 reads.
-          writeFileSync(
-            join(stateDir, "drive-pr-999.json"),
-            '{"pr": 999, "rounds"',
-          );
+          writeState(stateDir, "999", '{"pr": 999, "rounds"');
         },
       });
       expect(r.exitCode).toBe(1);

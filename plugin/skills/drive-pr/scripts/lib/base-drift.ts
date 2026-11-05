@@ -60,10 +60,28 @@ import { definedFields } from "../../../../shared/defined-fields.ts";
  * construct that merge tree either — see `pathCollisions` below.
  */
 
+import { fail } from "./cli.ts";
 import { drivenBranchName } from "./driven-branch.ts";
 import { consumerRoot, remoteName } from "../../../../shared/consumer.ts";
 import { gitCallTimeoutSeconds, readTimeoutEnv } from "./proc.ts";
 import { repoOfUrl } from "./repo-url.ts";
+
+/**
+ * `base-sync.ts`'s refusal (exit 3) of a tree already holding a git operation,
+ * whose every diff would compare against what that operation left. A
+ * conflict-resolve round did not start an open merge, and is told where the
+ * skill says to finish it or start it over.
+ */
+export function refuseOpenOperation(marker: string): never {
+  fail(
+    3,
+    `base-sync: an unconcluded git operation (${marker}) is already open in this worktree.`,
+    process.env.DRIVE_PR_ROUND_TASK === "conflict-resolve" &&
+      marker === "MERGE_HEAD"
+      ? "This conflict-resolve round did not start it: finish that merge, or abort it and start over, as SKILL.md § 0 says."
+      : "Conclude or abort it first: git merge --abort / git cherry-pick --abort / git revert --abort / git rebase --abort",
+  );
+}
 
 /** The measurement. Counts are uncapped; `overlap` is a bounded SAMPLE. */
 export interface BaseDrift {

@@ -1,6 +1,6 @@
 ---
 name: followup
-description: "After a Jig pull request merges, settle what the merge still owes: the tracker item and deferred findings, the release tags, the website, status pages, consumer repositories and cleanup; or, before the merge, list what it will owe."
+description: "After a Jig pull request merges, settle what the merge still owes: the tracker item and deferred findings, the release tags, the website, status pages, consumer repositories and live drivers and cleanup; or, before the merge, list what it will owe."
 argument-hint: "<PR number>"
 allowed-tools:
   - Read
@@ -55,6 +55,45 @@ gh pr view "$PR" --json number,title,state,mergedAt,mergeCommit,baseRefName,head
   alone: a fetch that updates them refuses a tag origin holds elsewhere
   ("would clobber existing tag"), and [B](#b-tagging-the-release) reads
   origin's tags, not this clone's.
+
+### Claim the follow-up
+
+The dispatcher (`jig dispatch`, [the plugin's README](../../../plugin/README.md#the-dispatcher))
+starts this pass by itself for a merged pull request, and a marker comment
+on the pull request is what keeps two runs from settling the same merge.
+Before any arm acts, claim it:
+
+```bash
+jig dispatch marker claim "$PR"     # prints {"pr": …, "comment": <id>}
+MARKER=<id>
+```
+
+Only exit `0` means this run holds the follow-up. Exit `3` means an earlier
+marker holds it: another run has it. Any other exit (`1` the forge could not
+be read, `2` the marker is missing or not trusted) proves no ownership. On
+every nonzero exit stop here and say so; retry later rather than go on. When the dispatcher started this session, its
+prompt names the marker it posted: that claim is this session's, so use
+that id as `MARKER` and post none of your own.
+
+Before each act that writes outside the pull request (an issue closed, a
+release workflow run, a tag pushed), check the claim again, and stop on any nonzero
+exit:
+
+```bash
+jig dispatch marker check "$PR" --comment "$MARKER"
+```
+
+When the pass ends with every arm settled, a claim you posted is marked
+done, so the dispatcher never starts the follow-up again:
+
+```bash
+jig dispatch marker done "$PR" --comment "$MARKER"
+```
+
+A session the dispatcher started records its result with the
+`jig dispatch result` command its prompt names instead. A run that stops
+short leaves its marker as it is: the dispatcher reports it, and a person
+marks it done or deletes it to have the follow-up run again.
 
 ## Step 1: the arms
 
@@ -233,6 +272,9 @@ merges change it. Three questions:
    fact. A match the merge did not update is OWED, and the diff in 2 cannot
    show it, because that page did not change.
 
+Read the [voice guide](../../../docs/VOICE.md) before writing a fix to the
+site's copy or to a visitor document.
+
 When the site itself changed (`website/`), also check that
 [design/website.md](../../../design/website.md) still describes it and that
 its build order no longer lists what the merge built.
@@ -274,10 +316,16 @@ decision for a person (AGENTS.md, HITL decisions): flag it.
 
 ### F. Cleanup
 
+`jig gc` ([resource GC](../../../design/resource-gc.md)) reports worktrees
+and drive state, and collects a worktree only if Orca manages it, and only on a machine
+whose `gc.orca.command` names Orca
+([plugin/gc/README.md](../../../plugin/gc/README.md#worktrees-orca-manages)),
+and does not inventory local branches; this repository's `gc.kinds`
+registers no scratch prefixes, so it does not see `.context/` notes. Until a collector covers a leftover, it stays owed here.
+
 | Thing | Check | Teardown |
 |---|---|---|
 | A live driver on this pull request | `bun plugin/skills/drive-pr/scripts/drives.ts` | `drives.ts --stop <PR>` |
-| The driver's log | listed by `drives.ts` | keep it; it is the record |
 | The local branch | `git branch --list <headRefName>` (Step 0). A squash merge leaves it out of `git branch --merged`, so Step 0's `MERGED` state shows only that the pull request's head merged; `git rev-parse <headRefName>` must equal Step 0's `headRefOid` for the branch to hold nothing else | delete it, only when its tip is `headRefOid` and no driver is live in this worktree. Any other tip holds commits the merge does not have: push them to a branch of their own, or ask, before deleting |
 | The workspace's `.context/` notes | what this work wrote there | remove what no later work needs |
 | Scaffolding in the merged diff | a disabled check, a `.only(`, a loosened timeout, a suppression | a follow-up change |
@@ -307,15 +355,36 @@ act:
 | Action | Authority |
 |---|---|
 | Tracker status, closing comment, filing follow-up items (here or for a consumer) | on its own |
+| Moving the merged work's Orca workspace card to `completed` | on its own |
 | Fixing what the pass found in Jig's documents or the site's hand-written text | on its own: one follow-up pull request for all of it, opened as a draft (CONTRIBUTING.md) |
 | Read-only checks: `status.ts`, `tag.ts` (without `--rerun`), `site-diff.ts`, `drives.ts`, `gh run` | on its own |
 | Running the release workflow, creating or replacing a release tag | ask first |
 | Re-running a failed deploy | ask first |
-| Stopping a live driver, deleting a branch or a worktree | ask first |
+| Stopping a live driver, deleting a branch | ask first |
 | Anything in another repository, or anything near the origin-reference boundary | a person decides |
 
+Then show the merge on Orca's workspace board, where the work ran in an Orca
+worktree: the card of the worktree that holds `headRefName` (Step 0) moves to
+`completed`, with what arm B found the release still owes as its comment, in
+one line (for example `merged; release 0.121.0 waits on the release run`, or
+`merged; released as v0.121.0`). Find that worktree in
+`git worktree list --porcelain` (the entry whose `branch` is
+`refs/heads/<headRefName>`) and skip this when none holds it. Outside Orca
+the script does nothing, and an Orca failure only warns (exit `0`). Write
+the line alone to `.context/card-comment.md` with the file editor, never
+into the command: the report can carry quotes, backticks and `$(…)`, and the
+shell would run them. `"$(cat …)"` is substituted once and not expanded
+again:
+
+```bash
+bun --cwd "<that worktree>" "$PWD/plugin/shared/orca-board.ts" completed --comment "$(cat "$PWD/.context/card-comment.md")"
+```
+
 Close with what is left for a person, by name. When every arm is NOT OWED,
-say so in one line: an honest "nothing is owed" is a result.
+say so in one line: an honest "nothing is owed" is a result. Then settle the
+claim ([Claim the follow-up](#claim-the-follow-up)): mark your marker done,
+or, in a session the dispatcher started, record the result its prompt
+names.
 
 ## Before the merge: preview
 
@@ -324,7 +393,22 @@ request's diff (`origin/main` and its head instead of `SHA^1` and `SHA`) and
 records what the merge will owe, carrying out nothing: the
 `## Out-of-tree follow-ups` section of the description, the deferred
 findings still to file, the site pages the change will reach, the cleanup
-inventory. The post-merge pass then checks a list instead of rebuilding it.
+inventory, and first of all the pull request's **provisional decisions**: the
+calls a drive took at the `wide` autonomy level that a person may still
+reverse before the merge. List them from the morning report
+(`bun plugin/skills/drive-pr/scripts/drives.ts --report --since <when the
+pull request opened> --json`, its `provisional` entries for this pull
+request), each with its thread or record and whether it stands or was
+reversed, so the person merging reads them before they merge. The report
+lists only the pull requests the signed-in account authored or wrote a drive
+ledger on, so a pull request someone else opened and drives from another
+clone may be missing: when its entry is absent, read that pull request's
+drive ledger comment (`<!-- drive-pr-ledger -->`) and its provisional replies
+directly rather than listing none. A provisional entry whose status is
+`unread`, or a report that exits 0 with errors in its top-level `unread`
+field, is not a complete inventory: say which part is unread and retry before
+the merge, never present the list as complete. The post-merge pass then
+checks a list instead of rebuilding it.
 
 Building the head for `site-diff.ts` runs the pull request's code (its
 install and the site's build scripts) with your credentials. Run it only on a

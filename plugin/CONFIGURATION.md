@@ -47,7 +47,8 @@ Contents: [the file](#the-file) ·
   are strict instead: there a misspelt key would silently keep the default it
   was written to change, so it is an error. They are `pull_requests`,
   `issue_tracker.states` (keys are canonical states),
-  `issue_tracker.labels` (keys are label roles), `resolve_conflicts`
+  `issue_tracker.labels` (keys are label roles), `review.lenses` (including
+  each `triggers` entry), `resolve_conflicts`
   (including each `generated` entry), `reflection`, `specs`, `verify` and `code_stats`
   (including each `areas` entry, and `kinds`, whose keys are kinds). In `review.taxonomy` every
   key other than `provenance_label` and `epic_label` is read as a list of
@@ -92,7 +93,7 @@ The skills read their values from up to three
 
 | Layer | Where | Holds |
 |-------|-------|-------|
-| 1. User | `~/.jig/jig.yaml`; `JIG_HOME` moves the `~/.jig` folder | One person's or one machine's values, for every repository: a personal default, a folder shared by all repositories |
+| 1. User | `~/.jig/jig.yaml`; `JIG_HOME` moves the `~/.jig` folder | One person's or one machine's values, for every repository: a personal default, a folder shared by all repositories, how far this host trusts a drive's passes |
 | 2. Repository | `.config/jig.yaml` ([the file](#the-file)); `JIG_OVERLAY` names a different file | The repository's own values |
 | 3. Environment | `JIG__<SECTION>__<FIELD>` variables | One run's values |
 
@@ -132,8 +133,15 @@ Command-line flags, where a script has them, override all three.
   classes a drive may park on, which an environment variable is refused for
   too ([`autonomy`](#autonomy)).
 - **Fields only a user file sets.** [`clones`](#clones-user-file-only)
-  describes one machine, so a repository's file refuses it; an environment
-  variable may still set it for one run.
+  describes one machine, and [`drive.pass_args` and
+  `drive.codex_bypass`](#a-hosts-opt-in-to-bypass) say how far this host
+  trusts a drive's passes. A repository's file refuses these fields with an error
+  naming the field, whatever it sets them to (an empty list and `null`
+  included), and so does a file `JIG_OVERLAY` names, which is the repository's
+  layer. A `drive` section in that layer that is not a mapping (`drive: null`,
+  or `drive:` with nothing under it) is refused the same way, since it would
+  replace the host's whole section. An environment variable may still set them
+  for one run.
 - **Adoption is the repository's file.** A user file alone does not make a
   repository look adopted: `resolve-review-comments` and the tracker scripts
   still refuse to run without `.config/jig.yaml`. The skills that run on
@@ -178,7 +186,9 @@ field only to override the derivation:
 
 ## `review`
 
-How review threads are resolved and how the drive recognises its AI reviewer.
+How review threads are resolved, how the drive recognises its AI reviewer,
+and which [review lenses](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+the `review` skill's semantic tier runs.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
@@ -202,6 +212,9 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 | `review.sticky_marker` | text | `<!-- ai-code-review -->` | drive-pr | Text identifying the reviewer's summary comment. Read only when a reviewer is expected. `DRIVE_PR_STICKY_MARKER` overrides it |
 | `review.reviewed_sha_marker` | text | `ai-reviewed-sha` | drive-pr | Marker for the commit the reviewer reviewed, inside that comment. Read only when a reviewer is expected. `DRIVE_PR_SHA_MARKER` overrides it |
 | `review.severity_formats` | list of `{login, shape, severities}` | none: the [built-in formats](EXTENDING.md#severity-formats) only | drive-pr, resolve-review-comments | How a reviewer writes a finding's severity, so the decline ladder can use it: a reviewer with no built-in format, or words or a shape a built-in format does not read. `login` is the reviewer's GitHub login (`[bot]` optional); `shape` is `bold-token` (`🟡 **Major**`), `badge` (a `![P1 Badge]` image), `html-badge` (an `<img alt="P1">` image), `pipe-fields` (`**category** \| **Major** \| **effort**`) or `icon-fields` (`**<picture>…</picture> Major** · **category** · **effort**`); `severities` maps each of the reviewer's words to `blocker`, `high`, `medium` or `low`. Read before the built-in formats, which still apply to a comment no entry reads, and only on comments that login posted. `null` means not set |
+| `review.lenses.dir` | path | none: only the plugin's seed lenses run | review, do-item | Folder of the repository's own lens files, one Markdown file per lens in the plugin's lens format, read from the base branch. A repository lens keeps its `LENS-NNN` number; the `jig.` prefix is the seed lenses'. A lens file the change under review adds is reported as proposed and not run |
+| `review.lenses.off` | list of lens ids | none | review, do-item | Lenses not to run. `--lens=<id>` still runs one. An id that names no lens stops the review |
+| `review.lenses.triggers` | map from lens id to `{paths, exclude, added_lines, removed_lines}`, each a list | none | review, do-item | Patterns appended to a lens's own trigger, never replacing them, so a repository fits a seed lens to its languages and layout: `paths` and `exclude` are globs, `added_lines` and `removed_lines` regular expressions matched against one changed line at a time. An unknown id, an unknown key or a pattern that is not a regular expression stops the review |
 
 The [resolve-review-comments README](skills/resolve-review-comments/README.md)
 and the [drive-pr README](skills/drive-pr/README.md) explain how these are used.
@@ -239,7 +252,7 @@ is a complete example.
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `repository.base_branch` | branch name, without the remote's prefix (`origin/`) | Derived: the clone's `origin/HEAD` (drive-pr, do-item and gc: the `HEAD` of `repository.remote`), else GitHub's default branch | drive-pr, do-item, review, descar, changelog, docs | The integration branch: where pull requests land. A round diffs against its pull request's own base, so a stacked layer's round covers that layer alone; it diffs against this branch only on a branch with no pull request, and refuses when the pull request's base cannot be read or fetched, or the remote (`repository.remote`) is not the pull request's repository. The required checks come from the protection of the pull request's base and, for a stacked layer, of the branch the stack's bottom layer targets; a walk down the stack stops at this branch, and an unknown integration branch is an error. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it. changelog: the integration branch its release, tag plan, status and `release-access.ts` work on. docs: the base its `last_updated` check compares a branch with, and against which it finds the documents a branch adds; a value that resolves neither as `origin/<branch>` nor as `<branch>` stops the pass (exit 2). Without the field docs does not ask GitHub for the default branch: it takes the first of `origin/HEAD`, `origin/main`, `main`, `origin/master` and `master` that resolves, and skips the `last_updated` check when none does, so set the field when the default branch is named otherwise and `origin/HEAD` is unset |
-| `repository.remote` | git remote name: ASCII letters, digits, `.`, `_`, `-` and `/`; no leading `-`, and none of the sequences a ref name refuses (`..`, `//`, a leading or trailing `/`, a trailing `.`, a component starting with `.` or ending in `.lock`) | `origin` | drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc | The git remote of the clone the skills push to and fetch from. drive-pr: it fetches the pull request's head branch from it to attach the pull request to a working tree (and to place one), fetches the pull request's base from it, diffs against `<remote>/<base>`, derives the integration branch from `<remote>/HEAD`, pushes the round's commits to it, and refuses to fetch or push when the remote's addresses do not name the pull request's repository; the conflict fix it prints names it. do-item: `pr-plan.ts open` measures the change against `<remote>/<base>` and prints the remote (`remote:`) the branch is pushed to. fix-ci: the default of `probe-base.ts --remote`. resolve-conflicts: `<remote>/HEAD` names the default branch, and its merge commands fetch from it. gc: the `worktrees` kind reads a worktree's pull requests and its integration branch (`<remote>/HEAD`) through it, and a detached tree a drive attached through the remote its record names. do-item, work-batch, file-issue, reflect: with GitHub Issues and no `issue_tracker.github.repository`, the remote's address names the repository. Set it when the clone names that remote otherwise (`upstream`, or a fork setup where `origin` is the fork). A person may set it in the user file for every clone; an unusable name, `null` included, is an error naming where it was set, and so is a `repository` section that is `null` or not a mapping |
+| `repository.remote` | git remote name: ASCII letters, digits, `.`, `_`, `-` and `/`; no leading `-`, and none of the sequences a ref name refuses (`..`, `//`, a leading or trailing `/`, a trailing `.`, a component starting with `.` or ending in `.lock`) | `origin` | drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc, jig | The git remote of the clone the skills push to and fetch from. drive-pr: it fetches the pull request's head branch from it to attach the pull request to a working tree (and to place one), fetches the pull request's base from it, diffs against `<remote>/<base>`, derives the integration branch from `<remote>/HEAD`, pushes the round's commits to it, and refuses to fetch or push when the remote's addresses do not name the pull request's repository; the conflict fix it prints names it. do-item: `pr-plan.ts open` measures the change against `<remote>/<base>` and prints the remote (`remote:`) the branch is pushed to. fix-ci: the default of `probe-base.ts --remote`. resolve-conflicts: `<remote>/HEAD` names the default branch, and its merge commands fetch from it. gc: the `worktrees` kind reads a worktree's pull requests and its integration branch (`<remote>/HEAD`) through it, and a detached tree a drive attached through the remote its record names. do-item, work-batch, file-issue, reflect: with GitHub Issues and no `issue_tracker.github.repository`, the remote's address names the repository. Set it when the clone names that remote otherwise (`upstream`, or a fork setup where `origin` is the fork). A person may set it in the user file for every clone; an unusable name, `null` included, is an error naming where it was set, and so is a `repository` section that is `null` or not a mapping |
 
 ## `pull_requests`
 
@@ -318,13 +331,61 @@ not resolve it either.
 |-------|------|-------------|---------|--------------|
 | `drive.validation_plan_command` | shell command | The plan is `gates.command` alone | drive-pr, fix-ci, resolve-conflicts, review, descar | Reads changed files (one per line) on stdin and prints the validation plan as JSON on stdout. The change-areas skill's resolver prints such a plan from the catalog: `bun <plugin>/skills/change-areas/scripts/resolve.ts --files - --format json`, or the repository's own [composer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) around it |
 | `drive.load_guard_command` | shell command | No load guard | drive-pr | Waits until the machine can take heavy checks |
-| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts | The repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block) and `agent`, through one reader that refuses an area whose globs, labels or `tracker` block are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `resolve-conflicts` also reads each area's `generated[].outputs` and `command` (see `resolve_conflicts.generated`). `determine_agent.ts --catalog` overrides it for one run |
+| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing, no serialized areas | drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts, dispatch | The repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block), `serialize` and `agent`, through one reader that refuses an area whose globs, labels, `tracker` block or `serialize` are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `resolve-conflicts` also reads each area's `generated[].outputs` and `command` (see `resolve_conflicts.generated`), and its history report proposes `serialize` for the areas its conflict hotspots lie in (`history.ts --propose-serialize`). The dispatcher reads the catalog from the default branch as the forge holds it, as it reads its `dispatch` section, so it must be a repository-relative path there; an area marked `serialize: true` has its pull requests driven one at a time ([`dispatch`](#dispatch)). `determine_agent.ts --catalog` overrides it for one run |
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
 | `drive.pass_deadline_retries` | whole number ≥ 0 | `2` | drive-pr | How many passes killed at their deadline one drive restarts from, counted in the drive state across re-arms and takeovers until the drive converges or the pull request closes: the driver reports what the killed pass left in the tree, leaves it there and starts the next round. Past this many it stops with exit `15` and says the budget is spent; `0` stops at the first. A value that is not a whole number of at least 0 stops the drive |
-| `drive.pass_model` | one word: a model id, a Claude Code alias, or a routing tier (`execution`, `strategic`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. A pass command that is not Claude Code's chooses its own model. A value that is not one word stops the drive |
-| `drive.pass_args` | list of words, each a string without spaces, such as `[--permission-mode, bypassPermissions]` | `[]`: the pass command carries no extra arguments | drive-pr, do-item | Extra arguments for a Claude Code pass command: the arm command both skills build carries them before `-p` (`claude --model <model> <words> -p …`), and `drive.ts` adds them before `-p` to a pass command that carries no arguments of its own. A command that carries its own (the arm command, or a re-arm or takeover command a stopped drive printed) is kept as written. The `--pass-args "<words>"` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive: one value, split on spaces, and empty for none. The driver log and the `drives.ts` listing name the [permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) each pass runs in (`inherited` when the command sets none: Claude Code's own settings decide). **What setting it risks:** `--permission-mode bypassPermissions` skips the permission prompts of the unattended passes (explicit ask rules, tools that need a person and checks before removing critical paths still apply), so a pass can then write nearly anywhere, including protected paths such as `.claude/skills/**` that a pass without a terminal is otherwise denied in a prompting mode; what then limits it is the instructions the drive gives it (`guarded-push.ts` pushes to the pull request's branch only, and the bots-only rule keeps it to bot threads), which a pass follows but nothing stops it from ignoring; a repository that needs a mechanical limit adds Claude Code `permissions.deny` rules or hooks. Jig sets nothing here for a repository that did not ask. It cannot hold `--model` (set `drive.pass_model`) or `-p`/`--print` (the drive writes the prompt). A pass command that is not Claude Code's ignores the field and the driver log says so. A value that is not a list of words stops the drive with a message naming the field |
+| `drive.pass_model` | one word: a model id, a Claude Code alias, or a routing tier (`execution`, `strategic`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. The setting is Claude Code's; `--pass-model` also overrides a Codex pass and resolves tiers through `routing.models.codex`. Without that flag, a Codex pass runs on its own `-m`, else the execution tier of `routing.models.codex`, else Codex's own configured model, and any other pass command chooses its own model. A value that is not one word stops the drive |
+| `drive.pass_args` | list of words, each a string without spaces, such as `[--permission-mode, bypassPermissions]`. Only the host's user file or one run's environment sets it | `[]`: the pass command carries no extra arguments | drive-pr, do-item, dispatch | Extra arguments for a Claude Code pass command on this host: the arm command both skills build carries them before `-p` (`claude --model <model> <words> -p …`), and `drive.ts` adds them before `-p` to a pass command that carries no arguments of its own, as the dispatcher's wrapper does to a follow-up's headless pass. A command that carries its own (the arm command, or a re-arm or takeover command a stopped drive printed) is kept as written. The `--pass-args "<words>"` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive: one value, split on spaces, and empty for none. The driver log and the `drives.ts` listing name the [permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) each pass runs in (`inherited` when the command sets none: Claude Code's own settings decide). A headless Claude pass can commit only where its approval source allows it: a permission mode `drive.pass_args` names, or an allow rule of Claude Code's own settings (`--allowedTools`, `permissions.allow`). Where nothing allows the commit, a conflict re-drive stops `9` again at the same change and the dispatcher notifies a person. A repository's file that sets it, an empty list included, stops the drive with an error naming the field; [a host's opt-in](#a-hosts-opt-in-to-bypass) says why, and what the setting risks. It cannot hold `--model` (set `drive.pass_model`) or `-p`/`--print` (the drive writes the prompt), and it cannot end in an option that needs a value, such as `--permission-mode`, since the drive's `-p` would be read as that value; `--pass-args` follows the same rules. A pass command that is not Claude Code's ignores the field and the driver log says so. A value that is not a list of words stops the drive with a message naming the field |
+| `drive.codex_bypass` | `true`, `false`. Only the host's user file or one run's environment sets it | `false`: a Codex pass carries no bypass, and Codex's own configuration decides | drive-pr, do-item, dispatch | Whether a Codex pass on this host runs with `--dangerously-bypass-approvals-and-sandbox`, which means no sandbox and no approvals. An arm from a Codex session writes it into the pass command. The dispatcher admits a Codex account only where it is `true`, for any launch, and says why on every run where it is not ([the machine's dispatch file](#the-machines-dispatch-file)); the launch record keeps what the run judged, so the launched pass does what was admitted. `drive.ts` runs a Codex pass command as given, so one armed without the setting still starts and its driver log says `inherited`. A repository's file that sets it stops the drive with an error naming the field ([a host's opt-in](#a-hosts-opt-in-to-bypass)). A value that is neither `true` nor `false` fails an arm from a Codex session and keeps the dispatcher from admitting a Codex account, naming the field |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
+
+### A host's opt-in to bypass
+
+A drive's pass, and a follow-up's pass the dispatcher starts, runs with nobody at a terminal, so whatever would ask a person
+is denied instead. Under Claude Code's prompting modes that includes every
+write under a protected path such as `.claude/skills/**`; under Codex's
+sandbox it includes a push and a write to the worktree's git directory. A host
+lets its passes skip those checks in its own user file, and nowhere else:
+
+```yaml
+# ~/.jig/jig.yaml
+drive:
+  pass_args: [--permission-mode, bypassPermissions]   # a Claude Code pass
+  codex_bypass: true                                  # a Codex pass
+```
+
+**What you accept.** With bypass on, a pass can do anything this host's
+account can: use every credential it holds, push wherever those credentials
+may push, change any other checkout on the machine, and call anything the
+network lets it reach. So opt in after checking what that account reaches.
+Claude Code's `bypassPermissions` still honours explicit ask rules, tools that
+need a person and the checks before removing critical paths; Codex's flag runs
+with no sandbox and no approvals at all. What steers a pass from there is the
+instructions the drive gives it (`guarded-push.ts` pushes to the pull request's
+branch only, and the bots-only rule keeps it to bot threads), which a pass
+follows but nothing stops it from ignoring. A host that needs a mechanical
+limit puts Claude Code `permissions.deny` rules or hooks in that account's own
+settings, since a pull request can edit the checkout's.
+
+**Why a repository's file cannot say.** It is shared by everyone who clones it,
+so it cannot know what a host's account reaches, and a drive reads it from the
+pull request's own checkout, so a pull request could give its own passes bypass
+or cancel the host's choice. The whole field is refused, not only its
+permission words, because other Claude Code options widen a pass as well
+(`--settings`, `--allowedTools`, `--mcp-config`, `--add-dir`, `--plugin-dir`).
+
+**For one drive.** `--pass-args` on `arm-drive.ts` and `drive.ts`, and a pass
+command given after `drive.ts`'s `--`, are a person or an agent on the host
+choosing for that drive. A re-arm or takeover command a drive prints carries the
+words the drive itself started with.
+
+**What this does not cover.** A checkout's own `.claude/settings.json` is the
+pull request's to edit too, and Claude Code reads it in a pass whatever the host
+chose. As of Claude Code 2.1.311, in a directory it has not been told to trust,
+hooks there run and a `permissions.defaultMode` of `acceptEdits` applies, while
+`bypassPermissions` there and allow rules do not. Treat a drive of a pull request
+you do not trust as running that pull request's code on this host.
 
 ## `autonomy`
 
@@ -343,11 +404,55 @@ says by what. A session with a person in it, rather than a drive's pass
 (`$DRIVE_PR_TARGET` unset), reads `attended` unless that person set a level
 in their own file or the environment.
 
+`off_hours` widens the level during the hours nobody is there to ask: inside
+one of its schedule's windows, a drive's pass runs at `off_hours.level`
+instead, capped by `max_level` like any other choice, and the printed line
+names the effective level and records the off-hours choice and the cap; outside every window the base level
+stands. A person's session never runs at the off-hours level.
+
+```yaml
+autonomy:
+  level: unattended
+  max_level: wide
+  off_hours:
+    level: wide
+    schedule:              # the default once off_hours.level is set
+      - "Mon-Fri 20:00-07:00"
+      - "Sat-Sun"
+      - "Mon 00:00-07:00"
+```
+
+What each level permits:
+
+| Decision | `attended` | `unattended` | `wide` |
+|---|---|---|---|
+| File a tracker issue a skill needs | Confirm first | File it; the body says which skill filed it, from which pull request and why | Same |
+| Defer a finding no tracker adapter can file | The pull request's `## Deferred` section | Same | Same |
+| A choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
+| A choice `decide` would rule underdetermined | Rule it `underdetermined`, naming the missing evidence in a spike issue (or a comment on the existing issue) | Gather the missing evidence, then apply the ladder, escalating a call it still cannot settle | Same |
+| A choice `decide`'s last row would escalate, with no sensitivity flag, no stakeholder category and no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional |
+| A review thread the arbiter rules `escalate` with the class `escalated` and no recorded human decision behind it | Park it | Same | Reply with a provisional `rejected`, `wont-fix` or `deferred`, never a fix; resolve it; list it in the morning report |
+| Re-arm after `HITL_PARKED` with items unanswered | Never | Never | Once every unanswered item is of the class `escalated`, handed on to be decided provisionally |
+
+No level decides a class the registry reserves. A person reverses a
+provisional decision by commenting on its thread (or on the pull request
+with a line `answer <key>: …`) as an owner, member or collaborator; the drive
+then parks it under `human-thread`. An unresolve alone reverses nothing.
+
+**`wide` and `off_hours` are not yet validated.** They ship opt-in as a
+recorded exception to Jig's rule against shipping unvalidated dials, to be
+revisited once a working repository has run them for a month with at least ten counted
+provisional decisions and fewer than one in ten of them reversed before the merge (`loop-metrics.ts`
+reports the share per pull request). Until then, opt in only to take part in
+that measurement.
+
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `autonomy.level` | `attended`, `unattended` or `wide` | `attended`, today's behaviour | drive-pr, resolve-review-comments, file-issue, decide | `attended`: a skill confirms an issue before filing it, and `decide` rules an underdetermined call `underdetermined`, naming the missing evidence in a spike issue (or a comment on the existing issue). `unattended`: `file-issue` files without the confirmation, its body saying which skill filed it, from which pull request and why; `decide` gathers the evidence an underdetermined call lacks within the round's budget, then applies its ladder, escalating a call it still cannot settle. Under both, a deferral no tracker adapter can file goes into the pull request's `## Deferred` section. `wide` is accepted and acts as `unattended`: its column (provisional decisions and off-hours windows) is not built yet |
+| `autonomy.level` | `attended`, `unattended` or `wide` | `attended`, today's behaviour | drive-pr, resolve-review-comments, file-issue, decide | The level a drive's pass decides at outside the off-hours windows, per the table above. `wide` is not yet validated (above) |
 | `autonomy.max_level` | `attended`, `unattended` or `wide` | The repository's own `level`, else `attended` | drive-pr, resolve-review-comments, file-issue, decide | The highest level any layer may choose. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
-| `autonomy.park_classes` | list of distinct class names (lower-case words joined by hyphens) | `ready`, `merge`, `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`, `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`, `escalated`, `human-decision` | drive-pr | The decision classes a drive may park on: the rows of the repository's [human-in-the-loop registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md), by default the template's. Set, it replaces the default list; `escalated` and `human-decision`, which the review arbiter emits, are kept whatever it lists. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
+| `autonomy.off_hours.level` | `attended`, `unattended` or `wide` | Off-hours is off | drive-pr, resolve-review-comments, file-issue, decide | The level a drive's pass decides at inside a window of `off_hours.schedule`, capped by `max_level`. Any layer may set it; the repository's ceiling still bounds it. Not yet validated (above) |
+| `autonomy.off_hours.schedule` | nonempty list of windows | `Mon-Fri 20:00-07:00`, `Sat-Sun` and `Mon 00:00-07:00`, once `off_hours.level` is set | drive-pr, resolve-review-comments, file-issue, decide | When off-hours applies, in the machine's local time zone. A window is `<days> [HH:MM-HH:MM]`: a day (`Mon`), a range (`Mon-Fri`; `Fri-Mon` wraps across the end of the week) or a comma list of those, then optionally times; without times it is those days whole; times alone (`22:00-06:00`) mean every day. An end at or before the start closes the next day, so a window crosses midnight; the days name the day it opens, which is why the default names Sunday night's end, `Mon 00:00-07:00`, on its own. A schedule without a level is an error |
+| `autonomy.park_classes` | list of distinct class names (lower-case words joined by hyphens) | `ready`, `merge`, `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`, `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`, `escalated`, `human-decision` | drive-pr | The decision classes a drive may park on: the rows of the repository's [human-in-the-loop registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md), by default the template's. Set, it replaces the default list; `escalated` and `human-decision`, which the review arbiter emits, and `human-thread`, which a reversed provisional decision is parked under, are kept whatever it lists. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
 
 ## `ci`
 
@@ -361,7 +466,7 @@ in their own file or the environment.
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `issue_tracker.adapter` | adapter name | `github` | do-item, drive-pr, decide, work-batch, dispatch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `github`, `linear` or `jira`. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. `jira` (Jira Cloud, through its REST API version 3) reads `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email address and an API token made for it, and signs every request with them (HTTP Basic authentication); its settings are under `issue_tracker.jira`. A file that sets `issue_tracker.team` without `issue_tracker.adapter` (or with it empty) is refused, since the default adapter has no team: add `adapter: linear` or `adapter: jira` |
-| `issue_tracker.team` | team key such as `ENG` | **Required by the Linear and Jira adapters**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch, dispatch | The key issue identifiers carry (`ENG` for `ENG-123`): the Linear team's key, or the Jira project's key. A Jira project key with `_` in it cannot be used, since a key is a capital letter followed by capital letters and digits. GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
+| `issue_tracker.team` | team key such as `ENG` | **Required by the Linear and Jira adapters**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch, dispatch, jig | The key issue identifiers carry (`ENG` for `ENG-123`): the Linear team's key, or the Jira project's key. A Jira project key with `_` in it cannot be used, since a key is a capital letter followed by capital letters and digits. GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
 | `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch, dispatch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate`. On GitHub Issues, `done`, `canceled` and `duplicate` are an issue closed as completed, not planned or duplicate, and each open state is the label (or, with `issue_tracker.github.states_from: project`, the board option) of that name; `todo` carries no label, so a new issue is in `todo`. On Jira, each name is matched to a status name ignoring case, and a status no name matches is read by its status category (To Do: not started, In Progress: started, Done: completed); `done`, `canceled` and `duplicate` may share one status when `issue_tracker.jira.resolutions` gives each its own resolution. A move takes one transition: the one out of the issue's current status into a status of the state's name, refused (naming the transitions there are) when none or several match. A Jira workflow suits this with a status per state the repository uses, transitions into In Progress, In Review and Done that any status can take, and a resolution field on the Done transition's screen |
 | `issue_tracker.github.repository` | `owner/name` | The repository the git remote (`repository.remote`, else `origin`) points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the repository whose issues the skills work on |
 | `issue_tracker.github.states_from` | `labels` or `project` | `labels` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: where an open issue's workflow state is kept. `labels`: a label per state, named by `issue_tracker.states`. `project`: the option of a Projects board's single-select field; an open issue with no option is in `todo`, and one whose option names no open state is refused; the token then needs the `project` scope (`gh auth refresh -s project`) |
@@ -403,7 +508,7 @@ same), rather than running without the repository's routing and gates.
 | `do_item.scouts` | map from agent to a list of scouts | none | do-item | Scouts that run before each agent. The key is the **agent**, not a label |
 | `do_item.gates` | list of `{labels, paths, skill}` | none | do-item | Review skills that must approve a change before it is pushed, when the issue carries one of the `labels` or the change touches one of the `paths` |
 | `do_item.execution_plan_block` | name | `execution-plan-v1` | do-item | Name of the fenced block in an epic's description that holds its machine-readable execution plan |
-| `do_item.arm_drive` | `auto`, `tab`, `background`, `print` | `auto` | do-item, drive-pr | How `/jig:do-item`'s § Arm the drive and `/jig:drive-pr`'s § Arm start the drive (both through drive-pr's `arm-drive.ts`). `auto`: in a terminal tab of the pull request's workspace where the session can open one (in an [Orca](https://www.onorca.dev) workspace on a macOS or Linux host), and with the session's background execution elsewhere, falling back to the background, and saying why, when Orca refuses the tab or the tab's drive is not listed in time. `tab`: a terminal tab, or a reported failure. `background`: the session's background execution. `print`: the command only, for a person to run. The tab is a fresh login shell of the user's, so `bun`, `claude` and the Claude account or profile come from it, not from the session. A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the drive's command is quoted for a POSIX shell: `auto` arms in the background, and `tab` fails. A session that is not Claude Code's prints the command whatever the setting, and so does a human checkpoint the run has no clearance for |
+| `do_item.arm_drive` | `auto`, `tab`, `background`, `print` | `auto` | do-item, drive-pr | How `/jig:do-item`'s § Arm the drive and `/jig:drive-pr`'s § Arm start the drive (both through drive-pr's `arm-drive.ts`). `auto`: in a terminal tab of the pull request's workspace where the session can open one (in an [Orca](https://www.onorca.dev) workspace on a macOS or Linux host), and with the session's background execution elsewhere, falling back to the background, and saying why, when Orca refuses the tab or the tab's drive is not listed in time. `tab`: a terminal tab, or a reported failure. `background`: the session's background execution. `print`: the command only, for a person to run. The tab is a fresh login shell of the user's, so `bun`, the agent's command (`claude` or `codex`) and the account or profile come from it, not from the session. The tab closes when the drive ends with nothing for a person, and stays open after a park or a failure until the pull request is armed again. A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the drive's command is quoted for a POSIX shell: `auto` arms in the background, and `tab` fails. The drive's pass command is the one of the agent tool the session runs in: a Codex session arms Codex's pass command in a tab or through its managed background command tool. Without that tool, the caller prints the command and reports the limitation; when the host ends children with the session, keep it alive until the drive ends or use an external terminal. A session of any other tool prints Claude Code's command whatever the setting, and so does a human checkpoint the run has no clearance for |
 | `do_item.work_types` | map from a work type to fields of its row in the depth table below | The table's defaults | do-item | How much each delivery station does for an item of each type. An entry overrides single fields and keeps the rest of the row; a type outside the default list must set every field. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, a field the table does not have, and a value outside a field's set. do-item prints the type and its row when it picks up an item |
 
 The routing order and the gates are explained in
@@ -472,6 +577,29 @@ shell must not expand; `--title <text>` is for a caller that starts the
 script without a shell. `--id` is left out for a pull request that serves no
 item.
 
+## `orca`
+
+How the skills show a piece of work on [Orca](https://www.onorca.dev)'s
+workspace board, where the session runs in a terminal Orca opened. Each stage
+of the execution line moves the worktree's card: `do-item` to the
+`in_progress` stage at pickup and to `in_review` when it opens the pull
+request, and `drive-pr` to `in_review` when it marks the pull request Ready;
+`completed` is the stage a post-merge step moves it to. A drive that stops where a
+person must look (a park, a usage-limit stop, a failure stop) marks the card
+unread with the stop's one-line reason as its comment, and moves no column.
+A comment never replaces one a person has not read: while the card is
+unread, the new line is appended to its comment, which Jig's dispatcher
+notifications do too, under one lock per card.
+Outside Orca nothing is read or called, and an Orca failure only warns.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `orca.board` | map from a stage (`in_progress`, `in_review`, `completed`) to a board status id | Orca's own columns, `{in_progress: in-progress, in_review: in-review, completed: completed}` | do-item, drive-pr | The column each stage moves the card to, for a board with custom columns. An entry overrides one stage and keeps the rest; a stage outside this set, or a value that is not a status id (letters, digits, `-` and `_`), only warns and moves nothing |
+
+From the repository root, `bun "<plugin>/shared/orca-board.ts" [in-progress|in-review|completed] [--pr <number>] [--unread] [--comment <text>]`
+moves the card by hand, `<plugin>` being the installed plugin's directory.
+The stage is written with a hyphen there, as Orca's default column is named.
+
 ## `work_batch`
 
 How `work-batch` sizes and ranks a batch of small issues for one pull
@@ -516,8 +644,8 @@ nothing yet
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare under `tracker.flags` | do-item | Flag labels that move the effort up one step |
 | `routing.raise.sizes` | list of labels | The known sizes (`work_batch.sizes`, else `issue_tracker.labels.batch_sizes`, with `review.taxonomy.sizes`) outside `issue_tracker.labels.batch_sizes`; `[large]` where that leaves none | do-item | Size labels that move the effort up one step. A batchable size never raises by default |
 | `routing.raise.reviews` | `true` or `false` | `true` | do-item | Whether an area with a mandatory review (`review.skills` naming a skill) among the areas the item's labels reach through `do_item.agents.codearea_areas`, and every area their `impliedBy` closure adds, moves the effort up one step |
-| `routing.models` | map from a runtime (`claude-code`, `codex`) to `{execution, strategic}`, each the runtime's [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) | `claude-code: {execution: sonnet, strategic: opus}` | do-item, drive-pr | Where a routing tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). A declared runtime row names both tiers and replaces that runtime's default; a runtime with no row gets no model, and its routes are recorded and not applied |
-| `routing.efforts` | map from a runtime to a map from an effort to the runtime's name for it | Each effort as written | do-item | Where a runtime spells an effort differently |
+| `routing.models` | map from a runtime (`claude-code`, `codex`) to `{execution, strategic}`, each the runtime's [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) | `claude-code: {execution: sonnet, strategic: opus}` | do-item, drive-pr, dispatch | Where a routing tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). A Codex pass of a drive runs on the `codex` row's `execution` model. The dispatcher reads the row of the agent a session runs in, which the account's vendor picks: a repository names a model per runtime here, never an agent. A declared runtime row names both tiers and replaces that runtime's default; a runtime with no row gets no model, and its routes are recorded and not applied |
+| `routing.efforts` | map from a runtime to a map from an effort to the runtime's name for it | Each effort as written | do-item, dispatch | Where a runtime spells an effort differently. A dispatched Codex session takes its effort as Codex's `model_reasoning_effort` |
 
 Refused besides: an unknown field in `routing` or `routing.raise`, a name
 that is more than one word (it would not read back from the route record),
@@ -780,10 +908,12 @@ area's paths, the build tools and the database conventions.
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
 `docs`, `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
-`explain`, `red-team`, `resolve-conflicts`, `audit`) detect
+`explain`, `red-team`, `resolve-conflicts`, `audit`, `jig`) detect
 what they need from the repository; set a field only when detection picks
-the wrong thing. `programmatic-execution`, `red-team` and `audit` read no
-field of their own; `audit` checks all the others. `red-team` reads a
+the wrong thing. `programmatic-execution`, `red-team`, `audit` and `jig` read no
+field of their own; `audit` checks all the others, and `jig`'s bug-report
+draft reads `repository.remote` and `issue_tracker.team` to know which of
+the repository's names to replace. `red-team` reads a
 document's kind from its frontmatter `type:` or its headings (`--kind`
 overrides) and takes the agent command for its fresh runs on the command
 line.
@@ -840,13 +970,15 @@ These are set per machine or per run, not committed:
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
 | `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
 | `DRIVE_PR_LEDGER` | `off` makes `drive.ts` drive without the drive ledger on the pull request: no seeding from it, no check for another clone's driver, no writes; `on` or unset uses it ([where its state lives](skills/drive-pr/README.md#where-its-state-lives)) |
-| `DRIVE_PR_STATE_DIR` | State root; rounds, locks and leases live in its `<clone-key>/` subdirectory. An inherited resolved leaf is also accepted. Flat legacy state refuses until explicitly relocated. |
+| `DRIVE_PR_STATE_DIR` | State root: rounds, locks and leases live in its database, `state.sqlite`, keyed by clone, and each clone's log and kept files in its `<clone-key>/` subdirectory. An inherited resolved clone directory is also accepted. A root holding a drive's files directly refuses until they are relocated. |
 | `JIG_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |
 | `JIG_REVIEW_TRIAGE_CONFIG` | The [review-triage file](#the-review-triage-file) to read instead of `.config/review-triage.yaml` |
 | `JIG_GH_CACHE_DIR` | Where cached GitHub answers are kept; default `~/.cache/jig/gh-cache` |
 | `JIG_GH_CACHE` | `off` disables that cache |
 | `GH_CALL_TIMEOUT` | Seconds one `gh` call may take; default 30 |
+| `JIG_MARKETPLACE` | The marketplace `jig upgrade` (and `tools/plugin/setup.ts`) installs the plugin from in an agent tool that lacks it, instead of Jig's repository; a tool registered from another source is then refused |
+| `JIG_SETUP_TIMEOUT_SECONDS` | Seconds one agent-tool command run by `jig upgrade` or `jig doctor` (and `tools/plugin/setup.ts`) may take before it is stopped; default 300 |
 | `JIG_LOG` | How much the scripts' diagnostics say on standard error: `error`, `warn` (the default), `info` or `debug`. At `debug` a failing script also prints the stack of the failure and its causes, with the last 4,096 bytes of a failed command's error output where the failure carries it (`resolve-review-comments`' `gh` calls), and an error dropped on purpose is printed with the reason |
 | `JIG_LOG_FORMAT` | `text` (the default) writes `<script>: <message>`; `json` writes one JSON object per line with the time, level, script, message and fields |
 | `JIG_TRACE` | `1` enables [trace spans](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) for drive passes, waits and commands; files are written under `~/.local/state/jig/traces/<date>/` and `reap-state.ts` reaps trace days older than 14 days |
@@ -902,9 +1034,12 @@ can be reported but cannot be collected.
 
 These settings live only in the user file (`$JIG_HOME/jig.yaml`, default
 `~/.jig/jig.yaml`); they cannot be set by a repository or environment override.
-Run `bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc install` to review the proposed entry, then repeat
-with `--yes` to confirm it and install the scheduler. Installation must run
-from the installed plugin copy, outside a Git checkout.
+Run `jig install gc` to review the proposed entry, then repeat with `--yes`
+to confirm it and install the scheduler (before `jig` is on `PATH`, run
+`bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts install gc`
+from the installed plugin copy; see
+[the `jig` command](README.md#the-jig-command)). Installation must run from
+the installed plugin copy, outside a Git checkout.
 
 | Setting in the user file's `gc` section | Default / meaning |
 |----------------------------------------|-------------------|
@@ -916,16 +1051,19 @@ from the installed plugin copy, outside a Git checkout.
 | `hour` | 4; local hour (0–23) for the daily scheduled run |
 | `collect_day` | 0; local weekday (Sunday 0 through Saturday 6) on which the daily run collects |
 | `min_free_bytes` | 0, disabled; collect on other days when available space in the home filesystem falls below this threshold |
+| `orca.command` | Unset; the absolute path of Orca's command (`orca`, or `orca-ide` on Linux). When set, the worktrees kind tells worktrees Orca manages from plain ones and collects them through Orca ([the collector's README](gc/README.md#worktrees-orca-manages)) |
 
 The job records Bun's executable, the installed command's path, `HOME`,
 `PATH`, `JIG_HOME`, and any explicit `TMPDIR`, `LOCK_ROOT` or `LOCK_NAME`.
+`jig upgrade` keeps what the job records when it rewrites it for a new
+release; `jig install gc --yes` records them afresh.
 Collection uses the same machine-wide heavy-run lock as gate runs. Scheduled
 and child Bun invocations use the plugin's trusted configuration and disable
 checkout environment files and preloads.
 Report-only runs also write receipts, under
-`~/.local/state/jig/gc/<date>/<run-id>.json`. `gc receipts` lists them;
-`gc receipts <date>` lists a day and `gc receipts <run-id>` prints a run.
-Use `gc --json` for the receipt schema on standard output.
+`~/.local/state/jig/gc/<date>/<run-id>.json`. `jig receipts gc` lists them;
+`jig receipts gc <date>` lists a day and `jig receipts gc <run-id>` prints a
+run. Use `jig gc --json` for the receipt schema on standard output.
 
 The available collectors and remaining rollout work are in
 [the collector's README](gc/README.md).
@@ -946,8 +1084,19 @@ repository. What a run may start is the machine's to say, in
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `dispatch.identity` | string: a GitHub login; a Linear user's email or display name; or, on Jira, an Atlassian account id, or an email or display name that matches exactly one user (more or fewer matches are refused) | None: the repository has no pickups | dispatch |
-| `dispatch.states` | nonempty list of [canonical states](#issue_tracker) | `[todo]` | dispatch |
-| `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command | dispatch |
+| `dispatch.states` | nonempty list of [canonical states](#issue_tracker), without `in_progress` (the state `do-item`'s claim moves an item to) | `[todo]` | dispatch |
+| `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command, which claims the follow-up with `jig dispatch marker` as [the plugin's README](README.md#the-dispatcher) says | dispatch |
+| `dispatch.stalled_after` | duration (`90s`, `30m`, `1h`) | `30m`: a claimed item (assigned to `identity` in `in_progress`) with no running session for longer is reported as a stalled pickup, never relaunched | dispatch |
+| `dispatch.blocked_after` | duration | `30m`: a session the dispatcher started that its runtime reports waiting (on a question or a permission prompt) for longer is reported; it keeps its slot | dispatch |
+| `dispatch.drive_rounds_flat` | positive whole number | `3`: a drive the dispatcher launched drifts when its unresolved review threads at the latest round the dispatcher recorded are not below the count this many recorded rounds earlier | dispatch |
+| `dispatch.pickup_within` | duration | `2h`: a pickup the dispatcher launched that has opened no pull request by then drifts | dispatch |
+| `dispatch.followup_within` | duration | `1h`: a follow-up the dispatcher launched that has not ended by then drifts | dispatch |
+| `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below) | dispatch |
+| `dispatch.labels.prefix` | string of at most 39 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch |
+| `dispatch.labels.only_labeled` | `true` or `false` | `false`: every open pull request is read for a drive ledger. `true` limits the dispatcher to the pull requests that carry a label of the set: one that carries none is never read, re-armed or followed up. Refused unless `enabled` is `true` | dispatch |
+| `dispatch.adopt.enabled` | `true` or `false` | `false`: a pull request with no drive ledger is driven only when a person labels it `drive`. `true` turns the adoption rule on (below). Refused beside `labels.only_labeled: true` | dispatch |
+| `dispatch.adopt.authors` | nonempty list of forge logins (a GitHub App's as `<name>[bot]`) | The login the dispatcher reads the forge as, the one the host's sessions open pull requests under: the authors whose pull requests the rule adopts | dispatch |
+| `dispatch.adopt.within` | duration | `168h` (a week): how recently a pull request must have been updated for the rule to adopt it | dispatch |
 
 An item is a pickup when it is assigned to `identity` and in one of
 `states`, and the person who made that assignment can write to the
@@ -957,7 +1106,15 @@ assigned by anyone else is reported and never planned. On Jira an app's
 account, Jira Automation's own included, is never trusted, so a Jira
 Automation rule that assigns an item starts a pickup only when it runs as a
 person. The sessions dispatched for a Jira repository run with the
-`JIRA_EMAIL` and `JIRA_API_TOKEN` of the account `identity` names. A pull request merged
+`JIRA_EMAIL` and `JIRA_API_TOKEN` of the account `identity` names. A
+dispatched `do-item` session claims its item with that identity's
+credentials (assigned to it, moved to `in_progress`), so the tick then
+watches the item among the claimed ones: one more than one running session
+joins to is a double claim, and one idle past `stalled_after` a stalled
+pickup; both are reported and nothing is started for them. A pickup whose
+session ended without claiming the item is not started again until the
+item leaves the dispatch states or its assignment for one run and comes
+back. A pull request merged
 since the follow-up stage's start wants `followup_command`. That start
 (`followup_since`) is the machine's, not the repository's:
 `jig dispatch --followup-since <date>` sets it, and otherwise each run keeps
@@ -965,15 +1122,93 @@ the start the previous run's receipt recorded (the first run starts it at
 its own time), unless the machine file's entry for the repository names
 one.
 
+The expectation fields (`drive_rounds_flat`, `pickup_within` and
+`followup_within`) govern the stages' expectations. A stage outside its
+expectation is reported as drifting, and, where the machine file enables
+`notify` and the run applies, notified once and written to the outcome log
+(a run that only reports writes no row for it); the dispatcher never acts on drift, and never changes these
+values itself: when a class keeps recurring on the dashboard, the change is
+a person's, through `reflect` and `review-reflections` (see
+[the plugin's README](README.md#the-dispatcher)).
+
+The dispatch labels (`dispatch.labels`) put the dispatcher's state on each
+pull request it manages, where a person sees it from any forge client, and
+take commands from a person. With the default prefix:
+
+| Label | Who writes it | Meaning |
+|-------|---------------|---------|
+| `jig:driving` | the dispatcher | a drive runs, or stopped on a state the dispatcher re-arms (a usage limit, an answered park) |
+| `jig:converged` | the dispatcher | the drive converged at the pull request's head: a person merges |
+| `jig:parked` | the dispatcher | the drive stopped on something only a person settles |
+| `jig:stale` | the dispatcher | the drive's stop no longer settles the pull request: it converged, then conflicted with its base or its head moved, or it stopped on a conflict. The dispatcher re-drives it |
+| `jig:held` | the dispatcher | the pull request waits its turn in a serialized change area (below): the dispatcher drives it once it leads |
+| `jig:followed-up` | the dispatcher | merged, and its follow-up is done |
+| `jig:drive` | a person | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists. The adoption rule (`dispatch.adopt`, below) does the same for a repository's own recent pull requests without the label |
+| `jig:hold` | a person | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
+
+A serialized change area (`serialize: true` on an area of the
+[change-area catalog](#drive) that `drive.change_areas_catalog` names, read
+from the default branch) holds every dispatched pull request that touches
+it but one: the one closest to merge, which the dispatcher drives as any
+other. The rest get no re-arm, takeover or re-drive while they wait, are
+reported as `held: serialized behind #N in <area>` (and, with the dispatch
+labels on, carry `jig:held`), and
+each hold's start and end is an event row in the outcome log, the end with
+how long it lasted. The order is mechanical, from the ledger and the forge:
+converged and mergeable first, then a drive in progress, then the fewest
+unresolved review threads, then the most rounds, then the oldest. When the
+leader merges or stops touching the area, the next run promotes the next.
+A pull request in two serialized areas waits unless it leads both. Only
+the dispatcher's own launches wait: a drive a person arms on a held pull
+request is not stopped, and the run reports that the area has two drives.
+A pull request whose files, threads or ledger do not read this run, or a
+catalog that does not read, leaves its group unplaced for the run, with no
+re-arm and no label written, and the next run reads it again.
+
+The ledger is the truth: each `--apply` run sets each managed pull
+request's state label from its ledger again (`jig:held` from the serialized
+areas), one forge call per pull
+request whose labels disagree, so a state label a person changed comes
+back at the next run, and the dispatcher never reads a state label to
+decide what to start. A run without `--apply`, or for a repository the
+machine file does not list, writes nothing and reports what it would
+write. The labels must exist before a run writes them: `jig install
+dispatch --repo <path> --yes` creates the missing ones where the signed-in
+account may, and lists the rest for a person, as `pull_requests.labels`
+must exist before a pull request opens with them. A write the forge
+refuses is reported and tried again at the next run; it does not fail the
+run. With `only_labeled` off, a drive a person armed by hand on a pull
+request with no label is still found, and gets its label at the next run.
+
+The adoption rule (`dispatch.adopt`) drives a repository's own recent pull
+requests without anyone labelling them. With it on, an open pull request
+with no drive ledger is armed as if a person had put `jig:drive` on it
+when its author is one of `adopt.authors` (by default the login the
+dispatcher reads the forge as, which is the identity the host's sessions
+open pull requests under) and it was updated within `adopt.within`. A
+draft is adopted like any other, since a drive marks its pull request
+ready. A bot's pull request (a dependency update, say) is adopted only
+when `authors` names the bot, and one carrying `jig:hold` never is. From
+there the `drive` label's rules apply unchanged: armed once per head
+commit, on an admitted account, behind a serialized area's hold, and a
+drive a person stopped is never re-armed, since its ledger records the
+stop. Each run's report names every pull request the rule adopted, with
+its author, its last update and the window, and the forge line counts
+them. It needs `labels.enabled`, since the hold label is read only with the
+labels on; under `labels.only_labeled` it is refused, since a pull request
+with no label of the set is never read.
+
 ### The machine's dispatch file
 
 What this machine dispatches, and on whose accounts, lives only in
 `$JIG_HOME/dispatch.yaml` (default `~/.jig/dispatch.yaml`); a repository
 cannot set it, and environment variables cannot override settings inside it.
 `JIG_HOME` selects the directory that contains it. `jig dispatch --apply`, and the
-timer `jig dispatch install` writes, start only what this file enables; a
+timer `jig install dispatch` writes, start only what this file enables; a
 run without `--apply` reads it for the repositories to report on, and
-works without it. An unknown key anywhere in the file is refused.
+works without it. The file is also the dispatcher's opt-in: `jig install`
+with no component named installs its timer only once the file exists. An
+unknown key anywhere in the file is refused.
 
 ```yaml
 repositories:
@@ -990,35 +1225,57 @@ interval: 5m
 wall_backoff: 1h
 runtime_timeout: 1m
 receipts_days: 30
+dashboard:
+  listen: 100.64.0.7:8765           # jig dispatch dashboard; private or loopback only
 ```
 
 | Setting | Default / meaning |
 |---------|-------------------|
 | `repositories[].path` | Required; the repository's local checkout. List a repository in one machine's file only |
-| `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` (re-arms and takeovers of drives) is the one that starts anything in this version; the others are accepted and their actions reported |
+| `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives, and a re-drive, once per change, of a converged drive whose pull request now conflicts with its base or whose head moved past the head the drive verified, and of a drive that stopped on a conflict (exit `9`). `pickup` starts a `do-item` session per item the repository's `dispatch` section makes a pickup, only where the session runtime can bind an interactive session to its account: Orca cannot yet, so each is reported with that reason and nothing is started. `followup` starts a headless pass running `dispatch.followup_command` per merged pull request, bound to an admitted account through its configuration directory as a drive's pass is, under the pass deadline and with the host's `drive.pass_args` (or, on a Codex account, `drive.codex_bypass`); a pass that stops on a question for a person is notified with it. `notify` sends each notification once (with Orca, the workspace's comment, marked unread). `steer` sends the one nudge, `Your usage limit has reset. Continue`, once to an interactive session the runtime reports waiting after its account's wall reset; no other stage implies it |
 | `repositories[].followup_since` | None; when the follow-up stage started for it. Without it, the previous run's receipt keeps the start |
 | `accounts[].name` | Required; the account's name here, which launch records and walls are kept under |
-| `accounts[].vendor` | Required; `claude` or `codex`. A headless drive pass runs on `claude` accounts only in this version |
-| `accounts[].config_dir` | Required; the configuration directory of the account's profile, set as `CLAUDE_CONFIG_DIR` (or `CODEX_HOME`) for each pass it bills. The pass starts with `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` removed, so only this directory decides the account |
+| `accounts[].vendor` | Required; the agent tool the account bills, which every session on it runs in: `claude` (Claude Code) or `codex` (Codex), the tools the drive documents a pass command for. A drive's pass on a `codex` account runs Codex's pass command, on the execution tier of the repository's `routing.models.codex`, and it and a follow-up's pass are admitted only while the pass deadline the run reads (`DRIVE_PR_PASS_TIMEOUT`, else 90 minutes) is positive, since a Codex pass has no turn cap of its own. A `codex` account is admitted for any launch only on a host that set [`drive.codex_bypass`](#a-hosts-opt-in-to-bypass), since a pass needs that bypass to push and to write its worktree's git directory, a pickup's session goes on to arm such a pass, and nobody is there to approve; every run reports why otherwise. Any other name (lowercase letters, digits and dashes) is accepted, reported on every run as accepted and not admitted, and never launched on |
+| `accounts[].config_dir` | Required; the configuration directory of the account's profile, set as `CLAUDE_CONFIG_DIR` (`claude`) or `CODEX_HOME` (`codex`) for each session it bills. The session starts with the other variable and `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` removed, so only this directory decides the account |
 | `accounts[].identity` | Required; the email address or account id the drive's identity resolver reads from that directory. A launch whose directory resolves to anything else, or to nothing, starts nothing and is reported |
 | `accounts[].max_per_account` | 2; the sessions the dispatcher may hold on the account at once (its slots). Sessions a person starts on the same account are not counted, so lower it when you share the account |
 | `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
 | `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on its usage limit (exit `16`) when the drive recorded no reset |
 | `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
-| `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and a file whose budget passes 24 days is refused |
-| `receipts_days` | 30; days receipts and ended launch records are kept |
+| `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's or an item's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and the dispatch configuration is refused when that budget exceeds 2,147,483,647 milliseconds (about 24.86 days, the longest a timer holds; each duration alone may be at most 24 days); a tick opens at most two workspaces, one of them kept for the notices workspace when the machine file enables `notify` for any repository, and a launch that needs a workspace beyond that waits for the next tick |
+| `receipts_days` | 30; days receipts and ended launch records are kept. The outcome log is never removed |
+| `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
-under `~/.local/state/jig/dispatch/`: `receipts/`, `launches/` (one record
-per launch, written before it) and `walls/` (each account's usage-limit
-wall, which lifts at its latest recorded reset). A launch record a run
-cannot check (claimed on another host or before a reboot) holds its
-account's slot until a person removes its files from `launches/`.
+under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
+per run), `walls/` (each account's usage-limit wall, which lifts at its
+latest recorded reset), the tick lock, the rotation cursor (`tick-index`)
+and the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
+removes. Everything else is one
+SQLite database, `state.sqlite`: the launch records (one per launch,
+written before it, with a pickup session's own result), since when each
+claimed item has had no running session (for `stalled_after`), each
+dispatched follow-up's outcome (done or failed, kept whatever
+`receipts_days` says), a record per notification sent (dropped once its
+cause is gone, except a drift's, which stays for the life of its launch
+and expectation so a launch that recovers and drifts again does not
+notify twice), a record per nudge attempted (with whether it arrived), and
+the outcome log (a row per launch that ended, per notification delivered
+and per nudge attempted, which nothing removes; a notification about the
+stop of a launch it started has no row of its own, because that launch's
+ended row covers it). A database a newer plugin wrote is refused, with its
+version named, until the plugin is updated. A launch record a run cannot
+check (claimed on another host, or while the process table cannot be read)
+holds its account's slot until a person clears it with
+`jig dispatch clear <record>`; one claimed on this host before it last
+restarted has died and frees its slot.
 
 ## Complete example
 
 Every section, with values a typical repository might set. Copy only what
-differs from the defaults.
+differs from the defaults. The fields only a host sets are not here, since a
+repository's file refuses them: [`clones`](#clones-user-file-only) and
+[a host's opt-in to bypass](#a-hosts-opt-in-to-bypass).
 
 ```yaml
 gc:
@@ -1029,6 +1286,19 @@ dispatch:
   identity: example-factory
   states: [todo]
   followup_command: /post-merge
+  stalled_after: 30m
+  blocked_after: 30m
+  drive_rounds_flat: 3
+  pickup_within: 2h
+  followup_within: 1h
+  labels:
+    enabled: true
+    prefix: "jig:"
+    only_labeled: false
+  adopt:
+    enabled: true
+    authors: [example-factory]
+    within: 168h
 gates:
   command: make check                    # required by resolve-review-comments
 review:
@@ -1060,6 +1330,13 @@ review:
     - login: example-linter[bot]
       shape: badge                       # bold-token | badge | html-badge | pipe-fields | icon-fields
       severities: { Sev1: blocker, Sev2: high, Sev3: medium, Sev4: low }
+  lenses:
+    dir: .config/review-lenses           # the repository's own lens files
+    off: [LENS-004]                      # lenses not to run
+    triggers:                            # appended to a lens's own trigger
+      jig.swallowed-failure:
+        added_lines: ['\bunwrap_or_default\(']
+        exclude: ["spec/**"]
 repository:
   base_branch: develop                   # default: the repository's default branch
   remote: upstream                       # default: origin
@@ -1081,11 +1358,13 @@ drive:
   max_rounds: 10                         # default round budget of a drive; --max-rounds overrides
   pass_deadline_retries: 2               # passes killed at their deadline a drive restarts from
   pass_model: sonnet                     # a model id, an alias or a routing tier; --pass-model overrides
-  pass_args: []                          # extra words for a claude pass, before -p, e.g. [--permission-mode, bypassPermissions]; --pass-args overrides
   escape_baseline_doc: docs/review-loop-baseline.md
 autonomy:
   level: attended                        # attended | unattended | wide
   max_level: unattended                  # the ceiling a person's layer may choose up to
+  off_hours:
+    level: unattended                    # inside a window; capped by max_level
+    schedule: ["Mon-Fri 20:00-07:00", "Sat-Sun", "Mon 00:00-07:00"]   # machine local time
   park_classes: [ready, merge, release, scope, human-thread, reviewer-posture, next-item, reopen-or-waive, dark-dial, rules, destructive, legal, copy]
 ci:
   required_checks: [build, test]
@@ -1156,6 +1435,8 @@ do_item:
 workspace_name:
   template: "{status} {id} {title}"   # [D] JIG-12 Rename workspaces
   statuses: { ready: "[R]", done: "✅" }
+orca:
+  board: { in_review: review, completed: shipped }   # custom board columns
 work_batch:
   point_budget: 16
   size_points: { xs: 1, small: 2, medium: 6 }   # keys: exactly issue_tracker.labels.batch_sizes

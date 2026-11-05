@@ -1,8 +1,8 @@
 /**
- * fsutil.test.ts — `lib/state/fsutil.ts`'s `atomicWrite`, `fsyncFileSync`
+ * fsutil.test.ts — `lib/state/fsutil.ts`'s `atomicWrite`
  * and `createExclusiveDurable`: the shared durable-write primitives used by
- * mailbox repair, leases, handoff, state storage, `clone-key.ts`'s
- * per-clone identity, and `migrate-legacy-state.ts`'s copy-verify-delete. See
+ * mailbox repair, the handoff, the files a pass is handed, and
+ * `clone-key.ts`'s per-clone identity. See
  * each module's own header for the crash-safety reasoning
  * (fsync-before-rename / fsync-before-delete, fsync-directory-after);
  * these tests are the probes for it.
@@ -25,7 +25,6 @@ import {
   createExclusiveDurable,
   ExclusiveDurabilityUnconfirmed,
   ExclusiveWriteOwnFailure,
-  fsyncFileSync,
 } from "../scripts/lib/state/fsutil.ts";
 import {
   exceptOnWindows,
@@ -574,71 +573,6 @@ describe("atomicWrite", () => {
       );
       expect(existsSync(target)).toBe(false);
       expect(readdirSync(dir)).toEqual([]);
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
-});
-
-describe("fsyncFileSync", () => {
-  it.skipIf(
-    skipsOnWindows(
-      "file-system",
-      "fsyncFileSync opens the file read-only and fsync on a read-only handle fails with EPERM on Windows",
-    ),
-  )("does not throw on an existing, already-flushed file", () => {
-    dir = mkdtempSync(join(tmpdir(), "fsutil-fsync-file-"));
-    const target = join(dir, "file.txt");
-    writeFileSyncReal(target, "content\n");
-    expect(() => fsyncFileSync(target)).not.toThrow();
-  });
-
-  it("propagates a genuine fsync failure — unlike fsyncDirectoryBestEffort, there is no ENOTSUP/EINVAL carve-out for a plain file", async () => {
-    dir = mkdtempSync(join(tmpdir(), "fsutil-fsync-file-fail-"));
-    const target = join(dir, "file.txt");
-    writeFileSyncReal(target, "content\n");
-
-    const actualFs = await import("node:fs");
-    const realFs = { ...actualFs };
-    mock.module("node:fs", () => ({
-      ...realFs,
-      fsyncSync: () => {
-        const err = new Error(
-          "simulated file fsync failure",
-        ) as NodeJS.ErrnoException;
-        err.code = "ENOTSUP";
-        throw err;
-      },
-    }));
-
-    try {
-      expect(() => fsyncFileSync(target)).toThrow(
-        "simulated file fsync failure",
-      );
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
-
-  it("preserves the primary fsync error over a close failure, rather than letting the close error replace it", async () => {
-    dir = mkdtempSync(join(tmpdir(), "fsutil-fsync-file-closefail-"));
-    const target = join(dir, "file.txt");
-    writeFileSyncReal(target, "content\n");
-
-    const actualFs = await import("node:fs");
-    const realFs = { ...actualFs };
-    mock.module("node:fs", () => ({
-      ...realFs,
-      fsyncSync: () => {
-        throw new Error("primary fsync failure");
-      },
-      closeSync: () => {
-        throw new Error("secondary close failure");
-      },
-    }));
-
-    try {
-      expect(() => fsyncFileSync(target)).toThrow("primary fsync failure");
     } finally {
       mock.module("node:fs", () => realFs);
     }

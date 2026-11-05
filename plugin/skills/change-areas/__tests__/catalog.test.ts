@@ -62,6 +62,13 @@ describe("the areas", () => {
     ]);
   });
 
+  test("serialize is true or false", () => {
+    expect(problems({ a: area({ serialize: true }) })).toEqual([]);
+    expect(problems({ a: area({ serialize: "yes" }) })).toEqual([
+      "a: `serialize` must be true or false",
+    ]);
+  });
+
   test("a missing required field, an unknown one and a non-kebab id are each named", () => {
     const { title: _, ...untitled } = area();
     expect(problems({ a: untitled })).toEqual(["a: `title` is missing"]);

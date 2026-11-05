@@ -7,8 +7,9 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { jobFiles } from "../../gc/scheduler.ts";
+import { jobFiles } from "../../runtime/scheduler.ts";
 import { dispatchJobSpec } from "../install.ts";
+import type { LaunchRecord } from "../lib/launches.ts";
 import { wallOf, writeWall } from "../lib/walls.ts";
 import { type World, world } from "./fixtures.ts";
 import {
@@ -19,6 +20,11 @@ import {
   machineFile,
 } from "./launch-fixtures.ts";
 
+/** The preview's cadence in whichever scheduler's own form it was rendered: systemd, launchd or cron. */
+const cadence = (minutes: number) =>
+  new RegExp(
+    `OnUnitActiveSec=${minutes}min|StartInterval</key><integer>${minutes * 60}<|\\*/${minutes} \\* \\* \\* \\*`,
+  );
 const RUN_TS = resolve(import.meta.dir, "../run.ts");
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
 
@@ -48,6 +54,7 @@ describe("the wrapper", () => {
     const id = "20261031T080000Z-cccccccc";
     earlierRecord(w, { id, account: "a", token: "the-token" });
     claimed(w, id, {
+      hostId: "",
       host: "elsewhere",
       bootId: "",
       pid: 4242,
@@ -58,6 +65,62 @@ describe("the wrapper", () => {
     expectSpawnExit(r, 3);
     expect(r.stderr).toContain(`${id} is already claimed; nothing started`);
     expect(driveRuns(w)).toEqual([]);
+  });
+
+  describe("a Codex drive's bypass", () => {
+    const BYPASS = "--dangerously-bypass-approvals-and-sandbox";
+
+    /** Runs a Codex drive's record under `fields`, in `env`, and returns the pass command the wrapper started. */
+    async function passOf(
+      fields: Partial<LaunchRecord>,
+      env: Record<string, string>,
+    ): Promise<string[]> {
+      const w = world();
+      current = w;
+      const id = "20261031T080000Z-eeeeeeee";
+      earlierRecord(w, {
+        id,
+        account: "c",
+        token: "the-token",
+        vendor: "codex",
+        ...fields,
+      });
+      w.env = { ...w.env, ...env };
+      const r = await runWrapper(w, [id, "the-token"]);
+      expectSpawnExit(r, 0);
+      const [run] = driveRuns(w);
+      return (run?.argv ?? []).slice((run?.argv ?? []).indexOf("--") + 1);
+    }
+
+    it("follows what the tick admitted it under, on a wrapper that reads no such setting", async () => {
+      const pass = await passOf(
+        { codexBypass: true },
+        { JIG_HOME: "/nonexistent-jig-home" },
+      );
+      expect(pass).toEqual([
+        "codex",
+        "exec",
+        BYPASS,
+        "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 7",
+      ]);
+    });
+
+    it.each([
+      ["says no", { codexBypass: false }],
+      ["was written before it kept this", {}],
+    ])(
+      "adds nothing for a record that %s, whatever the wrapper's environment sets",
+      async (_, fields) => {
+        const pass = await passOf(fields, {
+          JIG__DRIVE__CODEX_BYPASS: "true",
+        });
+        expect(pass).toEqual([
+          "codex",
+          "exec",
+          "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 7",
+        ]);
+      },
+    );
   });
 
   it("refuses a token that is not the record's", async () => {
@@ -97,6 +160,40 @@ describe("walls", () => {
 });
 
 describe("jig dispatch install", () => {
+  it("lets the last of a repeated --interval win", async () => {
+    const w = world();
+    current = w;
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    const r = await w.dispatch([
+      "install",
+      "--interval",
+      "5m",
+      "--interval",
+      "10m",
+    ]);
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toMatch(cadence(10));
+  });
+
+  it("checks whole minutes on the interval that wins, not on each one given", async () => {
+    const w = world();
+    current = w;
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    const kept = await w.dispatch([
+      "install",
+      "--interval",
+      "90s",
+      "--interval",
+      "10m",
+    ]);
+    expectSpawnExit(kept, 0);
+    expect(kept.stdout).toMatch(cadence(10));
+    const refused = await w.dispatch(["install", "--interval", "90s"]);
+    expectSpawnExit(refused, 2);
+    expect(refused.stderr).toContain("whole minutes");
+    expect(refused.stderr).toContain("Usage:");
+  });
+
   it("previews the tick's job, every interval, and writes nothing without --yes", async () => {
     const w = world();
     current = w;
@@ -136,7 +233,6 @@ describe("jig dispatch install", () => {
     const job = {
       command: ["bun", "jig.ts", "dispatch", "--apply"],
       env: {},
-      hour: 0,
       spec: dispatchJobSpec(5),
     };
     expect(jobFiles("systemd", job)["jig-dispatch.timer"]).toContain(

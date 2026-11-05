@@ -12,6 +12,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { load } from "../../../../shared/yaml.ts";
 import { skillDir, isSince } from "./repo.ts";
+import {
+  LensConfigError,
+  triggerOf,
+} from "../../../review/scripts/lens-file.ts";
 
 export const FIELD_TYPES = [
   "string",
@@ -65,6 +69,7 @@ export interface Field {
   exists?: "required" | "expected" | "machine";
   read_by: string[];
   repository_only?: boolean;
+  user_only?: boolean;
   default?: unknown;
   deprecated?: string;
   since?: string;
@@ -106,6 +111,7 @@ const FIELD_KEYS = new Set([
   "exists",
   "read_by",
   "repository_only",
+  "user_only",
   "default",
   "deprecated",
   "since",
@@ -242,6 +248,11 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
       ? "exists is required, expected or machine"
       : null,
   flag("repository_only"),
+  flag("user_only"),
+  (e) =>
+    e.repository_only === true && e.user_only === true
+      ? "a field is repository_only or user_only, not both"
+      : null,
   (e) =>
     e.default !== undefined &&
     typeProblem(e.default, e.type as FieldType, e as unknown as Field) !== null
@@ -479,8 +490,25 @@ function listProblem(value: unknown, field?: Field): string | null {
   return null;
 }
 
+/** What review refuses in the additions to lens triggers: an unknown key or a pattern that does not compile. */
+function lensTriggersProblem(value: Record<string, unknown>): string | null {
+  for (const [id, additions] of Object.entries(value)) {
+    try {
+      triggerOf(additions, id);
+    } catch (error) {
+      if (error instanceof LensConfigError) return error.message;
+      throw error;
+    }
+  }
+  return null;
+}
+
 function mapProblem(value: unknown, field?: Field): string | null {
   if (!isRecord(value)) return "must be a mapping";
+  if (field?.path === "review.lenses.triggers") {
+    const lens = lensTriggersProblem(value);
+    if (lens) return lens;
+  }
   for (const [key, entry] of Object.entries(value)) {
     if (field?.keys && !field.keys.includes(key))
       return `has unknown key ${key} (known: ${field.keys.join(", ")})`;
@@ -555,13 +583,23 @@ function refusedNullFinding(path: string): Finding {
   };
 }
 
-/** A known field's value: null where it is not nullable, the wrong shape, an older name. */
+/** A field only the host may set, in the file the audit judges: refused whatever its value. */
+function userOnlyFinding(path: string): Finding {
+  return {
+    id: `user-only:${path}`,
+    severity: "error",
+    message: `${path} is the host's to set, in its user file: every skill refuses a repository's file that sets it, whatever its value, so remove it here (CONFIGURATION.md § Configuration layers)`,
+  };
+}
+
+/** A known field's value: only the host's to set, null where it is not nullable, the wrong shape, an older name. */
 function knownFieldFindings(
   index: SchemaIndex,
   path: string,
   value: unknown,
   field: Field,
 ): Finding[] {
+  if (field.user_only) return [userOnlyFinding(path)];
   const findings: Finding[] = [];
   const problem = value === null ? null : typeProblem(value, field.type, field);
   if (value === null && index.schema.null_refused.includes(path))

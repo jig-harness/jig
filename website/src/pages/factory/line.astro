@@ -1,0 +1,29 @@
+---
+import ExecutionLevel from "../../components/factory/ExecutionLevel.astro";
+import Plate from "../../components/Plate.astro";
+import Base from "../../layouts/Base.astro";
+import { factory } from "../../lib/data/index.ts";
+import { FACTORY_PAGE_NOTES } from "../../lib/llms.ts";
+import { mdInline } from "../../lib/markdown.ts";
+import "../../styles/factory.css";
+
+const f = factory();
+const level = f.levels.find((l) => l.name === "The line");
+const unit = level ? await mdInline(level.unit, "FACTORY.md") : "";
+const hands = level ? await mdInline(level.handsOn, "FACTORY.md") : "";
+const note = FACTORY_PAGE_NOTES["/factory/line/"] ?? "";
+---
+
+<Base title="The line" description={note.charAt(0).toUpperCase() + note.slice(1) + "."}>
+  <section class="page wrap">
+    <div class="intro-row">
+      <div class="intro">
+        <span class="eyebrow">Jig as a software factory · the line</span>
+        <h1 class="display">The line: one work item, from pickup to follow-up.</h1>
+        <p class="muted small">The unit of work is <span set:html={unit} />. What the line hands on is <span set:html={hands} />. Two rails run under the stations: on the first a person merges, and on the second <a href="/factory/unattended/">the dispatcher</a> starts a station when nobody does.</p>
+      </div>
+      <span class="intro-plate" style="flex-basis: clamp(360px, 48%, 640px)"><Plate name="line" width="100%" /></span>
+    </div>
+    <ExecutionLevel />
+  </section>
+</Base>

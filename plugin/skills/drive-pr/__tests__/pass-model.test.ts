@@ -6,11 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import {
-  diagLines,
-  formatClaim,
-  parseClaimText,
-} from "../scripts/lib/claim.ts";
+import { diagLines, parseDiagText } from "../scripts/lib/claim.ts";
 import {
   effectivePass,
   type PassModel,
@@ -148,13 +144,68 @@ describe("effectivePass", () => {
   });
 
   it("leaves another pass command to choose its own model", () => {
+    const other = ["other-agent", "run", "/jig:drive-pr 7"];
+    expect(effectivePass(other, undefined, configured)).toEqual({
+      argv: other,
+      model: null,
+      source: "chosen by the pass command (other-agent)",
+    });
+    expect(() => effectivePass(other, "sonnet", configured)).toThrow(
+      PassModelUsageError,
+    );
+  });
+
+  it("runs a Codex pass on its own model, else routing.models.codex's execution tier after exec, else Codex's own", () => {
     const codex = ["codex", "exec", "/jig:drive-pr 7"];
-    expect(effectivePass(codex, undefined, configured)).toEqual({
+    const routed = () => ({
+      model: "gpt-example",
+      source: "routing.models.codex.execution",
+    });
+    const none = () => ({ model: null, source: "Codex's own configuration" });
+    expect(effectivePass(codex, undefined, configured, routed)).toEqual({
+      argv: ["codex", "exec", "-m", "gpt-example", "/jig:drive-pr 7"],
+      model: "gpt-example",
+      source: "routing.models.codex.execution",
+    });
+    expect(effectivePass(codex, undefined, configured, none)).toEqual({
       argv: codex,
       model: null,
-      source: "chosen by the pass command (codex)",
+      source: "Codex's own configuration",
     });
-    expect(() => effectivePass(codex, "sonnet", configured)).toThrow(
+    const own = ["codex", "exec", "-m", "gpt-own", "/jig:drive-pr 7"];
+    expect(effectivePass(own, undefined, configured, routed)).toEqual({
+      argv: own,
+      model: "gpt-own",
+      source: "the pass command's own model",
+    });
+    expect(
+      effectivePass(own, "gpt-override", configured, routed),
+    ).toMatchObject({
+      argv: ["codex", "exec", "-m", "gpt-override", "/jig:drive-pr 7"],
+      model: "gpt-override",
+    });
+  });
+
+  it("replaces all Codex model flags while preserving the prompt and other arguments", () => {
+    const prompt = "Use jig:drive-pr with --model mentioned in prose";
+    const pass = [
+      "codex",
+      "exec",
+      "--model=old",
+      "-m",
+      "other",
+      "--json",
+      prompt,
+    ];
+    expect(effectivePass(pass, "gpt-new", configured).argv).toEqual([
+      "codex",
+      "exec",
+      "-m",
+      "gpt-new",
+      "--json",
+      prompt,
+    ]);
+    expect(() => effectivePass(pass, "two words", configured)).toThrow(
       PassModelUsageError,
     );
   });
@@ -165,6 +216,39 @@ describe("effectivePass", () => {
 });
 
 describe("withoutModel", () => {
+  it("replaces attached Codex short model options", () => {
+    for (const option of ["-mold", "-m=old"]) {
+      const argv = ["codex", "exec", option, "prompt"];
+      expect(effectivePass(argv, undefined, configured).model).toBe("old");
+      expect(effectivePass(argv, "gpt-new", configured).argv).toEqual([
+        "codex",
+        "exec",
+        "-m",
+        "gpt-new",
+        "prompt",
+      ]);
+      expect(withoutModel(argv)).toEqual(["codex", "exec", "prompt"]);
+    }
+  });
+
+  it("preserves model-like prompt content after the option terminator", () => {
+    for (const prompt of ["--model=old is an example", "-mold", "--model"]) {
+      const argv = ["codex", "exec", "--", prompt];
+      expect(withoutModel(argv)).toEqual(argv);
+      expect(effectivePass(argv, "gpt-new", configured).argv).toEqual([
+        "codex",
+        "exec",
+        "-m",
+        "gpt-new",
+        "--",
+        prompt,
+      ]);
+      expect(withoutModel(["codex", "exec", "-mold", "--", prompt])).toEqual(
+        argv,
+      );
+    }
+  });
+
   it("drops a claude pass's --model, so a model id is never read as the PR", () => {
     expect(
       withoutModel(["claude", "--model", "claude-sonnet-4-5", "-p", "x"]),
@@ -172,8 +256,13 @@ describe("withoutModel", () => {
     expect(
       withoutModel(["claude", "--model", "a", "--model=b", "-p", "x"]),
     ).toEqual(["claude", "-p", "x"]);
-    expect(withoutModel(["codex", "--model", "4"])).toEqual([
+    expect(withoutModel(["codex", "exec", "-m", "4", "x"])).toEqual([
       "codex",
+      "exec",
+      "x",
+    ]);
+    expect(withoutModel(["other-agent", "--model", "4"])).toEqual([
+      "other-agent",
       "--model",
       "4",
     ]);
@@ -206,28 +295,25 @@ describe("the drives listing", () => {
   };
 
   it("names the model a claim records, and says when the pass command chooses it", () => {
-    const opus = parseClaimText(
-      formatClaim(1, "h", { ...diag, model: "opus" }),
-    );
-    expect(opus?.diag?.model).toBe("opus");
-    expect(diagLines(opus?.diag ?? diag)).toContain("    model:    opus");
-    const own = parseClaimText(formatClaim(1, "h", { ...diag, model: null }));
-    expect(diagLines(own?.diag ?? diag)).toContain(
+    const opus = parseDiagText(JSON.stringify({ ...diag, model: "opus" }));
+    expect(opus?.model).toBe("opus");
+    expect(diagLines(opus ?? diag)).toContain("    model:    opus");
+    const own = parseDiagText(JSON.stringify({ ...diag, model: null }));
+    expect(own?.model).toBeNull();
+    expect(diagLines(own ?? diag)).toContain(
       "    model:    chosen by the pass command",
     );
   });
 
   it("reads a claim from before the model, or with a malformed one, as unknown, keeping the rest", () => {
-    const older = parseClaimText(formatClaim(1, "h", diag));
-    expect(older?.diag).toEqual(diag);
+    const older = parseDiagText(JSON.stringify(diag));
+    expect(older).toEqual(diag);
     expect(diagLines(diag)).toContain(
       "    model:    unknown (claim predates the model)",
     );
     for (const model of [4, "", ["opus"]]) {
-      const torn = parseClaimText(
-        `1 h\n${JSON.stringify({ ...diag, model })}\n`,
-      );
-      expect(torn?.diag).toEqual(diag);
+      const torn = parseDiagText(JSON.stringify({ ...diag, model }));
+      expect(torn).toEqual(diag);
     }
   });
 });

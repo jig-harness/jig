@@ -1,5 +1,5 @@
 /** Validate driver options, acquire ownership and keep its resources alive through the round loop. */
-import { fail, isDigits, shellQuote } from "./../cli.ts";
+import { ExitError, fail, isDigits, shellQuote } from "./../cli.ts";
 import { parseDriverOptions, applyPassTimeout } from "./options.ts";
 
 import {
@@ -24,7 +24,7 @@ import { resolveStateDir, worktreeLockName } from "./../state/store.ts";
 
 import { resolveMailboxDir } from "./../state/mailbox.ts";
 
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { startDriverLog } from "./log.ts";
 
@@ -32,14 +32,12 @@ import { resolveAccountIdentity } from "./../identity.ts";
 
 import type { ClaimDiag } from "./../claim.ts";
 
-import { type DriveLock, acquire, release } from "./locks.ts";
+import { type DriveLock, acquire, prLockName, release } from "./locks.ts";
 import { markDriverRecordReleased } from "./../ledger-stop.ts";
 
-import {
-  installDriverLifecycle,
-  createDriverRegistry,
-  driverStopCompletionCleanup,
-} from "./lifecycle.ts";
+import { installDriverLifecycle, createDriverRegistry } from "./lifecycle.ts";
+
+import { nextDriverGeneration } from "./../state/mailbox-stop.ts";
 
 import { registerCleanup } from "./../../../../../shared/cleanup.ts";
 
@@ -47,7 +45,8 @@ import { driverRuntime } from "./runtime.ts";
 
 import { startHeartbeat } from "./identity.ts";
 
-import { captureStateDirIdentityToken } from "./../state/lease.ts";
+import { stateDirIdentityToken } from "./../state/lease.ts";
+import { dbPathFor, driveDb } from "./../state/db.ts";
 
 import { driveState, captureIntentChain, driveTs } from "./paths.ts";
 
@@ -68,6 +67,8 @@ import { pickUpDrive } from "./takeover-complete.ts";
 import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
 import { armLedger, ledgerIdentity, ledgerSettlement } from "./ledger.ts";
+
+import { cardAfterDrive } from "./orca-card.ts";
 
 import {
   type EffectivePass,
@@ -93,8 +94,8 @@ import type { DriveState } from "./../state/schema.ts";
  * usage error; and it is exported as $DRIVE_PR_TARGET, where drive-status.ts
  * and guarded-push.ts compare it as a string and refuse for a less obvious
  * reason. Canonical before anything is keyed by it: `042` is PR 42 to GitHub,
- * so a raw `042` would take `pr-drive-042.lock` beside a live #42 driver's
- * `pr-drive-42.lock` and write #42's state and log under a second name.
+ * so a raw `042` would write #42's log under a second name beside a live #42
+ * driver's.
  * Refused rather than rewritten, because the pass names the PR in its own
  * argv and drive-status.ts compares that against $DRIVE_PR_TARGET verbatim.
  */
@@ -109,7 +110,7 @@ function releaseHeld(
   pr: string,
   started: string,
 ): void {
-  if (lock === prLock) markDriverRecordReleased(dirname(lock.dir), pr, started);
+  if (lock === prLock) markDriverRecordReleased(lock.stateDir, pr, started);
   release(lock);
 }
 
@@ -145,8 +146,32 @@ async function stateUnderLocks(
   return quotaRefusal(state, agent, windowReopened) ?? state;
 }
 
+/**
+ * Run the drive; whatever ends it once the PR is known (a return, a refusal,
+ * a thrown failure) goes through `cardAfterDrive`, which moves nothing for a
+ * dry run and for the stops no person settles.
+ */
 export async function main(): Promise<number> {
+  const ctx = { pr: "", dryRun: false };
+  let exit: number;
+  try {
+    exit = await drive(ctx);
+  } catch (error) {
+    if (ctx.pr !== "")
+      await cardAfterDrive(
+        ctx.pr,
+        error instanceof ExitError ? error.code : 1,
+        ctx.dryRun,
+      );
+    throw error;
+  }
+  if (ctx.pr !== "") await cardAfterDrive(ctx.pr, exit, ctx.dryRun);
+  return exit;
+}
+
+async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
+  ctx.dryRun = options.dryRun;
   let { pr, keepDraft, handoffAt } = options;
   const { maxRounds, dryRun, botsOnly, passTimeout, forward } = options;
   const { takeOver, windowReopened } = options;
@@ -186,6 +211,7 @@ export async function main(): Promise<number> {
   if (pr === "") fail(1, "drive.ts: could not resolve a PR number");
   requireCanonicalPr(pr);
   process.env.PR = pr;
+  ctx.pr = pr;
   // The authoritative, out-of-band statement of which PR this drive is about.
   // drive-status.ts refuses to run when a pass resolves a different one, which
   // is what makes driver/pass agreement an assertion rather than an inference
@@ -194,7 +220,7 @@ export async function main(): Promise<number> {
   process.env.DRIVE_PR_TARGET = pr;
 
   // Both shared resources, in a fixed order — see § Single-instance locking.
-  // Both names live in the state dir: one keyed by PR, one by the working tree
+  // Both are rows of the drive's database: one keyed by PR, one by the working tree
   // — see `worktreeLockName` for why the latter may not be keyed by anything a
   // second driver in the same tree can be configured to compute differently.
   const stateDir = await resolveStateDir();
@@ -252,6 +278,10 @@ export async function main(): Promise<number> {
   // only here would keep reporting the old one for the rest of the drive's
   // life).
   const account = resolveAccountIdentity(agent);
+  // This driver's generation: what a mailbox `stop` addresses to end this
+  // driver alone (`state/mailbox-stop.ts`). Drawn before the locks, so a
+  // refused start spends a number, never reuses one.
+  const generation = nextDriverGeneration(driveDb(stateDir), pr);
   const diag: ClaimDiag = {
     pr,
     worktree: rootRes.code === 0 ? rootRes.stdout.trim() : "",
@@ -260,14 +290,18 @@ export async function main(): Promise<number> {
     account,
     model: pass.model,
     permissionMode: pass.args.permission.mode,
+    generation,
+    mailbox: mailboxDir,
   };
   const treeLock: DriveLock = {
-    dir: join(stateDir, await worktreeLockName()),
+    stateDir,
+    name: await worktreeLockName(),
     what: "worktree",
     diag,
   };
   const prLock: DriveLock = {
-    dir: join(stateDir, `pr-drive-${pr}.lock`),
+    stateDir,
+    name: prLockName(pr),
     what: `PR #${pr}`,
     diag,
   };
@@ -278,7 +312,11 @@ export async function main(): Promise<number> {
   const plan = takeOver ? await decideTakeover(pr, ledger) : null;
   const held: DriveLock[] = [];
   using lockResources = new DisposableStack();
-  await using lifecycle = installDriverLifecycle(held);
+  await using lifecycle = installDriverLifecycle(held, undefined, {
+    dir: mailboxDir,
+    pr,
+    generation,
+  });
   void lifecycle;
   const hold = async (lock: DriveLock): Promise<void> => {
     // A refusal names the holder's doctor verdict, and the takeover command
@@ -298,7 +336,7 @@ export async function main(): Promise<number> {
   await holdTreeAroundTakeover(
     plan,
     pr,
-    { tree: treeLock.dir, pr: prLock.dir },
+    { tree: treeLock, pr: prLock },
     () => hold(treeLock),
     armCommand(driveTs, pr, botsOnly, "", agent),
   );
@@ -308,6 +346,9 @@ export async function main(): Promise<number> {
   // PR's lock joins it once taken.
   startHeartbeat(held, agent);
   await hold(prLock);
+  console.error(
+    `drive.ts: PR #${pr} driver generation ${generation}; 'mailbox.ts send ${pr} --kind directive --command stop --generation ${generation}' stops this driver alone.`,
+  );
 
   // The SESSION every drive-state mutation of this drive belongs to, exported
   // once the locks are actually held and before the first such mutation (the
@@ -348,7 +389,6 @@ export async function main(): Promise<number> {
       );
   });
   createDriverRegistry(held);
-  lockResources.use(driverStopCompletionCleanup(held));
   driverRuntime.driverLogRotates = true;
 
   // The TREE this drive drives, so a pass measures local HEAD there rather
@@ -389,46 +429,21 @@ export async function main(): Promise<number> {
   // residuals rather than papered over.
   process.env.DRIVE_PR_STATE_DIR = stateDir;
 
-  // The directory's ON-DISK IDENTITY at the moment the driver resolved it —
-  // device/inode, birth time, canonical target path and volume UUID — exported because the PATH is exactly
-  // what a rename-and-recreate leaves unchanged.
-  //
-  // Without this, the fence's identity baseline can only be captured by the
-  // fence itself, in the same breath as its own enumeration. That closes a
-  // swap landing DURING the fence, but not one that completed BEFORE the pass
-  // started: the fence would enumerate the empty replacement, capture ITS
-  // identity, find that identity perfectly stable throughout, and authorize
-  // the POST while the live lease sits in the directory that moved. Only
-  // something that observed the directory before the swap can answer that,
-  // and the driver is the one thing that did.
-  //
-  // FAIL CLOSED when it cannot be read, rather than omitting the variable.
-  // An earlier revision omitted it, reasoning by analogy with
-  // `Lease.sessionStarted`'s leniency — but the analogy does not hold, and the
-  // difference is the whole point of this variable. A token-less session
-  // genuinely HAS no token, so `''` is the truth about it. A driver that
-  // cannot stat its own state directory has not learned "there is no
-  // baseline"; it has FAILED TO READ ONE. Omitting the variable publishes the
-  // first as though it were the second, and the pass then treats a failed
-  // safety read as "no baseline inherited" — so a transient failure here,
-  // followed by the directory being replaced before the pass starts, lands in
-  // exactly the pre-pass swap window this baseline exists to close.
-  //
-  // This is the fail-closed rule for gates applied to the producer: a check
-  // that cannot read its input has verified nothing, and must say so rather
-  // than emit an empty answer. Refusing costs a drive that could not have
-  // fenced its own passes anyway.
-  const stateDirIdentity = await captureStateDirIdentityToken(stateDir);
+  // The identity of the drive's database at the moment the driver opened it
+  // (`db.ts`'s instance id), exported beside the directory: the path is
+  // exactly what a database deleted and created again leaves unchanged, and
+  // the fence refuses a post when the database it reads is not this one
+  // (`lease-context.ts`). A driver that cannot read it fails closed rather
+  // than omit it, since a pass would read an omitted one as "no baseline".
+  const stateDirIdentity = stateDirIdentityToken(stateDir);
   if (stateDirIdentity === "") {
     fail(
       1,
-      `drive.ts: could not establish the identity of the drive state directory:`,
-      `  ${stateDir}`,
+      `drive.ts: could not establish the identity of the drive's database:`,
+      `  ${dbPathFor(stateDir)}`,
       "",
       "Refusing to start. Every pass this drive spawns inherits that identity as",
-      "the baseline proving the directory was not swapped before the pass began;",
-      'without it a pass cannot tell a failed read from "no baseline", and would',
-      "post unfenced through exactly that window.",
+      "the baseline proving the database was not replaced before the pass began.",
     );
   }
   process.env.DRIVE_PR_STATE_DIR_IDENTITY = stateDirIdentity;
@@ -458,11 +473,12 @@ export async function main(): Promise<number> {
   );
   // From here the ledger says this driver is running, so whatever ends the
   // drive (an exit, a thrown refusal, a stop) marks it stopped.
-  await using settlement = ledgerSettlement(pr, held);
+  await using settlement = ledgerSettlement(pr, held, dryRun);
   const firstPassNotice = await pickUpDrive(pr, plan, pickup, {
     agent,
     botsOnly,
     dryRun,
+    windowReopened,
   });
 
   // A dry run inspects; it does not work a round. Counting it would inflate
@@ -494,6 +510,7 @@ export async function main(): Promise<number> {
   const roundsExit = await runDriverRounds({
     pr,
     mailboxDir,
+    generation,
     keepDraft,
     dryRun,
     agent,
@@ -505,7 +522,8 @@ export async function main(): Promise<number> {
     deadlineRetryBudget,
     firstPassNotice,
   });
-  return await settlement.done(roundsExit);
+  const exit = await settlement.done(roundsExit);
+  return exit;
 }
 
 /**
@@ -609,7 +627,7 @@ async function announceRoundBudget(
   // at N, increments to N+1, and rejects the very round they raised the limit
   // to admit.
   //
-  // An unreadable state file is a hard stop, not a zero. Defaulting it would
+  // An unreadable stored state is a hard stop, not a zero. Defaulting it would
   // restore exactly the fresh-budget-per-restart hole this closes, on the one
   // path where the evidence has already been lost.
   const resumedRes = await run(tsArgv(driveState, ["rounds", pr]), {
@@ -701,7 +719,7 @@ async function ensureContinuousHandoff(
         "'**accepted**' and resolving the thread drops the held batch — leaving a",
         "fixed finding re-triaged next round, or two outcome tokens on one thread.",
         `'drive-state.ts held-keys ${pr}' must work first. Either this drive-state.ts`,
-        "predates the held batch, or the state file is unreadable — run it directly",
+        "predates the held batch, or the stored state is unreadable — run it directly",
         "to see which. Until then use --handoff-at 50 (or 75).",
       );
     }

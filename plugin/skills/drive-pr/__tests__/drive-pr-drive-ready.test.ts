@@ -5,14 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import {
-  chmodSync,
-  existsSync,
-  readFileSync,
-  rmSync,
-  utimesSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, delimiter } from "node:path";
 import { load as loadYaml } from "../../../shared/yaml.ts";
 
@@ -26,12 +19,13 @@ import {
 import {
   PASS_LOUD,
   PASS_NOOP,
+  refuseWrites,
   runDrive,
   runDriveIn,
   state,
 } from "./drive-loop-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
-import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
+import { claimRow, putClaim } from "./state-rows.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
@@ -124,6 +118,23 @@ describe("mark-ready.ts", () => {
     existsSync(join(dir, "ready-calls"))
       ? readFileSync(join(dir, "ready-calls"), "utf8").trim().split("\n")
       : [];
+
+  /** The Ready mark's claim row on PR 999, or `null` when nobody holds it. */
+  const readyClaim = (stateDir: string) => claimRow(stateDir, "999", "ready");
+
+  /** Age the Ready mark's claim by `minutes`, as a holder that stopped renewing it leaves it. */
+  function ageReadyClaim(stateDir: string, minutes: number): void {
+    const held = readyClaim(stateDir);
+    expect(held).not.toBeNull();
+    putClaim(
+      stateDir,
+      "999",
+      "ready",
+      "",
+      held?.token ?? "",
+      new Date(Date.now() - minutes * 60_000).toISOString(),
+    );
+  }
 
   it("--round applies pull_requests.mark_ready: not due before round N, due from it", async () => {
     const { dir, stateDir } = writeFixture({ threads: [], isDraft: true });
@@ -221,7 +232,7 @@ describe("mark-ready.ts", () => {
     // nothing and claims nothing, leaving the transition entirely to a later,
     // ordinary call.
     expect(calls(dir)).toEqual([]);
-    expect(existsSync(join(stateDir, "drive-pr-999.ready-claim"))).toBe(false);
+    expect(readyClaim(stateDir)).toBeNull();
     expect(await readyMarked(stateDir)).toBe("0");
   });
 
@@ -340,7 +351,7 @@ describe("mark-ready.ts", () => {
     const r = await markReady(dir, stateDir);
     expect(r.exitCode).toBe(1);
     expect(await readyMarked(stateDir)).toBe("0");
-    expect(existsSync(join(stateDir, "drive-pr-999.ready-claim"))).toBe(true);
+    expect(readyClaim(stateDir)).not.toBeNull();
 
     // An immediate retry does NOT re-fire — this process's own still-live
     // lease blocks it, exactly as a second driver's would. `calls(dir)`
@@ -353,9 +364,7 @@ describe("mark-ready.ts", () => {
 
     // Once the lease goes stale, a later round takes the transition over —
     // same recovery as any other abandoned lease.
-    const lease = join(stateDir, "drive-pr-999.ready-claim");
-    const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
-    utimesSync(lease, twentyMinutesAgo, twentyMinutesAgo);
+    ageReadyClaim(stateDir, 20);
     const retry = await markReady(dir, stateDir);
     expect(retry.exitCode).toBe(0);
     expect(retry.outcome).toBe("marked");
@@ -427,9 +436,8 @@ describe("mark-ready.ts", () => {
     // so the recovery needs no reconciliation against a live flag that would
     // undo a human's own re-draft.
     const { dir, stateDir } = writeFixture({ threads: [], isDraft: true });
-    // Exactly what the dead driver left behind: a lease file, no record.
-    const leaseFile = join(stateDir, "drive-pr-999.ready-claim");
-    writeFileSync(leaseFile, "dead-driver-token");
+    // Exactly what the dead driver left behind: a lease, no record.
+    putClaim(stateDir, "999", "ready", "", "dead-driver-token");
     expect(await readyMarked(stateDir)).toBe("0");
 
     // While it is still LIVE, the transition stays that driver's to make.
@@ -438,8 +446,7 @@ describe("mark-ready.ts", () => {
     expect(calls(dir)).toEqual([]);
 
     // Once it goes stale, the next round takes it over and finishes the job.
-    const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
-    utimesSync(leaseFile, twentyMinutesAgo, twentyMinutesAgo);
+    ageReadyClaim(stateDir, 20);
     const recovered = await markReady(dir, stateDir);
     expect(recovered.outcome).toBe("marked");
     expect(calls(dir)).toEqual(["999"]);
@@ -479,12 +486,11 @@ describe("mark-ready.ts", () => {
     // process resumes and fires a SECOND `ready_for_review`.
     //
     // The suspension is modelled by the delay hook, and the reclaim by
-    // replacing the lease file's token — which is exactly what a recovery
-    // does: break the stale claim, write a fresh one.
+    // replacing the lease's token — which is exactly what a recovery does:
+    // break the stale claim, write a fresh one.
     const { dir, stateDir } = writeFixture({ threads: [], isDraft: true });
     writeFileSync(join(dir, "pr-ready-no-flip"), "");
     const signal = join(dir, "lease-held");
-    const leaseFile = join(stateDir, "drive-pr-999.ready-claim");
 
     const running = markReady(dir, stateDir, [], {
       DRIVE_PR_MARK_READY_TEST_SIGNAL: signal,
@@ -495,7 +501,7 @@ describe("mark-ready.ts", () => {
       if (Date.now() > deadline) throw new Error("lease signal never appeared");
       await Bun.sleep(10);
     }
-    writeFileSync(leaseFile, "a-different-drivers-token");
+    putClaim(stateDir, "999", "ready", "", "a-different-drivers-token");
     const r = await running;
 
     // THE property: no event fired on a lease this process no longer owns.
@@ -504,7 +510,7 @@ describe("mark-ready.ts", () => {
     expect(r.exitCode).toBe(0);
     // And the reclaiming driver's lease is left intact — not released by the
     // process that merely used to own it.
-    expect(readFileSync(leaseFile, "utf8")).toBe("a-different-drivers-token");
+    expect(readyClaim(stateDir)?.token).toBe("a-different-drivers-token");
     expect(await readyMarked(stateDir)).toBe("0");
   });
 
@@ -517,7 +523,6 @@ describe("mark-ready.ts", () => {
     // time the way a genuinely stale lease does — every later round hit the
     // identical refusal and repeated the same false blame forever.
     const { dir, stateDir } = writeFixture({ threads: [], isDraft: true });
-    const leaseFile = join(stateDir, "drive-pr-999.ready-claim");
     const r = await markReady(dir, stateDir, [], {
       DRIVE_PR_CLAIM_STALE_MIN: "1",
       GH_CALL_TIMEOUT: "120",
@@ -532,7 +537,7 @@ describe("mark-ready.ts", () => {
     // And the lease this process itself won is released — not abandoned to
     // expire, which would report the identical false contention every round
     // until the staleness window happened to pass.
-    expect(existsSync(leaseFile)).toBe(false);
+    expect(readyClaim(stateDir)).toBeNull();
     expect(await readyMarked(stateDir)).toBe("0");
   });
 
@@ -543,10 +548,7 @@ describe("mark-ready.ts", () => {
     // PR back to draft before some later round records it, the drive sees zero
     // and undoes that decision.
     const { dir, stateDir } = writeFixture({ threads: [] });
-    writeFileSync(
-      join(stateDir, "drive-pr-999.ready-claim"),
-      "another-drivers-token",
-    );
+    putClaim(stateDir, "999", "ready", "", "another-drivers-token");
     const r = await markReady(dir, stateDir);
     expect(r.outcome).toBe("claimed-by-other");
     expect(r.exitCode).toBe(0);
@@ -554,36 +556,26 @@ describe("mark-ready.ts", () => {
     expect(calls(dir)).toEqual([]);
   });
 
-  it.skipIf(
-    skipsOnWindows(
-      "file-system",
-      "chmod 0555 on the state directory does not make it read-only on Windows, so the write failure the test forces never happens",
-    ),
-  )(
-    "fails closed when recording an ALREADY-Ready PR does not stick",
-    async () => {
-      // The branch that used to fire the record and never look at the result.
-      // Leaving it at 0 is not the cost-only outcome it looks like: this drive
-      // then owes no transition with no durable evidence of it, so a later round
-      // — after a human converts the PR BACK to draft — reads 0, sees a draft,
-      // and re-marks it, undoing that decision.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      // A READABLE state that cannot be WRITTEN — the shape that separates this
-      // branch from the earlier unreadable-state refusal. The store writes a
-      // temp file beside the target and renames it, so a read-only state
-      // directory fails every write and no read.
-      await markReadyState(stateDir, ["phase", "999", "--set", "probe"]);
-      chmodSync(stateDir, 0o555);
-      try {
-        const r = await markReady(dir, stateDir);
-        expect(r.exitCode).toBe(1);
-        expect(r.stderr).toContain("recording that durably failed");
-        expect(calls(dir)).toEqual([]);
-      } finally {
-        chmodSync(stateDir, 0o755);
-      }
-    },
-  );
+  it("fails closed when recording an ALREADY-Ready PR does not stick", async () => {
+    // Leaving the record at 0 is not the cost-only outcome it looks like: this
+    // drive then owes no transition with no durable evidence of it, so a later
+    // round — after a human converts the PR BACK to draft — reads 0, sees a
+    // draft, and re-marks it, undoing that decision.
+    const { dir, stateDir } = writeFixture({ threads: [] });
+    // A READABLE state that cannot be WRITTEN — the shape that separates this
+    // branch from the earlier unreadable-state refusal: the database refuses
+    // every write of PR 999's state row, and still serves its reads.
+    await markReadyState(stateDir, ["phase", "999", "--set", "probe"]);
+    const allowWrites = refuseWrites(stateDir, "drive_state", { pr: "999" });
+    try {
+      const r = await markReady(dir, stateDir);
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toContain("recording that durably failed");
+      expect(calls(dir)).toEqual([]);
+    } finally {
+      allowWrites();
+    }
+  });
 });
 
 describe("drive.ts loop control", () => {

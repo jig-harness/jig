@@ -7,11 +7,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import {
-  diagLines,
-  formatClaim,
-  parseClaimText,
-} from "../scripts/lib/claim.ts";
+import { diagLines, parseDiagText } from "../scripts/lib/claim.ts";
 import { armCommand } from "../scripts/lib/driver/rearm.ts";
 import {
   effectivePassArgs,
@@ -22,6 +18,7 @@ import {
   permissionMode,
   withPassArgs,
 } from "../scripts/lib/pass-args.ts";
+import { passCommand } from "../scripts/lib/pass-command.ts";
 
 const BYPASS = ["--permission-mode", "bypassPermissions"];
 const PASS = ["claude", "--model", "sonnet", "-p", "/jig:drive-pr 7"];
@@ -56,6 +53,35 @@ describe("parsePassArgsFlag", () => {
       "auto",
     ]);
   });
+
+  it.each([
+    "--permission-mode",
+    "--settings",
+    "--allowedTools",
+    "--allowed-tools",
+    "--disallowedTools",
+    "--tools",
+    "--mcp-config",
+    "--add-dir",
+    "--plugin-dir",
+    "--agents",
+    "--system-prompt-file",
+    "--max-turns",
+    "-n",
+  ])("refuses a list ending in %s, naming drive.pass_args", (option) => {
+    expect(() => parsePassArgsFlag(`--verbose ${option}`)).toThrow(
+      "drive.pass_args",
+    );
+    expect(parsePassArgsFlag(`${option} value`)).toEqual([option, "value"]);
+    expect(parsePassArgsFlag(`${option}=value`)).toEqual([`${option}=value`]);
+  });
+
+  it.each(["--dangerously-skip-permissions", "--verbose", "--bare", "-d"])(
+    "keeps a list ending in %s, which leaves the drive's -p alone",
+    (flag) => {
+      expect(parsePassArgsFlag(flag)).toEqual([flag]);
+    },
+  );
 });
 
 describe("withPassArgs", () => {
@@ -154,17 +180,41 @@ describe("effectivePassArgs", () => {
   });
 
   it("leaves a pass command that is not Claude Code's alone, saying the setting is ignored", () => {
-    const codex = ["codex", "exec", "/jig:drive-pr 7"];
-    const pass = effectivePassArgs(codex, undefined, configured);
-    expect(pass.argv).toEqual(codex);
+    const other = ["other-agent", "run", "/jig:drive-pr 7"];
+    const pass = effectivePassArgs(other, undefined, configured);
+    expect(pass.argv).toEqual(other);
     expect(pass.line).toBe(
-      "pass args: none; drive.pass_args applies to a Claude Code pass command, and 'codex' ignores it",
+      "pass args: none; drive.pass_args applies to a Claude Code pass command, and 'other-agent' ignores it",
     );
     expect(pass.permission.mode).toBeNull();
     expect(() =>
-      effectivePassArgs(codex, BYPASS.join(" "), configured),
+      effectivePassArgs(other, BYPASS.join(" "), configured),
     ).toThrow(PassArgsUsageError);
-    expect(effectivePassArgs(codex, "", configured).argv).toEqual(codex);
+    expect(effectivePassArgs(other, "", configured).argv).toEqual(other);
+  });
+
+  it("reads a Codex pass command's permission from its own words", () => {
+    const documented = passCommand("codex", 7, true);
+    const pass = effectivePassArgs(documented, undefined, configured);
+    expect(pass.argv).toEqual(documented);
+    expect(pass.permission).toEqual({
+      mode: "no sandbox, no approvals",
+      source: "the pass command's --dangerously-bypass-approvals-and-sandbox",
+    });
+    expect(
+      effectivePassArgs(
+        ["codex", "exec", "--sandbox", "workspace-write", "/jig:drive-pr 7"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("sandbox workspace-write");
+    expect(
+      effectivePassArgs(
+        ["codex", "exec", "/jig:drive-pr 7"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("inherited");
   });
 
   it("stops on a setting it cannot read", () => {
@@ -212,11 +262,11 @@ describe("the drives listing", () => {
   };
 
   it("names the permission mode a claim records", () => {
-    const claim = parseClaimText(
-      formatClaim(1, "h", { ...diag, permissionMode: "bypassPermissions" }),
+    const recorded = parseDiagText(
+      JSON.stringify({ ...diag, permissionMode: "bypassPermissions" }),
     );
-    expect(claim?.diag?.permissionMode).toBe("bypassPermissions");
-    expect(diagLines(claim?.diag ?? diag)).toContain(
+    expect(recorded?.permissionMode).toBe("bypassPermissions");
+    expect(diagLines(recorded ?? diag)).toContain(
       "    permissions: bypassPermissions",
     );
     expect(diagLines(diag)).toContain(

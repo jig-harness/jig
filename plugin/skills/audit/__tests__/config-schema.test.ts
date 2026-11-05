@@ -5,7 +5,10 @@
  * complete example that passes) and the skills that read the fields (the
  * value sets they accept).
  */
-import { REPOSITORY_ONLY_FIELDS } from "../../../shared/config-layers.ts";
+import {
+  REPOSITORY_ONLY_FIELDS,
+  USER_ONLY_FIELDS,
+} from "../../../shared/config-layers.ts";
 import { AUTONOMY_LEVELS, DEFAULT_LEVEL } from "../../../shared/autonomy.ts";
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
@@ -40,14 +43,23 @@ import {
   DEFAULT_ARM_DRIVE,
   DEFAULT_MAX_ROUNDS,
   DEFAULT_PASS_DEADLINE_RETRIES,
+  DEFAULT_CODEX_BYPASS,
   DEFAULT_PASS_ARGS,
   DEFAULT_PASS_MODEL,
   PASS_ARG_PATTERN,
+  passArgsProblem,
   refusedPassArgs,
   PASS_MODEL_PATTERN,
 } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
+import {
+  BOARD_CONFIG_KEYS,
+  BOARD_STAGES,
+  COLUMN_ID,
+} from "../../../shared/orca-board.ts";
+import { DEFAULT_LABELS } from "../../../dispatch/lib/labels.ts";
+import { dispatchSection } from "../../../dispatch/lib/section.ts";
 import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
@@ -186,6 +198,22 @@ describe("CONFIGURATION.md", () => {
     ).toEqual([...REPOSITORY_ONLY_FIELDS].sort());
   });
 
+  test("marks as user-only exactly the fields a repository's file refuses", () => {
+    const [dotted, whole] = [
+      USER_ONLY_FIELDS.filter((f) => f.includes(".")),
+      USER_ONLY_FIELDS.filter((f) => !f.includes(".")),
+    ];
+    expect(
+      schema.fields
+        .filter((f) => f.user_only)
+        .map((f) => f.path)
+        .sort(),
+    ).toEqual([...dotted].sort());
+    // A field with no section has no entry of its own: the schema refuses it whole.
+    for (const name of whole)
+      expect(Object.keys(schema.refused)).toContain(name);
+  });
+
   test("names the same readers as the schema", () => {
     for (const [path, readers] of documented)
       if (readers !== null)
@@ -218,8 +246,12 @@ describe("CONFIGURATION.md", () => {
           (node, key) => (node as Record<string, unknown> | undefined)?.[key],
           example,
         );
+    // A repository's file refuses what only the host sets.
     for (const f of schema.fields)
-      expect([f.path, set(f.path) !== undefined]).toEqual([f.path, true]);
+      expect([f.path, set(f.path) !== undefined]).toEqual([
+        f.path,
+        f.user_only !== true,
+      ]);
   });
 });
 
@@ -262,6 +294,16 @@ describe("the reading skills", () => {
     expect(field("reflection.store")?.values).toEqual([...STORE_KINDS]);
     expect(field("reflection.mode")?.values).toEqual([...MODES]);
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
+  });
+
+  test("map the board stages the Orca card moves through", () => {
+    expect(field("orca.board")?.keys).toEqual(
+      BOARD_STAGES.map((s) => BOARD_CONFIG_KEYS[s]),
+    );
+    expect(field("orca.board")?.values_type).toEqual({
+      type: "string",
+      pattern: COLUMN_ID.source,
+    });
   });
 
   test("accept the spec adapters the resolver has", () => {
@@ -343,6 +385,7 @@ describe("the reading skills", () => {
       "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
       "drive.pass_model": DEFAULT_PASS_MODEL,
       "drive.pass_args": DEFAULT_PASS_ARGS,
+      "drive.codex_bypass": DEFAULT_CODEX_BYPASS,
       "do_item.arm_drive": DEFAULT_ARM_DRIVE,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
       "issue_tracker.github.states_from": DEFAULT_STATES_FROM,
@@ -372,6 +415,10 @@ describe("the reading skills", () => {
       "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
       "verify.retention_days": DEFAULT_RETENTION_DAYS,
       "autonomy.level": DEFAULT_LEVEL,
+      "dispatch.labels.enabled": DEFAULT_LABELS.enabled,
+      "dispatch.labels.prefix": DEFAULT_LABELS.prefix,
+      "dispatch.labels.only_labeled": DEFAULT_LABELS.onlyLabeled,
+      "dispatch.adopt.enabled": dispatchSection({}).adopt.enabled,
     });
   });
 
@@ -404,8 +451,7 @@ describe("the reading skills", () => {
   });
 
   test("reject the drive.pass_args words the reading skill refuses, and accept the rest", () => {
-    const problems = (words: string[]) =>
-      checkConfig({ drive: { pass_args: words } }, schema).length;
+    const fits = (word: string) => PASS_ARG_PATTERN.test(word);
     for (const refused of [
       ["--model", "opus"],
       ["--model=opus"],
@@ -414,18 +460,33 @@ describe("the reading skills", () => {
       ["--"],
     ]) {
       expect(refusedPassArgs(refused)).toBeDefined();
-      expect(problems(refused)).toBeGreaterThan(0);
+      expect(passArgsProblem(refused)).toBeDefined();
+      expect(refused.every(fits)).toBe(false);
     }
-    // The schema cannot see an operand missing at the end of the list; the reading skill refuses it.
+    // The pattern cannot see an operand missing at the end of the list; the reading skill refuses it.
     expect(refusedPassArgs(["--permission-mode"])).toBeDefined();
+    expect(passArgsProblem(["--permission-mode"])).toBeDefined();
+    expect(fits("--permission-mode")).toBe(true);
     for (const accepted of [
       ["--permission-mode", "bypassPermissions"],
       ["--permission-mode=auto"],
       ["--modelish"],
     ]) {
       expect(refusedPassArgs(accepted)).toBeUndefined();
-      expect(problems(accepted)).toBe(0);
+      expect(passArgsProblem(accepted)).toBeUndefined();
+      expect(accepted.every(fits)).toBe(true);
     }
+    expect(passArgsProblem("--verbose")).toContain("must be a list of words");
+  });
+
+  test("report a host's own field in a repository's file once, whatever its value", () => {
+    const ids = (value: unknown) =>
+      checkConfig({ drive: { pass_args: value } }, schema).map((f) => [
+        f.id,
+        f.severity,
+      ]);
+    for (const value of [[], null, "--verbose", ["--permission-mode", "auto"]])
+      expect(ids(value)).toEqual([["user-only:drive.pass_args", "error"]]);
   });
 
   test("report as errors the nulls remoteName refuses, and other nulls as not set", () => {
@@ -440,7 +501,8 @@ describe("the reading skills", () => {
     expect(severities({ repository: { base_branch: null } })).toEqual([
       ["null:repository.base_branch", "info"],
     ]);
-    expect(severities({ drive: null })).toEqual([]);
+    expect(severities({ drive: null })).toEqual([["null:drive", "error"]]);
+    expect(severities({ review: null })).toEqual([]);
   });
 
   test("bound an integer from above where its reader does", () => {

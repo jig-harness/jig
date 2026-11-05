@@ -2,8 +2,9 @@
  * The Linear adapter's pool filters and assignment reads: the filter a
  * candidate pool reads with, the issues assigned to one user in the given
  * states, and who made an issue's current assignment, from the issue's
- * history. `linear.ts` hands in its pool query and parser, so the
- * assignment reads return the pool form the candidate pools do.
+ * history, with the claim's reads and write (`linear-claim.ts`). `linear.ts`
+ * hands in its pool query and parser, so the assignment reads return the
+ * pool form the candidate pools do.
  *
  * A Linear user is named by email or display name, compared without regard
  * to case. An assigner is trusted when it is a non-guest member of the team.
@@ -11,6 +12,7 @@
 
 import { isRecord } from "../../../../../shared/guards.ts";
 import type { LinearTransport } from "./linear.ts";
+import { claimOperations } from "./linear-claim.ts";
 import {
   type Assigner,
   type CanonicalState,
@@ -123,9 +125,13 @@ function assigner(actor: unknown, key: string, team: string): Assigner {
 
 export function assignedOperations(
   opts: AssignedOptions,
-): Pick<Tracker, "assignedIssues" | "assignedBy"> {
+): Pick<
+  Tracker,
+  "assignedIssues" | "assignedBy" | "viewer" | "assignees" | "assign"
+> {
   const { team, states, transport, pageAll } = opts;
   return {
+    ...claimOperations(transport),
     async assignedIssues(identity, wanted) {
       if (wanted.length === 0)
         throw new TrackerRequestError(

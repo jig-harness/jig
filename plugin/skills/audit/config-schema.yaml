@@ -42,6 +42,9 @@
 #             shared evidence record (`shared/evidence.ts`)
 #   repository_only  true for a field that describes one repository: the user
 #             file refuses it (CONFIGURATION.md § Configuration layers)
+#   user_only  true for a field only the host may set, in its user file or one
+#             run's environment: a repository's file refuses it, whatever its
+#             value (CONFIGURATION.md § Configuration layers)
 #   default   the value a skill uses when the field is absent, where that is
 #             one fixed value; a starter configuration never writes it
 #   deprecated  the message a re-run prints: what to use instead
@@ -67,6 +70,7 @@ strict:
   - issue_tracker.jira.resolutions
   - issue_tracker.jira.link_types
   - resolve_conflicts
+  - review.lenses
   - reflection
   - code_stats
   - docs
@@ -76,6 +80,7 @@ strict:
   - work_batch.ranking
   - workspace_name
   - workspace_name.statuses
+  - orca.board
   - routing
   - routing.raise
   - verify
@@ -86,10 +91,12 @@ strict:
 null_refused:
   - repository
   - repository.remote
+  - drive
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
   do_issue: "renamed do_item: rename the section (its fields are unchanged); do-item refuses to run while it exists"
+  clones: "it describes one machine, and every skill refuses a repository's file that sets it: move it to the user file"
 
 fields:
   gc.kinds:
@@ -123,7 +130,7 @@ fields:
     since: 0.105.0
   dispatch.states:
     type: list
-    items: { type: enum, values: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate] }
+    items: { type: enum, values: [triage, backlog, todo, in_review, ops_pending, done, canceled, duplicate] }
     distinct: true
     nonempty: true
     read_by: [dispatch]
@@ -134,6 +141,74 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.105.0
+  dispatch.stalled_after:
+    type: string
+    pattern: "^\\d+\\s*[smh]$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.114.0
+  dispatch.blocked_after:
+    type: string
+    pattern: "^\\d+\\s*[smh]$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.114.0
+  dispatch.drive_rounds_flat:
+    type: integer
+    min: 1
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.117.0
+  dispatch.pickup_within:
+    type: string
+    pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.117.0
+  dispatch.followup_within:
+    type: string
+    pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.117.0
+  dispatch.labels.enabled:
+    type: boolean
+    default: false
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.122.0
+  dispatch.labels.prefix:
+    type: string
+    default: "jig:"
+    pattern: "^(?=.{1,39}$)[^,\\s](?:[^,]*[^,\\s])?$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.122.0
+  dispatch.labels.only_labeled:
+    type: boolean
+    default: false
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.122.0
+  dispatch.adopt.enabled:
+    type: boolean
+    default: false
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.138.0
+  dispatch.adopt.authors:
+    type: list
+    items: { type: string, pattern: "^\\S+$" }
+    nonempty: true
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.138.0
+  dispatch.adopt.within:
+    type: string
+    pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.138.0
 
   gates.command:
     type: command
@@ -244,6 +319,22 @@ fields:
         severities: { type: map, values_type: string }
     read_by: [drive-pr, resolve-review-comments]
     since: 0.61.0
+  review.lenses.dir:
+    type: path
+    exists: expected
+    read_by: [review, do-item]
+    since: 0.116.0
+  review.lenses.off:
+    type: list
+    items: string
+    distinct: true
+    read_by: [review, do-item]
+    since: 0.116.0
+  review.lenses.triggers:
+    type: map
+    values_type: { type: map, values_type: { type: list, items: string } }
+    read_by: [review, do-item]
+    since: 0.116.0
 
   repository.base_branch:
     type: string
@@ -255,7 +346,7 @@ fields:
     type: string
     pattern: "^(?!-)(?!.*\\.\\.)(?!.*//)(?!/)(?!.*/$)(?!.*\\.$)(?!(?:.*/)?\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]+$"
     default: origin
-    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc]
+    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc, jig]
     since: 0.94.0
 
   pull_requests.stacking:
@@ -310,7 +401,7 @@ fields:
   drive.change_areas_catalog:
     type: path
     exists: expected
-    read_by: [drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts]
+    read_by: [drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts, dispatch]
   drive.reviews_drafts:
     type: boolean
     read_by: [drive-pr, do-item]
@@ -339,7 +430,14 @@ fields:
       pattern: "^(?!(?:--|-p|--print|--model)$)(?!--model=)\\S+$"
     default: []
     since: 0.109.0
-    read_by: [drive-pr, do-item]
+    read_by: [drive-pr, do-item, dispatch]
+    user_only: true
+  drive.codex_bypass:
+    type: boolean
+    default: false
+    since: 0.132.0
+    read_by: [drive-pr, do-item, dispatch]
+    user_only: true
   drive.escape_baseline_doc:
     type: path
     exists: expected
@@ -357,6 +455,17 @@ fields:
     read_by: [drive-pr, resolve-review-comments, file-issue, decide]
     repository_only: true
     since: 0.103.0
+  autonomy.off_hours.level:
+    type: enum
+    values: [attended, unattended, wide]
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: 0.113.0
+  autonomy.off_hours.schedule:
+    type: list
+    items: string
+    nonempty: true
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: 0.113.0
   autonomy.park_classes:
     type: list
     items: { type: string, pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }
@@ -384,7 +493,7 @@ fields:
   issue_tracker.team:
     type: string
     pattern: "^[A-Z][A-Z0-9]*$"
-    read_by: [do-item, drive-pr, review, work-batch, dispatch]
+    read_by: [do-item, drive-pr, review, work-batch, dispatch, jig]
     repository_only: true
   issue_tracker.states:
     type: map
@@ -569,6 +678,13 @@ fields:
     read_by: [do-item, drive-pr]
     since: 0.104.0
 
+  orca.board:
+    type: map
+    keys: [in_progress, in_review, completed]
+    values_type: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" }
+    read_by: [do-item, drive-pr]
+    since: 0.126.0
+
   work_batch.point_budget:
     type: integer
     min: 1
@@ -640,12 +756,12 @@ fields:
   routing.models:
     type: map
     values_type: { type: map, values_type: string }
-    read_by: [do-item, drive-pr]
+    read_by: [do-item, drive-pr, dispatch]
     since: 0.92.0
   routing.efforts:
     type: map
     values_type: { type: map, values_type: string }
-    read_by: [do-item]
+    read_by: [do-item, dispatch]
     since: 0.92.0
 
   fleet_health.config:

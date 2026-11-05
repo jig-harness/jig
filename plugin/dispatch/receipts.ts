@@ -27,6 +27,8 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { isMapping } from "../shared/config-layers.ts";
 import { swallow } from "../shared/errors.ts";
+import type { NotAdmitted } from "./lib/accounts.ts";
+import { failureText } from "./lib/text.ts";
 import type { RepoReport } from "./lib/types.ts";
 
 /** Days a receipt is kept unless the machine file's `receipts_days` says otherwise. */
@@ -41,8 +43,18 @@ export interface TickReceipt {
   /** Whether the tick launched what the machine file enables. */
   apply: boolean;
   exitStatus: number;
-  /** Launch record files that do not read, left out of every count. */
+  /** Why `--apply` was asked for with a machine file and nothing was started. */
+  applyWithheld?: string;
+  /** The machine file's accounts a drive's pass is never admitted on, and why: a vendor with no documented pass command, a Codex account while the pass deadline is `0`. */
+  accountsNotAdmitted?: NotAdmitted[];
+  /** Launch records that do not read, left out of every count. */
   unreadableLaunches?: string[];
+  /** Outcome rows that could not be written for records of repositories this tick did not read. */
+  unloggedOutcomes?: string[];
+  /** Why the outcome log's text copy was not brought up to date. */
+  logCopyFailed?: string;
+  /** Why the dashboard's line was not written: it keeps showing the tick before. */
+  lineFailed?: string;
   repos: RepoReport[];
 }
 
@@ -204,7 +216,7 @@ const FINISHED = "finished";
  * never exists empty and only one writer can create it. False when
  * something already is there.
  */
-export function publishOnce(path: string, text: string): boolean {
+function publishOnce(path: string, text: string): boolean {
   const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
   writeFileSync(temporary, text, { mode: 0o600 });
   try {
@@ -318,6 +330,39 @@ function reclaim(path: string, seen: number | null): boolean {
     writeFileSync(guard, FINISHED);
     sweepGuards(path);
   }
+}
+
+/**
+ * The index of this tick among the ticks that applied launches, kept in the
+ * state directory and advanced by one per call, so rotation does not depend
+ * on the timer's interval or on when a tick happens to start. Call it only
+ * while holding the tick lock. A counter that is missing or malformed starts
+ * over; one that cannot be read or written returns the reason, for an index that
+ * is not recorded would repeat and the tick must launch nothing rather than
+ * retry the same targets forever.
+ */
+export function nextTickIndex(root = stateRoot()): number | { failed: string } {
+  const path = join(root, "tick-index");
+  let last = -1;
+  try {
+    const value = Number(readFileSync(path, "utf8").trim());
+    if (Number.isSafeInteger(value) && value >= 0) last = value;
+  } catch (err) {
+    // A counter that does not exist yet starts the count; one that cannot be read is an I/O fault.
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      swallow(err, `${path} cannot be read`);
+      return { failed: `${path} cannot be read: ${failureText(err)}` };
+    }
+  }
+  const index = last + 1;
+  try {
+    mkdirSync(root, { recursive: true, mode: 0o700 });
+    writeFileSync(path, `${index}\n`, { mode: 0o600 });
+  } catch (err) {
+    swallow(err, `${path} cannot be written`);
+    return { failed: `${path} cannot be written: ${failureText(err)}` };
+  }
+  return index;
 }
 
 /** The tick lock: one tick per machine. Returns its release, or the holder. */

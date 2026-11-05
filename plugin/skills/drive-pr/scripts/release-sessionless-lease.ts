@@ -65,6 +65,7 @@ import {
   leaseHolderLabel,
   releaseSessionlessLease,
 } from "./lib/state/lease.ts";
+import { dbPathFor } from "./lib/state/db.ts";
 import { openStore, resolveStateDir } from "./lib/state/store.ts";
 
 const LABEL = "release-sessionless-lease.ts";
@@ -117,14 +118,10 @@ async function main(): Promise<number> {
     if (e instanceof ExitError) return 0;
     throw e;
   }
-  // Checked BEFORE `openStore`, which would `mkdirSync` it: a cleanup that
-  // CREATES the directory it found nothing in is a side effect nobody asked
-  // for. Narrow, and worth saying so rather than overclaiming — the ordinary
-  // resolution is the git COMMON DIR, which exists in every repository, so
-  // this only ever bites under a `$DRIVE_PR_STATE_DIR` override naming a path
-  // that is not there (a caller pointing at a state dir that was reaped, and
-  // the test that pins this).
-  if (!existsSync(stateDir)) return 0;
+  // Checked BEFORE `openStore`, which would create the database: a cleanup
+  // that CREATES the store it found nothing in is a side effect nobody asked
+  // for, and a store that does not exist holds no lease to release.
+  if (!existsSync(dbPathFor(stateDir))) return 0;
 
   const store = await openStore(pr);
   // Under the PR's STATE MUTEX, exactly as `drive-state.ts`'s `clear-lease`

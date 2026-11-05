@@ -3,170 +3,82 @@
  * order, as a headless pass in the pull request's workspace, on an
  * admitted account. For each one:
  *
- * 1. read the pull request's ledger again, and go on only when its facts
- *    are the ones the plan acted on;
+ * 1. read the pull request and its ledger again, and go on only when its
+ *    facts are the ones the plan acted on (for a re-drive, the change it acts
+ *    on too; for an arm its `drive` label asked for, still no ledger at the
+ *    same head) and no `hold` label has appeared on it;
  * 2. admit an account (accounts.ts), and check that the wrapper's
  *    environment resolves to that account's identity;
- * 3. use the workspace that holds the pull request, or open one;
+ * 3. use the workspace that holds the pull request, or open one named for
+ *    the stage and the pull request (`dispatched` in `runtime/port.ts`),
+ *    under the launch record's id minted here;
  * 4. write the launch record, then call the runtime's `launch` under the
- *    record's token.
+ *    record's token (launch.ts).
  *
  * Before any of that, a pending record of the repository whose launch got
  * no answer is retried once, under its own record and token, never as a
  * fresh launch. Everything else in the plan is reported, as without
  * `--apply`.
  */
-import type { MachineConfig } from "../machine-config.ts";
+import { admittedVendor } from "../accounts.ts";
 import {
-  type IdentityCheck,
-  admitRearm,
-  admitTakeover,
-  slotsOf,
-  checkIdentity,
-  refreshWalls,
-  type Slots,
-} from "../accounts.ts";
-import {
-  holds,
-  type LaunchAttempt,
   type LaunchRecord,
   newRecordId,
   newToken,
-  type ReadRecord,
-  removeRecord,
-  writeRecord,
+  redrivenChanges,
 } from "../launches.ts";
-import type {
-  SessionRuntime,
-  SessionsReport,
-  RuntimeReceipt,
+import {
+  type Dispatched,
+  dispatched,
+  type SessionsReport,
 } from "../runtime/port.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
   DrivenPr,
   LaunchOutcome,
+  LedgerClass,
   RepoReport,
   RepoTarget,
+  StaleCause,
 } from "../types.ts";
-import { factsOf } from "./drive-hold.ts";
+import { armsUnarmed, factsOf } from "./drive-hold.ts";
+import {
+  accountBlocked,
+  admitAccount,
+  type ApplyState,
+  type Opened,
+  openedFor,
+  openWithinBudget,
+  outOfTime,
+  replay,
+  replayable,
+  rotated,
+  startRecord,
+  waits,
+} from "./launch.ts";
 
-/** What `--apply` carries across a tick's repositories. */
-export interface ApplyState {
-  machine: MachineConfig;
-  runtime: SessionRuntime;
-  /** Every launch record, the ones this tick writes appended. */
-  records: ReadRecord[];
-  table: Slots[];
-  /** The account of the most recent launch record, where the turn resumes. */
-  last: string | null;
-  root?: string;
+export type { ApplyState } from "./launch.ts";
+
+/** A fresh read of one pull request's drive, and whether a person's `hold` label is on it. */
+export interface FreshDrive {
+  read: (pr: number) => Promise<DrivenPr | null>;
+  held: (pr: DrivenPr) => boolean;
 }
 
-/** A pending record's launch is retried once, under its own key. */
-const MAX_ATTEMPTS = 2;
-
-function attemptOf(receipt: RuntimeReceipt): LaunchAttempt {
-  return {
-    at: new Date().toISOString(),
-    outcome: receipt.ok ? "sent" : receipt.lost ? "lost" : "failed",
-    detail: receipt.detail,
-  };
-}
-
-async function callLaunch(
-  state: ApplyState,
-  record: LaunchRecord,
-): Promise<LaunchAttempt> {
-  const workspace = record.workspace as { id: string; path: string };
-  let receipt: RuntimeReceipt;
-  try {
-    receipt = await state.runtime.launch(
-      workspace,
-      { kind: "headless", title: `drive #${record.pr}`, record: record.id },
-      record.account,
-      record.token,
-    );
-  } catch (error) {
-    receipt = { ok: false, lost: true, detail: failureText(error) };
-  }
-  const attempt = attemptOf(receipt);
-  record.attempts.push(attempt);
-  writeRecord(record, state.root);
-  return attempt;
-}
-
-/** Whether a takeover shares the slot of the record it replaces, which still holds it. */
-function sharesSlot(state: ApplyState, record: LaunchRecord): boolean {
-  const replaced = state.records.find((r) => r.record.id === record.replaces);
-  return replaced !== undefined && holds(replaced.state);
-}
-
-/**
- * Whether every launch before the latest one is a known failure. An earlier
- * attempt whose answer was lost may still have started the wrapper, so a
- * record carrying one is kept until its claim or exit settles it.
- */
-function releasable(record: LaunchRecord): boolean {
-  return record.attempts.slice(0, -1).every((a) => a.outcome === "failed");
-}
-
-/** Release the slot of a record the runtime answered it started nothing for. */
-function release(state: ApplyState, record: LaunchRecord): void {
-  removeRecord(record.id, state.root);
-  state.records = state.records.filter((r) => r.record.id !== record.id);
-  const slots = slotsOf(state.table, record);
-  if (slots !== undefined && !sharesSlot(state, record)) slots.held -= 1;
-}
-
-function outcome(
-  record: LaunchRecord,
-  attempt: LaunchAttempt,
-  retried: boolean,
-): LaunchOutcome {
-  return {
-    target: `PR #${record.pr}`,
-    action: record.action,
-    outcome:
-      attempt.outcome === "sent"
-        ? retried
-          ? "retried"
-          : "launched"
-        : attempt.outcome,
-    account: record.account,
-    record: record.id,
-    detail: attempt.detail,
-  };
-}
+const HELD = "a person's hold label is on it now";
 
 /** Retry, once and under its own key, each pending record of `repo` whose launch got no answer. */
 async function retryPending(
   state: ApplyState,
   repo: RepoTarget,
   report: RepoReport,
-  fresh: (pr: number) => Promise<DrivenPr | null>,
+  fresh: FreshDrive,
 ): Promise<void> {
-  for (const { record, state: s } of [...state.records]) {
-    if (record.repo !== repo.slug || s.kind !== "pending") continue;
-    const last = record.attempts.at(-1);
-    if (last?.outcome === "sent" || record.attempts.length >= MAX_ATTEMPTS)
-      continue;
-    if (record.workspace === null) continue;
-    const reason = await retryBlocked(state, record, fresh);
-    if (reason !== null) {
-      report.launches.push(
-        waits(
-          { target: `PR #${record.pr}`, stage: "rearm" } as Action,
-          `the pending launch of ${record.id} is not replayed: ${reason}`,
-          record.account,
-        ),
-      );
-      continue;
-    }
-    const attempt = await callLaunch(state, record);
-    if (attempt.outcome === "failed" && releasable(record))
-      release(state, record);
-    report.launches.push(outcome(record, attempt, true));
+  for (const record of replayable(state, repo.slug, ["rearm", "takeover"])) {
+    const action = { target: `PR #${record.pr}`, stage: "rearm" } as Action;
+    const blocked = await retryBlocked(state, record, fresh);
+    report.launches.push(await replay(state, record, action, blocked));
   }
 }
 
@@ -174,79 +86,105 @@ async function retryPending(
 async function retryBlocked(
   state: ApplyState,
   record: LaunchRecord,
-  fresh: (pr: number) => Promise<DrivenPr | null>,
+  fresh: FreshDrive,
 ): Promise<string | null> {
   let read: DrivenPr | null;
   try {
-    read = await fresh(record.pr);
+    read = await fresh.read(record.pr as number);
   } catch (error) {
     return `its ledger cannot be read again: ${failureText(error)}`;
   }
   if (read === null) return "its ledger cannot be read again";
+  if (fresh.held(read)) return HELD;
   if (record.facts !== factsOf(read))
     return `its ledger changed since the launch (now ${factsOf(read)})`;
-  const want = record.action === "rearm" ? "re-armable" : "silent";
+  const want = wantedClass(
+    record.action === "takeover",
+    record.redrive,
+    record.facts,
+  );
   if (read.class !== want) return `its ledger now reads ${read.class}`;
-  refreshWalls(state.table, state.records, Date.now(), state.root);
-  const slots = slotsOf(state.table, record);
-  if (slots === undefined)
-    return `${record.account} is no longer in the machine file`;
-  if (
-    slots.account.vendor !== record.vendor ||
-    slots.account.configDir !== record.configDir
-  )
-    return `${slots.account.name} no longer has the vendor and directory the launch was recorded with`;
-  if (slots.wallUnrecorded)
-    return `${slots.account.name} ended on a wall that was not recorded`;
-  if (slots.wall !== null)
-    return `${slots.account.name} is walled until ${slots.wall.resetAt}`;
-  const identity = await identityOf(state, slots);
-  return identity.ok ? null : `identity check: ${identity.reason}`;
+  // A stop on a conflict stands whatever moved since: its base moves often, and
+  // this record holds the pull request until its launch is replayed. The replay
+  // then acts on the change read now, so the record names that one, and keeps
+  // the one an earlier launch may already have acted on.
+  const blocked =
+    record.redrive?.conflictStop === true
+      ? replayedChange(state, record, read)
+      : changedStale(record.redrive, read);
+  if (blocked !== null) return blocked;
+  return accountBlocked(state, record);
 }
 
-function waits(
-  action: Action,
-  detail: string,
-  account: string | null = null,
-): LaunchOutcome {
-  return {
-    target: action.target,
-    action: action.takeover === undefined ? "rearm" : "takeover",
-    outcome: "waits",
-    account,
-    record: null,
-    detail,
+/**
+ * A record that stopped on a conflict acts on the change read now: it names
+ * that one and keeps the ones an earlier launch may have acted on. Why it must
+ * not, when a launch record (its own history included) already re-drove that
+ * change; `null` when it may.
+ */
+function replayedChange(
+  state: ApplyState,
+  record: LaunchRecord,
+  read: DrivenPr,
+): string | null {
+  const redrive = record.redrive;
+  if (redrive == null || read.stale === undefined) return null;
+  const change = read.stale.change;
+  if (change === redrive.change) return null;
+  const done = state.records.find(
+    (r) =>
+      r.record.repo === record.repo &&
+      r.record.pr === record.pr &&
+      r.record.redrive != null &&
+      redrivenChanges(r.record.redrive).includes(change),
+  );
+  if (done !== undefined)
+    return `launch record ${done.record.id} already re-drove the change it shows now`;
+  record.redrive = {
+    ...read.stale,
+    earlier: [...(redrive.earlier ?? []), redrive.change],
   };
+  return null;
 }
 
-function refused(
+/** The class a launch acts on: a takeover's `silent`, a re-drive's `stale`, a labelled arm's `unarmed`, any other re-arm's `re-armable`. */
+function wantedClass(
+  takeover: boolean,
+  redrive: StaleCause | null | undefined,
+  facts: string | null | undefined,
+): LedgerClass {
+  if (takeover) return "silent";
+  if (armsUnarmed(facts)) return "unarmed";
+  return redrive == null ? "re-armable" : "stale";
+}
+
+/** Why a pull request no longer shows the change a re-drive acts on; `null` when it still does. */
+function changedStale(
+  redrive: StaleCause | null | undefined,
+  fresh: DrivenPr,
+): string | null {
+  if (redrive == null || fresh.stale?.change === redrive.change) return null;
+  return `its pull request changed since the plan read it (now ${fresh.stale?.cause ?? fresh.why})`;
+}
+
+/** The fresh read: the ledger, and a stale one's pull request, must still say what the plan acted on, and no hold label stand on it. */
+function stillWanted(
   action: Action,
-  detail: string,
-  account: string | null,
-): LaunchOutcome {
-  return { ...waits(action, detail, account), outcome: "refused" };
-}
-
-/** The fresh read: the ledger must still say what the plan acted on. */
-function stillWanted(action: Action, fresh: DrivenPr | null): string | null {
+  fresh: DrivenPr | null,
+  held: FreshDrive["held"],
+): string | null {
   if (fresh === null) return "its ledger cannot be read again";
+  if (held(fresh)) return HELD;
   if (factsOf(fresh) !== action.facts)
     return `its ledger changed since the plan read it (now ${factsOf(fresh)})`;
-  const want = action.takeover === undefined ? "re-armable" : "silent";
-  return fresh.class === want
-    ? null
-    : `its ledger now reads ${fresh.class}: ${fresh.why}`;
-}
-
-async function identityOf(
-  state: ApplyState,
-  slots: Slots,
-): Promise<IdentityCheck> {
-  // Read afresh each time: a login file can change between two launches.
-  return checkIdentity(
-    slots.account,
-    Math.ceil(state.machine.runtimeTimeoutMs / 1000),
+  const want = wantedClass(
+    action.takeover !== undefined,
+    action.redrive,
+    action.facts,
   );
+  if (fresh.class !== want)
+    return `its ledger now reads ${fresh.class}: ${fresh.why}`;
+  return changedStale(action.redrive, fresh);
 }
 
 async function workspaceFor(
@@ -255,89 +193,20 @@ async function workspaceFor(
   pr: number,
   head: string,
   sessions: SessionsReport,
-): Promise<{ id: string; path: string } | string> {
+  named: Dispatched,
+): Promise<Opened> {
   const held = sessions.ok
     ? sessions.workspaces.find((w) => w.prs.includes(pr))
     : undefined;
-  if (held !== undefined) return { id: held.id, path: held.path };
-  let opened: RuntimeReceipt;
-  try {
-    opened = await state.runtime.openWorkspace(repo, { pr, head });
-  } catch (error) {
-    return `the workspace could not be opened: ${failureText(error)}`;
-  }
-  if (opened.ok && opened.workspace !== undefined) return opened.workspace;
-  return `the workspace could not be opened${opened.lost ? " in time" : ""}: ${opened.detail}`;
+  if (held !== undefined)
+    return { workspace: { id: held.id, path: held.path } };
+  return openWithinBudget(state, repo, { pr, head, dispatched: named });
 }
 
-function admission(
-  state: ApplyState,
-  action: Action,
-  excluded: ReadonlySet<string>,
-) {
-  if (action.takeover === undefined)
-    return admitRearm(state.table, state.last, excluded);
-  const replaced = state.records.find((r) => r.record.id === action.takeover);
-  return replaced === undefined
-    ? { waits: `the launch record ${action.takeover} it replaces is gone` }
-    : admitTakeover(state.table, replaced);
-}
-
-/**
- * The account a launch bills, admitted afresh against the walls and the
- * identity check. A re-arm tries the next account when one fails its
- * identity check, so a stale login cannot starve the others; a takeover has
- * only its own account.
- */
-async function admitAccount(
-  state: ApplyState,
-  action: Action,
-): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
-  refreshWalls(state.table, state.records, Date.now(), state.root);
-  const failed = new Set<string>();
-  let refusal: LaunchOutcome | null = null;
-  for (;;) {
-    const admitted = admission(state, action, failed);
-    if ("waits" in admitted)
-      return { outcome: refusal ?? waits(action, admitted.waits) };
-    const slots = admitted.admitted;
-    const identity = await identityOf(state, slots);
-    if (identity.ok) return { slots };
-    const name = slots.account.name;
-    refusal ??= refused(action, `identity check: ${identity.reason}`, name);
-    if (action.takeover !== undefined) return { outcome: refusal };
-    failed.add(name);
-  }
-}
-
-/** Opening a workspace can outlast the wall or the login the account was admitted under. */
-async function changedWhileOpening(
-  state: ApplyState,
-  action: Action,
-  slots: Slots,
-): Promise<LaunchOutcome | null> {
-  refreshWalls(state.table, state.records, Date.now(), state.root);
-  const name = slots.account.name;
-  if (slots.wallUnrecorded)
-    return waits(
-      action,
-      `${name} ended on a wall that was not recorded while the workspace opened`,
-      name,
-    );
-  if (slots.wall !== null)
-    return waits(
-      action,
-      `${name} was walled until ${slots.wall.resetAt} while the workspace opened`,
-      name,
-    );
-  const after = await identityOf(state, slots);
-  return after.ok
-    ? null
-    : refused(
-        action,
-        `identity check after the workspace opened: ${after.reason}`,
-        name,
-      );
+/** The ledger's round, which the launch's outcome row counts its rounds from; `null` when the ledger does not say. */
+function roundOf(pr: DrivenPr): number | null {
+  const round = pr.evidence.round;
+  return typeof round === "number" ? round : null;
 }
 
 /** One planned re-arm or takeover, through its fresh read, admission, workspace and launch. */
@@ -347,73 +216,94 @@ async function launchOne(
   action: Action,
   fresh: DrivenPr | null,
   sessions: SessionsReport,
+  held: FreshDrive["held"],
 ): Promise<LaunchOutcome> {
-  const changed = stillWanted(action, fresh);
+  const late = outOfTime(state);
+  if (late !== null) return waits(action, late);
+  const changed = stillWanted(action, fresh, held);
   if (changed !== null) return waits(action, changed);
   const admitted = await admitAccount(state, action);
   if ("outcome" in admitted) return admitted.outcome;
   const slots = admitted.slots;
   const pr = fresh as DrivenPr;
-  const workspace = await workspaceFor(
+  const id = newRecordId(new Date());
+  const kind = action.takeover === undefined ? "rearm" : "takeover";
+  const named = dispatched(kind, `#${pr.number}`, id);
+  const opened = await openedFor(
     state,
-    repo,
-    pr.number,
-    pr.head,
-    sessions,
+    action,
+    slots,
+    workspaceFor(state, repo, pr.number, pr.head, sessions, named),
   );
-  if (typeof workspace === "string")
-    return refused(action, workspace, slots.account.name);
-  const stale = await changedWhileOpening(state, action, slots);
-  if (stale !== null) return stale;
-  const record: LaunchRecord = {
-    version: 1,
-    id: newRecordId(new Date()),
-    token: newToken(),
-    action: action.takeover === undefined ? "rearm" : "takeover",
-    repo: repo.slug,
-    repoPath: repo.path,
-    pr: pr.number,
-    account: slots.account.name,
-    vendor: slots.account.vendor,
-    configDir: slots.account.configDir,
-    wallBackoffMs: state.machine.wallBackoffMs,
-    replaces: action.takeover ?? null,
-    facts: action.facts ?? factsOf(pr),
-    createdAt: new Date().toISOString(),
-    workspace,
-    attempts: [],
-  };
-  writeRecord(record, state.root);
-  if (!sharesSlot(state, record)) slots.held += 1;
-  state.records.push({ record, state: { kind: "pending" } });
-  state.last = slots.account.name;
-  const attempt = await callLaunch(state, record);
-  if (attempt.outcome === "failed" && releasable(record))
-    release(state, record);
-  return outcome(record, attempt, false);
+  if ("outcome" in opened) return opened.outcome;
+  const { workspace } = opened;
+  const pastDeadline = outOfTime(state);
+  if (pastDeadline !== null)
+    return waits(action, pastDeadline, slots.account.name);
+  return startRecord(
+    state,
+    {
+      version: 1,
+      id,
+      token: newToken(),
+      action: kind,
+      repo: repo.slug,
+      repoPath: repo.path,
+      pr: pr.number,
+      account: slots.account.name,
+      vendor: admittedVendor(slots.account),
+      configDir: slots.account.configDir,
+      wallBackoffMs: state.machine.wallBackoffMs,
+      passTimeoutSec: state.passDeadlineSec,
+      codexBypass: state.codexOptIn.on,
+      replaces: action.takeover ?? null,
+      facts: action.facts ?? factsOf(pr),
+      createdAt: new Date().toISOString(),
+      workspace,
+      attempts: [],
+      item: null,
+      agentId: null,
+      model: null,
+      effort: null,
+      released: false,
+      command: null,
+      marker: null,
+      round: roundOf(pr),
+      redrive: action.redrive ?? null,
+      mark: named.mark,
+    },
+    slots,
+  );
 }
 
-/** `--apply` for one repository's drives; `fresh` re-reads one pull request's ledger. */
+/** `--apply` for one repository's drives; `fresh` re-reads one pull request's ledger and labels. */
 export async function applyDrives(
   state: ApplyState,
   repo: RepoTarget,
   report: RepoReport,
   sessions: SessionsReport,
-  fresh: (pr: number) => Promise<DrivenPr | null>,
+  fresh: FreshDrive,
 ): Promise<void> {
   await retryPending(state, repo, report, fresh);
-  for (const action of report.actions) {
-    if (action.stage !== "rearm") continue;
+  const rearms = report.actions.filter((a) => a.stage === "rearm");
+  for (const action of rotated(state, rearms, "targets")) {
+    const late = outOfTime(state);
+    if (late !== null) {
+      report.launches.push(waits(action, late));
+      continue;
+    }
     const pr = Number(action.target.replace(/^PR #/, ""));
     let read: DrivenPr | null;
     try {
-      read = await fresh(pr);
+      read = await fresh.read(pr);
     } catch (error) {
       report.launches.push(
         waits(action, `its ledger cannot be read again: ${failureText(error)}`),
       );
       continue;
     }
-    report.launches.push(await launchOne(state, repo, action, read, sessions));
+    report.launches.push(
+      await launchOne(state, repo, action, read, sessions, fresh.held),
+    );
   }
 }

@@ -3,6 +3,8 @@ import { driverRuntime } from "./runtime.ts";
 
 import { foldGateState } from "./../state/mailbox.ts";
 
+import { ackDirective, stopFor } from "./../state/mailbox-stop.ts";
+
 import { sleep } from "./../cli.ts";
 
 import { MAILBOX_POLL_SECONDS } from "./settings.ts";
@@ -16,27 +18,36 @@ type MailboxCheckpoint =
   | "compromised"
   | "taken-over";
 
+/** The mailbox a driver reads, and the generation an addressed `stop` must name to end it. */
+export interface MailboxWatch {
+  readonly dir: string;
+  readonly pr: string;
+  readonly generation: number;
+}
+
 /**
  * Keep the driver and its heartbeat alive while a pause is active: the lock
  * timer refreshes the locks, and `renew` (the ledger's `ledgerRenewal`) is
  * called on every poll while paused, since a pause may last past the ledger's
  * lease window. A renewal that names an exit (another clone's newer claim)
  * ends the wait as `taken-over`.
+ *
+ * The driver acknowledges the directive it acts on in the outbox: the
+ * `stop` that ends it, and the `pause` it starts holding at.
  */
 export async function waitAtMailboxCheckpoint(
-  dir: string,
-  pr: string,
+  watch: MailboxWatch,
   pauseMaxSec: number,
   renew: () => Promise<number | null> = async () => null,
 ): Promise<MailboxCheckpoint> {
   let pausedAt: number | null = null;
   for (;;) {
     if (driverRuntime.compromised !== "") return "compromised";
-    const directive = readMailboxDirective(dir, pr);
+    const directive = await readMailboxDirective(watch);
     if (directive === "clear") return pausedAt === null ? "clear" : "resumed";
     if (directive !== "paused") return directive;
-    pausedAt ??= pauseStarted(pr);
-    const ended = await whilePaused(pr, pausedAt, pauseMaxSec, renew);
+    pausedAt ??= pauseStarted(watch.pr);
+    const ended = await whilePaused(watch.pr, pausedAt, pauseMaxSec, renew);
     if (ended !== null) return ended;
   }
 }
@@ -66,20 +77,57 @@ async function whilePaused(
   return null;
 }
 
-function readMailboxDirective(
-  dir: string,
-  pr: string,
-): "paused" | "clear" | "stopped" | "unreadable" {
-  const gate = foldGateState(dir, pr);
+/** The directives each driver generation already acknowledged, so a pause polled again is acknowledged once. */
+const acknowledged = new Set<string>();
+
+/**
+ * Acknowledge `id` once the append is durable; a failed append is said, not
+ * remembered, so the next poll tries again, and does not stop the drive.
+ * Whether `id` is acknowledged by now.
+ */
+async function acknowledge(watch: MailboxWatch, id: string): Promise<boolean> {
+  const key = `${watch.generation}:${id}`;
+  if (acknowledged.has(key)) return true;
+  try {
+    await ackDirective(watch.dir, watch.pr, id, watch.generation);
+    acknowledged.add(key);
+    return true;
+  } catch (error) {
+    console.error(
+      `drive.ts: could not acknowledge mailbox directive ${id}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return false;
+  }
+}
+
+/** Tries a stop's acknowledgement gets before the drive ends without it. */
+const STOP_ACK_ATTEMPTS = 3;
+
+async function readMailboxDirective(
+  watch: MailboxWatch,
+): Promise<"paused" | "clear" | "stopped" | "unreadable"> {
+  const gate = foldGateState(watch.dir, watch.pr);
   if (!gate.ok) {
     console.error(`drive.ts: mailbox gate state unreadable: ${gate.why}`);
     return "unreadable";
   }
-  if (gate.state.stop.active) {
+  const stop = stopFor(gate.state, watch.generation, false);
+  if (stop !== null) {
     console.error(
-      `drive.ts: stop requested for PR #${pr}; ending at a safe round boundary.`,
+      `drive.ts: stop requested for PR #${watch.pr} (${stop}); ending at a safe round boundary.`,
     );
+    for (let attempt = 1; attempt <= STOP_ACK_ATTEMPTS; attempt++) {
+      if (await acknowledge(watch, stop)) break;
+      if (attempt === STOP_ACK_ATTEMPTS)
+        console.error(
+          `drive.ts: ending for stop ${stop} WITHOUT its acknowledgement in the outbox after ${STOP_ACK_ATTEMPTS} attempts.`,
+        );
+      else await sleep(1);
+    }
     return "stopped";
   }
-  return gate.state.pause.active ? "paused" : "clear";
+  const pause = gate.state.pause;
+  if (!pause.active) return "clear";
+  if (pause.by !== null) await acknowledge(watch, pause.by);
+  return "paused";
 }

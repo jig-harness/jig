@@ -4,6 +4,7 @@
  * (`lib/ci-policy.ts`); every predicate takes them as arguments.
  */
 
+import { swallow } from "../../../../shared/errors.ts";
 import { isGitSha } from "./cli.ts";
 
 export interface LabelTransition {
@@ -28,6 +29,8 @@ export interface CheckRunLite {
   startedAt: string | null;
   /** The GitHub App that published the run; `null` when the payload omits it. */
   appId: number | null;
+  /** The check suite of the workflow run behind it, when it names one. */
+  suiteId?: number | null;
 }
 
 /** A legacy commit status on the head: the latest state per context. */
@@ -183,6 +186,12 @@ export function mutationProven(
   return transition !== null && liveMatches;
 }
 
+/** A check run's `check_suite` field reduced to its id, when it names one. */
+export function suiteIdOf(checkSuite: unknown): number | null {
+  const id = (checkSuite as { id?: unknown } | null | undefined)?.id;
+  return typeof id === "number" ? id : null;
+}
+
 export function parseCheckRuns(raw: unknown): CheckRunLite[] | null {
   const pages = Array.isArray(raw) ? raw : [raw];
   const result: CheckRunLite[] = [];
@@ -236,6 +245,7 @@ export function parseCheckRuns(raw: unknown): CheckRunLite[] | null {
         conclusion,
         startedAt,
         appId,
+        suiteId: suiteIdOf(run.check_suite),
       });
     }
   }
@@ -419,6 +429,50 @@ export function completedHoldPrecondition(
     watermark,
     strictAfter,
   );
+}
+
+/**
+ * Whether a `gh pr view --json mergeable` call says the pull request
+ * conflicts with its base. `UNKNOWN`, which GitHub reports while it is still
+ * computing, a failed call and an unreadable answer are not a conflict.
+ */
+export function reportsConflict(call: {
+  code: number;
+  stdout: string;
+}): boolean {
+  if (call.code !== 0) return false;
+  try {
+    const value = JSON.parse(call.stdout) as unknown;
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      (value as Record<string, unknown>).mergeable === "CONFLICTING"
+    );
+  } catch (err) {
+    swallow(err, "the mergeability answer is not JSON");
+    return false;
+  }
+}
+
+/**
+ * Was the hold label on the pull request when a run was created? A re-run
+ * replays that run's event, label and all, so it would meet the held-head check
+ * again. A run created in the second of the label's removal is the release's
+ * own. In the second of its application it counts as held, and so does a run
+ * whose time cannot be read: leaving a run out only costs a pass a re-run.
+ */
+export function createdUnderHold(
+  createdAt: string,
+  transitions: readonly LabelTransition[],
+): boolean {
+  const created = Date.parse(createdAt);
+  if (!Number.isFinite(created)) return true;
+  let held = false;
+  for (const transition of transitions) {
+    if (Date.parse(transition.createdAt) > created) break;
+    held = transition.event === "labeled";
+  }
+  return held;
 }
 
 export function checkRunWatermark(

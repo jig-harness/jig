@@ -33,41 +33,27 @@ design still holds:
   `autonomy.park_classes` read from the pull request's base branch, failing
   closed when it cannot be read. Today they come from the working tree, so a
   pull request that edits them changes what its own drive may decide.
-- **`wide` and off-hours windows**: `autonomy.off_hours` raising the level on
-  a schedule, unless the environment chose a level for the run, and `wide`'s
-  own column, where a decision outside the registry's classes is taken
-  provisionally and recorded as such, and a parked drive re-arms once every
-  unanswered item is provisionally decided where its class allows it.
-  `wide` is accepted today and acts as `unattended`.
-- **The morning report**: `drives.ts --report`, run by a person or a
-  scheduler the repository sets up. It covers every pull request this clone
-  knows, plus every open pull request the account authored or drove, and
-  lists for each its terminal state, the provisional decisions first, the
-  takeovers and re-arms, the parked decisions in their framed form and the
-  deferred findings not yet filed; with the loop-metrics counters.
 
-The policy from the base branch ships first and on its own. `wide` and
-`off_hours` are dark-by-default dials: they come into Jig once a working
-repository has run them and the design's validation measure holds.
+The policy from the base branch ships on its own. `wide` and `off_hours`
+ship opt-in and documented as not yet validated, a maintainer's recorded
+exception to the dark-by-default rule, revisited once a working repository
+has run them for a month against the design's validation measure.
 
-Done when a drive reads its ceiling and park classes from the base branch;
-a `wide` run records a provisional decision where a person can reverse it
-and re-arms a parked drive once every unanswered item is provisionally
-decided; and a repository with `off_hours` on wakes to a morning report, run
-on request, whose provisional decisions a person can reverse from the pull
-request.
+Done when a drive reads its ceiling and park classes from the base branch.
 
 ### 33. The dispatcher: a tick that starts the execution line's stages
 
 Every stage of the execution line starts only when a person types it: an
 assigned item waits for someone to open a `do-item` session, a drive
 stopped by a usage limit or an answered park waits for someone to re-arm
-it, a merge waits for someone to run its follow-up. Nothing watches the
+it, a converged pull request that its base later conflicts waits for
+someone to notice, a merge waits for someone to run its follow-up. Nothing watches the
 tracker or the pull requests for the next thing to start, so with nobody at
 the keyboard the line stops at the first stage boundary.
 [design/dark-factory-dispatch.md](dark-factory-dispatch.md) has how it
-works: `jig dispatch` in `plugin/dispatch/`, a stateless tick on a timer
-`jig dispatch install` writes, reads the items assigned to the repository's
+works: `jig dispatch` in `plugin/dispatch/`, a tick on a timer
+`jig dispatch install` writes, which keeps what it did in one SQLite
+database and nothing in memory between runs, reads the items assigned to the repository's
 factory identity in a dispatch state (through a new tracker-interface read,
 `assignedIssues(identity, states)`, and `assignedBy(key)` for who made the assignment, beside the unchanged pool query), the drive ledger on each
 pull request and the session runtime's list of running sessions; it
@@ -92,9 +78,16 @@ closed list, a dashboard that filters it (`jig dispatch dashboard`, no
 report files), drift from each stage's expectation reported and notified
 but never acted on, recurring classes routed to `reflect`, and one
 mechanical nudge (`steer`, "continue" after a usage limit resets) with no
-open-ended prompt; the re-arm step waits on the drive
-running in a session of its own, and the pickups on `do-item` refusing an
-item already claimed. A park's notification carries the park's framed
+open-ended prompt, then the re-drive of a converged pull request the
+forge reports conflicting or whose head moved after the drive verified
+it, then Codex accounts admitted beside Claude Code's, the account's
+vendor choosing the agent a session runs in, then the pull requests that
+touch a change area the catalog marks `serialize: true` driven one at a
+time, the one closest to merge first and the rest held, with the conflict
+history report proposing which areas to mark; the re-arm step waits on the drive
+running in a session of its own, and the pickups' launches on an Orca
+session that can be bound to a chosen account (until then the pickups are
+reported, not started). A park's notification carries the park's framed
 decision.
 
 Done when, on a host running Orca, an item assigned to the factory
@@ -106,8 +99,198 @@ drive, every launch, refusal and notification is in the tick's
 receipts, every ended launch has a row with its outcome class in the
 outcome log, `jig dispatch dashboard` filtered to yesterday shows only
 yesterday's rows, a drive whose open threads rise across rounds is
-reported as drifting and notified once, and a session waiting after its
-account's wall reopened gets exactly one "continue" nudge.
+reported as drifting and notified once, a session waiting after its
+account's wall reopened gets exactly one "continue" nudge, a converged pull
+request that now conflicts with its base or whose head moved past the one
+the drive verified is re-armed once, one still at the verified head and
+mergeable is left alone, and one whose mergeability the forge is still
+computing is reported unplaced with no launch, a drive stopped on a Claude
+account's wall is re-armed on a Codex account with `CODEX_HOME` bound and
+the Claude variables absent, on a host that set `drive.codex_bypass`, and an
+account of a vendor with no documented
+pass command is reported and never launched, a Codex pass that outruns a
+positive `DRIVE_PR_PASS_TIMEOUT` is terminated, and a Codex account is
+reported and never launched while that deadline is `0` or on a host without
+that setting, and on a
+consumer repository three pull requests that touch one serialized area
+over a night are re-driven one at a time, the held ones carrying the
+`held` label until each leads.
+
+### 36. The dispatch board: what is driven and what is ready to merge
+
+The merge is the one stage of the execution line that stays a person's, and
+it sets the pace of the rest: each merge lets the dispatcher re-drive the
+pull requests that now conflict and start the next one in a serialized
+area. Yet the dispatch dashboard shows no merge queue: a converged,
+mergeable pull request is a class the tick reports and leaves alone, a
+drive a person or another machine runs is not on the page either, and
+nothing tells work that settles by itself from work that waits on a
+person. [design/dispatch-board.md](dispatch-board.md) has how it works:
+one predicate, `plugin/skills/drive-pr/scripts/lib/merge-ready.ts`, which
+the tick and `announce-merge-ready.ts` both call, places a converged pull
+request in a lane of Ready to merge (merge now, with a merge command pinned
+to the verified head and built only from values of a strict form; approve
+first, naming requested reviewers or that nobody was asked and saying other
+protection rules remain unread; update next, one
+per repository) or says why not, and merge now never rests on the ledger
+alone: the forge must witness a review of the head (the reviewer app's
+check, or a person's approval), and an outside author's pull request needs
+a person's approval. A board read per repository, made after planning and
+isolated from it, under a deadline and a floor on the forge budget it
+shares with the drives, reads the facts the predicate and each pull
+request's status row need (conflicts, checks with the failing ones named,
+unresolved threads, the derived merge state); every card says whether it
+settles by waiting or waits on a person, and which act; a pull request that
+becomes ready is notified once per head; and the outcome log records when
+work became ready and why it left. Later, a board view places every piece
+of work in one column (coming, picking up, driven, needs you, ready to
+merge, merged), each card moving in any direction and saying where it came
+from when it moved back. Built in the design's order: the waiting loss
+measured from the existing log first, then Ready to merge in the tick and
+on the page, then the board's placement, a design round and the board view.
+
+Done when, on a host running Orca, a converged pull request whose review the
+forge witnesses and that the forge lets merge is in merge now with its
+pinned command within one interval and reaches a person's phone once, one
+blocked on a required review is in approve first naming requested reviewers
+or saying nobody was asked, with unread protection rules explicit and no
+claim that approval alone permits merging,
+one whose ledger claims a head its reviewer never checked is in Needs you,
+one whose base then conflicts leaves Ready to merge with its cause, a
+failing board read leaves the tick's launches as they were, a drive a
+person armed by hand shows on the board as claimed, every pull request
+card shows its conflicts, checks, threads and merge state with the failing
+checks named, and the history view filtered to yesterday shows how many
+pull requests became ready, were merged, are still waiting, and were lost
+to waiting.
+
+### 35. One jig command line
+
+The plugin's machine-level tools are separate commands with no shared
+shape: `jig gc` and `jig dispatch` each install, remove and report on their
+own job in their own words, and installing, updating and checking the
+plugin itself is a script in this repository (`tools/plugin/setup.ts`), not
+a command the plugin ships. This item makes `jig` one command line, parsed
+with [Optique](https://optique.dev) (vendored as a bundle Jig builds,
+[ADR-0001](../docs/adr/ADR-0001-bun-typescript-toolchain.md)), with
+resource collection and the dispatcher as its components: each component
+defines its command beside its code (`plugin/gc/cli.ts`,
+`plugin/dispatch/cli.ts`) and `plugin/jig.ts` combines them, so `--help`,
+`jig help <command>` and `jig completion <shell>` come from the
+definitions that parse. Across the components come the lifecycle verbs
+`install`, `uninstall`, `upgrade`, `doctor`, `status`, `receipts` and `run`
+(`jig install dispatch`, `jig status`), through one component interface a
+third component joins without touching the verbs, while each component's
+own work stays under its name (`jig gc --collect`, `jig dispatch --apply`).
+`jig` reaches `PATH` through the launcher the installed jobs already run,
+which finds the installed plugin copy at each run, so a plugin update
+reaches it without a new install. The audit stays a skill; `jig doctor`
+runs its configuration-fit check beside its own.
+
+What must keep working through every step, because jobs already installed
+on machines run it: each timer's launcher, copied under the gc state
+directory, calls `<plugin copy>/jig.ts` with
+`--config=<plugin copy>/gc/bunfig.toml` and `gc --scheduled` or
+`dispatch --apply`. So `plugin/jig.ts` stays where it is,
+`plugin/gc/bunfig.toml` and `plugin/dispatch/bunfig.toml` stay (the
+dispatcher's pass wrapper and launches use the second), those two command
+lines keep their meaning, the heavy-run lock's re-run of
+`jig.ts gc … --collect` keeps working, and `jig dispatch run` stays the
+pass wrapper's passthrough.
+
+Built in this order:
+
+1. **Optique, behaviour unchanged**: one parser with a `gc` and a
+   `dispatch` command replaces the hand-written ones, every current form
+   keeping its meaning and exit code, with generated help and completion.
+2. **Lifecycle verbs over one component interface, `jig` on `PATH`**: the
+   verbs above for both components, each component's `install` and
+   `receipts` reached through them with the old forms still working, and
+   `jig install` writing a `jig` command that runs the installed copy
+   through the launcher.
+3. **`doctor` and `upgrade`**: `tools/plugin/setup.ts`'s install, update
+   and check move into the plugin as `jig upgrade` and `jig doctor`, moved
+   and not copied: `tools/plugin/setup.ts` keeps only a call into the
+   plugin's code, so a first install from a checkout still works. After
+   the plugin, `jig upgrade` has the newly installed copy refresh each
+   installed job's launcher copy and job, and the `jig` command, keeping
+   what each install recorded. `doctor` also runs the audit's
+   configuration-fit check, offline.
+4. **The timers keep the plugin current**: the launcher runs the installed
+   copy's `jig upgrade --scheduled` before each job and resolves the entry
+   again, so the job runs the copy the upgrade installed. The upgrade is on
+   by default (a machine that runs the dispatcher is the one with nobody at
+   the keyboard), follows the channel the machine installed from, and a pin
+   receives nothing. It runs at most once per `upgrade.every` (an hour)
+   whichever timer fires first, is a line in that job's receipt and in the
+   morning report, and when it fails it is reported, named by `jig doctor`,
+   and not tried again inside the interval. The launcher runs it from the
+   installed copy, never from itself, and the launcher copy is refreshed by
+   `jig upgrade` as step 3 has it. A versioned cache install puts each
+   version into its own directory, so a run already started keeps the files
+   it started with. A plugin loaded in place from a local marketplace has no
+   such directory: the scheduled upgrade skips it, reports the skip in the
+   job's receipt, and leaves updating it to the person who maintains that
+   folder. `jig install --no-upgrade`, or `upgrade: off` in the machine
+   file, opts a machine out.
+
+Done when `jig` on `PATH` installs, upgrades, checks and removes both
+components through the same verbs, `jig doctor` reports the plugin's
+installation and the repository's configuration fit, `tools/plugin/setup.ts`
+holds no logic of its own, a job installed before the first step still
+runs on a machine that took every release since, two timers firing within
+one interval run the upgrade once and the job after it runs the newly
+installed copy, a failed upgrade is reported and withheld for the rest of
+the interval while the job still runs, a successful and a failed upgrade
+each appear in the job's receipt and the morning report and `jig doctor`
+names the failed one, a scheduled run on a plugin loaded
+in place from a local marketplace leaves that folder untouched, records the
+skip in the receipt and still runs the job, and a pinned machine or one with
+`upgrade: off` runs no upgrade.
+
+### 37. Records: one envelope, one registry, records shared across hosts
+
+The execution line's parts coordinate through the records each leaves
+behind, and most families of records have their own envelope, their own
+writer identity and their own versioning: the drive's state file carries no
+version, the dispatcher's database a schema version. A host keeps its launches and follow-up outcomes to itself, so a
+second host cannot see what another holds or finished.
+[design/records.md](records.md) has how it works: every record carries one
+envelope (`kind`, `v`, `key`, `writer`, `at`, `generation`) through one
+codec for a file and a hidden marker on the forge; a registry lists every
+kind and a gate keeps it complete; one identity and lease module
+(`plugin/shared/liveness.ts`); the machine records in SQLite through
+`plugin/shared/records/db.ts`, one database per component, with additive
+migrations and a minimum-reader version, the mailbox and handoff staying
+files in the working tree; one forge-claims module whose one rule is that
+the earliest trusted comment per key and generation wins, every outward act
+re-checking it; a `SharedRecords` interface, forge-backed first, so a
+second host sees who holds a launch and whether a follow-up ended, with one
+owner host per repository for the board, notifications and history rows;
+and the dispatcher reading the drive's exit codes from its terminal-state
+registry, one round counter, and mailbox directives addressed to a driver
+generation. No daemon or bus coordinates them
+([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). Built in the
+design's order; built so far: the envelope, the registry
+and its gate, the ledger and the follow-up marker carrying the envelope
+([plugin/RECORDS.md](../plugin/RECORDS.md)); the liveness module; the
+machine's records in SQLite, the drive's state among them; the forge
+claims (the takeover claim, the follow-up marker and the merge-ready
+announcement as claims of `plugin/shared/records/forge-claims.ts`); and the
+dispatcher reading the drive's own records (its exit codes from the
+terminal-state registry, one review round record, and a mailbox stop addressed
+to a driver generation).
+
+Done when every record kind the plugin keeps is registered and the gate
+fails an unregistered marker, state file or table; the identity read by a
+launch claim, a drive lease and a worktree hook comes from one module; the
+drive's machine state lives in its own SQLite database that an older plugin
+refuses only when a migration requires it; the takeover claim, the
+follow-up marker and the merge-ready announcement are arbitrated by one
+rule; a second host reading
+the forge refuses to launch a pull request another host holds and does not
+start a follow-up another host finished; and the dispatcher names no drive
+exit code of its own.
 
 ### 3. The kickoff family
 
@@ -354,15 +537,11 @@ then become a plan item of its own or been dropped.
 
 ### 23. Seed review lenses
 
-M7 says how [review lenses](../GLOSSARY.md) are held but ships none, so
-nothing in `review` checks a change against the rules Jig's own modules
-state. [design/review-lenses.md](review-lenses.md) has how it works:
+`review` runs [review lenses](../GLOSSARY.md) from one file each, and
+ships the seed lens `jig.swallowed-failure` for M15; the other rules Jig's
+modules state that no gate can judge have none yet.
+[design/review-lenses.md](review-lenses.md) has how it works. What is left:
 
-- **The lens contract and the first lens**: one file per lens, selected by
-  what the diff adds or removes, run by `review`'s semantic tier with fresh
-  context, each finding carrying the evidence its lens asks for, and capped
-  at a warning; `review.lenses` configuration; `jig.swallowed-failure` for
-  M15.
 - **`jig.test-gap`** for M14.
 - **`jig.stale-comment`**, after M4 gains its rule for comments in code.
 - **`jig.type-invariants`**, after M15 gains its rule for types.
@@ -393,7 +572,9 @@ per step:
   Coordinate tool-state creators with collection admission before enabling
   retirement; its legacy reaper lock excludes only other reapers.
   Validate its weekly job through the installed command before starting
-  the later kinds. Worktree collection stays disabled until this integration.
+  the later kinds. Worktree collection stays disabled until this
+  integration, except for a worktree Orca manages, which `jig gc` collects
+  through Orca.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.
 - **Branches** merged as the forge records it (squash merges included) or
@@ -618,6 +799,53 @@ than an unflagged one with the `## Route` section saying why, a `route: yours` p
 delegates with nothing forwarded, and a loop-cost report shows the route
 beside the rounds.
 
+### 34. Jig in the Orca ecosystem
+
+Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
+on their own (the workspace tool behind the launcher, `do-item`'s board
+updates and workspace names, the dispatcher's session runtime), and the
+rest of the execution line meets it only in part: collection through
+Orca still races an agent started between its last registry read and the
+removal, the dispatcher cannot read an account's usage from Orca's command
+line, and Orca's plugin system has no Jig in it. [design/orca-integration.md](orca-integration.md)
+has how it works, in classes built in order. Still open: closing the
+collection gap, by every launch and open path taking `gc`'s session
+admission around the launch or Orca refusing a removal atomically while an
+agent starts or lives; what Jig asks of Orca (usage per account from the command line; a phone push only when an
+agent needs input; filed by a person, each with its pull request offered),
+and a worker-only plugin in its own repository that runs a
+`jig dispatch --apply` tick when an agent's status changes, with no panel
+until a panel can receive data. One pull request per step, in the design's
+order; the plugin waits on item 33's tick.
+
+Done when no launch can slip between the registry read and `orca worktree
+rm` of a collected checkout, the dispatcher's account cap reads `orca
+account usage --json` where Orca has it, and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
+under the plugin has a tick pending from the moment the event arrives, while the plugin's worker lives (a restart loses the pending flag and the machine's timer tick then processes the repository):
+the first event after a minute of quiet starts it at once, an event during
+a running tick or the minute after a start waits for one trailing tick
+that starts once the running tick has finished and a minute has passed
+since the last start, and either stays pending while the machine-wide
+tick lock refuses it and survives an event that arrives while that tick
+processes the repository.
+
+### 38. One look for Jig's pages
+
+The pages Jig's tooling draws pick their own colours: the dispatch
+dashboard wears Jig's look in light and dark, the decision, explainer and
+audit sheets share a neutral blue in light only, and the code-stats report
+has a blue of its own. [design/ui-theming.md](ui-theming.md) has how it
+works. What it will build: one set of colour names with a light and a dark
+value each (`plugin/shared/theme.ts`, the dashboard's values), with every
+text-on-background pair held to WCAG AA; the dashboard, the sheet kit and
+the code-stats report reading their colours from it; dark mode for the
+sheets; Jig's mark as every page's icon; and a test that the site's shared
+colours agree. One pull request, the design's first step.
+
+Done when every page Jig's tooling draws takes its colours from
+`theme.ts`, follows the reader's light or dark setting, carries Jig's mark,
+and each genre's contrast test holds its light and dark pairs.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the
@@ -633,6 +861,11 @@ beside the rounds.
   version; the event kept as an issue property. Its shape and open questions
   are in [design/reflection.md](reflection.md#jira-store-future); build
   it when a team that tracks its work in Jira needs it.
+- **A repository's theme.** A `ui` section with an accent colour and a
+  mark, the rest of the colours derived from the accent so that contrast
+  holds in both modes, applied by the dashboard's server and written into
+  each sheet. Its shape is in [design/ui-theming.md](ui-theming.md#a-repositorys-theme);
+  build it after item 38, when a team that uses Jig asks for it.
 - **More skills.** `scaffolding-update` (keeps agent instruction files in step
   with decisions and audits them; M0), with its paths as configuration; and a
   SOLID-principles review skill, once its generic procedure is separated from
@@ -688,11 +921,8 @@ beside the rounds.
     whole process group. Supervise it there too, once what the host must
     provide is decided: `bun` for the shared supervisor, as the Herdr tool
     asks of its hosts, or a supervisor in the host's own shell;
-  - `do-item` shows pickup and the opened pull request on Orca's
-    workspace board (`plugin/skills/do-item/scripts/orca-board.ts`); the review and merge
-    stages are not shown yet (`drive-pr` converged, the merge's follow-up
-    moving the card to `completed`), and the tracker's GitHub issues could
-    be linked with `--issue`;
+  - the board card (`plugin/shared/orca-board.ts`) could link the
+    tracker's GitHub issue with `--issue`;
   - a worktree created in the Orca app gets Orca's branch name and Orca's
     own setup hook, not the repository's convention and create hook; say in
     M12's mappings how a repository's `orca.yaml` setup script and Orca's

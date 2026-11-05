@@ -1,18 +1,22 @@
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
-/** Keep drive-pr's operated predicates and refusing lock protocol in one place. */
+/**
+ * drive-pr's state as a collection kind: what `reap-state.ts` would retire of
+ * the files a clone keeps beside the drive's database (a merged PR's logs,
+ * notices and answers, and an earlier release's files past their retention
+ * once the database imported them), read from its `--json` report so the
+ * reaper's predicates stay in one place. Report only: nothing here removes.
+ */
 import { fileURLToPath } from "node:url";
 import { run } from "../../shared/proc.ts";
 import { gitEnvironment } from "../git.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
 
 interface ReaperReport {
-  stateDir: string;
+  stateDir: string | null;
   exists?: boolean;
   retire: { id: string; reason: string }[];
   keep: { id: string; reason: string }[];
-  anchorsCompactable: number;
-  anchorsCompacted: number;
   entriesRemoved: number;
   failures: string[];
 }
@@ -26,42 +30,22 @@ function validReport(value: unknown): value is ReaperReport {
         typeof item.id === "string" &&
         typeof item.reason === "string",
     );
+  const removed = value.entriesRemoved;
   return (
-    typeof value.stateDir === "string" &&
+    (typeof value.stateDir === "string" || value.stateDir === null) &&
     families(value.retire) &&
     families(value.keep) &&
-    [
-      value.anchorsCompactable,
-      value.anchorsCompacted,
-      value.entriesRemoved,
-    ].every(
-      (n) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0,
-    ) &&
+    typeof removed === "number" &&
+    Number.isSafeInteger(removed) &&
+    removed >= 0 &&
     Array.isArray(value.failures) &&
     value.failures.every((item) => typeof item === "string")
   );
 }
 function parseReport(text: string): ReaperReport {
   const value: unknown = JSON.parse(text);
-  if (!isMapping(value)) throw new GcError("Invalid state reaper report");
-  if (value.exists !== false && !validReport(value))
-    throw new GcError("Invalid state reaper report");
-  const report = value;
-  if (report.exists === false && typeof report.stateDir === "string") {
-    return {
-      stateDir: report.stateDir,
-      retire: [],
-      keep: [],
-      anchorsCompactable: 0,
-      anchorsCompacted: 0,
-      entriesRemoved: 0,
-      failures: Array.isArray(report.failures)
-        ? report.failures.map(String)
-        : [],
-    };
-  }
-  if (!validReport(report)) throw new GcError("Invalid state reaper report");
-  return report;
+  if (!validReport(value)) throw new GcError("Invalid state reaper report");
+  return value;
 }
 /**
  * Worktree identity is dropped, but the relocated state root is the supported
@@ -119,24 +103,24 @@ export function toolStateKind(
     declaration,
     inventory: async (): Promise<Resource[]> => {
       latest = await inspect();
-      return [{ id: latest.stateDir, details: latest }];
+      return [{ id: latest.stateDir ?? repository, details: latest }];
     },
     prove: async (resource): Promise<Proof> => {
       latest = await inspect();
       resource.details = latest;
       if (latest.failures.length)
         return { state: "unverified", reason: latest.failures.join("; ") };
-      return latest.retire.length || latest.anchorsCompactable
+      return latest.retire.length
         ? {
             state: "dead",
             reportOnly:
               "state creators do not yet share collection admission; report only",
-            reason: `${latest.retire.length} state families meet the reaper's lifecycle and idle checks; ${latest.anchorsCompactable} anchors can be compacted without deleting their fences`,
+            reason: `${latest.retire.length} state families meet the reaper's lifecycle and idle checks`,
           }
         : {
             state: "live",
             reason:
-              "state reaper found no retirable families or uncompacted fences; details retain every family's proof",
+              "state reaper found no retirable families; details retain every family's proof",
           };
     },
     collect: async () => ({
