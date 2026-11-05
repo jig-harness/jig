@@ -178,7 +178,7 @@ this order:
 | `UNKNOWN`, or mergeability `UNKNOWN` | the column it was in, marked not read | the forge is still computing | waiting |
 | `BEHIND`, the first in Ready order of its repository | Ready to merge, update next | the repository requires an up-to-date branch; updating moves its head, which costs a re-drive (a review round and a CI run); where an approval is also required, the card says it is still owed | a person: update the branch |
 | `BEHIND`, any other | Coming | behind its base, updated after the one in update next | waiting |
-| an approval is required and the forge's merge state names it the only gap (`REVIEW_REQUIRED` with `BLOCKED`; or condition 3 or 8 asks for one and condition 7 holds) and a review is requested | Ready to merge, approve first | waits on an approval; the reviewers or teams requested are named as requested, and since when | a person: an approval |
+| an approval is required (`REVIEW_REQUIRED` with `BLOCKED`; or condition 3 or 8 asks for one and condition 7 holds) and a review is requested | Ready to merge, approve first | waits on an approval, and says the board has not read the repository's other protection rules (signatures, deployments); the reviewers or teams requested are named as requested, and since when | a person: an approval |
 | an approval is required, as in the row above, and no review is requested | Ready to merge, approve first | needs a review and approval from someone other than its author, and nobody is asked | a person: request a review |
 | `BLOCKED` for none of these | Needs you | the forge blocks the merge on a rule the board cannot tell (signed commits, a deployment): open the pull request | a person |
 
@@ -186,10 +186,13 @@ The rows are first match, and every row that names a blocker other than an
 approval (a failed or running check, a thread, an unread or behind branch)
 comes before the approval rows, with a confirmed failure ahead of a pending
 check, so a pull request is announced as waiting only on an approval once
-the other conditions are established. Where the approval is owed under
-condition 3 or 8 rather than by the forge, the forge's own merge state must
-already read `CLEAN`, `HAS_HOOKS` or a merge queue; a `BLOCKED` it cannot
-explain goes to the last row, since approving would not be the remaining act. A review request does not say whose approval satisfies
+the other conditions the board reads are established. The board reads no
+signature or deployment requirement, and `REVIEW_REQUIRED` with `BLOCKED`
+does not rule one out, so an approve-first card never says approval is the
+only act left: it says the other rules are unread. Where the approval is
+owed under condition 3 or 8 rather than by the forge, the forge's own merge
+state must already read `CLEAN`, `HAS_HOOKS` or a merge queue; a `BLOCKED`
+with no approval owed goes to the last row. A review request does not say whose approval satisfies
 branch protection: the repository may require several approvals or a code
 owner's, and the board reads neither. So a card names the people or teams
 requested as requested, never as the ones whose approval completes the
