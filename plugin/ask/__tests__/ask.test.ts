@@ -14,6 +14,7 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import {
   claimRecord,
   type LaunchRecord,
+  recordExit,
   writeRecord,
 } from "../../dispatch/lib/launches.ts";
 import { writeRow } from "../../dispatch/lib/log.ts";
@@ -56,7 +57,11 @@ function world(): AskWorld {
 const RECORD = "20261105T100000Z-abcdef12";
 
 /** A launch record for pull request `pr`, as a tick writes it. */
-function record(w: AskWorld, pr: number): LaunchRecord {
+function record(
+  w: AskWorld,
+  pr: number,
+  extra: Partial<LaunchRecord> = {},
+): LaunchRecord {
   const r: LaunchRecord = {
     version: 1,
     id: RECORD,
@@ -82,6 +87,7 @@ function record(w: AskWorld, pr: number): LaunchRecord {
     command: null,
     marker: null,
     sessionId: "session-1",
+    ...extra,
   };
   writeRecord(r, w.state);
   return r;
@@ -174,6 +180,41 @@ describe("jig ask", () => {
       record: "dispatch-launch",
       read: true,
       local: true,
+    });
+  });
+
+  it("reads a stop on a conflict this machine already re-drove for the same change as a person's to settle", async () => {
+    const w = world();
+    const head = "a".repeat(40);
+    const base = "b".repeat(40);
+    w.api(
+      `repos/${REPO}/pulls/7`,
+      pullDoc(7, { mergeable: false, base: { ref: "main" } }),
+    );
+    w.api(`repos/${REPO}/git/ref/heads/main`, { object: { sha: base } });
+    w.api(`repos/${REPO}/issues/7/comments`, [
+      comment(701, ledgerBody(stoppedLedger(7, 9))),
+    ]);
+    const open = await askJson(w, [`drive@${REPO}#7`]);
+    expect(JSON.stringify(open.answer.waitsOn)).not.toContain(
+      "already re-drove",
+    );
+    record(w, 7, {
+      redrive: {
+        cause: "stopped on a conflict with its base, and still conflicting",
+        change: `head ${head}, base ${base}`,
+        conflictStop: true,
+      },
+    });
+    recordExit(
+      RECORD,
+      { at: "2026-11-05T10:05:00.000Z", code: 9, signal: null },
+      w.state,
+    );
+    const { answer } = await askJson(w, [`drive@${REPO}#7`]);
+    expect(answer.waitsOn).toMatchObject({
+      person: "re-arm",
+      why: expect.stringContaining("already re-drove it"),
     });
   });
 

@@ -44,9 +44,11 @@ import {
   type SharedClaim,
   winners,
 } from "../../shared/records/shared.ts";
+import { settleConflictStops } from "../../dispatch/lib/actions/drive-hold.ts";
 import { isDrive } from "../../dispatch/lib/launches.ts";
 import { driveClass, lastEnded } from "../../dispatch/lib/log.ts";
 import {
+  type Classified,
   classifyLedger,
   type ParkReading,
   type PrFacts,
@@ -176,6 +178,36 @@ function stateOf(
   };
 }
 
+/** Why a stop on a conflict is a person's to settle, when this machine already re-drove it for the change it shows now; `null` otherwise. */
+function conflictSettled(
+  placed: Classified,
+  ledger: Ledger,
+  r: DriveReads,
+): string | null {
+  if (placed.class !== "stale" || placed.stale?.conflictStop !== true)
+    return null;
+  const [settled] = settleConflictStops(
+    [
+      {
+        number: r.pull.number,
+        url: r.pull.url,
+        title: r.pull.title,
+        head: r.pull.head,
+        class: placed.class,
+        why: placed.why,
+        stale: placed.stale,
+        evidence: {
+          generation: ledger.generation,
+          exit: ledger.driver.exit ?? null,
+          heartbeat: ledger.driver.heartbeat,
+        },
+      },
+    ],
+    r.records,
+  );
+  return settled?.class === "needs-person" ? settled.why : null;
+}
+
 /** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
 function waitsOnOf(
   ledger: Ledger,
@@ -195,6 +227,8 @@ function waitsOnOf(
       ...(base === undefined ? {} : { base }),
     },
   );
+  const settled = conflictSettled(placed, ledger, r);
+  if (settled !== null) return { person: "re-arm", why: settled };
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.
   const dispatched = ctx.dispatches || current(r.claims) !== null;
   const rearm = (why: string): WaitsOn =>
