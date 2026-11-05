@@ -324,6 +324,13 @@ Guidelines' minimum contrast, in both modes.
   for Herdr; and the tool and the launcher's Orca provider on Windows, where
   the tool's host steps (`sh`, `test`, `mkdir`) need the host's own shell
   first.
+- **A control-plane service for the shared records.** A small service with a
+  database joins the forge as a shared-record implementation when
+  [ADR-0013's conditions](docs/adr/ADR-0013-records-not-a-daemon.md#when-to-reopen)
+  hold. Those cover state shared within seconds, session nudges needing a
+  connection, and notification outside a host when it stops.
+- **The mailbox as every session's inbox.** Open the drive mailbox to every
+  session the execution line starts once a second mechanical nudge needs it.
 - **Change-area consumer lint.** The
   [change-areas skill](plugin/skills/change-areas/README.md) checks the path
   lists in agent rules, hook configuration and CI workflow triggers against

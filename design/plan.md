@@ -901,8 +901,9 @@ and each genre's contrast test holds its light and dark pairs.
   `records.shared` value. Build it when one of
   [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md#when-to-reopen)'s
   conditions holds: hosts dispatching one repository must see each other's
-  state within seconds rather than at their next tick, or someone outside a
-  host must be told that a dispatching host has stopped.
+  state within seconds rather than at their next tick, a nudge to a running
+  session needs a connection rather than a terminal keystroke, or someone
+  outside a host must be told that a dispatching host has stopped.
 - **The mailbox as every session's inbox.** The
   [drive mailbox](../GLOSSARY.md) reaches a drive's driver only, and the
   dispatcher's one nudge, the `continue` it types into a session whose usage

@@ -530,9 +530,25 @@ async function settleRecordClaims(
       `PR #${owed.pr}: the claims could not be read: ${read.failure.reason}`,
     ];
   const failures: string[] = [];
-  for (const c of ownOpen(read, ctx.host)) {
-    if (c.says.value.record !== r.record.id) continue;
-    const done = await ctx.records.end(target, owed.stage, c.id, owed.end);
+  const matches = readable(read.value).filter(
+    (c) =>
+      c.says.value.record === r.record.id &&
+      (c.says.value.host === ctx.host ||
+        (owed.stage === "followup" && c.says.value.host === null)),
+  );
+  if (matches.length === 0)
+    return [
+      `PR #${owed.pr}: no readable claim for launch record ${r.record.id} was observed`,
+    ];
+  for (const c of matches) {
+    if (!open(c)) continue;
+    const done = await ctx.records.end(
+      target,
+      owed.stage,
+      c.id,
+      owed.end,
+      c.says.value.host === null ? ctx.host : undefined,
+    );
     if (!done.ok)
       failures.push(
         `PR #${owed.pr}: the end of claim comment ${c.id} could not be written: ${done.failure.reason}`,

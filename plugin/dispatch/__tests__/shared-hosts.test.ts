@@ -443,6 +443,9 @@ describe("two hosts dispatching one repository", () => {
     const record = String(launches(first)[0]?.record);
     await waitFor("the re-arm", () => driveRuns(w).length === 1);
     await waitFor("its exit", () => exitWritten(a, record));
+    await waitFor("its end on the claim", () =>
+      launchClaims(w, 7).includes("· ended exit 0"),
+    );
 
     // Host A's claim was made six hours ago; the driver its launch started has been silent for five.
     const claimed = comments(w, 7)

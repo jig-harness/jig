@@ -14,6 +14,7 @@ import { claimBody } from "../../shared/records/forge-claims.ts";
 import {
   LAUNCH_CLAIM,
   LAUNCH_MARKER,
+  FOLLOWUP_MARKER,
   launchClaim,
 } from "../../shared/records/launch-claims.ts";
 import type { LaunchDraft } from "../../shared/records/shared.ts";
@@ -119,6 +120,72 @@ function claimLine(w: World): string {
 const ticked = (w: World) => existsSync(join(dispatchState(w), "receipts"));
 
 describe("the wrapper ends its launch's shared claim", () => {
+  for (const body of [null, `${LAUNCH_MARKER}\nnot a readable claim`]) {
+    it(`reports an inconclusive listing when the claim is ${body === null ? "missing" : "unreadable"}`, async () => {
+      const w = world();
+      current = w;
+      launched(w);
+      w.setComments(
+        7,
+        body === null ? [] : [forgeComment(705, body, "drive-bot")],
+      );
+      const r = await runWrapper(w, ID, TOKEN);
+      expectSpawnExit(r, EXIT, "the wrapper");
+      expect(r.stderr).toContain("the next tick writes it");
+    });
+  }
+
+  it("ends a hostless follow-up marker naming its local record and stamps its host", async () => {
+    const w = world();
+    current = w;
+    const host = launched(w);
+    earlierRecord(w, {
+      id: ID,
+      account: "a",
+      token: TOKEN,
+      action: "followup",
+      command: "/followup",
+    });
+    writeFileSync(join(w.dir, "claude-exit"), "0");
+    w.setComments(7, [
+      forgeComment(
+        705,
+        `${FOLLOWUP_MARKER}\njig dispatch follow-up · record: ${ID}`,
+        "drive-bot",
+      ),
+    ]);
+    const r = await runWrapper(w, ID, TOKEN);
+    expectSpawnExit(r, 0, "the follow-up wrapper");
+    const comments = JSON.parse(
+      readFileSync(join(w.dir, "comments-7.json"), "utf8"),
+    ) as Array<{ body: string }>;
+    expect(comments[0]?.body).toContain(`"host":"${host}"`);
+    expect(comments[0]?.body).toContain("outcome: failed");
+  });
+
+  it("leaves a hostless follow-up marker for another launch untouched", async () => {
+    const w = world();
+    current = w;
+    launched(w);
+    earlierRecord(w, {
+      id: ID,
+      account: "a",
+      token: TOKEN,
+      action: "followup",
+      command: "/followup",
+    });
+    writeFileSync(join(w.dir, "claude-exit"), "0");
+    const body = `${FOLLOWUP_MARKER}\njig dispatch follow-up · record: 20261105T120000Z-bbbbbbbb`;
+    w.setComments(7, [forgeComment(705, body, "drive-bot")]);
+    const r = await runWrapper(w, ID, TOKEN);
+    expectSpawnExit(r, 0, "the follow-up wrapper");
+    expect(r.stderr).toContain("the next tick writes it");
+    const comments = JSON.parse(
+      readFileSync(join(w.dir, "comments-7.json"), "utf8"),
+    ) as Array<{ body: string }>;
+    expect(comments[0]?.body).toBe(body);
+  });
+
   it("writes the end onto the claim as the stage exits, before any tick, and exits as the stage did", async () => {
     const w = world();
     current = w;
