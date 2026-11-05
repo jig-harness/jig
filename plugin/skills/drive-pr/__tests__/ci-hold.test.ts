@@ -1,12 +1,7 @@
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { stateText, writeState } from "./state-rows.ts";
 import { describe, expect, it } from "bun:test";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
 import {
@@ -1316,7 +1311,7 @@ esac
     expect(result.exitCode).not.toBe(0);
   });
 
-  it("refuses to reset an UNREADABLE state file that still NAMES a ciHold record", () => {
+  it("refuses to reset an UNREADABLE stored state that still NAMES a ciHold record", () => {
     // A file that fails to PARSE is not evidence it held no ci:hold
     // transition — it is evidence this code cannot tell either way. Reset
     // exists to clear genuine corruption, but silently treating "unreadable"
@@ -1327,10 +1322,8 @@ esac
     // parse — see the sibling test just below for the case this must NOT
     // block (corruption with no ciHold evidence in it at all).
     const { bin, stateDir } = fakeGh(HEAD, "[]");
-    writeFileSync(
-      join(stateDir, "drive-pr-999.json"),
-      '{"pr":999,"ciHold":{"phase":"held","eventId":"LE_1"',
-    );
+    const seeded = '{"pr":999,"ciHold":{"phase":"held","eventId":"LE_1"';
+    writeState(stateDir, "999", seeded);
     const reset = invoke(bin, stateDir, ["reset", "999"]);
     expect(reset.exitCode).toBe(9);
     expect(
@@ -1338,8 +1331,8 @@ esac
         .decode(reset.stderr)
         .includes("does not confirm the absence"),
     ).toBe(true);
-    // The file itself is untouched — reset refused before deleting anything.
-    expect(existsSync(join(stateDir, "drive-pr-999.json"))).toBe(true);
+    // The stored state is untouched — reset refused before deleting anything.
+    expect(stateText(stateDir, "999")).toBe(seeded);
   });
 
   it("still allows reset over unreadable state that names no ciHold evidence at all", () => {
@@ -1350,7 +1343,7 @@ esac
     // this case too would have "fixed" the finding by breaking the recovery
     // path it was raised against in the first place.
     const { bin, stateDir } = fakeGh(HEAD, "[]");
-    writeFileSync(join(stateDir, "drive-pr-999.json"), "not json at all");
+    writeState(stateDir, "999", "not json at all");
     const reset = invoke(bin, stateDir, ["reset", "999"]);
     expect(reset.exitCode).toBe(0);
   });
@@ -1362,13 +1355,11 @@ esac
     // earlier fix used exactly that substring check; this pins the escape-aware
     // string-literal scanner that replaced it.
     const { bin, stateDir } = fakeGh(HEAD, "[]");
-    writeFileSync(
-      join(stateDir, "drive-pr-999.json"),
-      '{"pr":999,"\\u0063iHold":{"phase":"held","eventId":"LE_1"',
-    );
+    const seeded = '{"pr":999,"\\u0063iHold":{"phase":"held","eventId":"LE_1"';
+    writeState(stateDir, "999", seeded);
     const reset = invoke(bin, stateDir, ["reset", "999"]);
     expect(reset.exitCode).toBe(9);
-    expect(existsSync(join(stateDir, "drive-pr-999.json"))).toBe(true);
+    expect(stateText(stateDir, "999")).toBe(seeded);
   });
 
   it('still allows reset when "ciHold" appears only as a VALUE, not a property key', () => {
@@ -1379,17 +1370,15 @@ esac
     // Only a literal immediately followed by (optional whitespace, then) `:`
     // counts as a key.
     const { bin, stateDir } = fakeGh(HEAD, "[]");
-    writeFileSync(
-      join(stateDir, "drive-pr-999.json"),
-      '{"reason":"ciHold","broken":',
-    );
+    const seeded = '{"reason":"ciHold","broken":';
+    writeState(stateDir, "999", seeded);
     const reset = invoke(bin, stateDir, ["reset", "999"]);
     expect(reset.exitCode).toBe(0);
   });
 
-  it("refuses to reset a PERFECTLY PARSEABLE state file whose `ciHold` key is simply missing, when GitHub still shows a live transition", () => {
+  it("refuses to reset a PERFECTLY PARSEABLE stored state whose `ciHold` key is simply missing, when GitHub still shows a live transition", () => {
     // Earlier fixes each closed this only for the UNPARSEABLE-text path — but a
-    // state file with no `ciHold` key at all still parses cleanly as valid
+    // stored state with no `ciHold` key at all still parses cleanly as valid
     // JSON, takes the `try` branch, and previously produced neither
     // `ownsCiHold` nor `hasCiHoldEvidence` — reset proceeded without ever
     // consulting the live timeline. Structurally identical risk to the
@@ -1414,13 +1403,11 @@ case "$1" in
 esac
 `,
     );
-    writeFileSync(
-      join(stateDir, "drive-pr-999.json"),
-      JSON.stringify({ pr: 999, round: 3 }),
-    );
+    const seeded = JSON.stringify({ pr: 999, round: 3 });
+    writeState(stateDir, "999", seeded);
     const reset = invoke(bin, stateDir, ["reset", "999"]);
     expect(reset.exitCode).toBe(9);
-    expect(existsSync(join(stateDir, "drive-pr-999.json"))).toBe(true);
+    expect(stateText(stateDir, "999")).toBe(seeded);
   });
 
   it("refuses to reset when `ciHold` parses but is a malformed shape (not null, not a recognized phase object), when GitHub still shows a live transition", () => {
@@ -1448,13 +1435,11 @@ esac
     // `ciHold` is a bare string, not null and not a held-transition object —
     // an unrecognized shape neither `ownsCiHold` nor `hasCiHoldEvidence` can
     // read a phase out of.
-    writeFileSync(
-      join(stateDir, "drive-pr-999.json"),
-      JSON.stringify({ pr: 999, round: 3, ciHold: "stale" }),
-    );
+    const seeded = JSON.stringify({ pr: 999, round: 3, ciHold: "stale" });
+    writeState(stateDir, "999", seeded);
     const reset = invoke(bin, stateDir, ["reset", "999"]);
     expect(reset.exitCode).toBe(9);
-    expect(existsSync(join(stateDir, "drive-pr-999.json"))).toBe(true);
+    expect(stateText(stateDir, "999")).toBe(seeded);
   });
 
   it("still allows reset over an EXPLICIT `ciHold: null` without any live check needed", () => {
@@ -1472,10 +1457,8 @@ esac
       gh,
       `#!/bin/sh\ncase "$*" in\n  *timeline*) echo "should not be called" >&2; exit 1 ;;\n  *) printf '%s\\n' '{"state":"OPEN","headRefOid":"${HEAD}","labels":[]}' ;;\nesac\n`,
     );
-    writeFileSync(
-      join(stateDir, "drive-pr-999.json"),
-      JSON.stringify({ pr: 999, round: 3, ciHold: null }),
-    );
+    const seeded = JSON.stringify({ pr: 999, round: 3, ciHold: null });
+    writeState(stateDir, "999", seeded);
     const reset = invoke(bin, stateDir, ["reset", "999"]);
     expect(reset.exitCode).toBe(0);
   });
@@ -1507,13 +1490,12 @@ esac
     );
     // Truncated before "ciHold" is ever written — the field is entirely
     // absent from the bytes, not merely malformed.
-    writeFileSync(
-      join(stateDir, "drive-pr-999.json"),
-      '{"pr":999,"round":3,"lastPushedSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
-    );
+    const seeded =
+      '{"pr":999,"round":3,"lastPushedSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"';
+    writeState(stateDir, "999", seeded);
     const reset = invoke(bin, stateDir, ["reset", "999"]);
     expect(reset.exitCode).toBe(9);
-    expect(existsSync(join(stateDir, "drive-pr-999.json"))).toBe(true);
+    expect(stateText(stateDir, "999")).toBe(seeded);
   });
 
   it("refuses to reset unreadable state when the live timeline itself cannot be read", () => {
@@ -1542,13 +1524,12 @@ case "$1" in
 esac
 `,
     );
-    writeFileSync(
-      join(stateDir, "drive-pr-999.json"),
-      '{"pr":999,"round":3,"lastPushedSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
-    );
+    const seeded =
+      '{"pr":999,"round":3,"lastPushedSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"';
+    writeState(stateDir, "999", seeded);
     const reset = invoke(bin, stateDir, ["reset", "999"]);
     expect(reset.exitCode).toBe(9);
-    expect(existsSync(join(stateDir, "drive-pr-999.json"))).toBe(true);
+    expect(stateText(stateDir, "999")).toBe(seeded);
   });
 });
 

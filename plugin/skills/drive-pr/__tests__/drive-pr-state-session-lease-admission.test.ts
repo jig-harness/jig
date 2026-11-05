@@ -6,16 +6,23 @@
 import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 
 import { join } from "node:path";
 
 import {
   clearAllLeases,
-  leaseFilesFor,
-  leasePathFor,
-  treeLeasePathFor,
+  leaseRef,
+  leaseRefsFor,
+  treeLeaseRef,
 } from "../scripts/lib/state/lease";
+
+import {
+  putLease,
+  readLease,
+  removeLease,
+  removeTreeLease,
+} from "./state-rows.ts";
 
 import { ACTOR, useDrivePrSuite } from "./drive-pr-harness.ts";
 
@@ -147,7 +154,7 @@ describe("drive-state.ts durability", () => {
         // isolates: `claimTreeLease` sees no tree lease at all here, so it
         // CREATES one silently (no refusal), and whatever happens next is
         // decided by `claimPrLease` alone.
-        rmSync(treeLeasePathFor(d, ACTOR), { force: true });
+        removeTreeLease(treeLeaseRef(d, ACTOR));
 
         // Still refused inside the window, even though it has gone quiet…
         const stillRefused = await state(
@@ -203,7 +210,7 @@ describe("drive-state.ts durability", () => {
         // still answers…` for why: `claimTreeLease` runs first and, left in
         // place, would refuse (or not) on its OWN floor before ever reaching
         // the per-PR one this test is about.
-        rmSync(treeLeasePathFor(d, ACTOR), { force: true });
+        removeTreeLease(treeLeaseRef(d, ACTOR));
 
         const refused = await state(d, ["bump-round", "999", "--head", "bbb"], {
           DRIVE_PR_SESSION: String(process.pid),
@@ -224,14 +231,14 @@ describe("drive-state.ts durability", () => {
       // admitted command and a revocation that did NOT go through the state
       // mutex.
       //
-      // Note what this deliberately no longer models: an operator's
-      // `clear-lease` racing INTO a locked section. That is unreachable now —
-      // `clear-lease` takes the state mutex itself, so it can only land between
-      // locked sections, which the sibling `clear-lease takes the state mutex`
-      // test pins from the other side. Removing the file directly is the
-      // general case that mutex ordering cannot reach: a crash-leftover
-      // cleanup, an out-of-band sweep, anything that deletes a lease without
-      // holding the state lock. The fence is the last line for all of them.
+      // What this deliberately does not model: an operator's `clear-lease`
+      // racing INTO a locked section. That is unreachable: `clear-lease` takes
+      // the state mutex itself, so it can only land between locked sections,
+      // which the sibling `clear-lease takes the state mutex` test pins from
+      // the other side. Deleting the lease row directly is the general case
+      // that mutex ordering cannot reach: a crash-leftover cleanup, an
+      // out-of-band sweep, anything that deletes a lease without holding the
+      // state lock. The fence is the last line for all of them.
       const d = stateDirFor("fence-lease-gone");
       const a = liveSession();
       try {
@@ -241,7 +248,7 @@ describe("drive-state.ts durability", () => {
         const before = await state(d, ["get", "999"]);
 
         const running = await stalledMutation(d, a.pid, "gone", () => {
-          rmSync(leasePathFor(d, "999", ACTOR), { force: true });
+          removeLease(leaseRef(d, "999", ACTOR));
         });
 
         const r = await running;
@@ -256,13 +263,11 @@ describe("drive-state.ts durability", () => {
     });
 
     it("a dead-pid takeover cannot land while a command holds the state mutex", async () => {
-      // This used to be a FENCE test — the takeover raced into the stalled
-      // command's window and the fence caught it on the way out. It is now an
-      // ORDERING test, because the race is gone: a takeover is a revocation,
-      // and every revocation coordinates with the state mutex, so it can only
-      // land BETWEEN locked sections. The window the fence was catching no
-      // longer opens, which is strictly better than catching it afterwards —
-      // the admitted command completes instead of being refused.
+      // An ORDERING test, not a fence test: a takeover is a revocation, and
+      // every revocation coordinates with the state mutex, so it can only land
+      // BETWEEN locked sections. No window opens for a fence to catch, which is
+      // strictly better than catching it afterwards — the admitted command
+      // completes instead of being refused.
       //
       // The fence still has its own coverage: `fences a command admitted before
       // its lease disappeared` exercises the branch for revocations that do not
@@ -321,93 +326,86 @@ describe("drive-state.ts durability", () => {
     });
 
     it("sweeping many leases leaves no process listeners behind", async () => {
-      // `clearAllLeases` makes one lock per lease FILE, and every `createLock`
-      // registers exit/SIGINT/SIGTERM handlers. Nothing removed them, so a PR
-      // driven from more than ten trees pushed Node past its default
-      // `maxListeners` and printed a leak warning on stderr — the same stream
-      // `reset`'s preserved-lease report uses, so it landed in the middle of
-      // the diagnostic an operator has to read (the threshold is 11 locks, not
-      // 4 — the three handlers are on three
-      // DIFFERENT events, so each lock adds one per event).
+      // A PR driven from many trees must sweep without adding exit or signal
+      // handlers that outlive the sweep: every leftover one pushes Node toward
+      // its default `maxListeners`, and the leak warning lands on stderr, the
+      // same stream `reset`'s preserved-lease report uses, in the middle of the
+      // diagnostic an operator has to read.
       //
       // Asserted as listener COUNT rather than as the warning text: the suite
       // runs under Bun, which does not emit the warning at all, so a probe on
-      // the message would pass here while the leak stayed live on the Node
-      // path the scripts also advertise.
+      // the message would pass here while a leak stayed live on the Node path
+      // the scripts also advertise.
       const d = stateDirFor("lease-listener-leak");
       for (let i = 0; i < 14; i++) {
         const actor = `wt-${String(i).padStart(16, "0")}`;
-        writeFileSync(
-          leasePathFor(d, "999", actor),
-          JSON.stringify({
-            holder: "session",
-            pid: 999_999,
-            host: "nowhere",
-            platform: "linux",
-            actor,
-            worktree: "/tmp/probe-tree",
-            startedAt: "2020-01-01T00:00:00.000Z",
-            lastSeen: "2020-01-01T00:00:00.000Z",
-            command: "hold",
-            generation: String(i).padStart(32, "0"),
-            sessionStarted: "",
-          }),
-        );
+        putLease(leaseRef(d, "999", actor), {
+          pid: 999_999,
+          host: "nowhere",
+          platform: "linux",
+          worktree: "/tmp/probe-tree",
+          startedAt: "2020-01-01T00:00:00.000Z",
+          lastSeen: "2020-01-01T00:00:00.000Z",
+          expiresAt: "2020-01-01T06:00:00.000Z",
+          command: "hold",
+          generation: i + 1,
+        });
       }
-      // All THREE events `createLock` registers, not just `exit`: the claim
-      // is that disposal detaches everything it added, and a probe on one
-      // event stays green while a regression leaks the other two.
+      expect(leaseRefsFor(d, "999")).toHaveLength(14);
+      // All THREE events a lock registers, not just `exit`: the claim is that
+      // the sweep detaches everything it added, and a probe on one event stays
+      // green while a regression leaks the other two.
       const events = ["exit", "SIGINT", "SIGTERM"] as const;
       const before = events.map((e) => process.listenerCount(e));
       await clearAllLeases(d, "999", null);
-      expect(leaseFilesFor(d, "999")).toEqual([]);
+      expect(leaseRefsFor(d, "999")).toEqual([]);
       expect(events.map((e) => process.listenerCount(e))).toEqual(before);
     });
 
-    it("the generation token survives renewal but not a same-tuple recreate", async () => {
-      // The fence compares a random `generation`, not `startedAt`. An ISO
-      // timestamp resolves to the millisecond, so a `clear-lease` plus a
-      // same-session reclaim inside one millisecond can reproduce the exact
+    it("the generation survives renewal but not a same-tuple recreate", async () => {
+      // The fence compares a `generation`, not `startedAt`. An ISO timestamp
+      // resolves to the millisecond, so a `clear-lease` plus a same-session
+      // reclaim inside one millisecond can reproduce the exact
       // `(pid, host, startedAt)` tuple and would be waved through as "my lease,
-      // renewed". Asserted structurally rather than
-      // by racing a millisecond: a renewal must PRESERVE the token, and a
-      // clear-then-reclaim must MINT a new one even when every other field is
-      // identical.
+      // renewed". Asserted structurally rather than by racing a millisecond: a
+      // renewal must PRESERVE the generation, and a clear-then-reclaim must
+      // draw a LATER one even when every other field is identical.
       const d = stateDirFor("lease-generation");
-      const path = leasePathFor(d, "999", ACTOR);
+      const ref = leaseRef(d, "999", ACTOR);
 
       await state(d, ["bump-round", "999", "--head", "aaa"], {
         DRIVE_PR_SESSION: String(process.pid),
       });
-      const first = JSON.parse(readFileSync(path, "utf8"));
-      // Pinned as a RANDOM nonce, not merely "some string that changes".
-      // "Changes after a clear" is satisfied by a timestamp too, as long as the
-      // test does not happen to race a millisecond — so a value-inequality
-      // assertion alone would stay green against exactly the clock-derived
-      // identity this finding was about. The representation is the claim.
-      expect(first.generation).toMatch(/^[0-9a-f]{32}$/);
-      expect(first.generation).not.toBe(first.startedAt);
-      expect(first.generation).not.toBe(first.lastSeen);
+      const first = readLease(ref);
+      if (first === null) throw new Error("the first claim wrote no lease");
+      // Drawn from a counter that only grows, not derived from the clock: a
+      // clock-derived identity would satisfy "changes after a clear" too, as
+      // long as the test does not happen to race a millisecond. The
+      // representation is the claim.
+      expect(Number.isSafeInteger(first.generation)).toBe(true);
+      expect(first.generation).toBeGreaterThan(0);
 
       // A renewal by the SAME session keeps it — sibling commands admitted
       // under it must stay admitted.
       await state(d, ["bump-attempt", "999", "--head", "aaa"], {
         DRIVE_PR_SESSION: String(process.pid),
       });
-      const renewed = JSON.parse(readFileSync(path, "utf8"));
-      expect(renewed.generation).toBe(first.generation);
+      expect(readLease(ref)?.generation).toBe(first.generation);
 
       // Cleared and reclaimed by the same session: same pid, same host, and
-      // `startedAt` is the only thing distinguishing it — which a fast enough
-      // clock cannot. The token must differ regardless.
+      // `startedAt` is the only other thing distinguishing it — which a fast
+      // enough clock cannot. The generation must move forward regardless, even
+      // though the row that carried the old one was deleted.
       expect((await state(d, ["clear-lease", "999"])).exitCode).toBe(0);
+      expect(readLease(ref)).toBeNull();
       await state(d, ["bump-round", "999", "--head", "bbb"], {
         DRIVE_PR_SESSION: String(process.pid),
       });
-      const reclaimed = JSON.parse(readFileSync(path, "utf8"));
+      const reclaimed = readLease(ref);
+      if (reclaimed === null) throw new Error("the reclaim wrote no lease");
       expect(reclaimed.pid).toBe(first.pid);
       expect(reclaimed.host).toBe(first.host);
-      expect(reclaimed.generation).not.toBe(first.generation);
+      expect(reclaimed.generation).toBeGreaterThan(first.generation);
     });
   });
 });

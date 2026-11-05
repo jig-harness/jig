@@ -1,10 +1,12 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 
 import { join } from "node:path";
 
-import { leasePathFor, treeLeasePathFor } from "../scripts/lib/state/lease";
+import { leaseRef, treeLeaseRef } from "../scripts/lib/state/lease";
 
 import { ACTOR } from "./drive-pr-harness.ts";
+
+import { editLease, editTreeLease } from "./state-rows.ts";
 
 import type { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
 export function createStateSessionLeaseFixtures(
@@ -69,14 +71,8 @@ export function createStateSessionLeaseFixtures(
    */
   function backdateSessionLeases(dir: string, pr: string, ms: number): void {
     const when = new Date(Date.now() - ms).toISOString();
-    for (const path of [
-      leasePathFor(dir, pr, ACTOR),
-      treeLeasePathFor(dir, ACTOR),
-    ]) {
-      const lease = JSON.parse(readFileSync(path, "utf8"));
-      lease.lastSeen = when;
-      writeFileSync(path, JSON.stringify(lease, null, 2));
-    }
+    editLease(leaseRef(dir, pr, ACTOR), (l) => ({ ...l, lastSeen: when }));
+    editTreeLease(treeLeaseRef(dir, ACTOR), (l) => ({ ...l, lastSeen: when }));
   }
 
   /**

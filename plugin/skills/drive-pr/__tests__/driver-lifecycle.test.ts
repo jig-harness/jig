@@ -19,7 +19,7 @@ for (const mode of ["signal", "cooperative"]) {
           "-e",
           `
           import {mock} from 'bun:test';
-          import {writeFileSync,existsSync,rmSync} from 'node:fs';
+          import {writeFileSync,existsSync,rmSync,mkdirSync} from 'node:fs';
           const options=JSON.parse(process.argv[1]);
           const original=await import(${JSON.stringify(tree)});
           const child=Bun.spawn([process.execPath,'-e','setTimeout(()=>process.exit(0),2000)'],{stdout:'ignore',stderr:'ignore'});
@@ -35,13 +35,14 @@ for (const mode of ["signal", "cooperative"]) {
           const {requestDriverStop}=await import(${JSON.stringify(request)});
           const {installDriverLifecycle}=await import(${JSON.stringify(drive)});
           const claim=options.dir+'/claim';writeFileSync(claim,'held');
-          const lock={dir:options.dir,what:'fixture',nonce:'generation'};
+          const stateDir=options.dir+'/clone';mkdirSync(stateDir);
+          const lock={stateDir,name:'pr-drive-1',what:'fixture',nonce:'generation'};
           const held=[lock];
           registerCleanup(()=>{
             if(held.includes(lock))rmSync(claim);
             console.log(JSON.stringify({completed,claimed:existsSync(claim)}));
           });
-          if(options.mode==='cooperative')requestDriverStop(options.dir,'generation');
+          if(options.mode==='cooperative')requestDriverStop(stateDir,lock.name,lock.nonce);
           await (async()=>{await using lifecycle=installDriverLifecycle(held,options.dir);})();
         `,
           JSON.stringify({ mode, confirmed, dir }),

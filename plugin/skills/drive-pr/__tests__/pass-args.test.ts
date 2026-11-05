@@ -7,11 +7,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import {
-  diagLines,
-  formatClaim,
-  parseClaimText,
-} from "../scripts/lib/claim.ts";
+import { diagLines, parseDiagText } from "../scripts/lib/claim.ts";
 import { armCommand } from "../scripts/lib/driver/rearm.ts";
 import {
   effectivePassArgs,
@@ -266,11 +262,11 @@ describe("the drives listing", () => {
   };
 
   it("names the permission mode a claim records", () => {
-    const claim = parseClaimText(
-      formatClaim(1, "h", { ...diag, permissionMode: "bypassPermissions" }),
+    const recorded = parseDiagText(
+      JSON.stringify({ ...diag, permissionMode: "bypassPermissions" }),
     );
-    expect(claim?.diag?.permissionMode).toBe("bypassPermissions");
-    expect(diagLines(claim?.diag ?? diag)).toContain(
+    expect(recorded?.permissionMode).toBe("bypassPermissions");
+    expect(diagLines(recorded ?? diag)).toContain(
       "    permissions: bypassPermissions",
     );
     expect(diagLines(diag)).toContain(

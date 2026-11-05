@@ -1,19 +1,20 @@
 /**
  * A stable, filename-safe identity for the CLONE `resolveStateDir` is
  * running against — the counterpart to `actor.ts`'s `worktreeKey`,
- * which identifies the TREE.
+ * which identifies the TREE. It keys every row of the drive's database and
+ * names the clone's state directory, and the drive ledger names the clone by
+ * it.
  *
  * Built from a PERSISTED identifier, not from `commonDir`'s own path: a hash of
  * `realpath(commonDir)` alone makes the identity depend on this clone's current
  * absolute pathname, so moving or renaming the checkout — the directory itself
- * untouched — silently changes the key. The moved clone's `.git` still holds
- * every prior lock/lease/state file, all now addressed under the OLD key, while
- * `ensureMigratedFromLegacy` sees a fresh, unmigrated NEW key with nothing
- * under it, writes the migrated marker, and starts round 0 — abandoning every
- * parked decision and round budget the per-clone state exists to protect,
- * with no error anywhere. A symlink hop resolves to the same physical
- * path and was never the gap; a genuine relocation changes the path itself,
- * which no amount of `realpathSync` can see past.
+ * untouched — silently changes the key, and every lock, lease and state the
+ * clone holds is then addressed under the OLD key while the clone starts round
+ * 0 under the new one — abandoning every parked decision and round budget the
+ * per-clone state exists to protect, with no error anywhere. A symlink hop
+ * resolves to the same physical path and was never the gap; a genuine
+ * relocation changes the path itself, which no amount of `realpathSync` can
+ * see past.
  *
  * `persistedCloneId` closes it by minting an identifier ONCE and writing it
  * inside `commonDir` — which moves WITH a rename or relocation, since it is
@@ -77,9 +78,8 @@ function readCloneId(path: string): string | null {
     // failure — permission denied, an I/O error, `path` reappearing as a
     // directory — is not evidence of that, and treating it as though it were
     // would let `peekCloneKey()` report `null` for a clone that actually
-    // already has an identity: its caller (the standalone fence's legacy
-    // fallback) then inspects the obsolete legacy directory instead of the real
-    // one, missing an active lease there.
+    // already has an identity: its caller (the post fence) would then read the
+    // clone as never driven, missing an active lease.
     if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return null;
     fail(
       2,
@@ -220,16 +220,15 @@ export function cloneKey(commonDir: string): string {
  * ALREADY persisted at `commonDir`, or `null` if none exists yet — never
  * mints or persists one.
  *
- * For a caller that must preview what `cloneKey`/`defaultStateDirFor` would
- * resolve to WITHOUT the side effect of creating that identity — a bare,
- * no-`--apply` dry run of `migrate-legacy-state.ts` promises to write nothing,
- * but calling `cloneKey` directly on a clone with no persisted id yet mints
- * and durably persists one via `createExclusiveDurable`, contradicting that
- * promise. There is no way to preview
+ * For a caller that must ask where a clone's state lives WITHOUT the side
+ * effect of creating that identity — the drive listing, a SessionStart
+ * banner, a dry run of the reaper, the post fence — since calling `cloneKey`
+ * on a clone with no persisted id yet mints and durably persists one via
+ * `createExclusiveDurable`. There is no way to preview
  * the value `cloneKey` WOULD mint — it is a fresh `randomUUID()`, not a
  * function of `commonDir` — so a caller in this position has only two honest
- * options: mint now (breaking the dry-run promise), or report that the
- * eventual key is not yet determined. This function is for the latter.
+ * options: mint now, or report that the clone has no key and so no state.
+ * This function is for the latter.
  */
 export function peekCloneKey(commonDir: string): string | null {
   const existing = readCloneId(join(commonDir, CLONE_ID_FILE));

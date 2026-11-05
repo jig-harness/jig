@@ -9,13 +9,13 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../lib/test-helpers/fake-program.ts";
 import { byPlatform } from "../../lib/test-helpers/windows-skip.ts";
@@ -341,24 +341,6 @@ function capturePickup(fixture: Fixture, token: string): void {
   expect(JSON.parse(result.stdout).kind).toBe("captured");
 }
 
-function recoverOrphan(fixture: Fixture): void {
-  const orphan = join(fixture.root, "orphan's $decision & é.json");
-  const recovered = join(fixture.root, "recovered's $decision & é.json");
-  writeFileSync(orphan, "parked decisions");
-  const emit = bun(fixture, [
-    "-e",
-    `const m=await import(${JSON.stringify(pathToFileURL(join(fixture.skill, "scripts/lib/state/orphans.ts")).href)});console.log(m.recoveryCommand(${JSON.stringify(orphan)},${JSON.stringify(recovered)}));`,
-  ]);
-  expectSpawnExit(emit, 0);
-  const command = emit.stdout.trim();
-  expectSpawnExit(
-    bun(fixture, ["-e", command.slice('bun -e "'.length, -1)], command),
-    0,
-  );
-  expect(existsSync(orphan)).toBe(false);
-  expect(readFileSync(recovered, "utf8")).toBe("parked decisions");
-}
-
 function driverCommand(fixture: Fixture): { argv: string[]; command: string } {
   const pass = join(fixture.root, "pass-999.ts");
   writeFileSync(
@@ -445,11 +427,14 @@ function passesStarted(fixture: Fixture): number {
     : 0;
 }
 
+/** The driver's log, in the clone's directory under the state root. */
 function driverLogTail(fixture: Fixture): string {
-  const log = join(fixture.stateDir, "drive-pr-999.log");
-  return existsSync(log)
-    ? readFileSync(log, "utf8").slice(-8000)
-    : "driver log unavailable";
+  const log = readdirSync(fixture.stateDir)
+    .map((clone) => join(fixture.stateDir, clone, "drive-pr-999.log"))
+    .find((path) => existsSync(path));
+  return log === undefined
+    ? "driver log unavailable"
+    : readFileSync(log, "utf8").slice(-8000);
 }
 
 async function awaitSecondPass(
@@ -539,7 +524,6 @@ async function smoke(usePowerShell: boolean): Promise<void> {
     seedConsumer(fixture);
     openDraft(fixture);
     capturePickup(fixture, pickup(fixture));
-    recoverOrphan(fixture);
     driver = startDriver(fixture);
     await awaitSecondPass(fixture, driver);
     await stopDriver(fixture, driver);

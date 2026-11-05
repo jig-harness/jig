@@ -1,38 +1,16 @@
-/** Refresh account diagnostics only while the driver still owns its claims and no pass is running. */
+/** Refresh account diagnostics only while the driver still owns its locks and no pass is running. */
 import { isDigits, sleep } from "./../cli.ts";
-
-import {
-  heartbeatStaleMs,
-  type ClaimDiag,
-  claimName,
-  ownClaim,
-} from "./../claim.ts";
-
+import { type ClaimDiag, heartbeatStaleMs } from "./../claim.ts";
 import { type AccountIdentity, resolveAccountIdentity } from "./../identity.ts";
-
-import { type DriveLock, inspect, claimWasTakenOver } from "./locks.ts";
-
-import { join } from "node:path";
-
-import { writeFileSync, existsSync, rmSync } from "node:fs";
-
-import { renameWithRetry } from "./../../../../../shared/rename-with-retry.ts";
-
 import { noteTakeover, touchLock } from "./lifecycle.ts";
-
+import { type DriveLock, renewLock } from "./locks.ts";
 import { driverRuntime } from "./runtime.ts";
 
-// The staleness window itself — HEARTBEAT_STALE_MIN_DEFAULT and
-// heartbeatStaleMs — lives in `lib/claim.ts` with the rest of the claim's
-// interpretation, so `drives.ts` judges live-vs-stale by exactly the rule
-// recovery uses here. This is not the `mtime < 2000ms` publication guess that
-// was rightly rejected above: that one tried to resolve a race in the
-// millisecond a lock was being created, on a filesystem whose timestamp
-// granularity is of the same order, while the window bounds a LIVENESS signal
-// at a scale where no filesystem's granularity or a shared mount's latency is
-// material. Renewal runs on `startHeartbeat`'s own timer at a sixth of the
-// window, so even the five-minute floor is refreshed every fifty seconds
-// regardless of what the pass is doing.
+// The staleness window itself (HEARTBEAT_STALE_MIN_DEFAULT and
+// heartbeatStaleMs) lives in `lib/claim.ts` with the rest of the lock's
+// interpretation, so `drives.ts` judges live against stale by exactly the
+// rule recovery uses. Renewal runs on `startHeartbeat`'s own timer at a
+// sixth of the window, whatever the pass is doing.
 
 /**
  * How often a held claim is renewed. A sixth of the staleness window, capped:
@@ -135,11 +113,10 @@ export function refreshAccountIdentity(
     // identity change happens to give it another chance. Each lock instead
     // retries independently until ITS OWN diag agrees with `fresh`.
     if (!accountChanged(fresh, lock.diag.account)) continue;
-    const result = rewriteAccountIdentity(
-      lock,
-      { ...lock.diag, account: fresh },
-      lock.nonce,
-    );
+    const result = rewriteAccountIdentity(lock, {
+      ...lock.diag,
+      account: fresh,
+    });
     if (result !== "synced") allSynced = false;
     if (result === "taken-over") break;
     // A failed rewrite can also discover takeover during cleanup. Proceeding
@@ -153,165 +130,28 @@ export function refreshAccountIdentity(
 
 type AccountRewriteResult = "synced" | "retry" | "taken-over";
 
-/** Confirm the published generation before advancing its in-memory diagnostics. */
-function confirmAccountRewrite(
-  lock: DriveLock,
-  dest: string,
-  updated: ClaimDiag,
-  nonce: string,
-): AccountRewriteResult {
-  const afterRewrite = inspect(lock.dir);
-  if (afterRewrite.unreadable) {
-    // The publishing rename succeeded, so this generation's claim is on
-    // disk; a `readdirSync` failure right afterward proves nothing about
-    // takeover (see `Occupant.unreadable`). Treat it as the same
-    // best-effort transient failure the outer `catch` below handles:
-    // leave `lock.diag` unadvanced so a later tick retries and actually
-    // confirms which case this was.
-    return "retry";
-  } else if (
-    // See `claimWasTakenOver`'s own comment for why this covers both
-    // coexistence AND a full successor-only transition, not just the
-    // former.
-    claimWasTakenOver(afterRewrite.claimNames, claimName(nonce))
-  ) {
-    // First, before the cleanup below can print anything.
-    noteTakeover(lock);
-    if (afterRewrite.claimNames.length > 1) {
-      try {
-        rmSync(dest, { force: true });
-      } catch {
-        // NOT harmless if this fails. `inspect()` reads
-        // `claim: null` for a directory holding more than one `claim.*`
-        // entry, and `acquire()` refuses outright rather than guess which
-        // one is real — so a resurrected entry that survives this removal
-        // wedges the lock PERMANENTLY: no future driver, this generation's
-        // takeover included, can ever auto-recover `lock.dir` again. This
-        // generation is about to stop (via `compromised`, set above) either
-        // way, so print the one thing an operator needs and cannot
-        // otherwise discover on their own: which directory needs manual
-        // cleanup, and why automatic recovery will never happen for it.
-        console.error(
-          `drive.ts: could not remove the resurrected claim at ${dest} — ${lock.dir} now permanently holds more than one claim and no driver can auto-recover it. Manual fix required: inspect the directory and remove the stale entry by hand.`,
-        );
-      }
-    }
-    // A successor-only transition (exactly one claim, not ours) and a
-    // vanished claim set (zero claims — the successor removed ours but
-    // had not yet installed its own when this landed) both hit this
-    // branch too, but `dest` (our own name) is already gone by then —
-    // either the successor's `retire()` removed it and rebuilt
-    // `lock.dir` from scratch, or that rebuild simply had not happened
-    // yet — so there is nothing of OURS left to remove either way. Any
-    // claim present now belongs to someone else; touching it would be
-    // exactly the destructive cross-driver mutation this generation
-    // exists to avoid, so both cases only ever stop driving, never
-    // mutate the directory.
-
-    // Stop entirely, not just this lock: `held` is ordered worktree lock
-    // first, PR lock second, so a `continue` here would proceed straight
-    // into the rewrite path for the NEXT lock while this generation is
-    // already known to have lost one — potentially resurrecting a claim
-    // beside a successor that is concurrently acquiring it and
-    // permanently wedging that lock.
-    return "taken-over";
-  } else {
-    // Advanced only NOW, after the rewrite is actually on disk AND
-    // confirmed unchallenged. An earlier revision set `lock.diag =
-    // updated` before attempting the write — so a failed
-    // `writeFileSync`/`renameSync` still left the in-memory diag
-    // pointing at `updated`, and the NEXT tick's `accountChanged`
-    // compared a fresh read against that already-advanced value, saw no
-    // difference, and never retried — stranding one or all persisted
-    // claims on the stale account for the rest of the drive.
-    lock.diag = updated;
-    return "synced";
-  }
-}
-
-/** Atomically publish one account update, retaining retry and takeover evidence. */
+/**
+ * Publish one account update in the lock's diagnostics, addressed to this
+ * acquisition's token: `synced` when it landed, `taken-over` when the lock no
+ * longer carries this acquisition's token (another driver recovered it), and
+ * `retry` when the database could not be written this time.
+ */
 function rewriteAccountIdentity(
   lock: DriveLock,
   updated: ClaimDiag,
-  nonce: string,
 ): AccountRewriteResult {
-  const dest = join(lock.dir, claimName(nonce));
-  // Deliberately OUTSIDE the `claim.` namespace `CLAIM_PREFIX` names — a
-  // name like `${dest}.rewrite-${pid}` still STARTS WITH `claim.`, so
-  // between this write and the rename below the directory would briefly
-  // hold two entries `inspect()`'s `claimNames` scan both counts
-  // as generations. That reads as debris to every concurrent reader:
-  // `drives.ts --json` reports `contested` instead of `live`, and a
-  // concurrent `acquire()` sees more-than-one claim and refuses outright.
-  // A name that never matches `CLAIM_PREFIX` is invisible to that scan for
-  // the whole window, so exactly one claim is ever visible until the
-  // atomic rename installs the new one.
-  const tmp = join(lock.dir, `rewrite.${nonce}.${process.pid}`);
+  let renewed: boolean;
   try {
-    writeFileSync(tmp, ownClaim(updated));
-    // Re-confirmed IMMEDIATELY before the rename, not assumed from
-    // `touchLock` having run earlier this same tick: `writeFileSync` above
-    // is real disk I/O, wide enough for a concurrent recovery to delete
-    // `dest` and install a successor's own claim while it runs. Renaming
-    // over that regardless would still republish this generation's
-    // obsolete claim ALONGSIDE the successor's — both now reading as valid
-    // — even with `touchLock` correctly ordered first. This does not make
-    // the check and the rename atomic with each other — no POSIX primitive
-    // here does — but it narrows the exposure from the full write's
-    // duration down to the gap between a stat and a rename. The
-    // post-rename check below is what actually closes the remainder —
-    // `touchLock`'s own next tick cannot.
-    if (!existsSync(dest)) {
-      throw new Error("claim recovered mid-rewrite");
-    }
-    // `rename(2)` is what makes THIS step atomic from a reader's
-    // perspective — never a torn write of this call's own making: a
-    // concurrent reader of `dest` sees either the complete old content or
-    // the complete new content, nothing in between.
-    renameWithRetry(tmp, dest);
-    // The `existsSync` check above narrows the exposure but does not close
-    // it: a recovery can still land in the gap between that check and this
-    // rename, retiring `lock.dir` (removing `dest`, then `rmdirSync`-ing the
-    // directory itself) and reinstalling it fresh with the SUCCESSOR's own
-    // differently-named claim — after which THIS rename recreates `dest`
-    // regardless, republishing our now-obsolete generation ALONGSIDE the
-    // successor's, both reading as valid. `touchLock`'s own next tick is NOT
-    // a backstop for this: it addresses `dest` by the same fixed name, so a
-    // resurrected file there makes its `utimesSync` succeed and permanently
-    // masks the takeover instead of catching it. Detect it here instead, the
-    // only place that still knows a rewrite just happened: a directory
-    // holding more than one claim is exactly what `acquire` already treats
-    // as unreachable-by-construction, so treat it as this generation's own
-    // takeover signal and repair it immediately rather than leaving a ghost
-    // for the next reader to trip on.
-    return confirmAccountRewrite(lock, dest, updated, nonce);
+    renewed = renewLock(lock, updated);
   } catch {
-    // Best-effort: a later tick retries — `lock.diag` is left unchanged
-    // above precisely so that retry actually fires. Not this tick's job
-    // to force — same posture `touchLock` already takes on its own
-    // refresh failures.
-    //
-    // But an ordinary transient write failure (permissions, a full disk,
-    // a slow filesystem) is not the only way to land here: `writeFileSync`
-    // itself throws ENOENT when a contender has ALREADY retired `lock.dir`
-    // before this call ever ran, and the `!existsSync(dest)` check above
-    // throws for the narrower race it exists to catch. The resurrection
-    // check further up only runs on the SUCCESS path (after a completed
-    // rename), so a failure that stems from `dest` genuinely being gone
-    // needs its own check here — otherwise this generation's claim can
-    // vanish with `compromised` never set, and this driver keeps going
-    // with no claim protecting the tree at all.
-    try {
-      rmSync(tmp, { force: true });
-    } catch {
-      // Leftover tmp file; harmless — the next successful tick's rename
-      // overwrites its own tmp path, and this one shares no name with it.
-    }
-    if (!existsSync(dest)) {
-      noteTakeover(lock);
-    }
     return "retry";
   }
+  if (!renewed) {
+    noteTakeover(lock);
+    return "taken-over";
+  }
+  lock.diag = updated;
+  return "synced";
 }
 
 /**
@@ -360,7 +200,7 @@ export async function refreshAccountIdentityBeforeSpawn(
  * Refreshing once per round made a claim only as fresh as the round was short,
  * and a round is not short: one runs an agent pass, the fixes it decides on,
  * the full gate suite and sometimes a Testbox. A single ordinary pass can
- * outlast the staleness window, and another start would then quarantine the
+ * outlast the staleness window, and another start would then break the
  * locks of a driver that is demonstrably alive and working — reintroducing the
  * concurrent editing and pushes the lock exists to prevent. A lease has to be
  * renewed WHILE the work happens, not between units of it.

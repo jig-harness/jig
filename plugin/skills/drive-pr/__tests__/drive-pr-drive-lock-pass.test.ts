@@ -8,15 +8,13 @@ import { describe, expect, it } from "bun:test";
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   realpathSync,
-  rmSync,
   statSync,
   truncateSync,
   writeFileSync,
 } from "node:fs";
-import { hostname, tmpdir } from "node:os";
+import { hostname } from "node:os";
 import { join, delimiter } from "node:path";
 import { MAILBOX_STOPPED_EXIT, QUOTA_PARKED_EXIT } from "../scripts/drive";
 import { DRIVER_LOG_MAX_BYTES } from "../scripts/lib/driver-log.ts";
@@ -30,8 +28,10 @@ import {
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 import {
+  type LockSlot,
   PASS_LOUD,
   lockDirs,
+  lockHeld,
   plantClaim,
   pollUntil,
   awaitFixtureMarker,
@@ -46,14 +46,14 @@ import {
   signalIdentityTargets,
 } from "../../../shared/process-tree.ts";
 import { requestDriverStop } from "../scripts/lib/stop-request.ts";
-import { readdirSync } from "node:fs";
+import { lockRow, readState } from "./state-rows.ts";
 
 useDrivePrSuite();
 
 describe("drive.ts loop control", () => {
   describe("single-instance lock", () => {
-    // Three failure modes, each modelled by planting
-    // the exact directory state the racing driver would have left behind.
+    // Each failure mode is modelled by planting the exact lock row the
+    // racing driver would have left behind.
 
     it("refuses when a LIVE driver holds the clone-wide PR lock from another worktree", async () => {
       // Separate worktrees never cross-ship edits, but they race pushes to one
@@ -99,10 +99,10 @@ describe("drive.ts loop control", () => {
       expect(stderr).not.toContain("RAN_THE_PASS");
       // And the first lock it DID take is released on the way out, rather
       // than left behind to be recovered as stale by the next start. Asserted
-      // through `lockDirs`, the same resolver drive.ts uses: a hand-written
-      // path here named a lock that has not existed since the worktree lock
-      // was keyed by the tree, so the check could only ever pass.
-      expect(existsSync(worktree)).toBe(false);
+      // through `lockDirs`, which names the lock as drive.ts does: a
+      // hand-written name could name a lock no driver takes, and the check
+      // would pass whatever happened.
+      expect(lockHeld(worktree)).toBe(false);
     });
 
     /**
@@ -936,16 +936,9 @@ describe("drive.ts loop control", () => {
         // session lease and queue for the per-PR state mutex before it
         // writes anything. Poll for the write rather than guessing a settle
         // interval a loaded CI machine can exceed.
-        const stateFile = join(stateDir, "drive-pr-999.json");
         for (let i = 0; i < 200; i++) {
-          try {
-            const s = JSON.parse(readFileSync(stateFile, "utf8")) as {
-              quotaPark: unknown;
-            };
-            if (s.quotaPark !== null) break;
-          } catch {
-            // Mid-write or not yet created — retry.
-          }
+          const s = readState(stateDir, "999");
+          if (s !== null && s.quotaPark !== null) break;
           await Bun.sleep(25);
         }
         return { passRan, sleeping, stateDir };
@@ -1155,11 +1148,10 @@ describe("drive.ts loop control", () => {
 
     /** Read `quotaPark` back out of a completed attempt's durable state. */
     function readQuotaPark(stateDir: string): { vendor: string } | null {
-      return (
-        JSON.parse(
-          readFileSync(join(stateDir, "drive-pr-999.json"), "utf8"),
-        ) as { quotaPark: { vendor: string } | null }
-      ).quotaPark;
+      const s = readState(stateDir, "999") as {
+        quotaPark: { vendor: string } | null;
+      } | null;
+      return s?.quotaPark ?? null;
     }
 
     it("interrupts a quota-wall sleep when the lock is recovered mid-sleep", async () => {
@@ -1330,202 +1322,17 @@ describe("drive.ts loop control", () => {
       expect(park?.vendor).toBe("claude");
     }, 30000);
 
-    it("aborts a quota-wall sleep when refreshAccountIdentity notices a COEXISTING claim, not just the removal touchLock already catches", async () => {
-      // "interrupts a quota-wall sleep when the lock is recovered mid-sleep"
-      // covers `touchLock`'s own takeover signal aborting a quota-wall
-      // sleep — but that signal fires only when
-      // OUR claim is REMOVED (`utimesSync` on our exact filename throws
-      // ENOENT). A resurrection that leaves a SECOND, coexisting claim
-      // alongside ours (see "heals a resurrected claim at the pass-exit
-      // rewrite" above) never removes our file at all, so `touchLock` never
-      // notices it — only `refreshAccountIdentity`'s own post-rewrite
-      // `claimWasTakenOver` check does, and it must abort the sleep as well
-      // as set `compromised`. Plant the coexisting
-      // claim directly (deterministic, no timing race) during a quota-wall
-      // sleep, trigger a rewrite via a file-backed identity change, and
-      // confirm the sleep ends almost immediately rather than running its
-      // full bound.
-      const { dir, stateDir } = writeFixture({
-        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-      });
-      const { worktree } = lockDirs(dir, stateDir);
-      // Same reasoning as `attemptQuotaWallSleepInterrupt`: no `cwd`
-      // override, since `WORKTREE_LOCK`/`lockDirs()` addresses the lock
-      // name derived from this process's own ambient cwd.
-      const claudeProjectsDir = join(dir, "claude-projects");
-      const passDonePath = join(dir, "quota-pass-done");
-      // A standalone helper FILE, not an inline stub body — same
-      // multi-layer-quoting reasoning as `attemptQuotaWallSleepInterrupt`'s
-      // own helper: the transcript record embeds a real apostrophe and a
-      // middle-dot separator.
-      const helperPath = join(dir, "write-quota-transcript.mjs");
-      writeFileSync(
-        helperPath,
-        [
-          "import { mkdirSync, writeFileSync } from 'node:fs';",
-          "import { join } from 'node:path';",
-          "const [, , projDir, doneMarker, ...passArgs] = process.argv;",
-          // `prepareQuotaSpawn` injects `--session-id <uuid>` into
-          // this pass's own argv, and the quota adapter discards any
-          // transcript record whose `sessionId` does not match it — so the
-          // record has to carry whatever value was actually injected, not a
-          // fixed or absent one.
-          "const sessionIdFlagIndex = passArgs.indexOf('--session-id');",
-          "const sessionId =",
-          "  sessionIdFlagIndex === -1 ? null : passArgs[sessionIdFlagIndex + 1];",
-          "mkdirSync(projDir, { recursive: true });",
-          "const now = new Date();",
-          // The quota parser reads minute precision. Keep its rounded reset
-          // at least 20 seconds away even when the pass runs just before a
-          // minute boundary; the test timeout still catches a missed abort.
-          "const target = new Date(now.getTime() + 80_000);",
-          "const h = target.getUTCHours();",
-          "const m = target.getUTCMinutes();",
-          "const h12 = h % 12 === 0 ? 12 : h % 12;",
-          "const ampm = h < 12 ? 'am' : 'pm';",
-          "const resetClause = `resets ${h12}:${String(m).padStart(2, '0')}${ampm} (UTC)`;",
-          "const record = {",
-          "  type: 'assistant',",
-          "  cwd: process.cwd(),",
-          "  timestamp: now.toISOString(),",
-          "  sessionId,",
-          "  error: 'rate_limit',",
-          "  isApiErrorMessage: true,",
-          "  apiErrorStatus: 429,",
-          "  message: {",
-          "    content: [",
-          "      { type: 'text', text: `You've hit your session limit \\u00b7 ${resetClause}` },",
-          "    ],",
-          "  },",
-          "};",
-          "writeFileSync(join(projDir, 'session.jsonl'), `${JSON.stringify(record)}\\n`);",
-          "writeFileSync(doneMarker, String(Date.now()));",
-          "process.exit(1);",
-        ].join("\n"),
-      );
-
-      // A `claude`-named stub is required here (unlike
-      // `attemptQuotaWallSleepInterrupt`'s plain `bun helperPath` pass
-      // command): vendor resolution keys off argv[0]
-      // literally naming `claude`/`codex`, and this test needs the
-      // FILE-BACKED identity path genuinely active so a change to it makes
-      // `refreshAccountIdentity` attempt a real rewrite.
-      const claudeStubDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-stub-"),
-      );
-      writeFakeProgram(
-        join(claudeStubDir, "claude"), // `candidateFiles` (`lib/quota/claude.ts`) scans `root/<subdir>/*.jsonl`
-        // — a `.jsonl` sitting directly in the root itself is never found —
-        // so the transcript is written one level under `claudeProjectsDir`,
-        // matching `attemptQuotaWallSleepInterrupt`'s own
-        // `join(claudeProjectsDir, 'proj')`.
-        // `"$@"` forwarded so the helper sees the `--session-id <uuid>`
-        // `prepareQuotaSpawn` injects into this pass's own argv —
-        // without it the transcript record carries no `sessionId` at all and
-        // the quota adapter discards it as unattributable to this pass.
-        `#!/bin/sh\nexec bun ${JSON.stringify(helperPath)} ${JSON.stringify(join(claudeProjectsDir, "proj"))} ${JSON.stringify(passDonePath)} "$@"\n`,
-      );
-
-      const claudeConfigDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-config-"),
-      );
-      const claudeJsonPath = join(claudeConfigDir, ".claude.json");
-      writeFileSync(
-        claudeJsonPath,
-        JSON.stringify({
-          oauthAccount: { emailAddress: "before@example.com" },
-        }),
-      );
-
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          // Same reasoning as `attemptQuotaWallSleepInterrupt`: round 1 hits
-          // the wall, round 2 is the further round the drive sleeps in order
-          // to reach.
-          "--max-rounds",
-          "2",
-          "--",
-          "claude",
-          "-p",
-          "/drive-pr 999",
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            CLAUDE_CONFIG_DIR: claudeConfigDir,
-            CLAUDE_CODE_OAUTH_TOKEN: "",
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-            DRIVE_PR_CLAUDE_PROJECTS_DIR: claudeProjectsDir,
-          },
-          stdout: "ignore",
-          stderr: "pipe",
-        },
-      );
-
-      try {
-        await awaitFixtureMarker(passDonePath);
-        expect(existsSync(passDonePath)).toBe(true);
-
-        const reader = proc.stderr.getReader();
-        const decoder = new TextDecoder();
-        let allStderr = "";
-        let sleepingSeen = false;
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (value) allStderr += decoder.decode(value, { stream: true });
-          if (!sleepingSeen && allStderr.includes("SLEEPING")) {
-            sleepingSeen = true;
-            // Plant the coexisting claim directly — the resurrection
-            // race's end state, reached deterministically instead of by
-            // timing a microsecond gap — then trigger the rewrite attempt
-            // that has to notice it.
-            plantClaim(worktree, {
-              pid: 999999,
-              host: "ghost-host",
-              nonce: "ghost02",
-            });
-            writeFileSync(
-              claudeJsonPath,
-              JSON.stringify({
-                oauthAccount: { emailAddress: "after@example.com" },
-              }),
-            );
-          }
-          if (done) break;
-        }
-        expect(sleepingSeen).toBe(true);
-
-        const exitCode = await proc.exited;
-        expect(exitCode).toBe(11);
-        expect(allStderr).toContain("recovered by another driver");
-      } finally {
-        proc.kill();
-        await proc.exited;
-        rmSync(claudeStubDir, { recursive: true, force: true });
-        rmSync(claudeConfigDir, { recursive: true, force: true });
-      }
-    }, 15000);
-
     function portablePassTree(dir: string): string[] {
       const childCode = `setInterval(() => {}, 1000);`;
       const code = `import {writeFileSync} from 'node:fs'; const child = Bun.spawn([process.execPath, '-e', ${JSON.stringify(childCode)}], {stdout:'inherit',stderr:'inherit'}); writeFileSync(${JSON.stringify(join(dir, "pass-started"))}, String(process.pid)); setInterval(() => {}, 1000);`;
       return [process.execPath, "-e", code, "999"];
     }
 
-    function requestHeldDriverStop(prLock: string): void {
-      const claim = readdirSync(prLock).find((name) =>
-        name.startsWith("claim."),
-      );
-      expect(claim).toBeDefined();
-      if (claim !== undefined)
-        requestDriverStop(prLock, claim.slice("claim.".length));
+    function requestHeldDriverStop(prLock: LockSlot): void {
+      const held = lockRow(prLock.stateDir, prLock.name);
+      expect(held).not.toBeNull();
+      if (held !== null)
+        requestDriverStop(prLock.stateDir, prLock.name, held.token);
     }
 
     it.each(["SIGTERM", "SIGHUP"] as const)(
@@ -1588,8 +1395,8 @@ describe("drive.ts loop control", () => {
         );
         // Both locks released — the pass was provably gone first, so releasing
         // them is safe and the next driver need not recover them as stale.
-        expect(existsSync(worktree)).toBe(false);
-        expect(existsSync(pr)).toBe(false);
+        expect(lockHeld(worktree)).toBe(false);
+        expect(lockHeld(pr)).toBe(false);
         if (captured !== null)
           expect(await identityTargetsGone(captured)).toBe(true);
       },
@@ -1731,8 +1538,8 @@ describe("drive.ts loop control", () => {
       const exitCode = await proc.exited;
       expect(exitCode).toBe(143);
       // Repeated cancellation and forced native exit both preserve the claims.
-      expect(existsSync(worktree)).toBe(true);
-      expect(existsSync(pr)).toBe(true);
+      expect(lockHeld(worktree)).toBe(true);
+      expect(lockHeld(pr)).toBe(true);
       if (captured !== null) {
         expect(await identityTargetsGone(captured)).toBe(mode === "repeated");
         await signalIdentityTargets(captured, "SIGKILL");

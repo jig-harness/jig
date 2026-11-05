@@ -366,8 +366,8 @@ needed.
 ## Concurrency: who may drive, and who may finish a hold
 
 **The provenance model, and what it does about a second driver.**
-This state file is shared by every driver of the PR — `drive-state.ts` keeps
-it in the per-clone state directory precisely so two linked worktrees see one
+This state is shared by every driver of the PR — `drive-state.ts` keys it
+by the clone in the drive's database precisely so two linked worktrees see one
 round budget and one held batch. A single PR-global `verifiedSha` would
 therefore be moved by whichever driver pushed last, and would then vouch for
 every held item on the PR: driver A holds a thread and stalls before pushing
@@ -443,7 +443,7 @@ you do need to know:
 lease above is scoped to *(working tree, PR)*, which is exactly right for two
 sessions driving the *same* PR — but leaves the *same* tree unguarded when two
 interactive sessions drive two *different* PRs: each resolves its own
-per-(tree, PR) lease file, neither sees the other's, and both are admitted
+per-(tree, PR) lease, neither sees the other's, and both are admitted
 into the *same* checkout, which they can then edit, commit, and push over one
 another. This is not a milder variant of the same-PR hazard — it is the
 identical damage (measured: two `drive.ts` processes in
@@ -478,7 +478,7 @@ topology is supported, and is the whole reason the actor is the tree. That is
 no reason to let both trees *triage*: two worktrees enumerating the same
 unresolved threads and each replying with its own outcome is the identical
 damage measured within one tree, reached across trees instead. The clone-wide
-state file gives them one round budget and one held batch; PR-wide admission
+state gives them one round budget and one held batch; PR-wide admission
 is the gate.
 
 So a claim answers two questions, and a refusal tells you which it is:
@@ -488,7 +488,7 @@ So a claim answers two questions, and a refusal tells you which it is:
 | `11` | Another live **session in your tree** holds it | Almost always stop. `clear-lease [PR]` if you know that session is gone |
 | `13` | Another live **working tree** is driving this PR | Stop. It names the tree's path, and its session pid when it has one |
 
-- It is **derived, not stored** — read off the lease files that already exist,
+- It is **derived, not stored** — read off the leases that already exist,
   by the same `leaseAlive` test — so it self-clears exactly as the per-session
   half does. A dead or idle worktree never wedges the PR for the others.
 - **A second worktree keeps every read** (`get`, `held`, `held-keys`,
@@ -512,7 +512,7 @@ So a claim answers two questions, and a refusal tells you which it is:
   out, because a driver told `SESSION_LEASE_HELD` goes looking in its own tree
   for a session that is not there.
 - **A runtime that identifies no session is covered too**. The refusal is
-  read off lease files, so it needs *one* side to have left one; a ladder
+  read off leases, so it needs *one* side to have left one; a ladder
   tier 3 that left none would admit two sessionless resolvers in two trees,
   and both would reply. So tier 3 writes a record whose
   **holder is the working tree** instead of a session. No pid is invented for
@@ -631,8 +631,8 @@ do not invoke it; it is wired in already. The following points apply:
   mutating `drive-state.ts` call. Only a lease held by *another live* session
   refuses; one whose owner is gone does not.
 - **But absence has to be established, not assumed.** Anything the fence cannot
-  read is a refusal, not an all-clear: a lease file it can enumerate but not
-  parse or open, a failed `git` probe in a tree that *is* a repository, or a
+  read is a refusal, not an all-clear: a database it cannot read, or one that is
+  not the database the driver opened, a failed `git` probe in a tree that *is* a repository, or a
   `drive-pr` installed with its fence script missing. "Is this a repository" is answered from the filesystem, never from
   git's exit status — `128` is git's generic fatal and also covers dubious
   ownership and corruption, where a live lease may well already exist.
@@ -698,7 +698,7 @@ stop and inspect (`bun "<skill-dir>/scripts/drive-state.ts" get [PR]`) rather th
 an entire batch one silently-failing key at a time. `4` means the snapshot
 you're iterating is stale, so re-read `held` before trusting anything else in
 it — do not assume the key is "already finished" without checking; `3` means
-the state file itself could not be read — the same "malformed, refuse"
+the stored state itself could not be read — the same "malformed, refuse"
 condition every other `drive-state.ts` command already fails closed on —
 which is not a per-key problem, so stop the round entirely rather than keep
 operating on unreadable state.

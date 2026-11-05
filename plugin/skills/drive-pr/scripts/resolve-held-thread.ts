@@ -46,7 +46,7 @@
  * fails.
  *
  * And the stamp is PER HOLD rather than PR-global, which is what makes it
- * survive a second driver. This state file is shared by every
+ * survive a second driver. This stored state is shared by every
  * driver working the PR, so a single `state.verifiedSha` was moved by
  * whichever of them pushed last and then vouched for all of them: driver A
  * holds a thread and stalls before pushing its fix, driver B pushes unrelated
@@ -155,7 +155,7 @@ async function main(): Promise<number> {
   // Validated, not trusted verbatim: an override of `0` — or any non-positive
   // value — would silently reintroduce the exact unbounded hang this deadline
   // exists to prevent, and a non-numeric override is refused for the same
-  // reason a malformed drive-state file is refused rather than coerced:
+  // reason a malformed drive state is refused rather than coerced:
   // guessing a fallback here would hide a misconfiguration behind a script that
   // otherwise looks like it is bounding calls it is not.
   for (const name of ["GH_CALL_TIMEOUT", "DRIVE_PR_HELPER_TIMEOUT"]) {

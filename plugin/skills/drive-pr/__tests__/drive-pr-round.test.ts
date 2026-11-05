@@ -23,11 +23,14 @@ import {
   assertTreeMutationAllowed,
   type Session,
   stateDirIdentityToken,
-  treeLeasePathFor,
+  treeLeaseRef,
 } from "../scripts/lib/state/lease";
+import { treeLeaseLockName } from "../scripts/lib/state/lease-model";
 import { worktreeRoot } from "../scripts/lib/state/actor";
 import { createLock } from "../scripts/lib/state/lock";
 import { appendDirective } from "../scripts/lib/state/mailbox";
+import { lockRow, putTreeLease } from "./state-rows.ts";
+import { scopedStateDir } from "./scoped-state-dir.ts";
 
 import {
   SCRIPTS,
@@ -1838,16 +1841,11 @@ describe("guarded-push.ts", () => {
           // ALWAYS, not only when a probe asks to seed drive state: the git
           // stub above answers ANY `rev-parse` (including `--git-common-dir`)
           // with `localHead`, so without this override `resolveFenceContext`
-          // resolves a garbage "state dir" — harmless for the old read-only
-          // tree fence (a nonexistent path reads as "no lease", i.e. pass), but
-          // `assertTreeMutationAllowed` now ACQUIRES a lock there too: creating
-          // a lock file under a directory that does not exist is not "no
-          // lease", it is a real failure the lock's own retry loop cannot
-          // distinguish from contention, and it burns the full
-          // `DRIVE_PR_LOCK_TIMEOUT` (30s) before every unseeded guarded-push
-          // probe in this suite. Both vars, never one alone — an override
-          // without its identity token fails closed, which would make every
-          // probe here measure that refusal instead of whatever the probe
+          // would resolve a garbage common directory rather than this
+          // fixture's clone, and the fences would judge (and take their locks
+          // in) a database no probe seeded. Both vars, never one alone — an
+          // override without its identity token fails closed, which would make
+          // every probe here measure that refusal instead of whatever the probe
           // actually tests.
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
@@ -1940,13 +1938,13 @@ describe("guarded-push.ts", () => {
   });
 
   it("refuses to push while a DIFFERENT live session holds this tree", async () => {
-    // Until this fix, guarded-push.ts called into NO session fence at all —
-    // an orphaned pass (its own session dead, the tree already taken over by
-    // a replacement session working a different PR) could push straight
-    // through, cross-shipping this pass's uncommitted work onto the other
-    // session's PR. Seeded directly (rather than via drive-state.ts) so the
-    // probe is exactly what the fence itself reads, independent of the
-    // claim path that normally writes it.
+    // Without a session fence in guarded-push.ts, an orphaned pass (its own
+    // session dead, the tree already taken over by a replacement session
+    // working a different PR) could push straight through, cross-shipping
+    // this pass's uncommitted work onto the other session's PR. Seeded
+    // directly (rather than via drive-state.ts) so the probe is exactly what
+    // the fence itself reads, independent of the claim path that normally
+    // writes it.
     const foreign = Bun.spawn(["sleep", "600"], {
       stdout: "ignore",
       stderr: "ignore",
@@ -1956,30 +1954,13 @@ describe("guarded-push.ts", () => {
         { threads: [] },
         {
           seedState: (stateDir) => {
-            const path = treeLeasePathFor(stateDir, ACTOR);
-            const now = new Date().toISOString();
-            writeFileSync(
-              path,
-              `${JSON.stringify(
-                {
-                  holder: "session",
-                  pid: foreign.pid,
-                  host: "",
-                  platform: process.platform,
-                  actor: ACTOR,
-                  worktree: "",
-                  startedAt: now,
-                  lastSeen: now,
-                  command: "bump-round",
-                  generation: "g1",
-                  sessionStarted: "",
-                  pr: "777",
-                  revision: "r1",
-                },
-                null,
-                2,
-              )}\n`,
-            );
+            putTreeLease(treeLeaseRef(stateDir, ACTOR), {
+              pid: foreign.pid,
+              worktree: "",
+              command: "bump-round",
+              pr: "777",
+              revision: "r1",
+            });
           },
           // No DRIVE_PR_SESSION/CLAUDE_PID matching `foreign` — this process
           // must read as a DIFFERENT, foreign session.
@@ -2015,30 +1996,13 @@ describe("guarded-push.ts", () => {
       { threads: [] },
       {
         seedState: (stateDir) => {
-          const path = treeLeasePathFor(stateDir, ACTOR);
-          const now = new Date().toISOString();
-          writeFileSync(
-            path,
-            `${JSON.stringify(
-              {
-                holder: "session",
-                pid: dead,
-                host: "",
-                platform: process.platform,
-                actor: ACTOR,
-                worktree: "",
-                startedAt: now,
-                lastSeen: now,
-                command: "bump-round",
-                generation: "g1",
-                sessionStarted: "",
-                pr: "777",
-                revision: "r1",
-              },
-              null,
-              2,
-            )}\n`,
-          );
+          putTreeLease(treeLeaseRef(stateDir, ACTOR), {
+            pid: dead,
+            worktree: "",
+            command: "bump-round",
+            pr: "777",
+            revision: "r1",
+          });
         },
         env: { DRIVE_PR_SESSION: "", CLAUDE_PID: "" },
       },
@@ -2048,18 +2012,18 @@ describe("guarded-push.ts", () => {
   });
 
   it("assertTreeMutationAllowed HOLDS the tree lock, not just checks it", async () => {
-    // Before this fix, the fence read the lease and returned void — the
-    // underlying `treeLeaseLock` was never taken at all, so a replacement
-    // session's takeover could land in the exact window between the check
-    // and `git push` completing.
+    // A fence that only READ the lease and returned would let a replacement
+    // session's takeover land in the exact window between the check and
+    // `git push` completing.
     // Proven directly at the lock level, independent of `guarded-push.ts`'s
-    // own subprocess plumbing: a second acquirer of the SAME tree-lease path
-    // — via the identical `createLock(path, ..., 'tree')` call
-    // `treeLeaseLock` itself makes — must stay BLOCKED for as long as the
-    // returned lock is held, not free to proceed the instant the check
-    // finished.
-    const d = mkdtempSync(join(tmpdir(), "drive-pr-tree-lock-held-"));
-    const path = treeLeasePathFor(d, ACTOR);
+    // own subprocess plumbing: a second acquirer of the SAME tree-lease lock
+    // row — via the identical `createLock(..., 'tree')` call `treeLeaseLock`
+    // itself makes — must stay BLOCKED for as long as the returned lock is
+    // held, not free to proceed the instant the check finished.
+    const d = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "drive-pr-tree-lock-held-")),
+    );
+    const name = treeLeaseLockName(ACTOR);
     const session: Session = {
       pid: process.pid,
       host: hostname(),
@@ -2073,15 +2037,15 @@ describe("guarded-push.ts", () => {
         stateDir: d,
         actor: ACTOR,
         session,
-        fromOverride: false,
-        legacyStateDirForFallback: d,
+        instance: stateDirIdentityToken(d),
       },
       "999",
       "test",
     );
+    expect(lockRow(d, name)).not.toBeNull();
     let released = false;
     try {
-      const rival = createLock(path, "drive-state.ts (tree lease)", "tree");
+      const rival = createLock(d, name, "drive-state.ts (tree lease)", "tree");
       let rivalAcquired = false;
       const rivalPromise = rival
         .acquire(5)

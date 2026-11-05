@@ -191,7 +191,7 @@ async function resolveSiblingCommitOids(
  * Deliberately soft, unlike `drive.ts`'s own reads of the same value: there the
  * count is the ROUND BUDGET and an unreadable one is a loop with no bound, so
  * it is a hard stop. Here it is a decoration next to a number derived from the
- * PR itself, and refusing to print any metrics because a state file is missing
+ * PR itself, and refusing to print any metrics because a stored state is missing
  * would defeat the whole point of deriving them from the PR.
  */
 async function durableRounds(pr: string): Promise<number | null> {
