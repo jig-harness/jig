@@ -384,6 +384,22 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.140.2] - 2026-11-05
+
+### Fixed
+
+- `drive-pr` no longer stops when the CI hold label (`ci.hold_label`) is on a
+  pull request but the drive did not add it. That happened when an earlier
+  run of the drive lost track of its own label, when a drive died and left
+  the label behind, or when someone else added it. `ci-hold.ts ensure` used to
+  refuse the push (`CI_HOLD_WAIT`) on every round until the drive stalled or
+  parked, and `release` left the label on at convergence. The drive now
+  adopts the label: it pushes under it and removes it at convergence, then
+  waits for fresh full CI as before. A failed push does not remove an
+  adopted label. The label only saves CI. To stop a drive, use
+  `drives.ts`'s `--stop`. Put the dispatcher's `jig:hold` label on the
+  pull request to prevent new launches and re-arms.
+
 ## [0.140.1] - 2026-11-05
 
 ### Changed
@@ -5280,7 +5296,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.140.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.140.2...HEAD
+[0.140.2]: https://github.com/jig-harness/jig/compare/v0.140.1...v0.140.2
 [0.140.1]: https://github.com/jig-harness/jig/compare/v0.140.0...v0.140.1
 [0.140.0]: https://github.com/jig-harness/jig/compare/v0.139.1...v0.140.0
 [0.139.1]: https://github.com/jig-harness/jig/compare/v0.139.0...v0.139.1
