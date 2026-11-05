@@ -560,25 +560,35 @@ running: start it from a terminal on the host (Orca's phone app reaches one),
 open the URL on the phone, and stop it with Ctrl-C.
 
 The page reads two things, every minute and when it comes back into focus, and
-writes nothing:
+writes nothing to the host:
 
-- **The line**, as the newest tick found it: the parks, stops and stalled
+- **What the newest tick found**, on the Now view: the parks, stops and stalled
   pickups waiting on a person, with the question and the recommendation in
   place and the whole decision one tap away; each account's slots and the
   sessions in them, with their evidence; what comes next and why. Each tick that
   reads every repository the machine file lists writes it to the state database
-  beside its receipt. So every panel says which tick it is as of, a stopped timer
-  shows as one, and a host may serve the page from a copy of that database, with
-  no other read. A tick for one repository leaves it as it was.
-- **The outcome log**, filtered by time (today, yesterday, seven or thirty days,
-  or a range), repository, stage, account, class and reason, counting each class
-  over the window and naming each bad class that recurs on a repository. A
-  question about yesterday is the Yesterday filter, and the filter is the page's
-  address, so a view on a phone is a link a laptop opens.
+  beside its receipt (the `tick_line` record). So the strip says how old that
+  tick is, a stopped timer shows as one, and a host may serve the page from a
+  copy of that database, with no other read. A tick for one repository leaves
+  it as it was.
+- **The outcome log**, on the History view, filtered by time (today, yesterday,
+  seven or thirty days, or a range), repository, stage, account, class and
+  reason, counting each class over the window and naming each bad class that
+  recurs on a repository. A question about yesterday is the Yesterday filter,
+  and the view and the filter are the page's address, so a view on a phone is a
+  link a laptop opens.
+
+The Help view says what the page's words, stages and marks mean; a chip, a
+dotted word or the `?` beside a heading says it in place, on hover, tap or
+focus. The theme follows the device until the switch in the strip picks light
+or dark.
 
 The page acts on nothing: it links to the pull request a decision is answered on
-and copies what cannot open, such as a workspace path or an answer line. When
-the server stops answering, it keeps what it last read and says when that was.
+and copies what cannot open, such as a workspace path or an answer line. Beside
+a parked decision a person can draft the reply, which stays in that browser
+only; Copy answer then takes `answer <key>: <reply>`, ready to paste as a
+comment on the pull request. When the server stops answering, it keeps what it
+last read and says when that was.
 
 **When a class recurs.** The tick tunes none of its own dials. A class that
 keeps showing on the dashboard (quota walls at the same hour, pickups that

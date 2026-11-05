@@ -204,7 +204,12 @@ expensive for that can let the drive suppress it between review rounds:
    by the event's action: with label events starting runs, a job that
    skipped on any `labeled` event would let an unrelated label replace a
    failing head's result with a passing skip, so an unrelated label event
-   on an unheld pull request runs real CI. And fail, rather than skip, a
+   on an unheld pull request runs real CI. Where labels change often, as
+   under the dispatcher's labels, the workflow can answer another label's
+   event with a mirror run instead, which skips the heavy jobs, cancels
+   nothing, and has the required check repeat the newest real run's result
+   ([M13's mappings](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/mappings.md#hold)).
+   And fail, rather than skip, a
    required check while the label is present, from the run the label's
    application starts onward, with a message naming the label, so a held
    head is visibly not mergeable throughout. A step in the required job
