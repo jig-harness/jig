@@ -36,6 +36,7 @@ code. The areas are product code, tests, tooling, agent scaffolding, build,
 database, docs and ops. It reports in the terminal, as JSON or as an
 interactive HTML report. It needs no setup, says how much it could not
 classify, and names the rule behind any file.
+Jig's own report is on the site, at [jig-harness.dev/stats/](https://jig-harness.dev/stats/).
 
 - **Skills:** [`audit`](plugin/skills/audit/README.md),
   [`code-stats`](plugin/skills/code-stats/README.md)
