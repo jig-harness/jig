@@ -1962,7 +1962,10 @@ make, use the entry's term instead.
   repository, on a branch of the default branch, for the notifications whose
   pull request or item has no workspace that can take one. It never
   launches an agent into it; it only writes its comment and marks it
-  unread for a person to read.
+  unread for a person to read. Once it has been read for
+  `dispatch.notices_linger`, or it is unread and every cause it carries is gone, the
+  dispatcher removes it with its branch, unless it holds anything a person
+  made.
 - **Dispatched mark** — the line that says the *dispatcher* started a
   session in a workspace: a short mark, the stage, the key and the *launch
   record*'s id (`⚙ dispatched · rearm #456 · launch <id>`). It is kept in
