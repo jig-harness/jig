@@ -20,8 +20,8 @@ keeps other records in the inventory. The machine records sit in one database
 per component with migrations a reader can check; and what a second host needs
 travels on the forge, through one interface.
 
-This is the design of [plan.md](plan.md) item 37. Its first three steps
-are built: the envelope and its codec (`plugin/shared/records/envelope.ts`),
+This is the design of [plan.md](plan.md) item 37. Its built steps
+are: the envelope and its codec (`plugin/shared/records/envelope.ts`),
 the registry (`plugin/shared/records/registry.ts`), the gate that checks
 those forms (`scripts/check-records-registry.ts`), the drive ledger and the
 follow-up marker carrying the envelope, and the view by record,

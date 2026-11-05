@@ -29,8 +29,10 @@
  * rows once, at the first open that finds no `imports` row for the clone
  * (`import.ts`), and its files are left where they are.
  */
-import type { Database } from "bun:sqlite";
+import { Database } from "bun:sqlite";
+import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { swallow } from "../../../../../shared/errors.ts";
 import {
   databaseInstance,
   inTransaction,
@@ -154,6 +156,12 @@ const MIGRATIONS: readonly Migration[] = [
   );
   `,
   },
+  {
+    additive: true,
+    sql: `
+  CREATE INDEX leases_by_actor ON leases (clone, actor, pr);
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */
@@ -189,8 +197,56 @@ export function driveDb(stateDir: string): DriveDb {
       `drive-state.ts: ${opened.failure.reason}`,
     );
   const drive = { db: opened.value, clone: basename(stateDir), path };
-  importStateDir(drive, stateDir);
+  try {
+    importStateDir(drive, stateDir);
+  } catch (error) {
+    fail(
+      1,
+      `drive-state.ts: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   return drive;
+}
+
+/** What a clone's import recorded: when, and the files it could not read. */
+export interface ImportRecord {
+  readonly at: string;
+  readonly skipped: readonly string[];
+}
+
+/**
+ * The clone's import record, read without creating, migrating or importing
+ * anything: `null` when there is no database, no `imports` row, or the
+ * database cannot be read. For a dry run, which must leave the disk as it is.
+ */
+export function peekImport(stateDir: string): ImportRecord | null {
+  const path = dbPathFor(stateDir);
+  if (!existsSync(path)) return null;
+  let db: Database;
+  try {
+    db = new Database(path, { readonly: true });
+  } catch (err) {
+    swallow(err, "the drive's database could not be opened read-only");
+    return null;
+  }
+  try {
+    const row = db
+      .query("SELECT at, skipped FROM imports WHERE clone = ?")
+      .get(basename(stateDir)) as { at: string; skipped: string } | null;
+    if (row === null) return null;
+    const skipped: unknown = JSON.parse(row.skipped);
+    return {
+      at: row.at,
+      skipped: Array.isArray(skipped)
+        ? skipped.filter((s): s is string => typeof s === "string")
+        : [],
+    };
+  } catch (err) {
+    swallow(err, "the drive's import record could not be read");
+    return null;
+  } finally {
+    db.close();
+  }
 }
 
 /** The database's instance id: what a driver hands its passes so they can tell it is still the same database. */

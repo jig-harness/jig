@@ -135,8 +135,13 @@ export interface PathLock extends Disposable {
   release(): void;
   /** Release, and remove the process-exit cleanup registration. Idempotent. */
   dispose(): void;
-  /** Renew the heartbeat of a lock this process holds; a no-op otherwise. */
-  touch(): void;
+  /**
+   * Renew the heartbeat of a lock this process holds. `false` when it could
+   * not: the row was replaced (the lock is lost, and this process no longer
+   * releases it) or the write failed (reported, retried by the next call).
+   * A no-op returning `true` when this process holds nothing.
+   */
+  touch(): boolean;
 }
 
 /** A lock row as the table holds it. */
@@ -183,7 +188,9 @@ export function lockRows(drive: DriveDb): LockRow[] {
 /**
  * Take lock `name` for `holder` when it is free or `seen` is the row to
  * replace: one statement, so of two contenders that saw the same row only one
- * replaces it. `true` when this call now holds it.
+ * replaces it. `true` when this call now holds it. The replacement also
+ * requires the row's heartbeat to be the one `seen` carried: a holder that
+ * renewed after the staleness decision was made keeps its lock.
  */
 export function takeLockRow(
   drive: DriveDb,
@@ -221,8 +228,8 @@ export function takeLockRow(
   return (
     drive.db.run(
       `UPDATE locks SET token = ?, label = ?, pid = ?, host_id = ?, host = ?, boot_id = ?, start = ?, platform = ?, detail = ?, acquired_at = ?, renewed_at = ?
-       WHERE clone = ? AND name = ? AND token = ?`,
-      [...values, drive.clone, name, seen.token],
+       WHERE clone = ? AND name = ? AND token = ? AND renewed_at = ?`,
+      [...values, drive.clone, name, seen.token, seen.renewed_at],
     ).changes === 1
   );
 }
@@ -305,14 +312,21 @@ export function createLock(
     cleanup[Symbol.dispose]();
   }
 
-  function touch(): void {
-    if (token === null) return;
+  function touch(): boolean {
+    if (token === null) return true;
     try {
-      renewLockRow(driveDb(stateDir), name, token);
-    } catch {
-      // The next heartbeat tries again; a lock that is really gone is what
-      // this process's own release finds out.
+      if (renewLockRow(driveDb(stateDir), name, token)) return true;
+    } catch (error) {
+      console.error(
+        `${label}: could not renew ${name} (${error instanceof Error ? error.message : String(error)}); it is broken if the failures last past the staleness window.`,
+      );
+      return false;
     }
+    console.error(
+      `${label}: lost ${name}: another process replaced it while this one held it.`,
+    );
+    token = null;
+    return false;
   }
 
   function attempt(staleMinutes: number): boolean {

@@ -25,6 +25,7 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { RECORD_KINDS } from "../../../shared/records/registry.ts";
 import { DB_FILE, DRIVE_DB_VERSION } from "../scripts/lib/state/db.ts";
+import { isFormerFile } from "../scripts/lib/state/import.ts";
 import { leaseRef } from "../scripts/lib/state/lease.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
 import { ACTOR } from "./drive-pr-harness.ts";
@@ -274,6 +275,29 @@ describe("a clone folder a release that kept files wrote", () => {
     } finally {
       db.close();
     }
+  });
+
+  it("is not imported while a state file cannot be read, and the next open tries again", () => {
+    const dir = stateDir();
+    mkdirSync(join(dir, "drive-pr-998.json"), { recursive: true });
+    const refused = run(dir, ["rounds", "999"]);
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stderr.toString()).toContain("drive-pr-998.json");
+    const db = new Database(join(dirname(dir), DB_FILE), { readonly: true });
+    try {
+      expect(db.query("SELECT 1 FROM imports").get()).toBeNull();
+    } finally {
+      db.close();
+    }
+    rmSync(join(dir, "drive-pr-998.json"), { recursive: true });
+    expectSpawnExit(run(dir, ["rounds", "999"]), 0);
+  });
+
+  it("calls only the names an earlier release wrote its leftovers", () => {
+    expect(isFormerFile("drive-pr-999.json.lock.recovering")).toBe(true);
+    expect(isFormerFile("drive-pr-remote-lock-999.lock")).toBe(true);
+    expect(isFormerFile("backup.lock")).toBe(false);
+    expect(isFormerFile("notes.lock.stale.mine")).toBe(false);
   });
 });
 

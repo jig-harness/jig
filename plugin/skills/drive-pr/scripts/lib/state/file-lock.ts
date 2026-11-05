@@ -14,11 +14,16 @@
  * read, then taken the ordinary way, so of two contenders only one creates
  * the new one.
  *
- * Breaking is a read and a removal, not one step: two breakers of the same
- * stale lock, one taking it between the other's read and its removal, could
- * remove a lock just taken. The mailbox's traffic is a few messages an hour
- * and each hold lasts milliseconds, so that interleaving is not a case this
- * lock is built for.
+ * Every removal of the lock file, a break or a release, is a read followed by
+ * an unlink, and two of them interleaving could remove a lock just taken:
+ * both read stale token A, the first unlinks A and a third process takes B,
+ * the second unlinks B. So each removal happens under a second exclusive
+ * file, `<file>.lock.unlink`, held for the read and the unlink only. Taking
+ * the lock never removes anything, it only creates the file when it is
+ * absent, so with removals serialized a removal always acts on the file it
+ * just read. The removal file is itself broken when it is older than the
+ * staleness window, which only a removal that died between its read and its
+ * unlink can leave behind.
  */
 import { randomBytes } from "node:crypto";
 import { readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
@@ -80,9 +85,43 @@ function stale(path: string, text: string, staleMs: number): boolean {
   }
 }
 
+/** Sleep `ms` without yielding, for the one synchronous wait a release makes. */
+function pause(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Run `fn` while holding the removal file `guard`; `false` when it could not
+ * be taken. A guard older than `staleMs` is removed so a later call takes it.
+ */
+function underGuard(guard: string, staleMs: number, fn: () => void): boolean {
+  try {
+    writeFileSync(guard, "", { flag: "wx" });
+  } catch (err) {
+    if (errnoCode(err) !== "EEXIST") throw err;
+    try {
+      if (Date.now() - statSync(guard).mtimeMs > staleMs) unlinkSync(guard);
+    } catch (inner) {
+      swallow(inner, "a removal guard is gone before its age was read");
+    }
+    return false;
+  }
+  try {
+    fn();
+  } finally {
+    try {
+      unlinkSync(guard);
+    } catch (err) {
+      swallow(err, "a removal guard was already removed");
+    }
+  }
+  return true;
+}
+
 /** The lock on `file`. `label` names the owning script in a timeout's message. */
 export function fileLock(file: string, label: string): FileLock {
   const path = `${file}.lock`;
+  const guard = `${path}.unlink`;
   let token: string | null = null;
 
   function attempt(staleMs: number): boolean {
@@ -97,13 +136,14 @@ export function fileLock(file: string, label: string): FileLock {
     const held = readHeld(path);
     if (held === null || !stale(path, held.text, staleMs)) return false;
     // Remove the stale lock only while it is still the one just judged.
-    if (readHeld(path)?.text === held.text) {
+    underGuard(guard, staleMs, () => {
+      if (readHeld(path)?.text !== held.text) return;
       try {
         unlinkSync(path);
       } catch (err) {
         if (errnoCode(err) !== "ENOENT") throw err;
       }
-    }
+    });
     return false;
   }
 
@@ -121,10 +161,19 @@ export function fileLock(file: string, label: string): FileLock {
     if (token === null) return;
     const mine = token;
     token = null;
-    try {
-      if (readHeld(path)?.token === mine) unlinkSync(path);
-    } catch (err) {
-      if (errnoCode(err) !== "ENOENT") throw err;
+    const staleMs = lockStaleMinutes() * 60_000;
+    // A guard held by another removal lasts milliseconds; if it outlasts the
+    // wait, the lock file stays and is broken once it reads stale.
+    for (let tries = 0; tries < 100; tries++) {
+      const done = underGuard(guard, staleMs, () => {
+        try {
+          if (readHeld(path)?.token === mine) unlinkSync(path);
+        } catch (err) {
+          if (errnoCode(err) !== "ENOENT") throw err;
+        }
+      });
+      if (done) return;
+      pause(20);
     }
   }
 

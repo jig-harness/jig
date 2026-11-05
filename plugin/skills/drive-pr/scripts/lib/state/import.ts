@@ -14,7 +14,9 @@
  * What is read, and how:
  *
  * - a state file, as its text: the store reads it as it read the file, so a
- *   file that was unusable stays unusable and is refused the same way;
+ *   file that was unusable stays unusable and is refused the same way. A
+ *   state file the import cannot read at all stops the import, which records
+ *   nothing and is tried again at the next open;
  * - a lease or tree lease that parses, under a new generation, since the
  *   earlier release's generations were random nonces; one that does not
  *   parse is skipped and named;
@@ -55,14 +57,18 @@ const FORMER = {
   driverRecord: /^ledger-driver-([0-9]+)\.json$/,
 } as const;
 
+/** The names an earlier release put a `.lock` mutex beside: a name the release never wrote is not one of its leftovers. */
+const LOCK_ANCHOR =
+  "(?:drive-pr-[0-9]+\\.json|drive-tree-lease-wt-[0-9a-f]{16}(?:\\.json)?|pr-drive-lease-[0-9]+-wt-[0-9a-f]{16}\\.json|drive-pr-remote-lock-[0-9]+|pr-drive-[0-9]+|pr-drive-worktree-[0-9a-f]{16}|ledger-driver-[0-9]+\\.json)";
+
 /**
  * Every other name an earlier release wrote there and nothing reads now: the
  * mutex directories and their tombstones, staging and compaction leftovers,
  * stop completions, temporary files, markers and the reaper's own files.
  */
 const FORMER_LEFTOVERS: readonly RegExp[] = [
-  /\.lock(?:\.recovering)?(?:\.stale\..+)?$/,
-  /\.lock\.[0-9]+\..+\.staging$/,
+  new RegExp(`^${LOCK_ANCHOR}\\.lock(?:\\.recovering)?(?:\\.stale\\..+)?$`),
+  new RegExp(`^${LOCK_ANCHOR}\\.lock\\.[0-9]+\\..+\\.staging$`),
   /^\.compacting\./,
   /^drive-pr-remote-lock-[0-9]+$/,
   /^drive-pr-[0-9]+\.stop-complete\.[0-9a-f]{24}\.json(?:\.[0-9]+\.tmp)?$/,
@@ -228,10 +234,18 @@ function formerClaim(dir: string, name: string): Row | null {
 type Reader = (rows: Rows, path: string, m: RegExpExecArray) => void;
 
 const readState: Reader = (rows, path, m) => {
-  const raw = text(path);
-  if (raw === null) {
-    rows.skipped.push(basename(path));
-    return;
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    // A state that vanished since the listing has nothing to import. One that
+    // exists and cannot be read must not become a fresh state with the import
+    // recorded: refuse, so the next open reads the directory again.
+    if (errnoCode(err) === "ENOENT") return;
+    throw new Error(
+      `${basename(path)} in the earlier release's state directory cannot be read (${err instanceof Error ? err.message : String(err)}); fix its permissions or move it aside, then run the command again`,
+      { cause: err },
+    );
   }
   rows.drive_state.push({
     pr: prOf(m),

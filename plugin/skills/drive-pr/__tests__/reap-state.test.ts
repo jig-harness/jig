@@ -209,7 +209,18 @@ describe("reap-state.ts — the files an earlier release kept", () => {
     expect(after.report().retire.map((r) => r.id)).toEqual([
       `imported:${basename(dir)}`,
     ]);
-    for (const name of names) expect(existsSync(join(dir, name))).toBe(false);
+    // The lease file is not a lease, so the import skipped it: it stays.
+    const [state, lease] = names as [string, string];
+    expect(existsSync(join(dir, state))).toBe(false);
+    expect(existsSync(join(dir, lease))).toBe(true);
+  });
+
+  it("creates nothing in a dry run", () => {
+    const dir = stateDir();
+    earlier(dir);
+    const before = existsSync(join(dirname(dir), DB_FILE));
+    expectSpawnExit(reap(dir, ghShim("open", "OPEN"), []).result, 0);
+    expect(existsSync(join(dirname(dir), DB_FILE))).toBe(before);
   });
 });
 

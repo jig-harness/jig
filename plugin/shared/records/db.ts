@@ -277,7 +277,25 @@ function connect(spec: DatabaseSpec): Outcome<Database, OpenCode> {
  */
 export function openDatabase(spec: DatabaseSpec): Outcome<Database, OpenCode> {
   const reused = cached(spec.path);
-  if (reused !== null) return ok(reused);
+  if (reused !== null) {
+    // Another process may have migrated the file since it was opened, and
+    // this call may ask for another schema than the one that opened it.
+    try {
+      const refused = refusal(reused, spec);
+      if (refused !== null) return refused;
+      if (needsWrite(reused, spec)) {
+        const migrated = migrate(reused, spec);
+        if (!migrated.ok) return migrated;
+      }
+    } catch (error) {
+      return failed(
+        "unopenable",
+        `${spec.path} cannot be opened: ${error instanceof Error ? error.message : String(error)}`,
+        error,
+      );
+    }
+    return ok(reused);
+  }
   const opened = connect(spec);
   if (!opened.ok) return opened;
   const id = fileId(spec.path);

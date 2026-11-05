@@ -140,7 +140,7 @@ import {
   peekResolvedStateDir,
   readStateRow,
   resolveStateDir,
-  stateRows,
+  stateNumbers,
   worktreeLockName,
 } from "./lib/state/store.ts";
 
@@ -407,7 +407,7 @@ export function listStateOnlyRows(
     lockRows.filter((r) => r.kind === "pr").map((r) => r.key),
   );
   const rows: LockRow[] = [];
-  for (const { pr } of stateRows(stateDir)) {
+  for (const pr of stateNumbers(stateDir)) {
     if (alreadyLocked.has(pr)) continue;
     // A lock-less stored state earns a row only when it has something to SAY.
     //

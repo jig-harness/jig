@@ -155,6 +155,27 @@ describe("openDatabase", () => {
     expect(meta(path)).toMatchObject({ version: 1, min_reader: 1 });
   });
 
+  it("refuses, on a held connection, a database another process migrated incompatibly", () => {
+    const path = fresh();
+    expect(openDatabase({ path, migrations: [V1] }).ok).toBe(true);
+    const other = new Database(path);
+    other.run("PRAGMA user_version = 3");
+    other.run("UPDATE db_meta SET version = 3, min_reader = 3");
+    other.close();
+    const again = openDatabase({ path, migrations: [V1] });
+    expect(again.ok).toBe(false);
+    closeDatabase(path);
+  });
+
+  it("migrates a held connection when another schema is asked for", () => {
+    const path = fresh();
+    expect(openDatabase({ path, migrations: [V1] }).ok).toBe(true);
+    const wider = openDatabase({ path, migrations: [V1, V2_ADDITIVE] });
+    expect(wider.ok).toBe(true);
+    expect(schemaVersion(path)).toBe(2);
+    closeDatabase(path);
+  });
+
   it("reopens a database whose file was replaced, under another instance", () => {
     const path = fresh();
     const first = openDatabase({ path, migrations: [V1] });

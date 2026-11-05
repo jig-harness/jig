@@ -175,18 +175,30 @@ export function readStateRow(
     : { text: row.state, v: row.v, at: row.updated_at };
 }
 
-/** Every PR's stored state in a clone. */
-export function stateRows(
-  stateDir: string,
-): { pr: string; text: string; v: number; at: string }[] {
+/** The pull requests a clone has a stored state for, without reading the states. */
+export function stateNumbers(stateDir: string): string[] {
   const drive = driveDb(stateDir);
   return (
     drive.db
       .query(
-        "SELECT pr, v, state, updated_at FROM drive_state WHERE clone = ? ORDER BY CAST(pr AS INTEGER)",
+        "SELECT pr FROM drive_state WHERE clone = ? ORDER BY CAST(pr AS INTEGER)",
       )
-      .all(drive.clone) as (StateRow & { pr: string })[]
-  ).map((r) => ({ pr: r.pr, text: r.state, v: r.v, at: r.updated_at }));
+      .all(drive.clone) as { pr: string }[]
+  ).map((r) => r.pr);
+}
+
+/** Every PR's stored state in a clone, one row at a time. */
+export function* stateRows(
+  stateDir: string,
+): Generator<{ pr: string; text: string; v: number; at: string }> {
+  const drive = driveDb(stateDir);
+  const rows = drive.db
+    .query(
+      "SELECT pr, v, state, updated_at FROM drive_state WHERE clone = ? ORDER BY CAST(pr AS INTEGER)",
+    )
+    .iterate(drive.clone) as IterableIterator<StateRow & { pr: string }>;
+  for (const r of rows)
+    yield { pr: r.pr, text: r.state, v: r.v, at: r.updated_at };
 }
 
 /** Write a PR's state text in a clone as it is, unvalidated: the store's write, and a test fixture's. */

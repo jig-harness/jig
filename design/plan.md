@@ -224,7 +224,7 @@ and the dispatcher reading the drive's exit codes from its terminal-state
 registry, one round counter, and mailbox directives addressed to a driver
 generation. No daemon or bus coordinates them
 ([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). Built in the
-design's order; the first three steps are built: the envelope, the registry
+design's order; built so far: the envelope, the registry
 and its gate, the ledger and the follow-up marker carrying the envelope
 ([plugin/RECORDS.md](../plugin/RECORDS.md)); the liveness module; and the
 machine's records in SQLite, the drive's state among them.

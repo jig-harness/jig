@@ -23,7 +23,10 @@
  *   lock directories and their tombstones, markers). RETIRED once the clone's
  *   import is older than `IMPORTED_RETENTION_DAYS`, which leaves a person a
  *   month to inspect them; kept before that, and kept when the clone was
- *   never imported.
+ *   never imported. The files the import could not read are never retired:
+ *   they may be the only copy of what they held. A dry run reads the import
+ *   record without opening the database for writing, so it creates and
+ *   imports nothing.
  *
  * A name neither family recognises is never removed. Every gate fails
  * CLOSED: an entry that cannot be read keeps its family.
@@ -46,13 +49,13 @@
  */
 
 import { readdirSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { reapTraceDays } from "../../../shared/trace.ts";
 import { fail, isDigits, runMain } from "./lib/cli.ts";
 import { ghCall } from "./lib/proc.ts";
 import { cloneFile, REPORT_MEMORY } from "./lib/state/artifacts.ts";
-import { driveDb } from "./lib/state/db.ts";
-import { importedAt, isFormerFile } from "./lib/state/import.ts";
+import { driveDb, peekImport } from "./lib/state/db.ts";
+import { isFormerFile } from "./lib/state/import.ts";
 import { liveLeasesFor } from "./lib/state/lease.ts";
 import { createLock, LockAcquireTimeoutError } from "./lib/state/lock.ts";
 import { peekResolvedStateDir, resolveStateDir } from "./lib/state/store.ts";
@@ -237,22 +240,29 @@ function judgePr(
   };
 }
 
-/** The imported family's verdict: retired once the import is past its retention. */
+/**
+ * The imported family's verdict: retired once the import is past its
+ * retention, except the files the import could not read, which are the only
+ * copy of what they held and stay until a person removes them.
+ */
 function judgeImported(stateDir: string, family: Family): Verdict {
-  const at = importedAt(driveDb(stateDir));
-  if (at === null)
+  const record = peekImport(stateDir);
+  if (record === null)
     return { family, action: "keep", reason: "this clone was never imported" };
-  const age = Date.now() - Date.parse(at);
+  const age = Date.now() - Date.parse(record.at);
   if (!Number.isFinite(age) || age < IMPORTED_RETENTION_DAYS * DAY_MS)
     return {
       family,
       action: "keep",
-      reason: `imported ${at}, within the ${IMPORTED_RETENTION_DAYS}-day retention`,
+      reason: `imported ${record.at}, within the ${IMPORTED_RETENTION_DAYS}-day retention`,
     };
+  const unread = new Set(record.skipped);
+  const names = family.names.filter((n) => !unread.has(n));
+  const left = family.names.length - names.length;
   return {
-    family,
+    family: { ...family, names },
     action: "retire",
-    reason: `imported ${at}, past the ${IMPORTED_RETENTION_DAYS}-day retention`,
+    reason: `imported ${record.at}, past the ${IMPORTED_RETENTION_DAYS}-day retention${left === 0 ? "" : `; ${left} file(s) the import could not read stay for a person`}`,
   };
 }
 
@@ -267,6 +277,33 @@ function retire(stateDir: string, family: Family): string[] {
     }
   }
   return failed;
+}
+
+/** The report for a clone with no state directory yet; the exit code. */
+function reportNoStateDir(
+  args: Args,
+  stateDir: string | null,
+  traceDays: ReturnType<typeof reapTraceDays>,
+): number {
+  if (args.json)
+    console.log(
+      JSON.stringify(
+        {
+          stateDir,
+          exists: false,
+          entries: 0,
+          retire: [],
+          keep: [],
+          entriesRemoved: 0,
+          traceDays: traceDays.days,
+          failures: traceDays.failures,
+        },
+        null,
+        2,
+      ),
+    );
+  else console.log("reap-state.ts: no state directory yet — nothing to reap.");
+  return traceDays.failures.length === 0 ? 0 : 1;
 }
 
 async function main(): Promise<number> {
@@ -289,28 +326,8 @@ async function main(): Promise<number> {
       }
     }
   }
-  if (stateDir === null || names === null) {
-    if (args.json)
-      console.log(
-        JSON.stringify(
-          {
-            stateDir,
-            exists: false,
-            entries: 0,
-            retire: [],
-            keep: [],
-            entriesRemoved: 0,
-            traceDays: traceDays.days,
-            failures,
-          },
-          null,
-          2,
-        ),
-      );
-    else
-      console.log("reap-state.ts: no state directory yet — nothing to reap.");
-    return failures.length === 0 ? 0 : 1;
-  }
+  if (stateDir === null || names === null)
+    return reportNoStateDir(args, stateDir, traceDays);
 
   const lock = args.del
     ? createLock(stateDir, "reap-state", "reap-state.ts (delete)", "reap-state")
@@ -327,7 +344,10 @@ async function main(): Promise<number> {
     }
   }
   try {
-    const clone = driveDb(stateDir).clone;
+    // Importing is a write, so only a run that acts does it; a dry run reads
+    // the import record as it is.
+    if (args.del) driveDb(stateDir);
+    const clone = basename(stateDir);
     const { families, unrecognised } = classify(names, clone);
     const prs = [...families.keys()]
       .filter((id) => id.startsWith("pr:"))

@@ -1100,20 +1100,20 @@ criteria:
     evidence: "drive-pr's loop and fleet metrics (plugin/skills/drive-pr/scripts/) are the only telemetry; they record round outcomes and carry no error code or type, and the failures they log carry the message"
   M15/migration-discipline-written:   # lite, requires convention
     # Where the repository has database migrations, the discipline is written beside them or in the instruction file: a merged migration is never edited, renamed or deleted and is corrected by a new one, a migration changes structure only, each migration's ledger entry lands with it, and a migration's commit carries a review marker (expected-absent where the repository has no database migrations).
-    score: expected-absent
-    evidence: "Jig tracks no migrations directory, SQL file, journal or revision chain; its components' SQLite stores (the dispatcher's and the drive's) migrate through ordered in-code lists that plugin/shared/records/db.ts applies, whose header states that an entry a released plugin ran is never edited, so there is no migration file for a discipline to sit beside"
+    score: absent
+    evidence: "Jig has database migrations: the dispatcher's and the drive's SQLite stores migrate through ordered in-code lists that plugin/shared/records/db.ts applies. Of the discipline, db.ts's header writes that an entry a released plugin ran is never edited and a change adds an entry; nothing writes that a migration changes structure only, that its ledger entry (PRAGMA user_version) lands with it, or that its commit carries a review marker, and no instruction file states the discipline"
   M15/applied-migrations-immutable:   # standard, requires mechanical
     # A gate in CI fails a change that modifies, renames or deletes a migration file the base branch already holds, allowing only a restoration to content the file held before on that branch, and the migration runner records each file's hash when it applies it and refuses to run while an applied file's hash differs or the file is gone (expected-absent where the repository has no database migrations).
-    score: expected-absent
-    evidence: "No migrations to hold immutable: the repository stores nothing in a database, and scripts/gates.ts runs no migration tool or wrapper"
+    score: absent
+    evidence: "The migrations are inline SQL lists in plugin/shared/records/db.ts consumers (plugin/skills/drive-pr/scripts/lib/state/db.ts, plugin/dispatch/lib/state.ts); no gate fails a change that edits, reorders or removes an entry a base branch already holds, and the runner records no per-entry hash"
   M15/migration-ledger-integrity:   # standard, requires mechanical
     # A check in CI holds the migration ledger and the files one to one, in strictly increasing order with no gap in the sequence and every field the runner reads explicit on each entry, so no migration is skipped silently or left without an entry (expected-absent where the repository has no database migrations).
-    score: expected-absent
-    evidence: "No migration ledger: no journal, changelog or revision chain exists, since the repository has no database"
+    score: absent
+    evidence: "The ledger is PRAGMA user_version, which the runner sets to the number of entries applied; no CI check holds the list and the version one to one, in order, with every field the runner reads explicit"
   M15/migrations-structure-only:   # strict, requires mechanical
     # A check in CI parses each migration with the database's grammar and blocks on a data statement (insert, update, delete, merge) anywhere in the statement tree, a procedural block or a function body included, fails a file whose dynamic statements it cannot read, and takes its exceptions from an allowlist outside the migration files that names each statement by identity under a reviewer's reason (expected-absent where the repository has no database migrations).
-    score: expected-absent
-    evidence: "No migrations to parse: the repository has no database and no migrations directory"
+    score: absent
+    evidence: "No CI check parses the inline migration SQL for a data statement; the drive's and the dispatcher's lists happen to hold structure only"
   M15/interface-policy-written:   # lite, requires convention
     # Where the repository serves an interface (HTTP, RPC, GraphQL), the interface policy is written beside the contract or in the instruction file: an operation is internal unless a named external consumer justifies publishing it, a change that publishes one names its consumer, every request input declares a bound, and an operation declares every failure status its code can produce (expected-absent where the repository serves no interface).
     score: expected-absent

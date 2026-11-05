@@ -439,6 +439,28 @@ describe("drive.ts loop control", () => {
       expect(claimsIn(worktree)).toEqual(["claim.successor3"]);
     });
 
+    it("does not replace a holder that renewed after the decision to replace it", () => {
+      const { dir, stateDir } = writeFixture({ threads: [] });
+      const { worktree } = lockDirs(dir, stateDir);
+      plantStaleLock(worktree, "stale0002");
+      const drive = driveDb(stateDir);
+      const seen = readLockRow(drive, worktree.name);
+      expect(renewLockRow(drive, worktree.name, "stale0002")).toBe(true);
+      // The renewal may land in the same millisecond as the plant.
+      drive.db.run(
+        "UPDATE locks SET renewed_at = '2999-01-01T00:00:00.000Z' WHERE clone = ? AND name = ?",
+        [drive.clone, worktree.name],
+      );
+      const took = takeLockRow(drive, worktree.name, seen, {
+        token: "latecomer2",
+        label: "drive.ts",
+        holder: lockIdentity(),
+        detail: null,
+      });
+      expect(took).toBe(false);
+      expect(readLockRow(drive, worktree.name)?.token).toBe("stale0002");
+    });
+
     it("leaves no lock residue however many times it runs", async () => {
       // The bound has to be structural, not a sweep. Three consecutive drives
       // are enough to show accumulation if anything accumulates at all.

@@ -349,9 +349,9 @@ function localStates(
   unread: string[],
 ): Map<string, { state: DriveState; mtime: number }> {
   const out = new Map<string, { state: DriveState; mtime: number }>();
-  let rows: ReturnType<typeof stateRows> = [];
+  let rows: { pr: string; text: string; v: number; at: string }[] = [];
   try {
-    rows = stateRows(stateDir);
+    rows = [...stateRows(stateDir)];
   } catch (err) {
     swallow(err, "the drive's database could not be read");
     unread.push(`the drive states of ${stateDir} could not be read`);
