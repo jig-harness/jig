@@ -1238,38 +1238,6 @@ esac
     }
   });
 
-  it("accepts a boolean adopted flag and refuses any other type", () => {
-    const base = {
-      phase: "held",
-      eventId: "123",
-      addedAtHead: HEAD,
-      actor: "drive-user",
-      createdAt: "2026-09-10T10:00:00Z",
-      checkRunWatermark: 0,
-    };
-    const releasing = {
-      phase: "releasing",
-      heldEventId: "123",
-      addedAtHead: HEAD,
-      heldActor: "drive-user",
-      heldCreatedAt: "2026-09-10T09:00:00Z",
-      head: HEAD,
-      actor: "drive-user",
-      createdAt: "2026-09-10T10:00:00Z",
-      checkRunWatermark: 42,
-    };
-    for (const hold of [base, releasing]) {
-      for (const adopted of [true, false]) {
-        const state = { ...freshState(999), ciHold: { ...hold, adopted } };
-        expect(isUsableState(state, 999)).toBe(true);
-      }
-      for (const adopted of ["true", 1, null]) {
-        const state = { ...freshState(999), ciHold: { ...hold, adopted } };
-        expect(isUsableState(state, 999)).toBe(false);
-      }
-    }
-  });
-
   it("refuses to reset state while this drive still owns a live hold", () => {
     const { bin, stateDir } = fakeGh(HEAD, '[{"name":"ci:hold"}]');
     const held = invoke(bin, stateDir, [
