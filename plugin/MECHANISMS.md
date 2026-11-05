@@ -361,16 +361,22 @@ development and shipped as a version.
 - **Deterministic.** The
   [follow-up marker](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), a
   hidden-marker comment on a merged pull request, claims its follow-up
-  (`dispatch/lib/followup-marker.ts`). The tick posts one naming its launch
+  (`dispatch/lib/followup-marker.ts`). It is a
+  [forge claim](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) of
+  the shared module `shared/records/forge-claims.ts`, which posts it, reads
+  it back (again a few times while the listing does not show it yet) and
+  decides it by the claims' one rule. The tick posts one naming its launch
   record before it starts the session. A run by hand uses
   `jig dispatch marker claim`, `check` before each act outside the pull
   request, and `done` at the end (`dispatch/marker.ts`). A marker counts only
   when the dispatcher's own login or an owner, member or collaborator wrote
   it. Of two trusted markers the commands stand down for the earlier
-  comment; the dispatcher instead reports a conflict and plans no follow-up
-  until a person settles the duplicate (`dispatch/lib/plan-followups.ts`).
-  Refuses: exit 3 when an earlier marker holds the follow-up, exit 2 for a
-  comment that is not a trusted marker.
+  comment; the dispatcher instead reports a conflict, naming the earlier,
+  and plans no follow-up until a person settles the duplicate
+  (`dispatch/lib/plan-followups.ts`). Refuses: exit 3 when an earlier marker
+  holds the follow-up, exit 2 for a comment that is not a trusted marker,
+  exit 1 when the markers cannot be read or the read-back never lists the
+  marker it posted.
 - **Reasoned.** The follow-up session decides what the merge still owes and
   does it; it calls the marker commands at the points its instructions name.
 - **If it fails.** The follow-up session stops on any non-zero exit. A
@@ -410,6 +416,15 @@ development and shipped as a version.
   (`skills/drive-pr/scripts/lib/state/ledger.ts`,
   `skills/drive-pr/scripts/lib/state/ledger-forge.ts`); a ledger counts only
   when the drive's own login or an owner, member or collaborator wrote it.
+  A takeover is a
+  [forge claim](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+  read back and decided by `shared/records/forge-claims.ts`: per ledger
+  generation the earliest trusted claim wins, with the lease window as its
+  lapse window. So is the merge-ready announcement
+  (`skills/drive-pr/scripts/announce-merge-ready.ts`, through
+  `skills/drive-pr/scripts/lib/announce.ts`): one per pull request and head,
+  posted only while the head's merge readiness holds, and of two the earlier
+  stands and the later is withdrawn.
   A round's finish is one script,
   `skills/drive-pr/scripts/finish-round.ts`, which sequences the CI hold,
   the push (`skills/drive-pr/scripts/guarded-push.ts`, which re-checks the
@@ -705,11 +720,10 @@ stops a model. A team that runs passes unattended should know which:
 - **Comments a script trusts by their author.** A ledger and a takeover
   claim count when the drive's own login or an owner, member or
   collaborator wrote them; a follow-up marker when the dispatcher's own
-  login or one of those wrote it; an answer to a thread or a parked
-  question when an owner, member or collaborator wrote it
-  (`shared/trusted-authors.ts`,
-  `skills/drive-pr/scripts/lib/state/ledger-forge.ts`,
-  `dispatch/lib/followup-marker.ts`,
+  login or one of those wrote it; a merge-ready announcement, an answer to a
+  thread or a parked question when an owner, member or collaborator wrote it
+  (`shared/trusted-authors.ts`, `shared/records/forge-claims.ts`,
+  `skills/drive-pr/scripts/lib/state/ledger.ts`,
   `skills/drive-pr/scripts/lib/driver/rearm.ts`). A pass signed in as the
   same login as the person can therefore post a comment those scripts would
   trust; only the instructions say it must not.

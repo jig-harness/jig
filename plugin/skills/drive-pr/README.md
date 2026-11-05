@@ -557,7 +557,9 @@ default); a plain arm is refused with exit `13`, and the refusal prints the
 takeover claim on the pull request; so does any drive that does not continue
 its own clone's ledger, such as the first drive of a pull request. If two
 clones claim at once, the earlier comment wins and the later one stands down
-with exit `20`. A claim whose clone never got the drive going stops counting
+with exit `20`. A claim the pull request's comments still do not show after a
+few reads refuses the drive with exit `1`, since it cannot tell a won claim
+from a lost one. A claim whose clone never got the drive going stops counting
 after the lease window, and a retry from that clone picks up its own claim.
 The old driver, if it is still alive, reads the claim at its next round
 boundary or before its next pass and stops with exit `20`. A drive that

@@ -1,13 +1,14 @@
 /**
  * The follow-ups in the plan: every pull request merged since the
- * follow-up stage's start, classified by its follow-up markers
- * (`followup-marker.ts`), this machine's launch records and the follow-ups'
- * outcome records (`followup-outcomes.ts`):
+ * follow-up stage's start, classified by its follow-up markers (claims of
+ * the shared forge-claims module, read through `followup-marker.ts`), this
+ * machine's launch records and the follow-ups' outcome records
+ * (`followup-outcomes.ts`):
  *
  * | Markers | The tick |
  * | --- | --- |
  * | none trusted | wants a follow-up (an untrusted one is ignored, and named) |
- * | more than one trusted | reports both; a person settles which run stands |
+ * | more than one trusted | reports them, naming the earliest, which holds the follow-up for the marker commands; a person settles which run stands |
  * | a trusted one that does not read | reports it, starts nothing |
  * | a manual run's, marked done | quiet: done |
  * | a manual run's, not marked done | quiet: held by that run, reported with its author and age |
@@ -149,6 +150,36 @@ function planTickMarker(
   );
 }
 
+/** A merged pull request with no trusted follow-up marker: the tick wants one. */
+function wantFollowup(
+  input: FollowupInput,
+  pr: MarkedPr,
+  ignored: readonly { id: number; login: string }[],
+  want: Want,
+): void {
+  want(
+    {
+      stage: "followup",
+      target: `PR #${pr.number}`,
+      record: "forge",
+      reason: `merged ${pr.mergedAt} with no follow-up marker; run ${input.command} ${pr.number}`,
+      evidence: {
+        url: pr.url,
+        head: pr.head,
+        mergedAt: pr.mergedAt,
+        ...(ignored.length === 0
+          ? {}
+          : {
+              ignoredMarkers: ignored
+                .map((m) => `${m.id} by ${m.login}`)
+                .join(", "),
+            }),
+      },
+    },
+    (w) => w.prs.includes(pr.number),
+  );
+}
+
 /** One merged pull request: wanted, running, quiet, failed or unplaced. */
 function planMerged(
   input: FollowupInput,
@@ -171,33 +202,13 @@ function planMerged(
     plan.unplaced.push({
       target,
       record: "forge",
-      reason: `it carries ${trusted.length} trusted follow-up markers (comments ${trusted.map((m) => m.id).join(", ")}): two runs may have claimed it, a person settles which stands`,
+      reason: `it carries ${trusted.length} trusted follow-up markers (comments ${trusted.map((m) => m.id).join(", ")}): two runs may have claimed it; the earliest, comment ${trusted[0]?.id}, holds it by the claim rule, and a person settles which run stands`,
     });
     return;
   }
   const [marker] = trusted;
   if (marker === undefined) {
-    want(
-      {
-        stage: "followup",
-        target,
-        record: "forge",
-        reason: `merged ${pr.mergedAt} with no follow-up marker; run ${input.command} ${pr.number}`,
-        evidence: {
-          url: pr.url,
-          head: pr.head,
-          mergedAt: pr.mergedAt,
-          ...(ignored.length === 0
-            ? {}
-            : {
-                ignoredMarkers: ignored
-                  .map((m) => `${m.id} by ${m.login}`)
-                  .join(", "),
-              }),
-        },
-      },
-      (w) => w.prs.includes(pr.number),
-    );
+    wantFollowup(input, pr, ignored, want);
     return;
   }
   if (marker.run.kind === "unreadable") {
