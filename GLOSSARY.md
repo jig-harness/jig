@@ -1937,6 +1937,14 @@ make, use the entry's term instead.
   not a draft, has no unresolved review thread, and branch protection lets
   it merge, or would once a person approves it or updates its branch.
   Planned: [ROADMAP.md](ROADMAP.md) item 36.
+- **Ready episode** — one unbroken period a pull request spends in the
+  *dispatch board*'s Ready to merge column at one verified head. A pull
+  request that leaves (a check fails, a thread opens, a hold is added) and
+  re-enters at the same head starts a new episode, so each period's wait
+  is counted on its own and its event rows share one key: the pull
+  request, the head and the tick that saw it enter. Not the once-per-head
+  `ready` notification record, which keeps a person from being told twice
+  about the same head however many episodes it has.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended, a table of its state database with a text copy of one
   file per month: one row per session with its stage, repository,

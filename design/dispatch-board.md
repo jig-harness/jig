@@ -173,19 +173,20 @@ this order:
 | an unresolved thread | Needs you | a thread was opened after the drive converged | a person: answer it, or re-arm the drive |
 | the reviewer app's check on the head is missing, failed or skipped | Needs you | the review the ledger reports is not witnessed on this head | a person: re-arm the drive |
 | `reviewDecision` `CHANGES_REQUESTED` | Needs you | who requested changes, and when | a person: that reviewer re-reviews, or the drive is re-armed to address it |
-| `BLOCKED`, a required check running | the column it was in | the required checks still running | waiting |
-| `BLOCKED` or `UNSTABLE`, a check failing | Needs you | a check failed after the drive converged, by name | a person: re-run it, or re-arm the drive |
+| `BLOCKED` or `UNSTABLE`, a check failing | Needs you | a check failed after the drive converged, by name; a check still running beside it does not change this | a person: re-run it, or re-arm the drive |
+| `BLOCKED`, a required check running, none failing | the column it was in | the required checks still running | waiting |
+| `UNKNOWN`, or mergeability `UNKNOWN` | the column it was in, marked not read | the forge is still computing | waiting |
+| `BEHIND`, the first in Ready order of its repository | Ready to merge, update next | the repository requires an up-to-date branch; updating moves its head, which costs a re-drive (a review round and a CI run); where an approval is also required, the card says it is still owed | a person: update the branch |
+| `BEHIND`, any other | Coming | behind its base, updated after the one in update next | waiting |
 | an approval is required (`REVIEW_REQUIRED`, or condition 3 or 8 asks for one) and a review is requested | Ready to merge, approve first | waits on an approval; the reviewers or teams requested are named as requested, and since when | a person: an approval |
 | an approval is required and no review is requested | Ready to merge, approve first | needs a review and approval from someone other than its author, and nobody is asked | a person: request a review |
 | `BLOCKED` for none of these | Needs you | the forge blocks the merge on a rule the board cannot tell (signed commits, a deployment): open the pull request | a person |
-| `BEHIND`, the first in Ready order of its repository | Ready to merge, update next | the repository requires an up-to-date branch; updating moves its head, which costs a re-drive (a review round and a CI run) | a person: update the branch |
-| `BEHIND`, any other | Coming | behind its base, updated after the one in update next | waiting |
-| `UNKNOWN`, or mergeability `UNKNOWN` | the column it was in, marked not read | the forge is still computing | waiting |
 
-The rows are first match, and every row that blocks a merge for a reason
-other than an approval comes before the approval rows, so a pull request
-with a failed or running check, or a thread, is never announced as waiting
-only on an approval. A review request does not say whose approval satisfies
+The rows are first match, and every row that names a blocker other than an
+approval (a failed or running check, a thread, an unread or behind branch)
+comes before the approval rows, with a confirmed failure ahead of a pending
+check, so a pull request is announced as waiting only on an approval once
+the other conditions are established. A review request does not say whose approval satisfies
 branch protection: the repository may require several approvals or a code
 owner's, and the board reads neither. So a card names the people or teams
 requested as requested, never as the ones whose approval completes the
@@ -321,10 +322,13 @@ cards say "not read: the forge budget is kept for the drives".
 A connection that reports another page (`hasNextPage`) on one pull request,
 whether checks, threads, review requests or latest reviews, gets follow-up
 queries for that pull request alone, by cursor, up to the
-[size this is built for](#the-size-it-is-built-for): three pages of 100,
-the first and two follow-ups, so 300 entries. A connection still reporting
-another page after that is marked partial on its card ("more than 300
-checks: open the pull request"), and a partial pull request is never in
+[size this is built for](#the-size-it-is-built-for): 300 entries per
+connection, counted in entries, not pages. The first page holds 100 checks
+or threads and 20 review requests or latest reviews, so the follow-ups of
+100 are two for checks and threads and three for review requests and
+reviews. A connection still reporting another page once 300 entries are
+read is marked partial on its card ("more than 300 checks: open the pull
+request"), and a partial pull request is never in
 merge now or approve first, since an unread failing check, an unread
 thread, an unread approval or an unread reviewer cannot be ruled out. It
 never fails the read of its repository.
@@ -476,7 +480,7 @@ follows the ledger, and it is not the merge queue (see Left out).
 The outcome log gains event rows. A pull request can leave and re-enter
 Ready to merge at one verified head (a check fails and is re-run, a thread
 opens and is resolved, a hold is added and removed), and each period is its
-own **ready episode**. An episode's key is the pull request, its verified
+own [**ready episode**](../GLOSSARY.md). An episode's key is the pull request, its verified
 head and the episode's start (the tick that saw it enter), so a later
 episode is never discarded as a duplicate of an earlier one, and all of an
 episode's rows share it:
@@ -548,7 +552,10 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
    <30 days ago> --jsonl` gives the re-drives of a stale converged pull
    request with their cause (the ended rows' reason names them), and, per
    pull request, the time from its drive's converged row to the forge's
-   `mergedAt`, read with `gh pr list --state merged --json number,mergedAt`.
+   `mergedAt`, read per pull request with `gh pr view <number> --repo <repository>
+   --json mergedAt` for each repository and number the log names, since a
+   `gh pr list` read stops at 30 pull requests unless given a larger
+   `--limit`, which would leave part of the log without a merge time.
    A follow-up's launch is not used as the merge time: a follow-up can be
    wanted or held until a slot frees, and the ended rows carry the end time
    and duration, not the launch time (launch is end minus duration), and
