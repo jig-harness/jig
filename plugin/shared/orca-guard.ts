@@ -268,7 +268,16 @@ function publish(
     return retried
       ? failed("held", `another collection is taking ${file}`)
       : publish(staged, file, true);
-  const standing = admissionHolder(text.value);
+  return replaceDead(staged, file, text.value);
+}
+
+/** Replace the admission `text` at `file` with `staged` when its holder is judged dead. */
+function replaceDead(
+  staged: string,
+  file: string,
+  text: string,
+): Outcome<true, AdmissionCode> {
+  const standing = admissionHolder(text);
   if (!standing.ok)
     return failed(
       "unreadable",
@@ -355,32 +364,35 @@ export function sweepLaunches(root = guardRoot(), now = Date.now()): string[] {
   try {
     names = readdirSync(dir);
   } catch (error) {
-    if (errnoCode(error) === "ENOENT") return [];
-    swallow(error, "the launch markers cannot be listed; none are swept");
+    if (errnoCode(error) !== "ENOENT")
+      swallow(error, "the launch markers cannot be listed; none are swept");
     return [];
   }
   const old = (at: number | null): boolean =>
     at !== null && now - at > LAUNCH_RETENTION_MS;
-  const swept: string[] = [];
-  for (const name of names) {
-    const file = join(dir, name);
-    if (name.endsWith(".tmp")) {
-      if (old(mtime(file)) && remove(file)) swept.push(name);
-      continue;
-    }
-    if (!ENTRY.test(name) || !old(launchedAt(file))) continue;
-    const aside = stagedBeside(dir, `${name}.sweep`);
-    try {
-      renameWithRetry(file, aside);
-    } catch (error) {
-      swallow(error, "the marker moved or is held open; it stays");
-      continue;
-    }
-    if (!old(launchedAt(aside))) restore(aside, file);
-    else swept.push(name);
-    remove(aside);
+  return names.filter((name) => sweepOne(dir, name, old));
+}
+
+/** Delete one entry of the launch markers' directory when it is old; whether it was deleted. */
+function sweepOne(
+  dir: string,
+  name: string,
+  old: (at: number | null) => boolean,
+): boolean {
+  const file = join(dir, name);
+  if (name.endsWith(".tmp")) return old(mtime(file)) && remove(file);
+  if (!ENTRY.test(name) || !old(launchedAt(file))) return false;
+  const aside = stagedBeside(dir, `${name}.sweep`);
+  try {
+    renameWithRetry(file, aside);
+  } catch (error) {
+    swallow(error, "the marker moved or is held open; it stays");
+    return false;
   }
-  return swept;
+  const stillOld = old(launchedAt(aside));
+  if (!stillOld) restore(aside, file);
+  remove(aside);
+  return stillOld;
 }
 
 function mtime(file: string): number | null {

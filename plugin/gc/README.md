@@ -99,7 +99,10 @@ code into the hook's Bun. A helper the hook starts from elsewhere in the
 checkout is the branch's own; keep helpers beside the hook. The registry is read once more after the
 hook and the park, right before `orca worktree rm`, because the hook may run
 for minutes; an agent Orca started meanwhile keeps the worktree. A registry
-that lists the worktree twice refuses collection.
+that lists the worktree twice refuses collection. The hook's supervisor starts without the session's `JIG__` and
+`JIG_OVERLAY` overrides, and its Bun ignores the checkout's environment files
+and `bunfig.toml`. Parking refuses while any of those overrides is set, since
+one may have moved the journal the findings were written to.
 
 Orca offers no reservation that stops a start between that last read and the
 removal. Jig's plugin for Orca closes that gap from inside Orca: its
@@ -124,11 +127,8 @@ Orca is closed, or its worker stopped) collection runs as it would without
 the plugin. Every Orca checkout's receipt line says which held when it was
 proved and collected: `details.guard` is `guarded` or `unguarded`, the
 reason ends with why, and the report prints it beside the runtime, as in
-`(orca, unguarded)`. A collecting run also deletes launch markers older than
-a day. The hook's supervisor starts without the session's `JIG__` and
-`JIG_OVERLAY` overrides, and its Bun ignores the checkout's environment files
-and `bunfig.toml`. Parking refuses while any of those overrides is set, since
-one may have moved the journal the findings were written to.
+`(orca, unguarded)`. Each collection of an Orca checkout first deletes the
+launch markers older than a day.
 
 #### The launch guard record
 
@@ -221,7 +221,7 @@ and gc keeps the worktree and leaves the file for a person to inspect.
 | -------- | ----- | ------- |
 | Heartbeat freshness | 180 s | The heartbeat is fresh while its `at` is within 180 s of now; gc collects as guarded only then |
 | Settling window | 120 s | A launch marker keeps its worktree while its `at` is within 120 s of now, and always when its `at` is not before the admission's `at` |
-| Marker retention | 1 day | A collecting run deletes launch markers whose `at` (or, when one does not read, whose modification time) is more than a day old, and the plugin's temporary files that old |
+| Marker retention | 1 day | Each collection of an Orca checkout first deletes launch markers whose `at` (or, when one does not read, whose modification time) is more than a day old, and the plugin's temporary files that old |
 
 An admission is deleted by the collector that wrote it once the worktree is
 removed or kept. One left by a collector that died stays until the next
