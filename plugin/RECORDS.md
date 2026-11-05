@@ -46,8 +46,10 @@ JSON and places the same bytes in a hidden comment on the forge. On the
 forge and the tracker the writer's host and boot are digests, so a public
 comment names no machine. A reader checks the envelope against a strict
 form and returns a failure as a value; the rest of the record is data,
-never a command. The drive ledger and the follow-up marker carry it; the
-other records adopt it one family at a time
+never a command. The drive ledger and the
+[forge claims](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (the
+takeover claim, the follow-up marker and the merge-ready announcement) carry
+it; the other records adopt it one family at a time
 ([design/records.md](https://github.com/jig-harness/jig/blob/main/design/records.md)).
 
 **How paths are written.** A path in the plugin is written from the plugin
@@ -146,12 +148,25 @@ and comments on the tracker. Where a row says "trusted authors only", a
 script counts the record only when Jig's own login, or an owner, member or
 collaborator of the repository, wrote it (`shared/trusted-authors.ts`).
 
+The takeover claim, the follow-up marker and the merge-ready announcement
+are claims of one module, `shared/records/forge-claims.ts`, under one rule.
+Each claim comment opens with its kind's line, holds its record envelope in
+a hidden marker (its `key` is what it claims: `takeover:<generation>`,
+`followup`, `merge-ready:<head>`), and ends with text a person reads. Of the
+trusted claims on one key and generation the earliest comment wins; the
+takeover's adds a lapse window, the lease window, past which a later claim
+replaces a winner whose owner never acted. The forge has no conditional
+create for a comment and its listing can lag, so a claim is read back after
+it is posted, read again a few times while the listing does not show it,
+and reported lost when it never does; each act it guards re-checks it
+first. A claim in a form written before the envelope still reads.
+
 | Record | Where it lives | Format | Written by | What guards it |
 |--------|----------------|--------|------------|----------------|
 | `drive-ledger` | one comment on the pull request opening `<!-- drive-pr-ledger -->`, its data in `<!-- drive-pr-ledger-data … -->` | a summary a person reads, then JSON carrying the record envelope (`v: 1`) beside `ledgerVersion: 1`; a ledger written before the envelope still reads | the driver: `skills/drive-pr/scripts/lib/state/ledger-mirror.ts`, through `ledger-forge.ts` | trusted authors only; the lowest trusted comment id is canonical; each write rereads the comments just before it patches and reads the ledger back after |
-| `drive-takeover-claim` | a comment per claim, `<!-- drive-pr-takeover-claim -->` with `<!-- drive-pr-takeover-claim-data … -->` | JSON: actor, clone, the ledger generation it read, time | `skills/drive-pr/scripts/lib/state/ledger-forge.ts` (`postClaim`) | append-only; per ledger generation the earliest trusted claim wins |
-| `dispatch-followup` | a comment on the merged pull request opening `<!-- jig-dispatch-followup -->`, its record in `<!-- jig-dispatch-followup-data … -->` from the second line | JSON carrying the record envelope (`v: 1`), then a line a person reads; a marker in the line form written before the envelope still reads | the tick (`dispatch/lib/actions/followup.ts`) or `jig dispatch marker` (`dispatch/marker.ts`), through `dispatch/lib/followup-marker.ts` | trusted authors only; the earlier comment wins; read back after posting, and checked again before each act outside the pull request |
-| `drive-merge-ready` | a comment ending `<!-- drive-pr-merge-ready: <sha> -->` | Markdown | `skills/drive-pr/scripts/announce-merge-ready.ts` | one per verified head: earlier trusted announcements are swept first; the lease fence |
+| `drive-takeover-claim` | a claim comment per claim, `<!-- drive-pr-takeover-claim -->` with `<!-- drive-pr-takeover-claim-data … -->` | JSON carrying the record envelope (`v: 1`, key `takeover:<generation>`, the ledger generation it read as its `generation`) beside the actor and clone, then a line a person reads; a claim written before the envelope still reads | the driver: `skills/drive-pr/scripts/lib/state/ledger.ts` writes it, `ledger-forge.ts` (`postClaim`) posts it, `lib/driver/ledger.ts` reads it back through `shared/records/forge-claims.ts` | a forge claim: trusted authors only; per ledger generation the earliest trusted claim wins, and one made past the lease window replaces a winner whose owner never wrote the ledger; read back after posting, and read again at each round boundary |
+| `dispatch-followup` | a claim comment on the merged pull request opening `<!-- jig-dispatch-followup -->`, its record in `<!-- jig-dispatch-followup-data … -->` from the second line | JSON carrying the record envelope (`v: 2`, key `followup`) beside the pull request and the run, then a line a person reads; a marker of version 1, or in the line form written before the envelope, still reads | the tick (`dispatch/lib/actions/followup.ts`) or `jig dispatch marker` (`dispatch/marker.ts`), through `dispatch/lib/followup-marker.ts` and `shared/records/forge-claims.ts` | a forge claim: trusted authors only; the earlier comment wins, and a trusted marker that does not read still holds; read back after posting, and checked again before each act outside the pull request |
+| `drive-merge-ready` | a claim comment per verified head opening with the announcement's first line, its record in `<!-- drive-pr-merge-ready-data … -->`, ending `<!-- drive-pr-merge-ready: <sha> -->` | Markdown, with JSON carrying the record envelope (`v: 1`, key `merge-ready:<head>`); an announcement that only ends with the head marker still reads | `skills/drive-pr/scripts/announce-merge-ready.ts`, through `skills/drive-pr/scripts/lib/announce.ts` and `shared/records/forge-claims.ts` | a forge claim: trusted associations only; of the announcements of one head the earliest wins, and the others are withdrawn; posted only while the head is converged, green, mergeable and clean, and withdrawn when that stops holding; announcements of heads the PR moved past are swept first |
 | `summary-answer` | a comment answering a summary finding, one `<!-- drive-pr-addressed: <fingerprint> -->` per finding | Markdown | `skills/drive-pr/scripts/answer-summary-finding.ts` | the lease fence and the held claim; a finding already answered is not answered again; read from trusted authors only |
 | `thread-reply` | a reply on a review thread opening with its outcome; its last line may be `<!-- triage-thread:leave-open -->`, `<!-- reply-to-thread:no-outcome -->`, `<!-- reply-to-thread:provisional -->` or the repository's `reply.marker` | Markdown | `skills/resolve-review-comments/scripts/reply-to-thread.ts` | a marker counts only as the last line; the leave-open and provisional markers only from the scripts allowed to write them; a marker does not prove its author (`shared/reply-markers.ts`) |
 | `deferred-section` | the pull request's body between `<!-- jig-deferred -->` and `<!-- /jig-deferred -->`, one `<!-- deferred-entry: … -->` block per finding | Markdown | `skills/resolve-review-comments/scripts/lib/pr-body.ts`, from `defer-in-pr.ts` and `file-deferred.ts` | the body is reread before each write, up to 3 tries, and read back after; a person's text outside the markers is never touched |

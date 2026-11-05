@@ -843,8 +843,10 @@ no running driver elsewhere is exit `2`. Once it holds its locks the taker
 re-reads the ledger (a heartbeat that moved since refuses with `11`) and
 posts an append-only claim, `<!-- drive-pr-takeover-claim -->` with its tree,
 clone, the ledger generation it read and the time, and reads the claims
-back; a read-back that fails refuses the takeover with exit `1`, since it
-cannot tell a won claim from a lost one. The forge
+back through the shared forge-claims module (`shared/records/forge-claims.ts`),
+again a few times while the listing does not show its own claim; a
+read-back that fails, or that never lists the claim, refuses the takeover
+with exit `1`, since it cannot tell a won claim from a lost one. The forge
 assigns increasing comment ids, so of the claims on one generation the
 earliest wins; a later claimant reads the earlier one back and stands down
 with exit `20`. The winner seeds, completes the takeover as above, and writes
