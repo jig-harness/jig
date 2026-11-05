@@ -5,7 +5,7 @@
  * the state root it reads is the one the test wrote.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -177,6 +177,33 @@ describe("jig dispatch line --json", () => {
       value: StateAnswer;
     };
     expect({ ...answer.value, now: "" }).toEqual({ ...served.value, now: "" });
+  });
+
+  it("refuses a version-1 line that lacks the snapshot's fields, as it does one that is not JSON", () => {
+    const root = stateRootOf(freshHome());
+    writeLine(LINE, "{}", root);
+    const bad = { ...LINE, timeZone: 42, startedAt: undefined };
+    stateDb(root)
+      .query("UPDATE tick_line SET line = ? WHERE id = 1")
+      .run(JSON.stringify(bad));
+    closeStateDb(root);
+    expect(() =>
+      lineMain({ root, nowMs: NOW, print: () => undefined }),
+    ).toThrow("line-unreadable");
+  });
+
+  it("reads a database at an older schema without migrating it", () => {
+    const root = stateRootOf(freshHome());
+    writeLine(LINE, "{}", root);
+    stateDb(root).run("PRAGMA user_version = 1");
+    closeStateDb(root);
+    const before = readFileSync(statePath(root));
+    const printed: string[] = [];
+    expect(
+      lineMain({ root, nowMs: NOW, print: (text) => printed.push(text) }),
+    ).toBe(0);
+    expect(printed).toHaveLength(1);
+    expect(readFileSync(statePath(root)).equals(before)).toBe(true);
   });
 
   it("exits 1 with one line on stderr and nothing on stdout when the line does not read", async () => {

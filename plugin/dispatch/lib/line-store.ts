@@ -9,13 +9,15 @@
  * dashboard's `GET /state` and `jig dispatch line --json` both answer with it,
  * so the two never say different things about one database.
  */
+import { Database } from "bun:sqlite";
+import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { pluginVersion } from "../../shared/plugin-version.ts";
 import { stateRoot } from "../receipts.ts";
 import type { LineSnapshot, StateAnswer } from "./dashboard-contract.ts";
 import { hostTimeZone } from "./host-time.ts";
-import { existingStateDb, SCHEMA_VERSION, stateDb } from "./state.ts";
+import { SCHEMA_VERSION, stateDb, statePath } from "./state.ts";
 
 /** Replace the stored line with this tick's. */
 export function writeLine(
@@ -32,27 +34,146 @@ export function writeLine(
     .run(line.runId, JSON.stringify(line), receipt);
 }
 
-function isLine(value: unknown): value is LineSnapshot {
+const isString = (value: unknown): value is string => typeof value === "string";
+const isNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+const nullOr =
+  (check: (value: unknown) => boolean) =>
+  (value: unknown): boolean =>
+    value === null || check(value);
+
+type Fields = Record<string, (value: unknown) => boolean>;
+
+/** Whether `value` is a mapping whose listed fields each pass their check. */
+function hasFields(value: unknown, fields: Fields): boolean {
   return (
     isMapping(value) &&
-    value.version === 1 &&
-    typeof value.runId === "string" &&
-    Array.isArray(value.needs) &&
-    Array.isArray(value.sessions) &&
-    Array.isArray(value.accounts) &&
-    Array.isArray(value.queue) &&
-    Array.isArray(value.repos)
+    Object.entries(fields).every(([name, check]) => check(value[name]))
   );
 }
 
-type Stored = { line: string; receipt: string };
+/** Whether `value` is a list every entry of which has the listed fields. */
+function listOf(fields: Fields): (value: unknown) => boolean {
+  return (value) =>
+    Array.isArray(value) && value.every((entry) => hasFields(entry, fields));
+}
 
-function stored(root: string): Stored | null {
+/** The fields every reader of a collection's entries relies on; the rest of an entry is the tick's own detail. */
+const ENTRY_FIELDS = {
+  needs: {
+    cause: isString,
+    repo: isString,
+    target: isString,
+    since: isString,
+    reason: isString,
+    decisions: Array.isArray,
+    workspaces: Array.isArray,
+  },
+  sessions: {
+    record: isString,
+    account: isString,
+    repo: isString,
+    target: isString,
+    createdAt: isString,
+    samples: Array.isArray,
+  },
+  accounts: {
+    name: isString,
+    vendor: isString,
+    cap: isNumber,
+    held: isNumber,
+  },
+  queue: { repo: isString, target: isString, why: isString },
+  repos: {
+    path: isString,
+    stages: Array.isArray,
+    failedReads: Array.isArray,
+    notes: Array.isArray,
+  },
+} satisfies Record<string, Fields>;
+
+const LINE_FIELDS: Fields = {
+  runId: isString,
+  startedAt: isString,
+  finishedAt: isString,
+  exitStatus: isNumber,
+  apply: (value) => typeof value === "boolean",
+  applyWithheld: nullOr(isString),
+  intervalMs: isNumber,
+  longestTickMs: isNumber,
+  recentTicksMs: (value) => value === undefined || Array.isArray(value),
+  plugin: nullOr(isString),
+  timeZone: (value) => value === undefined || isString(value),
+  lastAccount: nullOr(isString),
+  needs: listOf(ENTRY_FIELDS.needs),
+  sessions: listOf(ENTRY_FIELDS.sessions),
+  accounts: listOf(ENTRY_FIELDS.accounts),
+  queue: listOf(ENTRY_FIELDS.queue),
+  repos: listOf(ENTRY_FIELDS.repos),
+};
+
+/** Whether `value` has the shape of a `LineSnapshot` the dashboard and `jig dispatch line --json` pass on. */
+function isLine(value: unknown): value is LineSnapshot {
   return (
-    (existingStateDb(root)
-      ?.query("SELECT line, receipt FROM tick_line WHERE id = 1")
-      .get() as Stored | null | undefined) ?? null
+    isMapping(value) && value.version === 1 && hasFields(value, LINE_FIELDS)
   );
+}
+
+type Stored = { runId: string; line: string; receipt: string };
+
+/** A database a newer plugin wrote that this copy cannot read. */
+class NewerSchemaError extends Error {}
+
+/** Refuse a database a newer plugin wrote that needs a newer reader, as the shared opener does. */
+function refuseNewer(db: Database, path: string): void {
+  const { user_version: version } = db.query("PRAGMA user_version").get() as {
+    user_version: number;
+  };
+  if (version <= SCHEMA_VERSION) return;
+  const meta = db
+    .query(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'db_meta'",
+    )
+    .get()
+    ? (db
+        .query("SELECT version, min_reader FROM db_meta WHERE id = 1")
+        .get() as { version: number; min_reader: number } | null)
+    : null;
+  const minReader =
+    meta !== null && meta.version === version ? meta.min_reader : version;
+  if (minReader > SCHEMA_VERSION)
+    throw new NewerSchemaError(
+      `${path} is at state schema version ${version}, which needs a reader of version ${minReader} or later; this plugin knows version ${SCHEMA_VERSION}`,
+    );
+}
+
+/**
+ * The stored row, read through a read-only connection: opening the state
+ * database for writing would migrate an older schema and take SQLite's write
+ * lock, which a reader polling beside the tick must not. A database with no
+ * `tick_line` table (a schema before it) holds no line yet.
+ */
+function stored(root: string): Stored | null {
+  const path = statePath(root);
+  if (!existsSync(path)) return null;
+  const db = new Database(path, { readonly: true });
+  try {
+    db.run("PRAGMA busy_timeout = 10000");
+    refuseNewer(db, path);
+    const table = db
+      .query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get("tick_line");
+    if (table === null) return null;
+    return (
+      (db
+        .query(
+          "SELECT run_id AS runId, line, receipt FROM tick_line WHERE id = 1",
+        )
+        .get() as Stored | null | undefined) ?? null
+    );
+  } finally {
+    db.close();
+  }
 }
 
 /** The stored line; `null` before a tick wrote one. */
@@ -106,14 +227,12 @@ export function stateAnswer(
 export function readLineReceipt(
   root = stateRoot(),
 ): Outcome<{ runId: string; receipt: string } | null, "line-unreadable"> {
-  const row = attempt(
+  return attempt(
     "line-unreadable",
     "the newest tick's receipt cannot be read",
-    () =>
-      (existingStateDb(root)
-        ?.query("SELECT run_id AS runId, receipt FROM tick_line WHERE id = 1")
-        .get() as { runId: string; receipt: string } | null | undefined) ??
-      null,
+    () => {
+      const row = stored(root);
+      return row === null ? null : { runId: row.runId, receipt: row.receipt };
+    },
   );
-  return row;
 }
