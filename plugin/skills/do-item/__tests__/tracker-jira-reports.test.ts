@@ -658,6 +658,7 @@ describe("Jira adapter: assignments", () => {
       driveRoundsFlat: 3,
       pickupWithinMs: 7_200_000,
       followupWithinMs: 3_600_000,
+      noticesLingerMs: 3_600_000,
       labels: { enabled: false, prefix: "jig:", onlyLabeled: false },
       adopt: { enabled: false, authors: null, withinMs: 604_800_000 },
     };

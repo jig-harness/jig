@@ -33,6 +33,8 @@ export interface DispatchSection {
   pickupWithinMs: number;
   /** How long a follow-up may run before it has ended. */
   followupWithinMs: number;
+  /** How long the notices workspace stays once read before the tick removes it; `0s` removes it at the first tick that finds it read. */
+  noticesLingerMs: number;
   /** The dispatch labels (`dispatch.labels`): off by default. */
   labels: LabelConfig;
   /** The adoption rule (`dispatch.adopt`): off by default. */
@@ -285,6 +287,20 @@ export interface NotifyOutcome {
   detail: string;
 }
 
+/** What `--apply` did with the repository's notices workspace once its notifications were sent. */
+export interface RetireOutcome {
+  workspace: string;
+  /**
+   * `retired`: removed, its message read or every cause it carries gone;
+   * `kept`: it still has a job (unread with a cause standing, read within
+   * `dispatch.notices_linger`, or written this tick); `refused`: something
+   * in it is not the dispatcher's, so it is left for a person; `lost`: the
+   * removal's answer did not come back.
+   */
+  outcome: "retired" | "kept" | "refused" | "lost";
+  detail: string;
+}
+
 /** What `--apply` did with one nudge (the `steer` stage). */
 export interface SteerOutcome {
   target: string;
@@ -340,6 +356,8 @@ export interface RepoReport {
   launches: LaunchOutcome[];
   /** What `--apply` notified, where the machine file enables `notify`; empty otherwise. */
   notifications: NotifyOutcome[];
+  /** What `--apply` did with the repository's notices workspace, where the machine file enables `notify` and one is open. */
+  noticesWorkspace?: RetireOutcome;
   /** What `--apply` nudged, where the machine file enables `steer`; empty otherwise. */
   steers?: SteerOutcome[];
   /** The dispatch labels' part, where the repository turns them on. */

@@ -1091,6 +1091,7 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.drive_rounds_flat` | positive whole number | `3`: a drive the dispatcher launched drifts when its unresolved review threads at the latest round the dispatcher recorded are not below the count this many recorded rounds earlier | dispatch |
 | `dispatch.pickup_within` | duration | `2h`: a pickup the dispatcher launched that has opened no pull request by then drifts | dispatch |
 | `dispatch.followup_within` | duration | `1h`: a follow-up the dispatcher launched that has not ended by then drifts | dispatch |
+| `dispatch.notices_linger` | duration, or `0s` | `1h`: the repository's notices workspace, once read, is removed this long after the first tick that finds it read; `0s` removes it at that tick. An unread one is removed once every cause it carries is gone | dispatch |
 | `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below) | dispatch |
 | `dispatch.labels.prefix` | string of at most 39 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch |
 | `dispatch.labels.only_labeled` | `true` or `false` | `false`: every open pull request is read for a drive ledger. `true` limits the dispatcher to the pull requests that carry a label of the set: one that carries none is never read, re-armed or followed up. Refused unless `enabled` is `true` | dispatch |
@@ -1296,6 +1297,7 @@ dispatch:
   drive_rounds_flat: 3
   pickup_within: 2h
   followup_within: 1h
+  notices_linger: 1h
   labels:
     enabled: true
     prefix: "jig:"

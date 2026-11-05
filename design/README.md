@@ -70,6 +70,7 @@ with the review.
 | [Jig in the Orca ecosystem](orca-integration.md) | 34 |
 | [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 38; Later: a repository's theme |
 | [The dispatch board, what is driven and what is ready to merge](dispatch-board.md) | 36 |
+| [Addresses: asking and telling the stations of the line](addresses.md) | 39 |
 
 ## Starting a design
 

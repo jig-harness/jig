@@ -946,7 +946,6 @@ describe("the guide", () => {
     await page.evaluate(
       "window.scrollTo({ top: 2400, left: 0, behavior: 'instant' })",
     );
-    // More entries than the in-memory positions hold, each one scrolled.
     await page.evaluate(`(async () => {
       const all = [...document.querySelectorAll('a[href^="#d-"]')];
       const links = all.filter((l, i) => all.findIndex((m) => m.getAttribute('href') === l.getAttribute('href')) === i).slice(0, 2);
@@ -960,6 +959,7 @@ describe("the guide", () => {
     })()`);
     await page.evaluate("history.go(-30)");
     await page.waitForFunction("!location.hash && window.scrollY === 2400");
+    await scrollSettled(page);
     expect(await page.evaluate(() => window.scrollY)).toBe(2400);
     await page.context().close();
   });

@@ -265,12 +265,16 @@ to the person; its Herdr provider starts the configured agent.
 ### 34. Jig in the Orca ecosystem
 
 [Orca](https://www.onorca.dev) is one of the workspace runtimes Jig's
-tooling supports, beside Herdr, the runtime it targets first. On an Orca
-host `jig gc` will close the gap that lets an agent start between its last
-check and the removal of a worktree it collects through Orca, the
-dispatcher will read each account's usage from Orca's command line once
-Orca offers it, and a small plugin Orca loads will run a dispatcher tick
-the moment an agent stops or waits. The plugin is Orca-bound.
+tooling supports, beside Herdr, the runtime it targets first. A small
+plugin Orca loads runs a dispatcher tick the moment an agent stops or
+waits. On an Orca host the plugin will also refuse to start an agent in a
+worktree `jig gc` is removing, for every launch Orca makes through its
+launchers, so a launch gc's last check could miss is turned away. The
+protection is best-effort: a restored session, a hook that fails and a
+plugin that is down are not covered. The plugin will show what waits on a person in Orca's
+status bar and in a panel. The panel opens on that person's inbox, with the
+dispatch board beside it. The dispatcher will read each account's usage
+from Orca's command line once Orca offers it. The plugin is Orca-bound.
 
 ### 38. One look for Jig's pages
 
@@ -279,6 +283,19 @@ the decision, explainer and audit sheets, and the code-stats report. Each
 will follow the reader's light or dark setting and carry Jig's mark as its
 icon. Every text colour will meet WCAG AA, the Web Content Accessibility
 Guidelines' minimum contrast, in both modes.
+
+### 39. Addresses: asking and telling the stations of the line
+
+Every station on a piece of work will have an address, such as
+`drive@jig#456`: the drive of pull request 456. `jig ask <address>` will
+say who holds the station, what state it is in and what it waits on. It
+will also show what was said to the station and by it. It reads the
+tracker, the pull request and the dispatching machine's records.
+`jig send <address> <verb>` will write the assignment, label or comment
+the line already acts on, from a closed list of verbs. An operator skill
+will turn a question such as "what is waiting on me" into those
+commands. Nothing new is stored, and no agent has to keep running for an
+address to answer.
 
 ## Later
 

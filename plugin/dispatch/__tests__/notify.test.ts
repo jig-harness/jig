@@ -8,11 +8,13 @@
  * notices workspace.
  */
 import { afterEach, describe, expect, it } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/schema.ts";
 import type { TickReceipt } from "../receipts.ts";
+import { statePath } from "../lib/state.ts";
 import {
   ledgerComment,
   openPr,
@@ -22,7 +24,13 @@ import {
   type World,
   world,
 } from "./fixtures.ts";
-import { account, driveRuns, machineFile, waitFor } from "./launch-fixtures.ts";
+import {
+  account,
+  dispatchState,
+  driveRuns,
+  machineFile,
+  waitFor,
+} from "./launch-fixtures.ts";
 import { notifyWrites, orcaCalls, withOrigin } from "./pickup-fixtures.ts";
 
 const CONFIG = `issue_tracker:
@@ -98,6 +106,14 @@ describe("jig dispatch --apply notifies a person", () => {
     ]);
     const { comment, unread } = shown(w, ws);
     expect(unread).toBe(true);
+    const db = new Database(statePath(dispatchState(w)));
+    try {
+      expect(db.query("SELECT workspace FROM notices_content").all()).toEqual(
+        [],
+      );
+    } finally {
+      db.close();
+    }
     expect(comment).toContain(
       `[jig dispatch: ${SLUG} PR #7 parked, ledger generation 3: finding F1]`,
     );
