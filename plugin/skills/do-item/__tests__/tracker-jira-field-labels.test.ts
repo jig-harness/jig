@@ -226,6 +226,26 @@ describe("Jira adapter: fields read as labels", () => {
     expect((await t.getIssue("ENG-1"))?.labels).toEqual(["points:0.0000001"]);
   });
 
+  it("expands an exponent without rounding the digits", async () => {
+    const { t } = jira(
+      routes({
+        "POST search/jql": page(),
+        "GET field": SITE_FIELDS,
+        "GET issue/ENG-1": issue({
+          key: "ENG-1",
+          fields: { customfield_10080: [1e-21, -1.5e-7, 1.5e25, 1e21] },
+        }),
+      }),
+      overlay({ "Story Points": "points:" }),
+    );
+    expect((await t.getIssue("ENG-1"))?.labels).toEqual([
+      "points:0.000000000000000000001",
+      "points:-0.00000015",
+      "points:15000000000000000000000000",
+      "points:1000000000000000000000",
+    ]);
+  });
+
   it("takes an exact id before a display name", async () => {
     const { t } = jira(
       routes({
@@ -273,6 +293,20 @@ describe("Jira adapter: fields read as labels", () => {
     expect(jqlOf(calls.find((c) => c.path === "search/jql") as Call)).toBe(
       'project = ENG AND statusCategory != Done AND cf[10050] in ("M", "S") AND (labels in ("a") OR cf[10060] in ("backend")) AND cf[10080] in (3) AND (labels not in ("x") OR labels is EMPTY) AND (cf[10060] not in ("ui") OR cf[10060] is EMPTY) ORDER BY created ASC',
     );
+  });
+
+  it("ends a report's label resolution when its signal is aborted, before any request", async () => {
+    const abort = new AbortController();
+    abort.abort(new Error("stop"));
+    const { t, calls } = jira(
+      routes({ "GET field": SITE_FIELDS, "POST search/jql": page(TAGGED) }),
+      overlay(),
+    );
+    await expect(
+      t.startedIssueActivity("size:M", abort.signal),
+    ).rejects.toThrow();
+    await expect(t.labelledIssues("size:M", abort.signal)).rejects.toThrow();
+    expect(calls).toEqual([]);
   });
 
   it("selects a labelled population by a field's value", async () => {

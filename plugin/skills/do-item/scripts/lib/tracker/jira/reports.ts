@@ -247,7 +247,8 @@ export function reportOperations(client: Client): ReportOps {
       );
   }
 
-  const label = async (l: string) => hasLabel(l, await client.fieldLabels());
+  const label = async (l: string, signal?: AbortSignal) =>
+    hasLabel(l, await client.fieldLabels(signal));
 
   return {
     async issuesByKeys(keys) {
@@ -287,7 +288,11 @@ export function reportOperations(client: Client): ReportOps {
 
     async startedIssueActivity(l, signal) {
       const epics = await client.search(
-        inProject(project, await label(l), 'statusCategory = "In Progress"'),
+        inProject(
+          project,
+          await label(l, signal),
+          'statusCategory = "In Progress"',
+        ),
         `started issues labelled '${l}'`,
         signal,
       );
@@ -386,7 +391,7 @@ export function reportOperations(client: Client): ReportOps {
 
     async labelledIssues(l, signal, withDescription = false) {
       const read = await client.search(
-        inProject(project, await label(l)),
+        inProject(project, await label(l, signal)),
         `issues labelled '${l}'`,
         signal,
       );

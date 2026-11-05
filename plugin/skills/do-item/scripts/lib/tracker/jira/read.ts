@@ -194,15 +194,24 @@ export interface FieldLabel {
   match: "string" | "number" | null;
 }
 
-/** A number without exponent notation, the form a JQL number literal takes. */
+/**
+ * A number without exponent notation, the form a JQL number literal takes:
+ * the shortest round-trip digits with the decimal point moved, never rounded.
+ */
 function numberText(n: number): string {
   const plain = String(n);
-  return /e/i.test(plain)
-    ? n.toLocaleString("en-US", {
-        useGrouping: false,
-        maximumFractionDigits: 20,
-      })
-    : plain;
+  const m = /^(-?)(\d+)(?:\.(\d+))?e([+-]\d+)$/i.exec(plain);
+  if (m === null) return plain;
+  const [, sign = "", whole = "", frac = "", exp = "0"] = m;
+  const digits = whole + frac;
+  const point = whole.length + Number(exp);
+  const body =
+    point <= 0
+      ? `0.${"0".repeat(-point)}${digits}`
+      : point >= digits.length
+        ? digits + "0".repeat(point - digits.length)
+        : `${digits.slice(0, point)}.${digits.slice(point)}`;
+  return sign + body;
 }
 
 /**
