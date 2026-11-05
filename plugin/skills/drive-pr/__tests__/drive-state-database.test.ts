@@ -105,6 +105,7 @@ describe("the records registry", () => {
         "imports",
         "leases",
         "locks",
+        "review_rounds",
         "stops",
         "tree_leases",
       ].sort(),

@@ -384,6 +384,70 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.140.0] - 2026-11-05
+
+A signal the drive and the dispatcher share is kept in one place: the
+dispatcher reads a drive's exit codes from drive-pr's own registry, a pull
+request's review rounds are one record every review loop counts into, and a
+mailbox stop can address one driver.
+
+### Added
+
+- A drive mailbox `stop` can name the driver it is for:
+  `mailbox.ts send <PR> --kind directive --command stop --generation <n>`
+  ends only the driver of that generation, at its next round boundary, and a
+  later driver ignores it. Each driver prints its generation as it starts
+  (`driver generation <n>`), and `drives.ts` lists it. A `stop` without
+  `--generation` keeps its meaning: it stops every later driver in the
+  working tree until `resume --target stop`, which now also withdraws every
+  addressed stop.
+- The driver appends an `ack` record to the mailbox outbox for each `stop`
+  or `pause` it acted on, naming its generation, so a sender sees the
+  directive took effect (`mailbox.ts outbox <PR>`).
+
+### Changed
+
+- `/jig:resolve-review-comments`'s `await-round.ts` counts review rounds in
+  the drive's database (`~/.local/state/jig/drive-pr/state.sqlite`), one
+  record per pull request and head that a drive counts into too, whether or
+  not a drive runs, instead of the `resolve-review-rounds-<PR>` file and its
+  `.head` file in the working tree's Git directory. On the first run after
+  the upgrade the count starts again at the current head: rounds counted in
+  the Git directory are not carried over, and those two files can be
+  deleted. `current-round.ts` prints this one record, the round a drive's
+  ledger carries; convergence settles a loop's rounds for its reflection
+  prompt without lowering it. A drive's `--max-rounds` budget now counts the
+  rounds a hand-driven loop counted on the same pull request in that clone.
+  The skill installed without `/jig:drive-pr` beside it keeps no count.
+- `drives.ts --stop <PR>` sends the live driver a mailbox `stop` addressed to
+  its generation and marked to act at once; the driver cancels its active
+  pass, acknowledges the stop and releases its locks, as before. A driver an
+  earlier release started records no generation: `--stop` sends it nothing
+  and forces its process tree after the 30-second grace.
+- The dispatcher reads every exit of a drive by its name in drive-pr's
+  terminal-state registry, so the two cannot disagree on a code. The outcome
+  log's reasons for exits `7`, `12` and `15` name what happened (reviewer
+  failed, worktree unclean, pass deadline) instead of repeating the code.
+
+### Fixed
+
+- A drive's pass that takes the arm step by mistake and runs
+  `attach-pr.ts <PR> --place` for its own pull request is told it is a pass
+  of that running drive (exit `4`) and to work the round, instead of
+  meeting its own driver as a rival (exit `11`) and standing down until the
+  drive stalls. `attach-pr.ts <PR>` run by a pass, under the environment its
+  driver hands it, attaches under that driver's locks as the driver's own
+  attach does.
+
+## [0.139.1] - 2026-11-05
+
+### Fixed
+
+- The `jig dispatch dashboard` tab shows Jig's mark as its icon, in the
+  colours of the reader's light or dark theme, instead of a blank one. The
+  page holds the icon itself, so the browser still never asks the server
+  for a file without the page's token.
+
 ## [0.139.0] - 2026-11-05
 
 ### Added
@@ -5202,7 +5266,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.139.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.140.0...HEAD
+[0.140.0]: https://github.com/jig-harness/jig/compare/v0.139.1...v0.140.0
+[0.139.1]: https://github.com/jig-harness/jig/compare/v0.139.0...v0.139.1
 [0.139.0]: https://github.com/jig-harness/jig/compare/v0.138.0...v0.139.0
 [0.138.0]: https://github.com/jig-harness/jig/compare/v0.137.0...v0.138.0
 [0.137.0]: https://github.com/jig-harness/jig/compare/v0.136.0...v0.137.0

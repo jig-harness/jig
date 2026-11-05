@@ -31,6 +31,8 @@ import { ledgerRenewal, standDownOnNewerClaim } from "./ledger.ts";
 interface DriverRoundOptions {
   pr: string;
   mailboxDir: string;
+  /** This driver's generation, which an addressed mailbox `stop` names. */
+  generation: number;
   keepDraft: boolean;
   dryRun: boolean;
   agent: string[];
@@ -48,6 +50,7 @@ interface DriverRoundOptions {
 export async function runDriverRounds({
   pr,
   mailboxDir,
+  generation,
   keepDraft,
   dryRun,
   agent,
@@ -145,8 +148,7 @@ export async function runDriverRounds({
       : 1800;
   const mailboxOnly = async (): Promise<"clear" | "resumed" | number> => {
     const outcome = await waitAtMailboxCheckpoint(
-      mailboxDir,
-      pr,
+      { dir: mailboxDir, pr, generation },
       pauseMaxSec,
       ledgerRenewal(pr),
     );

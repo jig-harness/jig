@@ -20,10 +20,11 @@
  * | `leases` | clone, pull request and working tree: the session lease | `pr-drive-lease-<PR>-wt-<hex>.json` |
  * | `tree_leases` | clone and working tree: the tree lease | `drive-tree-lease-wt-<hex>.json` |
  * | `claims` | clone, pull request, kind and key: a held item's or the Ready mark's claim token | `drive-pr-<PR>.held-claim.*`, `.ready-claim` |
- * | `stops` | clone, driver lock and its generation: a stop request and its completion | `stop.<nonce>`, `.stop-complete.<nonce>.json` |
+ * | `stops` | nothing this release writes: an earlier release's stop requests; a stop is now a mailbox directive addressed to a driver generation (`mailbox.ts`), and the table stays so that release still opens the database | `stop.<nonce>`, `.stop-complete.<nonce>.json` |
  * | `driver_records` | clone and pull request: the driver a stop by signal leaves for recovery | `ledger-driver-<PR>.json` |
  * | `imports` | clone: when its state directory's files were read in | the migration scripts and markers |
- * | `counters` | name: a number that only grows, such as the lease generation | — |
+ * | `counters` | name: a number that only grows, such as the lease generation or a pull request's driver generation | — |
+ * | `review_rounds` | clone, pull request and head: the review round that head was counted as (`review-rounds.ts`) | the review loop's counter in the working tree's Git directory |
  *
  * A clone's state directory written by an earlier release is read into these
  * rows once, at the first open that finds no `imports` row for the clone
@@ -160,6 +161,20 @@ const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: `
   CREATE INDEX leases_by_actor ON leases (clone, actor, pr);
+  `,
+  },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE review_rounds (
+    clone TEXT NOT NULL,
+    pr TEXT NOT NULL,
+    head TEXT NOT NULL,
+    round INTEGER NOT NULL,
+    settled INTEGER NOT NULL DEFAULT 0,
+    at TEXT NOT NULL,
+    PRIMARY KEY (clone, pr, head)
+  );
   `,
   },
 ];

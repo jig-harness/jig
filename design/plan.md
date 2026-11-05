@@ -830,6 +830,23 @@ since the last start, and either stays pending while the machine-wide
 tick lock refuses it and survives an event that arrives while that tick
 processes the repository.
 
+### 38. One look for Jig's pages
+
+The pages Jig's tooling draws pick their own colours: the dispatch
+dashboard wears Jig's look in light and dark, the decision, explainer and
+audit sheets share a neutral blue in light only, and the code-stats report
+has a blue of its own. [design/ui-theming.md](ui-theming.md) has how it
+works. What it will build: one set of colour names with a light and a dark
+value each (`plugin/shared/theme.ts`, the dashboard's values), with every
+text-on-background pair held to WCAG AA; the dashboard, the sheet kit and
+the code-stats report reading their colours from it; dark mode for the
+sheets; Jig's mark as every page's icon; and a test that the site's shared
+colours agree. One pull request, the design's first step.
+
+Done when every page Jig's tooling draws takes its colours from
+`theme.ts`, follows the reader's light or dark setting, carries Jig's mark,
+and each genre's contrast test holds its light and dark pairs.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the
@@ -845,6 +862,11 @@ processes the repository.
   version; the event kept as an issue property. Its shape and open questions
   are in [design/reflection.md](reflection.md#jira-store-future); build
   it when a team that tracks its work in Jira needs it.
+- **A repository's theme.** A `ui` section with an accent colour and a
+  mark, the rest of the colours derived from the accent so that contrast
+  holds in both modes, applied by the dashboard's server and written into
+  each sheet. Its shape is in [design/ui-theming.md](ui-theming.md#a-repositorys-theme);
+  build it after item 38, when a team that uses Jig asks for it.
 - **More skills.** `scaffolding-update` (keeps agent instruction files in step
   with decisions and audits them; M0), with its paths as configuration; and a
   SOLID-principles review skill, once its generic procedure is separated from

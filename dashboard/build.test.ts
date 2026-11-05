@@ -28,3 +28,18 @@ test("an inline script cannot end early, and its licences come from what the bun
     expect(licences).toContain(`\n${name}`.trimStart());
   expect(licences).toContain("MIT License");
 }, 60_000);
+
+test("both pages name Jig's mark as their icon, inline, so the browser asks the server for none", async () => {
+  const mark = readFileSync(
+    join(root, "website/public/brand/jig-mark-adaptive.svg"),
+    "utf8",
+  ).trim();
+  const files = await buildPage();
+  for (const name of ["index.html", "refused.html"]) {
+    const href = /<link rel="icon" href="([^"]*)"/.exec(files[name] ?? "")?.[1];
+    expect({ name, icon: href && decodeURIComponent(href) }).toEqual({
+      name,
+      icon: `data:image/svg+xml,${mark}`,
+    });
+  }
+}, 60_000);
