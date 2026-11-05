@@ -121,6 +121,19 @@ and the logo are trademarks held apart from the code
 ([TRADEMARK.md](TRADEMARK.md)). Report a vulnerability privately
 ([SECURITY.md](SECURITY.md)).
 
+## Thanks
+
+Jig is open source, and its own repository relies on services that other
+people built and run. Thanks to the teams behind them:
+
+- [CodeRabbit](https://www.coderabbit.ai/) reviews Jig's pull requests.
+- [SonarQube Cloud](https://www.sonarsource.com/products/sonarcloud/) scans
+  them for bugs and security problems.
+- [GitHub](https://github.com/) hosts the repository, runs its checks, and
+  scans it with CodeQL and Dependabot.
+- [Renovate](https://www.mend.io/renovate/) proposes the dependency updates.
+- [Cloudflare](https://www.cloudflare.com/) serves jig-harness.dev.
+
 ## Working on Jig
 
 Install [mise](https://mise.jdx.dev/) and run:
