@@ -237,9 +237,7 @@ describe("jig dispatch line --json", () => {
         needs: [
           {
             ...NEED,
-            decisions: [
-              { key: "k", kind: "thread", lines: [{ toString: null }] },
-            ],
+            decisions: [{ ...DECISION, lines: [{ toString: null }] }],
           },
         ],
       },
@@ -256,14 +254,15 @@ describe("jig dispatch line --json", () => {
       },
     ],
     [
-      "a decision whose recommendation or class is not text",
+      "a decision whose recommendation is not text",
       {
-        needs: [
-          {
-            ...NEED,
-            decisions: [{ ...DECISION, recommendation: 3, decisionClass: [] }],
-          },
-        ],
+        needs: [{ ...NEED, decisions: [{ ...DECISION, recommendation: 3 }] }],
+      },
+    ],
+    [
+      "a decision whose class is not text",
+      {
+        needs: [{ ...NEED, decisions: [{ ...DECISION, decisionClass: [] }] }],
       },
     ],
     ["a null thread sample", { sessions: [{ ...SESSION, samples: [null] }] }],
