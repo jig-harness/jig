@@ -24,15 +24,13 @@
  * through `drive-state.ts handoff` under a driver variable naming the
  * stopped driver, the path every ledger write takes.
  */
-import { readFileSync, readdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { swallow } from "../../../../shared/errors.ts";
-import { isRecord } from "../../../../shared/guards.ts";
-import { CLAIM_PREFIX, type ClaimDiag, parseClaimText } from "./claim.ts";
+import type { ClaimDiag } from "./claim.ts";
+import { inspectLock, prLockName } from "./driver/locks.ts";
 import { driveState } from "./driver/paths.ts";
 import { helperTimeoutSeconds, pidAlive, run, tsArgv } from "./proc.ts";
 import { worktreePathKey } from "./state/actor.ts";
-import { atomicWrite } from "./state/fsutil.ts";
+import { driveDb } from "./state/db.ts";
 import { ledgerOfStoppedDriver } from "./state/ledger.ts";
 import { readLedgerSnapshot, resolveLogin } from "./state/ledger-forge.ts";
 import {
@@ -58,66 +56,87 @@ export interface DriverRecord {
   released?: true;
 }
 
-function recordPath(stateDir: string, pr: string): string {
-  return join(stateDir, `ledger-driver-${pr}.json`);
-}
-
+/** Write the driver record of `pr` in a clone, replacing its last one. */
 export function writeDriverRecord(
   stateDir: string,
   pr: string,
   record: DriverRecord,
 ): void {
-  atomicWrite(recordPath(stateDir, pr), `${JSON.stringify(record)}\n`);
+  const drive = driveDb(stateDir);
+  drive.db.run(
+    `INSERT OR REPLACE INTO driver_records (clone, pr, worktree, started, pid, host, released)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      drive.clone,
+      pr,
+      record.worktree,
+      record.started,
+      record.pid,
+      record.host,
+      record.released === true ? 1 : 0,
+    ],
+  );
 }
 
-/** Remove the record when it is still `started`'s (a successor's stays). */
+/** Remove the driver record of `pr`, while it is still the one started at `started`. */
 export function removeDriverRecord(
   stateDir: string,
   pr: string,
   started: string,
 ): void {
-  if (readDriverRecord(stateDir, pr)?.started === started)
-    rmSync(recordPath(stateDir, pr), { force: true });
+  const drive = driveDb(stateDir);
+  drive.db.run(
+    "DELETE FROM driver_records WHERE clone = ? AND pr = ? AND started = ?",
+    [drive.clone, pr, started],
+  );
 }
 
 /**
- * Mark `started`'s record released: called only on a witnessed termination
- * of its pass tree (the driver releasing the PR's lock, which it keeps over a
- * pass it could not witness gone, or `--stop`'s witnessed stop).
+ * Mark the driver record of `pr` released, while it is still the one started
+ * at `started`: the driver gave its locks back, so `--stop` and `--doctor`
+ * may mark its ledger stopped.
  */
 export function markDriverRecordReleased(
   stateDir: string,
   pr: string,
   started: string,
 ): void {
-  // Never in the way of the release: an unmarked record only keeps the
-  // ledger running, the direction a lost mark is safe in.
   try {
-    const record = readDriverRecord(stateDir, pr);
-    if (record?.started === started)
-      writeDriverRecord(stateDir, pr, { ...record, released: true });
+    const drive = driveDb(stateDir);
+    drive.db.run(
+      "UPDATE driver_records SET released = 1 WHERE clone = ? AND pr = ? AND started = ?",
+      [drive.clone, pr, started],
+    );
   } catch (err) {
     swallow(err, "the driver record could not be marked released");
   }
 }
 
+interface DriverRecordRow {
+  pr: string;
+  worktree: string;
+  started: string;
+  pid: number;
+  host: string;
+  released: number;
+}
+
+function recordOf(row: DriverRecordRow): DriverRecord {
+  return {
+    worktree: row.worktree,
+    started: row.started,
+    pid: row.pid,
+    host: row.host,
+    ...(row.released === 1 ? { released: true as const } : {}),
+  };
+}
+
 function readDriverRecord(stateDir: string, pr: string): DriverRecord | null {
-  try {
-    const v: unknown = JSON.parse(
-      readFileSync(recordPath(stateDir, pr), "utf8"),
-    );
-    return isRecord(v) &&
-      typeof v.worktree === "string" &&
-      typeof v.started === "string" &&
-      typeof v.pid === "number" &&
-      typeof v.host === "string" &&
-      (v.released === undefined || v.released === true)
-      ? (v as unknown as DriverRecord)
-      : null;
-  } catch (err) {
-    swallow(err, "no readable driver record");
-    return null;
-  }
+  const drive = driveDb(stateDir);
+  const row = drive.db
+    .query("SELECT * FROM driver_records WHERE clone = ? AND pr = ?")
+    .get(drive.clone, pr) as DriverRecordRow | null;
+  return row === null ? null : recordOf(row);
 }
 
 /**
@@ -147,44 +166,15 @@ export async function recoverFromDriverRecord(
 
 /** `--doctor`'s sweep of the driver records no lock row covers. */
 async function recoverDriverRecords(stateDir: string): Promise<void> {
-  let names: string[] = [];
-  try {
-    names = readdirSync(stateDir);
-  } catch (err) {
-    swallow(err, "the state directory could not be listed");
-  }
-  for (const name of names) {
-    const pr = /^ledger-driver-(\d+)\.json$/.exec(name)?.[1];
-    if (pr === undefined) continue;
-    const row = readLock(join(stateDir, `pr-drive-${pr}.lock`));
-    if (row !== "unreadable") await recoverFromDriverRecord(stateDir, pr, row);
-  }
-}
-
-/** The PR lock's single claim's diagnostics, `{diag: null}` when none holds it. */
-function readLock(
-  dir: string,
-): { diag: { started: string } | null } | "unreadable" {
-  let names: string[];
-  try {
-    names = readdirSync(dir);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { diag: null };
-    return "unreadable";
-  }
-  const claims = names.filter(
-    (n) => n.startsWith(CLAIM_PREFIX) && n.length > CLAIM_PREFIX.length,
-  );
-  if (claims.length === 0) return { diag: null };
-  if (claims.length > 1) return "unreadable";
-  try {
-    const record = parseClaimText(
-      readFileSync(join(dir, claims[0] as string), "utf8"),
-    );
-    return record === null ? "unreadable" : { diag: record.diag };
-  } catch (err) {
-    swallow(err, "the PR lock's claim could not be read");
-    return "unreadable";
+  const drive = driveDb(stateDir);
+  const prs = (
+    drive.db
+      .query("SELECT pr FROM driver_records WHERE clone = ? ORDER BY pr")
+      .all(drive.clone) as { pr: string }[]
+  ).map((r) => r.pr);
+  for (const pr of prs) {
+    const claim = inspectLock(stateDir, prLockName(pr));
+    await recoverFromDriverRecord(stateDir, pr, { diag: claim?.diag ?? null });
   }
 }
 

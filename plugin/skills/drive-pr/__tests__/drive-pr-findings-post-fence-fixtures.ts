@@ -6,16 +6,18 @@ import { scopedStateDir } from "./scoped-state-dir.ts";
 
 import { expect } from "bun:test";
 
-import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 
 import { hostname, tmpdir } from "node:os";
 
 import { join } from "node:path";
 
 import {
-  leasePathFor,
+  leaseRef,
+  leaseRefsFor,
   stateDirIdentityToken,
 } from "../scripts/lib/state/lease";
+import { putLease } from "./state-rows.ts";
 
 import { SCRIPTS, ACTOR, gitCleanEnv } from "./drive-pr-harness.ts";
 
@@ -31,7 +33,7 @@ export function createFindingsPostFenceFixtures() {
     return scopedStateDir(mkdtempSync(join(tmpdir(), `fence-${name}-`)));
   }
 
-  // Writes ONLY the per-PR lease file, under this test's own (real) actor —
+  // Writes ONLY the per-PR lease, under this test's own (real) actor —
   // unlike `seedLease` below, which goes through `drive-state.ts phase` and
   // so, as a `LEASED_COMMANDS` side effect, ALSO claims a TREE lease
   // for the same actor. That side effect is exactly right for a
@@ -42,22 +44,11 @@ export function createFindingsPostFenceFixtures() {
   // fence is wired into `answer-summary-finding.ts`'s posting path too, which
   // this suite's `fence()` helper spawns).
   function seedRawPrLease(stateDir: string, pr: string, pid: number): void {
-    writeFileSync(
-      leasePathFor(stateDir, pr, ACTOR),
-      JSON.stringify({
-        holder: "session",
-        pid,
-        host: hostname(),
-        platform: process.platform,
-        actor: ACTOR,
-        worktree: "",
-        startedAt: new Date().toISOString(),
-        lastSeen: new Date().toISOString(),
-        command: "phase",
-        generation: "e".repeat(32),
-        sessionStarted: "",
-      }),
-    );
+    putLease(leaseRef(stateDir, pr, ACTOR), {
+      pid,
+      host: hostname(),
+      command: "phase",
+    });
   }
 
   function seedLease(stateDir: string, pr: string, pid: number): void {
@@ -80,11 +71,7 @@ export function createFindingsPostFenceFixtures() {
       },
     );
     expect(seed.exitCode).toBe(0);
-    expect(
-      readdirSync(stateDir).filter((f) =>
-        new RegExp(`^pr-drive-lease-${pr}-wt-[0-9a-f]{16}\\.json$`).test(f),
-      ),
-    ).toHaveLength(1);
+    expect(leaseRefsFor(stateDir, pr)).toHaveLength(1);
   }
 
   async function fence(
@@ -137,8 +124,11 @@ export function createFindingsPostFenceFixtures() {
    * this helper exists to exercise the first.
    */
   async function fenceNoOverride(args: string[]) {
+    // The real state root is never touched: the child's home is a scratch
+    // one, so the database it resolves is a fresh one there.
     const env: Record<string, string> = {
       ...gitCleanEnv(),
+      HOME: mkdtempSync(join(tmpdir(), "fence-home-")),
       DRIVE_PR_SESSION: String(process.pid),
       DRIVE_PR_SESSION_STARTED: "",
     };

@@ -55,7 +55,7 @@ async function handlePassDeadline(
       "  exact two-drivers-one-tree state they exist to prevent. Confirm the tree is",
     );
     console.error(
-      "  actually gone, then remove the lock dir to re-arm (see `acquire`'s message).",
+      "  actually gone, then re-arm: the next drive recovers a lock whose driver has exited.",
     );
     context.held.length = 0;
   }

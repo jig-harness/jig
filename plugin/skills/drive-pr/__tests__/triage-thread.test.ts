@@ -1,4 +1,5 @@
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { writeState } from "./state-rows.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 /**
  * triage-thread.test.ts
@@ -1200,14 +1201,14 @@ describe("triage-thread.ts", () => {
   it("propagates a stale-hold cleanup FAILURE as a nonzero exit — a resolved thread has no other retry path", () => {
     const { dir, stateDir } = writeFixtureDir();
     writeNode(dir, { comments: [] });
-    // The state DIRECTORY itself stays valid (so its identity still resolves
-    // for the drive-lease fence reply-to-thread.ts's post goes through) —
-    // only the per-PR state FILE `drive-state.ts` reads is broken, by
-    // pre-creating its exact path as a directory instead of a file. `held`
-    // then fails deterministically ("exists but is not usable drive state"),
-    // simulating the "could not read held state" cleanup failure. The merit
-    // dispatch itself (resolve-thread.ts) still succeeds first.
-    mkdirSync(join(stateDir, "drive-pr-999.json"), { recursive: true });
+    // The database itself stays valid (so its identity still resolves for
+    // the drive-lease fence reply-to-thread.ts's post goes through) — only
+    // the per-PR state row `drive-state.ts` reads is broken, by storing text
+    // that is not drive state. `held` then fails deterministically ("exists
+    // but is not usable drive state"), simulating the "could not read held
+    // state" cleanup failure. The merit dispatch itself (resolve-thread.ts)
+    // still succeeds first.
+    writeState(stateDir, "999", "not json");
 
     const r = runTriage(
       ["PRRT_cleanupfail", "999"],

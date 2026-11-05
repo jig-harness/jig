@@ -172,7 +172,7 @@ export function skillsParentIsIntact(parent = SKILLS_ROOT): boolean {
  *
  * ABSENCE of a lease is not a refusal — that is the standalone path this skill
  * has to keep working, and the fence itself makes that call (it exits 0 when
- * there is no git dir for drive state to live in, no lease file, a lease that
+ * there is no git dir for drive state to live in, no lease, a lease that
  * is this session's own, or a foreign one whose owner is gone). Only a lease
  * held by another LIVE session refuses.
  *

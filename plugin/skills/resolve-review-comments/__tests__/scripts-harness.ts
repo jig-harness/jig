@@ -5,6 +5,7 @@
  * that stub with. A test file calls `useStubForge()` once at top level.
  */
 
+import { Database } from "bun:sqlite";
 import { afterAll, beforeAll } from "bun:test";
 import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import {
@@ -13,11 +14,10 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 
 export const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const SHARED = join(import.meta.dir, "..", "..", "..", "shared");
@@ -507,27 +507,36 @@ export function runScript(
     GH_CALL_TIMEOUT: "20",
     ...opts.env,
   };
-  // The state-dir OVERRIDE requires its on-disk identity beside it:
+  // The state-dir OVERRIDE requires its database's identity beside it:
   // `$DRIVE_PR_STATE_DIR` without `$DRIVE_PR_STATE_DIR_IDENTITY` can only come
-  // from a driver predating that change, and the fence refuses it rather than
-  // keeping a compatibility path alive. Derived here, once, from whatever state
-  // dir the caller passed — rather than at each of the call sites — so a test
-  // that sets an override cannot forget it and then fail for a reason it is not
-  // about. A caller that wants a STALE or ABSENT identity sets one explicitly
-  // and wins, since `opts.env` is spread above.
+  // from a driver predating it, and the fence refuses it. Read here, once,
+  // from the database beside whatever state dir the caller passed, so a test
+  // that sets an override cannot forget it and then fail for a reason it is
+  // not about. A caller that wants a STALE or ABSENT identity sets one
+  // explicitly and wins, since `opts.env` is spread above.
   //
-  // Computed inline from `statSync` rather than imported from `/drive-pr`'s
-  // `lease.ts`: this suite covers the skill in its STANDALONE shape, and a
-  // test-time import would make it depend on the sibling skill being
-  // installed — the very coupling the fence's own skip logic exists to
-  // tolerate. `statSync`, following symlinks, matching the producer.
+  // Read with `bun:sqlite` rather than imported from `/drive-pr`: this suite
+  // covers the skill in its STANDALONE shape, and a test-time import would
+  // make it depend on the sibling skill being installed.
   if (env.DRIVE_PR_STATE_DIR && env.DRIVE_PR_STATE_DIR_IDENTITY === undefined) {
+    const dir = env.DRIVE_PR_STATE_DIR;
+    const db = join(
+      /^[0-9a-f]{16}$/.test(basename(dir)) ? dirname(dir) : dir,
+      "state.sqlite",
+    );
     try {
-      const st = statSync(env.DRIVE_PR_STATE_DIR);
-      env.DRIVE_PR_STATE_DIR_IDENTITY = `${st.dev}:${st.ino}`;
+      const conn = new Database(db, { readonly: true });
+      try {
+        const row = conn
+          .query("SELECT instance FROM db_meta WHERE id = 1")
+          .get() as { instance: string } | null;
+        if (row !== null) env.DRIVE_PR_STATE_DIR_IDENTITY = row.instance;
+      } finally {
+        conn.close();
+      }
     } catch {
-      // Unreadable: leave it unset and let the script decide, which is what a
-      // test staging that condition is asking for.
+      // No database yet: leave it unset and let the script decide, which is
+      // what a test staging that condition is asking for.
     }
   }
   const r = spawnSync(

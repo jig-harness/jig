@@ -5,15 +5,18 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 
 import { join } from "node:path";
 
 import {
-  leasePathFor,
+  leaseRef,
+  readLease,
   readTreeLease,
-  treeLeasePathFor,
+  treeLeaseRef,
 } from "../scripts/lib/state/lease";
+
+import { editTreeLease, removeTreeLease } from "./state-rows.ts";
 
 import {
   SCRIPTS,
@@ -39,8 +42,8 @@ describe("drive-state.ts durability", () => {
   } = stateDurabilityFixtures;
   describe("the tree-wide session lease across PRs", () => {
     // The per-PR lease is scoped to (working tree, PR): two interactive
-    // sessions in ONE tree driving TWO DIFFERENT PRs resolve two different
-    // `leasePathFor` files, so on their own neither refuses the other and both
+    // sessions in ONE tree driving TWO DIFFERENT PRs hold two different
+    // per-PR lease rows, so on their own neither refuses the other and both
     // would be admitted into the SAME checkout — free to edit, commit, and
     // push over one another. `drive.ts` closes the analogous unattended-path
     // gap with a worktree-wide single-instance lock; the tree-wide session
@@ -58,7 +61,7 @@ describe("drive-state.ts durability", () => {
           ).exitCode,
         ).toBe(0);
 
-        // Session B — a DIFFERENT PR, so its per-PR lease file never collides
+        // Session B — a DIFFERENT PR, so its per-PR lease never collides
         // with A's, but it shares the SAME working tree, which is exactly what
         // the tree-wide lease refuses.
         const second = await state(d, ["bump-round", "888", "--head", "bbb"], {
@@ -71,7 +74,7 @@ describe("drive-state.ts durability", () => {
 
         // B never wrote a per-PR lease of its own — the refusal came before
         // that, exactly like the per-PR case.
-        expect(existsSync(leasePathFor(d, "888", ACTOR))).toBe(false);
+        expect(readLease(leaseRef(d, "888", ACTOR))).toBeNull();
       } finally {
         a.stop();
       }
@@ -101,9 +104,7 @@ describe("drive-state.ts durability", () => {
         // previous one it fast-pathed over without a write — this call is well
         // within `renewAfterMs()`, so without the `seen.pr === canonicalPr`
         // check the tree lease would still say '999' here.
-        expect(
-          JSON.parse(readFileSync(treeLeasePathFor(d, ACTOR), "utf8")).pr,
-        ).toBe("888");
+        expect(readTreeLease(treeLeaseRef(d, ACTOR))?.pr).toBe("888");
         // …and back to the first PR again.
         expect(
           (
@@ -112,9 +113,7 @@ describe("drive-state.ts durability", () => {
             })
           ).exitCode,
         ).toBe(0);
-        expect(
-          JSON.parse(readFileSync(treeLeasePathFor(d, ACTOR), "utf8")).pr,
-        ).toBe("999");
+        expect(readTreeLease(treeLeaseRef(d, ACTOR))?.pr).toBe("999");
       } finally {
         a.stop();
       }
@@ -123,8 +122,8 @@ describe("drive-state.ts durability", () => {
     it("two DIFFERENT worktrees stay fully independent — the tree lease does not span worktrees", async () => {
       // Two DIFFERENT PRs so the PR-wide gate has nothing to say — this probes
       // only whether the tree lease (keyed by actor) leaks across actors,
-      // which it must not: two Conductor worktrees are two different trees BY
-      // DESIGN, whatever lease files this module keeps.
+      // which it must not: two linked worktrees are two different trees BY
+      // DESIGN, whatever lease records this module keeps.
       const { a, b, env } = twoDrivers("lease-tree-cross-worktree");
       const sessionA = liveSession();
       const sessionB = liveSession();
@@ -188,14 +187,12 @@ describe("drive-state.ts durability", () => {
 
         // B never wrote a per-PR lease of its own — refused before that,
         // exactly like the identified-session case.
-        expect(existsSync(leasePathFor(d, "888", ACTOR))).toBe(false);
+        expect(readLease(leaseRef(d, "888", ACTOR))).toBeNull();
 
         // A's claim is a real `holder: 'worktree'` TREE lease, not merely a
-        // per-PR presence record — the whole point of this fix.
-        const tree = JSON.parse(
-          readFileSync(treeLeasePathFor(d, ACTOR), "utf8"),
-        );
-        expect({ holder: tree.holder, pid: tree.pid, pr: tree.pr }).toEqual({
+        // per-PR presence record.
+        const tree = readTreeLease(treeLeaseRef(d, ACTOR));
+        expect({ holder: tree?.holder, pid: tree?.pid, pr: tree?.pr }).toEqual({
           holder: "worktree",
           pid: 0,
           pr: "999",
@@ -236,9 +233,7 @@ describe("drive-state.ts durability", () => {
           sessionless,
         );
         expect(admitted.exitCode).toBe(0);
-        expect(
-          JSON.parse(readFileSync(treeLeasePathFor(d, ACTOR), "utf8")).pr,
-        ).toBe("888");
+        expect(readTreeLease(treeLeaseRef(d, ACTOR))?.pr).toBe("888");
       });
 
       it("renews its own tree presence record across repeated calls for the SAME pr, never refusing itself", async () => {
@@ -254,9 +249,7 @@ describe("drive-state.ts durability", () => {
           (await state(d, ["bump-round", "999", "--head", "bbb"], sessionless))
             .exitCode,
         ).toBe(0);
-        expect(
-          JSON.parse(readFileSync(treeLeasePathFor(d, ACTOR), "utf8")).pr,
-        ).toBe("999");
+        expect(readTreeLease(treeLeaseRef(d, ACTOR))?.pr).toBe("999");
       });
 
       it("takes over an abandoned TREE presence record for a DIFFERENT pr once staleness passes", async () => {
@@ -281,10 +274,11 @@ describe("drive-state.ts durability", () => {
             .exitCode,
         ).toBe(0);
 
-        const path = treeLeasePathFor(d, ACTOR);
-        const rec = JSON.parse(readFileSync(path, "utf8"));
-        rec.lastSeen = new Date(Date.now() - 400 * 60_000).toISOString();
-        writeFileSync(path, JSON.stringify(rec));
+        const tree = treeLeaseRef(d, ACTOR);
+        editTreeLease(tree, (l) => ({
+          ...l,
+          lastSeen: new Date(Date.now() - 400 * 60_000).toISOString(),
+        }));
 
         const taken = await state(
           d,
@@ -293,7 +287,7 @@ describe("drive-state.ts durability", () => {
         );
         expect(taken.exitCode).toBe(0);
         expect(taken.stderr).toContain("abandoned TREE presence record");
-        expect(JSON.parse(readFileSync(path, "utf8")).pr).toBe("888");
+        expect(readTreeLease(tree)?.pr).toBe("888");
       });
 
       it("a live SESSION-held tree lease on a DIFFERENT pr refuses a sessionless claim, naming the session", async () => {
@@ -323,12 +317,10 @@ describe("drive-state.ts durability", () => {
           expect(refused.exitCode).toBe(11);
           expect(refused.stderr).toContain(`pid ${holder.pid}`);
           expect(refused.stderr).toContain("PR #999");
-          expect(existsSync(leasePathFor(d, "888", ACTOR))).toBe(false);
+          expect(readLease(leaseRef(d, "888", ACTOR))).toBeNull();
           // The tree lease is still the session's own — a sessionless claim
           // must never overwrite it.
-          expect(
-            JSON.parse(readFileSync(treeLeasePathFor(d, ACTOR), "utf8")).holder,
-          ).toBe("session");
+          expect(readTreeLease(treeLeaseRef(d, ACTOR))?.holder).toBe("session");
         } finally {
           holder.stop();
         }
@@ -338,7 +330,7 @@ describe("drive-state.ts durability", () => {
         // `assertLeaseUnchanged` (the per-PR fence) already has its own probe
         // above ("fences the CLAIMING tier-3 path on its own record, like
         // every other claim"). This is its counterpart: the fence
-        // now also runs `assertTreeLeaseUnchanged` (via
+        // also runs `assertTreeLeaseUnchanged` (via
         // `acquireIdentifiedTreeGuardNow`, shared with the identified path)
         // over the TREE record tier 3 claims — so revoking THAT record
         // alone, leaving the per-PR one untouched, must still be caught.
@@ -366,12 +358,12 @@ describe("drive-state.ts durability", () => {
           },
         );
         await awaitLockedSection(signal, proc);
-        const admittedTree = readTreeLease(treeLeasePathFor(d, ACTOR));
+        const admittedTree = readTreeLease(treeLeaseRef(d, ACTOR));
         expect(admittedTree?.holder).toBe("worktree");
         expect(admittedTree?.pr).toBe("999");
         // Revoke ONLY the tree record — the per-PR one is left intact, so
         // `assertLeaseUnchanged` alone would wave this through.
-        rmSync(treeLeasePathFor(d, ACTOR), { force: true });
+        removeTreeLease(treeLeaseRef(d, ACTOR));
         const code = await proc.exited;
         const stderr = await new Response(proc.stderr).text();
         expect({ code, saw: stderr.includes("taken over") }).toEqual({
@@ -409,7 +401,7 @@ describe("drive-state.ts durability", () => {
         ).toBe(13);
 
         // A DIFFERENT pr from tree B: if the failed claim above had left its
-        // tree-wide record on disk, this would be refused (exit 11) by a
+        // tree-wide record behind, this would be refused (exit 11) by a
         // record pointing at a pr that was never actually admitted.
         expect(
           drive(b, sessionless, ["bump-round", "888", "--head", "ccc"])
@@ -421,8 +413,9 @@ describe("drive-state.ts durability", () => {
     describe("release-sessionless-lease.ts — completion releases a tier-3 record", () => {
       // The asymmetry this closes: a `holder: 'session'` lease is released for
       // free (its pid stops answering), while a `holder: 'worktree'` presence
-      // record has no pid to test and so went on refusing every OTHER working
-      // tree for a whole staleness window after its resolver finished CLEANLY.
+      // record has no pid to test and so would go on refusing every OTHER
+      // working tree for a whole staleness window after its resolver finished
+      // CLEANLY.
       // `converge.ts` — the loop that spawns those sessionless passes — is the
       // one process that knows when the work is over, and it reaches this
       // script by SPAWNING it (see /resolve-review-comments' own suite for that
@@ -471,11 +464,10 @@ describe("drive-state.ts durability", () => {
       }
 
       it("releases this tree’s tier-3 records, and ANOTHER working tree is admitted immediately", () => {
-        // Acceptance criterion 1, and asserted through ADMISSION rather than
-        // through file absence: the cross-tree refusal is DERIVED from live
-        // lease files, so "the file is gone" is a proxy and admission is the
-        // property. Mirrors how every other cross-tree probe in this file
-        // proves itself.
+        // Asserted through ADMISSION rather than through record absence: the
+        // cross-tree refusal is DERIVED from live lease records, so "the record
+        // is gone" is a proxy and admission is the property. Mirrors how every
+        // other cross-tree probe in this file proves itself.
         const { a, b, env } = twoDrivers("lease-sessionless-release");
         const sessionless = { ...env, DRIVE_PR_SESSION: "", CLAUDE_PID: "" };
 
@@ -535,7 +527,7 @@ describe("drive-state.ts durability", () => {
           );
           expect(leases).toHaveLength(1);
           expect(leases[0].holder).toBe("session");
-          // The protection is intact, not merely the file: B is still refused.
+          // The protection is intact, not merely the record: B is still refused.
           expect(
             drive(b, sessionless, ["bump-round", "999", "--head", "bbb"])
               .exitCode,
@@ -546,7 +538,7 @@ describe("drive-state.ts durability", () => {
       });
 
       it("leaves a TREE record that has moved on to a DIFFERENT pr alone, and that pr keeps its protection", async () => {
-        // `treeLeasePathFor` is ONE file per working tree, naming whichever PR
+        // The tree lease is ONE record per working tree, naming whichever PR
         // the tree is CURRENTLY driving. A release for the PR that just
         // finished must not strip the record a LATER sessionless resolver in
         // this same tree is driving a different PR under — that would be a new
@@ -562,12 +554,11 @@ describe("drive-state.ts durability", () => {
         // A release naming a DIFFERENT PR than the tree record does.
         const r = await release(d, ["--pr", "888"], sessionless);
         expect(r.exitCode).toBe(0);
-        // Presence asserted BEFORE reading it, so removing the pr-match guard
-        // reddens with the finding rather than with an ENOENT from the reader.
-        expect(existsSync(treeLeasePathFor(d, ACTOR))).toBe(true);
-        expect(
-          JSON.parse(readFileSync(treeLeasePathFor(d, ACTOR), "utf8")).pr,
-        ).toBe("999");
+        // Presence asserted BEFORE its PR, so removing the pr-match guard
+        // reddens on the record being gone rather than on a missing field.
+        const kept = readTreeLease(treeLeaseRef(d, ACTOR));
+        expect(kept).not.toBeNull();
+        expect(kept?.pr).toBe("999");
 
         // And the record still EXCLUDES, which is the point of keeping it: a
         // second sessionless resolver in this tree on a third PR is refused.
@@ -581,8 +572,8 @@ describe("drive-state.ts durability", () => {
       });
 
       it("cannot land while a sessionless command is INSIDE its locked section", async () => {
-        // Acceptance criterion 2, probed rather than argued. The call-site
-        // placement in converge.ts is one half; this is the mechanical half.
+        // Probed rather than argued. The call-site placement in converge.ts is
+        // one half; this is the mechanical half.
         // A release that took no state mutex could delete the lease of a
         // command that is already ADMITTED and mid-locked-section, and that
         // command's own admission fence would then refuse a mutation nothing
@@ -626,7 +617,7 @@ describe("drive-state.ts durability", () => {
             .phase,
         ).toBe("triage");
         // The release still happened — it was ordered, not skipped.
-        expect(existsSync(treeLeasePathFor(d, ACTOR))).toBe(false);
+        expect(readTreeLease(treeLeaseRef(d, ACTOR))).toBeNull();
       });
 
       it("is a harmless, idempotent no-op with nothing to release — and creates no state", async () => {

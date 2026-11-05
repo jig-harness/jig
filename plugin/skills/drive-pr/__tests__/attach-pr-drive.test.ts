@@ -88,7 +88,7 @@ describe("drive.ts attaches under both its locks", () => {
     const c = fresh();
     const tree = c.tree("wt1");
     const before = c.git(tree, "rev-parse", "HEAD");
-    plantLiveLock(c, "pr-drive-42.lock");
+    plantLiveLock(c, "pr-drive-42");
     const r = drive(c, tree);
     expectSpawnExit(r, 11, "drive.ts");
     // The PR's lock refuses before the attach runs.
@@ -160,7 +160,7 @@ describe("drive.ts attaches under both its locks", () => {
     const c = fresh();
     const tree = c.tree("wt1");
     const before = c.git(tree, "rev-parse", "HEAD");
-    plantLiveLock(c, "pr-drive-42.lock");
+    plantLiveLock(c, "pr-drive-42");
     // GitHub reads `042` as #42; a lock keyed `042` would not exclude #42's
     // live driver.
     const r = c.script(tree, "drive.ts", "042", "--", "true", "042");
@@ -204,7 +204,7 @@ describe("DRIVE_PR_ATTACH", () => {
     const c = fresh();
     const tree = c.tree("wt1");
     writeFileSync(join(tree, "scratch.txt"), "left over\n");
-    plantLiveLock(c, "pr-drive-42.lock");
+    plantLiveLock(c, "pr-drive-42");
     const r = drive(c, tree, { DRIVE_PR_ATTACH: "off" });
     // No attach refusal over the dirty tree: the PR lock is what stops it.
     expectSpawnExit(r, 11, "drive.ts");

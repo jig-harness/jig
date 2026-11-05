@@ -59,6 +59,7 @@ import {
   COLUMN_ID,
 } from "../../../shared/orca-board.ts";
 import { DEFAULT_LABELS } from "../../../dispatch/lib/labels.ts";
+import { dispatchSection } from "../../../dispatch/lib/section.ts";
 import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
@@ -417,6 +418,7 @@ describe("the reading skills", () => {
       "dispatch.labels.enabled": DEFAULT_LABELS.enabled,
       "dispatch.labels.prefix": DEFAULT_LABELS.prefix,
       "dispatch.labels.only_labeled": DEFAULT_LABELS.onlyLabeled,
+      "dispatch.adopt.enabled": dispatchSection({}).adopt.enabled,
     });
   });
 

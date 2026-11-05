@@ -11,8 +11,8 @@ export function createStateClaimFixtures(
 ) {
   const { state } = parent;
 
-  // `hold`/`held`/`release-held` serialise the JSON, but say nothing about
-  // who may DISPATCH the external mutation for a held item — that call
+  // `hold`/`held`/`release-held` serialise the drive state, but say nothing
+  // about who may DISPATCH the external mutation for a held item — that call
   // happens entirely outside this script, between reading `held` and
   // eventually releasing the key. Two concurrent drivers reading the same
   // snapshot could both decide to process the same item and both dispatch,
@@ -21,7 +21,7 @@ export function createStateClaimFixtures(
   // gate that makes only one of them allowed to dispatch.
 
   // Holds the finding AND stamps it with the push whose fix it is waiting on
-  // — `claim-held --kind finding` now refuses a `--pushed-sha`
+  // — `claim-held --kind finding` refuses a `--pushed-sha`
   // that is not the item's own. `stamp-held` runs AFTER the hold on purpose:
   // it stamps the batch as it stands, so an item held later is not
   // retroactively vouched for by an earlier push. Every test in this block is

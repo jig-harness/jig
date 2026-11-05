@@ -382,7 +382,7 @@ const CREDENTIAL_FINGERPRINT = /^(token|api-key):/;
 
 /**
  * The account a pass bills, as a stable hash: what a quota park records and a
- * re-arm compares, so the state file names whose wall it is without carrying
+ * re-arm compares, so the stored state names whose wall it is without carrying
  * an email address in clear. `null` when the identity did not resolve, and
  * when it is only a credential's fingerprint (`token:`, `api-key:`): two
  * credentials can bill one account, and one account can switch between a

@@ -8,7 +8,7 @@ import {
   processTable,
   type ProcessRow,
 } from "../../../shared/process-table.ts";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -23,20 +23,27 @@ import {
   useDrivePrSuite,
   writeFixture,
 } from "./drive-pr-harness.ts";
-import { lockDirs } from "./drive-loop-harness.ts";
+import { lockDirs, lockHeld } from "./drive-loop-harness.ts";
 
 useDrivePrSuite();
 
 describe("cooperative driver stop", () => {
   it("addresses one acquisition, so an older request cannot stop a successor", () => {
     const { stateDir } = writeFixture({ threads: [] });
-    requestDriverStop(stateDir, "old-generation");
-    expect(driverStopRequested(stateDir, "old-generation")).toBe(true);
-    expect(driverStopRequested(stateDir, "new-generation")).toBe(false);
+    requestDriverStop(stateDir, "pr-drive-999", "old-generation");
+    expect(
+      driverStopRequested(stateDir, "pr-drive-999", "old-generation"),
+    ).toBe(true);
+    expect(
+      driverStopRequested(stateDir, "pr-drive-999", "new-generation"),
+    ).toBe(false);
+    expect(
+      driverStopRequested(stateDir, "pr-drive-998", "old-generation"),
+    ).toBe(false);
   });
 
   it("cooperative stop waits for idle-driver helper cancellation before releasing resources", async () => {
-    const { dir } = writeFixture({ threads: [] });
+    const { dir, stateDir } = writeFixture({ threads: [] });
     const released = join(dir, "released");
     const helperPid = join(dir, "helper-pid");
     const cancelled = join(dir, "cancelled");
@@ -61,13 +68,13 @@ describe("cooperative driver stop", () => {
         child.kill();await child.exited;
         writeFileSync(${JSON.stringify(cancelled)},'done');
       });
-      installStopControls([{dir:${JSON.stringify(dir)},what:'fixture',nonce:'generation'}]);
+      installStopControls([{stateDir:${JSON.stringify(stateDir)},name:'pr-drive-999',what:'fixture',nonce:'generation'}]);
       void (async()=>{
         await new Promise(resolve=>registerSignalHandler(()=>resolve()));
         await finishDriverPassRegistrations([]);
         writeFileSync(${JSON.stringify(mutation)},'advanced');
       })();
-      requestDriverStop(${JSON.stringify(dir)},'generation');
+      requestDriverStop(${JSON.stringify(stateDir)},'pr-drive-999','generation');
       setInterval(()=>{},1000);
     `;
     const proc = Bun.spawn([process.execPath, "-e", script], {
@@ -180,9 +187,7 @@ describe("cooperative driver stop", () => {
         `driver process tree remained unreadable before the startup deadline; driver exit=${String(driver.exitCode)}\n${readFileSync(driverLog, "utf8")}`,
       ).not.toBeNull();
       if (captured === null) return;
-      expect(readdirSync(pr).filter((n) => n.startsWith("claim.")).length).toBe(
-        1,
-      );
+      expect(lockHeld(pr)).toBe(true);
       const stop = Bun.spawn(
         scriptArgv(join(SCRIPTS, "drives.ts"), "--stop", "999"),
         { env, stdout: "pipe", stderr: "pipe" },
@@ -205,8 +210,8 @@ describe("cooperative driver stop", () => {
       const [stdout, stderr] = await output;
       expectSpawnExit({ exitCode: code, stdout, stderr }, 143);
       expect(stderr).toContain("received stop request");
-      expect(existsSync(worktree)).toBe(false);
-      expect(existsSync(pr)).toBe(false);
+      expect(lockHeld(worktree)).toBe(false);
+      expect(lockHeld(pr)).toBe(false);
       expect(await identityTargetsGone(captured)).toBe(true);
     } finally {
       if (driver.exitCode === null) {

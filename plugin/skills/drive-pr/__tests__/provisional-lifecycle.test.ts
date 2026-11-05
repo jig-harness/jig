@@ -13,7 +13,6 @@
  *   wall are recorded in the drive state, by cause.
  */
 import { describe, expect, it } from "bun:test";
-import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { ExitError } from "../scripts/lib/cli.ts";
@@ -29,6 +28,7 @@ import {
   runIn,
   SCRIPTS,
 } from "./provisional-fixtures.ts";
+import { writeState } from "./state-rows.ts";
 
 const WIDE = "autonomy:\n  level: wide\n";
 const DRIVER = { DRIVE_PR_TARGET: "12" };
@@ -307,10 +307,7 @@ describe("the recoveries the drive records", () => {
     expect(quotaRearmCause(parked(null), false, now)).toBe("quota-account");
     expect(quotaRearmCause(freshState(12), false, now)).toBeNull();
 
-    writeFileSync(
-      join(forge.stateDir, "drive-pr-12.json"),
-      JSON.stringify(parked(past)),
-    );
+    writeState(forge.stateDir, "12", parked(past));
     const r = await inModule(
       forge,
       "lib/driver/takeover-complete.ts",

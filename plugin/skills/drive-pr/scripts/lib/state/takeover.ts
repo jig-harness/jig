@@ -6,7 +6,7 @@
  * items not verified as pushed that it reopened and those it could not, and
  * whether the reconciliation ran.
  *
- * Optional in a stored state, like `drivenBranch`: a state file written
+ * Optional in a stored state, like `drivenBranch`: a stored state written
  * before the field existed reads as no takeovers, since nothing about a
  * drive in progress changes when the field appears. A value that is present
  * must be well-formed.

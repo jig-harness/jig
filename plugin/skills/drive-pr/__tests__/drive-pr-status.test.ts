@@ -9,11 +9,13 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
-import { hostname, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 
 import { join, delimiter } from "node:path";
 
-import { leasePathFor } from "../scripts/lib/state/lease";
+import { leaseRef } from "../scripts/lib/state/lease";
+
+import { putLease, writeState } from "./state-rows.ts";
 
 import {
   SCRIPTS,
@@ -49,7 +51,7 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
     // worktree scaffolding, and the property under test is the same — whether
     // this caller passes that channel through at all.
     const { dir, stateDir } = writeFixture({ threads: [], reviewedSha: HEAD });
-    writeFileSync(join(stateDir, "drive-pr-999.json"), '{"pr": 999, "rounds"');
+    writeState(stateDir, "999", '{"pr": 999, "rounds"');
     const proc = Bun.spawn(
       scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
@@ -98,22 +100,11 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
     try {
       // A live lease belonging to ANOTHER working tree — a foreign actor, so
       // this is the PR-wide condition (13) and not the same-tree one (11).
-      writeFileSync(
-        leasePathFor(stateDir, "999", "wt-0000000000000abc"),
-        JSON.stringify({
-          holder: "session",
-          pid: holder.pid,
-          host: hostname(),
-          platform: process.platform,
-          actor: "wt-0000000000000abc",
-          worktree: "/some/other/tree",
-          startedAt: new Date().toISOString(),
-          lastSeen: new Date().toISOString(),
-          command: "hold",
-          generation: "a".repeat(32),
-          sessionStarted: "",
-        }),
-      );
+      putLease(leaseRef(stateDir, "999", "wt-0000000000000abc"), {
+        pid: holder.pid,
+        worktree: "/some/other/tree",
+        command: "hold",
+      });
       const proc = Bun.spawn(
         scriptArgv(
           join(SCRIPTS, "drive-status.ts"),

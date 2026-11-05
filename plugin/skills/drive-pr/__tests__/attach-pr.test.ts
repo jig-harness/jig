@@ -20,6 +20,7 @@ import {
   plantLiveLock,
   worktreeLock,
 } from "./attach-pr-fixtures.ts";
+import { lockRow } from "./state-rows.ts";
 
 const clones: Clone[] = [];
 afterAll(() => {
@@ -420,7 +421,7 @@ describe("attach-pr.ts refuses", () => {
     const tree = c.tree("wt1");
     expectSpawnExit(c.attach(tree, "42"), 0, "attach");
     const state = c.env.DRIVE_PR_STATE_DIR as string;
-    expect(existsSync(join(state, worktreeLock(c, tree)))).toBe(false);
-    expect(existsSync(join(state, "pr-drive-42.lock"))).toBe(false);
+    expect(lockRow(state, worktreeLock(c, tree))).toBeNull();
+    expect(lockRow(state, "pr-drive-42")).toBeNull();
   });
 });

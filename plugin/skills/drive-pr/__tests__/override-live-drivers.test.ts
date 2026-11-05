@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { gitIdentityEnv } from "../scripts/lib/proc.ts";
+import { readState } from "./state-rows.ts";
 
 const root = mkdtempSync(join(tmpdir(), "live-drivers-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -68,10 +69,9 @@ function driver(cwd: string, marker: string, pr = "161") {
     const {resolveActor} = await import(${JSON.stringify(join(scripts, "lib/state/actor.ts"))});
     const {acquire, release} = await import(${JSON.stringify(join(scripts, "lib/driver/locks.ts"))});
     const {runMain} = await import(${JSON.stringify(join(scripts, "lib/cli.ts"))});
-    const {join} = await import("node:path");
     await runMain("driver-probe", async () => {
       const s = await openStore(${JSON.stringify(pr)});
-      const locks = [ {dir:join(s.stateDir, "pr-drive-${pr}.lock"), what:"PR"}, {dir:join(s.stateDir, await worktreeLockName()),what:"worktree"} ];
+      const locks = [ {stateDir:s.stateDir, name:"pr-drive-${pr}", what:"PR"}, {stateDir:s.stateDir, name:await worktreeLockName(), what:"worktree"} ];
       acquire(locks[0], ${JSON.stringify(pr)});
       try {
         acquire(locks[1], ${JSON.stringify(pr)});
@@ -137,27 +137,26 @@ test("live drivers in different repositories share a root without sharing state 
       );
     expect(x.dir).not.toBe(y.dir);
     expect(x.rounds).toBe(1);
-    expect(
-      JSON.parse(
-        readFileSync(join(x.dir, "drive-pr-161.json"), "utf8"),
-      ).parked.map((p: { key: string }) => p.key),
-    ).toEqual([a]);
-    expect(
-      JSON.parse(
-        readFileSync(join(y.dir, "drive-pr-161.json"), "utf8"),
-      ).parked.map((p: { key: string }) => p.key),
-    ).toEqual([b]);
+    const stateOf = (stateDir: string) => {
+      const state = readState(stateDir, "161");
+      if (state === null)
+        throw new Error(`no state for PR #161 in ${stateDir}`);
+      return state as {
+        rounds: number;
+        parked: { key: string }[];
+        held: { key: string }[];
+        ciHold: { previousEventId: string };
+      };
+    };
+    expect(stateOf(x.dir).parked.map((p) => p.key)).toEqual([a]);
+    expect(stateOf(y.dir).parked.map((p) => p.key)).toEqual([b]);
     expect(y.rounds).toBe(1);
     for (const [stateDir, owner] of [
       [x.dir, a],
       [y.dir, b],
     ] as const) {
-      const state = JSON.parse(
-        readFileSync(join(stateDir, "drive-pr-161.json"), "utf8"),
-      );
-      expect(state.held.map((item: { key: string }) => item.key)).toEqual([
-        owner,
-      ]);
+      const state = stateOf(stateDir);
+      expect(state.held.map((item) => item.key)).toEqual([owner]);
       expect(state.ciHold.previousEventId).toBe(owner);
     }
     for (const [cwd, pr] of [
@@ -172,12 +171,8 @@ test("live drivers in different repositories share a root without sharing state 
         11,
       );
     }
-    expect(
-      JSON.parse(readFileSync(join(x.dir, "drive-pr-161.json"), "utf8")).rounds,
-    ).toBe(1);
-    expect(
-      JSON.parse(readFileSync(join(y.dir, "drive-pr-161.json"), "utf8")).rounds,
-    ).toBe(1);
+    expect(stateOf(x.dir).rounds).toBe(1);
+    expect(stateOf(y.dir).rounds).toBe(1);
   } finally {
     first.stdin.end();
     second?.stdin.end();

@@ -1312,15 +1312,14 @@ make, use the entry's term instead.
   shared module records and judges it for the *dispatcher*'s *launch
   records*, resource collection's admission tokens and the machine-wide
   locks (the one heavy test runs wait on, and the one over an Orca workspace
-  card's comment). The drive's locks share only its host comparison: their
-  claims record the process id and host, not the boot or start time.
+  card's comment) and the drive's locks and leases.
   *Avoid*: a bare process id as proof that a holder still runs.
-- **Directory fence** — a nonempty directory retained at the path reserved
-  for one lock acquisition after its release or recovery. A delayed process
-  trying to move that same acquisition there cannot replace the nonempty
-  directory, so it cannot remove a newer holder's lock. Windows retains this
-  shape because a directory move there can replace an ordinary file.
-  *Avoid*: directory guard.
+- **Minimum reader** — the lowest schema version a program must know to use
+  a database, recorded in the database beside its own version. A change that
+  only adds (a table, a column with a default) leaves it where it was, so a
+  copy of the program one release behind keeps using a database a newer copy
+  changed; a change that alters or removes what older copies read raises it,
+  and an older copy then refuses the database and names both versions.
 - **Control channel** — the way a person, or the session that started it,
   reaches an agent running unattended without killing it, kept with that
   agent's worktree (in its *worktree scratch*, or in the runner that started
@@ -1930,6 +1929,11 @@ make, use the entry's term instead.
   commands: `drive` asks the dispatcher to drive a pull request that has
   no drive yet, and `hold` stands it down from a pull request until the
   person removes the label.
+- **Adoption rule** — a repository's opt-in (`dispatch.adopt`) under which
+  the *dispatcher* drives its own recent pull requests without anyone
+  labelling them: an open pull request with no drive ledger, opened by one
+  of the rule's authors and updated within its window, is armed as if a
+  person had put the `drive` label on it.
 - **Serialized area** — an area of a *change-area catalog* marked
   `serialize: true`: its pull requests conflict with each other whenever
   two of them move at once (a migrations folder, a schema), so the
@@ -1942,6 +1946,29 @@ make, use the entry's term instead.
   and, with *dispatch labels* on, labels it `held`. A drive a person arms
   on it still runs. Not the same as a person's `hold` label, which stands
   the dispatcher down from a pull request altogether.
+- **Dispatch board** — the *dispatcher*'s dashboard view of every pull
+  request and item it reads, in one column each (coming, picking up,
+  driven, needs you, ready to merge, merged), placed again from the records
+  at every *tick*, so work moves in any direction and is never moved by
+  hand. **Ready to merge** groups converged pull requests by the next known
+  act: the drive converged at the head it verified, the
+  forge itself witnesses a review of that head (a reviewer app's check run,
+  or a person's approval where none is configured; a pull request still
+  owed that approval waits in approve first), it does not conflict, is
+  not a draft, and has no unresolved review thread. Merge now confirms
+  branch protection permits merging; approve first identifies a known
+  approval need and requested reviewers, with other protection rules unread
+  and further requirements possible. Update next identifies the next branch
+  to update, with any known approval need shown.
+  Planned: [ROADMAP.md](ROADMAP.md) item 36.
+- **Ready episode** — one unbroken period a pull request spends in the
+  *dispatch board*'s Ready to merge column at one verified head. A pull
+  request that leaves (a check fails, a thread opens, a hold is added) and
+  re-enters at the same head starts a new episode, so each period's wait
+  is counted on its own and its event rows share one key: the pull
+  request, the head and the tick that saw it enter. Not the once-per-head
+  `ready` notification record, which keeps a person from being told twice
+  about the same head however many episodes it has.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended, a table of its state database with a text copy of one
   file per month: one row per session with its stage, repository,

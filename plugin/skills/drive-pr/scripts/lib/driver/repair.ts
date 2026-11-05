@@ -191,7 +191,9 @@ export async function runRepairPass(
     console.error(
       "  exact two-drivers-one-tree state they exist to prevent. Confirm the tree is",
     );
-    console.error("  actually gone, then remove the lock dir to re-arm.");
+    console.error(
+      "  actually gone, then re-arm: the next drive recovers a lock whose driver has exited.",
+    );
     locks.length = 0;
     // No post-pass checkpoint here: termination could not be witnessed, so
     // a descendant may still be running — this return must stay quick

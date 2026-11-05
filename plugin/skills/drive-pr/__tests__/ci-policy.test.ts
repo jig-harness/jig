@@ -1,12 +1,7 @@
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { editState, stateText, writeState } from "./state-rows.ts";
 import { afterAll, describe, expect, it } from "bun:test";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
 import {
@@ -756,18 +751,18 @@ describe("hold label configuration changes", () => {
         timeline: JSON.stringify([[]]),
       });
       seedHold(repo.env, "held", "LE_seed");
-      const file = join(repo.stateDir, "drive-pr-999.json");
-      const state = JSON.parse(readFileSync(file, "utf8"));
-      state.ciHold = {
-        phase: "acquiring",
-        previousEventId: null,
-        ...(label === undefined ? {} : { label }),
-        head: HEAD,
-        actor: "drive-user",
-        createdAt: "2026-09-10T10:00:00Z",
-        checkRunWatermark: 42,
-      };
-      writeFileSync(file, JSON.stringify(state));
+      editState(repo.stateDir, "999", (state) => ({
+        ...state,
+        ciHold: {
+          phase: "acquiring",
+          previousEventId: null,
+          ...(label === undefined ? {} : { label }),
+          head: HEAD,
+          actor: "drive-user",
+          createdAt: "2026-09-10T10:00:00Z",
+          checkRunWatermark: 42,
+        },
+      }));
       return repo;
     };
     // A record without a label predates ci.hold_label: it added ci:hold.
@@ -785,8 +780,7 @@ describe("hold label configuration changes", () => {
 
   it("refuses to reset inconclusive state when no hold label is configured", () => {
     const repo = noHoldRepo({ overlay: DERIVED, runs: [] });
-    const file = join(repo.stateDir, "drive-pr-999.json");
-    writeFileSync(file, '{"pr":999');
+    writeState(repo.stateDir, "999", '{"pr":999');
     const reset = Bun.spawnSync(
       scriptArgv(
         join(import.meta.dir, "..", "scripts", "drive-state.ts"),
@@ -797,7 +791,7 @@ describe("hold label configuration changes", () => {
     );
     expect(reset.exitCode).toBe(9);
     expect(reset.stderr.toString()).toContain("does not confirm the absence");
-    expect(existsSync(file)).toBe(true);
+    expect(stateText(repo.stateDir, "999")).toBe('{"pr":999');
   });
 });
 

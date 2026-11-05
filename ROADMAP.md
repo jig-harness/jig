@@ -47,6 +47,24 @@ Orca is its first session runtime
 ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
 with others through the same interface.
 
+### 36. The dispatch board: what is driven and what is ready to merge
+
+The dispatch dashboard leads with a Ready to merge list of the converged
+pull requests a person can merge now. Each has a merge command that refuses
+a pull request changed since its review. A pull request with a known approval
+need stands beside them, naming requested reviewers or saying nobody was asked.
+Its card says other merge rules remain unread and the forge may require more.
+A pull request is ready only when the forge itself confirms its review, and an outside contributor's always needs a person's approval. Every
+pull request shows the same status at a glance: conflicts, checks with the
+failing ones named, unresolved review threads, and whether it is ready, with
+the reason when not. Every card says whether it settles by waiting or waits
+on a person. A person is told once when a pull request becomes ready, and
+the history shows how long ready work waited and how much was lost to
+waiting. Then a board view shows every piece of work the dispatcher knows,
+whoever drives it, in one column: coming, picking up, driven, needs you,
+ready to merge, or merged. Work moves in any direction, and a pull request
+that was ready and moved back says why. Merging stays a person's.
+
 ### 35. One jig command line
 
 The plugin's machine-level tools become one `jig` command on `PATH`, with
