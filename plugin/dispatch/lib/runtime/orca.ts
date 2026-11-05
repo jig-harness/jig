@@ -22,6 +22,9 @@
  * `orca terminal list` names each terminal's tab and pane), re-reads the
  * agent's state, the workspace a person has open and the rendered screen,
  * and types the nudge with `orca terminal send --enter` (`orca-steer.ts`).
+ *
+ * `retire` reads the notices workspace's card again under the comment lock
+ * and removes it with `orca worktree rm --delete-branch` (`orca-retire.ts`).
  */
 import { realpathSync } from "node:fs";
 import { orcaCommand, orcaFailure, orcaResult } from "../../../shared/orca.ts";
@@ -36,6 +39,7 @@ import {
   openNoticesWorkspace,
   openPullRequestWorkspace,
 } from "./orca-open.ts";
+import { orcaRetire } from "./orca-retire.ts";
 import { orcaSteer } from "./orca-steer.ts";
 import {
   type AgentSession,
@@ -271,7 +275,7 @@ function workspaceOf(
     agents: listed ?? [],
     unverifiableTerminals: unverifiable(row, listed),
     comment: text(row.comment),
-    unread: row.unread === true,
+    unread: typeof row.unread === "boolean" ? row.unread : null,
     name: text(row.displayName),
   };
 }
@@ -378,5 +382,14 @@ export function orcaRuntime(
       orcaNotify(target, message, deadlines.runtimeTimeoutMs),
     steer: (session, nudge) =>
       orcaSteer(session, NUDGES[nudge], deadlines.runtimeTimeoutMs),
+    retire: (workspace, expected, timeoutMs) =>
+      orcaRetire(
+        workspace,
+        expected,
+        Math.min(
+          timeoutMs ?? deadlines.runtimeTimeoutMs,
+          deadlines.runtimeTimeoutMs,
+        ),
+      ),
   };
 }

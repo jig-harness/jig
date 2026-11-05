@@ -12,7 +12,7 @@
  * tick re-arms on.
  */
 import { createHash } from "node:crypto";
-import type { DrivenPr, Notice } from "./types.ts";
+import type { DrivenPr, Notice, RepoReport } from "./types.ts";
 
 const TAG = "[jig dispatch: ";
 
@@ -124,4 +124,15 @@ export function pickupNotice(
   reason: string,
 ): Notice {
   return notice(`${slug} ${key}`, [`${slug}: ${reason}.`]);
+}
+
+/** Absence of a cause proves nothing when its target was not observed in scope. */
+export function unobservedTarget(report: RepoReport, target: string): boolean {
+  return (
+    report.unplaced.some((u) => u.target === target) ||
+    (report.withheld ?? []).includes(target) ||
+    (report.inScope !== undefined &&
+      /^PR #\d+$/.test(target) &&
+      !report.inScope.some((n) => target === `PR #${n}`))
+  );
 }
