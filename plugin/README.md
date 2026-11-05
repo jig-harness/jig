@@ -1014,12 +1014,14 @@ review rounds (see the [drive-pr README](skills/drive-pr/README.md#ci-hold)).
 
 **Where a drive keeps its state.** A drive records its rounds, locks and
 leases (a [lease](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a short-lived claim that one session owns the pull
-request's threads) outside the repository, in a per-clone folder:
-`~/.local/state/jig/drive-pr/<clone>/` by default. Set
-`DRIVE_PR_STATE_DIR` to relocate its parent root, retaining one `<clone>/`
-subdirectory per clone. Existing flat overrides refuse until their artifacts'
-owners are established and their state explicitly relocated. To move existing state into another folder,
-run `bun <skill-dir>/scripts/migrate-state-dir.ts --from <old-dir>` (see the
+request's threads) outside the repository, in one SQLite database per
+machine, `~/.local/state/jig/drive-pr/state.sqlite` by default, keyed by
+clone, with a per-clone folder beside it for its logs:
+`~/.local/state/jig/drive-pr/<clone>/`. Set `DRIVE_PR_STATE_DIR` to relocate
+that root. A clone's folder an earlier release filled with state files is
+read into the database once and left in place. Existing flat overrides
+refuse until their artifacts' owners are established. To move the root, stop
+every drive, move it whole and export the new one (see the
 [drive-pr README](skills/drive-pr/README.md#relocating-the-state-dir)). The
 [verification-fit](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) log (the agent's recorded verdicts on whether each round's
 required validation was worth its cost) defaults to the Jig state
@@ -1429,11 +1431,13 @@ ignored without a notice, so each of them has to be moved by hand:
    `claude plugin marketplace remove groundwork`, and for Codex
    `codex plugin remove groundwork@groundwork` and
    `codex plugin marketplace remove groundwork`.
-3. To keep the history of the drives' state, move it:
-   `bun <drive-pr skill>/scripts/migrate-state-dir.ts --from ~/.local/state/groundwork/drive-pr`.
-   An override already containing per-clone directories needs no move for this
-   rename. A flat `DRIVE_PR_STATE_DIR` still needs the explicit relocation in
-   the [drive-pr README](skills/drive-pr/README.md#relocating-the-state-dir).
+3. To keep the history of the drives' state, move each per-clone directory
+   under `~/.local/state/groundwork/drive-pr/` to
+   `~/.local/state/jig/drive-pr/` before the first drive runs; the database
+   reads each one in at its first open. An override already containing
+   per-clone directories needs no move for this rename. A flat
+   `DRIVE_PR_STATE_DIR` still needs the explicit relocation in the
+   [drive-pr README](skills/drive-pr/README.md#relocating-the-state-dir).
 4. Rename any `GROUNDWORK_*` variables in shell profiles, launch agents and
    CI configuration to `JIG_*`.
 

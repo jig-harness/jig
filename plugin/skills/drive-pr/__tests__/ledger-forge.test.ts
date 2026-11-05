@@ -9,10 +9,11 @@ import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { formatClaim } from "../scripts/lib/claim.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { lockRow, putLock } from "./state-rows.ts";
 import {
   type Ledger,
   ledgerFromState,
@@ -57,6 +58,42 @@ function ledgersOn(forge: ReturnType<typeof fakeForge>): Map<number, Ledger> {
     if (parsed?.kind === "ledger") out.set(c.id, parsed.ledger);
   }
   return out;
+}
+
+const stateRows = new URL("./state-rows.ts", import.meta.url).href;
+
+/**
+ * `forge` behind a `gh` that removes PR 999's lock from the clone `leaf`
+ * names once the forge has answered its first listing, before the caller
+ * reads the answer: a driver releasing its lock during the reads.
+ */
+function releasingLockOnFirstList(
+  forge: ReturnType<typeof fakeForge>,
+  leaf: string,
+): ReturnType<typeof fakeForge> {
+  const forgeGh = Bun.which("gh", { PATH: forge.env.PATH ?? "" });
+  if (forgeGh === null) throw new Error("the fake forge's gh is not on PATH");
+  const bin = join(dirname(forge.dir), "release-bin");
+  mkdirSync(bin, { recursive: true });
+  writeFakeProgram(
+    join(bin, "gh"),
+    `#!/usr/bin/env bun
+const { existsSync, readFileSync, writeFileSync } = require("node:fs");
+const F = process.env.LEDGER_FAKE_DIR;
+const r = Bun.spawnSync([${JSON.stringify(forgeGh)}, ...process.argv.slice(2)], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+const listed = existsSync(F + "/list-count") ? readFileSync(F + "/list-count", "utf8") : "0";
+if (listed === "1" && !existsSync(F + "/lock-released")) {
+  const { removeLock } = await import(${JSON.stringify(stateRows)});
+  removeLock(${JSON.stringify(leaf)}, "pr-drive-999");
+  writeFileSync(F + "/lock-released", "");
+}
+process.exit(r.exitCode ?? 1);
+`,
+  );
+  return {
+    ...forge,
+    env: { ...forge.env, PATH: `${bin}${delimiter}${forge.env.PATH ?? ""}` },
+  };
 }
 
 async function handoff(
@@ -378,17 +415,14 @@ describe("the ledger written from the drive state", () => {
   it("is not written once its driver loses the PR's lock during the reads", async () => {
     const forge = fakeForge([], { login: "drive-bot" });
     const started = "2026-10-01T09:00:00.000Z";
-    const lock = join(
-      scopedStateDir(forge.stateDir, forge.repo),
-      "pr-drive-999.lock",
-    );
-    mkdirSync(lock, { recursive: true });
-    writeFileSync(
-      join(lock, "claim.feedc0de"),
-      formatClaim(process.pid, hostname(), {
+    const leaf = scopedStateDir(forge.stateDir, forge.repo);
+    putLock(leaf, "pr-drive-999", {
+      token: "feedc0de",
+      host: hostname(),
+      diag: {
         pr: "999",
         worktree: forge.repo,
-        log: join(lock, "drive.log"),
+        log: join(leaf, "drive-pr-999.log"),
         started,
         account: {
           account: null,
@@ -396,18 +430,17 @@ describe("the ledger written from the drive state", () => {
           provenance: "none",
           reason: "test",
         },
-      }),
-    );
+      },
+    });
     // The driver releases its lock while the write reads the comments.
-    writeFileSync(
-      join(forge.dir, "remove-on-list"),
-      JSON.stringify({ n: 1, path: lock }),
-    );
-    const env = JSON.parse(driverEnv(CLONE));
-    const r = await handoff(forge, {
-      DRIVE_PR_LEDGER_DRIVER: JSON.stringify({ ...env, started }),
+    const r = await handoff(releasingLockOnFirstList(forge, leaf), {
+      DRIVE_PR_LEDGER_DRIVER: JSON.stringify({
+        ...JSON.parse(driverEnv(CLONE)),
+        started,
+      }),
     });
     expectSpawnExit(r, 0);
+    expect(lockRow(leaf, "pr-drive-999")).toBeNull();
     expect(r.stderr).toContain("no longer holds PR #999's lock");
     expect(forge.comments()).toEqual([]);
   });

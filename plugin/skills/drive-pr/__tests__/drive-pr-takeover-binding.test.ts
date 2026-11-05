@@ -10,10 +10,11 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { inspectLock } from "../scripts/lib/driver/locks.ts";
 import { isTakeoverRecord } from "../scripts/lib/state/takeover.ts";
 import {
   gitCleanEnv,
@@ -56,13 +57,11 @@ async function drives(stateDir: string, args: string[]) {
   return { stdout, stderr, exitCode };
 }
 
-/** The acquisition time PR 999's planted claim records. */
+/** The acquisition time PR 999's planted lock records. */
 function claimStarted(stateDir: string): string {
-  const lock = join(stateDir, "pr-drive-999.lock");
-  const claim = readdirSync(lock).find((f) => f.startsWith("claim."));
-  if (claim === undefined) throw new Error("no claim planted");
-  const diag = readFileSync(join(lock, claim), "utf8").split("\n")[1] ?? "";
-  return (JSON.parse(diag) as { started: string }).started;
+  const started = inspectLock(stateDir, "pr-drive-999")?.diag?.started;
+  if (started === undefined) throw new Error("no lock planted");
+  return started;
 }
 
 describe("drives.ts --stop --expect-started", () => {

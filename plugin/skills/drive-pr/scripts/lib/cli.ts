@@ -29,7 +29,7 @@ export {
  * documented caller derives via `git rev-parse HEAD` (never `--short`, never an
  * abbreviation). Rejecting anything looser than that at the argument boundary
  * is what closes a whole class of malformed-input, not just CR/LF: a value this
- * permits can never contain a newline (it fails-closed the shared state file on
+ * permits can never contain a newline (it fails-closed the shared stored state on
  * the next read) or a backtick/pipe (it corrupts the handoff's markdown table,
  * which renders both SHAs and actor ids inside backtick code spans and
  * pipe-delimited rows).

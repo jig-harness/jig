@@ -210,7 +210,7 @@ export async function runRoundIteration(
   // drive-status.ts bumped the durable round count for this head on its way
   // to exit 0, so read it back rather than deriving it; the durable
   // per-head attempt count is bumped here, because a pass is this loop's
-  // event, not the status check's. Both reads are hard — a state file this
+  // event, not the status check's. Both reads are hard — a stored state this
   // loop cannot read is a loop with no bound, and continuing on a default
   // is the fail-open.
   const readRoundBudgetResult = await readRoundBudget(

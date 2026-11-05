@@ -5,25 +5,27 @@
 
 import { describe, expect, it } from "bun:test";
 
-import {
-  existsSync,
-  mkdirSync,
-  rmSync,
-  utimesSync,
-  writeFileSync,
-} from "node:fs";
-
-import { hostname } from "node:os";
+import { existsSync } from "node:fs";
 
 import { join } from "node:path";
 
-import { claimPathFor, newClaimToken } from "../scripts/lib/state/claims";
+import { newClaimToken } from "../scripts/lib/state/claims";
 
 import {
   clearAllLeases,
-  leasePathFor,
-  treeLeasePathFor,
+  leaseRef,
+  treeLeaseRef,
 } from "../scripts/lib/state/lease";
+
+import {
+  claimRow,
+  hasState,
+  putClaim,
+  putLease,
+  readLease,
+  removeLease,
+  removeTreeLease,
+} from "./state-rows.ts";
 
 import { ACTOR, useDrivePrSuite } from "./drive-pr-harness.ts";
 import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
@@ -48,11 +50,11 @@ describe("drive-state.ts durability", () => {
     const { A_URL, B_URL, holdAs } = stateSessionLeaseFixtures;
 
     it("reset REFUSES while another tree is live, deleting nothing", async () => {
-      // Preserving the foreign lease was not enough: the state file and the
-      // CLAIM files are shared across trees. A live session mid-dispatch has
-      // already created its claim file and may not have posted yet — deleting
-      // it lets this tree rebuild state, see the finding as unaddressed, and
-      // dispatch the same non-idempotent answer again.
+      // Preserving the foreign lease is not enough: the state and the CLAIMS
+      // are shared across trees. A live session mid-dispatch has already
+      // created its claim and may not have posted yet — deleting it lets this
+      // tree rebuild state, see the finding as unaddressed, and dispatch the
+      // same non-idempotent answer again.
       //
       // Still exit 9 under the PR-wide admission gate, and WHY is worth
       // stating: this tree took its lease at the `bump-round` below, before the
@@ -68,26 +70,14 @@ describe("drive-state.ts durability", () => {
         await state(d, ["bump-round", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(process.pid),
         });
-        const foreignActor = "wt-00000000000000ff";
-        writeFileSync(
-          leasePathFor(d, "999", foreignActor),
-          JSON.stringify({
-            holder: "session",
-            pid: other.pid,
-            host: hostname(),
-            platform: process.platform,
-            actor: foreignActor,
-            worktree: "/tmp/probe-tree",
-            startedAt: new Date().toISOString(),
-            lastSeen: new Date().toISOString(),
-            command: "hold",
-            generation: "a".repeat(32),
-            sessionStarted: "",
-          }),
-        );
-        // A claim file standing in for that session's in-flight dispatch.
-        const claim = claimPathFor(d, "999", "FP");
-        writeFileSync(claim, newClaimToken());
+        const foreign = leaseRef(d, "999", "wt-00000000000000ff");
+        putLease(foreign, {
+          pid: other.pid,
+          worktree: "/tmp/probe-tree",
+          command: "hold",
+        });
+        // A claim standing in for that session's in-flight dispatch.
+        putClaim(d, "999", "held", "FP", newClaimToken());
 
         const r = await state(d, ["reset", "999"], {
           DRIVE_PR_SESSION: String(process.pid),
@@ -96,157 +86,40 @@ describe("drive-state.ts durability", () => {
         expect(r.stderr).toContain("refusing to reset");
         expect(r.stderr).toContain(`pid ${other.pid}`);
         // Nothing shared was touched — that is the whole point.
-        expect(existsSync(join(d, "drive-pr-999.json"))).toBe(true);
-        expect(existsSync(claim)).toBe(true);
-        expect(existsSync(leasePathFor(d, "999", foreignActor))).toBe(true);
+        expect(hasState(d, "999")).toBe(true);
+        expect(claimRow(d, "999", "held", "FP")).not.toBeNull();
+        expect(readLease(foreign)).not.toBeNull();
       } finally {
         other.stop();
       }
     });
 
-    it("a lock whose acquire fails is still disposed", async () => {
-      // `createLock` installs its exit/SIGINT/SIGTERM handlers at CONSTRUCTION,
-      // so a lock registered only after a successful `acquire` leaks three
-      // listeners on every failed attempt — the exact leak disposal was added
-      // to stop, reintroduced on the failure path.
-      const d = stateDirFor("dispose-on-acquire-fail");
-      const f = leasePathFor(d, "999", "wt-00000000000000ab");
-      writeFileSync(
-        f,
-        JSON.stringify({
-          holder: "session",
-          pid: 999_999,
-          host: "nowhere",
-          platform: "linux",
-          actor: "wt-00000000000000ab",
-          worktree: "/tmp/probe-tree",
-          startedAt: "2020-01-01T00:00:00.000Z",
-          lastSeen: "2020-01-01T00:00:00.000Z",
-          command: "hold",
-          generation: "b".repeat(32),
-          sessionStarted: "",
-        }),
-      );
-      mkdirSync(`${f}.lock`, { recursive: true });
-      writeFileSync(join(`${f}.lock`, "owner.someone-else"), "");
-
-      const prev = {
-        t: process.env.DRIVE_PR_LOCK_TIMEOUT,
-        s: process.env.DRIVE_PR_LOCK_STALE_MIN,
-      };
-      // One immediate attempt per acquire: the failure path is the subject,
-      // not how long it waits before failing.
-      process.env.DRIVE_PR_LOCK_TIMEOUT = "0";
-      process.env.DRIVE_PR_LOCK_STALE_MIN = "60";
-      try {
-        const events = ["exit", "SIGINT", "SIGTERM"] as const;
-        const before = events.map((e) => process.listenerCount(e));
-        // Several failed attempts, because one leak is easy to miss in noise.
-        for (let i = 0; i < 3; i++) {
-          await expect(clearAllLeases(d, "999", null)).rejects.toThrow();
-        }
-        expect(events.map((e) => process.listenerCount(e))).toEqual(before);
-      } finally {
-        // Assigning undefined would store the string "undefined".
-        for (const [key, value] of [
-          ["DRIVE_PR_LOCK_TIMEOUT", prev.t],
-          ["DRIVE_PR_LOCK_STALE_MIN", prev.s],
-        ] as const) {
-          if (value === undefined) delete process.env[key];
-          else process.env[key] = value;
-        }
-      }
-    });
-
-    it("reports a deletion failure as an explicit PARTIAL sweep, naming both halves", async () => {
-      // `force: true` only makes a MISSING target harmless — deletion can still
-      // fail (EACCES, EPERM, EROFS, I/O). The two-phase split makes a phase-1
-      // failure mean "nothing changed"; a phase-2 failure genuinely is partial,
-      // and claiming otherwise would be false. It must SAY so.
-      //
-      // A directory named like a lease file is the portable way to make
-      // `rmSync(f, { force: true })` throw: `leaseFilesFor` matches on name,
-      // and `rmSync` without `recursive` refuses a directory on every platform.
-      const d = stateDirFor("sweep-partial-report");
-      const ok = leasePathFor(d, "999", "wt-0000000000000001");
-      writeFileSync(
-        ok,
-        JSON.stringify({
-          holder: "session",
-          pid: 999_999,
-          host: "nowhere",
-          platform: "linux",
-          actor: "wt-0000000000000001",
-          worktree: "/tmp/probe-tree",
-          startedAt: "2020-01-01T00:00:00.000Z",
-          lastSeen: "2020-01-01T00:00:00.000Z",
-          command: "hold",
-          generation: "1".repeat(32),
-          sessionStarted: "",
-        }),
-      );
-      const undeletable = leasePathFor(d, "999", "wt-0000000000000002");
-      mkdirSync(undeletable, { recursive: true });
-      writeFileSync(join(undeletable, "blocker"), "");
-
-      await expect(clearAllLeases(d, "999", null)).rejects.toThrow(
-        /PARTIAL sweep/,
-      );
-      // Every doomed entry is attempted, so the deletable one really is gone —
-      // which is exactly why the error has to name both halves rather than let
-      // the caller assume nothing happened.
-      expect(existsSync(ok)).toBe(false);
-      expect(existsSync(undeletable)).toBe(true);
-
-      await expect(clearAllLeases(d, "999", null)).rejects.toThrow(
-        /Left in place[\s\S]*wt-0000000000000002/,
-      );
-    });
-
     it("a MIXED lease set refuses without sweeping the stale ones", async () => {
-      // `reset`'s exit-9 diagnostic promises nothing was deleted. That was
-      // false while phase 2 ran before the caller could refuse: a set holding
-      // both stale leases and one live foreign lease swept the stale ones and
-      // THEN returned the refusal. The
-      // sweep now returns before deleting, so the promise holds and the
-      // function's own contract is simply "everything, or nothing".
+      // `reset`'s exit-9 diagnostic promises nothing was deleted. A sweep
+      // that removed the stale leases of a set holding one live foreign lease
+      // and THEN returned the refusal would break that promise. The sweep
+      // decides before deleting, so the promise holds and the function's own
+      // contract is simply "everything, or nothing".
       const d = stateDirFor("sweep-mixed-refuses");
       const other = liveSession();
       try {
-        const stale = leasePathFor(d, "999", "wt-0000000000000001");
-        writeFileSync(
-          stale,
-          JSON.stringify({
-            holder: "session",
-            pid: 999_999,
-            host: "nowhere",
-            platform: "linux",
-            actor: "wt-0000000000000001",
-            worktree: "/tmp/probe-tree",
-            startedAt: "2020-01-01T00:00:00.000Z",
-            lastSeen: "2020-01-01T00:00:00.000Z",
-            command: "hold",
-            generation: "1".repeat(32),
-            sessionStarted: "",
-          }),
-        );
-        const liveForeign = leasePathFor(d, "999", "wt-0000000000000002");
-        writeFileSync(
-          liveForeign,
-          JSON.stringify({
-            holder: "session",
-            pid: other.pid,
-            host: hostname(),
-            platform: process.platform,
-            actor: "wt-0000000000000002",
-            worktree: "/tmp/probe-tree",
-            startedAt: new Date().toISOString(),
-            lastSeen: new Date().toISOString(),
-            command: "hold",
-            generation: "2".repeat(32),
-            sessionStarted: "",
-          }),
-        );
+        const stale = leaseRef(d, "999", "wt-0000000000000001");
+        putLease(stale, {
+          pid: 999_999,
+          host: "nowhere",
+          platform: "linux",
+          worktree: "/tmp/probe-tree",
+          startedAt: "2020-01-01T00:00:00.000Z",
+          lastSeen: "2020-01-01T00:00:00.000Z",
+          expiresAt: "2020-01-01T06:00:00.000Z",
+          command: "hold",
+        });
+        const liveForeign = leaseRef(d, "999", "wt-0000000000000002");
+        putLease(liveForeign, {
+          pid: other.pid,
+          worktree: "/tmp/probe-tree",
+          command: "hold",
+        });
 
         const { preservedForeign, removed } = await clearAllLeases(
           d,
@@ -254,27 +127,25 @@ describe("drive-state.ts durability", () => {
           null,
         );
         expect(preservedForeign).toHaveLength(1);
-        // Nothing was removed — the point this test makes, now checkable
-        // directly against the function's own report rather than only
-        // inferred from the files still being on disk.
+        // Nothing was removed — the point this test makes, checked directly
+        // against the function's own report as well as against the rows.
         expect(removed).toEqual([]);
         // The stale one is UNTOUCHED — that is the claim `reset` makes.
-        expect(existsSync(stale)).toBe(true);
-        expect(existsSync(liveForeign)).toBe(true);
+        expect(readLease(stale)).not.toBeNull();
+        expect(readLease(liveForeign)).not.toBeNull();
       } finally {
         other.stop();
       }
     });
 
     it("CREATING a lease takes the state mutex, not just taking one over", async () => {
-      // Scoping the state mutex to TAKEOVERS alone leaves `reset` exposed
+      // Scoping the state mutex to TAKEOVERS alone would leave `reset` exposed
       // to a tree it had never seen: a new actor's first claim writes its lease
       // AFTER `clearAllLeases` enumerated, so the sweep reports no live foreign
-      // lease, reset deletes the shared state and claim files, and the freshly
+      // lease, reset deletes the shared state and claims, and the freshly
       // admitted command then runs against reset state with its own lease
-      // intact. The rule is now "any write
-      // that MINTS a new generation takes the state mutex", which covers
-      // creation as well as takeover.
+      // intact. The rule is "any write that MINTS a new generation takes the
+      // state mutex", which covers creation as well as takeover.
       //
       // Modelled by removing the lease mid-stall so the next claim is a
       // CREATION (`held === null`) — the same state a never-seen tree is in —
@@ -314,8 +185,8 @@ describe("drive-state.ts durability", () => {
         // genuinely different session here would now ALSO collide with
         // `holder`'s still-live TREE lease — a real, separate
         // mechanism this test is not about.
-        const leaseFile = leasePathFor(d, "999", ACTOR);
-        rmSync(leaseFile, { force: true });
+        const ref = leaseRef(d, "999", ACTOR);
+        removeLease(ref);
 
         const creating = state(d, ["bump-round", "999", "--head", "ccc"], {
           DRIVE_PR_SESSION: String(holder.pid),
@@ -327,19 +198,18 @@ describe("drive-state.ts durability", () => {
         // The assertion is about WHEN THE LEASE APPEARS, not about completion
         // order. `bump-round` blocks on the state mutex for its own mutation
         // either way, so both orderings finish holder-then-creator and an
-        // order-only probe cannot tell them apart — an earlier version of this
-        // test did exactly that and stayed green under mutation. What the fix
-        // changes is that `claimLease` writes the lease only after taking the
-        // state mutex, so while the holder still owns it the file must not
-        // exist. Without the fix it reappears almost immediately, which is
-        // precisely how `reset` came to miss it.
+        // order-only probe cannot tell them apart, staying green under
+        // mutation. `claimLease` writes the lease only after taking the state
+        // mutex, so while the holder still owns it the row must not exist. A
+        // claim that skipped the mutex would write it almost immediately,
+        // which is precisely how `reset` would miss it.
         await new Promise((r) => setTimeout(r, 1200));
-        expect(existsSync(leaseFile)).toBe(false);
+        expect(readLease(ref)).toBeNull();
 
         await Promise.all([running, creating]);
         expect(done).toEqual(["holder", "creator"]);
         // …and once the mutex frees, the lease really is created.
-        expect(existsSync(leaseFile)).toBe(true);
+        expect(readLease(ref)).not.toBeNull();
       } finally {
         holder.stop();
       }
@@ -351,10 +221,10 @@ describe("drive-state.ts durability", () => {
       // from this checkout with no session identity at all (tier 3 — both
       // `$DRIVE_PR_SESSION` and `$CLAUDE_PID` unset) and `claimLease` admits
       // nothing, yet a real driver's live lease here still has
-      // `actor === selfActor`. It was therefore treated as "mine, not news",
-      // and reset deleted the shared state and claim files out from under a
-      // live driver whose generation is unchanged — so its fence still passes
-      // and its in-flight finding dispatch can be duplicated.
+      // `actor === selfActor`. Treated as "mine, not news", reset would delete
+      // the shared state and claims out from under a live driver whose
+      // generation is unchanged — so its fence would still pass and its
+      // in-flight finding dispatch could be duplicated.
       const d = stateDirFor("reset-unidentified");
       const driver = liveSession();
       try {
@@ -369,9 +239,8 @@ describe("drive-state.ts durability", () => {
         // `clearAllLeases`'s own `isOwn` protection, which remains the last
         // line for a per-PR lease with no accompanying tree lease — a driver
         // whose tree lease independently expired.
-        rmSync(treeLeasePathFor(d, ACTOR), { force: true });
-        const claim = claimPathFor(d, "999", "FP");
-        writeFileSync(claim, newClaimToken());
+        removeTreeLease(treeLeaseRef(d, ACTOR));
+        putClaim(d, "999", "held", "FP", newClaimToken());
 
         // …and a reset with no session identity whatsoever.
         const r = await state(d, ["reset", "999"], {
@@ -382,9 +251,9 @@ describe("drive-state.ts durability", () => {
         expect(r.stderr).toContain("refusing to reset");
         expect(r.stderr).toContain(`pid ${driver.pid}`);
         // Nothing shared was deleted underneath the live driver.
-        expect(existsSync(join(d, "drive-pr-999.json"))).toBe(true);
-        expect(existsSync(claim)).toBe(true);
-        expect(existsSync(leasePathFor(d, "999", ACTOR))).toBe(true);
+        expect(hasState(d, "999")).toBe(true);
+        expect(claimRow(d, "999", "held", "FP")).not.toBeNull();
+        expect(readLease(leaseRef(d, "999", ACTOR))).not.toBeNull();
       } finally {
         driver.stop();
       }
@@ -392,11 +261,11 @@ describe("drive-state.ts durability", () => {
 
     it("reset refuses while a claim is LIVE, even one of its own session", async () => {
       // A finding's answer is POSTed outside the state mutex, between claiming
-      // and releasing. So the claiming session's own lease is `isOwn` — round
-      // 15's ownership test says "mine, not blocking" — while its dispatch has
-      // not landed. Deleting the claim there lets any later command see the
-      // finding as unaddressed and answer it again, which is the duplicate
-      // top-level comment the claim protocol exists to prevent.
+      // and releasing. So the claiming session's own lease is `isOwn` —
+      // `clearAllLeases`'s ownership test says "mine, not blocking" — while
+      // its dispatch has not landed. Deleting the claim there lets any later
+      // command see the finding as unaddressed and answer it again, which is
+      // the duplicate top-level comment the claim protocol exists to prevent.
       //
       // Keyed on the CLAIM rather than on ownership, precisely because
       // ownership is what fails to discriminate here: this reset runs under the
@@ -404,66 +273,65 @@ describe("drive-state.ts durability", () => {
       const d = stateDirFor("reset-live-claim");
       const S = { DRIVE_PR_SESSION: String(process.pid) };
       await state(d, ["bump-round", "999", "--head", "aaa"], S);
-      const claim = claimPathFor(d, "999", "FP");
-      writeFileSync(claim, newClaimToken());
+      const token = newClaimToken();
+      putClaim(d, "999", "held", "FP", token);
 
       const r = await state(d, ["reset", "999"], S);
       expect(r.exitCode).toBe(9);
       expect(r.stderr).toContain("live claim");
-      expect(existsSync(claim)).toBe(true);
-      expect(existsSync(join(d, "drive-pr-999.json"))).toBe(true);
+      expect(claimRow(d, "999", "held", "FP")).not.toBeNull();
+      expect(hasState(d, "999")).toBe(true);
 
       // A STALE claim is not a dispatch in flight, so it must NOT block the
-      // reset a human ran to clear exactly that kind of debris.
-      const old = Date.now() - 60 * 60_000;
-      utimesSync(claim, new Date(old), new Date(old));
+      // reset a human ran to clear exactly that kind of debris. A claim's age
+      // is its row's `at`.
+      putClaim(
+        d,
+        "999",
+        "held",
+        "FP",
+        token,
+        new Date(Date.now() - 60 * 60_000).toISOString(),
+      );
       const second = await state(d, ["reset", "999"], S);
       expect(second.exitCode).toBe(0);
-      expect(existsSync(claim)).toBe(false);
+      expect(claimRow(d, "999", "held", "FP")).toBeNull();
     });
 
     it("reset refused by a live claim still reports a stale lease it already swept", async () => {
       // The mixed case the previous test's own comment flagged as uncovered:
       // `clearAllLeases` runs BEFORE the live-claim check and sweeps stale
       // leases unconditionally on its non-refusing path, so a reset that goes
-      // on to refuse on a live claim can still have mutated the lease set.
-      // The old unconditional "Nothing has been deleted" wording was false
-      // whenever that happened.
+      // on to refuse on a live claim can still have mutated the lease set,
+      // and an unconditional "Nothing has been deleted" would then be false.
       const d = stateDirFor("reset-live-claim-mixed-lease");
       const S = { DRIVE_PR_SESSION: String(process.pid) };
       await state(d, ["bump-round", "999", "--head", "aaa"], S);
-      const claim = claimPathFor(d, "999", "FP");
-      writeFileSync(claim, newClaimToken());
+      putClaim(d, "999", "held", "FP", newClaimToken());
 
       // A lease from a session that is definitively gone — stale by both age
       // and a pid nothing owns, same fixture shape as the MIXED-set probe
       // above.
-      const stale = leasePathFor(d, "999", "wt-0000000000000099");
-      writeFileSync(
-        stale,
-        JSON.stringify({
-          holder: "session",
-          pid: 999_999,
-          host: "nowhere",
-          platform: "linux",
-          actor: "wt-0000000000000099",
-          worktree: "/tmp/probe-tree",
-          startedAt: "2020-01-01T00:00:00.000Z",
-          lastSeen: "2020-01-01T00:00:00.000Z",
-          command: "hold",
-          generation: "9".repeat(32),
-          sessionStarted: "",
-        }),
-      );
+      const stale = leaseRef(d, "999", "wt-0000000000000099");
+      putLease(stale, {
+        pid: 999_999,
+        host: "nowhere",
+        platform: "linux",
+        worktree: "/tmp/probe-tree",
+        startedAt: "2020-01-01T00:00:00.000Z",
+        lastSeen: "2020-01-01T00:00:00.000Z",
+        expiresAt: "2020-01-01T06:00:00.000Z",
+        command: "hold",
+      });
 
       const r = await state(d, ["reset", "999"], S);
       expect(r.exitCode).toBe(9);
       // Swept, even though the reset as a whole refused.
-      expect(existsSync(stale)).toBe(false);
-      // What the refusal is actually FOR — the state file and the live claim
-      // — stayed untouched.
-      expect(existsSync(claim)).toBe(true);
-      expect(existsSync(join(d, "drive-pr-999.json"))).toBe(true);
+      expect(readLease(stale)).toBeNull();
+      // What the refusal is actually FOR — the state and the live claim —
+      // stayed untouched.
+      expect(claimRow(d, "999", "held", "FP")).not.toBeNull();
+      expect(hasState(d, "999")).toBe(true);
       // The message must not claim nothing was deleted when a lease was.
       expect(r.stderr).not.toContain("Nothing has been deleted");
       expect(r.stderr).toContain("stale session lease");
@@ -600,10 +468,10 @@ describe("drive-state.ts durability", () => {
     });
 
     it("refuses a SESSIONLESS tree too — taking a lease needs an identity, checking one does not", async () => {
-      // Ladder tier 3 returned before the PR-wide gate ever ran, so a runtime
-      // that identifies no session mutated straight through it — and two such
-      // resolvers in two worktrees still produced the doubled outcome replies
-      // this module exists to prevent. Taking a lease
+      // A ladder tier 3 that returned before the PR-wide gate ran would let a
+      // runtime that identifies no session mutate straight through it — and
+      // two such resolvers in two worktrees would still produce the doubled
+      // outcome replies this module exists to prevent. Taking a lease
       // and reading someone else's are different capabilities, and only the
       // first needs an identity.
       const { a, b, env } = twoDrivers("lease-cross-tree-sessionless");
@@ -633,8 +501,7 @@ describe("drive-state.ts durability", () => {
         // the reverse order would leave a refused tree holding a live record
         // its own next command would fast-path off. Asserted through the read
         // surface because these two worktrees share the CLONE-WIDE state dir
-        // that `twoDrivers` deliberately leaves unset, so the test has no path
-        // to stat: only A's lease exists.
+        // that `twoDrivers` deliberately leaves unset: only A's lease exists.
         const leases = JSON.parse(
           drive(a, ea, ["lease", "999", "--all"]).stdout,
         );

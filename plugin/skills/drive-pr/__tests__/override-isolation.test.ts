@@ -3,24 +3,17 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
-  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
 import { gitIdentityEnv } from "../scripts/lib/proc.ts";
-import {
-  sameDirIdentity,
-  statDirIdentity,
-  parseDirIdentityToken,
-  captureStateDirIdentityToken,
-} from "../scripts/lib/state/lease-files.ts";
+import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
+import { readState } from "./state-rows.ts";
 
-const VOLUME = "11111111-2222-3333-4444-555555555555";
-const OTHER_VOLUME = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const root = mkdtempSync(join(tmpdir(), "override-isolation-"));
 const store = join(import.meta.dir, "../scripts/lib/state/store.ts");
 const env = { ...gitIdentityEnv(), DRIVE_PR_STATE_DIR: join(root, "shared") };
@@ -65,9 +58,8 @@ test("same-numbered PR stores and locks are isolated across repositories", () =>
   expect(x.tree).not.toBe(y.tree);
   expect(x.rounds).toBe(1);
   expect(y.rounds).toBe(1);
-  expect(
-    JSON.parse(readFileSync(join(x.dir, "drive-pr-161.json"), "utf8")).rounds,
-  ).toBe(1);
+  expect(readState(x.dir, "161")?.rounds).toBe(1);
+  expect(readState(y.dir, "161")?.rounds).toBe(1);
 });
 
 test("an existing unbound flat foreign state is refused without alteration", () => {
@@ -87,101 +79,42 @@ test("an existing unbound flat foreign state is refused without alteration", () 
   expect(readFileSync(flat, "utf8")).toBe(bytes);
 });
 
-test("device drift needs matching inode, birth time, canonical path and volume UUID", async () => {
-  const dir = join(root, "identity");
-  mkdirSync(dir);
-  const original = statDirIdentity(dir);
-  if (original === null) throw new Error("cannot stat identity fixture");
-  const token = parseDirIdentityToken(
-    await captureStateDirIdentityToken(dir, async () => VOLUME),
-  );
-  expect(token.kind).toBe("ok");
-  if (token.kind !== "ok") throw new Error("identity transport failed");
-  const drift = { ...original, dev: original.dev + 1n, volumeUUID: VOLUME };
-  expect(
-    sameDirIdentity(token.id, { ...drift, volumeUUID: OTHER_VOLUME }),
-  ).toBe(false);
-  expect(
-    sameDirIdentity(token.id, { ...original, dev: original.dev + 1n }),
-  ).toBe(false);
-  expect(sameDirIdentity(token.id, drift)).toBe(true);
-  expect(sameDirIdentity(token.id, { ...original, birthtimeNs: 0n })).toBe(
-    true,
-  );
-  expect(
-    sameDirIdentity(
-      { ...token.id, volumeUUID: "" },
-      { ...drift, volumeUUID: "" },
-    ),
-  ).toBe(false);
-  expect(sameDirIdentity(token.id, { ...drift, ino: original.ino + 1n })).toBe(
-    false,
-  );
-  expect(sameDirIdentity(token.id, { ...drift, birthtimeNs: 0n })).toBe(false);
-  expect(
-    sameDirIdentity(token.id, { ...drift, pathHash: "0".repeat(64) }),
-  ).toBe(false);
-  expect(sameDirIdentity({ dev: original.dev, ino: original.ino }, drift)).toBe(
-    false,
-  );
-  renameSync(dir, `${dir}-old`);
-  mkdirSync(dir);
-  expect(sameDirIdentity(token.id, statDirIdentity(dir))).toBe(false);
-});
-
-test("the inherited mutation fence accepts proven device drift and refuses replacement", async () => {
+test("the inherited mutation fence accepts its driver's database and refuses another", () => {
   const cwd = repo("fence");
   const setup = probe(cwd, 'console.log((await openStore("161")).stateDir);', {
     DRIVE_PR_STATE_DIR: join(root, "fence-state"),
   });
   expectSpawnExit(setup, 0);
   const dir = setup.stdout.toString().trim();
-  const token = await captureStateDirIdentityToken(dir, async () => VOLUME);
-  const parts = token.split(":");
-  const device = parts[0];
-  if (device === undefined) throw new Error("missing device field");
-  parts[0] = String(BigInt(device) + 1n);
   const extra = {
     DRIVE_PR_STATE_DIR: dir,
-    DRIVE_PR_STATE_DIR_IDENTITY: parts.join(":"),
+    DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(dir),
     FENCE_MODULE: join(
       import.meta.dir,
       "../scripts/lib/state/lease-context.ts",
     ),
-    TEST_VOLUME: VOLUME,
   };
   const code =
-    'const {resolveFenceContext} = await import(process.env.FENCE_MODULE); await resolveFenceContext("guard-probe", async()=>process.env.TEST_VOLUME || null);';
-  expectSpawnExit(probe(cwd, code, { ...extra, TEST_VOLUME: OTHER_VOLUME }), 1);
-  expectSpawnExit(probe(cwd, code, { ...extra, TEST_VOLUME: "" }), 1);
+    'const {resolveFenceContext} = await import(process.env.FENCE_MODULE); await resolveFenceContext("guard-probe");';
   expectSpawnExit(probe(cwd, code, extra), 0);
-  const racingCode = code.replace(
-    "async()=>process.env.TEST_VOLUME || null",
-    'async()=>{ const fs=await import("node:fs"); const dir=process.env.DRIVE_PR_STATE_DIR; fs.renameSync(dir,dir+"-during-probe"); fs.mkdirSync(dir); return process.env.TEST_VOLUME; }',
-  );
-  const raced = probe(cwd, racingCode, extra);
-  expectSpawnExit(raced, 1);
-  expect(raced.stderr.toString()).toContain(
-    "replaced while checking the volume identity",
-  );
-  renameSync(dir, `${dir}-old`);
-  mkdirSync(dir);
+  const wrong = probe(cwd, code, {
+    ...extra,
+    DRIVE_PR_STATE_DIR_IDENTITY: "00000000-0000-4000-8000-000000000000",
+  });
+  expectSpawnExit(wrong, 1);
+  expect(wrong.stderr.toString()).toContain("is not the one this drive opened");
+  const absent = probe(cwd, code, {
+    ...extra,
+    DRIVE_PR_STATE_DIR_IDENTITY: "",
+  });
+  expectSpawnExit(absent, 1);
+  for (const suffix of ["", "-wal", "-shm"])
+    rmSync(join(dirname(dir), `state.sqlite${suffix}`), { force: true });
   const replaced = probe(cwd, code, extra);
   expectSpawnExit(replaced, 1);
   expect(replaced.stderr.toString()).toContain(
-    "not the one this drive resolved",
+    "is not the one this drive opened",
   );
-});
-
-test("arming refuses a replacement during the volume lookup", async () => {
-  const dir = join(root, "arm-swap");
-  mkdirSync(dir);
-  const token = await captureStateDirIdentityToken(dir, async () => {
-    renameSync(dir, `${dir}-old`);
-    mkdirSync(dir);
-    return VOLUME;
-  });
-  expect(token).toBe("");
 });
 
 test("a wandering pass keeps the clone pinned by its driver", () => {
@@ -190,18 +123,18 @@ test("a wandering pass keeps the clone pinned by its driver", () => {
   const rootOverride = join(root, "anchored-state");
   const setup = probe(
     a,
-    `const s=await openStore("161"); s.write({...s.read().state,rounds:3}); console.log(s.file);`,
+    `const s=await openStore("161"); s.write({...s.read().state,rounds:3}); console.log(s.stateDir);`,
     { DRIVE_PR_STATE_DIR: rootOverride },
   );
   expectSpawnExit(setup, 0);
-  const file = setup.stdout.toString().trim();
-  for (const override of [rootOverride, join(file, "..")]) {
+  const dir = setup.stdout.toString().trim();
+  for (const override of [rootOverride, dir]) {
     const read = probe(
       b,
-      `const s=await openStore("161"); console.log(JSON.stringify({file:s.file,rounds:s.read().state.rounds}));`,
+      `const s=await openStore("161"); console.log(JSON.stringify({dir:s.stateDir,rounds:s.read().state.rounds}));`,
       { DRIVE_PR_STATE_DIR: override, DRIVE_PR_WORKTREE: a },
     );
     expectSpawnExit(read, 0);
-    expect(JSON.parse(read.stdout.toString())).toEqual({ file, rounds: 3 });
+    expect(JSON.parse(read.stdout.toString())).toEqual({ dir, rounds: 3 });
   }
 });

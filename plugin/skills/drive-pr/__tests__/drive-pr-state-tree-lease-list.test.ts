@@ -5,15 +5,7 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-
-import { join } from "node:path";
-
-import {
-  leaseFilesFor,
-  leasePathFor,
-  readLease,
-} from "../scripts/lib/state/lease";
+import { leaseRef, readLease } from "../scripts/lib/state/lease";
 
 import {
   ACTOR,
@@ -23,6 +15,7 @@ import {
 } from "./drive-pr-harness.ts";
 import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
 import { createStateSessionLeaseFixtures } from "./drive-pr-state-session-lease-fixtures.ts";
+import { writeLease } from "./state-rows.ts";
 
 useDrivePrSuite();
 describe("drive-state.ts durability", () => {
@@ -43,9 +36,9 @@ describe("drive-state.ts durability", () => {
     const { A_URL, holdAs } = stateSessionLeaseFixtures;
 
     it("lease --all reports every live tree with a self flag, and [] for none", async () => {
-      // The foreign-lease READ surface. Before it there was no way
-      // for a resolver to detect another live worktree, and the near-miss is
-      // why this is a lease read and not a hold read: the durable per-hold
+      // The foreign-lease READ surface. Without it there is no way for a
+      // resolver to detect another live worktree, and it is a lease read and
+      // not a hold read on purpose: the durable per-hold
       // `actor` proves a hold was MADE elsewhere, never that anyone is still
       // driving, because a hold deliberately outlives its driver so a successor
       // can finish it. Stopping on a foreign actor wedges that successor.
@@ -138,14 +131,13 @@ describe("drive-state.ts durability", () => {
       const d = stateDirFor("lease-renewal");
       const me = { DRIVE_PR_SESSION: String(process.pid) };
       await state(d, ["bump-round", "999", "--head", "aaa"], me);
-      const path = leasePathFor(d, "999", ACTOR);
-      const first = JSON.parse(readFileSync(path, "utf8"));
+      const ref = leaseRef(d, "999", ACTOR);
+      const first = readLease(ref);
+      if (first === null) throw new Error("the first command took no lease");
 
       // Immediately after: nothing to decide, so nothing is written.
       await state(d, ["phase", "999", "--set", "triage"], me);
-      expect(JSON.parse(readFileSync(path, "utf8")).lastSeen).toBe(
-        first.lastSeen,
-      );
+      expect(readLease(ref)?.lastSeen).toBe(first.lastSeen);
 
       // Quiet for longer than the renewal interval: the next command renews,
       // and keeps the original `startedAt` so the refusal can still say how
@@ -154,14 +146,14 @@ describe("drive-state.ts durability", () => {
         ...first,
         lastSeen: new Date(Date.now() - 60_000).toISOString(),
       };
-      writeFileSync(path, JSON.stringify(quiet, null, 2));
+      writeLease(ref, quiet);
       await state(d, ["phase", "999", "--set", "fix"], me);
-      const renewed = JSON.parse(readFileSync(path, "utf8"));
-      expect(Date.parse(renewed.lastSeen)).toBeGreaterThan(
+      const renewed = readLease(ref);
+      expect(Date.parse(renewed?.lastSeen ?? "")).toBeGreaterThan(
         Date.parse(quiet.lastSeen),
       );
-      expect(renewed.startedAt).toBe(first.startedAt);
-      expect(renewed.command).toBe("phase");
+      expect(renewed?.startedAt).toBe(first.startedAt);
+      expect(renewed?.command).toBe("phase");
     });
 
     it("refuses a $DRIVE_PR_SESSION that is not a pid rather than falling through", async () => {
@@ -177,11 +169,11 @@ describe("drive-state.ts durability", () => {
 
     it("refuses a $DRIVE_PR_SESSION that is digits but not a usable pid", async () => {
       // `0` and a digit string too long to parse exactly are both `isDigits`-
-      // clean, so they used to sail through into a lease file that `readLease`
-      // then bounced right back off — `0` fails its `> 0` test, and the 400-
-      // nines case parses to `Infinity` and serialises as JSON `null`. The
-      // session then held NO lease while believing it held one, and the next
-      // session was free to mutate alongside it: the concurrency this module
+      // clean, yet neither names a process: `0` addresses the caller's own
+      // process group, and the 400-nines case parses to `Infinity`. A lease
+      // taken under either would exclude nobody, so the session would hold
+      // no real exclusion while believing it held one, and the next session
+      // would be free to mutate alongside it: the concurrency this module
       // exists to refuse, reached by a path that reported nothing.
       const d = stateDirFor("lease-unusable-pid");
       for (const bad of ["0", "9".repeat(400)]) {
@@ -192,7 +184,7 @@ describe("drive-state.ts durability", () => {
         expect({ at, code: r.exitCode }).toEqual({ at, code: 2 });
       }
       // Neither left a phantom lease behind, and neither counted a round.
-      expect(existsSync(leasePathFor(d, "999", ACTOR))).toBe(false);
+      expect(readLease(leaseRef(d, "999", ACTOR))).toBeNull();
 
       // `$CLAUDE_PID` is the harness's to set, not the caller's, so the same
       // unusable value there falls THROUGH to ladder tier 3 — admitted, not
@@ -212,11 +204,11 @@ describe("drive-state.ts durability", () => {
       // `$DRIVE_PR_SESSION` values above — those named a session and got it
       // wrong, this one names none and says so.
       //
-      // Asserted on the CONTENT rather than on the file's existence, which is
-      // what this line used to check. "No file" was never the property that
-      // mattered; "no exclusion taken under an identity that does not exist"
-      // was, and a tree-scoped record does not take one — see `isMine`.
-      const written = readLease(leasePathFor(d, "999", ACTOR));
+      // Asserted on the CONTENT rather than on the record's existence: "no
+      // record" is not the property that matters; "no exclusion taken under
+      // an identity that does not exist" is, and a tree-scoped record does
+      // not take one — see `isMine`.
+      const written = readLease(leaseRef(d, "999", ACTOR));
       expect({ holder: written?.holder, pid: written?.pid }).toEqual({
         holder: "worktree",
         pid: 0,
@@ -231,7 +223,7 @@ describe("drive-state.ts durability", () => {
       try {
         const b = { DRIVE_PR_SESSION: String(process.pid) };
         await holdAs(d, a.pid, A_URL);
-        expect(existsSync(leasePathFor(d, "999", ACTOR))).toBe(true);
+        expect(readLease(leaseRef(d, "999", ACTOR))).not.toBeNull();
         expect((await state(d, ["reset", "999"], b)).exitCode).toBe(11);
         // Refused, because reset is itself a mutation — so the documented order
         // is clear-lease first.
@@ -251,18 +243,18 @@ describe("drive-state.ts durability", () => {
 
     it("every *-ready-mark command is refused while another session holds the lease", async () => {
       // These four mutate a DIFFERENT lease (the ready-mark claim,
-      // `readyClaimPath` — cross-WORKTREE, guarding the draft→Ready
+      // `readyClaimRef` — cross-WORKTREE, guarding the draft→Ready
       // transition), but that does not exempt them from THIS one, which
       // guards against a second SESSION in the same tree. Left off
-      // LEASED_COMMANDS, `release-ready-mark`'s tokenless recovery path let a
-      // second session delete the first session's live ready-mark claim and
-      // take the transition itself, without ever reaching this refusal.
+      // LEASED_COMMANDS, `release-ready-mark`'s tokenless recovery path would
+      // let a second session delete the first session's live ready-mark claim
+      // and take the transition itself, without ever reaching this refusal.
       const d = stateDirFor("lease-ready-mark");
       const a = liveSession();
       try {
         const b = { DRIVE_PR_SESSION: String(process.pid) };
         await holdAs(d, a.pid, A_URL);
-        expect(existsSync(leasePathFor(d, "999", ACTOR))).toBe(true);
+        expect(readLease(leaseRef(d, "999", ACTOR))).not.toBeNull();
         for (const args of [
           ["claim-ready-mark", "999"],
           ["renew-ready-mark", "999", "--token", "x"],
@@ -278,10 +270,9 @@ describe("drive-state.ts durability", () => {
 
     it("reset REFUSES across trees while a foreign lease is live, then succeeds once it is gone", async () => {
       // Preserving the foreign lease is necessary but not sufficient: the
-      // state file and the CLAIM files are shared by every tree driving the
-      // PR, so continuing would let this tree delete a live session's
-      // in-flight claim and re-dispatch a non-idempotent answer it had already
-      // claimed. `reset` refuses outright, deleting nothing.
+      // state and the CLAIMS are shared by every tree driving the PR, so
+      // continuing would let this tree delete a live session's in-flight claim
+      // and re-dispatch a non-idempotent answer it had already claimed. `reset` refuses outright, deleting nothing.
       //
       // The refusal comes from the PR-wide gate: `reset` is a leased command,
       // and this tree holds no lease yet, so its claim is a fresh admission
@@ -297,8 +288,8 @@ describe("drive-state.ts durability", () => {
       // branch remains reachable — see the `reset-refuses-live` probe above,
       // where this tree was admitted BEFORE the foreign lease existed.
       //
-      // The second half is unchanged and is the reason refusing is safe: once
-      // that session is GONE its lease is exactly the wedge `reset` exists to
+      // The second half is the reason refusing is safe: once that session is
+      // GONE its lease is exactly the wedge `reset` exists to
       // clear, so the next attempt sweeps it and completes.
       const { a, b, env } = twoDrivers("lease-reset-cross-tree");
       const sessionA = liveSession();
@@ -319,8 +310,7 @@ describe("drive-state.ts durability", () => {
           { pid: sessionA.pid },
         );
         expect(drive(b, eb, ["lease", "999"]).stdout.trim()).toBe("");
-        // …and NOTHING was reset, which is the half of the contract that has
-        // never changed.
+        // …and NOTHING was reset.
         expect(drive(b, eb, ["rounds", "999"]).stdout.trim()).toBe("1");
 
         // Once A's session is GONE its lease is exactly the wedge `reset`
@@ -396,26 +386,6 @@ describe("drive-state.ts durability", () => {
 
       // Tree A's lease is gone — recognized as dead, not preserved.
       expect(drive(a, ea, ["lease", "999"]).stdout.trim()).toBe("");
-    });
-
-    it("surfaces a failed lease enumeration instead of answering “no leases”", () => {
-      // `[]` from `leaseFilesFor` is indistinguishable from "swept everything",
-      // so swallowing an EACCES/EMFILE there would let `reset` report success
-      // while every lease file stayed put — refusing later mutations for a
-      // whole staleness window with nothing said about why.
-      //
-      // Staged as ENOTDIR — a state directory path that is a FILE — rather
-      // than with `chmod 000`. Mode bits do not bite for root, so a
-      // permission-based probe asserts nothing on a runner that happens to be
-      // root: a one-line regression catching the error and returning `[]`
-      // would stay green there. ENOTDIR needs no privilege to provoke and no
-      // privilege to escape, so this reddens for every runner.
-      const d = stateDirFor("lease-enum-fail");
-      const notADir = join(d, "state-dir-is-a-file");
-      writeFileSync(notADir, "not a directory\n");
-      expect(() => leaseFilesFor(notADir, "999")).toThrow(/ENOTDIR/);
-      // An ABSENT directory is a confirmed empty answer, not a failure.
-      expect(leaseFilesFor(join(d, "nope"), "999")).toEqual([]);
     });
   });
 });

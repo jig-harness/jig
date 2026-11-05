@@ -6,11 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import {
-  diagLines,
-  formatClaim,
-  parseClaimText,
-} from "../scripts/lib/claim.ts";
+import { diagLines, parseDiagText } from "../scripts/lib/claim.ts";
 import {
   effectivePass,
   type PassModel,
@@ -299,28 +295,25 @@ describe("the drives listing", () => {
   };
 
   it("names the model a claim records, and says when the pass command chooses it", () => {
-    const opus = parseClaimText(
-      formatClaim(1, "h", { ...diag, model: "opus" }),
-    );
-    expect(opus?.diag?.model).toBe("opus");
-    expect(diagLines(opus?.diag ?? diag)).toContain("    model:    opus");
-    const own = parseClaimText(formatClaim(1, "h", { ...diag, model: null }));
-    expect(diagLines(own?.diag ?? diag)).toContain(
+    const opus = parseDiagText(JSON.stringify({ ...diag, model: "opus" }));
+    expect(opus?.model).toBe("opus");
+    expect(diagLines(opus ?? diag)).toContain("    model:    opus");
+    const own = parseDiagText(JSON.stringify({ ...diag, model: null }));
+    expect(own?.model).toBeNull();
+    expect(diagLines(own ?? diag)).toContain(
       "    model:    chosen by the pass command",
     );
   });
 
   it("reads a claim from before the model, or with a malformed one, as unknown, keeping the rest", () => {
-    const older = parseClaimText(formatClaim(1, "h", diag));
-    expect(older?.diag).toEqual(diag);
+    const older = parseDiagText(JSON.stringify(diag));
+    expect(older).toEqual(diag);
     expect(diagLines(diag)).toContain(
       "    model:    unknown (claim predates the model)",
     );
     for (const model of [4, "", ["opus"]]) {
-      const torn = parseClaimText(
-        `1 h\n${JSON.stringify({ ...diag, model })}\n`,
-      );
-      expect(torn?.diag).toEqual(diag);
+      const torn = parseDiagText(JSON.stringify({ ...diag, model }));
+      expect(torn).toEqual(diag);
     }
   });
 });

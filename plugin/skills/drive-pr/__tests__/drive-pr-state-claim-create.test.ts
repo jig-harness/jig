@@ -5,14 +5,11 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { readdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
-
-import { join } from "node:path";
-
 import { ACTOR, HELD_PUSH, useDrivePrSuite } from "./drive-pr-harness.ts";
 
 import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
 import { createStateClaimFixtures } from "./drive-pr-state-claim-fixtures.ts";
+import { claimRow, heldClaims, putClaim, writeState } from "./state-rows.ts";
 
 useDrivePrSuite();
 describe("drive-state.ts durability", () => {
@@ -96,21 +93,13 @@ describe("drive-state.ts durability", () => {
     });
 
     it("ONLY ONE of many concurrent claimants wins the same key", async () => {
-      // The scripted version of the race this whole issue is about: several
+      // The scripted version of the race the claim exists for: several
       // processes read the same held snapshot and all try to claim the same
-      // item at once. `claimCreate`'s atomic, `O_CREAT|O_EXCL` file
-      // creation (see its own comment in lib/state/claims.ts) must let exactly
-      // one through.
-      //
-      // An earlier version of `claimIsLive` judged a claim directory "torn"
-      // (not yet live) until its owner marker existed, and broke a directory
-      // it found in that state — so a second claimant racing the FIRST
-      // claimant's own two-step create window saw a torn slot, broke it,
-      // and both ended up with a valid token. Measured empirically at the
-      // time: an 8-way race over 40 iterations produced 3 winners once.
-      // Repeating the race several times here is what actually catches that
-      // regression — a single iteration passed the overwhelming majority of
-      // the time even with the bug present.
+      // item at once. `claimCreate`'s single insert, which does nothing when
+      // the row exists (see lib/state/claims.ts), must let exactly one
+      // through. The race is repeated because a single iteration of a race
+      // with a narrow window passes most of the time even when the window is
+      // open.
       for (let round = 0; round < 10; round++) {
         const d = stateDirFor(`claim-race-${round}`);
         await hold(d, "PRRT_a");
@@ -134,30 +123,11 @@ describe("drive-state.ts durability", () => {
       }
     });
 
-    it("two keys differing only by CASE produce claim files that stay distinct even if the filesystem folds case", async () => {
-      // `claimKeyForPath` sanitises a key into a directory name, and the
-      // sanitisation alone does not guarantee two distinct keys land on two
-      // distinct paths: real thread ids and fingerprints already fit inside
-      // the preserved character set, so the `tr` is close to a no-op — the
-      // actual source of a collision is a case-insensitive volume (the
-      // default on macOS, where these worktrees run), which folds two ids
-      // differing only in the case of one character onto the SAME directory.
-      // Measured against a real PR in this repo: 7 of 100 thread ids
-      // collided that way. A checksum on the exact-case original is what
-      // keeps them apart regardless of the filesystem's case sensitivity.
-      //
-      // This runner's OWN temp filesystem is whatever the host gives it —
-      // case-INSENSITIVE on macOS, where these worktrees run, but
-      // case-SENSITIVE on Linux CI. On a case-sensitive host, both claims
-      // succeeding proves nothing: the raw, un-checksummed "safe" prefix
-      // already differs by case there, so a regression that deleted the
-      // checksum suffix entirely would still pass this test green on CI —
-      // exactly the gap to close. Folding both real
-      // filenames to lowercase HERE, in the assertion, reproduces the
-      // case-insensitive collision deterministically on any host: it is
-      // true if and only if the checksum suffix (not the case-foldable
-      // prefix) is what keeps the two files apart, independent of what the
-      // actual test-runner filesystem does with case.
+    it("two keys differing only by CASE are two claims", async () => {
+      // Thread ids and fingerprints are case-sensitive: two ids differing
+      // only in the case of one character are two different items, so each
+      // gets its own claim row, and claiming one never contends with the
+      // other.
       const d = stateDirFor("claim-case-collision");
       await hold(d, "PRRT_AbCdEf");
       await hold(d, "PRRT_ABCDEF");
@@ -181,63 +151,57 @@ describe("drive-state.ts durability", () => {
         "--pushed-sha",
         HELD_PUSH,
       ]);
-      // On this host's actual filesystem, both succeed regardless of case
-      // sensitivity: a case-sensitive host never collided in the first
-      // place, and a case-insensitive one is exactly what the checksum
-      // suffix is there to survive.
       expect(first.exitCode).toBe(0);
       expect(second.exitCode).toBe(0);
-      const claimFiles = readdirSync(d).filter((f) =>
-        f.startsWith("drive-pr-999.held-claim.PRRT_"),
-      );
-      expect(claimFiles).toHaveLength(2);
-      const folded = claimFiles.map((f) => f.toLowerCase());
-      expect(folded[0]).not.toBe(folded[1]);
+      expect(
+        heldClaims(d, "999").map(({ key, token }) => ({ key, token })),
+      ).toEqual([
+        { key: "PRRT_ABCDEF", token: second.stdout },
+        { key: "PRRT_AbCdEf", token: first.stdout },
+      ]);
     });
 
-    it("claim-held propagates a distinct exit when the state file is unusable", async () => {
+    it("claim-held propagates a distinct exit when the stored state is unusable", async () => {
       // Must NOT be conflated with "key not in held batch" (exit 4) — one is
       // "nothing to do, move on", the other is "stop, a human has to look at
-      // this file". Mirrors read_state's own fail-closed contract elsewhere
+      // this state". Mirrors read_state's own fail-closed contract elsewhere
       // in this script.
       const d = stateDirFor("claim-malformed-state");
       // A held batch must exist for claim-held to reach the locked read at all —
       // write it well-formed first, THEN corrupt it, so the failure being
       // tested is read_state's, not an earlier, unrelated one.
-      writeFileSync(
-        join(d, "drive-pr-999.json"),
-        JSON.stringify({
-          pr: 999,
-          lastEscalatedRound: 0,
-          lastEscalatedInvariant: "",
-          roundPaths: [],
-          lastProgressAt: "",
-          quotaPark: null,
-          rounds: 0,
-          lastCountedHead: "",
-          attempts: 0,
-          attemptsHead: "",
-          lastReflectedRound: 0,
-          lastReflectedAttempts: 0,
-          readyMarkedRound: 0,
-          ciHold: null,
-          verifiedSha: "",
-          phase: "",
-          parked: [],
-          held: [
-            {
-              key: "PRRT_a",
-              kind: "finding",
-              outcome: "accepted",
-              round: 0,
-              reason: "reason",
-              actor: ACTOR,
-              verifiedSha: HELD_PUSH,
-            },
-          ],
-        }),
-      );
-      writeFileSync(join(d, "drive-pr-999.json"), "not json at all");
+      const heldState = {
+        pr: 999,
+        lastEscalatedRound: 0,
+        lastEscalatedInvariant: "",
+        roundPaths: [],
+        lastProgressAt: "",
+        quotaPark: null,
+        rounds: 0,
+        lastCountedHead: "",
+        attempts: 0,
+        attemptsHead: "",
+        lastReflectedRound: 0,
+        lastReflectedAttempts: 0,
+        readyMarkedRound: 0,
+        ciHold: null,
+        verifiedSha: "",
+        phase: "",
+        parked: [],
+        held: [
+          {
+            key: "PRRT_a",
+            kind: "finding",
+            outcome: "accepted",
+            round: 0,
+            reason: "reason",
+            actor: ACTOR,
+            verifiedSha: HELD_PUSH,
+          },
+        ],
+      };
+      writeState(d, "999", heldState);
+      writeState(d, "999", "not json at all");
       const r = await state(d, [
         "claim-held",
         "999",
@@ -252,39 +216,8 @@ describe("drive-state.ts durability", () => {
       expect(r.exitCode).not.toBe(4);
       // The claim taken before the read failed must not be left dangling —
       // a fresh, well-formed state must still be able to claim the key.
-      writeFileSync(
-        join(d, "drive-pr-999.json"),
-        JSON.stringify({
-          pr: 999,
-          lastEscalatedRound: 0,
-          lastEscalatedInvariant: "",
-          roundPaths: [],
-          lastProgressAt: "",
-          quotaPark: null,
-          rounds: 0,
-          lastCountedHead: "",
-          attempts: 0,
-          attemptsHead: "",
-          lastReflectedRound: 0,
-          lastReflectedAttempts: 0,
-          readyMarkedRound: 0,
-          ciHold: null,
-          verifiedSha: "",
-          phase: "",
-          parked: [],
-          held: [
-            {
-              key: "PRRT_a",
-              kind: "finding",
-              outcome: "accepted",
-              round: 0,
-              reason: "reason",
-              actor: ACTOR,
-              verifiedSha: HELD_PUSH,
-            },
-          ],
-        }),
-      );
+      expect(heldClaims(d, "999")).toEqual([]);
+      writeState(d, "999", heldState);
       const retry = await state(d, [
         "claim-held",
         "999",
@@ -453,24 +386,22 @@ describe("drive-state.ts durability", () => {
       expect(stillLive.exitCode).toBe(1);
     });
 
-    it("a STALE owner calling unclaim-held never deletes a FRESH reclaimer's file", async () => {
-      // `unclaim-held` used to check the token and remove the claim file as
-      // two SEPARATE, unlocked steps. An owner returning right at the edge of
-      // the staleness window could pass its token check against its own
-      // still-on-disk (but now stale) file, then have a DIFFERENT driver
-      // legitimately break that SAME stale claim and create a fresh one for
-      // itself in the gap before this call's own `removeClaimFile` ran —
-      // deleting the FRESH claimant's file, not the one this caller ever
-      // owned, and leaving a third driver free to claim the key while the
-      // second still believed it held it exclusively. Firing the original
-      // owner's `unclaim-held` at the same instant as several reclaimers,
-      // repeated over several rounds, is what actually exercises that window
-      // — a single iteration passes the overwhelming majority of the time
-      // even with the bug present, exactly like the sibling stale-claim race
-      // probe. Deliberately smaller than that sibling's 8x8 (4 rounds x 4-way
-      // here vs. 8x8 there): `drive-pr-selftest`'s commit hook caps the WHOLE
-      // suite at a fixed budget, and this test's subprocess count stacks on top
-      // of every other race probe already in the file, not in isolation.
+    it("a STALE owner calling unclaim-held never deletes a FRESH reclaimer's claim", async () => {
+      // `unclaim-held` checks the token and removes the claim in one lock
+      // hold. Were they two unlocked steps, an owner returning right at the
+      // edge of the staleness window could pass its token check against its
+      // own (now stale) claim, then have a DIFFERENT driver legitimately
+      // break that SAME stale claim and create a fresh one for itself in the
+      // gap before this call's removal ran — deleting the FRESH claimant's
+      // claim, not the one this caller ever owned, and leaving a third
+      // driver free to claim the key while the second still believed it held
+      // it exclusively. Firing the original owner's `unclaim-held` at the
+      // same instant as several reclaimers, repeated over several rounds, is
+      // what exercises that window — a single iteration passes most of the
+      // time even when the window is open. Deliberately smaller than the
+      // sibling stale-claim race probe (4 rounds x 4-way here vs. 8x8
+      // there): the suite runs under a fixed budget, and this test's
+      // subprocess count stacks on top of every other race probe.
       for (let round = 0; round < 4; round++) {
         const d = stateDirFor(`unclaim-race-${round}`);
         await hold(d, "PRRT_a");
@@ -486,12 +417,16 @@ describe("drive-state.ts durability", () => {
         ]);
         expect(original.exitCode).toBe(0);
         const originalToken = original.stdout;
-        const claimFile = readdirSync(d).find((f) =>
-          f.startsWith("drive-pr-999.held-claim.PRRT_a."),
-        );
-        if (!claimFile) throw new Error("claim file was not created");
+        expect(claimRow(d, "999", "held", "PRRT_a")?.token).toBe(originalToken);
         const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
-        utimesSync(join(d, claimFile), twentyMinutesAgo, twentyMinutesAgo);
+        putClaim(
+          d,
+          "999",
+          "held",
+          "PRRT_a",
+          originalToken,
+          twentyMinutesAgo.toISOString(),
+        );
         // The original, now-stale owner tries to give the claim back at the
         // same instant several OTHER drivers see it as stale and race to
         // reclaim it.
@@ -518,18 +453,17 @@ describe("drive-state.ts durability", () => {
           ),
         ]);
         const winners = reclaimResults.filter((r) => r.exitCode === 0);
-        // Exactly one reclaimer must win — not merely "at most one". Under
-        // the old unlocked match-then-remove, the stale owner's
-        // unclaim-held could delete a fresh claimant's file AFTER
-        // claimCreate but BEFORE that claimant's own final ownership
-        // check (claim-held's "prove OUR token is still the content
-        // actually sitting at $path" step) — so the claimant then exits
-        // non-zero too, every contender loses, winners.length is 0, and a
-        // `<= 1` assertion would pass right through that exact failure
-        // mode without ever reaching the recovery check below.
+        // Exactly one reclaimer must win — not merely "at most one". An
+        // unlocked match-then-remove would let the stale owner's
+        // unclaim-held delete a fresh claimant's claim AFTER claimCreate but
+        // BEFORE that claimant's own final ownership check (claim-held's
+        // "prove OUR token is still the one recorded" step) — so the
+        // claimant then exits non-zero too, every contender loses,
+        // winners.length is 0, and a `<= 1` assertion would pass right
+        // through that failure mode without reaching the check below.
         expect(winners).toHaveLength(1);
         // A fresh, LIVE claim now exists. A further attempt on the same
-        // key must be refused — proof the winner's file was NOT silently
+        // key must be refused — proof the winner's claim was NOT silently
         // deleted by the racing unclaim-held call.
         const after = await state(d, [
           "claim-held",
@@ -552,26 +486,24 @@ describe("drive-state.ts durability", () => {
 
     it("a claim racing release-held --all observes the CLEAR, never a stale pre-clear snapshot", async () => {
       // `release-held --all` checks every held key for a live claim, clears
-      // `.held = []`, and deletes each key's claim file — all inside ONE lock
-      // hold. Before this fix, claim-held's own post-create membership
-      // re-check was UNLOCKED, so a concurrent claim-held racing exactly this
-      // window could read the PRE-clear snapshot (key still present), pass its
-      // own membership check, and return a "valid" token for a key `--all`'s
-      // cleanup was about to delete out from under it — the exact
-      // duplicate-dispatch bug this whole primitive exists to prevent, just
-      // reached one step earlier than the claim-file deletion itself. Locking
-      // the re-check closes it: the concurrent claimant's decision is now
-      // ordered against `--all`'s clear, so it either wins before `--all`'s OWN
-      // contended check (which then refuses to proceed) or loses to the clear
-      // (reads `.held = []`, exits 4) — never a token for a key that is being
-      // wiped out from under it in the same instant.
+      // `.held = []`, and deletes each key's claim — all inside ONE lock
+      // hold. claim-held's own post-create membership re-check is locked
+      // too: unlocked, a concurrent claim-held racing exactly this window
+      // could read the PRE-clear snapshot (key still present), pass its own
+      // membership check, and return a "valid" token for a key `--all`'s
+      // cleanup was about to delete out from under it — the
+      // duplicate-dispatch this primitive exists to prevent. Locked, the
+      // concurrent claimant's decision is ordered against `--all`'s clear,
+      // so it either wins before `--all`'s OWN contended check (which then
+      // refuses to proceed) or loses to the clear (reads `.held = []`, exits
+      // 4) — never a token for a key that is being wiped out in the same
+      // instant.
       //
       // `$DRIVE_PR_RELEASE_ALL_TEST_DELAY` holds `--all` open inside its lock
       // exactly between its contended check and its clear landing, so the
       // claimant below is GUARANTEED to be deciding while the pre-clear
-      // snapshot is still on disk rather than merely likely to be. (The bash
-      // original got that window by shimming `mv` on PATH, which a
-      // `renameSync` port cannot be stalled by — see `testDelaySeconds`.)
+      // snapshot is still stored rather than merely likely to be (see
+      // `testDelaySeconds`).
       const d = stateDirFor("claim-vs-release-all");
       await hold(d, "PRRT_a");
       const releaseAll = state(d, ["release-held", "999", "--all"], {
@@ -593,28 +525,25 @@ describe("drive-state.ts durability", () => {
       // clearing in the same instant — it must observe the clear.
       expect(claim.exitCode).toBe(4);
       expect(claim.stdout).toBe("");
-      // No orphaned claim file left behind on either side.
-      expect(readdirSync(d).filter((f) => f.includes("held-claim"))).toEqual(
-        [],
-      );
+      // No orphaned claim left behind on either side.
+      expect(heldClaims(d, "999")).toEqual([]);
     }, 15_000);
 
     it("release-held --all's post-clear cleanup never deletes a RE-HELD key's fresh claim", async () => {
-      // `claimPathFor` is a pure function of the key STRING — it encodes no
-      // generation. Before this fix, `--all` released its lock and only THEN
-      // removed each old key's claim file. A concurrent driver could, in that
-      // unlocked window, legitimately `hold` the SAME key again and
-      // `claim-held` it (the clear-ordering lock only orders a claimant against
-      // `--all`'s CLEAR, not against `--all`'s CLEANUP — a claimant reading the
-      // already-cleared `.held` sees its OWN fresh hold and correctly gets a
-      // token) — and `--all`'s unconditional path-based removal would then
-      // delete that live claim out from under it. Fixed by moving the cleanup
-      // inside the same lock hold, so no claim can be CONFIRMED while it runs.
+      // A claim is keyed by the key STRING alone — it encodes no generation.
+      // `--all` removes each old key's claim inside the same lock hold as
+      // its clear. Were the cleanup outside the lock, a concurrent driver
+      // could, in that unlocked window, legitimately `hold` the SAME key
+      // again and `claim-held` it (the clear-ordering lock only orders a
+      // claimant against `--all`'s CLEAR, not against `--all`'s CLEANUP — a
+      // claimant reading the already-cleared `.held` sees its OWN fresh hold
+      // and correctly gets a token) — and `--all`'s unconditional removal by
+      // key would then delete that live claim out from under it.
       //
       // `$DRIVE_PR_RELEASE_ALL_CLEANUP_TEST_DELAY` stalls `--all` after the
       // clear has landed and before the cleanup, which is where the two shapes
       // diverge observably: with the cleanup inside the lock the re-`hold`
-      // below cannot start until every file is already gone, and with it
+      // below cannot start until every claim is already gone, and with it
       // outside the lock the re-hold and its claim land first and the stalled
       // cleanup carries the fresh claim off.
       const d = stateDirFor("release-all-vs-rehold");
@@ -639,22 +568,18 @@ describe("drive-state.ts durability", () => {
       // `--all`'s cleanup did not carry off this fresh generation.
       expect(claim.exitCode).toBe(0);
       expect(claim.stdout).not.toBe("");
-      const claimFile = readdirSync(d).find((f) =>
-        f.startsWith("drive-pr-999.held-claim.PRRT_a."),
-      );
-      if (!claimFile) throw new Error("the fresh claim file was deleted");
-      expect(readFileSync(join(d, claimFile), "utf8")).toBe(claim.stdout);
+      expect(claimRow(d, "999", "held", "PRRT_a")?.token).toBe(claim.stdout);
     }, 15_000);
 
     it("an ABANDONED claim is reclaimable after the staleness window, like the per-PR lock", async () => {
       const d = stateDirFor("claim-stale");
       await hold(d, "PRRT_a");
-      // A negative staleness value no longer produces an instantly-stale claim
-      // (drive-state.ts now clamps/validates DRIVE_PR_CLAIM_STALE_MIN — an
+      // A negative staleness value does not produce an instantly-stale claim
+      // (drive-state.ts clamps and validates DRIVE_PR_CLAIM_STALE_MIN — an
       // invalid value falls back to the default rather than making every
       // claim reclaimable immediately). Use the safe minimum instead and
-      // backdate the claim file's mtime past it, the same technique the
-      // concurrent-race probe below uses.
+      // backdate the claim's time past it, the same technique the
+      // concurrent-race probe uses.
       const env = { DRIVE_PR_CLAIM_STALE_MIN: "1" };
       const first = await state(
         d,
@@ -671,12 +596,16 @@ describe("drive-state.ts durability", () => {
         env,
       );
       expect(first.exitCode).toBe(0);
-      const claimFile = readdirSync(d).find((f) =>
-        f.startsWith("drive-pr-999.held-claim.PRRT_a."),
-      );
-      if (!claimFile) throw new Error("claim file was not created");
+      expect(claimRow(d, "999", "held", "PRRT_a")?.token).toBe(first.stdout);
       const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-      utimesSync(join(d, claimFile), twoMinutesAgo, twoMinutesAgo);
+      putClaim(
+        d,
+        "999",
+        "held",
+        "PRRT_a",
+        first.stdout,
+        twoMinutesAgo.toISOString(),
+      );
       const second = await state(
         d,
         [

@@ -13,13 +13,13 @@
  * the ledger alone.
  */
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
-import { join } from "node:path";
+import { basename } from "node:path";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
-import { CLAIM_PREFIX, parseClaimText } from "../claim.ts";
+import { thisHost } from "../../../../../shared/liveness.ts";
 import { fail } from "../cli.ts";
+import { inspectLock, prLockName } from "../driver/locks.ts";
 import { handoffPath, installNarrative, narrativeOf } from "./handoff.ts";
 import {
   type ClaimComment,
@@ -90,16 +90,8 @@ export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
 
 /** Whether PR `pr`'s drive lock is held by the acquisition made at `started`. */
 function holdsPrLock(stateDir: string, pr: string, started: string): boolean {
-  const dir = join(stateDir, `pr-drive-${pr}.lock`);
   try {
-    const claims = readdirSync(dir).filter(
-      (n) => n.startsWith(CLAIM_PREFIX) && n.length > CLAIM_PREFIX.length,
-    );
-    if (claims.length !== 1) return false;
-    const record = parseClaimText(
-      readFileSync(join(dir, claims[0] as string), "utf8"),
-    );
-    return record?.diag?.started === started;
+    return inspectLock(stateDir, prLockName(pr))?.diag?.started === started;
   } catch (err) {
     swallow(err, "the PR's drive lock could not be read");
     return false;
@@ -331,33 +323,43 @@ export async function seedLedgerCommand(
 }
 
 /**
- * `drive-state.ts reset`'s removal of the state file, keeping the ledger
- * generation the state had reached: without it, the next arm would read the
- * ledger as newer than the fresh state and seed back everything the reset
- * forgot. The ledger's next write then carries the reset state. A file too
- * damaged to read a generation from is removed outright.
+ * This clone as the ledger names it: the clone key (`clone-key.ts`, the name
+ * of the clone's state directory) and, after an `@`, a label of the host the
+ * clone is on, so a reader of the ledger can tell which host claims a drive.
+ * The label is the first 16 characters of the host id (`liveness.ts`'s
+ * `thisHost`), itself a digest of the machine's id, so the public comment
+ * names no machine; a host with no id is labelled by a digest of its name.
+ * The clone key alone is the identity: the label only says where it lives.
  */
-/** The clone, by machine and state directory: stable across this clone's drives. */
 export function cloneId(stateDir: string): string {
-  return createHash("sha256")
-    .update(`${hostname()}\0${stateDir}`)
-    .digest("hex")
-    .slice(0, 16);
+  const host = thisHost();
+  const label =
+    host.hostId !== ""
+      ? host.hostId.slice(0, 16)
+      : createHash("sha256").update(hostname()).digest("hex").slice(0, 16);
+  return `${basename(stateDir)}@${label}`;
 }
 
+/**
+ * `drive-state.ts reset`'s removal of the state, keeping the ledger
+ * generation the state had reached: without it, the next arm would read the
+ * ledger as newer than the fresh state and seed back everything the reset
+ * forgot. The ledger's next write then carries the reset state. A state too
+ * damaged to read a generation from is removed outright.
+ */
 export function removeStateKeepingLedgerGeneration(
   store: StateStore,
   pr: number,
 ): void {
   let generation = 0;
   try {
-    const raw: unknown = JSON.parse(readFileSync(store.file, "utf8"));
+    const raw: unknown = JSON.parse(store.stored() ?? "null");
     if (isRecord(raw) && typeof raw.ledgerGeneration === "number")
       generation = raw.ledgerGeneration;
   } catch (err) {
-    swallow(err, "the state file being reset holds no ledger generation");
+    swallow(err, "the state being reset holds no ledger generation");
   }
-  rmSync(store.file, { force: true });
+  store.remove();
   if (Number.isInteger(generation) && generation > 0)
     store.write({ ...freshState(pr), ledgerGeneration: generation });
 }

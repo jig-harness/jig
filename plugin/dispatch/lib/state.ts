@@ -21,34 +21,41 @@
  * files, and the outcome log keeps a text copy, one JSONL file per month
  * (`log-export.ts`).
  *
- * The database is opened in WAL mode, so `jig dispatch dashboard` and
- * `jig dispatch log` read while a tick writes. Ticks write one at a time,
- * under the tick lock; the wrapper's claim and exit and a session's result
- * are single statements SQLite's own write lock orders, each waiting up to
- * `BUSY_MS` for a transaction in progress.
+ * The database is opened through the shared `shared/records/db.ts`, in WAL
+ * mode, so `jig dispatch dashboard` and `jig dispatch log` read while a tick
+ * writes. Ticks write one at a time, under the tick lock; the wrapper's claim
+ * and exit and a session's result are single statements SQLite's own write
+ * lock orders, each waiting for a transaction in progress.
  *
  * Its schema has a version (`PRAGMA user_version`): a database at an older
  * one is migrated forward, one entry of `MIGRATIONS` per version, in one
- * transaction; one a newer plugin wrote is refused, with its version named.
+ * transaction. One a newer plugin migrated is used as it is when every step
+ * past this plugin's version was additive, and refused, with its version
+ * named, when it needs a newer reader (the shared module's minimum reader).
  */
-import { Database } from "bun:sqlite";
-import { chmodSync, existsSync, mkdirSync } from "node:fs";
+import type { Database } from "bun:sqlite";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import {
+  closeDatabase,
+  type Migration,
+  openDatabase,
+  schemaVersion,
+} from "../../shared/records/db.ts";
 import { stateRoot } from "../receipts.ts";
 
 /** The database's file name under the state directory. */
 const STATE_FILE = "state.sqlite";
 
-/** How long a write waits for another connection's transaction to end. */
-const BUSY_MS = 10_000;
-
 /**
  * Each entry moves the schema from its index to the next version; a new
- * database runs them all. A change to the schema adds an entry and never
- * edits one a released plugin ran.
+ * database runs them all. A change to the schema adds an entry, says whether
+ * it is additive, and never edits one a released plugin ran.
  */
-const MIGRATIONS: readonly string[] = [
-  `
+const MIGRATIONS: readonly Migration[] = [
+  {
+    additive: false,
+    sql: `
   CREATE TABLE launches (
     id TEXT PRIMARY KEY,
     repo TEXT NOT NULL,
@@ -133,10 +140,16 @@ const MIGRATIONS: readonly string[] = [
     seq INTEGER NOT NULL
   );
   `,
-  `
+  },
+  {
+    additive: true,
+    sql: `
   CREATE INDEX launches_created ON launches (created_at);
   `,
-  `
+  },
+  {
+    additive: true,
+    sql: `
   CREATE TABLE holds (
     repo TEXT NOT NULL,
     pr INTEGER NOT NULL,
@@ -146,7 +159,10 @@ const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (repo, pr)
   );
   `,
-  `
+  },
+  {
+    additive: true,
+    sql: `
   CREATE TABLE tick_line (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     run_id TEXT NOT NULL,
@@ -154,45 +170,23 @@ const MIGRATIONS: readonly string[] = [
     receipt TEXT NOT NULL
   );
   `,
+  },
 ];
 
 /** The schema version this plugin writes. */
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
-/** A database this plugin cannot use: a newer plugin wrote it. */
+/** A database this plugin cannot use: a newer plugin wrote it, and it needs a newer reader. */
 export class StateVersionError extends Error {
   readonly path: string;
   readonly version: number;
-  constructor(path: string, version: number) {
-    super(
-      `${path} is at state schema version ${version}, which a newer plugin wrote; this plugin knows version ${SCHEMA_VERSION}. Update the plugin, or move the file aside to start a new one`,
-    );
+  constructor(path: string, version: number, reason: string) {
+    super(reason);
     this.name = "StateVersionError";
     this.path = path;
     this.version = version;
   }
 }
-
-function userVersion(db: Database): number {
-  const row = db.query("PRAGMA user_version").get() as {
-    user_version: number;
-  };
-  return row.user_version;
-}
-
-/** Bring the schema to `SCHEMA_VERSION`, refusing a newer one, in one transaction. */
-function migrate(db: Database, path: string): void {
-  db.transaction(() => {
-    // Read again under the write lock: another process may have migrated it.
-    const version = userVersion(db);
-    if (version > SCHEMA_VERSION) throw new StateVersionError(path, version);
-    for (let v = version; v < SCHEMA_VERSION; v++)
-      db.run(MIGRATIONS[v] as string);
-    db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-  }).immediate();
-}
-
-const connections = new Map<string, Database>();
 
 /** The database file under a state directory. */
 export function statePath(root = stateRoot()): string {
@@ -202,36 +196,23 @@ export function statePath(root = stateRoot()): string {
 /**
  * The state database under `root`, opened once per process: created and
  * migrated to this plugin's schema when it is new or older, refused
- * (`StateVersionError`) when a newer plugin wrote it.
+ * (`StateVersionError`) when a newer plugin wrote it and it needs a newer
+ * reader. A database that cannot be opened at all is a defect here, as it
+ * always was: what the platform threw is thrown.
  */
 export function stateDb(root = stateRoot()): Database {
   const path = statePath(root);
-  const open = connections.get(path);
-  if (open !== undefined) return open;
-  mkdirSync(root, { recursive: true, mode: 0o700 });
-  const fresh = !existsSync(path);
-  const db = new Database(path, { create: true });
-  try {
-    if (fresh) chmodSync(path, 0o600);
-    db.run(`PRAGMA busy_timeout = ${BUSY_MS}`);
-    const version = userVersion(db);
-    if (version > SCHEMA_VERSION) throw new StateVersionError(path, version);
-    db.run("PRAGMA journal_mode = WAL");
-    db.run("PRAGMA foreign_keys = ON");
-    if (version < SCHEMA_VERSION) migrate(db, path);
-  } catch (error) {
-    db.close();
-    throw error;
-  }
-  connections.set(path, db);
-  return db;
+  const opened = openDatabase({ path, migrations: MIGRATIONS });
+  if (opened.ok) return opened.value;
+  const { code, reason, cause } = opened.failure;
+  if (code === "newer-schema")
+    throw new StateVersionError(path, schemaVersion(path) ?? 0, reason);
+  throw cause instanceof Error ? cause : new Error(reason);
 }
 
 /** Close and forget the connection to the state database under `root`, when this process holds one. */
 export function closeStateDb(root = stateRoot()): void {
-  const path = statePath(root);
-  connections.get(path)?.close();
-  connections.delete(path);
+  closeDatabase(statePath(root));
 }
 
 /** The state database under `root` when it exists; `null` before the first tick created it. A reader never creates it. */
@@ -240,6 +221,4 @@ export function existingStateDb(root = stateRoot()): Database | null {
 }
 
 /** Run `fn` in one write transaction: everything it writes lands, or none of it does. */
-export function inTransaction<T>(db: Database, fn: () => T): T {
-  return db.transaction(fn).immediate();
-}
+export { inTransaction } from "../../shared/records/db.ts";

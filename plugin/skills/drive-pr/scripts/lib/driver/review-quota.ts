@@ -228,12 +228,12 @@ export async function handleQuotaBlock(
   // returns, nothing refreshes this drive's claim any further, and
   // `release()` (`process.on('exit')`) `rmdir`s the lock slot on the
   // way out — a NORMAL exit, not a crash, so a later `--doctor` sweep
-  // finds NO lock directory here at all. Without this record it would
+  // finds NO lock here at all. Without this record it would
   // therefore see NOTHING for this PR — not even a stale claim to
   // report — and could not tell a drive that parked ON PURPOSE from one
   // that never existed. `listStateOnlyRows` (`drives.ts`) is what makes
-  // the record findable despite the missing lock: it sweeps
-  // `drive-pr-<PR>.json` directly, so this write is what `--doctor`
+  // the record findable despite the missing lock: it sweeps the PR
+  // states directly, so this write is what `--doctor`
   // actually reads to draw the `QUOTA_PARKED` distinction
   // (`lib/doctor.ts`). Best-effort, same reasoning as the pre-spawn
   // stamp above: the wall itself is the fact worth acting on, and

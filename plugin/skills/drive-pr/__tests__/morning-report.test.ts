@@ -8,11 +8,12 @@
  * out. Then the time the report remembers for the next one.
  */
 import { describe, expect, it } from "bun:test";
-import { existsSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { withDeferredEntry } from "../../resolve-review-comments/scripts/lib/deferred-section.ts";
 import { REPORT_MEMORY } from "../scripts/lib/morning-report.ts";
+import { driveDb } from "../scripts/lib/state/db.ts";
 import { ledgerFromState, renderLedger } from "../scripts/lib/state/ledger.ts";
 import { type DriveState, freshState } from "../scripts/lib/state/schema.ts";
 import { provisionalBody } from "../scripts/provisional-reply.ts";
@@ -22,6 +23,7 @@ import {
   runIn,
   SCRIPTS,
 } from "./provisional-fixtures.ts";
+import { writeState as writeStateRow } from "./state-rows.ts";
 
 const ago = (hours: number) =>
   new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
@@ -54,10 +56,21 @@ function decision(key: string, hoursAgo: number) {
   };
 }
 
-function writeState(forge: Forge, state: DriveState): string {
-  const file = join(forge.stateDir, `drive-pr-${state.pr}.json`);
-  writeFileSync(file, JSON.stringify(state));
-  return file;
+function writeState(forge: Forge, state: DriveState): void {
+  writeStateRow(forge.stateDir, String(state.pr), state);
+}
+
+/** Make PR `pr`'s stored state read as written `days` ago. */
+function backdateState(forge: Forge, pr: number, days: number): void {
+  const drive = driveDb(forge.stateDir);
+  drive.db.run(
+    "UPDATE drive_state SET updated_at = ? WHERE clone = ? AND pr = ?",
+    [
+      new Date(Date.now() - days * 86400000).toISOString(),
+      drive.clone,
+      String(pr),
+    ],
+  );
 }
 
 function setUp(): Forge {
@@ -106,12 +119,8 @@ function setUp(): Forge {
     ],
   } as DriveState);
   // A quiet local state from long ago: nothing to say.
-  const quiet = writeState(forge, freshState(13));
-  utimesSync(
-    quiet,
-    new Date(Date.now() - 400 * 86400000),
-    new Date(Date.now() - 400 * 86400000),
-  );
+  writeState(forge, freshState(13));
+  backdateState(forge, 13, 400);
   forge.thread("PRRT_a", [
     FINDING,
     PROVISIONAL,
