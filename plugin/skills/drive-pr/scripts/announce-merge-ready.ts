@@ -952,10 +952,10 @@ ${marker}`;
 
   // The merge-readiness predicate: the PR's live state, then the tree, then
   // the final CI proof, each read afresh, and the first that fails answers.
-  // Every success return and the post itself sit behind it. Every check the
-  // announcement is gated on belongs inside this function, a merge-readiness
-  // predicate another component defines included, so no path announces
-  // without it.
+  // The dry-run return and the post itself sit behind it. The two paths that
+  // answer without posting (an announcement of this head already standing,
+  // and a lost race) run the same three checks inline, each with its own
+  // withdrawal policy, so a check added here must be added to them too.
   async function mergeReady(): Promise<{
     rc: number;
     failed: "state" | "tree" | "ci" | null;

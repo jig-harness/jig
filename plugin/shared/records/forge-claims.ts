@@ -1,6 +1,6 @@
 /**
  * Claims on the forge: the one module that posts, reads back and arbitrates
- * a claim comment on a pull request or issue. Jig makes three kinds of claim
+ * a claim comment on a pull request or issue. Jig makes these kinds of claim
  * there: a driver taking a drive over from another clone's stopped driver
  * (`drive-takeover-claim`), the dispatcher or a person following up a merge
  * (`dispatch-followup`), and a driver announcing that a head is safe to merge
@@ -101,7 +101,11 @@ export interface ClaimKind {
    * payload has the wrong shape, or it names another pull request than
    * `target`), or `null` when it is one.
    */
-  shape?: (record: ClaimRecord, target: ClaimTarget | null) => string | null;
+  shape?: (
+    record: ClaimRecord,
+    target: ClaimTarget | null,
+    body: string,
+  ) => string | null;
   /**
    * A claim in a form written before this one: what it says, why it does not
    * read, or `null` when the body is in no form the kind knows.
@@ -194,6 +198,18 @@ export interface ReadOptions {
 /** How often, and how long apart, a read-back reads again by default. */
 const RETRIES = 3;
 const DELAY_MS = 2_000;
+const MAX_RETRIES = 20;
+const MAX_DELAY_MS = 60_000;
+
+/** `value` as a whole number from 0 to `max`; `fallback` when it is absent or not a finite number. */
+function boundedInt(
+  value: number | undefined,
+  fallback: number,
+  max: number,
+): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(0, Math.trunc(value)));
+}
 
 const dataName = (kind: ClaimKind): string => kind.data.replace(/^<!--\s*/, "");
 
@@ -283,7 +299,9 @@ export function readClaim(
     (data.ok ? currentRecord(kind, data.value) : null) ??
     kind.legacy?.(text, target) ??
     failed("unreadable", `it does not read as a ${kind.name} claim`);
-  const fault = read.ok ? (kind.shape?.(read.value, target) ?? null) : null;
+  const fault = read.ok
+    ? (kind.shape?.(read.value, target, text) ?? null)
+    : null;
   return fault === null ? read : failed("unreadable", fault);
 }
 
@@ -490,7 +508,8 @@ export async function readBack(
   opts: ReadOptions = {},
 ): Promise<Outcome<Standing, "unreadable">> {
   const rule = opts.rule ?? {};
-  const retries = rule.retries ?? RETRIES;
+  const retries = boundedInt(rule.retries, RETRIES, MAX_RETRIES);
+  const delayMs = boundedInt(rule.delayMs, DELAY_MS, MAX_DELAY_MS);
   const clock = opts.clock ?? systemClock;
   for (let attempt = 0; ; attempt++) {
     const listing = await list(target, kind, opts.self ?? null);
@@ -498,7 +517,7 @@ export async function readBack(
     const now = standing(kind, listing.value, posted, rule);
     if (now.verdict !== "lost" || now.own !== null || attempt >= retries)
       return ok(now);
-    await clock.sleep(rule.delayMs ?? DELAY_MS);
+    await clock.sleep(delayMs);
   }
 }
 

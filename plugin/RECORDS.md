@@ -46,7 +46,7 @@ JSON and places the same bytes in a hidden comment on the forge. On the
 forge and the tracker the writer's host and boot are digests, so a public
 comment names no machine. A reader checks the envelope against a strict
 form and returns a failure as a value; the rest of the record is data,
-never a command. The drive ledger and the three
+never a command. The drive ledger and the
 [forge claims](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (the
 takeover claim, the follow-up marker and the merge-ready announcement) carry
 it; the other records adopt it one family at a time

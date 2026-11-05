@@ -8,7 +8,7 @@ release: minor
   `plugin/shared/records/forge-claims.ts` posts a
   [forge claim](../GLOSSARY.md), reads it back, decides it, re-checks it
   before an act and withdraws it. The takeover claim, the follow-up marker
-  and the merge-ready announcement are its three kinds, under one rule: of
+  and the merge-ready announcement are its kinds, under one rule: of
   the trusted claims on one key the earliest comment wins, with the lease
   window as the takeover's lapse window. Who is trusted is one rule too:
   the reading script's own login, or an owner, member or collaborator.

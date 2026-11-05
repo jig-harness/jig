@@ -92,6 +92,8 @@ function followupFault(
   r: ClaimRecord,
   target: ClaimTarget | null,
 ): string | null {
+  if (!r.legacy && r.key !== FOLLOWUP_KEY)
+    return `its record claims ${JSON.stringify(r.key)}, not the follow-up`;
   if (!r.legacy && target !== null && r.payload.pr !== target.number)
     return `its record names pull request #${String(r.payload.pr)}`;
   return runFault(r.payload);

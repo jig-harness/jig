@@ -79,11 +79,21 @@ function legacyAnnouncement(
     : ok({ key: headKey(m[1] ?? ""), at: "", payload: {}, legacy: true });
 }
 
+/** Why a record that reads is not an announcement of the head its text ends with, or `null`. */
+function announcementFault(record: ClaimRecord, _: unknown, body: string) {
+  if (record.legacy) return null;
+  const marked = body.replace(/\s+$/, "").match(HEAD_MARKER)?.[1];
+  return marked !== undefined && record.key === headKey(marked)
+    ? null
+    : "its record and its head marker do not name the same head";
+}
+
 /** The merge-ready announcement as a kind of forge claim. */
 export const MERGE_READY: ClaimKind = {
   name: "drive-merge-ready",
   opens: OPENER,
   data: "<!-- drive-pr-merge-ready-data",
+  shape: announcementFault,
   legacy: legacyAnnouncement,
 };
 

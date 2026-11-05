@@ -36,6 +36,7 @@ import {
 import { ok } from "../outcome.ts";
 import {
   arbitrate,
+  claimBody,
   type ListedClaim,
   readClaim,
   standing,
@@ -167,6 +168,20 @@ return brief(r.value.standing.value);`,
     // The first read and the rule's two more.
     expect(listings(forge)).toBe(3);
   });
+
+  it("hide-ids: a read-back with a non-finite retry count or a negative delay still ends after its bounded reads", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
+    writeFileSync(
+      join(forge.dir, "hide-ids"),
+      JSON.stringify({ ids: [101], until: 99 }),
+    );
+    const out = await probe(
+      forge,
+      `const r = await m.post(pr, l.TAKEOVER_CLAIM, takeover("clone-b", 3), { self: "drive-bot", rule: { retries: Infinity, delayMs: -5 } });
+return brief(r.value.standing.value);`,
+    );
+    expect(out).toMatchObject({ verdict: "lost", own: null });
+  }, 60_000);
 
   it("hide-ids: a read-back that hides the claim but shows an earlier rival reports the loss at once", async () => {
     const forge = fakeForge([], { login: "drive-bot" });
@@ -453,6 +468,36 @@ describe("the forms each kind was written in before", () => {
       kind: "tick",
       record: id,
     });
+  });
+
+  it("refuses a follow-up marker of the current version that claims another key", () => {
+    const id = "20261104T093000Z-aaaaaaaa";
+    const body = tickMarker(id, { ...POST, pr: 9 }).replace(
+      '"key":"followup"',
+      '"key":"9"',
+    );
+    expect(body).toContain('"key":"9"');
+    expect(markerRun(body, 9).kind).toBe("unreadable");
+  });
+
+  it("refuses a merge-ready announcement whose record and head marker name different heads", () => {
+    const h1 = "0123456789abcdef0123456789abcdef01234567";
+    const h2 = "fedcba9876543210fedcba9876543210fedcba98";
+    const body = claimBody(MERGE_READY, {
+      key: `merge-ready:${h1}`,
+      writer: { host: "sha256:0123456789abcdef" },
+      payload: {},
+      text: `done\n\n<!-- drive-pr-merge-ready: ${h1} -->`,
+    });
+    const read = readClaim(MERGE_READY, body);
+    expect(read?.ok).toBe(true);
+    const other = body.replace(
+      `<!-- drive-pr-merge-ready: ${h1} -->`,
+      `<!-- drive-pr-merge-ready: ${h2} -->`,
+    );
+    expect(readClaim(MERGE_READY, other)?.ok).toBe(false);
+    const none = body.replace(`<!-- drive-pr-merge-ready: ${h1} -->`, "");
+    expect(readClaim(MERGE_READY, none)?.ok).toBe(false);
   });
 
   it("reads a merge-ready announcement that only ends with its head marker, and writes one that still does", () => {
