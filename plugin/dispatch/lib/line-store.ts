@@ -14,6 +14,7 @@ import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { pluginVersion } from "../../shared/plugin-version.ts";
+import { isSpan, isTime, isZone } from "../../shared/time-guards.ts";
 import { stateRoot } from "../receipts.ts";
 import type { LineSnapshot, StateAnswer } from "./dashboard-contract.ts";
 import { hostTimeZone } from "./host-time.ts";
@@ -58,15 +59,29 @@ function listOf(fields: Fields): (value: unknown) => boolean {
     Array.isArray(value) && value.every((entry) => hasFields(entry, fields));
 }
 
+/** What the needs view reads of each decision. */
+const DECISION_FIELDS: Fields = {
+  key: isString,
+  kind: (value) => value === "thread" || value === "finding",
+  lines: Array.isArray,
+};
+
+/** What the sessions view reads of each thread sample. */
+const SAMPLE_FIELDS: Fields = {
+  round: isNumber,
+  threads: isNumber,
+  at: isString,
+};
+
 /** The fields every reader of a collection's entries relies on; the rest of an entry is the tick's own detail. */
 const ENTRY_FIELDS = {
   needs: {
     cause: isString,
     repo: isString,
     target: isString,
-    since: isString,
+    since: isTime,
     reason: isString,
-    decisions: Array.isArray,
+    decisions: listOf(DECISION_FIELDS),
     workspaces: Array.isArray,
   },
   sessions: {
@@ -74,8 +89,8 @@ const ENTRY_FIELDS = {
     account: isString,
     repo: isString,
     target: isString,
-    createdAt: isString,
-    samples: Array.isArray,
+    createdAt: isTime,
+    samples: listOf(SAMPLE_FIELDS),
   },
   accounts: {
     name: isString,
@@ -94,8 +109,8 @@ const ENTRY_FIELDS = {
 
 const LINE_FIELDS: Fields = {
   runId: isString,
-  startedAt: isString,
-  finishedAt: isString,
+  startedAt: isTime,
+  finishedAt: isTime,
   exitStatus: isNumber,
   apply: (value) => typeof value === "boolean",
   applyWithheld: nullOr(isString),
@@ -104,7 +119,7 @@ const LINE_FIELDS: Fields = {
   recentTicksMs: (value) =>
     value === undefined || (Array.isArray(value) && value.every(isNumber)),
   plugin: nullOr(isString),
-  timeZone: (value) => value === undefined || isString(value),
+  timeZone: (value) => value === undefined || isZone(value),
   lastAccount: nullOr(isString),
   needs: listOf(ENTRY_FIELDS.needs),
   sessions: listOf(ENTRY_FIELDS.sessions),
@@ -113,10 +128,25 @@ const LINE_FIELDS: Fields = {
   repos: listOf(ENTRY_FIELDS.repos),
 };
 
+/** Whether the spans the page adds to the tick's start (and to each other) stay times it can show; `value` has passed `LINE_FIELDS`. */
+function hasSpans(line: Record<string, unknown>): boolean {
+  const startedAt = line.startedAt as string;
+  const interval = line.intervalMs as number;
+  const longest = line.longestTickMs as number;
+  return (
+    isSpan(startedAt, interval) &&
+    isSpan(startedAt, longest) &&
+    isSpan(startedAt, interval + longest)
+  );
+}
+
 /** Whether `value` has the shape of a `LineSnapshot` the dashboard and `jig dispatch line --json` pass on. */
 function isLine(value: unknown): value is LineSnapshot {
   return (
-    isMapping(value) && value.version === 1 && hasFields(value, LINE_FIELDS)
+    isMapping(value) &&
+    value.version === 1 &&
+    hasFields(value, LINE_FIELDS) &&
+    hasSpans(value)
   );
 }
 

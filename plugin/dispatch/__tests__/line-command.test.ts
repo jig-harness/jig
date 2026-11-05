@@ -183,6 +183,10 @@ describe("jig dispatch line --json", () => {
     ["a time zone that is not a string", { timeZone: 42 }],
     ["no start time", { startedAt: undefined }],
     ["a duration that is not a number", { recentTicksMs: ["oops"] }],
+    ["a start time that is not a time", { startedAt: "not-a-date" }],
+    ["a time zone that is not a zone", { timeZone: "not-a-zone" }],
+    ["a negative interval", { intervalMs: -1 }],
+    ["an interval past the last time Date holds", { intervalMs: 9e15 }],
   ])(
     "refuses a version-1 line with %s, as it does one that is not JSON",
     (_name, change) => {
@@ -198,6 +202,39 @@ describe("jig dispatch line --json", () => {
       ).toThrow("line-unreadable");
     },
   );
+
+  const NEED = {
+    cause: "park",
+    repo: "r",
+    target: "t",
+    since: "2026-01-01T00:00:00.000Z",
+    reason: "x",
+    decisions: [],
+    workspaces: [],
+  };
+  const SESSION = {
+    record: "r",
+    account: "a",
+    repo: "r",
+    target: "t",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    samples: [],
+  };
+
+  it.each([
+    ["a null decision", { needs: [{ ...NEED, decisions: [null] }] }],
+    ["a null thread sample", { sessions: [{ ...SESSION, samples: [null] }] }],
+  ])("refuses a line with %s", (_name, change) => {
+    const root = stateRootOf(freshHome());
+    writeLine(LINE, "{}", root);
+    stateDb(root)
+      .query("UPDATE tick_line SET line = ? WHERE id = 1")
+      .run(JSON.stringify({ ...LINE, ...change }));
+    closeStateDb(root);
+    expect(() =>
+      lineMain({ root, nowMs: NOW, print: () => undefined }),
+    ).toThrow("line-unreadable");
+  });
 
   it("reads a database at an older schema without migrating it", () => {
     const root = stateRootOf(freshHome());
