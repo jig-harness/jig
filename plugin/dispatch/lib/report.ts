@@ -201,9 +201,7 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
     ...receipt.repos.flatMap((r) => [...repoLines(r, receipt.apply), ""]),
     ...(receipt.defect === undefined
       ? []
-      : [
-          `DEFECT: the tick did not complete; its ${receipt.defect.phase} phase threw: ${receipt.defect.message}`,
-        ]),
+      : [`DEFECT: the tick did not complete: ${receipt.defect.reason}`]),
     ...phaseLine("Tick took ", receipt.phasesMs),
     `Receipt: ${path}`,
   ].join("\n");

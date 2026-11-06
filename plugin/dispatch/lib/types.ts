@@ -395,12 +395,12 @@ export type RepoPhase =
  * ([ADR-0012](../../../docs/adr/ADR-0012-failures-as-values.md)).
  */
 export interface Defect {
+  /** For code and tests: always `defect`, so a reader tells it from a refusal without parsing the reason. */
+  code: "defect";
   /** The phase it was thrown in. */
   phase: string;
-  /** The error's name and first line. */
-  message: string;
-  /** Its stack, where the error carried one. */
-  stack: string | null;
+  /** For a person: what was thrown, in which phase, and the error's first line. Its stack goes to the tick's error output, never here. */
+  reason: string;
 }
 
 export interface RepoReport {

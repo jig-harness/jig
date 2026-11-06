@@ -98,7 +98,7 @@ async function run(
 }
 
 describe("a defect in one repository's turn", () => {
-  it("stops that turn only: the next repository is planned, the receipt names the defect with its stack, and the tick exits 1", async () => {
+  it("stops that turn only: the next repository is planned, the receipt names the defect, its stack goes to the log, and the tick exits 1", async () => {
     const { w, second } = fixture();
     const { receipt, stderr } = await run(
       w,
@@ -108,12 +108,16 @@ describe("a defect in one repository's turn", () => {
     );
     const [broken, next] = receipt.repos;
     expect(broken?.path).toBe(w.repo);
+    expect(broken?.defect?.code).toBe("defect");
     expect(broken?.defect?.phase).toBe("runtime");
-    expect(broken?.defect?.message).toContain("TypeError");
-    expect(broken?.defect?.stack).toContain("tick-observe.ts");
-    expect(broken?.refused).toContain(
-      "a defect stopped this repository's turn in its runtime phase",
+    expect(broken?.defect?.reason).toStartWith(
+      "a TypeError was thrown in the runtime phase: ",
     );
+    expect(broken?.refused).toContain(
+      "a defect stopped this repository's turn, and nothing after it was done this tick: a TypeError was thrown in the runtime phase",
+    );
+    // The stack goes to the log, never on the receipt.
+    expect(JSON.stringify(receipt)).not.toContain("tick-observe.ts");
     // What the phases before the defect read stays on the report.
     expect(broken?.records.map((r) => r.record)).toEqual(["tracker", "forge"]);
     expect(next?.path).toBe(second);
@@ -125,7 +129,7 @@ describe("a defect in one repository's turn", () => {
     expect(receipt.completed).toBe(true);
     expect(receipt.exitStatus).toBe(1);
     expect(stderr).toContain(
-      `a defect stopped ${SLUG}'s turn in its runtime phase`,
+      `a defect stopped ${SLUG}'s turn: a TypeError was thrown in the runtime phase`,
     );
     expect(stderr).toContain("tick-observe.ts");
   });
@@ -142,15 +146,19 @@ describe("a defect in the tick's closing steps", () => {
     );
     expect(receipt.completed).toBe(false);
     expect(receipt.exitStatus).toBe(1);
-    expect(receipt.defect?.phase).toBe("close");
-    expect(receipt.defect?.message).toBe(
-      "TypeError: a bug in the closing steps",
-    );
+    expect(receipt.defect).toEqual({
+      code: "defect",
+      phase: "close",
+      reason:
+        "a TypeError was thrown in the close phase: a bug in the closing steps",
+    });
     expect(receipt.repos[0]?.actions.map((a) => a.target)).toEqual([
       "#12",
       "PR #7",
     ]);
-    expect(stderr).toContain("a defect stopped the tick in its close phase");
+    expect(stderr).toContain(
+      "a defect stopped the tick: a TypeError was thrown in the close phase: a bug in the closing steps\nTypeError: a bug in the closing steps\n    at ",
+    );
     const listed = await w.dispatch(["receipts"]);
     expectSpawnExit(listed, 0);
     expect(listed.stdout).toContain("incomplete");

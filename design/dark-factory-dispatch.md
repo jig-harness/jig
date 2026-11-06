@@ -121,10 +121,11 @@ disk under the state database, say). The tick catches it once, at the
 boundary around each repository's turn
 ([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)). The repository's
 report keeps what its earlier phases did, launches included, and is
-refused with the defect: the phase it was thrown in, its message and its
-stack. The stack also goes to the tick's error output, which the timer's
-journal keeps. The remaining repositories run, the tick still closes and
-writes its receipt, and it exits 1. A defect in the closing steps still
+refused with the defect: the code `defect`, the phase it was thrown in, and
+a sentence saying what was thrown there. The receipt never carries the
+stack: that goes to the tick's error output, beside the same sentence,
+which the timer's journal keeps. The remaining repositories run, the tick
+still closes and writes its receipt, and it exits 1. A defect in the closing steps still
 writes the receipt, marked not completed, with the defect on it; `jig
 dispatch receipts` lists it as incomplete and counts its defects.
 
@@ -1108,7 +1109,8 @@ notifies for it (see Several hosts), so a person is told once.
 Every tick writes one receipt under `~/.local/state/jig/dispatch/receipts/`, as
 `jig gc` does: the records it read and from where, each planned action with
 its reason, each launch with the runtime's answer, each notification, the
-milliseconds of each phase, and any defect with its stack. A
+milliseconds of each phase, and any defect with its phase and what was
+thrown (its stack goes to the journal). A
 tick removes receipts and ended launch records older than the machine
 file's retention, keeping the latest completed receipt. These records are
 kept apart from them and do not expire: the outcome log (see Control) and

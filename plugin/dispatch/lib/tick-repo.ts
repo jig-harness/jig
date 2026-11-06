@@ -84,13 +84,13 @@ function timed(report: RepoReport, timer: PhaseTimer<RepoPhase>): RepoReport {
 
 /**
  * The report of a turn a defect stopped: what its earlier phases put on it,
- * refused with the defect, which is said with its stack on the error output.
+ * refused with the defect; its stack goes to the error output only.
  */
 export function defectReport(turn: RepoTurn, error: unknown): RepoReport {
   const defect = defectOf(turn.timer.current ?? "open", error);
   const report = turn.report ?? emptyReport(turn.path, "");
-  report.refused = `a defect stopped this repository's turn in its ${defect.phase} phase, so nothing after it was done this tick: ${defect.message}`;
+  report.refused = `a defect stopped this repository's turn, and nothing after it was done this tick: ${defect.reason}`;
   report.defect = defect;
-  logDefect(`${report.slug ?? turn.path}'s turn`, defect);
+  logDefect(`${report.slug ?? turn.path}'s turn`, defect, error);
   return timed(report, turn.timer);
 }
