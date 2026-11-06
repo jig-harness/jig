@@ -143,4 +143,15 @@ describe("jig send assign", () => {
     expect(r2.stderr).toContain("set dispatch.identity");
     expect(writes(none.ops)).toEqual([]);
   });
+
+  it("takes the tracker from the default branch, not the checkout", async () => {
+    const { w, ops } = world();
+    w.config(
+      "dispatch:\n  identity: factory-bot\nissue_tracker:\n  adapter: linear\n  linear:\n    team: ENG\n",
+    );
+    const r = await w.send([`pickup@${REPO}#14`, "assign"]);
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("not an item key of the tracker");
+    expect(writes(ops)).toEqual([]);
+  });
 });

@@ -4,7 +4,10 @@
  * value.
  */
 import { describe, expect, it } from "bun:test";
-import type { TrackerUser } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import type {
+  Issue,
+  TrackerUser,
+} from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { type AssignTracker, assignPickup } from "../lib/requests.ts";
 
 const BOT: TrackerUser = { id: "U_bot", name: "factory-bot" };
@@ -15,6 +18,7 @@ function tracker(opts: {
   holders?: TrackerUser[];
   failMove?: boolean;
   keepsHolders?: boolean;
+  startedState?: boolean;
 }) {
   const calls: string[] = [];
   let holders = opts.holders ?? [];
@@ -25,6 +29,13 @@ function tracker(opts: {
       calls.push("assign");
       if (opts.keepsHolders !== true) holders = [user];
     },
+    getIssue: async () =>
+      ({
+        state: {
+          name: "In Progress",
+          type: opts.startedState ? "started" : "unstarted",
+        },
+      }) as Issue,
     transition: async () => {
       calls.push("transition");
       if (opts.failMove) throw new Error("the tracker is down");
@@ -52,6 +63,22 @@ describe("assignPickup", () => {
     const r = await assignPickup(t, "#14", "factory-bot", null);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.failure.reason).toContain("now assigned to dana");
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses an item someone took after the plan before it moves it", async () => {
+    const { t, calls } = tracker({ holders: [DANA] });
+    const r = await assignPickup(t, "#14", "factory-bot", "todo");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.failure.reason).not.toContain("already moved");
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses an item someone started after the plan, without moving it back", async () => {
+    const { t, calls } = tracker({ startedState: true });
+    const r = await assignPickup(t, "#14", "factory-bot", "todo");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.failure.reason).toContain("work in progress");
     expect(calls).toEqual([]);
   });
 

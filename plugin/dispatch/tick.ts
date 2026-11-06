@@ -38,7 +38,6 @@
  * the history rows of what it did not launch.
  */
 import { passTimeoutSeconds } from "../skills/drive-pr/scripts/lib/driver/settings.ts";
-import { parseTrackerConfig } from "../skills/do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../skills/do-item/scripts/lib/tracker/index.ts";
 import {
   type IssueKeys,
@@ -104,7 +103,7 @@ import type {
   SessionRuntime,
   SessionsReport,
 } from "./lib/runtime/port.ts";
-import { branchPattern, readSection } from "./lib/section.ts";
+import { branchPattern, readSection, trackerConfigOf } from "./lib/section.ts";
 import {
   heldElsewhere,
   launchClaimer,
@@ -629,12 +628,7 @@ async function readTracker(
     tracker: null,
   };
   try {
-    const parsed = parseTrackerConfig(values);
-    // GitHub Issues with no repository named are the forge repository's own.
-    const config =
-      parsed.adapter === "github" && parsed.github.repository === null
-        ? { ...parsed, github: { ...parsed.github, repository: repo.slug } }
-        : parsed;
+    const config = trackerConfigOf(values, repo.slug);
     tracked.keys = issueKeysOf(config);
     const reading = await readPickups(() => {
       tracked.tracker = openTracker(config, repo.path);

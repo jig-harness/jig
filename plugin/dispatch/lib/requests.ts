@@ -49,19 +49,34 @@ export async function writeCommandLabel(
 /** The tracker operations a pick-up assignment uses. */
 export type AssignTracker = Pick<
   Tracker,
-  "user" | "assignees" | "assign" | "transition"
+  "user" | "assignees" | "assign" | "transition" | "getIssue"
 >;
+
+/** The refusal of an item someone holds; `moved` when this request had already moved it. */
+function heldBy(
+  key: string,
+  identity: string,
+  holders: ReadonlyArray<{ name: string }>,
+  moved: boolean,
+): Outcome<void, "refused"> {
+  return failed(
+    "refused",
+    `${key} is now assigned to ${holders.map((h) => h.name).join(", ")}, so it was not assigned to ${identity}${moved ? "; this request had already moved it to a dispatch state" : ""}`,
+  );
+}
 
 /**
  * Assign item `key` to the factory identity and, with `move`, move it to
  * that dispatch state. The move comes first: the tick picks up only items
  * assigned to the identity, so an item moved and not yet assigned waits
  * harmlessly, and a request that stopped between the two writes is finished
- * by sending it again. The assignees are read again right before the
- * assignment, which replaces whoever holds the item, and again after it:
- * an item someone took in between is refused, not taken from them. The
- * forge cannot make the read and the write one step, so a hold made between
- * the last read and the write is the one case left.
+ * by sending it again. Before the move the item is read again: one that
+ * someone took or started since the plan is refused untouched. The
+ * assignees are read once more right before the assignment, which replaces
+ * whoever holds the item, and again after it: an item someone took in
+ * between is refused, not taken from them. The forge cannot make a read and
+ * the write after it one step, so a hold made between the last read and the
+ * write is the one case left.
  */
 export async function assignPickup(
   tracker: AssignTracker,
@@ -71,13 +86,20 @@ export async function assignPickup(
 ): Promise<Outcome<void, "refused">> {
   try {
     const user = await tracker.user(identity);
-    if (move !== null) await tracker.transition(key, move);
+    if (move !== null) {
+      const before = await tracker.assignees(key);
+      if (before.length > 0) return heldBy(key, identity, before, false);
+      const now = await tracker.getIssue(key);
+      if (now?.state.type === "started")
+        return failed(
+          "refused",
+          `${key} is now ${now.state.name}, a state of work in progress, so it was neither moved nor assigned to ${identity}`,
+        );
+      await tracker.transition(key, move);
+    }
     const holders = await tracker.assignees(key);
     if (holders.length > 0)
-      return failed(
-        "refused",
-        `${key} is now assigned to ${holders.map((h) => h.name).join(", ")}, so it was not assigned to ${identity}${move === null ? "" : "; it was already moved to a dispatch state, where it waits unassigned"}`,
-      );
+      return heldBy(key, identity, holders, move !== null);
     await tracker.assign(key, user);
     const after = await tracker.assignees(key);
     if (after.length !== 1 || after[0]?.id !== user.id)
