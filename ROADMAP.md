@@ -9,6 +9,11 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ## Now
 
+First comes what lets a team's pull requests reach merge-ready with nobody
+watching. An agent working alone cannot get past a person, the dispatcher
+leaves no work stranded, and a person sees and steers the work from one
+place.
+
 ### 32. Driving any pull request from anywhere, with autonomy that fits the hour
 
 The review drive already runs from any checkout, restarts itself, is taken
@@ -21,6 +26,20 @@ so a pull request cannot widen what its own drive may decide. A repository
 may already raise how far an agent decides during the hours nobody is there
 to ask (opt-in, not yet validated); every such decision is recorded on the
 pull request where a person can reverse it, and a morning report lists them.
+
+### 40. The pass trust boundary as mechanisms
+
+An agent that works one round of a pull request's review with nobody
+watching, a [drive pass](plugin/MECHANISMS.md#the-two-kinds-of-part),
+usually uses the login of the person who started the drive. Only its
+instructions stop it from a few things it must never do. It could answer a
+question it left for a person, push while a person holds pushes, or merge.
+It could also loosen a check, resolve a review thread nobody answered, or
+edit the records the dispatcher reads and the plugin copy its timers run.
+Each of these gets a mechanism that runs instead: a hook, a permission rule
+or a credential of its own. The
+[mechanism map](plugin/MECHANISMS.md#where-the-boundary-rests-on-instructions)
+then names what holds each one, or records its risk as accepted.
 
 ### 33. The dispatcher: a tick that starts the execution line's stages
 
@@ -65,6 +84,20 @@ whoever drives it, in one column: coming, picking up, driven, needs you,
 ready to merge, or merged. Work moves in any direction, and a pull request
 that was ready and moved back says why. Merging stays a person's.
 
+### 39. Addresses: asking and telling the stations of the line
+
+Every station on a piece of work has an address, such as
+`drive@jig#456`: the drive of pull request 456. `jig ask <address>` says
+who holds the station, what state it is in and what it waits on. It also
+shows what was said to the station and by it. It reads the tracker, the
+pull request and the dispatching machine's records.
+`jig send <address> <verb>` writes the assignment, label, comment or
+mailbox directive the line already acts on, from a closed list of verbs,
+and checks first that the station can take it. The operator skill,
+`/jig:operator`, turns a question such as "what is waiting on me" into
+those commands. Nothing new is stored, and no agent has to keep running for an
+address to answer.
+
 ### 35. One jig command line
 
 The plugin's machine-level tools become one `jig` command on `PATH`, with
@@ -80,6 +113,49 @@ machine receives nothing. Help for every command and shell completion come
 from the same definitions that parse the command line, and the jobs a
 machine already installed keep running unchanged.
 
+### 34. Jig in the Orca ecosystem
+
+[Orca](https://www.onorca.dev) is one of the workspace runtimes Jig's
+tooling supports, beside Herdr, the runtime it targets first. A small
+plugin Orca loads runs a dispatcher tick the moment an agent stops or
+waits. On an Orca host the plugin will also refuse to start an agent in a
+worktree `jig gc` is removing, for every launch Orca makes through its
+launchers, so a launch gc's last check could miss is turned away. The
+protection is best-effort: a restored session, a hook that fails and a
+plugin that is down are not covered. The plugin will show what waits on a person in Orca's
+status bar and in a panel. The panel opens on that person's inbox, with the
+dispatch board beside it. The dispatcher will read each account's usage
+from Orca's command line once Orca offers it. The plugin is Orca-bound.
+
+## Next
+
+Next comes delegated merge, once an agent cannot push or merge by any other
+path. Then come what lets a second team adopt Jig, work that arrives
+complete, and reviews that catch what checks cannot. Last come the practices
+the modules and skills lack, measurement, the developer machine and its
+runtimes, and the runs that wait on a person.
+
+### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
+
+An opt-in setting that lets a converged drive arm the forge's auto-merge for
+the exact commit it certified, for a repository that chooses to delegate the
+merge. The delegation is read only from places the pull request cannot
+change, and withdrawing it withdraws an auto-merge already armed. It waits
+until [the pass trust boundary](#40-the-pass-trust-boundary-as-mechanisms)
+holds, so an agent that may arm a merge has no other way to push or merge.
+Jig itself keeps a person merging
+([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
+
+### 26. `init`: setting a repository up for Jig
+
+One command in a fresh clone that derives the values the repository already
+states (gate command, integration branch, reviewers, issue-key prefix,
+catalog, changelog), asks only what it cannot derive, writes
+`.config/jig.yaml` with the evidence beside each value, enables the plugin
+for everyone who clones, and checks the result the way the audit will. The
+audit stays the measurement; init is the setup, and the audit's remedy for a
+fixable configuration finding.
+
 ### 3. The kickoff family
 
 A `kickoff` skill that starts a new repository from nothing: requirements,
@@ -90,12 +166,6 @@ issues. It replaces the fixed starter kit the
 review inside `review`; and `upgrade-deps`, which makes grouped dependency
 upgrades an update bot cannot make alone and drives them to merge.
 
-### 7. The Notion store, verified against Notion
-
-The [Notion store](plugin/skills/reflect/README.md#notion-store) for
-reflections passes its tests against a stand-in for Notion's API. This item
-runs it against Notion itself and fixes what differs.
-
 ### 8. The audit experience: what is left
 
 An audit at the end of a greenfield kickoff that checks the chosen
@@ -104,25 +174,103 @@ and the audit results a team marks as wrong reaching the
 [reflection store](plugin/skills/reflect/README.md), so the audit learns
 from them.
 
-### 19. Herdr as the primary workspace runtime
+### 38. One look for Jig's pages
 
-[Herdr](https://herdr.dev) is the [workspace runtime](GLOSSARY.md) Jig's
-tooling is built and tested for first
-([ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
-Opening a tracker issue as a Herdr workspace, on the machine or on a remote
-host, and M12's worktree lifecycle in Herdr are available
-([the Herdr workspace tool](tools/herdr/README.md)); what remains is checking
-the drive, pickup and review skills inside Herdr on macOS and Linux.
+The pages Jig's tooling draws will share one look: the dispatch dashboard,
+the decision, explainer and audit sheets, and the code-stats report. Each
+will follow the reader's light or dark setting and carry Jig's mark as its
+icon. Every text colour will meet WCAG AA, the Web Content Accessibility
+Guidelines' minimum contrast, in both modes.
 
-## Next
+### 41. Configurable issue facets: type, priority and size
 
-### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
+Every issue records its type, priority and size, so a team can sort and
+filter its tracker by them. A team chooses where its tracker keeps each one:
+the tracker's own field, a custom field, labels, or a command of its own.
+Each tracker Jig supports has a documented default. On GitHub Issues that is
+the issue type and the organization's own issue fields, with labels where it
+has none. Every way Jig's tools file an issue sets all three and checks them,
+and a weekly check reports any issue that lacks one.
 
-An opt-in setting that lets a converged drive arm the forge's auto-merge for
-the exact commit it certified, for a repository that chooses to delegate the
-merge. The delegation is read only from places the pull request cannot
-change, and withdrawing it withdraws an auto-merge already armed. Jig itself
-keeps a person merging ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
+### 12. More tracker adapters
+
+A plan file kept in the repository, beside Linear, GitHub Issues and
+Jira. The [tracker interface](GLOSSARY.md) first gains attaching a file,
+the one operation the skills need that the interface does not have yet, and
+the workspace launcher learns to open GitHub issues.
+
+### 27. Work types: depth by kind of work
+
+An item's type (bug, feature, improvement, task, spike) derived from the
+tracker's label taxonomy, its own issue type or a conventional title prefix,
+and one table saying what each type changes: pre-scouts, test-first, review
+tiers, the change note, batchability, autonomy. A type lightens the work
+only where no flag label, catalog review or gate asks for more, and an item
+whose type is unknown gets the deepest treatment.
+
+### 29. The spec a work item links
+
+A work item names where its requirements and acceptance criteria live, in
+its own body or in whatever spec framework the repository already uses, and
+Jig resolves that reference read-only, through an adapter per layout, into
+requirements, acceptance criteria and tasks with their ids. The implementing
+agent and the reviewer get the list, and the pull request accounts for every
+criterion: met with evidence, deferred to a filed item, or not applicable.
+The delivery loop writes no spec and dictates no format; the tools that
+write specs well are recommended beside the adapter that reads each.
+
+### 31. Routing work to an agent, a model and an effort
+
+Delegation already picks an agent from the issue's change areas, labels and
+title, and `do-item` reports the model tier and effort the work's type, its
+size and flag labels and the change areas' mandatory reviews call for, by
+rules a repository declares with defaults it overrides. The agent still
+runs on whichever model and effort the session was started with, whatever
+the work. Routing will apply that route to the implementer, opt-in, with
+the reason recorded on the pull request where the review loop's reports
+join it to the outcome, and a person's choice always able to override it.
+Until then, the workspace launcher's Orca provider hands the agent's start
+to the person; its Herdr provider starts the configured agent.
+
+### 23. Seed review lenses
+
+[`review`](plugin/skills/review/SKILL.md) runs [review lenses](GLOSSARY.md)
+from one file each, and ships the lens for no swallowed failure
+([M15](modules/M15-contracts-errors/README.md)); the other rules Jig's
+modules state that no gate can judge have none yet. Still to come: a test for
+each changed behaviour ([M14](modules/M14-testing-strategy/README.md)),
+comments that say what the code does now ([M4](modules/M4-docs-governance/README.md)),
+and types that admit no invalid value (M15). Each runs only when the diff
+gives it something to check, comments until measurement shows it may block,
+and can be loaded by a repository's own automated reviewer.
+
+### 30. Scanner findings block convergence
+
+A static-analysis app that reports to the pull request as annotations rather
+than review threads (SonarQube Cloud does) has its findings worked by the
+review loop when a round runs, but a drive with only annotations can converge
+without starting one. They will count as open work beside threads and summary
+findings; a finding that stands can be recorded against the head so a later
+head is checked again; and the tool's own dismissal is made where the tool
+offers one.
+
+### 25. Dependency-review feedback
+
+Tools that review a pull request's dependency changes for supply-chain risk,
+such as Socket, report in a check and a summary comment. The review loop
+already counts a failing check of theirs in its CI verdict, like any other
+check, but does not read their alerts. The loop will read their alerts as
+findings with a severity, answer or fix them like any other finding, and show
+their scores without acting on them. A failing check of such a tool will not
+stop a pull request by itself, unless the repository requires that check; its
+alerts will.
+
+### 17. Corrected designs for the existing modules
+
+Practices working repositories validated, added to the modules that exist:
+watchdogs for what is deployed (M10, M11), an acceptance stage (M6), a skill
+that runs M7's post-merge stage in any repository, and a generator for the
+model roster (M0).
 
 ### 10. Values the skills still assume
 
@@ -134,20 +282,6 @@ skills outside the delivery loop still assume a git remote named `origin`
 where the rest read [`repository.remote`](plugin/CONFIGURATION.md#repository). They move
 into configuration, and the follow-up step onto the tracker interface, so it
 files on every tracker Jig supports.
-
-### 12. More tracker adapters
-
-A plan file kept in the repository, beside Linear, GitHub Issues and
-Jira. The [tracker interface](GLOSSARY.md) first gains attaching a file,
-the one operation the skills need that the interface does not have yet, and
-the workspace launcher learns to open GitHub issues.
-
-### 17. Corrected designs for the existing modules
-
-Practices working repositories validated, added to the modules that exist:
-watchdogs for what is deployed (M10, M11), an acceptance stage (M6), a skill
-that runs M7's post-merge stage in any repository, and a generator for the
-model roster (M0).
 
 ### 20. `code-stats`: a reference set and audit evidence
 
@@ -165,58 +299,6 @@ monorepo's packages, keeps a changelog and a version for each with the
 one per repository. The skill also gets workflow templates for CI providers
 other than GitHub.
 
-### 23. Seed review lenses
-
-[`review`](plugin/skills/review/SKILL.md) runs [review lenses](GLOSSARY.md)
-from one file each, and ships the lens for no swallowed failure
-([M15](modules/M15-contracts-errors/README.md)); the other rules Jig's
-modules state that no gate can judge have none yet. Still to come: a test for
-each changed behaviour ([M14](modules/M14-testing-strategy/README.md)),
-comments that say what the code does now ([M4](modules/M4-docs-governance/README.md)),
-and types that admit no invalid value (M15). Each runs only when the diff
-gives it something to check, comments until measurement shows it may block,
-and can be loaded by a repository's own automated reviewer.
-
-### 24. Resource garbage collection for a developer machine
-
-One command, `jig gc`, that reports and then reclaims what parallel agent
-worktrees leave on a machine: fixture processes, scratch directories,
-container volumes and images, merged branches and tool state. Every kind
-follows one contract (something must prove the resource dead, age only
-guards, report first, fail closed, a receipt per run); a repository enables
-the kinds it mints with its own facts, a machine sets the schedule, and
-[M12](modules/M12-parallel-agent-ergonomics/README.md) gains the practice.
-
-### 25. Dependency-review feedback
-
-Tools that review a pull request's dependency changes for supply-chain risk,
-such as Socket, report in a check and a summary comment. The review loop
-already counts a failing check of theirs in its CI verdict, like any other
-check, but does not read their alerts. The loop will read their alerts as
-findings with a severity, answer or fix them like any other finding, and show
-their scores without acting on them. A failing check of such a tool will not
-stop a pull request by itself, unless the repository requires that check; its
-alerts will.
-
-### 26. `init`: setting a repository up for Jig
-
-One command in a fresh clone that derives the values the repository already
-states (gate command, integration branch, reviewers, issue-key prefix,
-catalog, changelog), asks only what it cannot derive, writes
-`.config/jig.yaml` with the evidence beside each value, enables the plugin
-for everyone who clones, and checks the result the way the audit will. The
-audit stays the measurement; init is the setup, and the audit's remedy for a
-fixable configuration finding.
-
-### 27. Work types: depth by kind of work
-
-An item's type (bug, feature, improvement, task, spike) derived from the
-tracker's label taxonomy, its own issue type or a conventional title prefix,
-and one table saying what each type changes: pre-scouts, test-first, review
-tiers, the change note, batchability, autonomy. A type lightens the work
-only where no flag label, catalog review or gate asks for more, and an item
-whose type is unknown gets the deepest treatment.
-
 ### 28. `verify` and `debug`: evidence before claims, and a bounded debugging protocol
 
 `verify` runs a check and keeps the proof: the command, the tree it ran
@@ -228,75 +310,33 @@ protocol: reproduce, attribute on a fresh base, narrow, write down each
 hypothesis, fix, and stop after a stated budget with the ledger posted where
 the work is tracked, instead of a fourth guess.
 
-### 29. The spec a work item links
+### 24. Resource garbage collection for a developer machine
 
-A work item names where its requirements and acceptance criteria live, in
-its own body or in whatever spec framework the repository already uses, and
-Jig resolves that reference read-only, through an adapter per layout, into
-requirements, acceptance criteria and tasks with their ids. The implementing
-agent and the reviewer get the list, and the pull request accounts for every
-criterion: met with evidence, deferred to a filed item, or not applicable.
-The delivery loop writes no spec and dictates no format; the tools that
-write specs well are recommended beside the adapter that reads each.
+One command, `jig gc`, that reports and then reclaims what parallel agent
+worktrees leave on a machine: fixture processes, scratch directories,
+container volumes and images, merged branches and tool state. Every kind
+follows one contract (something must prove the resource dead, age only
+guards, report first, fail closed, a receipt per run); a repository enables
+the kinds it mints with its own facts, a machine sets the schedule, and
+[M12](modules/M12-parallel-agent-ergonomics/README.md) gains the practice.
 
-### 30. Scanner findings block convergence
+### 19. Herdr as the primary workspace runtime
 
-A static-analysis app that reports to the pull request as annotations rather
-than review threads (SonarQube Cloud does) has its findings worked by the
-review loop when a round runs, but a drive with only annotations can converge
-without starting one. They will count as open work beside threads and summary
-findings; a finding that stands can be recorded against the head so a later
-head is checked again; and the tool's own dismissal is made where the tool
-offers one.
+[Herdr](https://herdr.dev) is the [workspace runtime](GLOSSARY.md) Jig's
+tooling is built and tested for first
+([ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
+Opening a tracker issue as a Herdr workspace, on the machine or on a remote
+host, and M12's worktree lifecycle in Herdr are available
+([the Herdr workspace tool](tools/herdr/README.md)); what remains is checking
+the drive, pickup and review skills inside Herdr on macOS and Linux. That
+check waits on a repository that runs its agents in Herdr.
 
-### 31. Routing work to an agent, a model and an effort
+### 7. The Notion store, verified against Notion
 
-Delegation already picks an agent from the issue's change areas, labels and
-title, and `do-item` reports the model tier and effort the work's type, its
-size and flag labels and the change areas' mandatory reviews call for, by
-rules a repository declares with defaults it overrides. The agent still
-runs on whichever model and effort the session was started with, whatever
-the work. Routing will apply that route to the implementer, opt-in, with
-the reason recorded on the pull request where the review loop's reports
-join it to the outcome, and a person's choice always able to override it.
-Until then, the workspace launcher's Orca provider hands the agent's start
-to the person; its Herdr provider starts the configured agent.
-
-### 34. Jig in the Orca ecosystem
-
-[Orca](https://www.onorca.dev) is one of the workspace runtimes Jig's
-tooling supports, beside Herdr, the runtime it targets first. A small
-plugin Orca loads runs a dispatcher tick the moment an agent stops or
-waits. On an Orca host the plugin will also refuse to start an agent in a
-worktree `jig gc` is removing, for every launch Orca makes through its
-launchers, so a launch gc's last check could miss is turned away. The
-protection is best-effort: a restored session, a hook that fails and a
-plugin that is down are not covered. The plugin will show what waits on a person in Orca's
-status bar and in a panel. The panel opens on that person's inbox, with the
-dispatch board beside it. The dispatcher will read each account's usage
-from Orca's command line once Orca offers it. The plugin is Orca-bound.
-
-### 38. One look for Jig's pages
-
-The pages Jig's tooling draws will share one look: the dispatch dashboard,
-the decision, explainer and audit sheets, and the code-stats report. Each
-will follow the reader's light or dark setting and carry Jig's mark as its
-icon. Every text colour will meet WCAG AA, the Web Content Accessibility
-Guidelines' minimum contrast, in both modes.
-
-### 39. Addresses: asking and telling the stations of the line
-
-Every station on a piece of work has an address, such as
-`drive@jig#456`: the drive of pull request 456. `jig ask <address>` says
-who holds the station, what state it is in and what it waits on. It also
-shows what was said to the station and by it. It reads the tracker, the
-pull request and the dispatching machine's records.
-`jig send <address> <verb>` writes the assignment, label, comment or
-mailbox directive the line already acts on, from a closed list of verbs,
-and checks first that the station can take it. The operator skill,
-`/jig:operator`, turns a question such as "what is waiting on me" into
-those commands. Nothing new is stored, and no agent has to keep running for an
-address to answer.
+The [Notion store](plugin/skills/reflect/README.md#notion-store) for
+reflections passes its tests against a stand-in for Notion's API. This item
+runs it against Notion itself and fixes what differs. That run waits on a
+person with an access token for a Notion workspace.
 
 ## Later
 
