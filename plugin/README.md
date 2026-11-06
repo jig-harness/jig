@@ -426,7 +426,11 @@ each one; a drive stopped on an exit only a person settles, or with no exit;
 a failed follow-up, with the question its pass stopped on; a stalled pickup,
 a double claim, a session waiting past `dispatch.blocked_after`. Each message
 carries the cause or the question, the pull request's link and the handoff,
-and names the workspace the stage ran in. Every message for a repository
+and names the workspace the stage ran in. Follow-up passes leave routine
+local branch, retired-workspace and scratch-note retention to periodic
+cleanup, including leftovers no collector covers yet. These do not require
+a question for a person or a failed result; evidence of unlanded work or an
+active operational problem still does require follow-up. Every message for a repository
 goes to one place a person watches, never to the workspace joined to the
 pull request or item, which a person following many repositories does not
 visit: the workspace on the branch `dispatch.notices_branch` names, when the
