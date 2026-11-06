@@ -617,7 +617,11 @@ outlives the session that spawned it, so its console is not where you look:
   nonexistent PR number, never a repository/auth/transport error), no lease
   is live on it, and nothing in the family was touched for `--min-age-days`
   (default 7); and the files an earlier release kept there, once the
-  database's import of them is 30 days old. A closed-but-unmerged PR is
+  database's import of them is 30 days old. Displaced file-lock quarantine
+  entries form a separate family, reported with count and bytes: they retire
+  after 24 hours without a write, including descendants, with no legacy lock
+  or recovery gate present, whether or not the clone was imported.
+  A closed-but-unmerged PR is
   deliberately kept — GitHub permits reopening it with no time limit. A name
   it does not recognise is never removed, and every gate fails closed. It
   also expires trace days older than 14 days. The database's rows are not

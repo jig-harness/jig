@@ -11,7 +11,7 @@
  * claims) is not this script's: a release leaves no row behind, and a PR's
  * state row stays, small, for the morning report and a re-arm.
  *
- * Two families, each retired whole or kept whole:
+ * Families retired whole or kept whole:
  *
  * - `pr:<PR>`: a PR's files. RETIRED only when the PR is MERGED (or GitHub no
  *   longer knows it), no live session lease is on it, and nothing in the
@@ -27,8 +27,11 @@
  *   they may be the only copy of what they held. A dry run reads the import
  *   record without opening the database for writing, so it creates and
  *   imports nothing.
+ * - `quarantine:<clone>`: displaced legacy locks and recovery gates, retired
+ *   after 24 hours without a write and only with no legacy lock present.
+ *   Their retention is independent of whether or when the clone was imported.
  *
- * A name neither family recognises is never removed. Every gate fails
+ * A name no family recognises is never removed. Every gate fails
  * CLOSED: an entry that cannot be read keeps its family.
  *
  * Usage:
@@ -55,9 +58,10 @@ import { fail, isDigits, runMain } from "./lib/cli.ts";
 import { ghCall } from "./lib/proc.ts";
 import { cloneFile, REPORT_MEMORY } from "./lib/state/artifacts.ts";
 import { driveDb, peekImport } from "./lib/state/db.ts";
-import { isFormerFile } from "./lib/state/import.ts";
+import { FORMER_QUARANTINE, isFormerFile } from "./lib/state/import.ts";
 import { peekLiveLeasesFor } from "./lib/state/lease.ts";
 import { createLock, LockAcquireTimeoutError } from "./lib/state/lock.ts";
+import { judgeQuarantine } from "./lib/state/quarantine.ts";
 import { peekResolvedStateDir, resolveStateDir } from "./lib/state/store.ts";
 
 const DEFAULT_MIN_AGE_DAYS = 7;
@@ -164,6 +168,7 @@ interface Verdict {
   family: Family;
   action: "retire" | "keep";
   reason: string;
+  bytes?: number | null;
 }
 
 /** Newest mtime across a family, or `null` when one member cannot be read. */
@@ -196,7 +201,8 @@ function classify(
   };
   for (const name of names) {
     const file = cloneFile(name);
-    if (file !== null) add(`pr:${file.pr}`, name);
+    if (FORMER_QUARANTINE.test(name)) add(`quarantine:${clone}`, name);
+    else if (file !== null) add(`pr:${file.pr}`, name);
     else if (isFormerFile(name)) add(`imported:${clone}`, name);
     else if (name !== REPORT_MEMORY) unrecognised.push(name);
   }
@@ -270,6 +276,43 @@ function judgeImported(stateDir: string, family: Family): Verdict {
     family: { ...family, names },
     action: "retire",
     reason: `imported ${record.at}, past the ${IMPORTED_RETENTION_DAYS}-day retention${left === 0 ? "" : `; ${left} file(s) the import could not read stay for a person`}`,
+  };
+}
+
+/** Judge each family under its own retention rule. */
+function judgeFamily(
+  stateDir: string,
+  family: Family,
+  lifecycles: ReadonlyMap<string, PrLifecycle>,
+  minAgeMs: number,
+): Verdict {
+  if (family.id.startsWith("pr:"))
+    return judgePr(
+      stateDir,
+      family,
+      lifecycles.get(family.id.slice(3)) ?? "unknown",
+      minAgeMs,
+    );
+  if (family.id.startsWith("quarantine:"))
+    return { family, ...judgeQuarantine(stateDir, family.names) };
+  return judgeImported(stateDir, family);
+}
+
+/** A visible family line, including quarantines kept by a safety guard. */
+function familyLine(v: Verdict, del: boolean): string {
+  const action =
+    v.action === "keep" ? "kept" : del ? "RETIRED" : "would retire";
+  const bytes =
+    v.bytes === undefined ? "" : `, ${v.bytes ?? "unreadable"} bytes`;
+  return `  ${action} ${v.family.id} (${v.family.names.length} entries${bytes}) — ${v.reason}`;
+}
+
+function reportEntry(v: Verdict) {
+  return {
+    id: v.family.id,
+    entries: v.family.names.length,
+    ...(v.bytes === undefined ? {} : { bytes: v.bytes }),
+    reason: v.reason,
   };
 }
 
@@ -362,14 +405,7 @@ async function main(): Promise<number> {
     const lifecycles = await prLifecycles(prs);
     const minAgeMs = args.minAgeDays * DAY_MS;
     const verdicts = [...families.values()].map((family) =>
-      family.id.startsWith("pr:")
-        ? judgePr(
-            stateDir,
-            family,
-            lifecycles.get(family.id.slice("pr:".length)) ?? "unknown",
-            minAgeMs,
-          )
-        : judgeImported(stateDir, family),
+      judgeFamily(stateDir, family, lifecycles, minAgeMs),
     );
     let removed = 0;
     const retired = verdicts.filter((v) => v.action === "retire");
@@ -379,18 +415,13 @@ async function main(): Promise<number> {
         removed += v.family.names.length - failed.length;
         failures.push(...failed.map((f) => `${v.family.id}: ${f}`));
       }
-    const entry = (v: Verdict) => ({
-      id: v.family.id,
-      entries: v.family.names.length,
-      reason: v.reason,
-    });
     const report = {
       stateDir,
       exists: true,
       entries: names.length,
       families: families.size,
-      retire: retired.map(entry),
-      keep: verdicts.filter((v) => v.action === "keep").map(entry),
+      retire: retired.map(reportEntry),
+      keep: verdicts.filter((v) => v.action === "keep").map(reportEntry),
       untouched: { unrecognised: unrecognised.length },
       applied: args.del,
       entriesRetirable: retired.reduce((n, v) => n + v.family.names.length, 0),
@@ -404,10 +435,10 @@ async function main(): Promise<number> {
       console.log(
         `reap-state.ts: ${names.length} entries in ${stateDir}, ${families.size} families`,
       );
-      for (const v of retired)
-        console.log(
-          `  ${args.del ? "RETIRED" : "would retire"} ${v.family.id} (${v.family.names.length} entries) — ${v.reason}`,
-        );
+      for (const v of verdicts.filter(
+        (v) => v.action === "retire" || v.bytes !== undefined,
+      ))
+        console.log(familyLine(v, args.del));
       console.log(
         `  kept ${report.keep.length} family/families; untouched: ${unrecognised.length} unrecognised entry/entries`,
       );

@@ -715,6 +715,17 @@ A release before the database kept the drive's machine state as files in the clo
 
 Stop every drive before upgrading, or let it reach a terminal state: a drive still running the earlier release keeps writing files the database no longer reads, and its state after the import reaches this clone only through its ledger on the pull request, which a later drive seeds from when it is newer.
 
+Displaced lock quarantine entries (`<lock>.stale.<generation>` and
+`<lock>.recovering.stale.<generation>`, directories or marker files) are not
+imported state. The reaper reports them as `quarantine:<clone>` with their
+entry count and bytes, and retires the family after every entry and descendant
+has been idle for 24 hours. Any legacy lock or recovery gate still present
+keeps the family, including one whose holder cannot be read; an unreadable
+quarantine entry also keeps it. This applies even when the clone was never
+imported, independently of the other files' 30-day import retention. Only the
+reaper with `--delete`, under its own lock, retires them. Stop all earlier
+drivers before running it; an earlier driver's suspended holder can resume.
+
 ## Relocating the state dir
 
 `$DRIVE_PR_STATE_DIR` relocates the state root: the database and every clone's directory. With an override of `/absolute/shared-state`, the database is `/absolute/shared-state/state.sqlite` and each clone's directory `/absolute/shared-state/<clone-key>/`. The default root is `~/.local/state/jig/drive-pr/`. The key is the first 16 hexadecimal characters of SHA-256 over a [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID) persisted as `drive-pr-clone-id` in Git's common directory (the path `git rev-parse` prints for `--git-common-dir`). It survives a clone move, is shared by linked worktrees, and differs between separate clones, including clones of the same remote repository. Remote owner/name is not the key. Commands that resolve state, including the reaper, need the owning clone as their Git context; an override path alone outside Git does not identify a clone.

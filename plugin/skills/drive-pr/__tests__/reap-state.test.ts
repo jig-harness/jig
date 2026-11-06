@@ -207,6 +207,7 @@ describe("reap-state.ts — the files an earlier release kept", () => {
     const within = reap(dir, gh, ["--delete"]);
     expectSpawnExit(within.result, 0);
     expect(within.report().keep.map((k) => k.id)).toEqual([
+      `quarantine:${basename(dir)}`,
       `imported:${basename(dir)}`,
     ]);
     for (const name of names) expect(existsSync(join(dir, name))).toBe(true);

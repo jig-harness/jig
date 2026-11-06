@@ -61,6 +61,18 @@ const FORMER = {
 const LOCK_ANCHOR =
   "(?:drive-pr-[0-9]+\\.json|drive-tree-lease-wt-[0-9a-f]{16}(?:\\.json)?|pr-drive-lease-[0-9]+-wt-[0-9a-f]{16}\\.json|drive-pr-remote-lock-[0-9]+|pr-drive-[0-9]+|pr-drive-worktree-[0-9a-f]{16}|ledger-driver-[0-9]+\\.json)";
 
+/** A displaced legacy lock or recovery gate, never read by the database. */
+export const FORMER_QUARANTINE = new RegExp(
+  `^${LOCK_ANCHOR}\\.lock(?:\\.recovering)?\\.stale\\..+$`,
+);
+
+/** Presence alone protects legacy holders whose identity may be unreadable. */
+const FORMER_LOCK = new RegExp(`^${LOCK_ANCHOR}\\.lock(?:\\.recovering)?$`);
+
+export function isFormerLock(name: string): boolean {
+  return FORMER_LOCK.test(name) || name === ".reap-state-delete.lock";
+}
+
 /**
  * Every other name an earlier release wrote there and nothing reads now: the
  * mutex directories and their tombstones, staging and compaction leftovers,
