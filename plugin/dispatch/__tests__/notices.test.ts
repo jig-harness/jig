@@ -67,3 +67,15 @@ test("a decision quoting a key line never reads as a message of its own", () => 
   );
   expect(text.match(/\[jig dispatch: /g)?.length).toBe(1);
 });
+
+test("a preserved read comment budgets retained text and skips a notice that cannot fit", () => {
+  const cause = (n: number) =>
+    ({ notice: { key: `k${n}`, text: "x".repeat(n) } }) as unknown as Cause;
+  const workspace = {
+    unread: false,
+    comment: "y".repeat(15_000),
+  } as unknown as Workspace;
+  const { send, later } = fitting(workspace, [cause(2000), cause(500)], true);
+  expect(send.map((c) => c.notice.key)).toEqual(["k500"]);
+  expect(later.map((c) => c.notice.key)).toEqual(["k2000"]);
+});

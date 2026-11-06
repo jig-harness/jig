@@ -108,6 +108,8 @@ export interface NotifyTarget {
   path: string;
   branch?: string;
   dispatcherOnly?: boolean;
+  /** Exact dispatcher-owned read comment that may be replaced; rechecked under the lock. */
+  replaceReadComment?: string;
 }
 
 /**

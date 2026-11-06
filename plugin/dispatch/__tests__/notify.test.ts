@@ -333,40 +333,59 @@ describe("jig dispatch --apply notifies a person", () => {
     expect(orcaCalls(w, "worktree", "create")).toEqual([]);
   });
 
-  it("sends a notice that still stands again once renotify_after has passed since it was sent, and not before", async () => {
-    const { w } = fixture();
-    const [sent] = notifications(await tick(w));
-    const notices = sent?.workspace ?? "";
-    markRead(w, notices);
+  it.each([null, "desk", "jig-dispatch-notices"])(
+    "repeats a read notice on %s within its budget and records exact ownership",
+    async (branch) => {
+      const { w } = fixture(
+        branch === null ? undefined : (ws) => [{ branch, path: ws }],
+        branch === null
+          ? CONFIG
+          : `${CONFIG}dispatch:\n  notices_branch: ${branch}\n`,
+      );
+      const [sent] = notifications(await tick(w));
+      const notices = sent?.workspace ?? "";
+      markRead(w, notices);
 
-    agedBy(w, 23);
-    expect(notifications(await tick(w))).toEqual([
-      expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
-    ]);
-    expect(notifyWrites(w)).toHaveLength(1);
+      agedBy(w, 23);
+      expect(notifications(await tick(w))).toEqual([
+        expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
+      ]);
+      expect(notifyWrites(w)).toHaveLength(1);
 
-    agedBy(w, 25);
-    const again = notifications(await tick(w));
-    expect(again).toEqual([
-      expect.objectContaining({
-        target: "PR #7",
-        outcome: "sent",
-        workspace: notices,
-      }),
-    ]);
-    expect(again[0]?.detail).toContain("sent again");
-    expect(notifyWrites(w)).toHaveLength(2);
-    const { comment, unread } = shown(w, notices);
-    expect(unread).toBe(true);
-    expect(comment).toContain("Sent again: this still waits on a person");
-    expect(comment).toContain("PR #7 parked");
+      agedBy(w, 25);
+      const again = notifications(await tick(w));
+      expect(again).toEqual([
+        expect.objectContaining({
+          target: "PR #7",
+          outcome: "sent",
+          workspace: notices,
+        }),
+      ]);
+      expect(again[0]?.detail).toContain("sent again");
+      expect(notifyWrites(w)).toHaveLength(2);
+      const { comment, unread } = shown(w, notices);
+      expect(unread).toBe(true);
+      expect(comment).toContain("Sent again: this still waits on a person");
+      expect(comment).toContain("PR #7 parked");
+      expect(comment.match(/\[jig dispatch: /g)).toHaveLength(1);
+      const db = new Database(statePath(dispatchState(w)));
+      try {
+        expect(
+          db
+            .query("SELECT comment FROM notices_content WHERE workspace = ?")
+            .get(notices),
+        ).toEqual({ comment });
+      } finally {
+        db.close();
+      }
 
-    // The repeat is timed from its own send.
-    expect(notifications(await tick(w))).toEqual([
-      expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
-    ]);
-    expect(notifyWrites(w)).toHaveLength(2);
-  });
+      // The repeat is timed from its own send.
+      expect(notifications(await tick(w))).toEqual([
+        expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
+      ]);
+      expect(notifyWrites(w)).toHaveLength(2);
+    },
+  );
 
   it("does not advance a due repeat's clock on an ineffective write", async () => {
     const { w } = fixture();

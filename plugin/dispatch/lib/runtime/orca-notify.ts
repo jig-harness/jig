@@ -16,9 +16,9 @@
 import { isRecord } from "../../../shared/guards.ts";
 import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
 import { call, withCardDeadline } from "./orca-comment.ts";
+import { noticeComment } from "./notice-comment.ts";
 import { holdsNotice } from "../notices.ts";
 import {
-  keepMarks,
   MAX_COMMENT,
   type NotifyTarget,
   type RuntimeReceipt,
@@ -120,51 +120,6 @@ async function confirmedReceipt(
   };
 }
 
-/** The entries a message joins: each opens with its key line. */
-function entriesOf(message: string): string[] {
-  return message.split(/\n\n(?=\[jig dispatch: )/);
-}
-
-/** The key line an entry opens with; `null` for text that has none. */
-function keyLineOf(entry: string): string | null {
-  return entry.match(/^\[jig dispatch: .*\]$/m)?.[0] ?? null;
-}
-
-/** Orca reads a value that opens with `-` as a flag of its own. */
-function argumentSafe(comment: string): string {
-  return comment.startsWith("-") ? `Unread notes:\n${comment}` : comment;
-}
-
-/**
- * The comment to write over the card as it is now: the entries it does not
- * carry yet appended to a comment still unread, so nothing a person has not
- * read is replaced; the message otherwise, behind the dispatched marks. `null` when the unread
- * comment already carries every entry.
- */
-function merged(
-  card: { comment: string | null; unread: boolean },
-  message: string,
-  preserveRead: boolean,
-): string | null {
-  // A notice marker proves presence, not ownership of accompanying text.
-  // Named destinations retain read text too, including personal additions.
-  if (preserveRead && !card.unread && withoutMarks(card.comment ?? "") !== "")
-    return `${card.comment}\n\n${message}`;
-  if (
-    !card.unread ||
-    card.comment === null ||
-    withoutMarks(card.comment) === ""
-  )
-    return keepMarks(card.comment ?? "", message);
-  const carried = card.comment;
-  const missing = entriesOf(message).filter((entry) => {
-    const key = keyLineOf(entry);
-    return !carried.includes(key ?? entry);
-  });
-  if (missing.length === 0) return null;
-  return `${carried}\n\n${missing.join("\n\n")}`;
-}
-
 export async function orcaNotify(
   target: NotifyTarget,
   message: string,
@@ -221,16 +176,21 @@ async function notifyUnlocked(
   if (!before.ok) return { ok: false, lost: before.lost, detail: before.why };
   const card = await destinationCard(target, before.result, remaining);
   if ("ok" in card) return card;
-  const merge = merged(card, message, target.dispatcherOnly === true);
+  const merge = noticeComment(
+    card,
+    message,
+    target.dispatcherOnly === true &&
+      card.comment !== target.replaceReadComment,
+  );
   if (merge !== null) {
-    const comment = argumentSafe(merge);
+    const comment = merge;
     // The budget the sender computed from an earlier listing; the card read
     // under the lock is the one the written comment is measured on.
     if (comment.length > MAX_COMMENT)
       return {
         ok: false,
         lost: false,
-        detail: `${target.path}: the card's unread comment and the message would pass ${MAX_COMMENT} characters; nothing written, it goes once the comment is read`,
+        detail: `${target.path}: the retained comment and the message would pass ${MAX_COMMENT} characters; nothing written, read unread notices or shorten personal additions`,
       };
     late = spent();
     if (late !== null) return late;
@@ -272,6 +232,6 @@ async function notifyUnlocked(
       lost: true,
       detail: `the comment was written; the read-back came after the deadline`,
     };
-  const expected = merge === null ? card.comment : argumentSafe(merge);
+  const expected = merge === null ? card.comment : merge;
   return confirmedReceipt(target, shown.result, expected, remaining);
 }

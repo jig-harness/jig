@@ -46,6 +46,7 @@
  * …`), which the next tick reads as a re-armable ledger: nothing comes back
  * through the notification.
  */
+import { noticeComment } from "../runtime/notice-comment.ts";
 import { stateRoot } from "../../receipts.ts";
 import {
   driveClass,
@@ -55,7 +56,6 @@ import {
 } from "../log.ts";
 import { carries, holdsNotice, unobservedTarget } from "../notices.ts";
 import {
-  keepMarks,
   MAX_COMMENT,
   NOTICES_NAME,
   type RuntimeReceipt,
@@ -340,22 +340,21 @@ async function noticesWorkspace(
 export function fitting(
   workspace: Workspace,
   causes: Cause[],
+  preserveRead = false,
 ): { send: Cause[]; later: Cause[] } {
-  const unread = workspace.unread !== false && workspace.comment.trim() !== "";
-  // A read comment is replaced, behind the dispatched marks it keeps.
-  let used = unread
-    ? workspace.comment.length
-    : keepMarks(workspace.comment, "").length;
   const send: Cause[] = [];
   const later: Cause[] = [];
   for (const c of causes) {
-    const next = used + c.notice.text.length + 2;
-    if ((used > 0 || send.length > 0) && next > MAX_COMMENT) {
+    const next = noticeComment(
+      { comment: workspace.comment, unread: workspace.unread !== false },
+      messageFor([...send, c]),
+      preserveRead,
+    );
+    if (next !== null && next.length > MAX_COMMENT) {
       later.push(c);
       continue;
     }
     send.push(c);
-    used = next;
   }
   return { send, later };
 }
@@ -371,6 +370,7 @@ async function deliver(
   workspace: Workspace,
   message: string,
   dispatcherOnly: boolean,
+  replaceReadComment?: string,
 ): Promise<RuntimeReceipt> {
   try {
     return await state.runtime.notify(
@@ -379,6 +379,7 @@ async function deliver(
         path: workspace.path,
         branch: workspace.branch,
         dispatcherOnly,
+        ...(replaceReadComment === undefined ? {} : { replaceReadComment }),
       },
       message,
     );
@@ -464,25 +465,35 @@ async function sendTo(
   const late = outOfTime(state);
   if (late !== null)
     return [...out, ...fresh.map((c) => outcomeFor(c, "waits", null, late))];
-  const { send, later } = fitting(workspace, fresh);
+  const owned = ownsComment(workspace, root);
+  const preserveRead = dispatcherOnly && !owned;
+  const { send, later } = fitting(workspace, fresh, preserveRead);
   out.push(
     ...later.map((c) =>
       outcomeFor(
         c,
         "waits",
         null,
-        "the comment is full: it goes in the next tick, once the workspace's unread notices are read",
+        "the comment is full: read unread notices or shorten personal additions so a later tick can deliver it",
       ),
     ),
   );
   if (send.length === 0) return out;
   const message = messageFor(send);
   const expected =
-    workspace.unread !== false && withoutMarks(workspace.comment) !== ""
-      ? `${workspace.comment}\n\n${message}`
-      : keepMarks(workspace.comment, message);
-  const known = workspace.unread === false || ownsComment(workspace, root);
-  const receipt = await deliver(state, workspace, message, dispatcherOnly);
+    noticeComment(
+      { comment: workspace.comment, unread: workspace.unread !== false },
+      message,
+      preserveRead,
+    ) ?? workspace.comment;
+  const known = owned || (!dispatcherOnly && workspace.unread === false);
+  const receipt = await deliver(
+    state,
+    workspace,
+    message,
+    dispatcherOnly,
+    owned ? workspace.comment : undefined,
+  );
   if (known && receipt.ok && receipt.comment === expected)
     recordComment(workspace, expected, root, repo);
   for (const c of send) {
