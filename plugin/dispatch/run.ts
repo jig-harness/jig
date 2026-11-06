@@ -77,6 +77,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { swallow } from "../shared/errors.ts";
 import { QuestionTail } from "./lib/question-tail.ts";
 import { NO_WATCH, watchWindowsTree } from "./lib/windows-tree.ts";
@@ -160,6 +161,7 @@ const DRAIN_MS = 2000;
 
 interface Ran {
   started?: number;
+  exited?: number;
   output?: string;
   code: number | null;
   signal: string | null;
@@ -248,6 +250,8 @@ function runStage(
   return new Promise((settle) => {
     const started = Date.now();
     let output = "";
+    const stdoutDecoder = new StringDecoder("utf8");
+    const stderrDecoder = new StringDecoder("utf8");
     // A pass under a deadline leads its own process group, so the deadline reaches what the agent started too.
     const grouped = options.deadlineSec > 0 && process.platform !== "win32";
     // Windows has no process group to signal; its tree is walked and ended by identity.
@@ -282,7 +286,7 @@ function runStage(
     const tail = new QuestionTail(QUESTION_PREFIX, QUESTION_CHARS);
     let drained = !options.keepOutput;
     child.stdout?.on("data", (chunk: Buffer) => {
-      output = (output + chunk.toString()).slice(-8192);
+      output = (output + stdoutDecoder.write(chunk)).slice(-8192);
       if (!process.stdout.write(chunk)) {
         child.stdout?.pause();
         process.stdout.once("drain", () => child.stdout?.resume());
@@ -290,17 +294,19 @@ function runStage(
       tail.write(chunk);
     });
     child.stdout?.on("end", () => {
+      output = (output + stdoutDecoder.end()).slice(-8192);
       drained = true;
     });
     let stderrDrained = !options.keepOutput;
     child.stderr?.on("data", (chunk: Buffer) => {
-      output = (output + chunk.toString()).slice(-8192);
+      output = (output + stderrDecoder.write(chunk)).slice(-8192);
       if (!process.stderr.write(chunk)) {
         child.stderr?.pause();
         process.stderr.once("drain", () => child.stderr?.resume());
       }
     });
     child.stderr?.on("end", () => {
+      output = (output + stderrDecoder.end()).slice(-8192);
       stderrDrained = true;
     });
     const forward = (name: NodeJS.Signals) => signalTree(name);
@@ -312,6 +318,7 @@ function runStage(
     const done = async (code: number | null, signal: string | null) => {
       if (ended) return;
       ended = true;
+      const exited = Date.now();
       for (const timer of timers) clearTimeout(timer);
       watch.stopSampling();
       // What the agent started can outlive it; the exit is published once the group has ended.
@@ -324,6 +331,7 @@ function runStage(
         code,
         signal,
         started,
+        exited,
         output,
         ...(!treeEnded ? { unconfirmed: true as const } : {}),
         ...(options.keepOutput && tail.question !== ""
@@ -510,9 +518,20 @@ async function wrap(id: string, token: string): Promise<number> {
 
 /** Startup evidence is checked only when the session left no result or question. */
 function startupOf(record: LaunchRecord, ran: Ran) {
-  if (readResult(record.id) !== null || ran.said || ran.started === undefined)
+  if (
+    readResult(record.id) !== null ||
+    ran.said ||
+    ran.started === undefined ||
+    ran.exited === undefined
+  )
     return undefined;
-  return failedStartup(record, ran.code, ran.started, ran.output ?? "");
+  return failedStartup(
+    record,
+    ran.code,
+    ran.started,
+    ran.output ?? "",
+    ran.exited,
+  );
 }
 
 /** Back off an account before releasing the slot held by an unstarted session. */

@@ -540,6 +540,7 @@ async function settleRecordClaims(
   ctx: Pick<SharedContext, "records" | "host">,
   r: ReadRecord,
   nowIso: string,
+  root = stateRoot(),
 ): Promise<string[]> {
   const owed = owedAtExit(r, nowIso);
   if (owed === null) return [];
@@ -560,14 +561,17 @@ async function settleRecordClaims(
     ctx.host,
     owed.stage,
   );
+  if (retryableStartup(r)) {
+    const released = await releaseStartupClaims(ctx, target, matches);
+    if (matches.length > 0 && failures.length === 0 && released.length === 0)
+      settleEnds([r.record.id], nowIso, root);
+    return [...failures, ...released];
+  }
   if (matches.length === 0)
-    return retryableStartup(r)
-      ? failures
-      : [
-          `PR #${owed.pr}: no readable claim for launch record ${r.record.id} was observed`,
-        ];
-  if (retryableStartup(r))
-    return [...failures, ...(await releaseStartupClaims(ctx, target, matches))];
+    return [
+      ...failures,
+      `PR #${owed.pr}: no readable claim for launch record ${r.record.id} was observed`,
+    ];
   return [...failures, ...(await writeRecordEnds(ctx, target, owed, matches))];
 }
 
@@ -644,7 +648,7 @@ export async function settleAtExit(
   if (owedAtExit(r, nowIso) === null) return [];
   const login = await resolveLogin(AT_EXIT_CALL_SEC);
   const records = forgeShared({ login, timeoutSec: AT_EXIT_CALL_SEC });
-  return settleRecordClaims({ records, host: hostOf(root) }, r, nowIso);
+  return settleRecordClaims({ records, host: hostOf(root) }, r, nowIso, root);
 }
 
 /**

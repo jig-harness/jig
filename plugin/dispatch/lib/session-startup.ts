@@ -65,13 +65,15 @@ function transcriptAbsent(record: LaunchRecord, started: number): boolean {
 
 /** Only a recognized standalone vendor notice is persisted, never arbitrary output. */
 function quotaNotice(output: string): boolean {
-  return output
-    .split(/\r?\n/)
-    .some((line) =>
-      /^you(?:'|’)ve hit your (?:session |weekly |usage )?limit\s*·\s*resets\s+[^\r\n]+$/i.test(
-        line.trim(),
-      ),
+  return output.split(/\r?\n/).some((line) => {
+    const parts = line.trim().split("·");
+    if (parts.length !== 2) return false;
+    return (
+      /^you(?:'|’)ve hit your (?:session |weekly |usage )?limit$/i.test(
+        (parts[0] ?? "").trim(),
+      ) && /^resets\s+\S/i.test((parts[1] ?? "").trim())
     );
+  });
 }
 
 export function failedStartup(
@@ -79,6 +81,7 @@ export function failedStartup(
   code: number | null,
   started: number,
   output: string,
+  exited: number,
 ): "quota" | "unstarted" | undefined {
   if (
     record.action !== "followup" ||
@@ -86,7 +89,7 @@ export function failedStartup(
     typeof record.sessionId !== "string" ||
     code === null ||
     code === 0 ||
-    Date.now() - started > STARTUP_MS ||
+    exited - started > STARTUP_MS ||
     !transcriptAbsent(record, started)
   )
     return;

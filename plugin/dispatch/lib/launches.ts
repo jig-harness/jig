@@ -45,6 +45,7 @@
  * `waiting_episodes` table), and, once it ended, the time its outcome row
  * carries (`endedAt`), written in the same transaction as that row.
  */
+import { retryableStartup } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
@@ -867,6 +868,9 @@ export function pruneLaunches(
 ): string[] {
   const cutoff = nowMs - days * 86_400_000;
   const kept = latestRefusals(records);
+  const settled = settledEnds(root);
+  for (const r of records)
+    if (retryableStartup(r) && !settled.has(r.record.id)) kept.add(r.record.id);
   for (const id of latestPickups(records)) kept.add(id);
   for (const id of latestRedrives(records)) kept.add(id);
   for (const id of latestArms(records)) kept.add(id);

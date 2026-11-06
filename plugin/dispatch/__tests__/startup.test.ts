@@ -6,8 +6,10 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
-import { readRecord } from "../lib/launches.ts";
+import { join, resolve } from "node:path";
+import { pruneLaunches, readLaunches, readRecord } from "../lib/launches.ts";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { failedStartup } from "../lib/session-startup.ts";
 import { MARKER } from "../lib/followup-marker.ts";
 import { wallOf } from "../lib/walls.ts";
 import { existingStateDb } from "../lib/state.ts";
@@ -49,15 +51,18 @@ function fixture() {
   return w;
 }
 
-it.each([false, true])(
+it.each(["none", "stdout", "stderr"])(
   "backs off an unstarted follow-up and retries on another account (quota evidence: %s)",
-  async (quota) => {
+  async (stream) => {
+    const quota = stream !== "none";
     const w = fixture();
     const first = await applyTick(w, false);
     const launch = first.repos[0]?.launches?.[0];
     expect(launch?.account).toBe("a");
     const id = String(launch?.record);
     await waitFor("the pass", () => claudeRuns(w).length === 1);
+    if (quota) writeFileSync(join(w.dir, "claude-split"), "");
+    if (stream === "stderr") writeFileSync(join(w.dir, "claude-stderr"), "");
     if (quota)
       writeFileSync(
         join(w.dir, "claude-said"),
@@ -108,6 +113,40 @@ it("retries the exact startup marker release after the wrapper's forge refusal",
   rmSync(join(w.dir, "claude-exit"));
   const held = await applyTick(w, false);
   expect(held.repos[0]?.launches ?? []).toEqual([]);
+  expect(
+    held.repos[0]?.actions.some((a) => a.cause === "followup-failed"),
+  ).toBe(false);
+  const commentsPath = join(w.dir, "comments-9.json");
+  const comments = readFileSync(commentsPath, "utf8");
+  writeFileSync(commentsPath, "[]");
+  const settle = join(w.root, "settle-missing.ts");
+  writeFileSync(
+    settle,
+    `import { readLaunches } from ${JSON.stringify(resolve(import.meta.dir, "../lib/launches.ts"))};
+import { settleAtExit } from ${JSON.stringify(resolve(import.meta.dir, "../lib/shared-launches.ts"))};
+const r = (await readLaunches()).records.find((r) => r.record.id === ${JSON.stringify(id)});
+if (!r) throw new Error("missing launch");
+await settleAtExit(r);
+`,
+  );
+  expectSpawnExit(await w.dispatch([], settle), 0);
+  writeFileSync(commentsPath, comments);
+  const records = await readLaunches(dispatchState(w));
+  expect(
+    pruneLaunches(
+      records.records,
+      Date.now() + 32 * 86_400_000,
+      30,
+      dispatchState(w),
+    ),
+  ).not.toContain(id);
+  const started = Date.now() - 61_000;
+  expect(failedStartup(record, 1, started, "", started + 59_000)).toBe(
+    "unstarted",
+  );
+  expect(
+    failedStartup(record, 1, started, "", started + 60_001),
+  ).toBeUndefined();
   expect(held.repos[0]?.unplaced).toContainEqual(
     expect.objectContaining({
       reason: expect.stringContaining(
@@ -125,6 +164,14 @@ it("retries the exact startup marker release after the wrapper's forge refusal",
   rmSync(join(w.dir, "comment-delete-fail"));
   await applyTick(w, false);
   expect(markers()).toEqual([]);
+  expect(
+    pruneLaunches(
+      (await readLaunches(dispatchState(w))).records,
+      Date.now() + 32 * 86_400_000,
+      30,
+      dispatchState(w),
+    ),
+  ).toContain(id);
   const retry = await applyTick(w, false);
   expect(retry.repos[0]?.launches).toContainEqual(
     expect.objectContaining({
