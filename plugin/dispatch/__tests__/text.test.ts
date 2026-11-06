@@ -8,7 +8,9 @@ describe("failureText", () => {
   });
 
   it("survives an error whose message is not a string", () => {
-    const malformed = Object.assign(new Error("placeholder"), { message: null });
+    const malformed = Object.assign(new Error("placeholder"), {
+      message: null,
+    });
     expect(failureText(malformed)).toBe("null");
   });
 
