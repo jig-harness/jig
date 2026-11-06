@@ -527,7 +527,8 @@ visible in every report rather than silent.
 
 A notification goes out once per cause, its launch record or receipt
 naming what was sent: a drive parked with an item unanswered, carrying the
-parked questions in their framed form; a drive
+parked questions in their framed form, or their stored reasons for a
+park with no decision record; a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
 stalled pickup or a double claim; a failed follow-up; a session waiting past
@@ -839,7 +840,8 @@ One pull request each, in this order; each is usable on its own.
    person runs it by hand and marks that marker done when it succeeds
    (Jig's `/followup` first); the notifications above
    through `notify`. The park's
-   notification carries the park's framed decision, and the receipts join
+   notification carries the park's framed decision, or its stored reason
+   when it has no decision record, and the receipts join
    item 32's morning report once that is built; a consumer repository's
    follow-up waits on its own post-merge command (item 17).
 6. **Control.** The outcome log and its classifier, the expectations and
