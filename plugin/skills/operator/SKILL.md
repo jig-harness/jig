@@ -102,8 +102,8 @@ pick-up's or a follow-up's thread is `--thread` on its own address. Write a
   the dispatcher's newest tick, and says when that tick ran: say that time.
   It lists what waits on anyone, not only on this person: `--person` is
   refused until a park records whom it waits on, so do not pass it. Open an
-  address (`jig ask` on it) only to say more about one entry. On a machine
-  that dispatches nothing it says there is no line to read; say so, and
+  address (`jig ask` on it) only to say more about one entry. When `unread`
+  is non-null or `tick` is null, relay why the line is unavailable, and
   offer to ask about one address instead.
 - **A pick-up** is answered only on a machine with a checkout of its
   repository; elsewhere `ask` refuses and says why. Relay that.
@@ -147,11 +147,12 @@ every time, from one `jig ask --waiting`:
 ```
 
 One repository block per repository the answer lists, in its order, and
-one line per entry, in its order; with nothing waiting, the line `Nothing
+one line per entry, in its order. First check `unread` and `tick`: when
+`unread` is non-null or `tick` is null, relay the unavailable-line reason
+in place of the card, and ask which pull request or item to look at.
+Only with a read tick and an empty waiting list, put `Nothing
 waits on a person.` in place of the blocks. Open no address to fill the
-card. On a machine that dispatches nothing, `ask` says there is no line to
-read: say that in place of the card, and ask which pull request or item
-to look at.
+card.
 
 ### Filling in the card
 
@@ -159,7 +160,7 @@ Each line comes from these fields, in the person's terms, and never from an
 earlier answer:
 
 - **`holder`** (Where it stands): who holds the station now. `none` means
-  nobody does, which is normal between launches; when `last` is null, say no previous launch was recorded;
+  nobody does, which is normal between launches; when `last` is null, say no previous ended launch is available in this answer;
   otherwise say how it ended, and when. With a holder, say the stage, the host and whether its
   process is alive, dead or unknown, and the account and session where the
   answer names them.

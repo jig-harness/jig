@@ -245,7 +245,7 @@ describe("its status card", () => {
       expect(body).toContain(line);
     expect(body).toContain("quote it exactly and say the person runs it");
     expect(body).toContain(
-      "when `last` is null, say no previous launch was recorded",
+      "when `last` is null, say no previous ended launch is available in this answer",
     );
   });
 });
