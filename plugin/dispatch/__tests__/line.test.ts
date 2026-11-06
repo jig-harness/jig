@@ -269,6 +269,46 @@ describe("buildLine", () => {
     );
   });
 
+  it("lists every pull request waiting on a person with its cause, its question and since when, the first send dating it", () => {
+    const stop: Action = {
+      stage: "notify",
+      target: "PR #457",
+      record: "forge",
+      reason: "its drive stopped 7, which only a person settles",
+      evidence: { exit: 7 },
+      cause: "needs-person",
+      notice: { key: "stop-key", text: "t" },
+    };
+    const question = "which version does this merge ship in?";
+    const followup: Action = {
+      stage: "notify",
+      target: "PR #458",
+      record: "forge",
+      reason: `failed follow-up: on a question for a person: ${question}`,
+      evidence: { question },
+      cause: "followup-failed",
+      notice: { key: "followup-key", text: "t" },
+    };
+    const line = buildLine(
+      input({
+        reports: [report({ actions: [stop, followup] })],
+        stored: () => ({
+          ...NOTHING_STORED,
+          notified: new Map([
+            ["stop-key", "2026-11-02T09:00:00.000Z"],
+            ["followup-key", "2026-11-03T10:00:00.000Z"],
+          ]),
+        }),
+      }),
+    );
+    expect(
+      line.needs.map((n) => [n.target, n.cause, n.since, n.question]),
+    ).toEqual([
+      ["PR #457", "needs-person", "2026-11-02T09:00:00.000Z", null],
+      ["PR #458", "followup-failed", "2026-11-03T10:00:00.000Z", question],
+    ]);
+  });
+
   it("leaves a waiting or drifting cause to its session, and dates a stalled pickup by its idle clock", () => {
     const line = buildLine(
       input({

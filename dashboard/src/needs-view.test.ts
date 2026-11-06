@@ -141,6 +141,35 @@ describe("a park", () => {
   });
 });
 
+describe("a stage that stopped on a question", () => {
+  it("shows a failed follow-up's question in place of its reason, the reason kept in the evidence", () => {
+    const question = "Which version does this merge ship in?";
+    const view = needView(
+      { ...NEED, cause: "followup-failed", question },
+      CLOCK,
+    );
+    expect(view.question).toBe(question);
+    expect(view.evidence.find((r) => r.k === "reason")?.v).toBe(NEED.reason);
+  });
+
+  it("says which workspace the notice went to", () => {
+    const view = needView(
+      {
+        ...NEED,
+        notified: {
+          at: iso(10, 5),
+          outcome: "sent",
+          workspace: "/srv/work/web-notices",
+        },
+      },
+      CLOCK,
+    );
+    expect(view.evidence.find((r) => r.k === "notified")?.v).toBe(
+      "10:05, to /srv/work/web-notices",
+    );
+  });
+});
+
 describe("a need's words", () => {
   it("labels the link by what the person does", () => {
     const label = (change: Partial<LineNeed>) =>
@@ -190,9 +219,7 @@ describe("a need's words", () => {
       },
       CLOCK,
     ).evidence;
-    expect(evidence.find((r) => r.k === "notified")?.v).toBe(
-      "10:05, to its workspace",
-    );
+    expect(evidence.find((r) => r.k === "notified")?.v).toBe("10:05");
     expect(evidence.find((r) => r.k === "workspace 2")?.copy).toBe("/srv/b");
   });
 

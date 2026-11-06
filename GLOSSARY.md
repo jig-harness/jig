@@ -1961,8 +1961,9 @@ make, use the entry's term instead.
   its own, so any session on any machine can be the operator. *Avoid:*
   orchestrator, lead agent.
 - **Notices workspace** — the workspace the *dispatcher* keeps per
-  repository, on a branch of the default branch, for the notifications whose
-  pull request or item has no workspace that can take one. It never
+  repository, on a branch of the default branch, where every notification
+  for that repository goes, unless the repository names another workspace
+  for them (`dispatch.notices_branch`). It never
   launches an agent into it; it only writes its comment and marks it
   unread for a person to read. Once it has been read for
   `dispatch.notices_linger`, or it is unread and every cause it carries is gone, the

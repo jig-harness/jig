@@ -1,0 +1,12 @@
+---
+release: minor
+---
+
+### Changed
+
+- The dispatcher sends every notification for a repository to one place: the repository's notices workspace, or the workspace on the branch the new `dispatch.notices_branch` setting names. It no longer writes a notice into the workspace joined to the pull request or item, such as an agent's tree or a follow-up's workspace, which a person following many repositories does not visit. Each message now names the workspace the stage ran in, where its handoff is ([CONFIGURATION.md](../plugin/CONFIGURATION.md#dispatch)).
+- A notification whose cause still stands is sent again after `dispatch.renotify_after` (a day by default), saying since when it has waited, until the cause goes, rather than once per cause for good. `0s` keeps the old behaviour of sending each one once.
+
+### Added
+
+- The dispatch dashboard's What needs you shows the question a follow-up stopped on, and the workspace each notice was sent to.

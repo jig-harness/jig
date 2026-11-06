@@ -79,6 +79,8 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "dispatch.pickup_within",
   "dispatch.followup_within",
   "dispatch.notices_linger",
+  "dispatch.notices_branch",
+  "dispatch.renotify_after",
   "dispatch.labels.enabled",
   "dispatch.labels.prefix",
   "dispatch.labels.only_labeled",

@@ -9,7 +9,10 @@
  * A park's message is the drive's own framed decision for every parked
  * item still unanswered, and how to answer it: a comment on the pull
  * request with a line `answer <key>: …`, which the drive reads and the next
- * tick re-arms on.
+ * tick re-arms on. Every message carries the cause or the question, the
+ * pull request's link and where its handoff is; the notify step adds the
+ * workspaces the stage ran in, since the message goes to the repository's
+ * one destination rather than to them.
  */
 import { createHash } from "node:crypto";
 import type { DrivenPr, Notice, RepoReport } from "./types.ts";
@@ -94,7 +97,7 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
     `${slug} PR #${pr.number} stopped ${stop}, ledger generation ${generation(pr)}`,
     [
       `PR #${pr.number} (${pr.title}): its drive stopped ${stop}, which only a person settles. ${pr.why}.`,
-      "Read the drive's handoff (`.context/pr-drive-<PR>.md` in the workspace that drove it), then re-arm it or stop it.",
+      `Read the drive's handoff, \`.context/pr-drive-${pr.number}.md\` in the workspace that drove it (named below while it is open), then re-arm it or stop it.`,
       pr.url,
     ],
   );

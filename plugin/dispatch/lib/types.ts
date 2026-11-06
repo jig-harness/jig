@@ -35,6 +35,10 @@ export interface DispatchSection {
   followupWithinMs: number;
   /** How long the notices workspace stays once read before the tick removes it; `0s` removes it at the first tick that finds it read. */
   noticesLingerMs: number;
+  /** The branch of the workspace every notice goes to (`notices_branch`); `null` for the repository's notices workspace, which the tick opens and removes. */
+  noticesBranch: string | null;
+  /** How long a notice that still stands waits before it is sent again (`renotify_after`); `0` sends it once. */
+  renotifyAfterMs: number;
   /** The dispatch labels (`dispatch.labels`): off by default. */
   labels: LabelConfig;
   /** The adoption rule (`dispatch.adopt`): off by default. */

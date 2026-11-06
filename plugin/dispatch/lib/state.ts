@@ -8,7 +8,7 @@
  * | `launches` | session the dispatcher started | the record's id; its `claim`, `exit` and `result` are each written once, by an update that only fills an empty column |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
- * | `notices` | repository and notification cause | once per cause, until the cause goes |
+ * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
  * | `notices_content` | workspace | the exact dispatcher-only comment last written and read back |
  * | `notices_read` | repository | when the tick first found its notices workspace read, until it is unread again or removed |
  * | `nudges` | session and waiting episode | one nudge per episode, its delivery marked once |
@@ -213,6 +213,12 @@ const MIGRATIONS: readonly Migration[] = [
   UPDATE log SET target = json_extract(row, '$.target');
   CREATE INDEX log_target ON log (repo, target, at_ms);
   `,
+  },
+  {
+    // When a notice was last sent, which its repeat is timed from; `at`
+    // stays its first send. A row without it was sent once, at `at`.
+    additive: true,
+    sql: "ALTER TABLE notices ADD COLUMN sent_at TEXT;",
   },
 ];
 

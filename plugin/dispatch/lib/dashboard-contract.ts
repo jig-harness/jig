@@ -57,6 +57,8 @@ export interface LineNeed {
   since: string;
   /** The tick's reason, verbatim. */
   reason: string;
+  /** The question a stage stopped on for a person, such as a follow-up's `Question:` line; `null` when it stated none. A park's questions are its decisions'. */
+  question?: string | null;
   /** For a park: the decisions still unanswered, oldest first. */
   decisions: LineDecision[];
   notified: LineNotified | null;

@@ -2,25 +2,32 @@
  * `--apply` for notifications, where the machine file enables `notify`:
  * each cause the plan names (a park with decisions unanswered, a drive
  * stopped on what only a person settles, a failed follow-up, a stalled
- * pickup, a double claim, a session waiting) reaches a person once, through
- * the runtime's `notify`.
+ * pickup, a double claim, a session waiting) reaches a person through the
+ * runtime's `notify`, and again on a cadence while it stands.
  *
- * - **Once per cause.** A cause counts as sent, and its suppression record
- *   is written (the state database's `notices` table, keyed by the
- *   repository and the cause's key), only once the
- *   runtime's receipt shows the target's comment carrying its key; a cause
- *   whose key the comment already carries is recorded as sent without being
- *   sent again. A suppression record is dropped when its cause leaves a
- *   tick that read every record whole (the park was answered, the drive
- *   moved on), so the same facts never notify twice and new facts always
- *   do.
- * - **The target.** The workspace joined to the target when it can take a
- *   comment: an agent has started in it, or its comment is empty or the
+ * - **Once per cause, then on a cadence.** A cause counts as sent, and its
+ *   suppression record is written (the state database's `notices` table,
+ *   keyed by the repository and the cause's key), only once the runtime's
+ *   receipt shows the target's comment carrying its key; a cause whose key
+ *   the comment already carries is recorded as sent without being sent
+ *   again. A cause that still stands `dispatch.renotify_after` after it was
+ *   last sent is sent again, marked as a repeat, unless the destination is
+ *   still unread with it (`0s` sends each cause once). A drift is an
+ *   observation, sent once for the life of its key. A suppression record is
+ *   dropped when its cause leaves a tick that read every record whole (the
+ *   park was answered, the drive moved on), so a cause that is settled is
+ *   never repeated and new facts always notify.
+ * - **One destination per repository.** Every cause goes to the workspace
+ *   on `dispatch.notices_branch` when the repository names one, else to the
+ *   repository's notices workspace (`NOTICES_BRANCH`), opened from the
+ *   default branch and named as the dispatcher's (`NOTICES_NAME`); never to
+ *   the workspace joined to the pull request or item, which a person
+ *   watching many repositories does not visit. The message names that
+ *   workspace, where the stage's handoff is. The destination takes a comment
+ *   when an agent has started in it, or its comment is empty or the
  *   dispatcher's own (a workspace's comment carries a kickoff prompt until
- *   its agent starts, and the tick never overwrites one). Otherwise the
- *   repository's notices workspace (`NOTICES_BRANCH`), opened once from the
- *   default branch and named as the dispatcher's (`NOTICES_NAME`), its
- *   comment naming what each message is about.
+ *   its agent starts, and the tick never overwrites one); a named workspace
+ *   that is not open, or cannot take one, leaves the cause waiting, reported.
  * - **One comment per workspace.** The causes for one workspace in a tick
  *   are joined into one message; while the workspace is still unread from
  *   an earlier notification, the new causes are appended to its comment
@@ -31,7 +38,8 @@
  *   machine launched has its ended row instead.
  *
  * Once they are sent, the notices workspace is removed when its job is done
- * (`retire-notices.ts`).
+ * (`retire-notices.ts`); a workspace `notices_branch` names is a person's,
+ * and is never removed.
  *
  * The answer to a park stays a comment on the pull request (`answer <key>:
  * …`), which the next tick reads as a re-armable ledger: nothing comes back
@@ -83,7 +91,10 @@ interface Suppression {
   repo: string;
   target: string;
   key: string;
+  /** When it was first sent. */
   at: string;
+  /** When it was last sent: `at`, or its latest repeat. */
+  sentAt: string;
   workspace: string;
   /** Set for a cause notified once for the life of its key: the cause going away does not release it. */
   lasting: boolean;
@@ -96,22 +107,49 @@ function readSuppressions(
 ): Map<string, Suppression> {
   const rows = stateDb(root)
     .query(
-      "SELECT repo, key, target, workspace, at, lasting FROM notices WHERE repo = ?",
+      "SELECT repo, key, target, workspace, at, sent_at, lasting FROM notices WHERE repo = ?",
     )
-    .all(repo) as Array<Omit<Suppression, "lasting"> & { lasting: number }>;
-  return new Map(rows.map((r) => [r.key, { ...r, lasting: r.lasting === 1 }]));
+    .all(repo) as Array<
+    Omit<Suppression, "lasting" | "sentAt"> & {
+      lasting: number;
+      sent_at: string | null;
+    }
+  >;
+  return new Map(
+    rows.map((r) => [
+      r.key,
+      {
+        repo: r.repo,
+        key: r.key,
+        target: r.target,
+        workspace: r.workspace,
+        at: r.at,
+        sentAt: r.sent_at ?? r.at,
+        lasting: r.lasting === 1,
+      },
+    ]),
+  );
 }
 
 /**
  * Write a cause's suppression record, and its event row with it in one
- * transaction; the record that is already there stands.
+ * transaction; the record that is already there stands. A repeat moves the
+ * record's last send and its workspace, and writes no event row: the cause's
+ * row was written when it was first sent.
  */
 function suppress(
-  record: Suppression,
+  record: Omit<Suppression, "sentAt">,
   event: LogRow | null,
   root: string,
+  repeat: boolean,
 ): void {
   const db = stateDb(root);
+  if (repeat) {
+    db.query(
+      "UPDATE notices SET sent_at = ?, workspace = ? WHERE repo = ? AND key = ?",
+    ).run(record.at, record.workspace, record.repo, record.key);
+    return;
+  }
   inTransaction(db, () => {
     const written = db
       .query(
@@ -145,8 +183,12 @@ function takesComment(w: Workspace): boolean {
   );
 }
 
-/** A notification the plan names, with its cause and message. */
-export type Cause = Action & { cause: NotifyCause; notice: Notice };
+/** A notification the plan names, with its cause and message; `repeat` once it is sent again after `renotify_after`. */
+export type Cause = Action & {
+  cause: NotifyCause;
+  notice: Notice;
+  repeat?: true;
+};
 
 function isCause(a: Action): a is Cause {
   return (
@@ -163,14 +205,43 @@ function joins(cause: Cause, w: Workspace): boolean {
     : w.prs.includes(Number(pr[1]));
 }
 
-/** The workspace joined to a cause's target that can take its message; `null` when none. */
-function joinedTarget(cause: Cause, workspaces: Workspace[]): Workspace | null {
-  const joined = workspaces.filter((w) => joins(cause, w) && takesComment(w));
-  return (
-    joined.sort((a, b) =>
-      a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
-    )[0] ?? null
-  );
+/**
+ * The cause with the workspaces joined to its target named at the end of
+ * its message: where its stage ran and its handoff is, since the message
+ * itself goes to the repository's one destination.
+ */
+function located(
+  cause: Cause,
+  workspaces: Workspace[],
+  destination: Workspace,
+): Cause {
+  const joined = workspaces
+    .filter((w) => w.path !== destination.path && joins(cause, w))
+    .map((w) => w.path)
+    .sort();
+  if (joined.length === 0) return cause;
+  const named = `${joined.length === 1 ? "Its workspace" : "Its workspaces"}: ${joined.join(", ")}`;
+  return {
+    ...cause,
+    notice: { ...cause.notice, text: `${cause.notice.text}\n${named}` },
+  };
+}
+
+function hours(ms: number): string {
+  return ms % 3_600_000 === 0
+    ? `${ms / 3_600_000}h`
+    : `${Math.round(ms / 60_000)}m`;
+}
+
+/** A cause sent again: its message says it still waits, and since when. */
+function asRepeat(cause: Cause, record: Suppression, everyMs: number): Cause {
+  const [head = "", ...rest] = cause.notice.text.split("\n");
+  const again = `Sent again: this still waits on a person, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
+  return {
+    ...cause,
+    repeat: true,
+    notice: { ...cause.notice, text: [head, again, ...rest].join("\n") },
+  };
 }
 
 function outcomeFor(
@@ -191,11 +262,31 @@ function outcomeFor(
 
 const NO_JOIN = { keys: null, branchPattern: "", pullRequests: [] } as const;
 
-/** Why a workspace on the notices branch must not be written; `null` when it takes the message. */
-function noticesBlocked(w: Workspace): string | null {
+/** Why the destination workspace on `branch` must not be written; `null` when it takes the message. */
+function noticesBlocked(w: Workspace, branch = NOTICES_BRANCH): string | null {
   return takesComment(w)
     ? null
-    : `the workspace on ${NOTICES_BRANCH} (${w.path}) holds a comment that is not the dispatcher's, which a notification would overwrite`;
+    : `the workspace on ${branch} (${w.path}) holds a comment that is not the dispatcher's, which a notification would overwrite`;
+}
+
+/**
+ * The repository's one destination: the workspace on `dispatch.notices_branch`
+ * when the repository names one, which the tick never opens, else the
+ * notices workspace.
+ */
+async function destination(
+  state: ApplyState,
+  repo: RepoTarget,
+  sessions: { workspaces: Workspace[]; report: RepoReport },
+  branch: string | null,
+): Promise<Workspace | string> {
+  const { workspaces, report } = sessions;
+  if (branch === null || branch === NOTICES_BRANCH)
+    return noticesWorkspace(state, repo, workspaces, report);
+  const found = workspaces.find((w) => w.branch === branch);
+  if (found === undefined)
+    return `no workspace on ${branch}, the branch dispatch.notices_branch names, is open: open one there, or remove the setting to use the repository's notices workspace`;
+  return noticesBlocked(found, branch) ?? found;
 }
 
 /** The repository's notices workspace: the one on `NOTICES_BRANCH`, else opened now; its comment is read before it is adopted. */
@@ -289,6 +380,55 @@ function notArrived(receipt: RuntimeReceipt, cause: Cause): string | null {
     : "the comment read back does not carry it";
 }
 
+/**
+ * The causes the workspace's comment already carries, recorded as sent
+ * without sending them again, and the rest. A repeat goes again unless the
+ * destination is still unread with it: a person who read it and did not act
+ * is told again.
+ */
+function alreadyThere(
+  workspace: Workspace,
+  causes: Cause[],
+  suppress: (cause: Cause, workspace: string) => void,
+): { out: NotifyOutcome[]; fresh: Cause[] } {
+  const already = causes.filter(
+    (c) =>
+      carries(workspace.comment, c.notice.key) &&
+      (c.repeat !== true || workspace.unread !== false),
+  );
+  const out = already.map((c) => {
+    suppress(c, workspace.path);
+    return outcomeFor(
+      c,
+      "already",
+      workspace.path,
+      c.repeat === true
+        ? "due again, and the workspace is still unread with it"
+        : "the workspace's comment already carried it",
+    );
+  });
+  return { out, fresh: causes.filter((c) => !already.includes(c)) };
+}
+
+/** How a sent cause went, by the receipt: sent (again, for a repeat) or lost. */
+function delivered(
+  receipt: RuntimeReceipt,
+  cause: Cause,
+  workspace: string,
+): NotifyOutcome {
+  const why = notArrived(receipt, cause);
+  if (why !== null) return outcomeFor(cause, "lost", workspace, why);
+  const detail = receipt.ok ? receipt.detail : "";
+  return outcomeFor(
+    cause,
+    "sent",
+    workspace,
+    cause.repeat === true
+      ? `sent again, the cause still standing: ${detail}`
+      : detail,
+  );
+}
+
 /** One workspace's causes, joined into one message and sent. */
 async function sendTo(
   state: ApplyState,
@@ -298,19 +438,7 @@ async function sendTo(
   root: string,
   repo: string,
 ): Promise<NotifyOutcome[]> {
-  const already = causes.filter((c) =>
-    carries(workspace.comment, c.notice.key),
-  );
-  const fresh = causes.filter((c) => !already.includes(c));
-  const out = already.map((c) => {
-    suppress(c, workspace.path);
-    return outcomeFor(
-      c,
-      "already",
-      workspace.path,
-      "the workspace's comment already carried it",
-    );
-  });
+  const { out, fresh } = alreadyThere(workspace, causes, suppress);
   if (fresh.length === 0) return out;
   const late = outOfTime(state);
   if (late !== null)
@@ -337,13 +465,9 @@ async function sendTo(
   if (known && receipt.ok && receipt.comment === expected)
     recordComment(workspace, expected, root, repo);
   for (const c of send) {
-    const why = notArrived(receipt, c);
-    if (why === null) suppress(c, workspace.path);
-    out.push(
-      why === null
-        ? outcomeFor(c, "sent", workspace.path, receipt.detail)
-        : outcomeFor(c, "lost", workspace.path, why),
-    );
+    const outcome = delivered(receipt, c, workspace.path);
+    if (outcome.outcome === "sent") suppress(c, workspace.path);
+    out.push(outcome);
   }
   return out;
 }
@@ -391,31 +515,28 @@ function prune(
   });
 }
 
-/** The causes for each target workspace; a cause with none reachable is reported as waiting. */
-async function groupByTarget(
+/** The due causes at the repository's destination, each naming where its stage ran; `null`, every cause reported waiting, when it cannot be reached. */
+async function atDestination(
   state: ApplyState,
   repo: RepoTarget,
   due: Cause[],
-  workspaces: Workspace[],
-  report: RepoReport,
-): Promise<Map<string, { workspace: Workspace; causes: Cause[] }>> {
-  const groups = new Map<string, { workspace: Workspace; causes: Cause[] }>();
-  let notices: Workspace | string | null = null;
-  for (const cause of due) {
-    let target = joinedTarget(cause, workspaces);
-    if (target === null) {
-      notices ??= await noticesWorkspace(state, repo, workspaces, report);
-      if (typeof notices === "string") {
-        report.notifications.push(outcomeFor(cause, "waits", null, notices));
-        continue;
-      }
-      target = notices;
-    }
-    const group = groups.get(target.path) ?? { workspace: target, causes: [] };
-    group.causes.push(cause);
-    groups.set(target.path, group);
+  sessions: { workspaces: Workspace[]; report: RepoReport },
+  branch: string | null,
+): Promise<{ workspace: Workspace; causes: Cause[] } | null> {
+  // The listing before the destination is opened: the notices workspace is no cause's own.
+  const listed = [...sessions.workspaces];
+  const target = await destination(state, repo, sessions, branch);
+  if (typeof target === "string") {
+    for (const cause of due)
+      sessions.report.notifications.push(
+        outcomeFor(cause, "waits", null, target),
+      );
+    return null;
   }
-  return groups;
+  return {
+    workspace: target,
+    causes: due.map((c) => located(c, listed, target)),
+  };
 }
 
 /** The stage a cause is about, for its event row. */
@@ -473,13 +594,34 @@ function eventRow(repo: string, cause: Cause, at: string): LogRow {
   };
 }
 
+/** The repository's `dispatch` settings the notifications read. */
+export interface NoticeSettings {
+  /** `notices_linger`. */
+  lingerMs: number;
+  /** `renotify_after`; `0` sends each cause once. */
+  renotifyAfterMs: number;
+  /** `notices_branch`; `null` for the repository's notices workspace. */
+  branch: string | null;
+}
+
+/** Whether a cause already sent is due again: it still stands `renotify_after` after its last send, and is not an observation notified once. */
+function dueAgain(
+  record: Suppression,
+  everyMs: number,
+  nowMs: number,
+): boolean {
+  if (everyMs <= 0 || record.lasting) return false;
+  const last = Date.parse(record.sentAt);
+  return Number.isFinite(last) && nowMs - last >= everyMs;
+}
+
 /** `--apply` for one repository's notifications, then its notices workspace. */
 export async function applyNotices(
   state: ApplyState,
   repo: RepoTarget,
   report: RepoReport,
   sessions: SessionsReport,
-  lingerMs: number,
+  settings: NoticeSettings,
 ): Promise<void> {
   const root = state.root ?? stateRoot();
   if (sessions.ok) pruneComments(repo.slug, sessions.workspaces, root);
@@ -487,7 +629,9 @@ export async function applyNotices(
   const written = await sendNotices(state, repo, report, sessions, {
     causes,
     root,
+    settings,
   });
+  const { lingerMs } = settings;
   if (!sessions.ok) return;
   const notices =
     sessions.workspaces.find((w) => w.branch === NOTICES_BRANCH) ?? null;
@@ -510,17 +654,32 @@ async function sendNotices(
   repo: RepoTarget,
   report: RepoReport,
   sessions: SessionsReport,
-  { causes, root }: { causes: Cause[]; root: string },
+  {
+    causes,
+    root,
+    settings,
+  }: { causes: Cause[]; root: string; settings: NoticeSettings },
 ): Promise<Set<string>> {
   const sent = readSuppressions(repo.slug, root);
   prune(report, new Set(causes.map((c) => c.notice.key)), sent, root);
-  const due = causes.filter((c) => !sent.has(c.notice.key));
+  const nowMs = Date.now();
+  const due: Cause[] = [];
   for (const c of causes) {
     const earlier = sent.get(c.notice.key);
-    if (earlier === undefined) continue;
-    report.notifications.push(
-      outcomeFor(c, "suppressed", earlier.workspace, `sent ${earlier.at}`),
-    );
+    if (earlier === undefined) due.push(c);
+    else if (dueAgain(earlier, settings.renotifyAfterMs, nowMs))
+      due.push(asRepeat(c, earlier, settings.renotifyAfterMs));
+    else
+      report.notifications.push(
+        outcomeFor(
+          c,
+          "suppressed",
+          earlier.workspace,
+          earlier.sentAt === earlier.at
+            ? `sent ${earlier.at}`
+            : `sent ${earlier.at}, again ${earlier.sentAt}`,
+        ),
+      );
   }
   if (due.length === 0) return new Set();
   if (!sessions.ok) {
@@ -543,6 +702,7 @@ async function sendNotices(
         // A cause about a stage this machine launched has its ended row instead.
         c.launched === true ? null : eventRow(repo.slug, c, at),
         root,
+        c.repeat === true,
       );
     } catch (error) {
       outcomeLogFailed(
@@ -552,16 +712,23 @@ async function sendNotices(
       );
     }
   };
-  const groups = await groupByTarget(
+  const group = await atDestination(
     state,
     repo,
     due,
-    sessions.workspaces,
-    report,
+    { workspaces: sessions.workspaces, report },
+    settings.branch,
   );
-  for (const { workspace, causes: mine } of groups.values())
-    report.notifications.push(
-      ...(await sendTo(state, workspace, mine, suppressed, root, repo.slug)),
-    );
-  return new Set(groups.keys());
+  if (group === null) return new Set();
+  report.notifications.push(
+    ...(await sendTo(
+      state,
+      group.workspace,
+      group.causes,
+      suppressed,
+      root,
+      repo.slug,
+    )),
+  );
+  return new Set([group.workspace.path]);
 }

@@ -1,16 +1,18 @@
 /**
  * dispatch --apply: notifications. A drive parked with a decision
- * unanswered reaches a person once, as the workspace's comment carrying the
- * drive's framed decision with the workspace marked unread (what Orca's
- * phone app shows); the answer, a comment on the pull request, makes the
- * next tick re-arm the drive. A cause whose message did not arrive is sent
- * again; one the target has no workspace for goes to the repository's
- * notices workspace.
+ * unanswered reaches a person as the comment of the repository's one
+ * destination, the notices workspace or the workspace `notices_branch`
+ * names, with the workspace marked unread (what Orca's phone app shows),
+ * never the workspace joined to the pull request; the message names that
+ * workspace, where the handoff is. The answer, a comment on the pull
+ * request, makes the next tick re-arm the drive. A cause whose message did
+ * not arrive is sent again; one that still stands `renotify_after` after its
+ * last send is sent again, and with the cadence zero, once only.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/schema.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -56,11 +58,15 @@ afterEach(() => {
   current = null;
 });
 
-/** PR #7 parked on F1, in a workspace of its own; one account, `rearm` and `notify` enabled. */
-function fixture(rows?: (ws: string) => OrcaRow[]): { w: World; ws: string } {
+/** PR #7 parked on F1, in a workspace of its own that could take a comment; one account, `rearm` and `notify` enabled. */
+function fixture(
+  rows?: (ws: string) => OrcaRow[],
+  config = CONFIG,
+): { w: World; ws: string } {
   const w = world();
   current = w;
-  w.setConfig(CONFIG);
+  w.setConfig(config);
+  withOrigin(w);
   w.setPrs("open", [openPr(7, "feature/7-parked")]);
   w.setComments(7, [
     ledgerComment(701, stoppedLedger(7, 8, { parked: [PARK] })),
@@ -82,44 +88,59 @@ async function tick(w: World): Promise<TickReceipt> {
 
 const notifications = (r: TickReceipt) => r.repos[0]?.notifications ?? [];
 
+type PsRow = { path: string; comment: string; unread: boolean };
+
+function psRows(w: World): { worktrees: PsRow[] } {
+  return JSON.parse(readFileSync(join(w.dir, "orca-ps.json"), "utf8"));
+}
+
 /** The comment and unread mark Orca keeps for the workspace at `path`. */
 function shown(w: World, path: string): { comment: string; unread: boolean } {
-  const ps = JSON.parse(readFileSync(join(w.dir, "orca-ps.json"), "utf8")) as {
-    worktrees: Array<{ path: string; comment: string; unread: boolean }>;
-  };
-  const row = ps.worktrees.find((r) => r.path === path);
+  const row = psRows(w).worktrees.find((r) => r.path === path);
   return { comment: row?.comment ?? "", unread: row?.unread ?? false };
 }
 
+/** A person opens the workspace at `path`: Orca clears its unread mark. */
+function markRead(w: World, path: string): void {
+  const ps = psRows(w);
+  for (const row of ps.worktrees) if (row.path === path) row.unread = false;
+  writeFileSync(join(w.dir, "orca-ps.json"), JSON.stringify(ps));
+}
+
+/** Move every suppression record's sends `hours` into the past, as if that long had passed. */
+function agedBy(w: World, hours: number): void {
+  const at = new Date(Date.now() - hours * 3_600_000).toISOString();
+  const db = new Database(statePath(dispatchState(w)));
+  try {
+    db.query("UPDATE notices SET at = ?, sent_at = ?").run(at, at);
+  } finally {
+    db.close();
+  }
+}
+
 describe("jig dispatch --apply notifies a person", () => {
-  it("notifies a parked drive once across three ticks, and re-arms it at the tick after the answer", async () => {
+  it("notifies a parked drive once across three ticks in the notices workspace, naming the drive's own, and re-arms it at the tick after the answer", async () => {
     const { w, ws } = fixture();
 
     const first = await tick(w);
-    expect(notifications(first)).toEqual([
-      expect.objectContaining({
-        target: "PR #7",
-        cause: "parked",
-        outcome: "sent",
-        workspace: ws,
-      }),
-    ]);
-    const { comment, unread } = shown(w, ws);
+    const [sent] = notifications(first);
+    expect(sent).toMatchObject({
+      target: "PR #7",
+      cause: "parked",
+      outcome: "sent",
+    });
+    const notices = sent?.workspace ?? "";
+    expect(notices).not.toBe(ws);
+    expect(shown(w, ws)).toEqual({ comment: "", unread: false });
+    const { comment, unread } = shown(w, notices);
     expect(unread).toBe(true);
-    const db = new Database(statePath(dispatchState(w)));
-    try {
-      expect(db.query("SELECT workspace FROM notices_content").all()).toEqual(
-        [],
-      );
-    } finally {
-      db.close();
-    }
     expect(comment).toContain(
       `[jig dispatch: ${SLUG} PR #7 parked, ledger generation 3: finding F1]`,
     );
     expect(comment).toContain("[finding] F1 · class design-choice");
     expect(comment).toContain("Recommended: (a)");
     expect(comment).toContain("`answer <key>: …`");
+    expect(comment).toContain(`Its workspace: ${ws}`);
 
     for (const later of [await tick(w), await tick(w)])
       expect(notifications(later)).toEqual([
@@ -153,47 +174,51 @@ describe("jig dispatch --apply notifies a person", () => {
   });
 
   it("sends a message again when the workspace's comment did not take it", async () => {
-    const { w, ws } = fixture();
+    const { w } = fixture();
     writeFileSync(join(w.dir, "orca-set-noop"), "");
     const lost = await tick(w);
     expect(notifications(lost)).toEqual([
       expect.objectContaining({ target: "PR #7", outcome: "lost" }),
     ]);
     rmSync(join(w.dir, "orca-set-noop"));
-    expect(notifications(await tick(w))).toEqual([
+    const again = notifications(await tick(w));
+    expect(again).toEqual([
       expect.objectContaining({ target: "PR #7", outcome: "sent" }),
     ]);
-    expect(shown(w, ws).comment).toContain("PR #7 parked");
+    expect(shown(w, again[0]?.workspace ?? "").comment).toContain(
+      "PR #7 parked",
+    );
   });
 
   it("appends to a comment a person has not read yet rather than replacing it", async () => {
     const earlier = "[jig dispatch: an earlier cause]\nPR #3 stopped.";
     const { w, ws } = fixture((path) => [
+      { branch: "feature/7-parked", linkedPR: 7, path },
       {
-        branch: "feature/7-parked",
-        linkedPR: 7,
-        path,
+        branch: "jig-dispatch-notices",
+        path: join(dirname(path), "notices"),
         comment: earlier,
         unread: true,
       },
     ]);
+    const notices = join(dirname(ws), "notices");
     await tick(w);
-    const { comment } = shown(w, ws);
+    const { comment } = shown(w, notices);
     expect(comment.startsWith(earlier)).toBe(true);
     expect(comment).toContain("PR #7 parked");
+    expect(orcaCalls(w, "worktree", "create")).toEqual([]);
   });
 
-  it("sends what has no workspace that can take it to the repository's notices workspace, in one message", async () => {
-    // PR #7's workspace still holds a kickoff prompt; PR #8 has none.
+  it("sends every cause to the notices workspace in one message, even where the pull request's own workspace could take it", async () => {
+    // PR #7's workspace runs an agent, so it could take a comment; PR #8 has none.
     const { w, ws } = fixture((path) => [
       {
         branch: "feature/7-parked",
         linkedPR: 7,
         path,
-        comment: "Fix the flaky retry test",
+        agents: [{ state: "working" }],
       },
     ]);
-    withOrigin(w);
     w.setPrs("open", [
       openPr(7, "feature/7-parked"),
       openPr(8, "feature/8-failed"),
@@ -209,7 +234,7 @@ describe("jig dispatch --apply notifies a person", () => {
     const notices = sent[0]?.workspace ?? "";
     expect(notices).not.toBe(ws);
     expect(sent[1]?.workspace).toBe(notices);
-    expect(shown(w, ws).comment).toBe("Fix the flaky retry test");
+    expect(shown(w, ws)).toEqual({ comment: "", unread: false });
     // Named as the dispatcher's, and its comment, rewritten by the message, keeps the mark.
     const [create] = orcaCalls(w, "worktree", "create");
     expect(create?.[create.indexOf("--name") + 1]).toBe(
@@ -220,6 +245,7 @@ describe("jig dispatch --apply notifies a person", () => {
     expect(comment.split("\n")[0]).toBe("⚙ dispatched · notices");
     expect(comment).toContain("PR #7 parked");
     expect(comment).toContain(`[jig dispatch: ${SLUG} PR #8 stopped 7`);
+    expect(comment).toContain(`Its workspace: ${ws}`);
     expect(notifyWrites(w)).toHaveLength(1);
 
     await tick(w);
@@ -227,19 +253,110 @@ describe("jig dispatch --apply notifies a person", () => {
     expect(notifyWrites(w)).toHaveLength(1);
   });
 
+  it("sends the notice to the workspace notices_branch names, even when a workspace is joined to the pull request", async () => {
+    const rows = (ws: string): OrcaRow[] => [
+      {
+        branch: "feature/7-parked",
+        linkedPR: 7,
+        path: ws,
+        agents: [{ state: "working" }],
+      },
+      { branch: "desk", path: join(dirname(ws), "desk") },
+    ];
+    const { w, ws } = fixture(
+      rows,
+      `${CONFIG}dispatch:\n  notices_branch: desk\n`,
+    );
+    const desk = join(dirname(ws), "desk");
+    expect(notifications(await tick(w))).toEqual([
+      expect.objectContaining({
+        target: "PR #7",
+        outcome: "sent",
+        workspace: desk,
+      }),
+    ]);
+    expect(shown(w, desk).comment).toContain("PR #7 parked");
+    expect(shown(w, desk).unread).toBe(true);
+    expect(shown(w, ws).comment).toBe("");
+    expect(orcaCalls(w, "worktree", "create")).toEqual([]);
+  });
+
+  it("leaves a notice waiting, opening nothing, while no workspace is on the branch notices_branch names", async () => {
+    const { w } = fixture(
+      undefined,
+      `${CONFIG}dispatch:\n  notices_branch: desk\n`,
+    );
+    const [waits] = notifications(await tick(w));
+    expect(waits).toMatchObject({ target: "PR #7", outcome: "waits" });
+    expect(waits?.detail).toContain("dispatch.notices_branch");
+    expect(notifyWrites(w)).toEqual([]);
+    expect(orcaCalls(w, "worktree", "create")).toEqual([]);
+  });
+
+  it("sends a notice that still stands again once renotify_after has passed since it was sent, and not before", async () => {
+    const { w } = fixture();
+    const [sent] = notifications(await tick(w));
+    const notices = sent?.workspace ?? "";
+    markRead(w, notices);
+
+    agedBy(w, 23);
+    expect(notifications(await tick(w))).toEqual([
+      expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
+    ]);
+    expect(notifyWrites(w)).toHaveLength(1);
+
+    agedBy(w, 25);
+    const again = notifications(await tick(w));
+    expect(again).toEqual([
+      expect.objectContaining({
+        target: "PR #7",
+        outcome: "sent",
+        workspace: notices,
+      }),
+    ]);
+    expect(again[0]?.detail).toContain("sent again");
+    expect(notifyWrites(w)).toHaveLength(2);
+    const { comment, unread } = shown(w, notices);
+    expect(unread).toBe(true);
+    expect(comment).toContain("Sent again: this still waits on a person");
+    expect(comment).toContain("PR #7 parked");
+
+    // The repeat is timed from its own send.
+    expect(notifications(await tick(w))).toEqual([
+      expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
+    ]);
+    expect(notifyWrites(w)).toHaveLength(2);
+  });
+
+  it("sends a notice once only when renotify_after is zero", async () => {
+    const { w } = fixture(
+      undefined,
+      `${CONFIG}dispatch:\n  renotify_after: 0s\n`,
+    );
+    const [sent] = notifications(await tick(w));
+    expect(sent?.outcome).toBe("sent");
+    markRead(w, sent?.workspace ?? "");
+    agedBy(w, 72);
+    expect(notifications(await tick(w))).toEqual([
+      expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
+    ]);
+    expect(notifyWrites(w)).toHaveLength(1);
+  });
+
   it("keeps a suppression record while its pull request is outside the label scope", async () => {
-    const { w, ws } = fixture();
-    w.setConfig(`${CONFIG}dispatch:
+    const { w } = fixture(
+      undefined,
+      `${CONFIG}dispatch:
   labels: { enabled: true, only_labeled: true }
-`);
+`,
+    );
     const labelled = {
       ...openPr(7, "feature/7-parked"),
       labels: [{ name: "jig:drive" }],
     };
     w.setPrs("open", [labelled]);
-    expect(notifications(await tick(w))).toEqual([
-      expect.objectContaining({ target: "PR #7", outcome: "sent" }),
-    ]);
+    const [sent] = notifications(await tick(w));
+    expect(sent).toMatchObject({ target: "PR #7", outcome: "sent" });
 
     // The label comes off: the cause is not observed to change, only unread.
     w.setPrs("open", [openPr(7, "feature/7-parked")]);
@@ -250,6 +367,6 @@ describe("jig dispatch --apply notifies a person", () => {
       expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
     ]);
     expect(notifyWrites(w)).toHaveLength(1);
-    expect(shown(w, ws).unread).toBe(true);
+    expect(shown(w, sent?.workspace ?? "").unread).toBe(true);
   });
 });

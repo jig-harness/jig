@@ -90,14 +90,17 @@ function needEvidence(
     ...n.decisions.map((d) => ({ k: d.kind, v: d.key, copy: d.key })),
     ...(questionShown ? [{ k: "reason", v: n.reason, copy: n.reason }] : []),
   ];
-  if (n.notified !== null)
+  if (n.notified !== null) {
+    const to =
+      n.notified.workspace === null ? "" : `, to ${n.notified.workspace}`;
     rows.push({
       k: "notified",
       v:
         n.notified.at === null
           ? n.notified.outcome
-          : `${clock(Date.parse(n.notified.at), timeZone)}, to its workspace`,
+          : `${clock(Date.parse(n.notified.at), timeZone)}${to}`,
     });
+  }
   n.workspaces.forEach((path, i) => {
     rows.push({ k: `workspace ${i + 1}`, v: path, copy: path });
   });
@@ -107,7 +110,8 @@ function needEvidence(
 /** One need as its row shows it. */
 export function needView(n: LineNeed, clockNow: Clock): NeedView {
   const first = n.decisions[0];
-  const question = first?.question ?? null;
+  // A park's question is its first decision's; a follow-up's is the line it stopped on.
+  const question = first?.question ?? n.question ?? null;
   const recommendation = first?.recommendation ?? null;
   const decision = decisionText(n.decisions);
   const named = first?.decisionClass ?? null;

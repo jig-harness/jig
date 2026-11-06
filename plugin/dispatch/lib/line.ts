@@ -282,6 +282,7 @@ function needsOf(
         at ??
         sightedSince(previous, view.slug, action, nowIso),
       reason: action.reason,
+      question: text(action.evidence, "question"),
       decisions: (view.drive(pr)?.waiting ?? []).map(decisionOf),
       notified:
         notification === undefined
@@ -313,6 +314,7 @@ function needsOf(
           firstSeen(previous, view.slug, u.target, "assigner-cannot-write") ??
           nowIso,
         reason: u.reason,
+        question: null,
         decisions: [],
         notified: null,
         workspaces: [],

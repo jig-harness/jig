@@ -531,13 +531,11 @@ async function applyStages(
   if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
   // A host that does not own the repository never notifies for it: the owner does, once.
   if (enabled.has("notify") && inputs.shared.owner)
-    await applyNotices(
-      apply,
-      repo,
-      report,
-      inputs.sessions,
-      section.noticesLingerMs,
-    );
+    await applyNotices(apply, repo, report, inputs.sessions, {
+      lingerMs: section.noticesLingerMs,
+      renotifyAfterMs: section.renotifyAfterMs,
+      branch: section.noticesBranch,
+    });
 }
 
 /** This machine's launch records, the ones this tick writes included. */

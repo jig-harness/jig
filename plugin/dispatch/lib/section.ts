@@ -23,6 +23,8 @@ const DEFAULT_PICKUP_WITHIN_MS = 2 * 3_600_000;
 const DEFAULT_FOLLOWUP_WITHIN_MS = 3_600_000;
 /** `notices_linger`'s default. */
 const DEFAULT_NOTICES_LINGER_MS = 3_600_000;
+/** `renotify_after`'s default: a day. */
+const DEFAULT_RENOTIFY_AFTER_MS = 24 * 3_600_000;
 const KEYS = [
   "identity",
   "states",
@@ -33,6 +35,8 @@ const KEYS = [
   "pickup_within",
   "followup_within",
   "notices_linger",
+  "notices_branch",
+  "renotify_after",
   "labels",
   "adopt",
 ];
@@ -125,10 +129,20 @@ function wait(
   }
 }
 
-/** `notices_linger`: a duration, or zero (`0s`, `0m`, `0h`). */
-function linger(value: unknown): number {
+/** A duration that may also be zero (`0s`, `0m`, `0h`): `notices_linger`, `renotify_after`. */
+function orZero(value: unknown, field: string, fallback: number): number {
   if (typeof value === "string" && /^0+\s*[smh]$/.test(value.trim())) return 0;
-  return wait(value, "notices_linger", DEFAULT_NOTICES_LINGER_MS);
+  return wait(value, field, fallback);
+}
+
+/** `notices_branch`: a branch name with no space; `null` for the repository's notices workspace. */
+function noticesBranch(value: unknown): string | null {
+  const named = text(value, "notices_branch");
+  if (named !== null && /\s/.test(named))
+    throw new SectionError(
+      "dispatch.notices_branch must be a branch name, with no space",
+    );
+  return named;
 }
 
 function flag(value: unknown, field: string, fallback: boolean): boolean {
@@ -260,7 +274,17 @@ export function dispatchSection(
       "followup_within",
       DEFAULT_FOLLOWUP_WITHIN_MS,
     ),
-    noticesLingerMs: linger(section.notices_linger),
+    noticesLingerMs: orZero(
+      section.notices_linger,
+      "notices_linger",
+      DEFAULT_NOTICES_LINGER_MS,
+    ),
+    noticesBranch: noticesBranch(section.notices_branch),
+    renotifyAfterMs: orZero(
+      section.renotify_after,
+      "renotify_after",
+      DEFAULT_RENOTIFY_AFTER_MS,
+    ),
     labels: labelConfig,
     adopt,
   };
