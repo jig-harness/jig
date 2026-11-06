@@ -22,7 +22,9 @@
  * writes its end, before any expired record is removed. Every record the
  * tick keeps is a row of the state database (lib/state.ts); at the end of
  * the tick the outcome log's new rows are copied into its month files
- * (lib/log-export.ts).
+ * (lib/log-export.ts), and, after every launch, each class that recurs is
+ * recorded as a reflection finding where reflection is on
+ * (lib/reflection-route.ts).
  *
  * Where a repository turns dispatch labels on (lib/labels.ts), the open
  * pull requests are listed with their labels, a person's `hold` keeps
@@ -70,7 +72,12 @@ import {
   type FreshDrive,
 } from "./lib/actions/drive.ts";
 import { applyFollowups } from "./lib/actions/followup.ts";
-import { accountsReport, outOfTime, rotated } from "./lib/actions/launch.ts";
+import {
+  accountsReport,
+  outOfTime,
+  rotated,
+  timeLeftMs,
+} from "./lib/actions/launch.ts";
 import {
   heldPullRequests,
   planLabels,
@@ -117,6 +124,11 @@ import { readPickups } from "./lib/sources/tracker.ts";
 import { type ForgeRead, readForge } from "./lib/tick-forge.ts";
 import { copyLog, lineInputOf, writeTickLine } from "./lib/tick-line.ts";
 import {
+  type RepoReflection,
+  repositoryReflection,
+  routeRecurrences,
+} from "./lib/reflection-route.ts";
+import {
   endOwnClaims,
   openShared,
   readDriveClaims,
@@ -161,6 +173,8 @@ interface TickContext {
   apply: ApplyState | null;
   /** What each repository's tick read beside its report, by path, for the line. */
   lineInputs: Map<string, RepoLineInput>;
+  /** Each repository's reflection settings, for the route at the tick's end. */
+  reflections: RepoReflection[];
 }
 
 function emptyReport(path: string, refused: string): RepoReport {
@@ -193,6 +207,7 @@ interface OpenedRepo {
   /** Whether the machine file lists it, and whether this host owns it there. */
   listed: boolean;
   owner: boolean;
+  reflection: RepoReflection["reflection"];
 }
 
 /** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
@@ -212,9 +227,11 @@ async function openRepo(
     );
   }
   let read: ReturnType<typeof readSection>;
+  let file: string | null;
   const where = `${repo.slug}@${repo.defaultBranch}:.config/jig.yaml`;
   try {
-    read = readSection(await defaultBranchConfig(repo), where);
+    file = await defaultBranchConfig(repo);
+    read = readSection(file, where);
   } catch (error) {
     return {
       ...emptyReport(
@@ -232,7 +249,16 @@ async function openRepo(
     section,
     followupSince: followupStart(options, entry, path, nowMs),
   };
-  return { repo, values, section, where, report, ...entryFacts(entry) };
+  const reflection = repositoryReflection(path, file, where);
+  return {
+    repo,
+    values,
+    section,
+    where,
+    report,
+    reflection,
+    ...entryFacts(entry),
+  };
 }
 
 /** When the follow-up stage started for a repository: the run's override, the machine file's, the previous receipt's, else now. */
@@ -301,6 +327,8 @@ async function gatherRepo(
   if (!("repo" in opened)) return opened;
   const { repo, values, section, where, report } = opened;
   const { runtime, nowMs } = context;
+  const { owner, reflection } = opened;
+  context.reflections.push({ slug: repo.slug, path, reflection, owner });
   const tracked = await readTracker(values, repo, section, report, where);
 
   // The forge: the open pull requests and their ledgers, the merges, and the launch claims of every host.
@@ -824,6 +852,24 @@ async function readSessions(
   }
 }
 
+/**
+ * The reflection route, after every launch: each class that recurs recorded
+ * where reflection is on. What it did goes on the receipt; a failure there
+ * leaves the tick's exit status as it is.
+ */
+async function routeReflection(
+  receipt: TickReceipt,
+  context: TickContext,
+): Promise<void> {
+  const { apply } = context;
+  const reflection = await routeRecurrences(context.reflections, {
+    apply: apply !== null,
+    nowMs: Date.now(),
+    timeLeftMs: apply === null ? null : timeLeftMs(apply),
+  });
+  if (reflection !== null) receipt.reflection = reflection;
+}
+
 export type TickResult =
   | { held: string }
   | { receipt: TickReceipt; path: string };
@@ -912,6 +958,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       launches: apply?.records ?? read.records,
       apply,
       lineInputs: new Map(),
+      reflections: [],
     };
     const order =
       apply === null ? options.repos : rotated(apply, options.repos);
@@ -919,6 +966,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       receipt.repos.push(await gatherRepo(path, context));
     const failed = await settleOutcomes(receipt, context, days);
     const copied = copyLog(receipt);
+    await routeReflection(receipt, context);
     receipt.exitStatus = failed || !copied || withheld !== undefined ? 1 : 0;
     receipt.completed = true;
     receipt.finishedAt = new Date().toISOString();
