@@ -307,11 +307,17 @@ checks:
 
 `/jig:operator` is the skill a person talks to. It turns "where does 456
 stand", "what is waiting on me" or "hold 456" into `jig ask` and `jig
-send`, and answers in sentences. It holds no state: what it knows it has
+send`, and answers in sentences, except for a status, which is one fixed
+card: `ask`'s own answer, then where the work stands, what it waits on,
+what the person can do and what was not read, so the same question reads
+the same in every session. It holds no state: what it knows it has
 just read, so any session on any machine can be the operator, and a session
 that ends loses nothing. A person who wants one address's status without a
 session runs `jig ask` and reads its plain answer.
 
+- **The skill run on its own** answers "what is waiting on me", and a
+  bare number is the status of that pull request, or of the item of that
+  number where no pull request has it.
 - **"What is waiting on me"** is `jig ask --waiting --person <login>` once
   step 5 has built, one read; before it, `jig ask --waiting`. The operator opens an address only to say more about one entry.
 - **The status of a pull request** is `jig ask drive@<repository>#<PR>`,

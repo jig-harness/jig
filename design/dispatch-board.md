@@ -101,8 +101,11 @@ still sees why a card in Coming has not started.
 
 One predicate decides it, a pure function in
 `plugin/skills/drive-pr/scripts/lib/merge-ready.ts`. The tick calls it to
-place a card, and `announce-merge-ready.ts` calls it before it posts, so
-the board and the drive's announcement cannot disagree. It takes the facts
+place a card, `announce-merge-ready.ts` calls it before it posts, and
+`jig ask` calls it for what a converged drive waits on and for the `merge`
+station ([addresses](addresses.md#an-address-names-a-station-on-a-piece-of-work)),
+so the board, the drive's announcement and the answer a person gets about
+one pull request cannot disagree. It takes the facts
 of one pull request and returns its lane and, for each condition not met,
 whether waiting settles it or which person's act does. A pull request is in
 Ready to merge, lane **merge now**, when all of these hold at the tick:
@@ -578,8 +581,11 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
    steps 4 to 6 are built. Steps 2 and 3 are built either way: they are
    the queue a person asked for, and they measure the loss from then on.
 2. **Ready to merge in the tick.** The predicate in `lib/merge-ready.ts`
-   with a test for each condition and each row of the placement table, and
-   `announce-merge-ready.ts` calling it; the board read with its deadline,
+   with a test for each condition and each row of the placement table,
+   `announce-merge-ready.ts` calling it, and `jig ask` calling it: a
+   converged drive's `waitsOn` names the lane's act in place of saying the
+   approval and the branch were not read, and the `merge` station joins
+   the addresses; the board read with its deadline,
    budget floor, overflow follow-up and `UNKNOWN` re-read, isolated from
    planning; the merge command's strict forms; `jig dispatch`'s report
    listing the merge queue; the `ready` notification; the event rows;
@@ -591,8 +597,9 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
    whose ledger says `0` at a head its reviewer never checked is in Needs
    you; one whose base then conflicts leaves with a left-ready row and its
    cause; a merge puts one pull request in update next and the rest in
-   Coming; each reaches a person's phone once; and a board read made to
-   fail leaves that tick's launches as they were.
+   Coming; each reaches a person's phone once; `jig ask` on each names the
+   same lane and act as its card; and a board read made to fail leaves
+   that tick's launches as they were.
 3. **Ready to merge on the page.** A Ready to merge list at the top of the
    Now view, with its lanes, the status rows, `waitsOn` and the pinned
    command; the strip's counts; the history view's counts. Done when the
