@@ -50,7 +50,7 @@ export type PersonAct = (typeof PERSON_ACTS)[number];
 export type WaitsOn =
   | "none"
   | { waiting: string }
-  | { person: PersonAct; why: string };
+  | { person: PersonAct; why: string; people?: string[] };
 
 /** The last launch of the station that ended. */
 export interface Last {

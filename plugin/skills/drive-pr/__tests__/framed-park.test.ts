@@ -7,7 +7,8 @@
 import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { parseDecisionRecord } from "../scripts/lib/state/framed-park.ts";
 import { framedDecisionLines } from "../scripts/lib/state/park-frame.ts";
@@ -82,6 +83,118 @@ describe("park refuses what is not a framed decision", () => {
 });
 
 describe("park records a framed decision", () => {
+  it("keeps every --path for existing record-paths callers", async () => {
+    const d = stateDirFor("record-multiple-paths");
+    expectSpawnExit(await state(d, ["bump-round", "999", "--head", "aaa"]), 0);
+    const result = await state(d, [
+      "record-paths",
+      "999",
+      "--path",
+      "api/route.ts",
+      "--path",
+      "web/view.ts",
+    ]);
+    expectSpawnExit(result, 0);
+    const stored = await state(d, ["get", "999"]);
+    expectSpawnExit(stored, 0);
+    const parsed = JSON.parse(stored.stdout) as {
+      roundPaths: { paths: string[] }[];
+    };
+    expect(parsed.roundPaths[0]?.paths).toEqual([
+      "api/route.ts",
+      "web/view.ts",
+    ]);
+  });
+  it("infers a thread's area owner and otherwise stores the PR author", async () => {
+    const d = stateDirFor("park-routed-person");
+    const bin = mkdtempSync(join(tmpdir(), "park-forge-"));
+    const overlay = join(bin, "jig.yaml");
+    const catalog = join(bin, "areas.yaml");
+    writeFileSync(
+      catalog,
+      'areas:\n  api:\n    paths: ["api/**"]\n    owner: api-owner\n',
+    );
+    writeFileSync(
+      overlay,
+      `drive:\n  change_areas_catalog: ${JSON.stringify(catalog)}\n`,
+    );
+    writeFakeProgram(
+      join(bin, "gh"),
+      `#!/usr/bin/env bun
+const args = process.argv.slice(2);
+if (args[0] === "api" && args[1] === "graphql") {
+  if (process.env.PARK_THREAD_FAIL) { console.error("offline"); process.exit(7); }
+  console.log(process.env.PARK_THREAD_REPLY ?? JSON.stringify({data:{node:{path:"api/route.ts"}}}));
+} else if (args[0] === "pr" && args[1] === "view") {
+  console.log(JSON.stringify({author:{login:"pr-author"}}));
+} else process.exit(1);
+`,
+    );
+    const env = {
+      PATH: `${bin}${delimiter}${process.env.PATH}`,
+      JIG_OVERLAY: overlay,
+      JIG_USER_LAYER: "off",
+      JIG__dispatch__person: undefined,
+    };
+    expectSpawnExit(
+      await state(
+        d,
+        parkArgs("PRRT_route", "thread"),
+        env,
+        parkRecord(QUESTION),
+      ),
+      0,
+    );
+    expectSpawnExit(
+      await state(
+        d,
+        parkArgs("summary-key", "finding"),
+        env,
+        parkRecord(QUESTION),
+      ),
+      0,
+    );
+    expectSpawnExit(
+      await state(
+        d,
+        [...parkArgs("anchored-summary", "finding"), "--path", "api/route.ts"],
+        env,
+        parkRecord(QUESTION),
+      ),
+      0,
+    );
+    const result = await state(d, ["get", "999"], env);
+    expectSpawnExit(result, 0);
+    const parks = (
+      JSON.parse(result.stdout) as { parked: { key: string; person: string }[] }
+    ).parked;
+    expect(parks.map((p) => [p.key, p.person])).toEqual([
+      ["PRRT_route", "api-owner"],
+      ["summary-key", "pr-author"],
+      ["anchored-summary", "api-owner"],
+    ]);
+    for (const broken of [
+      { PARK_THREAD_REPLY: "{" },
+      { PARK_THREAD_FAIL: "1" },
+    ]) {
+      const result = await state(
+        d,
+        parkArgs("PRRT_unreadable", "thread"),
+        { ...env, ...broken },
+        parkRecord(QUESTION),
+      );
+      expectSpawnExit(result, 0);
+      expect(result.stderr).toContain("using recipient fallback");
+      const stored = await state(d, ["get", "999"], env);
+      expectSpawnExit(stored, 0);
+      const park = (
+        JSON.parse(stored.stdout) as {
+          parked: { key: string; person: string }[];
+        }
+      ).parked.find((p) => p.key === "PRRT_unreadable");
+      expect(park?.person).toBe("pr-author");
+    }
+  });
   it("accepts a class and a complete record, and keeps both", async () => {
     const d = stateDirFor("park-framed");
     const r = await state(
@@ -97,10 +210,12 @@ describe("park records a framed decision", () => {
         class: string;
         reason: string;
         record: string;
+        person: string;
       }>;
     };
     expect(got.parked).toHaveLength(1);
     expect(got.parked[0]?.class).toBe("human-decision");
+    expect(got.parked[0]?.person).toBe("maintainer");
     expect(got.parked[0]?.reason).toBe(QUESTION);
     expect(got.parked[0]?.record).toContain("## Steps for a person");
     const handoff = readFileSync(join(d, "handoff", "pr-drive-999.md"), "utf8");

@@ -258,7 +258,24 @@ function waitsOnOf(
     case "driven":
       return "none";
     case "parked":
-      return { person: "answer", why: placed.why };
+      return {
+        person: "answer",
+        why: placed.why,
+        people: [
+          ...new Set(
+            ledger.parked
+              .filter(
+                (p) =>
+                  r.comments === null || !answered(p.key, p.at, r.comments),
+              )
+              .flatMap((p) =>
+                p.person === undefined
+                  ? [r.pull.author].filter(Boolean)
+                  : [p.person],
+              ),
+          ),
+        ],
+      };
     case "re-armable":
     case "stale":
       return rearm(placed.why);

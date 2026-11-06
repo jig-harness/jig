@@ -31,6 +31,7 @@ import { layeredConfig } from "../../../../../shared/consumer.ts";
 import type { DriveState, ParkedItem } from "./schema.ts";
 import { parkRefusal } from "./rulings.ts";
 import type { StateStore } from "./store.ts";
+import { resolveParkPerson } from "./park-person.ts";
 
 /** The record's headings, in the order it must carry them. */
 export const RECORD_SECTIONS = [
@@ -240,6 +241,7 @@ interface ParkArgs {
   kind: string;
   parkClass: string;
   reason: string;
+  paths: string[];
 }
 
 /** `park`: validate the class and the record, then record the item. */
@@ -283,10 +285,18 @@ export async function framedPark(
       ...parsed.problems.map((p) => `  - ${p}`),
     );
   const record = parsed.record;
+  const refusal = parkRefusal(store.read().state, a.key, a.kind, a.parkClass);
+  if (refusal !== null) fail(2, `park: ${refusal}.`);
+  const person = await resolveParkPerson(
+    String(store.read().state.pr),
+    a.key,
+    a.kind,
+    a.paths[0] ?? "",
+  );
   await store.update((s) => {
     const refusal = parkRefusal(s, a.key, a.kind, a.parkClass);
     if (refusal !== null) fail(2, `park: ${refusal}.`);
-    return parkedWith(s, a, record);
+    return parkedWith(s, a, record, person);
   });
   return 0;
 }
@@ -296,6 +306,7 @@ function parkedWith(
   s: DriveState,
   a: ParkArgs,
   record: DecisionRecord,
+  person: string,
 ): DriveState {
   return {
     ...s,
@@ -303,6 +314,7 @@ function parkedWith(
       ...s.parked.filter((p) => p.key !== a.key),
       {
         key: a.key,
+        person,
         kind: a.kind as "thread" | "finding",
         reason: record.Question,
         class: a.parkClass,

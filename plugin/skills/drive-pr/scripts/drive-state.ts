@@ -208,6 +208,7 @@ import {
   isDigits,
   isGitSha,
   readStdinAll,
+  valueAfter,
   runMain,
   sleep,
   testDelaySeconds,
@@ -567,11 +568,6 @@ function parseArgs(argv: string[]): Args {
     parkedAts: [],
     paths: [],
   };
-  const take = (flag: string, i: number): string => {
-    const value = argv[i + 1];
-    if (value === undefined) fail(2, `${flag} requires a value`);
-    return value;
-  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === undefined) continue;
@@ -579,14 +575,14 @@ function parseArgs(argv: string[]): Args {
       ? VALUE_FLAGS[arg]
       : undefined;
     if (field !== undefined) {
-      a[field] = take(arg, i++);
+      a[field] = valueAfter(argv, i++);
       continue;
     }
     switch (arg) {
       // Every `--key` the parser consumed, in order, for `unpark`'s set: a
       // value that merely reads `--key` is a value, not another flag.
       case "--key":
-        a.key = take(arg, i++);
+        a.key = valueAfter(argv, i++);
         a.keys.push(a.key);
         break;
       case "--unconfirmed":
@@ -605,10 +601,10 @@ function parseArgs(argv: string[]): Args {
       // and the failure would be invisible — the predicate would just answer
       // "not armed" forever.
       case "--path":
-        a.paths.push(take(arg, i++));
+        a.paths.push(valueAfter(argv, i++));
         break;
       case "--parked-at":
-        a.parkedAts.push(take(arg, i++));
+        a.parkedAts.push(valueAfter(argv, i++));
         break;
       case "--stdin":
         a.stdin = true;

@@ -807,7 +807,7 @@ changes nothing on the forge or the tracker
 
 ```sh
 jig ask <station>@<owner>/<name>#<key> [--json] [--thread [--since <date> | --all]]
-jig ask --waiting [--json]
+jig ask --waiting [--person <login>] [--json]
 ```
 
 In a session, [`/jig:operator`](skills/operator/SKILL.md) runs `jig ask`
@@ -887,8 +887,10 @@ thread is an instruction to whoever reads it.
 each waits for, across the repositories the machine dispatches, from the
 newest tick's line, which the dispatcher keeps for its dashboard: it makes
 no forge or tracker call, and it says when that tick ran. On a machine that
-dispatches nothing it says there is no line to read. `--person <login>` is
-refused until a park records whom it waits on. Each entry carries its recorded
+dispatches nothing it says there is no line to read. `--person <login>` lists
+only entries naming that login (case insensitive) in their `people` field;
+older parks use the PR author when the tick knows them; older snapshots without
+a named recipient remain in the unfiltered list. Each entry carries its recorded
 stage and parked questions in `questions` in JSON and as `question:` lines
 in text; parks without a separate question use their recorded decision lines.
 

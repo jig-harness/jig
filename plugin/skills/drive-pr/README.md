@@ -522,7 +522,9 @@ mechanical state rather than on anyone's judgement:
   the stop prints each in full: the question, the options with what each
   changes and costs, the recommendation, the steps you must take and what the
   drive already did. The doctor names the questions in its `NEEDS_HUMAN`
-  row. Answer each parked item on its thread, or in a
+  row. Each question names the area owner, else `dispatch.person`, else the
+  pull request's author; this routes the question without restricting answers.
+  Answer each parked item on its thread, or in a
   pull-request comment with a line `answer <key>: …`, as an owner, member or
   collaborator; `jig send drive@<owner>/<name>#<PR> answer <key> "<text>"`
   writes that comment after checking the key is parked and unanswered

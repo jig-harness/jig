@@ -24,6 +24,13 @@ export {
   runMain,
 } from "../../../../shared/cli.ts";
 
+/** The value after an argv flag, or a usage error naming that flag. */
+export function valueAfter(argv: readonly string[], index: number): string {
+  const value = argv[index + 1];
+  if (value === undefined) fail(2, `${argv[index]} requires a value`);
+  return value;
+}
+
 /**
  * A full, lowercase, 40-character SHA-1 hex string — the exact grammar every
  * documented caller derives via `git rev-parse HEAD` (never `--short`, never an
