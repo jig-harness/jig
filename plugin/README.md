@@ -435,7 +435,11 @@ each one; a drive stopped on an exit only a person settles, or with no exit;
 a failed follow-up, with the question its pass stopped on; a stalled pickup,
 a double claim, a session waiting past `dispatch.blocked_after`. Each message
 carries the cause or the question, the pull request's link and the handoff,
-and names the workspace the stage ran in. Every message for a repository
+and names the workspace the stage ran in. Follow-up passes leave routine
+local branch, retired-workspace and scratch-note retention to periodic
+cleanup, including leftovers no collector covers yet. These do not require
+a question for a person or a failed result; evidence of unlanded work or an
+active operational problem still does require follow-up. Every message for a repository
 goes to one place a person watches, never to the workspace joined to the
 pull request or item, which a person following many repositories does not
 visit: the workspace on the branch `dispatch.notices_branch` names, when the
@@ -912,9 +916,9 @@ another usage error.
 ## Telling a station what to do
 
 `jig send` writes one record of a kind the line already reads, and exits.
-It types nothing into a session and starts nothing itself: the record's
-reader acts on it at its next run, as it does on the same record written by
-hand. It takes the same [addresses](#asking-a-station-where-it-stands) as
+It types nothing into a session: the record's reader acts on it at its next
+run, as it does on the same record written by hand, and when that reader is
+the dispatcher's tick, `send` wakes it (see below). It takes the same [addresses](#asking-a-station-where-it-stands) as
 `jig ask`, the key also as a second argument:
 
 ```sh
@@ -987,9 +991,26 @@ once). The mailbox lets only a `stop` name a generation, so a `pause` or a
 generation that holds the drive when it is sent. A `resume` needs only the
 tree, so it also clears a directive a driver left behind.
 
+**It wakes the tick that reads its record.** After `assign`, `drive`,
+`hold`, `release` or `answer`, when this machine's
+[dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists the
+repository with the stage the tick acts under (`pickup` for `assign`,
+`followup` for a follow-up's `hold` and `release`, `rearm` for the rest),
+`send` wakes that repository's tick: a [waiter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in the background runs `jig
+dispatch --apply --repo <path>` the way the installed timer does, when idle
+and no sooner than a minute after the last tick it started, rather than
+at the next timer run. Several sends within that minute start one tick. A tick that
+finds another holding the tick lock is tried again a minute later; the
+waiter exits when nothing is pending, or after starting 10 ticks; the record stays the request, so the
+next timer run reads it whatever happens to the wake. What the waiter did
+is in `~/.local/state/jig/dispatch/wake/<digest>/last-run.log`. A mailbox
+directive wakes nothing: the driver reads it at its next round.
+
 **`--dry-run`** prints all of that and writes nothing. A real send ends
 with the link to what it wrote (the pull request, the comment, the item) or
-the mailbox's path, and the reader that acts on it next. The forge can take
+the mailbox's path, and the reader that acts on it next: the dispatcher's
+tick for the repository, woken now or to start when idle and at least a minute after the last start,
+when the send woke it. The forge can take
 a moment to list a new comment, so that link, not a `jig ask` right after
 it, shows the request landed.
 

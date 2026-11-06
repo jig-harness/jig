@@ -1577,6 +1577,15 @@ make, use the entry's term instead.
 
 ## Runnable tooling
 
+- **Wake and waiter** — A wake asks a reader to run sooner after a command
+  writes a request. The request record remains authoritative: losing the
+  wake only delays reading it until the next scheduled run. A waiter is the
+  temporary process that groups wakes for one target, waits for the minimum
+  spacing between runs, and starts the reader. It exits when no wake is
+  pending or its attempt bound is reached. Jig's dispatch wake asks for a
+  repository's dispatcher tick; the dispatch request and the wake's pending
+  files serve these different purposes.
+
 - **Plugin** — an installable bundle of skills and other agent extensions
   that an agent tool loads in every session. Jig ships its skills and
   its review agent as one plugin for Claude Code and Codex, installed once

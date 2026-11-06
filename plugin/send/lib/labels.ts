@@ -19,7 +19,7 @@ import { readSection } from "../../dispatch/lib/section.ts";
 import { readDrive } from "../../ask/lib/drive.ts";
 import { readDefaultConfig } from "../../ask/lib/forge.ts";
 import { type AskContext, pullFor } from "../../ask/lib/station.ts";
-import { type Planned, refused } from "./plan.ts";
+import { NEXT_TICK, type Planned, refused, type TickReader } from "./plan.ts";
 import type { LabelVerb } from "./verbs.ts";
 
 /** The repository's dispatch labels as the tick reads them, or why they cannot be told. */
@@ -79,13 +79,20 @@ async function pullFacts(
   return ok({ labels: doc.labels, url: doc.url });
 }
 
-const READER: Record<LabelVerb, string> = {
+const ACTS: Record<LabelVerb, string> = {
   drive:
-    "the dispatcher's next tick, which arms a drive on it where its dispatch file enables the rearm stage, and replaces the label with the drive's state label once the ledger exists",
-  hold: "the dispatcher's next tick, which keeps every stage off the pull request while the label is there",
-  release:
-    "the dispatcher's next tick, which starts the stages the pull request wants again",
+    "which arms a drive on it where its dispatch file enables the rearm stage, and replaces the label with the drive's state label once the ledger exists",
+  hold: "which keeps every stage off the pull request while the label is there",
+  release: "which starts the stages the pull request wants again",
 };
+
+/** The tick reading a label: under the followup stage for a follow-up's, the rearm stage for a drive's. */
+function tickReader(ctx: AskContext, verb: LabelVerb): TickReader {
+  return {
+    stage: ctx.address.station === "followup" ? "followup" : "rearm",
+    reader: (tick) => `${tick}, ${ACTS[verb]}`,
+  };
+}
 
 /** The plan of a label verb, or why the pull request cannot take it. */
 export async function planLabel(
@@ -112,6 +119,7 @@ export async function planLabel(
     );
   const add = verb !== "release";
   const { url } = facts.value;
+  const tick = tickReader(ctx, verb);
   return ok({
     address: ctx.name,
     repo: ctx.address.repo,
@@ -119,7 +127,8 @@ export async function planLabel(
     writesAs,
     record: `the label ${label}, ${add ? "added to" : "removed from"} pull request ${pr}`,
     where: url,
-    reader: READER[verb],
+    reader: tick.reader(NEXT_TICK),
+    tick,
     undo:
       verb === "drive"
         ? `remove ${label} from the pull request until the tick has armed the drive`

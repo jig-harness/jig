@@ -103,7 +103,8 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    ([.claude/skills/followup/](.claude/skills/followup/SKILL.md)): the
    tracker item and deferred findings, the release tag, what the merge did
    to the website, the status pages and documents that cite them, the
-   consumer repositories, and cleanup. Its fixes go in one follow-up pull
+   consumer repositories, and active scaffolding. Routine local branch,
+   workspace and scratch-note cleanup is left to periodic maintenance. Its fixes go in one follow-up pull
    request. A contributor's pull request owes nothing here; the maintainer
    who merges it runs this step.
 
