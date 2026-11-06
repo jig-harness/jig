@@ -372,6 +372,11 @@ async function deliver(
   message: string,
   dispatcherOnly: boolean,
   replaceReadComment?: string,
+  prepareComment?: (
+    before: string,
+    projected: string,
+    unread: boolean,
+  ) => boolean,
 ): Promise<RuntimeReceipt> {
   try {
     return await state.runtime.notify(
@@ -380,6 +385,7 @@ async function deliver(
         path: workspace.path,
         branch: workspace.branch,
         dispatcherOnly,
+        ...(prepareComment === undefined ? {} : { prepareComment }),
         ...(replaceReadComment === undefined ? {} : { replaceReadComment }),
       },
       message,
@@ -482,23 +488,26 @@ async function sendTo(
   );
   if (send.length === 0) return out;
   const message = messageFor(send);
-  const expected =
-    noticeComment(
-      { comment: workspace.comment, unread: workspace.unread !== false },
-      message,
-      preserveRead,
-    ) ?? workspace.comment;
-  const known = owned || (!dispatcherOnly && workspace.unread === false);
-  if (known) intendComment(workspace, expected, root, repo);
   const receipt = await deliver(
     state,
     workspace,
     message,
     dispatcherOnly,
     owned ? workspace.comment : undefined,
+    (before, projected, unread) => {
+      const known =
+        ownsComment({ ...workspace, comment: before }, root) ||
+        (!dispatcherOnly && !unread);
+      if (known) intendComment(workspace, projected, root, repo);
+      return known;
+    },
   );
-  if (known && receipt.ok && receipt.comment === expected)
-    recordComment(workspace, expected, root, repo);
+  if (
+    receipt.ok &&
+    receipt.ownedComment === true &&
+    receipt.comment !== undefined
+  )
+    recordComment(workspace, receipt.comment, root, repo);
   for (const c of send) {
     const outcome = delivered(receipt, c, workspace.path);
     if (outcome.outcome === "sent") suppress(c, workspace.path);

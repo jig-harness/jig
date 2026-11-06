@@ -100,6 +100,8 @@ export interface RuntimeReceipt {
   comment?: string;
   /** For `notify`: the unread mark read back with the comment. */
   unread?: boolean;
+  /** For `notify`: the confirmed projection was persisted as dispatcher-only under the lock. */
+  ownedComment?: boolean;
 }
 
 /** Notification identity and the comment policy rechecked under the write lock. */
@@ -110,6 +112,12 @@ export interface NotifyTarget {
   dispatcherOnly?: boolean;
   /** Exact dispatcher-owned read comment that may be replaced; rechecked under the lock. */
   replaceReadComment?: string;
+  /** Persist the actual locked projection before writing; return whether it is dispatcher-only. */
+  prepareComment?: (
+    before: string,
+    projected: string,
+    unread: boolean,
+  ) => boolean;
 }
 
 /**

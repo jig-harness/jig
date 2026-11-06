@@ -62,8 +62,9 @@ const CHILD = `
 import { orcaNotify } from ${JSON.stringify(new URL("../lib/runtime/orca-notify.ts", import.meta.url).pathname)};
 const lockless = async (_w, body) => ({ value: await body() });
 const [name, message, owned] = process.argv.slice(1);
-const receipt = await orcaNotify({ id: "w", path: "/ws/notify-merge/" + name, ...(name.startsWith("named-") ? { branch: "desk", dispatcherOnly: true, replaceReadComment: owned } : {}) }, message, 5000, lockless);
-console.log(JSON.stringify(receipt));
+let intended;
+const receipt = await orcaNotify({ prepareComment: (before, projected) => { if (before === owned) { intended = projected; return true; } return false; }, id: "w", path: "/ws/notify-merge/" + name, ...(name.startsWith("named-") ? { branch: "desk", dispatcherOnly: true, replaceReadComment: owned } : {}) }, message, 5000, lockless);
+console.log(JSON.stringify({ ...receipt, intended }));
 `;
 
 /** Runs `orcaNotify` in a child whose environment names the fake `orca`. */
@@ -141,6 +142,20 @@ describe("notify on Orca: merging into an unread comment", () => {
       await notify(changed, "named-changed", message, owned),
     ).toMatchObject({ ok: false, lost: false });
     expect(changed.sets()).toEqual([]);
+  });
+
+  test("persists the locked projection when an owned unread listing becomes read", async () => {
+    const owned = "[jig dispatch: old]\noriginal";
+    const message = "[jig dispatch: new]\nnext";
+    const orca = fakeOrca({ branch: "desk", isUnread: false, comment: owned });
+    expect(await notify(orca, "named-read-race", message, owned)).toMatchObject(
+      {
+        ok: true,
+        comment: message,
+        intended: message,
+        ownedComment: true,
+      },
+    );
   });
 
   test("refuses a personal comment read under the lock at a named destination", async () => {

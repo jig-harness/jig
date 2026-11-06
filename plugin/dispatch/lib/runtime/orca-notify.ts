@@ -97,6 +97,7 @@ async function confirmedReceipt(
   result: unknown,
   expected: string | null,
   remaining: () => number,
+  ownedComment: boolean,
 ): Promise<RuntimeReceipt> {
   const read = cardOf(result);
   if (
@@ -117,6 +118,7 @@ async function confirmedReceipt(
     detail: `${target.path} marked unread with the message as its comment`,
     comment: read.comment ?? "",
     unread: read.unread,
+    ownedComment,
   };
 }
 
@@ -153,6 +155,17 @@ export async function orcaNotify(
   );
 }
 
+/** Persist only a projection whose fresh source the sender can vouch for. */
+function prepareProjection(
+  target: NotifyTarget,
+  card: { comment: string | null; unread: boolean },
+  projected: string,
+): boolean {
+  return (
+    target.prepareComment?.(card.comment ?? "", projected, card.unread) ?? false
+  );
+}
+
 async function notifyUnlocked(
   target: NotifyTarget,
   message: string,
@@ -182,6 +195,7 @@ async function notifyUnlocked(
     target.dispatcherOnly === true &&
       card.comment !== target.replaceReadComment,
   );
+  let ownedComment = false;
   if (merge !== null) {
     const comment = merge;
     // The budget the sender computed from an earlier listing; the card read
@@ -192,6 +206,7 @@ async function notifyUnlocked(
         lost: false,
         detail: `${target.path}: the retained comment and the message would pass ${MAX_COMMENT} characters; nothing written, read unread notices or shorten personal additions`,
       };
+    ownedComment = prepareProjection(target, card, comment);
     late = spent();
     if (late !== null) return late;
     const set = await call(
@@ -233,5 +248,11 @@ async function notifyUnlocked(
       detail: `the comment was written; the read-back came after the deadline`,
     };
   const expected = merge === null ? card.comment : merge;
-  return confirmedReceipt(target, shown.result, expected, remaining);
+  return confirmedReceipt(
+    target,
+    shown.result,
+    expected,
+    remaining,
+    ownedComment,
+  );
 }
