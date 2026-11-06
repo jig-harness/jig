@@ -176,17 +176,22 @@ the new store in its configuration. An explicit `store` always wins. The
 field default reaches only a repository with no labels for the facet and
 no store named, such as a new one.
 
-**A store the default selected stays selected.** The first detection that
-selects a store for a facet is remembered, without expiry, in the clone's
-[machine-local store](../GLOSSARY.md) beside the hour-long cache of what
-detection read. When later evidence would select another store, a label
-appearing for the facet, a field deleted or its options changed, reads and
-writes of that facet fail closed with an error naming both stores, and
-`facetStores()` shows it, until the configuration names a store. So the
-fallback label of a type the organization has no issue type for (`docs`
-beside Bug, Feature and Task) cannot, on a later detection, turn the whole
-type facet to labels, and an administrator's change cannot move a facet
-that was already selected.
+**A store the default selected stays selected.** Detection is a function of
+shared tracker state, so every clone reaches the same answer. The fallback
+label of a type the organization has no issue type for (`docs` beside Bug,
+Feature and Task) is a write the native type store makes itself, so it is
+not evidence for the labels store: only a label that is not such a fallback
+counts. The first detection that selects a store for a facet is also kept in
+the clone's [machine-local store](../GLOSSARY.md), beside the hour-long cache
+of what detection read, as a tripwire and nothing more: deleting it loses no
+decision, because the next detection reads the same shared state. When later
+evidence would select another store, a label appearing for the facet, a field
+deleted or its options changed, reads and writes of that facet in a clone
+that kept the earlier answer fail closed with an error naming both stores,
+and `facetStores()` shows the change in every clone, until the configuration
+names a store. The audit reports a repository whose facet has no named
+store, so a repository relying on a default has it committed rather than
+remembered.
 
 This rule is load-bearing. GitHub's issue fields have been
 [generally available since 2026-07-02](https://github.blog/changelog/2026-07-02-issue-fields-are-now-generally-available/)
@@ -326,8 +331,10 @@ file.
   one page of open issues not in the triage state and not yet started that
   lack a value for a listed facet (`missing`) or carry a label a facet's
   store has retired (`retired`), a cursor for the next, and, with every
-  page, the tracker's own counts of the open issues outside triage and of
-  those lacking each facet, so a ratio never has a filtered denominator. A
+  page, the tracker's own counts of the open issues outside triage that
+  must carry each facet and of those among them lacking it (an epic is not
+  counted for size, as in [the write's check](#checked-inside-the-write)),
+  so a ratio never has a filtered denominator or counts a lawful absence. A
   started issue is never in these pages, so one that stays incomplete cannot
   use up the read; the sweep lists them from a separate read of one page of
   100. It is the weekly sweep's read, and the one read of the interface that
@@ -508,7 +515,8 @@ Its bounds:
   two); a `Retry-After` is honoured up to 3 times, and on the fourth refusal
   the run stops and reports how many it moved and how many remain.
 - **A store problem moves nothing.** When more than half of the open issues
-  outside triage, by the tracker's own counts, lack the same facet, or
+  outside triage that must carry a facet, by the tracker's own counts, lack
+  that facet, or
   `facetStores()` reports a store that fails closed, it moves none and
   reports the store and detection result instead, since that is a store
   that stopped answering, not a pile of bad filings.
@@ -535,11 +543,15 @@ and runs no sweep.
 fields, fields to labels and field to field. Its target is the
 `issue_tracker.facets` section the repository will commit, given as a file
 (`--target <file>`), so the switch commits exactly what the copy wrote; its
-source is the section in force. A person runs it; the scheduled workflow
+source is the section in force when the move starts, which the preview
+writes into the move record (`--record <file>`) beside the target. Copy,
+resume and retire all take that record (`--record <file>`) and read both
+sections from it, so the source stays named after the switch commits the
+target, and a field-to-field move still names its old field. A person runs it; the scheduled workflow
 never does. Each run is one pass over the open issues, at most one update
 per issue, carrying every facet it moves. Writes are paced and honour
 `Retry-After` as the sweep's are. It changes nothing without `--yes`, and
-with `--yes` it writes a record (`--record <file>`) of every issue it
+with `--yes` it adds to that record every issue it
 changed: for each store it touched, the issue's value before and after,
 whether a label, an issue type or a field value, the labels it added as well
 as the ones it took off. `move --restore <file> --yes` puts every recorded
@@ -549,11 +561,13 @@ Each phase is complete for an issue on its own condition, so a run that
 stopped is resumed by running it again:
 
 - **Copy** is complete when the destination holds the source's value.
-- **Retire** is complete when the destination is correct and the source
+- **Retire** is complete when the destination is valid and the source
   representation is gone (the source labels are off, or the source field is
-  cleared). A copied issue is not skipped by retire.
+  cleared). A copied issue is not skipped by retire. An issue whose
+  destination is cleared or unmapped is never retired: it is listed as
+  unresolved, with its remaining source value, until a person settles it.
 
-1. **Preview.** `move --target <file>` without `--yes` lists what each
+1. **Preview.** `move --target <file> --record <file>` without `--yes` lists what each
    issue would get, and the issues whose source gives no value or two.
    Such an issue is **unresolved**: a person gives it one value in its
    source first. Copy refuses to start while any open issue is unresolved,
@@ -566,19 +580,23 @@ stopped is resumed by running it again:
    adding a field, `facetStores()` in each repository of the organization
    shows which ones it would reach: only those that keep no labels for that
    facet and name no store.
-3. **Copy.** `move --target <file> --copy --yes` sets every open issue's
+3. **Copy.** `move --record <file> --copy --yes` sets every open issue's
    destination value from its source, keeps the source as it is, and writes
    the value it copied into the record as the copy snapshot.
 4. **Switch.** The person commits the target section to the repository's
    configuration. Filings write the new stores from then on.
-5. **Retire.** `move --target <file> --retire --yes` reads each open issue
+5. **Retire.** `move --record <file> --retire --yes` reads each open issue
    again and compares its source with the copy snapshot. An unchanged source
-   is retired. A source someone changed since the copy, with the
+   is retired once its destination is valid. A source someone changed since the copy, with the
    destination still at the snapshot, has its new value written to the
    destination first and is then retired. A source and a destination both
    changed since the copy conflict: the issue is left as it is and listed, and
-   the run is not complete until a person settles each one. An issue filed
-   after the copy has no snapshot and is copied and retired in one update.
+   the run is not complete until a person settles each one. An issue with no
+   snapshot is told apart by when it was filed: one filed before the switch
+   and missed by the copy is copied and retired in one update, while one
+   filed after the switch wrote only the destination stores, has no source
+   representation to read and is left alone, its destination checked as for
+   any other.
    The source representation is removed only where the source is a label or
    a field; a destination label is never removed. Closed issues keep their
    labels as history, and no label is deleted while a closed issue carries
