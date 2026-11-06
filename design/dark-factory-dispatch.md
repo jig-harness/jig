@@ -176,10 +176,12 @@ guards keep one stage from starting twice:
   writes a pending release record in its state database (one row per
   repository and pull request, `followup_releases`), deletes the marker,
   and marks the record released in one transaction with an event row
-  (class `stalled`) in the outcome log. A deletion the forge refuses removes
-  the pending record and is reported, so a later tick tries again; a pending
-  record whose marker is still there is a release a tick began and did not
-  finish, which the next tick finishes. Nothing starts in the tick that
+  (class `stalled`) in the outcome log. An unconfirmed deletion keeps
+  the pending record: the response may have been lost after the deletion.
+  A fresh complete marker listing completes a pending release whose marker
+  is gone, with its event row, before planning another follow-up. A pending
+  record whose marker is still there is retried after the same fresh checks.
+  Nothing starts in the tick that
   releases: the next tick finds no marker and starts the follow-up as it
   would for any merge. A claim on the same pull request that goes stale
   after that (the restarted follow-up's, or a person's later run) is not
@@ -684,7 +686,8 @@ implementation:
   every record whole; never one written that tick, nor one holding a
   comment that is not the dispatcher's, an agent, changes git reports or a
   commit no remote branch holds. The next message that needs it opens it
-  again; a cause already sent is not sent again;
+  again; a cause still standing is sent again on the configured cadence,
+  unless it is still unread with the message;
 - `steer` as the nudge's text sent to the session's terminal, after the
   terminal's screen is read for the checks in Control. Orca reaches a
   running agent's terminal by the id `orca worktree ps --json` reports:

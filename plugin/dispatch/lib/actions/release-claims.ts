@@ -9,18 +9,14 @@
  * 2. the pending release record (`followup-releases.ts`), which a claim on
  *    the pull request is released once against;
  * 3. the marker deleted through the shared records, then the record marked
- *    released with its event row; a deletion the forge refuses removes the
- *    pending record and is reported, so a later tick tries again.
+ *    released with its event row; an unsuccessful deletion keeps the pending
+ *    record, since its response may have been lost after the deletion.
  *
  * Nothing starts in the tick that releases: the next tick finds no marker
  * and wants the follow-up, as it does for any merge.
  */
 import type { SharedClaim } from "../../../shared/records/shared.ts";
-import {
-  beginRelease,
-  dropRelease,
-  finishRelease,
-} from "../followup-releases.ts";
+import { beginRelease, finishRelease } from "../followup-releases.ts";
 import { holding } from "../holding.ts";
 import type { LogRow } from "../log.ts";
 import { stateRoot } from "../../receipts.ts";
@@ -141,11 +137,10 @@ async function releaseOne(
     marker,
   );
   if (!deleted.ok) {
-    dropRelease(key, root);
     return outcomeOf(
       action,
       "refused",
-      `marker comment ${marker} could not be deleted: ${deleted.failure.reason}; a later tick tries again`,
+      `marker comment ${marker} could not be deleted: ${deleted.failure.reason}; the pending record is kept for a fresh marker listing`,
     );
   }
   finishRelease(

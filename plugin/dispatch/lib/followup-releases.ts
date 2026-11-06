@@ -7,8 +7,8 @@
  *
  * A release is written in two steps around the marker's deletion: pending
  * before it (`released_at` empty), then released, in one transaction with
- * the release's event row, once the forge deleted the marker; a deletion the
- * forge refuses removes the pending record. A pending record whose marker is
+ * the release's event row, once the forge deleted the marker; an unconfirmed
+ * deletion keeps the pending record. A pending record whose marker is
  * still on the pull request is a release a tick began and did not finish,
  * which the next tick finishes; one whose marker is gone counts as a
  * release. Only the host that owns the repository releases a claim, so this
@@ -18,7 +18,7 @@
 import { stateRoot } from "../receipts.ts";
 import { insertRow, type LogRow } from "./log.ts";
 import { inTransaction, stateDb } from "./state.ts";
-import type { StaleClaim } from "./types.ts";
+import type { MarkedPr, StaleClaim } from "./types.ts";
 
 export interface FollowupRelease extends StaleClaim {
   /** The repository's `owner/name`. */
@@ -28,17 +28,20 @@ export interface FollowupRelease extends StaleClaim {
   releasedAt: string | null;
 }
 
-/** The release records of `repo`, by pull request. */
+/** The release records for the pull requests being classified, by pull request. */
 export function readReleases(
   repo: string,
+  prs: readonly number[],
   root = stateRoot(),
 ): Map<number, FollowupRelease> {
-  const rows = stateDb(root)
-    .query(
-      `SELECT repo, pr, marker, login, claimant, claimed_at, released_at
-       FROM followup_releases WHERE repo = ?`,
-    )
-    .all(repo) as Array<{
+  const query = stateDb(root).query(
+    `SELECT repo, pr, marker, login, claimant, claimed_at, released_at
+     FROM followup_releases WHERE repo = ? AND pr = ?`,
+  );
+  const rows = [...new Set(prs)].flatMap((pr) => {
+    const row = query.get(repo, pr);
+    return row === null ? [] : [row];
+  }) as Array<{
     repo: string;
     pr: number;
     marker: number;
@@ -61,6 +64,43 @@ export function readReleases(
       },
     ]),
   );
+}
+
+/** Complete pending releases only when a fresh, complete marker listing proves their marker gone. */
+export function reconcileReleases(
+  releases: Map<number, FollowupRelease>,
+  prs: readonly MarkedPr[],
+  root = stateRoot(),
+): Map<number, FollowupRelease> {
+  for (const pr of prs) {
+    const release = releases.get(pr.number);
+    if (
+      release === undefined ||
+      release.releasedAt !== null ||
+      "unreadable" in pr.markers ||
+      pr.markers.some((m) => m.id === release.marker)
+    )
+      continue;
+    const at = new Date().toISOString();
+    finishRelease(
+      release,
+      {
+        kind: "event",
+        key: `event ${release.repo} PR #${pr.number} follow-up claim released, marker ${release.marker}`,
+        at,
+        repo: release.repo,
+        stage: "followup",
+        target: `PR #${pr.number}`,
+        event: "followup-released",
+        account: null,
+        class: "stalled",
+        reason: `fresh marker listing confirms pending release of marker ${release.marker}, ${release.claimant}'s claim`,
+      },
+      root,
+    );
+    releases.set(pr.number, { ...release, releasedAt: at });
+  }
+  return releases;
 }
 
 /** Write a pending release record before the marker is deleted; false when another marker's release already stands for the pull request. */
@@ -103,17 +143,4 @@ export function finishRelease(
       .run(event.at, release.repo, release.pr, release.marker);
     if (written.changes === 1) insertRow(db, event);
   });
-}
-
-/** Remove a pending release whose marker the forge did not delete, so the claim is still released once. */
-export function dropRelease(
-  release: Pick<FollowupRelease, "repo" | "pr" | "marker">,
-  root = stateRoot(),
-): void {
-  stateDb(root)
-    .query(
-      `DELETE FROM followup_releases
-       WHERE repo = ? AND pr = ? AND marker = ? AND released_at IS NULL`,
-    )
-    .run(release.repo, release.pr, release.marker);
 }

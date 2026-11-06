@@ -281,6 +281,30 @@ describe("jig dispatch --apply notifies a person", () => {
     expect(orcaCalls(w, "worktree", "create")).toEqual([]);
   });
 
+  it.each(["desk", "jig-dispatch-notices"])(
+    "preserves a personal comment on named destination %s even after an agent started",
+    async (branch) => {
+      const { w, ws } = fixture(
+        (ws) => [
+          {
+            branch,
+            path: join(dirname(ws), "desk"),
+            comment: "Remember to check the release",
+            agents: [{ state: "done" }],
+          },
+        ],
+        `${CONFIG}dispatch:\n  notices_branch: ${branch}\n`,
+      );
+      expect(notifications(await tick(w))).toEqual([
+        expect.objectContaining({ outcome: "waits" }),
+      ]);
+      expect(shown(w, join(dirname(ws), "desk")).comment).toBe(
+        "Remember to check the release",
+      );
+      expect(notifyWrites(w)).toEqual([]);
+    },
+  );
+
   it("leaves a notice waiting, opening nothing, while no workspace is on the branch notices_branch names", async () => {
     const { w } = fixture(
       undefined,

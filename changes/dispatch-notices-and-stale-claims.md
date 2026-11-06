@@ -14,3 +14,5 @@ release: minor
 ### Fixed
 
 - A follow-up claim that no run will finish no longer holds the follow-up for good. A marker a person's run posted and never marked done, or another host's with no answer, that is older than the new `dispatch.followup_stale_after` (a day by default) with no session joined to its pull request is released once: the dispatcher deletes it and starts the follow-up again at its next run, and the report says whose claim it was. A claim on the same pull request that goes stale again is notified to a person instead of released a second time.
+
+- Pending stale-claim releases survive a lost deletion response and are completed from the next full marker listing, including their outcome event, before a follow-up can start again. Release-history reads use only the pull requests being classified. Named notification destinations preserve personal comments even when an agent has run there, and stale tick-marker notices name the result command instead of the manual-marker command.

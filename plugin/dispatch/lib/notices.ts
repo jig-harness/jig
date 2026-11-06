@@ -128,6 +128,7 @@ export function staleClaimNotice(
     marker: number;
     claimant: string;
     age: string;
+    manual: boolean;
     earlier: { marker: number; claimant: string; releasedAt: string | null };
   },
 ): Notice {
@@ -138,7 +139,9 @@ export function staleClaimNotice(
     [
       `The follow-up of merged PR #${pr.number} is held by a claim nobody is finishing: ${claim.claimant} claimed it ${claim.age} ago (marker comment ${claim.marker}), has not marked it done, and no session is joined to it.`,
       `The tick released an earlier stale claim on it once (marker comment ${earlier.marker}, ${earlier.claimant}'s)${when}, and does not release a second.`,
-      `Mark the marker done when that run succeeded (\`jig dispatch marker done ${pr.number} --comment ${claim.marker}\`), or delete it to have the follow-up start again.`,
+      claim.manual
+        ? `Mark the marker done when that run succeeded (\`jig dispatch marker done ${pr.number} --comment ${claim.marker}\`), or delete it to have the follow-up start again.`
+        : "Have the originating host record that run's result through jig dispatch result with its record and token, or delete the marker comment to have the follow-up start again.",
       pr.url,
     ],
   );

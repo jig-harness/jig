@@ -79,6 +79,7 @@ if (single !== null) {
     if (at < 0) continue;
     if (method === "DELETE") all.splice(at, 1); else all[at].body = input.body;
     fs.writeFileSync(F + "/" + name, JSON.stringify(all));
+    if (method === "DELETE" && fs.existsSync(F + "/comment-delete-lost")) { process.stderr.write("gh: response lost\\n"); process.exit(1); }
     out("{}");
   }
   process.stderr.write("gh: Not Found (HTTP 404)\\n");

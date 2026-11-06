@@ -19,7 +19,7 @@
  * | the same, stale, a claim on it released before | notified to a person, never released twice |
  * | this host's, its outcome done | quiet: done |
  * | this host's, its launch record still holding | running |
- * | this host's, its outcome failed, its record died, or record and outcome both gone | a failed follow-up: notified once, with the question its pass stopped on when it stated one, never started again |
+ * | this host's, its outcome failed, its record died, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one, never started again |
  * | this host's, naming a record for anything else | reports it, starts nothing |
  *
  * A tick's marker names the host that posted it; one that names none was
@@ -137,6 +137,7 @@ function planClaimed(
         marker: marker.id,
         claimant,
         age: ageText,
+        manual: marker.run.kind === "manual",
         earlier,
       }),
     });

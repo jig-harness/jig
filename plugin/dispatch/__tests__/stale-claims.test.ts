@@ -183,6 +183,60 @@ describe("jig dispatch --apply releases a stale follow-up claim", () => {
     expect(markers(w)).toEqual([]);
   });
 
+  it("recovers a deletion whose response was lost, without allowing another release", async () => {
+    const { w } = fixture();
+    w.setComments(9, [posted(901, manualMarker(false, POST), 30)]);
+    writeFileSync(join(w.dir, "comment-delete-lost"), "");
+    const first = await applyTick(w, false);
+    expect(repo(first)?.releases).toContainEqual(
+      expect.objectContaining({ outcome: "refused" }),
+    );
+    expect(markers(w)).toEqual([]);
+    w.setComments(9, [posted(920, manualMarker(false, POST), 26)]);
+    const next = await applyTick(w, false);
+    expect(repo(next)?.actions).toContainEqual(
+      expect.objectContaining({ cause: "followup-stale" }),
+    );
+    expect(markers(w)).toEqual([920]);
+    expect(
+      events(w).filter((e) => e.event === "followup-released"),
+    ).toHaveLength(1);
+  });
+
+  it("finishes a pending release before launching after its marker disappeared", async () => {
+    const { w } = fixture();
+    w.setComments(9, [posted(901, manualMarker(false, POST), 30)]);
+    await applyTick(w, false);
+    const db = existingStateDb(dispatchState(w));
+    db?.query("UPDATE followup_releases SET released_at = NULL").run();
+    db?.query("DELETE FROM log WHERE kind = 'event'").run();
+    await applyTick(w, false);
+    expect(
+      events(w).filter((e) => e.event === "followup-released"),
+    ).toHaveLength(1);
+    expect(
+      db?.query("SELECT released_at FROM followup_releases WHERE pr = 9").get(),
+    ).toEqual({ released_at: expect.any(String) });
+  });
+
+  it("offers only manual markers the marker done command", async () => {
+    const { w } = fixture();
+    w.setComments(9, [posted(901, manualMarker(false, POST), 30)]);
+    await applyTick(w, false);
+    w.setComments(9, [
+      posted(
+        920,
+        tickMarker("20261030T200000Z-aaaaaaaa", { ...POST, host: OTHER }),
+        30,
+      ),
+    ]);
+    const next = await applyTick(w, false);
+    const text = repo(next)?.actions.find((a) => a.cause === "followup-stale")
+      ?.notice?.text;
+    expect(text).not.toContain("jig dispatch marker done");
+    expect(text).toContain("delete");
+  });
+
   it("holds a claim inside the window as before", async () => {
     const { w } = fixture();
     w.setComments(9, [posted(903, manualMarker(false, POST), 2)]);

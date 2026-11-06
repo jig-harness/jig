@@ -23,11 +23,12 @@
  *   default branch and named as the dispatcher's (`NOTICES_NAME`); never to
  *   the workspace joined to the pull request or item, which a person
  *   watching many repositories does not visit. The message names that
- *   workspace, where the stage's handoff is. The destination takes a comment
- *   when an agent has started in it, or its comment is empty or the
- *   dispatcher's own (a workspace's comment carries a kickoff prompt until
- *   its agent starts, and the tick never overwrites one); a named workspace
- *   that is not open, or cannot take one, leaves the cause waiting, reported.
+ *   workspace, where the stage's handoff is. An explicitly named destination
+ *   takes only an empty comment or an existing dispatcher notice. The automatic
+ *   notices workspace also accepts its own kickoff comment or one whose agent
+ *   has started (a kickoff prompt waits until its agent starts); a named
+ *   workspace that is not open, or cannot take a comment, leaves the cause
+ *   waiting, reported.
  * - **One comment per workspace.** The causes for one workspace in a tick
  *   are joined into one message; while the workspace is still unread from
  *   an earlier notification, the new causes are appended to its comment
@@ -218,7 +219,7 @@ function located(
   const joined = workspaces
     .filter((w) => w.path !== destination.path && joins(cause, w))
     .map((w) => w.path)
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
   if (joined.length === 0) return cause;
   const named = `${joined.length === 1 ? "Its workspace" : "Its workspaces"}: ${joined.join(", ")}`;
   return {
@@ -281,12 +282,15 @@ async function destination(
   branch: string | null,
 ): Promise<Workspace | string> {
   const { workspaces, report } = sessions;
-  if (branch === null || branch === NOTICES_BRANCH)
-    return noticesWorkspace(state, repo, workspaces, report);
+  if (branch === null) return noticesWorkspace(state, repo, workspaces, report);
   const found = workspaces.find((w) => w.branch === branch);
+  if (found === undefined && branch === NOTICES_BRANCH)
+    return noticesWorkspace(state, repo, workspaces, report);
   if (found === undefined)
     return `no workspace on ${branch}, the branch dispatch.notices_branch names, is open: open one there, or remove the setting to use the repository's notices workspace`;
-  return noticesBlocked(found, branch) ?? found;
+  return withoutMarks(found.comment) === "" || holdsNotice(found.comment)
+    ? found
+    : `the workspace on ${branch} (${found.path}) holds a personal comment, which a notification would overwrite`;
 }
 
 /** The repository's notices workspace: the one on `NOTICES_BRANCH`, else opened now; its comment is read before it is adopted. */
