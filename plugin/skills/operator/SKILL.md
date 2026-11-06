@@ -159,8 +159,8 @@ Each line comes from these fields, in the person's terms, and never from an
 earlier answer:
 
 - **`holder`** (Where it stands): who holds the station now. `none` means
-  nobody does, which is normal between launches; then say how `last`
-  ended, and when. Otherwise say the stage, the host and whether its
+  nobody does, which is normal between launches; when `last` is null, say no previous launch was recorded;
+  otherwise say how it ended, and when. With a holder, say the stage, the host and whether its
   process is alive, dead or unknown, and the account and session where the
   answer names them.
 - **`state`** (Where it stands): the station's state in its own words,

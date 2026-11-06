@@ -858,7 +858,9 @@ each waits for, across the repositories the machine dispatches, from the
 newest tick's line, which the dispatcher keeps for its dashboard: it makes
 no forge or tracker call, and it says when that tick ran. On a machine that
 dispatches nothing it says there is no line to read. `--person <login>` is
-refused until a park records whom it waits on.
+refused until a park records whom it waits on. Each entry carries its recorded
+stage and parked questions in `questions` in JSON and as `question:` lines
+in text; parks without a separate question use their recorded decision lines.
 
 **`--json`** prints the answer as one object carrying its version, `v` (1):
 later versions add fields and never rename one. The fields only this
