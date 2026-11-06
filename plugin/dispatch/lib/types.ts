@@ -33,8 +33,14 @@ export interface DispatchSection {
   pickupWithinMs: number;
   /** How long a follow-up may run before it has ended. */
   followupWithinMs: number;
+  /** How old a follow-up claim with no done mark and no session joined to it may grow before the tick releases it, once (`followup_stale_after`). */
+  followupStaleAfterMs: number;
   /** How long the notices workspace stays once read before the tick removes it; `0s` removes it at the first tick that finds it read. */
   noticesLingerMs: number;
+  /** The branch of the workspace every notice goes to (`notices_branch`); `null` for the repository's notices workspace, which the tick opens and removes. */
+  noticesBranch: string | null;
+  /** How long a notice that still stands waits before it is sent again (`renotify_after`); `0` sends it once. */
+  renotifyAfterMs: number;
   /** The dispatch labels (`dispatch.labels`): off by default. */
   labels: LabelConfig;
   /** The adoption rule (`dispatch.adopt`): off by default. */
@@ -202,8 +208,21 @@ export type NotifyCause =
   | "needs-person"
   | "stopped-unknown"
   | "followup-failed"
+  | "followup-stale"
   | "drifting"
   | "nudge-unanswered";
+
+/** A follow-up claim past `followup_stale_after` with no done mark and no session joined to it: the marker the tick releases, and whose claim it was. */
+export interface StaleClaim {
+  /** The marker's comment id. */
+  marker: number;
+  /** Who wrote the marker. */
+  login: string;
+  /** Whose run claimed it, in the report's words: `maintainer's /followup run`, `host <h>'s launch record <r>`. */
+  claimant: string;
+  /** When the marker was posted. */
+  claimedAt: string;
+}
 
 /**
  * A notification's message: `key` names the facts its suppression record
@@ -242,6 +261,18 @@ export interface Action {
   launched?: true;
   /** For a nudge: the launch record, the agent it goes to, and the waiting episode it answers. */
   nudge?: { record: string; agent: string; episode: string; account: string };
+  /** For a follow-up: the stale claim the tick releases, rather than a launch. */
+  release?: StaleClaim;
+}
+
+/** What `--apply` did with one stale follow-up claim. */
+export interface ReleaseOutcome {
+  target: string;
+  marker: number;
+  claimant: string;
+  /** `released`: the marker was deleted and the release recorded; `waits`: the fresh read changed, or the tick ran out of time; `refused`: the forge did not delete it. */
+  outcome: "released" | "waits" | "refused";
+  detail: string;
 }
 
 /** What `--apply` did with one planned launch. */
@@ -360,6 +391,8 @@ export interface RepoReport {
   noticesWorkspace?: RetireOutcome;
   /** What `--apply` nudged, where the machine file enables `steer`; empty otherwise. */
   steers?: SteerOutcome[];
+  /** What `--apply` did with the stale follow-up claims it released, where the machine file enables `followup`; absent when there were none. */
+  releases?: ReleaseOutcome[];
   /** The dispatch labels' part, where the repository turns them on. */
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */

@@ -406,19 +406,38 @@ another host reads it, and the next run writes it there when the wrapper
 could not; the result is also kept in an outcome record per pull request
 that never expires. A follow-up that failed, or whose marker names a
 launch record this machine no longer has and carries no answer, is notified
-once and never started again: delete its marker to have it run again. A pass that cannot finish without a person stops and
+and never started again: delete its marker to have it run again. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
 that question, and the outcome log counts it as parked for a person.
 
-**Notifications** (the `notify` stage) reach a person once per cause: a drive
+A claim no run will finish does not hold a follow-up for good. A marker a
+person's run posted and never marked done, or another host's with no
+answer, that is older than `dispatch.followup_stale_after` (a day by
+default) with no session joined to its pull request is released: the host
+that owns the repository deletes it, once per pull request, and the next run
+starts the follow-up again. The report says whose claim it was, how old, and
+the window. A claim on the same pull request that goes stale again after
+that is not released a second time: it is notified to a person, with its
+age and whose claim it is, to mark done or delete.
+
+**Notifications** (the `notify` stage) reach a person for each cause: a drive
 parked with a decision unanswered, carrying the drive's framed decision for
 each one; a drive stopped on an exit only a person settles, or with no exit;
-a failed follow-up; a stalled pickup, a double claim, a session waiting past
-`dispatch.blocked_after`. With Orca the message becomes the comment of the
-pull request's or item's workspace, and the workspace is marked unread,
-which Orca's phone app shows; a target with no workspace that can take a
-comment (none, or one whose comment may still be its agent's kickoff
-prompt) goes to the repository's notices workspace, a branch of the default
+a failed follow-up, with the question its pass stopped on; a stalled pickup,
+a double claim, a session waiting past `dispatch.blocked_after`. Each message
+carries the cause or the question, the pull request's link and the handoff,
+and names the workspace the stage ran in. Every message for a repository
+goes to one place a person watches, never to the workspace joined to the
+pull request or item, which a person following many repositories does not
+visit: the workspace on the branch `dispatch.notices_branch` names, when the
+repository names one (the tick never opens or removes that one, and a
+message waits while it is not open), else the repository's notices
+workspace. With Orca the message becomes that workspace's comment, and the
+workspace is marked unread, which Orca's phone app shows. A message that
+still stands `dispatch.renotify_after` (a day by default) after it was last
+sent is sent again, saying since when it has waited, until its cause goes;
+`0s` sends each one once. The dispatch dashboard lists the same causes,
+each with how long it has waited. The notices workspace is a branch of the default
 branch (`jig-dispatch-notices`), named `⚙ dispatched · notices`, into which
 no agent is launched, in which the repository's create hook does not run, and whose first terminal is closed. If that close fails,
 the tick reports the failure in its receipt while still delivering the
@@ -437,7 +456,8 @@ refreshes the workspace identity, branch, agents, terminals and Git checks
 under the removal deadline; the next message that needs it opens it
 again. A message
 counts as sent only once the workspace's comment, read back, carries its key
-line (`[jig dispatch: …]`), and is never sent again while its cause stands;
+line (`[jig dispatch: …]`), and is not sent again while its cause stands
+until `renotify_after` has passed;
 while a workspace is still unread, a new message is appended to its comment
 rather than replacing it. The answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line

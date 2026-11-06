@@ -8,11 +8,12 @@
  * | `launches` | session the dispatcher started | the record's id; its `claim`, `exit` and `result` are each written once, by an update that only fills an empty column |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
- * | `notices` | repository and notification cause | once per cause, until the cause goes |
- * | `notices_content` | workspace | the exact dispatcher-only comment last written and read back |
+ * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
+ * | `notices_content` | workspace | the exact dispatcher-only comment last confirmed, and the intended write awaiting an exact read |
  * | `notices_read` | repository | when the tick first found its notices workspace read, until it is unread again or removed |
  * | `nudges` | session and waiting episode | one nudge per episode, its delivery marked once |
  * | `followup_outcomes` | repository and merged pull request | the latest attempt's outcome |
+ * | `followup_releases` | repository and merged pull request | the one stale claim the tick released, pending until the forge deleted its marker |
  * | `idle` | repository and claimed item | the stall clock starts once |
  * | `holds` | repository and pull request held behind another in a serialized area | the hold's start, written with its event row |
  * | `log` | outcome row | each row once: it is written in the same transaction as what it records; its `target` column, the piece of work, is indexed with the repository |
@@ -213,6 +214,31 @@ const MIGRATIONS: readonly Migration[] = [
   UPDATE log SET target = json_extract(row, '$.target');
   CREATE INDEX log_target ON log (repo, target, at_ms);
   `,
+  },
+  {
+    // When a notice was last sent, which its repeat is timed from; `at`
+    // stays its first send. A row without it was sent once, at `at`.
+    additive: true,
+    sql: "ALTER TABLE notices ADD COLUMN sent_at TEXT;",
+  },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE followup_releases (
+    repo TEXT NOT NULL,
+    pr INTEGER NOT NULL,
+    marker INTEGER NOT NULL,
+    login TEXT NOT NULL,
+    claimant TEXT NOT NULL,
+    claimed_at TEXT NOT NULL,
+    released_at TEXT,
+    PRIMARY KEY (repo, pr)
+  );
+  `,
+  },
+  {
+    additive: true,
+    sql: "ALTER TABLE notices_content ADD COLUMN pending TEXT;",
   },
 ];
 

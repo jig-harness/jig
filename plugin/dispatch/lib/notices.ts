@@ -9,7 +9,10 @@
  * A park's message is the drive's own framed decision for every parked
  * item still unanswered, and how to answer it: a comment on the pull
  * request with a line `answer <key>: …`, which the drive reads and the next
- * tick re-arms on.
+ * tick re-arms on. Every message carries the cause or the question, the
+ * pull request's link and where its handoff is; the notify step adds the
+ * workspaces the stage ran in, since the message goes to the repository's
+ * one destination rather than to them.
  */
 import { createHash } from "node:crypto";
 import type { DrivenPr, Notice, RepoReport } from "./types.ts";
@@ -94,7 +97,7 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
     `${slug} PR #${pr.number} stopped ${stop}, ledger generation ${generation(pr)}`,
     [
       `PR #${pr.number} (${pr.title}): its drive stopped ${stop}, which only a person settles. ${pr.why}.`,
-      "Read the drive's handoff (`.context/pr-drive-<PR>.md` in the workspace that drove it), then re-arm it or stop it.",
+      `Read the drive's handoff, \`.context/pr-drive-${pr.number}.md\` in the workspace that drove it (named below while it is open), then re-arm it or stop it.`,
       pr.url,
     ],
   );
@@ -115,6 +118,33 @@ export function followupFailedNotice(
     "Delete its marker comment on the pull request: the marker holds the claim, so a run by hand stops behind it. Then run the follow-up by hand, or leave it for the next tick to start again. The tick never starts it again by itself.",
     pr.url,
   ]);
+}
+
+/** A follow-up claim that went stale after the tick released an earlier one on the pull request: a person settles it. */
+export function staleClaimNotice(
+  slug: string,
+  pr: { number: number; url: string },
+  claim: {
+    marker: number;
+    claimant: string;
+    age: string;
+    manual: boolean;
+    earlier: { marker: number; claimant: string; releasedAt: string | null };
+  },
+): Notice {
+  const { earlier } = claim;
+  const when = earlier.releasedAt === null ? "" : ` at ${earlier.releasedAt}`;
+  return notice(
+    `${slug} PR #${pr.number} follow-up claim stale, marker ${claim.marker}`,
+    [
+      `The follow-up of merged PR #${pr.number} is held by a claim nobody is finishing: ${claim.claimant} claimed it ${claim.age} ago (marker comment ${claim.marker}), has not marked it done, and no session is joined to it.`,
+      `The tick released an earlier stale claim on it once (marker comment ${earlier.marker}, ${earlier.claimant}'s)${when}, and does not release a second.`,
+      claim.manual
+        ? `Mark the marker done when that run succeeded (\`jig dispatch marker done ${pr.number} --comment ${claim.marker}\`), or delete it to have the follow-up start again.`
+        : "Have the originating host record that run's result through jig dispatch result with its record and token, or delete the marker comment to have the follow-up start again.",
+      pr.url,
+    ],
+  );
 }
 
 /** A cause a pickup raises (a stalled pickup, a double claim, a session waiting), in the plan's own words. */
