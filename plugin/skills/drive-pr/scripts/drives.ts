@@ -126,6 +126,7 @@ import {
   noLiveDriver,
   stallThresholdMs,
 } from "./lib/doctor.ts";
+import { ciHoldDoctor } from "./lib/ci-hold-doctor.ts";
 import { attachedTree } from "./lib/driven-branch.ts";
 import {
   findPassChild,
@@ -143,7 +144,7 @@ import {
 import { liveDrives, reportMain } from "./lib/morning-report.ts";
 import { type DriveState, isUsableState } from "./lib/state/schema.ts";
 import { claimAlive, inspectLock, lockLabel } from "./lib/driver/locks.ts";
-import { dbPathFor, driveDb } from "./lib/state/db.ts";
+import { READ_ONLY_ENV, dbPathFor, driveDb } from "./lib/state/db.ts";
 import { lockRows } from "./lib/state/lock.ts";
 import {
   peekResolvedStateDir,
@@ -301,42 +302,8 @@ function listRows(stateDir: string): LockRow[] {
   return rows;
 }
 
-/**
- * `--doctor`-ONLY extension of the sweep population beyond `listRows`'s lock
- * census.
- *
- * `drive.ts` releases its locks on EVERY normal process exit — including
- * both the quota-park exit (`QUOTA_PARKED_EXIT`) and the HITL-park exit,
- * neither of which is a crash. A drive that parked (for a quota wall or for
- * a human) and then exited normally therefore has NO lock left at all, while
- * its state — carrying the exact `quotaPark`/`parked` record `--doctor`
- * exists to surface — survives untouched. A sweep that reads only locks
- * reports "no drive locks" for precisely the two verdicts (`QUOTA_PARKED`
- * after the exiting park, `NEEDS_HUMAN` once every remaining item is parked)
- * this feature was built to answer.
- *
- * Deliberately scoped to `--doctor` (and `--doctor --json`) only, NOT the plain
- * listing or plain `--json` — a considered choice, not an oversight: the plain
- * listing's own stated purpose is "list every drive LOCK" (see the module
- * header), and a state-only row has no lock to report — showing one there
- * would be new information arriving through a surface that never promised to
- * carry it, and a status board polling plain `--json` has no use for a row it
- * would immediately filter out (it only reads `state === 'live'`). `--doctor`
- * is a state-derived health judgment, so it is the one surface whose whole job
- * is exactly this kind of row.
- *
- * Returns ONLY the rows `listRows` did not already report — a PR with a live
- * (or stale, or contested…) lock is represented by `listRows`'s own row, not
- * a duplicate here, however this function's population is computed — and,
- * among those, only the ones with something to say: a state that reads
- * cleanly and carries neither a park nor a parked item is skipped, while an
- * UNREADABLE one is always reported. See the inline comment on that guard for
- * the measurement that forced it and why it is not a fail-open.
- *
- * Exported for `drives.test.ts` — its own fail-closed-on-read-failure
- * behavior is unit-tested directly, the same way `gatherWorktreeLeftovers`
- * is.
- */
+/** Include lock-less states with a quota park, human decisions, a recorded CI hold,
+ * or unreadable state. Other historical states carry no active blocker. */
 export function listStateOnlyRows(
   stateDir: string,
   lockRows: readonly LockRow[],
@@ -347,29 +314,13 @@ export function listStateOnlyRows(
   const rows: LockRow[] = [];
   for (const pr of stateNumbers(stateDir)) {
     if (alreadyLocked.has(pr)) continue;
-    // A lock-less stored state earns a row only when it has something to SAY.
-    //
-    // A clone keeps a state for every PR it ever drove, hundreds over time,
-    // and a sweep whose first run buries its findings under two hundred
-    // lines of `UNKNOWN` is a sweep nobody reads.
-    //
-    // The filter is not a fail-open. Failing closed is about input the gate
-    // CANNOT READ, and an UNREADABLE state is still reported — that is the
-    // `!snapshot.ok` arm below, and it is exactly the "this clone holds
-    // states this version refuses" signal an operator needs. What is dropped
-    // is the opposite case: a state read SUCCESSFULLY, which positively says
-    // there is no park and nothing parked. Those are the only two verdicts a
-    // lock-less row can ever carry — `DEAD_WITH_LEFTOVERS` needs a worktree
-    // path, and a row with no claim has no `diag` to supply one — so a
-    // readable, park-free, nothing-parked state has no reachable finding
-    // to hide. Reporting it as `UNKNOWN` would not be caution; it would be
-    // noise asserted with the same word this classifier uses for genuine
-    // uncertainty.
     const snapshot = readStateSnapshot(stateDir, pr);
     if (
       snapshot.ok &&
       snapshot.state.quotaPark === null &&
-      snapshot.state.parked.length === 0
+      snapshot.state.parked.length === 0 &&
+      (snapshot.state.ciHold === null ||
+        snapshot.state.ciHold.phase === "released")
     ) {
       continue;
     }
@@ -602,6 +553,7 @@ async function attachDoctorVerdicts(
   stateDir: string,
   rows: readonly LockRow[],
   selfPath: string,
+  doctorMode: boolean,
 ): Promise<LockRow[]> {
   // ONE process-table read for the whole sweep, taken before the fan-out
   // rather than once per row — see `snapshotProcesses`' own header for why
@@ -615,7 +567,26 @@ async function attachDoctorVerdicts(
     rows.map(async (row) => {
       if (row.kind !== "pr") return row;
       const input = await gatherDoctorInput(stateDir, row, selfPath, procs);
-      return { ...row, doctor: classifyDrive(input, new Date()) };
+      const doctor = classifyDrive(input, new Date());
+      const snapshot = readStateSnapshot(stateDir, row.key);
+      if (
+        doctorMode &&
+        snapshot.ok &&
+        snapshot.state.ciHold !== null &&
+        snapshot.state.ciHold.phase !== "released"
+      ) {
+        doctor.ciHold = await ciHoldDoctor(
+          stateDir,
+          row.key,
+          snapshot.state,
+          row.state,
+          fileURLToPath(new URL(".", import.meta.url)),
+        );
+        doctor.reason += `; ${doctor.ciHold.reason}`;
+        if (doctor.ciHold.recovery !== null)
+          doctor.recovery = doctor.ciHold.recovery;
+      }
+      return { ...row, doctor };
     }),
   );
 }
@@ -1328,9 +1299,9 @@ async function main(argv: string[]): Promise<number> {
   // Classified in every mode: `--json` always carries the verdict, and the
   // human listing's "stalled" annotation reads the same `.doctor` field.
   const repository = await driveRepository();
-  const doctored = (await attachDoctorVerdicts(stateDir, rows, SELF)).map(
-    (row) => ({ ...row, repository }),
-  );
+  const doctored = (
+    await attachDoctorVerdicts(stateDir, rows, SELF, doctorMode)
+  ).map((row) => ({ ...row, repository }));
   if (json) console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
   else if (doctorMode) printDoctor(stateDir, doctored, repository);
   else printHuman(stateDir, doctored, repository);
@@ -1339,7 +1310,16 @@ async function main(argv: string[]): Promise<number> {
 
 /** `--doctor`'s population, recovered first (a takeover reads `--json`). */
 async function doctorRows(stateDir: string, lockRows: LockRow[]) {
-  await ledgerStop.recoverStoppedLedgers(stateDir);
+  if (process.env[READ_ONLY_ENV] !== "1") {
+    await ledgerStop.recoverStoppedLedgers(stateDir, (pr) => {
+      const snapshot = readStateSnapshot(stateDir, pr);
+      return (
+        snapshot.ok &&
+        snapshot.state.ciHold !== null &&
+        snapshot.state.ciHold.phase !== "released"
+      );
+    });
+  }
   return [...lockRows, ...listStateOnlyRows(stateDir, lockRows)];
 }
 

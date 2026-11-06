@@ -131,7 +131,10 @@ function recordOf(row: DriverRecordRow): DriverRecord {
   };
 }
 
-function readDriverRecord(stateDir: string, pr: string): DriverRecord | null {
+export function readDriverRecord(
+  stateDir: string,
+  pr: string,
+): DriverRecord | null {
   const drive = driveDb(stateDir);
   const row = drive.db
     .query("SELECT * FROM driver_records WHERE clone = ? AND pr = ?")
@@ -165,7 +168,10 @@ export async function recoverFromDriverRecord(
 }
 
 /** `--doctor`'s sweep of the driver records no lock row covers. */
-async function recoverDriverRecords(stateDir: string): Promise<void> {
+async function recoverDriverRecords(
+  stateDir: string,
+  skip: (pr: string) => boolean,
+): Promise<void> {
   const drive = driveDb(stateDir);
   const prs = (
     drive.db
@@ -173,6 +179,7 @@ async function recoverDriverRecords(stateDir: string): Promise<void> {
       .all(drive.clone) as { pr: string }[]
   ).map((r) => r.pr);
   for (const pr of prs) {
+    if (skip(pr)) continue;
     const claim = inspectLock(stateDir, prLockName(pr));
     await recoverFromDriverRecord(stateDir, pr, { diag: claim?.diag ?? null });
   }
@@ -328,6 +335,9 @@ export async function recoverIdleStop(
 }
 
 /** `--doctor`'s recovery: every driver record a released driver left. */
-export async function recoverStoppedLedgers(stateDir: string): Promise<void> {
-  await recoverDriverRecords(stateDir);
+export async function recoverStoppedLedgers(
+  stateDir: string,
+  skip: (pr: string) => boolean = () => false,
+): Promise<void> {
+  await recoverDriverRecords(stateDir, skip);
 }
