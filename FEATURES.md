@@ -134,6 +134,12 @@ state as a label: driving, converged, parked or held, among others. A person
 steers with two labels of their own. One asks for a drive, and the other
 keeps the dispatcher away from that pull request.
 
+A person can also ask the line in a sentence: "where does 456 stand", or
+"what is waiting on me". The [operator](GLOSSARY.md) skill reads the answer
+from the line's records with `jig ask`. Told to hold a pull request or to
+answer a parked question, it shows what `jig send` would write and sends it
+once the person agrees.
+
 Some pull requests conflict whenever two of them move at once, such as two
 database migrations. A team marks such an area of its code as
 [serialized](GLOSSARY.md), and the dispatcher drives its pull requests one
@@ -152,7 +158,8 @@ Orca is the first, and another runtime joins by implementing the same
 interface.
 
 - **Skills:** [`do-item`](plugin/skills/do-item/SKILL.md),
-  [`drive-pr`](plugin/skills/drive-pr/README.md)
+  [`drive-pr`](plugin/skills/drive-pr/README.md),
+  [`operator`](plugin/skills/operator/SKILL.md)
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),
   [M12](modules/M12-parallel-agent-ergonomics/),
   [M11](modules/M11-process-observability/),

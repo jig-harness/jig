@@ -37,6 +37,7 @@ version's tag, `https://github.com/jig-harness/jig/blob/v<version>/…`.
 | What a practice module says (M0, M7, …) or what a term means          | `modules/` and `GLOSSARY.md` at the version's tag                                                                                                                      |
 | The `jig` command, and the machine tools (`jig gc`, `jig dispatch`)   | `<plugin>/README.md`: "The `jig` command" (install, upgrade, doctor, status), then the sections named after each tool                                                  |
 | A skill missing, a configuration error, old behaviour after an update | `jig doctor`, which names the command that fixes each failure, then `<plugin>/README.md`, section "Troubleshooting"                                                    |
+| Where a piece of work stands, and what waits on a person              | `/jig:operator`, which asks the line with `jig ask` and passes a person's command to it with `jig send`; `<plugin>/README.md`, "Asking a station where it stands"      |
 
 ## Which skill
 
@@ -47,7 +48,8 @@ then `do-item` (or `work-batch`), which opens the pull request and arms
 
 - **Find your way:** `jig`, this skill.
 - **Deliver a change:** `file-issue`, `do-item`, `work-batch`, `drive-pr`,
-  `resolve-review-comments`, `resolve-conflicts`, `fix-ci`.
+  `resolve-review-comments`, `resolve-conflicts`, `fix-ci`, `operator`,
+  which says where work stands and what waits on a person.
 - **Review a change:** `change-areas`, `review`, `github-actions`.
 - **Understand, decide and record:** `explain`, `decide`, `adr`, `red-team`,
   `design-brief-builder`.

@@ -293,9 +293,9 @@ shows what was said to the station and by it. It reads the tracker, the
 pull request and the dispatching machine's records.
 `jig send <address> <verb>` writes the assignment, label, comment or
 mailbox directive the line already acts on, from a closed list of verbs,
-and checks first that the station can take it. An operator skill
-will turn a question such as "what is waiting on me" into those
-commands. Nothing new is stored, and no agent has to keep running for an
+and checks first that the station can take it. The operator skill,
+`/jig:operator`, turns a question such as "what is waiting on me" into
+those commands. Nothing new is stored, and no agent has to keep running for an
 address to answer.
 
 ## Later

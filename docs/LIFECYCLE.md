@@ -39,6 +39,7 @@ between loops.
 | Skill | Used when |
 |-------|-----------|
 | `/jig:jig` | an agent needs to know which skill fits, where the plugin's reference is, or how to report a Jig bug |
+| `/jig:operator` | a person asks where a piece of work stands on the line or what waits on them, or tells a station to hold, release, drive or take an answer; it reads with `jig ask` and writes the one record with `jig send` |
 | `/jig:reflect` | a session learned something about the instructions, skills or gates |
 | `/jig:promote-memory` | an agent's private lesson has become knowledge the team should share |
 | `/jig:descar` | a document is about to be promoted, or its history has piled up |

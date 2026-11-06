@@ -909,10 +909,12 @@ area's paths, the build tools and the database conventions.
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
 `docs`, `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
-`explain`, `red-team`, `resolve-conflicts`, `audit`, `jig`) detect
+`explain`, `red-team`, `resolve-conflicts`, `audit`, `jig`, `operator`) detect
 what they need from the repository; set a field only when detection picks
-the wrong thing. `programmatic-execution`, `red-team`, `audit` and `jig` read no
-field of their own; `audit` checks all the others, and `jig`'s bug-report
+the wrong thing. `programmatic-execution`, `red-team`, `audit`, `jig` and
+`operator` read no field of their own (`operator` runs `jig ask` and
+`jig send`, whose own reads are in
+[their sections of the README](README.md#asking-a-station-where-it-stands)); `audit` checks all the others, and `jig`'s bug-report
 draft reads `repository.remote` and `issue_tracker.team` to know which of
 the repository's names to replace. `red-team` reads a
 document's kind from its frontmatter `type:` or its headings (`--kind`
