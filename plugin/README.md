@@ -28,7 +28,7 @@ runs, what it hands over to.
 |-------|--------------|-----------|------------|
 | [jig](skills/jig/README.md) | Answers which skill fits a task and how the skills hand work on, from the reference installed with the plugin (these tables, the configuration reference, each skill's pages) and Jig's repository at the installed version's tag; when Jig itself is wrong, decides whether the fault is Jig's, searches for an existing issue, and drafts a bug report in the fields of Jig's bug form, with the repository's own names replaced, for a person to confirm before it is filed on jig-harness/jig | `/jig:jig` | Names the skill that does the work and hands over to it; sends a lesson that is not a defect to [reflect](skills/reflect/README.md), and in Jig's own repository files the bug through [file-issue](skills/file-issue/README.md) |
 
-**Deliver a change.** One item of work, from the tracker to a merged pull request. `file-issue` puts the item on the tracker, labelled by the repository's label taxonomy; `do-item` opens the pull request and arms `drive-pr`, and `work-batch` does the same for several small issues closed in one pull request; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent. Each also works by hand.
+**Deliver a change.** One item of work, from the tracker to a merged pull request. `file-issue` puts the item on the tracker, labelled by the repository's label taxonomy; `do-item` opens the pull request and arms `drive-pr`, and `work-batch` does the same for several small issues closed in one pull request; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent; `operator` tells a person where a piece of work stands on the line and passes their commands to it. Each also works by hand.
 
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
@@ -39,6 +39,7 @@ runs, what it hands over to.
 | [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/jig:resolve-review-comments` | One review round of [drive-pr](skills/drive-pr/README.md); hands contested findings to the `review-arbiter` agent and design questions to [decide](skills/decide/SKILL.md) |
 | [resolve-conflicts](skills/resolve-conflicts/README.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files (those the repository lists in its configuration or declares in its change-area catalog), records every decision in the commit message, checks that no change was silently dropped, verifies staged work belongs to the operation, and applies repository obligations to the whole resolved diff; replays past merges to report where they conflicted, why, and the change that removes each cause | `/jig:resolve-conflicts` | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge |
 | [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running or its CI-repair budget is spent; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow |
+| [operator](skills/operator/SKILL.md) | Answers a person's question about the line in sentences (where a pull request, item or follow-up stands, what waits on a person, what was said to a station) from [`jig ask`](#asking-a-station-where-it-stands), and sends their command to a station (hold, release, drive, an answer to a parked question, a mailbox directive) with [`jig send`](#telling-a-station-what-to-do), only on their instruction and after showing them the dry run; holds no state of its own | `/jig:operator` | Reads and writes the records [do-item](skills/do-item/SKILL.md), [drive-pr](skills/drive-pr/README.md) and the follow-up leave and act on; hands the work of a station to that station's skill, and a question about how Jig works to [jig](skills/jig/README.md) |
 
 **Review a change.** Check work against the repository's own standards before and during review: `change-areas` says what the change owes, `review` and `github-actions` check it.
 
@@ -759,6 +760,10 @@ changes nothing on the forge or the tracker
 jig ask <station>@<owner>/<name>#<key> [--json] [--thread [--since <date> | --all]]
 jig ask --waiting [--json]
 ```
+
+In a session, [`/jig:operator`](skills/operator/SKILL.md) runs `jig ask`
+and `jig send` for you: ask it "where does 456 stand" or "what is waiting on
+me", or tell it "hold 456", and it answers in sentences.
 
 **The address.** A station on a piece of work has an
 [address](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
