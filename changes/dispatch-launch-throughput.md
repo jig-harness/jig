@@ -16,3 +16,5 @@ release: minor
   behind follow-ups for more than one tick when capacity is available.
   Waiting launches say whether the accounts or the per-tick open budget
   holds them, in both the receipt and the dashboard's queue.
+- Notifications wait for a later tick when their complete workspace read
+  or delivery cannot finish while preserving time to write the tick's receipt.

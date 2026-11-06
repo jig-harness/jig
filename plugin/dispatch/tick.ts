@@ -1,3 +1,4 @@
+import { readSessions } from "./lib/runtime/read-sessions.ts";
 import {
   applyInTurns,
   launchStageOrder,
@@ -860,21 +861,22 @@ async function settleOutcomes(
   );
 }
 
-/** The runtime's answer; a rejected read is a failed report, never an escape. */
-async function readSessions(
-  runtime: SessionRuntime,
-  repo: RepoTarget,
-  join: JoinTargets,
-): Promise<SessionsReport> {
-  try {
-    return await runtime.sessions(repo, join);
-  } catch (error) {
-    return {
-      ok: false,
-      source: runtime.name,
-      reason: `the runtime could not be read: ${failureText(error)}`,
-    };
-  }
+/**
+ * The reflection route, after every launch: each class that recurs recorded
+ * where reflection is on. What it did goes on the receipt; a failure there
+ * leaves the tick's exit status as it is.
+ */
+async function routeReflection(
+  receipt: TickReceipt,
+  context: TickContext,
+): Promise<void> {
+  const { apply } = context;
+  const reflection = await routeRecurrences(context.reflections, {
+    apply: apply !== null,
+    nowMs: Date.now(),
+    timeLeftMs: apply === null ? null : timeLeftMs(apply),
+  });
+  if (reflection !== null) receipt.reflection = reflection;
 }
 
 export type TickResult =
@@ -974,12 +976,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     await applyPending(context);
     const failed = await settleOutcomes(receipt, context, days);
     const copied = copyLog(receipt);
-    const reflection = await routeRecurrences(context.reflections, {
-      apply: apply !== null,
-      nowMs: Date.now(),
-      timeLeftMs: apply === null ? null : timeLeftMs(apply),
-    });
-    if (reflection !== null) receipt.reflection = reflection;
+    await routeReflection(receipt, context);
     receipt.exitStatus = failed || !copied || withheld !== undefined ? 1 : 0;
     receipt.completed = true;
     receipt.finishedAt = new Date().toISOString();
