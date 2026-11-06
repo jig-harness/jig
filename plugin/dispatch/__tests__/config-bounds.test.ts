@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { jobFiles } from "../../runtime/scheduler.ts";
 import { dispatchJobSpec } from "../install.ts";
-import { readMachineConfig } from "../lib/machine-config.ts";
+import {
+  readMachineConfig,
+  tickBudgetMs,
+  tickDeadlineMs,
+} from "../lib/machine-config.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -23,6 +27,41 @@ const account = (name: string, identity: string, dir = name) =>
   `  - {name: ${name}, vendor: claude, config_dir: /tmp/${dir}, identity: ${identity}}\n`;
 
 describe("the machine file's bounds", () => {
+  it("keeps a launch open beside the notices reservation", () => {
+    expect(
+      config(
+        "opens_per_tick: 1\nrepositories:\n  - {path: /tmp/web, stages: [notify]}\n",
+      ),
+    ).toThrow("opens_per_tick must be at least 2");
+    expect(config("opens_per_tick: 1\n")()).not.toBeNull();
+  });
+
+  it("defaults to four workspace opens and budgets configured opens in the timer", () => {
+    expect((config("")() as { opensPerTick: number }).opensPerTick).toBe(4);
+    const machine = config(
+      "opens_per_tick: 8\nworkspace_timeout: 1h\nruntime_timeout: 1m\n",
+    )() as NonNullable<ReturnType<typeof readMachineConfig>>;
+    expect(machine.opensPerTick).toBe(8);
+    expect(tickBudgetMs(machine)).toBe(8 * 3_600_000 + 8 * 60_000);
+    expect(tickDeadlineMs(machine)).toBe(tickBudgetMs(machine));
+    expect(dispatchJobSpec(5, machine).deadlineSec).toBe(
+      Math.ceil(tickBudgetMs(machine) / 1000),
+    );
+  });
+
+  it("refuses invalid open counts and a count whose workspace opens exceed the timer", () => {
+    for (const value of ["0", "-1", "1.5", "many"])
+      expect(config(`opens_per_tick: ${value}\n`)).toThrow(
+        "opens_per_tick must be a positive whole number",
+      );
+    expect(config("opens_per_tick: 1000\nworkspace_timeout: 1h\n")).toThrow(
+      "opens_per_tick",
+    );
+    expect(config("opens_per_tick: 1000\nworkspace_timeout: 1h\n")).toThrow(
+      "longer than 24d",
+    );
+  });
+
   it("refuses a duration past the supported range, however large", () => {
     expect(config("wall_backoff: 999999999999999999999999h\n")).toThrow(
       "at most 24d",

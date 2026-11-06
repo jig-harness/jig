@@ -59,7 +59,7 @@ describe("a tick's targets and deadline", () => {
       (n) => rotated(state(n), ["rearm", "pickup", "followup"], "stages")[0],
     );
     expect(stageLeads).toEqual(["rearm", "pickup", "followup", "rearm"]);
-    const targetLeads = [0, 6, 12, 18].map(
+    const targetLeads = [0, 8, 16, 24].map(
       (n) => rotated(state(n), ["a", "b"], "targets")[0],
     );
     expect(targetLeads).toEqual(["a", "b", "a", "b"]);

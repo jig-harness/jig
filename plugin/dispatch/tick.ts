@@ -1,3 +1,9 @@
+import {
+  applyInTurns,
+  launchStageOrder,
+  type LaunchGroup,
+  type PendingRepository,
+} from "./lib/apply-order.ts";
 /**
  * One tick, under the tick lock: for each repository, read the records
  * (the dispatch section from the default branch, the tracker, the forge's
@@ -70,7 +76,7 @@ import {
   type FreshDrive,
 } from "./lib/actions/drive.ts";
 import { applyFollowups } from "./lib/actions/followup.ts";
-import { accountsReport, outOfTime, rotated } from "./lib/actions/launch.ts";
+import { accountsReport, outOfTime } from "./lib/actions/launch.ts";
 import {
   heldPullRequests,
   planLabels,
@@ -161,6 +167,12 @@ interface TickContext {
   apply: ApplyState | null;
   /** What each repository's tick read beside its report, by path, for the line. */
   lineInputs: Map<string, RepoLineInput>;
+  pending: PendingRepository[];
+}
+
+/** Apply all repositories after their plans are gathered. */
+async function applyPending(context: TickContext): Promise<void> {
+  await applyInTurns(context.pending, context.apply?.tick ?? 0);
 }
 
 function emptyReport(path: string, refused: string): RepoReport {
@@ -366,7 +378,16 @@ async function gatherRepo(
   });
   if (onlyLabeled) report.inScope = [...inScope];
   await logRepo(context, repo.slug, report, drives);
-  if (context.apply !== null) {
+  const finish = async () => {
+    await projectLabels(context, repo.slug, report, labels, {
+      ...forge,
+      listed: opened.listed && ctx.owner,
+      serialized,
+    });
+    report.shared = await sharedReport(shared, ctx, claims, forge);
+  };
+  const apply = context.apply;
+  if (apply !== null) {
     await endOwnClaims(ctx, report, {
       claims,
       forge,
@@ -374,7 +395,7 @@ async function gatherRepo(
       outcomes: readOutcomes(repo.slug),
       nowMs,
     });
-    await applyStages(context.apply, opened.stages, report, {
+    const inputs = {
       repo,
       runtime,
       section,
@@ -384,15 +405,16 @@ async function gatherRepo(
       join,
       sessions,
       shared: ctx,
+    };
+    context.pending.push({
+      apply: (group) =>
+        applyStages(apply, opened.stages, report, inputs, group),
+      finish: async () => {
+        await applyStages(apply, opened.stages, report, inputs, "finish");
+        await finish();
+      },
     });
-  }
-  // The labels are the owner's to write, as its board, notifications and history rows are.
-  await projectLabels(context, repo.slug, report, labels, {
-    ...forge,
-    listed: opened.listed && ctx.owner,
-    serialized,
-  });
-  report.shared = await sharedReport(shared, ctx, claims, forge);
+  } else await finish();
   context.lineInputs.set(path, lineInputOf(drives, forge, tracked, sessions));
   return report;
 }
@@ -460,6 +482,7 @@ async function applyStages(
   enabled: ReadonlySet<string>,
   report: RepoReport,
   inputs: ApplyInputs,
+  group: LaunchGroup | "finish",
 ): Promise<void> {
   const { repo, runtime, section, tracked, login, join } = inputs;
   const fresh = () => readSessions(runtime, repo, join);
@@ -527,7 +550,14 @@ async function applyStages(
         });
     },
   ];
-  for (const stage of rotated(apply, stages, "stages")) await stage();
+  for (const stage of launchStageOrder(
+    stages,
+    group,
+    apply.tick ?? 0,
+    apply.repos ?? 1,
+  ))
+    await stage();
+  if (group !== "finish") return;
   // The nudges first: a nudge that went unanswered is notified in the same tick.
   if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
   // A host that does not own the repository never notifies for it: the owner does, once.
@@ -912,11 +942,12 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       launches: apply?.records ?? read.records,
       apply,
       lineInputs: new Map(),
+      pending: [],
     };
-    const order =
-      apply === null ? options.repos : rotated(apply, options.repos);
+    const order = options.repos;
     for (const path of order)
       receipt.repos.push(await gatherRepo(path, context));
+    await applyPending(context);
     const failed = await settleOutcomes(receipt, context, days);
     const copied = copyLog(receipt);
     receipt.exitStatus = failed || !copied || withheld !== undefined ? 1 : 0;

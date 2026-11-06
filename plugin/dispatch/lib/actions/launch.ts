@@ -76,8 +76,10 @@ export interface ApplyState {
    * it, so the pass command does what was judged.
    */
   codexOptIn: CodexOptIn;
-  /** The workspaces this tick has opened so far, within `OPENS_PER_TICK`. */
+  /** The workspaces this tick has opened so far, within `opens_per_tick`. */
   opened?: number;
+  /** Opens spent on notices, which do not consume the launches' allowance. */
+  noticesOpened?: number;
   /** When the tick began, for its overall deadline. */
   startedAt?: number;
   /** The index of this tick among the applying ticks, which rotates the order of everything that shares the allowance. */
@@ -138,8 +140,8 @@ export function outOfTime(state: ApplyState): string | null {
     : null;
 }
 
-/** The stages a repository's tick applies (rearm, pickup, followup), for the targets' radix. */
-const STAGES_PER_REPO = 3;
+/** Two launch groups and two background stages per repository complete a target turn. */
+const TARGET_TURN_PER_REPO = 4;
 
 /** The level of the hierarchy a rotation orders; each is a digit of the tick index, the repositories the lowest. */
 export type RotationLevel = "repositories" | "stages" | "targets";
@@ -147,12 +149,10 @@ export type RotationLevel = "repositories" | "stages" | "targets";
 /**
  * `items` in this tick's order: rotated by a digit of the tick's own index, a
  * counter that advances once per applying tick whatever the timer's interval.
- * The repositories, the stages within one and the targets within a stage share
- * the tick's allowance of opens, so each level turns once per full turn of
- * the levels above it (the index counted in mixed radix: repositories, then
- * stages, then targets). A repository that leads on every even tick then
- * leads with each of its stages in turn, and an item whose open fails every
- * time cannot keep every later one waiting.
+ * Target order advances after both launch groups and both background stages
+ * have led every repository. A failed open at the front of one stage then
+ * cannot keep every later target waiting across successive opportunities.
+ * The global repository and stage order is applied by `apply-order.ts`.
  */
 export function rotated<T>(
   state: ApplyState,
@@ -166,7 +166,7 @@ export function rotated<T>(
       ? 1
       : level === "stages"
         ? repos
-        : repos * STAGES_PER_REPO;
+        : repos * TARGET_TURN_PER_REPO;
   const start = Math.floor(state.tick / divisor) % items.length;
   return [...items.slice(start), ...items.slice(0, start)];
 }
@@ -179,9 +179,34 @@ export type Opened =
   | { waits: string }
   | { refused: string };
 
+/** Total and launch-specific allowances count notices once. */
+function openAllowance(state: ApplyState) {
+  const done = state.opened ?? 0;
+  const keeps = state.machine.repositories.some((r) =>
+    r.stages.includes("notify"),
+  );
+  const budget = state.machine.opensPerTick ?? OPENS_PER_TICK;
+  return {
+    done,
+    keeps,
+    budget,
+    cap: keeps ? budget - 1 : budget,
+    launches: done - (state.noticesOpened ?? 0),
+  };
+}
+
+/** Why the next workspace open would exhaust this tick's allowance. */
+function openBudgetWait(state: ApplyState, notice: boolean): string | null {
+  const { done, keeps, budget, cap, launches } = openAllowance(state);
+  if (done < budget && (notice || launches < cap)) return null;
+  const reservation =
+    notice || !keeps ? "" : " for launches (one is kept for notifications)";
+  return `this tick has opened the ${notice ? budget : cap} workspaces its per-tick budget covers${reservation}; a later tick opens this one`;
+}
+
 /**
  * Open a workspace through the runtime, within the tick's budget: a tick
- * opens at most `OPENS_PER_TICK`, one of them kept for the notices workspace, and a launch that needs another waits for
+ * opens at most `opens_per_tick` (four by default), one of them kept for the notices workspace, and a launch that needs another waits for
  * the next tick rather than run past the deadline the timer gives it.
  */
 export async function openWithinBudget(
@@ -191,18 +216,20 @@ export async function openWithinBudget(
 ): Promise<Opened> {
   const late = outOfTime(state);
   if (late !== null) return { waits: late };
-  const done = state.opened ?? 0;
-  // One open is kept for the notices workspace, so a queue of launches never starves the notifications that reach a person.
-  const keeps = state.machine.repositories.some((r) =>
-    r.stages.includes("notify"),
-  );
-  const cap =
-    "notices" in target || !keeps ? OPENS_PER_TICK : OPENS_PER_TICK - 1;
-  if (done >= cap)
+  if (
+    state.startedAt !== undefined &&
+    enforcedDeadlineMs(state.machine) - (Date.now() - state.startedAt) <
+      state.machine.workspaceTimeoutMs + state.machine.runtimeTimeoutMs
+  )
     return {
-      waits: `this tick has opened the ${cap} workspaces its budget covers${"notices" in target || !keeps ? "" : " for launches (one is kept for notifications)"}; a later tick opens this one`,
+      waits:
+        "the tick deadline has no room for another workspace_timeout and its receipt; a later tick opens this one",
     };
-  state.opened = done + 1;
+  const notice = "notices" in target;
+  const waiting = openBudgetWait(state, notice);
+  if (waiting !== null) return { waits: waiting };
+  state.opened = (state.opened ?? 0) + 1;
+  if (notice) state.noticesOpened = (state.noticesOpened ?? 0) + 1;
   let opened: RuntimeReceipt;
   try {
     opened = await state.runtime.openWorkspace(repo, target);
@@ -550,7 +577,9 @@ export async function admitAccount(
   for (;;) {
     const admitted = admission(state, action, failed);
     if ("waits" in admitted)
-      return { outcome: refusal ?? waits(action, admitted.waits) };
+      return {
+        outcome: refusal ?? waits(action, admitted.waits),
+      };
     const slots = admitted.admitted;
     const identity = await identityOf(state, slots);
     if (identity.ok) return { slots };
