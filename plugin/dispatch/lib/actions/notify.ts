@@ -75,6 +75,7 @@ import type {
 } from "../types.ts";
 import { type ApplyState, openWithinBudget, outOfTime } from "./launch.ts";
 import {
+  intendComment,
   ownsComment,
   pruneComments,
   recordComment,
@@ -460,12 +461,13 @@ async function sendTo(
   repo: string,
   dispatcherOnly: boolean,
 ): Promise<NotifyOutcome[]> {
+  // Reconcile an interrupted delivery even when every cause is already present.
+  const owned = ownsComment(workspace, root);
   const { out, fresh } = alreadyThere(workspace, causes, suppress);
   if (fresh.length === 0) return out;
   const late = outOfTime(state);
   if (late !== null)
     return [...out, ...fresh.map((c) => outcomeFor(c, "waits", null, late))];
-  const owned = ownsComment(workspace, root);
   const preserveRead = dispatcherOnly && !owned;
   const { send, later } = fitting(workspace, fresh, preserveRead);
   out.push(
@@ -487,6 +489,7 @@ async function sendTo(
       preserveRead,
     ) ?? workspace.comment;
   const known = owned || (!dispatcherOnly && workspace.unread === false);
+  if (known) intendComment(workspace, expected, root, repo);
   const receipt = await deliver(
     state,
     workspace,

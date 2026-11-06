@@ -387,6 +387,33 @@ describe("jig dispatch --apply notifies a person", () => {
     },
   );
 
+  it.each([false, true])(
+    "recovers a lost write without claiming personal additions (%s)",
+    async (personal) => {
+      const { w, ws } = fixture(
+        (ws) => [{ branch: "desk", path: ws }],
+        `${CONFIG}dispatch:\n  notices_branch: desk\n`,
+      );
+      writeFileSync(join(w.dir, "orca-set-lost"), "");
+      expect(notifications(await tick(w))[0]?.outcome).toBe("lost");
+      rmSync(join(w.dir, "orca-set-lost"));
+      if (personal) {
+        const ps = psRows(w);
+        const row = ps.worktrees.find((r) => r.path === ws);
+        if (!row) throw new Error("notification destination is missing");
+        row.comment += "\nPersonal note";
+        writeFileSync(join(w.dir, "orca-ps.json"), JSON.stringify(ps));
+      }
+      expect(notifications(await tick(w))[0]?.outcome).toBe("already");
+      markRead(w, ws);
+      agedBy(w, 25);
+      expect(notifications(await tick(w))[0]?.outcome).toBe("sent");
+      const comment = shown(w, ws).comment;
+      expect(comment.match(/\[jig dispatch: /g)).toHaveLength(personal ? 2 : 1);
+      expect(comment.includes("Personal note")).toBe(personal);
+    },
+  );
+
   it("does not advance a due repeat's clock on an ineffective write", async () => {
     const { w } = fixture();
     const [first] = notifications(await tick(w));
