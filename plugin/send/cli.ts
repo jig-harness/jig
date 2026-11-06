@@ -1,9 +1,17 @@
 /**
  * `jig send <address> <verb> [arguments]`: write one record of a kind the
  * line already reads, and exit (`design/addresses.md`). It types nothing
- * into a session and starts nothing itself; the record's reader acts on it
- * at its next run. The verbs are a closed list (`lib/verbs.ts`), and each
- * record is written by the writer of the component that owns it.
+ * into a session; the record's reader acts on it at its next run. The verbs
+ * are a closed list (`lib/verbs.ts`), and each record is written by the
+ * writer of the component that owns it.
+ *
+ * When the record's reader is the dispatcher's tick, and this machine
+ * dispatches the repository with the stage the tick acts under, a real send
+ * then wakes that repository's tick (`dispatch/lib/wake-tick.ts`): the tick
+ * starts when idle, no sooner than a minute after the last one the wake
+ * started, rather than at the next timer sweep. The record stays the request; the wake only has
+ * it read sooner. A mailbox directive wakes nothing: the driver reads it at
+ * its next round.
  *
  * Before it writes, `send` reads the address through `jig ask`'s readers
  * and refuses a request the station cannot take, then prints the
@@ -45,12 +53,15 @@ import { planAssign } from "./lib/assign.ts";
 import { planLabel } from "./lib/labels.ts";
 import { planMailbox } from "./lib/mailbox.ts";
 import {
+  NEXT_TICK,
+  type Plan,
   type Planned,
   refused,
   renderPlan,
   renderSent,
   writerLogin,
 } from "./lib/plan.ts";
+import { wakeTick } from "../dispatch/lib/wake-tick.ts";
 import {
   isPersonVerb,
   isVerb,
@@ -165,6 +176,46 @@ export async function sendMain(args: SendArguments): Promise<number> {
     console.error(`jig send: not sent: ${wrote.failure.reason}`);
     return SEND_EXIT.REFUSED;
   }
-  console.log(renderSent(plan, wrote.value));
+  console.log(renderSent(plan, wrote.value, wake(resolved, plan)));
   return SEND_EXIT.SENT;
+}
+
+/**
+ * The machine-file path of the repository whose tick reads `plan`, where
+ * this machine dispatches it with the stage the tick acts under; `null`
+ * when the tick is not the reader or this machine would not act on it.
+ */
+function dispatchedPath(resolved: ResolvedAddress, plan: Plan): string | null {
+  const { tick } = plan;
+  const machine = machineFile();
+  if (tick === null || !machine.ok || machine.value === null) return null;
+  const repo = plan.repo.toLowerCase();
+  const paths = new Set(
+    resolved.choices.known
+      .filter((k) => k.slug?.toLowerCase() === repo)
+      .map((k) => k.path),
+  );
+  return (
+    machine.value.repositories.find(
+      (r) => paths.has(r.path) && r.stages.includes(tick.stage),
+    )?.path ?? null
+  );
+}
+
+/** Wake the tick that reads what `plan` wrote: the tick it woke, for the reader line, or `null` when it woke none. */
+function wake(resolved: ResolvedAddress, plan: Plan): string | null {
+  const path = dispatchedPath(resolved, plan);
+  if (path === null) return null;
+  const woke = wakeTick(path);
+  if (!woke.ok) {
+    console.error(
+      `jig send: the tick was not woken, so ${NEXT_TICK} reads the record: ${woke.failure.reason}`,
+    );
+    return null;
+  }
+  const when =
+    woke.value === "now"
+      ? "now"
+      : "to start when idle, at least a minute after the last start";
+  return `the dispatcher's tick for ${plan.repo}, woken ${when}`;
 }
