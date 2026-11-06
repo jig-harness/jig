@@ -222,6 +222,182 @@ describe("decisionOf", () => {
 });
 
 describe("buildLine", () => {
+  it("names an idle parked drive's joined workspace, independently of its notification destination", () => {
+    const line = buildLine(
+      input({
+        reports: [
+          report({
+            actions: [PARK],
+            notifications: [
+              {
+                target: PARK.target,
+                cause: "parked",
+                key: "park-key",
+                outcome: "sent",
+                workspace: "/srv/notices",
+                detail: "sent",
+              },
+            ],
+          }),
+        ],
+        inputs: reads({
+          drives: [parkedPr()],
+          sessions: {
+            ok: true,
+            source: "fake",
+            workspaces: [
+              {
+                id: "park",
+                path: "/srv/parked",
+                branch: "feature/456",
+                items: [],
+                prs: [456],
+                agents: [],
+                unverifiableTerminals: 0,
+                comment: "",
+                unread: false,
+                name: "park",
+              },
+            ],
+          },
+        }),
+      }),
+    );
+    expect(line.sessions).toEqual([]);
+    expect(line.needs[0]).toMatchObject({
+      workspace: "/srv/parked",
+      notified: { workspace: "/srv/notices" },
+    });
+  });
+
+  it("leaves an unknown workspace null rather than using the notices destination", () => {
+    const line = buildLine(
+      input({
+        reports: [
+          report({
+            actions: [PARK],
+            notifications: [
+              {
+                target: PARK.target,
+                cause: "parked",
+                key: "park-key",
+                outcome: "sent",
+                workspace: "/srv/notices",
+                detail: "sent",
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(line.needs[0]).toMatchObject({
+      workspace: null,
+      notified: { workspace: "/srv/notices" },
+    });
+  });
+
+  it("uses the matching running launch's workspace and excludes another repository's records", () => {
+    const line = buildLine(
+      input({
+        reports: [report({ actions: [PARK] })],
+        records: [
+          record({
+            repo: "other/repo",
+            workspace: { id: "other", path: "/srv/other" },
+          }),
+          record(),
+        ],
+      }),
+    );
+    expect(line.needs[0]).toMatchObject({ workspace: "/srv/work/web/pr-456" });
+  });
+
+  it("uses an explicit launch workspace for a failed follow-up and does not guess between double claims", () => {
+    const line = buildLine(
+      input({
+        reports: [
+          report({
+            actions: [
+              { ...PARK, cause: "followup-failed", workspace: "/srv/followup" },
+              { ...PARK, cause: "double-claim", target: "WEB-412" },
+            ],
+          }),
+        ],
+        inputs: reads({
+          sessions: {
+            ok: true,
+            source: "fake",
+            workspaces: ["one", "two"].map((id) => ({
+              id,
+              path: `/srv/${id}`,
+              branch: id,
+              items: ["WEB-412"],
+              prs: [],
+              agents: [],
+              unverifiableTerminals: 0,
+              comment: "",
+              unread: false,
+              name: id,
+            })),
+          },
+        }),
+      }),
+    );
+    expect(line.needs.map((n) => n.workspace)).toEqual(["/srv/followup", null]);
+  });
+
+  it("excludes a notices workspace even if it is joined to the target", () => {
+    const line = buildLine(
+      input({
+        reports: [report({ actions: [PARK] })],
+        inputs: reads({
+          sessions: {
+            ok: true,
+            source: "fake",
+            workspaces: [
+              {
+                id: "notices",
+                path: "/srv/notices",
+                branch: "jig-dispatch-notices",
+                items: [],
+                prs: [456],
+                agents: [],
+                unverifiableTerminals: 0,
+                comment: "⚙ dispatched · notices",
+                name: "renamed notices",
+                unread: false,
+              },
+            ],
+          },
+        }),
+      }),
+    );
+    expect(line.needs[0]?.workspace).toBeNull();
+  });
+
+  it("uses the stage record for an unanswered nudge when runtime reads fail", () => {
+    const line = buildLine(
+      input({
+        reports: [
+          report({
+            actions: [
+              {
+                ...PARK,
+                cause: "nudge-unanswered",
+                evidence: { record: "20261103T153000Z-aaaaaaaa" },
+              },
+            ],
+          }),
+        ],
+        records: [record()],
+        inputs: reads({
+          sessions: { ok: false, source: "fake", reason: "offline" },
+        }),
+      }),
+    );
+    expect(line.needs[0]?.workspace).toBe("/srv/work/web/pr-456");
+  });
+
   it("makes a need of a park, dated by its last ledger write, with its decisions and notification", () => {
     const line = buildLine(
       input({
