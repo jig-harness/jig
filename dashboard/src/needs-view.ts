@@ -107,6 +107,10 @@ function needEvidence(
   }
   if (n.stuckRecord != null) {
     const clear = `jig dispatch clear ${n.stuckRecord}`;
+    rows.push({
+      k: "to release",
+      v: "a person checks for a session it started, then runs jig dispatch clear",
+    });
     rows.push({ k: "clear", v: clear, copy: clear });
   }
   n.workspaces.forEach((path, i) => {

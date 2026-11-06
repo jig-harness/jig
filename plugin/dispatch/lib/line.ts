@@ -307,7 +307,10 @@ function needsOf(
       workspaces:
         action.cause === "double-claim"
           ? view.workspacesHolding(action.target)
-          : [],
+          : text(action.evidence, "stuck") !== null &&
+              action.workspace !== undefined
+            ? [action.workspace]
+            : [],
       stuckRecord:
         text(action.evidence, "stuck") === null
           ? null

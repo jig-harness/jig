@@ -601,6 +601,8 @@ describe("buildLine", () => {
         stage: "followup",
         target: "PR #456",
         stuckRecord: stuck.record.id,
+        workspaces:
+          stuck.record.workspace === null ? [] : [stuck.record.workspace.path],
         reason: expect.stringContaining(
           `jig dispatch clear ${stuck.record.id}`,
         ),

@@ -188,6 +188,10 @@ describe("a need's words", () => {
     const view = needView({ ...NEED, stuckRecord: "launch-9" }, CLOCK);
     expect(view.goLabel).toBe("Open the pull request");
     expect(view.evidence).toContainEqual({
+      k: "to release",
+      v: "a person checks for a session it started, then runs jig dispatch clear",
+    });
+    expect(view.evidence).toContainEqual({
       k: "clear",
       v: "jig dispatch clear launch-9",
       copy: "jig dispatch clear launch-9",
