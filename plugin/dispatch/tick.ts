@@ -27,7 +27,9 @@
  * writes its end, before any expired record is removed. Every record the
  * tick keeps is a row of the state database (lib/state.ts); at the end of
  * the tick the outcome log's new rows are copied into its month files
- * (lib/log-export.ts).
+ * (lib/log-export.ts), and, after every launch, each class that recurs is
+ * recorded as a reflection finding where reflection is on
+ * (lib/reflection-route.ts).
  *
  * Where a repository turns dispatch labels on (lib/labels.ts), the open
  * pull requests are listed with their labels, a person's `hold` keeps
@@ -44,7 +46,7 @@
  */
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
-import { accountsReport, rotated } from "./lib/actions/launch.ts";
+import { accountsReport, rotated, timeLeftMs } from "./lib/actions/launch.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
@@ -59,6 +61,7 @@ import {
 } from "./lib/tick-context.ts";
 import { copyLog, writeTickLine } from "./lib/tick-line.ts";
 import { defectReport, runTurn, startTurn } from "./lib/tick-repo.ts";
+import { routeRecurrences } from "./lib/reflection-route.ts";
 import { settleOutcomes } from "./lib/tick-settle.ts";
 import type { Defect, RepoReport } from "./lib/types.ts";
 import {
@@ -143,6 +146,7 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
     launches: apply?.records ?? read.records,
     apply,
     lineInputs: new Map(),
+    reflections: [],
   };
   return { receipt, context, withheld, settleFailed };
 }
@@ -174,6 +178,24 @@ async function runRepos(
     receipt.repos.push(await boundedTurn(path, context));
 }
 
+/**
+ * The reflection route, after every launch: each class that recurs recorded
+ * where reflection is on. What it did goes on the receipt; a failure there
+ * leaves the tick's exit status as it is.
+ */
+async function routeReflection(
+  receipt: TickReceipt,
+  context: TickContext,
+): Promise<void> {
+  const { apply } = context;
+  const reflection = await routeRecurrences(context.reflections, {
+    apply: apply !== null,
+    nowMs: Date.now(),
+    timeLeftMs: apply === null ? null : timeLeftMs(apply),
+  });
+  if (reflection !== null) receipt.reflection = reflection;
+}
+
 /** The closing steps: the records of repositories not read settled, the outcome log copied, the exit decided, the line written. */
 async function closeTick(
   started: StartedTick,
@@ -198,6 +220,7 @@ async function closeTick(
     unsettled,
   );
   const copied = copyLog(receipt);
+  await routeReflection(receipt, context);
   receipt.exitStatus =
     failed || !copied || settleFailed || withheld !== undefined ? 1 : 0;
   // A defect the start kept on the receipt stays: the tick ran, but not whole.

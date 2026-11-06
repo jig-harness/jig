@@ -3,9 +3,11 @@ import { orcaAnswering } from "../../../lib/test-helpers/orca-answering.ts";
 import {
   currentWorktree,
   orcaCommand,
+  orcaCommandOrInstalled,
   orcaEnvelope,
   orcaErrorText,
   orcaFailure,
+  orcaInstalledName,
   orcaResult,
   orcaTabCommand,
 } from "../orca.ts";
@@ -34,6 +36,23 @@ describe("orcaCommand", () => {
     expect(orcaCommand(ORCA, "linux", "/usr/local/bin/orca-ide")).toBe(
       "/opt/orca/bin/orca",
     );
+  });
+});
+
+describe("orcaCommandOrInstalled", () => {
+  test("is the name Orca installs its command under when nothing names one", () => {
+    expect(orcaInstalledName("linux")).toBe("orca-ide");
+    expect(orcaInstalledName("darwin")).toBe("orca");
+    expect(orcaInstalledName("win32")).toBe("orca");
+    expect(orcaCommandOrInstalled({}, "linux")).toBe("orca-ide");
+    expect(orcaCommandOrInstalled({}, "darwin")).toBe("orca");
+  });
+
+  test("is the terminal's command when Orca named one", () => {
+    expect(orcaCommandOrInstalled(ORCA, "linux")).toBe("/opt/orca/bin/orca");
+    expect(
+      orcaCommandOrInstalled({ ORCA_CLI_BIN_DIR: "/opt/orca/bin" }, "linux"),
+    ).toBe("/opt/orca/bin/orca-ide");
   });
 });
 

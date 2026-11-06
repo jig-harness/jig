@@ -2,6 +2,10 @@
 import type { TickReceipt } from "../receipts.ts";
 import type { SerialReport } from "./contention.ts";
 import type {
+  RecurrenceFinding,
+  ReflectionReport,
+} from "./reflection-route.ts";
+import type {
   Evidence,
   LabelReport,
   LabelWrite,
@@ -172,6 +176,22 @@ function labelLines(l: LabelReport | undefined): string[] {
   ];
 }
 
+/** The reflection route's part: each finding recorded, pending or that would be recorded, and each failure. */
+function reflectionLines(r: ReflectionReport | undefined): string[] {
+  if (r === undefined) return [];
+  const finding = (f: RecurrenceFinding) =>
+    `${f.class} on the ${f.stage} stage of ${f.repo}, ${f.week} (${f.id})`;
+  return [
+    ...r.recorded.map((f) => `reflection recorded ${finding(f)}`),
+    ...r.pending.map(
+      (f) => `reflection pending  ${finding(f)}, sent again by the next tick`,
+    ),
+    ...r.would.map((f) => `reflection would    record ${finding(f)}`),
+    ...r.failures.map((f) => `reflection failed   ${f.repo}: ${f.reason}`),
+    "",
+  ];
+}
+
 export function formatReceipt(receipt: TickReceipt, path: string): string {
   const head = receipt.apply
     ? `jig dispatch --apply: what the machine file enables was started (tick ${receipt.runId})`
@@ -203,6 +223,7 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
       ? []
       : [`DEFECT: the tick did not complete: ${receipt.defect.reason}`]),
     ...phaseLine("Tick took ", receipt.phasesMs),
+    ...reflectionLines(receipt.reflection),
     `Receipt: ${path}`,
   ].join("\n");
 }

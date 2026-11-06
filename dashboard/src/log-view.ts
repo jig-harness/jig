@@ -195,6 +195,11 @@ export interface RecurringView {
   rowKey: string;
   cls: string;
   repo: string;
+  stage: string;
+  /** What its button says: the class, the repository and the stage. */
+  title: string;
+  /** The log's filter its button sets: its rows over the last seven days. */
+  filter: Partial<LogFilter>;
   role: Role;
   nights: boolean[];
   label: string;
@@ -202,18 +207,21 @@ export interface RecurringView {
   finding: string;
 }
 
-/** A class that recurs, as its row in the recurring block shows it. */
+/** A class that recurs on one stage of a repository, as its row in the recurring block shows it. */
 export function recurringView(r: RecurringClass): RecurringView {
   const nights = r.nights.filter(Boolean).length;
   return {
-    rowKey: `${r.class} ${r.repo}`,
+    rowKey: JSON.stringify([r.class, r.repo, r.stage]),
     cls: r.class,
     repo: r.repo,
+    stage: r.stage,
+    title: `${r.class} on ${r.repo}, ${r.stage}`,
+    filter: { repo: r.repo, stage: r.stage, class: r.class, window: "7d" },
     role: ROLES.badly,
     nights: r.nights,
     label: `${nights} of the last 7 nights`,
     note: `${nights} of 7 nights, ${plural(r.rows, "row")}`,
-    finding: `Recurring: ${r.class} on ${r.repo}, ${nights} of the last 7 nights, ${plural(r.rows, "row")}`,
+    finding: `Recurring: ${r.class} on the ${r.stage} stage of ${r.repo}, ${nights} of the last 7 nights, ${plural(r.rows, "row")}`,
   };
 }
 

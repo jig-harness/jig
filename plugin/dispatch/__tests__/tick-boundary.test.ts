@@ -276,7 +276,10 @@ describe("an ended follow-up whose outcome cannot be written", () => {
   });
 
   it("writes it at the close when only the start failed and its repository had no turn this tick, and prunes it after", async () => {
-    const { receipt, rows, outcomes } = await ageing(1, "example-org/omitted-repo");
+    const { receipt, rows, outcomes } = await ageing(
+      1,
+      "example-org/omitted-repo",
+    );
     expect(outcomes).toBe(1);
     expect(rows).toBe(0);
     // The defect the start kept stays on the receipt.

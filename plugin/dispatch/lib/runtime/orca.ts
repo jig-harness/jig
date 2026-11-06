@@ -7,7 +7,9 @@
  * branch carrying the item's key in the repository's branch form.
  *
  * Orca's command is the shared resolver's (`ORCA_CLI_COMMAND`, else the
- * command in `ORCA_CLI_BIN_DIR`), else `orca` on `PATH`.
+ * command in `ORCA_CLI_BIN_DIR`), else the name Orca installs it under on
+ * `PATH`: `orca-ide` on Linux, where `orca` may be GNOME's screen reader,
+ * and `orca` elsewhere (`orcaCommandOrInstalled`).
  *
  * Orca cannot yet start an interactive session billed to a chosen account
  * (`ORCA_BINDING`): `orca agent launch` starts its agent on the account the
@@ -27,7 +29,11 @@
  * and removes it with `orca worktree rm --delete-branch` (`orca-retire.ts`).
  */
 import { realpathSync } from "node:fs";
-import { orcaCommand, orcaFailure, orcaResult } from "../../../shared/orca.ts";
+import {
+  orcaCommandOrInstalled,
+  orcaFailure,
+  orcaResult,
+} from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { keyFromBranch } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
@@ -81,7 +87,7 @@ async function orca(
   timeoutSec = ORCA_TIMEOUT_SEC,
 ): Promise<Record<string, unknown> | string> {
   const done = await run(
-    [orcaCommand(process.env) ?? "orca", ...args, "--json"],
+    [orcaCommandOrInstalled(process.env), ...args, "--json"],
     { timeoutSec, stderr: "pipe" },
   );
   return (

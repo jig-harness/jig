@@ -129,6 +129,7 @@ export function renderWaiting(w: WaitingAnswer): string {
         `  ${e.address}  ${e.act}  since ${e.since}${e.title === null ? "" : `  ${e.title}`}`,
       ),
       printable(`    ${e.reason}`),
+      ...e.questions.map((q) => printable(`    question: ${q}`)),
       ...(e.url === null ? [] : [`    ${e.url}`]),
     ]),
   ].join("\n");

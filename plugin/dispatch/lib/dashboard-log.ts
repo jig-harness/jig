@@ -4,13 +4,10 @@
  * queries shows in neither. A question about yesterday is a filter, not a
  * report: nothing is generated per run and nothing is written to disk.
  */
-import type {
-  RecurringClass,
-  RowsAnswer,
-  WindowName,
-} from "./dashboard-contract.ts";
+import type { RowsAnswer, WindowName } from "./dashboard-contract.ts";
 import { midnightIn } from "./host-time.ts";
 import { OUTCOME_CLASSES, rowsOf } from "./log.ts";
+import { recurringClasses } from "./recurring.ts";
 import { existingStateDb } from "./state.ts";
 
 /** What the page filters the log by; an absent field filters nothing. */
@@ -30,13 +27,6 @@ interface LogFilter {
 const MAX_ROWS = 5000;
 
 const DAY_MS = 86_400_000;
-
-/** The nights a class is looked for, and on how many it must occur to recur. */
-const RECURRENCE_NIGHTS = 7;
-const RECURRENCE_AT_LEAST = 3;
-
-/** The classes that are not a stage finishing badly: the finished-well ones, and a park, which is a person's to answer. */
-const NOT_BAD = ["converged", "merged", "parked for a person"];
 
 /** The filter's fields but the class; `counts` ignores the class so another can still be chosen. */
 const KEPT_ANY_CLASS = `at_ms >= ?1 AND at_ms <= ?2
@@ -108,52 +98,6 @@ function parseFilter(
     if (value !== undefined) filter[name] = value;
   }
   return filter;
-}
-
-/** Each bad class on a repository that ended on at least three of the last seven host days, today included. */
-function recurringClasses(
-  db: NonNullable<ReturnType<typeof existingStateDb>>,
-  nowMs: number,
-  timeZone: string,
-): RecurringClass[] {
-  // Day starts, oldest first: they are calendar boundaries of the host's zone,
-  // so a day's bucket does not move as the query time does.
-  const starts = Array.from({ length: RECURRENCE_NIGHTS }, (_, i) =>
-    midnightIn(timeZone, nowMs, i + 1 - RECURRENCE_NIGHTS),
-  );
-  const groups = new Map<string, RecurringClass>();
-  // One grouped query per day: the result follows the classes that ended, not
-  // the sessions, however busy the week was.
-  const perDay = db.query(
-    `SELECT bucket, repo, COUNT(*) AS n FROM log
-     WHERE kind = 'ended' AND at_ms >= ?1 AND at_ms <= ?2
-       AND bucket NOT IN (${NOT_BAD.map((c) => `'${c}'`).join(", ")})
-     GROUP BY bucket, repo`,
-  );
-  starts.forEach((start, day) => {
-    const end =
-      day + 1 < starts.length ? (starts[day + 1] ?? nowMs) - 1 : nowMs;
-    const found = perDay.all(start, end) as Array<{
-      bucket: string;
-      repo: string;
-      n: number;
-    }>;
-    for (const row of found) {
-      const key = `${row.bucket}\u0000${row.repo}`;
-      const group = groups.get(key) ?? {
-        class: row.bucket,
-        repo: row.repo,
-        nights: Array.from({ length: RECURRENCE_NIGHTS }, () => false),
-        rows: 0,
-      };
-      group.nights[day] = true;
-      group.rows += row.n;
-      groups.set(key, group);
-    }
-  });
-  return [...groups.values()]
-    .filter((g) => g.nights.filter(Boolean).length >= RECURRENCE_AT_LEAST)
-    .sort((a, b) => b.rows - a.rows);
 }
 
 /** The values each field takes in the window, for the page's choices. */

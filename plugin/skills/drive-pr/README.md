@@ -174,6 +174,8 @@ configuration, because they describe one machine's layout:
 | `DRIVE_PR_STATE_DIR` | State root: the drive's database `<root>/state.sqlite`, and each clone's directory `<root>/<clone-key>/` (an inherited resolved clone directory is also accepted) | Root: `~/.local/state/jig/drive-pr/` |
 | `JIG_VERIFICATION_FIT_LOG` | Where `verification-fit.ts` appends its verdicts | `~/.local/state/jig/verification-fit.jsonl` |
 
+The listing opens the drive's database, which creates and migrates it. A reader that is not a driver, such as `jig ask`, runs the sibling script `drives-read-only.ts` instead: it lists a database that is already current, lists nothing where none exists, and exits `4` with the reason on stderr, writing nothing, for one a driver's next run must first bring forward.
+
 `drives.ts` identifies each drive's repository in both human listings and
 JSON rows (`repository`): the owner/repository of the drive's remote
 (`repository.remote`), or the clone's Git common directory when that remote is

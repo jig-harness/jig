@@ -43,8 +43,9 @@ export async function runTurn(
   const { path, timer } = turn;
   const opened = await timer.time("open", () => openRepo(path, context));
   if (!("repo" in opened)) return timed(opened, timer);
-  const { report } = opened;
+  const { report, owner, reflection } = opened;
   turn.report = report;
+  context.reflections.push({ slug: opened.repo.slug, path, reflection, owner });
   const observation = await observeRepo(
     opened,
     {

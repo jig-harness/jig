@@ -275,7 +275,24 @@ const LINE: LineSnapshot = {
       title: "Pull request 7",
       since: "2026-11-05T09:00:00.000Z",
       reason: "drive ledger parked: waiting on thread PRRT_thread1",
-      decisions: [],
+      decisions: [
+        {
+          key: "PRRT_thread1",
+          kind: "thread",
+          question: "Keep the old flag?",
+          lines: ["## Question", "Keep the old flag?"],
+          recommendation: null,
+          decisionClass: "scope",
+        },
+        {
+          key: "PRRT_thread2",
+          kind: "thread",
+          question: null,
+          lines: ["Which format should remain?"],
+          recommendation: null,
+          decisionClass: null,
+        },
+      ],
       notified: null,
       workspaces: [],
     },
@@ -290,6 +307,7 @@ const LINE: LineSnapshot = {
       title: "Issue 12",
       since: "2026-11-05T08:00:00.000Z",
       reason: "claimed, no session for 40 min",
+      question: "Which session should continue?\u001b",
       decisions: [],
       notified: null,
       workspaces: [],
@@ -315,8 +333,20 @@ describe("jig ask --waiting", () => {
       [`pickup@${REPO}#12`, "look at the stalled pickup"],
     ]);
     expect(w.calls()).toEqual([]);
+    expect(answer.waiting.map((e) => e.questions)).toEqual([
+      ["Keep the old flag?", "Which format should remain?"],
+      ["Which session should continue?\u001b"],
+    ]);
     const text = await w.ask(["--waiting"], w.away);
+    expectSpawnExit(text, 0);
     expect(text.stdout).toContain(`as the tick ${LINE.runId} found it`);
+    for (const question of [
+      "Keep the old flag?",
+      "Which format should remain?",
+      "Which session should continue?",
+    ])
+      expect(text.stdout).toContain(`question: ${question}`);
+    expect(text.stdout).not.toContain("\u001b");
   });
 
   it("says there is no line to read on a machine that dispatches nothing, and refuses --person", async () => {

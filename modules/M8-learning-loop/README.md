@@ -125,7 +125,11 @@ Both properties are mechanical in the
 to remember them. What it deliberately leaves to a person is the judgement —
 which lever, or whether the reviewer was the thing that was wrong. Jig's
 plugin applies the same trigger in its own review loop, recording the round
-count as a finding in the reflection journal at convergence.
+count as a finding in the reflection journal at convergence. Its
+[dispatcher](../../plugin/README.md#the-dispatcher) treats a class of outcome
+that keeps recurring the same way: it records the class once a week as a
+finding, with the days, the row count and the reasons attached, and leaves
+the judgement to the person who reviews it.
 
 ## The audit catalog: areas no gate covers
 

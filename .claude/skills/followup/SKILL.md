@@ -1,6 +1,6 @@
 ---
 name: followup
-description: "After a Jig pull request merges, settle what the merge still owes: the tracker item and deferred findings, the release tags, the website, status pages, consumer repositories and live drivers and cleanup; or, before the merge, list what it will owe."
+description: "After a Jig pull request merges, settle what the merge still owes: the tracker item and deferred findings, the release tags, the website, status pages, consumer repositories and active scaffolding; or, before the merge, list what it will owe."
 argument-hint: "<PR number>"
 allowed-tools:
   - Read
@@ -317,23 +317,28 @@ tracker are where this arm's work goes.
 Anything that would name a consumer, or bring its content into Jig, is a
 decision for a person (AGENTS.md, HITL decisions): flag it.
 
-### F. Cleanup
+### F. Active scaffolding
 
-`jig gc` ([resource GC](../../../design/resource-gc.md)) reports worktrees
-and drive state, and collects a worktree only if Orca manages it, and only on a machine
-whose `gc.orca.command` names Orca
-([plugin/gc/README.md](../../../plugin/gc/README.md#worktrees-orca-manages)),
-and does not inventory local branches; this repository's `gc.kinds`
-registers no scratch prefixes, so it does not see `.context/` notes. Until a collector covers a leftover, it stays owed here.
+Followup settles operational, tactical and logical obligations of the merge.
+Routine local housekeeping belongs to periodic cleanup: retired workspaces,
+local branches and workspace scratch notes may remain after this pass. Do not
+inventory them, ask whether to retain or delete them, file cleanup items, or
+leave the follow-up incomplete because they remain. This holds even when the
+collector does not cover a leftover yet.
 
-| Thing | Check | Teardown |
+[`jig gc`](../../../plugin/gc/README.md) handles the resources its configured
+collectors cover; other local leftovers wait for periodic maintenance.
+This pass neither deletes them nor needs a retention decision.
+
+| Thing | Check | Resolution |
 |---|---|---|
-| A live driver on this pull request | `bun plugin/skills/drive-pr/scripts/drives.ts` | `drives.ts --stop <PR>` |
-| The local branch | `git branch --list <headRefName>` (Step 0). A squash merge leaves it out of `git branch --merged`, so Step 0's `MERGED` state shows only that the pull request's head merged; `git rev-parse <headRefName>` must equal Step 0's `headRefOid` for the branch to hold nothing else | delete it, only when its tip is `headRefOid` and no driver is live in this worktree. Any other tip holds commits the merge does not have: push them to a branch of their own, or ask, before deleting |
-| The workspace's `.context/` notes | what this work wrote there | remove what no later work needs |
+| A live driver on this pull request | `bun plugin/skills/drive-pr/scripts/drives.ts` | `drives.ts --stop <PR>`, within the authority below |
 | Scaffolding in the merged diff | a disabled check, a `.only(`, a loosened timeout, a suppression | a follow-up change |
+| Temporary operational resources | an environment or flag the work introduced that still affects behavior, cost or access | done or filed with its owner |
 
-Never `git stash` any of this (CONTRIBUTING.md § Parallel workspaces).
+Evidence of work that has not landed or an active operational problem remains
+in scope; the mere presence of a branch, worktree or notes is not such evidence.
+Never `git stash` work (CONTRIBUTING.md § Parallel workspaces).
 
 ### G. What comes next
 
@@ -363,7 +368,7 @@ act:
 | Read-only checks: `status.ts`, `tag.ts` (without `--rerun`), `site-diff.ts`, `drives.ts`, `gh run` | on its own |
 | Running the release workflow, creating or replacing a release tag | ask first |
 | Re-running a failed deploy | ask first |
-| Stopping a live driver, deleting a branch | ask first |
+| Stopping a live driver | ask first |
 | Anything in another repository, or anything near the origin-reference boundary | a person decides |
 
 Then show the merge on Orca's workspace board, where the work ran in an Orca
@@ -384,7 +389,9 @@ bun --cwd "<that worktree>" "$PWD/plugin/shared/orca-board.ts" completed --comme
 ```
 
 Close with what is left for a person, by name. When every arm is NOT OWED,
-say so in one line: an honest "nothing is owed" is a result. Then settle the
+say so in one line: an honest "nothing is owed" is a result. Routine local
+leftovers do not prevent this result or a done marker; do not turn them into a
+question for a person or a failed dispatch result. Then settle the
 claim ([Claim the follow-up](#claim-the-follow-up)): mark your marker done,
 or, in a session the dispatcher started, record the result its prompt
 names.
@@ -395,8 +402,8 @@ On an open pull request the skill runs the same arms against the pull
 request's diff (`origin/main` and its head instead of `SHA^1` and `SHA`) and
 records what the merge will owe, carrying out nothing: the
 `## Out-of-tree follow-ups` section of the description, the deferred
-findings still to file, the site pages the change will reach, the cleanup
-inventory, and first of all the pull request's **provisional decisions**: the
+findings still to file, the site pages the change will reach, the active
+scaffolding, and first of all the pull request's **provisional decisions**: the
 calls a drive took at the `wide` autonomy level that a person may still
 reverse before the merge. List them from the morning report
 (`bun plugin/skills/drive-pr/scripts/drives.ts --report --since <when the

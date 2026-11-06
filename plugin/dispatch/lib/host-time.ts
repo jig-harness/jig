@@ -48,3 +48,37 @@ export function midnightIn(timeZone: string, nowMs: number, days = 0): number {
   );
   return wall - offsetMs(timeZone, wall - offsetMs(timeZone, wall));
 }
+
+/** `atMs` as `timeZone`'s clock shows it, read as if that clock were UTC's. */
+function wall(timeZone: string, atMs: number): Date {
+  return new Date(atMs + offsetMs(timeZone, atMs));
+}
+
+/** The date `atMs` falls on in `timeZone`: `2026-11-03`. */
+export function dateIn(timeZone: string, atMs: number): string {
+  return wall(timeZone, atMs).toISOString().slice(0, 10);
+}
+
+/** `atMs` on `timeZone`'s clock to the minute, as a `datetime-local` control writes it: `2026-11-03T16:47`. */
+export function wallClockIn(timeZone: string, atMs: number): string {
+  return wall(timeZone, atMs).toISOString().slice(0, 16);
+}
+
+/**
+ * The ISO week `atMs` falls in on `timeZone`'s clock: `2026-W45`. A week runs
+ * Monday to Sunday and belongs to the year that holds its Thursday, so the
+ * days around a new year can belong to the other year's week.
+ */
+export function isoWeekIn(timeZone: string, atMs: number): string {
+  const date = wall(timeZone, atMs);
+  const day = date.getUTCDay() === 0 ? 7 : date.getUTCDay();
+  const thursday = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate() + 4 - day,
+  );
+  const year = new Date(thursday).getUTCFullYear();
+  const week =
+    Math.floor((thursday - Date.UTC(year, 0, 1)) / 86_400_000 / 7) + 1;
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}

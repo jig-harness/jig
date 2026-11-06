@@ -38,6 +38,10 @@ import type {
 } from "./runtime/port.ts";
 import { branchPattern, readSection, trackerConfigOf } from "./section.ts";
 import type { PhaseTimer } from "./phase-timer.ts";
+import {
+  type RepoReflection,
+  repositoryReflection,
+} from "./reflection-route.ts";
 import { observeWalls } from "./session-walls.ts";
 import {
   type DriveClaims,
@@ -82,6 +86,7 @@ export interface OpenedRepo {
   /** Whether the machine file lists it, and whether this host owns it there. */
   listed: boolean;
   owner: boolean;
+  reflection: RepoReflection["reflection"];
 }
 
 /** What the tracker gives one repository's tick. */
@@ -129,9 +134,11 @@ export async function openRepo(
     );
   }
   let read: ReturnType<typeof readSection>;
+  let file: string | null;
   const where = `${repo.slug}@${repo.defaultBranch}:.config/jig.yaml`;
   try {
-    read = readSection(await defaultBranchConfig(repo), where);
+    file = await defaultBranchConfig(repo);
+    read = readSection(file, where);
   } catch (error) {
     return {
       ...emptyReport(
@@ -149,7 +156,16 @@ export async function openRepo(
     section,
     followupSince: followupStart(options, entry, path, nowMs),
   };
-  return { repo, values, section, where, report, ...entryFacts(entry) };
+  const reflection = repositoryReflection(path, file, where);
+  return {
+    repo,
+    values,
+    section,
+    where,
+    report,
+    reflection,
+    ...entryFacts(entry),
+  };
 }
 
 /** When the follow-up stage started for a repository: the run's override, the machine file's, the previous receipt's, else now. */

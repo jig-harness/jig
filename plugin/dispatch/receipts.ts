@@ -46,6 +46,7 @@ import {
   type ProcessIdentity,
 } from "../shared/liveness.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
+import type { ReflectionReport } from "./lib/reflection-route.ts";
 import { failureText } from "./lib/text.ts";
 import type { Defect, RepoReport } from "./lib/types.ts";
 
@@ -77,6 +78,8 @@ export interface TickReceipt {
   phasesMs?: Partial<Record<TickPhase, number>>;
   /** The defect that stopped the tick's closing steps; a receipt with one is not completed. */
   defect?: Defect;
+  /** The classes that recur, as the reflection route recorded them, left them pending or would record them; absent when it had nothing to do. */
+  reflection?: ReflectionReport;
   repos: RepoReport[];
 }
 

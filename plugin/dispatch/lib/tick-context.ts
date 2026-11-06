@@ -7,6 +7,7 @@ import type { ApplyState } from "./actions/drive.ts";
 import type { ReadRecord } from "./launches.ts";
 import type { RepoLineInput } from "./line.ts";
 import type { MachineConfig } from "./machine-config.ts";
+import type { RepoReflection } from "./reflection-route.ts";
 import type { SessionRuntime } from "./runtime/port.ts";
 import type { RepoReport } from "./types.ts";
 
@@ -30,6 +31,8 @@ export interface TickContext {
   apply: ApplyState | null;
   /** What each repository's tick read beside its report, by path, for the line. */
   lineInputs: Map<string, RepoLineInput>;
+  /** Each repository's reflection settings, for the route at the tick's end. */
+  reflections: RepoReflection[];
 }
 
 /** This machine's launch records, the ones this tick writes included. */
