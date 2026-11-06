@@ -45,6 +45,7 @@
  * `waiting_episodes` table), and, once it ended, the time its outcome row
  * carries (`endedAt`), written in the same transaction as that row.
  */
+import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import {
@@ -484,8 +485,11 @@ type ControlRows = Pick<LaunchRecord, "samples" | "episodes">;
 const EMPTY: ControlRows = { samples: [], episodes: [] };
 
 /** The thread samples and waiting episodes of one launch, or of every launch, in the order they were first written. */
-function controlRows(root: string, id?: string): Map<string, ControlRows> {
-  const db = stateDb(root);
+function controlRows(
+  root: string,
+  id?: string,
+  db: Database = stateDb(root),
+): Map<string, ControlRows> {
   const where = id === undefined ? "" : "WHERE launch = ?";
   const args = id === undefined ? [] : [id];
   const out = new Map<string, ControlRows>();
@@ -693,19 +697,24 @@ function stateOf(
   return claimState(claim, rows, here);
 }
 
-/** Every record with its state as judged from `here`, oldest first; a row that does not read is left out and named. */
+/**
+ * Every record with its state as judged from `here`, oldest first; a row
+ * that does not read is left out and named. A reader that must not migrate
+ * the database passes its own read-only connection as `db`.
+ */
 export async function readLaunches(
   root = stateRoot(),
   here: HostIdentity = thisHost(),
+  db: Database = stateDb(root),
 ): Promise<{
   records: ReadRecord[];
   unreadable: string[];
 }> {
-  const all = stateDb(root)
+  const all = db
     .query("SELECT id, record, claim, exit, result FROM launches ORDER BY id")
     .all() as LaunchRow[];
   const rows = all.length === 0 ? [] : await processTable();
-  const control = controlRows(root);
+  const control = controlRows(root, undefined, db);
   const records: ReadRecord[] = [];
   const unreadable: string[] = [];
   for (const row of all) {

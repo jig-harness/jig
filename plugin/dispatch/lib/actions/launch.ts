@@ -124,6 +124,14 @@ export function enforcedDeadlineMs(
     : tickDeadlineMs(machine);
 }
 
+/** What the tick has left of its launcher's deadline, less the time its receipt needs; `null` for a tick that keeps no start. */
+export function timeLeftMs(state: ApplyState): number | null {
+  if (state.startedAt === undefined) return null;
+  const allowed =
+    enforcedDeadlineMs(state.machine) - state.machine.runtimeTimeoutMs;
+  return allowed - (Date.now() - state.startedAt);
+}
+
 /**
  * Why the tick has no time left to start another launch: the runtime calls
  * of a tick are not bounded by a count, so the deadline its launcher enforces
@@ -132,12 +140,11 @@ export function enforcedDeadlineMs(
  * its launches. `null` while time remains.
  */
 export function outOfTime(state: ApplyState): string | null {
-  if (state.startedAt === undefined) return null;
+  const left = timeLeftMs(state);
+  if (left === null || left > 0) return null;
   const allowed =
     enforcedDeadlineMs(state.machine) - state.machine.runtimeTimeoutMs;
-  return Date.now() - state.startedAt >= allowed
-    ? `this tick has used the ${Math.ceil(allowed / 1000)}s its timer allows; a later tick starts this one`
-    : null;
+  return `this tick has used the ${Math.ceil(allowed / 1000)}s its timer allows; a later tick starts this one`;
 }
 
 /** Two launch groups and two background stages per repository complete a target turn. */

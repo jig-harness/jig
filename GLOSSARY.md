@@ -2046,6 +2046,19 @@ make, use the entry's term instead.
   except for a notification about the stop of a session it started, which
   its row for that session already covers. One dashboard filters
   it; it is never rendered into a report file.
+- **Recurring class** — a bad outcome class (any but converged, merged and
+  parked for a person) of one stage on one repository in the *outcome log* on
+  at least three of the last seven days of the host's clock, counting the rows
+  of ended sessions and the event rows that carry a class, such as a drive
+  stopped for a person; a drift carries none and never recurs in this sense.
+  The *dispatcher*'s dashboard lists each one, and where *reflection* is on
+  the dispatcher records each as one finding in the *reflection store* per
+  week, which a person decides on in a review.
+- **ISO week** — a week as the ISO 8601 date standard numbers it: Monday to
+  Sunday, written `2026-W45`, and belonging to the year that holds its
+  Thursday, so the days around a new year can fall in the other year's week.
+  The *dispatcher* records a *recurring class* once per ISO week on the
+  host's clock.
 - **Stage drift** — a running stage falling short of what it is expected to
   achieve: a review drive whose open threads do not fall across rounds, a
   pickup that has not opened a pull request in time. The *dispatcher*

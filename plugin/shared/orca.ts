@@ -9,7 +9,10 @@
  * puts its command in `ORCA_CLI_COMMAND`, or its directory in
  * `ORCA_CLI_BIN_DIR`. A run that no Orca terminal started, such as `jig gc`
  * under the machine's scheduler, finds it only where its configuration names
- * it. Outside Orca, and with none configured, nothing here makes a call.
+ * it. Outside Orca, and with none configured, nothing here makes a call,
+ * except for a caller that uses `orcaCommandOrInstalled`, such as the
+ * dispatcher's tick, which falls back to the name Orca installs its command
+ * under, found on `PATH`.
  */
 import { join } from "node:path";
 import { swallow } from "./errors.ts";
@@ -50,11 +53,36 @@ export function orcaCommand(
   return configured?.trim() || null;
 }
 
+/**
+ * The name Orca installs its command under: `orca-ide` on Linux, `orca`
+ * elsewhere. On Linux a bare `orca` is GNOME's screen reader, which many
+ * desktops install; it fails without a display and never answers Orca's
+ * JSON. Orca's own `orca` shim on Linux runs the screen reader when one is
+ * on `PATH` and no Orca terminal started the call.
+ */
+export function orcaInstalledName(
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return platform === "linux" ? "orca-ide" : "orca";
+}
+
+/**
+ * Orca's command as `orcaCommand` names it, else the name Orca installs it
+ * under, found on `PATH`: for a run that calls Orca whether or not an Orca
+ * terminal started it, such as the dispatcher's tick.
+ */
+export function orcaCommandOrInstalled(
+  env: Env,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return orcaCommand(env, platform) ?? orcaInstalledName(platform);
+}
+
 function orcaEnvCommand(env: Env, platform: NodeJS.Platform): string | null {
   const command = env.ORCA_CLI_COMMAND?.trim();
   if (command) return command;
   const dir = env.ORCA_CLI_BIN_DIR?.trim();
-  return dir ? join(dir, platform === "linux" ? "orca-ide" : "orca") : null;
+  return dir ? join(dir, orcaInstalledName(platform)) : null;
 }
 
 /**

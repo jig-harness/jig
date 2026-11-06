@@ -28,6 +28,7 @@ import { basename, dirname, join } from "node:path";
 import { isMapping } from "../shared/config-layers.ts";
 import { swallow } from "../shared/errors.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
+import type { ReflectionReport } from "./lib/reflection-route.ts";
 import { failureText } from "./lib/text.ts";
 import type { RepoReport } from "./lib/types.ts";
 
@@ -55,6 +56,8 @@ export interface TickReceipt {
   logCopyFailed?: string;
   /** Why the dashboard's line was not written: it keeps showing the tick before. */
   lineFailed?: string;
+  /** The classes that recur, as the reflection route recorded them, left them pending or would record them; absent when it had nothing to do. */
+  reflection?: ReflectionReport;
   repos: RepoReport[];
 }
 
