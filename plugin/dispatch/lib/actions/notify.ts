@@ -235,9 +235,14 @@ function hours(ms: number): string {
 }
 
 /** A cause sent again: its message says it still waits, and since when. */
-function asRepeat(cause: Cause, record: Suppression, everyMs: number): Cause {
+function asRepeat(
+  cause: Cause,
+  record: Suppression,
+  everyMs: number,
+  nowMs: number,
+): Cause {
   const [head = "", ...rest] = cause.notice.text.split("\n");
-  const again = `Sent again: this still waits on a person, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
+  const again = `Sent again: this still waits on a person as of ${new Date(nowMs).toISOString()}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
   return {
     ...cause,
     repeat: true,
@@ -365,10 +370,16 @@ async function deliver(
   state: ApplyState,
   workspace: Workspace,
   message: string,
+  dispatcherOnly: boolean,
 ): Promise<RuntimeReceipt> {
   try {
     return await state.runtime.notify(
-      { id: workspace.id, path: workspace.path },
+      {
+        id: workspace.id,
+        path: workspace.path,
+        branch: workspace.branch,
+        dispatcherOnly,
+      },
       message,
     );
   } catch (error) {
@@ -379,6 +390,11 @@ async function deliver(
 /** Why the receipt does not show a cause arrived; `null` when it does. */
 function notArrived(receipt: RuntimeReceipt, cause: Cause): string | null {
   if (!receipt.ok) return receipt.detail;
+  if (
+    cause.repeat === true &&
+    (receipt.unread !== true || !receipt.comment?.includes(cause.notice.text))
+  )
+    return "the read-back does not confirm this repeat's text and unread mark";
   return carries(receipt.comment ?? "", cause.notice.key)
     ? null
     : "the comment read back does not carry it";
@@ -441,6 +457,7 @@ async function sendTo(
   suppress: (cause: Cause, workspace: string) => void,
   root: string,
   repo: string,
+  dispatcherOnly: boolean,
 ): Promise<NotifyOutcome[]> {
   const { out, fresh } = alreadyThere(workspace, causes, suppress);
   if (fresh.length === 0) return out;
@@ -465,7 +482,7 @@ async function sendTo(
       ? `${workspace.comment}\n\n${message}`
       : keepMarks(workspace.comment, message);
   const known = workspace.unread === false || ownsComment(workspace, root);
-  const receipt = await deliver(state, workspace, message);
+  const receipt = await deliver(state, workspace, message, dispatcherOnly);
   if (known && receipt.ok && receipt.comment === expected)
     recordComment(workspace, expected, root, repo);
   for (const c of send) {
@@ -674,7 +691,7 @@ async function sendNotices(
     const earlier = sent.get(c.notice.key);
     if (earlier === undefined) due.push(c);
     else if (dueAgain(earlier, settings.renotifyAfterMs, nowMs))
-      due.push(asRepeat(c, earlier, settings.renotifyAfterMs));
+      due.push(asRepeat(c, earlier, settings.renotifyAfterMs, nowMs));
     else
       report.notifications.push(
         outcomeFor(
@@ -734,6 +751,7 @@ async function sendNotices(
       suppressed,
       root,
       repo.slug,
+      settings.branch !== null,
     )),
   );
   return new Set([group.workspace.path]);

@@ -4,7 +4,9 @@
  * path:<path> --comment <message> --unread`), which Orca's phone app shows
  * as an unread workspace with its comment. The comment is then read back
  * (`orca worktree show`): that read is the receipt, and the tick counts a
- * message as sent only once it finds the message's key in it. Each call
+ * message as sent only once the read-back confirms the written comment and
+ * unread mark. The destination's selected branch and comment policy are
+ * checked under the write lock. Each call
  * runs under the runtime's deadline; an answer past it is lost. The write
  * and the read-back hold the card's comment lock, shared with the skills'
  * board helper; a lock not taken in time sends nothing, and the receipt says
@@ -14,9 +16,11 @@
 import { isRecord } from "../../../shared/guards.ts";
 import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
 import { call, withCardDeadline } from "./orca-comment.ts";
+import { holdsNotice } from "../notices.ts";
 import {
   keepMarks,
   MAX_COMMENT,
+  type NotifyTarget,
   type RuntimeReceipt,
   withoutMarks,
 } from "./port.ts";
@@ -36,12 +40,84 @@ function cardOf(
   return { comment: comment ?? null, unread: isUnread };
 }
 
-/** The comment in `worktree show`'s answer; `null` when it names none. */
-function commentOf(result: unknown): string | null {
-  const worktree = isRecord(result) ? result.worktree : undefined;
-  return isRecord(worktree) && typeof worktree.comment === "string"
-    ? worktree.comment
-    : null;
+/** Whether the fresh workspace still holds the selected branch. */
+async function sameBranch(
+  target: NotifyTarget,
+  remaining: () => number,
+): Promise<boolean> {
+  if (target.branch === undefined) return true;
+  if (remaining() <= 0) return false;
+  const listed = await call(["worktree", "ps", "--limit", "2000"], remaining());
+  const ps = listed.ok ? listed.result : null;
+  if (!isRecord(ps) || !Array.isArray(ps.worktrees)) return false;
+  const rows = ps.worktrees.filter(
+    (row) => isRecord(row) && row.path === target.path,
+  );
+  const row = rows.length === 1 ? rows[0] : null;
+  return (
+    isRecord(row) &&
+    row.worktreeId === target.id &&
+    row.branch === `refs/heads/${target.branch}`
+  );
+}
+
+/** The destination policy is evaluated against the card read under the lock. */
+async function destinationCard(
+  target: NotifyTarget,
+  result: unknown,
+  remaining: () => number,
+): Promise<NonNullable<ReturnType<typeof cardOf>> | RuntimeReceipt> {
+  const refused = (problem: string): RuntimeReceipt => ({
+    ok: false,
+    lost: false,
+    detail: `${target.path}: ${problem}; nothing written`,
+  });
+  const card = cardOf(result);
+  if (card === null)
+    return refused(
+      "orca worktree show named no readable comment and unread mark",
+    );
+  if (!(await sameBranch(target, remaining)))
+    return refused(
+      "the selected notification branch changed or could not be read",
+    );
+  const comment = card.comment ?? "";
+  if (
+    target.dispatcherOnly &&
+    withoutMarks(comment) !== "" &&
+    !holdsNotice(comment)
+  )
+    return refused("the destination now holds a personal comment");
+  return card;
+}
+
+/** Only the exact delivered comment, unread mark and selected branch confirm a write. */
+async function confirmedReceipt(
+  target: NotifyTarget,
+  result: unknown,
+  expected: string | null,
+  remaining: () => number,
+): Promise<RuntimeReceipt> {
+  const read = cardOf(result);
+  if (
+    read === null ||
+    !read.unread ||
+    read.comment !== expected ||
+    !(await sameBranch(target, remaining)) ||
+    remaining() <= 0
+  )
+    return {
+      ok: false,
+      lost: true,
+      detail:
+        "the read-back did not confirm the delivered comment, unread mark and selected branch",
+    };
+  return {
+    ok: true,
+    detail: `${target.path} marked unread with the message as its comment`,
+    comment: read.comment ?? "",
+    unread: read.unread,
+  };
 }
 
 /** The entries a message joins: each opens with its key line. */
@@ -85,7 +161,7 @@ function merged(
 }
 
 export async function orcaNotify(
-  target: { id: string; path: string },
+  target: NotifyTarget,
   message: string,
   timeoutMs: number,
   lock: CardLock = withCardLock,
@@ -118,7 +194,7 @@ export async function orcaNotify(
 }
 
 async function notifyUnlocked(
-  target: { id: string; path: string },
+  target: NotifyTarget,
   message: string,
   remaining: () => number,
 ): Promise<RuntimeReceipt> {
@@ -138,13 +214,8 @@ async function notifyUnlocked(
     remaining(),
   );
   if (!before.ok) return { ok: false, lost: before.lost, detail: before.why };
-  const card = cardOf(before.result);
-  if (card === null)
-    return {
-      ok: false,
-      lost: false,
-      detail: `${target.path}: orca worktree show named no readable comment and unread mark; nothing written`,
-    };
+  const card = await destinationCard(target, before.result, remaining);
+  if ("ok" in card) return card;
   const merge = merged(card, message);
   if (merge !== null) {
     const comment = argumentSafe(merge);
@@ -196,16 +267,6 @@ async function notifyUnlocked(
       lost: true,
       detail: `the comment was written; the read-back came after the deadline`,
     };
-  const read = commentOf(shown.result);
-  return read === null
-    ? {
-        ok: false,
-        lost: true,
-        detail: "orca worktree show named no comment to read back",
-      }
-    : {
-        ok: true,
-        detail: `${target.path} marked unread with the message as its comment`,
-        comment: read,
-      };
+  const expected = merge === null ? card.comment : argumentSafe(merge);
+  return confirmedReceipt(target, shown.result, expected, remaining);
 }

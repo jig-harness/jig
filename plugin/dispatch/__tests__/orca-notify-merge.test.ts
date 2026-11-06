@@ -32,6 +32,7 @@ function fakeOrca(card: Record<string, unknown>): {
     `#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
 const a = process.argv.slice(2);
+if (a[1] === "ps") { console.log(JSON.stringify({ ok: true, result: { worktrees: [{ worktreeId: "w", path: "/ws/notify-merge/" + process.env.NOTIFY_NAME, branch: "refs/heads/" + ${JSON.stringify(card.branch)} }] } })); process.exit(0); }
 if (a[1] === "set") appendFileSync(${JSON.stringify(log)}, JSON.stringify(a[a.indexOf("--comment") + 1]) + "\\n");
 console.log(JSON.stringify({ ok: true, result: { worktree: ${JSON.stringify(card)} } }));
 `,
@@ -51,7 +52,7 @@ const CHILD = `
 import { orcaNotify } from ${JSON.stringify(new URL("../lib/runtime/orca-notify.ts", import.meta.url).pathname)};
 const lockless = async (_w, body) => ({ value: await body() });
 const [name, message] = process.argv.slice(1);
-const receipt = await orcaNotify({ id: "w", path: "/ws/notify-merge/" + name }, message, 5000, lockless);
+const receipt = await orcaNotify({ id: "w", path: "/ws/notify-merge/" + name, ...(name.startsWith("named-") ? { branch: "desk", dispatcherOnly: true } : {}) }, message, 5000, lockless);
 console.log(JSON.stringify(receipt));
 `;
 
@@ -62,7 +63,7 @@ async function notify(
   message: string,
 ): Promise<Record<string, unknown>> {
   const child = Bun.spawnSync([process.execPath, "-e", CHILD, name, message], {
-    env: { ...process.env, ORCA_CLI_COMMAND: orca.script },
+    env: { ...process.env, ORCA_CLI_COMMAND: orca.script, NOTIFY_NAME: name },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -71,6 +72,50 @@ async function notify(
 }
 
 describe("notify on Orca: merging into an unread comment", () => {
+  test("refuses a personal comment read under the lock at a named destination", async () => {
+    const orca = fakeOrca({
+      branch: "desk",
+      isUnread: false,
+      comment: "my notes",
+    });
+    const receipt = await notify(
+      orca,
+      "named-personal",
+      "[jig dispatch: k]\nx",
+    );
+    expect(receipt).toMatchObject({ ok: false, lost: false });
+    expect(orca.sets()).toEqual([]);
+  });
+
+  test("refuses a named destination whose branch changed after listing", async () => {
+    const orca = fakeOrca({ branch: "other", isUnread: false, comment: "" });
+    const receipt = await notify(orca, "named-moved", "[jig dispatch: k]\nx");
+    expect(receipt).toMatchObject({ ok: false, lost: false });
+    expect(orca.sets()).toEqual([]);
+  });
+
+  test("an acknowledged write retaining the old read comment is not delivery", async () => {
+    const orca = fakeOrca({
+      isUnread: false,
+      comment: "[jig dispatch: k]\noriginal",
+    });
+    const receipt = await notify(
+      orca,
+      "ineffective-repeat",
+      "[jig dispatch: k]\nSent again: waiting",
+    );
+    expect(receipt).toMatchObject({ ok: false, lost: true });
+  });
+
+  test("a delivered repeat without the unread mark is not confirmed", async () => {
+    const message = "[jig dispatch: k]\nSent again: waiting";
+    const orca = fakeOrca({ isUnread: false, comment: message });
+    expect(await notify(orca, "read-repeat", message)).toMatchObject({
+      ok: false,
+      lost: true,
+    });
+  });
+
   test("appends only the entries the unread comment lacks", async () => {
     const orca = fakeOrca({
       isUnread: true,

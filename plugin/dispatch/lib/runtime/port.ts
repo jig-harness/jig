@@ -98,6 +98,16 @@ export interface RuntimeReceipt {
   refused?: boolean;
   /** For `notify`: the target's comment as the runtime reads it back after the write. */
   comment?: string;
+  /** For `notify`: the unread mark read back with the comment. */
+  unread?: boolean;
+}
+
+/** Notification identity and the comment policy rechecked under the write lock. */
+export interface NotifyTarget {
+  id: string;
+  path: string;
+  branch?: string;
+  dispatcherOnly?: boolean;
 }
 
 /**
@@ -200,12 +210,11 @@ export interface SessionRuntime {
    * listing), else set as the comment, and the workspace marked unread,
    * which Orca's phone app shows. The dispatched marks the comment held stay
    * in it (`keepMarks`). Its receipt carries the target's comment as the
-   * runtime reads it back after the write.
+   * runtime reads it back after the write, together with the unread mark.
+   * A target's branch and dispatcher-only comment policy are rechecked
+   * under the same lock as the write.
    */
-  notify(
-    target: { id: string; path: string },
-    message: string,
-  ): Promise<RuntimeReceipt>;
+  notify(target: NotifyTarget, message: string): Promise<RuntimeReceipt>;
   /**
    * One of the closed set of nudges (`NUDGES`), sent with Enter to the
    * agent the runtime reports under `session`. The adapter re-reads, in the

@@ -305,6 +305,22 @@ describe("jig dispatch --apply notifies a person", () => {
     },
   );
 
+  it("preserves a personal comment added after the destination listing", async () => {
+    const { w, ws } = fixture(
+      (ws) => [{ branch: "desk", path: ws }],
+      `${CONFIG}dispatch:\n  notices_branch: desk\n`,
+    );
+    writeFileSync(
+      join(w.dir, "orca-on-show.json"),
+      JSON.stringify({ comment: "new personal notes", unread: false }),
+    );
+    expect(notifications(await tick(w))).toEqual([
+      expect.objectContaining({ outcome: "lost" }),
+    ]);
+    expect(shown(w, ws).comment).toBe("new personal notes");
+    expect(notifyWrites(w)).toHaveLength(0);
+  });
+
   it("leaves a notice waiting, opening nothing, while no workspace is on the branch notices_branch names", async () => {
     const { w } = fixture(
       undefined,
@@ -350,6 +366,29 @@ describe("jig dispatch --apply notifies a person", () => {
       expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
     ]);
     expect(notifyWrites(w)).toHaveLength(2);
+  });
+
+  it("does not advance a due repeat's clock on an ineffective write", async () => {
+    const { w } = fixture();
+    const [first] = notifications(await tick(w));
+    markRead(w, first?.workspace ?? "");
+    agedBy(w, 25);
+    const db = new Database(statePath(dispatchState(w)));
+    try {
+      const before = db.query("SELECT sent_at FROM notices").get();
+      writeFileSync(join(w.dir, "orca-set-noop"), "");
+      expect(notifications(await tick(w))).toEqual([
+        expect.objectContaining({ outcome: "lost" }),
+      ]);
+      expect(db.query("SELECT sent_at FROM notices").get()).toEqual(before);
+      rmSync(join(w.dir, "orca-set-noop"));
+      expect(notifications(await tick(w))).toEqual([
+        expect.objectContaining({ outcome: "sent" }),
+      ]);
+      expect(db.query("SELECT sent_at FROM notices").get()).not.toEqual(before);
+    } finally {
+      db.close();
+    }
   });
 
   it("sends a notice once only when renotify_after is zero", async () => {
