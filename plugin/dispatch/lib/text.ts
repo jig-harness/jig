@@ -2,7 +2,7 @@
 export function failureText(error: unknown): string {
   let message: string;
   try {
-    message = error instanceof Error ? error.message : String(error);
+    message = error instanceof Error ? String(error.message) : String(error);
   } catch {
     // A value with no text form (a null-prototype object, a throwing toString) is still a failure to report.
     message = "";

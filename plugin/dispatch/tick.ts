@@ -90,6 +90,8 @@ interface StartedTick {
   receipt: TickReceipt;
   context: TickContext;
   withheld: string | undefined;
+  /** Whether settling the launch records' follow-up outcomes failed; each repository's turn settles its own again. */
+  settleFailed: boolean;
 }
 
 /** Read this machine's launch records and build the apply state and the receipt the tick fills. */
@@ -99,7 +101,14 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
   const runtime = options.runtime ?? defaultRuntime(machine);
   const read = await readLaunches();
   // An ended follow-up's outcome is written before its record can expire.
-  settleFollowups(read.records);
+  let settleFailed = false;
+  try {
+    settleFollowups(read.records);
+  } catch (error) {
+    // A failed write must not stop every repository's turn; the turns settle their own records again.
+    settleFailed = true;
+    logDefect("the follow-up outcomes", defectOf("start", error), error);
+  }
   const attempt = applyState(
     options,
     runtime,
@@ -132,7 +141,7 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
     apply,
     lineInputs: new Map(),
   };
-  return { receipt, context, withheld };
+  return { receipt, context, withheld, settleFailed };
 }
 
 /**
@@ -167,11 +176,12 @@ async function closeTick(
   started: StartedTick,
   timer: PhaseTimer<TickPhase>,
 ): Promise<void> {
-  const { receipt, context, withheld } = started;
+  const { receipt, context, withheld, settleFailed } = started;
   const machine = context.options.machine ?? null;
   const failed = await settleOutcomes(receipt, context, machine?.receiptsDays);
   const copied = copyLog(receipt);
-  receipt.exitStatus = failed || !copied || withheld !== undefined ? 1 : 0;
+  receipt.exitStatus =
+    failed || !copied || settleFailed || withheld !== undefined ? 1 : 0;
   receipt.completed = true;
   receipt.finishedAt = new Date().toISOString();
   // The dashboard's copy is written here, so it carries the phases timed so far; the receipt file adds `close`.
