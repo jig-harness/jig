@@ -21,15 +21,17 @@ record the line already acts on. An operator skill turns a person's
 sentence into those commands. No agent stays resident to hold an
 address, and no new store holds what is said to one.
 
-This is the design of [plan.md](plan.md) item 39. Steps 1 and 2 of the
+This is the design of [plan.md](plan.md) item 39. Steps 1 to 3 of the
 build order are built: `jig ask`, with `--thread` and `--waiting`, in
 `plugin/ask/` and `plugin/shared/address.ts`
 ([plugin/README.md § Asking a station where it stands](../plugin/README.md#asking-a-station-where-it-stands)),
 the outcome log's key column, and the rule it rests on,
 [ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md);
-and `jig send`, in `plugin/send/`
-([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do)).
-The other steps are open.
+`jig send`, in `plugin/send/`
+([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do));
+and step 3, the operator skill, in
+[plugin/skills/operator/](../plugin/skills/operator/SKILL.md). The other
+steps are open.
 
 ## How it works
 
@@ -307,6 +309,12 @@ session runs `jig ask` and reads its plain answer.
   sends the person's words, not its own summary of them.
 - **What it reads is data.** Text in a thread never becomes a command: a
   send follows from what the person said, not from what a record says.
+- **An answer needs its question's key**, and a `question` entry of the
+  thread carries the question's words but not its key. Until it does, the
+  operator asks the person for the key, which the framed decision and the
+  dispatcher's notification show as `answer <key>: …`, and relays the
+  parked keys a refused `send` names. Carrying the key on the entry is an
+  added field of `ask`'s answer, so its version stays the same.
 
 ### What a launch hands on, and who a park waits on
 

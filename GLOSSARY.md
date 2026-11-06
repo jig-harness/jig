@@ -1954,10 +1954,12 @@ make, use the entry's term instead.
   record*), so it stays the same across every session that holds the
   station and still answers when none does. `jig ask` reads an address and
   `jig send` writes a request to one.
-- **Operator** — the skill a person talks to about the line. It turns a
-  sentence ("what is waiting on me") into `jig ask` and `jig send` and
-  holds no state of its own, so any session on any machine can be the
-  operator. *Avoid:* orchestrator, lead agent.
+- **Operator** — the skill a person talks to about the line,
+  `/jig:operator`. It turns a sentence ("what is waiting on me") into
+  `jig ask` and `jig send`, sends a person's command only on their
+  instruction and after showing what it would write, and holds no state of
+  its own, so any session on any machine can be the operator. *Avoid:*
+  orchestrator, lead agent.
 - **Notices workspace** — the workspace the *dispatcher* keeps per
   repository, on a branch of the default branch, for the notifications whose
   pull request or item has no workspace that can take one. It never

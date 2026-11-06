@@ -843,9 +843,11 @@ thread and the list of what waits on a person, the outcome log's key column
 and the rule it rests on,
 [ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md)
 ([plugin/README.md § Asking a station where it stands](../plugin/README.md#asking-a-station-where-it-stands));
-and `jig send`, its verbs, their checks and the refusal of a person's
+`jig send`, its verbs, their checks and the refusal of a person's
 commands in a session the line started
-([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do)).
+([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do));
+and the operator skill, `/jig:operator`
+([plugin/skills/operator/](../plugin/skills/operator/SKILL.md)).
 
 Done when `jig ask` answers the address of a pick-up, a drive and a
 follow-up on the machine that dispatched them and, from the forge and the

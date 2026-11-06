@@ -760,6 +760,7 @@ and fixes its call. What the script settles, and what the model decides:
 | [red-team](skills/red-team/README.md) | the plan of personas, a fresh agent process per persona where the runtime has no subagents, checking what each reported, and the one report (`skills/red-team/scripts/red-team.ts`) | each persona's reading and findings |
 | [work-batch](skills/work-batch/README.md) | the proposed batch: solo-only issues and issues another person holds left out, the point budget filled in rank order (`skills/work-batch/scripts/candidates.ts`); each issue's claim (`skills/do-item/scripts/tracker.ts claim`) | whether the issues form one coherent change, and the change itself |
 | [design-brief-builder](skills/design-brief-builder/SKILL.md) | the returned bundle's landing and its browser check (`skills/design-brief-builder/scripts/handback.ts`, `browser.ts`) | the brief, and how the returned design is merged against the repository's fixes |
+| [operator](skills/operator/SKILL.md) | what each answer reads and each request is checked against and writes: `jig ask` and `jig send` (`ask/cli.ts`, `send/cli.ts`) | which address and verb a person's sentence means, how the answer reads in sentences, and whether the person said to send |
 | [github-actions](skills/github-actions/SKILL.md), [programmatic-execution](skills/programmatic-execution/SKILL.md), [promote-memory](skills/promote-memory/SKILL.md) | none: they have no scripts of their own | all of it: the workflow review, the analysis script it writes, the lesson promoted |
 
 ## Where the boundary rests on instructions
@@ -783,6 +784,11 @@ stops a model. A team that runs passes unattended should know which:
   writable by every session the same user runs. Leases and tokens fence the
   scripts that write them (`jig dispatch result` checks its record's token);
   nothing fences a direct write.
+- **Sending a person's command.** `jig send` refuses a person's commands
+  in a session the line started (`JIG_LAUNCH`), but in a person's own
+  session it cannot tell their yes from the model's: that the operator
+  sends only on the person's instruction, after showing the dry run, is a
+  rule of its instructions.
 - **Resolving a thread.**
   `skills/resolve-review-comments/scripts/resolve-thread.ts` resolves whatever thread it is
   given; that a thread is resolved only after its fix or reply is posted is
