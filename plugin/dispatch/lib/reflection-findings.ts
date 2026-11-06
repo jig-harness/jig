@@ -85,14 +85,18 @@ export function addFinding(
   );
 }
 
-/** The findings of `repo` the store has not reported stored, oldest first. */
-export function pendingFindings(db: Database, repo: string): FindingRecord[] {
+/** The findings of `repo` the store has not reported stored, oldest first; the first `limit` when given. */
+export function pendingFindings(
+  db: Database,
+  repo: string,
+  limit = -1,
+): FindingRecord[] {
   return (
     db
       .query(
-        "SELECT * FROM reflection_findings WHERE repo = ? AND stored_at IS NULL ORDER BY at, id",
+        "SELECT * FROM reflection_findings WHERE repo = ? AND stored_at IS NULL ORDER BY at, id LIMIT ?",
       )
-      .all(repo) as Row[]
+      .all(repo, limit) as Row[]
   ).map(recordOf);
 }
 

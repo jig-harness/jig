@@ -83,11 +83,13 @@ export async function runStore(
   input: string,
   timeoutSec: number,
   env?: Record<string, string | undefined>,
+  cwd?: string,
 ): Promise<StoreResult> {
   const r = await run([...command, op], {
     stdin: input,
     timeoutSec: deadlineFor(op, timeoutSec),
     ...(env === undefined ? {} : { env }),
+    ...(cwd === undefined ? {} : { cwd }),
   });
   if (r.timedOut)
     return {
@@ -116,10 +118,18 @@ function failed(op: Operation, r: StoreResult): StoreError {
 export class Store {
   readonly command: string[];
   readonly timeoutSec: number;
+  /** Where the store command runs; this process's directory when unset. */
+  readonly cwd: string | undefined;
 
-  constructor(command: string[], timeoutSec: number) {
+  constructor(command: string[], timeoutSec: number, cwd?: string) {
     this.command = command;
     this.timeoutSec = timeoutSec;
+    this.cwd = cwd;
+  }
+
+  /** The same store under another deadline. */
+  within(timeoutSec: number): Store {
+    return new Store(this.command, timeoutSec, this.cwd);
   }
 
   static configured(settings: ReflectionSettings): Store {
@@ -146,7 +156,14 @@ export class Store {
   ): Promise<Array<{ id: string; ref: string | null }>> {
     if (events.length === 0) return [];
     const input = `${events.map((event) => JSON.stringify(event)).join("\n")}\n`;
-    const r = await runStore(this.command, "append", input, this.timeoutSec);
+    const r = await runStore(
+      this.command,
+      "append",
+      input,
+      this.timeoutSec,
+      undefined,
+      this.cwd,
+    );
     if (r.code !== EXIT.done) throw failed("append", r);
     const out = parseObject(r.stdout, "the store's append output");
     const stored: Array<{ id: string; ref: string | null }> = [];

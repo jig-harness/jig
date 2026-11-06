@@ -296,6 +296,26 @@ describe("a store that fails", () => {
   });
 });
 
+describe("a tick with no time left", () => {
+  it("starts no Git read and no append, lists nothing as recorded, and names no-time", async () => {
+    const f = fixture();
+    recurringUpTo(f.root, WEDNESDAY);
+    const report = await routeRecurrences([f.repo], {
+      apply: true,
+      nowMs: WEDNESDAY,
+      timeZone: "UTC",
+      root: f.root,
+      timeLeftMs: 0,
+    });
+    expect(report?.recorded).toEqual([]);
+    expect(report?.failures).toEqual([
+      expect.objectContaining({ repo: REPO, code: "no-time" }),
+    ]);
+    expect(f.events()).toHaveLength(0);
+    expect((await route(f, WEDNESDAY + 600_000))?.recorded).toHaveLength(1);
+  });
+});
+
 describe("what never becomes a finding", () => {
   it("a park, a convergence, a merge and a drift, however many days they occur on", async () => {
     const f = fixture();

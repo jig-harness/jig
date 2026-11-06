@@ -16,7 +16,8 @@ release: minor
   repository, the stage, the class and the week, so later ticks that week
   record nothing new and each week the class still recurs counts toward its
   escalation in `/jig:review-reflections` run in Jig. The append runs under
-  `reflection.timeout_sec`; a store that fails or does not answer is named on
+  `reflection.timeout_sec`, cut to the time the tick has left, in batches, with
+  the store command run in the repository's checkout; a store that fails or does not answer is named on
   the receipt, the tick's exit status stays as it was, and the next tick
   sends the same finding again. A tick without `--apply` lists what it would
   record. It records only: it changes no cap, expectation or nudge

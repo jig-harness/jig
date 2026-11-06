@@ -17,8 +17,10 @@
  * Jig's own findings escalates it, never an unattended session in the
  * repository.
  *
- * Each append runs under the store's deadline, cut to the time the tick has
- * left. One that fails leaves its findings pending, says why on the receipt,
+ * Findings go to the store in batches, each append under the store's
+ * deadline cut to the time the tick has left when it starts, the Git reads
+ * under the same limit, and the store command runs in the repository's
+ * checkout so its relative words resolve there. One that fails leaves its findings pending, says why on the receipt,
  * and is sent again, the same bytes, by the next tick; it never changes the
  * tick's exit status.
  */
@@ -29,6 +31,7 @@ import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import {
   repositoryId,
   sessionBlock,
+  withGitDeadline,
 } from "../../skills/reflect/scripts/lib/context.ts";
 import {
   derivedId,
@@ -143,10 +146,8 @@ export function repositoryReflection(
 
 /** An outcome class as a reflection class name: `gates failed` is `dispatch-recurring-gates-failed`. */
 function findingClass(outcome: string): string {
-  return `dispatch-recurring-${outcome
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")}`;
+  const words = outcome.toLowerCase().split(/[^a-z0-9]+/);
+  return `dispatch-recurring-${words.filter((w) => w !== "").join("-")}`;
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -249,6 +250,15 @@ interface RepoRun {
   options: RouteOptions;
   timeZone: string;
   report: ReflectionReport;
+  /** When the tick's time for the route ends, in epoch milliseconds; `null` for no limit. */
+  deadline: number | null;
+}
+
+/** The whole seconds left before the run's deadline, or `settings.timeoutSec` for none. */
+function secondsLeft(run: RepoRun): number {
+  return run.deadline === null
+    ? run.settings.timeoutSec
+    : Math.floor((run.deadline - Date.now()) / 1000);
 }
 
 const failure = (
@@ -265,10 +275,12 @@ const failure = (
  * Keep a pending finding for each recurring class of the repository not
  * found before this week; in a tick that only reports, list them instead.
  */
-function findRecurrences(run: RepoRun): void {
+function findRecurrences(run: RepoRun): "no-time" | undefined {
   const { db, repo, options, timeZone, report } = run;
   const recurring = recurringClasses(db, options.nowMs, timeZone, repo.slug);
-  if (recurring.length === 0) return;
+  if (recurring.length === 0) return undefined;
+  // The Git reads below start only with time left to finish them.
+  if (options.apply && secondsLeft(run) < 1) return "no-time";
   const id = attempt(
     "repository-unread",
     "the repository's name for the reflection store could not be read",
@@ -276,7 +288,7 @@ function findRecurrences(run: RepoRun): void {
   );
   if (!id.ok) {
     report.failures.push(failure(run, id.failure.code, id.failure.reason));
-    return;
+    return undefined;
   }
   const week = isoWeekIn(timeZone, options.nowMs);
   for (const r of recurring) {
@@ -295,65 +307,79 @@ function findRecurrences(run: RepoRun): void {
     const event = findingEvent(db, r, id.value, options.nowMs, timeZone);
     addFinding(db, { ...found, event: JSON.stringify(event), at: event.at });
   }
+  return undefined;
 }
 
-/**
- * Send the repository's pending findings to its store, under the store's
- * deadline cut to the tick's time left; a tick that only reports lists them.
- */
-async function appendPending(run: RepoRun): Promise<void> {
-  const { db, repo, settings, options, report } = run;
-  const pending = pendingFindings(db, repo.slug);
-  if (pending.length === 0) return;
-  const listed = pending.map((p) => ({
+/** The most findings sent to a store in one append, so one operation stays inside its deadline. */
+const APPEND_BATCH = 50;
+
+/** Record that the tick has no time left for the repository's store, listing what waits. */
+function noTime(run: RepoRun): void {
+  run.report.pending.push(
+    ...listFindings(pendingFindings(run.db, run.repo.slug)),
+  );
+  run.report.failures.push(
+    failure(
+      run,
+      "no-time",
+      "this tick has no time left for the store; the next tick sends its findings",
+    ),
+  );
+}
+
+const listFindings = (records: ReturnType<typeof pendingFindings>) =>
+  records.map((p) => ({
     id: p.id,
     repo: p.repo,
     stage: p.stage,
     class: p.class,
     week: p.week,
   }));
+
+/**
+ * Send the repository's pending findings to its store in batches, each
+ * under the store's deadline cut to the time the tick has left when it
+ * starts; a tick that only reports lists them.
+ */
+async function appendPending(run: RepoRun): Promise<void> {
+  const { db, repo, settings, options, report } = run;
   if (!options.apply) {
-    report.pending.push(...listed);
-    return;
-  }
-  const leftSec =
-    options.timeLeftMs == null
-      ? settings.timeoutSec
-      : Math.floor(options.timeLeftMs / 1000);
-  if (leftSec < 1) {
-    report.pending.push(...listed);
-    report.failures.push(
-      failure(
-        run,
-        "no-time",
-        "this tick has no time left for the store; the next tick sends its findings",
-      ),
-    );
+    report.pending.push(...listFindings(pendingFindings(db, repo.slug)));
     return;
   }
   const store = new Store(
     storeCommand(settings),
-    Math.min(settings.timeoutSec, leftSec),
+    settings.timeoutSec,
+    repo.path,
   );
-  const appended = await appendEvents(
-    store,
-    pending.map((p) => parseEvent(p.event)),
-  );
-  if (!appended.ok) {
-    report.pending.push(...listed);
-    report.failures.push(
-      failure(
-        run,
-        appended.failure.code,
-        `${appended.failure.reason}; the next tick sends its findings again`,
-      ),
+  for (;;) {
+    const batch = pendingFindings(db, repo.slug, APPEND_BATCH);
+    if (batch.length === 0) return;
+    const leftSec = secondsLeft(run);
+    if (leftSec < 1) {
+      noTime(run);
+      return;
+    }
+    const appended = await appendEvents(
+      store.within(Math.min(settings.timeoutSec, leftSec)),
+      batch.map((p) => parseEvent(p.event)),
     );
-    return;
+    if (!appended.ok) {
+      report.pending.push(...listFindings(pendingFindings(db, repo.slug)));
+      report.failures.push(
+        failure(
+          run,
+          appended.failure.code,
+          `${appended.failure.reason}; the next tick sends its findings again`,
+        ),
+      );
+      return;
+    }
+    const at = nowAt();
+    for (const stored of appended.value)
+      markStored(db, stored.id, at, stored.ref);
+    report.recorded.push(...listFindings(batch));
   }
-  const at = nowAt();
-  for (const stored of appended.value)
-    markStored(db, stored.id, at, stored.ref);
-  report.recorded.push(...listed);
 }
 
 /** The store's append as a value: what it stored, or why it did not. */
@@ -378,12 +404,18 @@ async function appendEvents(
   }
 }
 
+async function routeBody(run: RepoRun): Promise<void> {
+  if (findRecurrences(run) === "no-time") return noTime(run);
+  await appendPending(run);
+}
+
 /** One repository's route; a defect in it is reported and stops only this repository's. */
 async function routeRepo(
   db: Database,
   repo: RepoReflection,
   options: RouteOptions,
   report: ReflectionReport,
+  deadline: number | null,
 ): Promise<void> {
   if (!repo.owner) return;
   if (!repo.reflection.ok) {
@@ -403,10 +435,12 @@ async function routeRepo(
     options,
     timeZone: options.timeZone ?? hostTimeZone(),
     report,
+    deadline,
   };
   try {
-    findRecurrences(run);
-    await appendPending(run);
+    await (deadline === null
+      ? routeBody(run)
+      : withGitDeadline(deadline, () => routeBody(run)));
   } catch (error) {
     console.error(error);
     report.failures.push(failure(run, "defect", failureText(error)));
@@ -433,7 +467,12 @@ export async function routeRecurrences(
   )
     return null;
   const db = stateDb(options.root ?? stateRoot());
-  for (const repo of repos) await routeRepo(db, repo, options, report);
+  // One absolute deadline for every repository: they run in turn, so each
+  // gets what the ones before it left, not the tick's whole allowance again.
+  const deadline =
+    options.timeLeftMs == null ? null : Date.now() + options.timeLeftMs;
+  for (const repo of repos)
+    await routeRepo(db, repo, options, report, deadline);
   const empty = Object.values(report).every((list) => list.length === 0);
   return empty ? null : report;
 }

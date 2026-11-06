@@ -1366,7 +1366,9 @@ where a person approves the change: a cap, an expectation, a skill's step.
   tick keeps each finding it makes (see What the tick keeps), so every later
   tick that week records nothing new, and a class still recurring in a new
   week is a new occurrence that counts toward its escalation: at the default
-  of three occurrences, three weeks of recurrence.
+  of three occurrences, three weeks of one recurrence, sooner when several
+  repositories or stages record the class in the same week (the review counts
+  a class's occurrences per owner, not per repository).
 - **The finding.** `kind: error`, `severity: medium`, its class
   `dispatch-recurring-<class>` (the outcome class in kebab case), its target
   the dispatcher as a Jig tool (`{"scope": "tool", "tool": "jig", "name":

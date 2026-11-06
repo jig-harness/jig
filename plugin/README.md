@@ -744,7 +744,9 @@ as `dispatch-recurring-gates-failed`), with the repository, the stage, the
 days, the row count, the reasons the rows give most often and the
 dashboard filter that shows them. A later tick that week records nothing
 new; a class still recurring the next week is a new occurrence, so the
-default escalation, at three, takes three weeks. A store that fails or
+default escalation, at three occurrences of a class, is reached after three
+weeks of one recurrence, sooner when several repositories or stages
+record the class in the same week. A store that fails or
 does not answer within `reflection.timeout_sec` is named on the receipt
 and tried again by the next tick, and the tick's exit status stays as it
 was; a tick without `--apply` lists what it would record. The tick never
