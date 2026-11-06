@@ -34,6 +34,7 @@ import { type DriveHold, driveHold, factsOf } from "./actions/drive-hold.ts";
 import { type Contention, heldReason } from "./contention.ts";
 import { holding, liveAgents } from "./holding.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
+import type { FollowupRelease } from "./followup-releases.ts";
 import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
@@ -71,6 +72,8 @@ export interface PlanInput {
   merged: MarkedPr[];
   /** The follow-ups' outcome records, by pull request. */
   outcomes: ReadonlyMap<number, FollowupOutcome>;
+  /** The stale follow-up claims this host released, by pull request. */
+  releases?: ReadonlyMap<number, FollowupRelease>;
   sessions: SessionsReport;
   /** Each pull request's creation time; a pickup's pull request is one created after its launch. */
   created?: ReadonlyMap<number, string>;
@@ -85,7 +88,7 @@ export interface PlanInput {
   /** The pull requests serialization holds, or cannot place, this tick. */
   serialized?: Pick<Contention, "held" | "unplaced">;
   /** The shared records read this tick: this host, and each drive's launch claims (`shared-launches.ts`). */
-  shared?: { host: string; drives: DriveClaims };
+  shared?: { host: string; drives: DriveClaims; owner?: boolean };
   nowMs: number;
 }
 
@@ -176,6 +179,10 @@ export function planTick(input: PlanInput): Plan {
         launches: input.launches,
         outcomes: input.outcomes,
         host: input.shared?.host ?? null,
+        sessions,
+        staleAfterMs: input.section.followupStaleAfterMs,
+        releases: input.releases ?? new Map(),
+        owner: input.shared?.owner ?? true,
         nowMs: input.nowMs,
       },
       plan,

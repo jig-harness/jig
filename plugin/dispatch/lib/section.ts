@@ -25,6 +25,8 @@ const DEFAULT_FOLLOWUP_WITHIN_MS = 3_600_000;
 const DEFAULT_NOTICES_LINGER_MS = 3_600_000;
 /** `renotify_after`'s default: a day. */
 const DEFAULT_RENOTIFY_AFTER_MS = 24 * 3_600_000;
+/** `followup_stale_after`'s default: a day. */
+const DEFAULT_FOLLOWUP_STALE_AFTER_MS = 24 * 3_600_000;
 const KEYS = [
   "identity",
   "states",
@@ -34,6 +36,7 @@ const KEYS = [
   "drive_rounds_flat",
   "pickup_within",
   "followup_within",
+  "followup_stale_after",
   "notices_linger",
   "notices_branch",
   "renotify_after",
@@ -273,6 +276,11 @@ export function dispatchSection(
       section.followup_within,
       "followup_within",
       DEFAULT_FOLLOWUP_WITHIN_MS,
+    ),
+    followupStaleAfterMs: wait(
+      section.followup_stale_after,
+      "followup_stale_after",
+      DEFAULT_FOLLOWUP_STALE_AFTER_MS,
     ),
     noticesLingerMs: orZero(
       section.notices_linger,

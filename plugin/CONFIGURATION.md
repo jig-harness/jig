@@ -1095,6 +1095,7 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.drive_rounds_flat` | positive whole number | `3`: a drive the dispatcher launched drifts when its unresolved review threads at the latest round the dispatcher recorded are not below the count this many recorded rounds earlier | dispatch |
 | `dispatch.pickup_within` | duration | `2h`: a pickup the dispatcher launched that has opened no pull request by then drifts | dispatch |
 | `dispatch.followup_within` | duration | `1h`: a follow-up the dispatcher launched that has not ended by then drifts | dispatch |
+| `dispatch.followup_stale_after` | duration | `24h`: a follow-up claim no run will finish (a person's run's marker not marked done, or another host's with no answer) that is older than this, with no session joined to its pull request, is released: the host that owns the repository deletes the marker, once per pull request, and the follow-up starts again. A claim on it that goes stale again after that is notified to a person, never released twice | dispatch |
 | `dispatch.notices_linger` | duration, or `0s` | `1h`: the repository's notices workspace, once read, is removed this long after the first tick that finds it read; `0s` removes it at that tick. An unread one is removed once every cause it carries is gone | dispatch |
 | `dispatch.notices_branch` | branch name, with no space | None: every notification for the repository goes to its notices workspace. A branch names the workspace a person watches instead: every notification goes to the workspace on that branch, never to the one joined to the pull request or item. The dispatcher never opens or removes it, and a notification waits, reported, while no workspace on it is open or its comment is a person's. Naming `jig-dispatch-notices`, the notices workspace's own branch, is the same as naming none | dispatch |
 | `dispatch.renotify_after` | duration, or `0s` | `24h`: a notification whose cause still stands this long after it was last sent is sent again, saying since when it has waited, until the cause goes. `0s` sends each one once | dispatch |
@@ -1305,6 +1306,7 @@ dispatch:
   drive_rounds_flat: 3
   pickup_within: 2h
   followup_within: 1h
+  followup_stale_after: 24h
   notices_linger: 1h
   notices_branch: jig-dispatch-notices
   renotify_after: 24h

@@ -25,7 +25,8 @@
  *
  * Once the launch record ends, this host's next tick writes the follow-up's
  * answer onto the marker (`shared-launches.ts`), where another host reads
- * it.
+ * it. A stale claim the plan names is released first (`release-claims.ts`),
+ * and nothing is launched for it in the same tick.
  */
 import type {
   ClaimAnswer,
@@ -71,6 +72,7 @@ import {
   rotated,
   waits,
 } from "./launch.ts";
+import { applyReleases, isRelease } from "./release-claims.ts";
 
 /** What a repository's follow-ups need beyond the apply state. */
 export interface FollowupContext {
@@ -420,7 +422,10 @@ export async function applyFollowups(
   report: RepoReport,
   ctx: FollowupContext,
 ): Promise<void> {
-  const wanted = report.actions.filter((a) => a.stage === "followup");
+  await applyReleases(state, repo, report, ctx);
+  const wanted = report.actions.filter(
+    (a) => a.stage === "followup" && !isRelease(a),
+  );
   const unsettled = await dropUnmarked(state, repo, ctx);
   for (const action of rotated(state, wanted, "targets")) {
     const held = unsettled.has(Number(action.target.replace(/\D/g, "")));

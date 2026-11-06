@@ -658,6 +658,7 @@ describe("Jira adapter: assignments", () => {
       driveRoundsFlat: 3,
       pickupWithinMs: 7_200_000,
       followupWithinMs: 3_600_000,
+      followupStaleAfterMs: 86_400_000,
       noticesLingerMs: 3_600_000,
       noticesBranch: null,
       renotifyAfterMs: 86_400_000,

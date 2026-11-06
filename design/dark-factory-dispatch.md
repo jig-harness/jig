@@ -135,7 +135,8 @@ guards keep one stage from starting twice:
   outcome and the tick has no record that could; a person settles it by
   marking it done when the run succeeded without marking it, or, as the
   tick's are, by deleting it when the run failed, which makes the
-  follow-up wanted again. Whoever posts a marker, the tick or a
+  follow-up wanted again. Such a hold ends when the claim goes stale (see
+  Stale follow-up claims, below). Whoever posts a marker, the tick or a
   manual run, reads the markers back after posting, and of two trusted
   markers on one pull request the earlier comment wins, as the drive's
   takeover claims do: both are claims of one module,
@@ -159,6 +160,46 @@ guards keep one stage from starting twice:
   answer onto the marker (`outcome: done` or `failed`), so another host
   dispatching the repository reads its done from its failed (see Several
   hosts).
+
+  **Stale follow-up claims.** A claim whose end no tick can see (a manual
+  run's not marked done, or another host's with no answer written) is
+  stale once it is older than `dispatch.followup_stale_after` (a day by
+  default) and no session the runtime reports is joined to its pull
+  request. The run that made it stopped short (on a question, a crash, a
+  closed session) and will not come back to it, and a follow-up is what a
+  merge still owes: tags, tracker items, status pages. Held silently, that
+  debt is never paid, and the only sign of it is a line in each tick's
+  journal. The host that owns the repository therefore releases a stale
+  claim, once per pull request: just before, it reads the markers again
+  (the stale one still the earliest trusted marker, still not marked done
+  or answered), the runtime (still no session joined) and the hold label,
+  writes a pending release record in its state database (one row per
+  repository and pull request, `followup_releases`), deletes the marker,
+  and marks the record released in one transaction with an event row
+  (class `stalled`) in the outcome log. A deletion the forge refuses removes
+  the pending record and is reported, so a later tick tries again; a pending
+  record whose marker is still there is a release a tick began and did not
+  finish, which the next tick finishes. Nothing starts in the tick that
+  releases: the next tick finds no marker and starts the follow-up as it
+  would for any merge. A claim on the same pull request that goes stale
+  after that (the restarted follow-up's, or a person's later run) is not
+  released a second time: it is notified to a person (cause
+  `followup-stale`), with its age, whose claim it is and the earlier
+  release, and repeated on the notifications' cadence until a person marks
+  it done or deletes it. Once is the bound because a single release
+  recovers a run that stopped short, which is what the hold usually is, and
+  two in a row say the follow-up itself needs a person; a release that
+  could repeat would start a follow-up again and again behind a failure no
+  run settles. A claim inside the window, one a running session is joined
+  to, one whose age does not read, and one the runtime cannot say about are
+  held as before, reported with their author and age and with the window
+  that releases them. The tick's own claims are not released this way:
+  their end is on this host's records, so a failed one is notified as a
+  failed follow-up and a running one ends with its launch. A person's claim
+  and another host's count alike, since the marker is the one record either
+  leaves, and the report and the notice say whose claim it was. Only the
+  owner releases, as it alone notifies, so the release record on its host
+  is the only one, and two hosts never release one claim twice.
 - **A claim on the forge for every drive launch.** Beside each drive's
   launch record, after the record holds its slot and before the runtime's
   `launch`, the tick posts a launch claim on the pull request, one of the
@@ -897,7 +938,7 @@ naming what was sent: a drive parked with an item unanswered, carrying the
 parked questions (item 32's framed decision, built); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
-stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a session waiting past
+stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a session waiting past
 `blocked_after`; a running stage drifting from its expectation, and a
 session still waiting on a wall after its one nudge (see Control). Every
 message carries the cause or the question, the pull request's link and
@@ -1000,11 +1041,13 @@ per kind of record, each row under a unique key:
 - **Waiting episodes**: one row per interactive session and wall it met,
   keyed by the wall's observation time.
 - **Suppression records** of notifications: one row per repository and
-  cause, dropped when the cause goes.
+  cause, with its first and its last send, dropped when the cause goes.
 - **Nudge records**: one row per session and waiting episode, written
   pending before the send, its delivery marked once after.
 - **Follow-up outcome records**: one row per repository and merged pull
   request, the latest attempt's.
+- **Follow-up release records**: one row per repository and merged pull
+  request, the one stale claim the tick released on it.
 - **Idle clocks** of claimed items: one row per repository and item.
 - **The outcome log**: one row per key, which nothing removes, written in
   the same transaction as what it records (see Control).
@@ -1071,7 +1114,9 @@ cannot close, is in
   whose launch record ended and still has none, the backstop for a wrapper
   killed before its write and a forge that refused it. A claim whose launch
   record is gone from its host ends as died. A claim whose host never writes
-  its end holds the pull request until a person deletes the comment.
+  its end holds the pull request until a person deletes the comment; a
+  follow-up's marker with no answer is released once it goes stale (see
+  Stale follow-up claims).
 
 The tick reads every host's claims for each pull request it classifies and
 places them beside its own launch records. A launch another host's current
@@ -1081,7 +1126,7 @@ re-drive of the same change and an arm at the same head count as if this
 host had launched them, so a re-drive is launched once per change across
 hosts and a stop on a conflict another host re-drove is a person's. A
 follow-up another host ran reads as done or failed once that host wrote its
-answer, and as held by that host until then. A driver another host started
+answer, and as held by that host until then, or until its claim goes stale. A driver another host started
 (its claim made before the driver's run began, and its launch not ended
 before it) whose ledger heartbeat is past the lease window is taken over by
 this host under the ledger's own rule; a claim alone, however old, never

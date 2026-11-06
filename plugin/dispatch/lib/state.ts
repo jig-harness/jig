@@ -13,6 +13,7 @@
  * | `notices_read` | repository | when the tick first found its notices workspace read, until it is unread again or removed |
  * | `nudges` | session and waiting episode | one nudge per episode, its delivery marked once |
  * | `followup_outcomes` | repository and merged pull request | the latest attempt's outcome |
+ * | `followup_releases` | repository and merged pull request | the one stale claim the tick released, pending until the forge deleted its marker |
  * | `idle` | repository and claimed item | the stall clock starts once |
  * | `holds` | repository and pull request held behind another in a serialized area | the hold's start, written with its event row |
  * | `log` | outcome row | each row once: it is written in the same transaction as what it records; its `target` column, the piece of work, is indexed with the repository |
@@ -219,6 +220,21 @@ const MIGRATIONS: readonly Migration[] = [
     // stays its first send. A row without it was sent once, at `at`.
     additive: true,
     sql: "ALTER TABLE notices ADD COLUMN sent_at TEXT;",
+  },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE followup_releases (
+    repo TEXT NOT NULL,
+    pr INTEGER NOT NULL,
+    marker INTEGER NOT NULL,
+    login TEXT NOT NULL,
+    claimant TEXT NOT NULL,
+    claimed_at TEXT NOT NULL,
+    released_at TEXT,
+    PRIMARY KEY (repo, pr)
+  );
+  `,
   },
 ];
 

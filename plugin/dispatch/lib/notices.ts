@@ -120,6 +120,30 @@ export function followupFailedNotice(
   ]);
 }
 
+/** A follow-up claim that went stale after the tick released an earlier one on the pull request: a person settles it. */
+export function staleClaimNotice(
+  slug: string,
+  pr: { number: number; url: string },
+  claim: {
+    marker: number;
+    claimant: string;
+    age: string;
+    earlier: { marker: number; claimant: string; releasedAt: string | null };
+  },
+): Notice {
+  const { earlier } = claim;
+  const when = earlier.releasedAt === null ? "" : ` at ${earlier.releasedAt}`;
+  return notice(
+    `${slug} PR #${pr.number} follow-up claim stale, marker ${claim.marker}`,
+    [
+      `The follow-up of merged PR #${pr.number} is held by a claim nobody is finishing: ${claim.claimant} claimed it ${claim.age} ago (marker comment ${claim.marker}), has not marked it done, and no session is joined to it.`,
+      `The tick released an earlier stale claim on it once (marker comment ${earlier.marker}, ${earlier.claimant}'s)${when}, and does not release a second.`,
+      `Mark the marker done when that run succeeded (\`jig dispatch marker done ${pr.number} --comment ${claim.marker}\`), or delete it to have the follow-up start again.`,
+      pr.url,
+    ],
+  );
+}
+
 /** A cause a pickup raises (a stalled pickup, a double claim, a session waiting), in the plan's own words. */
 export function pickupNotice(
   slug: string,

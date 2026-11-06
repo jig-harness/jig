@@ -410,6 +410,16 @@ and never started again: delete its marker to have it run again. A pass that can
 ends its output with a line starting `Question:`; the notification carries
 that question, and the outcome log counts it as parked for a person.
 
+A claim no run will finish does not hold a follow-up for good. A marker a
+person's run posted and never marked done, or another host's with no
+answer, that is older than `dispatch.followup_stale_after` (a day by
+default) with no session joined to its pull request is released: the host
+that owns the repository deletes it, once per pull request, and the next run
+starts the follow-up again. The report says whose claim it was, how old, and
+the window. A claim on the same pull request that goes stale again after
+that is not released a second time: it is notified to a person, with its
+age and whose claim it is, to mark done or delete.
+
 **Notifications** (the `notify` stage) reach a person for each cause: a drive
 parked with a decision unanswered, carrying the drive's framed decision for
 each one; a drive stopped on an exit only a person settles, or with no exit;

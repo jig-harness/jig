@@ -542,7 +542,8 @@ async function atDestination(
 /** The stage a cause is about, for its event row. */
 function stageOf(cause: Cause): string {
   if (typeof cause.evidence.stage === "string") return cause.evidence.stage;
-  if (cause.cause === "followup-failed") return "followup";
+  if (cause.cause === "followup-failed" || cause.cause === "followup-stale")
+    return "followup";
   if (cause.cause === "stalled" || cause.cause === "double-claim")
     return "pickup";
   return "rearm";
@@ -554,6 +555,7 @@ function classOf(cause: Cause): OutcomeClass | null {
     case "double-claim":
       return "double claim";
     case "stalled":
+    case "followup-stale":
       return "stalled";
     case "parked":
       return "parked for a person";

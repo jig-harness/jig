@@ -10,3 +10,7 @@ release: minor
 ### Added
 
 - The dispatch dashboard's What needs you shows the question a follow-up stopped on, and the workspace each notice was sent to.
+
+### Fixed
+
+- A follow-up claim that no run will finish no longer holds the follow-up for good. A marker a person's run posted and never marked done, or another host's with no answer, that is older than the new `dispatch.followup_stale_after` (a day by default) with no session joined to its pull request is released once: the dispatcher deletes it and starts the follow-up again at its next run, and the report says whose claim it was. A claim on the same pull request that goes stale again is notified to a person instead of released a second time.

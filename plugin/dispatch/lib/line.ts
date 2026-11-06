@@ -144,7 +144,8 @@ export function decisionOf(park: {
 
 /** The stage a cause is about. */
 function needStage(cause: NeedCause): LineNeed["stage"] {
-  if (cause === "followup-failed") return "followup";
+  if (cause === "followup-failed" || cause === "followup-stale")
+    return "followup";
   if (cause === "nudge-unanswered") return "steer";
   if (
     cause === "stalled" ||

@@ -64,6 +64,7 @@ function goLabelOf(n: LineNeed): string {
   if (n.cause === "needs-person") return "Read the handoff on the pull request";
   if (
     n.cause === "followup-failed" ||
+    n.cause === "followup-stale" ||
     n.cause === "nudge-unanswered" ||
     n.cause === "stopped-unknown"
   )

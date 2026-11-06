@@ -11,10 +11,12 @@
  * | more than one trusted | reports them, naming the earliest, which holds the follow-up for the marker commands; a person settles which run stands |
  * | a trusted one that does not read | reports it, starts nothing |
  * | a manual run's, marked done | quiet: done |
- * | a manual run's, not marked done | quiet: held by that run, reported with its author and age |
+ * | a manual run's, not marked done | quiet: held by that run, reported with its author and age, until it goes stale |
  * | another host's, its answer done | quiet: done |
- * | another host's, its answer failed | a failed follow-up: notified once, never started again |
- * | another host's, no answer yet | running, held by that host |
+ * | another host's, its answer failed | a failed follow-up: notified, never started again |
+ * | another host's, no answer yet | running, held by that host, until it goes stale |
+ * | a manual run's or another host's with no answer, stale, never released | released: the marker deleted, so a later tick starts the follow-up again |
+ * | the same, stale, a claim on it released before | notified to a person, never released twice |
  * | this host's, its outcome done | quiet: done |
  * | this host's, its launch record still holding | running |
  * | this host's, its outcome failed, its record died, or record and outcome both gone | a failed follow-up: notified once, with the question its pass stopped on when it stated one, never started again |
@@ -30,13 +32,26 @@
  * A marker is a claim, not a completion; a person settles a failed or
  * held follow-up by deleting its marker (wanted again) or, for a manual
  * run, by marking it done.
+ *
+ * A claim nobody can see the end of, a manual run's not marked done or
+ * another host's with no answer, is **stale** once it is older than
+ * `dispatch.followup_stale_after` and no session the runtime reports is
+ * joined to its pull request: the run that made it stopped short (on a
+ * question, a crash, a closed session) and will not finish. A claim whose
+ * age does not read, or a runtime that cannot say, holds it as before. The
+ * host that owns the repository releases a stale claim once per pull
+ * request (`followup-releases.ts`); a claim that goes stale again after
+ * that is notified, with its age and whose claim it is, and never released
+ * a second time, since a follow-up that stalls twice wants a person.
  */
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
+import type { FollowupRelease } from "./followup-releases.ts";
 import { trustedMarkers } from "./followup-marker.ts";
+import { holding } from "./holding.ts";
 import { holds, type ReadRecord, targetOf } from "./launches.ts";
-import { followupFailedNotice } from "./notices.ts";
-import type { Workspace } from "./runtime/port.ts";
+import { followupFailedNotice, staleClaimNotice } from "./notices.ts";
+import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import { questionOf } from "./session.ts";
 import type { Action, FollowupMarker, MarkedPr, RepoReport } from "./types.ts";
 
@@ -48,6 +63,14 @@ export interface FollowupInput {
   outcomes: ReadonlyMap<number, FollowupOutcome>;
   /** This host, as its markers name it; `null` when the shared records name none. */
   host: string | null;
+  /** The runtime's answer: a claim a running session is joined to is not stale. */
+  sessions: SessionsReport;
+  /** `dispatch.followup_stale_after`. */
+  staleAfterMs: number;
+  /** The claims this host released, by pull request. */
+  releases: ReadonlyMap<number, FollowupRelease>;
+  /** Whether this host owns the repository: only the owner releases a claim. */
+  owner: boolean;
   nowMs: number;
 }
 
@@ -59,6 +82,87 @@ function age(createdAt: string, nowMs: number): string {
   if (!Number.isFinite(at)) return "an unknown time";
   const minutes = Math.floor((nowMs - at) / 60_000);
   return minutes < 120 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`;
+}
+
+function hoursOf(ms: number): string {
+  return ms % 3_600_000 === 0
+    ? `${ms / 3_600_000}h`
+    : `${Math.round(ms / 60_000)}m`;
+}
+
+/**
+ * A claim with no end a tick can see: held by `held` while it is inside
+ * `followup_stale_after`, a running session is joined to its pull request,
+ * or either cannot be read; once stale, released, or notified when a claim
+ * on the pull request was released before.
+ */
+function planClaimed(
+  input: FollowupInput,
+  pr: MarkedPr,
+  marker: FollowupMarker,
+  claimant: string,
+  plan: Plan,
+  held: () => void,
+): void {
+  const posted = Date.parse(marker.createdAt);
+  const joined = holding(input.sessions, (w) => w.prs.includes(pr.number));
+  if (
+    !Number.isFinite(posted) ||
+    input.nowMs - posted < input.staleAfterMs ||
+    joined.kind !== "free"
+  ) {
+    held();
+    return;
+  }
+  const target = `PR #${pr.number}`;
+  const ageText = age(marker.createdAt, input.nowMs);
+  const facts = `${claimant} claimed it ${ageText} ago (marker comment ${marker.id}), has not marked it done, and no session is joined to it, past dispatch.followup_stale_after ${hoursOf(input.staleAfterMs)}`;
+  const evidence = {
+    url: pr.url,
+    marker: marker.id,
+    by: marker.login,
+    claimant,
+    claimedAt: marker.createdAt,
+  };
+  const earlier = input.releases.get(pr.number);
+  if (earlier !== undefined && earlier.marker !== marker.id) {
+    plan.actions.push({
+      stage: "notify",
+      target,
+      record: "forge",
+      reason: `stale follow-up claim, again: ${facts}; the tick released ${earlier.claimant}'s stale claim (marker comment ${earlier.marker}) once and does not release a second, a person settles it`,
+      evidence: { ...evidence, released: earlier.marker },
+      cause: "followup-stale",
+      notice: staleClaimNotice(input.slug, pr, {
+        marker: marker.id,
+        claimant,
+        age: ageText,
+        earlier,
+      }),
+    });
+    return;
+  }
+  if (!input.owner) {
+    plan.quiet.push({
+      target,
+      class: "followup-held",
+      why: `${facts}; the host that owns the repository releases it`,
+    });
+    return;
+  }
+  plan.actions.push({
+    stage: "followup",
+    target,
+    record: "forge",
+    reason: `stale follow-up claim: ${facts}; the tick deletes the marker once, and a later tick starts the follow-up again`,
+    evidence,
+    release: {
+      marker: marker.id,
+      login: marker.login,
+      claimant,
+      claimedAt: marker.createdAt,
+    },
+  });
 }
 
 function failed(
@@ -144,12 +248,20 @@ function planForeignMarker(
     );
     return;
   }
-  plan.running.push({
-    target,
-    stage: "followup",
-    reason: `held by host ${host}: ${named} claims its follow-up, and that host has not written its answer`,
-    evidence: { record, marker: marker.id, host },
-  });
+  planClaimed(
+    input,
+    pr,
+    marker,
+    `host ${host}'s launch record ${record}`,
+    plan,
+    () =>
+      plan.running.push({
+        target,
+        stage: "followup",
+        reason: `held by host ${host}: ${named} claims its follow-up, and that host has not written its answer`,
+        evidence: { record, marker: marker.id, host },
+      }),
+  );
 }
 
 /** A pull request the tick's own marker claims, by the record it names and the outcome. */
@@ -321,13 +433,27 @@ function planMerged(
     return;
   }
   if (marker.run.kind === "manual") {
-    plan.quiet.push({
-      target,
-      class: marker.run.done ? "followup-done" : "followup-held",
-      why: marker.run.done
-        ? `a follow-up ${marker.login} ran marked it done (comment ${marker.id})`
-        : `a follow-up ${marker.login} ran claimed it ${age(marker.createdAt, input.nowMs)} ago (comment ${marker.id}) and has not marked it done; mark it done when that run succeeded, or delete it to start the follow-up again`,
-    });
+    if (marker.run.done) {
+      plan.quiet.push({
+        target,
+        class: "followup-done",
+        why: `a follow-up ${marker.login} ran marked it done (comment ${marker.id})`,
+      });
+      return;
+    }
+    planClaimed(
+      input,
+      pr,
+      marker,
+      `${marker.login}'s ${input.command} run`,
+      plan,
+      () =>
+        plan.quiet.push({
+          target,
+          class: "followup-held",
+          why: `a follow-up ${marker.login} ran claimed it ${age(marker.createdAt, input.nowMs)} ago (comment ${marker.id}) and has not marked it done; mark it done when that run succeeded, or delete it to start the follow-up again; past dispatch.followup_stale_after ${hoursOf(input.staleAfterMs)} with no session joined to it, the tick releases it once`,
+        }),
+    );
     return;
   }
   planTick(

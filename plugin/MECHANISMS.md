@@ -387,7 +387,12 @@ development and shipped as a version.
   it. Of two trusted markers the commands stand down for the earlier
   comment; the dispatcher instead reports a conflict, naming the earlier,
   and plans no follow-up until a person settles the duplicate
-  (`dispatch/lib/plan-followups.ts`). Refuses: exit 3 when an earlier marker
+  (`dispatch/lib/plan-followups.ts`). A claim no run will finish (a person's
+  not marked done, or another host's with no answer, past
+  `dispatch.followup_stale_after` with no session joined to its pull request)
+  the owner host deletes once per pull request, recorded in its state
+  database (`dispatch/lib/actions/release-claims.ts`), and notifies a person
+  when a claim on it goes stale again. Refuses: exit 3 when an earlier marker
   holds the follow-up, exit 2 for a comment that is not a trusted marker,
   exit 1 when the markers cannot be read or the read-back never lists the
   marker it posted.

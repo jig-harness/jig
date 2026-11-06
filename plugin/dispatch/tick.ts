@@ -83,6 +83,7 @@ import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
 import { hostCodexOptIn, lastAccount, slotTable } from "./lib/accounts.ts";
 import { readOutcomes, settleFollowups } from "./lib/followup-outcomes.ts";
+import { readReleases } from "./lib/followup-releases.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
 import type { RepoLineInput } from "./lib/line.ts";
 import { hasEnded } from "./lib/log.ts";
@@ -360,7 +361,7 @@ async function gatherRepo(
     created,
     held,
     serialized,
-    shared: { host: ctx.host, drives: claims },
+    shared: { host: ctx.host, drives: claims, owner: ctx.owner },
     ...(onlyLabeled ? { inScope } : {}),
   });
   if (onlyLabeled) report.inScope = [...inScope];
@@ -666,6 +667,7 @@ function planRepo(
   const plan = planTick({
     ...input,
     outcomes: readOutcomes(repo),
+    releases: readReleases(repo),
     launches: records,
     idleSince: readIdle(repo),
     nowMs,
