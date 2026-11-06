@@ -195,6 +195,8 @@ export async function planMailbox(
     record: `${what}, a directive in the mailbox of ${tree.worktree}`,
     where: inboxPath(tree.dir),
     reader: READER[request.verb](g),
+    // The driver reads its mailbox at its next round: no tick to wake.
+    tick: null,
     undo: UNDO[request.verb](ctx.name, request),
     notice: null,
     write: () => writeDirective(tree, pr, login, request),

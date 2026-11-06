@@ -1443,6 +1443,22 @@ from the tracker or the forge could only start a tick early; the timer
 stays the reconcile, so a missed event would cost one interval, and no
 route into the host is opened for events (see Left out).
 
+Two things on the host wake one repository's tick early, both by running
+`jig dispatch --apply --repo <path>`, the invocation the timer makes, so
+the machine file alone decides what that tick starts: Jig's Orca plugin,
+when an agent waits, blocks or finishes or a workspace is removed
+([Waking the dispatcher](orca-integration.md)); and `jig send`, once it
+has written a record the tick reads (`assign`, `drive`, `hold`, `release`,
+`answer`), where the machine file lists the repository with the stage the
+tick acts under ([`jig send`](addresses.md)). Both follow one rule: one
+tick at a time for a repository, no sooner than a minute after the last
+one started, a request made inside that minute taken by one trailing
+tick, and a tick refused for the held tick lock tried again after the
+minute. `send` keeps its pending requests on disk
+(`plugin/shared/wake.ts`), since it exits at once; its waiter runs the
+tick with the installed timer's launcher and environment and exits after
+it.
+
 ## Build order
 
 One pull request each, in this order; each is usable on its own.

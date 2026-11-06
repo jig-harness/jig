@@ -870,9 +870,9 @@ another usage error.
 ## Telling a station what to do
 
 `jig send` writes one record of a kind the line already reads, and exits.
-It types nothing into a session and starts nothing itself: the record's
-reader acts on it at its next run, as it does on the same record written by
-hand. It takes the same [addresses](#asking-a-station-where-it-stands) as
+It types nothing into a session: the record's reader acts on it at its next
+run, as it does on the same record written by hand, and when that reader is
+the dispatcher's tick, `send` wakes it (see below). It takes the same [addresses](#asking-a-station-where-it-stands) as
 `jig ask`, the key also as a second argument:
 
 ```sh
@@ -945,9 +945,26 @@ once). The mailbox lets only a `stop` name a generation, so a `pause` or a
 generation that holds the drive when it is sent. A `resume` needs only the
 tree, so it also clears a directive a driver left behind.
 
+**It wakes the tick that reads its record.** After `assign`, `drive`,
+`hold`, `release` or `answer`, when this machine's
+[dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists the
+repository with the stage the tick acts under (`pickup` for `assign`,
+`followup` for a follow-up's `hold` and `release`, `rearm` for the rest),
+`send` wakes that repository's tick: a waiter in the background runs `jig
+dispatch --apply --repo <path>` the way the installed timer does, at once
+or within a minute of the last tick it started, rather than at the next
+timer run. Several sends within that minute start one tick. A tick that
+finds another holding the tick lock is tried again a minute later; the
+waiter exits when nothing is pending, or after starting 10 ticks; the record stays the request, so the
+next timer run reads it whatever happens to the wake. What the waiter did
+is in `~/.local/state/jig/dispatch/wake/<digest>/last-run.log`. A mailbox
+directive wakes nothing: the driver reads it at its next round.
+
 **`--dry-run`** prints all of that and writes nothing. A real send ends
 with the link to what it wrote (the pull request, the comment, the item) or
-the mailbox's path, and the reader that acts on it next. The forge can take
+the mailbox's path, and the reader that acts on it next: the dispatcher's
+tick for the repository, woken now or to start within a minute, when the
+send woke it. The forge can take
 a moment to list a new comment, so that link, not a `jig ask` right after
 it, shows the request landed.
 
