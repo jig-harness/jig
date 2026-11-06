@@ -41,10 +41,12 @@ interface carries on every issue it reads and writes, the same in every
 repository. Where the tracker keeps it is the facet's
 [store](../GLOSSARY.md), set per facet in the repository's configuration,
 with a documented default per adapter. Callers read the value, never the
-label or field behind it. Every path that files an issue writes each facet,
-one check run inside the write refuses an issue that lacks one, the pools
-report an issue that lacks one on every read, and a weekly sweep catches
-the rest.
+label or field behind it. Every path that files through the interface
+writes each facet, and one check run inside the write refuses an issue that
+lacks one. A filing that goes around the interface (an issue form, a bug
+report, `gh issue create` by hand) is caught afterwards: the pools report an
+issue that lacks a facet on every read, and a weekly sweep catches the
+rest.
 
 Fixing the filing paths alone, on today's stores, would close the gaps the
 count shows on Jig. The stores are configurable as well because the facts
@@ -68,9 +70,10 @@ and its adapters, and the callers that read type, priority and size: the
 > tracker keeps it is configuration, per facet, with a documented default
 > per adapter. Callers read the value and never parse the place it is kept.
 > **No repository's store of record moves** unless its configuration says
-> so or a person runs the move. Every path that files an issue writes each
-> facet, and **one check, run inside the write**, refuses an issue that
-> lacks one.
+> so or a person runs the move. Every path that files an issue through the
+> interface writes each facet, and **one check, run inside the write**,
+> refuses an issue that lacks one; a filing around the interface is caught
+> by the pools and the sweep.
 
 This is M9's rule of
 [priority and category at birth](../modules/M9-tasks-memory/README.md#priority-and-category-at-birth),
@@ -173,6 +176,18 @@ the new store in its configuration. An explicit `store` always wins. The
 field default reaches only a repository with no labels for the facet and
 no store named, such as a new one.
 
+**A store the default selected stays selected.** The first detection that
+selects a store for a facet is remembered, without expiry, in the clone's
+[machine-local store](../GLOSSARY.md) beside the hour-long cache of what
+detection read. When later evidence would select another store, a label
+appearing for the facet, a field deleted or its options changed, reads and
+writes of that facet fail closed with an error naming both stores, and
+`facetStores()` shows it, until the configuration names a store. So the
+fallback label of a type the organization has no issue type for (`docs`
+beside Bug, Feature and Task) cannot, on a later detection, turn the whole
+type facet to labels, and an administrator's change cannot move a facet
+that was already selected.
+
 This rule is load-bearing. GitHub's issue fields have been
 [generally available since 2026-07-02](https://github.blog/changelog/2026-07-02-issue-fields-are-now-generally-available/)
 on the Free, Team and Enterprise plans, and ship in GitHub Enterprise
@@ -202,10 +217,10 @@ extra types cannot be added without offering them to all; a repository
 that wants one place for its types maps every type or sets `store: label`.
 A repository on a detected field is told by `facetStores()` and the audit
 to name that store in its configuration: until it does, an organization
-admin who renames the Priority field's options makes its filings fail with
-the error above, and one who deletes a field or moves the Effort options
-away from the size names moves that facet to labels, which its tick record
-shows and the sweep's store-problem rule catches before it moves anything.
+admin who renames the Priority field's options, deletes a field or moves
+the Effort options away from the size names makes that facet's filings and
+reads fail with an error that names the two stores, which the dispatcher's
+tick record shows; nothing moves to labels by itself.
 
 **On Jira every issue has an issue type.** Type moves to issue types only
 when `issue_tracker.facets.type` names the `native` store, with a `values`
@@ -286,6 +301,7 @@ one of today's keys below with different labels.
 | `issue_tracker.labels.bug` | The labels of the `bug` type in a label store, as it is today an alias of `issue_tracker.types.bug` |
 | `issue_tracker.github.priority_labels` | The priority facet's `labels`; set, it keeps priority in labels until `store` names another |
 | `issue_tracker.jira.field_labels` | An entry whose values are a facet's values (a `Size` field whose labels are the size group's) is that facet's `field` store, now written as well as read, and its values still show as labels; any other entry reads as labels, as it does today |
+| `issue_tracker.jira.priorities` | The priority facet's `values` map on Jira, seeded from it: its entries and its defaults (urgent is Highest) stay the names written and read until `issue_tracker.facets.priority.values` is set; a facet map that gives a canonical value another name than this key does is refused when the configuration is read |
 | `issue_tracker.jira.issue_type` | The issue type of every new issue until a type store is named, and then of one whose type has no issue type of its own name, and of one created under an Epic |
 | `issue_tracker.labels.batch_sizes`, `work_batch.sizes` and `size_points`, `routing.raise.sizes`, `review.taxonomy.sizes` | Each entry is read as a size value, or as the label of one, so a list keeps working whatever store the size is in |
 
@@ -306,11 +322,17 @@ file.
   matches when its value is in the list) and `missing` (facets: an issue
   matches when it has no value for one of them). `work-batch` selects its pool by size this way, and reads
   its labelling gaps with `missing`, instead of by size labels.
-- `Tracker` gains `incompleteIssues({ missing, after?, limit })`: one page
-  of open issues not in the triage state that lack a value for a listed
-  facet, and a cursor for the next. It is the weekly sweep's read, and the
-  one read of the interface that returns part of a population on purpose,
-  so it says so in its name and its cursor.
+- `Tracker` gains `incompleteIssues({ missing, retired, after?, limit })`:
+  one page of open issues not in the triage state and not yet started that
+  lack a value for a listed facet (`missing`) or carry a label a facet's
+  store has retired (`retired`), a cursor for the next, and, with every
+  page, the tracker's own counts of the open issues outside triage and of
+  those lacking each facet, so a ratio never has a filtered denominator. A
+  started issue is never in these pages, so one that stays incomplete cannot
+  use up the read; the sweep lists them from a separate read of one page of
+  100. It is the weekly sweep's read, and the one read of the interface that
+  returns part of a population on purpose, so it says so in its name and its
+  cursor.
 - `Tracker` gains `facetStores()`: each facet's effective store and why
   (configured, kept in labels, detected), and on GitHub what detection saw
   (the field, its options, the credential that read them), so the check, the
@@ -366,7 +388,9 @@ before the reads and writes that touch that facet's field, not before every
 call. What it reads (whether the repository's issues carry the facet's
 labels, the organization's issue types and fields) is cached for one hour
 in the clone's [machine-local store](../GLOSSARY.md), keyed by repository,
-organization and the login of the credential that read it, and dropped when
+organization and a non-secret fingerprint of the credential that read it (a
+salted hash of the token, never its login, which two tokens of different
+reach share), and dropped when
 a write is refused for a value the cache named. For a repository that keeps
 labels or names its stores, only `facetStores()` and the audit read the
 organization, to report the field it could move to; its reads and writes
@@ -427,8 +451,9 @@ says (a deferred correctness finding is a `bug` whatever the pull request
 was), so the entry `defer-in-pr.ts` writes into the pull request records the
 type, the severity and the category `defer-batch.ts` already takes. A
 finding of `unknown` severity files as medium, set once in the shared
-severity mapping (`SEVERITY_TO_PRIORITY` in `defer-batch.ts`), so every path
-that files a finding gives it the same priority. An entry written before
+severity mapping (`SEVERITY_TO_PRIORITY` in `defer-batch.ts`) and in the
+append rules beside it, so every path that files or updates a finding gives
+it the same priority. An entry written before
 `defer-in-pr.ts` records type and severity stays in the pull request's
 section, reported as one a person files through `/jig:file-issue`.
 
@@ -466,22 +491,27 @@ lacks a type, a priority or a size (no size on an epic), or carries a
 retired label (a facet's label where that facet is kept elsewhere), and
 moves each one not yet started back to the `triage` state with a comment
 naming the missing facets, so the move carries its reason in the tracker's
-history. An issue already started is listed, not moved, since moving it
-would take it from the session working it. An issue already in triage is
-not read again, so each issue is moved and commented on once.
+history. The comment is posted first and carries a marker naming the issue's
+missing facets; a run that stopped between the comment and the move finds the
+marker on the next run, moves the issue and posts nothing again. An issue
+already started is listed, not moved, since moving it would take it from the
+session working it. An issue already in triage is not read again, so each
+issue is moved and commented on once.
 
 Its bounds:
 
 - **A run is capped.** It reads at most 20 pages of 100 issues and moves at
   most 50; what remains is moved by the next run, which starts from the
-  issues still outside triage.
+  issues still outside triage. The read pages over issues not yet started
+  only, so the same started issues cannot take the budget run after run.
 - **Writes are paced.** At most 30 a minute (a move and its comment are
   two); a `Retry-After` is honoured up to 3 times, and on the fourth refusal
   the run stops and reports how many it moved and how many remain.
-- **A store problem moves nothing.** When more than half the open issues a
-  run reads lack the same facet, it moves none and reports the store and
-  detection result instead, since that is a store that stopped answering,
-  not a pile of bad filings.
+- **A store problem moves nothing.** When more than half of the open issues
+  outside triage, by the tracker's own counts, lack the same facet, or
+  `facetStores()` reports a store that fails closed, it moves none and
+  reports the store and detection result instead, since that is a store
+  that stopped answering, not a pile of bad filings.
 - **It prints keys, not content.** Each line is an issue key and its missing
   facets, never a title or a body, so a public workflow log holds nothing a
   private tracker does not show.
@@ -502,20 +532,33 @@ and runs no sweep.
 ### Moving a repository from one store to another
 
 `check-fields.ts move` moves facets between any two stores, labels to
-fields and back. Its target is the `issue_tracker.facets` section the
-repository will commit, given as a file (`--target <file>`), so the switch
-commits exactly what the copy wrote. A person runs it; the scheduled
-workflow never does. Each
-run is one pass over the open issues, at most one update per issue, carrying
-every facet it moves; an issue whose target already holds its value is
-skipped, so a run that stopped is resumed by running it again. Writes are
-paced and honour `Retry-After` as the sweep's are. It changes nothing
-without `--yes`, and with `--yes` it writes a record (`--record <file>`) of
-each issue it changed: the labels it took off and the field values it
-replaced, from which `move --restore <file> --yes` puts them back.
+fields, fields to labels and field to field. Its target is the
+`issue_tracker.facets` section the repository will commit, given as a file
+(`--target <file>`), so the switch commits exactly what the copy wrote; its
+source is the section in force. A person runs it; the scheduled workflow
+never does. Each run is one pass over the open issues, at most one update
+per issue, carrying every facet it moves. Writes are paced and honour
+`Retry-After` as the sweep's are. It changes nothing without `--yes`, and
+with `--yes` it writes a record (`--record <file>`) of every issue it
+changed: for each store it touched, the issue's value before and after,
+whether a label, an issue type or a field value, the labels it added as well
+as the ones it took off. `move --restore <file> --yes` puts every recorded
+before-state back.
+
+Each phase is complete for an issue on its own condition, so a run that
+stopped is resumed by running it again:
+
+- **Copy** is complete when the destination holds the source's value.
+- **Retire** is complete when the destination is correct and the source
+  representation is gone (the source labels are off, or the source field is
+  cleared). A copied issue is not skipped by retire.
 
 1. **Preview.** `move --target <file>` without `--yes` lists what each
-   issue would get, and the issues whose labels give no value or two.
+   issue would get, and the issues whose source gives no value or two.
+   Such an issue is **unresolved**: a person gives it one value in its
+   source first. Copy refuses to start while any open issue is unresolved,
+   and retire never removes a source representation it has not verified
+   copied.
 2. **Give the organization the fields** where they are missing: issue types
    named like the taxonomy's types, and Effort options that are the
    taxonomy's sizes (the default Priority field already names the
@@ -524,15 +567,22 @@ replaced, from which `move --restore <file> --yes` puts them back.
    shows which ones it would reach: only those that keep no labels for that
    facet and name no store.
 3. **Copy.** `move --target <file> --copy --yes` sets every open issue's
-   target value from its current store, keeping its labels.
+   destination value from its source, keeps the source as it is, and writes
+   the value it copied into the record as the copy snapshot.
 4. **Switch.** The person commits the target section to the repository's
    configuration. Filings write the new stores from then on.
-5. **Retire.** `move --target <file> --retire --yes` sets any value still missing in the
-   target (an issue filed or relabelled since the copy, read from its
-   labels) and takes the facet's labels off, in the same update. Closed
-   issues keep their labels as history, and no label is deleted while a
-   closed issue carries it, so the ledgers' priority history is never
-   erased.
+5. **Retire.** `move --target <file> --retire --yes` reads each open issue
+   again and compares its source with the copy snapshot. An unchanged source
+   is retired. A source someone changed since the copy, with the
+   destination still at the snapshot, has its new value written to the
+   destination first and is then retired. A source and a destination both
+   changed since the copy conflict: the issue is left as it is and listed, and
+   the run is not complete until a person settles each one. An issue filed
+   after the copy has no snapshot and is copied and retired in one update.
+   The source representation is removed only where the source is a label or
+   a field; a destination label is never removed. Closed issues keep their
+   labels as history, and no label is deleted while a closed issue carries
+   it, so the ledgers' priority history is never erased.
 
 A move writes at most twice per open issue (the copy and the retire) and
 never touches a closed issue; at 30 writes a minute, a run over 1,000 open
@@ -595,7 +645,9 @@ measured.
    `plugin/CONFIGURATION.md`, `plugin/EXTENDING.md`, a change note
    (`release: minor`), the adapters' tests, the fake transport returning a
    timeout, a rate limit and a refusal to detection. Done when a repository
-   that sets nothing files, reads and pools exactly as before, in the same
+   that sets nothing files, reads and pools exactly as before (a store named
+   for type or size before step 2 is for the scratch run below only: the
+   callers read labels until step 2), in the same
    order; on a scratch issue of Jig's repository with the stores named in an
    overlay, `tracker.ts create` with type `bug`, priority 2 and size `small`
    files a Bug with Priority High and Effort `small` and none of them as a
@@ -611,7 +663,12 @@ measured.
    for a priority. `resolve-review-comments/scripts/file-deferred.ts`,
    `defer-in-pr.ts`, `lib/deferred-section.ts` and the deferral protocol:
    the entry records type, severity and category, and the filing sets every
-   facet; `defer-batch.ts`'s `SEVERITY_TO_PRIORITY`: `unknown` as medium.
+   facet; `defer-batch.ts`'s `SEVERITY_TO_PRIORITY`: `unknown` as medium, with
+   `priorityReflectsSeverity` and `priorityAfterSeverity` and their tests
+   revised to match: they compare severity ranks, and `unknown` ranks below
+   every real severity today, so an existing priority is left alone in the
+   append path. After the change `unknown` has the medium floor: a priority
+   weaker than medium is raised to it, a stronger one stays.
    `jig/scripts/report-bug.ts`: the Bug type. `.github/ISSUE_TEMPLATE/bug.yml`
    and `change.yml`: their types beside their labels, priority and size left
    to triage.
