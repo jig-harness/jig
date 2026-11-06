@@ -387,6 +387,18 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.149.3] - 2026-11-06
+
+### Fixed
+
+- On Linux, a dispatcher tick that no Orca terminal started (a wake-up from
+  Orca's plugin, or any run without `ORCA_CLI_COMMAND`) reads and starts
+  sessions through `orca-ide`, the name Orca installs its command under
+  there. It ran a bare `orca`, which on a desktop with GNOME's screen reader
+  installed is the screen reader: every such tick failed its runtime read
+  (`orca repo list failed (exit 1): … dbind-CRITICAL …`) and started
+  nothing. `jig doctor`'s `dispatch:orca` check looks for the same command.
+
 ## [0.149.2] - 2026-11-06
 
 ### Fixed
@@ -5457,7 +5469,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.149.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.149.3...HEAD
+[0.149.3]: https://github.com/jig-harness/jig/compare/v0.149.2...v0.149.3
 [0.149.2]: https://github.com/jig-harness/jig/compare/v0.149.1...v0.149.2
 [0.149.1]: https://github.com/jig-harness/jig/compare/v0.149.0...v0.149.1
 [0.149.0]: https://github.com/jig-harness/jig/compare/v0.148.1...v0.149.0
