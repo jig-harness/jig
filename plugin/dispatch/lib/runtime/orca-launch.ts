@@ -25,7 +25,7 @@
  */
 import { resolve } from "node:path";
 import { shellQuote } from "../../../shared/cli.ts";
-import { orcaCommand, orcaEnvelope } from "../../../shared/orca.ts";
+import { orcaCommandOrInstalled, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import {
@@ -63,7 +63,7 @@ function wrapperCommand(record: string, token: string, until: number): string {
 
 /** The command Orca's CLI runs as. */
 function orcaBinary(): string {
-  return orcaCommand(process.env) ?? "orca";
+  return orcaCommandOrInstalled(process.env);
 }
 
 function seconds(ms: number): number {
