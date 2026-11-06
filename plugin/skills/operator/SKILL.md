@@ -134,7 +134,8 @@ drive parked; an `answer` entry is a trusted person's reply.
 | --- | --- |
 | hold a pull request; keep the line off it | `jig send drive@<owner>/<name> <PR> hold --dry-run` |
 | release it | `jig send drive@<owner>/<name> <PR> release --dry-run` |
-| hold or release a merged pull request's follow-up | `jig send followup@<owner>/<name> <PR> hold --dry-run` |
+| hold a merged pull request's follow-up | `jig send followup@<owner>/<name> <PR> hold --dry-run` |
+| release a merged pull request's follow-up | `jig send followup@<owner>/<name> <PR> release --dry-run` |
 | drive a pull request that has no drive yet | `jig send drive@<owner>/<name> <PR> drive --dry-run` |
 | answer a parked question | `jig send drive@<owner>/<name> <PR> answer <key> '<their words>' --dry-run` |
 | pause a drive | `jig send drive@<owner>/<name> <PR> pause --dry-run` |

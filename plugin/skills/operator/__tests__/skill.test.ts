@@ -50,10 +50,13 @@ function words(line: string): string[] {
 }
 
 /** Every `jig ask` and `jig send` command the skill prescribes, from its code spans and fenced blocks. */
-function commands(tool: "ask" | "send"): string[] {
-  const spans = [...body.matchAll(/`([^`\n]+)`/g)].map((m) => m[1] ?? "");
-  const fenced = [...body.matchAll(/```[a-z]*\n([\s\S]*?)```/g)].flatMap((m) =>
-    (m[1] ?? "").split("\n"),
+function commands(tool: "ask" | "send", source = body): string[] {
+  const inline = source.replace(/```[^\n]*\n[\s\S]*?```/g, "");
+  const spans = [...inline.matchAll(/`([^`]+)`/g)].map((m) =>
+    (m[1] ?? "").replace(/\s+/g, " "),
+  );
+  const fenced = [...source.matchAll(/```[a-z]*\n([\s\S]*?)```/g)].flatMap(
+    (m) => (m[1] ?? "").split("\n"),
   );
   return [...spans, ...fenced]
     .map((s) => s.trim())
@@ -88,6 +91,28 @@ function optionNames(usage: unknown): Set<string> {
 const refuse = (reason: string): never => {
   throw new Error(reason);
 };
+
+function validateSend(line: string): void {
+  const parsed = parse(sendCommand, ["send", ...filled(line)]);
+  if (!parsed.success) throw new Error(`jig send does not take: ${line}`);
+  expect(parsed.value.dryRun, line).toBe(true);
+  // The address, its key and the verb split as sendMain splits them.
+  const [text = "", ...rest] = parsed.value.words;
+  const second =
+    text.includes("#") || isVerb(rest[0]) ? undefined : rest.shift();
+  const written = parseAddress(text, second);
+  if (!written.ok) throw new Error(`${line}: ${written.failure.reason}`);
+  expect(
+    checkKey(written.value.station, written.value.key, (key) =>
+      /^[1-9][0-9]*$/.test(key) ? key : null,
+    ).ok,
+    line,
+  ).toBe(true);
+  expect(
+    () => parseRequest(written.value.station, rest, refuse),
+    line,
+  ).not.toThrow();
+}
 
 describe("SKILL.md's frontmatter", () => {
   test("is named for its folder, and its description leads with the trigger and says what it is not for", () => {
@@ -141,21 +166,39 @@ describe("the commands it names", () => {
   });
 
   test("every jig send parses with send's parser and its verbs, and is a dry run", () => {
-    for (const line of commands("send")) {
-      const parsed = parse(sendCommand, ["send", ...filled(line)]);
-      if (!parsed.success) throw new Error(`jig send does not take: ${line}`);
-      expect(parsed.value.dryRun, line).toBe(true);
-      // The address, its key and the verb split as sendMain splits them.
-      const [text = "", ...rest] = parsed.value.words;
-      const second =
-        text.includes("#") || isVerb(rest[0]) ? undefined : rest.shift();
-      const written = parseAddress(text, second);
-      if (!written.ok) throw new Error(`${line}: ${written.failure.reason}`);
-      expect(
-        () => parseRequest(written.value.station, rest, refuse),
-        line,
-      ).not.toThrow();
-    }
+    for (const line of commands("send")) validateSend(line);
+  });
+
+  test("wrapped commands stay subject to verb and dry-run validation", () => {
+    const wrapped = commands(
+      "send",
+      "`jig send drive@<owner>/<name> <PR>\n halt --dry-run`",
+    );
+    expect(wrapped).toEqual([
+      "jig send drive@<owner>/<name> <PR> halt --dry-run",
+    ]);
+    expect(() => validateSend(wrapped[0] ?? "")).toThrow();
+    expect(() =>
+      validateSend("jig send drive@<owner>/<name> <PR> hold"),
+    ).toThrow();
+  });
+
+  test("send keys must match their station's form", () => {
+    for (const station of ["drive", "followup", "pickup"])
+      expect(() =>
+        validateSend(
+          `jig send ${station}@<owner>/<name> not-a-number ${station === "pickup" ? "assign" : "hold"} --dry-run`,
+        ),
+      ).toThrow();
+  });
+
+  test("holding and releasing a follow-up name distinct verbs", () => {
+    expect(body).toContain(
+      "| hold a merged pull request's follow-up | `jig send followup@<owner>/<name> <PR> hold --dry-run` |",
+    );
+    expect(body).toContain(
+      "| release a merged pull request's follow-up | `jig send followup@<owner>/<name> <PR> release --dry-run` |",
+    );
   });
 
   test("every option it names is one jig ask or jig send takes", () => {
