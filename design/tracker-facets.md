@@ -165,21 +165,35 @@ when a key of today names that facet's labels (`priority_labels`, or the
 labels `issue_tracker.types` lists) or when any of its issues, open or
 closed, carries one of that facet's labels; a label merely defined, such as
 the `bug` label GitHub gives every new repository, does not count. Such a
-repository files and reads exactly as it does today after every upgrade; the organization field it could move to is
-reported by `facetStores()` and by the audit, and it moves by running
+repository files and reads exactly as it does today after every upgrade;
+the organization field it could move to is reported by `facetStores()` and
+by the audit, and it moves by running
 [the move](#moving-a-repository-from-one-store-to-another) and then naming
 the new store in its configuration. An explicit `store` always wins. The
 field default reaches only a repository with no labels for the facet and
 no store named, such as a new one.
 
+This rule is load-bearing. GitHub's issue fields have been
+[generally available since 2026-07-02](https://github.blog/changelog/2026-07-02-issue-fields-are-now-generally-available/)
+on the Free, Team and Enterprise plans, and ship in GitHub Enterprise
+Server 3.23. Every organization gets Priority (Urgent, High, Medium, Low),
+Effort (High, Medium, Low), Start date and Target date by default, so
+detection finds a Priority field in every GitHub organization. Without the
+rule, every repository that keeps priority in labels would move its
+priority to that field on its first upgrade, whoever added the field and
+whatever the repository's own searches and boards read.
+
 **On GitHub the fields are detected, never switched on.** For a facet the
 rules above leave open, the adapter reads the organization's issue types
 and issue fields. A Priority field counts when its options name the
-priorities (Urgent, High, Medium and Low, ignoring case), and an Effort
-field when its options name the taxonomy's sizes. A repository a person
-owns has neither, so it uses labels. A field of that name whose options do
-not match is an error naming the two ways out (a `values` map, or
-`store: label`), not a quiet fall back to labels. A type with no issue type
+priorities (Urgent, High, Medium and Low, ignoring case), as the default
+field's do; one whose options an organization renamed is an error naming
+the two ways out (a `values` map, or `store: label`), not a quiet fall back
+to labels. An Effort field counts when its options are the taxonomy's
+sizes; the default Effort's High, Medium and Low are not, so size stays in
+labels unless the organization sets its Effort options to the size names
+or a `values` map names them. A repository a person owns has no issue
+fields, so it uses labels. A type with no issue type
 of its name, such as `docs` in an organization that has only Bug, Feature
 and Task, keeps its label; GitHub asks for no issue type on an issue, so
 nothing else is set. The type is mixed per value because an organization's
@@ -188,10 +202,10 @@ extra types cannot be added without offering them to all; a repository
 that wants one place for its types maps every type or sets `store: label`.
 A repository on a detected field is told by `facetStores()` and the audit
 to name that store in its configuration: until it does, an organization
-admin who renames the field's options makes its filings fail with the error
-above, and one who deletes the field moves it to labels, which its tick
-record shows and the sweep's store-problem rule catches before it moves
-anything.
+admin who renames the Priority field's options makes its filings fail with
+the error above, and one who deletes a field or moves the Effort options
+away from the size names moves that facet to labels, which its tick record
+shows and the sweep's store-problem rule catches before it moves anything.
 
 **On Jira every issue has an issue type.** Type moves to issue types only
 when `issue_tracker.facets.type` names the `native` store, with a `values`
@@ -199,7 +213,13 @@ map where names differ (`feature: Story` is an example map, never a
 default). Then a type with no issue type of its name is filed as
 `issue_tracker.jira.issue_type` and keeps its value in its label, and an
 issue created under a standard issue is a sub-task, as today, and keeps its
-type in its label too. On Jira the issue type chooses the workflow and the
+type in its label too. Such an issue can name two values when
+`issue_type` is itself a mapped value (`task` → Task), and a GitHub type
+kept as a label can sit beside an issue type someone set by hand. A type
+label wins over Jira's fallback issue type (`issue_type` or the sub-task
+type); any other two different values read as no type, as two type labels
+make an item `unknown` in [work types](work-types.md), and the weekly sweep
+reports the issue. On Jira the issue type chooses the workflow and the
 create screen per project, so every issue type a map names must reach the
 states `issue_tracker.states` names; the live run in build step 4 moves one
 issue of each mapped type through them.
@@ -397,15 +417,26 @@ so `createIssue` offers no way around the check.
 | `file-issue` | writes through `tracker.ts create`; type and size as labels, priority optional | the same command, checked inside the write; priority required |
 | `tracker.ts create` (`do-item`) | checks shape | checked inside the write, the missing facet named |
 | `file-deferred.ts` | the follow-up label only | checked inside the write; the type from the finding, the priority from the [severity mapping](../GLOSSARY.md) M9 names, the size `small` unless the entry names one |
-| `report-bug.ts` | `gh issue create` with the `bug` label | sets the Bug issue type where the account may set types |
-| The issue forms | a label | `type: Bug` on the bug form, `type: Feature` on the change form |
+| `report-bug.ts` | `gh issue create` with the `bug` label | sets the Bug issue type where the account may set types; priority and size from triage |
+| The issue forms | a label | `type: Bug` on the bug form, `type: Feature` on the change form; priority and size from triage |
 | An agent by hand | whatever it sets | reported by the pools on their next read, and moved by the weekly sweep |
 
 `file-deferred.ts` takes the type from the finding as the
 [deferral protocol](../plugin/skills/resolve-review-comments/references/deferral-protocol.md#labels)
 says (a deferred correctness finding is a `bug` whatever the pull request
 was), so the entry `defer-in-pr.ts` writes into the pull request records the
-type, the severity and the category `defer-batch.ts` already takes.
+type, the severity and the category `defer-batch.ts` already takes. A
+finding of `unknown` severity files as medium, set once in the shared
+severity mapping (`SEVERITY_TO_PRIORITY` in `defer-batch.ts`), so every path
+that files a finding gives it the same priority. An entry written before
+`defer-in-pr.ts` records type and severity stays in the pull request's
+section, reported as one a person files through `/jig:file-issue`.
+
+The issue forms set the type (`type:` in the form) but not the priority or
+the size, since
+[field values cannot be pre-filled from an issue template or a URL](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-and-managing-issue-fields).
+They come from triage: the pools report such an issue on their next read,
+and the weekly sweep moves it to the triage state if no one has.
 
 Requiring a priority and a size breaks a script that files through
 `tracker.ts create` without them, so the check arrives in two releases.
@@ -486,9 +517,9 @@ replaced, from which `move --restore <file> --yes` puts them back.
 1. **Preview.** `move --target <file>` without `--yes` lists what each
    issue would get, and the issues whose labels give no value or two.
 2. **Give the organization the fields** where they are missing: issue types
-   named like the taxonomy's types, a Priority field with the options
-   Urgent, High, Medium and Low, and an Effort field whose options are the
-   taxonomy's sizes; or a `values` map to the names it already uses. Before
+   named like the taxonomy's types, and Effort options that are the
+   taxonomy's sizes (the default Priority field already names the
+   priorities); or a `values` map to the names it already uses. Before
    adding a field, `facetStores()` in each repository of the organization
    shows which ones it would reach: only those that keep no labels for that
    facet and name no store.
@@ -509,11 +540,6 @@ issues takes about 35 minutes, and a repository's move is a person's
 preview, those two runs and one configuration commit. Going back is the
 same command with the old section as its target, or `--restore` with the
 record, followed by reverting the configuration commit.
-
-Before build step 1 a person confirms GitHub's issue fields are available to
-the organizations Jig targets (their release status and the plans that have
-them); a repository whose organization has none keeps labels, which the
-defaults already give it.
 
 ### Compatibility
 
@@ -536,16 +562,17 @@ defaults already give it.
 ### Jig's own repository
 
 Jig moves to GitHub's stores once the move exists (build step 3). Its
-organization has an issue type for each of its taxonomy's types (Bug,
-Feature, Docs, Chore and Infra, beside Task), a Priority field whose options
-are the priorities, and an Effort field whose options are `xs`, `small`,
-`medium`, `large` and `xl`, so its configuration names the stores
-(`store: native` for type and priority, `store: field` with `field: Effort`
-for size) and needs no value map. Its `issue_tracker.types` keeps mapping
-`docs`, `chore` and `infra` to the `task` work type. Its open issues then
-carry no type, priority or size label; its closed issues keep theirs. An
-issue of type Task names no type of Jig's taxonomy, so it reads as none,
-and the sweep moves it to triage once with its comment.
+organization's issue types are its taxonomy's types, Bug, Feature, Docs,
+Chore and Infra: a person retires GitHub's default Task type from the
+organization before the move, so the web interface offers no type that
+names nothing. Its Priority field has the default options, and its Effort
+field's options are `xs`, `small`, `medium`, `large` and `xl`, so its
+configuration names the stores (`store: native` for type and priority,
+`store: field` with `field: Effort` for size) and needs no value map. Its
+`issue_tracker.types` keeps mapping `docs`, `chore` and `infra` to the
+`task` work type. Its open issues then carry no type, priority or size
+label, and its closed issues keep theirs. Its issue forms carry both the
+type and the type label until the move, and drop the label with it.
 
 ## Build order
 
@@ -584,8 +611,10 @@ measured.
    for a priority. `resolve-review-comments/scripts/file-deferred.ts`,
    `defer-in-pr.ts`, `lib/deferred-section.ts` and the deferral protocol:
    the entry records type, severity and category, and the filing sets every
-   facet. `jig/scripts/report-bug.ts`: the Bug type.
-   `.github/ISSUE_TEMPLATE/bug.yml` and `change.yml`: their types.
+   facet; `defer-batch.ts`'s `SEVERITY_TO_PRIORITY`: `unknown` as medium.
+   `jig/scripts/report-bug.ts`: the Bug type. `.github/ISSUE_TEMPLATE/bug.yml`
+   and `change.yml`: their types beside their labels, priority and size left
+   to triage.
    `facets/detect.ts`: GitHub's field default for a repository that keeps no
    labels for the facet. `plugin/dispatch/tick.ts` and its receipt: each
    facet's store and the pool's gaps in the tracker record.
@@ -608,7 +637,8 @@ measured.
    the fake tracker writes at most one update per open issue per run, skips
    the issues a stopped run already moved, and is undone by `--restore`; and
    the sweep stops at its caps and at a refused write, reporting what
-   remains. Owed by a person after the merge: Jig's move, after which no
+   remains. Owed by a person after the merge: the Task type retired from
+   Jig's organization, then Jig's move, after which no
    open issue of Jig carries a type, priority or size label, its closed
    issues keep theirs, its configuration names its stores, its pools read in
    the same order as before, and the sweep lists no issue.
@@ -637,9 +667,9 @@ measured.
 A store kept by the repository's own command, for a facet no other store
 can express (a value derived from two Jira fields, or kept in a service of
 the repository's own), is not built until a repository names the facet it
-needs it for. Whether it comes as a command per facet or as a whole adapter
-kept as a script is the person's choice when that happens. Either way it
-must meet these constraints:
+needs it for. It is a command per facet, not a whole adapter kept as a
+script: the interface's other operations stay in code. It must meet these
+constraints:
 
 - **Only the repository sets it, from its default branch.** It is one of
   the fields only a repository sets (`REPOSITORY_ONLY_FIELDS`), refused in
@@ -676,6 +706,10 @@ must meet these constraints:
   every adapter's store fixed in code, so a Jira site's custom issue types
   and fields, or a GitHub organization's fields, stay out of reach. Overruled
   by the person accepting this design.
+- **A whole adapter as an external script.** The interface has an
+  operation for every read and write the skills make, and the next adapter
+  is planned as code ([plan.md](plan.md) item 12); the command per facet,
+  when a repository needs it, covers what no store expresses.
 - **Every field shown as a label**, as `jira.field_labels` does, so no
   caller changes. It leaves type and size with no defined value in the
   interface.
@@ -687,8 +721,9 @@ must meet these constraints:
   an owning repository. They stay labels or Jira `field_labels`; one joins
   when a caller needs to read it.
 - **The deferral batch step's own Linear path** (`defer-batch.ts`), which
-  files outside the interface and already sets priority from severity. It
-  joins the check when the deferral moves onto the interface (plan item 10).
+  files outside the interface and already sets priority from severity,
+  through the shared mapping that files `unknown` as medium. It joins the
+  check when the deferral moves onto the interface (plan item 10).
 - **Records.** `reflect`'s issues are records, not work, carry no facets,
   and are never read by the sweep.
 - **An epic as a Jira issue type.** The epic stays a label on every
@@ -696,31 +731,6 @@ must meet these constraints:
 - **A host timer for the sweep.** Jig's repository runs it as a workflow; a
   host job like the dispatcher's joins when a consumer without CI asks for
   one.
-
-## Open questions
-
-The person who accepts this design decides each, at the point named.
-
-1. **A type read from two places** (decide before acceptance: it sets step
-   1's reads). A GitHub type kept as a label can sit beside an issue type
-   someone set by hand, and a Jira issue whose type has no issue type is
-   filed as `issue_type` (or as the sub-task type) and keeps its type in a
-   label; when `issue_type` is itself a mapped value (`task` → Task), such
-   an issue names two values. Recommendation: a value kept in a label wins
-   over the fallback issue type (`issue_type`, the sub-task type); any
-   other pair of different values reads as none, as two type labels make an
-   item `unknown` in [work types](work-types.md), and the sweep reports it.
-2. **A deferred finding of unknown severity** (before step 2). The severity
-   mapping turns `unknown` into no priority, which the check refuses, and
-   an entry written before `defer-in-pr.ts` records type and severity has
-   neither. Recommendation: `unknown` files as medium, set once in the
-   severity mapping so every path agrees; an entry with no recorded type
-   stays in the section, reported as one a person files through
-   `/jig:file-issue`.
-3. **The Task type in Jig's organization** (before Jig's move). It is
-   offered on every new issue and names no type of Jig's taxonomy.
-   Recommendation: retire it from the organization, so the web interface
-   stops offering a type the sweep moves back to triage.
 
 ## Review
 
