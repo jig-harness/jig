@@ -1091,7 +1091,7 @@ repository. What a run may start is the machine's to say, in
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `dispatch.identity` | string: a GitHub login; a Linear user's email or display name; or, on Jira, an Atlassian account id, or an email or display name that matches exactly one user (more or fewer matches are refused) | None: the repository has no pickups | dispatch |
-| `dispatch.person` | forge login | None: a parked question routes to the owner of its anchor's change area, else this login when configured, else the pull request's author. Overlapping areas with different owners use the fallback. This routes the question and changes no answer permissions | drive-pr (writes parks); dispatch and ask (read the recorded person) |
+| `dispatch.person` | forge login | None: a parked question routes to the owner of its anchor's change area, else this login when configured, else the pull request's author. Overlapping areas with different owners use the fallback. This routes the question and changes no answer permissions; dispatch and ask read the recorded person | drive-pr |
 | `dispatch.states` | nonempty list of [canonical states](#issue_tracker), without `in_progress` (the state `do-item`'s claim moves an item to) | `[todo]` | dispatch |
 | `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command, which claims the follow-up with `jig dispatch marker` as [the plugin's README](README.md#the-dispatcher) says | dispatch |
 | `dispatch.stalled_after` | duration (`90s`, `30m`, `1h`) | `30m`: a claimed item (assigned to `identity` in `in_progress`) with no running session for longer is reported as a stalled pickup, never relaunched | dispatch |
@@ -1304,6 +1304,7 @@ gc:
   scratch_prefixes: [/tmp/example-test.]
 dispatch:
   identity: example-factory
+  person: example-maintainer
   states: [todo]
   followup_command: /post-merge
   stalled_after: 30m
