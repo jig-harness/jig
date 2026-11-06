@@ -128,8 +128,8 @@ function labelPrefixAt(checkout: string | null): string | null {
  * An address as written, resolved in full and its key checked, with what
  * resolving it read; every refusal goes to `refuse`, a usage error. `jig
  * send` resolves its address the same way. With `keyAsWritten` a pick-up's
- * key is left as written for the caller to check against another tracker
- * than the checkout's.
+ * key is left as written and the checkout's tracker configuration is not
+ * read, for the caller to check against another tracker than the checkout's.
  */
 export function resolveAddress(
   text: string | undefined,
@@ -149,12 +149,16 @@ export function resolveAddress(
   if (!repo.ok) refuse(repo.failure.reason);
   const checkout = checkoutOf(repo.value, choices);
   const { station } = written.value;
+  const asWritten = keyAsWritten && station === "pickup";
   const tracker =
-    station === "pickup" ? trackerOf(repo.value, checkout, refuse) : null;
+    station === "pickup" && !asWritten
+      ? trackerOf(repo.value, checkout, refuse)
+      : null;
+  if (asWritten && checkout === null) noCheckout(repo.value, refuse);
   const key = checkKey(
     station,
     written.value.key,
-    keyAsWritten && tracker !== null ? (k) => k : (tracker?.keys ?? null),
+    asWritten ? (k) => k : (tracker?.keys ?? null),
   );
   if (!key.ok) refuse(key.failure.reason);
   const address: Address = { station, repo: repo.value, key: key.value };
@@ -189,16 +193,19 @@ export function contextFor(
   };
 }
 
+function noCheckout(repo: string, usage: (reason: string) => never): never {
+  return usage(
+    `no checkout of ${repo} on this machine names its tracker, so the item key cannot be checked or read; run it in a checkout of the repository, or one the dispatch file lists`,
+  );
+}
+
 /** A pick-up's tracker, from a checkout of its repository here; a usage error where there is none. */
 function trackerOf(
   repo: string,
   checkout: string | null,
   usage: (reason: string) => never,
 ): RepoTracker {
-  if (checkout === null)
-    usage(
-      `no checkout of ${repo} on this machine names its tracker, so the item key cannot be checked or read; run it in a checkout of the repository, or one the dispatch file lists`,
-    );
+  if (checkout === null) noCheckout(repo, usage);
   const tracker = trackerAt(checkout);
   if (!tracker.ok) usage(tracker.failure.reason);
   return tracker.value;

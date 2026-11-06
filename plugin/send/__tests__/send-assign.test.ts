@@ -165,4 +165,12 @@ describe("jig send assign", () => {
     expectSpawnExit(r, 0);
     expect(writes(ops)).toEqual(["TrackerAssign"]);
   });
+
+  it("assigns although the checkout's tracker configuration does not read", async () => {
+    const { w, ops } = world();
+    writeFileSync(join(w.repo, ".config", "jig.yaml"), "issue_tracker: 123\n");
+    const r = await w.send([`pickup@${REPO}#14`, "assign"]);
+    expectSpawnExit(r, 0);
+    expect(writes(ops)).toEqual(["TrackerAssign"]);
+  });
 });

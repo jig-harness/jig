@@ -33,7 +33,7 @@ import { type Planned, refused, writerLogin } from "./plan.ts";
 /** What the tick reads from the repository's default branch: its tracker, factory identity and dispatch states. */
 async function tickSettings(
   ctx: AskContext,
-  repoTracker: RepoTracker,
+  root: string,
 ): Promise<
   Outcome<{ tracked: RepoTracker; identity: string; key: string }, "refused">
 > {
@@ -63,7 +63,7 @@ async function tickSettings(
     );
   return ok({
     tracked: {
-      ...repoTracker,
+      root,
       config,
       keys: (input) => keys.normalize(input),
       identity,
@@ -77,11 +77,11 @@ async function tickSettings(
 /** The plan of an assignment, or why the item cannot take it. */
 export async function planAssign(
   written: AskContext,
-  repoTracker: RepoTracker,
+  root: string,
   as: string | undefined,
 ): Promise<Planned> {
   const { repo } = written.address;
-  const settings = await tickSettings(written, repoTracker);
+  const settings = await tickSettings(written, root);
   if (!settings.ok) return settings;
   const { tracked, identity, key } = settings.value;
   const address = { ...written.address, key };

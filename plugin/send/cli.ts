@@ -117,9 +117,9 @@ async function planFor(
   const r = reading();
   if (request.verb === "assign") {
     const ctx = contextFor(resolved, r, null);
-    return resolved.tracker === null
-      ? refused("the repository's tracker is not known here")
-      : planAssign(ctx, resolved.tracker, as);
+    return resolved.checkout === null
+      ? refused("no checkout of the repository is known here")
+      : planAssign(ctx, resolved.checkout, as);
   }
   const login = writerLogin(await readLogin(r), as, "the forge");
   if (!login.ok) return login;
