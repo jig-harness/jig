@@ -179,6 +179,8 @@ export interface LaunchClaim extends ProcessIdentity {
 }
 
 export interface LaunchExit {
+  /** A headless session stopped quickly without a result or its own transcript. */
+  startup?: "quota" | "unstarted";
   at: string;
   /** The stage's exit code; `null` when it ended on a signal. */
   code: number | null;

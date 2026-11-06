@@ -54,6 +54,7 @@ import { factsOf } from "./actions/drive-hold.ts";
 import type { LaunchClaimer } from "./actions/launch.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
+import { retryableStartup } from "./session-startup.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
@@ -451,6 +452,19 @@ export async function settleOwnClaims(
   nowIso: string,
 ): Promise<string[]> {
   const byId = new Map(records.map((r) => [r.record.id, r]));
+  const retryFailures: string[] = [];
+  const retryIds = new Set(
+    merged.flatMap((pr) =>
+      ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).map(
+        (m) => m.run.record,
+      ),
+    ),
+  );
+  for (const id of retryIds) {
+    const r = byId.get(id);
+    if (r !== undefined && retryableStartup(r))
+      retryFailures.push(...(await settleRecordClaims(ctx, r, nowIso)));
+  }
   const ends = [
     ...driveEnds(claims, ctx.host, byId, nowIso),
     ...merged.flatMap((pr) =>
@@ -465,9 +479,15 @@ export async function settleOwnClaims(
       ),
     ),
   ];
-  const failures: string[] = [];
+  const failures: string[] = [...retryFailures];
   const written = new Set<number>();
   for (const o of ends) {
+    if (
+      o.stage === "followup" &&
+      o.end.state === "ended" &&
+      o.end.outcome === null
+    )
+      continue;
     const r = await ctx.records.end(
       { repo: ctx.slug, pr: o.pr },
       o.stage,
@@ -534,16 +554,31 @@ async function settleRecordClaims(
   const unread = unreadClaims(read);
   const failures: string[] =
     unread === null ? [] : [`PR #${owed.pr}: ${unread}`];
-  const matches = readable(read.value).filter(
-    (c) =>
-      c.says.value.record === r.record.id &&
-      (c.says.value.host === ctx.host ||
-        (owed.stage === "followup" && c.says.value.host === null)),
+  const matches = ownRecordClaims(
+    read.value,
+    r.record.id,
+    ctx.host,
+    owed.stage,
   );
   if (matches.length === 0)
-    return [
-      `PR #${owed.pr}: no readable claim for launch record ${r.record.id} was observed`,
-    ];
+    return retryableStartup(r)
+      ? failures
+      : [
+          `PR #${owed.pr}: no readable claim for launch record ${r.record.id} was observed`,
+        ];
+  if (retryableStartup(r))
+    return [...failures, ...(await releaseStartupClaims(ctx, target, matches))];
+  return [...failures, ...(await writeRecordEnds(ctx, target, owed, matches))];
+}
+
+/** Publish each readable still-open claim's end, keeping independent write failures. */
+async function writeRecordEnds(
+  ctx: Pick<SharedContext, "records" | "host">,
+  target: { repo: string; pr: number },
+  owed: { stage: SharedStage; pr: number; end: LaunchEnd },
+  matches: ReadClaim[],
+): Promise<string[]> {
+  const failures: string[] = [];
   for (const c of matches) {
     if (!open(c)) continue;
     const done = await ctx.records.end(
@@ -556,6 +591,39 @@ async function settleRecordClaims(
     if (!done.ok)
       failures.push(
         `PR #${owed.pr}: the end of claim comment ${c.id} could not be written: ${done.failure.reason}`,
+      );
+  }
+  return failures;
+}
+
+/** Match readable claims to this host's record, including legacy hostless follow-ups. */
+function ownRecordClaims(
+  claims: SharedClaim[],
+  record: string,
+  host: string,
+  stage: SharedStage,
+): ReadClaim[] {
+  return readable(claims).filter(
+    (c) =>
+      c.says.value.record === record &&
+      (c.says.value.host === host ||
+        (stage === "followup" && c.says.value.host === null)),
+  );
+}
+
+/** A startup that never began releases only its own still-open claims. */
+async function releaseStartupClaims(
+  ctx: Pick<SharedContext, "records">,
+  target: { repo: string; pr: number },
+  matches: ReadClaim[],
+): Promise<string[]> {
+  const failures: string[] = [];
+  for (const claim of matches) {
+    if (!open(claim)) continue;
+    const released = await ctx.records.release(target, claim.id);
+    if (!released.ok)
+      failures.push(
+        `PR #${target.pr}: the unstarted follow-up's marker ${claim.id} could not be released: ${released.failure.reason}`,
       );
   }
   return failures;

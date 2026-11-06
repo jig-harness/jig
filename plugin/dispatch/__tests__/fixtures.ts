@@ -72,6 +72,7 @@ if (single !== null) {
   // A comment's update or removal, on whichever pull request's file holds it; an update is refused while comment-edit-fail exists.
   const id = Number(single[1]);
   const method = args[args.indexOf("-X") + 1];
+  if (method === "DELETE" && fs.existsSync(F + "/comment-delete-fail")) { fs.writeFileSync(F + "/comment-delete-refused", String(id)); process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
   if (method === "PATCH" && fs.existsSync(F + "/comment-edit-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
   const input = method === "PATCH" ? JSON.parse(fs.readFileSync(0, "utf8")) : null;
   for (const name of fs.readdirSync(F).filter((n) => /^comments-\\d+\\.json$/.test(n))) {
