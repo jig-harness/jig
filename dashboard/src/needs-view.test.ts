@@ -308,6 +308,29 @@ describe("whether What needs you exists", () => {
       needRows(lineOf("loud"), CLOCK).filter((r) => r.type !== "head").length,
     );
   });
+  it("counts a stuck launch record once, as its need", () => {
+    const line = lineOf("quiet");
+    const [session] = line.sessions;
+    const stuck = {
+      ...(session as LineSession),
+      launch: "pending",
+      stuck: "no workspace",
+      record: "launch-9",
+    } as LineSession;
+    const both: LineSnapshot = {
+      ...line,
+      needs: [{ ...NEED, stuckRecord: "launch-9" }],
+      sessions: [stuck],
+    };
+    expect(needCount(both, NOW)).toBe(1);
+    expect(needRows(both, CLOCK).filter((r) => r.type !== "head").length).toBe(
+      1,
+    );
+    expect(answerBand(both, CLOCK, true, false).sub).not.toContain(
+      "not moving",
+    );
+    expect(needCount({ ...both, needs: [] }, NOW)).toBe(1);
+  });
   it("does with a need, or with a session not moving", () => {
     expect(hasNeedRows(lineOf("loud"), NOW)).toBe(true);
     const line = lineOf("quiet");

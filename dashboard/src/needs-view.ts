@@ -5,6 +5,7 @@
 import type {
   LineDecision,
   LineNeed,
+  LineSession,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { ago, clock, plural } from "./format.ts";
@@ -164,6 +165,16 @@ export function orderedNeeds(needs: LineNeed[]): LineNeed[] {
   ];
 }
 
+/** The sessions under "Not moving": a stuck launch record already listed as a need is not listed again. */
+function notMoving(line: LineSnapshot, nowMs: number): LineSession[] {
+  const listed = new Set(
+    line.needs.flatMap((n) => (n.stuckRecord == null ? [] : [n.stuckRecord])),
+  );
+  return line.sessions.filter(
+    (s) => isStuck(sessionKind(s, nowMs)) && !listed.has(s.record),
+  );
+}
+
 export type NeedRow =
   | { type: "head"; head: string }
   | { type: "need"; need: NeedView }
@@ -187,9 +198,7 @@ export function needRows(line: LineSnapshot, clockNow: Clock): NeedRow[] {
     ordered.filter((n) => !TO_DECIDE.has(n.cause)),
     "To check",
   );
-  const stuck = line.sessions.filter((s) =>
-    isStuck(sessionKind(s, clockNow.nowMs)),
-  );
+  const stuck = notMoving(line, clockNow.nowMs);
   if (stuck.length > 0) {
     rows.push({ type: "head", head: "Not moving" });
     for (const s of stuck)
@@ -200,18 +209,14 @@ export function needRows(line: LineSnapshot, clockNow: Clock): NeedRow[] {
 
 /** Counts records needing a person without formatting evidence that belongs inside a panel. */
 export function needCount(line: LineSnapshot | null, nowMs: number): number {
-  return line === null
-    ? 0
-    : line.needs.length +
-        line.sessions.filter((s) => isStuck(sessionKind(s, nowMs))).length;
+  return line === null ? 0 : line.needs.length + notMoving(line, nowMs).length;
 }
 
 /** Whether What needs you exists on this page, which decides the page's shape. */
 export function hasNeedRows(line: LineSnapshot | null, nowMs: number): boolean {
   return (
     line !== null &&
-    (line.needs.length > 0 ||
-      line.sessions.some((s) => isStuck(sessionKind(s, nowMs))))
+    (line.needs.length > 0 || notMoving(line, nowMs).length > 0)
   );
 }
 
@@ -243,7 +248,7 @@ export function answerBand(
   const moving = kinds.filter(
     (k) => k === "working" || k === "takeover",
   ).length;
-  const stuck = kinds.filter(isStuck).length;
+  const stuck = notMoving(line, nowMs).length;
   const needs = orderedNeeds(line.needs);
   const first = needs[0];
   const tickClock = clock(Date.parse(line.startedAt), timeZone);
