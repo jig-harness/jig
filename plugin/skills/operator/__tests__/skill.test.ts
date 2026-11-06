@@ -214,6 +214,36 @@ describe("the commands it names", () => {
   });
 });
 
+describe("its status card", () => {
+  const card = /### The status card\n([\s\S]*?)\n### /.exec(body)?.[1] ?? "";
+
+  test("puts jig ask's own answer first, then the same four lines in order", () => {
+    expect(card).toContain(
+      "**`jig ask`'s own answer**, exactly as it printed it",
+    );
+    const lines = [...card.matchAll(/^ {3}\*\*([^*]+):\*\* /gm)].map(
+      (m) => m[1],
+    );
+    expect(lines).toEqual([
+      "Where it stands",
+      "Waits on",
+      "What you can do",
+      "Not read",
+    ]);
+  });
+
+  test("says how each line is filled in, and that it runs no recovery command itself", () => {
+    expect(body).toContain("### Filling in the card");
+    for (const line of [
+      "(Where it stands)",
+      "(Waits on, What you can do)",
+      "(Not read)",
+    ])
+      expect(body).toContain(line);
+    expect(body).toContain("quote it exactly and say the person runs it");
+  });
+});
+
 describe("its rules for sending", () => {
   test("states each rule a send follows", () => {
     for (const rule of [
