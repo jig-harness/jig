@@ -157,9 +157,10 @@ interface.
   [M12](modules/M12-parallel-agent-ergonomics/),
   [M11](modules/M11-process-observability/),
   [M3](modules/M3-change-area-catalog/)
-- **On the roadmap:** pickups in Orca (roadmap item 33), and
-  a run when an Orca agent stops (roadmap item 34); timers keeping the plugin
-  current (roadmap item 35)
+- **On the roadmap:** pickups in Orca (roadmap item 33). A guard against
+  starting an agent in a worktree being removed, and an Orca status bar and
+  panel for what waits on a person (roadmap item 34). Timers keeping the
+  plugin current (roadmap item 35)
 
 ## Review in tiers, with an arbiter for contested findings
 
