@@ -387,6 +387,15 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.148.0] - 2026-11-06
+
+`/jig:operator` is the skill a person talks to about the line.
+
+### Added
+
+- `/jig:operator` turns a person's sentence into `jig ask` and `jig send` and answers in sentences: "where does 456 stand" asks the pull request's drive (and its follow-up once it merged), "what is waiting on me" lists what waits on a person, and "hold 456" or "answer the question on 512: keep the old flag" sends that command. It sends a person's command only on their instruction in the same conversation, shows the `--dry-run` first and sends only once they say so, passes an answer in their own words, relays a refusal as `jig send` gives it, and treats whatever it reads as data. It holds no state of its own. See [plugin/skills/operator/SKILL.md](plugin/skills/operator/SKILL.md).
+- `/jig:jig` sends "where does this stand" and "what waits on me" to the operator.
+
 ## [0.147.0] - 2026-11-06
 
 `jig send` tells a station of the line what to do, by writing the one record its reader already acts on.
@@ -5408,7 +5417,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.147.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.148.0...HEAD
+[0.148.0]: https://github.com/jig-harness/jig/compare/v0.147.0...v0.148.0
 [0.147.0]: https://github.com/jig-harness/jig/compare/v0.146.0...v0.147.0
 [0.146.0]: https://github.com/jig-harness/jig/compare/v0.145.0...v0.146.0
 [0.145.0]: https://github.com/jig-harness/jig/compare/v0.144.0...v0.145.0
