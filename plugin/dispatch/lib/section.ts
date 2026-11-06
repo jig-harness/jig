@@ -5,6 +5,10 @@
  * there would let an unreviewed change choose what a timer starts.
  */
 import { isMapping, parseConfigText } from "../../shared/config-layers.ts";
+import {
+  parseTrackerConfig,
+  type TrackerConfig,
+} from "../../skills/do-item/scripts/lib/tracker/config.ts";
 import { CANONICAL_STATES } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { DEFAULT_LABELS, type LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
@@ -52,6 +56,22 @@ export function branchPattern(values: Record<string, unknown>): string {
   return typeof pattern === "string" && pattern !== ""
     ? pattern
     : BRANCH_PATTERN;
+}
+
+/**
+ * The tracker configuration of a repository's configuration `values`: GitHub
+ * Issues with no repository named are the forge repository `slug`'s own.
+ * The tick and `jig send` both derive their tracker here, from the default
+ * branch's values.
+ */
+export function trackerConfigOf(
+  values: Record<string, unknown>,
+  slug: string,
+): TrackerConfig {
+  const parsed = parseTrackerConfig(values);
+  return parsed.adapter === "github" && parsed.github.repository === null
+    ? { ...parsed, github: { ...parsed.github, repository: slug } }
+    : parsed;
 }
 
 class SectionError extends Error {}

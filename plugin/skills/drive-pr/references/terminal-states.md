@@ -811,7 +811,8 @@ pass that bills a different account from the one the park recorded (or after
 the reset), and after `HITL_PARKED` once every parked item has an answer later
 than its park (a park records when it was made; an older park without that
 time is never read as answered). A comment the drive itself writes (one
-opening with an outcome token, or carrying a hidden marker) is never an answer.
+opening with an outcome token, or carrying a hidden marker other than the
+record of an answer `jig send` wrote) is never an answer.
 
 Replacing a driver that still holds its locks is a **takeover**,
 `drive.ts` with `--take-over`, decided before any lock is taken by the holder's

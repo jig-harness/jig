@@ -115,6 +115,14 @@ export function carriesSet(
   return labels.some((l) => names.has(l));
 }
 
+/** A command label's full name under the repository's prefix (`jig:hold`). */
+export function commandLabel(
+  config: LabelConfig,
+  command: CommandName,
+): string {
+  return labelName(config, command);
+}
+
 export function hasCommand(
   config: LabelConfig,
   labels: readonly string[] | undefined,

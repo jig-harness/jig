@@ -118,9 +118,10 @@ machine rather than in a session. Its components are
 [resource collection](#machine-resource-collection) (`jig gc`) and
 [the dispatcher](#the-dispatcher) (`jig dispatch`), and the same commands
 install, remove, report on and run each of them; `jig upgrade` and
-`jig doctor` keep the plugin itself current and check it, and
+`jig doctor` keep the plugin itself current and check it,
 [`jig ask`](#asking-a-station-where-it-stands) says where a piece of work
-stands. The first install runs
+stands, and [`jig send`](#telling-a-station-what-to-do) tells it what to do.
+The first install runs
 from the installed plugin copy, with trusted Bun startup, and puts `jig` on
 `PATH`:
 
@@ -840,6 +841,103 @@ machine can leave them out.
 `1` when the key names nothing (no such pull request or item); and `2` on a
 malformed address, an unknown station (the error lists the valid ones) or
 another usage error.
+
+## Telling a station what to do
+
+`jig send` writes one record of a kind the line already reads, and exits.
+It types nothing into a session and starts nothing itself: the record's
+reader acts on it at its next run, as it does on the same record written by
+hand. It takes the same [addresses](#asking-a-station-where-it-stands) as
+`jig ask`, the key also as a second argument:
+
+```sh
+jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <login>]
+```
+
+| Verb | To | The record it writes | Read by |
+| --- | --- | --- | --- |
+| `assign` | `pickup` | the item assigned to the factory identity (`dispatch.identity`), moved into the first dispatch state (`dispatch.states`) when it is in none | the dispatcher's next tick, which starts the pick-up when the person who made the assignment can write to the repository |
+| `drive` | `drive` | the `drive` [dispatch label](CONFIGURATION.md#dispatch) | the dispatcher's next tick, which arms a drive |
+| `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
+| `answer <key> <text>` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>` | the re-arm, which hands the answer to the drive's passes as your verdict |
+| `pause`, `resume <hold-push\|pause\|stop>`, `stop`, `hold-push` | `drive` | a directive in the [mailbox](skills/drive-pr/README.md) of the working tree that holds the drive on this machine | the driver: `hold-push` before each push, `pause` and `stop` at its next round boundary |
+
+**It checks before it writes.** It reads the address first, through `jig
+ask`'s readers, and refuses (exit `1`) a request the station cannot take:
+
+- `assign` on an item already assigned to anyone, claimed, in progress or
+  closed, or in a repository that names no factory identity;
+- `drive` on a pull request that is not open, already has a drive ledger, or
+  already carries the label; a second `hold`; a `release` with no `hold`;
+- `answer` whose key is not a parked question in the pull request's drive
+  ledger, or that a trusted comment after the park already answers (a reply
+  on the parked thread itself is not read);
+- a mailbox directive already in force, a `resume` with nothing to withdraw,
+  a drive no driver on this machine holds, and a drive another host holds,
+  which it names: a directive reaches a driver on this machine only, so
+  stopping a drive elsewhere stays that host's act.
+
+The text of an `answer` is one line of at most 500 characters, with no
+control character (no line break, no mark that reorders text) and no hidden
+marker (`<!--`), since it reaches the drive's passes as your verdict; any
+other text is a usage error (exit `2`). Several words after the key are
+joined with a space.
+
+**It says who writes, and where.** Before it writes it prints the
+repository in full, the login it writes as (the forge login the `gh` client
+here is signed in as, or for `assign` the user the tracker's credential acts
+as), the record, where it goes, the reader that acts on it and how to take
+it back. `--as <login>` refuses when this machine writes as anyone else. An
+`answer` is a comment readable by whoever can read the pull request, and
+`send` says so; the comment carries the
+[record envelope](RECORDS.md#the-registry-and-the-envelope) in a hidden
+marker, naming you and this host as a digest. `send` adds no authority:
+each reader keeps its own rule for whose record counts, an assignment made
+by someone who can write to the repository, an answer from an owner, member
+or collaborator.
+
+**What it refuses outright.** A verb whose record the repository has
+switched off is refused with the setting named: `drive`, `hold` and
+`release` need `dispatch.labels.enabled`, read as the dispatcher reads it,
+from the configuration on the repository's default branch, and the label
+carries the repository's prefix. A machine whose
+[dispatch file](CONFIGURATION.md#the-machines-dispatch-file) says
+`send: false` refuses every send. A session the line started (a dispatched
+launch, or a drive's pass) runs with `JIG_LAUNCH` set, and there `send`
+refuses `assign`, `drive`, `hold`, `release` and `answer`, which are a
+person's commands; the mailbox verbs are not refused by it. That stops a
+skill's mistake; a session holding its person's credentials could still
+clear the variable or call the forge itself, as it could before.
+
+**The mailbox verbs.** The working tree, its mailbox and the driver
+generation come from the drive's own listing in a checkout of the
+repository here (`drives.ts --json`). A `stop` is addressed to that
+generation, so it ends that driver at its next round boundary and a later
+driver ignores it (`drives.ts --stop` also cancels the running pass at
+once). The mailbox lets only a `stop` name a generation, so a `pause` or a
+`hold-push` holds every driver of the pull request in that tree until
+`resume pause` or `resume hold-push` withdraws it; `send` names the
+generation that holds the drive when it is sent. A `resume` needs only the
+tree, so it also clears a directive a driver left behind.
+
+**`--dry-run`** prints all of that and writes nothing. A real send ends
+with the link to what it wrote (the pull request, the comment, the item) or
+the mailbox's path, and the reader that acts on it next. The forge can take
+a moment to list a new comment, so that link, not a `jig ask` right after
+it, shows the request landed.
+
+**What can be taken back.** `release` undoes a `hold`, and `hold` a
+`release`; a `drive` label can be removed by hand until the tick has armed
+the drive; `resume` withdraws a directive; an assignment can be undone on
+the tracker until the tick starts the pick-up. An `answer` the re-arm has
+read cannot be taken back, which is why it is checked, shown and sent in
+your own words; until then, deleting the comment withdraws it.
+
+`jig send` exits `0` when it sent (or, with `--dry-run`, would send), `1`
+when it refused or the write failed, and `2` on a usage error: a malformed
+address, an unknown station or verb, a verb the station does not take (the
+error lists the verbs it takes), or an answer's text that is not one line
+within its limit.
 
 ## Set up from an agent session
 

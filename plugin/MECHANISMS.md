@@ -223,7 +223,9 @@ development and shipped as a version.
   each failure; it changes nothing. `jig ask` (`ask/cli.ts`), registered
   beside the components with no job of its own (`CommandComponent`), reads
   a station's records through their owners' exports and prints one answer;
-  it writes no record.
+  it writes no record. `jig send` (`send/cli.ts`), registered the same way,
+  reads the station through `jig ask`'s readers, refuses a request it cannot
+  take, and writes one record through the writer its owner exports.
 - **Reasoned.** None. A person installs, upgrades and checks; no session is
   involved.
 - **If it fails.** A job that cannot find the installed copy stops with a

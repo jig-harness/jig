@@ -522,7 +522,10 @@ mechanical state rather than on anyone's judgement:
   drive already did. The doctor names the questions in its `NEEDS_HUMAN`
   row. Answer each parked item on its thread, or in a
   pull-request comment with a line `answer <key>: …`, as an owner, member or
-  collaborator. Once every item is answered, the re-arm unparks them all and
+  collaborator; `jig send drive@<owner>/<name>#<PR> answer <key> "<text>"`
+  writes that comment after checking the key is parked and unanswered
+  ([the plugin's README](../../README.md#telling-a-station-what-to-do)).
+  Once every item is answered, the re-arm unparks them all and
   hands your answers to the drive's passes as your verdicts, keeping them in
   the drive's state directory until a pass completes, so a drive that stops
   first still hands them on when it is re-armed. With any item unanswered

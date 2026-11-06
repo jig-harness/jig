@@ -68,6 +68,8 @@ const FOLLOWUP_KEY = /^(?:followup|[1-9]\d*)$/;
 /** A launch claim's key: a launch of the drive of the pull request it is on; its generation is the attempt. */
 const LAUNCH_KEY = /^drive$/;
 const MERGE_READY_KEY = /^merge-ready:[0-9a-f]{7,64}$/;
+/** A sent answer's key: the parked item it answers, on the pull request its comment is on. */
+const ANSWER_KEY = /^answer:\S+$/;
 
 /** A worktree's key in the Orca guard record: the SHA-256 of its path as Orca reports it. */
 const ORCA_GUARD_KEY = /^[0-9a-f]{64}$/;
@@ -628,6 +630,22 @@ const FORGE: RecordKind[] = [
     "the label `ci.hold_label` names, on the pull request",
     0,
   ),
+  {
+    name: "drive-answer",
+    medium: "forge",
+    owner: `${DRIVE}lib/answer-comment.ts`,
+    at: "a comment on the pull request answering one parked item, written by `jig send`",
+    markers: ["jig-send-answer"],
+    version: 1,
+    key: ANSWER_KEY,
+  },
+  plain(
+    "forge",
+    "dispatch-command-label",
+    "dispatch/lib/requests.ts",
+    "a command label on the pull request (`jig:drive`, `jig:hold`), which a person writes by hand or with `jig send`",
+    0,
+  ),
   plain(
     "forge",
     "dispatch-state-label",
@@ -673,6 +691,13 @@ const TRACKER: RecordKind[] = [
     "tracker-claim",
     "skills/do-item/scripts/lib/claim.ts",
     "the item's assignee and its in-progress state",
+    0,
+  ),
+  plain(
+    "tracker",
+    "dispatch-pickup-assignment",
+    "dispatch/lib/requests.ts",
+    "the item assigned to the factory identity in a dispatch state, which a person writes by hand or with `jig send`",
     0,
   ),
   plain(

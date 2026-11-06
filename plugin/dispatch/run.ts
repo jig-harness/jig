@@ -50,6 +50,10 @@
  * Codex), interactively, on `/jig:do-item <key>` with its route's model and
  * effort, bound to its account the same way.
  *
+ * Whatever it starts runs with `JIG_LAUNCH` set to the launch record, so
+ * `jig send` refuses that session a person's commands
+ * (`shared/launched-session.ts`).
+ *
  * The exit of a follow-up's pass or a pickup's session is recorded, and no
  * wall is written for it. Once the exit is recorded, the wrapper writes the
  * launch's end onto the shared claim this host made for it (a drive's launch
@@ -74,6 +78,7 @@ import { QuestionTail } from "./lib/question-tail.ts";
 import { NO_WATCH, watchWindowsTree } from "./lib/windows-tree.ts";
 import { captureIdentity } from "../shared/liveness.ts";
 import { endOwnTab, withoutRunTabMarker } from "../shared/orca-tabs.ts";
+import { LAUNCH_VARIABLE } from "../shared/launched-session.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
 import { passCommand } from "../skills/drive-pr/scripts/lib/pass-command.ts";
 import {
@@ -467,8 +472,12 @@ async function wrap(id: string, token: string): Promise<number> {
   const ran = await runStage(
     argv,
     record.workspace.path,
-    // The tab's own command is this wrapper; the drive it runs is not.
-    withoutRunTabMarker(passEnvironment(process.env, record)),
+    // The tab's own command is this wrapper; the drive it runs is not. What
+    // it starts is a session the line started, named by its launch record.
+    {
+      ...withoutRunTabMarker(passEnvironment(process.env, record)),
+      [LAUNCH_VARIABLE]: id,
+    },
     runOptions(record),
   );
   return finishRun(id, record, ran);

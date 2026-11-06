@@ -27,6 +27,7 @@
  *   listen: 100.64.0.7:8765
  * records:
  *   shared: forge
+ * send: true
  * ```
  *
  * An unknown key anywhere is refused, so a misspelt dial never reads as its
@@ -98,6 +99,8 @@ export interface MachineConfig {
   dashboardListen: Listen | null;
   /** Where the records another host reads are shared (`records.shared`). */
   sharedRecords: SharedMedium;
+  /** Whether `jig send` may write a request from this machine (`send`); `true` unless the file says `false`. */
+  send: boolean;
 }
 
 const DEFAULTS = {
@@ -119,6 +122,7 @@ const TOP_KEYS = [
   "receipts_days",
   "dashboard",
   "records",
+  "send",
 ];
 const DASHBOARD_KEYS = ["listen"];
 const RECORDS_KEYS = ["shared"];
@@ -374,6 +378,7 @@ function parseValues(values: unknown, where: string): MachineConfig {
     ),
     dashboardListen: dashboard(top.dashboard),
     sharedRecords: records(top.records),
+    send: flag(top.send, "send", true),
   };
 }
 
