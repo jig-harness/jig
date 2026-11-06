@@ -387,6 +387,14 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.148.1] - 2026-11-06
+
+### Fixed
+
+- The dispatcher's test of a tick whose dashboard line cannot be written now
+  also checks that the tick launched its pull request and kept the launch
+  record, so a regression that drops the launch no longer passes it.
+
 ## [0.148.0] - 2026-11-06
 
 `/jig:operator` is the skill a person talks to about the line.
@@ -5417,7 +5425,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.148.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.148.1...HEAD
+[0.148.1]: https://github.com/jig-harness/jig/compare/v0.148.0...v0.148.1
 [0.148.0]: https://github.com/jig-harness/jig/compare/v0.147.0...v0.148.0
 [0.147.0]: https://github.com/jig-harness/jig/compare/v0.146.0...v0.147.0
 [0.146.0]: https://github.com/jig-harness/jig/compare/v0.145.0...v0.146.0
