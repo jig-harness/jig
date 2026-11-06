@@ -58,8 +58,10 @@ request per boundary, in this order:
   takeover claim and a follow-up marker count only when they can be told
   apart from a comment a pass posted under the person's login, through a
   pass identity of its own, a token only the driver holds, or a mark on the
-  pass's own comments that the readers refuse as an answer, decided in one
-  place, `plugin/shared/trusted-authors.ts`. A pass then cannot answer its
+  pass's own comments that the readers refuse as an answer, where the mark
+  is imposed and protected outside the pass's control (a pass holding the
+  person's credential could otherwise post an unmarked comment) or the pass
+  has a separate credential, decided in one place, `plugin/shared/trusted-authors.ts`. A pass then cannot answer its
   own park or write the drive ledger.
 - **The push and the merge**: inside a drive pass, a push that does not go
   through `plugin/skills/drive-pr/scripts/guarded-push.ts` and every merge
@@ -547,11 +549,13 @@ and each genre's contrast test holds its light and dark pairs.
 An issue's type, priority and size are kept differently by each way an
 issue is filed: in the tracker's own field, in a label, or nowhere, so a
 tracker cannot sort or filter on them. The
-[tracker interface](../GLOSSARY.md) has no type or size, an adapter's
-priority storage is configurable only as far as the GitHub label map
-(`issue_tracker.github.priority_labels`) goes, with no choice between the
-tracker's field, a custom field, labels or a command, and only `file-issue`
-checks that an issue it files is complete. What it will build: the tracker
+[tracker interface](../GLOSSARY.md) reads an issue's native type
+(`Issue.nativeType`) but cannot write a type, carries no size, and an
+adapter's priority storage is configurable only per adapter (the GitHub label
+map `issue_tracker.github.priority_labels`, the Jira priority names
+`issue_tracker.jira.priorities`), with no choice between the tracker's field,
+a custom field, labels or a command, and only `file-issue` checks that an
+issue it files is complete. What it will build: the tracker
 interface carries an issue's type, priority and size as canonical values, and
 where each of the three is kept is per-repository configuration
 (`issue_tracker.attributes`): the tracker's own field, a named custom field,
@@ -566,8 +570,9 @@ adapter:
   an option for size.
 
 Today's `issue_tracker.types`, `issue_tracker.github.priority_labels` and
-`issue_tracker.jira.field_labels` become the label or field form of their
-attribute. Every filing path (`file-issue`, `file-deferred.ts`,
+`issue_tracker.jira.field_labels` and `issue_tracker.jira.priorities` become
+the label or field form of their attribute, and the native-type read the
+interface already has is kept. Every filing path (`file-issue`, `file-deferred.ts`,
 `report-bug.ts`, the issue forms) sets and checks all three, and a weekly
 check reports the issues missing one. It includes reading and writing the
 tracker's own issue type, not only a type label.
