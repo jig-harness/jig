@@ -147,15 +147,11 @@ const UNDO: Record<
 };
 
 /** Why no driver can be sent a directive: none holds the drive, or the listing that would say was not read. */
-function noDriverReason(
-  ctx: AskContext,
-  verb: MailboxRequest["verb"],
-  noTree: boolean,
-): string {
+function noDriverReason(ctx: AskContext, verb: MailboxRequest["verb"]): string {
   const unread = ctx.reading
     .sources()
     .records.find((s) => s.record === "drive-lock" && !s.read);
-  if (noTree && unread !== undefined)
+  if (unread !== undefined)
     return `the drive's listing was not read (${unread.detail ?? "no reason given"}), so whether a driver on this machine holds ${ctx.name} is not known: send again once it is`;
   return `no driver on this machine holds ${ctx.name}${ctx.checkout === null ? " (no checkout of the repository here to read the drive's listing in)" : ""}: a ${verb} directive reaches a running driver`;
 }
@@ -180,7 +176,7 @@ export async function planMailbox(
     tree === null ||
     (needsDriver && (!tree.live || tree.generation === null))
   )
-    return refused(noDriverReason(ctx, request.verb, tree === null));
+    return refused(noDriverReason(ctx, request.verb));
   const gate = foldGateState(tree.dir, ctx.address.key);
   if (!gate.ok)
     return refused(

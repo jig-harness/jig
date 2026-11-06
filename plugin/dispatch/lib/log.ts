@@ -186,6 +186,9 @@ export function insertRow(db: Database, row: LogRow): boolean {
   return done.changes === 1;
 }
 
+/** How many of a repository's newest rows a lookup on a schema before the `target` column reads. */
+const UNINDEXED_SCAN_ROWS = 5000;
+
 /**
  * Every row about one piece of work of a repository (`target` as the rows
  * name it: `PR #<n>`, or an item's key), in the order they were written;
@@ -193,7 +196,9 @@ export function insertRow(db: Database, row: LogRow): boolean {
  * which also reads the rows a copy one release behind wrote without it
  * (their target is in the row's own text). A reader that must not migrate
  * the database passes its own read-only connection as `db` (`null` for none):
- * on a schema before the `target` column, the rows are found by their text.
+ * on a schema before the `target` column, the rows are found by their text,
+ * among the repository's newest `UNINDEXED_SCAN_ROWS` (no index serves that
+ * lookup, and the log keeps every outcome), until a tick migrates it.
  */
 export function rowsFor(
   repo: string,
@@ -216,7 +221,7 @@ export function rowsFor(
           .all(repo, target, target)
       : db
           .query(
-            `SELECT row FROM log WHERE repo = ? AND ${byText} ORDER BY seq`,
+            `SELECT row FROM (SELECT seq, row FROM log WHERE repo = ? ORDER BY seq DESC LIMIT ${UNINDEXED_SCAN_ROWS}) WHERE ${byText} ORDER BY seq`,
           )
           .all(repo, target)
   ) as Array<{ row: string }>;

@@ -31,13 +31,19 @@ function freshStateDir(): string {
   return scopedStateDir(join(root, `state-${n++}`));
 }
 
-async function list(stateDir: string, args = ["--json"]) {
+async function list(
+  stateDir: string,
+  args = ["--json"],
+  script = DRIVES,
+  extraEnv: Record<string, string> = {},
+) {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env))
     if (v !== undefined && !k.startsWith("GIT_") && !k.startsWith("DRIVE_PR_"))
       env[k] = v;
   env.DRIVE_PR_STATE_DIR = stateDir;
-  const child = Bun.spawn([process.execPath, DRIVES, ...args], {
+  Object.assign(env, extraEnv);
+  const child = Bun.spawn([process.execPath, script, ...args], {
     env,
     stdout: "pipe",
     stderr: "pipe",
@@ -104,6 +110,21 @@ describe("drives-read-only.ts --json", () => {
     edit(db, "DELETE FROM imports");
     const before = readFileSync(db);
     const r = await list(stateDir);
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain("has not read this clone's state directory in");
+    expect(readFileSync(db).equals(before)).toBe(true);
+  });
+
+  it("opens read-only throughout: a database that changed after the readiness check is declined, not migrated", async () => {
+    const { stateDir, db } = drivenClone();
+    edit(db, "DELETE FROM imports");
+    const before = readFileSync(db);
+    const r = await list(
+      stateDir,
+      ["--json"],
+      join(import.meta.dir, "..", "scripts", "drives.ts"),
+      { JIG_DRIVE_DB_READ_ONLY: "1" },
+    );
     expectSpawnExit(r, 4);
     expect(r.stderr).toContain("has not read this clone's state directory in");
     expect(readFileSync(db).equals(before)).toBe(true);

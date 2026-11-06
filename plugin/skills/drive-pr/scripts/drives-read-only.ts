@@ -6,7 +6,8 @@
  * Opening the drive's database creates it, migrates its schema and reads the
  * clone's state directory into it, and the listing opens it. So this lists
  * only a database that is already current, by running `drives.ts --json`
- * over it, and otherwise writes nothing:
+ * over a read-only connection (`READ_ONLY_ENV`), so a change after the
+ * readiness check cannot make the listing write, and otherwise writes nothing:
  *
  *   - no clone identity, or no database yet: no drive was ever started here,
  *     and the rows are empty;
@@ -18,7 +19,7 @@
  */
 import { join } from "node:path";
 import { fail, runMain } from "./lib/cli.ts";
-import { driveDbReadiness } from "./lib/state/db.ts";
+import { driveDbReadiness, READ_ONLY_ENV } from "./lib/state/db.ts";
 import { peekResolvedStateDir } from "./lib/state/store.ts";
 
 const DRIVES = join(import.meta.dir, "drives.ts");
@@ -53,6 +54,7 @@ async function main(argv: string[]): Promise<number> {
   }
   const child = Bun.spawn([process.execPath, DRIVES, "--json"], {
     stdin: "ignore",
+    env: { ...process.env, [READ_ONLY_ENV]: "1" },
     stdout: "inherit",
     stderr: "inherit",
   });
