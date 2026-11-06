@@ -13,6 +13,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  bootId,
+  decodeIdentity,
+  encodeIdentity,
+  lockIdentity,
+} from "../../shared/liveness.ts";
+import {
   newRunId,
   nextTickIndex,
   previousFollowupSince,
@@ -126,6 +132,43 @@ describe("takeTickLock", () => {
     const old = new Date(Date.now() - 60_000);
     utimesSync(lock, old, old);
     expect("release" in takeTickLock(dir)).toBe(true);
+  });
+
+  it("names the live holder of a held lock by its identity", () => {
+    const dir = root();
+    const first = takeTickLock(dir);
+    const second = takeTickLock(dir);
+    expect("heldBy" in second && second.heldBy).toContain(
+      `pid ${process.pid} on `,
+    );
+    if ("release" in first) first.release();
+  });
+
+  it("reclaims a lock whose pid now belongs to a process that started at another time", () => {
+    const dir = root();
+    const reused = { ...lockIdentity(), start: "Mon Jan  1 00:00:00 2001" };
+    writeFileSync(join(dir, "tick.lock"), encodeIdentity(reused));
+    const lock = takeTickLock(dir);
+    expect("release" in lock).toBe(true);
+    expect(
+      decodeIdentity(readFileSync(join(dir, "tick.lock"), "utf8"))?.start,
+    ).toBe(lockIdentity().start);
+  });
+
+  it.skipIf(bootId() === "")(
+    "reclaims a lock its holder took before this host last restarted",
+    () => {
+      const dir = root();
+      const before = { ...lockIdentity(), bootId: "an-earlier-boot" };
+      writeFileSync(join(dir, "tick.lock"), encodeIdentity(before));
+      expect("release" in takeTickLock(dir)).toBe(true);
+    },
+  );
+
+  it("keeps a lock in the earlier form whose pid still answers", () => {
+    const dir = root();
+    writeFileSync(join(dir, "tick.lock"), String(process.pid));
+    expect("heldBy" in takeTickLock(dir)).toBe(true);
   });
 
   it("replaces a lock whose holder is gone", () => {

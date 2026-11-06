@@ -9,6 +9,14 @@
  * completed one whatever its age, the latest completed one naming each
  * repository, and the latest one recording a follow-up window for each, since
  * a receipt of a refused read names the repository without its window.
+ *
+ * One tick runs per machine, under the tick lock beside the receipts. The
+ * lock names its holder by the identity every lock of the plugin records
+ * (`shared/liveness.ts`): host, boot, pid and start time. A lock whose
+ * holder ran before this host last restarted, or whose pid now belongs to a
+ * process that started at another time, is abandoned and taken over; one
+ * whose holder cannot be judged is kept. A lock in the earlier form, a bare
+ * pid, is judged by that pid alone.
  */
 import {
   closeSync,
@@ -27,6 +35,15 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { isMapping } from "../shared/config-layers.ts";
 import { swallow } from "../shared/errors.ts";
+import {
+  decodeIdentity,
+  describeIdentity,
+  encodeIdentity,
+  isAliveSync,
+  legacyIdentity,
+  lockIdentity,
+  type ProcessIdentity,
+} from "../shared/liveness.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
 import { failureText } from "./lib/text.ts";
 import type { Defect, RepoReport } from "./lib/types.ts";
@@ -237,20 +254,54 @@ function publishOnce(path: string, text: string): boolean {
   }
 }
 
-/** The lock file, holding this process's pid, published by `publishOnce`. */
+/**
+ * The lock file, holding this process's identity (`shared/liveness.ts`): its
+ * host, its boot, its pid and its start time, published by `publishOnce`.
+ */
 function publishLock(path: string): boolean {
-  return publishOnce(path, String(process.pid));
+  return publishOnce(path, encodeIdentity(lockIdentity()));
 }
 
-/** The pid a lock file names; `null` while it is empty or unreadable. */
-function lockHolder(path: string): number | null {
+/** A lock file's text; `null` when it cannot be read. */
+function lockText(path: string): string | null {
   try {
-    const holder = Number(readFileSync(path, "utf8").trim());
-    return Number.isSafeInteger(holder) && holder > 0 ? holder : null;
+    return readFileSync(path, "utf8");
   } catch (err) {
     swallow(err, `${path} cannot be read`);
     return null;
   }
+}
+
+/**
+ * The holder a lock file's text names: an identity, or a bare pid in the
+ * earlier form, which is judged by its pid alone; `null` while it is empty,
+ * finished, or names no holder.
+ */
+function holderOf(text: string | null): ProcessIdentity | null {
+  const trimmed = text?.trim() ?? "";
+  if (/^[1-9][0-9]*$/.test(trimmed)) return legacyIdentity(Number(trimmed));
+  return trimmed === "" ? null : decodeIdentity(trimmed);
+}
+
+function lockHolder(path: string): ProcessIdentity | null {
+  return holderOf(lockText(path));
+}
+
+/**
+ * Whether a holder is gone: judged dead because no process has its pid, its
+ * pid now belongs to a process that started at another time, or it ran
+ * before this host last restarted. A holder that cannot be judged keeps its
+ * lock.
+ */
+function holderGone(holder: ProcessIdentity): boolean {
+  const verdict = isAliveSync(holder);
+  return verdict.ok && verdict.value.state === "dead";
+}
+
+/** Whether the lock file at `path`, whose text is `text`, is abandoned: its holder gone, or none written within the grace. */
+function abandoned(path: string, text: string | null): boolean {
+  const holder = holderOf(text);
+  return holder === null ? olderThan(path, LOCK_GRACE_MS) : holderGone(holder);
 }
 
 function olderThan(path: string, ms: number): boolean {
@@ -262,11 +313,10 @@ function olderThan(path: string, ms: number): boolean {
   }
 }
 
-/** Whether a lock file's owner is gone: dead, or never wrote its pid within the grace. */
+/** Whether a lock file's owner is gone: dead, or never wrote its identity within the grace. */
 function ownerGone(file: string): boolean {
   if (finished(file)) return true;
-  const holder = lockHolder(file);
-  return holder === null ? olderThan(file, LOCK_GRACE_MS) : !alive(holder);
+  return abandoned(file, lockText(file));
 }
 
 /** Whether a guard was marked finished by its owner. */
@@ -304,10 +354,9 @@ function sweepGuards(path: string): void {
 }
 
 /** Replace the lock under the guard when it is still the abandoned one the caller saw. */
-function replaceSeen(path: string, seen: number | null): boolean {
-  const now = lockHolder(path);
-  const gone = now === null ? olderThan(path, LOCK_GRACE_MS) : !alive(now);
-  if (!gone || now !== seen) return false;
+function replaceSeen(path: string, seen: string | null): boolean {
+  const now = lockText(path);
+  if (now !== seen || !abandoned(path, now)) return false;
   rmSync(path, { force: true });
   return publishLock(path);
 }
@@ -322,7 +371,7 @@ function replaceSeen(path: string, seen: number | null): boolean {
  * generations only grow and two contenders never hold the same abandoned lock
  * at once.
  */
-function reclaim(path: string, seen: number | null): boolean {
+function reclaim(path: string, seen: string | null): boolean {
   const newest = guardsOf(path).at(-1);
   if (newest !== undefined && !ownerGone(newest.file)) return false;
   const generation = (newest?.generation ?? 0) + 1;
@@ -380,25 +429,18 @@ export function takeTickLock(
   const path = join(root, "tick.lock");
   const release = () => {
     // Only the owner removes the lock: a replaced one belongs to another tick.
-    if (lockHolder(path) === process.pid) rmSync(path, { force: true });
+    if (lockHolder(path)?.pid === process.pid) rmSync(path, { force: true });
   };
   for (let attempt = 0; attempt < 2; attempt++) {
     if (publishLock(path)) return { release };
-    const holder = lockHolder(path);
-    const abandoned =
-      holder === null ? olderThan(path, LOCK_GRACE_MS) : !alive(holder);
-    if (!abandoned)
-      return { heldBy: `process ${holder ?? "unknown"} (${path})` };
-    if (reclaim(path, holder)) return { release };
+    const seen = lockText(path);
+    if (!abandoned(path, seen)) {
+      const holder = holderOf(seen);
+      const who =
+        holder === null ? "a process not yet named" : describeIdentity(holder);
+      return { heldBy: `${who} (${path})` };
+    }
+    if (reclaim(path, seen)) return { release };
   }
   return { heldBy: path };
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== "ESRCH";
-  }
 }
