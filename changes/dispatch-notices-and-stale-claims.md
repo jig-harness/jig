@@ -17,3 +17,4 @@ release: minor
 
 - Pending stale-claim releases survive a lost deletion response and are completed from the next full marker listing, including their outcome event, before a follow-up can start again. Release-history reads use only the pull requests being classified. Named notification destinations preserve personal comments even when an agent has run there, and stale tick-marker notices name the result command instead of the manual-marker command.
 - Notification delivery rechecks the selected branch and named destination's comment ownership under its write lock. Repeat clocks advance only after the receipt confirms that repeat's text and the unread mark.
+- Named destinations retain existing text when appending a notice to a read comment, so a personal addition to an earlier dispatcher notice survives delivery.

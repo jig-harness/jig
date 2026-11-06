@@ -72,6 +72,24 @@ async function notify(
 }
 
 describe("notify on Orca: merging into an unread comment", () => {
+  test("preserves personal text appended to a read named destination notice", async () => {
+    const comment =
+      "[jig dispatch: old]\noriginal\nRemember to check the release";
+    const message = "[jig dispatch: new]\nnext";
+    const orca = fakeOrca({ branch: "desk", isUnread: false, comment });
+    await notify(orca, "named-mixed", message);
+    expect(orca.sets()).toEqual([`${comment}\n\n${message}`]);
+  });
+
+  test("appends a repeat's full text behind a read named destination comment", async () => {
+    const comment =
+      "[jig dispatch: same]\noriginal\nRemember to check the release";
+    const message = "[jig dispatch: same]\nSent again: waiting";
+    const orca = fakeOrca({ branch: "desk", isUnread: false, comment });
+    await notify(orca, "named-mixed-repeat", message);
+    expect(orca.sets()).toEqual([`${comment}\n\n${message}`]);
+  });
+
   test("refuses a personal comment read under the lock at a named destination", async () => {
     const orca = fakeOrca({
       branch: "desk",

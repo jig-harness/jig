@@ -144,7 +144,12 @@ function argumentSafe(comment: string): string {
 function merged(
   card: { comment: string | null; unread: boolean },
   message: string,
+  preserveRead: boolean,
 ): string | null {
+  // A notice marker proves presence, not ownership of accompanying text.
+  // Named destinations retain read text too, including personal additions.
+  if (preserveRead && !card.unread && withoutMarks(card.comment ?? "") !== "")
+    return `${card.comment}\n\n${message}`;
   if (
     !card.unread ||
     card.comment === null ||
@@ -216,7 +221,7 @@ async function notifyUnlocked(
   if (!before.ok) return { ok: false, lost: before.lost, detail: before.why };
   const card = await destinationCard(target, before.result, remaining);
   if ("ok" in card) return card;
-  const merge = merged(card, message);
+  const merge = merged(card, message, target.dispatcherOnly === true);
   if (merge !== null) {
     const comment = argumentSafe(merge);
     // The budget the sender computed from an earlier listing; the card read
