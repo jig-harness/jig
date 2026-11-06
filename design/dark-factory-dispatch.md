@@ -938,7 +938,8 @@ waits on the authenticated Windows smoke.
 
 A notification goes out for each cause, its launch record or receipt
 naming what was sent: a drive parked with an item unanswered, carrying the
-parked questions (item 32's framed decision, built); a drive
+parked questions (item 32's framed decision, built, or the stored
+reason for a park with no decision record); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
 stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a session waiting past
@@ -1484,7 +1485,8 @@ One pull request each, in this order; each is usable on its own.
    person runs it by hand and marks that marker done when it succeeds
    (Jig's `/followup` first); the notifications above
    through `notify`. The park's
-   notification carries item 32's framed decision, and
+   notification carries item 32's framed decision, or its stored reason
+   when it has no decision record, and
    the receipts join its morning report; a consumer repository's
    follow-up waits on its own post-merge command (item 17).
 6. **Control.** The outcome log and its classifier, the expectations and
