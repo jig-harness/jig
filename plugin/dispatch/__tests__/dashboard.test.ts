@@ -243,11 +243,58 @@ describe("jig dispatch dashboard", () => {
       {
         class: "stalled",
         repo: "example-org/web",
+        stage: "rearm",
         nights: [false, false, false, false, true, true, true],
         rows: 4,
       },
     ]);
     expect(logHasRows).toBe(true);
+  });
+
+  it("counts the event rows that carry a class beside the ended rows, one stage at a time, and leaves out the rows that carry none", () => {
+    const root = mkdtempSync(join(tmpdir(), "dispatch-log-"));
+    bulkRoots.push(root);
+    const hoursAgo = (hours: number) =>
+      new Date(NOW - hours * 3_600_000).toISOString();
+    const event = (
+      hours: number,
+      stage: string,
+      cls: LogRow["class"],
+      name: string,
+    ): LogRow => ({
+      kind: "event",
+      key: `event ${name} ${stage} ${hours}`,
+      at: hoursAgo(hours),
+      repo: "example-org/web",
+      stage,
+      target: "PR #7",
+      event: name,
+      account: null,
+      class: cls,
+      reason: `${name} ${hours}h ago`,
+    });
+    // A drive stopped for a person on three nights: event rows alone recur.
+    for (const hours of [2, 26, 50])
+      writeRow(event(hours, "rearm", "gates failed", "needs-person"), root);
+    // The same class on another stage, on two of them only, is its own count.
+    for (const hours of [3, 27])
+      writeRow(
+        event(hours, "followup", "gates failed", "followup-failed"),
+        root,
+      );
+    // A drift carries no class, on however many nights.
+    for (const hours of [4, 28, 52])
+      writeRow(event(hours, "pickup", null, "drifting"), root);
+    const { recurring } = rowsOf(new URLSearchParams(), root);
+    expect(recurring).toEqual([
+      {
+        class: "gates failed",
+        repo: "example-org/web",
+        stage: "rearm",
+        nights: [false, false, false, false, true, true, true],
+        rows: 3,
+      },
+    ]);
   });
 
   it("buckets recurrence by host day, so the nights do not move with the query time", () => {

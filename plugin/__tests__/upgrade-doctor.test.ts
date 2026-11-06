@@ -19,6 +19,7 @@ import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../lib/test-helpers/fake-program.ts";
 import { skipsOnWindows } from "../../lib/test-helpers/windows-skip.ts";
 import { newRunId, writeReceipt } from "../dispatch/receipts.ts";
+import { orcaInstalledName } from "../shared/orca.ts";
 import { type Machine, machine, SCHEDULERS } from "./lifecycle-fixtures.ts";
 
 const onWindows = skipsOnWindows(
@@ -83,7 +84,10 @@ test.skipIf(onWindows)(
   () => {
     const m = machine(SCHEDULERS[0]);
     m.writeDispatchFile();
-    writeFakeProgram(join(m.root, "bin", "orca"), "#!/bin/sh\nexit 0\n");
+    writeFakeProgram(
+      join(m.root, "bin", orcaInstalledName()),
+      "#!/bin/sh\nexit 0\n",
+    );
     expectSpawnExit(m.jig(["install", "--yes"]), 0);
     expectSpawnExit(m.jig(["run", "gc"]), 0);
     dispatchReceipt(m, 0);

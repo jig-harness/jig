@@ -5,7 +5,7 @@
  * the dispatched mark to.
  */
 import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
-import { orcaCommand, orcaEnvelope } from "../../../shared/orca.ts";
+import { orcaCommandOrInstalled, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { marksIn, withMark } from "./port.ts";
@@ -39,7 +39,7 @@ export async function call(
   timeoutMs: number,
 ): Promise<CallAnswer> {
   const done = await run(
-    [orcaCommand(process.env) ?? "orca", ...args, "--json"],
+    [orcaCommandOrInstalled(process.env), ...args, "--json"],
     {
       timeoutSec: seconds(timeoutMs),
       stderr: "pipe",

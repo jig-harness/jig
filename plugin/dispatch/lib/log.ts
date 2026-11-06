@@ -186,23 +186,40 @@ export function insertRow(db: Database, row: LogRow): boolean {
   return done.changes === 1;
 }
 
+/** A lookup the log's schema cannot answer completely within a bound. */
+class UnindexedLogError extends Error {}
+
 /**
  * Every row about one piece of work of a repository (`target` as the rows
  * name it: `PR #<n>`, or an item's key), in the order they were written;
  * none before the database exists. One lookup through the `target` index,
  * which also reads the rows a copy one release behind wrote without it
- * (their target is in the row's own text).
+ * (their target is in the row's own text). A reader that must not migrate
+ * the database passes its own read-only connection as `db` (`null` for none).
+ * On a schema before the `target` column it throws: no index serves a lookup
+ * by the row's text and the log keeps every outcome, so the scan could be
+ * neither complete nor bounded; the reader names the source as not read until
+ * a tick migrates it.
  */
 export function rowsFor(
   repo: string,
   target: string,
   root = stateRoot(),
+  db: Database | null = existingStateDb(root),
 ): LogRow[] {
-  const db = existingStateDb(root);
   if (db === null) return [];
+  const byText =
+    "CASE WHEN json_valid(row) THEN json_extract(row, '$.target') END = ?";
+  const hasColumn = (
+    db.query("PRAGMA table_info(log)").all() as Array<{ name: string }>
+  ).some((c) => c.name === "target");
+  if (!hasColumn)
+    throw new UnindexedLogError(
+      "the outcome log has no target column yet, and its rows cannot be found by their text without scanning every outcome",
+    );
   const selected = db
     .query(
-      "SELECT row FROM log WHERE repo = ? AND (target = ? OR (target IS NULL AND CASE WHEN json_valid(row) THEN json_extract(row, '$.target') END = ?)) ORDER BY seq",
+      `SELECT row FROM log WHERE repo = ? AND (target = ? OR (target IS NULL AND ${byText})) ORDER BY seq`,
     )
     .all(repo, target, target) as Array<{ row: string }>;
   return rowsOf(selected).filter((r) => r.target === target);

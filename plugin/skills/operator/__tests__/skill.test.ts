@@ -214,6 +214,70 @@ describe("the commands it names", () => {
   });
 });
 
+describe("its status card", () => {
+  const card = /### The status card\n([\s\S]*?)\n### /.exec(body)?.[1] ?? "";
+
+  test("puts jig ask's own answer first, then the same four lines in order", () => {
+    expect(card).toContain(
+      "**`jig ask`'s own answer**, exactly as it printed it",
+    );
+    expect(card.indexOf("**`jig ask`'s own answer**")).toBeLessThan(
+      card.indexOf("**Where it stands:**"),
+    );
+    const lines = [...card.matchAll(/^ {3}\*\*([^*]+):\*\* /gm)].map(
+      (m) => m[1],
+    );
+    expect(lines).toEqual([
+      "Where it stands",
+      "Waits on",
+      "What you can do",
+      "Not read",
+    ]);
+  });
+
+  test("says how each line is filled in, and that it runs no recovery command itself", () => {
+    expect(body).toContain("### Filling in the card");
+    for (const line of [
+      "(Where it stands)",
+      "(Waits on, What you can do)",
+      "(Not read)",
+    ])
+      expect(body).toContain(line);
+    expect(body).toContain("quote it exactly and say the person runs it");
+    expect(body).toContain(
+      "when `last` is null, say no previous ended launch is available in this answer",
+    );
+  });
+});
+
+describe("its waiting card and bare requests", () => {
+  test("answers the skill run on its own with jig ask --waiting, as the waiting card", () => {
+    expect(body).toContain(
+      "| nothing: the skill run on its own | `jig ask --waiting`, answered as [the waiting card](#the-waiting-card) |",
+    );
+    const card = /### The waiting card\n([\s\S]*?)\n### /.exec(body)?.[1] ?? "";
+    for (const part of [
+      "**Waiting on a person**, as the dispatcher's tick at",
+      "**<owner>/<name>**: <how many> waiting",
+      "- `<address>`: <the act that settles it>, since <the date>. <the title>",
+      "the question, quoted as the record's words",
+      "One repository block per repository",
+      "one line per entry, in its order",
+      "**Not listed:** drives that are running",
+      "`Nothing\nwaits on a person.`",
+    ])
+      expect(card).toContain(part);
+  });
+
+  test("takes a bare number as a pull request, then the item of that number", () => {
+    expect(body).toContain("- **A bare number** (`/jig:operator 456`)");
+    expect(body).toContain("ask the `pickup` of the same number\n  once");
+    expect(body).toContain(
+      "When the `drive` answer\n  exits `1` with no such pull request, ask the `pickup`",
+    );
+  });
+});
+
 describe("its rules for sending", () => {
   test("states each rule a send follows", () => {
     for (const rule of [

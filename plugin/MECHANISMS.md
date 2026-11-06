@@ -361,9 +361,11 @@ development and shipped as a version.
   record's token, a drive pass's record and a second answer. Nothing
   else reasoned writes these records.
 - **Boundary.** The tick tunes none of its own settings. A class that keeps
-  recurring is a finding a person records with
-  [`/jig:reflect`](skills/reflect/README.md) and approves through
-  [`/jig:review-reflections`](skills/review-reflections/README.md).
+  recurring is a finding: where reflection is on, the tick records it, once
+  a week, as a finding about the dispatcher in the reflection store
+  (`dispatch/lib/reflection-route.ts`), and otherwise a person records it with
+  [`/jig:reflect`](skills/reflect/README.md). A person approves any change
+  through [`/jig:review-reflections`](skills/review-reflections/README.md).
 - **If it fails.** A person, from the dashboard or the morning report. Asked
   to fix: a person decides the change; a defect is a Jig change.
 

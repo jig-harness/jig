@@ -17,29 +17,96 @@ here have a design in this folder ([README.md](README.md)).
 
 ## Now
 
+Now is the line that runs with nobody watching: a team's pull requests
+driven to merge-ready while a person keeps every decision that is theirs.
+First what keeps an unattended pass from getting past a person, then what
+keeps the line from stranding work, then one place to see and steer it,
+then Orca, the dispatcher's first session runtime.
+
 ### 32. Driving any pull request from anywhere, with autonomy that fits the hour
 
 Most of [the design](dark-factory-driving.md) is built, in
 [`drive-pr`](../plugin/skills/drive-pr/README.md) and
-[CONFIGURATION.md § `autonomy`](../plugin/CONFIGURATION.md#autonomy): a pull
-request is driven from any checkout, a stopped drive restarts itself or is
-re-armed, a wedged or dead driver is taken over through the drive ledger on
-the pull request, the `attended` and `unattended` levels say what an agent
-decides and records instead of asking, and a park is reserved for the
-configured human decision classes and carries a framed decision. What the
-design still holds:
+[CONFIGURATION.md § `autonomy`](../plugin/CONFIGURATION.md#autonomy). What
+it still holds is **the policy from the base branch**: `autonomy.max_level`
+and `autonomy.park_classes` read from the pull request's base branch,
+failing closed when it cannot be read. Today they come from the working
+tree, so a pull request that edits them changes what its own drive may
+decide.
 
-- **The policy from the base branch**: `autonomy.max_level` and
-  `autonomy.park_classes` read from the pull request's base branch, failing
-  closed when it cannot be read. Today they come from the working tree, so a
-  pull request that edits them changes what its own drive may decide.
-
-The policy from the base branch ships on its own. `wide` and `off_hours`
-ship opt-in and documented as not yet validated, a maintainer's recorded
-exception to the dark-by-default rule, revisited once a working repository
-has run them for a month against the design's validation measure.
+`wide` and `off_hours` ship opt-in and documented as not yet validated, a
+maintainer's recorded exception to the dark-by-default rule, revisited once
+a working repository has run them for a month against the design's
+validation measure.
 
 Done when a drive reads its ceiling and park classes from the base branch.
+
+### 40. The pass trust boundary as mechanisms
+
+A drive pass runs with no person at its terminal, usually signed in as the
+person who armed the drive and, on a host that opted in, with its
+permission prompts off. Where a script checks what the pass does, the pass
+cannot get past a person. Where only the pass's instructions say what it
+must not do, nothing that runs stops it;
+[the mechanism map](../plugin/MECHANISMS.md#where-the-boundary-rests-on-instructions)
+lists those places. What it will build: each boundary the map lists as
+held only by an instruction for an unattended pass gets a mechanism
+instead (a hook, a permission rule or a separate credential), one pull
+request per boundary, in this order:
+
+- **Comments trusted by their author**: a park answer, a ledger entry, a
+  takeover claim and a follow-up marker count only when they can be told
+  apart from a comment a pass posted under the person's login, through a
+  pass identity of its own, a token only the driver holds, or a mark on the
+  pass's own comments that the readers refuse as an answer, where the mark
+  is imposed and protected outside the pass's control (a pass holding the
+  person's credential could otherwise post an unmarked comment) or the pass
+  has a separate credential, decided in one place, `plugin/shared/trusted-authors.ts`. A pass then cannot answer its
+  own park or write the drive ledger.
+- **The push and the merge**: inside a drive pass, a push that does not go
+  through `plugin/skills/drive-pr/scripts/guarded-push.ts` and every merge
+  command are refused by something that runs (a plugin hook, a deny rule
+  the drive installs for its pass, or a pre-push check that sees every
+  push), and the refusal reaches the pass. A raw `git push` then no longer
+  escapes a person's `hold-push`, and a person's own session is not
+  affected.
+- **A loosened ratchet**: a `Ratchet-Loosen` trailer counts only with
+  evidence a person gave it, such as a commit the person signed or an
+  approval recorded on the pull request, and the ratchet says which
+  evidence it read.
+- **The machine's state**: the dispatch and drive records under
+  `~/.local/state/jig/` that a script decides from are verified when read,
+  or a direct edit is otherwise detected, and the reader's report names the
+  refusal. Which records need it, and whether detection is enough, is part
+  of the work.
+- **Resolving a thread**:
+  `plugin/skills/resolve-review-comments/scripts/resolve-thread.ts` refuses,
+  with a named exit, a thread that carries no reply from the resolving
+  login posted after its last reviewer comment. This binds only a pass that
+  uses the script: a pass holding the person's login can send the
+  `resolveReviewThread` mutation directly. The work either enforces the
+  check where the credential is used or records that bypass as an accepted
+  risk, and the script's check is not called mechanical enforcement until
+  it does.
+- **The installed copy**: before a scheduled job runs, the launcher
+  (`plugin/runtime/launcher.ts`) confirms that the plugin copy matches a
+  released version, for example by a digest the release records, and
+  refuses with a named reason in the job's receipt otherwise.
+- **The site's sync record**: in Jig, the gates fail a change to
+  `website/content-sync.yaml` that `scripts/website-sync.ts --advance` did
+  not make.
+
+How each boundary is held is part of its work. A boundary no mechanism can
+hold stays, and the map records it as an accepted risk. A person's command
+sent from their own session (`jig send`, through the operator) is outside
+this item: no pass runs there. It waits on nothing, and delegated merge
+(item 9) waits on it.
+
+Done when each boundary `plugin/MECHANISMS.md` lists as instruction-only
+for an unattended pass is enforced by a mechanism or recorded there as an
+accepted risk, and the map says which: a park answer a pass posts under the
+person's login is not taken as the person's, and a raw `git push` or a
+merge command from a pass is refused.
 
 ### 33. The dispatcher: a tick that starts the execution line's stages
 
@@ -77,7 +144,8 @@ log, one row per ended launch with an outcome class from a
 closed list, a dashboard that filters it (`jig dispatch dashboard`, no
 report files, which grows into item 42's hub and keeps its command),
 drift from each stage's expectation reported and notified
-but never acted on, recurring classes routed to `reflect`, and one
+but never acted on, each recurring class recorded once a week as a
+reflection finding about the dispatcher, and one
 mechanical nudge (`steer`, "continue" after a usage limit resets) with no
 open-ended prompt, then the re-drive of a converged pull request the
 forge reports conflicting or whose head moved after the drive verified
@@ -91,7 +159,8 @@ session that can be bound to a chosen account (until then the pickups are
 reported, not started). A park's notification carries the park's framed
 decision.
 
-Done when, on a host running Orca, an item assigned to the factory
+What is open is checking it on a live host. Done when, on a host running
+Orca, an item assigned to the factory
 identity gets one workspace and one `do-item` session within one interval,
 a drive stopped on one account's usage limit is re-armed on another account
 by the next tick, a merged pull request gets one follow-up session, a park
@@ -128,7 +197,7 @@ drive a person or another machine runs is not on the page either, and
 nothing tells work that settles by itself from work that waits on a
 person. [design/dispatch-board.md](dispatch-board.md) has how it works:
 one predicate, `plugin/skills/drive-pr/scripts/lib/merge-ready.ts`, which
-the tick and `announce-merge-ready.ts` both call, places a converged pull
+the tick, `announce-merge-ready.ts` and `jig ask` all call, places a converged pull
 request in a lane of Ready to merge (merge now, with a merge command pinned
 to the verified head and built only from values of a strict form; approve
 first, naming requested reviewers or that nobody was asked and saying other
@@ -255,6 +324,69 @@ names; and, once item 40 has settled, a commit from the hub writes only as
 the person, after proof that they are present and a dry run that still
 matches, while the operator chat proposes and never sends.
 
+
+### 39. Addresses: asking and telling the stations of the line
+
+Where a piece of work stands is read from many places (the dispatcher's
+report, receipts and log, the dashboard, the ledger comment, the drive's
+doctor), and a person steers the line with a different gesture for each
+case: an assignment, a label, an `answer` comment, a mailbox directive.
+Every session and interface that shows or steers the line reads those
+records its own way. [design/addresses.md](addresses.md) has how it works.
+What it will build: an address for every station on a piece of work,
+`station@repository#key` (`drive@jig#456`), resolved from the records the
+line already keeps and declared nowhere; `jig ask <address>`, which answers
+who holds the station, its state, what it waits on and its last outcome,
+names every record it could not read, with `--thread` adds the address's
+correspondence (requests, questions, answers, launches and outcomes, each
+linked to its record) in one shape the command line and a panel both
+read, and with `--waiting` lists every address that waits on a person,
+from the newest tick's line; `jig send <address> <verb>`, which writes the one record
+the line already acts on, from a closed list of verbs, and refuses a
+person's commands inside a session the line started; an operator skill
+that turns a person's sentence into those commands and holds no state;
+a launch's result naming what follows it; and a park naming the person it
+waits on. No agent stays resident to hold an address, and no daemon or
+queue holds a request
+([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). One pull
+request per step, in the design's order; built so far: `jig ask`, with its
+thread and the list of what waits on a person, the outcome log's key column
+and the rule it rests on,
+[ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md)
+([plugin/README.md § Asking a station where it stands](../plugin/README.md#asking-a-station-where-it-stands));
+`jig send`, its verbs, their checks and the refusal of a person's
+commands in a session the line started
+([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do));
+and the operator skill, `/jig:operator`
+([plugin/skills/operator/](../plugin/skills/operator/SKILL.md)). Also
+open, for the hub (item 42), which builds them as its stage 2's first
+step: the thread grows under `ask`'s version 1, each entry with a stable
+id, a question with its key, its class and a status (open, answered, acted
+on, expired), an answer with the question it replies to, who answered and
+that person's permission on the repository, and an answered park kept from
+the drive ledger's resolved parks; the addresses of one piece of work fold
+into one thread by its aliases (the item key, the branch, the pull
+request), each join with its evidence and only on evidence the
+repository's own people wrote, and a work-batch's batch key makes
+its members one thread; and `ask` lists the threads that hold something
+for a person (an open question, an act a merge waits on, a follow-up's
+question) only while they hold it, storing nothing when a reader hides
+one.
+
+Done when `jig ask` answers the address of a pick-up, a drive and a
+follow-up on the machine that dispatched them and, from the forge and the
+tracker alone, on a machine that did not, saying what it could not read;
+an address nobody holds answers with its last outcome; the thread a panel
+shows for an address is the one `jig ask --thread` prints; each verb of
+`jig send` writes a record its reader acts on at its next run, and a
+session the line started is refused the verbs that are a person's; the
+operator answers "where does this stand" and "what waits on me" from those
+commands alone; every ended launch names what follows it; every parked
+question names the person it waits on; an answered park stays in its
+thread with its answer and status; and a pick-up, the drive of the pull
+request it opened and that pull request's follow-up read as one thread,
+which leaves the thread list once nothing in it waits on a person.
+
 ### 35. One jig command line
 
 The plugin's machine-level tools are separate commands with no shared
@@ -339,513 +471,6 @@ in place from a local marketplace leaves that folder untouched, records the
 skip in the receipt and still runs the job, and a pinned machine or one with
 `upgrade: off` runs no upgrade.
 
-### 3. The kickoff family
-
-The greenfield kickoff becomes a living skill instead of a frozen seed, with
-the skills it calls, written for Jig and free of third-party lineage. Each
-moves in from where it is kept today, and that copy is deleted in the same
-rollout:
-
-- **`kickoff`**: the project bootstrap (requirements, architecture,
-  red team, synthesis, repository bootstrap, plan review, developer
-  documentation, scaffolding, agent hierarchy, implementation plans, tracker).
-  It replaces `seeds/project-kickoff/`, which is an older copy. M6's PRD and
-  architecture templates and the kickoff's own are merged into one of each.
-  The opinions M6 leaves out (tiers, model routing) belong in the skill, not
-  the module; its red-team phase runs
-  [`red-team`](../plugin/skills/red-team/SKILL.md), which holds the
-  personas. M6's PRD and architecture templates move into the
-  skill (`templates/`), moved and not copied, and M6's README links them there
-  ([the module contract](../modules/AGENTS.md#the-module-contract)); the
-  NOTICE entries move with them.
-- **Plan review**, folded into `review`, which already accepts a plan
-  document: dependencies and critical path, completeness, simplification and
-  effort checks.
-- **`upgrade-deps`**: grouped, changelog-driven dependency upgrades (the
-  majors an update bot cannot do alone), opened through `do-item`'s
-  pull-request policy and driven by `drive-pr`; the runnable side of M1's
-  pin-and-update rule.
-- **`design-brief-builder`**: two copies have diverged; merge the source's
-  `failure-modes`, `bundle-contract` and `creative-latitude` references into
-  this one.
-
-[adoption/greenfield.md](../adoption/greenfield.md) then points at
-`/jig:kickoff` instead of the seed.
-
-### 7. The Notion store, run against Notion
-
-The [Notion store](../plugin/skills/reflect/README.md#notion-store) is built and
-passes the conformance suite against a local fake of the Notion API. What
-is left is the run against Notion itself, which needs an integration's
-token: set `NOTION_TOKEN` and `JIG_NOTION_LIVE_PARENT` (a scratch page shared
-with the integration) and run
-`bun test plugin/skills/reflect/__tests__/notion-live.test.ts`, then fix
-where the fake and Notion disagree, in both.
-
-Done when that test passes, and a repository reflects into a database `init`
-created using only `NOTION_TOKEN` and `reflection.notion.database`.
-
-### 8. The audit experience: what is left
-
-The audit sheet, the decisions round trip, profiles as targets, the trend
-across past records and the starter configuration are in the
-[audit skill](../plugin/skills/audit/README.md).
-What its [design](audit-experience.md) still holds:
-
-- **Greenfield**: an audit run at the end of the kickoff's repository
-  bootstrap leads with the profile check and leaves out modules outside the
-  profile; the kickoff family (item 3) calls it.
-- **Calibration into the reflection store**: each *this is wrong* decision
-  becomes a finding about the `audit` skill in the
-  [reflection store](../plugin/skills/reflect/README.md).
-
-Done when a kickoff run ends with the greenfield check and a *wrong*
-decision reaches the reflection store.
-
-### 19. Herdr as the primary workspace runtime
-
-[Herdr](https://herdr.dev) is the workspace runtime Jig's tooling targets
-first ([ADR-0005](../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
-The [Herdr workspace tool](../tools/herdr/README.md), the launcher's `herdr`
-provider and M12's worktree lifecycle in Herdr are in place. Done when:
-
-- each consumer repository's own Herdr launch and worktree commands call the
-  workspace tool, and their copies of what it does are deleted, keeping only
-  the repository's own setup as its `.config/worktree-hooks/create`;
-- `drive-pr`, `do-item` and `review`'s reading of a delegated agent's output
-  are run in a Herdr workspace on macOS and on Linux, and what differs is
-  fixed or written down.
-
-## Next
-
-### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
-
-Lets a converged drive arm the forge's auto-merge for the exact head it
-certified. It relaxes "a human merges", so the doctrine change is approved on
-its own. Before it ships, the design must guarantee that:
-
-- the delegation and the merge method are read only from sources the pull
-  request cannot change, fetched fresh at the moment of the decision, and the
-  integration branch is resolved independently of the pull request's own
-  `repository.base_branch`;
-- revoking the delegation, or any condition that refuses it, withdraws an
-  auto-merge an earlier run armed, whatever the policy then says;
-- `drive.ts` leaves the decision to the helper instead of gating on the pull
-  request's own copy of the policy;
-- an armed auto-merge is bound to the certified head and cannot arm before the
-  reviewers summoned by Ready have reported;
-- the doctrine (M7 invariant, the human-in-the-loop registry's Merge row, the
-  maturity criteria) changes in the same pull request, in the direction the
-  decision picks.
-
-### 10. Values the skills still assume
-
-Move into configuration when a consumer needs them:
-
-- the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
-  with fixed label groups, instead of going through the
-  [tracker interface](../GLOSSARY.md), so a repository on GitHub Issues,
-  the default tracker, cannot defer a finding. Moving it onto the interface makes it work on
-  every adapter; revisit for GitHub Issues what the step relies on that
-  GitHub lacks or spells differently: label groups (GitHub labels have none,
-  so the type and repository groups become configured label lists), its
-  `--originating` and `--team` keys (validated through the adapter's key
-  shape, `keys.ts`), the conditional description edits that keep concurrent
-  deferrals from losing an entry (the interface may need a compare-and-set
-  update, or a comment per entry where the tracker cannot compare), and
-  GitHub's secondary rate limit on writes when a review defers many
-  findings at once. Done when a deferral round files and appends its
-  findings on both adapters, with the fake-tracker tests both adapters'
-  tests use;
-- the git remote: the delivery skills read it from `repository.remote`
-  (default `origin`), but `review`, `review-reflections`, `reflect`,
-  `code-stats`, `changelog` and the audit's `config-fit.ts` still read
-  `origin` directly; they move onto the same setting, through
-  `remoteName()` in `shared/consumer.ts`;
-- the markers of Jig's own finding format (`ai-review-backlog`,
-  `ai-review-round`, the leading `ai-review-*` comments) are fixed, and the
-  summary-comment markers default to `<!-- ai-code-review -->` and
-  `ai-reviewed-sha`: they become settings with neutral defaults, set to the
-  current names first in the repositories whose reviewer writes them.
-
-### 11. Jig's own Simplified Technical English linter
-
-`decide`'s `ste-lint` is a faithful TypeScript translation of a third-party
-Python linter, kept output-identical to it. Rewrite it as Jig's own
-implementation of the same writing rules, free to deviate where Jig's
-rules differ (for example by folding in the corrections its wrapper applies
-today), and keep crediting the original
-([Credits](../plugin/RECOMMENDED-SKILLS.md#credits)). The parity record and the
-golden files from the Python linter then retire with the translation.
-
-### 12. More tracker adapters
-
-A plan file kept in the repository, beside Linear, GitHub Issues and Jira.
-It waits on the open decisions below. For every adapter to work end
-to end, the [tracker interface](../GLOSSARY.md) gains attaching a file,
-which `decide` and `explain` now do through the Linear MCP tools or the
-`linear` command. The deferral step (item 10), `decide`, `explain` and
-`do-item`'s instructions then use the interface's operations, and
-`do-item`'s parent-status reconciliation reads the interface's answers
-instead of Linear's on its native path too. The workspace launcher and the
-Herdr kickoff open Linear issues only: a GitHub key (`#123`) needs a
-launcher tracker for GitHub Issues and the key's file name (`issue-123`)
-where they name a cache file or a claim.
-[plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
-still assumes Linear.
-
-### 17. Corrected designs for the existing modules
-
-Practices a working repository validated, for modules that exist today:
-
-- **M10 and M11**:
-  - a ledger of out-of-tree work that blocks promotion.
-- **M6 and M7**:
-  - an acceptance stage;
-  - plan claims checked against the code before building;
-  - the execution-plan format the pickup skill reads;
-  - a skill that runs the post-merge stage M7 states, for any repository (the
-    stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md));
-- **M0, M4 and M5**:
-  - a reference generator for the model roster, when the working tool moves
-    here;
-  - files that change only with an approved decision record.
-
-Done when each module states the practice with its mappings and criteria, and
-a re-audit of Jig scores them.
-
-### 18. The jig-harness.dev website
-
-`website/` renders this repository's documents as a designed site (Astro, a
-static Cloudflare Worker), open to every reader and to search engines;
-[design/website.md](website.md) has
-how it works and what is left. Done when:
-
-- a gate checks the contrast of every text pair and every hover and focus
-  state, in both themes;
-- search works on a phone, and the plugin page shows one agent's steps at a
-  time;
-- the home and adoption pages show an audit sheet of Jig's own audit.
-
-### 20. `code-stats`: a reference set and audit evidence
-
-The [code-stats skill](../plugin/skills/code-stats/README.md) classifies a
-repository's files from conventions, attributes, its test runners'
-configuration, its `code_stats` configuration and a classify command. What
-is left:
-
-- **A reference set** of public repositories (a Python service, a Go
-  module, a Rust workspace, a Java build, a JavaScript monorepo), each run
-  recorded with its commit and its results beside it, as
-  [the audit's calibration](../plugin/skills/audit/calibration/) is, so a
-  change to a rule shows what it moves.
-- **Audit evidence**: `jig:audit` reads `--json` (schema `code-stats/v1`)
-  for the criteria that need a measure: the test-to-code ratio, the
-  generated share, the scaffolding size, and a large unclassified share as a
-  finding about the configuration.
-
-Done when the reference set's recorded results are checked by a test, and
-an audit sheet cites code-stats figures as evidence.
-
-### 21. `changelog` skill: several artifacts
-
-The [`changelog` skill](../plugin/skills/changelog/README.md) is the
-runnable form of [M16](../modules/M16-releases-versions/README.md) for a
-repository with one released artifact. What is left:
-
-- **Several released artifacts in one repository**, each with its own
-  changelog, version, tag prefix and release paths: a `changelog` section
-  that lists artifacts, a note's front matter naming the artifacts it
-  reaches and the bump for each, a release run that releases each artifact
-  whose notes wait as one version of that artifact, and tags that carry the
-  artifact's name. A note reaching no artifact stays the repository's
-  choice (Unreleased, or none). Done when a monorepo with two packages
-  releases them independently through the action, and the single-artifact
-  configuration keeps working unchanged.
-- **Other CI providers' templates** beside GitHub's workflow template, when
-  a repository needs one.
-
-### 22. Merge conflicts, measured
-
-The replay, live record and [M11/M12 practice](merge-conflicts.md) measure
-where parallel work conflicts, expose the result in the audit and cross-PR
-scoreboard, and feed each hotspot into the reflection store as a finding
-whose class is its cause. What is left concerns only how Jig keeps its own
-plan:
-
-- **One file per roadmap item** follows only if the report shows the plan
-  or the roadmap conflicting where items are added or removed side by side
-  (`append` or `adjacent` hotspots, which now also arrive as reflection
-  findings of those classes).
-
-Done when a history report over a window of parallel work on Jig has shown
-whether the plan or the roadmap has such hotspots, and one file per item has
-then become a plan item of its own or been dropped.
-
-### 23. Seed review lenses
-
-`review` runs [review lenses](../GLOSSARY.md) from one file each, and
-ships the seed lens `jig.swallowed-failure` for M15; the other rules Jig's
-modules state that no gate can judge have none yet.
-[design/review-lenses.md](review-lenses.md) has how it works. What is left:
-
-- **`jig.test-gap`** for M14.
-- **`jig.stale-comment`**, after M4 gains its rule for comments in code.
-- **`jig.type-invariants`**, after M15 gains its rule for types.
-- **Measurement and promotion**: a lens's findings on pull request threads
-  counted into M8's parity report, one row per lens version, and a lens
-  promoted to blocking only with the measurement that cleared the bar.
-
-Done when `review` runs every seed lens a diff triggers and says why it
-skipped the others, each seed lens's eval fixtures have passed live, and the
-tallying script turns a fixture set of threads into one parity row per lens
-version.
-
-### 24. Resource garbage collection for a developer machine
-
-A machine that runs many worktrees fills with what their sessions leave
-behind (fixture processes, scratch directories, container volumes and images,
-merged branches, tool state), each kind cleaned by its own script on its own
-schedule or by nobody.
-[design/resource-gc.md](resource-gc.md) has how it works: one runner, one
-contract (a lifecycle predicate decides, age only guards, report first, fail
-closed, a receipt per run), kinds a repository enables with its own facts,
-and a machine layer for the schedule. What it will build, one pull request
-per step:
-
-- **Finish the first rollout**: move in the operated worktree reaper and its
-  scheduler tests, with the creating/opening tool taking the shared session
-  lock, and retire the working repository's copies in the same rollout.
-  Coordinate tool-state creators with collection admission before enabling
-  retirement; its legacy reaper lock excludes only other reapers.
-  Validate its weekly job through the installed command before starting
-  the later kinds. Worktree collection stays disabled until this
-  integration, except for a worktree Orca manages, which `jig gc` collects
-  through Orca.
-- **Containers, volumes and images**, keyed to the compose projects the
-  worktrees derive, and the machine-level dangling images and build cache.
-- **Branches** merged as the forge records it (squash merges included) or
-  into the base by ancestry, with the remote branch gone.
-- **Processes**: the process registry as a shared module, the test runner
-  registering its fixtures, and the kind reaping registered trees whose
-  owner is gone.
-
-Done when a working repository's weekly sweep is the installed `jig gc`
-job, its own reapers and installers are gone, and the report names each
-resource's proof before anything is collected.
-
-### 25. Dependency-review feedback
-
-A tool that reviews what a pull request does to the repository's
-dependencies (Socket is one) reports through a check run and one summary
-comment, and raises no review thread. The loop's CI verdict already counts
-that check run like any other non-reviewer check (`ciVerdictOf` in
-`plugin/skills/drive-pr/scripts/lib/status/evidence.ts`), so a failing one
-reads as failing CI whether or not the repository requires it; what the loop
-does not do is read the alerts as findings
-([AI reviewers](../plugin/EXTENDING.md#ai-reviewers) says why). What it will
-build, one pull request per step:
-
-- **Read the report**: a dependency reporter is configured by its login and
-  check name, and read by a format of its own, the way a
-  [severity format](../plugin/EXTENDING.md#severity-formats) is: only from
-  comments and checks that login posted. Socket is the first built-in, checked
-  against its real comments and check runs.
-- **Alerts become findings**: each alert the report carries is a finding that
-  names the package and the alert, with its severity mapped onto `blocker`,
-  `high`, `medium` and `low`. It enters the loop through the path summary
-  comments already use, so the decline ladder and a top-level answer apply
-  unchanged.
-- **Scores stay advisory**: a report's scores (supply chain, quality,
-  maintenance, license) appear in the drive's status and the pull-request
-  plan, never as findings, with no threshold that turns a score into one.
-- **A failing check does not block by itself**: the reporter's check run
-  leaves the overall CI verdict, and only its alerts carry weight, as
-  findings. A check the repository's effective CI policy requires (listed in
-  `ci.required_checks`, or required by branch protection when that is unset)
-  keeps that requirement.
-
-Done when a drive on a pull request whose report carries an alert with a
-severity answers it as a finding, a report with scores and no alert adds none,
-and a failing reporter check with no alert does not hold the drive back,
-unless the repository's effective CI policy requires that check.
-
-### 26. `init`: setting a repository up for Jig
-
-A repository adopts Jig by hand today: read the configuration reference,
-write `.config/jig.yaml`, or copy the audit's starter configuration out of
-the sheet. [design/init.md](init.md) has how it works: one detector shared
-with the audit's configuration fit, a run that derives every value the
-repository states, asks at most five questions for the rest, writes the
-overlay with its evidence, enables the plugin for everyone who clones, and
-checks the result the way the audit will; the audit measures, init writes.
-What it will build, one pull request per step:
-
-- **The skill**: `plugin/skills/init/` with `init.ts` (derive, ask, write,
-  check) on the shared detector (`plugin/shared/detect.ts`), which learns the
-  changelog file, the label taxonomy and the title convention, the `fields` on
-  the configuration fit's findings so init can sort them, refresh mode
-  after a plugin release, tests from a plugin copy against fixture
-  repositories with and without a configuration, the lifecycle-map row and
-  the README table row.
-- **The pointers**: the adoption pages, setup's next step, the audit's
-  `remedy: init` marker and the sheet's command, and the configuration
-  fit's finding for a file written under an older plugin than the last
-  field-adding release.
-- **Project-level enablement** in the host settings files.
-
-Done when a fresh clone with no configuration runs `/jig:init`, commits
-what it wrote, the audit's configuration fit reports no finding about a
-field init derived or wrote, every other finding is reported with its
-remedy, and the brownfield and greenfield pages send a new repository
-there first.
-
-### 27. Work types: depth by kind of work
-
-Every item runs the same stations at the same depth, and the kinds of work
-Jig already knows (`labels.bug`, `batch_sizes`, `hitl`, the taxonomy's
-closed `types` list) are read in scattered places or not at all.
-[design/work-types.md](work-types.md) has how it works: the type derived
-from the taxonomy's types family, the tracker's own type or a conventional
-title prefix, never asked when derivable; one depth table per type with
-defaults a repository overrides field by field; a type lowering depth only
-where no flag, catalog review or gate raises it; an unknown type getting
-the strictest value of every field. What it will build, one pull request per step:
-
-- **`do-item` reads the row**: the pattern pre-scout, the review tiers and
-  skip threshold, the change note, the body sections and the spike's `hitl`
-  default move to the table, with a `task` fixture showing the lighter path.
-- **`work-batch` and `file-issue`**: batchability from the row; the type
-  written at filing.
-- **The required check** that refuses a pull request whose item is
-  of type `unknown` or links no item, reading its script and the type mapping from
-  the base branch rather than the head, with a workflow template and the
-  setup that makes it required.
-- **The lifecycle map's column and M9's audit criterion.**
-
-Done when a task-typed issue reaches its pull request with the depth its
-row gives, a feature keeps every gate it has today, and the three former
-conditions have no reader outside the table.
-
-### 28. `verify` and `debug`: evidence before claims, and a bounded debugging protocol
-
-A claim that the tests pass points at nothing, and a failure whose cause is
-not named gets a fix, then another. [design/verify-and-debug.md](verify-and-debug.md)
-has how it works: an evidence record tied to the tree hash, with the test
-counts from the runner's report and an expected-failure mode for M14's
-seen-to-fail; a `verify` skill that records and a pull-request policy that
-refuses a push without a record; a `debug` skill that reproduces,
-attributes on a fresh base, narrows, keeps a hypothesis ledger, fixes, and
-stops after a budget with the ledger posted where the work is tracked.
-What it will build, one pull request per step:
-
-- **`verify`**: the skill, its README, the lifecycle row, the M14 link.
-- **Evidence collection**: a resource collection kind that removes records,
-  their output and moved-aside reports past `verify.retention_days`, with
-  receipts; until it lands, `verify.retention_days` is read and nothing is
-  removed.
-- **`do-item` and `fix-ci` record and require**: the policy refusal, the
-  body's evidence section, the seen-to-fail requirement by work type (item 27).
-- **`debug`**: the skill, the ledger, the budget, the hand-off from
-  `fix-ci`, tests with a fixture whose failure needs attribution and one
-  whose budget runs out.
-
-Done when a pull request `do-item` opens carries an evidence section for
-the pushed tree, `fix-ci` hands a surviving test failure to `debug`, and a
-drive's repair round ends with a posted ledger when the budget runs out.
-
-### 29. The spec a work item links
-
-A work item carries or links its requirements, and the link is prose:
-`do-item` hands the agent the body, the reviewer is told to check "the
-acceptance criteria" wherever they are, and the pull request never says
-which were met. [design/spec-link.md](spec-link.md) has how it works, on
-the [spec ecosystems research note](spec-ecosystems-research.md): a
-read-only resolver with one adapter per layout (the item's own body first,
-then the common repository layouts by convention, then the tracker's
-attachments once the interface has them) that returns requirements,
-acceptance criteria and tasks with their ids; the result handed to the
-implementing agent and the reviewer; a pull-request section accounting for
-every criterion as met with an evidence record (item 28), deferred to a
-filed item, or not applicable. The delivery loop writes no spec and
-dictates no format.
-What it will build, one pull request per step:
-
-- **The repository adapters**, two or three layouts per pull request, each
-  with its fixture folder; M6's audit criterion with the last of them.
-- **`do-item` reads and requires**: the `spec` pre-scout by work type
-  (item 27), the delegation prompt and the reviewer's list, the policy
-  refusal for an unaccounted criterion, the recommended-skills page naming
-  the spec-writing tools with the adapter that reads each.
-- **The required check** that refuses an unlinked pull request or an
-  unaccounted criterion, honouring an exception only when a member of
-  `specs.exception_approvers` other than the author and the implementing
-  agent's identity applied its label after the exception record `do-item` writes (the references, each source's revision and the exception lines) last changed, the record still matches, and the label is
-  still on, reading its script and policy from the base branch rather than
-  the head, with a workflow template and the setup that makes it required.
-- **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
-- **The tracker source**, once the tracker interface has attachments
-  (item 12).
-
-Done when a feature whose body links a spec in any supported layout
-reaches its pull request with every acceptance criterion accounted for,
-one with none stops, saying so, before any code is written, and the stance (a work
-item links its requirements; the delivery loop writes no spec) is a decision record.
-
-### 30. Scanner findings block convergence
-
-`resolve-review-comments` lists the findings a static-analysis app reports as
-check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
-to work them, but the drive's verdict reads threads and summary comments
-only, so a drive with annotations as its only findings can end `CONVERGED`
-without starting a round. What it will
-build: the annotation listing as a third source of open work beside threads
-and summary findings, read by `drive-status`, `round-plan` and `converge`,
-so the verdict withholds `CONVERGED` while a scanner check is running on the
-head or lists a finding no round has answered; a way to record a finding
-that stands (rejected, won't fix, deferred) against the head so it stops
-counting; and the dismissal in the tool for the apps that expose one
-(SonarQube Cloud's issue transitions), as an adapter beside the listing.
-Done when a pull request whose scanner check holds a warning does not
-converge until a round fixes it or records why it stands.
-
-### 31. Routing work to an agent, a model and an effort
-
-`do-item` chooses which agent implements an issue, from the change-area
-catalog, the issue's labels and its title (`determine_agent.ts`), but
-nothing chooses the model or the effort that agent runs on, and nothing
-records why: a bug fix in one file and an epic's architecture spike are
-implemented on whatever model the session runs, the one the launcher's
-settings or a person picked. [design/agent-routing.md](agent-routing.md)
-has how it works, decided in
-[ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md): a
-route (agent, model tier, effort) for the implementer, derived from the
-work type (item 27), the size and flag labels and the catalog's flags and
-mandatory reviews, by rules as data with defaults a repository overrides;
-raises that only move the effort up; the strictest value on every
-conflict; a pinned agent keeping its pin; the reason, the source and
-whether it was applied on the pull request, where the drive's loop-cost
-report joins them to the outcome; a person's choice always winning; opt-in
-until a repository declares its rules; no model asked to route. The design
-is written and decided, and its first step is built: `determine_route.ts`
-derives the route from the `routing` section and its defaults, and
-`do-item` prints it and forwards nothing. What stays open is the rest of
-the build, its own epic, one pull request per step:
-
-- **The record**: the `## Route` section written and parsed from
-  `plugin/shared/`, and the loop-cost report reading it.
-- **M0's declaration point**: the policy, the criterion and the loader's
-  families check.
-- **`do-item` forwards**, behind a declared `routing` section: the model
-  and effort to the subagent tool, the launcher's `route:` prompt line
-  honoured, the pinned agent kept.
-- **`work-batch` and the audit criterion** at M0 Standard.
-
-The build epic is done when a flagged bug is delegated on a higher effort
-than an unflagged one with the `## Route` section saying why, a `route: yours` prompt
-delegates with nothing forwarded, and a loop-cost report shows the route
-beside the rounds.
-
 ### 34. Jig in the Orca ecosystem
 
 Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
@@ -893,6 +518,129 @@ since the last start, and either stays pending while the machine-wide
 tick lock refuses it and survives an event that arrives while that tick
 processes the repository.
 
+## Next
+
+Next starts with delegated merge, once item 40 holds. Then come what lets a
+second team adopt Jig, work that arrives complete, reviews that catch what
+gates cannot, and doctrine and measurement. Last come the developer machine
+and its runtimes, and the runs a person owes.
+
+### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
+
+Lets a converged drive arm the forge's auto-merge for the exact head it
+certified. It relaxes "a human merges", so the doctrine change is approved on
+its own. It waits on item 40, because delegating the merge to a pass whose
+pushes and merges are not enforced widens the gap item 40 closes: a pass
+that pushes past a person's hold or runs a merge command itself. Before it
+ships, the design must guarantee that:
+
+- the delegation and the merge method are read only from sources the pull
+  request cannot change, fetched fresh at the moment of the decision, and the
+  integration branch is resolved independently of the pull request's own
+  `repository.base_branch`;
+- revoking the delegation, or any condition that refuses it, withdraws an
+  auto-merge an earlier run armed, whatever the policy then says;
+- `drive.ts` leaves the decision to the helper instead of gating on the pull
+  request's own copy of the policy;
+- an armed auto-merge is bound to the certified head and cannot arm before the
+  reviewers summoned by Ready have reported;
+- the doctrine (M7 invariant, the human-in-the-loop registry's Merge row, the
+  maturity criteria) changes in the same pull request, in the direction the
+  decision picks.
+
+### 26. `init`: setting a repository up for Jig
+
+A repository adopts Jig by hand today: read the configuration reference,
+write `.config/jig.yaml`, or copy the audit's starter configuration out of
+the sheet. [design/init.md](init.md) has how it works: one detector shared
+with the audit's configuration fit, a run that derives every value the
+repository states, asks at most five questions for the rest, writes the
+overlay with its evidence, enables the plugin for everyone who clones, and
+checks the result the way the audit will; the audit measures, init writes.
+What it will build, one pull request per step:
+
+- **The skill**: `plugin/skills/init/` with `init.ts` (derive, ask, write,
+  check) on the shared detector (`plugin/shared/detect.ts`), which learns the
+  changelog file, the label taxonomy and the title convention, the `fields` on
+  the configuration fit's findings so init can sort them, refresh mode
+  after a plugin release, tests from a plugin copy against fixture
+  repositories with and without a configuration, the lifecycle-map row and
+  the README table row.
+- **The pointers**: the adoption pages, setup's next step, the audit's
+  `remedy: init` marker and the sheet's command, and the configuration
+  fit's finding for a file written under an older plugin than the last
+  field-adding release.
+- **Project-level enablement** in the host settings files.
+
+Done when a fresh clone with no configuration runs `/jig:init`, commits
+what it wrote, the audit's configuration fit reports no finding about a
+field init derived or wrote, every other finding is reported with its
+remedy, and the brownfield and greenfield pages send a new repository
+there first.
+
+### 3. The kickoff family
+
+The greenfield kickoff becomes a living skill instead of a frozen seed, with
+the skills it calls, written for Jig and free of third-party lineage. Each
+moves in from where it is kept today, and that copy is deleted in the same
+rollout:
+
+- **`kickoff`**: the project bootstrap (requirements, architecture,
+  red team, synthesis, repository bootstrap, plan review, developer
+  documentation, scaffolding, agent hierarchy, implementation plans, tracker).
+  It replaces `seeds/project-kickoff/`, which is an older copy. M6's PRD and
+  architecture templates and the kickoff's own are merged into one of each.
+  The opinions M6 leaves out (tiers, model routing) belong in the skill, not
+  the module; its red-team phase runs
+  [`red-team`](../plugin/skills/red-team/SKILL.md), which holds the
+  personas. M6's PRD and architecture templates move into the
+  skill (`templates/`), moved and not copied, and M6's README links them there
+  ([the module contract](../modules/AGENTS.md#the-module-contract)); the
+  NOTICE entries move with them.
+- **Plan review**, folded into `review`, which already accepts a plan
+  document: dependencies and critical path, completeness, simplification and
+  effort checks.
+- **`upgrade-deps`**: grouped, changelog-driven dependency upgrades (the
+  majors an update bot cannot do alone), opened through `do-item`'s
+  pull-request policy and driven by `drive-pr`; the runnable side of M1's
+  pin-and-update rule.
+- **`design-brief-builder`**: two copies have diverged; merge the source's
+  `failure-modes`, `bundle-contract` and `creative-latitude` references into
+  this one.
+
+[adoption/greenfield.md](../adoption/greenfield.md) then points at
+`/jig:kickoff` instead of the seed.
+
+### 8. The audit experience: what is left
+
+The audit sheet, the decisions round trip, profiles as targets, the trend
+across past records and the starter configuration are in the
+[audit skill](../plugin/skills/audit/README.md).
+What its [design](audit-experience.md) still holds:
+
+- **Greenfield**: an audit run at the end of the kickoff's repository
+  bootstrap leads with the profile check and leaves out modules outside the
+  profile; the kickoff family (item 3) calls it.
+- **Calibration into the reflection store**: each *this is wrong* decision
+  becomes a finding about the `audit` skill in the
+  [reflection store](../plugin/skills/reflect/README.md).
+
+Done when a kickoff run ends with the greenfield check and a *wrong*
+decision reaches the reflection store.
+
+### 18. The jig-harness.dev website
+
+`website/` renders this repository's documents as a designed site (Astro, a
+static Cloudflare Worker), open to every reader and to search engines;
+[design/website.md](website.md) has
+how it works and what is left. Done when:
+
+- a gate checks the contrast of every text pair and every hover and focus
+  state, in both themes;
+- search works on a phone, and the plugin page shows one agent's steps at a
+  time;
+- the home and adoption pages show an audit sheet of Jig's own audit.
+
 ### 38. One look for Jig's pages
 
 The pages Jig's tooling draws pick their own colours: the dispatch
@@ -910,67 +658,436 @@ Done when every page Jig's tooling draws takes its colours from
 `theme.ts`, follows the reader's light or dark setting, carries Jig's mark,
 and each genre's contrast test holds its light and dark pairs.
 
-### 39. Addresses: asking and telling the stations of the line
+### 41. Configurable issue attributes: type, priority and size
 
-Where a piece of work stands is read from many places (the dispatcher's
-report, receipts and log, the dashboard, the ledger comment, the drive's
-doctor), and a person steers the line with a different gesture for each
-case: an assignment, a label, an `answer` comment, a mailbox directive.
-Every session and interface that shows or steers the line reads those
-records its own way. [design/addresses.md](addresses.md) has how it works.
-What it will build: an address for every station on a piece of work,
-`station@repository#key` (`drive@jig#456`), resolved from the records the
-line already keeps and declared nowhere; `jig ask <address>`, which answers
-who holds the station, its state, what it waits on and its last outcome,
-names every record it could not read, with `--thread` adds the address's
-correspondence (requests, questions, answers, launches and outcomes, each
-linked to its record) in one shape the command line and a panel both
-read, and with `--waiting` lists every address that waits on a person,
-from the newest tick's line; `jig send <address> <verb>`, which writes the one record
-the line already acts on, from a closed list of verbs, and refuses a
-person's commands inside a session the line started; an operator skill
-that turns a person's sentence into those commands and holds no state;
-a launch's result naming what follows it; and a park naming the person it
-waits on. No agent stays resident to hold an address, and no daemon or
-queue holds a request
-([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). One pull
-request per step, in the design's order; built so far: `jig ask`, with its
-thread and the list of what waits on a person, the outcome log's key column
-and the rule it rests on,
-[ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md)
-([plugin/README.md § Asking a station where it stands](../plugin/README.md#asking-a-station-where-it-stands));
-`jig send`, its verbs, their checks and the refusal of a person's
-commands in a session the line started
-([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do));
-and the operator skill, `/jig:operator`
-([plugin/skills/operator/](../plugin/skills/operator/SKILL.md)). Also
-open, for the hub (item 42), which builds them as its stage 2's first
-step: the thread grows under `ask`'s version 1, each entry with a stable
-id, a question with its key, its class and a status (open, answered, acted
-on, expired), an answer with the question it replies to, who answered and
-that person's permission on the repository, and an answered park kept from
-the drive ledger's resolved parks; the addresses of one piece of work fold
-into one thread by its aliases (the item key, the branch, the pull
-request), each join with its evidence and only on evidence the
-repository's own people wrote, and a work-batch's batch key makes
-its members one thread; and `ask` lists the threads that hold something
-for a person (an open question, an act a merge waits on, a follow-up's
-question) only while they hold it, storing nothing when a reader hides
-one.
+An issue's type, priority and size are kept differently by each way an
+issue is filed: in the tracker's own field, in a label, or nowhere, so a
+tracker cannot sort or filter on them. The
+[tracker interface](../GLOSSARY.md) reads an issue's native type
+(`Issue.nativeType`) but cannot write a type, carries no size, and an
+adapter's priority storage is configurable only per adapter (the GitHub label
+map `issue_tracker.github.priority_labels`, the Jira priority names
+`issue_tracker.jira.priorities`), with no choice between the tracker's field,
+a custom field, labels or a command, and only `file-issue` checks that an
+issue it files is complete. What it will build: the tracker
+interface carries an issue's type, priority and size as canonical values, and
+where each of the three is kept is per-repository configuration
+(`issue_tracker.attributes`): the tracker's own field, a named custom field,
+labels, or the repository's own command, with a documented default per
+adapter:
 
-Done when `jig ask` answers the address of a pick-up, a drive and a
-follow-up on the machine that dispatched them and, from the forge and the
-tracker alone, on a machine that did not, saying what it could not read;
-an address nobody holds answers with its last outcome; the thread a panel
-shows for an address is the one `jig ask --thread` prints; each verb of
-`jig send` writes a record its reader acts on at its next run, and a
-session the line started is refused the verbs that are a person's; the
-operator answers "where does this stand" and "what waits on me" from those
-commands alone; every ended launch names what follows it; every parked
-question names the person it waits on; an answered park stays in its
-thread with its answer and status; and a pick-up, the drive of the pull
-request it opened and that pull request's follow-up read as one thread,
-which leaves the thread list once nothing in it waits on a person.
+- **GitHub Issues**: the issue type; the organization's Priority field; the
+  Effort field when its options carry the size names, else size labels.
+- **Jira**: the issue type, matched by name; the priority field; size as
+  labels until a size field is named.
+- **Linear**: labels for type and size; its priority field; the estimate as
+  an option for size.
+
+Today's `issue_tracker.types`, `issue_tracker.github.priority_labels` and
+`issue_tracker.jira.field_labels` and `issue_tracker.jira.priorities` become
+the label or field form of their attribute, and the native-type read the
+interface already has is kept. Every filing path (`file-issue`, `file-deferred.ts`,
+`report-bug.ts`, the issue forms) sets and checks all three, and a weekly
+check reports the issues missing one. It includes reading and writing the
+tracker's own issue type, not only a type label.
+
+Done when a repository on each adapter files and reads all three in its
+configured store, and Jig's own repository keeps them in GitHub's fields
+with no type, priority or size labels.
+
+### 12. More tracker adapters
+
+A plan file kept in the repository, beside Linear, GitHub Issues and Jira.
+It waits on the open decisions below. For every adapter to work end
+to end, the [tracker interface](../GLOSSARY.md) gains attaching a file,
+which `decide` and `explain` now do through the Linear MCP tools or the
+`linear` command. The deferral step (item 10), `decide`, `explain` and
+`do-item`'s instructions then use the interface's operations, and
+`do-item`'s parent-status reconciliation reads the interface's answers
+instead of Linear's on its native path too. The workspace launcher and the
+Herdr kickoff open Linear issues only: a GitHub key (`#123`) needs a
+launcher tracker for GitHub Issues and the key's file name (`issue-123`)
+where they name a cache file or a claim.
+[plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
+still assumes Linear.
+
+### 27. Work types: depth by kind of work
+
+Every item runs the same stations at the same depth, and the kinds of work
+Jig already knows (`labels.bug`, `batch_sizes`, `hitl`, the taxonomy's
+closed `types` list) are read in scattered places or not at all.
+[design/work-types.md](work-types.md) has how it works: the type derived
+from the taxonomy's types family, the tracker's own type or a conventional
+title prefix, never asked when derivable; one depth table per type with
+defaults a repository overrides field by field; a type lowering depth only
+where no flag, catalog review or gate raises it; an unknown type getting
+the strictest value of every field. What it will build, one pull request per step:
+
+- **`do-item` reads the row**: the pattern pre-scout, the review tiers and
+  skip threshold, the change note, the body sections and the spike's `hitl`
+  default move to the table, with a `task` fixture showing the lighter path.
+- **`work-batch` and `file-issue`**: batchability from the row; the type
+  written at filing.
+- **The required check** that refuses a pull request whose item is
+  of type `unknown` or links no item, reading its script and the type mapping from
+  the base branch rather than the head, with a workflow template and the
+  setup that makes it required.
+- **The lifecycle map's column and M9's audit criterion.**
+
+Done when a task-typed issue reaches its pull request with the depth its
+row gives, a feature keeps every gate it has today, and the three former
+conditions have no reader outside the table.
+
+### 29. The spec a work item links
+
+A work item carries or links its requirements, and the link is prose:
+`do-item` hands the agent the body, the reviewer is told to check "the
+acceptance criteria" wherever they are, and the pull request never says
+which were met. [design/spec-link.md](spec-link.md) has how it works, on
+the [spec ecosystems research note](spec-ecosystems-research.md): a
+read-only resolver with one adapter per layout (the item's own body first,
+then the common repository layouts by convention, then the tracker's
+attachments once the interface has them) that returns requirements,
+acceptance criteria and tasks with their ids; the result handed to the
+implementing agent and the reviewer; a pull-request section accounting for
+every criterion as met with an evidence record (item 28), deferred to a
+filed item, or not applicable. The delivery loop writes no spec and
+dictates no format.
+What it will build, one pull request per step:
+
+- **The repository adapters**, two or three layouts per pull request, each
+  with its fixture folder; M6's audit criterion with the last of them.
+- **`do-item` reads and requires**: the `spec` pre-scout by work type
+  (item 27), the delegation prompt and the reviewer's list, the policy
+  refusal for an unaccounted criterion, the recommended-skills page naming
+  the spec-writing tools with the adapter that reads each.
+- **The required check** that refuses an unlinked pull request or an
+  unaccounted criterion, honouring an exception only when a member of
+  `specs.exception_approvers` other than the author and the implementing
+  agent's identity applied its label after the exception record `do-item` writes (the references, each source's revision and the exception lines) last changed, the record still matches, and the label is
+  still on, reading its script and policy from the base branch rather than
+  the head, with a workflow template and the setup that makes it required.
+- **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
+- **The tracker source**, once the tracker interface has attachments
+  (item 12).
+
+Done when a feature whose body links a spec in any supported layout
+reaches its pull request with every acceptance criterion accounted for,
+one with none stops, saying so, before any code is written, and the stance (a work
+item links its requirements; the delivery loop writes no spec) is a decision record.
+
+### 31. Routing work to an agent, a model and an effort
+
+`do-item` chooses which agent implements an issue, from the change-area
+catalog, the issue's labels and its title (`determine_agent.ts`), but
+nothing chooses the model or the effort that agent runs on, and nothing
+records why: a bug fix in one file and an epic's architecture spike are
+implemented on whatever model the session runs, the one the launcher's
+settings or a person picked. [design/agent-routing.md](agent-routing.md)
+has how it works, decided in
+[ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md): a
+route (agent, model tier, effort) for the implementer, derived from the
+work type (item 27), the size and flag labels and the catalog's flags and
+mandatory reviews, by rules as data with defaults a repository overrides;
+raises that only move the effort up; the strictest value on every
+conflict; a pinned agent keeping its pin; the reason, the source and
+whether it was applied on the pull request, where the drive's loop-cost
+report joins them to the outcome; a person's choice always winning; opt-in
+until a repository declares its rules; no model asked to route. The design
+is written and decided, and its first step is built: `determine_route.ts`
+derives the route from the `routing` section and its defaults, and
+`do-item` prints it and forwards nothing. What stays open is the rest of
+the build, its own epic, one pull request per step:
+
+- **The record**: the `## Route` section written and parsed from
+  `plugin/shared/`, and the loop-cost report reading it.
+- **M0's declaration point**: the policy, the criterion and the loader's
+  families check.
+- **`do-item` forwards**, behind a declared `routing` section: the model
+  and effort to the subagent tool, the launcher's `route:` prompt line
+  honoured, the pinned agent kept.
+- **`work-batch` and the audit criterion** at M0 Standard.
+
+The build epic is done when a flagged bug is delegated on a higher effort
+than an unflagged one with the `## Route` section saying why, a `route: yours` prompt
+delegates with nothing forwarded, and a loop-cost report shows the route
+beside the rounds.
+
+### 23. Seed review lenses
+
+`review` runs [review lenses](../GLOSSARY.md) from one file each, and
+ships the seed lens `jig.swallowed-failure` for M15; the other rules Jig's
+modules state that no gate can judge have none yet.
+[design/review-lenses.md](review-lenses.md) has how it works. What is left:
+
+- **`jig.test-gap`** for M14.
+- **`jig.stale-comment`**, after M4 gains its rule for comments in code.
+- **`jig.type-invariants`**, after M15 gains its rule for types.
+- **Measurement and promotion**: a lens's findings on pull request threads
+  counted into M8's parity report, one row per lens version, and a lens
+  promoted to blocking only with the measurement that cleared the bar.
+
+Done when `review` runs every seed lens a diff triggers and says why it
+skipped the others, each seed lens's eval fixtures have passed live, and the
+tallying script turns a fixture set of threads into one parity row per lens
+version.
+
+### 30. Scanner findings block convergence
+
+`resolve-review-comments` lists the findings a static-analysis app reports as
+check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
+to work them, but the drive's verdict reads threads and summary comments
+only, so a drive with annotations as its only findings can end `CONVERGED`
+without starting a round. What it will
+build: the annotation listing as a third source of open work beside threads
+and summary findings, read by `drive-status`, `round-plan` and `converge`,
+so the verdict withholds `CONVERGED` while a scanner check is running on the
+head or lists a finding no round has answered; a way to record a finding
+that stands (rejected, won't fix, deferred) against the head so it stops
+counting; and the dismissal in the tool for the apps that expose one
+(SonarQube Cloud's issue transitions), as an adapter beside the listing.
+Done when a pull request whose scanner check holds a warning does not
+converge until a round fixes it or records why it stands.
+
+### 25. Dependency-review feedback
+
+A tool that reviews what a pull request does to the repository's
+dependencies (Socket is one) reports through a check run and one summary
+comment, and raises no review thread. The loop's CI verdict already counts
+that check run like any other non-reviewer check (`ciVerdictOf` in
+`plugin/skills/drive-pr/scripts/lib/status/evidence.ts`), so a failing one
+reads as failing CI whether or not the repository requires it; what the loop
+does not do is read the alerts as findings
+([AI reviewers](../plugin/EXTENDING.md#ai-reviewers) says why). What it will
+build, one pull request per step:
+
+- **Read the report**: a dependency reporter is configured by its login and
+  check name, and read by a format of its own, the way a
+  [severity format](../plugin/EXTENDING.md#severity-formats) is: only from
+  comments and checks that login posted. Socket is the first built-in, checked
+  against its real comments and check runs.
+- **Alerts become findings**: each alert the report carries is a finding that
+  names the package and the alert, with its severity mapped onto `blocker`,
+  `high`, `medium` and `low`. It enters the loop through the path summary
+  comments already use, so the decline ladder and a top-level answer apply
+  unchanged.
+- **Scores stay advisory**: a report's scores (supply chain, quality,
+  maintenance, license) appear in the drive's status and the pull-request
+  plan, never as findings, with no threshold that turns a score into one.
+- **A failing check does not block by itself**: the reporter's check run
+  leaves the overall CI verdict, and only its alerts carry weight, as
+  findings. A check the repository's effective CI policy requires (listed in
+  `ci.required_checks`, or required by branch protection when that is unset)
+  keeps that requirement.
+
+Done when a drive on a pull request whose report carries an alert with a
+severity answers it as a finding, a report with scores and no alert adds none,
+and a failing reporter check with no alert does not hold the drive back,
+unless the repository's effective CI policy requires that check.
+
+### 22. Merge conflicts, measured
+
+The replay, live record and [M11/M12 practice](merge-conflicts.md) measure
+where parallel work conflicts, expose the result in the audit and cross-PR
+scoreboard, and feed each hotspot into the reflection store as a finding
+whose class is its cause. What is left concerns only how Jig keeps its own
+plan:
+
+- **One file per roadmap item** follows only if the report shows the plan
+  or the roadmap conflicting where items are added or removed side by side
+  (`append` or `adjacent` hotspots, which now also arrive as reflection
+  findings of those classes).
+
+Done when a history report over a window of parallel work on Jig has shown
+whether the plan or the roadmap has such hotspots, and one file per item has
+then become a plan item of its own or been dropped.
+
+### 17. Corrected designs for the existing modules
+
+Practices a working repository validated, for modules that exist today:
+
+- **M10 and M11**:
+  - a ledger of out-of-tree work that blocks promotion.
+- **M6 and M7**:
+  - an acceptance stage;
+  - plan claims checked against the code before building;
+  - the execution-plan format the pickup skill reads;
+  - a skill that runs the post-merge stage M7 states, for any repository (the
+    stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md));
+- **M0, M4 and M5**:
+  - a reference generator for the model roster, when the working tool moves
+    here;
+  - files that change only with an approved decision record.
+
+Done when each module states the practice with its mappings and criteria, and
+a re-audit of Jig scores them.
+
+### 10. Values the skills still assume
+
+Move into configuration when a consumer needs them:
+
+- the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
+  with fixed label groups, instead of going through the
+  [tracker interface](../GLOSSARY.md), so a repository on GitHub Issues,
+  the default tracker, cannot defer a finding. Moving it onto the interface makes it work on
+  every adapter; revisit for GitHub Issues what the step relies on that
+  GitHub lacks or spells differently: label groups (GitHub labels have none,
+  so the type and repository groups become configured label lists), its
+  `--originating` and `--team` keys (validated through the adapter's key
+  shape, `keys.ts`), the conditional description edits that keep concurrent
+  deferrals from losing an entry (the interface may need a compare-and-set
+  update, or a comment per entry where the tracker cannot compare), and
+  GitHub's secondary rate limit on writes when a review defers many
+  findings at once. Done when a deferral round files and appends its
+  findings on both adapters, with the fake-tracker tests both adapters'
+  tests use;
+- the git remote: the delivery skills read it from `repository.remote`
+  (default `origin`), but `review`, `review-reflections`, `reflect`,
+  `code-stats`, `changelog` and the audit's `config-fit.ts` still read
+  `origin` directly; they move onto the same setting, through
+  `remoteName()` in `shared/consumer.ts`;
+- the markers of Jig's own finding format (`ai-review-backlog`,
+  `ai-review-round`, the leading `ai-review-*` comments) are fixed, and the
+  summary-comment markers default to `<!-- ai-code-review -->` and
+  `ai-reviewed-sha`: they become settings with neutral defaults, set to the
+  current names first in the repositories whose reviewer writes them.
+
+### 11. Jig's own Simplified Technical English linter
+
+`decide`'s `ste-lint` is a faithful TypeScript translation of a third-party
+Python linter, kept output-identical to it. Rewrite it as Jig's own
+implementation of the same writing rules, free to deviate where Jig's
+rules differ (for example by folding in the corrections its wrapper applies
+today), and keep crediting the original
+([Credits](../plugin/RECOMMENDED-SKILLS.md#credits)). The parity record and the
+golden files from the Python linter then retire with the translation.
+
+### 20. `code-stats`: a reference set and audit evidence
+
+The [code-stats skill](../plugin/skills/code-stats/README.md) classifies a
+repository's files from conventions, attributes, its test runners'
+configuration, its `code_stats` configuration and a classify command. What
+is left:
+
+- **A reference set** of public repositories (a Python service, a Go
+  module, a Rust workspace, a Java build, a JavaScript monorepo), each run
+  recorded with its commit and its results beside it, as
+  [the audit's calibration](../plugin/skills/audit/calibration/) is, so a
+  change to a rule shows what it moves.
+- **Audit evidence**: `jig:audit` reads `--json` (schema `code-stats/v1`)
+  for the criteria that need a measure: the test-to-code ratio, the
+  generated share, the scaffolding size, and a large unclassified share as a
+  finding about the configuration.
+
+Done when the reference set's recorded results are checked by a test, and
+an audit sheet cites code-stats figures as evidence.
+
+### 21. `changelog` skill: several artifacts
+
+The [`changelog` skill](../plugin/skills/changelog/README.md) is the
+runnable form of [M16](../modules/M16-releases-versions/README.md) for a
+repository with one released artifact. What is left:
+
+- **Several released artifacts in one repository**, each with its own
+  changelog, version, tag prefix and release paths: a `changelog` section
+  that lists artifacts, a note's front matter naming the artifacts it
+  reaches and the bump for each, a release run that releases each artifact
+  whose notes wait as one version of that artifact, and tags that carry the
+  artifact's name. A note reaching no artifact stays the repository's
+  choice (Unreleased, or none). Done when a monorepo with two packages
+  releases them independently through the action, and the single-artifact
+  configuration keeps working unchanged.
+- **Other CI providers' templates** beside GitHub's workflow template, when
+  a repository needs one.
+
+### 28. `verify` and `debug`: evidence before claims, and a bounded debugging protocol
+
+A claim that the tests pass points at nothing, and a failure whose cause is
+not named gets a fix, then another. [design/verify-and-debug.md](verify-and-debug.md)
+has how it works: an evidence record tied to the tree hash, with the test
+counts from the runner's report and an expected-failure mode for M14's
+seen-to-fail; a `verify` skill that records and a pull-request policy that
+refuses a push without a record; a `debug` skill that reproduces,
+attributes on a fresh base, narrows, keeps a hypothesis ledger, fixes, and
+stops after a budget with the ledger posted where the work is tracked.
+What it will build, one pull request per step:
+
+- **`verify`**: the skill, its README, the lifecycle row, the M14 link.
+- **Evidence collection**: a resource collection kind that removes records,
+  their output and moved-aside reports past `verify.retention_days`, with
+  receipts; until it lands, `verify.retention_days` is read and nothing is
+  removed.
+- **`do-item` and `fix-ci` record and require**: the policy refusal, the
+  body's evidence section, the seen-to-fail requirement by work type (item 27).
+- **`debug`**: the skill, the ledger, the budget, the hand-off from
+  `fix-ci`, tests with a fixture whose failure needs attribution and one
+  whose budget runs out.
+
+Done when a pull request `do-item` opens carries an evidence section for
+the pushed tree, `fix-ci` hands a surviving test failure to `debug`, and a
+drive's repair round ends with a posted ledger when the budget runs out.
+
+### 24. Resource garbage collection for a developer machine
+
+A machine that runs many worktrees fills with what their sessions leave
+behind (fixture processes, scratch directories, container volumes and images,
+merged branches, tool state), each kind cleaned by its own script on its own
+schedule or by nobody.
+[design/resource-gc.md](resource-gc.md) has how it works: one runner, one
+contract (a lifecycle predicate decides, age only guards, report first, fail
+closed, a receipt per run), kinds a repository enables with its own facts,
+and a machine layer for the schedule. What it will build, one pull request
+per step:
+
+- **Finish the first rollout**: move in the operated worktree reaper and its
+  scheduler tests, with the creating/opening tool taking the shared session
+  lock, and retire the working repository's copies in the same rollout.
+  Coordinate tool-state creators with collection admission before enabling
+  retirement; its legacy reaper lock excludes only other reapers.
+  Validate its weekly job through the installed command before starting
+  the later kinds. Worktree collection stays disabled until this
+  integration, except for a worktree Orca manages, which `jig gc` collects
+  through Orca.
+- **Containers, volumes and images**, keyed to the compose projects the
+  worktrees derive, and the machine-level dangling images and build cache.
+- **Branches** merged as the forge records it (squash merges included) or
+  into the base by ancestry, with the remote branch gone.
+- **Processes**: the process registry as a shared module, the test runner
+  registering its fixtures, and the kind reaping registered trees whose
+  owner is gone.
+
+Done when a working repository's weekly sweep is the installed `jig gc`
+job, its own reapers and installers are gone, and the report names each
+resource's proof before anything is collected.
+
+### 19. Herdr as the primary workspace runtime
+
+[Herdr](https://herdr.dev) is the workspace runtime Jig's tooling targets
+first ([ADR-0005](../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
+The [Herdr workspace tool](../tools/herdr/README.md), the launcher's `herdr`
+provider and M12's worktree lifecycle in Herdr are in place. What is left
+waits on a consumer repository that runs its agents in Herdr; the hosts
+that run Jig's own line run Orca. Done when:
+
+- each consumer repository's own Herdr launch and worktree commands call the
+  workspace tool, and their copies of what it does are deleted, keeping only
+  the repository's own setup as its `.config/worktree-hooks/create`;
+- `drive-pr`, `do-item` and `review`'s reading of a delegated agent's output
+  are run in a Herdr workspace on macOS and on Linux, and what differs is
+  fixed or written down.
+
+### 7. The Notion store, run against Notion
+
+The [Notion store](../plugin/skills/reflect/README.md#notion-store) is built and
+passes the conformance suite against a local fake of the Notion API. What
+is left is the run against Notion itself, which waits on a person who holds
+a Notion integration's token: with `NOTION_TOKEN` and
+`JIG_NOTION_LIVE_PARENT` (a scratch page shared with the integration) set,
+run `bun test plugin/skills/reflect/__tests__/notion-live.test.ts`, then fix
+where the fake and Notion disagree, in both.
+
+Done when that test passes, and a repository reflects into a database `init`
+created using only `NOTION_TOKEN` and `reflection.notion.database`.
 
 ## Later
 

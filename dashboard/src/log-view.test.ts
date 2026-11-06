@@ -242,6 +242,7 @@ describe("a class that recurs", () => {
   const view = recurringView({
     class: "gates failed",
     repo: "example-org/web",
+    stage: "rearm",
     nights: [true, false, true, true, false, true, true],
     rows: 9,
   });
@@ -253,9 +254,27 @@ describe("a class that recurs", () => {
     expect(view.role).toBe(ROLES.badly);
   });
 
+  it("names its stage, and filters the log to that stage's rows", () => {
+    expect(view.title).toBe("gates failed on example-org/web, rearm");
+    expect(view.filter).toEqual({
+      repo: "example-org/web",
+      stage: "rearm",
+      class: "gates failed",
+      window: "7d",
+    });
+    const other = recurringView({
+      class: "gates failed",
+      repo: "example-org/web",
+      stage: "followup",
+      nights: view.nights,
+      rows: 3,
+    });
+    expect(other.rowKey).not.toBe(view.rowKey);
+  });
+
   it("offers a finding to copy", () => {
     expect(view.finding).toBe(
-      "Recurring: gates failed on example-org/web, 5 of the last 7 nights, 9 rows",
+      "Recurring: gates failed on the rearm stage of example-org/web, 5 of the last 7 nights, 9 rows",
     );
   });
 });

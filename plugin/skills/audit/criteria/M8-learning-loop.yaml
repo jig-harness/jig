@@ -197,3 +197,4 @@ criteria:
       - "the threshold is configurable, and firing on every change is not the default"
       - "a record already filed for that change and count is not filed again, including after the inbox entry has been processed"
       - "with Jig's plugin and reflection on: the review loop's wind-down notes the round count in the reflection journal under an id derived from the pull request, and asks for `/jig:reflect`"
+      - "with Jig's dispatcher and reflection on: a `jig dispatch --apply` tick records each recurring class of its outcome log as a finding about the dispatcher, under an id derived from the repository, the stage, the class and the week, so one recurrence is filed once a week and each further week of it counts toward escalation"
