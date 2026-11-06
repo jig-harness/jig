@@ -1443,7 +1443,7 @@ from the tracker or the forge could only start a tick early; the timer
 stays the reconcile, so a missed event would cost one interval, and no
 route into the host is opened for events (see Left out).
 
-Two things on the host wake one repository's tick early, both by running
+Things on the host wake one repository's tick early, both by running
 `jig dispatch --apply --repo <path>`, the invocation the timer makes, so
 the machine file alone decides what that tick starts: Jig's Orca plugin,
 when an agent waits, blocks or finishes or a workspace is removed

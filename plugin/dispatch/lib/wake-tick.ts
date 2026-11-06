@@ -31,10 +31,15 @@ import {
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { GcError } from "../../shared/gc-error.ts";
 import { run } from "../../shared/proc.ts";
 import { requestWake, waitAndRun, wakeDir } from "../../shared/wake.ts";
 import { stateRoot } from "../receipts.ts";
-import { MIN_TICK_DEADLINE_MS } from "./machine-config.ts";
+import {
+  MIN_TICK_DEADLINE_MS,
+  readMachineConfig,
+  tickDeadlineMs,
+} from "./machine-config.ts";
 
 /** The exit of a tick that found another holding the tick lock (`dispatch/cli.ts`). */
 const LOCK_HELD_EXIT = 3;
@@ -85,7 +90,7 @@ function testCommand(): Outcome<string[] | null, "unstarted"> {
     : failed("unstarted", "JIG_WAKE_COMMAND must be a JSON array of strings");
 }
 
-/** The installed timer's launcher command (up to `--`) and environment; `null` when no timer is installed or it does not read. */
+/** The installed timer's launcher command (up to `--`) and environment; `null` only when no timer is installed. */
 async function installedTimer(): Promise<{
   prefix: string[];
   env: Record<string, string>;
@@ -94,17 +99,25 @@ async function installedTimer(): Promise<{
   const { detectScheduler, snapshotScheduler } = await import(
     "../../runtime/scheduler.ts"
   );
-  const { readInstalledJob } = await import("../../runtime/installed-job.ts");
-  const job = readInstalledJob(
-    await snapshotScheduler(detectScheduler(), dispatchJobSpec(5)),
+  const { jobPresent, readInstalledJob } = await import(
+    "../../runtime/installed-job.ts"
   );
+  const snapshot = await snapshotScheduler(
+    detectScheduler(),
+    dispatchJobSpec(5),
+  );
+  if (!jobPresent(snapshot)) return null;
+  const job = readInstalledJob(snapshot);
   const separator = job?.command.indexOf("--") ?? -1;
-  if (job === null || separator < 1) return null;
+  if (job === null || separator < 1)
+    throw new GcError("the installed timer is incomplete or malformed");
   return { prefix: job.command.slice(0, separator + 1), env: job.env };
 }
 
 /** How the waiter runs the tick for the repository at `path`. */
-async function tickCall(path: string): Promise<Outcome<TickCall, "unstarted">> {
+export async function tickCall(
+  path: string,
+): Promise<Outcome<TickCall, "unstarted">> {
   const test = testCommand();
   if (!test.ok) return test;
   if (test.value !== null)
@@ -123,7 +136,13 @@ async function tickCall(path: string): Promise<Outcome<TickCall, "unstarted">> {
       error,
     );
   }
-  if (timer === null)
+  if (timer === null) {
+    const machine = attempt(
+      "unstarted",
+      "the machine configuration does not read",
+      () => readMachineConfig(),
+    );
+    if (!machine.ok) return machine;
     return ok({
       argv: [
         process.execPath,
@@ -133,8 +152,12 @@ async function tickCall(path: string): Promise<Outcome<TickCall, "unstarted">> {
         ...tickArgs(path),
       ],
       env: environment(LINE_VARIABLE),
-      timeoutSec: DEFAULT_DEADLINE_SEC + GRACE_SEC,
+      timeoutSec:
+        (machine.value === null
+          ? DEFAULT_DEADLINE_SEC
+          : tickDeadlineMs(machine.value) / 1000) + GRACE_SEC,
     });
+  }
   const deadline = Number(timer.env.JIG_LAUNCHER_DEADLINE_SEC);
   return ok({
     argv: [...timer.prefix, ...tickArgs(path)],
@@ -183,7 +206,7 @@ function startWaiter(path: string, dir: string): void {
 
 /**
  * Ask for a tick of the machine-file repository at `path` soon: when it
- * starts, at once or within the minute after the last one started; or why
+ * can start, when idle and no sooner than a minute after the last start; or why
  * the request could not be recorded.
  */
 export function wakeTick(path: string): Outcome<"now" | "soon", "failed"> {

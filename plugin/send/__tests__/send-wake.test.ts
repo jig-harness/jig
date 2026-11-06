@@ -146,20 +146,34 @@ describe("jig send wakes the tick that reads its record", () => {
       const again = await w.send([ADDRESS, "hold"]);
       expectSpawnExit(again, 0);
       expect(again.stdout).toContain(
-        `the dispatcher's tick for ${REPO}, woken to start within a minute`,
+        `the dispatcher's tick for ${REPO}, woken to start when idle, at least a minute after the last start`,
       );
     }
     // One waiter holds all three; the running tick took the first and removes it when it ends.
     expect(pending(w)).toBe(3);
     expect(waiterPid(w)).toBe(waiter);
+    expect(w.ticks()).toHaveLength(1);
+    // Bring the next due time close while retaining a real detached sleep.
+    writeFileSync(join(w.wake, "started"), String(Date.now() - 59_000));
     rmSync(w.hold);
     await waitFor("the first tick to end", () =>
       runLog(w).includes("exited 0"),
     );
-    // The two sent while it ran wait for one trailing tick, a minute after the first started.
-    expect(pending(w)).toBe(2);
-    expect(w.ticks()).toHaveLength(1);
-  });
+    // The requests sent while it ran are consumed by one trailing tick.
+    await waitFor("the trailing tick", () => w.ticks().length === 2, 5000);
+    expect(w.ticks()).toEqual([
+      ["dispatch", "--apply", "--repo", w.repo],
+      ["dispatch", "--apply", "--repo", w.repo],
+    ]);
+    await waitFor("the waiter to exit", () => waiterPid(w) === null);
+    expect(pending(w)).toBe(0);
+    expect(w.ticks()).toHaveLength(2);
+    expect(waiter).not.toBeNull();
+    await waitFor(
+      "the detached waiter process to exit",
+      () => !answers(waiter as number),
+    );
+  }, 15_000);
 });
 
 describe("jig send wakes no tick", () => {

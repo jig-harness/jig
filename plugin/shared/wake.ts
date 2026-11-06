@@ -21,7 +21,8 @@
  *   minute start one run.
  * - **Counted at the start.** A run takes the requests present when it
  *   starts and removes only those when it ends; a request made while it runs
- *   stays pending, and one trailing run starts once the minute has passed.
+ *   stays pending, and one trailing run starts after the running one ends
+ *   and the minute has passed.
  * - **A refused run is retried.** A run that ends `busy` (the tick lock is
  *   machine-wide, so another tick can hold it) keeps its requests and is
  *   tried again after the same minute.
@@ -47,11 +48,13 @@ import { join } from "node:path";
 import { type Clock, systemClock } from "./clock.ts";
 import { errnoCode } from "./errors.ts";
 import type { Outcome } from "./outcome.ts";
+import { log } from "./log.ts";
 import {
   decodeIdentity,
   encodeIdentity,
   isAliveSync,
   lockIdentity,
+  type ProcessIdentity,
 } from "./liveness.ts";
 
 /** The least time between the starts of two runs of one wake. */
@@ -116,9 +119,20 @@ function liveHolder(dir: string): string | null {
   }
   const holder = decodeIdentity(parsed);
   if (holder === null) return null;
+  return ownerGone(holder, "waiter claim") ? null : text;
+}
+
+/** Only a confirmed dead owner permits reclaiming; an unreadable owner keeps its claim. */
+function ownerGone(holder: ProcessIdentity, claim: string): boolean {
   const verdict = isAliveSync(holder);
-  // A holder whose liveness cannot be told keeps the file: a second waiter would start a second run.
-  return verdict.ok && verdict.value.state === "dead" ? null : text;
+  if (!verdict.ok)
+    log.warn(
+      "the wake keeps its " +
+        claim +
+        " because liveness is indeterminate: " +
+        verdict.failure.reason,
+    );
+  return verdict.ok && verdict.value.state === "dead";
 }
 
 /** Take the waiter file for this process; `false` when a live waiter holds it. */
@@ -126,23 +140,56 @@ function takeWaiter(dir: string): boolean {
   const path = waiterPath(dir);
   const mine = encodeIdentity(lockIdentity());
   for (let attempt = 0; attempt < 2; attempt++) {
-    const temporary = `${path}.${process.pid}.tmp`;
-    writeFileSync(temporary, mine, { mode: 0o600 });
-    try {
-      linkSync(temporary, path);
-      return true;
-    } catch (error) {
-      if (errnoCode(error) !== "EEXIST") throw error;
-    } finally {
-      rmSync(temporary, { force: true });
-    }
+    if (publishIdentity(path, mine)) return true;
     const seen = readOptional(path);
     if (seen === null) continue;
-    if (liveHolder(dir) !== null) return false;
-    // Remove only the file judged gone, not one another waiter has just published.
-    if (readOptional(path) === seen) rmSync(path, { force: true });
+    if (!reclaimWaiter(dir, seen, mine)) return false;
   }
   return false;
+}
+
+/**
+ * Serialize stale removal with a mutex for this file content. A dead mutex
+ * is superseded by a new generation, never unlinked by another reclaimer.
+ * Every reclaimer rechecks the waiter under that mutex, so a paused one
+ * cannot remove the live waiter another reclaimer published.
+ */
+function reclaimWaiter(dir: string, seen: string, mine: string): boolean {
+  const id = createHash("sha256").update(seen).digest("hex").slice(0, 16);
+  const deadline = performance.now() + 5000;
+  for (let generation = 1; performance.now() < deadline; generation++) {
+    const mutex = join(dir, "reclaim-" + id + "-" + generation);
+    if (!publishIdentity(mutex, mine)) {
+      const owner = decodeIdentity(readOptional(mutex));
+      if (owner === null) return false;
+      if (!ownerGone(owner, "reclaim mutex")) return false;
+      continue;
+    }
+    try {
+      if (readOptional(waiterPath(dir)) !== seen) return true;
+      if (liveHolder(dir) !== null) return false;
+      rmSync(waiterPath(dir), { force: true });
+      return true;
+    } finally {
+      rmSync(mutex, { force: true });
+    }
+  }
+  return false;
+}
+
+/** Publish an identity whole and exclusively, without exposing a partially written file. */
+function publishIdentity(path: string, mine: string): boolean {
+  const temporary = path + "." + randomBytes(8).toString("hex") + ".tmp";
+  writeFileSync(temporary, mine, { flag: "wx", mode: 0o600 });
+  try {
+    linkSync(temporary, path);
+    return true;
+  } catch (error) {
+    if (errnoCode(error) !== "EEXIST") throw error;
+    return false;
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
 /** Give up the waiter file, when this process holds it. */
@@ -155,7 +202,7 @@ function releaseWaiter(dir: string): void {
 export interface Requested {
   /** Whether the caller must start a waiter: no live one holds the wake. */
   startWaiter: boolean;
-  /** When the run starts: at once, or within the minute after the last one started. */
+  /** When the run can start: now, or when idle and spaced from the last start. */
   when: "now" | "soon";
 }
 

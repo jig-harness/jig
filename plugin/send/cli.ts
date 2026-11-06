@@ -8,8 +8,8 @@
  * When the record's reader is the dispatcher's tick, and this machine
  * dispatches the repository with the stage the tick acts under, a real send
  * then wakes that repository's tick (`dispatch/lib/wake-tick.ts`): the tick
- * starts at once, or within a minute of the last one the wake started, not
- * at the next timer sweep. The record stays the request; the wake only has
+ * starts when idle, no sooner than a minute after the last one the wake
+ * started, rather than at the next timer sweep. The record stays the request; the wake only has
  * it read sooner. A mailbox directive wakes nothing: the driver reads it at
  * its next round.
  *
@@ -213,6 +213,9 @@ function wake(resolved: ResolvedAddress, plan: Plan): string | null {
     );
     return null;
   }
-  const when = woke.value === "now" ? "now" : "to start within a minute";
+  const when =
+    woke.value === "now"
+      ? "now"
+      : "to start when idle, at least a minute after the last start";
   return `the dispatcher's tick for ${plan.repo}, woken ${when}`;
 }

@@ -951,9 +951,9 @@ tree, so it also clears a directive a driver left behind.
 repository with the stage the tick acts under (`pickup` for `assign`,
 `followup` for a follow-up's `hold` and `release`, `rearm` for the rest),
 `send` wakes that repository's tick: a waiter in the background runs `jig
-dispatch --apply --repo <path>` the way the installed timer does, at once
-or within a minute of the last tick it started, rather than at the next
-timer run. Several sends within that minute start one tick. A tick that
+dispatch --apply --repo <path>` the way the installed timer does, when idle
+and no sooner than a minute after the last tick it started, rather than
+at the next timer run. Several sends within that minute start one tick. A tick that
 finds another holding the tick lock is tried again a minute later; the
 waiter exits when nothing is pending, or after starting 10 ticks; the record stays the request, so the
 next timer run reads it whatever happens to the wake. What the waiter did
@@ -963,8 +963,8 @@ directive wakes nothing: the driver reads it at its next round.
 **`--dry-run`** prints all of that and writes nothing. A real send ends
 with the link to what it wrote (the pull request, the comment, the item) or
 the mailbox's path, and the reader that acts on it next: the dispatcher's
-tick for the repository, woken now or to start within a minute, when the
-send woke it. The forge can take
+tick for the repository, woken now or to start when idle and at least a minute after the last start,
+when the send woke it. The forge can take
 a moment to list a new comment, so that link, not a `jig ask` right after
 it, shows the request landed.
 
