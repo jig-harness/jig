@@ -186,8 +186,8 @@ export function insertRow(db: Database, row: LogRow): boolean {
   return done.changes === 1;
 }
 
-/** How many of a repository's newest rows a lookup on a schema before the `target` column reads. */
-const UNINDEXED_SCAN_ROWS = 5000;
+/** A lookup the log's schema cannot answer completely within a bound. */
+class UnindexedLogError extends Error {}
 
 /**
  * Every row about one piece of work of a repository (`target` as the rows
@@ -195,10 +195,11 @@ const UNINDEXED_SCAN_ROWS = 5000;
  * none before the database exists. One lookup through the `target` index,
  * which also reads the rows a copy one release behind wrote without it
  * (their target is in the row's own text). A reader that must not migrate
- * the database passes its own read-only connection as `db` (`null` for none):
- * on a schema before the `target` column, the rows are found by their text,
- * among the repository's newest `UNINDEXED_SCAN_ROWS` (no index serves that
- * lookup, and the log keeps every outcome), until a tick migrates it.
+ * the database passes its own read-only connection as `db` (`null` for none).
+ * On a schema before the `target` column it throws: no index serves a lookup
+ * by the row's text and the log keeps every outcome, so the scan could be
+ * neither complete nor bounded; the reader names the source as not read until
+ * a tick migrates it.
  */
 export function rowsFor(
   repo: string,
@@ -212,19 +213,15 @@ export function rowsFor(
   const hasColumn = (
     db.query("PRAGMA table_info(log)").all() as Array<{ name: string }>
   ).some((c) => c.name === "target");
-  const selected = (
-    hasColumn
-      ? db
-          .query(
-            `SELECT row FROM log WHERE repo = ? AND (target = ? OR (target IS NULL AND ${byText})) ORDER BY seq`,
-          )
-          .all(repo, target, target)
-      : db
-          .query(
-            `SELECT row FROM (SELECT seq, row FROM log WHERE repo = ? ORDER BY seq DESC LIMIT ${UNINDEXED_SCAN_ROWS}) WHERE ${byText} ORDER BY seq`,
-          )
-          .all(repo, target)
-  ) as Array<{ row: string }>;
+  if (!hasColumn)
+    throw new UnindexedLogError(
+      "the outcome log has no target column yet, and its rows cannot be found by their text without scanning every outcome",
+    );
+  const selected = db
+    .query(
+      `SELECT row FROM log WHERE repo = ? AND (target = ? OR (target IS NULL AND ${byText})) ORDER BY seq`,
+    )
+    .all(repo, target, target) as Array<{ row: string }>;
   return rowsOf(selected).filter((r) => r.target === target);
 }
 

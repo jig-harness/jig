@@ -341,6 +341,9 @@ export function driveDbReadiness(stateDir: string): DriveDbReadiness {
   return found.readiness;
 }
 
+/** The read-only connections this process holds, one per database, as `driveDb` holds one writable connection: callers never close it. */
+const readOnlyHeld = new Map<string, DriveDb>();
+
 /**
  * `driveDb` for a reader that must never write: the connection is read-only
  * for as long as the process holds it, so a change between the readiness check
@@ -348,16 +351,18 @@ export function driveDbReadiness(stateDir: string): DriveDbReadiness {
  * with exit 4 instead of creating, migrating or importing.
  */
 function driveDbReadOnly(stateDir: string): DriveDb {
+  const path = dbPathFor(stateDir);
+  const held = readOnlyHeld.get(path);
+  if (held !== undefined) return held;
   const found = inspect(stateDir);
-  if ("db" in found)
-    return {
-      db: found.db,
-      clone: basename(stateDir),
-      path: dbPathFor(stateDir),
-    };
+  if ("db" in found) {
+    const drive = { db: found.db, clone: basename(stateDir), path };
+    readOnlyHeld.set(path, drive);
+    return drive;
+  }
   const r = found.readiness;
   fail(
-    r.state === "unreadable" ? 2 : 4,
+    4,
     r.state === "absent"
       ? "drive-state.ts: the drive's database is gone, and only a driver creates it"
       : `drive-state.ts: ${r.reason}`,

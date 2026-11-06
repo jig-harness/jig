@@ -170,24 +170,24 @@ describe("jig ask against the dispatcher's database", () => {
     expect(readFileSync(file).equals(before)).toBe(true);
   });
 
-  it("reads a database one schema behind without migrating it", async () => {
+  it("names the outcome log as not read on a database one schema behind, without migrating it", async () => {
     const w = world();
     seed(w);
     const file = statePath(w.state);
-    // The schema before the log's `target` column: its rows are found by their text.
+    // The schema before the log's `target` column: no index finds its rows, and a scan could neither finish nor be complete.
     edit(file, ...BEFORE_TARGET);
     const before = readFileSync(file);
 
     const answer = await askNine(w);
-    expect(answer.last).toMatchObject({
-      class: "converged",
-      from: "outcome log",
-    });
-    expect(answer.sources.records).toContainEqual({
-      record: "dispatch-outcome",
-      read: true,
-      local: true,
-    });
+    expect(answer.last).toBeNull();
+    expect(answer.sources.records).toContainEqual(
+      expect.objectContaining({
+        record: "dispatch-outcome",
+        read: false,
+        local: true,
+        detail: expect.stringContaining("no target column"),
+      }),
+    );
     expect(readFileSync(file).equals(before)).toBe(true);
     expect(userVersion(file)).toBe(8);
   });
