@@ -18,6 +18,7 @@
  * | `holds` | repository and pull request held behind another in a serialized area | the hold's start, written with its event row |
  * | `log` | outcome row | each row once: it is written in the same transaction as what it records; its `target` column, the piece of work, is indexed with the repository |
  * | `tick_line` | the newest tick from the machine file | one row, replaced by each such tick: the line as it found it and its receipt, which `jig dispatch dashboard` reads |
+ * | `reflection_findings` | finding the reflection route made of a recurring class | its id, derived from the repository, stage, class and week: the event as every append sends it, pending until the store reports it stored |
  *
  * The receipts, the account walls (which the drive's quota adapters write
  * from a pass, outside the tick), the tick lock and the rotation cursor stay
@@ -239,6 +240,23 @@ const MIGRATIONS: readonly Migration[] = [
   {
     additive: true,
     sql: "ALTER TABLE notices_content ADD COLUMN pending TEXT;",
+  },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE reflection_findings (
+    id TEXT PRIMARY KEY,
+    repo TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    class TEXT NOT NULL,
+    week TEXT NOT NULL,
+    event TEXT NOT NULL,
+    at TEXT NOT NULL,
+    stored_at TEXT,
+    ref TEXT
+  );
+  CREATE INDEX reflection_findings_repo ON reflection_findings (repo, stored_at);
+  `,
   },
 ];
 

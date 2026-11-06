@@ -953,29 +953,29 @@ fields:
 
   reflection.enabled:
     type: boolean
-    read_by: [reflect, review-reflections, drive-pr, resolve-review-comments]
+    read_by: [reflect, review-reflections, drive-pr, resolve-review-comments, dispatch]
     since: 0.28.0
   reflection.store:
     type: enum
     values: [filesystem, command, notion, github]
-    read_by: [reflect, review-reflections]
+    read_by: [reflect, review-reflections, dispatch]
     since: 0.28.0
   reflection.path:
     type: path
-    read_by: [reflect, review-reflections]
+    read_by: [reflect, review-reflections, dispatch]
     since: 0.28.0
   reflection.command:
     type: any
-    read_by: [reflect, review-reflections]
+    read_by: [reflect, review-reflections, dispatch]
     since: 0.28.0
   reflection.notion.database:
     type: string
-    read_by: [reflect, review-reflections]
+    read_by: [reflect, review-reflections, dispatch]
     since: 0.30.0
   reflection.github.repository:
     type: string
     pattern: "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
-    read_by: [reflect, review-reflections]
+    read_by: [reflect, review-reflections, dispatch]
     since: 0.82.0
   reflection.journal:
     type: path
@@ -989,7 +989,7 @@ fields:
   reflection.timeout_sec:
     type: integer
     min: 1
-    read_by: [reflect, review-reflections]
+    read_by: [reflect, review-reflections, dispatch]
     since: 0.28.0
   reflection.mode:
     type: enum

@@ -176,24 +176,23 @@ function Recurring({
             className="fbtn"
             type="button"
             disabled={offline}
-            onClick={() =>
-              setFilter({ repo: r.repo, class: r.cls, window: "7d" })
-            }
+            onClick={() => setFilter(r.filter)}
           >
             <Mark role={r.role} />
-            {r.cls} on {r.repo}
+            {r.title}
           </button>
           <span className="sm mut">{r.note}</span>
           <CopyButton
             text={r.finding}
             idle="Copy finding"
-            aria={`Copy finding for ${r.cls} on ${r.repo}`}
+            aria={`Copy finding for ${r.title}`}
           />
         </div>
       ))}
       <p className="sm mut">
-        A class that recurs is a finding about the scaffolding. A person records
-        it with <span className="m">reflect</span>; nothing here adjusts
+        A class that recurs is a finding about the scaffolding. Where reflection
+        is on, the tick records it once a week for{" "}
+        <span className="m">review-reflections</span>; nothing here adjusts
         anything.
       </p>
     </div>
@@ -231,8 +230,8 @@ export function LogPanel({
           The outcome log: one row per ended launch, with its class and the
           reason it gave. Filter by time, repository, stage, account, class and
           reason; the filters are the page's address, so Copy link shares this
-          view. A class that recurs on a repository across nights is listed
-          above the rows.
+          view. A class that recurs on a stage of a repository, on three of the
+          last seven days, is listed above the rows.
         </PanelHelp>
         <span className="sm mut">
           The outcome log, newest first. Tap a row for its whole reason.

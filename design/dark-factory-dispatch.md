@@ -1054,6 +1054,10 @@ per kind of record, each row under a unique key:
 - **Idle clocks** of claimed items: one row per repository and item.
 - **The outcome log**: one row per key, which nothing removes, written in
   the same transaction as what it records (see Control).
+- **Reflection findings**: one row per finding the reflection route made of
+  a recurring class, keyed by the finding's id, holding the event as its
+  first append sent it, pending until the store reports it stored (see
+  Control).
 
 The receipts stay files, one per tick, since a receipt is a run's
 narrative for a person and for the morning report. The account walls stay
@@ -1311,10 +1315,14 @@ The second is the log, read when the page asks, every minute and on focus:
 filtered by time, repository, stage, account, class and reason in SQL over the
 log table, in one read transaction. It counts each class over the filtered
 window ignoring the class filter, so another class can still be chosen, and
-lists each bad class that ended on a repository on three or more of the last
-seven nights. A question about yesterday is a filter, not a report: no report
-file is ever generated. The filter is the page's query string, so a view is a
-link.
+lists each recurring class: a bad class (any but converged, merged and parked
+for a person) of one stage on one repository on at least three of the last
+seven host days, today included, counting the ended rows and the event rows
+that carry a class. A drift, a wait, a nudge or a hold carries none and stays
+out. The reflection route below reads the same definition
+(`dispatch/lib/recurring.ts`). A question about yesterday is a filter, not a
+report: no report file is ever generated. The filter is the page's query
+string, so a view is a link.
 
 The server runs while the command runs, started and stopped by a person
 (from a terminal on the host, which Orca's phone app reaches); nothing
@@ -1338,12 +1346,45 @@ holds the token.
 
 **Self-correction through the reflection loop.** A class that recurs is a
 finding about the scaffolding, not something the tick adjusts on its own.
-A person reads the recurring classes on the dashboard and records the
-finding through [`reflect`](../plugin/skills/reflect/README.md), and
+The tick records it and never steers: it changes no cap, expectation, nudge
+or other dial, and
 [`review-reflections`](../plugin/skills/review-reflections/README.md) is
 where a person approves the change: a cap, an expectation, a skill's step.
-No route carries a class to the reflection store by itself in this
-design. The tick tunes none of its own dials.
+
+- **The route.** Where reflection is on for a repository (a `reflection`
+  section in a configuration layer, the repository's layer read from its
+  default branch as the dispatch section is), a tick with `--apply`, after
+  every launch it makes, appends one finding to the reflection store for
+  each recurring class of that repository (the dashboard's definition
+  above). Only the host that owns the repository records, as only it
+  notifies, so a recurrence is recorded once. A tick that only reports lists
+  on its receipt the findings it would record.
+- **One finding per recurrence per week.** The finding's id is derived from
+  the repository, the stage, the class and the host-time-zone ISO week, as
+  the review loop's round-count finding derives its id from its fact. The
+  tick keeps each finding it makes (see What the tick keeps), so every later
+  tick that week records nothing new, and a class still recurring in a new
+  week is a new occurrence that counts toward its escalation: at the default
+  of three occurrences, three weeks of recurrence.
+- **The finding.** `kind: error`, `severity: medium`, its class
+  `dispatch-recurring-<class>` (the outcome class in kebab case), its target
+  the dispatcher as a Jig tool (`{"scope": "tool", "tool": "jig", "name":
+  "dispatch"}`). So it is escalated only by `review-reflections` run in Jig,
+  by a person, and no unattended session escalates a recurrence into a
+  repository's tracker; moving it to a repository's scaffolding is a
+  person's call in the review. Its description gives the repository, the
+  stage, the days it occurred, the row count, the reasons the rows give most
+  often, verbatim, and the dashboard filter that shows those rows.
+- **Bounded and quiet on failure.** The append runs under the store's
+  deadline (`reflection.timeout_sec`), cut to what the tick has left of its
+  own. A failed append is written on the tick's receipt, leaves the finding
+  pending and does not change the tick's exit status; the next tick sends
+  the same finding again, the same bytes, so a store that kept the first
+  copy holds one event.
+
+Without reflection on, the route reads nothing and writes nothing; a person
+who reads a recurring class on the dashboard can still record it through
+[`reflect`](../plugin/skills/reflect/README.md).
 
 **Steering.** The session runtime gains `steer(session, nudge)`, which
 sends a fixed text to a session the runtime reports waiting. The set of nudges is closed and

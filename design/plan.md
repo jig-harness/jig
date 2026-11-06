@@ -76,7 +76,8 @@ then follow-ups and notifications, then control: a permanent outcome
 log, one row per ended launch with an outcome class from a
 closed list, a dashboard that filters it (`jig dispatch dashboard`, no
 report files), drift from each stage's expectation reported and notified
-but never acted on, recurring classes routed to `reflect`, and one
+but never acted on, each recurring class recorded once a week as a
+reflection finding about the dispatcher, and one
 mechanical nudge (`steer`, "continue" after a usage limit resets) with no
 open-ended prompt, then the re-drive of a converged pull request the
 forge reports conflicting or whose head moved after the drive verified

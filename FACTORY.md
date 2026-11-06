@@ -196,8 +196,8 @@ never the dispatcher.
   two sessions joined, goes to a person.
 - **Stop a driver that is making progress.** It takes over only a stalled
   driver its own machine started.
-- **Change its own limits.** A class that recurs on the dashboard goes to a
-  person as a finding.
+- **Change its own limits.** A class that recurs on the dashboard is recorded
+  as a finding, and what to change is a person's decision.
 
 On the roadmap:
 [pickups started on Orca](ROADMAP.md#33-the-dispatcher-a-tick-that-starts-the-execution-lines-stages),
