@@ -29,7 +29,7 @@ import { isMapping } from "../shared/config-layers.ts";
 import { swallow } from "../shared/errors.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
 import { failureText } from "./lib/text.ts";
-import type { RepoReport } from "./lib/types.ts";
+import type { Defect, RepoReport } from "./lib/types.ts";
 
 /** Days a receipt is kept unless the machine file's `receipts_days` says otherwise. */
 const RETENTION_DAYS = 30;
@@ -55,8 +55,15 @@ export interface TickReceipt {
   logCopyFailed?: string;
   /** Why the dashboard's line was not written: it keeps showing the tick before. */
   lineFailed?: string;
+  /** Milliseconds the tick spent before its first repository, on its repositories, and closing; absent from a receipt written before phases were timed. */
+  phasesMs?: Partial<Record<TickPhase, number>>;
+  /** The defect that stopped the tick's closing steps; a receipt with one is not completed. */
+  defect?: Defect;
   repos: RepoReport[];
 }
+
+/** The phases of a tick around its repositories' turns. */
+export type TickPhase = "start" | "repos" | "close";
 
 export function stateRoot(): string {
   return join(homedir(), ".local", "state", "jig", "dispatch");

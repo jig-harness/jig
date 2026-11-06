@@ -43,10 +43,12 @@
  * the history rows of what it did not launch.
  */
 import { hostCodexOptIn } from "./lib/accounts.ts";
+import { defectOf, logDefect } from "./lib/defect.ts";
 import { accountsReport, rotated } from "./lib/actions/launch.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
+import { PhaseTimer } from "./lib/phase-timer.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
 import { applyState } from "./lib/tick-apply.ts";
@@ -56,11 +58,13 @@ import {
   type TickOptions,
 } from "./lib/tick-context.ts";
 import { copyLog, writeTickLine } from "./lib/tick-line.ts";
-import { gatherRepo } from "./lib/tick-repo.ts";
+import { defectReport, runTurn, startTurn } from "./lib/tick-repo.ts";
 import { settleOutcomes } from "./lib/tick-settle.ts";
+import type { RepoReport } from "./lib/types.ts";
 import {
   newRunId,
   pruneReceipts,
+  type TickPhase,
   type TickReceipt,
   takeTickLock,
   writeReceipt,
@@ -81,67 +85,122 @@ function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
       });
 }
 
+/** A tick once its launch records are read: its receipt so far, the context its turns share, and why `--apply` was withheld. */
+interface StartedTick {
+  receipt: TickReceipt;
+  context: TickContext;
+  withheld: string | undefined;
+}
+
+/** Read this machine's launch records and build the apply state and the receipt the tick fills. */
+async function startTick(options: TickOptions): Promise<StartedTick> {
+  const now = options.now ?? new Date();
+  const machine = options.machine ?? null;
+  const runtime = options.runtime ?? defaultRuntime(machine);
+  const read = await readLaunches();
+  // An ended follow-up's outcome is written before its record can expire.
+  settleFollowups(read.records);
+  const attempt = applyState(
+    options,
+    runtime,
+    read.records,
+    now.getTime(),
+    read.unreadable,
+  );
+  // `--apply` with a machine file that was then withheld says why.
+  const withheld =
+    attempt !== null && "withheld" in attempt ? attempt.withheld : undefined;
+  const apply = attempt !== null && "tick" in attempt ? attempt : null;
+  const receipt: TickReceipt = {
+    version: 1,
+    runId: newRunId(now),
+    startedAt: now.toISOString(),
+    finishedAt: now.toISOString(),
+    completed: false,
+    apply: apply !== null,
+    exitStatus: 0,
+    ...(withheld === undefined ? {} : { applyWithheld: withheld }),
+    ...accountsReport(machine, apply),
+    unreadableLaunches: read.unreadable,
+    repos: [],
+  };
+  const context: TickContext = {
+    options,
+    runtime,
+    nowMs: now.getTime(),
+    launches: apply?.records ?? read.records,
+    apply,
+    lineInputs: new Map(),
+  };
+  return { receipt, context, withheld };
+}
+
+/**
+ * The per-repository boundary: a defect thrown in one repository's turn
+ * stops that turn only, and its report says so; the next repository runs.
+ */
+async function boundedTurn(
+  path: string,
+  context: TickContext,
+): Promise<RepoReport> {
+  const turn = startTurn(path);
+  try {
+    return await runTurn(turn, context);
+  } catch (error) {
+    return defectReport(turn, error);
+  }
+}
+
+/** Each repository's turn, in this tick's rotated order. */
+async function runRepos(
+  receipt: TickReceipt,
+  context: TickContext,
+): Promise<void> {
+  const { apply, options } = context;
+  const order = apply === null ? options.repos : rotated(apply, options.repos);
+  for (const path of order)
+    receipt.repos.push(await boundedTurn(path, context));
+}
+
+/** The closing steps: the records of repositories not read settled, the outcome log copied, the exit decided, the line written. */
+async function closeTick(started: StartedTick): Promise<void> {
+  const { receipt, context, withheld } = started;
+  const machine = context.options.machine ?? null;
+  const failed = await settleOutcomes(receipt, context, machine?.receiptsDays);
+  const copied = copyLog(receipt);
+  receipt.exitStatus = failed || !copied || withheld !== undefined ? 1 : 0;
+  receipt.completed = true;
+  receipt.finishedAt = new Date().toISOString();
+  writeTickLine(receipt, {
+    machine,
+    repos: context.options.repos,
+    records: allRecords(context),
+    inputs: context.lineInputs,
+    codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
+  });
+}
+
 export async function runTick(options: TickOptions): Promise<TickResult> {
   const lock = takeTickLock();
   if ("heldBy" in lock) return { held: lock.heldBy };
   try {
-    const now = options.now ?? new Date();
-    const machine = options.machine ?? null;
-    const runtime = options.runtime ?? defaultRuntime(machine);
-    const read = await readLaunches();
-    const days = machine?.receiptsDays;
-    // An ended follow-up's outcome is written before its record can expire.
-    settleFollowups(read.records);
-    const attempt = applyState(
-      options,
-      runtime,
-      read.records,
-      now.getTime(),
-      read.unreadable,
-    );
-    // `--apply` with a machine file that was then withheld says why.
-    const withheld =
-      attempt !== null && "withheld" in attempt ? attempt.withheld : undefined;
-    const apply = attempt !== null && "tick" in attempt ? attempt : null;
-    const receipt: TickReceipt = {
-      version: 1,
-      runId: newRunId(now),
-      startedAt: now.toISOString(),
-      finishedAt: now.toISOString(),
-      completed: false,
-      apply: apply !== null,
-      exitStatus: 0,
-      ...(withheld === undefined ? {} : { applyWithheld: withheld }),
-      ...accountsReport(machine, apply),
-      unreadableLaunches: read.unreadable,
-      repos: [],
-    };
-    const context: TickContext = {
-      options,
-      runtime,
-      nowMs: now.getTime(),
-      launches: apply?.records ?? read.records,
-      apply,
-      lineInputs: new Map(),
-    };
-    const order =
-      apply === null ? options.repos : rotated(apply, options.repos);
-    for (const path of order)
-      receipt.repos.push(await gatherRepo(path, context));
-    const failed = await settleOutcomes(receipt, context, days);
-    const copied = copyLog(receipt);
-    receipt.exitStatus = failed || !copied || withheld !== undefined ? 1 : 0;
-    receipt.completed = true;
-    receipt.finishedAt = new Date().toISOString();
-    writeTickLine(receipt, {
-      machine,
-      repos: options.repos,
-      records: allRecords(context),
-      inputs: context.lineInputs,
-      codexOptIn: apply?.codexOptIn ?? hostCodexOptIn(),
-    });
+    const timer = new PhaseTimer<TickPhase>();
+    const started = await timer.time("start", () => startTick(options));
+    const { receipt } = started;
+    try {
+      await timer.time("repos", () => runRepos(receipt, started.context));
+      await timer.time("close", () => closeTick(started));
+    } catch (error) {
+      // A defect outside every repository's turn: the receipt is still written, and says the tick did not complete.
+      receipt.defect = defectOf(timer.current ?? "close", error);
+      receipt.completed = false;
+      receipt.exitStatus = 1;
+      receipt.finishedAt = new Date().toISOString();
+      logDefect("the tick", receipt.defect);
+    }
+    receipt.phasesMs = { ...timer.ms };
     const path = writeReceipt(receipt);
-    pruneReceipts(Date.now(), undefined, days);
+    pruneReceipts(Date.now(), undefined, options.machine?.receiptsDays);
     return { receipt, path };
   } finally {
     lock.release();

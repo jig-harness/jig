@@ -368,11 +368,50 @@ export interface RecordRead {
 }
 
 /** One repository's part of a tick's report. */
+/**
+ * The phases of one repository's turn, in their order (`tick-repo.ts`):
+ * opening it, reading the tracker, the forge and every host's launch claims,
+ * joining the runtime's sessions, Control's reads (`observe`), the plan, the
+ * outcome log, the act phase of `--apply`, the label projection and the
+ * shared records' report.
+ */
+export type RepoPhase =
+  | "open"
+  | "tracker"
+  | "forge"
+  | "claims"
+  | "runtime"
+  | "observe"
+  | "plan"
+  | "log"
+  | "apply"
+  | "labels"
+  | "shared";
+
+/**
+ * A defect: something no code expected threw (a bug, or a write the platform
+ * refused where nothing turns the refusal into a value), caught once at the
+ * boundary around the work it stopped
+ * ([ADR-0012](../../../docs/adr/ADR-0012-failures-as-values.md)).
+ */
+export interface Defect {
+  /** The phase it was thrown in. */
+  phase: string;
+  /** The error's name and first line. */
+  message: string;
+  /** Its stack, where the error carried one. */
+  stack: string | null;
+}
+
 export interface RepoReport {
   path: string;
   slug: string | null;
-  /** Set when the repository could not be dispatched at all. */
+  /** Set when the repository could not be dispatched at all, or a defect stopped its turn. */
   refused: string | null;
+  /** The defect that stopped the repository's turn; what its earlier phases did stays on the report. */
+  defect?: Defect;
+  /** Milliseconds each phase of the repository's turn took; absent from a receipt written before phases were timed. */
+  phasesMs?: Partial<Record<RepoPhase, number>>;
   section: DispatchSection | null;
   followupSince: string | null;
   records: RecordRead[];
