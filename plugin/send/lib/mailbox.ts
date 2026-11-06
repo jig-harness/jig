@@ -106,6 +106,8 @@ function inForce(
         : null;
     }
     case "stop":
+      if (gate.stop.active)
+        return `a stop addressed to no generation is already in force${since(gate.stop)}`;
       return gate.addressed.some((s) => s.generation === generation)
         ? `a stop addressed to driver generation ${generation} is already in the mailbox`
         : null;

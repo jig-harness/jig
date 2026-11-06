@@ -275,6 +275,9 @@ describe("jig send to a drive's mailbox", () => {
       { kind: "directive", pr: "12", from: "maintainer", command: "pause" },
     ]);
     expect(inbox(w)[1]).not.toHaveProperty("generation");
+    const stopAgain = await w.send([ADDRESS, "stop"]);
+    expectSpawnExit(stopAgain, 1);
+    expect(stopAgain.stderr).toContain("is already in the mailbox");
     const again = await w.send([ADDRESS, "pause"]);
     expectSpawnExit(again, 1);
     expect(again.stderr).toContain("a pause directive is already in force");

@@ -33,10 +33,13 @@ function world(identity: string | null = "factory-bot") {
   const w = sendWorld();
   current = w;
   const ops: Array<{ op: string; variables: Record<string, unknown> }> = [];
+  let assigned = false;
+  // The tick reads the identity from the default branch, so the checkout's own file does not set it.
+  if (identity !== null) w.config(`dispatch:\n  identity: ${identity}\n`);
   mkdirSync(join(w.repo, ".config"), { recursive: true });
   writeFileSync(
     join(w.repo, ".config", "jig.yaml"),
-    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${REPO}\n${identity === null ? "" : `dispatch:\n  identity: ${identity}\n`}`,
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${REPO}\n`,
   );
   const issue = (n: number) =>
     issueNode({
@@ -55,6 +58,7 @@ function world(identity: string | null = "factory-bot") {
       };
       const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "?";
       ops.push({ op, variables });
+      if (op === "TrackerAssign") assigned = true;
       const answers: Record<string, unknown> = {
         TrackerViewer: { viewer: { id: "U_maintainer", login: "maintainer" } },
         TrackerIssue: oneIssue(
@@ -66,7 +70,15 @@ function world(identity: string | null = "factory-bot") {
         TrackerUser: { user: { id: "U_factory-bot", login: "factory-bot" } },
         TrackerAssignees: {
           repository: {
-            issue: { id: "I_14", assignees: { totalCount: 0, nodes: [] } },
+            issue: {
+              id: "I_14",
+              assignees: assigned
+                ? {
+                    totalCount: 1,
+                    nodes: [{ id: "U_factory-bot", login: "factory-bot" }],
+                  }
+                : { totalCount: 0, nodes: [] },
+            },
           },
         },
         TrackerAssign: { updateIssue: { issue: { id: "I_14" } } },
@@ -99,7 +111,10 @@ describe("jig send assign", () => {
     );
     expect(r.stdout).toContain("starts the pick-up");
     expect(writes(ops)).toEqual([]);
-    expect(w.calls()).toEqual([]);
+    // The forge is read for the default branch's configuration and written nowhere.
+    expect(w.calls()).toEqual([
+      `api -i repos/${REPO}/contents/.config/jig.yaml`,
+    ]);
   });
 
   it("assigns the item to the factory identity", async () => {

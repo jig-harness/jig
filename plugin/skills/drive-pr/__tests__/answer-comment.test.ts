@@ -33,7 +33,7 @@ describe("answerTextFault", () => {
     expect(answerTextFault("keep the flag for one release")).toBeNull();
     expect(answerTextFault("  ")).toContain("empty");
     expect(answerTextFault("yes\nno")).toContain("one line");
-    expect(answerTextFault("yes‮on")).toContain("control character");
+    expect(answerTextFault("yes\u202eon")).toContain("control character");
     expect(answerTextFault("yes <!-- x")).toContain("hidden marker");
     expect(answerTextFault("y".repeat(ANSWER_TEXT_MAX))).toBeNull();
     expect(answerTextFault("y".repeat(ANSWER_TEXT_MAX + 1))).toContain(

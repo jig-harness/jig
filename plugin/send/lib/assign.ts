@@ -6,17 +6,24 @@
  * assignment can write to the repository: `send` adds no authority, it
  * writes as the user the tracker's credential acts as here.
  *
+ * The identity and the states are the ones the tick reads: the `dispatch`
+ * section of the configuration file the repository's default branch holds on
+ * the forge, never the checkout's, so an unmerged edit cannot send the
+ * assignment where the tick will not look.
+ *
  * Checked before the write: the repository names a factory identity, and
  * the item is open, assigned to nobody (the identity included) and not in a
  * state of work in progress.
  */
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
-import { ok } from "../../shared/outcome.ts";
+import { attempt, ok } from "../../shared/outcome.ts";
 import { assignPickup } from "../../dispatch/lib/requests.ts";
+import { readSection } from "../../dispatch/lib/section.ts";
 import { failureText } from "../../dispatch/lib/text.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import type { CanonicalState } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { type RepoTracker, readPickup } from "../../ask/lib/pickup.ts";
+import { readDefaultConfig } from "../../ask/lib/forge.ts";
 import { within } from "../../ask/lib/reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
 import { type Planned, refused, writerLogin } from "./plan.ts";
@@ -27,8 +34,18 @@ export async function planAssign(
   repoTracker: RepoTracker,
   as: string | undefined,
 ): Promise<Planned> {
-  const { identity } = repoTracker;
   const { repo, key } = ctx.address;
+  const where = `${OVERLAY_RELPATH} on ${repo}'s default branch`;
+  const text = await readDefaultConfig(ctx.reading, repo);
+  if (!text.ok)
+    return refused(
+      `the factory identity of ${repo} cannot be told: ${where} did not read (${text.failure.reason})`,
+    );
+  const section = attempt("refused", `${where} does not read`, () =>
+    readSection(text.value, where),
+  );
+  if (!section.ok) return section;
+  const { identity, states: dispatchStates } = section.value.section;
   if (identity === null)
     return refused(
       `assign writes the item assigned to the factory identity, and ${repo} names none: set dispatch.identity in ${OVERLAY_RELPATH}`,
@@ -56,9 +73,9 @@ export async function planAssign(
     return refused(
       `${key} is assigned to ${issue.assignee}; assigning it to ${identity} would take it from them, so unassign it first if that is meant`,
     );
-  const states = repoTracker.states as CanonicalState[];
+  const states = dispatchStates as CanonicalState[];
   const inState = states.some((s) => tracker.stateName(s) === issue.state.name);
-  if (!inState && issue.state.type === "started")
+  if (issue.state.type === "started")
     return refused(
       `${key} is ${issue.state.name}, a state of work in progress; assign does not move it back to a dispatch state`,
     );
