@@ -684,10 +684,13 @@ writes nothing to the host:
   it as it was.
 - **The outcome log**, on the History view, filtered by time (today, yesterday,
   seven or thirty days, or a range), repository, stage, account, class and
-  reason, counting each class over the window and naming each bad class that
-  recurs on a repository. A question about yesterday is the Yesterday filter,
-  and the view and the filter are the page's address, so a view on a phone is a
-  link a laptop opens.
+  reason, counting each class over the window and naming each recurring
+  class: a bad class (any but converged, merged and parked for a person) of
+  one stage on one repository on at least three of the last seven host days,
+  counting the ended rows and the event rows that carry a class, such as a
+  drive stopped for a person (a drift carries none). A question about
+  yesterday is the Yesterday filter, and the view and the filter are the
+  page's address, so a view on a phone is a link a laptop opens.
 
 The Help view says what the page's words, stages and marks mean; a chip, a
 dotted word or the `?` beside a heading says it in place, on hover, tap or
@@ -730,12 +733,31 @@ Its exit codes:
 - `2`: the command line was refused.
 
 **When a class recurs.** The tick tunes none of its own dials. A class that
-keeps showing on the dashboard (quota walls at the same hour, pickups that
-drift past `pickup_within`, a reason recurring among the `unknown` rows) is
-a finding about the scaffolding: record it with
-[`reflect`](skills/reflect/README.md), and
-[`review-reflections`](skills/review-reflections/README.md) is where a
-person approves the change, a cap, an expectation, a skill's step.
+recurs (the dashboard's definition above) is a finding about the
+scaffolding. Where reflection is on for the repository (a
+[`reflection` section](CONFIGURATION.md#reflection) in any configuration
+layer, the repository's own read from its default branch), a tick with
+`--apply` on the host that owns the repository records it, after its
+launches, as one finding per week in the reflection store: an error about
+the dispatcher as a Jig tool, its class `dispatch-recurring-<class>` (such
+as `dispatch-recurring-gates-failed`), with the repository, the stage, the
+days, the row count, the reasons the rows give most often and the
+dashboard filter that shows them. A later tick that week records nothing
+new; a class still recurring the next week is a new occurrence, so the
+default escalation, at three occurrences of a class, is reached after three
+weeks of one recurrence, sooner when several repositories or stages
+record the class in the same week. A store that fails or
+does not answer within `reflection.timeout_sec` is named on the receipt
+and tried again by the next tick, and the tick's exit status stays as it
+was; a tick without `--apply` lists what it would record. The tick never
+acts on a recurrence: [`review-reflections`](skills/review-reflections/README.md),
+run in Jig by a person, is where the change is approved, a cap, an
+expectation, a skill's step, or where the finding is moved to the
+repository's own scaffolding. A pattern the route does not count (pickups
+that drift past `pickup_within`, since a drift carries no class; quota walls
+at the same hour; a reason recurring among the `unknown` rows), and any
+recurrence while reflection is off, is a person's to record with
+[`reflect`](skills/reflect/README.md).
 
 **The morning routine.** Nothing needs restarting after a night: the timer
 ran every tick. Read the morning report,
