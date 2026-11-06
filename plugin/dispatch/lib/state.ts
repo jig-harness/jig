@@ -42,10 +42,14 @@ import { join } from "node:path";
 import {
   closeDatabase,
   type Migration,
+  type OpenCode,
   openDatabase,
+  openReadOnly,
+  type ReadOnlyDatabase,
   schemaVersion,
 } from "../../shared/records/db.ts";
 import { stateRoot } from "../receipts.ts";
+import type { Outcome } from "../../shared/outcome.ts";
 
 /** The database's file name under the state directory. */
 const STATE_FILE = "state.sqlite";
@@ -287,6 +291,18 @@ export function closeStateDb(root = stateRoot()): void {
 /** The state database under `root` when it exists; `null` before the first tick created it. A reader never creates it. */
 export function existingStateDb(root = stateRoot()): Database | null {
   return existsSync(statePath(root)) ? stateDb(root) : null;
+}
+
+/**
+ * The state database under `root` opened read-only, for a reader that is not
+ * the dispatcher (`jig ask`): it creates and migrates nothing, so an older
+ * schema stays as it is until a tick brings it forward, and it takes no write
+ * lock. `null` when there is no database. The caller closes the connection.
+ */
+export function readOnlyStateDb(
+  root = stateRoot(),
+): Outcome<ReadOnlyDatabase | null, OpenCode> {
+  return openReadOnly({ path: statePath(root), migrations: MIGRATIONS });
 }
 
 /** Run `fn` in one write transaction: everything it writes lands, or none of it does. */
