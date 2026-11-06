@@ -54,6 +54,37 @@ function recipientForPark(
   return configured === undefined ? null : login(configured, "dispatch.person");
 }
 
+async function threadAnchor(key: string): Promise<string | null> {
+  const result = await ghCall([
+    "api",
+    "graphql",
+    "-f",
+    "query=query($id:ID!){node(id:$id){... on PullRequestReviewThread{path}}}",
+    "-f",
+    `id=${key}`,
+  ]);
+  if (result.code === 0) {
+    try {
+      const doc = JSON.parse(result.stdout);
+      const anchor =
+        typeof doc?.data?.node?.path === "string" ? doc.data.node.path : null;
+      if (anchor === null)
+        console.error(
+          `park: thread ${key} returned no path; using recipient fallback`,
+        );
+      return anchor;
+    } catch (error) {
+      console.error(
+        `park: cannot parse thread ${key}'s anchor; using recipient fallback: ${String(error)}`,
+      );
+    }
+  } else
+    console.error(
+      `park: cannot read thread ${key}'s anchor; using recipient fallback (exit ${result.code}): ${result.stderr}`,
+    );
+  return null;
+}
+
 /** Resolve once before writing state; forge calls use the drive's bounded transport. */
 export async function resolveParkPerson(
   pr: string,
@@ -68,35 +99,9 @@ export async function resolveParkPerson(
     typeof drive.change_areas_catalog === "string"
       ? loadCatalogFile(resolve(consumerRoot(), drive.change_areas_catalog))
       : null;
-  let anchor: string | null = path || null;
-  if (anchor === null && catalog !== null && kind === "thread") {
-    const result = await ghCall([
-      "api",
-      "graphql",
-      "-f",
-      "query=query($id:ID!){node(id:$id){... on PullRequestReviewThread{path}}}",
-      "-f",
-      `id=${key}`,
-    ]);
-    if (result.code === 0) {
-      try {
-        const doc = JSON.parse(result.stdout);
-        anchor =
-          typeof doc?.data?.node?.path === "string" ? doc.data.node.path : null;
-        if (anchor === null)
-          console.error(
-            `park: thread ${key} returned no path; using recipient fallback`,
-          );
-      } catch (error) {
-        console.error(
-          `park: cannot parse thread ${key}'s anchor; using recipient fallback: ${String(error)}`,
-        );
-      }
-    } else
-      console.error(
-        `park: cannot read thread ${key}'s anchor; using recipient fallback (exit ${result.code}): ${result.stderr}`,
-      );
-  }
+  const anchor =
+    path ||
+    (catalog !== null && kind === "thread" ? await threadAnchor(key) : null);
   const recipient = recipientForPark(anchor, catalog, dispatch.person);
   if (recipient !== null) return recipient;
   const result = await ghCall(["pr", "view", String(pr), "--json", "author"]);
