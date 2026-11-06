@@ -20,7 +20,7 @@
  * Findings go to the store in batches, each append under the store's
  * deadline cut to the time the tick has left when it starts, the Git reads
  * under the same limit, and the store command runs in the repository's
- * checkout so its relative words resolve there. One that fails leaves its findings pending, says why on the receipt,
+ * checkout so its relative words resolve there (the checkout the host registered, so a store command with relative paths runs whatever that checkout holds). One that fails leaves its findings pending, says why on the receipt,
  * and is sent again, the same bytes, by the next tick; it never changes the
  * tick's exit status.
  */

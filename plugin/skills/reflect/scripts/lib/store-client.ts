@@ -141,7 +141,14 @@ export class Store {
     reason: string | undefined;
     fix: string | undefined;
   }> {
-    const r = await runStore(this.command, "check", "", this.timeoutSec);
+    const r = await runStore(
+      this.command,
+      "check",
+      "",
+      this.timeoutSec,
+      undefined,
+      this.cwd,
+    );
     if (r.code !== EXIT.done) throw failed("check", r);
     const out = parseObject(r.stdout, "the store's check output");
     return {
@@ -187,7 +194,14 @@ export class Store {
   /** Every event, each id once, whatever the store returned. */
   async list(since?: string): Promise<StoredEvent[]> {
     const input = since === undefined ? "" : JSON.stringify({ since });
-    const r = await runStore(this.command, "list", input, this.timeoutSec);
+    const r = await runStore(
+      this.command,
+      "list",
+      input,
+      this.timeoutSec,
+      undefined,
+      this.cwd,
+    );
     if (r.code !== EXIT.done) throw failed("list", r);
     const stored: StoredEvent[] = [];
     for (const [index, text] of jsonlLines(r.stdout).entries()) {
@@ -204,7 +218,14 @@ export class Store {
   }
 
   async diagnose(): Promise<Array<Record<string, unknown>>> {
-    const r = await runStore(this.command, "diagnose", "", this.timeoutSec);
+    const r = await runStore(
+      this.command,
+      "diagnose",
+      "",
+      this.timeoutSec,
+      undefined,
+      this.cwd,
+    );
     if (r.code !== EXIT.done) throw failed("diagnose", r);
     return jsonlLines(r.stdout).map((line) =>
       parseObject(line, "a diagnose notice"),
