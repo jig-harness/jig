@@ -15,10 +15,35 @@ gc:
   kinds: [tool-state, worktrees]
   worktree_roots:
     - ../../orca/workspaces/jig
-    - ../../worktrees/jig # Herdr-era worktrees, until none remain
+    - .claude/worktrees # Claude Code's isolated subagent worktrees, inside the clone
 dispatch:
   # What `jig dispatch` wants after a merge here: Jig's own post-merge pass.
   followup_command: /followup
+  # The dispatcher's state on every pull request it manages (`jig:driving`,
+  # `jig:converged`, `jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up`), and a
+  # person's commands: `jig:drive` arms a drive on a pull request with
+  # no ledger, `jig:hold` keeps every stage off one. The host's
+  # `jig install dispatch --repo <clone> --yes` creates the labels.
+  labels:
+    enabled: true
+  # Drive the maintainers' own recent pull requests (updated within a week,
+  # drafts included) without waiting for a `jig:drive` label; `jig:hold`
+  # keeps one out. The authors are named because the host opens pull
+  # requests under one login and reads the forge under another.
+  adopt:
+    enabled: true
+    authors: [liqweed, ophir-docomply]
+design_brief:
+  # Where finished design bundles land, one folder per flow, and what the
+  # design-handback landing check needs. The browser script finds the
+  # machine's Chromium; `JIG_CHROMIUM`, or the environment layer's
+  # `JIG__design_brief__handback__browser_executable`, names another.
+  prototypes: design/prototypes
+  handback:
+    widths: [390, 1440]
+    rubric: design/prototypes/rubric.md
+    scorecard: design/prototypes/dispatch-dashboard.scorecard.md
+    browser_executable: tools/design/chromium.sh
 gates:
   command: bun run gates
 review:
@@ -100,3 +125,75 @@ changelog:
         - plugin/skills/audit/config-schema.yaml
       from: "since: next"
       to: "since: {version}"
+code_stats:
+  # What Jig is made of, for `/jig:code-stats` and the report the website
+  # renders from its JSON. The default areas assume a product in the root
+  # folders; Jig's product is the plugin, the practice modules, the website
+  # and the template seeds, so those four are the `production` area, and
+  # everything that supports them has an area of its own. First match wins.
+  areas:
+    - name: scaffolding
+      description: Agent instructions and skills for working on this repository
+      paths:
+        - ".claude/**"
+        - "**/AGENTS.md"
+        - "**/CLAUDE.md"
+    - name: production
+      description: What Jig ships, the plugin, the practice modules, the website and the template seeds
+      paths:
+        - ".claude-plugin/**"
+        - ".agents/plugins/**"
+        - "plugin/**"
+        - "dashboard/**"
+        - "modules/**"
+        - "website/**"
+        - "seeds/**"
+        - "assets/**"
+    - name: ci
+      description: Pipelines, workflows and the actions they share
+      paths: [".github/workflows/**", ".github/actions/**"]
+    - name: repo-config
+      description: Repository settings, manifests, lockfiles and linter configuration
+      paths:
+        - ".config/**"
+        - ".github/**"
+        - ".*"
+        - "*.json"
+        - "*.jsonc"
+        - "*.json5"
+        - "*.toml"
+        - "*.yaml"
+        - "bun.lock"
+        - "lefthook.yml"
+    - name: tools
+      description: Gates, scripts and test helpers that develop Jig and do not ship
+      paths: ["tools/**", "scripts/**", "lib/**"]
+    - name: design
+      description: Design records and the design prototypes
+      paths: ["design/**"]
+    - name: docs
+      description: Documents about Jig, its principles, decisions and how to adopt it
+      paths:
+        - "docs/**"
+        - "principles/**"
+        - "adoption/**"
+        - "profiles/**"
+        - "audit/**"
+        - "changes/**"
+        - "*.md"
+        - "LICENSE*"
+        - "NOTICE"
+  default_area: production
+  kinds:
+    docs: ["**/LICENSE*", "**/NOTICE"]
+    # Built from dashboard/src by `bun dashboard/build.ts`.
+    generated: ["plugin/dispatch/dashboard-page/**"]
+  # The plugin's skills and runtime components, each practice module, and the
+  # root folders that are a unit of their own.
+  modules:
+    - "plugin/skills/*"
+    - "plugin/*"
+    - "modules/*"
+    - "tools/*"
+    - "design/*"
+    - "*"

@@ -1,6 +1,6 @@
 # The dispatcher, a tick that starts the execution line's stages: design
 
-**What problem this solves.** Jig's [execution line](../FACTORY.md#execution-the-work-item-line)
+**What problem this solves.** Jig's [execution line](../FACTORY.md#the-line)
 has a skill for each stage: `do-item` picks an item up, `drive-pr` drives its
 pull request through review, a follow-up settles what the merge owes. Each
 of them starts only when a person types it. An item assigned to the team
@@ -16,13 +16,16 @@ and tells a person when a stage stops on something only a person can
 settle. It never merges: that stays a person's
 ([ADR-0003](../docs/adr/ADR-0003-a-person-merges.md)).
 
-This is the design of [plan.md](plan.md) item 33. Nothing of it is built
-yet. It builds on item 32 (driving any pull request from anywhere): the
+This is the design of [plan.md](plan.md) item 33. Every step of its
+[build order](#build-order) is built, and the documents that describe it are
+the current truth; the item stays open on the roadmap until its "Done when"
+checks run on a host running Orca, each named at its own build step. It
+builds on item 32 (driving any pull request from anywhere): the
 [drive ledger](../plugin/skills/drive-pr/README.md#where-its-state-lives)
-on each pull request, the re-arm of a stopped drive, the takeover of a
-wedged one and the framed park (a park that carries the question, the
-options and the recommended one) are in `drive-pr` today; item 32's morning
-report is still being built. M0 names the service this is: a
+on each pull request, the re-arm of a stopped drive and the takeover of a
+wedged one are in `drive-pr` today; item 32's framed park (a park that
+carries the question, the options and the recommended one) and its morning
+report are built too. M0 names the service this is: a
 [control plane](../GLOSSARY.md), "a service that tracks an agent's job and
 can reach a person". The dispatcher is the first one Jig ships, for the
 execution line only. Its first [session runtime](../GLOSSARY.md) is Orca
@@ -34,11 +37,10 @@ execution line only. Its first [session runtime](../GLOSSARY.md) is Orca
 computes the stages that are wanted and not running, and, when told to,
 starts each one as an agent session. A timer runs the tick every few
 minutes. What is *wanted* is always derived from those records, never from
-the dispatcher's memory; the dispatcher keeps only what it did: a launch
-record per session it started (what, where, on which account, and how it
-ended), a receipt per tick, and the account walls and repeat suppressions
-those imply. Stopping it loses nothing, and there is no resident
-process to supervise: the "daemon" is the timer.
+the dispatcher's memory. What the dispatcher keeps is what it did and what
+it saw its sessions do (see What the tick keeps, and where): stopping it
+loses nothing, and there is no resident process to supervise: the
+"daemon" is the timer.
 
 ```mermaid
 flowchart LR
@@ -68,26 +70,24 @@ guards keep one stage from starting twice:
   session for it.
 - **The stages' own refusals.** `drive.ts` refuses a second driver by its
   lock and the ledger's claim, and admits a re-arm or takeover only on a
-  mechanical state. `do-item` has no such refusal today: its start step
-  moves the item to its in-progress state "if not already active" and goes
-  on, so a person's manual pickup racing a dispatched one starts beside it.
-  The pickup stage (build step 4) therefore depends on a change to
-  `do-item`'s claim: it refuses an item already in its in-progress state or
-  assigned to anyone but the session's own identity, and it re-reads the
-  item after its transition and stands down when another claim landed
-  first. A tracker offers no conditional write, so a race inside that
+  mechanical state. `do-item`'s claim has the same kind of refusal, which
+  the pickup stage (build step 4) depends on: it refuses an item already in
+  its in-progress state or assigned to anyone but the session's own
+  identity, and it re-reads the item after its transition and stands down
+  when another claim landed first, so a person's manual pickup racing a
+  dispatched one does not start beside it. A tracker offers no conditional write, so a race inside that
   re-read is narrowed, not closed, and when both claims come from the
   factory identity the item's state and assignee cannot tell them apart.
   The tick therefore checks the sessions instead: an item that more than
   one running session joins to (two workspaces, or a workspace beside a
   still-running launch record for another one) is reported as a double
-  claim and notified once, and the tick starts nothing for it. A manual
+  claim and notified, and the tick starts nothing for it. A manual
   pickup on another host is not in this host's runtime report, so it stays
   invisible until it opens its pull request.
 - **A marker on the pull request for the follow-up**, which has no claim of
   its own: the tick posts a hidden-marker comment
   (`<!-- jig-dispatch-followup -->`) on the merged pull request before it
-  starts the follow-up session, carrying the launch record's id. The marker
+  starts the follow-up's pass, carrying the launch record's id. The marker
   is trusted only as the drive trusts a ledger: written by the dispatcher's
   own login or by an owner, member or collaborator; a marker from anyone
   else is ignored and reported, and an unreadable marker leaves the pull
@@ -111,7 +111,7 @@ guards keep one stage from starting twice:
   outcome of done means the follow-up is done; a launch record
   still running holds it; a failed outcome, a launch record that died, or
   a tick's marker whose launch record and outcome are both absent on this
-  machine is a failed follow-up, notified once and never relaunched by the
+  machine is a failed follow-up, notified and never relaunched by the
   tick. A person settles it by deleting the marker, which makes the
   follow-up wanted again, then running the follow-up or leaving it to the
   next tick. The marker lives on the forge, so a lost launch record does not
@@ -135,12 +135,16 @@ guards keep one stage from starting twice:
   outcome and the tick has no record that could; a person settles it by
   marking it done when the run succeeded without marking it, or, as the
   tick's are, by deleting it when the run failed, which makes the
-  follow-up wanted again. Whoever posts a marker, the tick or a
+  follow-up wanted again. Such a hold ends when the claim goes stale (see
+  Stale follow-up claims, below). Whoever posts a marker, the tick or a
   manual run, reads the markers back after posting, and of two trusted
   markers on one pull request the earlier comment wins, as the drive's
-  takeover claims do: the later poster deletes its marker and stands down
-  (the tick ends its launch record without starting a session; a manual run
-  stops before it acts). A read-back that fails starts nothing. The forge
+  takeover claims do: both are claims of one module,
+  `plugin/shared/records/forge-claims.ts`, under its one rule. The later
+  poster deletes its marker and stands down (the tick ends its launch record
+  without starting a session; a manual run stops before it acts). A
+  read-back that does not list the new marker reads again a few times; one
+  that fails, or never lists it, starts nothing. The forge
   offers no conditional create for a comment, so the read-back is not
   atomic: a read that lags can omit a marker posted a moment earlier, and
   two runs can each read themselves the winner. The follow-up command
@@ -151,18 +155,70 @@ guards keep one stage from starting twice:
   a read that lags past every one of those checks; the tick reports two
   trusted markers on one pull request whenever it finds them, so a double
   run is seen and a person settles it. The marker
-  settles who starts the follow-up, but the outcome record stays on the
-  machine that launched it, and another machine cannot tell its done from
-  its failed; so one machine dispatches a repository: at most one machine
-  file lists it (see Left out, several Orca hosts).
+  settles who starts the follow-up, and it names the host that posted it:
+  once that host's launch record ends, its next tick writes the follow-up's
+  answer onto the marker (`outcome: done` or `failed`), so another host
+  dispatching the repository reads its done from its failed (see Several
+  hosts).
+
+  **Stale follow-up claims.** A claim whose end no tick can see (a manual
+  run's not marked done, or another host's with no answer written) is
+  stale once it is older than `dispatch.followup_stale_after` (a day by
+  default) and no session the runtime reports is joined to its pull
+  request. The run that made it stopped short (on a question, a crash, a
+  closed session) and will not come back to it, and a follow-up is what a
+  merge still owes: tags, tracker items, status pages. Held silently, that
+  debt is never paid, and the only sign of it is a line in each tick's
+  journal. The host that owns the repository therefore releases a stale
+  claim, once per pull request: just before, it reads the markers again
+  (the stale one still the earliest trusted marker, still not marked done
+  or answered), the runtime (still no session joined) and the hold label,
+  writes a pending release record in its state database (one row per
+  repository and pull request, `followup_releases`), deletes the marker,
+  and marks the record released in one transaction with an event row
+  (class `stalled`) in the outcome log. An unconfirmed deletion keeps
+  the pending record: the response may have been lost after the deletion.
+  A fresh complete marker listing completes a pending release whose marker
+  is gone, with its event row, before planning another follow-up. A pending
+  record whose marker is still there is retried after the same fresh checks.
+  Nothing starts in the tick that
+  releases: the next tick finds no marker and starts the follow-up as it
+  would for any merge. A claim on the same pull request that goes stale
+  after that (the restarted follow-up's, or a person's later run) is not
+  released a second time: it is notified to a person (cause
+  `followup-stale`), with its age, whose claim it is and the earlier
+  release, and repeated on the notifications' cadence until a person marks
+  it done or deletes it. Once is the bound because a single release
+  recovers a run that stopped short, which is what the hold usually is, and
+  two in a row say the follow-up itself needs a person; a release that
+  could repeat would start a follow-up again and again behind a failure no
+  run settles. A claim inside the window, one a running session is joined
+  to, one whose age does not read, and one the runtime cannot say about are
+  held as before, reported with their author and age and with the window
+  that releases them. The tick's own claims are not released this way:
+  their end is on this host's records, so a failed one is notified as a
+  failed follow-up and a running one ends with its launch. A person's claim
+  and another host's count alike, since the marker is the one record either
+  leaves, and the report and the notice say whose claim it was. Only the
+  owner releases, as it alone notifies, so the release record on its host
+  is the only one, and two hosts never release one claim twice.
+- **A claim on the forge for every drive launch.** Beside each drive's
+  launch record, after the record holds its slot and before the runtime's
+  `launch`, the tick posts a launch claim on the pull request, one of the
+  [shared records](../GLOSSARY.md) every host dispatching the repository
+  reads. A current claim another host made and has not ended holds the pull
+  request's launches, so a second host never starts the same launch; a
+  claim that loses its attempt to an earlier one is withdrawn and the launch
+  record given back (see Several hosts).
 
 ### The records it reads
 
 | Record | Read through | What the tick takes from it |
 | --- | --- | --- |
-| The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear and GitHub Issues today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
-| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers | the drives to re-arm, take over or report; the follow-ups wanted, running or failed |
+| The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
+| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed |
 | The session runtime | in Orca, `orca worktree ps --json` | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
+| The shared records | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts` | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts) |
 
 **The tracker.** The interface gains one read, `assignedIssues(identity,
 states)`: the issues assigned to that user in those states, in the pool
@@ -177,8 +233,10 @@ the pickup out of the plan and names the failure.
 
 Only an assignment a person with write access made starts a pickup: for an
 item in a dispatch state, the tick reads who made its current assignment
-through `assignedBy` and requires a member of the team (Linear) or an
-owner, member or collaborator of the repository (GitHub), as the drive
+through `assignedBy` and requires a member of the team (Linear), an
+owner, member or collaborator of the repository (GitHub), or a person's
+Atlassian account, not a guest, that can be assigned issues in the project
+(Jira; an app's account, Jira Automation's included, never), as the drive
 requires of a ledger or an answer. The check gates pickups only. A claimed
 item's current assignment is the claim's own, made by the factory
 identity, so the stalled and double-claim reports below read claimed items
@@ -208,6 +266,61 @@ which the driver writes into its ledger as it stops, not the status
 reporter's: `drive.ts` maps convergence to `0`, where `drive-status.ts`
 reports `3`
 ([terminal states](../plugin/skills/drive-pr/references/terminal-states.md)).
+A converged drive is read beside what its stop does not fix: the
+pull request's mergeability as the forge reports it, read with the pull
+request, and its head against the head the ledger says the drive
+verified. Main moving under a converged pull request can make it
+conflict, and a person's push after the drive stopped leaves the new
+head unreviewed; either makes the drive stale, and the drive itself
+already knows what to do on a re-arm (a conflict-resolve round for the
+first, its ordinary rounds for the second). A mergeability the forge is
+still computing leaves the pull request unplaced for that tick, and so
+does a converged ledger that names no verified head on a pull request
+that does not conflict. A re-drive is launched once per change, the pull
+request's head and whether it conflicts: its launch record keeps that
+change, and a later tick that finds the same change reports it however
+that launch ended, so a drive that converges again without settling it
+starts no loop.
+
+A drive that stopped `9` (conflicting with its base, its conflict-repair
+budget spent) is read beside the pull request too. Its conflict-resolve pass
+can fail for reasons a second try settles: an account's usage limit, a pass
+deadline, a base that moved under it. So it is
+re-driven as well, once per change, and here the change is the pair of the
+pull request's head and its base branch's head. That head is read from the
+branch itself, and only for a ledger that stopped `9`: the pull request's own
+`baseRefOid` stays at the commit the forge recorded when the pull request last
+moved, so it cannot say that the base did. The re-drive is owed whatever the
+forge reports now. Still conflicting, the conflict-resolve round tries again;
+mergeable (a person merged the base in, or the base moved past the conflict),
+the stop no longer describes the pull request, and the drive's ordinary rounds
+take it from there. A mergeability the forge is still computing, or a head or
+a base head that does not read, leaves it unplaced for that tick.
+
+A person is told only once this machine's re-drive of that change leaves the
+ledger stopped `9`, whether the re-drive stopped so itself or ended without
+writing a stop of its own (a refusal at its attach, a crash), since nothing
+else drives the pull request until its head or its base moves. Any other exit
+it stops on reads as that exit's row says. A stuck conflict therefore costs one
+launch per base move, and the base moving is what makes it a new attempt, so
+there is no loop: a re-drive that changes nothing leaves the change as it was,
+and a change is never re-driven twice. A converged drive's re-drive is keyed on
+its head and whether it conflicts, so one that stops `9` gets one more attempt
+under this key: at most one launch more. The serialized areas' holds and a
+person's `hold` label keep a re-drive off as they keep any re-arm, and a person's
+stop is never re-armed.
+
+A headless Claude pass can commit only where its approval source allows it: a permission mode `drive.pass_args` names, or an allow rule of Claude Code's own settings (`--allowedTools`, `permissions.allow`). Only a host's user file or one run's environment sets it; a repository's own file that sets it stops the drive. Where nothing allows the commit, a conflict re-drive stops `9` again at the same change and the dispatcher notifies a person.
+
+A conflict-resolve pass does not leave its merge behind: a merge it started and
+did not conclude is aborted before the drive re-gates or stops
+([terminal states](../plugin/skills/drive-pr/references/terminal-states.md#repair-rounds)),
+so a re-drive finds a clean tree and an attach is not refused over a head that
+moved. A merge the tree already held when the pass started is not the pass's
+to discard: the pass finishes it or starts it over (`drive-pr` `SKILL.md` § 0),
+and a tree that holds one behind a moved head refuses the attach, which leaves
+the ledger stopped `9`, so a person is told.
+
 A stopped ledger with no exit has no known origin: `drives.ts --stop`
 records one, and so does the driver's own recovery after a crash, a thrown
 refusal or a signal, so the tick cannot read a person's decision into it.
@@ -215,16 +328,19 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | Ledger says | Class | The tick |
 | --- | --- | --- |
 | running, heartbeat inside the lease window | driven | nothing |
-| running, heartbeat past the lease window | silent | takes it over only when this machine's launch record started that driver; otherwise reports it |
-| stopped `0` (converged), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
+| running, heartbeat past the lease window | silent | takes it over only when this machine's launch record, or another host's launch claim, started that driver; otherwise reports it |
+| stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
+| stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
+| stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies per stop, with the exit and the drive's handoff |
+| stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
 | stopped `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
-| stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies once per stop, with the drive's handoff |
+| stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies per stop, with the drive's handoff |
 | stopped `16` (quota-parked) | re-armable | re-arms on an admitted account other than the one its launch record names, when one does, or after the wall's reset |
 | stopped `8` (parked), every parked item answered | re-armable | re-arms on any admitted account |
 | stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive) | re-armable | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to |
-| stopped `8`, an item unanswered | parked | notifies once per park |
+| stopped `8`, an item unanswered | parked | notifies per park |
 | stopped `11` or `13` | refused | nothing; another driver holds it |
-| stopped on any other exit (`1`, `2`, `6`, `7`, `9`, `12`, `14`, `15`, or one this table does not know) | needs a person | notifies once per stop, with the exit and the drive's handoff |
+| stopped on any other exit (`1`, `2`, `6`, `7`, `12`, `14`, `15`, or one this table does not know) | needs a person | notifies per stop, with the exit and the drive's handoff |
 
 The tick reads every pull request merged after the date the follow-up
 stage was switched on for the repository (`followup_since` in the machine
@@ -234,6 +350,131 @@ it (see Guards against a second launch), so a marker whose launch record
 this machine no longer has is still found and reported. A merge
 the cap keeps from starting at once stays wanted until a later tick starts
 it; nothing about it depends on a time window between ticks.
+
+**Labels** (optional). A repository may turn on dispatch labels
+(`dispatch.labels`, off by default, every name under a prefix the
+repository picks, `jig:` by default), which put the tick's view of each
+pull request where a person sees it from any forge client and take a
+person's commands the same way. With them on, the open pull requests are
+listed with their labels in the same one listing, and the merged ones
+with theirs; with them off, no label is read or written.
+
+- **States**, written by the tick alone: `driving` (a driver runs, or the
+  drive stopped on a state the tick re-arms), `converged`, `parked` (a
+  person settles it: a park, a stop with no exit or one only a person
+  settles, a person's own stop), `stale`, `held` (an open pull request
+  waiting its turn in a serialized area, below, whatever its ledger
+  says), and `followed-up` (a merged pull request whose follow-up is
+  done). The ledger is the truth: after the
+  plan, each managed pull request's state is derived from its ledger
+  again and set as its one state label, in one forge call per pull
+  request whose labels disagree and none where they agree. A label a
+  person edited, or one a killed drive left behind, is corrected at the
+  next tick. A ledger the tick cannot read leaves the labels as they are.
+  Only the states listed here are kept by this projection, so a state a
+  later stage owns, which no ledger produces, is never touched by it.
+- **Commands**, written by a person and read by the tick: `drive` on an
+  open pull request with no ledger asks for one, and the plan arms a drive
+  on it as a re-arm (`drive.ts <PR> -- <pass>` on an admitted account),
+  once per head commit, so an arm that ends without leaving a ledger is
+  reported rather than launched at every tick; once a ledger exists, the
+  command has been carried out and the label is replaced by the state
+  label, and a `drive` label on a pull request that already has a ledger
+  is reported and replaced the same way, never arming a second driver.
+  `hold` keeps every stage off its pull request (re-arm, takeover, arm,
+  follow-up, notification) while it is there; each action it keeps off is
+  reported, and the fresh read before a launch refuses one a `hold`
+  appeared on since the plan.
+- **Only labelled pull requests.** With `only_labeled` on, a pull request
+  that carries no label of the set is never read for a ledger, launched,
+  notified or followed up; what puts one under the dispatcher is a
+  person's `drive`, and the state labels keep it there. Membership reads
+  any label of the set; which stage is planned never reads one. The scope
+  is decided once per tick, from the listings that hold each pull request
+  (the open one and the merged one): in scope when each finds a label of
+  the set on it. A pull request they disagree on (it merged between the two
+  reads, and the label changed with it) is unplaced for that tick, as any
+  record the tick cannot place: reported, no action and no label written
+  on it, its notice records kept, and read again at the next tick. A
+  launch's fresh read is the observation that launch acts on, so it checks
+  the scope again there. With `only_labeled` off, every open pull request
+  is still read, so a drive a person armed by hand on an unlabelled pull
+  request is found and gets its label.
+
+**Adoption** (optional). A pull request nobody armed is never driven
+otherwise: the drive label asks a person to notice each idle one, which is
+the polling the dispatcher exists to remove. A repository may therefore
+name an adoption rule (`dispatch.adopt`, off by default). Under it the
+tick reads an open pull request with no drive ledger as if it carried the
+`drive` command when its author is one of the rule's identities (by
+default the login the dispatcher reads the forge as, the identity the
+host's sessions open pull requests under) and the forge reports it
+updated within the rule's window (a week by default). The open listing
+carries each pull request's author, draft flag and last update for it. A
+draft is adopted like any other, since pull requests open as drafts and
+the drive marks them ready. A bot's pull request is adopted only where
+the rule names that bot: driving dependency updates stays a choice the
+repository makes by name. A pull request a person's `hold` label is on is
+never adopted, and one a person stopped carries a ledger that records the
+stop, so adoption, which reads only pull requests with no ledger, never
+reaches it. Everything after adoption is the `drive` command's: the plan
+arms it as a re-arm, once per head commit (its launch record's facts are
+a labelled arm's), on an admitted account, behind a serialized area's
+hold, and the fresh read before the launch applies the rule again. The
+report names each adopted pull request with the rule's reason (its
+author, its last update, the window), and the forge record counts them.
+The rule needs the labels on, since the hold label is read only then;
+beside `only_labeled` it is refused, since a pull request with no label of
+the set is never read.
+
+**Serialized areas** (optional). An area of the repository's change-area
+catalog (`drive.change_areas_catalog`, [M3](../modules/M3-change-area-catalog/README.md))
+marked `serialize: true` is one whose pull requests conflict with each
+other whenever two of them move at once, so the tick drives them one at a
+time. Once per tick, from one observation of each fact: the catalog is
+read from the default branch as the forge holds it, as the `dispatch`
+section is, so a pull request cannot unserialize its own area; each open
+pull request read for a drive gets its changed files from the forge, page
+by page; a pull request touches an area when one of its files matches the
+area's own globs (its seeds, never the `impliedBy` closure: contention is
+two changes in the same files). The pull requests that touch one
+serialized area make its group, ordered by closeness to merge, read from
+the ledger and the forge and never judged: converged and mergeable first,
+then a drive in progress (a running driver, or this machine's launch
+record still holding it), then the fewest unresolved review threads, then
+the most rounds, then the oldest by creation, then the lowest number, so
+the order is the same at every tick until a fact changes. The first leads
+the group and is planned as any pull request is. Every other member is
+**held**: no re-arm, takeover or re-drive, each such action reported as
+`held: serialized behind #N in <area>`; its notifications go on. A pull
+request in two groups is held unless it leads both; the order is one total
+order, so the first pull request of all leads every group it is in and no
+two groups wait on each other. When the leader merges or leaves the group,
+the next tick promotes the next, which the re-drive of a stale converged
+drive then launches once per change. A drive in progress ranks above
+review progress so that a leader mid-drive, whose threads rise and fall
+with each round, keeps its place: otherwise the next tick could promote
+another and start a second drive in the group. Only the dispatcher's
+launches are held: a drive a person arms on a held pull request is not
+stopped, and the tick reports that the group has two drives. A pull
+request whose files do not read, or a group in which a member's ledger or
+threads do not read, is unplaced for the tick with every member of the
+group: no re-arm, no label written, read again at the next tick; a catalog
+that does not read unplaces every drive's re-arm the same way. The tick
+writes a held pull request's state label as `held` where the labels are
+on, and an event row when each hold begins and ends, the end carrying how
+long it waited (the hold's start is a row of the state database, `holds`).
+The catalog grows through a person: the conflict history report
+(`history.ts --propose-serialize` in `resolve-conflicts`) prints the
+catalog lines for the hotspots that lie in one area alone, and writes
+nothing.
+
+The labels must exist before the tick writes them: `jig install dispatch
+--repo <path>` lists the missing ones and, with `--yes`, creates them
+where the signed-in account may and lists the rest for a person. The tick
+writes labels only with `--apply`, for a repository the machine file
+lists; a write the forge refuses is reported in the receipt and tried
+again at the next tick, never a failed tick.
 
 **The session runtime.** Each workspace is joined to an item or a pull
 request by the pull request the runtime links to it, by the issue it links
@@ -258,7 +499,7 @@ jig dispatch [--repo <path>]... [--json]          # report: what it would start,
 jig dispatch --apply [--repo <path>]...           # start what the machine file enables
 jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
-jig dispatch result <record> <token> done|failed  # an interactive session's answer
+jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
 ```
 
 A tick without `--apply` prints every action it would take, each with the
@@ -278,8 +519,8 @@ for a while. An item or pull request gets at most one action per tick.
 
 A launched stage runs for minutes or hours in its session, long after the
 tick that started it has ended, so the tick never sees its exit directly.
-Every launch therefore begins with a launch record under
-`~/.local/state/jig/dispatch/launches/`, which the tick writes before it
+Every launch therefore begins with a launch record in the state database
+(see What the tick keeps, and where), which the tick writes before it
 calls the runtime's `launch` (the action, the item or pull request, the
 account, and a random token minted for that launch). From that write on,
 the record holds its stage and its account slot, so a launch whose answer
@@ -295,7 +536,8 @@ its launch is retried only under its own token, which the tick hands
 `launch` as the launch's key (see The session runtime interface), never as
 a fresh launch. A record still pending at a later tick, with its launch's
 answer lost and no keyed retry that produced one, is an unknown, reported,
-holding its stage and slot until a person clears it. The next
+holding its stage and slot until a person clears it (`jig dispatch clear
+<record>`, which refuses a record whose process is alive). The next
 tick reads the records: a record whose process is alive under that same
 identity holds its stage; one that ended carries the stage's answer; one
 whose identity cannot be checked (another boot, an unreadable process
@@ -313,27 +555,35 @@ whose facts have not changed since the refusal is reported, not launched
 again. A record whose process is gone without an exit is a launch that
 died, reported with its last state.
 
-The wrapper is the command a headless pass runs. An interactive session
-(`do-item`, the follow-up) is started as the runtime's agent, which runs
-no wrapper, and an agent's state says that it finished, not whether its
-stage succeeded. Its launch record, written by the tick before the launch,
-gains the agent's id from the launch's receipt, and the prompt the tick composes ends by asking the
-session to record its result: `jig dispatch result <record> <token>
-done|failed`, which writes the stage's answer into that launch record. The
-command refuses a token that is not the record's own and a record that
-already has a result, so a session settles its own launch and no other,
-once; the token binds a session to its record, and does not guard the
-state directory against a process of the same user, which can write it
-directly. The result is the stage's answer, not proof that its session
-stopped: an agent can record its result and go on working or wait for
-another prompt. So the record's state is its agent's: the agent `sessions`
-reports under the record's agent id holds the stage and its account slot
-while working or waiting, whether or not a result is recorded, and the
-record ends only when the runtime reports that agent finished or gone. It
-ends with its result, or as failed when none was recorded, since a session
-that stopped on a question or a crash records none; a pickup's record is
-read beside the item's state, and a follow-up's result is what its outcome
-record keeps.
+The wrapper is the command a headless pass runs, a drive's or a
+follow-up's. A drive's exit is its answer. A follow-up pass's exit says
+only that it ended, so the prompt the tick composes ends by asking the
+pass to record its result: `jig dispatch result <record> <token>
+done|failed`, which writes the stage's answer into its launch record. Its
+record ends with the pass's exit, with that result, or as failed when none
+was recorded; the wrapper keeps the last `Question:` line of the output of a pass that
+ended short of `done` on its exit, which is where a pass that needs a person
+states its question (see Sessions that wait), and the follow-up's result
+is what its outcome record keeps.
+
+An interactive session (`do-item`) is started as the runtime's agent, and
+an agent's state says that it finished, not whether its stage succeeded.
+Its launch record, written by the tick before the launch, gains the
+agent's id from the launch's receipt, and its prompt ends by asking the
+session to record its result the same way. The command refuses a token
+that is not the record's own and a record that already has a result, so a
+session settles its own launch and no other, once; the token binds a
+session to its record, and does not guard the state directory against a
+process of the same user, which can write it directly. The result is the
+stage's answer, not proof that its session stopped: an agent can record
+its result and go on working or wait for another prompt. So the record's
+state is its agent's: the agent `sessions` reports under the record's
+agent id holds the stage and its account slot while working or waiting,
+whether or not a result is recorded, and the record ends only when the
+runtime reports that agent finished or gone. It ends with its result, or
+as failed when none was recorded, since a session that stopped on a
+question or a crash records none; a pickup's record is read beside the
+item's state.
 
 ### The session runtime interface
 
@@ -346,6 +596,7 @@ The tick reaches the runtime only through these methods:
 | `launch(workspace, stage, account, key, sessionId?)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id. `key` is the launch record's token: a second call with a key already launched starts no second session. `sessionId`, given for an interactive session, is the vendor session id the tick minted and keeps on the launch record (see Control), distinct from the agent's id and the key; a launch that cannot carry it records no wall and gets no nudge |
 | `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
 | `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting, its screen and attachment re-read in the same call just before the send |
+| `retire(workspace, expected)` | the repository's notices workspace removed with its terminals and branch, once a re-read just before, under the comment lock, finds the comment and unread mark the tick decided on |
 
 Each returns the runtime's receipt, and each, a terminal-screen read for
 `steer` included, runs under a deadline and is cancelled past it: its
@@ -369,9 +620,8 @@ that promise for a kind of session does not retry it: a pending record of
 that kind stays the reported unknown. Orca is the first
 implementation:
 
-- `sessions` from `orca worktree ps --json`; that it carries a workspace's
-  comment and unread mark is checked when the notifications are built, and
-  until it does, notifications are reported in the receipts and not sent;
+- `sessions` from `orca worktree ps --json`, which carries each
+  workspace's comment and unread mark (`comment`, `unread`);
   that `orca agent launch`'s answer names the agent by the id `orca
   worktree ps --json` reports it under is checked when the pickup stage is
   built, and until it does, interactive sessions are not launched, since
@@ -382,19 +632,22 @@ implementation:
   Jig, not from the plugin, so the installed dispatcher cannot call it.
   Its workspace rules (branch selection, an existing checkout of the
   branch first, branch correction and setup, which a bare `orca worktree
-  create` does not do) move into the plugin in build step 3, the first
-  step that opens a workspace, and the tool then calls the moved code, so
+  create` does not do) live in the plugin, in
+  `plugin/shared/orca-workspace/open.ts`, and the tool calls that code, so
   the pickups in step 4 reuse it rather than a copy;
-- `launch` for a **headless pass** (a drive re-arm or takeover) as
-  `orca terminal create --worktree <selector> --title <stage> --command
-  <wrapper>`, the account's configuration directory set in the command's
-  environment (below); for an **interactive session** (a pickup, a
-  follow-up) as `orca agent launch --agent <id> --worktree <selector>
+- `launch` for a **headless pass** (a drive re-arm or takeover, a
+  follow-up) as
+  `orca terminal create --worktree <selector> --title <tab title> --command
+  <wrapper>` (the title as Naming what it starts gives it), the account's configuration directory set in the command's
+  environment (below); for an **interactive session** (a pickup) as
+  `orca agent launch --agent <id> --worktree <selector>
   --prompt "<skill> <key>"`, with the model and effort from the item's
   route where the repository declares `routing`, bound to the account as a
   headless pass is (below), and with `sessionId` passed to the agent where
-  `orca agent launch` can carry it, which is checked when the control step
-  is built; that `orca agent launch` can bind its agent to
+  the launch can carry it: `orca agent launch` takes no session id, so the
+  interactive launch the pickup step built (the wrapper in a terminal tab,
+  starting Claude Code itself) passes it as Claude Code's `--session-id`;
+  that `orca agent launch` can bind its agent to
   an account so is checked when the pickup stage is built, and until it
   does, interactive sessions are not launched. The key is kept by the
   record itself for a headless pass: the wrapper claims the record
@@ -403,26 +656,84 @@ implementation:
   wrapper under the same record. For an interactive session, that `orca
   agent launch --retry-launch` retries by a key the adapter passes it,
   rather than starting a second agent, is checked when the pickup stage is
-  built, and until it does, a lost interactive launch is not retried;
-- `notify` as a workspace marked unread with the message as its comment,
-  appended to the comment while the workspace is still unread (see
-  Notifications), which Orca's phone app shows. A workspace's comment carries a kickoff
+  built, and until it does, a lost interactive launch is not retried.
+  The launched terminal is recorded as a *run tab*
+  (`plugin/shared/orca-tabs.ts`): its handle and the PID and start of the
+  login shell Orca reports for it. The wrapper closes it through `orca
+  terminal close --terminal` (never the whole tab, so a pane a person added
+  beside it stays) once the stage ends with nothing for a person,
+  while the shell is still alive (Orca no longer closes a tab whose shell
+  has exited by its handle), and a launch closes the earlier idle run tabs
+  of its pull request or item in the workspace;
+- `notify` as a workspace marked unread with the message as its comment
+  (`orca worktree set --comment <message> --unread`, the comment read
+  first and read back with `orca worktree show`), appended to the comment while the workspace
+  is still unread (see Notifications) and keeping the comment's dispatched
+  marks, which Orca's phone app shows. A workspace's comment carries a kickoff
   prompt until its agent starts, so the tick never writes one on a
-  workspace that may yet start an agent with it. The target is the item's
-  or pull request's workspace when its agent has started; otherwise
-  (a drive a person or another machine started, a pull request with no
-  local workspace, a pickup whose agent never started) it is a
-  notification workspace the dispatcher keeps per repository, on the
-  default branch, into which it never launches an agent, its comment
-  naming the item or pull request the message is about;
+  workspace that may yet start an agent with it. The target is the
+  repository's one destination (see Notifications): the workspace on the
+  branch `dispatch.notices_branch` names, else a notification workspace the
+  dispatcher keeps per repository, on the default branch, into which it
+  never launches an agent, its comment naming the item or pull request each
+  message is about and the workspace its stage ran in. A new one runs no
+  create hook and has its first terminal closed (`orca terminal close
+  --all`). Once a tick's
+  messages are sent, the tick removes it (`orca worktree rm
+  --delete-branch`) when it has stayed read for `dispatch.notices_linger`
+  (one hour by default; the first tick that finds it read records when),
+  or is still unread with every cause it carries gone, on a tick that read
+  every record whole; never one written that tick, nor one holding a
+  comment that is not the dispatcher's, an agent, changes git reports or a
+  commit no remote branch holds. The next message that needs it opens it
+  again; a cause still standing is sent again on the configured cadence,
+  unless it is still unread with the message;
 - `steer` as the nudge's text sent to the session's terminal, after the
-  terminal's screen is read for the checks in Control; that Orca can read
-  a running agent's terminal and send it text by the id `orca worktree ps
-  --json` reports is checked when the control step is built, and until it
-  does, the nudge is reported and not sent.
+  terminal's screen is read for the checks in Control. Orca reaches a
+  running agent's terminal by the id `orca worktree ps --json` reports:
+  that id is the terminal's tab and pane (`<tabId>:<leafId>`), which `orca
+  terminal list --json` names beside each terminal's handle; `orca terminal
+  read --screen --json` returns the rendered screen (its `source` says
+  whether it is the screen, and `draft` holds text in Orca's composer), and
+  `orca terminal send --text <nudge> --enter` types it. Orca reports no
+  person attached to a terminal; the nearest it reports is the workspace a
+  person has open (`isActive` in `orca worktree ps`), and a nudge is not
+  sent into one. A live send on an Orca host has not been made, since Orca
+  starts no interactive session until it binds one to an account.
 
 A second runtime is a second implementation of the same methods, with
 nothing in the tick changed.
+
+#### Naming what it starts
+
+A person looking at the board should tell what the dispatcher started
+from what they started themselves. One convention, in the interface
+itself (`plugin/dispatch/lib/runtime/port.ts`), gives every runtime the
+same strings, so a later runtime names things as Orca does:
+
+- **The name** of a workspace the dispatcher creates: a short mark, the
+  stage, the key (`⚙ dispatched · pickup #123`, `⚙ dispatched · rearm
+  #456`, `⚙ dispatched · followup #789`; the notices workspace is
+  `⚙ dispatched · notices`). It reads at a glance and a search for the
+  mark finds every one. On Orca it is the `--name` of `orca worktree
+  create`, which Orca shows as the workspace's name and makes its folder's
+  name from; the branch is still the one the branch rule names.
+- **The mark** in the workspace's comment: the name and the launch
+  record's id (`⚙ dispatched · rearm #456 · launch <id>`), on a line of its
+  own, one per stage and key, a later launch's replacing the earlier one.
+  A workspace the dispatcher creates gets it as its comment; one it reuses
+  keeps its name, and `launch` adds the mark to its comment before the
+  session starts, keeping what the comment holds and never adding a
+  launch's mark twice. A notification that rewrites the comment keeps its
+  marks. A mark the runtime refuses to write does not hold the launch
+  back: the receipt says so.
+- **The tab title** of a launch: `jig dispatch · rearm #456`.
+
+The launch record keeps the same mark. A skill may rename a workspace to
+what the work became; the mark outlives the name, so the comment and the
+record still say the dispatcher started it, and the morning report lists
+the workspaces of the night by the mark on their launch records, each with
+the name it carries now.
 
 ### Admission by account
 
@@ -447,9 +758,15 @@ replaces, and the two count as one slot until the old one ends:
 `drive.ts --take-over` stops the wedged holder through `drives.ts --stop`
 before it drives, so the account never runs more than its cap of drivers
 that work. A takeover `drive.ts` refuses ends its own record, and the old
-record keeps its slot.
+record keeps its slot. A takeover of a driver another host started has no
+record on this host to replace, and is admitted on a free slot, as a re-arm
+is (see Several hosts).
 
-An interactive session (a pickup, a follow-up) is admitted the same way, on
+A follow-up runs as a headless pass (see Binding a session to its
+account) and is admitted as a drive's pass is: under the pass deadline it
+runs under, which the wrapper enforces on it, on a Codex account only on a
+host that opted in to Codex's bypass, holding one slot until its pass
+ends. An interactive session (a pickup) is admitted the same way, on
 one account with a free slot and no wall in effect, and its launch binds
 it to that account (below), so its launch record names the account and
 holds one slot. A session whose launch cannot bind its account is never
@@ -471,7 +788,9 @@ stays where `drive-pr` keeps it and still decides whether `drive.ts` admits
 the re-arm. A wall an interactive session meets is not recorded before the
 control step (see Control): that session shows as waiting, holds its slot, and is
 reported once it has waited past `dispatch.blocked_after` (30 minutes by
-default).
+default). A wall a follow-up's pass meets ends the pass short of `done`,
+so it is notified as a failed follow-up; it is not written as the
+account's wall.
 
 **Binding a session to its account.** A headless pass is bound to its
 account through the configuration directory of that account's Orca
@@ -493,15 +812,90 @@ Switching Orca's active account before a launch is not used: it is
 host-wide and would move every other session's next pass too. Whether an
 Orca agent launch can bind its agent to an account is not verified (Orca's
 command line selects accounts only for some agents), so until it is shown
-to work the dispatcher launches headless passes only, and pickups and
-follow-ups are reported, not started.
+to work pickups are reported, not started.
 
-**Sessions that wait.** Pickups and follow-ups are interactive skills, and
-with nobody to answer a question they stop and state it, as every Jig skill
-does without a person. An agent the runtime reports waiting for longer than
-`dispatch.blocked_after` is reported and notified once; it keeps its slot
+A follow-up does not wait for that: it runs as a headless pass, the
+account's vendor's non-interactive command (`claude -p`, `codex exec`) on
+the repository's follow-up command and the pull request, started by the
+same wrapper and bound the same way as a drive's pass. These reasons decide
+it. The work is mechanical: tags, tracker items, status pages and
+consumers, which a skill settles without a conversation. Headless binding
+is the binding the dispatcher already proves at every drive's launch, with
+the identity check before it starts. And an interactive session would add
+a workspace a person must visit, for the step of the loop that most
+needs no one. The pass runs with the host's own permission settings
+(`drive.pass_args`, and `drive.codex_bypass` for a Codex account), read as
+a drive's pass reads them; the launcher adds none, and a repository's file
+cannot set them.
+
+**Sessions that wait.** A pickup is an interactive skill, and with nobody
+to answer a question it stops and states it, as every Jig skill does
+without a person. An agent the runtime reports waiting for longer than
+`dispatch.blocked_after` is reported and notified; it keeps its slot
 until it ends or a person ends it, so a cap full of waiting sessions is
-visible in every report rather than silent.
+visible in every report rather than silent. A follow-up's pass cannot
+wait: one that cannot finish without a person carries out what does not
+depend on the answer, stops, records `failed`, and ends its output with a
+line that starts `Question:`. The wrapper keeps that line, at most 1000 characters and
+nothing else of the output, on the pass's exit; it reaches the launch
+record, the outcome log and the notification, so the pass is told to put
+no secret or personal data in it. The tick notifies the failed follow-up with the
+question, classed as parked for a person; the marker stays, so nothing
+starts it again until a person settles it.
+
+### The agent behind a session
+
+The agent a launched session runs in (Claude Code or Codex today) is the
+admitted account's vendor, and nothing else chooses it: admission picks the
+account, the account's `vendor` names the agent, and the launch is bound
+to that account through its configuration directory (`CLAUDE_CONFIG_DIR`,
+`CODEX_HOME`). A repository never names an agent; it names a model per
+runtime in `routing.models`, which the launch reads for the vendor it got,
+so one repository is picked up by whichever account has a free slot. The
+skills are the same text in both agents, and the prompts the tick composes
+and the `jig dispatch result` instruction name no agent. A drive's pass
+runs the drive's documented pass command for the vendor, and a follow-up's
+pass the same non-interactive command on the follow-up command; the dispatcher
+admits an account only for a vendor whose pass command the drive
+documents, and reports an account of any other vendor as accepted and not
+admitted. An interactive session is launched as that vendor's Orca agent.
+These differences travel with the session, not the dispatcher: the
+review-arbiter agent exists only in Claude Code, and a Codex session uses
+the substitute the plugin documents; the turn-budget hook counts nothing
+under Codex, so a Codex pass has no turn cap of its own; a pass that
+runs on without finishing is bounded by the drive's pass deadline
+(`DRIVE_PR_PASS_TIMEOUT`), which kills it whatever its vendor, and
+Control's drive expectation, which compares rounds, sees the passes that
+do finish. The deadline can be switched off (`0`), and a Codex pass then
+has no bound at all, so the dispatcher admits a Codex account for an
+unattended pass only when the deadline in force for that launch is
+positive, and reports the account as accepted and not admitted
+otherwise. A pass's bypass is the host's to give, once it has verified what
+its account reaches, so a Codex account is admitted for any launch only on a
+host that set `drive.codex_bypass` in its user file or the tick's environment;
+without it the account is reported the same way. A repository cannot give it:
+a pull request can edit the repository's file, and the tick reads the setting
+without one. The tick judges this once and the launch record keeps what it
+judged, so the launched wrapper, which can read another user layer from the
+tick's, does what was admitted rather than reading the setting again. A Codex
+wall is recorded as a
+Claude one is, by the drive's quota adapter for the vendor, keyed by the
+account; binding the pass through the account's own configuration
+directory is what lets the adapter attribute the wall to that account,
+which a directory shared between accounts could not.
+
+A pass that outruns its deadline is ended with everything it started. On
+POSIX the wrapper leads the pass's own process group and signals the group.
+Windows has no process group to signal, so the wrapper samples the pass's
+descendants while their parent links exist, keeps what it recorded after the
+pass exits, and ends them by identity. That cleanup is best-effort, and
+limits stand: a descendant started and parented between two samples can
+survive a pass, and when the tree cannot be shown to have ended the wrapper
+still exits, so the record's slot is released while a survivor may run on in the
+workspace. Closing them takes a persisted "cleanup uncertain" launch state that
+admission holds until reconciliation or a person's clearance, or ownership at
+creation through a Windows job object; both are separate work, and the first
+waits on the authenticated Windows smoke.
 
 ### What it never does
 
@@ -516,24 +910,83 @@ visible in every report rather than silent.
   reported, never taken over.
 - **Re-arm a drive a person may have stopped** (a mailbox stop or pause,
   or a stop with no exit), or relaunch a stalled pickup.
+- **Keep a converged pull request current with its base.** It re-drives a
+  converged pull request on mechanical facts only: the forge reports
+  it conflicting with its base, or its head moved past the head the drive
+  verified. A pull request its base merely moved past, still mergeable,
+  is left as it is: merging the base in on every move is a round and a
+  CI run for a pull request the merge would take cleanly.
 - **Pass the flags the skills reserve for a person**: `--window-reopened`
   and `clear-lease`.
 - **Write to the tracker.** The item's own state is the claim, and `do-item`
-  sets it. The one thing it writes to the forge is the follow-up marker.
+  sets it. What it writes to the forge is the follow-up marker and, where a
+  repository turns dispatch labels on, the state labels.
+- **Read a state label to decide a launch.** A state label is derived from
+  the ledger and written; what the tick starts comes from the ledger alone.
+- **Add a `drive` or `hold` label, or remove a person's `hold`.** Both are
+  a person's commands. `drive` is removed only once it has been carried
+  out, its pull request's ledger existing, by the state label that
+  replaces it; `hold` stays until a person removes it.
 - **Compose a prompt for a stuck session.** It sends only the fixed nudges
   of Control's closed set; anything else a session needs goes to a person.
+- **Add a serialized area, or stop a person's drive on a held pull
+  request.** What is serialized is the catalog's, changed by a person; the
+  tick never infers contention from a conflict it just saw. A hold keeps
+  only the dispatcher's own launches off.
 
 ### Notifications
 
-A notification goes out once per cause, its launch record or receipt
+A notification goes out for each cause, its launch record or receipt
 naming what was sent: a drive parked with an item unanswered, carrying the
-parked questions in their framed form, or their stored reasons for a
-park with no decision record; a drive
+parked questions (item 32's framed decision, built, or the stored
+reason for a park with no decision record); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
-stalled pickup or a double claim; a failed follow-up; a session waiting past
+stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a session waiting past
 `blocked_after`; a running stage drifting from its expectation, and a
-session still waiting on a wall after its one nudge (see Control).
+session still waiting on a wall after its one nudge (see Control). Every
+message carries the cause or the question, the pull request's link and
+where the handoff is, and names the workspaces the stage ran in.
+
+**One destination per repository.** Every notification for a repository goes
+to one workspace: the one on the branch `dispatch.notices_branch` names,
+when the repository names one, else the repository's notices workspace,
+which the tick opens from the default branch when it needs it and removes
+once its job is done. It never goes to the workspace joined to the pull
+request or item. The person this serves dispatches many repositories from
+one machine and does not visit workspaces one by one: a notice written into
+an agent's tree, or into the workspace a follow-up ran in, is a notice
+nobody reads, and the only standing record of it is the tick's journal. A
+single place per repository is one a person can say they watch. The
+workspace a person names is theirs: the tick never opens or removes it, and
+a notice waits, reported, while no workspace on that branch is open or its
+comment is a person's, rather than going somewhere else. That is also why
+the destination is named by a branch, in the repository's `dispatch`
+section: a branch reads the same on every host, where a workspace's path is
+one machine's.
+
+**Repeated until it is settled.** A cause still standing
+`dispatch.renotify_after` (a day by default) after it was last sent is sent
+again, its message saying it still waits and since when, and again at that
+cadence until the cause leaves the plan: the park is answered, the drive
+re-armed or stopped, the follow-up's marker deleted. A notice sent once per
+head and then suppressed forever is one a person who missed it never hears
+of again. A repeat is skipped while the destination is still unread with the
+message, since sending it again says nothing new, and its clock starts from
+then. `0s` sends each cause once. A drift is an observation rather than
+something a person must do, so it is sent once for the life of its key and
+never repeated. The suppression record keeps the first send, which the
+dashboard dates the wait from, and the last, which the repeat is timed from;
+a repeat writes no second event row to the outcome log, since the cause's
+row was written when it was first sent.
+
+**On the dashboard.** The board's What needs you lists every cause the plan
+notifies, whether or not it has been sent: its pull request or item, the
+cause, the question when the stage stated one (a park's framed decisions, a
+follow-up's `Question:`), how long it has waited (from the stop's last
+ledger write, else the first send, else the first tick that saw it) and the
+workspace it was sent to. It is the one view over the line's waits, read
+from the same plan the notifications come from, so the two never disagree.
 
 A workspace holds one comment, so a message never replaces one a person has
 not read. The tick joins every cause it notifies to one target in a tick
@@ -552,9 +1005,12 @@ The answer to a park stays where the drive reads it, a
 comment on the pull request, so the next tick re-arms the drive with
 nothing from the phone but that comment.
 
+Where several hosts dispatch a repository, only the host that owns it
+notifies for it (see Several hosts), so a person is told once.
+
 ### Receipts
 
-Every tick writes one receipt under `~/.local/state/jig/dispatch/`, as
+Every tick writes one receipt under `~/.local/state/jig/dispatch/receipts/`, as
 `jig gc` does: the records it read and from where, each planned action with
 its reason, each launch with the runtime's answer, each notification. A
 tick removes receipts and ended launch records older than the machine
@@ -567,9 +1023,160 @@ record per cause (an unchanged refusal not to retry, a notification
 already sent), keyed by the cause's own facts (the item and its state, the
 ledger's generation and exit, the park), and dropped only when those facts
 change or the item or pull request leaves every record the tick reads. `jig dispatch
-receipts` lists them; once item 32's morning report is built, it lists the
+receipts` lists them; the morning report (`drives.ts --report`) lists the
 launches, refusals and notifications since the last report beside the
 drives' own.
+
+### What the tick keeps, and where
+
+Everything the tick keeps lives under `~/.local/state/jig/dispatch/`. What
+it joins, dedupes and queries from tick to tick is one SQLite database
+there, `state.sqlite`, opened with Bun's built-in `bun:sqlite`, one table
+per kind of record, each row under a unique key:
+
+- **Launch records**: one row per session the dispatcher started, keyed by
+  the record's id; the tick writes its part before the launch, and the
+  wrapper's process identity, the stage's exit and an interactive
+  session's result are each a column written once, by an update that
+  fills only an empty column, so one wrapper claims a record and the first
+  exit and result stand.
+- **Thread samples** (a drive's expectation): one row per launch record and
+  ledger round, written the first tick that sees the round.
+- **Waiting episodes**: one row per interactive session and wall it met,
+  keyed by the wall's observation time.
+- **Suppression records** of notifications: one row per repository and
+  cause, with its first and its last send, dropped when the cause goes.
+- **Nudge records**: one row per session and waiting episode, written
+  pending before the send, its delivery marked once after.
+- **Follow-up outcome records**: one row per repository and merged pull
+  request, the latest attempt's.
+- **Follow-up release records**: one row per repository and merged pull
+  request, the one stale claim the tick released on it.
+- **Idle clocks** of claimed items: one row per repository and item.
+- **The outcome log**: one row per key, which nothing removes, written in
+  the same transaction as what it records (see Control).
+
+The receipts stay files, one per tick, since a receipt is a run's
+narrative for a person and for the morning report. The account walls stay
+files, under `walls/`, since the drive's quota adapters write them from a
+pass, outside the tick. The tick lock and the rotation cursor
+(`tick-index`) stay files beside them. The outcome log also keeps a text
+copy, one file per month (`log-<year>-<month>.jsonl`), the archive that
+outlives any change to the database's schema.
+
+One tick writes at a time, under the tick lock. The wrapper's claim and
+exit and a session's result are single writes that SQLite's own write lock
+orders against a tick's. The database runs in write-ahead logging mode,
+so the dashboard and `jig dispatch log` read while a tick writes. Its
+schema carries a version: a database at an older one is migrated forward
+in one transaction, and one a newer plugin wrote is refused, with its
+version named, by every command that opens it.
+
+What another host must know of this host's launches is not kept here: it
+is published as shared records on the forge (see Several hosts). The local
+database stays the cache and the log: planning reads this host's own
+launches from its launch records and every other host's from their claims,
+and the dashboard reads the local log.
+
+### Several hosts
+
+A repository may be listed in the machine files of several hosts, each
+dispatching it with its own accounts and its own session runtime. They
+share no process and no database; they coordinate through
+[shared records](../GLOSSARY.md), written and read through one interface,
+`SharedRecords` (`plugin/shared/records/shared.ts`), whose first
+implementation is the forge (`plugin/shared/records/shared-forge.ts`) and
+which the machine file names (`records.shared: forge`, the only value; a
+value it does not know is refused). It claims a launch, re-checks a claim
+before an act, writes a launch's end onto its own claim, lists the claims
+and their ends for a pull request or a repository, and releases a claim;
+each returns an `Outcome`. How the records are kept, and what their read-back
+cannot close, is in
+[plugin/RECORDS.md](../plugin/RECORDS.md#on-the-forge-and-the-tracker).
+
+- **A drive's launch** posts a launch claim (`dispatch-launch-claim`), a
+  [forge claim](../GLOSSARY.md) on the pull request with key `drive` and the
+  attempt as its generation, naming the action, the claiming host's launch
+  record, the host (a digest of its dispatcher database's instance id, so a
+  public comment names no machine, and a database created again is a new
+  host), whether that host owns the repository, the ledger facts the launch
+  acts on and, for a re-drive, its change. A launch claims the attempt after
+  the latest; of the claims on one attempt the earliest trusted comment
+  wins; the latest attempt's winner is the current claim, and while it has
+  no end it holds the pull request's launches for every host. Only a
+  takeover claims past a current claim with no end, since the driver it
+  replaces is wedged by definition.
+- **A follow-up's claim** is its marker, which names the host that posted
+  it; that host writes the follow-up's answer onto it once its launch record
+  ends, as it writes a launch's end.
+- **A pickup's claim** is the tracker claim `do-item` makes, which every
+  host already reads; nothing is published for it here.
+- **A launch's end** is written by the host that made the claim, onto the
+  claim's own comment: its exit, or why it died. The wrapper writes it right
+  after it records the stage's exit, so other hosts read it when the launch
+  ends; that host's next tick with `--apply` writes the end of every claim
+  whose launch record ended and still has none, the backstop for a wrapper
+  killed before its write and a forge that refused it. A claim whose launch
+  record is gone from its host ends as died. A claim whose host never writes
+  its end holds the pull request until a person deletes the comment; a
+  follow-up's marker with no answer is released once it goes stale (see
+  Stale follow-up claims).
+
+The tick reads every host's claims for each pull request it classifies and
+places them beside its own launch records. A launch another host's current
+claim holds is reported as held by that host and never started twice. A
+refusal `drive.ts` gave another host's launch on the same ledger facts, a
+re-drive of the same change and an arm at the same head count as if this
+host had launched them, so a re-drive is launched once per change across
+hosts and a stop on a conflict another host re-drove is a person's. A
+follow-up another host ran reads as done or failed once that host wrote its
+answer, and as held by that host until then, or until its claim goes stale. A driver another host started
+(its claim made before the driver's run began, and its launch not ended
+before it) whose ledger heartbeat is past the lease window is taken over by
+this host under the ledger's own rule; a claim alone, however old, never
+starts a takeover. Such a takeover is admitted on a free slot, as a re-arm
+is, since this host has no launch record to take the slot of. A pull
+request whose claims cannot be read, or that carries a trusted claim that
+does not read, is unplaced for the tick. A serialized area orders a pull
+request another host's current claim holds as a drive in progress, so every
+host orders the area alike.
+
+**One owner host per repository.** The machine file's repository entry
+says `owner: true|false`, `true` by default, so a single machine keeps
+today's behaviour. The owner alone notifies for the repository, writes its
+dispatch labels, writes the outcome log's event rows for what it did not
+launch (a stop it notifies on, a serialized hold beginning and ending) and,
+once it is built, reads the [dispatch board](dispatch-board.md); every other
+host launches, re-arms, re-drives and takes over through the shared records
+and writes none of those, so each is written once. Each host still writes
+the ended rows of its own launches. Every report names this host and the
+host that owns the repository, and says so when another host's claims say
+it owns the repository too. The receipt records each shared read and write
+per tick and the forge's budget left after them, as the board's read
+records its cost, so what sharing costs is measured.
+
+What these records are, and are not:
+
+- **They coordinate launches; they never authorize an act a person takes**,
+  as the board's merge never rests on the ledger alone. Nothing reads a
+  claim as leave to merge, close an item or skip a review.
+- **The forge offers no conditional create.** A claim is read back after it
+  is posted, again a bounded number of times while the listing does not show
+  it, and re-checked before each act it guards; two hosts whose read-backs
+  each lag past the other's claim can still both read themselves the holder
+  of one launch. The stage's own refusal is the backstop: the drive's lock
+  and its ledger's claim refuse a second driver, `do-item`'s claim refuses
+  an item already taken, and a follow-up stops before its next act on an
+  earlier marker.
+- **A host sees another only as fast as the forge carries it**: a claim's
+  end lands at its host's next tick
+  ([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)).
+- **A takeover from another host does not stop the wedged driver there.**
+  `drive.ts --take-over` stops a holder only on its own host; a wedged
+  driver on another keeps that host's account slot until its process ends.
+- **A host that does not own the repository notifies for nothing**, its own
+  sessions included: one that waits or drifts is reported on that host and
+  notified by nobody, and its dashboard shows its own launches only.
 
 ### Control: observe, record, report, steer
 
@@ -581,10 +1188,9 @@ mechanical nudge.
 
 **The outcome log.** Receipts and launch records are working records and
 expire with the machine file's retention; what the factory learns from
-must not. The tick appends rows to an outcome log under
-`~/.local/state/jig/dispatch/`, one file per month (`log-<year>-<month>.jsonl`),
-which nothing removes. Every row carries its key and its time, and goes
-into the file of the month its time falls in. It holds these kinds of row:
+must not. The tick writes rows to an outcome log, the state database's
+`log` table, which nothing removes. Every row carries its key and its
+time. It holds these kinds of row:
 
 - **An ended row**, one per launch record, when the record ends, timed at
   the record's end: the stage, the repository, the item or pull request, the account, the model
@@ -619,7 +1225,7 @@ replaced by a takeover is stalled, not refused.
 | converged | a drive's convergence (`drive.ts` exit `0`); a pickup's or follow-up's recorded result `done` |
 | merged | a drive or pickup whose pull request merged while it ran (exit `5`, merged); never a follow-up, which starts after the merge |
 | quota wall | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood |
-| parked for a person | a park (exit `8`) |
+| parked for a person | a park (exit `8`); a follow-up pass that stopped on a question for a person |
 | stalled | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over` |
 | died | a process gone without an exit; an interactive session that ended with no result |
 | refused | a stage's own refusal or a stop it was given: exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; exit `5` on a closed pull request; an item already claimed; a person's `drives.ts --stop` |
@@ -634,17 +1240,18 @@ place is logged as `unknown`, never dropped, so the list grows from
 evidence: a reason that recurs among the `unknown` rows becomes a class in
 a later change.
 
-Each launch record gains a `logged` mark, set once its ended row is
-appended, and keeps the row's time from when the record ends, so a retry
-writes the same row into the same month's file. A tick that stopped
-between the append and the mark finds the record's key among the last
-rows of that file, which are in append order, before it appends; an event
-row keeps its time on its suppression record and is checked the same way.
-A row is one line written in one append. A reader skips any line that
-does not parse as a row, and before it appends, the tick settles an
-unterminated last line: one that parses is kept and given its newline,
-one that does not is cut off, so a torn write never becomes a completed
-line. The follow-up's outcome record (see Receipts) stays
+A row is written in the same transaction as what it records: an ended row
+with its launch record's end (the time the row carries), an event row with
+its suppression record, a nudge's row with its delivery mark. The two land
+together or not at all, so a tick that stops between them leaves nothing
+for the next one to repair, and a row's key, unique in the table, writes
+no cause twice. At the end of every tick, the rows written since the last
+copy are added to the text copy, each to the file of the month its time
+falls in, unless the file already holds a row with that key: the file is
+written whole with them and renamed into place, so a tick that stops
+mid-copy leaves the copy as it was and the next adds the same rows once.
+`jig dispatch log [--since <date>] [--jsonl]` prints the log as text,
+`--jsonl` as the lines the month files hold. The follow-up's outcome record (see Receipts) stays
 what it is: it settles whether a merged pull request still wants a
 follow-up, and the tick reads it; the ended row for the same launch is the
 analysis record, read only by people and the dashboard, and the tick never
@@ -678,11 +1285,38 @@ never acted on: the stage keeps running and keeps its slot, and whether to
 stop it is a person's call. Stages the dispatcher did not launch carry no
 expectation.
 
-**The dashboard.** `jig dispatch dashboard` serves one page that reads the
-log when it is opened and filters it by time, repository, stage, account,
-class and reason, and shows the count of each class over the filtered
-window. A question about yesterday is a filter, not a report: no report
-file is ever generated, and nothing is written to disk but the log itself.
+**The dashboard.** `jig dispatch dashboard` serves one page that answers, in
+order, what needs a person, what is running on which account, what is coming
+and how it went ([the designed page](prototypes/dispatch-dashboard/README.md)),
+in views: Now for the first three, History for the log, and Help for the
+words the page uses. A view is a parameter of the address, like the log's
+filter. It reads two records and writes nothing to the host: what a person
+chooses on the page (the theme, reply drafts beside a decision) stays in that
+browser's own storage.
+
+The first is the **line**, one row of the state database (`tick_line`): the
+needs, the accounts with their slots and walls, the sessions, the queue and the
+repositories as a tick found them, with that tick's receipt. A tick that read
+every repository the machine file lists replaces it at its end; a tick for one
+repository leaves it. Every read behind it stays in the tick: process liveness,
+walls, the machine file, titles, framed decisions. So the page says once, in
+its strip, how old the tick it shows is, never "live"; a timer that stopped
+shows as a tick older than the interval plus the longest recent tick; and a host
+may serve the page from a copy of the database and nothing else, which is how an
+isolated service runs it. The
+line is a view: a tick that cannot write it says so on its receipt and exits
+`1`, and what it launched stands. What no record holds stays off the page rather
+than being guessed.
+
+The second is the log, read when the page asks, every minute and on focus:
+filtered by time, repository, stage, account, class and reason in SQL over the
+log table, in one read transaction. It counts each class over the filtered
+window ignoring the class filter, so another class can still be chosen, and
+lists each bad class that ended on a repository on three or more of the last
+seven nights. A question about yesterday is a filter, not a report: no report
+file is ever generated. The filter is the page's query string, so a view is a
+link.
+
 The server runs while the command runs, started and stopped by a person
 (from a terminal on the host, which Orca's phone app reaches); nothing
 installs or keeps it running, so the dispatcher stays without a resident
@@ -690,8 +1324,18 @@ process. It listens on the address the machine file names
 (`dashboard.listen`, no default), and refuses an address outside the
 private and loopback ranges, so no route into the host is opened beyond
 the network the host already trusts. The URL it prints carries a token
-minted at start, and a request without it is refused: the log names
+minted at start, and a request without it is refused: these records name
 repositories, items and accounts.
+
+Each read answers with its value or a coded failure with a reason for a person,
+and a bug is caught once around the routes and logged with its stack
+([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)), so the page holds a code
+and a sentence, never a stack. It keeps the last data it read when the server
+stops answering, and shows nothing at all behind a refused token. The page is
+one HTML document the plugin carries, built from `dashboard/` on
+React, TanStack and Base UI, its script allowed by hash and able to reach only
+this server, since the text it shows comes from pull requests and its address
+holds the token.
 
 **Self-correction through the reflection loop.** A class that recurs is a
 finding about the scaffolding, not something the tick adjusts on its own.
@@ -719,8 +1363,8 @@ mechanically, so it rests on a wall record for interactive sessions:
   wall record, which admission reads, and as a waiting episode (the wall
   and its reset) on that session's own launch record, so every session
   behind one account's wall has its own. A launch that cannot carry the session
-  id records no wall and gets no nudge; that an Orca agent launch can pass
-  it through is checked when the control step is built.
+  id records no wall and gets no nudge; on Orca the wrapper's launch
+  carries it (see The session runtime interface).
 - **Sending the nudge.** The tick sends **continue** only with `--apply`
   and only for a repository whose machine-file stages include `steer`,
   which no other stage implies. It sends it to a session only when all of
@@ -775,8 +1419,9 @@ session runs. Its values are split as configuration always is:
   identity per tracker (`identity`), the states that mean "ready to pick
   up" (`states`), the follow-up command (`followup_command`, `/followup` in
   Jig; a consumer repository names its own post-merge command),
-  `stalled_after`, `blocked_after`, and the expectations
-  `drive_rounds_flat`, `pickup_within` and `followup_within`.
+  `stalled_after`, `blocked_after`, the expectations
+  `drive_rounds_flat`, `pickup_within` and `followup_within`, and the
+  dispatch labels (`labels`: `enabled`, `prefix`, `only_labeled`).
 
 A repository's `dispatch` section is read from its default branch as the
 forge holds it, fetched afresh at every tick, never from a workspace's
@@ -835,14 +1480,14 @@ One pull request each, in this order; each is usable on its own.
    pickups, double claims and waiting sessions reported. Usable alone:
    assigning an item is the start button.
 5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
-   outcome record, and a follow-up session per merged pull request with the repository's follow-up
+   outcome record, and a follow-up pass per merged pull request with the repository's follow-up
    command, which claims the pull request with a manual marker when a
    person runs it by hand and marks that marker done when it succeeds
    (Jig's `/followup` first); the notifications above
    through `notify`. The park's
-   notification carries the park's framed decision, or its stored reason
-   when it has no decision record, and the receipts join
-   item 32's morning report once that is built; a consumer repository's
+   notification carries item 32's framed decision, or its stored reason
+   when it has no decision record, and
+   the receipts join its morning report; a consumer repository's
    follow-up waits on its own post-merge command (item 17).
 6. **Control.** The outcome log and its classifier, the expectations and
    stage drift, `jig dispatch dashboard`, the interactive wall record and
@@ -854,6 +1499,103 @@ One pull request each, in this order; each is usable on its own.
    pickup and follow-up expectations on steps 4 and 5; the nudge on
    interactive launches (step 4, itself waiting on an agent launch that
    binds its account) and on a launch that carries the vendor session id.
+7. **Re-drive a stale converged pull request.** The forge read carries each
+   open pull request's mergeability and current head commit, compared with the ledger's `verifiedSha`; the
+   ledger classification the
+   `stale` class (converged, and conflicting or past the verified head),
+   and the plan re-arms it through step 3's launch, on any admitted
+   account. Tests: a converged ledger on a conflicting pull request is
+   re-armed once; one whose head moved is re-armed once; one still at the
+   verified head and mergeable is left alone; a mergeability still being
+   computed leaves it unplaced. Waits on step 3 only. Usable alone: a
+   pull request that converged and then conflicted no longer waits for a
+   person to notice. A drive that stopped `9` is re-driven through the same
+   launch, keyed on its head and its base branch's head.
+8. **Admit Codex accounts.** The drive skill documents the Codex pass
+   command beside Claude Code's, with the pass model read per vendor from
+   `routing.models`; the dispatcher admits `vendor: codex` accounts, on a
+   host that set `drive.codex_bypass`, for
+   headless passes bound through `CODEX_HOME`, launches interactive
+   sessions with Orca's Codex agent, and the live checks made for Claude
+   (the launch binds the agent to the account; the runtime reports the
+   agent's state) are made for Codex on the host. Tests: a re-arm admitted
+   on a Codex account runs the Codex pass command with `CODEX_HOME` set and
+   the Claude variables absent; an account of a vendor with no documented
+   pass command is reported, never launched; a Codex account is reported,
+   never launched, while the inherited pass deadline is `0` or on a host
+   that has not set `drive.codex_bypass`; a Codex pass
+   that outruns a positive deadline is terminated. Waits on step 3 and on
+   step 4 for the interactive launch. Usable alone: a drive stopped on a Claude
+   wall restarts on a Codex account.
+9. **Keep the dispatcher's state in SQLite.** The launch records, the
+   thread samples, the waiting episodes, the suppression and nudge
+   records, the follow-up outcomes, the idle clocks and the outcome log
+   move into one database (see What the tick keeps, and where), each a
+   table with a unique key, and the outcome log's row is written in the
+   same transaction as what it records; the dashboard filters with one
+   query; `jig dispatch log` prints the log as text, and each tick keeps
+   its month files current; `jig dispatch clear` removes a launch record
+   only a person can settle. The receipts and the walls stay files. A
+   machine that ran an earlier version starts a new database: no machine
+   has kept state worth carrying over. Tests: a tick killed between a
+   launch record's end and its row leaves, after the next tick, exactly one
+   row; the dashboard open while a tick writes shows the new rows on
+   refresh and never an error; the first tick creates the database, and a
+   database a newer plugin wrote is refused with its version named;
+   `jig dispatch log --jsonl` and the month files hold the same rows as the
+   database. Usable alone: a stop between two writes no longer needs a
+   repair at the next tick.
+10. **Labels as the visible protocol.** The label set under the
+   repository's prefix (see Labels), off by default; the open and merged
+   listings carry the labels where they are on; the projection after the
+   plan, one write per pull request whose labels disagree, counted in the
+   receipt; `drive` arming a pull request with no ledger once per head
+   commit, and `hold` keeping every stage off its pull request;
+   `only_labeled`; `jig install dispatch --repo` creating the missing
+   labels; the morning report's counts by label. Tests: a state label
+   changed by hand carries the ledger's label again after one tick; a
+   `drive` label on a pull request with no ledger gets one drive across
+   three ticks and becomes the state label once the ledger exists; a
+   `hold` keeps a re-armable drive from being re-armed and the receipt
+   says so; with `only_labeled`, an unlabelled pull request with a ledger
+   is never read or launched; with the labels off, no label is read or
+   written. Waits on step 3. Usable alone: a person sees from a phone what
+   the dispatcher holds each pull request as, adopts one with a label and
+   stands the dispatcher down from another.
+11. **Name what the dispatcher starts.** The naming convention in the
+   runtime interface (see Naming what it starts): a workspace the
+   dispatcher creates named for its stage and key, with the mark and the
+   launch record's id as its comment; a reused one keeping its name, the
+   mark added to its comment once at launch; the terminal tab and the
+   notices workspace named as the dispatcher's; the mark kept on the
+   launch record and through a notification's rewrite of the comment; the
+   morning report's dispatched workspaces, by the mark on their launch
+   records, with the name each carries now. Tests: a pickup, a re-arm and
+   a follow-up each open a workspace named with the mark, the stage and
+   the key, or mark the one they reuse, under a tab that names the
+   dispatcher; a workspace renamed after its launch is still listed by the
+   morning report; a notification keeps the mark; a mark Orca refuses to
+   write leaves the launch as it was. Waits on step 3. Usable alone: a
+   person tells a dispatched workspace from their own at a glance on the
+   board.
+12. **Serialize contended pull requests.** `serialize: true` on an area of
+   the change-area catalog, validated like the other fields; each open
+   pull request's changed files read once per tick; the groups by
+   serialized area, their order and their leaders (see Serialized areas);
+   a held pull request's re-arm, takeover and re-drive reported as held,
+   its state label `held`, and an event row when its hold begins and
+   ends; `history.ts --propose-serialize` printing the catalog lines for
+   the hotspots one area holds. Tests: three converged pull requests on one
+   serialized area, all conflicting after a merge to main, get one
+   re-drive per tick in the fixed order, the other two reported held with
+   no launch; when the leader merges, the next tick promotes the next and
+   re-drives it once; a pull request outside every serialized area is
+   driven beside a held group, and a person's drive on a held pull request
+   is reported, not stopped; the history report with
+   `--propose-serialize` prints a catalog line for a hotspot and writes
+   nothing. Waits on steps 7 and 10. Usable alone: a night of pull
+   requests that all touch the migrations no longer re-drives each of them
+   after every merge.
 
 ## Left out
 
@@ -873,16 +1615,9 @@ One pull request each, in this order; each is usable on its own.
 - **Pre-emptive quota pacing.** Admission reacts to walls already met;
   spreading load before a wall is reached needs usage telemetry Jig does
   not read yet.
-- **Several Orca hosts.** One tick dispatches on the host it runs on, and
-  takes over only drivers that host started. A repository is listed in one
-  machine's file only: the follow-up marker settles which one starts a
-  follow-up, but nothing else arbitrates two dispatchers on one repository,
-  and a follow-up's outcome is read only on the machine that launched it,
-  until forge-side claims and outcomes are designed. The dashboard reads
-  one machine's outcome log until then too.
-- **Interactive sessions**, pickups and follow-ups, until an Orca agent
-  launch that binds its agent to an account is shown to work; headless
-  passes run meanwhile.
+- **Interactive pickups**, until an Orca agent launch that binds its agent
+  to an account is shown to work; drives and follow-ups run as headless
+  passes meanwhile.
 - **Further nudges.** A nudge joins the closed set only when the outcome
   log's waiting-episode rows show a mechanical cause that recurs, with a
   target the tick can identify and a screen state it can check, as

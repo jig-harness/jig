@@ -10,7 +10,9 @@
  * no version on the host that can drift from the caller's.
  */
 import { join } from "node:path";
-import { HerdrError } from "./runner.ts";
+import { HerdrError, shellQuote } from "./runner.ts";
+
+export { shellQuote };
 
 const ENTRY = join(import.meta.dir, "workspace.ts");
 
@@ -21,13 +23,6 @@ export const SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15"];
 export function assertHost(host: string): void {
   if (host === "" || host.startsWith("-") || /\s/.test(host))
     throw new HerdrError(`"${host}" is not an SSH destination`);
-}
-
-/** Quote one argument for the remote shell, which SSH hands the command to. */
-export function shellQuote(arg: string): string {
-  return /^[A-Za-z0-9_./:=@%+-]+$/.test(arg)
-    ? arg
-    : `'${arg.replaceAll("'", `'"'"'`)}'`;
 }
 
 /** The workspace tool as one self-contained script. */

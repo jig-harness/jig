@@ -2,7 +2,7 @@
 // A station of the factory: its number, its name, and who runs it. A
 // station a person decides is held (tinted); `compact` drops the actor lines
 // for marks only (the home page's miniature).
-import type { Station } from "../lib/data/factory.ts";
+import { partOf, type Station } from "../lib/data/factory.ts";
 import ActorLine from "./ActorLine.astro";
 import Arrow from "./Arrow.astro";
 import StatusMark from "./StatusMark.astro";
@@ -19,8 +19,7 @@ interface Props {
 const { station, tag, compact = false, arrow = false, href, handoff } = Astro.props;
 const held = station.actors[0]?.kind === "person" && station.id.startsWith("b");
 const kinds = new Set(station.actors.map((a) => a.kind));
-const level = station.id.startsWith("a") ? "Design" : "Execution";
-const aria = `${level} ${station.n}, ${station.name}: ${[
+const aria = `${partOf(station) === "Design" ? "Design stage" : "Line station"} ${station.n}, ${station.name}: ${[
   kinds.has("skill") && "run by a skill",
   kinds.has("agent") && "with an agent",
   kinds.has("tool") && "with a tool",

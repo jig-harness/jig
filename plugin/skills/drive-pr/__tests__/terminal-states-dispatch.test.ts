@@ -1,0 +1,273 @@
+/**
+ * The dispatcher's part of the terminal-state drift check: a dispatcher file
+ * that restates a drive exit as a number, or stops reading the registry,
+ * fails `terminal-states-consistency.ts`, and the real files pass.
+ */
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join, relative, resolve } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
+import {
+  closeTypeScriptService,
+  createSingleFileProgram,
+  resolveLiteral,
+} from "./terminal-states-consistency.ts";
+import {
+  DISPATCH_FILES,
+  findDispatchExitLiterals,
+  findInlinePairMismatches,
+  importsRegistry,
+} from "./terminal-states-dispatch.ts";
+
+afterAll(closeTypeScriptService);
+
+const TOOLS = { program: createSingleFileProgram, resolveLiteral };
+const PLUGIN = resolve(import.meta.dir, "..", "..", "..");
+const CHECK = join(import.meta.dir, "terminal-states-consistency.ts");
+
+const valuesIn = async (source: string) =>
+  (await findDispatchExitLiterals(source, "fixture.ts", TOOLS)).map((f) =>
+    Number(/exit (\d+)/.exec(f.what)?.[1]),
+  );
+
+describe("the dispatcher files as they are", () => {
+  test("read every drive exit from the registry", async () => {
+    for (const file of DISPATCH_FILES) {
+      const source = await Bun.file(join(PLUGIN, file.path)).text();
+      expect([
+        file.path,
+        await importsRegistry(source, join(PLUGIN, file.path), TOOLS),
+      ]).toEqual([file.path, file.importsRegistry]);
+      expect([
+        file.path,
+        await findDispatchExitLiterals(source, file.path, TOOLS),
+        findInlinePairMismatches(source),
+      ]).toEqual([file.path, [], []]);
+    }
+  });
+});
+
+describe("the registry import", () => {
+  const registry = join(
+    PLUGIN,
+    "skills/drive-pr/scripts/lib/status/terminal-states.ts",
+  );
+  const from = join(PLUGIN, "dispatch/fixture.ts");
+  const specifier = relative(dirname(from), registry);
+
+  test("is an import declaration, not a comment or a string", async () => {
+    const real = `import { DRIVE_EXIT } from "${specifier}";\n`;
+    const commented = `// import { DRIVE_EXIT } from "${specifier}";\nconst s = 'from "${specifier}"';\n`;
+    expect(await importsRegistry(real, from, TOOLS)).toBe(true);
+    expect(await importsRegistry(commented, from, TOOLS)).toBe(false);
+  });
+
+  test("binds a runtime value from the registry itself", async () => {
+    const check = (text: string) => importsRegistry(text, from, TOOLS);
+    expect(
+      await check(`import type { DriveExitName } from "${specifier}";\n`),
+    ).toBe(false);
+    expect(
+      await check(`import { type DriveExitName } from "${specifier}";\n`),
+    ).toBe(false);
+    expect(
+      await check(
+        `import { DRIVE_EXIT, type DriveExitName } from "${specifier}";\n`,
+      ),
+    ).toBe(true);
+    expect(await check(`import * as registry from "${specifier}";\n`)).toBe(
+      true,
+    );
+    expect(
+      await check(`import { DRIVE_EXIT } from "./terminal-states.ts";\n`),
+    ).toBe(false);
+  });
+});
+
+describe("a restated exit", () => {
+  test("is found in each position that classifies an exit", async () => {
+    expect(
+      await valuesIn(`
+const REFUSALS = new Set([11, 13, 20]);
+const CLASSES = new Map([[16, "quota wall"], [0, "converged"]]);
+const TABLE = { 5: "done", 18: "stopped-by-person" };
+const QUOTA = 16;
+function f(exit: number, code: number) {
+  if (exit === 8) return 1;
+  if (code !== QUOTA) return 2;
+  switch (exit) { case 9: return 3; }
+  return 0;
+}
+`),
+    ).toEqual([11, 13, 20, 16, 0, 5, 18, 8, 16, 9]);
+  });
+
+  test("is found through parentheses and a computed key", async () => {
+    expect(
+      await valuesIn(
+        'function f(exit: number) { return (exit) === 8; }\nconst t = { [5]: "done" };\n',
+      ),
+    ).toEqual([8, 5]);
+  });
+
+  test("is found through a literal bracket access and a wrapped collection", async () => {
+    expect(
+      await valuesIn(`
+function f(ledger: { exit: number }) {
+  if (ledger["exit"] === 8) return 1;
+  switch (ledger[\`exit\`]) { case 9: return 2; }
+  return 0;
+}
+const A = new Set(([11, 13]));
+const B = new Map(([[16, "quota wall"]]));
+const C = new Map([([18, "stopped"])]);
+`),
+    ).toEqual([8, 9, 11, 13, 16, 18]);
+  });
+
+  test("is found through type-only wrappers on the collection, its entries and its keys", async () => {
+    expect(
+      await valuesIn(`
+const A = new Set([11, 13] as const);
+const B = new Map([[16, "quota wall"]] as const);
+const C = new Map([[18, "stopped"] as const]);
+const D = new Set([(20 satisfies number)]);
+const E = new Map([[(9 as number), "x"]]);
+function f(l: { exit: number }) { return (l as { exit: number }).exit === 8; }
+`),
+    ).toEqual([11, 13, 16, 18, 20, 9, 8]);
+  });
+
+  test("is found through a type-only wrapper on a value, a comparison side, a case or a local alias", async () => {
+    expect(
+      await valuesIn(`
+const K = 13;
+const L = <number>16;
+const A = new Set([<number>11, K as number]);
+const B = new Map([[L as number, "x"], [(<number>18), "y"]]);
+function f(l: { exit: number }) {
+  if (l.exit === (<number>8)) return 1;
+  if (l.exit === (K as number)) return 2;
+  switch (l.exit) { case 9 as number: return 3; case (K satisfies number): return 4; }
+  return 0;
+}
+`),
+    ).toEqual([11, 13, 16, 18, 8, 13, 9, 13]);
+  });
+
+  test("is found through a wrapper on an alias's initializer, at any depth of the chain", async () => {
+    expect(
+      await valuesIn(`
+const K = 13;
+const L = K as number;
+const M = (<number>L)!;
+const N = +(M satisfies number);
+const A = new Set([L]);
+const B = new Map([[M, "x"]]);
+function f(l: { exit: number }) {
+  if (l.exit === N) return 1;
+  switch (l.exit) { case L: return 2; }
+  return 0;
+}
+`),
+    ).toEqual([13, 13, 13, 13]);
+  });
+
+  test("is not found through a bracket access whose key is not a literal", async () => {
+    expect(
+      await valuesIn(
+        "function f(l: { exit: number }, k: string) { return l[k] === 8; }\n",
+      ),
+    ).toEqual([]);
+  });
+
+  test("against a `code` does not count the codes every process exits with; against an `exit` it does", async () => {
+    expect(
+      await valuesIn(`
+function f(done: { code: number }, ledger: { exit: number }) {
+  if (done.code !== 0) return 1;
+  if (done.code === 2) return 1;
+  if (ledger.exit === 0) return 2;
+  return 0;
+}
+`),
+    ).toEqual([0]);
+  });
+
+  test("read by name from the registry is not one", async () => {
+    expect(
+      await valuesIn(`
+import { DRIVE_EXIT } from "../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+const REFUSALS = new Set([DRIVE_EXIT.SINGLE_INSTANCE_LOCK]);
+function f(exit: number) { return exit === DRIVE_EXIT.HITL_PARKED; }
+`),
+    ).toEqual([]);
+  });
+
+  test("in prose is checked where it pairs a state with a code", () => {
+    expect(
+      findInlinePairMismatches(
+        `stopped \`QUOTA_PARKED\` (\`${DRIVE_EXIT.QUOTA_PARKED}\`) and \`CONVERGED\` (\`0\`)`,
+      ),
+    ).toEqual([]);
+    expect(
+      findInlinePairMismatches(
+        "line one\nstopped `QUOTA_PARKED` (`15`), `NO_SUCH_STATE` (`3`)",
+      ).map((f) => [f.line, f.what]),
+    ).toEqual([
+      [2, "`QUOTA_PARKED` (`15`): drive.ts exits 16 for it"],
+      [2, "`NO_SUCH_STATE` (`3`) names no state in TERMINAL_STATES"],
+    ]);
+  });
+});
+
+describe("the consistency check over dispatcher files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "drive-pr-terminal-dispatch-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const registry = relative(
+    dir,
+    join(PLUGIN, "skills/drive-pr/scripts/lib/status/terminal-states.ts"),
+  );
+  const fixture = (name: string, body: string): string => {
+    const path = join(dir, name);
+    writeFileSync(path, body);
+    return path;
+  };
+  const check = (files: string[]) =>
+    Bun.spawnSync([process.execPath, CHECK], {
+      env: {
+        ...process.env,
+        DRIVE_PR_TERMINAL_STATES_TEST_DISPATCH_FILES: files.join(delimiter),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+  test("passes a file that reads the registry", () => {
+    const clean = fixture(
+      "clean.ts",
+      `import { DRIVE_EXIT } from "${registry}";\nexport const q = (code: number) => code === DRIVE_EXIT.QUOTA_PARKED;\n`,
+    );
+    expectSpawnExit(check([`${clean}=imports`]), 0);
+  });
+
+  test("fails a file that restates an exit, or reads nothing from the registry", () => {
+    const restating = fixture(
+      "restating.ts",
+      `import { DRIVE_EXIT } from "${registry}";\nexport const refusals = new Set([11, DRIVE_EXIT.TAKEN_OVER]);\n`,
+    );
+    const unread = fixture(
+      "unread.ts",
+      "export const q = (code: number) => code > 0;\n",
+    );
+    const r = check([`${restating}=imports`, `${unread}=imports`]);
+    expectSpawnExit(r, 1);
+    const err = r.stderr.toString();
+    expect(err).toContain("restating.ts:2  exit 11 in a new Set");
+    expect(err).toContain(
+      "unread.ts: imports nothing from drive-pr's terminal-states.ts",
+    );
+  });
+});

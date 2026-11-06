@@ -1,13 +1,14 @@
 /**
- * A fake forge for the drive-ledger suites: a `gh` that keeps a pull
- * request's issue comments in a JSON file (`comments.json`, or
+ * A fake forge for the drive-ledger suites and the forge claims': a `gh` that
+ * keeps a pull request's issue comments in a JSON file (`comments.json`, or
  * `comments-<N>.json` for pull request N) and answers the calls the ledger
- * makes (list, post, patch, delete, the signed-in login, the repository and
- * the search), recording each call. Opt-in files script the races and
- * failures:
+ * and the claims make (list, post, patch, delete, the signed-in login, the
+ * repository and the search), recording each call. Opt-in files script the
+ * races and failures:
  *
  * - `race-on-post` / `race-on-claim`: a rival comment (JSON) inserted, with
- *   the id it names, just before a ledger / claim post lands.
+ *   the id it names, just before a ledger / claim (a takeover claim, a
+ *   follow-up marker or a dispatcher's launch claim) post lands.
  * - `hide-ids`: `{ "ids": [...], "until": n }` hides those comments from
  *   every listing before the n-th, as a lagging read would.
  * - `bump-on-list` + `bump-body.json`: a concurrent writer rewrites the
@@ -98,7 +99,7 @@ if (list) {
   const pr = list[1];
   if (method === "POST") {
     const all = read(pr);
-    const race = input.body.startsWith("<!-- drive-pr-ledger -->") ? "race-on-post" : input.body.startsWith("<!-- drive-pr-takeover-claim -->") ? "race-on-claim" : "";
+    const race = input.body.startsWith("<!-- drive-pr-ledger -->") ? "race-on-post" : /^<!-- (drive-pr-takeover-claim|jig-dispatch-followup|jig-dispatch-launch-claim) -->/.test(input.body) ? "race-on-claim" : "";
     if (race !== "" && has(race)) {
       all.push(JSON.parse(text(race)));
       fs.rmSync(F + "/" + race);

@@ -4,7 +4,7 @@ import ModChip from "../../components/ModChip.astro";
 import StatusMark from "../../components/StatusMark.astro";
 import TermInfo from "../../components/TermInfo.astro";
 import Base from "../../layouts/Base.astro";
-import { type Actor, DESIGN_NOT_BUILT } from "../../lib/data/factory.ts";
+import { type Actor, DESIGN_NOT_BUILT, stationLabel } from "../../lib/data/factory.ts";
 import { factory, skills } from "../../lib/data/index.ts";
 import { mdInline } from "../../lib/markdown.ts";
 import { modulesRunBy, stationsRunBy } from "../../lib/skills-view.ts";
@@ -37,7 +37,7 @@ const STATION_NOTE: Record<string, string> = {
 const f = factory();
 const unrun: { station: string; href: string; actors: Actor[] }[] = [...f.pipeline, ...f.line]
   .map((s) => ({
-    station: `${s.id.startsWith("a") ? "Design" : "Execution"} ${s.n} · ${s.name}`,
+    station: stationLabel(s),
     href: `/factory/#station-${s.id}`,
     actors: s.actors.filter((a) => a.kind === "person" || a.kind === "todo"),
   }))

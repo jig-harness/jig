@@ -2,6 +2,12 @@ import { GcError } from "./gc-error.ts";
 /**
  * Cooperative reader/writer admission for resource publication. Stale tokens
  * are retained: without captured ownership evidence a lock is never stolen.
+ *
+ * A creator's admission token (`reader-<pid>-<uuid>`) and a collector's
+ * `writer` file each hold their process's identity (`liveness.ts`); a token
+ * in its earlier empty form names its pid in its name, and a writer in its
+ * earlier form holds a bare pid. A token found stale is reported with its
+ * holder and why it counts as gone, and is still never removed by gc.
  */
 import { randomUUID } from "node:crypto";
 import {
@@ -13,43 +19,84 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { errnoCode } from "./errors.ts";
+import {
+  decodeIdentity,
+  describeIdentity,
+  encodeIdentity,
+  isAliveSync,
+  legacyIdentity,
+  ownIdentity,
+  type ProcessIdentity,
+} from "./liveness.ts";
 
 function gcLockRoot(): string {
   return join(homedir(), ".local", "state", "jig", "gc-locks");
 }
-/**
- * Only a recorded writer process that no longer exists proves a writer token
- * stale; an unreadable token or a reused pid keeps it held.
- */
-function writerGone(writer: string): boolean {
-  let pid: number;
-  try {
-    pid = Number(readFileSync(writer, "utf8"));
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT";
-  }
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return false;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ESRCH";
-  }
+
+/** The identity a token or writer file records, in today's form or the earlier one. */
+function recorded(
+  content: string,
+  namedPid: number | null,
+): ProcessIdentity | null {
+  const text = content.trim();
+  if (text === "") return namedPid === null ? null : legacyIdentity(namedPid);
+  if (/^[1-9][0-9]*$/.test(text)) return legacyIdentity(Number(text));
+  return decodeIdentity(text);
 }
+
+/**
+ * The file at `path` with its holder as judged now: `gone` only for a holder
+ * judged dead, never for one that cannot be read or judged. `null` when the
+ * file is gone.
+ */
+function judged(
+  path: string,
+  namedPid: number | null,
+): { gone: boolean; text: string } | null {
+  let content: string;
+  try {
+    content = readFileSync(path, "utf8");
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return null;
+    return { gone: false, text: `${path}: its holder cannot be read` };
+  }
+  const identity = recorded(content, namedPid);
+  if (identity === null)
+    return { gone: false, text: `${path}: it names no holder to judge` };
+  const verdict = isAliveSync(identity);
+  const reason = verdict.ok ? verdict.value.reason : verdict.failure.reason;
+  return {
+    gone: verdict.ok && verdict.value.state === "dead",
+    text: `${path} (${describeIdentity(identity)}): ${reason}`,
+  };
+}
+
+/** The pid a token's name carries, `reader-<pid>-<uuid>`. */
+function namedPid(name: string): number | null {
+  const pid = /^reader-([1-9][0-9]*)-/.exec(name)?.[1];
+  return pid === undefined ? null : Number(pid);
+}
+
 export function sharedGcLock(kind: string, root = gcLockRoot()): () => void {
   const dir = join(root, kind);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const token = join(dir, `reader-${process.pid}-${randomUUID()}`);
-  writeFileSync(token, "", { flag: "wx", mode: 0o600 });
+  writeFileSync(token, encodeIdentity(ownIdentity()), {
+    flag: "wx",
+    mode: 0o600,
+  });
   try {
     // A reader publishes before checking the writer. The writer publishes
     // before enumerating readers, so at least one side observes the other.
     // A writer whose process is gone collects nothing, so it cannot race
     // this creation; it stays for the next collector to report.
-    const writer = join(dir, "writer");
-    if (readdirSync(dir).includes("writer") && !writerGone(writer))
+    const writer = readdirSync(dir).includes("writer")
+      ? judged(join(dir, "writer"), null)
+      : null;
+    if (writer !== null && !writer.gone)
       throw new GcError(
-        `gc ${kind}: collection in progress (${writer}); retry creation`,
+        `gc ${kind}: collection in progress (${writer.text}); retry creation`,
       );
   } catch (error) {
     rmSync(token);
@@ -57,6 +104,31 @@ export function sharedGcLock(kind: string, root = gcLockRoot()): () => void {
   }
   return () => rmSync(token, { force: true });
 }
+
+/**
+ * Why collection cannot be admitted while creators' tokens stand: the live
+ * or unjudgeable ones as creators holding the lock, the stale ones with their
+ * holders and why each counts as gone, for a person to remove.
+ */
+function admissionRefusal(kind: string, dir: string, names: string[]): string {
+  const tokens = names.flatMap((name) => {
+    const token = judged(join(dir, name), namedPid(name));
+    return token === null ? [] : [token];
+  });
+  const held = tokens.filter((t) => !t.gone).map((t) => t.text);
+  const stale = tokens.filter((t) => t.gone).map((t) => t.text);
+  const parts: string[] = [];
+  if (held.length > 0)
+    parts.push(`a creator holds the lock: ${held.join("; ")}`);
+  if (stale.length > 0)
+    parts.push(
+      `stale admission token ${stale.join("; stale admission token ")}; gc never removes an admission token: remove it after inspection`,
+    );
+  if (parts.length === 0)
+    parts.push("a creator held the lock as collection began; retry");
+  return `gc ${kind}: ${parts.join("; ")}`;
+}
+
 export async function exclusiveGcLock<T>(
   kind: string,
   body: () => Promise<T>,
@@ -66,20 +138,25 @@ export async function exclusiveGcLock<T>(
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const writer = join(dir, "writer");
   try {
-    writeFileSync(writer, String(process.pid), { flag: "wx", mode: 0o600 });
+    writeFileSync(writer, encodeIdentity(ownIdentity()), {
+      flag: "wx",
+      mode: 0o600,
+    });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const held = judged(writer, null);
     throw new GcError(
-      writerGone(writer)
-        ? `gc ${kind}: ${writer} names a process that has exited; remove it after inspection`
-        : `gc ${kind}: another collection holds ${writer}`,
+      held?.gone === true
+        ? `gc ${kind}: ${writer} names a process that has exited (${held.text}); remove it after inspection`
+        : `gc ${kind}: another collection holds ${held?.text ?? writer}`,
     );
   }
   try {
-    if (readdirSync(dir).some((name) => name.startsWith("reader-")))
-      throw new GcError(
-        `gc ${kind}: a creator holds the lock; stale admission tokens require inspection`,
-      );
+    const tokens = readdirSync(dir).filter((name) =>
+      name.startsWith("reader-"),
+    );
+    if (tokens.length > 0)
+      throw new GcError(admissionRefusal(kind, dir, tokens));
     return await body();
   } finally {
     rmSync(writer);

@@ -7,6 +7,8 @@ import { markReady } from "./paths.ts";
 
 import { MARK_READY_OUTCOMES } from "./settings.ts";
 
+import { cardOnReady } from "./orca-card.ts";
+
 async function markConvergedReady(
   status: Record<string, unknown>,
   context: DriveRoundContext,
@@ -83,6 +85,7 @@ async function markConvergedReady(
   // the other two dispatched nothing this run.
   if (outcome === "marked") {
     context.markedReadyThisRun = true;
+    await cardOnReady(context.pr);
     return "continue";
   }
   // `already-ready` / `already-marked` are STABLE answers — an

@@ -33,7 +33,12 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
   levels and stations; FEATURES.md into a feature per section with its
   skills, modules and roadmap items; the plugin README's skill tables; the glossary; the
   changelog and roadmap; M8's flywheel. `website/src/lib/data/index.ts`
-  loads each once per build. The parsers are pure functions over text, and
+  loads each once per build. The one figure no document holds, Jig's own
+  code statistics, comes from running the code-stats skill's script with
+  `--json` on the checkout being built (`code-stats.ts`): nothing is
+  committed, so no snapshot goes stale or conflicts between pull requests,
+  and a failed run or a report shape other than `code-stats/v1` fails the
+  build. The parsers are pure functions over text, and
   `data.test.ts` runs them against the real files, so a document whose
   structure a page relies on cannot change shape unnoticed.
 - **Rendering**: whole documents go through Astro's content collection
@@ -57,22 +62,25 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
-| `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; the factory miniature; the map strip (the compact module map, starting on Team/Standard, each row opening its module's popover, with what a filled cell means); the limits; the enforcement ladder; the profiles; the day-one audit text; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
-| `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, number, title and skill chips) linking to its section, then one section per feature: its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
+| `/` | README, FEATURES.md, FACTORY.md, profiles, `website/src/data/walkthrough.yaml` | the evaluator's path: what Jig is, as the README opens, its tagline and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; what goes wrong, one feature's problem line each, linked to its section on `/features/`; one recorded run of Jig's own line, each event at its station, from the pull request's opening to the follow-up after its merge; the README's factory section beside the factory miniature; the dispatch dashboard's shot beside what it answers in the morning, linked to the dispatcher's page; the map strip (the compact module map, starting on Team/Standard, each row opening its module's popover, with what a filled cell means); the limits; the enforcement ladder; the profiles; the day-one audit text; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
+| `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, its problem line, number, title and skill chips) linking to its section, then one section per feature: its problem line as a quotation, its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
 | `/modules/<Mn>/mappings/` | mappings.md | the whole file, for links that name it |
-| `/factory/` | FACTORY.md | the overview: figure 1 (stations on the scaffolding, above the platform), figure 2 (every station, who runs it and what it hands on, inside the learning loop), figure 3 (every actor by every station), the levels, what stays with a person and what the platform supplies |
-| `/factory/scaffolding/` | FACTORY.md, CONFIGURATION.md | the jobs with the modules that build each, when each verification module acts along a session, running many agents at once, and what Jig provides: the configuration layers and the tracker interface |
-| `/factory/design/`, `/factory/execution/` | FACTORY.md | one level each: its stations as a row with handoffs, the stages or the pull-request loop in text, the skills that run them or the station table |
-| `/factory/learning-loop/` | FACTORY.md, M8's README | the miss-to-lens flywheel step by step, its two companion cycles, and what triggers reflection |
+| `/factory/` | FACTORY.md | the overview: the problem in three sentences, figure 1 (stations on the scaffolding, above the platform, with the dispatcher's rail under the line), the factory's pages one card each, figure 2 (every station, who runs it and what it hands on, inside the learning loop, with the line's two rails: a person merges, and the dispatcher starts stations), figure 3 (every actor by every station, the dispatcher's row among them), the two parts side by side, what stays with a person and what the platform supplies |
+| `/factory/line/` | FACTORY.md | the line: its stations as a row with handoffs and its two rails, the pull-request loop in text, the station table, and what is on the roadmap; `/factory/execution/`, its address before, forwards to it |
+| `/factory/unattended/` | FACTORY.md | with nobody at the keyboard: a figure of what one tick reads, starts and tells a person, above the line with its rails; then each part of the dispatcher's section, the outcome log's with the dispatch dashboard's shot, what it never does, and what is on the roadmap |
+| `/factory/design/` | FACTORY.md | deciding what to build: the stages as a row with handoffs, the stages in text, and the skills that run them |
+| `/factory/scaffolding/` | FACTORY.md, CONFIGURATION.md | what it stands on: the jobs with the modules that build each, when each verification module acts along a session, running many agents at once, and what Jig provides: the configuration layers and the tracker interface |
+| `/factory/learning-loop/` | FACTORY.md, M8's README | the loop that sharpens it: the miss-to-lens flywheel step by step, its two companion cycles, and what triggers reflection |
 | `/adopt/` | plugin/README.md | getting started: the prompt that hands the setup to an agent, then the stations from nothing installed to a first audit, then the guides for an existing repository and a new project |
 | `/adopt/existing/`, `/adopt/greenfield/` | adoption/*.md, profiles | the guides with the plan rail: the chosen profile's modules in order, linked to their levels, and a hand-off link that keeps the profile (`?profile=`) |
-| `/adopt/plugin/`, `/adopt/configuration/`, `/adopt/extending/` | plugin/README.md, CONFIGURATION.md, EXTENDING.md | the plugin README's sections getting started does not render; the configuration reference; the extending guide |
+| `/adopt/plugin/`, `/adopt/configuration/`, `/adopt/extending/`, `/adopt/mechanisms/` | plugin/README.md, CONFIGURATION.md, EXTENDING.md, MECHANISMS.md | the plugin README's sections getting started does not render; the configuration reference; the extending guide; the map of the deterministic and reasoned parts |
 | `/skills/`, `/skills/<name>/`, `/skills/<name>/skill/` | plugin README tables, each skill's README or SKILL.md | what each skill runs (stations and modules), the stations no skill runs, each skill's own page, and its agent contract where the page is its README |
 | `/principles/`, `/principles/<n>/` | principles/ | the index shows each principle's statement and the first paragraph of its why, with a link to where it is visible on the site; each principle's page has its statement, why and consequences; principle 4 draws the ladder |
 | `/glossary/` | GLOSSARY.md | every term in its group, an anchor per term, a find filter |
 | `/whats-new/` | CHANGELOG.md, ROADMAP.md | every release beside the roadmap, each item foldable and anchored (`#rm-item-<n>`) |
+| `/stats/` | the code-stats skill's `--json` report, run by the build on the commit it builds | what Jig's own repository is made of, for transparency and as an example of the skill: headline figures (files, lines of code, the test-to-code ratio, the unclassified share), then a table per dimension with a bar per row: the areas in their rule order, the kinds, the languages with the most lines of code, and every module (each skill, plugin component, practice module and tool), sortable and filtered by the folder that holds it, a skill or a practice module linked to its page; the commit and date it counted. Totals only: no file path and no HTML report |
 | `/glossary.json`, `/search.json` | the same data | term definitions for the popovers, and the search index |
 
 ### The design system
@@ -128,6 +136,11 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
   entry on hover or keyboard focus, and on each of the section's pages
   holds it as a bar below itself, the current page marked, so the reader
   sees where they are among the section's pages however far they scroll.
+  The factory's pages follow FACTORY.md's order, the line first: the
+  overview, the line, with nobody at the keyboard, deciding what to build,
+  what it stands on, and the loop that sharpens it. An address a factory
+  page or anchor had before forwards to where that part is now
+  (`website/src/lib/factory-anchors.ts`).
   A page's own index of its sections or of its family's pages (the skills,
   the principles) is the side index, one design wherever it appears; a
   list taller than the window scrolls within it. Sticky rails and anchor
@@ -148,6 +161,16 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
   Which plate stands beside which feature is the site's choice, kept in
   `FEATURE_PLATES` (`website/src/lib/data/features.ts`) by the feature's
   heading id; the tests check every feature has one and every plate is drawn.
+- **Shots** (`public/shots/*.webp`, drawn by `DashboardShot.astro`): what
+  a page of Jig's own looks like, where a drawing would not show it. They
+  are screenshots of the real page served over its fixtures, never a
+  person's data, taken by a script at twice the pixel density on a desk and
+  on a phone, once per theme; the component shows the pair matching the
+  reader's theme, and a narrow window the phone alone. The dispatch
+  dashboard's are `website/scripts/dashboard-shots.ts`
+  (`bun run dashboard-shots` in `website/`), over the dashboard's `loud`
+  fixture, run again after a change to the dashboard's page or that fixture.
+  Unlike a plate, a shot says something, so each carries its alt text.
 
 ### Drawing a plate
 
@@ -172,28 +195,30 @@ subjects:
 | `map` | the Context job, 1:1 | a surveyor's map unrolled on a table, held flat by two brass weights, a compass rose on the map and a folding ruler beside it |
 | `gauge` | the Verification job, 16:9 | a pair of steel vernier calipers measuring a small machined part, next to a cylindrical go/no-go plug gauge standing upright |
 | `catalog` | the Knowledge job, 1:1 | a wooden card-catalog cabinet of twelve drawers in three rows of four, one drawer pulled open to show index cards with tabs, label holders empty |
-| `drafting` | design and planning, 16:9 | a drafting table tilted toward the viewer with a T-square, compasses, a set square and a half-finished mechanical drawing pinned at the corners |
-| `line` | execution, 3:1 | a straight conveyor line in side elevation with seven small work stations along it, each a bench with a different hand tool, and a return belt underneath running back to the first station |
-| `flywheel` | the learning loop, 16:9 | a large cast-iron flywheel on a bearing stand, belt-driven, with a centrifugal ball governor beside it |
+| `drafting` | deciding what to build, 16:9 | a drafting table tilted toward the viewer with a T-square, compasses, a set square and a half-finished mechanical drawing pinned at the corners |
+| `line` | the line, 3:1, and the unattended page's intro until `escapement` is drawn | a straight conveyor line in side elevation with seven small work stations along it, each a bench with a different hand tool, and a return belt underneath running back to the first station |
+| `flywheel` | the loop that sharpens it, 16:9 | a large cast-iron flywheel on a bearing stand, belt-driven, with a centrifugal ball governor beside it |
 | `lever` | what stays with a person, 16:9 | a human hand gripping a tall lever on a cast-iron control stand, the lever set to one of three notched positions |
-| `slab` | what Jig leaves to the platform, 16:9 | a building foundation in section: a concrete slab on driven piles, with service conduits and a drainage pipe passing through it |
+| `slab` | what the platform supplies, 16:9 | a building foundation in section: a concrete slab on driven piles, with service conduits and a drainage pipe passing through it |
 | `engine` | the 404 page, 16:9 | the preamble alone, with no subject |
 | `lattice` | behind sunk bands, a 1:1 tile | a seamless repeating tile of a faint isometric scaffolding lattice: thin poles, ledgers, diagonal braces and couplers in thin even lines, continuing across all four edges |
 | `toolwall` | the features page's intro, 16:9 | a pegboard tool wall with tools hung above their painted outlines, two outlines empty |
 | `theodolite` | feature 1, an audit of where you stand, 1:1 | a surveyor's theodolite on a tripod with a folded measuring staff |
 | `crate` | feature 2, a work item carried from pickup to merge, 1:1 | a tagged wooden crate on a roller conveyor |
-| `sieves` | feature 3, review in tiers with an arbiter, 1:1 | three stacked sieves over a tray, a balance scale beside them |
-| `ratchet` | feature 4, a learning loop built into the process, 1:1 | a ratchet wheel with its pawl engaged |
-| `ledger` | feature 5, decisions recorded, found again, turned into checks, 1:1 | an open bound ledger with a ribbon, a hand stamp and ink pad |
-| `pantograph` | feature 6, design and planning grounded in the repository, 1:1 | a pantograph copying a small drawing larger on a drawing board |
-| `stepladder` | feature 7, gates that ship with their tests, 1:1 | a five-rung stepladder with a plug gauge on its top step |
-| `spindle` | feature 8, change notes and a changelog, 1:1 | a desk spindle holding a stack of impaled notes, one note waiting |
-| `bays` | feature 9, workspaces for many agents on one machine, 1:1 | a long bench divided into four bays, each with a vise and a lamp |
-| `stencils` | feature 10, one configuration file read in layers, 1:1 | three stacked stencil plates with offset openings |
-| `scraper` | feature 11, documents that say what is true now, 1:1 | a drawing board with an erasing knife and its shavings |
-| `wrenches` | feature 12, adopt one module at a time, 1:1 | three sizes of one wrench on a pegboard, a hand taking the middle one |
+| `sieves` | feature 4, review in tiers with an arbiter, 1:1 | three stacked sieves over a tray, a balance scale beside them |
+| `ratchet` | feature 5, a learning loop built into the process, 1:1 | a ratchet wheel with its pawl engaged |
+| `ledger` | feature 6, decisions recorded, found again, turned into checks, 1:1 | an open bound ledger with a ribbon, a hand stamp and ink pad |
+| `pantograph` | feature 7, design and planning grounded in the repository, 1:1 | a pantograph copying a small drawing larger on a drawing board |
+| `stepladder` | feature 8, gates that ship with their tests, 1:1 | a five-rung stepladder with a plug gauge on its top step |
+| `spindle` | feature 9, change notes and a changelog, 1:1 | a desk spindle holding a stack of impaled notes, one note waiting |
+| `bays` | feature 10, workspaces for many agents on one machine, 1:1 | a long bench divided into four bays, each with a vise and a lamp |
+| `stencils` | feature 11, one configuration file read in layers, 1:1 | three stacked stencil plates with offset openings |
+| `scraper` | feature 12, documents that say what is true now, 1:1 | a drawing board with an erasing knife and its shavings |
+| `wrenches` | feature 13, adopt one module at a time, 1:1 | three sizes of one wrench on a pegboard, a hand taking the middle one |
 | `footing` | not yet drawn: the home page's foot, 3:1, in place of `slab` | a wide cross-section of the ground under a building: a concrete slab on driven piles, service pipes and conduits running the width of the drawing beneath it, and a scaffolding lattice standing on the slab at the right, cut by the drawing's upper edge |
-| `numberer` | not yet placed: FEATURES.md's section on change notes and the `changelog` skill, 16:9 | an automatic numbering stamp on a stack of slips, one stamped slip on a booklet |
+| `escapement` | not yet drawn: the unattended page's intro, 16:9, in place of `line` | a clockwork escapement driving a long shaft through three bearing stands |
+| `timer` | not yet drawn: feature 3, a line that runs with nobody at the keyboard, 1:1, in place of `numberer` | a wall-mounted clockwork timer switch, its dial marked in hours, a lever beside it |
+| `numberer` | feature 3 until `timer` is drawn; drawn for FEATURES.md's section on change notes and the `changelog` skill, 16:9 | an automatic numbering stamp on a stack of slips, one stamped slip on a booklet |
 
 #### The jig's model
 
@@ -312,7 +337,7 @@ Markdown, and an index to find it by.
   is, from the README, and links to the file of each section:
   `/modules/llms.txt`, `/skills/llms.txt`, `/principles/llms.txt`,
   `/factory/llms.txt` and `/adopt/llms.txt`, plus the
-  pages that belong to no section (what you get, what's new). Its first
+  pages that belong to no section (what you get, what's new, the code statistics). Its first
   link, under "Start here", is getting started, where an agent asked to set
   Jig up in a repository finds the steps it follows. Each section
   file lists its pages, its overview and the skills' agent contracts
@@ -366,7 +391,8 @@ update is not a plugin release.
 ## Build order
 
 Done: the site, its design, CI and deployment from `main`, open to every
-reader and to search engines.
+reader and to search engines. The home page opens with what Jig is, then what goes wrong without it, and
+a recorded run of Jig's own line.
 Open, each its own pull request:
 
 1. **Contrast gate.** A check, run in CI after the build, that every text
@@ -386,13 +412,7 @@ Open, each its own pull request:
    renderer, and the home page and the adoption page embed it with a caption
    naming that run. It rests inert so the page keeps its scroll, usable
    after a click, in full screen or in its own tab.
-6. **The problem first.** The home page opens with what goes wrong for a
-   team that builds with agents and no scaffolding, in two or three plain
-   sentences before the model, and the evaluator's path continues with a
-   recorded walkthrough of one item from pickup to merge, so a reader sees
-   the loop run before reading how it is built. The copy comes from the
-   README's opening, which gains that statement first.
-7. **A comparison page.** One page that sets Jig beside the other
+6. **A comparison page.** One page that sets Jig beside the other
    frameworks a team evaluating it will have met, on the dimensions the
    [spec ecosystems](spec-ecosystems-research.md) note uses, says plainly
    where Jig is behind (time to first value, the product-facing layer,

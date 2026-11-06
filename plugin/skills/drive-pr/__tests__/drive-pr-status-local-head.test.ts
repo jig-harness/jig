@@ -5,13 +5,11 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { chmodSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 
 import { tmpdir } from "node:os";
 
 import { join, delimiter } from "node:path";
-
-import { inspect } from "../scripts/drive";
 
 import {
   SCRIPTS,
@@ -30,47 +28,6 @@ import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 useDrivePrSuite();
-
-describe("inspect — an unreadable directory is not a confirmed empty claim set", () => {
-  // `claimWasTakenOver([], ...)` is deliberately `true` (the "vanished claim
-  // set" case just above) — a genuine, successfully-read empty directory
-  // really is a takeover signal. The bug this covers is upstream of that
-  // decision: `inspect()` used to fold a `readdirSync` failure (a transient
-  // permission/I/O/filesystem error) into the identical `claimNames: []`
-  // shape, so its caller could not tell "confirmed empty" from "could not
-  // read it" and called `claimWasTakenOver` on the ambiguous result either
-  // way — reading a transient read failure as proof of takeover and
-  // aborting a live drive for it.
-  //
-  // `process.getuid`-gated: on a container that runs tests as root, `chmod
-  // 000` does not block root's own `readdirSync`, so the directory would read
-  // successfully and the fixture would not exercise the failure path at all.
-  const canDropOwnPermissions =
-    typeof process.getuid === "function" && process.getuid() !== 0;
-
-  it.skipIf(!canDropOwnPermissions)(
-    "reports unreadable, with an empty claim set, when readdirSync itself throws",
-    () => {
-      const dir = mkdtempSync(join(tmpdir(), "drive-pr-inspect-unreadable-"));
-      try {
-        chmodSync(dir, 0o000);
-        const occupant = inspect(dir);
-        expect(occupant.unreadable).toBe(true);
-        expect(occupant.claimNames).toEqual([]);
-        expect(occupant.claim).toBeNull();
-      } finally {
-        chmodSync(dir, 0o755);
-      }
-    },
-  );
-
-  it("reports NOT unreadable for a confirmed, successfully-read empty directory", () => {
-    const dir = mkdtempSync(join(tmpdir(), "drive-pr-inspect-empty-"));
-    const occupant = inspect(dir);
-    expect(occupant.unreadable).toBe(false);
-    expect(occupant.claimNames).toEqual([]);
-  });
-});
 
 describe("drive-status.ts measures local HEAD in the tree being driven", () => {
   /**

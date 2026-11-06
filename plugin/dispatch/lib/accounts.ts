@@ -1,0 +1,441 @@
+/**
+ * Admission by account: which subscription account a launch bills, within
+ * each account's cap.
+ *
+ * An account's slots held are its launch records that hold their stage
+ * (pending, alive, unknown), a takeover and the record it replaces counted
+ * as one while both hold. A re-arm is admitted on an account with a free
+ * slot and no wall in effect, the accounts taken in turn starting after the
+ * account of the most recent launch record, so the turn survives between
+ * ticks without state of its own. A takeover is admitted into the slot of
+ * the record it replaces, on that record's account, while that account has
+ * no wall. With no account free the action waits, and the reason names
+ * every account's slots.
+ *
+ * The account's vendor chooses the agent a session runs in, so an account
+ * is admitted only for a vendor the drive documents a pass command for
+ * (`pass-command.ts`); an account of any other vendor is accepted by the
+ * machine file, reported, and never admitted. A vendor whose pass has no
+ * turn cap of its own (Codex) is admitted for a drive's pass only while the
+ * pass deadline the launch runs under is positive, since nothing else would
+ * bound a pass that runs on. A Codex account is admitted for any launch only
+ * on a host that set `drive.codex_bypass`: a pass needs that bypass to push
+ * and write its worktree's git directory, a pickup's session goes on to arm
+ * such a pass, and the dispatcher starts them with nobody there to approve.
+ * The tick reads that setting once, and a drive's launch record keeps what
+ * was judged, so its wrapper never reads it again.
+ *
+ * Before a launch the tick resolves, with the drive's own resolver, the
+ * identity the wrapper's environment yields for the admitted account
+ * (`passEnvironment`), and compares it with the account's `identity`; a
+ * mismatch, or an identity that does not resolve, starts nothing.
+ */
+import { resolve } from "node:path";
+import {
+  isMapping,
+  sourceOf,
+  userConfigPath,
+  valueAt,
+} from "../../shared/config-layers.ts";
+import { layeredConfig } from "../../shared/consumer.ts";
+import { Defect } from "../../shared/errors.ts";
+import { run } from "../../shared/proc.ts";
+import type { AccountVendor } from "../../skills/drive-pr/scripts/lib/identity.ts";
+import {
+  isPassVendor,
+  onlyDeadlineBounds,
+} from "../../skills/drive-pr/scripts/lib/pass-command.ts";
+import { holds, type ReadRecord, unrecordedWalls } from "./launches.ts";
+import type { MachineAccount } from "./machine-config.ts";
+import { accountWall, type Wall } from "./walls.ts";
+
+/** The credential variables the drive's resolver reads before a configuration directory. */
+const CREDENTIAL_VARIABLES = [
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+] as const;
+
+type Env = Record<string, string | undefined>;
+
+/** The variable that names each vendor's configuration directory. */
+const DIRECTORY_VARIABLE: Record<AccountVendor, string> = {
+  claude: "CLAUDE_CONFIG_DIR",
+  codex: "CODEX_HOME",
+};
+
+/**
+ * The environment a pass billed to `account` runs in: `base` with the
+ * credential variables, every vendor's directory variable and the harness
+ * markers (`CLAUDECODE`, `CODEX_…`) removed, and the account's configuration
+ * directory set, so the drive's resolver and quota adapters read that
+ * account and no other, and the session detects its own agent rather than
+ * the wrapper's.
+ */
+export function passEnvironment(
+  base: Env,
+  account: { vendor: AccountVendor; configDir: string },
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(base))
+    if (value !== undefined) env[key] = value;
+  for (const name of CREDENTIAL_VARIABLES) delete env[name];
+  for (const name of Object.keys(env))
+    if (name === "CLAUDECODE" || name.startsWith("CODEX_")) delete env[name];
+  for (const name of Object.values(DIRECTORY_VARIABLE)) delete env[name];
+  env[DIRECTORY_VARIABLE[account.vendor]] = account.configDir;
+  return env;
+}
+
+/** Whether this host opted in to Codex's bypass, and why not when it did not. */
+export type CodexOptIn = { on: true } | { on: false; why: string };
+
+/**
+ * This host's opt-in: `drive.codex_bypass` in its user file or the tick's
+ * environment, read without any repository's file. A value that cannot be
+ * read is no opt-in, and says why.
+ */
+export function hostCodexOptIn(env: Env = process.env): CodexOptIn {
+  try {
+    const config = layeredConfig(process.cwd(), env, null);
+    const value = valueAt(config.values, "drive.codex_bypass");
+    if (value === true) return { on: true };
+    return value === undefined || value === null || value === false
+      ? {
+          on: false,
+          why: `this host has not opted in to Codex's bypass (drive.codex_bypass: true in ${userConfigPath(env)}), and without it an unattended Codex session cannot push or write its git directory and has nobody to approve`,
+        }
+      : {
+          on: false,
+          why: `drive.codex_bypass must be true or false: ${sourceOf(config, "drive.codex_bypass")}`,
+        };
+  } catch (error) {
+    return {
+      on: false,
+      why: `drive.codex_bypass could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/** What a launch starts, on a host's opt-in: a drive's headless pass under its deadline (seconds, `0` for none), or an interactive session. */
+export type LaunchKind = { codex: CodexOptIn } & (
+  | { kind: "pass"; deadlineSec: number }
+  | { kind: "interactive" }
+);
+
+/**
+ * Why an account of `vendor` is never admitted for `launch`, whatever its
+ * slots; `null` when it may be.
+ */
+function vendorRefusal(vendor: string, launch: LaunchKind): string | null {
+  if (!isPassVendor(vendor))
+    return `the drive documents no pass command for its vendor ${vendor}, so it is accepted and not admitted`;
+  if (vendor === "codex" && !launch.codex.on)
+    return `${launch.codex.why}: not admitted`;
+  if (
+    launch.kind === "pass" &&
+    launch.deadlineSec === 0 &&
+    onlyDeadlineBounds(vendor)
+  )
+    return `a ${vendor} pass has no turn cap of its own and the pass deadline (DRIVE_PR_PASS_TIMEOUT) is 0, so nothing would bound it: not admitted for a drive's pass`;
+  return null;
+}
+
+/** The vendor of an account a launch was admitted on, which admission only allows for a vendor with a documented pass command. */
+export function admittedVendor(account: MachineAccount): AccountVendor {
+  const vendor = account.vendor;
+  if (!isPassVendor(vendor))
+    throw new Defect(
+      `${account.name} was admitted with the vendor ${vendor}, which has no documented pass command`,
+    );
+  return vendor;
+}
+
+/** An account the machine file lists that a drive's pass is never admitted on, and why. */
+export interface NotAdmitted {
+  account: string;
+  vendor: string;
+  reason: string;
+}
+
+/** The accounts a drive's pass under the pass deadline `deadlineSec`, on this host's opt-in, is never admitted on. */
+export function notAdmitted(
+  accounts: MachineAccount[],
+  deadlineSec: number,
+  codex: CodexOptIn,
+): NotAdmitted[] {
+  return accounts.flatMap((account) => {
+    const reason = vendorRefusal(account.vendor, {
+      kind: "pass",
+      deadlineSec,
+      codex,
+    });
+    return reason === null
+      ? []
+      : [{ account: account.name, vendor: account.vendor, reason }];
+  });
+}
+
+/** One account's slots as a tick sees them. */
+export interface Slots {
+  account: MachineAccount;
+  held: number;
+  wall: Wall | null;
+  /** A launch ended on this account's wall and the wall was never recorded: no launch is admitted until a person clears that record. */
+  wallUnrecorded: boolean;
+}
+
+/**
+ * The listed account a record bills. An account is its vendor and
+ * configuration directory; its name is a label a person may change. So the
+ * account at the record's vendor and directory is the one, whatever it is
+ * called now, and the name decides only when no listed account has them.
+ */
+function accountOf(
+  accounts: MachineAccount[],
+  record: { account: string; vendor: string; configDir: string },
+): string | null {
+  const same = accounts.filter(
+    (a) => a.vendor === record.vendor && a.configDir === record.configDir,
+  );
+  if (same.length === 1) return (same[0] as MachineAccount).name;
+  if (same.length > 1) return null;
+  return accounts.find((a) => a.name === record.account)?.name ?? null;
+}
+
+/** The slots of the account a record bills; `undefined` when the machine file lists none. */
+export function slotsOf(
+  table: Slots[],
+  record: { account: string; vendor: string; configDir: string },
+): Slots | undefined {
+  const name = accountOf(
+    table.map((s) => s.account),
+    record,
+  );
+  return table.find((s) => s.account.name === name);
+}
+
+/** The slots a set of records holds, per listed account name. */
+function heldByAccount(
+  accounts: MachineAccount[],
+  records: ReadRecord[],
+): Map<string, number> {
+  const holding = records.filter((r) => holds(r.state));
+  const ids = new Set(holding.map((r) => r.record.id));
+  const held = new Map<string, number>();
+  for (const { record } of holding) {
+    // A takeover shares the slot of the record it replaces while both hold.
+    if (record.replaces !== null && ids.has(record.replaces)) continue;
+    const name = accountOf(accounts, record);
+    if (name === null) continue;
+    held.set(name, (held.get(name) ?? 0) + 1);
+  }
+  return held;
+}
+
+/** The accounts whose launches ended on a wall that was never recorded. */
+function unrecordedAccounts(
+  accounts: MachineAccount[],
+  records: ReadRecord[],
+  root?: string,
+): Set<string | null> {
+  const ended = new Set(
+    unrecordedWalls(
+      records.map((r) => r.record.id),
+      root,
+    ),
+  );
+  return new Set(
+    records
+      .filter(
+        (r) =>
+          ended.has(r.record.id) ||
+          (r.state.kind === "unknown" && r.state.wallUnrecorded === true),
+      )
+      .map((r) => accountOf(accounts, r.record)),
+  );
+}
+
+export function slotTable(
+  accounts: MachineAccount[],
+  records: ReadRecord[],
+  nowMs: number,
+  root?: string,
+): Slots[] {
+  const held = heldByAccount(accounts, records);
+  const unrecorded = unrecordedAccounts(accounts, records, root);
+  return accounts.map((account) => ({
+    account,
+    held: held.get(account.name) ?? 0,
+    wall: accountWall(account, nowMs, root),
+    wallUnrecorded: unrecorded.has(account.name),
+  }));
+}
+
+/**
+ * Read every account's wall again, and the exits that ended on a wall that
+ * was not recorded, as a wrapper may have written either since the table was
+ * built. A closure once seen stays.
+ */
+export function refreshWalls(
+  table: Slots[],
+  records: ReadRecord[],
+  nowMs: number,
+  root?: string,
+): void {
+  const unrecorded = unrecordedAccounts(
+    table.map((s) => s.account),
+    records,
+    root,
+  );
+  for (const slots of table) {
+    slots.wall = accountWall(slots.account, nowMs, root);
+    if (unrecorded.has(slots.account.name)) slots.wallUnrecorded = true;
+  }
+}
+
+/** Every account's slots, in one line for a report, an account `launch` is never admitted on named so. */
+function describeSlots(table: Slots[], launch: LaunchKind): string {
+  if (table.length === 0) return "the machine file lists no accounts";
+  return table
+    .map((s) => {
+      const refused = vendorRefusal(s.account.vendor, launch);
+      if (refused !== null) return `${s.account.name} (${refused})`;
+      return `${s.account.name} ${s.held}/${s.account.maxPerAccount}${s.wall === null ? "" : ` (walled until ${s.wall.resetAt})`}${s.wallUnrecorded ? " (wall not recorded)" : ""}`;
+    })
+    .join(", ");
+}
+
+/** Why an account cannot take `launch` now; `null` when it can. */
+function closed(slots: Slots, launch: LaunchKind): string | null {
+  const refused = vendorRefusal(slots.account.vendor, launch);
+  if (refused !== null) return refused;
+  if (slots.wallUnrecorded)
+    return "its wall was not recorded; it stays closed until that launch record is cleared";
+  if (slots.wall !== null) return `walled until ${slots.wall.resetAt}`;
+  return slots.held >= slots.account.maxPerAccount ? "full" : null;
+}
+
+export type Admission = { admitted: Slots } | { waits: string };
+
+/** The account a re-arm (or an interactive session) runs on, taken in turn after `last`. */
+export function admitRearm(
+  table: Slots[],
+  last: string | null,
+  launch: LaunchKind,
+  excluded: ReadonlySet<string> = new Set(),
+): Admission {
+  const start = table.findIndex((s) => s.account.name === last) + 1;
+  for (let i = 0; i < table.length; i++) {
+    const slots = table[(start + i) % table.length] as Slots;
+    if (!excluded.has(slots.account.name) && closed(slots, launch) === null)
+      return { admitted: slots };
+  }
+  return {
+    waits: `no account has a free slot: ${describeSlots(table, launch)}`,
+  };
+}
+
+/** The slot a takeover runs in under the pass deadline `deadlineSec`, on this host's opt-in: the replaced record's, on its account. */
+export function admitTakeover(
+  table: Slots[],
+  replaced: ReadRecord,
+  deadlineSec: number,
+  codex: CodexOptIn,
+): Admission {
+  const slots = slotsOf(table, replaced.record);
+  if (slots === undefined)
+    return {
+      waits: `the record it replaces bills ${replaced.record.account}, which the machine file no longer lists`,
+    };
+  const launch: LaunchKind = { kind: "pass", deadlineSec, codex };
+  const refused = vendorRefusal(slots.account.vendor, launch);
+  if (refused !== null) return { waits: `${slots.account.name}: ${refused}` };
+  if (slots.wallUnrecorded)
+    return {
+      waits: `${slots.account.name}, whose slot it takes, ended on a wall that was not recorded`,
+    };
+  if (slots.wall !== null)
+    return {
+      waits: `${slots.account.name}, whose slot it takes, is walled until ${slots.wall.resetAt}`,
+    };
+  // A record that no longer holds its slot gave it back: the takeover needs a free one.
+  if (!holds(replaced.state) && slots.held >= slots.account.maxPerAccount)
+    return {
+      waits: `no free slot on ${describeSlots([slots], launch)}`,
+    };
+  return { admitted: slots };
+}
+
+/** The account of the most recent launch record, where the turn resumes. */
+export function lastAccount(records: ReadRecord[]): string | null {
+  let latest: ReadRecord | null = null;
+  for (const r of records)
+    if (latest === null || r.record.createdAt >= latest.record.createdAt)
+      latest = r;
+  return latest?.record.account ?? null;
+}
+
+const RUN_TS = resolve(import.meta.dir, "../run.ts");
+const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
+
+export type IdentityCheck = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Resolve, with the drive's own resolver, the identity a pass billed to
+ * `account` would run under, and compare it with the account's `identity`.
+ * The resolver runs in a child given the wrapper's environment, so what it
+ * reads is what the pass reads.
+ */
+export async function checkIdentity(
+  account: MachineAccount,
+  timeoutSec: number,
+): Promise<IdentityCheck> {
+  const vendor = account.vendor;
+  if (!isPassVendor(vendor))
+    return {
+      ok: false,
+      reason: `the drive documents no pass command for the vendor ${vendor}`,
+    };
+  const done = await run(
+    [
+      process.execPath,
+      "--no-env-file",
+      `--config=${BUNFIG}`,
+      RUN_TS,
+      "identity",
+      vendor,
+    ],
+    {
+      timeoutSec,
+      env: passEnvironment(process.env, {
+        vendor,
+        configDir: account.configDir,
+      }),
+    },
+  );
+  if (done.code !== 0)
+    return {
+      ok: false,
+      reason: `the identity resolver failed (exit ${done.code}): ${done.stderr.trim().slice(0, 200)}`,
+    };
+  let found: unknown;
+  try {
+    found = JSON.parse(done.stdout);
+  } catch {
+    found = null;
+  }
+  if (!isMapping(found))
+    return { ok: false, reason: "the identity resolver printed no answer" };
+  if (typeof found.account !== "string")
+    return {
+      ok: false,
+      reason: `${account.configDir} resolves to no identity (${String(found.reason ?? "no reason given")})`,
+    };
+  return found.account.toLowerCase() === account.identity.toLowerCase()
+    ? { ok: true }
+    : {
+        ok: false,
+        reason: `${account.configDir} resolves to ${found.account}, not ${account.identity}`,
+      };
+}

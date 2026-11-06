@@ -1,8 +1,9 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.4/schema.json",
   "files": {
     "includes": [
       "**/*.ts",
+      "**/*.tsx",
       "**/*.json",
       "!**/fixtures/**",
       "!**/templates/**",
@@ -19,6 +20,9 @@
   },
   "linter": {
     "enabled": true,
+    "domains": {
+      "react": "none"
+    },
     "rules": {
       "preset": "recommended",
       "complexity": {
@@ -78,6 +82,16 @@
     {
       "path": "./tools/quality/grit/no-bare-exit-code-assertion.grit",
       "includes": ["**/*.test.ts", "**/__tests__/**/*.ts"]
+    }
+  ],
+  "overrides": [
+    {
+      "includes": ["dashboard/**"],
+      "linter": {
+        "domains": {
+          "react": "recommended"
+        }
+      }
     }
   ],
   "assist": {

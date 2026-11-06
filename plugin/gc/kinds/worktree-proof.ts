@@ -1,15 +1,19 @@
 /** Re-read local identity; preserve unknown evidence and the session-lock veto. */
-import { lstatSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
+import { isAbsolute, join, normalize, resolve } from "node:path";
 import { layeredConfig, remoteName } from "../../shared/consumer.ts";
 import { readDrivenTree, type DrivenTree } from "../../shared/driven-tree.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
+import { detectPackageManager } from "../../shared/detect/package-manager.ts";
+import { orcaFailure, orcaResult, runOrca } from "../../shared/orca.ts";
 import { gcGit as git } from "../git.ts";
 import type { Proof } from "../types.ts";
+import { guardLabel } from "./worktree-guard.ts";
 import {
   classifyWorktree,
   localWorktreeVeto,
+  type IgnoredContent,
   type WorktreeEvidence,
   type WorktreeRequest,
 } from "./worktree-evidence.ts";
@@ -80,6 +84,77 @@ async function operation(admin: string): Promise<string | null> {
   }
   return null;
 }
+/**
+ * Whether `directory` (a path under `root`) holds nothing but dependency
+ * directories: the shape of a wholly ignored workspace folder that git
+ * reports as one collapsed entry, hiding the `node_modules` inside it. A
+ * symbolic link or any other file is local state and fails it. The walk
+ * is bounded by `deadline` (checked on entering a directory and per entry,
+ * like `worktreeActivity`) and throws when it passes, so a huge ignored cache cannot hold the collector.
+ */
+function checkDeadline(deadline: number): void {
+  if (Date.now() > deadline)
+    throw new GcError("Ignored-content scan exceeded its deadline");
+}
+function onlyDependencyDirectories(
+  directory: string,
+  deadline: number,
+): boolean {
+  checkDeadline(deadline);
+  const children = readdirSync(directory);
+  if (children.length === 0) return false;
+  return children.every((child) => {
+    checkDeadline(deadline);
+    const path = join(directory, child);
+    const stat = lstatSync(path);
+    if (!stat.isDirectory()) return false;
+    return (
+      child === "node_modules" || onlyDependencyDirectories(path, deadline)
+    );
+  });
+}
+/** Whether the root holds a manifest and a recognised lockfile to rebuild from. */
+function rebuildInputs(root: string): boolean {
+  if (detectPackageManager(root).found === null) return false;
+  try {
+    return lstatSync(join(root, "package.json")).isFile();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+/**
+ * Ignored directories that a package manager's dependency directory accounts
+ * for, wherever they sit (a monorepo's nested `node_modules` counts too):
+ * rebuildable from the root's `package.json` and the lockfile
+ * `detectPackageManager` found, never meaningful local state. Only a real
+ * directory counts (git marks one with a trailing slash), so an ignored file
+ * or link named `node_modules` stays local state, as does a collapsed
+ * directory that holds anything beside dependency directories. No field
+ * declares an override, since every ecosystem that module recognises needs
+ * none; a lockfile-less ecosystem's own rebuildable directory would be
+ * grounds to add one.
+ */
+export function classifyIgnored(
+  root: string,
+  paths: string[],
+  deadline = Date.now() + 30_000,
+): IgnoredContent {
+  const inputs = rebuildInputs(root);
+  const rebuildable: string[] = [];
+  const other: string[] = [];
+  for (const path of paths) {
+    checkDeadline(deadline);
+    const directory = path.endsWith("/") ? path.slice(0, -1) : null;
+    const dependency =
+      inputs &&
+      directory !== null &&
+      (directory.split("/").pop() === "node_modules" ||
+        onlyDependencyDirectories(join(root, directory), deadline));
+    (dependency ? rebuildable : other).push(path);
+  }
+  return { rebuildable, other };
+}
 async function mergedHeadCoverage(
   root: string,
   head: string,
@@ -138,10 +213,97 @@ async function drivenRequests(
     );
   return prs;
 }
+/** A path as git spells a worktree: links resolved, where the path exists. */
+export function canonicalWorktree(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return normalize(path);
+    throw error;
+  }
+}
+/**
+ * Orca's own liveness evidence for a worktree it manages, from its registry
+ * (`orca worktree ps --json`): an agent Orca reports in any state but done
+ * (working, or waiting on a person) keeps the worktree, whatever git says.
+ * A registry that cannot be read, is cut short, or does not list the worktree
+ * proves nothing, so collection is refused. Null when Orca reports no agent
+ * still at work in it.
+ */
+export async function orcaLiveness(
+  command: string,
+  path: string,
+): Promise<Proof | null> {
+  const unread = (why: string): Proof => ({
+    state: "unverified",
+    reason: `Orca's registry (orca worktree ps) ${why}`,
+  });
+  const done = await runOrca(command, ["worktree", "ps", "--json"]);
+  const result = orcaResult(done);
+  if (result === null) return unread(`could not be read ${orcaFailure(done)}`);
+  if (result.truncated !== false || !Array.isArray(result.worktrees))
+    return unread("answered an incomplete list");
+  const own = canonicalWorktree(path);
+  // Every row for the path counts: a second row must not hide an agent the first omits.
+  const rows = result.worktrees.filter(
+    (entry: unknown) =>
+      isMapping(entry) &&
+      typeof entry.path === "string" &&
+      canonicalWorktree(entry.path) === own,
+  );
+  if (rows.length > 1) return unread("lists the worktree more than once");
+  const row = rows[0];
+  if (!isMapping(row)) return unread("does not list the worktree");
+  if (!Array.isArray(row.agents)) return unread("lists no agents for it");
+  for (const agent of row.agents) {
+    if (!isMapping(agent) || typeof agent.state !== "string")
+      return unread("lists an agent without a state");
+    if (agent.state !== "done")
+      return {
+        state: "live",
+        reason: `Orca's registry reports an agent ${agent.state} in the worktree`,
+      };
+  }
+  return null;
+}
+/** The runtime that manages a worktree, when one does: Orca, by its command. */
+export interface WorktreeRuntime {
+  orca: string;
+}
+/**
+ * The proof of a worktree a runtime manages. The runtime's registry is read
+ * first: an agent at work there is the most direct evidence the worktree is
+ * in use, and it is read again on every proof, the final one before removal
+ * included. Its showing no agent stands in for session admission. The proof
+ * says whether Jig's plugin for Orca guards launches now (`details.guard`),
+ * so a report says whether its collection would be guarded.
+ */
+export async function runtimeWorktreeProof(
+  path: string,
+  policy: WorktreePolicy,
+  idleDays: number,
+  runtime: WorktreeRuntime,
+): Promise<Proof> {
+  if (!lstatSync(path).isDirectory())
+    return { state: "finding", reason: "worktree root is not a directory" };
+  const registry = await orcaLiveness(runtime.orca, path);
+  const proof = registry ?? (await worktreeProof(path, policy, idleDays, true));
+  const guard = guardLabel();
+  return {
+    ...proof,
+    reason: `${proof.reason}; ${guard.reason}`,
+    details: {
+      ...(isMapping(proof.details) ? proof.details : {}),
+      guard: guard.label,
+    },
+  };
+}
 export async function worktreeProof(
   path: string,
   policy: WorktreePolicy,
   idleDays: number,
+  coordinated = false,
 ): Promise<Proof> {
   if (!lstatSync(path).isDirectory())
     return { state: "finding", reason: "worktree root is not a directory" };
@@ -175,28 +337,48 @@ export async function worktreeProof(
       .split("\0")
       .some((entry) => /^[a-zS] /.test(entry)),
     operation: await operation(admin),
-    ignoredContent: !!(await git(path, [
-      "ls-files",
-      "--others",
-      "--ignored",
-      "--exclude-standard",
-      "-z",
-    ])),
+    ignoredContent: classifyIgnored(
+      path,
+      (
+        await git(path, [
+          "ls-files",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          // A wholly ignored directory (node_modules, in the common case) is
+          // one entry, not every file inside it: a dependency tree can hold
+          // tens of thousands, which would otherwise bloat every veto reason
+          // and receipt line that names it.
+          "--directory",
+          "-z",
+        ])
+      )
+        .split("\0")
+        .filter((entry) => entry !== ""),
+    ),
     requests: null,
     localOnlyCommits: null,
     mergedHeadCovers: null,
     aheadOfBase: null,
     held: null,
     idleMs: null,
+    coordinated,
   };
+  // Every return below carries the paths set aside as rebuildable, whatever
+  // the outcome, so the receipt says what was judged rebuildable even for a
+  // worktree that goes on to report `would-collect`.
+  const attach = (proof: Proof): Proof =>
+    facts.ignoredContent.rebuildable.length
+      ? { ...proof, details: { rebuildable: facts.ignoredContent.rebuildable } }
+      : proof;
   const local = localWorktreeVeto(facts);
-  if (local) return local;
+  if (local) return attach(local);
   facts.requests =
     driven === null
       ? await requests(path, policy.remote, name)
       : await drivenRequests(path, driven);
   if (facts.requests.some((pr) => pr.state === "OPEN"))
-    return classifyWorktree(facts, idleDays * 86_400_000);
+    return attach(classifyWorktree(facts, idleDays * 86_400_000));
   facts.localOnlyCommits = await localOnlyCommits(path, head);
   if (facts.localOnlyCommits)
     facts.mergedHeadCovers = await mergedHeadCoverage(
@@ -213,5 +395,5 @@ export async function worktreeProof(
     (await git(path, ["rev-parse", "--abbrev-ref", "HEAD"])) !== name
   )
     throw new GcError("Worktree identity changed during the proof");
-  return classifyWorktree(facts, idleDays * 86_400_000);
+  return attach(classifyWorktree(facts, idleDays * 86_400_000));
 }

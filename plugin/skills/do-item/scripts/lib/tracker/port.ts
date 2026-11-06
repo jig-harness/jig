@@ -3,7 +3,7 @@
  * issue tracker, independent of which tracker answers.
  *
  * Callers depend on this interface only. An adapter (one per tracker: Linear
- * in `linear.ts`, GitHub Issues in `github/`) implements it, and `index.ts`
+ * in `linear.ts`, GitHub Issues in `github/`, Jira Cloud in `jira/`) implements it, and `index.ts`
  * picks the adapter the consumer names in `issue_tracker.adapter`. Adding a tracker means adding an
  * adapter and registering it; no caller changes.
  *
@@ -217,6 +217,12 @@ export interface Assigner {
   trusted: boolean;
 }
 
+/** A user of the tracker: its own id, and the name it shows (a GitHub login, a Linear or Jira display name). */
+export interface TrackerUser {
+  id: string;
+  name: string;
+}
+
 /** Which open issues a pool holds, by label. */
 export interface PoolQuery {
   /** Each list must match: the issue carries at least one label of each. */
@@ -399,6 +405,21 @@ export interface Tracker {
    * assignment, so an unknown assigner is never read as a trusted one.
    */
   assignedBy(key: string, assignee?: string): Promise<Assigner>;
+
+  // ── Claiming ──
+  /** The user this tracker's credential acts as: who "yourself" is. */
+  viewer(): Promise<TrackerUser>;
+  /** Every user the issue is assigned to; empty when nobody. */
+  assignees(key: string): Promise<TrackerUser[]>;
+  /** Assign the issue to `user` alone, replacing any other assignee. */
+  assign(key: string, user: TrackerUser): Promise<void>;
+  /**
+   * The user an identity names, in the form `dispatch.identity` takes (a
+   * GitHub login; a Linear user's email or display name; a Jira account
+   * id, or an email or display name that matches one user). Throws a
+   * `TrackerRequestError` (`unresolved`) when it names no user or several.
+   */
+  user(identity: string): Promise<TrackerUser>;
 
   // ── Filing and planning ──
   /**

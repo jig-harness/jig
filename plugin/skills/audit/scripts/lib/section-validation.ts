@@ -28,6 +28,7 @@ import { parseWorkTypes } from "../../../do-item/scripts/lib/work-types.ts";
 import { parsePrPolicy } from "../../../drive-pr/scripts/lib/pr-policy.ts";
 import { parseSeverityFormats } from "../../../drive-pr/scripts/lib/severity-formats.ts";
 import { journalPath } from "../../../reflect/scripts/lib/context.ts";
+import { checkLensConfig } from "../../../review/scripts/select-lenses.ts";
 import { parseReflection } from "../../../reflect/scripts/lib/settings.ts";
 import { parseObligations } from "../../../resolve-conflicts/scripts/lib/obligations.ts";
 import {
@@ -163,6 +164,7 @@ export function skillValidation(
   const batchSizes = batchSizesOf(config);
   if (batchSizes !== null && sizePointsFindings(config).length === 0)
     attempt("work-batch", () => parseWorkBatchSection(config, batchSizes));
+  attempt("review (lenses)", () => checkLensConfig(root, config.review));
   attempt("reflect", () => {
     const reflection = parseReflection(config.reflection, root);
     const journal = reflection.journal ?? null;

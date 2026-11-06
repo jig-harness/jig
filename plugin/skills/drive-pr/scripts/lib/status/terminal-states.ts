@@ -19,6 +19,12 @@
  * documented (exit, state) pair this table does not contain — a drift check
  * that commits nothing.
  *
+ * The dispatcher names no exit code of its own: it reads `drive.ts`'s exits
+ * through `DRIVE_EXIT` and the sets below it (`DRIVER_REFUSAL_EXITS`,
+ * `PERSON_STOP_EXITS`, `driveExitClosesTab`), and the consistency check fails a
+ * dispatcher file that restates one as a number
+ * (`__tests__/terminal-states-dispatch.ts`).
+ *
  * Categories of entry (`drive-status.ts`'s "Exit codes — the driver contract"
  * doc comment mixes all four in one column, unmarked):
  *
@@ -76,6 +82,8 @@
  * same way it already does for `drive.ts`'s driver-only exits.
  */
 
+import { Defect } from "../../../../../shared/errors.ts";
+
 export type TerminalStateCategory =
   | "state"
   | "class-label"
@@ -93,9 +101,10 @@ export interface TerminalStateEntry {
    * from `drive.ts` … mean opposite things"). Not a second, independent
    * pairing to keep in step by hand — `drive.ts`'s own remap is its `case 3:`
    * branch (`scripts/drive.ts`, ending `return 0` after certifying the
-   * converged worktree), so this field exists only so the drift checker does
+   * converged worktree), so this field exists so the drift checker does
    * not read `using-drive-pr.md`'s and `pr-lifecycle.md`'s documentation of
-   * THAT remap as a wrong pairing. Those two files are the ONLY ones the
+   * THAT remap as a wrong pairing, and so `DRIVE_EXIT` below gives the
+   * dispatcher the code `drive.ts` itself exits. Those two files are the ONLY ones the
    * checker treats this way (`CorpusFile.documentsDriveTsRemap` in
    * `__tests__/terminal-states-consistency.ts`) — everywhere else
    * (`drive-status.ts`'s own header, `SKILL.md`, `references/
@@ -505,4 +514,129 @@ export function outOfBand(
   report.state = name;
   report.reason = reason;
   return entry.exitCode;
+}
+
+// ── What the dispatcher reads: `drive.ts`'s own exits ─────────────────────
+
+/**
+ * The states whose exit the dispatcher reads from `drive.ts`
+ * (`dispatch/run.ts`, `dispatch/lib/launches.ts`, `dispatch/lib/log.ts`,
+ * `dispatch/lib/sources/ledgers.ts`): every exit `drive.ts` can end with, by
+ * the name this table gives it. `SESSION_LEASE_HELD` shares
+ * `SINGLE_INSTANCE_LOCK`'s code and `drive.ts` reports neither apart, so the
+ * dispatcher names that code by the driver's own refusal.
+ */
+export type DriveExitName =
+  | "CONVERGED"
+  | "INDETERMINATE"
+  | "UNSUPPORTED_CLI"
+  | "NOT_SETTLED"
+  | "PR_NOT_OPEN"
+  | "MAX_ROUNDS"
+  | "REVIEWER_FAILED"
+  | "HITL_PARKED"
+  | "PR_CONFLICTING"
+  | "SINGLE_INSTANCE_LOCK"
+  | "WORKTREE_UNCLEAN"
+  | "DRIVE_HELD_BY_OTHER_WORKTREE"
+  | "STALLED"
+  | "PASS_DEADLINE"
+  | "QUOTA_PARKED"
+  | "MAILBOX_STOPPED"
+  | "MAILBOX_PAUSE_TIMEOUT"
+  | "TAKEN_OVER";
+
+const DRIVE_EXIT_NAMES: readonly DriveExitName[] = [
+  "CONVERGED",
+  "INDETERMINATE",
+  "UNSUPPORTED_CLI",
+  "NOT_SETTLED",
+  "PR_NOT_OPEN",
+  "MAX_ROUNDS",
+  "REVIEWER_FAILED",
+  "HITL_PARKED",
+  "PR_CONFLICTING",
+  "SINGLE_INSTANCE_LOCK",
+  "WORKTREE_UNCLEAN",
+  "DRIVE_HELD_BY_OTHER_WORKTREE",
+  "STALLED",
+  "PASS_DEADLINE",
+  "QUOTA_PARKED",
+  "MAILBOX_STOPPED",
+  "MAILBOX_PAUSE_TIMEOUT",
+  "TAKEN_OVER",
+];
+
+/**
+ * The exit `drive.ts` ends with for `name`: the code it remaps the state to
+ * when the table records one (`CONVERGED`, which `drive.ts` exits `0`), else
+ * the state's own code. Throws when the table has no such entry, as
+ * `terminal()` does.
+ */
+function driveExitCode(name: DriveExitName): number {
+  const entry = TERMINAL_STATES[name];
+  if (entry === undefined) {
+    throw new Defect(
+      `driveExitCode(): '${name}' has no TERMINAL_STATES entry — the dispatcher and terminal-states.ts have drifted`,
+    );
+  }
+  return entry.additionalExitCodes?.[0] ?? entry.exitCode;
+}
+
+/** `drive.ts`'s exit for each state the dispatcher reads, by the state's name. */
+export const DRIVE_EXIT: Readonly<Record<DriveExitName, number>> =
+  Object.freeze(
+    Object.fromEntries(
+      DRIVE_EXIT_NAMES.map((name) => [name, driveExitCode(name)]),
+    ) as Record<DriveExitName, number>,
+  );
+
+/**
+ * The state a `drive.ts` exit names, as this table gives it: the first state
+ * in `DRIVE_EXIT_NAMES` order with that code, so `0` is `CONVERGED`, `4` the
+ * `NOT_SETTLED` class and `11` the driver's own `SINGLE_INSTANCE_LOCK`;
+ * `null` for a code `drive.ts` never exits with.
+ */
+export function driveExitName(code: number): DriveExitName | null {
+  return DRIVE_EXIT_NAMES.find((name) => DRIVE_EXIT[name] === code) ?? null;
+}
+
+/**
+ * `drive.ts`'s refusals of a second driver: this clone's lock is held,
+ * another working tree drives the pull request, or another clone took the
+ * drive over. Each is the stage's answer while the ledger's facts hold.
+ */
+export const DRIVER_REFUSAL_EXITS: ReadonlySet<number> = new Set([
+  DRIVE_EXIT.SINGLE_INSTANCE_LOCK,
+  DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE,
+  DRIVE_EXIT.TAKEN_OVER,
+]);
+
+/** A person's stop through the drive's mailbox: a `stop`, or a `pause` that outlasted its wait. */
+export const PERSON_STOP_EXITS: ReadonlySet<number> = new Set([
+  DRIVE_EXIT.MAILBOX_STOPPED,
+  DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT,
+]);
+
+/**
+ * The exits that leave nothing for a person in the drive's terminal tab:
+ * converged, merged or closed, re-armable (a usage-limit wall, a pull request
+ * not judgeable yet), a person's stop, or a refusal of a second driver.
+ */
+const TAB_CLOSING_EXITS: ReadonlySet<number> = new Set([
+  DRIVE_EXIT.CONVERGED,
+  DRIVE_EXIT.PR_NOT_OPEN,
+  DRIVE_EXIT.QUOTA_PARKED,
+  DRIVE_EXIT.NOT_SETTLED,
+  ...PERSON_STOP_EXITS,
+  ...DRIVER_REFUSAL_EXITS,
+]);
+
+/**
+ * Whether a drive that exited `code` closes its run tab, which
+ * `shared/orca-tabs.ts` then does: only an exit in `TAB_CLOSING_EXITS`. A
+ * park, any other exit and a signal (`null`) keep the tab for a person.
+ */
+export function driveExitClosesTab(code: number | null): boolean {
+  return code !== null && TAB_CLOSING_EXITS.has(code);
 }

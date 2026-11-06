@@ -15,6 +15,7 @@ import {
   makeClone,
   plantLiveLock,
 } from "./attach-pr-fixtures.ts";
+import { removeLock } from "./state-rows.ts";
 
 const clones: Clone[] = [];
 afterAll(() => {
@@ -119,12 +120,11 @@ describe("attach-pr.ts --place", () => {
 
   test("reuses a tree it created when the attach there did not finish", () => {
     const { c, roots } = withRoots();
-    const lock = join(c.env.DRIVE_PR_STATE_DIR as string, "pr-drive-42.lock");
-    plantLiveLock(c, "pr-drive-42.lock");
+    plantLiveLock(c, "pr-drive-42");
     const first = c.attach(c.primary, "42", "--place");
     expectSpawnExit(first, 11, "attach --place, PR held");
     const tree = realpathSync(join(roots, "clone-pr-42"));
-    rmSync(lock, { recursive: true, force: true });
+    removeLock(c.env.DRIVE_PR_STATE_DIR as string, "pr-drive-42");
     const again = c.attach(c.primary, "42", "--place");
     expectSpawnExit(again, 0, "attach --place again");
     expect(JSON.parse(again.stdout)).toMatchObject({ tree });

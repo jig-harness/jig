@@ -14,6 +14,10 @@ other tools, or as one interactive HTML page. Where its detection is wrong
 for a repository, a few values in `.config/jig.yaml` fix it, and
 `--explain` shows which rule decided any file.
 
+Jig's own report is published at
+[jig-harness.dev/stats/](https://jig-harness.dev/stats/), rebuilt from every
+deploy: what Jig's repository is made of, as an example of the output.
+
 ## What it measures
 
 Every tracked file gets one value in each of the

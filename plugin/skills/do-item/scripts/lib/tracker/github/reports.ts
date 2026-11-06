@@ -26,6 +26,7 @@ import type {
   WindowSpec,
 } from "../port.ts";
 import { TrackerRequestError } from "../port.ts";
+import { checkPoolQuery, inWindow } from "../requests.ts";
 import type { Client } from "./client.ts";
 import { STATE_TYPES } from "./model.ts";
 import {
@@ -88,10 +89,6 @@ const CLOSED_STATES: ReadonlySet<string> = new Set([
 const LABELED_EVENTS = `timelineItems(itemTypes: [LABELED_EVENT], last: ${PAGE}) {
   nodes { ... on LabeledEvent { createdAt label { name } } }
 }`;
-
-const inWindow = (at: string | null, w: WindowSpec | undefined) =>
-  w === undefined ||
-  (at !== null && Date.parse(at) >= w.sinceMs && Date.parse(at) < w.untilMs);
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
@@ -378,14 +375,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     },
 
     async openIssues(query) {
-      if (
-        query.withSomeOf.length === 0 ||
-        query.withSomeOf.some((l) => l.length === 0)
-      )
-        throw new TrackerRequestError(
-          "invalid",
-          "a pool query needs at least one non-empty label list; an empty one would read every open issue",
-        );
+      checkPoolQuery(query);
       // GitHub's label filter requires every listed label, so each
       // alternative of the first group is read on its own and the union is
       // deduplicated; every group is then applied locally.

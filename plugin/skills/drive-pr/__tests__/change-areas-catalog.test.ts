@@ -102,6 +102,21 @@ describe("parseCatalog", () => {
     );
   });
 
+  it("reads serialize, false when absent, and refuses one that is not true or false", () => {
+    const catalog = parseCatalog({
+      areas: {
+        db: { paths: ["db/**"], serialize: true },
+        app: { paths: ["src/**"] },
+      },
+    });
+    expect(catalog.get("db")?.serialize).toBe(true);
+    expect(catalog.get("app")?.serialize).toBe(false);
+    for (const value of ["yes", null, 1])
+      expect(() =>
+        parseCatalog({ areas: { db: { paths: ["db/**"], serialize: value } } }),
+      ).toThrow("catalog area db.serialize: expected true or false");
+  });
+
   it("refuses a tracker block that is not a mapping, in either spelling", () => {
     for (const block of ["tracker", "linear"])
       for (const value of [["delivery-system"], null])

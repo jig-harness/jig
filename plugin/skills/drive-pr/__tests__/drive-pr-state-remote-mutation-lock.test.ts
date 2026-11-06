@@ -7,42 +7,30 @@ import { describe, expect, it, spyOn } from "bun:test";
 
 import { execFileSync } from "node:child_process";
 
-import { createHash } from "node:crypto";
-
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-
-import { hostname, tmpdir } from "node:os";
+import { hostname } from "node:os";
 
 import { join, resolve } from "node:path";
-
-import { ExitError } from "../scripts/lib/cli";
 
 import { cloneKey } from "../scripts/lib/state/clone-key";
 
 import {
   assertRemoteMutationAllowed,
-  leasePathFor,
-  prRemoteMutationLockPathFor,
+  type FenceContext,
+  remoteLockName,
   type Session,
+  stateDirIdentityToken,
 } from "../scripts/lib/state/lease";
 
 import { createLock } from "../scripts/lib/state/lock";
-
-import { defaultStateDirFor } from "../scripts/lib/state/store";
 
 import {
   SCRIPTS,
   ACTOR,
   suiteHome,
-  gitCleanEnv,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
+
+import { lockRow } from "./state-rows.ts";
 
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
@@ -51,46 +39,72 @@ import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtu
 useDrivePrSuite();
 describe("drive-state.ts durability", () => {
   const stateDurabilityFixtures = createStateDurabilityFixtures();
-  const { twoDrivers, drive } = stateDurabilityFixtures;
+  const { stateDirFor, twoDrivers, drive } = stateDurabilityFixtures;
+
+  /** This process as the session a fence judges, in clone `d`. */
+  function contextIn(d: string): FenceContext {
+    const session: Session = {
+      pid: process.pid,
+      host: hostname(),
+      source: "DRIVE_PR_SESSION",
+      sessionStarted: "",
+    };
+    return {
+      stateDir: d,
+      actor: ACTOR,
+      session,
+      instance: stateDirIdentityToken(d),
+    };
+  }
+
+  /**
+   * The state directory both worktrees of `a`'s clone share: the default
+   * root under the suite's home, keyed by the clone (the
+   * `--git-common-dir`), not by either tree.
+   */
+  function sharedStateDir(a: string, env: Record<string, string>): string {
+    const commonDir = resolve(
+      a,
+      execFileSync("git", ["rev-parse", "--git-common-dir"], {
+        cwd: a,
+        env,
+      })
+        .toString()
+        .trim(),
+    );
+    return join(
+      suiteHome,
+      ".local",
+      "state",
+      "jig",
+      "drive-pr",
+      cloneKey(commonDir),
+    );
+  }
 
   describe("the PR-wide remote-mutation lock spans the push/POST", () => {
     it("assertRemoteMutationAllowed HOLDS the PR-wide lock, not just checks it", async () => {
-      // The gap this closes: before this fix, the fence read the per-PR
-      // lease set and returned `void` — the underlying PR-wide lock was
-      // never taken at all, so a DIFFERENT worktree's admission could land
-      // in the exact window between the check and `git push` (or the POST)
-      // completing. Proven directly at the lock level, independent of
-      // `guarded-push.ts`'s own subprocess plumbing — the same shape as the
-      // tree lock's own proof above: a second acquirer of the SAME
-      // PR-remote-mutation-lock path — via the identical `createLock(path,
-      // ...)` call `prRemoteMutationLockPathFor` resolves to — must stay
+      // A fence that only READ the lease set and returned would let a
+      // DIFFERENT worktree's admission land in the exact window between the
+      // check and `git push` (or the POST) completing. Proven directly at the
+      // lock level, independent of `guarded-push.ts`'s own subprocess
+      // plumbing: a second acquirer of the SAME PR-wide lock row must stay
       // BLOCKED for as long as the returned lock is held.
-      const d = mkdtempSync(join(tmpdir(), "drive-pr-remote-lock-held-"));
-      const path = prRemoteMutationLockPathFor(d, "999");
-      const session: Session = {
-        pid: process.pid,
-        host: hostname(),
-        source: "DRIVE_PR_SESSION",
-        sessionStarted: "",
-      };
+      const d = stateDirFor("remote-lock-held");
       // No lease seeded — the fence's own per-PR enumeration finds nothing,
       // so the lock is the only thing left to prove.
       const lock = await assertRemoteMutationAllowed(
-        {
-          stateDir: d,
-          actor: ACTOR,
-          session,
-          fromOverride: false,
-          legacyStateDirForFallback: d,
-        },
+        contextIn(d),
         "999",
         "test",
       );
       expect(lock).not.toBeNull();
+      expect(lockRow(d, remoteLockName("999"))).not.toBeNull();
       let released = false;
       try {
         const rival = createLock(
-          path,
+          d,
+          remoteLockName("999"),
           "drive-state.ts (pr remote mutation)",
           "999",
         );
@@ -121,355 +135,37 @@ describe("drive-state.ts durability", () => {
       }
     });
 
-    it("re-resolves the legacy-fallback directory LIVE, catching a drive admitted after the snapshot decision (TOCTOU)", async () => {
-      // The race this closes: `resolveFenceContext` decides `legacyDir` vs
-      // its relocation ONCE, as a snapshot — an empty, unmarked
-      // legacy directory at that instant resolves to `legacyDir`. If a
-      // concurrent current-code `drive.ts` is admitted into the relocated
-      // directory (creates it, writes its lease) any time between that
-      // snapshot and this fence's own check, a fence that trusted the stale
-      // snapshot would enumerate the wrong directory and miss that lease
-      // entirely — an exact fail-open.
-      //
-      // Reproduced directly at the `ctx` level, the same way the override
-      // path's rename-and-recreate races are proven elsewhere in this file:
-      // hand-build a `ctx` that matches what `resolveFenceContext` would
-      // have returned from a genuinely empty legacy directory (`stateDir`
-      // pinned to `legacyDir`, `fromOverride: false`), THEN — simulating the
-      // concurrent admission — write a live foreign lease into
-      // `defaultStateDirFor(legacyDir)`, and only THEN call
-      // `assertRemoteMutationAllowed` with the stale `ctx`. It must still
-      // refuse: that is only possible if the fence re-derives the directory
-      // choice live, rather than trusting `ctx.stateDir` as resolved.
-      const legacyDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-legacy-fallback-race-"),
-      );
-      // `defaultStateDirFor` resolves under the REAL `os.homedir()` — this
-      // legacyDir mints a fresh, random clone identity, so the resulting
-      // `newDir` is a unique, never-otherwise-touched path (never collides
-      // with the developer's own real drive-pr state), but it is still a
-      // real write outside this test's own tmpdir and must be cleaned up
-      // explicitly — nothing removes it automatically, and leaving one behind
-      // on every run accumulates without bound.
-      const newDir = defaultStateDirFor(legacyDir);
-      try {
-        mkdirSync(newDir, { recursive: true });
-        const foreignActor = "wt-00000000deadbeef";
-        // `holder: 'worktree'` — `isMine` decides a tree-held record purely
-        // by `actor` (never pid/host, see its own comment), so this is
-        // genuinely foreign as long as `foreignActor` differs from the
-        // caller's own `ACTOR` below, with no need to spawn a separate live
-        // process just to get a pid `isMine`'s (pid, host) branch would not
-        // treat as ours. `leaseAlive` for this holder kind checks only
-        // `lastSeen` freshness.
-        writeFileSync(
-          leasePathFor(newDir, "999", foreignActor),
-          JSON.stringify({
-            holder: "worktree",
-            pid: 0,
-            host: hostname(),
-            platform: process.platform,
-            actor: foreignActor,
-            worktree: "/some/other/tree",
-            startedAt: new Date().toISOString(),
-            lastSeen: new Date().toISOString(),
-            command: "bump-round",
-            generation: "f".repeat(32),
-            sessionStarted: "",
-            pr: "999",
-            revision: "a".repeat(32),
-          }),
-        );
-        const session: Session = {
-          pid: process.pid,
-          host: hostname(),
-          source: "DRIVE_PR_SESSION",
-          sessionStarted: "",
-        };
-        let threw: unknown;
-        try {
-          await assertRemoteMutationAllowed(
-            {
-              // The STALE snapshot decision — what `resolveFenceContext`
-              // would have returned before the concurrent admission above
-              // landed.
-              stateDir: legacyDir,
-              actor: ACTOR,
-              session,
-              fromOverride: false,
-              legacyStateDirForFallback: legacyDir,
-            },
-            "999",
-            "test",
-          );
-        } catch (e) {
-          threw = e;
-        }
-        expect(threw).toBeInstanceOf(ExitError);
-        expect((threw as ExitError).code).toBe(11);
-      } finally {
-        rmSync(newDir, { recursive: true, force: true });
-        rmSync(legacyDir, { recursive: true, force: true });
-      }
-    });
-
-    it("never mints a clone identity for a genuinely fresh legacy dir", async () => {
-      // This fence is documented as lightweight and read-only, but the
-      // original `resolveLegacyFallbackDir` called `defaultStateDirFor`
-      // unconditionally, which calls `cloneKey` — durably minting and
-      // persisting a fresh clone identity (`drive-pr-clone-id`) the first
-      // time it runs on a legacy dir that has none. A read-only check must
-      // not have that side effect. `legacyDir` here has no such file at all
-      // (a genuinely never-driven clone), so `peekDefaultStateDirFor` must
-      // return `null` and the fence must fall back to `legacyDir` WITHOUT
-      // minting anything.
-      const legacyDir = mkdtempSync(join(tmpdir(), "drive-pr-no-mint-legacy-"));
-      const session: Session = {
-        pid: process.pid,
-        host: hostname(),
-        source: "DRIVE_PR_SESSION",
-        sessionStarted: "",
-      };
-      expect(existsSync(join(legacyDir, "drive-pr-clone-id"))).toBe(false);
-      const lock = await assertRemoteMutationAllowed(
-        {
-          stateDir: legacyDir,
-          actor: ACTOR,
-          session,
-          fromOverride: false,
-          legacyStateDirForFallback: legacyDir,
-        },
-        "999",
-        "test",
-      );
-      try {
-        expect(existsSync(join(legacyDir, "drive-pr-clone-id"))).toBe(false);
-      } finally {
-        lock?.release();
-        lock?.dispose();
-      }
-    });
-
-    it("prefers an empty, not-yet-created newDir over acquiring the PR-wide lock in legacyDir when legacyDir holds nothing", async () => {
-      // Two things proven together: the lock is acquired against the SAME
-      // directory `resolveLegacyFallbackDir` would resolve to fresh (a lock
-      // built from the STALE `ctx.stateDir` before any live refresh ran would
-      // target the wrong directory), and that fresh resolution avoids
-      // `legacyDir` entirely when it holds no real footprint (every acquire/
-      // release leaves a permanent quarantine tombstone in whatever
-      // directory it targets, which `legacyFootprint()` then reads back as
-      // "unmigrated state", manufacturing a spurious migration refusal).
-      //
-      // `legacyDir` carries a PRE-EXISTING clone identity (so `newDir`'s path
-      // is knowable via `peekDefaultStateDirFor` without this call minting
-      // one) but is otherwise completely empty — no drive-pr footprint of
-      // any kind — and `newDir` does not exist yet either. The stale `ctx`
-      // handed to the fence still names `legacyDir` (as if resolved before
-      // this state existed), mirroring the exact snapshot-then-check gap
-      // enumeration guards against; this test is the same gap for the LOCK.
-      //
-      // Run as a SUBPROCESS, not in-process like the sibling tests above:
-      // `peekDefaultStateDirFor`/`defaultStateDirFor` resolve `newDir` under
-      // `os.homedir()`, and under Bun (unlike Node) `os.homedir()` does NOT
-      // re-read `$HOME` from `process.env` after startup — an in-process
-      // `process.env.HOME = fakeHome` before calling the fence is silently
-      // ineffective, and the fence resolves and mutates the REAL developer's
-      // `~/.local/state/jig` instead (measured while writing this test: it did).
-      // Only a genuinely separate process picks up a faked `$HOME` cold, the
-      // same reason `suiteHome`/`gitCleanEnv()` above route every
-      // `homedir()`-sensitive probe in this file through a subprocess rather
-      // than an in-process env mutation.
-      const probeDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-empty-legacy-prefers-new-probe-"),
-      );
-      const legacyDir = join(probeDir, "legacy");
-      const fakeHome = join(probeDir, "home");
-      mkdirSync(legacyDir, { recursive: true });
-      mkdirSync(fakeHome, { recursive: true });
-      // A real, persisted clone identity — written the same way
-      // `cloneKey`/`defaultStateDirFor` would, but without invoking either,
-      // so this fixture does not itself depend on the code path under test.
-      // UUID-shaped (never a bare label) so it survives `clone-key.ts`'s own
-      // validation, which refuses anything `randomUUID()` would not have
-      // minted — the same fixed value `migrate-legacy-state.test.ts` uses for
-      // the identical reason.
-      const cloneId = "4c1d2e3f-1a2b-4c3d-8e4f-0123456789ab";
-      writeFileSync(join(legacyDir, "drive-pr-clone-id"), `${cloneId}\n`);
-      const newDir = join(
-        fakeHome,
-        ".local",
-        "state",
-        "jig",
-        "drive-pr",
-        createHash("sha256").update(cloneId).digest("hex").slice(0, 16),
-      );
-      const leaseTsPath = join(SCRIPTS, "lib", "state", "lease.ts");
-      const probeScript = join(probeDir, "probe.ts");
-      writeFileSync(
-        probeScript,
-        [
-          `import { existsSync, readdirSync } from 'node:fs';`,
-          `import { hostname } from 'node:os';`,
-          `import { assertRemoteMutationAllowed, prRemoteMutationLockPathFor } from ${JSON.stringify(leaseTsPath)};`,
-          `const legacyDir = ${JSON.stringify(legacyDir)};`,
-          `const newDir = ${JSON.stringify(newDir)};`,
-          `const session = { pid: process.pid, host: hostname(), source: 'DRIVE_PR_SESSION', sessionStarted: '' };`,
-          `const lock = await assertRemoteMutationAllowed(`,
-          `  { stateDir: legacyDir, actor: 'wt-probe', session, fromOverride: false, legacyStateDirForFallback: legacyDir },`,
-          `  '999', 'test',`,
-          `);`,
-          `console.log(JSON.stringify({`,
-          `  lockAtNewDir: existsSync(prRemoteMutationLockPathFor(newDir, '999') + '.lock'),`,
-          `  legacyDirEntries: readdirSync(legacyDir),`,
-          `}));`,
-          `lock?.release();`,
-          `lock?.dispose();`,
-        ].join("\n"),
-      );
-      try {
-        expect(existsSync(newDir)).toBe(false);
-        const r = Bun.spawnSync([process.execPath, probeScript], {
-          // Windows' home directory is USERPROFILE, not HOME.
-          env: { ...gitCleanEnv(), HOME: fakeHome, USERPROFILE: fakeHome },
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        expect(r.stderr.toString()).toBe("");
-        const result = JSON.parse(r.stdout.toString());
-        expect(result.lockAtNewDir).toBe(true);
-        // legacyDir must show NOTHING drive-pr related beyond the
-        // pre-seeded clone-id fixture itself — no lock, no quarantine.
-        expect(result.legacyDirEntries).toEqual(["drive-pr-clone-id"]);
-      } finally {
-        rmSync(probeDir, { recursive: true, force: true });
-        rmSync(newDir, { recursive: true, force: true });
-      }
-    });
-
-    it("does NOT trust an existing newDir as migration proof when legacyDir still holds a live lease", async () => {
-      // The gap the "prefer empty newDir" rule leaves open: `newDir`
-      // existing was still, on its own, sufficient to select it — and
-      // `ensureMigratedFromLegacy`/`migrate-legacy-state.ts --apply` both
-      // `mkdirSync(newDir)` BEFORE scanning `legacyDir` and possibly
-      // refusing, so an empty `newDir` is exactly as consistent with a
-      // FAILED admission attempt as with a genuine one. `legacyDir` here
-      // holds a real, live foreign lease — the marker is absent and
-      // `newDir` exists-but-empty, simulating exactly that failed-attempt
-      // debris. The fence must still find and refuse on the live lease in
-      // `legacyDir`, not silently trust the empty `newDir`.
-      const legacyDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-newdir-not-proof-legacy-"),
-      );
-      const newDir = defaultStateDirFor(legacyDir);
-      const foreignActor = "wt-00000000deadbeef";
-      try {
-        // `newDir` exists (as `ensureMigratedFromLegacy` would leave it
-        // after a refused attempt) but is otherwise completely empty — no
-        // marker, no lease.
-        mkdirSync(newDir, { recursive: true });
-        // `legacyDir` holds a genuinely LIVE lease — the content a failed
-        // migration attempt would have refused on, and exactly what this
-        // fence must not miss.
-        writeFileSync(
-          leasePathFor(legacyDir, "999", foreignActor),
-          JSON.stringify({
-            holder: "worktree",
-            pid: 0,
-            host: hostname(),
-            platform: process.platform,
-            actor: foreignActor,
-            worktree: "/some/other/tree",
-            startedAt: new Date().toISOString(),
-            lastSeen: new Date().toISOString(),
-            command: "bump-round",
-            generation: "f".repeat(32),
-            sessionStarted: "",
-            pr: "999",
-            revision: "a".repeat(32),
-          }),
-        );
-        const session: Session = {
-          pid: process.pid,
-          host: hostname(),
-          source: "DRIVE_PR_SESSION",
-          sessionStarted: "",
-        };
-        let threw: unknown;
-        try {
-          await assertRemoteMutationAllowed(
-            {
-              stateDir: legacyDir,
-              actor: ACTOR,
-              session,
-              fromOverride: false,
-              legacyStateDirForFallback: legacyDir,
-            },
-            "999",
-            "test",
-          );
-        } catch (e) {
-          threw = e;
-        }
-        expect(threw).toBeInstanceOf(ExitError);
-        expect((threw as ExitError).code).toBe(11);
-      } finally {
-        rmSync(newDir, { recursive: true, force: true });
-        rmSync(legacyDir, { recursive: true, force: true });
-      }
-    });
-
     it("returns null, and touches nothing, with no PR named", async () => {
       // `assert-post-allowed.ts`'s standalone actor-wide path — there is no
       // single PR this call is protecting, so there is nothing for a lock
       // keyed by PR to guard.
-      const d = mkdtempSync(join(tmpdir(), "drive-pr-remote-lock-nopr-"));
-      const session: Session = {
-        pid: process.pid,
-        host: hostname(),
-        source: "DRIVE_PR_SESSION",
-        sessionStarted: "",
-      };
-      // Three rounds of observational fixes here (readdirSync name-list,
-      // fs.watch, then a listenerCount snapshot) were each correctly found
-      // insufficient in turn: a before/after snapshot cannot see a
-      // create-then-remove, fs.watch's OS-level delivery is best-effort and
-      // can coalesce or drop events, and a listener-COUNT snapshot cannot
-      // see a construct-then-DISPOSE, since `dispose()` removes the exact
-      // listener `createLock` added. The actual structural fix: spy on the
-      // GLOBAL seam `createLock` unconditionally calls at construction —
-      // `process.on('exit', ...)` — and record every CALL, not the net listener
-      // count afterward. This captures the ATTEMPT itself, synchronously,
-      // before any filesystem I/O, and survives any later `dispose()`
-      // un-registering it — there is no way to construct a `PathLock` without
-      // this call firing first, and no way for a subsequent `dispose()` to
-      // erase the fact that it fired. bun-types 1.4.0 regression: the
-      // process.on overloads collapse so `spyOn` infers the 'memoryPressure'
-      // signature, making `event === 'exit'` below a no-overlap type error. Spy
-      // through the EventEmitter view — same object, same seam, honest event
-      // type — matching the cast lib/state/lock.ts already carries for the
-      // mirror-image process.off collapse.
+      const d = stateDirFor("remote-lock-nopr");
+      const ctx = contextIn(d);
+      // A before/after look at the lock table cannot see an acquire-then-
+      // release, and a listener-COUNT snapshot cannot see a construct-then-
+      // DISPOSE, since `dispose()` removes the exact listener `createLock`
+      // added. So this spies on the GLOBAL seam every lock construction
+      // calls — `process.on('exit', ...)`, through `registerCleanup` — and
+      // records every CALL, not the net listener count afterward: there is no
+      // way to construct a `PathLock` without this call firing first, and no
+      // way for a later `dispose()` to erase the fact that it fired. The spy
+      // goes through the EventEmitter view (same object, same seam): bun-types'
+      // `process.on` overloads collapse so `spyOn` would infer the
+      // 'memoryPressure' signature, making `event === 'exit'` below a
+      // no-overlap type error.
       const onSpy = spyOn(
         process as unknown as import("node:events").EventEmitter,
         "on",
       );
       let lock: Awaited<ReturnType<typeof assertRemoteMutationAllowed>>;
       try {
-        lock = await assertRemoteMutationAllowed(
-          {
-            stateDir: d,
-            actor: ACTOR,
-            session,
-            fromOverride: false,
-            legacyStateDirForFallback: d,
-          },
-          null,
-          "test",
-        );
+        lock = await assertRemoteMutationAllowed(ctx, null, "test");
       } finally {
         onSpy.mockRestore();
       }
       expect(lock).toBeNull();
       expect(onSpy.mock.calls.some(([event]) => event === "exit")).toBe(false);
+      expect(lockRow(d, remoteLockName("999"))).toBeNull();
     });
 
     it("refuses a DIFFERENT worktree claiming this PR while the lock is held mid-push, and admits it once released", async () => {
@@ -481,51 +177,23 @@ describe("drive-state.ts durability", () => {
       // deliberately not overridable, so a stand-in would prove the refusal
       // fires on a value the test chose rather than on the topology.
       //
-      // A never actually claims a per-PR lease of its own here — the race
-      // this closes is that the lock ALONE (guarded-push.ts's or
-      // answer-summary-finding.ts's hold across their own mutation) must
-      // block a fresh claim regardless of whether the pusher's own lease
-      // still looks alive, which is exactly the case where the OLD,
-      // point-in-time-only check could not have seen the conflict at all
-      // (nothing had renewed A's lease mid-push). Holding the lock directly,
+      // A never actually claims a per-PR lease of its own here — the lock
+      // ALONE (guarded-push.ts's or answer-summary-finding.ts's hold across
+      // their own mutation) must block a fresh claim regardless of whether
+      // the pusher's own lease still looks alive, which is exactly the case a
+      // point-in-time check of the leases could not see at all (nothing
+      // renews A's lease mid-push). Holding the lock directly,
       // the way a real push does via `assertRemoteMutationAllowed`, is what
       // this probe is actually proving — spawning a real `guarded-push.ts`
       // would additionally exercise its own subprocess plumbing, which the
       // unit-level test above already covers on its own.
       const { a, b, env } = twoDrivers("remote-mutation-lock-pr-wide");
-      // Both worktrees land on the SAME state dir because they share one
-      // clone (mirrors the stale-lease probe above) — the default,
-      // `~/.local/state/jig/drive-pr/<cloneKey>/`, keyed off `--git-common-dir`
-      // rather than the common dir itself.
-      const commonDirRemoteLock = resolve(
-        a,
-        execFileSync("git", ["rev-parse", "--git-common-dir"], {
-          cwd: a,
-          env,
-        })
-          .toString()
-          .trim(),
-      );
-      const stateDir = join(
-        suiteHome,
-        ".local",
-        "state",
-        "jig",
-        "drive-pr",
-        cloneKey(commonDirRemoteLock),
-      );
-      // A real caller only ever reaches `createLock()` after `resolveStateDir()`
-      // has guaranteed this directory exists (via `ensureMigratedFromLegacy`'s
-      // own `mkdirSync`, or `openStore()`'s) — this test constructs the lock
-      // path directly, bypassing both, so it has to establish the same
-      // precondition itself. Without it, `createLock`'s `acquire()` sees
-      // `mkdirSync(lock)` fail with ENOENT (missing parent) and retries
-      // indefinitely, identically to how it treats an already-held lock
-      // (`lock.ts`'s blanket `catch` does not distinguish the two) — a real
-      // hang, not a flake.
-      mkdirSync(stateDir, { recursive: true });
+      // Both worktrees land on the SAME clone's rows because they share one
+      // clone.
+      const stateDir = sharedStateDir(a, env);
       const holdLock = createLock(
-        prRemoteMutationLockPathFor(stateDir, "999"),
+        stateDir,
+        remoteLockName("999"),
         "drive-state.ts (pr remote mutation)",
         "999",
       );
@@ -624,10 +292,9 @@ describe("drive-state.ts durability", () => {
           holdLock.dispose();
         }
         // Terminate and join the child on EVERY exit path, not just the
-        // happy one: an earlier
-        // assertion throwing above (e.g. the `toBeNull()` check) left the
-        // child running, unkilled and unjoined, in the original version of
-        // this test. `exitCode` is only ever set by the `.then()` above, so
+        // happy one: an assertion throwing above (e.g. the `toBeNull()`
+        // check) would otherwise leave the child running, unkilled and
+        // unjoined. `exitCode` is only ever set by the `.then()` above, so
         // it being still `null` here means the child has not reported an
         // exit yet.
         if (
@@ -661,30 +328,10 @@ describe("drive-state.ts durability", () => {
       // "could not acquire … or the lock is wedged" message, which would
       // misreport an entirely ordinary long-running push as a stuck lock.
       const { a, b, env } = twoDrivers("remote-mutation-lock-exceeds-wait");
-      // See the previous test's comment: both worktrees share one clone's
-      // default state dir, keyed off `--git-common-dir`, not that dir itself.
-      const commonDirExceedsWait = resolve(
-        a,
-        execFileSync("git", ["rev-parse", "--git-common-dir"], {
-          cwd: a,
-          env,
-        })
-          .toString()
-          .trim(),
-      );
-      const stateDir = join(
-        suiteHome,
-        ".local",
-        "state",
-        "jig",
-        "drive-pr",
-        cloneKey(commonDirExceedsWait),
-      );
-      // See the previous test's comment: `createLock()` here bypasses
-      // `resolveStateDir()`'s own guarantee that this directory exists.
-      mkdirSync(stateDir, { recursive: true });
+      const stateDir = sharedStateDir(a, env);
       const holdLock = createLock(
-        prRemoteMutationLockPathFor(stateDir, "999"),
+        stateDir,
+        remoteLockName("999"),
         "drive-state.ts (pr remote mutation)",
         "999",
       );
@@ -714,7 +361,7 @@ describe("drive-state.ts durability", () => {
         // stderr before throwing — that is unavoidable from the caller side
         // and harmless (extra context, not a conflicting claim) — so this
         // asserts on the EXIT CODE (11, not `acquire()`'s own generic 1) and
-        // on this fix's OWN message being present, not on the absence of
+        // on the refusal's OWN message being present, not on the absence of
         // `acquire()`'s.
         expect(r.exitCode).toBe(11);
         expect(r.stderr).toContain("irreversible remote mutation");

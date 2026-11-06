@@ -22,6 +22,7 @@ import {
   writeFixture,
 } from "./drive-pr-harness.ts";
 import { runDriveIn, state } from "./drive-loop-harness.ts";
+import { writeState } from "./state-rows.ts";
 import {
   humanVerdictNotice,
   NOTICE_MAX,
@@ -199,7 +200,7 @@ describe("drive.ts keeps a re-arm's answers until a pass completes with them", (
 
   it("stops before any pass when the drive state cannot be read once the locks are held", async () => {
     const { dir, stateDir } = await answeredPark();
-    writeFileSync(join(stateDir, "drive-pr-999.json"), "{ not json");
+    writeState(stateDir, "999", "{ not json");
     const run = await runDriveIn(dir, stateDir, [
       "--no-head-sync",
       "--max-rounds",

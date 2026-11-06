@@ -295,8 +295,8 @@ or writes fail the observation run. Other tracker adapters are future work.
 Implement the [issue lifecycle](README.md#scheduled-failures-one-issue-per-cause)
 in a separate triage job with tracker credentials. The evidence-only test job
 has neither those credentials nor a model call. The following are recipes
-for consumer repositories, not adapters shipped by Jig. Linear and GitHub
-Issues are the [existing tracker interface](../../plugin/EXTENDING.md#issue-tracker)'s
+for consumer repositories, not adapters shipped by Jig. Linear, GitHub
+Issues and Jira are the [existing tracker interface](../../plugin/EXTENDING.md#issue-tracker)'s
 implemented adapters; the rows below describe the equivalent provider
 operations for a consumer's integration.
 

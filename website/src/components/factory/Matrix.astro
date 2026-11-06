@@ -1,25 +1,35 @@
 ---
 // Who works where, as one grid: a row per actor, a column per station, a
 // mark where the actor runs the station. Derived from the stations' actors,
-// so it cannot disagree with figure 2.
+// so it cannot disagree with figure 2, and from the stations the
+// dispatcher starts, which figure 2 draws as its rail.
 import "../../styles/factory.css";
-import { type Actor, EVERY_STAGE } from "../../lib/data/factory.ts";
+import { type Actor, DISPATCHER, dispatcherTaps, EVERY_STAGE } from "../../lib/data/factory.ts";
 import { factory, isRoadmapGroup, roadmapHref } from "../../lib/data/index.ts";
 import ActorChip from "../ActorChip.astro";
 import StatusMark from "../StatusMark.astro";
 
 const f = factory();
+const started = dispatcherTaps(f);
 interface Column {
   id: string;
   n: string;
   name: string;
   actors: Actor[];
-  level: "A" | "B";
+  part: "design" | "line";
 }
 const columns: Column[] = [
-  ...f.pipeline.map((s): Column => ({ id: s.id, n: String(s.n), name: s.name, actors: s.actors, level: "A" })),
-  { id: "band", n: "·", name: "every stage", actors: EVERY_STAGE, level: "A" },
-  ...f.line.map((s): Column => ({ id: s.id, n: String(s.n), name: s.name, actors: s.actors, level: "B" })),
+  ...f.pipeline.map((s): Column => ({ id: s.id, n: String(s.n), name: s.name, actors: s.actors, part: "design" })),
+  { id: "band", n: "·", name: "every stage", actors: EVERY_STAGE, part: "design" },
+  ...f.line.map(
+    (s): Column => ({
+      id: s.id,
+      n: String(s.n),
+      name: s.name,
+      actors: started.has(s.id) ? [...s.actors, DISPATCHER] : s.actors,
+      part: "line",
+    }),
+  ),
 ];
 const key = (a: Actor) => (a.kind === "person" || a.kind === "todo" ? a.kind : `${a.kind}:${a.name}`);
 const RANK: Record<Actor["kind"], number> = { skill: 0, agent: 1, tool: 2, person: 3, todo: 4 };
@@ -34,6 +44,7 @@ const todoMark = (t: Todo) => (isRoadmapGroup(t.item) ? t.item[0] : t.item);
 function cellLabel(row: Actor, at: Actor, c: Column): string {
   if (row.kind === "person") return `a person at ${c.name}`;
   if (at.kind === "todo") return `on the roadmap: ${at.text} at ${c.name}`;
+  if (row === DISPATCHER) return `the dispatcher starts ${c.name}`;
   return `${"name" in row ? row.name : ""} at ${c.name}`;
 }
 ---
@@ -44,14 +55,14 @@ function cellLabel(row: Actor, at: Actor, c: Column): string {
       <thead>
         <tr class="levels">
           <td></td>
-          <th scope="colgroup" colspan={columns.filter((c) => c.level === "A").length}><a href="#design-level">A · Design and planning</a></th>
-          <th scope="colgroup" colspan={columns.filter((c) => c.level === "B").length}><a href="#execution-level">B · Execution</a></th>
+          <th scope="colgroup" colspan={columns.filter((c) => c.part === "design").length}><a href="#design-level">Deciding what to build</a></th>
+          <th scope="colgroup" colspan={columns.filter((c) => c.part === "line").length}><a href="#line-level">The line</a></th>
         </tr>
         <tr>
           <th scope="col" class="who">Who</th>
           {
             columns.map((c) => (
-              <th scope="col" class:list={["st", c.level, { band: c.id === "band" }]}>
+              <th scope="col" class:list={["st", c.part, { band: c.id === "band" }]}>
                 <a href={columnHref(c)}>
                   <span class="st-n">{c.n}</span>
                   <span class="st-name">{c.name}</span>
@@ -65,11 +76,11 @@ function cellLabel(row: Actor, at: Actor, c: Column): string {
         {
           ordered.map(([k, a]) => (
             <tr class={a.kind}>
-              <th scope="row">{a.kind === "todo" ? <span class="todo-head"><StatusMark kind="todo" size={13} />on the roadmap</span> : <ActorChip actor={{ ...a, note: undefined } as Actor} />}</th>
+              <th scope="row">{a.kind === "todo" ? <span class="todo-head"><StatusMark kind="todo" size={13} />on the roadmap</span> : <ActorChip actor={a.kind === "tool" ? a : { ...a, note: undefined }} />}</th>
               {columns.map((c) => {
                 const at = cell(c, k);
                 return (
-                  <td class:list={[c.level, { on: !!at, band: c.id === "band" }]}>
+                  <td class:list={[c.part, { on: !!at, band: c.id === "band" }]}>
                     {at?.kind === "todo" ? (
                       <a class="item" href={roadmapHref(at.item)} title={at.text}>{todoMark(at)}</a>
                     ) : at ? (
@@ -86,6 +97,6 @@ function cellLabel(row: Actor, at: Actor, c: Column): string {
     </table>
   </div>
   <figcaption id="mx-cap">
-    Figure 3: who works where. A row per skill, agent, tool and person, a column per station; a dashed cell holds the roadmap item of work still to build. Only a person works one column, Merge; delegating that merge is a roadmap item.
+    Figure 3: who works where. A row per skill, agent, tool and person, and a column per station. The dispatcher's row marks the stations it starts when nobody does. A dashed cell holds the roadmap item of work to build. Only a person works the Merge column, and delegating that merge is on the roadmap.
   </figcaption>
 </figure>

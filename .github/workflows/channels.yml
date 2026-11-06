@@ -77,14 +77,14 @@ jobs:
       start: ${{ steps.plan.outputs.start }}
       commit: ${{ steps.plan.outputs.commit }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
           # Nothing in this job pushes; the repository is public, so the
           # script fetches the tags and channels without a credential.
           persist-credentials: false
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
       - id: plan
         env:
           COMMAND: ${{ inputs.command }}

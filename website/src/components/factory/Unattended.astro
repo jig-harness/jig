@@ -1,0 +1,238 @@
+---
+// The dispatcher's section of FACTORY.md in full. First a figure: what one
+// tick reads, starts and tells a person, and the line whose stations it
+// starts, with its two rails. Then each part of the section in the
+// document's order, what the dispatcher never does among them, and what is
+// on the roadmap. The outcome log's part shows its dashboard.
+import "../../styles/factory.css";
+import ActorLine from "../ActorLine.astro";
+import Arrow from "../Arrow.astro";
+import DashboardShot from "../DashboardShot.astro";
+import SectionHead from "../SectionHead.astro";
+import StationBox from "../StationBox.astro";
+import StatusMark from "../StatusMark.astro";
+import ReturnRail from "./ReturnRail.astro";
+import { factory } from "../../lib/data/index.ts";
+import { md, mdInline } from "../../lib/markdown.ts";
+import { paragraphs } from "../../lib/source.ts";
+
+const f = factory();
+const u = f.unattended;
+const SECTION = "With nobody at the keyboard";
+const inline = (text: string) => mdInline(text, "FACTORY.md");
+const block = (text: string) => md(text, "FACTORY.md");
+const stationOf = (id?: string) => f.line.find((s) => s.id === id);
+const starts = await Promise.all(
+  u.starts.map(async (s) => ({ ...s, at: stationOf(s.station), html: await inline(s.body) })),
+);
+const never = await Promise.all(u.never.map((n) => inline(n.body)));
+const roadmap = f.roadmap.filter((r) => r.section === SECTION);
+const parts = await Promise.all(
+  u.parts.map(async (p) => {
+    const paras = paragraphs(p.body);
+    if (p.title.startsWith("What it starts"))
+      return { ...p, kind: "starts" as const, intro: await inline(paras[0] ?? ""), rest: await Promise.all(paras.slice(1).map(inline)) };
+    if (p.title.startsWith("What it never does")) return { ...p, kind: "never" as const, intro: "", rest: [] };
+    const shot = p.title.startsWith("The outcome log");
+    return { ...p, kind: "prose" as const, intro: await block(p.body), rest: [], shot };
+  }),
+);
+---
+
+  <SectionHead id="unattended" label="With nobody at the keyboard" note="the dispatcher, a tick every few minutes" />
+  <figure class="tick-fig" aria-labelledby="tick-cap">
+    <div class="tick-row">
+      <div class="tick-col">
+        <span class="label">Each tick reads</span>
+        <ul>{u.reads.map((r) => <li>{r}</li>)}</ul>
+      </div>
+      <span class="tick-arrow"><Arrow /></span>
+      <div class="tick-core">
+        <span class="label accent">One tick</span>
+        <span>what is wanted, minus what already runs, within each account's slots</span>
+      </div>
+      <span class="tick-arrow"><Arrow /></span>
+      <div class="tick-col">
+        <span class="label">and starts</span>
+        <ul class="tick-starts">
+          {starts.map((s) => (
+            <li>
+              <span>{s.lead.replace(/^(A|The) /, "").toLowerCase()}</span>
+              {s.at && <a class="tick-at" href={`/factory/line/#line-${s.at.id}`}>station {s.at.n}, {s.at.name}</a>}
+            </li>
+          ))}
+        </ul>
+        <span class="label">or tells a person</span>
+        <ul class="tick-tells">{u.tells.map((t) => <li><StatusMark kind="person" size={12} />{t}</li>)}</ul>
+      </div>
+    </div>
+    <ol class="row seven tick-line">
+      {f.line.map((s) => <StationBox station={s} compact href={`/factory/line/#line-${s.id}`} />)}
+    </ol>
+    <ReturnRail line={f.line} />
+    <figcaption id="tick-cap">
+      Figure: one tick of the dispatcher. It reads what it does not own, starts what should be running and is not, and tells a person about each stop only a person settles. Under the line, the dispatcher's rail taps up into the stations it starts. A person merges, and the dispatcher never does.
+    </figcaption>
+  </figure>
+
+  {
+    parts.map((p) => (
+      <>
+        <SectionHead id={p.id} label={p.title} />
+        {p.kind === "starts" && (
+          <div class="unattended-part">
+            <p class="small-p" set:html={p.intro} />
+            <ul class="starts">
+              {starts.map((s) => (
+                <li>
+                  <p set:html={s.html} />
+                  {s.at && <a class="start-at" href={`/factory/line/#line-${s.at.id}`}><span class="start-n">{s.at.n}</span>{s.at.name}</a>}
+                </li>
+              ))}
+            </ul>
+            {p.rest.map((html) => <p class="small-p" set:html={html} />)}
+          </div>
+        )}
+        {p.kind === "never" && (
+          <div class="unattended-part">
+            <ul class="marked never">
+              {never.map((html) => (
+                <li>
+                  <span class="never-mark" aria-hidden="true">✕</span>
+                  <span class="vh">Never: </span>
+                  <span set:html={html} />
+                </li>
+              ))}
+            </ul>
+            <div class="roadmap-refs">
+              <span class="label">On the roadmap</span>
+              {roadmap.map((r) => <ActorLine actor={{ kind: "todo", item: r.item, text: r.text }} />)}
+            </div>
+          </div>
+        )}
+        {p.kind === "prose" && <div class="prose unattended-part" set:html={p.intro} />}
+        {p.kind === "prose" && p.shot && (
+          <div class="unattended-shot">
+            <DashboardShot caption="Figure: the dashboard as the plugin serves it, over its own sample data. A person's decisions come first, each with its question and the recommended answer. Beside them, each account's sessions and what starts next." />
+          </div>
+        )}
+      </>
+    ))
+  }
+
+<style>
+  /* The unattended page's figure: what one tick reads, starts and tells a
+     person, above the line whose stations it starts. */
+  .tick-fig {
+    margin: 0 0 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--card);
+    padding: clamp(14px, 2vw, 24px) clamp(14px, 2vw, 24px) 18px;
+  }
+  .tick-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.9fr) auto minmax(0, 1.3fr);
+    gap: 10px 14px;
+    align-items: center;
+    margin-bottom: 22px;
+  }
+  .tick-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    font-size: 13.5px;
+  }
+  .tick-col ul {
+    margin: 0 0 6px;
+    padding: 0 0 0 16px;
+    line-height: 1.45;
+  }
+  .tick-core {
+    background: var(--accent-soft);
+    border-radius: var(--r);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13.5px;
+  }
+  .tick-starts li,
+  .tick-tells li {
+    margin: 1px 0;
+  }
+  .tick-at {
+    margin-left: 6px;
+    font-size: 12.5px;
+  }
+  .tick-tells {
+    list-style: none;
+    padding-left: 0 !important;
+  }
+  .tick-tells li {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .tick-fig figcaption {
+    font-size: 13.5px;
+    color: var(--muted);
+    margin-top: 12px;
+    max-width: 96ch;
+  }
+  .unattended-part {
+    max-width: 76ch;
+  }
+  .unattended-part.prose {
+    font-size: 15.5px;
+  }
+  .unattended-shot {
+    max-width: 980px;
+    margin: 20px 0 8px;
+  }
+  .starts {
+    list-style: none;
+    margin: 12px 0 4px;
+    padding: 0;
+    border-top: 1px solid var(--line);
+  }
+  .starts li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 140px;
+    gap: 4px 18px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: baseline;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .starts p {
+    margin: 0;
+  }
+  .start-n {
+    font-family: var(--serif);
+    font-weight: 400;
+    color: var(--muted);
+    margin-right: 4px;
+  }
+  .start-at {
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+  .never-mark {
+    flex: none;
+    font-size: 13px;
+    color: var(--accent);
+    margin-top: 3px;
+  }
+  @media (max-width: 1079px) {
+    .starts li,
+    .tick-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .tick-arrow {
+      display: none;
+    }
+  }
+</style>

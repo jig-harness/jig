@@ -256,7 +256,14 @@ interrupts the user. An `escalate` ruling carries a `class:`, the decision
 class of the repository's human-in-the-loop registry that keeps the call a
 person's (`human-decision` for a value the pull request records as a person's
 decision, else the registry row, else `escalated`); under a drive it is the
-class the item is parked under (drive-pr § 4). When that escalation turns out to be an **architectural**
+class the item is parked under (drive-pr § 4). At the `wide` autonomy level a
+drive answers an `escalate` with the class `escalated` and no human decision
+behind it **provisionally** instead: a reply outcome (`rejected`, `wont-fix`
+or `deferred`, never a fix) posted with `**provisional**` after its token by
+drive-pr's `provisional-reply.ts`, resolved, and recorded where a person can
+reverse it with a comment (drive-pr § Autonomy). A thread standing on a
+provisional reply is never triaged again. A run outside a drive has no drive
+state to record one in, and escalates as at any other level. When that escalation turns out to be an **architectural**
 question rather than a product/scope one — which pattern, which contract
 shape, which boundary — route it through the `decide` skill (`/jig:decide`)
 before interrupting: it checks the question against the repository's
@@ -634,12 +641,12 @@ put two outcome replies on every thread, which cannot be repaired once posted
 It names the holder's pid, a command to check whether that process is still
 alive, and the `clear-lease` operation of `drive-state.ts`; the right response is almost
 always to **stop**, not to clear the lease. With no `/drive-pr`
-installed, no lease file, or a lease whose owner is gone, the reply posts
+installed, no lease, or a lease whose owner is gone, the reply posts
 normally — absence of a lease is never itself a refusal.
 
 Absence does have to be *established*, though. Anything the check cannot read
-refuses (exit 1) rather than passing as an all-clear: a lease file it can see
-but cannot parse or open, a `git` probe that failed for any reason other than
+refuses (exit 1) rather than passing as an all-clear: a drive database it
+cannot read, or one that is not the database the drive opened, a `git` probe that failed for any reason other than
 reporting "not a repository", or a `/drive-pr` that is installed with its fence
 script missing. A half-installed sibling skill is a broken integration, not a
 licence to post unfenced.
@@ -995,9 +1002,14 @@ Placement decisions that matter:
 
 - **It lives in `await-round.ts`**, the one script both harness paths call, so a
   Claude `/loop` session that never invokes `converge.ts` still gets it.
-- **The count persists in the git dir**, so rounds worked across separate
-  invocations — even hours apart — add up to one session total. A per-process
-  counter would reset every pass and never reach the threshold.
+- **The count is the PR's review round record**, keyed by head and kept in
+  `/drive-pr`'s database, so rounds worked across separate invocations — even
+  hours apart, or by a drive — add up. A per-process counter would reset every
+  pass and never reach the threshold. Convergence settles the rounds counted
+  so far, so the next review of the PR is weighed on its own, while the PR's
+  round ordinal (`current-round.ts`) keeps counting. Without `/drive-pr`
+  installed beside this skill nothing keeps the count and the prompt never
+  fires.
 
 It fires at wind-down rather than mid-loop because that is the only point where
 there is something settled to reflect *on*: while rounds are still arriving the

@@ -8,6 +8,23 @@
  *
  * Orca's command is the shared resolver's (`ORCA_CLI_COMMAND`, else the
  * command in `ORCA_CLI_BIN_DIR`), else `orca` on `PATH`.
+ *
+ * Orca cannot yet start an interactive session billed to a chosen account
+ * (`ORCA_BINDING`): `orca agent launch` starts its agent on the account the
+ * host has active, and takes no account or environment of its own.
+ *
+ * `notify` writes the workspace's comment and marks it unread (`orca
+ * worktree set --comment … --unread`), then reads the comment back
+ * (`orca worktree show`), which is the receipt the tick checks for each
+ * message's key (`orca-notify.ts`).
+ *
+ * `steer` finds the agent's terminal by its id (`<tabId>:<leafId>`, as
+ * `orca terminal list` names each terminal's tab and pane), re-reads the
+ * agent's state, the workspace a person has open and the rendered screen,
+ * and types the nudge with `orca terminal send --enter` (`orca-steer.ts`).
+ *
+ * `retire` reads the notices workspace's card again under the comment lock
+ * and removes it with `orca worktree rm --delete-branch` (`orca-retire.ts`).
  */
 import { realpathSync } from "node:fs";
 import { orcaCommand, orcaFailure, orcaResult } from "../../../shared/orca.ts";
@@ -15,28 +32,57 @@ import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { keyFromBranch } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { RepoTarget } from "../types.ts";
+import { orcaLaunch } from "./orca-launch.ts";
+import { orcaNotify } from "./orca-notify.ts";
+import {
+  openItemWorkspace,
+  openNoticesWorkspace,
+  openPullRequestWorkspace,
+} from "./orca-open.ts";
+import { orcaRetire } from "./orca-retire.ts";
+import { orcaSteer } from "./orca-steer.ts";
 import {
   type AgentSession,
+  type Binding,
   type JoinTargets,
-  notYet,
+  NUDGES,
   type SessionRuntime,
   type SessionsReport,
   type Workspace,
 } from "./port.ts";
 
-/** Seconds one Orca call may take. */
+/**
+ * Whether Orca binds an interactive session to its account. `orca agent
+ * launch` has no account selection for Claude Code or Codex (`orca account
+ * select` covers OpenCode and Devin only), and Orca starts the agent with
+ * the configuration directory of the account the host has active, which a
+ * person can switch at any moment. The wrapper in a terminal tab binds the
+ * session through the account's directory, as it does a headless pass.
+ * Orca reports a Codex session started that way as an agent (`codex`)
+ * under the id its launch receipt names, but Codex then waits on its
+ * question whether to trust a folder it has not seen, which nobody answers;
+ * that Orca reports a Claude Code session started that way is not shown.
+ * Until both are settled, pickups are reported and none is started.
+ */
+const ORCA_BINDING: Binding = {
+  ok: false,
+  reason:
+    "an Orca agent launch cannot bind its session to a chosen account yet (it runs on the host's active account), so pickups are reported and none is started",
+};
+
+/** Seconds one Orca call may take: `runtime_timeout`'s default. */
 const ORCA_TIMEOUT_SEC = 60;
 
 /** The most rows one listing asks for; a cut page is an unknown. */
 const ROW_LIMIT = 2000;
 
-async function orca(args: string[]): Promise<Record<string, unknown> | string> {
+async function orca(
+  args: string[],
+  timeoutSec = ORCA_TIMEOUT_SEC,
+): Promise<Record<string, unknown> | string> {
   const done = await run(
     [orcaCommand(process.env) ?? "orca", ...args, "--json"],
-    {
-      timeoutSec: ORCA_TIMEOUT_SEC,
-      stderr: "pipe",
-    },
+    { timeoutSec, stderr: "pipe" },
   );
   return (
     orcaResult(done) ?? `orca ${args.join(" ")} failed ${orcaFailure(done)}`
@@ -161,6 +207,10 @@ function agents(row: Record<string, unknown>): AgentSession[] | null {
     id: typeof a.paneKey === "string" ? a.paneKey : "",
     state: String(a.state),
     agentType: typeof a.agentType === "string" ? a.agentType : null,
+    since:
+      typeof a.stateStartedAt === "number" && Number.isFinite(a.stateStartedAt)
+        ? a.stateStartedAt
+        : null,
   }));
 }
 
@@ -225,16 +275,51 @@ function workspaceOf(
     agents: listed ?? [],
     unverifiableTerminals: unverifiable(row, listed),
     comment: text(row.comment),
-    unread: row.unread === true,
+    unread: typeof row.unread === "boolean" ? row.unread : null,
+    name: text(row.displayName),
   };
 }
 
-export function orcaRuntime(): SessionRuntime {
+/** The deadlines of the runtime's calls (`runtime_timeout`, `workspace_timeout`). */
+export interface OrcaDeadlines {
+  runtimeTimeoutMs: number;
+  workspaceTimeoutMs: number;
+}
+
+/** The Orca repository that is this checkout: its id and its clone's path. */
+async function orcaRepo(
+  repo: RepoTarget,
+  timeoutSec: number,
+): Promise<{ id: string; path: string } | string> {
+  const listing = await orca(["repo", "list"], timeoutSec);
+  if (typeof listing === "string") return listing;
+  const ids = repoIds(listing, repo);
+  if (ids === null || ids.length !== 1)
+    return `orca repo list names ${ids === null ? "a matching repository without an id" : `${ids.length} repositories`} for ${repo.slug}`;
+  const row = (listing.repos as unknown[])
+    .filter(isRecord)
+    .find((r) => r.id === ids[0]);
+  return typeof row?.path === "string"
+    ? { id: ids[0] as string, path: row.path }
+    : `orca repo list gives ${repo.slug} no clone path`;
+}
+
+export function orcaRuntime(
+  deadlines: OrcaDeadlines = {
+    runtimeTimeoutMs: ORCA_TIMEOUT_SEC * 1000,
+    workspaceTimeoutMs: ORCA_TIMEOUT_SEC * 1000,
+  },
+  /** Whether interactive launches bind their account; tests pass `{ ok: true }`. */
+  binding: Binding = ORCA_BINDING,
+): SessionRuntime {
+  const timeoutSec = Math.max(1, Math.ceil(deadlines.runtimeTimeoutMs / 1000));
+  const orcaCall = (args: string[]) => orca(args, timeoutSec);
   return {
     name: "orca",
+    interactiveBinding: binding,
     async sessions(repo, join): Promise<SessionsReport> {
       const source = "orca worktree ps";
-      const listing = await orca(["repo", "list"]);
+      const listing = await orcaCall(["repo", "list"]);
       if (typeof listing === "string")
         return { ok: false, source, reason: listing };
       const ids = repoIds(listing, repo);
@@ -251,7 +336,12 @@ export function orcaRuntime(): SessionRuntime {
           source,
           reason: `no Orca repository is ${repo.path} or ${repo.slug}`,
         };
-      const ps = await orca(["worktree", "ps", "--limit", String(ROW_LIMIT)]);
+      const ps = await orcaCall([
+        "worktree",
+        "ps",
+        "--limit",
+        String(ROW_LIMIT),
+      ]);
       if (typeof ps === "string") return { ok: false, source, reason: ps };
       const cut = partial(ps);
       if (cut !== null) return { ok: false, source, reason: cut };
@@ -270,9 +360,36 @@ export function orcaRuntime(): SessionRuntime {
       const workspaces = rows.map((row) => workspaceOf(row, join));
       return { ok: true, source, workspaces };
     },
-    openWorkspace: () => notYet("openWorkspace", "build step 3"),
-    launch: () => notYet("launch", "build step 3"),
-    notify: () => notYet("notify", "build step 5"),
-    steer: () => notYet("steer", "build step 6"),
+    async openWorkspace(repo, target) {
+      const found = await orcaRepo(repo, timeoutSec);
+      if (typeof found === "string") return { ok: false, detail: found };
+      if ("notices" in target)
+        return openNoticesWorkspace(
+          found,
+          target,
+          deadlines.workspaceTimeoutMs,
+        );
+      return "pr" in target
+        ? openPullRequestWorkspace(found, target, deadlines.workspaceTimeoutMs)
+        : openItemWorkspace(found, target, deadlines.workspaceTimeoutMs);
+    },
+    async launch(workspace, stage, _account, key) {
+      if (stage.kind === "interactive" && !binding.ok)
+        return { ok: false, detail: binding.reason };
+      return orcaLaunch(workspace, stage, key, deadlines.runtimeTimeoutMs);
+    },
+    notify: (target, message) =>
+      orcaNotify(target, message, deadlines.runtimeTimeoutMs),
+    steer: (session, nudge) =>
+      orcaSteer(session, NUDGES[nudge], deadlines.runtimeTimeoutMs),
+    retire: (workspace, expected, timeoutMs) =>
+      orcaRetire(
+        workspace,
+        expected,
+        Math.min(
+          timeoutMs ?? deadlines.runtimeTimeoutMs,
+          deadlines.runtimeTimeoutMs,
+        ),
+      ),
   };
 }

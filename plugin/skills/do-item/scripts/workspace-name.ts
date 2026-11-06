@@ -23,7 +23,7 @@
  *
  * Without `workspace_name.template` the name is `DEFAULT_TEMPLATE`; an empty
  * string turns renaming off. It acts only in a terminal Orca opened whose
- * worktree Orca knows (the detection `orca-board.ts` uses). Every runtime
+ * worktree Orca knows (the detection `shared/orca-board.ts` uses). Every runtime
  * failure only warns and the exit is 0; a malformed command line or a
  * template naming an unknown variable exits 2.
  */

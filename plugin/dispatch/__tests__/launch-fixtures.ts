@@ -1,0 +1,189 @@
+/**
+ * What the launch tests add to a tick's world: the machine file, accounts
+ * whose configuration directories the drive's resolver reads, launch
+ * records and walls written straight into the child's state directory, and
+ * polling for what the wrapper leaves behind.
+ */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { dump } from "../../shared/yaml.ts";
+import {
+  claimRecord,
+  type LaunchRecord,
+  type LaunchClaim,
+  recordExit,
+  writeRecord,
+} from "../lib/launches.ts";
+import { existingStateDb } from "../lib/state.ts";
+import type { World } from "./fixtures.ts";
+
+export interface Account {
+  name: string;
+  identity: string;
+  dir: string;
+  /** `claude` when absent. */
+  vendor?: string;
+}
+
+export function dispatchState(w: World): string {
+  return join(w.home, ".local", "state", "jig", "dispatch");
+}
+
+/** A Claude Code account whose configuration directory resolves to `email`. */
+export function account(w: World, name: string, email: string): Account {
+  const dir = join(w.root, `config-${name}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, ".claude.json"),
+    JSON.stringify({ oauthAccount: { emailAddress: email } }),
+  );
+  return { name, identity: email, dir };
+}
+
+/** A Codex account whose `CODEX_HOME` resolves to the account id `id` (its `auth.json`). */
+export function codexAccount(w: World, name: string, id: string): Account {
+  const dir = join(w.root, `codex-${name}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "auth.json"),
+    JSON.stringify({ tokens: { account_id: id } }),
+  );
+  return { name, identity: id, dir, vendor: "codex" };
+}
+
+/** The machine file: the world's repository with `stages` (`rearm` by default) and `repository`'s keys, and these accounts. */
+export function machineFile(
+  w: World,
+  accounts: Array<Account & { max?: number }>,
+  extra: Record<string, unknown> = {},
+  stages: string[] = ["rearm"],
+  repository: Record<string, unknown> = {},
+): void {
+  mkdirSync(join(w.home, ".jig"), { recursive: true });
+  writeFileSync(
+    join(w.home, ".jig", "dispatch.yaml"),
+    dump({
+      repositories: [{ path: w.repo, stages, ...repository }],
+      accounts: accounts.map((a) => ({
+        name: a.name,
+        vendor: a.vendor ?? "claude",
+        config_dir: a.dir,
+        identity: a.identity,
+        ...(a.max === undefined ? {} : { max_per_account: a.max }),
+      })),
+      ...extra,
+    }),
+  );
+}
+
+/** A launch record as an earlier tick wrote it. */
+export function earlierRecord(
+  w: World,
+  fields: Partial<LaunchRecord> & Pick<LaunchRecord, "id" | "account">,
+): LaunchRecord {
+  const record: LaunchRecord = {
+    version: 1,
+    token: "earlier-token",
+    action: "rearm",
+    repo: "example-org/example-repo",
+    repoPath: w.repo,
+    pr: 7,
+    vendor: "claude",
+    configDir: join(w.root, `config-${fields.account}`),
+    wallBackoffMs: 3_600_000,
+    replaces: null,
+    facts: "",
+    createdAt: "2026-10-30T20:00:00.000Z",
+    workspace: { id: "repo-1::/ws/0", path: w.repo },
+    attempts: [],
+    item: null,
+    agentId: null,
+    model: null,
+    effort: null,
+    released: false,
+    command: null,
+    marker: null,
+    ...fields,
+  };
+  writeRecord(record, dispatchState(w));
+  return record;
+}
+
+export function claimed(
+  w: World,
+  id: string,
+  identity: LaunchClaim,
+  exit?: number,
+): void {
+  claimRecord(id, identity, dispatchState(w));
+  if (exit !== undefined)
+    recordExit(
+      id,
+      { at: "2026-10-30T21:00:00.000Z", code: exit, signal: null },
+      dispatchState(w),
+    );
+}
+
+/** Poll until `check` holds, failing past the deadline. */
+export async function waitFor(
+  what: string,
+  check: () => boolean,
+  deadlineMs = 20_000,
+): Promise<void> {
+  const until = Date.now() + deadlineMs;
+  while (!check()) {
+    if (Date.now() > until) throw new Error(`timed out waiting for ${what}`);
+    await Bun.sleep(50);
+  }
+}
+
+/** The runs the fake drive recorded. */
+export function driveRuns(w: World): Array<{
+  argv: string[];
+  cwd: string;
+  configDir: string | null;
+  token: string | null;
+  codexHome: string | null;
+  anthropicKey: string | null;
+  openaiKey: string | null;
+  /** The launch the wrapper named in the drive's environment (`JIG_LAUNCH`). */
+  launch: string | null;
+}> {
+  const path = join(w.dir, "drive-runs.jsonl");
+  if (!existsSync(path)) return [];
+  // The fake appends one line per run: a poll can land between the file's
+  // creation and its write, so only a newline-terminated line is a run.
+  const text = readFileSync(path, "utf8");
+  return text
+    .slice(0, text.lastIndexOf("\n") + 1)
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line));
+}
+
+/** Every `orca terminal create` the fake Orca answered, by its arguments. */
+export function terminalCreates(w: World): string[][] {
+  const path = join(w.dir, "orca-calls.log");
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as string[])
+    .filter((args) => args[0] === "terminal" && args[1] === "create");
+}
+
+/** The ids of the launch records in the child's state database. */
+export function recordIds(w: World): string[] {
+  const rows = existingStateDb(dispatchState(w))
+    ?.query("SELECT id FROM launches ORDER BY id")
+    .all() as Array<{ id: string }> | undefined;
+  return (rows ?? []).map((r) => r.id);
+}
+
+/** Whether the wrapper recorded the stage's exit on the record `id`. */
+export function exitWritten(w: World, id: string): boolean {
+  const row = existingStateDb(dispatchState(w))
+    ?.query("SELECT exit FROM launches WHERE id = ?")
+    .get(id) as { exit: string | null } | null | undefined;
+  return typeof row?.exit === "string";
+}

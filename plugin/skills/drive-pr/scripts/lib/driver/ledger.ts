@@ -15,12 +15,15 @@
  * clone's ledger (a takeover, a pull request with no ledger yet, another
  * clone's stopped one, or its own ledger with another clone's claim in force
  * past the position it records) posts a claim naming the ledger generation
- * it read;
- * of the claims on one generation the earliest comment id wins and every
- * later claimant stands down, at once when it sees the earlier claim and at
- * its next check when a lagging read hid it. A claim whose owner never wrote
- * the ledger past its generation lapses after the lease window, and a retry
- * from the same clone drives by that clone's earlier claim. Every driver
+ * it read, a claim of the shared forge-claims module
+ * (`shared/records/forge-claims.ts`), which reads it back and decides it by
+ * that module's one rule: of the claims on one generation the earliest
+ * comment id wins and every later claimant stands down, at once when it sees
+ * the earlier claim and at its next check when a lagging read hid it. A
+ * read-back that never lists the driver's own claim refuses the drive, as an
+ * unreadable one does. A claim whose owner never wrote the ledger past its
+ * generation lapses after the lease window, and a retry from the same clone
+ * drives by that clone's earlier claim. Every driver
  * reads the claims at each round boundary, before each pass and after each
  * heartbeat renewal through a wait, and exits
  * `TAKEN_OVER` when one in force from another clone is newer than its own
@@ -43,14 +46,19 @@ import { resolveStateDir } from "./../state/store.ts";
 import { STALL_THRESHOLD_MIN_DEFAULT, stallThresholdMs } from "./../doctor.ts";
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 import { resolveActor } from "./../state/actor.ts";
+import { readBack } from "../../../../../shared/records/forge-claims.ts";
 import {
   type ClaimComment,
   type Ledger,
   type LedgerSnapshot,
+  TAKEOVER_CLAIM,
+  claimComment,
   claimFloor,
+  claimRule,
   effectiveClaims,
   heldFromLedger,
   newerClaim,
+  takeoverKey,
 } from "./../state/ledger.ts";
 import {
   postClaim,
@@ -67,7 +75,7 @@ import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
 import type { DriveState } from "./../state/schema.ts";
 import type { DriveLock } from "./locks.ts";
 import { driveState } from "./paths.ts";
-import { readDriveState } from "./rearm.ts";
+import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
 import type { TakeoverPlan } from "./takeover.ts";
 
@@ -169,9 +177,10 @@ export async function admitCrossCloneTakeover(
 }
 
 /**
- * Post this clone's claim and read the claims back: the claim when it is the
- * earliest on its generation, `null` when a rival's came first. A read-back
- * that fails refuses the takeover: it cannot tell a won claim from a lost one.
+ * Post this clone's claim and read the claims back through the forge-claims
+ * module: the claim when it is the earliest on its generation, `null` when a
+ * rival's came first. A read-back that fails, or that never lists the claim,
+ * refuses the takeover: it cannot tell a won claim from a lost one.
  */
 export async function claimDrive(
   pr: string,
@@ -190,20 +199,20 @@ export async function claimDrive(
       1,
       `drive.ts: could not post the drive claim on PR #${pr} (${own}); not starting the drive.`,
     );
-  const after = await readLedgerSnapshot(pr, id.login);
-  if (typeof after === "string")
+  const back = await readBack(
+    { repo: "{owner}/{repo}", number: Number(pr) },
+    TAKEOVER_CLAIM,
+    { id: own, key: takeoverKey(generation), generation, at: claim.at },
+    { self: id.login, rule: claimRule() },
+  );
+  const won = back.ok ? back.value.winner : null;
+  if (won === null)
     return fail(
       1,
-      `drive.ts: posted claim ${own} on PR #${pr}, but ${after}, so whether an earlier claim beat it is unknown; not starting the drive.`,
+      `drive.ts: posted claim ${own} on PR #${pr}, but ${back.ok ? back.value.reason : back.failure.reason}, so whether an earlier claim beat it is unknown; not starting the drive.`,
       "The claim stays on the pull request, and a re-arm from this clone drives by it once the comments read.",
     );
-  const mine: ClaimComment = { id: own, claim };
-  const claims = after.claims.some((c) => c.id === own)
-    ? after.claims
-    : [...after.claims, mine];
-  const winner =
-    effectiveClaims(claims).find((c) => c.claim.generation === generation) ??
-    mine;
+  const winner = claimComment(won);
   if (winner.claim.clone !== id.clone) {
     console.error(
       `drive.ts: standing down. Claim ${winner.id} from another clone (${winner.claim.actor}) was posted before this one (${own}) on the same ledger generation ${generation}, so that clone drives PR #${pr}.`,
@@ -269,6 +278,7 @@ export async function armLedger(
       "Re-arm once the pull request's comments read, or set DRIVE_PR_LEDGER=off to drive without the ledger.",
     );
   const ledger = readLedger(pr, snapshot);
+  refuseDamaged(pr, ledger, snapshot);
   const refusal = refuseBesideAnotherClone(
     pr,
     ledger,
@@ -354,6 +364,31 @@ function continuation(
     `ledger: another clone's claim (comment ${rival.id}, ${rival.claim.actor}) is past this clone's recorded position ${position}; arbitrating the drive by a claim.`,
   );
   return null;
+}
+
+/**
+ * A ledger that cannot be read is not an absent one: it may name a running
+ * driver, and a start without it would drive beside that driver with none of
+ * the recorded round or parked state. A readable ledger posted after the
+ * damaged one does not settle that: a lost creation race leaves exactly that
+ * duplicate, and its state may differ from what the damaged one recorded.
+ */
+function refuseDamaged(
+  pr: string,
+  ledger: Ledger | null,
+  snapshot: LedgerSnapshot,
+): void {
+  const readableId = snapshot.canonical?.comment.id ?? Number.POSITIVE_INFINITY;
+  if (!snapshot.malformed.some((c) => c.id < readableId)) return;
+  const what =
+    ledger === null
+      ? "holds no ledger this drive can read"
+      : "holds a ledger this drive cannot read ahead of the one it can";
+  fail(
+    1,
+    `drive.ts: PR #${pr}'s drive ledger ${what}; not starting the drive, since whether another clone drives it is unknown.`,
+    "Delete the damaged ledger comment and re-arm, or set DRIVE_PR_LEDGER=off to drive without the ledger.",
+  );
 }
 
 /** Report what is ignored, and refuse a version this code does not read. */
@@ -511,10 +546,12 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
  * whose termination was not witnessed may still act): the ledger keeps
  * naming this driver running, its heartbeat ages toward the lease window,
  * and the record stays unmarked, so no recovery marks it stopped either.
+ * The same holds when the stop cannot be recorded in the drive state first.
  */
 export function ledgerSettlement(
   pr: string,
   held: readonly DriveLock[],
+  dryRun = false,
 ): AsyncDisposable & {
   done(code: number): Promise<number>;
 } {
@@ -533,11 +570,26 @@ export function ledgerSettlement(
       await dropRecord();
       return;
     }
-    if (driver === null) return;
     settled = true;
-    if (held.length === 0) {
+    if (driver !== null && held.length === 0) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its locks are retained, so its pass may still act.`,
+      );
+      return;
+    }
+    // The exit goes into the state before the ledger's last write, which
+    // mirrors the state's events: an unknown exit names none in the driver
+    // record, so a report reading the ledger falls back to those events, and
+    // the previous run's stop must not be the last of them. A dry run (no
+    // ledger driver either) records nothing. An unrecorded stop writes no
+    // ledger and keeps the record: the recovery (`lib/ledger-stop.ts`)
+    // records the stop and then writes the ledger, in that order.
+    const recorded =
+      dryRun || (await recordDriveEvent(pr, "stop", String(code ?? "unknown")));
+    if (driver === null) return;
+    if (!recorded) {
+      console.error(
+        `ledger: PR #${pr}'s ledger is left naming this driver running: its stop is not in the drive state, so the recovery writes both.`,
       );
       return;
     }

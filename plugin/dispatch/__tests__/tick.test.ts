@@ -196,11 +196,13 @@ describe("jig dispatch receipts", () => {
 });
 
 describe("jig dispatch --apply", () => {
-  it("is refused, naming the step that enables it, and starts nothing", async () => {
+  it("is refused without a machine file, naming it, and starts nothing", async () => {
     const w = fixture();
     const r = await w.dispatch(["--repo", w.repo, "--apply"]);
     expectSpawnExit(r, 2);
-    expect(r.stderr).toContain("arrive with the dispatcher's build step 3");
+    expect(r.stderr).toContain(
+      `jig dispatch --apply needs the machine file ${join(w.home, ".jig", "dispatch.yaml")}`,
+    );
     const receipts = join(
       w.home,
       ".local",

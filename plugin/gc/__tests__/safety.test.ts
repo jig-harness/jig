@@ -6,7 +6,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { gitEnvironment } from "../git.ts";
@@ -17,7 +17,8 @@ import { receiptsKind } from "../kinds/receipts.ts";
 import { sharedGcLock, exclusiveGcLock } from "../../shared/gc-lock.ts";
 import { SCRATCH_OWNER_FILE } from "../../shared/scratch-owner.ts";
 import { boundDeclaration, parseDeclaration, parseMachine } from "../config.ts";
-import { jobFiles } from "../scheduler.ts";
+import { jobFiles } from "../../runtime/scheduler.ts";
+import { gcJobSpec } from "../job-spec.ts";
 import { argumentsFor, scheduledCollection } from "../cli.ts";
 import { readReceipt, writeReceipt, receiptPaths } from "../receipts.ts";
 import type { Receipt } from "../types.ts";
@@ -157,6 +158,48 @@ test("a writer whose process exited blocks collectors, not creators", async () =
   writeFileSync(writer, String(process.pid));
   expect(() => sharedGcLock("scratch", dir)).toThrow(writer);
 });
+test("an admission token whose creator exited is reported stale with its holder, and kept", async () => {
+  const dir = root();
+  const lock = join(import.meta.dir, "../../shared/gc-lock.ts");
+  // A creator that took admission and exited without giving it back.
+  const creator = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `const { sharedGcLock } = await import(${JSON.stringify(lock)}); sharedGcLock("scratch", ${JSON.stringify(dir)});`,
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  expectSpawnExit(creator, 0);
+  const tokens = readdirSync(join(dir, "scratch"));
+  expect(tokens).toHaveLength(1);
+  const token = join(dir, "scratch", tokens[0] as string);
+  await expect(
+    exclusiveGcLock("scratch", async () => undefined, dir),
+  ).rejects.toThrow(
+    `stale admission token ${token} (pid ${creator.pid} on ${hostname()}, started `,
+  );
+  await expect(
+    exclusiveGcLock("scratch", async () => undefined, dir),
+  ).rejects.toThrow(`no process has pid ${creator.pid} now`);
+  expect(readdirSync(join(dir, "scratch"))).toEqual(tokens);
+});
+test("an admission token in its earlier empty form is judged by the pid its name carries", async () => {
+  const dir = root();
+  const exited = Bun.spawnSync([process.execPath, "-e", "0"]);
+  expectSpawnExit(exited, 0);
+  mkdirSync(join(dir, "scratch"));
+  const token = join(dir, "scratch", `reader-${exited.pid}-earlier`);
+  writeFileSync(token, "");
+  await expect(
+    exclusiveGcLock("scratch", async () => undefined, dir),
+  ).rejects.toThrow(
+    `stale admission token ${token} (pid ${exited.pid} on this host): no process has pid ${exited.pid} now`,
+  );
+  expect(readdirSync(join(dir, "scratch"))).toEqual([
+    `reader-${exited.pid}-earlier`,
+  ]);
+});
 test("repository declarations cannot register commands or production kinds", () => {
   expect(() => parseDeclaration({ command: "rm -rf" }, "/repo")).toThrow(
     "Unknown gc.command",
@@ -229,7 +272,7 @@ test("scheduler files preserve exact argv and explicit environment", () => {
   const job = {
     command: ["/opt/bun", "/cache/jig's plugin/jig.ts", "gc", "--scheduled"],
     env: { PATH: "/bin:/a b", JIG_HOME: "/a&b" },
-    hour: 4,
+    spec: gcJobSpec(4),
   };
   expect(jobFiles("launchd", job)["dev.jig.gc.plist"]).toContain("/a&amp;b");
   expect(jobFiles("systemd", job)["jig-gc.service"]).toContain(
@@ -250,6 +293,7 @@ test("bad arguments are refused before a sweep", () => {
   for (const args of [
     ["--kind", "unknown"],
     ["--repo"],
+    ["--repo", ""],
     ["--wat"],
     ["--collect", "--scheduled"],
     ["--machine"],
@@ -346,7 +390,7 @@ test("systemd escapes command dollars while preserving environment dollars", () 
   const files = jobFiles("systemd", {
     command: ["/opt/bun", "/cache/jig$version/jig.ts"],
     env: { JIG_HOME: "/a$b%c" },
-    hour: 4,
+    spec: gcJobSpec(4),
   });
   expect(files["jig-gc.service"]).toContain(
     'ExecStart="/opt/bun" "/cache/jig$$version/jig.ts"',

@@ -1,28 +1,50 @@
 ---
-import ExecutionLevel from "../../components/factory/ExecutionLevel.astro";
-import Plate from "../../components/Plate.astro";
-import Base from "../../layouts/Base.astro";
-import { factory } from "../../lib/data/index.ts";
-import { mdInline } from "../../lib/markdown.ts";
-import { countWord } from "../../lib/view.ts";
-import "../../styles/factory.css";
+// The line's page had this address once. A bookmark or a link from
+// elsewhere still names it, so it forwards to the page that holds the line
+// now, its anchor renamed where the new page renamed it and kept otherwise.
+// A reader with scripts keeps any anchor. Without scripts, and in the Markdown
+// twin, the page lists the renamed anchors as links, and any other anchor
+// lands on the page's top.
+import { RENAMED_PAGES } from "../../lib/factory-anchors.ts";
 
-const f = factory();
-const level = f.levels[1];
-const unit = level ? await mdInline(level.unit, "FACTORY.md") : "";
-const hands = level ? await mdInline(level.handsOn, "FACTORY.md") : "";
+const { to, anchors } = RENAMED_PAGES.execution ?? { to: "line", anchors: {} };
+const target = `/factory/${to}/`;
 ---
 
-<Base title="Execution" description={`The work-item line: the pull-request loop every change follows, and the ${countWord(f.line.length)} stations the plugin runs it as, one work item at a time.`}>
-  <section class="page wrap">
-    <div class="intro-row">
-      <div class="intro">
-        <span class="eyebrow">Jig as a software factory · level B</span>
-        <h1 class="display">Execution: the work-item line.</h1>
-        <p class="muted small">The unit of work is <span set:html={unit} />; what the level hands on is <span set:html={hands} />. <a href="/factory/#levels">Both levels, in figure 2</a>.</p>
-      </div>
-      <span class="intro-plate" style="flex-basis: clamp(360px, 48%, 640px)"><Plate name="line" width="100%" /></span>
-    </div>
-    <ExecutionLevel />
-  </section>
-</Base>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>The line · Jig Harness</title>
+    <link rel="canonical" href={target} />
+    <script is:inline define:vars={{ target, anchors }}>
+      // The anchor travels with the reader: renamed where the line's page
+      // renamed it, as it was otherwise.
+      let id = "";
+      try {
+        id = decodeURIComponent(location.hash.slice(1));
+      } catch {}
+      const anchor = Object.hasOwn(anchors, id) ? anchors[id] : id;
+      location.replace(anchor ? `${target}#${encodeURIComponent(anchor)}` : target);
+    </script>
+    <noscript><meta http-equiv="refresh" content={`0; url=${target}`} /></noscript>
+  </head>
+  <body>
+    <main>
+      <p>This page is now <a href={target}>The line</a>.</p>
+      {
+        Object.keys(anchors).length > 0 && (
+          <ul>
+            {Object.entries(anchors).map(([from, to]) => (
+              <li>
+                <code>#{from}</code> is now <a href={`${target}#${encodeURIComponent(to)}`}>#{to}</a>.
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </main>
+  </body>
+</html>

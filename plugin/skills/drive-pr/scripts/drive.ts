@@ -20,6 +20,14 @@
  *                    own `--model`, else `drive.pass_model`, else `sonnet`.
  *                    Applies to a `claude` pass only (`lib/pass-model.ts`);
  *                    the driver log and `drives.ts` name the model.
+ *   --pass-args "W"  extra arguments for a `claude` pass, for this run: one
+ *                    value split on whitespace, put before `-p` unless the
+ *                    pass command already carries them; empty for none.
+ *                    Default: `drive.pass_args`, which only the host's user
+ *                    file or one run's environment may set, added only to a
+ *                    pass command without arguments of its own
+ *                    (`lib/pass-args.ts`); the driver log and `drives.ts`
+ *                    name the permission mode the pass runs in.
  *   --handoff-at V   the context-economy dial: hand off at V% of the pass's
  *                    context rather than degrading. V is a whole percent, or
  *                    `never` for a continuous drive through compaction.
@@ -167,6 +175,10 @@ import { runMain } from "./lib/cli.ts";
 import { span } from "../../../shared/trace.ts";
 import { main } from "./lib/driver/main.ts";
 import { driverRuntime } from "./lib/driver/runtime.ts";
+import { endOwnTab } from "../../../shared/orca-tabs.ts";
+import { driveExitClosesTab } from "./lib/status/terminal-states.ts";
+import { swallow } from "../../../shared/errors.ts";
+import { ExitError } from "../../../shared/cli.ts";
 export {
   roundFingerprint,
   resolveHandoffAt,
@@ -187,22 +199,43 @@ export {
   conflictRepairRounds,
   type RepairTask,
 } from "./lib/driver/settings.ts";
-export { inspect, claimWasTakenOver } from "./lib/driver/locks.ts";
 export {
   driverStopExitCode,
   installStopControls,
   drainDriverRegistrations,
   finishDriverPassRegistrations,
   installDriverLifecycle,
-  driverStopCompletionCleanup,
 } from "./lib/driver/lifecycle.ts";
+
+/**
+ * Close the drive's terminal tab when the drive is that tab's own command
+ * (armed in a tab, `lib/arm.ts`) and its exit leaves nothing for a person;
+ * under the dispatcher's wrapper, the wrapper closes the tab instead.
+ */
+async function closeTabIfDone(code: number): Promise<void> {
+  try {
+    const line = await endOwnTab(driveExitClosesTab(code));
+    if (line !== null) console.error(`drive.ts: ${line}`);
+  } catch (error) {
+    swallow(error, "the drive's tab could not be closed");
+  }
+}
 
 // Bun resolves the entry module's identity, including Windows path aliases.
 // Importing helpers must never start the driver or acquire its locks.
 if (import.meta.main) {
   runMain("drive.ts", async () => {
     try {
-      return await span("drive", {}, main);
+      let code: number;
+      try {
+        code = await span("drive", {}, main);
+      } catch (error) {
+        // A refusal travels as an ExitError; its code decides the tab too.
+        if (error instanceof ExitError) await closeTabIfDone(error.code);
+        throw error;
+      }
+      await closeTabIfDone(code);
+      return code;
     } finally {
       // The shared coordinator owns exit while other cancellations are pending.
       if (driverRuntime.driverShuttingDown)

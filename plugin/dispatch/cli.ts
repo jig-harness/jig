@@ -1,84 +1,378 @@
 /**
- * `jig dispatch`: one tick of the dispatcher, as a report. It reads the
- * tracker, the forge's drive ledgers and the session runtime for each
- * repository and prints every stage it would start, with the record that
- * wants it and the evidence; it starts nothing. `--apply` is accepted and
- * refused until the step that launches re-arms is built.
+ * `jig dispatch`: one tick of the dispatcher. It reads the tracker, the
+ * forge's drive ledgers, the session runtime and this machine's launch
+ * records for each repository and prints every stage it would start, with
+ * the record that wants it and the evidence. With `--apply` it starts the
+ * stages the machine file (`~/.jig/dispatch.yaml`) enables for each
+ * repository: the drives' re-arms and takeovers, the follow-ups as headless
+ * passes, and the pickups where the
+ * session runtime binds an interactive session to its account.
+ * `jig dispatch install` writes the timer that runs `--apply` every
+ * interval; `jig dispatch result` is how a dispatched session or follow-up pass
+ * records how it ended; `jig dispatch marker` is how a follow-up command
+ * claims a merged pull request's follow-up, checks its claim and marks it
+ * done; `jig dispatch dashboard` serves one page over the outcome log while
+ * it runs; `jig dispatch log` prints the outcome log as text; `jig dispatch
+ * line --json` prints the newest tick's line as the dashboard serves it;
+ * `jig dispatch clear` removes a launch record only a person can settle.
  */
-import { resolve } from "node:path";
+import { basename, dirname } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
 import { ExitError } from "../shared/cli.ts";
+import { dateValue, pathValue } from "../shared/command-line.ts";
+import {
+  argument,
+  choice,
+  command,
+  constant,
+  flag,
+  type InferValue,
+  map,
+  message,
+  multiple,
+  object,
+  option,
+  optional,
+  or,
+  string,
+  text,
+  type ValueParser,
+  withDefault,
+} from "../shared/vendor/optique.mjs";
+import { DEFAULT_PORT, dashboardMain } from "./dashboard.ts";
+import { clearMain } from "./clear.ts";
+import { installDispatch } from "./install.ts";
+import { StateVersionError } from "./lib/state.ts";
+import { lineMain } from "./line-command.ts";
+import { logMain } from "./log-command.ts";
+import {
+  duration,
+  type MachineConfig,
+  MachineConfigError,
+  machineConfigPath,
+  readMachineConfig,
+} from "./lib/machine-config.ts";
 import { formatReceipt } from "./lib/report.ts";
+import { markerMain } from "./marker.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
+import { resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
-
-const USAGE = `jig dispatch [--repo <path>]... [--followup-since <date>] [--json]
-jig dispatch receipts [<run-id>]`;
 
 /** Exit when another tick holds the lock. */
 const LOCK_HELD_EXIT = 3;
 
-const APPLY_REFUSAL =
-  "jig dispatch --apply: refused. This version only reports; starting re-arms within each account's cap, and the timer that runs the tick, arrive with the dispatcher's build step 3. Run without --apply for the report.";
+/** A positive whole number: a pull request's, or a comment's id. */
+const countValue = (metavar: "PR" | "ID"): ValueParser<"sync", number> => ({
+  mode: "sync",
+  metavar,
+  placeholder: 1,
+  parse: (input) =>
+    /^[1-9][0-9]*$/.test(input) && Number.isSafeInteger(Number(input))
+      ? { success: true, value: Number(input) }
+      : {
+          success: false,
+          error: message`Expected a positive whole number, but got ${input}.`,
+        },
+  format: (value) => String(value),
+});
 
-interface Options {
-  repos: string[];
-  json: boolean;
-  apply: boolean;
-  followupSince?: string;
-}
+/**
+ * A duration (`90s`, `5m`, `1h`) in milliseconds. `install` requires whole
+ * minutes of the interval that wins, so the lenient form takes any duration
+ * and `winningIntervalArguments` feeds the strict one the winner alone.
+ */
+const intervalValue = (wholeMinutes: boolean): ValueParser<"sync", number> => ({
+  mode: "sync",
+  metavar: "DURATION",
+  placeholder: 60_000,
+  parse: (input) => {
+    try {
+      const ms = duration(input, "The interval");
+      if (wholeMinutes && ms % 60_000 !== 0)
+        return {
+          success: false,
+          error: [
+            text(`The interval must be whole minutes, but got ${input}.`),
+          ],
+        };
+      return { success: true, value: ms };
+    } catch (error) {
+      if (!(error instanceof MachineConfigError)) throw error;
+      return { success: false, error: [text(`${error.message}.`)] };
+    }
+  },
+  format: (ms) => `${ms / 60_000}m`,
+});
 
-/** Take a flag's value into `options`. */
-function takeValue(
-  options: Options,
-  flag: string,
-  value: string | undefined,
-): void {
-  if (value === undefined || value.startsWith("--"))
-    throw new ExitError(2, `Missing value for ${flag}`);
-  if (flag === "--repo") {
-    options.repos.push(resolve(value));
-    return;
-  }
-  if (!Number.isFinite(Date.parse(value)))
-    throw new ExitError(2, `--followup-since is not a date: ${value}`);
-  options.followupSince = new Date(value).toISOString();
-}
+const tick = object({
+  action: constant("tick"),
+  apply: option("--apply", {
+    description: message`Start what the machine file (~/.jig/dispatch.yaml) enables for each repository. Without it, the run only reports.`,
+  }),
+  repos: multiple(
+    option("--repo", pathValue, {
+      description: message`A repository to read; repeat it for more. Without it, the machine file's repositories, else the current checkout.`,
+    }),
+  ),
+  followupSince: map(
+    multiple(
+      option("--followup-since", dateValue, {
+        description: message`Start the window that merges owe follow-ups from at this date, for every repository. The last one given wins.`,
+      }),
+    ),
+    (values) => values.at(-1),
+  ),
+  json: option("--json", {
+    description: message`Print the receipt as JSON.`,
+  }),
+});
 
-const SWITCHES: Record<string, "json" | "apply"> = {
-  "--json": "json",
-  "--apply": "apply",
+const installation = (wholeMinutes: boolean) =>
+  command(
+    "install",
+    object({
+      action: constant("install"),
+      intervalMs: map(
+        multiple(
+          option("--interval", intervalValue(wholeMinutes), {
+            description: message`How often the timer runs, in whole minutes (5m, 1h). Without it, the machine file's interval, else five minutes. The last one given wins.`,
+          }),
+        ),
+        (values) => values.at(-1),
+      ),
+      confirm: option("--yes", {
+        description: message`Write the job the preview shows.`,
+      }),
+      uninstall: option("--uninstall", {
+        description: message`Remove the job instead.`,
+      }),
+    }),
+    {
+      brief: message`Install the timer that runs dispatch --apply.`,
+      description: message`Previews the scheduler job that runs jig dispatch --apply every interval; --yes writes it. The same as jig install dispatch, or with --uninstall jig uninstall dispatch --machine, with --interval in place of the machine file's; kept for the command lines that use this form.`,
+      hidden: true,
+    },
+  );
+
+const receipts = command(
+  "receipts",
+  object({
+    action: constant("receipts"),
+    runId: optional(
+      argument(string({ metavar: "RUN-ID" }), {
+        description: message`Print the run with that id. Without it, list every run.`,
+      }),
+    ),
+  }),
+  {
+    brief: message`List the receipts of earlier runs, or print one.`,
+    description: message`The same as jig receipts dispatch; kept for the command lines that use this form.`,
+    hidden: true,
+  },
+);
+
+const result = command(
+  "result",
+  object({
+    action: constant("result"),
+    record: argument(string({ metavar: "RECORD" }), {
+      description: message`The launch record the session was started under.`,
+    }),
+    token: argument(string({ metavar: "TOKEN" }), {
+      description: message`The record's token, named in the session's prompt.`,
+    }),
+    outcome: argument(string({ metavar: "done|failed" }), {
+      description: message`How the session ended.`,
+    }),
+  }),
+  { brief: message`Record how a dispatched interactive session ended.` },
+);
+
+const marker = command(
+  "marker",
+  object({
+    action: constant("marker"),
+    verb: argument(choice(["claim", "check", "done"] as const), {
+      description: message`claim posts a manual run's marker; check stops a run an earlier marker holds; done marks a manual run's marker done.`,
+    }),
+    pr: argument(countValue("PR"), {
+      description: message`The merged pull request.`,
+    }),
+    comment: optional(
+      option("--comment", countValue("ID"), {
+        description: message`The marker's comment id, as claim printed it or the session's prompt names it (check and done).`,
+      }),
+    ),
+    repo: optional(
+      option("--repo", string({ metavar: "OWNER/NAME" }), {
+        description: message`The repository. Without it, the current checkout's.`,
+      }),
+    ),
+  }),
+  {
+    brief: message`Claim a merged pull request's follow-up, check the claim, or mark it done.`,
+  },
+);
+
+const log = command(
+  "log",
+  object({
+    action: constant("log"),
+    since: optional(
+      option("--since", dateValue, {
+        description: message`Leave out the rows timed before this date.`,
+      }),
+    ),
+    jsonl: option("--jsonl", {
+      description: message`Print each row as the JSON line the month files hold.`,
+    }),
+  }),
+  {
+    brief: message`Print the outcome log as text, in the order the rows were written.`,
+    description: message`Reads the state database and prints one line a row; --jsonl prints the rows as the log-<year>-<month>.jsonl files hold them.`,
+  },
+);
+
+const line = command(
+  "line",
+  object({
+    action: constant("line"),
+    json: flag("--json", {
+      description: message`Print the line as JSON, the one form it has.`,
+    }),
+  }),
+  {
+    brief: message`Print the newest tick's line as JSON, as the dashboard's GET /state answers.`,
+    description: message`Reads the state database and prints one JSON document, the answer the dashboard's GET /state gives: {"ok":true,"value":{now, timeZone, plugin, schema, line}}, its line versioned by the line's own version field. It takes no lock and never creates the database; with no database or no line yet, line is null and it exits 0. A line that cannot be read exits 1 with one line on standard error.`,
+  },
+);
+
+const clear = command(
+  "clear",
+  object({
+    action: constant("clear"),
+    record: argument(string({ metavar: "RECORD" }), {
+      description: message`The launch record to remove.`,
+    }),
+  }),
+  {
+    brief: message`Remove a launch record only a person can settle.`,
+    description: message`Removes a launch record that is unknown, pending or unreadable, which holds its stage and its account's slot until it is cleared; refuses one whose session is running.`,
+  },
+);
+
+/** A port between 1 and 65535. */
+const portValue: ValueParser<"sync", number> = {
+  mode: "sync",
+  metavar: "PORT",
+  placeholder: 1,
+  parse: (input) =>
+    /^[1-9][0-9]*$/.test(input) && Number(input) <= 65_535
+      ? { success: true, value: Number(input) }
+      : {
+          success: false,
+          error: message`Expected a port between 1 and 65535, but got ${input}.`,
+        },
+  format: (value) => String(value),
 };
 
-function parseArguments(argv: string[]): Options {
-  const options: Options = { repos: [], json: false, apply: false };
-  for (let i = 0; i < argv.length; i++) {
-    const flag = argv[i] as string;
-    if (flag === "--repo" || flag === "--followup-since") {
-      takeValue(options, flag, argv[++i]);
-      continue;
-    }
-    const field = SWITCHES[flag];
-    if (field === undefined)
-      throw new ExitError(2, `Unknown argument: ${flag}\n${USAGE}`);
-    options[field] = true;
+const dashboard = command(
+  "dashboard",
+  object({
+    action: constant("dashboard"),
+    port: optional(
+      option("--port", portValue, {
+        description: message`The port to listen on. Without it, the port dashboard.listen names, else ${String(DEFAULT_PORT)}.`,
+      }),
+    ),
+  }),
+  {
+    brief: message`Serve one page over the outcome log, filtered by time, repository, stage, account and class.`,
+    description: message`Listens on the machine file's dashboard.listen, an address in the private or loopback ranges, until stopped; prints its URL with the token a request needs. It reads the log when the page asks and writes nothing.`,
+  },
+);
+
+/**
+ * `jig dispatch`: one tick by default, with `result`, `marker`, `dashboard`,
+ * `log`, `line` and `clear` as its subcommands. Its `install` and `receipts`
+ * subcommands do what the lifecycle verbs `jig install dispatch` and
+ * `jig receipts dispatch` do, and stay for the command lines that use them,
+ * hidden from help.
+ */
+const dispatch = (wholeMinutes: boolean) =>
+  command(
+    "dispatch",
+    withDefault(
+      or(
+        installation(wholeMinutes),
+        receipts,
+        result,
+        marker,
+        dashboard,
+        log,
+        line,
+        clear,
+        tick,
+      ),
+      {
+        action: "tick",
+        apply: false,
+        repos: [],
+        followupSince: undefined,
+        json: false,
+      } as const,
+    ),
+    {
+      brief: message`Say which stages of the delivery loop should be running, and start them.`,
+      description: message`Reads the tracker, the pull requests' drive ledgers, the running sessions and this machine's launch records for each repository, and prints every action it would take, with the record that wants it and the evidence. Each run writes a receipt.`,
+    },
+  );
+
+export const dispatchCommand = dispatch(false);
+/** The same command with `install --interval` held to whole minutes. */
+export const strictDispatchCommand = dispatch(true);
+
+export type DispatchArguments = InferValue<typeof dispatchCommand>;
+
+/**
+ * `argv` with every `--interval` but the last removed: the one that wins,
+ * which `strictDispatchCommand` then validates alone.
+ */
+export function winningIntervalArguments(argv: readonly string[]): string[] {
+  const starts: number[] = [];
+  argv.forEach((arg, i) => {
+    if (arg === "--interval" || arg.startsWith("--interval=")) starts.push(i);
+  });
+  const drop = new Set<number>();
+  for (const i of starts.slice(0, -1)) {
+    drop.add(i);
+    if (argv[i] === "--interval") drop.add(i + 1);
   }
-  return options;
+  return argv.filter((_, i) => !drop.has(i));
+}
+type Tick = Extract<DispatchArguments, { action: "tick" }>;
+
+/** One line per receipt that reads: its run, outcome, size and file. */
+function listReceipts(paths: readonly string[]): void {
+  for (const path of paths) {
+    const r = readReceipt(path);
+    if (r === null) continue;
+    const actions = r.repos.reduce((n, repo) => n + repo.actions.length, 0);
+    console.log(
+      `${r.runId}  ${r.startedAt}  ${r.completed ? `exit ${r.exitStatus}` : "incomplete"}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)  ${path}`,
+    );
+  }
 }
 
-function showReceipts(argv: string[]): number {
-  if (argv.length > 1) throw new ExitError(2, "receipts accepts one run id");
+/** Lists every receipt, or that day's (`YYYY-MM-DD`), or prints the run with that id. */
+export function showReceipts(id: string | undefined): number {
   const paths = receiptPaths();
-  const id = argv[0];
   if (id === undefined) {
-    for (const path of paths) {
-      const r = readReceipt(path);
-      if (r === null) continue;
-      const actions = r.repos.reduce((n, repo) => n + repo.actions.length, 0);
-      console.log(
-        `${r.runId}  ${r.startedAt}  ${r.completed ? `exit ${r.exitStatus}` : "incomplete"}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)  ${path}`,
-      );
-    }
+    listReceipts(paths);
+    return 0;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(id)) {
+    listReceipts(paths.filter((path) => basename(dirname(path)) === id));
     return 0;
   }
   const path = paths.find(
@@ -90,29 +384,107 @@ function showReceipts(argv: string[]): number {
   return 0;
 }
 
-export async function dispatchMain(argv: string[]): Promise<number> {
-  if (argv[0] === "--help" && argv.length === 1) {
-    console.log(USAGE);
-    return 0;
+/** The machine file, or null without one; one that does not read is a usage error (exit 2). */
+export function machineFile(): MachineConfig | null {
+  try {
+    return readMachineConfig();
+  } catch (error) {
+    if (error instanceof MachineConfigError)
+      throw new ExitError(2, error.message);
+    throw error;
   }
-  if (argv[0] === "receipts") return showReceipts(argv.slice(1));
-  const options = parseArguments(argv);
-  if (options.apply) {
-    console.error(APPLY_REFUSAL);
-    return 2;
+}
+
+/** The repositories a tick reads: `--repo`, else the machine file's, else this checkout. */
+function repositories(options: Tick, machine: MachineConfig | null): string[] {
+  if (options.repos.length > 0) return [...options.repos];
+  if (machine !== null && machine.repositories.length > 0)
+    return machine.repositories.map((r) => r.path);
+  return [consumerRoot()];
+}
+
+type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
+
+/** A subcommand's run: everything but the tick. */
+function subcommandMain(
+  args: Subcommand,
+  script: string,
+): number | Promise<number> {
+  if (args.action === "result")
+    // An interactive session's own answer, under its launch record's token.
+    return resultMain([args.record, args.token, args.outcome]);
+  if (args.action === "receipts") return showReceipts(args.runId);
+  if (args.action === "log")
+    return logMain({
+      jsonl: args.jsonl,
+      ...(args.since === undefined ? {} : { since: args.since }),
+    });
+  if (args.action === "line") return lineMain();
+  if (args.action === "clear") return clearMain(args.record);
+  if (args.action === "dashboard")
+    return dashboardMain(
+      machineFile()?.dashboardListen ?? null,
+      args.port,
+      machineConfigPath(),
+    );
+  if (args.action === "marker")
+    return markerMain({
+      verb: args.verb,
+      pr: args.pr,
+      comment: args.comment ?? null,
+      repo: args.repo ?? null,
+    });
+  // `install`. A removal needs no machine file: a broken one must not keep the timer installed.
+  return installDispatch(
+    {
+      intervalMs: args.intervalMs ?? null,
+      confirm: args.confirm,
+      uninstall: args.uninstall,
+    },
+    script,
+    args.uninstall ? null : machineFile(),
+  );
+}
+
+export async function dispatchMain(
+  args: DispatchArguments,
+  script = "",
+): Promise<number> {
+  try {
+    return await commandMain(args, script);
+  } catch (error) {
+    // A state database a newer plugin wrote is refused by every command that reads it.
+    if (error instanceof StateVersionError)
+      throw new ExitError(2, `jig dispatch: ${error.message}`);
+    throw error;
   }
+}
+
+async function commandMain(
+  args: DispatchArguments,
+  script: string,
+): Promise<number> {
+  if (args.action !== "tick") return subcommandMain(args, script);
+  const machine = machineFile();
+  if (args.apply && machine === null)
+    throw new ExitError(
+      2,
+      `jig dispatch --apply needs the machine file ${machineConfigPath()}: the repositories, the stages enabled for each and the accounts it may bill (see CONFIGURATION.md § The machine's dispatch file). Run without --apply for the report.`,
+    );
   const result = await runTick({
-    repos: options.repos.length > 0 ? options.repos : [consumerRoot()],
-    ...(options.followupSince === undefined
+    repos: repositories(args, machine),
+    apply: args.apply,
+    machine,
+    ...(args.followupSince === undefined
       ? {}
-      : { followupSince: options.followupSince }),
+      : { followupSince: args.followupSince }),
   });
   if ("held" in result) {
     console.error(`jig dispatch: another tick holds the lock: ${result.held}`);
     return LOCK_HELD_EXIT;
   }
   console.log(
-    options.json
+    args.json
       ? JSON.stringify(result.receipt, null, 2)
       : formatReceipt(result.receipt, result.path),
   );

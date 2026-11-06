@@ -114,7 +114,10 @@ verbs for two actions. The linter never flags hedges.
 
 The linter is advisory. It exits `1` when it finds a hard flag. That exit code
 informs the author and is never a reason to stop. No continuous-integration
-workflow, hook or validation plan runs it on text that people write.
+workflow, hook or validation plan runs it on text that people write, except a
+ratchet that counts its findings over documents a repository names and
+refuses only a rise in a document's count (the linter's README, § Advisory
+only).
 Provenance and licence of the upstream linter it derives from:
 `<skill-dir>/scripts/ste-lint/README.md`.
 

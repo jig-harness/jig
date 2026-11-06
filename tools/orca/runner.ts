@@ -1,7 +1,7 @@
 /**
  * How the Orca workspace tool runs commands. It reuses the Herdr tool's
- * runner (tools/herdr/runner.ts): one synchronous call per command, with a
- * deadline, through a seam tests replace with a fixture.
+ * runner (plugin/shared/orca-workspace/runner.ts): one synchronous call per
+ * command, with a deadline, through a seam tests replace with a fixture.
  *
  * Two machines take part. Orca's command-line tool runs on this machine and
  * reaches Orca here or, with `--environment`, a paired Orca server. Git and
@@ -23,13 +23,16 @@ import {
   spawnSync,
   withoutLeakyGitEnv,
 } from "../../plugin/shared/guarded-git-spawn.ts";
-import { HOOK_TIMEOUT_MS, runHook } from "../herdr/lifecycle.ts";
+import { OrcaError } from "../../plugin/shared/orca-workspace/envelope.ts";
+import {
+  boundedHook,
+  type HookRunner,
+} from "../../plugin/shared/orca-workspace/port.ts";
+import { runHook } from "../herdr/lifecycle.ts";
 import { assertHost, SSH_OPTIONS, shellQuote } from "../herdr/remote.ts";
 import {
-  budget,
   COMMAND_TIMEOUT_MS,
   type Context,
-  HerdrError,
   type Log,
   type RunOptions,
   type Runner,
@@ -37,10 +40,9 @@ import {
   stderrLog,
 } from "../herdr/runner.ts";
 
-/** A workspace step that cannot go on; the message says why and what to do. */
-export class OrcaError extends HerdrError {
-  override name = "OrcaError";
-}
+export { OrcaError } from "../../plugin/shared/orca-workspace/envelope.ts";
+export { WAIT_POLL_MS } from "../../plugin/shared/orca-workspace/limits.ts";
+export type { HookRunner } from "../../plugin/shared/orca-workspace/port.ts";
 
 /** Orca's command and, for a paired server, which one. */
 export interface OrcaTarget {
@@ -49,19 +51,6 @@ export interface OrcaTarget {
   /** A paired Orca server by name (`orca environment list`); Orca on this machine when absent. */
   environment?: string;
 }
-
-/**
- * Runs a worktree hook (`hook`, a path in `worktree`) through `ctx`, with the
- * hook's output in the log; throws when it fails. `groupFile`, where the
- * runner supervises a process group, records the group so a failed run's
- * leftovers can be ended.
- */
-export type HookRunner = (
-  ctx: Context,
-  worktree: string,
-  hook: string,
-  groupFile?: string,
-) => void;
 
 /** The two machines of a run, and Orca. */
 export interface Workspace {
@@ -81,19 +70,7 @@ export interface Workspace {
  * by the hook's limit, its output logged line by line. The SSH session is the
  * only hold on it (see the module comment).
  */
-export const remoteHook: HookRunner = (ctx, worktree, hook) => {
-  const done = ctx.run([hook], {
-    cwd: worktree,
-    timeoutMs: budget(ctx, HOOK_TIMEOUT_MS),
-  });
-  for (const stream of [done.stdout, done.stderr])
-    for (const line of stream.split("\n")) if (line !== "") ctx.log(line);
-  if (done.status !== 0)
-    throw new OrcaError(`${hook} failed (exit ${done.status})`);
-};
-
-/** How often an open that waits for another's hook run or agent start looks again. */
-export const WAIT_POLL_MS = 1_000;
+export const remoteHook: HookRunner = boundedHook;
 
 /** Where the tool keeps what must outlive a worktree: kickoff receipts. */
 export function orcaStateDir(): string {

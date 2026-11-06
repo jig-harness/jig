@@ -26,6 +26,14 @@ async function prove(kind: CollectionKind, resource: Resource): Promise<Proof> {
 function scope(kind: CollectionKind): { repository?: string } {
   return kind.repository ? { repository: kind.repository } : {};
 }
+/** `base`, overlaid with `overlay` where it sets any field. */
+function mergedDetails(base: unknown, overlay: unknown): unknown {
+  if (overlay === undefined) return base;
+  return {
+    ...(isMapping(base) ? base : {}),
+    ...(isMapping(overlay) ? overlay : {}),
+  };
+}
 function refuseReportOnly(line: ReceiptLine, proof: Proof): boolean {
   if (!proof.reportOnly) return false;
   line.outcome = "refused";
@@ -43,12 +51,18 @@ async function collectResource(
     const final = await prove(kind, resource);
     line.reason = final.reason;
     line.outcome = outcome(final);
+    const details = mergedDetails(resource.details, final.details);
+    if (details !== undefined) line.details = details;
     if (final.state !== "dead" || refuseReportOnly(line, final)) return;
     line.proof = final.reason;
     line.outcome = "unverified";
     line.reason = "collection started; completion not yet recorded";
     persist();
-    Object.assign(line, await kind.collect(resource));
+    const collected = await kind.collect(resource);
+    const before = line.details;
+    Object.assign(line, collected);
+    const merged = mergedDetails(before, collected.details);
+    if (merged !== undefined) line.details = merged;
   });
 }
 async function evaluate(
@@ -66,7 +80,8 @@ async function evaluate(
     outcome: outcome(proof),
     reason: proof.reason,
   };
-  if (resource.details !== undefined) line.details = resource.details;
+  const details = mergedDetails(resource.details, proof.details);
+  if (details !== undefined) line.details = details;
   if (resource.bytes !== undefined) line.bytes = resource.bytes;
   receipt.resources.push(line);
   if (
@@ -155,13 +170,28 @@ function familyLines(line: ReceiptLine): string[] {
       );
   });
 }
+/**
+ * The workspace runtime a line's resource is managed by, when one is, and
+ * whether its launches were guarded (`orca, unguarded`).
+ */
+function runtimeOf(line: ReceiptLine): string {
+  if (
+    !isMapping(line.details) ||
+    typeof line.details.runtime !== "string" ||
+    line.details.runtime === "none"
+  )
+    return "";
+  const guard =
+    typeof line.details.guard === "string" ? `, ${line.details.guard}` : "";
+  return ` (${line.details.runtime}${guard})`;
+}
 export function formatReceipt(receipt: Receipt): string {
   const declarations = receipt.kinds.map(
     (kind) =>
       `${kind.name} ${kind.repository ?? "machine"}: declaration ${kind.declaration}`,
   );
   const lines = receipt.resources.flatMap((line) => [
-    `${line.kind} ${line.repository ?? "machine"} ${line.resource}: ${line.outcome} — ${line.reason}${line.bytes === undefined ? "" : ` (${line.bytes} bytes)`}`,
+    `${line.kind} ${line.repository ?? "machine"} ${line.resource}${runtimeOf(line)}: ${line.outcome} — ${line.reason}${line.bytes === undefined ? "" : ` (${line.bytes} bytes)`}`,
     ...familyLines(line),
   ]);
   return [

@@ -1,9 +1,6 @@
 /**
- * drive-pr suite: arming a drive from a session (`scripts/arm-drive.ts`,
- * `lib/arm.ts`): the way `do_item.arm_drive` and the session choose, the
- * command that starts the drive and how it is quoted, and the terminal tab
- * Orca opens, with a stand-in for Orca's command line: no test opens a real
- * tab.
+ * Drive arming: command quoting, runtime selection, configuration forwarding,
+ * tab confirmation, and background fallback. Orca calls use a stand-in.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -106,6 +103,22 @@ describe("the command that starts the drive", () => {
       "claude",
       "--model",
       "opus",
+      "-p",
+      "/jig:drive-pr --bots-only 42",
+    ]);
+  });
+
+  it("puts the extra pass arguments before the pass's -p", () => {
+    const argv = driveArgv(REQUEST, "sonnet", [
+      "--permission-mode",
+      "bypassPermissions",
+    ]);
+    expect(argv.slice(argv.indexOf("--") + 1)).toEqual([
+      "claude",
+      "--model",
+      "sonnet",
+      "--permission-mode",
+      "bypassPermissions",
       "-p",
       "/jig:drive-pr --bots-only 42",
     ]);
@@ -227,17 +240,19 @@ describe("the way a drive is armed", () => {
     });
   });
 
-  it("prints the command only for print, and in a session that is not Claude Code's", () => {
+  it("prints the command only for print, and in a session of no agent tool with a documented pass", () => {
     expect(chooseWay("print", IN_ORCA, "linux")).toMatchObject({
       way: "print",
     });
-    const codex = chooseWay(
+    const none = chooseWay(
       "auto",
-      { CODEX_HOME: "/x", ORCA_CLI_COMMAND: "/opt/orca/bin/orca" },
+      { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" },
       "linux",
     );
-    expect(codex).toMatchObject({ way: "print" });
-    expect(JSON.stringify(codex)).toContain("this session runs codex");
+    expect(none).toMatchObject({ way: "print" });
+    expect(JSON.stringify(none)).toContain(
+      "the documented pass commands are Claude Code's and Codex's",
+    );
   });
 });
 
@@ -299,6 +314,7 @@ function drive(startedMs: number): LiveDrive {
     started: new Date(startedMs).toISOString(),
     log: "/state/drive-pr-42.log",
     model: "sonnet",
+    permissionMode: "inherited",
     doctor: null,
   };
 }
@@ -419,6 +435,7 @@ function inputs(
     request: REQUEST,
     setting: { value, source: "do_item.arm_drive" },
     model: { model: "sonnet", source: "the default" },
+    passArgs: { words: [], source: "the default" },
     env,
     platform,
   };
@@ -524,13 +541,19 @@ describe("liveDriveIn", () => {
       key: "42",
       state: "live",
       pid: 3,
-      diag: { started: "s", log: "l", model: "opus" },
+      diag: {
+        started: "s",
+        log: "l",
+        model: "opus",
+        permissionMode: "bypassPermissions",
+      },
     } as never);
     expect(liveDriveIn(listing, "42")).toEqual({
       pid: 3,
       started: "s",
       log: "l",
       model: "opus",
+      permissionMode: "bypassPermissions",
       doctor: null,
     });
   });
@@ -642,6 +665,48 @@ describe("arm-drive.ts", () => {
     ]);
   });
 
+  it("arms Codex in the background with its strategic model and forwards the override", async () => {
+    const run = await runArm(
+      scratchTree(),
+      ["42", "--pass-model", "strategic"],
+      {
+        CODEX_HOME: "/unused/codex",
+        JIG__ROUTING__MODELS__CODEX__EXECUTION: "gpt-small",
+        JIG__ROUTING__MODELS__CODEX__STRATEGIC: "gpt-large",
+      },
+    );
+    expectSpawnExit(run, 0);
+    const answer = report(run);
+    expect(answer).toMatchObject({
+      status: "spawn",
+      way: "background",
+      model: "gpt-large",
+    });
+    const separator = answer.argv.indexOf("--");
+    expect(answer.argv.slice(5, separator)).toEqual([
+      "--bots-only",
+      "--pass-model",
+      "strategic",
+    ]);
+    expect(answer.argv.slice(separator + 1, separator + 5)).toEqual([
+      "codex",
+      "exec",
+      "-m",
+      "gpt-large",
+    ]);
+  });
+
+  it("refuses a Codex tier without its routing row rather than using Claude's", async () => {
+    const run = await runArm(
+      scratchTree(),
+      ["42", "--pass-model", "strategic"],
+      { CODEX_HOME: "/unused/codex" },
+    );
+    expectSpawnExit(run, 1);
+    expect(report(run)).toMatchObject({ status: "failed", model: null });
+    expect(report(run).reason).toContain("no codex row");
+  });
+
   it("reads do_item.arm_drive and drive.pass_model from the configuration", async () => {
     const tree = scratchTree();
     const run = await runArm(tree, ["42"], {
@@ -697,6 +762,144 @@ describe("arm-drive.ts", () => {
     expectSpawnExit(flag, 2);
     expect(report(flag).reason).toContain("--pass-model");
     expect(report(flag).argv).not.toContain("--pass-model");
+  });
+
+  /** The pass command after the separator in an arm's argv. */
+  const passOf = (argv: string[]) => argv.slice(argv.indexOf("--") + 1);
+  const BYPASS = ["--permission-mode", "bypassPermissions"];
+
+  it("prints the command it always printed when drive.pass_args is not set", async () => {
+    const tree = scratchTree();
+    const run = await runArm(tree, ["42", "--mode", "print"], CLAUDE);
+    expectSpawnExit(run, 0);
+    const answer = report(run);
+    expect(answer.argv.slice(4)).toEqual([
+      "42",
+      "--bots-only",
+      "--",
+      "claude",
+      "--model",
+      "sonnet",
+      "-p",
+      "/jig:drive-pr --bots-only 42",
+    ]);
+    expect(answer.command).toBe(commandLine(answer.argv));
+    expect(answer.command).toEndWith(
+      ' 42 --bots-only -- claude --model sonnet -p "/jig:drive-pr --bots-only 42"',
+    );
+    expect(answer).toMatchObject({
+      passArgs: [],
+      passArgsSource: "the default; drive.pass_args is not set",
+      permissionMode: "inherited",
+    });
+  });
+
+  it("writes drive.pass_args into the printed command before the prompt, and names the permission mode", async () => {
+    const tree = scratchTree();
+    const run = await runArm(tree, ["42", "--mode", "print"], {
+      ...CLAUDE,
+      JIG__DRIVE__PASS_ARGS: "[--permission-mode, bypassPermissions]",
+    });
+    expectSpawnExit(run, 0);
+    const answer = report(run);
+    expect(passOf(answer.argv)).toEqual([
+      "claude",
+      "--model",
+      "sonnet",
+      ...BYPASS,
+      "-p",
+      "/jig:drive-pr --bots-only 42",
+    ]);
+    expect(answer.command).toContain(
+      'claude --model sonnet --permission-mode bypassPermissions -p "/jig:drive-pr --bots-only 42"',
+    );
+    expect(answer.argv).not.toContain("--pass-args");
+    expect(answer).toMatchObject({
+      passArgsSource: "drive.pass_args",
+      permissionMode: "bypassPermissions",
+    });
+    expect(run.stderr).toContain("permission mode bypassPermissions");
+  });
+
+  it("takes --pass-args over drive.pass_args for one drive, forwarding it to drive.ts, and an empty one as none", async () => {
+    const tree = scratchTree();
+    const env = {
+      ...CLAUDE,
+      JIG__DRIVE__PASS_ARGS: "[--permission-mode, acceptEdits]",
+    };
+    const flag = await runArm(
+      tree,
+      ["42", "--mode", "print", "--pass-args", BYPASS.join(" ")],
+      env,
+    );
+    expectSpawnExit(flag, 0);
+    const { argv } = report(flag);
+    expect(argv.slice(5, argv.indexOf("--"))).toEqual([
+      "--bots-only",
+      "--pass-args",
+      "--permission-mode bypassPermissions",
+    ]);
+    expect(passOf(argv).slice(3, 5)).toEqual(BYPASS);
+    expect(report(flag).passArgsSource).toBe("--pass-args");
+    const none = await runArm(
+      tree,
+      ["42", "--mode", "print", "--pass-args", ""],
+      env,
+    );
+    expectSpawnExit(none, 0);
+    expect(passOf(report(none).argv)).toEqual([
+      "claude",
+      "--model",
+      "sonnet",
+      "-p",
+      "/jig:drive-pr --bots-only 42",
+    ]);
+  });
+
+  it("stops on a drive.pass_args that is not a list of words, naming the field", async () => {
+    const tree = scratchTree();
+    for (const value of [
+      "--permission-mode bypassPermissions",
+      "[--permission-mode bypassPermissions]",
+      "[--model, opus]",
+    ]) {
+      const bad = await runArm(tree, ["42", "--mode", "print"], {
+        ...CLAUDE,
+        JIG__DRIVE__PASS_ARGS: value,
+      });
+      expectSpawnExit(bad, 1);
+      expect(report(bad)).toMatchObject({ status: "failed", passArgs: [] });
+      expect(report(bad).reason).toContain("drive.pass_args");
+      expect(report(bad).command).toContain("claude --model sonnet -p");
+    }
+    const flag = await runArm(
+      tree,
+      ["42", "--mode", "print", "--pass-args", "--model opus"],
+      CLAUDE,
+    );
+    expectSpawnExit(flag, 2);
+    expect(report(flag).reason).toContain("--pass-args cannot hold --model");
+    expect(report(flag).argv).not.toContain("--pass-args");
+    const end = await runArm(
+      tree,
+      ["42", "--mode", "print", "--pass-args", "-- x"],
+      CLAUDE,
+    );
+    expectSpawnExit(end, 2);
+    expect(report(end).reason).toContain("--pass-args cannot hold --:");
+  });
+
+  it("does not take the next flag of its own command line for the value of --pass-args", async () => {
+    const tree = scratchTree();
+    for (const next of ["--keep-draft", "--mode", "--max-rounds 3", "--"]) {
+      const run = await runArm(
+        tree,
+        ["42", "--pass-args", ...next.split(" ")],
+        CLAUDE,
+      );
+      expectSpawnExit(run, 2);
+      expect(run.stderr).toContain("--pass-args requires a value");
+    }
   });
 
   it("answers a directory that is no git working tree with a failed report and no command", async () => {
@@ -781,9 +984,11 @@ describe("arm-drive.ts", () => {
       const prefix = shellWords(typed.slice(0, -command.length - 1));
       expect(prefix.slice(0, LOGIN_PREFIX.length)).toEqual(LOGIN_PREFIX);
       const rest = prefix.slice(LOGIN_PREFIX.length);
-      expect(rest.filter((word) => word.includes("=")).sort()).toEqual(
-        carried.sort(),
+      const words = rest.filter((word) => word.includes("="));
+      const due = words.map((w) =>
+        w.replace(/^(JIG_ORCA_TAB_PENDING=)\d+$/, "$1_"),
       );
+      expect(due.sort()).toEqual([...carried, "JIG_ORCA_TAB_PENDING=_"].sort());
       expect(rest.filter((word) => word === "-u").length).toBe(
         ["JIG_HOME", "JIG_OVERLAY", "JIG_USER_LAYER"].filter(
           (key) => !carried.some((entry) => entry.startsWith(`${key}=`)),

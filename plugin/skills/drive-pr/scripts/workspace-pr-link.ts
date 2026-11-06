@@ -14,7 +14,7 @@
  * differs.
  *
  * The caller runs it only in the worktree that drove the pull request. Like
- * `orca-board.ts` it acts only in a terminal Orca opened whose worktree Orca
+ * `shared/orca-board.ts` it acts only in a terminal Orca opened whose worktree Orca
  * knows, and every Orca failure only warns and the exit is 0; only a
  * malformed command line exits 2.
  */

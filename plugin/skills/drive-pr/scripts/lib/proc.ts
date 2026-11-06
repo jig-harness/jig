@@ -184,7 +184,7 @@ export function markReadyTimeoutSeconds(): number {
 
 /**
  * The deadline for one `ci-hold.ts` transition. Its longest path consumes a
- * remote/state-lock budget, one local git read, and up to twenty GitHub calls
+ * remote/state-lock budget, one local git read, and up to 24 GitHub calls
  * (rollback's probes plus both bounded restoration-observation loops). The
  * parent must outlive that whole sequence: killing it after GitHub applied a
  * label but before ownership was persisted would leave an unowned hold that
@@ -196,7 +196,7 @@ export function ciHoldTimeoutSeconds(): number {
   // One PR-wide remote lock plus as many as three sequential state commits
   // (intent, recovery, settled ownership) on the crash-recovery paths.
   const STATE_LOCK_BUDGET_SECONDS = 1200;
-  const GH_BOUND_CALLS = 20; // rollback probes + release mutation/retries/restore
+  const GH_BOUND_CALLS = 24; // rollback probes + release mutation/retries/restore; final-ready's proofs
   const GIT_BOUND_CALLS = 1; // exact local push-head check on ensure
   const TOTAL_CALLS = 1 + GH_BOUND_CALLS + GIT_BOUND_CALLS;
   const TIMELINE_RETRY_WAIT_SECONDS = 6;
@@ -224,14 +224,15 @@ export function finalVerifyTimeoutSeconds(): number {
   //
   // On top of that chain: the CI policy's own reads (2: the PR's base
   // branch, then its protection and rulesets in parallel), and per proof,
-  // when a pinned requirement falls back to commit statuses, the status
-  // list (1) plus one app lookup per publisher, capped at
-  // MAX_STATUS_PUBLISHERS (lib/status/evidence.ts, mirrored here to keep
-  // the shared timeout layer free of that import). A failed lookup is not
-  // cached, so each of the three proofs may repeat them.
+  // the workflow runs when a check did not pass (1), and when a pinned
+  // requirement falls back to commit statuses, the status list (1) plus one
+  // app lookup per publisher, capped at MAX_STATUS_PUBLISHERS
+  // (lib/status/evidence.ts, mirrored here to keep the shared timeout layer
+  // free of that import). A failed lookup is not cached, so each of the three
+  // proofs may repeat them.
   const PROOFS = 3;
   const MAX_STATUS_PUBLISHERS = 4;
-  const GH_BOUND_CALLS = 15 + 2 + PROOFS * (1 + MAX_STATUS_PUBLISHERS);
+  const GH_BOUND_CALLS = 15 + 2 + PROOFS * (2 + MAX_STATUS_PUBLISHERS);
   // set-verified can take THREE separate lock acquisitions in its worst case,
   // not two: the PR-wide remote-mutation lock, the state mutex for the
   // certificate write, and — when the post-write `stillFullyCurrent()` check
@@ -260,7 +261,7 @@ export function driveStatusOnceTimeoutSeconds(): number {
   // bounded child even when operators skew the three timeout knobs away from
   // their default ratio; the per-call escalation grace is part of the bound.
   const HELPER_BOUND_CALLS = 8;
-  const GH_BOUND_CALLS = 12;
+  const GH_BOUND_CALLS = 13;
   const GIT_BOUND_CALLS = 6;
   const TOTAL_CALLS = HELPER_BOUND_CALLS + GH_BOUND_CALLS + GIT_BOUND_CALLS;
   const totalSeconds =

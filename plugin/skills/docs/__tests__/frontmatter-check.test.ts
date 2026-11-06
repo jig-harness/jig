@@ -6,6 +6,7 @@ import {
   checkFrontmatter,
   readSchema,
 } from "../scripts/frontmatter-check/frontmatter-check";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 const fixtures = join(import.meta.dir, "fixtures", "frontmatter-check");
 const schema = join(fixtures, "schema.yaml");
@@ -45,7 +46,13 @@ function run(
       stderr: "pipe",
     },
   );
-  return { code: result.exitCode, out: result.stdout.toString() };
+  return {
+    code: result.exitCode,
+    out: result.stdout.toString(),
+    exitCode: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
 }
 const fix = (path: string) => join(fixtures, path);
 
@@ -92,14 +99,14 @@ const cases: [number, string, string[], string?][] = [
 for (const [want, label, files, output] of cases) {
   test(label, () => {
     const result = run(files.map(fix));
-    expect(result.code).toBe(want);
+    expectSpawnExit(result, want);
     if (output) expect(result.out).toContain(output);
   });
 }
 
 test("only the generated index at its configured path is left out", () => {
   const index = join(import.meta.dir, "fixtures", "index", "docs", "INDEX.md");
-  expect(run([index], { env: { OUT: index } }).code).toBe(0);
+  expectSpawnExit(run([index], { env: { OUT: index } }), 0);
   // The same file is an ordinary document when the index is configured elsewhere.
   expect(run([index]).out).toContain("no frontmatter");
   const copied = join(scratch, "copied-marker.md");
@@ -123,7 +130,7 @@ test("only the generated index at its configured path is left out", () => {
 test("no-description doc fails when NEW", () => {
   const file = fix("good/nodesc.md");
   const result = run([file], { newDocs: file });
-  expect(result.code).toBe(1);
+  expectSpawnExit(result, 1);
   expect(result.out).toContain("new doc missing required field: description");
 });
 
@@ -133,7 +140,7 @@ test("NEW_DOCS holds one path per line, so a name may contain spaces", () => {
   try {
     const files = [fix("good/caching.md"), spaced];
     const result = run(files, { newDocs: files.join("\n") });
-    expect(result.code).toBe(1);
+    expectSpawnExit(result, 1);
     expect(result.out).toContain("new doc missing required field: description");
     expect(result.out).not.toContain("is not among the files checked");
   } finally {
@@ -144,13 +151,13 @@ test("NEW_DOCS holds one path per line, so a name may contain spaces", () => {
 test("a NEW_DOCS entry that names no checked file fails", () => {
   const files = [fix("good/caching.md"), fix("good/nodesc.md")];
   const result = run(files, { newDocs: files.join(" ") });
-  expect(result.code).toBe(1);
+  expectSpawnExit(result, 1);
   expect(result.out).toContain("is not among the files checked");
 });
 
 test("constructs outside the YAML subset are violations, with their line", () => {
   const result = run([fix("bad/subset.md")]);
-  expect(result.code).toBe(1);
+  expectSpawnExit(result, 1);
   expect(result.out).toContain(
     "unsupported YAML: line 2: anchors and aliases are not supported",
   );
@@ -170,7 +177,7 @@ const inFixtures = { cwd: fixtures, schema: rules };
 test("the template's example path rules are commented out", () => {
   // Live, they would fail any tree without docs/runbooks/ and docs/archive/.
   const result = run([fix("good/caching.md")]);
-  expect(result.code).toBe(0);
+  expectSpawnExit(result, 0);
 });
 
 test("path rules: a conforming runbook passes, a fenced TODO is not a violation", () => {
@@ -179,12 +186,12 @@ test("path rules: a conforming runbook passes, a fenced TODO is not a violation"
     inFixtures,
   );
   expect(result.out).toContain("OK — frontmatter valid");
-  expect(result.code).toBe(0);
+  expectSpawnExit(result, 0);
 });
 
 test("path rules: required field, narrowed enum and body pattern are enforced", () => {
   const result = run(["docs/runbooks/rotate-keys.md"], inFixtures);
-  expect(result.code).toBe(1);
+  expectSpawnExit(result, 1);
   expect(result.out).toContain(
     "missing required field: service (path rule 'runbooks-name-their-service')",
   );
@@ -198,7 +205,7 @@ test("path rules: required field, narrowed enum and body pattern are enforced", 
 
 test("path rules: an archive document must be archived", () => {
   const result = run(["docs/archive/still-active.md"], inFixtures);
-  expect(result.code).toBe(1);
+  expectSpawnExit(result, 1);
   expect(result.out).toContain(
     "status 'active' is not allowed here (allowed: archived) (path rule 'archive-holds-archived-docs')",
   );
@@ -208,7 +215,7 @@ test("path rules: an archive document must be archived", () => {
 test("path rules do not apply outside their prefix", () => {
   // A draft guide: both rules would reject it under their prefixes.
   const result = run(["good/block-forms.md"], inFixtures);
-  expect(result.code).toBe(0);
+  expectSpawnExit(result, 0);
 });
 
 test("a prefix that matches no document in the tree fails the check", () => {
@@ -223,7 +230,7 @@ test("a prefix that matches no document in the tree fails the check", () => {
       cwd: fixtures,
       schema: typo,
     });
-    expect(result.code).toBe(1);
+    expectSpawnExit(result, 2);
     expect(result.out).toContain(
       "rule 'archive-holds-archived-docs': path 'docs/archvie/' matches no document in the tree",
     );
@@ -237,7 +244,7 @@ test("a path rule that cannot be evaluated fails the check (fail closed)", () =>
     cwd: fixtures,
     schema: fix("rules-broken.yaml"),
   });
-  expect(result.code).toBe(1);
+  expectSpawnExit(result, 2);
   expect(result.out).toContain("the schema cannot be used as written");
   expect(result.out).toContain(
     "rule 'bad-pattern': forbidden_body_patterns[0] pattern does not compile",
@@ -272,7 +279,7 @@ test("every YAML spelling of a schema list is enforced, flow form and trailing c
     );
     try {
       const untitled = run([missingTitle], { schema: flow });
-      expect(untitled.code).toBe(1);
+      expectSpawnExit(untitled, 1);
       expect(untitled.out).toContain("missing required field: title");
     } finally {
       rmSync(missingTitle, { force: true });
@@ -293,7 +300,7 @@ test("a schema section of the wrong shape fails the run instead of dropping its 
   );
   try {
     const result = run([fix("good/caching.md")], { schema: odd });
-    expect(result.code).toBe(1);
+    expectSpawnExit(result, 2);
     expect(result.out).toContain("'required' must be a list of names");
   } finally {
     rmSync(odd, { force: true });
@@ -305,7 +312,7 @@ test("a schema that is not valid YAML fails the run", () => {
   writeFileSync(broken, "required: [title\n");
   try {
     const result = run([fix("good/caching.md")], { schema: broken });
-    expect(result.code).toBe(1);
+    expectSpawnExit(result, 2);
     expect(result.out).toContain("schema is not valid YAML");
   } finally {
     rmSync(broken, { force: true });
@@ -321,7 +328,7 @@ test("without its YAML parser the checker refuses rather than reading the schema
 
 test("a missing schema exits 2", () => {
   const result = run([fix("good/caching.md")], { schema: fix("no-such.yaml") });
-  expect(result.code).toBe(2);
+  expectSpawnExit(result, 2);
 });
 
 test("checkFrontmatter returns its exit code to the caller", async () => {
@@ -356,7 +363,7 @@ test("an explicit null section is a schema error, not an omitted one", () => {
       expect(text).toMatch(pattern);
       writeFileSync(nulled, text.replace(pattern, replacement));
       const result = run([fix("good/caching.md")], { schema: nulled });
-      expect(result.code).toBe(1);
+      expectSpawnExit(result, 2);
       expect(result.out).toContain(section);
     }
   } finally {
@@ -384,7 +391,7 @@ test("a value YAML loads as an object but not a mapping is a schema error", () =
       expect(text).toMatch(pattern);
       writeFileSync(dated, text.replace(pattern, replacement));
       const result = run([fix("good/caching.md")], { schema: dated });
-      expect(result.code).toBe(1);
+      expectSpawnExit(result, 2);
       expect(result.out).toContain(section);
     }
   } finally {
@@ -394,5 +401,29 @@ test("a value YAML loads as an object but not a mapping is a schema error", () =
 
 test("a schema that cannot be read exits 2, not as a schema violation", () => {
   const result = run([fix("good/caching.md")], { schema: fixtures });
-  expect(result.code).toBe(2);
+  expectSpawnExit(result, 2);
+});
+
+test("a schema with one malformed section reports it alone and checks no document", () => {
+  const odd = join(scratch, "no-values-schema.yaml");
+  writeFileSync(
+    odd,
+    readFileSync(schema, "utf8").replace(
+      /^status:\n {2}values:/m,
+      "status:\n  fields:",
+    ),
+  );
+  try {
+    const result = run([fix("good/caching.md"), fix("bad/broken.md")], {
+      schema: odd,
+    });
+    expectSpawnExit(result, 2);
+    expect(result.out.match(/^FAIL /gm)).toHaveLength(1);
+    expect(result.out.match(/^ {2}- /gm)).toHaveLength(1);
+    expect(result.out).toContain("'status.values' must be a non-empty list");
+    expect(result.out).not.toContain("not in schema enum");
+    expect(result.out).not.toContain("broken.md");
+  } finally {
+    rmSync(odd, { force: true });
+  }
 });

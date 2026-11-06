@@ -2,7 +2,7 @@
  * The drive-state document: its shape, its validator, and its fresh default.
  *
  * ABSENT and MALFORMED are different answers, and collapsing them is a
- * fail-open. A drive with no state file has nothing to lose, so a fresh empty
+ * fail-open. A drive with no stored state has nothing to lose, so a fresh empty
  * object is correct. A file that EXISTS but does not parse is the opposite
  * case: it is the only record of the parked human decisions, the durable round
  * budget and the verified SHA, and substituting fresh state there silently
@@ -44,6 +44,7 @@ import { type TakeoverRecord, isOptionalTakeovers } from "./takeover.ts";
 import { isOptionalRetryCount } from "./deadline-retries.ts";
 import { isOptionalFrame } from "./park-frame.ts";
 import { type UnattendedDecision, isOptionalDecisions } from "./decisions.ts";
+import { type DriveEvent, isOptionalEvents } from "./events.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 
 /**
@@ -128,7 +129,7 @@ export interface HeldItem {
    * WHICH driver created this hold — `lib/state/actor.ts`'s worktree-derived
    * id, recorded by every writer (`hold`, `restore-held`) for both kinds.
    *
-   * The state file is shared by every driver working one PR (`store.ts` keys
+   * The stored state is shared by every driver working one PR (`store.ts` keys
    * it per clone, by default under `~/.local/state/jig/drive-pr/<cloneKey>/`,
    * on purpose), so without this the batch is one anonymous list and nothing
    * can tell driver A's holds from driver B's.
@@ -184,6 +185,8 @@ export type CiHoldState =
     }
   | {
       phase: "held";
+      /** A pre-existing label must survive failed pushes, including retries. */
+      adopted?: boolean;
       eventId: string;
       addedAtHead: string;
       actor: string;
@@ -193,6 +196,7 @@ export type CiHoldState =
     }
   | {
       phase: "releasing";
+      adopted?: boolean;
       heldEventId: string;
       addedAtHead: string;
       heldActor: string;
@@ -218,7 +222,7 @@ export type CiHoldState =
  * optional-and-defaulted tier.
  *
  * Four of these once carried `?`, with the validator and every consumer reading
- * them through `?? 0` / `?? []`, so a state file written before the field
+ * them through `?? 0` / `?? []`, so a stored state written before the field
  * existed and one written after were both accepted by one parser. That is the
  * accepts-both-shapes tolerance this state format deliberately does not carry
  * before general availability, and it was reported as such on the two newest of
@@ -296,7 +300,7 @@ export interface DriveState {
    * REQUIRED, not `?? ''`-defaulted — the same "no optional-and-defaulted
    * tier" stance this interface already takes for `lastEscalatedRound` and
    * `lastEscalatedInvariant` (see their own comments), for the identical
-   * reason: a state file written before this field existed has no opinion on
+   * reason: a stored state written before this field existed has no opinion on
    * whether the drive it describes ever progressed, and defaulting that
    * silence to `''` ("never") would be indistinguishable from a REAL "never"
    * on a drive that is in fact healthy — exactly the false reading a
@@ -404,6 +408,8 @@ export interface DriveState {
   deadlineRetries?: number;
   /** Decisions the agent took and recorded, oldest first (`decisions.ts`). */
   decisions?: UnattendedDecision[];
+  /** The drive's self-restarts and re-arms, oldest first (`events.ts`). */
+  events?: DriveEvent[];
   /** The review arbiter's ruling per thread (`rulings.ts`). */
   rulings?: ArbiterRuling[];
   [extra: string]: unknown;
@@ -414,7 +420,7 @@ export interface DriveState {
  * window is safely ACKNOWLEDGED (`foldRoundPaths` below). The predicate reads
  * exactly two adjacent entries, so anything ≥2 is behaviourally sufficient;
  * the surplus is for a human reading `drive-state.ts round-paths` (or the
- * state file), who wants the shape of the whole drive rather than only its
+ * stored state), who wants the shape of the whole drive rather than only its
  * last two rounds. This is a floor, not a hard cap — see `foldRoundPaths`.
  */
 export const ROUND_PATHS_WINDOW = 12;
@@ -427,7 +433,7 @@ export const ROUND_PATH_MAX_LENGTH = 512;
 
 /**
  * Cap on `lastEscalatedInvariant`'s length — generous for "one
- * sentence" while still bounding a state file rewritten under a lock on every
+ * sentence" while still bounding a stored state rewritten under a lock on every
  * mutation. The CLI refuses an over-cap `--invariant` outright rather than
  * silently truncating it: a truncated claim can read as a DIFFERENT, narrower
  * claim than the one actually made, which is worse than asking the caller to
@@ -506,7 +512,7 @@ function isCount(v: unknown): boolean {
 }
 
 /** A parked item every reader can match and render (`ParkedItem`). */
-function isParkedItem(p: unknown): boolean {
+export function isParkedItem(p: unknown): boolean {
   if (typeof p !== "object" || p === null) return false;
   const e = p as Record<string, unknown>;
   return (
@@ -553,9 +559,73 @@ function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
     isOptionalTakeovers(s.takeovers),
     isOptionalRetryCount(s.deadlineRetries),
     isOptionalDecisions(s.decisions),
+    isOptionalEvents(s.events),
     isOptionalRulings(s.rulings),
     s.ledgerGeneration === undefined || isCount(s.ledgerGeneration),
   ].every(Boolean);
+}
+
+const isNonEmptyString = (v: unknown): v is string =>
+  typeof v === "string" && v.length > 0;
+const isSingleLine = (v: unknown): boolean =>
+  isNonEmptyString(v) && !/\r|\n/.test(v);
+const isSha = (v: unknown): boolean => typeof v === "string" && isGitSha(v);
+const isTimestamp = (v: unknown): boolean =>
+  typeof v === "string" && Number.isFinite(Date.parse(v));
+const isOptionalBoolean = (v: unknown): boolean =>
+  v === undefined || typeof v === "boolean";
+
+/** The fields only one phase of a recorded CI hold carries. */
+function hasUsablePhaseFields(hold: Record<string, unknown>): boolean {
+  switch (hold.phase) {
+    case "acquiring":
+      return (
+        (hold.previousEventId === null ||
+          isNonEmptyString(hold.previousEventId)) &&
+        isSha(hold.head) &&
+        (hold.label === undefined || isNonEmptyString(hold.label))
+      );
+    case "held":
+      return (
+        isNonEmptyString(hold.eventId) &&
+        isOptionalBoolean(hold.adopted) &&
+        isSha(hold.addedAtHead)
+      );
+    case "releasing":
+      return (
+        isOptionalBoolean(hold.adopted) &&
+        isSha(hold.head) &&
+        isNonEmptyString(hold.heldEventId) &&
+        isSha(hold.addedAtHead) &&
+        isSingleLine(hold.heldActor) &&
+        isTimestamp(hold.heldCreatedAt)
+      );
+    case "released":
+      return (
+        isNonEmptyString(hold.eventId) &&
+        isSha(hold.head) &&
+        (hold.source === "external" ||
+          (hold.source === "drive" && hold.checkRunWatermark !== 0))
+      );
+    default:
+      return false;
+  }
+}
+
+/** Whether a recorded CI hold has the shape its phase requires. */
+function isUsableCiHold(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return false;
+  const hold = value as Record<string, unknown>;
+  const watermark = hold.checkRunWatermark;
+  return (
+    hasUsablePhaseFields(hold) &&
+    typeof watermark === "number" &&
+    Number.isSafeInteger(watermark) &&
+    watermark >= 0 &&
+    isSingleLine(hold.actor) &&
+    isTimestamp(hold.createdAt)
+  );
 }
 
 export function isUsableState(v: unknown, pr: number): v is DriveState {
@@ -575,91 +645,10 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (!isCount(s.lastReflectedRound)) return false;
   if (!isCount(s.lastReflectedAttempts)) return false;
   if (!isCount(s.readyMarkedRound)) return false;
-  if (s.ciHold !== null) {
-    if (typeof s.ciHold !== "object" || Array.isArray(s.ciHold)) return false;
-    const hold = s.ciHold as Record<string, unknown>;
-    if (
-      hold.phase !== "acquiring" &&
-      hold.phase !== "held" &&
-      hold.phase !== "releasing" &&
-      hold.phase !== "released"
-    )
-      return false;
-    if (
-      (hold.phase === "held" || hold.phase === "released") &&
-      (typeof hold.eventId !== "string" || hold.eventId.length === 0)
-    )
-      return false;
-    if (hold.phase === "acquiring") {
-      if (
-        hold.previousEventId !== null &&
-        (typeof hold.previousEventId !== "string" ||
-          hold.previousEventId.length === 0)
-      )
-        return false;
-      if (typeof hold.head !== "string" || !isGitSha(hold.head)) return false;
-      if (
-        hold.label !== undefined &&
-        (typeof hold.label !== "string" || hold.label.length === 0)
-      )
-        return false;
-    }
-    if (hold.phase === "held") {
-      if (typeof hold.addedAtHead !== "string" || !isGitSha(hold.addedAtHead))
-        return false;
-    } else if (
-      hold.phase !== "acquiring" &&
-      (typeof hold.head !== "string" || !isGitSha(hold.head))
-    ) {
-      return false;
-    }
-    if (
-      (hold.phase === "acquiring" ||
-        hold.phase === "held" ||
-        hold.phase === "released" ||
-        hold.phase === "releasing") &&
-      (typeof hold.checkRunWatermark !== "number" ||
-        !Number.isSafeInteger(hold.checkRunWatermark) ||
-        hold.checkRunWatermark < 0)
-    )
-      return false;
-    if (
-      hold.phase === "released" &&
-      hold.source !== "drive" &&
-      hold.source !== "external"
-    )
-      return false;
-    if (
-      hold.phase === "released" &&
-      hold.source === "drive" &&
-      hold.checkRunWatermark === 0
-    )
-      return false;
-    if (hold.phase === "releasing") {
-      if (
-        typeof hold.heldEventId !== "string" ||
-        hold.heldEventId.length === 0 ||
-        typeof hold.addedAtHead !== "string" ||
-        !isGitSha(hold.addedAtHead) ||
-        typeof hold.heldActor !== "string" ||
-        hold.heldActor.length === 0 ||
-        /\r|\n/.test(hold.heldActor) ||
-        typeof hold.heldCreatedAt !== "string" ||
-        !Number.isFinite(Date.parse(hold.heldCreatedAt))
-      )
-        return false;
-    }
-    if (typeof hold.actor !== "string" || hold.actor.length === 0) return false;
-    if (/\r|\n/.test(hold.actor)) return false;
-    if (
-      typeof hold.createdAt !== "string" ||
-      !Number.isFinite(Date.parse(hold.createdAt))
-    )
-      return false;
-  }
+  if (s.ciHold !== null && !isUsableCiHold(s.ciHold)) return false;
   // Present AND well-typed, on the same terms as every other counter here —
   // backward compatibility before general availability is deliberately not
-  // offered, so a state file written before this field existed is REFUSED by
+  // offered, so a stored state written before this field existed is REFUSED by
   // `store.read` rather than silently migrated to a zeroed baseline. A
   // tolerated-absent `lastEscalatedRound` would read as "never acknowledged",
   // which re-arms a duty a human already discharged — the same re-arm shape
@@ -679,7 +668,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   )
     return false;
   // Same REQUIRED-not-optional stance as `lastEscalatedRound` above, added in
-  // the same PR that added the field: a state file written before
+  // the same PR that added the field: a stored state written before
   // it existed is refused rather than tolerated with a `?? ''` default,
   // consistent with this interface's own "no optional-and-defaulted tier"
   // rule. Length-capped and newline-free against the writer's own refusal
@@ -919,7 +908,7 @@ export function withProgress(
  * `ReflectCounters`: a caller legitimately holds a partial set (drive-status
  * reads it back out of `drive-state.ts get`'s stdout), and tolerating absence
  * at a FUNCTION boundary is not the accepts-both-stored-shapes tolerance
- * `DriveState` documents rejecting. Nothing here decides whether a state FILE
+ * `DriveState` documents rejecting. Nothing here decides whether a stored STATE
  * is usable.
  */
 export interface EscalationState {
@@ -1098,7 +1087,7 @@ export function foldRoundPaths(
  * the counters one at a time out of `drive-state.ts`'s stdout and assembles
  * them here, so a caller legitimately holds a partial set. Tolerating absence
  * at a function boundary is not the accepts-both-stored-shapes tolerance
- * `DriveState` documents rejecting; nothing here decides whether a state FILE
+ * `DriveState` documents rejecting; nothing here decides whether a stored STATE
  * is usable.
  */
 export interface ReflectCounters {
@@ -1113,7 +1102,7 @@ export function reflectDepthPastLast(s: ReflectCounters): number {
     (s.rounds ?? 0) - (s.lastReflectedRound ?? 0),
     (s.attempts ?? 0) - (s.lastReflectedAttempts ?? 0),
   );
-  // A state file that PARSES but carries a non-numeric counter (`{"rounds":"x"}`)
+  // A stored state that PARSES but carries a non-numeric counter (`{"rounds":"x"}`)
   // yields NaN, and every consumer compares with `depth > threshold`, which NaN
   // makes false — the duty would go silently OFF on the one input that cannot
   // be trusted, against the stated fail-open. The

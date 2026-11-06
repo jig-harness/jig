@@ -30,6 +30,7 @@ import { finishDriverPassRegistrations, touchLock } from "./lifecycle.ts";
 export function passEnv(task?: {
   task: RepairTask;
   detail: string;
+  failedRuns?: readonly number[];
 }): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.CLAUDECODE;
@@ -41,12 +42,15 @@ export function passEnv(task?: {
   // unanswered, which is the one failure this whole loop exists to prevent.
   delete env.DRIVE_PR_ROUND_TASK;
   delete env.DRIVE_PR_ROUND_TASK_DETAIL;
+  delete env.DRIVE_PR_ROUND_FAILED_RUNS;
   // The same for the notice of a recovered stop: only the driver that
   // recovered it may say so, and only to the review pass it spawns next.
   delete env.DRIVE_PR_PASS_NOTICE;
   if (task !== undefined) {
     env.DRIVE_PR_ROUND_TASK = task.task;
     env.DRIVE_PR_ROUND_TASK_DETAIL = task.detail;
+    if ((task.failedRuns ?? []).length > 0)
+      env.DRIVE_PR_ROUND_FAILED_RUNS = (task.failedRuns ?? []).join(" ");
   }
   return env;
 }
@@ -105,6 +109,8 @@ export async function runRepairPass(
   mailboxCheckpoint: (opts?: {
     beforePass?: boolean;
   }) => Promise<"clear" | "resumed" | number>,
+  // The runs a `ci-repair` pass may re-run: `failed-runs.ts`.
+  failedRuns: readonly number[] = [],
 ): Promise<RepairDispatch> {
   const deadlineSec = passTimeoutSeconds();
   // One more refresh, immediately before THIS spawn — not only at the PRIOR
@@ -150,7 +156,7 @@ export async function runRepairPass(
       stdout: "inherit",
       stderr: "inherit",
       detached: true,
-      env: passEnv({ task, detail }),
+      env: passEnv({ task, detail, failedRuns }),
       ...(deadlineSec > 0 ? { timeoutSec: deadlineSec } : {}),
       onSpawn: (h) => {
         driverRuntime.activePass = h;
@@ -185,7 +191,9 @@ export async function runRepairPass(
     console.error(
       "  exact two-drivers-one-tree state they exist to prevent. Confirm the tree is",
     );
-    console.error("  actually gone, then remove the lock dir to re-arm.");
+    console.error(
+      "  actually gone, then re-arm: the next drive recovers a lock whose driver has exited.",
+    );
     locks.length = 0;
     // No post-pass checkpoint here: termination could not be witnessed, so
     // a descendant may still be running — this return must stay quick

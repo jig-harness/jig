@@ -117,6 +117,14 @@ function sameRepo(id: string | null, ref: PrRef): boolean {
     : id === `${ref.host}/${slug}`;
 }
 
+/** Whether `ref` names a pull request of the repository checked out at `cwd`. */
+export async function refersToCheckout(
+  ref: PrRef,
+  cwd: string,
+): Promise<boolean> {
+  return ref.slug === null || sameRepo(await repoId(cwd), ref);
+}
+
 interface Tree {
   path: string;
   branch: string | null;

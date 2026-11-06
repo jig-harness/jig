@@ -27,6 +27,7 @@ test("generated, vendored and fixture output is outside the source scope", () =>
     "src/generated/example.ts",
     "generated/example.ts",
     "lib/vendor/js-yaml.mjs",
+    "plugin/shared/vendor/optique.mjs",
     "modules/M1/reference/x/fixtures/large.ts",
   ])
     expect([path, inScope(path)]).toEqual([path, false]);

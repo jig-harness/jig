@@ -256,6 +256,7 @@ describe("foldGateState", () => {
         "hold-push": { active: false, since: null, by: null },
         pause: { active: false, since: null, by: null },
         stop: { active: false, since: null, by: null },
+        addressed: [],
       },
       warnings: [],
     });
@@ -820,18 +821,12 @@ describe("appendLine durability (fsync after append)", () => {
 
 describe("repairInbox dry-run is genuinely read-only", () => {
   it("creates no .lock artifacts on a dry-run repair, even against an inbox with a dropped line", async () => {
-    // Acquiring the mutating per-file lock on a dry-run broke the
-    // command's own "reports without writing" contract: it creates
-    // .lock.stale.*/.lock.recovering.stale.* tombstone directories as a
-    // side effect and would fail outright against a genuinely read-only
-    // mailbox directory.
+    // A dry run "reports without writing": taking the per-file lock
+    // (`<inbox>.lock`, created exclusively) would write into the mailbox
+    // directory, and would fail outright against a read-only one.
     //
-    // The inbox content is written DIRECTLY here (bypassing appendLine),
-    // deliberately: appendLine's own lock acquire/release is itself a
-    // normal source of these same tombstones (a known, separate property
-    // of lock.ts, not this bug), and routing the setup through it would
-    // make this test unable to tell "appendNote's own lock use" apart
-    // from "repairInbox's dry-run taking one it shouldn't".
+    // The inbox content is written DIRECTLY here (bypassing appendLine), so
+    // the only lock this test can see is one the dry run itself took.
     writeFileSync(
       inboxPath(dir),
       `${JSON.stringify({ id: "m-1", ts: new Date().toISOString(), kind: "note", from: "x", pr: "999", body: "good" })}\n{"truncated-no-newline`,
@@ -840,6 +835,16 @@ describe("repairInbox dry-run is genuinely read-only", () => {
     expect(r.ok).toBe(true);
     const lockArtifacts = readdirSync(dir).filter((e) => e.includes(".lock"));
     expect(lockArtifacts).toEqual([]);
+  });
+
+  it("leaves no .lock artifact behind once an append and a real repair released their lock", async () => {
+    await appendNote(dir, "999", "orchestrator", "first");
+    appendFileSync(inboxPath(dir), '{"truncated-no-newline');
+    const r = await repairInbox(dir, false);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.droppedLines).toBe(1);
+    await appendNote(dir, "999", "orchestrator", "second");
+    expect(readdirSync(dir).filter((e) => e.includes(".lock"))).toEqual([]);
   });
 });
 
@@ -1010,14 +1015,11 @@ describe("repairInbox", () => {
 
   it("fails CLOSED on both dry-run and a real repair when the mailbox path itself exists as a regular FILE, not a directory", async () => {
     // `lstatSync(dir)` succeeding only proves SOMETHING exists at `dir` —
-    // not that it's a directory. Before this fix, `dir` being a plain file
-    // sailed past that check: the real (non-dry-run) path then reached
-    // `lock.acquire()`, whose `mkdirSync(inbox.jsonl.lock)` fails with
-    // ENOTDIR on every attempt (a path component, `dir` itself, is the
-    // wrong type) — the lock treats that as ordinary contention and
-    // eventually reports "another driver is updating state", sending an
-    // operator chasing a nonexistent rival instead of the actual broken
-    // path.
+    // not that it's a directory. Without the type check, `dir` being a plain
+    // file would reach the real (non-dry-run) path's `lock.acquire()`, whose
+    // exclusive create of `inbox.jsonl.lock` fails with ENOTDIR (a path
+    // component, `dir` itself, is the wrong type) instead of naming the
+    // broken path.
     const mailboxPathIsAFile = join(dir, "mailbox-is-actually-a-file");
     writeFileSync(mailboxPathIsAFile, "this is a file, not a directory");
 
@@ -1052,8 +1054,8 @@ describe("repairInbox", () => {
 
   it("succeeds on a mailbox directory that does not exist yet, and never creates it — repair as the very first mailbox command on a fresh worktree", async () => {
     // Every other test's `dir` is pre-created by `beforeEach`'s `mkdtempSync`,
-    // which never exercises this: `createLock`'s own `mkdirSync(lock)` is not
-    // recursive. Having repair create the mailbox directory itself before
+    // which never exercises this: the lock file `<inbox>.lock` needs its
+    // directory. Having repair create the mailbox directory itself before
     // locking would break `--dry-run`'s own "reports without writing" contract
     // by mutating a fresh worktree unconditionally, so repair short-circuits on
     // an absent directory before touching the filesystem at all, for both

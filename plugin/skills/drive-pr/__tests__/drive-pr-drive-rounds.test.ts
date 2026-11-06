@@ -9,10 +9,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   realpathSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -52,6 +50,7 @@ import {
 } from "./drive-loop-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { lockRow, writeState } from "./state-rows.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
@@ -79,7 +78,7 @@ describe("drive.ts loop control", () => {
       );
       expect(r.exitCode).toBe(MAILBOX_STOPPED_EXIT);
       expect(r.stderr).not.toContain("RAN_THE_PASS");
-      expect(existsSync(join(stateDir, "pr-drive-999.lock"))).toBe(false);
+      expect(lockRow(stateDir, "pr-drive-999")).toBeNull();
     });
 
     it("times out a pause without spending a pass", async () => {
@@ -100,7 +99,7 @@ describe("drive.ts loop control", () => {
       );
       expect(r.exitCode).toBe(MAILBOX_PAUSE_TIMEOUT_EXIT);
       expect(r.stderr).not.toContain("RAN_THE_PASS");
-      expect(existsSync(join(stateDir, "pr-drive-999.lock"))).toBe(false);
+      expect(lockRow(stateDir, "pr-drive-999")).toBeNull();
     });
 
     it("fails closed on an unreadable directive state", async () => {
@@ -185,13 +184,9 @@ describe("drive.ts loop control", () => {
       // it at pause entry would satisfy every assertion above and below
       // just as well, despite breaking the single-driver guarantee a pause
       // must not weaken. Assert both directly, with the pause still live:
-      const prLockDir = join(stateDir, "pr-drive-999.lock");
-      const claimsInPrLock = () =>
-        readdirSync(prLockDir).filter((n) => n.startsWith("claim."));
-      const heldClaims = claimsInPrLock();
-      expect(heldClaims.length).toBe(1);
-      const claimPath = join(prLockDir, heldClaims[0] as string);
-      const firstBeat = statSync(claimPath).mtimeMs;
+      const held = lockRow(stateDir, "pr-drive-999");
+      expect(held).not.toBeNull();
+      const firstBeat = Date.parse(held?.renewed_at ?? "");
 
       // A competing invocation against the SAME PR must still be refused —
       // a pause holds the lock, it does not release it.
@@ -227,7 +222,10 @@ describe("drive.ts loop control", () => {
       // driver that stopped renewing while paused would eventually look
       // recoverable to exactly the competitor above.
       await Bun.sleep(500);
-      const secondBeat = statSync(claimPath).mtimeMs;
+      const after = lockRow(stateDir, "pr-drive-999");
+      // The same acquisition, renewed: not a lock taken again.
+      expect(after?.token).toBe(held?.token);
+      const secondBeat = Date.parse(after?.renewed_at ?? "");
       expect(secondBeat).toBeGreaterThan(firstBeat);
 
       await appendDirective(mailboxDir, "999", "test", "resume", {
@@ -246,7 +244,7 @@ describe("drive.ts loop control", () => {
       expect(existsSync(passFinished)).toBe(true);
       expect(stderr).toContain("stop requested");
       expect(existsSync(join(dir, "ready-calls"))).toBe(true);
-      expect(existsSync(join(stateDir, "pr-drive-999.lock"))).toBe(false);
+      expect(lockRow(stateDir, "pr-drive-999")).toBeNull();
       // 25s, not 20s: the added competing-invocation spawn and heartbeat
       // freshness wait above cost this test a little over half a second in
       // the common case, but leave the same worst-case synchronization
@@ -545,10 +543,10 @@ describe("drive.ts loop control", () => {
       // compaction between the reply and the resolve drops the held batch
       // unless it is durable. Starting a continuous drive without the state
       // that makes it survivable is the failure, so the driver probes for it.
-      // An unreadable state file models a drive-state.ts that cannot serve the
-      // batch, whatever the reason.
+      // An unusable stored state models a drive-state.ts that cannot serve
+      // the batch, whatever the reason.
       const { dir, stateDir } = writeFixture({ threads: [] });
-      writeFileSync(join(stateDir, "drive-pr-999.json"), "not usable state");
+      writeState(stateDir, "999", "not usable state");
       const proc = Bun.spawn(
         scriptArgv(
           join(SCRIPTS, "drive.ts"),
@@ -907,29 +905,26 @@ describe("drive.ts loop control", () => {
 
   /** Seed the durable state directly, to model a drive resumed at its bound. */
   function seedRounds(stateDir: string, rounds: number, head = HEAD) {
-    writeFileSync(
-      join(stateDir, "drive-pr-999.json"),
-      JSON.stringify({
-        pr: 999,
-        rounds,
-        lastCountedHead: head,
-        attempts: 0,
-        attemptsHead: "",
-        lastReflectedRound: 0,
-        lastReflectedAttempts: 0,
-        readyMarkedRound: 0,
-        ciHold: null,
-        verifiedSha: "",
-        phase: "",
-        parked: [],
-        held: [],
-        lastEscalatedRound: 0,
-        lastEscalatedInvariant: "",
-        roundPaths: [],
-        lastProgressAt: "",
-        quotaPark: null,
-      }),
-    );
+    writeState(stateDir, "999", {
+      pr: 999,
+      rounds,
+      lastCountedHead: head,
+      attempts: 0,
+      attemptsHead: "",
+      lastReflectedRound: 0,
+      lastReflectedAttempts: 0,
+      readyMarkedRound: 0,
+      ciHold: null,
+      verifiedSha: "",
+      phase: "",
+      parked: [],
+      held: [],
+      lastEscalatedRound: 0,
+      lastEscalatedInvariant: "",
+      roundPaths: [],
+      lastProgressAt: "",
+      quotaPark: null,
+    });
   }
 
   it.skipIf(skipLongDriveFixture)(

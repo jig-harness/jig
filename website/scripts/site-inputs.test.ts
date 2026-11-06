@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { join, posix, relative, resolve } from "node:path";
+import { dirname, join, posix, relative, resolve } from "node:path";
 import { convertToTsx } from "@astrojs/astro2tsx";
 import ts from "typescript";
 import { repoFiles } from "../../lib/files.ts";
+import { CODE_STATS_SCRIPT } from "../src/lib/data/code-stats.ts";
 import {
   CATALOG,
   type Catalog,
@@ -702,6 +703,7 @@ function readPaths(files: string[], sources: Map<string, string>) {
   expect(unused).toEqual([]);
   expect(paths).toContain("plugin/skills/audit/profiles.yaml");
   expect(paths).toContain("plugin/EXTENDING.md");
+  expect(paths).toContain("plugin/MECHANISMS.md");
   const globbed = globs.map((g) =>
     files.filter((f) => new Bun.Glob(g).match(f)),
   );
@@ -859,6 +861,17 @@ test("Jig's catalog selects the website for every file the site's build reads", 
   ].filter((f) => !f.startsWith("website/") && !f.includes("node_modules/"));
   expect(
     read.filter((f) => !resolveAreas([f], jig).areas.includes("website")),
+  ).toEqual([]);
+  // The build runs the code-stats skill's script rather than importing it,
+  // so the script, the code it imports and the configuration it reads are
+  // named here.
+  const ran = [
+    ...files.filter((f) => f.startsWith(dirname(CODE_STATS_SCRIPT))),
+    ".config/jig.yaml",
+  ];
+  expect(ran).toContain(CODE_STATS_SCRIPT);
+  expect(
+    ran.filter((f) => !resolveAreas([f], jig).areas.includes("website")),
   ).toEqual([]);
   // And what the site does not read leaves the website out.
   for (const file of [

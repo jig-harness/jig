@@ -1,0 +1,262 @@
+# Records: what Jig's parts leave for each other
+
+Jig's parts never share a process. A drive pass lives minutes, a dispatcher
+tick seconds, and a person answers a parked question hours later. So each
+part leaves records behind, and the next part reads them: a file on the
+machine, a file in the working tree, a comment or a label on the pull
+request, a field or a comment on the tracker. Without one list, a reader has
+to trace every script to learn where a drive keeps its state, which comment
+the dispatcher reads, or what stops two writers from overwriting each other.
+
+This page lists every record the plugin keeps, **by record**: where it
+lives, its format, who writes it and what guards it. It is a view
+of the same system: the
+[lifecycle map](https://github.com/jig-harness/jig/blob/main/docs/LIFECYCLE.md)
+walks it by stage,
+[FACTORY.md](https://github.com/jig-harness/jig/blob/main/FACTORY.md) by
+station, and [MECHANISMS.md](MECHANISMS.md) by mechanism. Why the parts
+share records rather than talk to a resident daemon is
+[ADR-0013](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0013-records-not-a-daemon.md).
+
+Contents: [the registry and the envelope](#the-registry-and-the-envelope) ·
+[on the machine](#on-the-machine) ·
+[in the working tree](#in-the-working-tree) ·
+[on the forge and the tracker](#on-the-forge-and-the-tracker) ·
+[markers that are not records](#markers-that-are-not-records)
+
+## The registry and the envelope
+
+Every record below is registered in the
+[records registry](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+(`shared/records/registry.ts`) under the name in its first column, with its
+medium (`machine`, `tree`, `forge` or `tracker`), its owner, where it lives
+and its schema version. A kind another tool or a person writes and Jig only
+reads is registered as foreign, with the plugin file that reads it as its
+owner. Jig's own gates fail a hidden marker, a drive state family or a
+SQLite table that the plugin's code names and the registry does not hold,
+and a registry entry the code no longer names. This text check does not
+discover arbitrary file-backed records or names assembled at runtime.
+Adding or changing those records requires updating this inventory and the
+registry during review.
+
+A record that carries the
+[record envelope](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+(`shared/records/envelope.ts`) says what it is in the same fields
+everywhere: its `kind`, its schema version `v` (an integer), its `key` (what
+it is about, unique within its kind), its `writer` (the login where known,
+the host, the boot, the process and its start time) and the time `at`, with
+a `generation` when it is rewritten in place. The envelope's fields sit
+beside the record's own at the top level of one JSON object, so a reader
+written before the record carried the envelope still finds the fields it
+reads. One codec writes it as a file's JSON and places the same bytes in a
+hidden comment on the forge, with every `<` and `>` escaped so nothing in it
+can close the comment early. On the forge and the tracker the writer's host
+and boot are digests, so a public comment names no machine. A reader returns
+a failure as a value and never throws on what it reads. It checks the
+envelope against a strict form: the kind is registered, the version is a
+positive integer no newer than the one the reader knows for the kind, the
+key has the kind's shape, the writer names a host, and the time reads as a
+date and time. The rest of the record is data, never a command, so no record
+makes its reader run, fetch or follow what it names. The drive ledger and the
+[forge claims](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (the
+takeover claim, the follow-up marker, the launch claim and the merge-ready
+announcement) carry it, so does the answer `jig send` writes, and so does
+the Orca guard record on the machine.
+The other records adopt it one family at a time, each still reading its form
+from before the envelope for one release.
+
+**How paths are written.** A path in the plugin is written from the plugin
+directory (`dispatch/lib/walls.ts`), as in [MECHANISMS.md](MECHANISMS.md).
+`<drive db>` is the drive's database, `~/.local/state/jig/drive-pr/state.sqlite`,
+one per machine, and `<state dir>` a clone's directory beside it,
+`~/.local/state/jig/drive-pr/<clone>/`, which
+`skills/drive-pr/scripts/lib/state/store.ts` resolves (`$DRIVE_PR_STATE_DIR`
+moves their root). `<dispatch>` is the dispatcher's,
+`~/.local/state/jig/dispatch/` (`dispatch/receipts.ts`). `<git dir>` is the
+working tree's own Git directory. `~/.jig/` is `$JIG_HOME` when it is set.
+
+**A component's database.** The drive's and the dispatcher's databases are
+SQLite, one per component and never one shared by all, so a component's
+migration never waits on another's. Each is opened through
+`shared/records/db.ts`: a write-ahead log so a reader never waits on a
+writer, a wait of up to ten seconds for another connection's transaction to
+end, foreign keys enforced, and a directory and file only their owner can
+read when it creates them (an existing directory or database keeps the
+permissions it had). Its schema moves forward through migrations, never edited once
+released, and its version is in `PRAGMA user_version`. A `db_meta` row
+(`db-meta`) holds the database's instance id and its minimum reader, the
+lowest schema version a plugin must know to use it. Each migration says
+whether it is additive (it only adds a table, an index or a column with a
+default); the minimum reader is the version the last migration that was not
+additive moved the schema to. So a plugin one release behind reads a
+database a newer one changed only additively, and refuses one that needs a
+newer reader, naming both versions. The instance id is random, so a
+database deleted and created again at the same path is told apart from the
+one before it.
+
+## On the machine
+
+Records only this machine reads, under the user's home or the temporary
+directory.
+
+| Record | Where it lives | Format | Written by | What guards it |
+|--------|----------------|--------|------------|----------------|
+| `drive-state` | `<drive db>`, table `drive_state`, one row per clone and PR | the `DriveState` document as JSON, with its version in a column; a shape the store cannot use is refused (`isUsableState`) | `skills/drive-pr/scripts/lib/state/store.ts`, through `drive-state.ts` | the store's lock (`drive-lock`) around each read-modify-write; the lease fence checked inside the lock |
+| `drive-lock` | `<drive db>`, table `locks`, one row per clone and name: the store's per-PR lock `drive-pr-<PR>`, the driver locks `pr-drive-<PR>` and `pr-drive-worktree-<16 hex>`, the remote-mutation lock `drive-pr-remote-lock-<PR>`, the tree-lease guard `drive-tree-lease-wt-<16 hex>`, the reaper's `reap-state` | the holder's process identity (`shared/liveness.ts`), a token per acquisition, the heartbeat; a driver lock's diagnostics as JSON | `skills/drive-pr/scripts/lib/state/lock.ts`; the driver locks `skills/drive-pr/scripts/lib/driver/locks.ts` | taken by one statement that inserts or replaces the row it saw; released and renewed only under its token; a holder judged dead, or past its window, is replaced; a release deletes the row |
+| `drive-pr-lease` | `<drive db>`, table `leases`, one row per clone, PR and working tree | the holder's process identity, the lease shape (generation, start, renewal, expiry), the session's token and diagnostics | `skills/drive-pr/scripts/lib/state/lease-admission.ts` | read and written in one transaction; a generation drawn from `drive-counter`, kept on renewal and raised by every admission, which the fence compares |
+| `drive-tree-lease` | `<drive db>`, table `tree_leases`, one row per clone and working tree | as `drive-pr-lease`, with the PR it drives and a revision per write | `skills/drive-pr/scripts/lib/state/lease-tree.ts` | the tree-lease guard (`drive-lock`) and one transaction; a rollback compares the revision |
+| `drive-claim` | `<drive db>`, table `claims`: a held item's claim per key, the Ready mark's per PR | a token and when it was taken | `skills/drive-pr/scripts/lib/state/claims.ts` | created by an insert that does nothing when one exists; a stale claim is broken under the store's lock |
+| `drive-stop` | `<drive db>`, table `stops` | an earlier release's stop requests; nothing in this release writes or reads them, since a stop is a `drive-mailbox` directive | `skills/drive-pr/scripts/lib/state/db.ts`, which keeps the table in the schema so an earlier release still opens the database | none |
+| `drive-ledger-driver` | `<drive db>`, table `driver_records`, one row per clone and PR | the driver's worktree, start, process and host, and whether it released its locks | `skills/drive-pr/scripts/lib/ledger-stop.ts` | updated and removed only while it names the same start |
+| `drive-state-import` | `<drive db>`, table `imports`, one row per clone | when an earlier release's state directory was read in, how many records, and the files it could not read | `skills/drive-pr/scripts/lib/state/import.ts` | written once, in the transaction that imports, at the first open of the database for that clone |
+| `drive-counter` | `<drive db>`, table `counters` | a number that only grows: the lease generation, and each pull request's driver generation in a clone, which a mailbox `stop` addresses | `skills/drive-pr/scripts/lib/state/db.ts` | one statement increments and returns it |
+| `review-round-counter` | `<drive db>`, table `review_rounds`, one row per clone, pull request and head counted | the round that head was counted as, and whether a hand-driven loop's convergence settled it | `skills/drive-pr/scripts/lib/state/review-rounds.ts`: the drive's `bump-round`, and `count-round`, `settle-rounds` for `skills/resolve-review-comments/scripts/await-round.ts`, whether or not a driver runs; read by `current-round.ts` and, through the drive state, the ledger | one transaction gives a new head the next ordinal; a head already counted adds nothing |
+| `drive-log` | `<state dir>/drive-pr-<PR>.log`, rotated to `.log.1` | text lines | `skills/drive-pr/scripts/lib/driver-log.ts` | appended; only the driver that holds the lock rotates it |
+| `drive-pass-handoff` | `<state dir>/drive-pr-<PR>.answers.json`, `drive-pr-<PR>.notice.md` | JSON; Markdown | `skills/drive-pr/scripts/lib/state/pass-handoff.ts` | renamed into place |
+| `drive-report-memory` | `<state dir>/drives-report.json` | JSON: when the last morning report ran | `skills/drive-pr/scripts/lib/morning-report.ts` (`drives.ts --report`) | one writer, no lock |
+| `drive-arm-output` | `<state dir>/drive-arm-<PR>.out` | output text | nothing in this version; `skills/drive-pr/scripts/lib/state/artifacts.ts` recognises it so the reaper retires one | none |
+| `drive-clone-id` | `<git common dir>/drive-pr-clone-id` | a random id | `skills/drive-pr/scripts/lib/state/clone-key.ts` | created exclusively from a synced temporary file; a second writer adopts the first one's id |
+| `dispatch-launch`, `dispatch-thread-sample`, `dispatch-waiting-episode`, `dispatch-notice`, `dispatch-notices-content`, `dispatch-notices-read`, `dispatch-nudge`, `dispatch-followup-outcome`, `dispatch-followup-release`, `dispatch-idle`, `dispatch-hold`, `dispatch-outcome`, `dispatch-log-cursor`, `dispatch-tick-line`, `dispatch-settled-end` | `<dispatch>/state.sqlite`, one table each: `launches`, `thread_samples`, `waiting_episodes`, `notices`, `notices_content`, `notices_read`, `nudges`, `followup_outcomes`, `followup_releases`, `idle`, `holds`, `log`, `log_export`, `tick_line`, `settled_ends` | SQLite, through `shared/records/db.ts`; a newer schema read when it only gained tables or columns, refused when it needs a newer reader | the tick, through `dispatch/lib/state.ts` and each table's module; the wrapper `dispatch/run.ts` claims a launch and records its exit; `jig dispatch result` records a session's answer | ticks run one at a time under the tick lock, each write a transaction; a launch's claim, exit and result are each written once, by an update that fills an empty column |
+| `dispatch-receipt` | `<dispatch>/receipts/<date>/<run id>.json` | JSON, `version: 1` | `dispatch/receipts.ts` | created exclusively, synced and renamed; one per tick |
+| `dispatch-tick-lock` | `<dispatch>/tick.lock`, `<dispatch>/tick-index` | a process id; a counter | `dispatch/receipts.ts` | the lock is published by a link, which fails while one exists; the counter is written under it |
+| `dispatch-wall` | `<dispatch>/walls/<account>/<ms>-<8 hex>.json` | JSON | `dispatch/lib/walls.ts`, from `dispatch/run.ts` and `dispatch/lib/session-walls.ts` | one file per write; the wall is the latest reset of them all, so no write moves it earlier |
+| `dispatch-outcome-log` | `<dispatch>/log-<year>-<month>.jsonl` | JSONL, the text copy of the `log` table | `dispatch/lib/log-export.ts` | rewritten through an exclusive temporary file and a rename, rows deduplicated by key; its cursor is the `log_export` table |
+| `dispatch-workspace-note` | the session runtime's workspace name and comment (with Orca, the workspace's comment) | text: the dispatched mark, and each notification's key line | `dispatch/lib/runtime/orca-comment.ts`, for notices `dispatch/lib/actions/notify.ts` | the card lock (`shared/orca-card-lock.ts`); a notification counts as sent once its key line reads back |
+| `gc-receipt` | `~/.local/state/jig/gc/<date>/<run id>.json` | JSON, `version: 1` | `gc/receipts.ts` | published by a link that never replaces; updates renamed into place |
+| `gc-admission` | `~/.local/state/jig/gc-locks/<kind>/writer`, `reader-<pid>-<id>` | token files | `shared/gc-lock.ts` | created exclusively; a reader publishes before it checks and the writer before it enumerates; a lock is never taken over |
+| `gc-scratch-owner` | `<scratch folder>/.jig-scratch-owner.json` | JSON, `version: 1` | `shared/scratch-owner.ts` | created exclusively |
+| `gc-machine-entry` | the `gc` section of `~/.jig/jig.yaml` | YAML | `gc/install.ts` | the install lock; renamed into place |
+| `scheduled-job` | a systemd user timer, a launchd job or a crontab line per component, and its launcher copy under `~/.local/state/jig/<component>/launcher/` | scheduler files | `runtime/scheduler.ts` | the install lock; staged and renamed |
+| `path-command` | `~/.local/bin/jig`, and its launcher copy under `~/.local/state/jig/launcher/` | a script carrying the line `jig: written by jig install` | `runtime/path-command.ts` | a file without that line is never replaced |
+| `evidence-record` | `~/.local/state/jig/evidence/<repo>/<tree>/<command>/<run id>.json` | JSON, `schema: jig-evidence/v1` | `shared/evidence.ts` | the run id is reserved by an exclusive log file; the record is renamed into place |
+| `host-id` | `~/.local/state/jig/host-id` | a random UUID and a newline | `shared/liveness.ts` | written to a temporary file created exclusively, then published by a link that fails while one exists; concurrent first readers adopt the first id |
+| `verification-fit-log` | `~/.local/state/jig/verification-fit.jsonl` | JSONL, `v: 1` | `skills/drive-pr/scripts/verification-fit.ts` | appended |
+| `trace` | `~/.local/state/jig/traces/<date>/<trace id>.jsonl`, when tracing is on | JSONL | `shared/trace.ts` | appended |
+| `orca-card-lock` | `~/.local/state/jig/orca-card-locks/` | a lock file | `shared/orca-card-lock.ts` | published whole by a link; a dead holder is reclaimed in generations |
+| `orca-run-tab` | `~/.local/state/jig/orca-tabs/<handle>.json` | JSON, `version: 1` | `shared/orca-tabs.ts` | renamed into place |
+| `orca-guard-admission` | `~/.local/state/jig/orca-guard/admissions/<key>.json`, `<key>` the SHA-256 of the worktree's path as Orca reports it | JSON with the envelope, `v: 1`: the path and the holder's process identity | `shared/orca-guard.ts`, from `gc/kinds/worktree-guard.ts` while gc collects a worktree Orca manages | published whole by a link, which fails while one stands; a dead holder's is replaced, one that does not read is left for a person ([the contract](gc/README.md#the-launch-guard-record)) |
+| `orca-guard-launch` | `~/.local/state/jig/orca-guard/launches/<key>.json` | JSON with the envelope, `v: 1`: the path, Orca's workspace id and the agent | outside Jig: Jig's plugin for Orca, before each launch it lets through; read by `shared/orca-guard.ts` | renamed into place; gc deletes those older than a day before each collection of an Orca checkout, setting each aside and reading it again first |
+| `orca-guard-heartbeat` | `~/.local/state/jig/orca-guard/heartbeat.json` | JSON with the envelope, `v: 1`: the worker's pid and the plugin's version | outside Jig: Jig's plugin for Orca, about every minute; read by `shared/orca-guard.ts` | renamed into place; one writer |
+| `orca-board-card` | the session runtime's card for a workspace: its column and comment | text | `shared/orca-board.ts` | the card lock |
+| `gh-cache` | `~/.cache/jig/gh-cache/<hash>.json` | JSON, `v: 1` | `shared/gh-cache-storage.ts` | renamed into place; best effort, pruned |
+| `db-meta` | every component's database, table `db_meta` | one row: the database's instance id, the schema version it was written for and its minimum reader | `shared/records/db.ts` | written in the migration's transaction |
+| `process-registry` | `<tmp>/jig-processes-<id>/`; a driver's on Windows, `<state dir>/pr-drive-<PR>.processes.<token>/` | JSON per process | `shared/process-registry.ts` | renamed into place; a completion is published once |
+| `resource-lock` | `<tmp>/jig-lock.<name>` | a link naming the holder's process | `shared/resource-lock.ts` | created atomically; a dead holder is reclaimed through a claim file |
+| `turn-budget-state` | `<tmp>/jig-turn-budget/<session>/state.json` | JSON | `hooks/turn-budget-guard.ts` | renamed into place |
+| `reflection-pending` | `~/.jig/pending/<repo>-<hash>/<time>-<16 hex>.jsonl` | JSONL, `v: 1` | `skills/reflect/scripts/lib/journal.ts`, also when `jig gc` removes a worktree | written whole and renamed; adopted by renaming a claim |
+| `reflection-file-store` | `~/.jig/reflections/<year>-<month>/` | JSONL, `v: 1` | `skills/reflect/scripts/filesystem-store.ts` | linked into place; never replaced or edited |
+| `reflection-notion-cache` | `~/.jig/cache/notion/<database>.json` | JSON | `skills/reflect/scripts/lib/notion/store.ts` | renamed into place |
+| `fleet-health-snapshot` | `<fleet_health.snapshot_dir>/fleet-health.json` | JSON, `version: 1` | outside Jig: the repository's own dashboard; read by `skills/drive-pr/scripts/lib/fleet-health-advisory.ts` | none on Jig's side |
+
+## In the working tree
+
+Records in the clone a session works in: under `.context/`, in its Git
+directory, or committed.
+
+| Record | Where it lives | Format | Written by | What guards it |
+|--------|----------------|--------|------------|----------------|
+| `drive-handoff` | `.context/pr-drive-<PR>.md` | Markdown: a block opening `<!-- machine block: … -->` regenerated from the state, and a narrative under `<!-- narrative below this line is agent-authored and preserved -->` | `skills/drive-pr/scripts/lib/state/handoff.ts` | rendered in the same hold of the state lock as the state it shows; renamed into place; the narrative is kept across regenerations |
+| `drive-mailbox` | `.context/drive-mailbox/inbox.jsonl`, `outbox.jsonl` | JSONL: notes and directives; a `stop` may name the driver generation it addresses | any sender appends to the inbox through `skills/drive-pr/scripts/mailbox.ts`, `drives.ts --stop` among them; the drive's side appends to the outbox, the driver an `ack` of each directive it acted on (`lib/state/mailbox.ts`, `lib/state/mailbox-stop.ts`) | append-only, each append under the file's own lock, `<file>.lock`, created exclusively and removed on release (`lib/state/file-lock.ts`); a stop addressed to one generation is ignored by every other driver |
+| `intent-chain` | `.context/intent-chain/<stem>.md` and `.current`, `pickups/<hash>.json`, and the pull request's pin `pr.<PR>.md` | Markdown opening `<!-- refocus-arm: on -->` or `off`; pickups as JSON | `skills/do-item/scripts/intent-chain.ts` and `lib/intent-chain-pickup.ts`; the pin `skills/drive-pr/scripts/capture-intent-chain.ts` | a file lock per chain; a new file published by a link that fails while one exists; a pickup never changes once written |
+| `foreground-wait` | `.context/foreground-wait/gen-<n>/` | process ids, a log, a result | `skills/drive-pr/scripts/foreground-wait.ts` | creating the next generation's folder is the claim; the result is renamed into place |
+| `red-team-run` | `.context/red-team/<slug>/` | the plan as JSON, and each persona's brief, reply and findings | `skills/red-team/scripts/lib/plan.ts` | one run per folder; a new run replaces it |
+| `audit-record` | `.config/jig-audit.yaml`, committed | YAML | `skills/audit/scripts/record.ts` | a person commits it; `record.ts check` and Jig's audit-fit gate read it |
+| `driven-tree` | `<git dir>/jig-driven-pr.json` | JSON: the pull request and branch the worktree drives | `shared/driven-tree.ts`, from `skills/drive-pr/scripts/lib/attach.ts` | renamed into place |
+| `reflection-journal` | `<git dir>/jig/reflection-journal.jsonl` | JSONL, `v: 1` | `skills/reflect/scripts/lib/journal.ts` | append-only |
+| `conflict-snapshot` | `<git dir>/jig/conflicts.json`, and `jig/pending/` | JSON, `version: 1` | `skills/resolve-conflicts/scripts/lib/snapshot.ts` | renamed into place |
+| `conflict-events` | `<git common dir>/jig/conflict-events.jsonl` | JSONL | `skills/resolve-conflicts/scripts/lib/events.ts` | appended, deduplicated by key |
+
+## On the forge and the tracker
+
+Records everyone who can read the repository reads: comments, the pull
+request's body and labels on the forge (GitHub today), and fields, issues
+and comments on the tracker. Where a row says "trusted authors only", a
+script counts the record only when Jig's own login, or an owner, member or
+collaborator of the repository, wrote it (`shared/trusted-authors.ts`).
+
+The takeover claim, the follow-up marker, the dispatcher's launch claim and
+the merge-ready announcement are claims of one module,
+`shared/records/forge-claims.ts`, under one rule. Each claim comment opens
+with its kind's line, holds its record envelope in a hidden marker (its
+`key` is what it claims: `takeover:<generation>`, `followup`, `drive`,
+`merge-ready:<head>`), and ends with text a person reads. Of the trusted
+claims on one key and generation the earliest comment wins; the takeover's
+adds a lapse window, the lease window, past which a later claim replaces a
+winner whose owner never acted. The forge has no conditional create for a
+comment and its listing can lag, so a claim is read back after it is
+posted, read again a few times while the listing does not show it, and
+reported lost when it never does; each act it guards re-checks it first, and
+a claim that lost may be withdrawn by deleting its comment, which each
+kind's caller decides: the launch claim and the merge-ready announcement are
+withdrawn, while a takeover that stands down leaves its comment, the record
+of the claim it lost. A claim in a form
+written before the envelope still reads. What this cannot close: two claims
+whose read-backs each lag past the other's comment both read themselves the
+winner, and a re-check that lags the same way passes. The earlier comment
+still wins at the first read that lists both, and each kind's callers act on
+it then: a driver stands down at its next round boundary, a follow-up stops
+before its next act and the dispatcher reports the two markers, and a second
+announcement of one head is withdrawn.
+
+The launch claim and the follow-up marker are the dispatcher's
+[shared records](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
+what a host dispatching a repository publishes for another host dispatching
+it to read, through one interface (`shared/records/shared.ts`, on the forge
+through `shared/records/shared-forge.ts`, as the machine file's
+`records.shared: forge` names it). Through it a host claims a launch,
+re-checks its claim before an act, writes the launch's end onto its own
+claim, lists the claims and their ends for a pull request, and releases a
+claim; each returns a failure as a value. A host's launch records stay on
+its machine as the cache and the log; its claims say on the forge which
+host holds a launch and how it ended. The host a claim names is a digest of
+its dispatcher database's instance id, so a public comment names no machine.
+The end is written onto the claim's own comment by the host that made it:
+by the wrapper that ran the launch (`dispatch/run.ts`) as soon as it records
+the stage's exit, and otherwise by that host's next tick with `--apply`,
+which writes the end of every claim whose launch ended and still has none
+(a wrapper that died before its write, a forge that refused it;
+`dispatch/lib/shared-launches.ts`).
+One host owns each repository (`owner` in the machine file, true by
+default): only it notifies a person about the repository, writes its
+dispatch labels and writes outcome-log rows for what it did not launch, so
+none of them is written twice. The claims coordinate launches and never
+authorize an act a person takes. Since the forge has no conditional create,
+two hosts can each read themselves the holder of one launch; the stage's
+own refusal (the drive's lock and ledger claim, `do-item`'s claim, a
+follow-up's re-check before each act) is the backstop. A pickup has no
+claim here: the tracker claim `do-item` makes is its shared record.
+
+| Record | Where it lives | Format | Written by | What guards it |
+|--------|----------------|--------|------------|----------------|
+| `drive-ledger` | one comment on the pull request opening `<!-- drive-pr-ledger -->`, its data in `<!-- drive-pr-ledger-data … -->` | a summary a person reads, then JSON carrying the record envelope (`v: 1`) beside `ledgerVersion: 1`; a ledger written before the envelope still reads | the driver: `skills/drive-pr/scripts/lib/state/ledger-mirror.ts`, through `ledger-forge.ts` | trusted authors only; the lowest trusted comment id is canonical; each write rereads the comments just before it patches and reads the ledger back after |
+| `drive-takeover-claim` | a claim comment per claim, `<!-- drive-pr-takeover-claim -->` with `<!-- drive-pr-takeover-claim-data … -->` | JSON carrying the record envelope (`v: 1`, key `takeover:<generation>`, the ledger generation it read as its `generation`) beside the actor and clone, then a line a person reads; a claim written before the envelope still reads | the driver: `skills/drive-pr/scripts/lib/state/ledger.ts` writes it, `ledger-forge.ts` (`postClaim`) posts it, `lib/driver/ledger.ts` reads it back through `shared/records/forge-claims.ts` | a forge claim: trusted authors only; per ledger generation the earliest trusted claim wins, and one made past the lease window replaces a winner whose owner never wrote the ledger; read back after posting, and read again at each round boundary |
+| `dispatch-followup` | a claim comment on the merged pull request opening `<!-- jig-dispatch-followup -->`, its record in `<!-- jig-dispatch-followup-data … -->` from the second line | JSON carrying the record envelope (`v: 2`, key `followup`) beside the pull request and the run: a tick's names its launch record, its host and whether that host owns the repository, and once the launch ended its answer (`outcome: done` or `failed`); a manual run's carries its own outcome. Then a line a person reads. A marker of version 1, or in the line form written before the envelope, still reads | the tick (`dispatch/lib/actions/followup.ts`; its answer the wrapper `dispatch/run.ts` at the pass's exit, else the next tick, both through `dispatch/lib/shared-launches.ts`) or `jig dispatch marker` (`dispatch/marker.ts`), through `shared/records/shared-forge.ts`; the kind is `shared/records/launch-claims.ts`'s | a forge claim: trusted authors only; the earlier comment wins, and a trusted marker that does not read still holds; read back after posting, and checked again before each act outside the pull request; only the host that posted a tick's marker writes its answer |
+| `dispatch-launch-claim` | a claim comment per drive launch on the pull request, opening `<!-- jig-dispatch-launch-claim -->`, its record in `<!-- jig-dispatch-launch-claim-data … -->` | JSON carrying the record envelope (`v: 1`, key `drive`, the attempt as its `generation`) beside the pull request, the action (`rearm` or `takeover`), the launch record, the host and whether it owns the repository, the ledger facts the launch acts on and, for a re-drive, its change; once the launch ended, its `end` (the exit, or why it died). Then a line a person reads | the tick (`dispatch/lib/actions/drive.ts`; its end the wrapper `dispatch/run.ts` at the drive's exit, else the next tick; all through `dispatch/lib/shared-launches.ts`), through `shared/records/shared-forge.ts` | a forge claim: trusted authors only; a launch claims the attempt after the latest, and of the claims on one attempt the earliest wins; the latest attempt's winner with no end holds the pull request's launches for every host, past which only a takeover claims; read back after posting; only the host that made it writes its end, onto the same comment |
+| `drive-merge-ready` | a claim comment per verified head opening with the announcement's first line, its record in `<!-- drive-pr-merge-ready-data … -->`, ending `<!-- drive-pr-merge-ready: <sha> -->` | Markdown, with JSON carrying the record envelope (`v: 1`, key `merge-ready:<head>`); an announcement that only ends with the head marker still reads | `skills/drive-pr/scripts/announce-merge-ready.ts`, through `skills/drive-pr/scripts/lib/announce.ts` and `shared/records/forge-claims.ts` | a forge claim: trusted associations only; of the announcements of one head the earliest wins, and the others are withdrawn; posted only while the head is converged, green, mergeable and clean, and withdrawn when that stops holding; announcements of heads the PR moved past are swept first |
+| `summary-answer` | a comment answering a summary finding, one `<!-- drive-pr-addressed: <fingerprint> -->` per finding | Markdown | `skills/drive-pr/scripts/answer-summary-finding.ts` | the lease fence and the held claim; a finding already answered is not answered again; read from trusted authors only |
+| `thread-reply` | a reply on a review thread opening with its outcome; its last line may be `<!-- triage-thread:leave-open -->`, `<!-- reply-to-thread:no-outcome -->`, `<!-- reply-to-thread:provisional -->` or the repository's `reply.marker` | Markdown | `skills/resolve-review-comments/scripts/reply-to-thread.ts` | a marker counts only as the last line; the leave-open and provisional markers only from the scripts allowed to write them; a marker does not prove its author (`shared/reply-markers.ts`) |
+| `deferred-section` | the pull request's body between `<!-- jig-deferred -->` and `<!-- /jig-deferred -->`, one `<!-- deferred-entry: … -->` block per finding | Markdown | `skills/resolve-review-comments/scripts/lib/pr-body.ts`, from `defer-in-pr.ts` and `file-deferred.ts` | the body is reread before each write, up to 3 tries, and read back after; a person's text outside the markers is never touched |
+| `scanner-finding-reply` | a comment answering a scanner's finding, one `<!-- scanner-finding: <fingerprint> -->` per finding | Markdown | the session `skills/resolve-review-comments/SKILL.md` instructs; no script | an existing comment for the finding is reused |
+| `ci-hold-label` | the label `ci.hold_label` names, on the pull request | a label | `skills/drive-pr/scripts/ci-hold.ts` | the label's own timeline event proves the drive made the change it undoes |
+| `drive-answer` | a comment on the pull request whose first line is `answer <key>: <text>`, its record in `<!-- jig-send-answer … -->` | the line the re-arm reads, then JSON carrying the record envelope (`v: 1`, key `answer:<key>`, its writer's login and host digest) beside the pull request | `jig send … answer` (`send/`), through `skills/drive-pr/scripts/lib/answer-comment.ts` | sent only for a key the ledger has parked and no trusted comment has answered, in one line of at most 500 characters with no control character or hidden marker; read from trusted authors only, by the re-arm's rule for an answer, whose readers set the record aside before they check that a person's comment carries no hidden marker |
+| `dispatch-command-label` | a command label on the pull request (`jig:drive`, `jig:hold`) where a repository turns dispatch labels on | labels | a person, by hand or with `jig send … drive`, `hold` or `release` (`send/`, through `dispatch/lib/requests.ts`); read by `dispatch/lib/actions/labels.ts` | the tick never adds either; it removes `drive` once a ledger exists and never removes `hold`; `jig send` refuses a `drive` on a pull request with a ledger, a second `hold` and a `release` with no `hold` |
+| `dispatch-state-label` | a state label on the pull request (`jig:driving`, `jig:parked`, …) where a repository turns dispatch labels on | labels | `dispatch/lib/actions/labels.ts` | derived from the ledger every tick; never read to decide what to start |
+| `tracker-claim` | an item's assignee and its in-progress state | tracker fields | `skills/do-item/scripts/lib/claim.ts`, through each tracker adapter | refuses an item someone else holds; assigns first, then rereads and stands down on a race (exit 4) |
+| `dispatch-pickup-assignment` | an item assigned to the factory identity (`dispatch.identity`) in a dispatch state (`dispatch.states`) | tracker fields | a person, by hand or with `jig send … assign` (`send/`, through `dispatch/lib/requests.ts` and each tracker adapter); read by `dispatch/lib/sources/tracker.ts` | the tick starts a pick-up only when the person who made the assignment can write to the repository; `jig send` refuses an item already assigned, claimed or closed |
+| `deferred-issue` | an issue whose description names the deferred finding | Markdown | `skills/resolve-review-comments/scripts/file-deferred.ts` | an issue that already names the finding is reused |
+| `deferred-batch` | a batch issue whose description opens with `<!-- defer-batch-key: … -->` | Markdown | `skills/resolve-review-comments/scripts/defer-batch.ts` | the oldest duplicate wins; the tracker is queried again after a create |
+| `tracker-related` | a comment on a GitHub issue, `<!-- jig:related <owner>/<repo>#<n> -->` | Markdown | `skills/do-item/scripts/lib/tracker/github/tracker.ts` | existing relations are checked first; read from trusted authors only |
+| `reflection-github-store` | an issue per change in the reflection repository, `<!-- jig-reflection-change: <key> -->`, with comments opening `<!-- jig-reflection-events -->` | Markdown holding JSON events, `v: 1` | `skills/reflect/scripts/lib/github/store.ts` | comments are only added; trusted authors only; a change's oldest issue wins |
+| `reflection-escalation` | an issue labelled with the finding's class, its owner on one line of its description | Markdown | `skills/reflect/scripts/lib/escalation.ts` | attaches only to an issue that carries the owner's line |
+| `fleet-health-suspicion` | a comment on an epic ending `<!-- fleet-health: suspected kind=<kind> -->` | Markdown | `skills/drive-pr/scripts/fleet-health.ts` (`--post`) | the epic's comments are reread before it posts |
+| `ai-review-summary` | the AI reviewer's sticky comment, `<!-- ai-code-review -->`, and the reviewed commit marked in it | Markdown | outside Jig: the repository's AI reviewer; read by `skills/drive-pr/scripts/lib/overlay.ts` | the markers are configuration (`review.sticky_marker`, `review.reviewed_sha_marker`) |
+| `ai-review-round` | `<!-- ai-review-round: <n> -->` and `<!-- ai-review-backlog: … -->` in the reviewer's comments | Markdown | outside Jig: the repository's AI reviewer; read by `skills/drive-pr/scripts/summary-findings.ts` | none on Jig's side |
+| `coderabbit-comment` | `<!-- coderabbit-ai-generated:v1 -->` and `<!-- coderabbit-skip-review-comment-follow-up -->` in CodeRabbit's comments | Markdown | outside Jig: CodeRabbit; read by `skills/drive-pr/scripts/lib/bot-confirmation.ts` | none on Jig's side |
+| `epic-acceptance-verdict` | a line `<!-- epic-acceptance-verdict: … -->` in a comment on an epic | Markdown | outside Jig: a person accepting the epic; read by `skills/drive-pr/scripts/lib/fleet-health-sources.ts` | trusted authors only |
+
+## Markers that are not records
+
+A few hidden-marker literals in the plugin are not records, and the registry
+lists them as such: the `<!-- deferral-ok: … -->` waiver a person writes in a
+document, which the docs skill's deferral check reads, and the banners the
+change-areas and docs skills write at the top of a file they generate.

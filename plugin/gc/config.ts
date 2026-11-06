@@ -27,6 +27,8 @@ export interface MachineConfig {
   hour: number;
   collect_day: number;
   min_free_bytes: number;
+  /** Orca's command, for a run no Orca terminal started (the scheduler's). */
+  orca?: { command: string };
 }
 function mapping(value: unknown, field: string): Record<string, unknown> {
   if (!isMapping(value))
@@ -110,6 +112,7 @@ export function parseMachine(value: unknown): MachineConfig {
       "hour",
       "collect_day",
       "min_free_bytes",
+      "orca",
     ],
     "machine gc",
   );
@@ -155,6 +158,7 @@ export function parseMachine(value: unknown): MachineConfig {
     idle_days[kind as KindName] = integer(days, `gc.idle_days.${kind}`, 7, 365);
   if (gc.receipts !== undefined && typeof gc.receipts !== "boolean")
     throw new GcConfigurationError("gc.receipts must be boolean");
+  const orca = gc.orca === undefined ? undefined : orcaEntry(gc.orca);
   return {
     repositories,
     disabled: kindList(gc.disabled ?? [], true),
@@ -164,7 +168,20 @@ export function parseMachine(value: unknown): MachineConfig {
     hour: integer(gc.hour ?? 4, "gc.hour", 0, 23),
     collect_day: integer(gc.collect_day ?? 0, "gc.collect_day", 0, 6),
     min_free_bytes: integer(gc.min_free_bytes ?? 0, "gc.min_free_bytes", 0),
+    ...(orca === undefined ? {} : { orca }),
   };
+}
+/**
+ * Orca's command as an absolute path: the scheduler's `PATH` is not the
+ * shell's, so a bare name could find another program or none.
+ */
+function orcaEntry(value: unknown): { command: string } {
+  const orca = mapping(value, "gc.orca");
+  keys(orca, ["command"], "gc.orca");
+  const command = orca.command;
+  if (typeof command !== "string" || !isAbsolute(command))
+    throw new GcConfigurationError("gc.orca.command must be an absolute path");
+  return { command };
 }
 export function gcConfiguration(
   root: string,

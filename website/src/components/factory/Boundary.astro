@@ -1,6 +1,6 @@
 ---
-// The learning loop, what stays with a person, and what Jig leaves to the
-// platform: one above the other, each its text beside its plate.
+// The learning loop, what stays with a person, and what the platform
+// supplies: one above the other, each its text beside its plate.
 import "../../styles/factory.css";
 import Plate from "../Plate.astro";
 import SectionHead from "../SectionHead.astro";
@@ -14,7 +14,7 @@ const platformItems = await Promise.all(f.platform.map(async (p) => ({ ...p, htm
 ---
 
 <div class="bound">
-  <SectionHead id="learning" label="The learning loop, around both levels" />
+  <SectionHead id="learning" label="The loop that sharpens it, around both parts" />
   <div class="bound-body">
     <div class="bound-text">
       <p class="small-p" set:html={await inline(f.learning)} />
@@ -38,7 +38,7 @@ const platformItems = await Promise.all(f.platform.map(async (p) => ({ ...p, htm
 </div>
 
 <div class="bound">
-  <SectionHead id="platform" label="What Jig leaves to the platform" />
+  <SectionHead id="platform" label="What the platform supplies" />
   <div class="bound-body">
     <div class="bound-text">
       <p class="small-p" set:html={await inline(f.platformLead)} />

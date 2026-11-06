@@ -5,15 +5,12 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { existsSync, statSync, utimesSync, writeFileSync } from "node:fs";
-
-import { join } from "node:path";
-
 import { resolveActor } from "../scripts/lib/state/actor";
 
 import { ACTOR, useDrivePrSuite } from "./drive-pr-harness.ts";
 
 import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
+import { claimRow, putClaim, writeState } from "./state-rows.ts";
 
 useDrivePrSuite();
 describe("drive-state.ts durability", () => {
@@ -25,8 +22,7 @@ describe("drive-state.ts durability", () => {
       // suspended holder and a duplicate `ready_for_review`, so it has to
       // refuse a reclaimed lease rather than reset someone else's clock.
       const d = stateDirFor("ready-lease-renew");
-      const lease = join(d, "drive-pr-999.ready-claim");
-      writeFileSync(lease, "successor-token");
+      putClaim(d, "999", "ready", "", "successor-token");
       const refused = await state(d, [
         "renew-ready-mark",
         "999",
@@ -40,7 +36,7 @@ describe("drive-state.ts durability", () => {
       // And it DOES renew one that is still ours — the half that buys the full
       // staleness window for the outbound call.
       const old = new Date(Date.now() - 9 * 60 * 1000);
-      utimesSync(lease, old, old);
+      putClaim(d, "999", "ready", "", "successor-token", old.toISOString());
       const ok = await state(d, [
         "renew-ready-mark",
         "999",
@@ -48,7 +44,9 @@ describe("drive-state.ts durability", () => {
         "successor-token",
       ]);
       expect(ok.exitCode).toBe(0);
-      expect(Date.now() - statSync(lease).mtimeMs).toBeLessThan(60_000);
+      const renewed = claimRow(d, "999", "ready");
+      expect(renewed?.token).toBe("successor-token");
+      expect(Date.now() - Date.parse(renewed?.at ?? "")).toBeLessThan(60_000);
     });
 
     it("refuses to renew into a window the configuration cannot cover", async () => {
@@ -59,8 +57,7 @@ describe("drive-state.ts durability", () => {
       // comment claims under that configuration, so it refuses rather than
       // renewing into a window it cannot cover.
       const d = stateDirFor("ready-lease-window");
-      const lease = join(d, "drive-pr-999.ready-claim");
-      writeFileSync(lease, "our-token");
+      putClaim(d, "999", "ready", "", "our-token");
       const bad = await state(
         d,
         ["renew-ready-mark", "999", "--token", "our-token"],
@@ -87,8 +84,7 @@ describe("drive-state.ts durability", () => {
       // (60 > 59), even though the protected call can still be in flight for
       // ~61s — reclaimable and running at once.
       const d = stateDirFor("ready-lease-window-escalation");
-      const lease = join(d, "drive-pr-999.ready-claim");
-      writeFileSync(lease, "our-token");
+      putClaim(d, "999", "ready", "", "our-token");
       const bad = await state(
         d,
         ["renew-ready-mark", "999", "--token", "our-token"],
@@ -107,18 +103,18 @@ describe("drive-state.ts durability", () => {
     });
 
     it("reset clears the ready-mark lease, which no claim sweep covers", async () => {
-      // The lease deliberately sits outside `claimPrefix` so the held-batch
-      // sweep never sees it — which meant reset's sweep never did either
-      //. An operator resetting to unwedge a drive would get
-      // a fresh JSON plus an orphaned lease that keeps reporting contention
-      // for a full staleness window, with nothing left to explain why.
+      // The lease is a claim of its own kind (`ready`), deliberately outside
+      // the held-batch sweep (`claimRefsFor` lists held claims only), so
+      // reset has to clear it by name. An operator resetting to unwedge a
+      // drive would otherwise get a fresh state plus an orphaned lease that
+      // keeps reporting contention for a full staleness window, with nothing
+      // left to explain why.
       const d = stateDirFor("reset-ready-lease");
-      const lease = join(d, "drive-pr-999.ready-claim");
       await state(d, ["phase", "999", "--set", "probe"]);
-      writeFileSync(lease, "an-abandoned-token");
+      putClaim(d, "999", "ready", "", "an-abandoned-token");
       const r = await state(d, ["reset", "999"]);
       expect(r.exitCode).toBe(0);
-      expect(existsSync(lease)).toBe(false);
+      expect(claimRow(d, "999", "ready")).toBeNull();
       // And the very next claim succeeds rather than reporting contention.
       const claim = await state(d, ["claim-ready-mark", "999"]);
       expect(claim.stdout.trim().startsWith("claimed ")).toBe(true);
@@ -168,10 +164,7 @@ describe("drive-state.ts durability", () => {
       for (const field of fields) {
         for (const bad of [0.5, -1]) {
           const d = stateDirFor(`counter-${field}-${bad}`);
-          writeFileSync(
-            join(d, "drive-pr-999.json"),
-            JSON.stringify({ ...base, [field]: bad }),
-          );
+          writeState(d, "999", { ...base, [field]: bad });
           const r = await state(d, ["get", "999"]);
           expect(r.exitCode).not.toBe(0);
           expect(r.stderr).toContain("not usable drive state");
@@ -187,38 +180,35 @@ describe("drive-state.ts durability", () => {
       // probe for it, since nothing else in the suite would notice the day it
       // stopped being legal.
       const d = stateDirFor("held-unconfirmed-round");
-      writeFileSync(
-        join(d, "drive-pr-999.json"),
-        JSON.stringify({
-          pr: 999,
-          lastEscalatedRound: 0,
-          lastEscalatedInvariant: "",
-          roundPaths: [],
-          lastProgressAt: "",
-          quotaPark: null,
-          rounds: 3,
-          lastCountedHead: "",
-          attempts: 0,
-          attemptsHead: "",
-          lastReflectedRound: 0,
-          lastReflectedAttempts: 0,
-          readyMarkedRound: 0,
-          ciHold: null,
-          verifiedSha: "",
-          phase: "",
-          parked: [],
-          held: [
-            {
-              key: "PRRT_unconfirmed",
-              kind: "thread",
-              outcome: "accepted",
-              round: -1,
-              commentUrl: "https://example.invalid/c1",
-              actor: await resolveActor(),
-            },
-          ],
-        }),
-      );
+      writeState(d, "999", {
+        pr: 999,
+        lastEscalatedRound: 0,
+        lastEscalatedInvariant: "",
+        roundPaths: [],
+        lastProgressAt: "",
+        quotaPark: null,
+        rounds: 3,
+        lastCountedHead: "",
+        attempts: 0,
+        attemptsHead: "",
+        lastReflectedRound: 0,
+        lastReflectedAttempts: 0,
+        readyMarkedRound: 0,
+        ciHold: null,
+        verifiedSha: "",
+        phase: "",
+        parked: [],
+        held: [
+          {
+            key: "PRRT_unconfirmed",
+            kind: "thread",
+            outcome: "accepted",
+            round: -1,
+            commentUrl: "https://example.invalid/c1",
+            actor: await resolveActor(),
+          },
+        ],
+      });
       const r = await state(d, ["held-keys", "999"]);
       expect(r.exitCode).toBe(0);
       expect(r.stdout.trim()).toBe("PRRT_unconfirmed");
@@ -252,16 +242,11 @@ describe("drive-state.ts durability", () => {
       const actor = await resolveActor();
       for (const bad of [0.5, -1]) {
         const d = stateDirFor(`parked-round-${bad}`);
-        writeFileSync(
-          join(d, "drive-pr-999.json"),
-          JSON.stringify({
-            ...base,
-            parked: [
-              { key: "PRRT_a", kind: "thread", reason: "x", round: bad },
-            ],
-            held: [],
-          }),
-        );
+        writeState(d, "999", {
+          ...base,
+          parked: [{ key: "PRRT_a", kind: "thread", reason: "x", round: bad }],
+          held: [],
+        });
         const r = await state(d, ["get", "999"]);
         expect(r.exitCode).not.toBe(0);
         expect(r.stderr).toContain("not usable drive state");
@@ -271,23 +256,20 @@ describe("drive-state.ts durability", () => {
       // rejected here, or this test would just re-cover the sentinel test.
       for (const bad of [0.5, -2]) {
         const d = stateDirFor(`held-round-${bad}`);
-        writeFileSync(
-          join(d, "drive-pr-999.json"),
-          JSON.stringify({
-            ...base,
-            parked: [],
-            held: [
-              {
-                key: "PRRT_a",
-                kind: "thread",
-                outcome: "accepted",
-                round: bad,
-                commentUrl: "https://example.invalid/c1",
-                actor,
-              },
-            ],
-          }),
-        );
+        writeState(d, "999", {
+          ...base,
+          parked: [],
+          held: [
+            {
+              key: "PRRT_a",
+              kind: "thread",
+              outcome: "accepted",
+              round: bad,
+              commentUrl: "https://example.invalid/c1",
+              actor,
+            },
+          ],
+        });
         const r = await state(d, ["get", "999"]);
         expect(r.exitCode).not.toBe(0);
         expect(r.stderr).toContain("not usable drive state");
@@ -297,7 +279,7 @@ describe("drive-state.ts durability", () => {
     it("rejects a `finding` entry with an empty or missing reason", async () => {
       // `hold --kind finding` refuses to write one without a non-empty reason
       // (it is the verbatim text step 6 must send to
-      // answer-summary-finding.ts), so a state file with a finding entry
+      // answer-summary-finding.ts), so a stored state with a finding entry
       // that has none can only be hand-edited or corrupted — but the schema
       // has to actually say so, or step 6 is left with an outcome and
       // nothing to explain it. A `thread` entry needs no reason at all.
@@ -333,38 +315,32 @@ describe("drive-state.ts durability", () => {
         ],
         [{ key: "f00d", kind: "finding", outcome: "moot", round: 0 }],
       ]) {
-        writeFileSync(
-          join(d, "drive-pr-999.json"),
-          JSON.stringify({ ...base, held }),
-        );
+        writeState(d, "999", { ...base, held });
         const r = await state(d, ["held-keys", "999"]);
         expect(r.exitCode).not.toBe(0);
       }
       // A thread entry with no `reason` key at all remains valid (but still
       // needs a commentUrl — required for kind: thread, see the sibling test
       // below).
-      writeFileSync(
-        join(d, "drive-pr-999.json"),
-        JSON.stringify({
-          ...base,
-          held: [
-            {
-              key: "PRRT_a",
-              kind: "thread",
-              outcome: "accepted",
-              round: 0,
-              commentUrl: "https://example.invalid/x",
-              actor: ACTOR,
-            },
-          ],
-        }),
-      );
+      writeState(d, "999", {
+        ...base,
+        held: [
+          {
+            key: "PRRT_a",
+            kind: "thread",
+            outcome: "accepted",
+            round: 0,
+            commentUrl: "https://example.invalid/x",
+            actor: ACTOR,
+          },
+        ],
+      });
       expect((await state(d, ["held-keys", "999"])).exitCode).toBe(0);
     });
 
     it("rejects a `thread` entry with an empty or missing commentUrl", async () => {
       // `hold` itself refuses to write a thread entry without --comment-url
-      // (either path), so a state file with one that has an
+      // (either path), so a stored state with one that has an
       // empty or absent commentUrl can only be hand-edited, corrupted, or
       // written by an older version of this script — but the schema
       // has to actually say so, or a provenance-free confirmed hold remains
@@ -397,10 +373,7 @@ describe("drive-state.ts durability", () => {
         ],
         [{ key: "PRRT_a", kind: "thread", outcome: "accepted", round: 0 }],
       ]) {
-        writeFileSync(
-          join(d, "drive-pr-999.json"),
-          JSON.stringify({ ...base, held }),
-        );
+        writeState(d, "999", { ...base, held });
         const r = await state(d, ["held-keys", "999"]);
         expect(r.exitCode).not.toBe(0);
       }

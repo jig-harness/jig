@@ -2,7 +2,7 @@
  * The model a drive's passes run on.
  *
  * A pass is one round's agent process. When it is Claude Code's CLI
- * (`claude`, the documented pass command), the driver decides its model, in
+ * (`claude`, a documented pass command), the driver decides its model, in
  * this order:
  *
  *   1. `--pass-model` on `drive.ts`, for one run: it replaces the pass
@@ -16,10 +16,19 @@
  * A value is a model id, a Claude Code alias (`sonnet` follows the latest
  * Sonnet) or a routing tier (`execution`, `strategic`), which resolves through
  * the same tier-to-model table as the implementer's route
- * (`routing.models.claude-code`). Only `--model` is read or written: the rest
- * of the pass command stays as the caller gave it, and a pass command that is
- * not `claude` (another agent tool, a wrapper) chooses its own model, so
- * `--pass-model` is refused for it rather than guessed into its grammar.
+ * (`routing.models.claude-code`).
+ *
+ * When it is Codex's (`codex`, the other documented pass command,
+ * `pass-command.ts`), the model is the pass command's own (`-m`, `--model`),
+ * else the execution tier of `routing.models.codex`, added after `exec`,
+ * else none, and Codex's own configuration decides. `drive.pass_model` and
+ * `--pass-model` differ: the setting is Claude Code's, while the flag
+ * overrides either vendor and resolves tiers through that vendor's row.
+ *
+ * Only the model option is read or written: the rest of the pass command
+ * stays as the caller gave it, and a pass command of any other tool (a
+ * wrapper, a shell) chooses its own model, so `--pass-model` is refused for
+ * it rather than guessed into its grammar.
  */
 import { basename } from "node:path";
 import { swallow } from "../../../../shared/errors.ts";
@@ -39,6 +48,10 @@ import {
 /** The runtime whose row of `routing.models` a pass's tier resolves through. */
 const PASS_RUNTIME = "claude-code";
 
+/** The runtime row, and its tier, a Codex pass's model comes from. */
+const CODEX_RUNTIME = "codex";
+const CODEX_TIER = "execution";
+
 /** A pass model and where it came from, for the driver log. */
 export interface PassModel {
   model: string;
@@ -50,13 +63,14 @@ export class PassModelUsageError extends Error {}
 
 /**
  * The model `value` names: a routing tier resolved through
- * `routing.models.claude-code`, anything else as written. `where` names the
+ * the selected runtime's `routing.models` row, anything else as written. `where` names the
  * value's origin in the source and in errors.
  */
 export function resolveModelValue(
   value: string,
   where: string,
   overlay: () => Record<string, unknown> = readOptionalOverlay,
+  runtime = PASS_RUNTIME,
 ): PassModel {
   if (!PASS_MODEL_PATTERN.test(value))
     throw new PassModelUsageError(
@@ -64,14 +78,14 @@ export function resolveModelValue(
     );
   const tier = TIERS.find((t) => t === value);
   if (tier === undefined) return { model: value, source: where };
-  const model = parseRoutingModels(overlay())[PASS_RUNTIME]?.[tier];
+  const model = parseRoutingModels(overlay())[runtime]?.[tier];
   if (model === undefined)
     throw new RoutingError(
-      `${where} names the ${tier} tier, but routing.models has no ${PASS_RUNTIME} row to resolve it through`,
+      `${where} names the ${tier} tier, but routing.models has no ${runtime} row to resolve it through`,
     );
   return {
     model,
-    source: `${where}: the ${tier} tier, routing.models.${PASS_RUNTIME}.${tier}`,
+    source: `${where}: the ${tier} tier, routing.models.${runtime}.${tier}`,
   };
 }
 
@@ -86,26 +100,63 @@ export function configuredPassModel(): PassModel {
   return resolveModelValue(value, "drive.pass_model");
 }
 
-/** Where `--model` sits in a `claude` argv, and its value. */
+/** A Codex pass's model as the configuration asks for it; `model` is `null` when Codex's own configuration decides. */
+export interface CodexPassModel {
+  model: string | null;
+  source: string;
+}
+
+/**
+ * The model the configuration asks for a Codex pass: the execution tier of
+ * `routing.models.codex`, else none.
+ */
+export function configuredCodexModel(
+  overlay: () => Record<string, unknown> = readOptionalOverlay,
+): CodexPassModel {
+  const model = parseRoutingModels(overlay())[CODEX_RUNTIME]?.[CODEX_TIER];
+  return model === undefined
+    ? {
+        model: null,
+        source: `Codex's own configuration; routing.models.${CODEX_RUNTIME} names no ${CODEX_TIER} model`,
+      }
+    : {
+        model,
+        source: `routing.models.${CODEX_RUNTIME}.${CODEX_TIER}`,
+      };
+}
+
+/** The words that take the model as the next word: `--model` for both tools, and Codex's `-m`. */
+function modelFlags(argv: readonly string[]): ReadonlySet<string> {
+  return passVendor(argv) === "codex"
+    ? new Set(["--model", "-m"])
+    : new Set(["--model"]);
+}
+
+/** Where the model option sits in a `claude` or `codex` argv, and its value. */
 function modelOption(
   argv: readonly string[],
 ): { index: number; width: 1 | 2; value: string } | null {
+  const flags = modelFlags(argv);
   for (let i = 1; i < argv.length; i++) {
     const word = argv[i] as string;
-    if (word === "--model" && i + 1 < argv.length)
+    if (word === "--") break;
+    if (flags.has(word) && i + 1 < argv.length)
       return { index: i, width: 2, value: argv[i + 1] as string };
     if (word.startsWith("--model="))
       return { index: i, width: 1, value: word.slice("--model=".length) };
+    if (flags.has("-m") && word.startsWith("-m") && word.length > 2)
+      return { index: i, width: 1, value: word.slice(word[2] === "=" ? 3 : 2) };
   }
   return null;
 }
 
 /**
- * `argv` without a `claude` pass's `--model` option, so a check that reads
- * the PR number out of the pass command does not read it out of a model id.
+ * `argv` without a `claude` or `codex` pass's model option, so a check that
+ * reads the PR number out of the pass command does not read it out of a
+ * model id.
  */
 export function withoutModel(argv: readonly string[]): string[] {
-  if (passVendor(argv) !== "claude") return [...argv];
+  if (passVendor(argv) === null) return [...argv];
   let rest = [...argv];
   for (let own = modelOption(rest); own !== null; own = modelOption(rest))
     rest = [...rest.slice(0, own.index), ...rest.slice(own.index + own.width)];
@@ -120,6 +171,16 @@ function withModel(argv: readonly string[], model: string): string[] {
   const rest = withoutModel(argv);
   const at = modelOption(argv)?.index ?? 1;
   return [...rest.slice(0, at), "--model", model, ...rest.slice(at)];
+}
+
+/** Replace a Codex pass's model with `-m model` after `exec` (after `codex` when it has none). */
+export function withCodexModel(
+  argv: readonly string[],
+  model: string,
+): string[] {
+  const rest = withoutModel(argv);
+  const at = rest[1] === "exec" ? 2 : 1;
+  return [...rest.slice(0, at), "-m", model, ...rest.slice(at)];
 }
 
 /** The pass command the driver runs, and the model it runs on. */
@@ -175,6 +236,47 @@ function ownModel(
 }
 
 /**
+ * A Codex pass command with its model decided: its own, else the
+ * configured one, else none.
+ */
+function codexPass(
+  argv: readonly string[],
+  configured: () => CodexPassModel,
+): EffectivePass {
+  const own = modelOption(argv);
+  if (own !== null) {
+    if (!PASS_MODEL_PATTERN.test(own.value))
+      return {
+        argv: [...argv],
+        model: null,
+        source: `the pass command's own model '${own.value}', which names no model`,
+      };
+    let config: CodexPassModel | null = null;
+    try {
+      config = configured();
+    } catch (error) {
+      swallow(error, "the configured Codex model only names a source here");
+    }
+    return {
+      argv: [...argv],
+      model: own.value,
+      source:
+        config?.model === own.value
+          ? `${config.source}, as the pass command's -m`
+          : "the pass command's own model",
+    };
+  }
+  const chosen = configured();
+  return chosen.model === null
+    ? { argv: [...argv], model: null, source: chosen.source }
+    : {
+        argv: withCodexModel(argv, chosen.model),
+        model: chosen.model,
+        source: chosen.source,
+      };
+}
+
+/**
  * The pass command with its model decided (see the module header), from the
  * command as given, the `--pass-model` flag and the configured model.
  */
@@ -182,21 +284,32 @@ export function effectivePass(
   argv: readonly string[],
   flag: string | undefined,
   configured: () => PassModel = configuredPassModel,
+  codex: () => CodexPassModel = configuredCodexModel,
 ): EffectivePass {
   const first = argv[0];
   if (first === undefined)
     return { argv: [], model: null, source: "no pass command given" };
-  if (passVendor(argv) !== "claude") {
-    if (flag !== undefined)
-      throw new PassModelUsageError(
-        `--pass-model applies to a Claude Code pass command (claude …); '${basename(first)}' chooses its own model`,
-      );
+  const vendor = passVendor(argv);
+  if (vendor === null && flag !== undefined)
+    throw new PassModelUsageError(
+      `--pass-model applies to a Claude Code pass command or a Codex pass command; '${basename(first)}' chooses its own model`,
+    );
+  if (vendor === "codex") {
+    if (flag === undefined) return codexPass(argv, codex);
+    const chosen = resolveModelValue(
+      flag,
+      "--pass-model",
+      readOptionalOverlay,
+      CODEX_RUNTIME,
+    );
+    return { argv: withCodexModel(argv, chosen.model), ...chosen };
+  }
+  if (vendor !== "claude")
     return {
       argv: [...argv],
       model: null,
       source: `chosen by the pass command (${basename(first)})`,
     };
-  }
   const own = modelOption(argv);
   if (flag !== undefined) {
     const chosen = resolveModelValue(flag, "--pass-model");
