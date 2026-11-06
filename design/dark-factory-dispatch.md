@@ -1148,7 +1148,8 @@ host orders the area alike.
 says `owner: true|false`, `true` by default, so a single machine keeps
 today's behaviour. The owner alone notifies for the repository, writes its
 dispatch labels, writes the outcome log's event rows for what it did not
-launch (a stop it notifies on, a serialized hold beginning and ending) and,
+launch (a stop it notifies on, a serialized hold beginning and ending),
+records each recurring class as a reflection finding (see Control) and,
 once it is built, reads the [dispatch board](dispatch-board.md); every other
 host launches, re-arms, re-drives and takes over through the shared records
 and writes none of those, so each is written once. Each host still writes

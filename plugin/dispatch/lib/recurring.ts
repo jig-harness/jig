@@ -15,10 +15,10 @@ import { OUTCOME_CLASSES, type OutcomeClass } from "./log.ts";
 
 /** The host days a class is looked for, and on how many it must occur to recur. */
 export const RECURRENCE_DAYS = 7;
-export const RECURRENCE_AT_LEAST = 3;
+const RECURRENCE_AT_LEAST = 3;
 
 /** The classes that are not a stage finishing badly: the finished-well ones, and a park, which is a person's to answer. */
-export const NOT_BAD: readonly OutcomeClass[] = [
+const NOT_BAD: readonly OutcomeClass[] = [
   "converged",
   "merged",
   "parked for a person",

@@ -142,7 +142,7 @@ export function repositoryReflection(
 }
 
 /** An outcome class as a reflection class name: `gates failed` is `dispatch-recurring-gates-failed`. */
-export function findingClass(outcome: string): string {
+function findingClass(outcome: string): string {
   return `dispatch-recurring-${outcome
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -160,7 +160,7 @@ function queryValue(value: string): string {
 }
 
 /** The dashboard's filter that shows a recurring class's rows over its seven days. */
-export function dashboardFilter(
+function dashboardFilter(
   r: Pick<RecurringClass, "class" | "repo" | "stage">,
   nowMs: number,
   timeZone: string,
