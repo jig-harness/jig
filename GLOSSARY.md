@@ -799,10 +799,11 @@ make, use the entry's term instead.
   behind it ([design](design/tracker-facets.md)).
 - **Facet store** (store) — where a tracker keeps one *issue facet*: the
   tracker's own field for it (`native`, such as GitHub's or Jira's issue
-  type), a custom field the repository names (`field`), a label per value
-  (`label`), or the repository's own command (`command`). Each facet has a
-  default store per *tracker adapter*, and a repository sets its own in
-  `issue_tracker.facets` ([design](design/tracker-facets.md)).
+  type), a custom field the repository names (`field`), or a label per
+  value (`label`). Each facet has a default store per *tracker adapter*, a
+  repository names its own in `issue_tracker.facets`, and no repository's
+  store moves unless its configuration says so or a person runs the move
+  ([design](design/tracker-facets.md)).
 - **Sensitivity flag** — a *flag label* marking a change that carries extra
   obligations, such as a database migration, a published contract, personal
   data or a manual operational step. `decide` reads them under fixed names:
