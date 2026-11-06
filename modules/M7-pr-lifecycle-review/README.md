@@ -208,9 +208,12 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
      person will find it, in the tracker item and in the repository's own
      ledger of such work where it keeps one.
    - **Temporary scaffolding**: reverted, in the repository and outside it. A
-     widened timeout, a disabled gate, a live review driver, a working
-     branch, an environment or a flipped flag each stays behind unless
-     something looks for it.
+     widened timeout, a disabled gate, a live review driver, an environment or a flipped flag
+     can still affect behavior, cost or access after the merge. Routine local
+     branches, retired workspaces and scratch notes wait for periodic cleanup,
+     even where no collector covers them yet. Their presence alone never
+     makes a follow-up incomplete or calls for a human retention decision;
+     evidence of unlanded work or an active operational problem remains owed.
    - **Live verification**: owed only when the change has a runtime surface,
      has reached an environment and is not already covered by CI. Anything
      else is not owed, and says which condition it fails.
