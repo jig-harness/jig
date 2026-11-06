@@ -96,9 +96,8 @@ async function installedTimer(): Promise<{
   env: Record<string, string>;
 } | null> {
   const { dispatchJobSpec } = await import("../install.ts");
-  const { detectScheduler, snapshotScheduler } = await import(
-    "../../runtime/scheduler.ts"
-  );
+  const { detectScheduler, snapshotScheduler, launcherDirectory } =
+    await import("../../runtime/scheduler.ts");
   const { jobPresent, readInstalledJob } = await import(
     "../../runtime/installed-job.ts"
   );
@@ -109,7 +108,16 @@ async function installedTimer(): Promise<{
   if (!jobPresent(snapshot)) return null;
   const job = readInstalledJob(snapshot);
   const separator = job?.command.indexOf("--") ?? -1;
-  if (job === null || separator < 1)
+  if (
+    job === null ||
+    separator < 1 ||
+    ["launcher.ts", "bunfig.toml"].some(
+      (name) =>
+        typeof snapshot.launcher[
+          join(launcherDirectory(snapshot.spec), name)
+        ] !== "string",
+    )
+  )
     throw new GcError("the installed timer is incomplete or malformed");
   return { prefix: job.command.slice(0, separator + 1), env: job.env };
 }
@@ -228,13 +236,18 @@ async function waiterMain(path: string): Promise<number> {
     truncateSync(logPath(dir));
   const note = (line: string) =>
     appendFileSync(logPath(dir), `${new Date().toISOString()} ${line}\n`);
+  let prepared: TickCall;
   const { end } = await waitAndRun(dir, {
     busy: LOCK_HELD_EXIT,
     note,
-    run: async () => {
+    prepare: async () => {
       const call = await tickCall(path);
       if (!call.ok) return call;
-      const { argv, env, timeoutSec } = call.value;
+      prepared = call.value;
+      return ok(undefined);
+    },
+    run: async () => {
+      const { argv, env, timeoutSec } = prepared;
       const result = await run(argv, { env, cwd: homedir(), timeoutSec });
       if (result.spawnFailed)
         return failed(

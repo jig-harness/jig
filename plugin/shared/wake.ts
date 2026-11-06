@@ -225,7 +225,9 @@ export function requestWake(
 /** What a waiter needs: the clock, the run, and the exit code that means the run was refused. */
 export interface WaitDeps {
   clock?: Clock;
-  /** Start the run and wait for its exit code; a failure when it could not start. */
+  /** Prepare the command before the spacing check; failure leaves requests pending. */
+  prepare?(): Promise<Outcome<void, "unstarted">>;
+  /** Launch without asynchronous preparation, then await its bounded exit; failure when it could not start. */
   run(): Promise<Outcome<number, "unstarted">>;
   /** The exit code of a run that was refused and must be retried. */
   busy: number;
@@ -263,22 +265,24 @@ async function turn(
   count: { attempts: number; runs: number },
 ): Promise<WaitEnd | null> {
   const clock = deps.clock ?? systemClock;
-  const taken = pendingRequests(dir);
-  if (taken.length === 0) return idle(dir);
+  const pending = pendingRequests(dir);
+  if (pending.length === 0) return idle(dir);
   if (count.attempts >= WAKE_ATTEMPTS) {
     deps.note?.(
-      `${count.attempts} runs started; ${taken.length} requests are left for the next wake`,
+      `${count.attempts} runs started; ${pending.length} requests are left for the next wake`,
     );
     return "bounded";
   }
-  const now = clock.now();
-  const due = (lastStart(dir) ?? Number.NEGATIVE_INFINITY) + WAKE_SPACING_MS;
-  if (now < due) {
-    await clock.sleep(due - now);
-    return null;
+  const prepared = deps.prepare ? await deps.prepare() : undefined;
+  if (prepared && !prepared.ok) {
+    deps.note?.(`the run did not start: ${prepared.failure.reason}`);
+    return "failed";
   }
+  const due = (lastStart(dir) ?? Number.NEGATIVE_INFINITY) + WAKE_SPACING_MS;
+  while (clock.now() < due) await clock.sleep(due - clock.now());
+  const taken = pendingRequests(dir);
   count.attempts++;
-  writeStarted(dir, now);
+  writeStarted(dir, clock.now());
   const ran = await deps.run();
   if (!ran.ok) {
     deps.note?.(`the run did not start: ${ran.failure.reason}`);

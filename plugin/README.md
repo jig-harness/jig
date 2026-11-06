@@ -950,7 +950,7 @@ tree, so it also clears a directive a driver left behind.
 [dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists the
 repository with the stage the tick acts under (`pickup` for `assign`,
 `followup` for a follow-up's `hold` and `release`, `rearm` for the rest),
-`send` wakes that repository's tick: a waiter in the background runs `jig
+`send` wakes that repository's tick: a [waiter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in the background runs `jig
 dispatch --apply --repo <path>` the way the installed timer does, when idle
 and no sooner than a minute after the last tick it started, rather than
 at the next timer run. Several sends within that minute start one tick. A tick that

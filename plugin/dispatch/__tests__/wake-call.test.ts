@@ -8,12 +8,14 @@ import type { tickCall } from "../lib/wake-tick.ts";
 
 function call(
   files: Record<string, string | null>,
+  launcher: Record<string, string | null> = {},
 ): Awaited<ReturnType<typeof tickCall>> {
   const home = mkdtempSync(join(tmpdir(), "wake-call-"));
   try {
     const source = [
       'import { mock } from "bun:test";',
       'import { mkdirSync, writeFileSync } from "node:fs";',
+      'import { join } from "node:path";',
       'mkdirSync(process.env.HOME + "/.jig");',
       'writeFileSync(process.env.HOME + "/.jig/dispatch.yaml", "repositories: []\\nworkspace_timeout: 4h\\nruntime_timeout: 1m\\n");',
       "const scheduler = await import(" +
@@ -26,7 +28,9 @@ function call(
       'detectScheduler: () => "systemd",',
       "snapshotScheduler: async (_, spec) => ({ scheduler: 'systemd', spec, files: " +
         JSON.stringify(files) +
-        " }),",
+        ", launcher: Object.fromEntries(Object.entries(" +
+        JSON.stringify(launcher) +
+        ").map(([name, text]) => [join(scheduler.launcherDirectory(spec), name), text])) }),",
       "}));",
       "const { tickCall } = await import(" +
         JSON.stringify(resolve(import.meta.dir, "../lib/wake-tick.ts")) +
@@ -59,6 +63,26 @@ it("keeps a partial timer installation unstarted", () => {
   if (!result.ok) expect(result.failure.reason).toContain("installed timer");
 });
 
+it.each(["launcher.ts", "bunfig.toml"])(
+  "keeps a timer missing %s unstarted",
+  (missing) => {
+    const result = call(
+      {
+        "jig-dispatch.service":
+          '[Unit]\nDescription=Dispatch\n[Service]\nExecStart="/bun" "/launcher/launcher.ts" "--" "dispatch" "--apply"\n',
+        "jig-dispatch.timer": "[Timer]\nOnUnitActiveSec=5min\n",
+      },
+      {
+        "launcher.ts": "launcher",
+        "bunfig.toml": "preload = []",
+        [missing]: null,
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.failure.reason).toContain("installed timer");
+  },
+);
+
 it("gives a timer-free tick the configured workspace and runtime budget", () => {
   const result = call({
     "jig-dispatch.service": null,
@@ -66,4 +90,26 @@ it("gives a timer-free tick the configured workspace and runtime budget", () => 
   });
   expect(result).toMatchObject({ ok: true });
   if (result.ok) expect(result.value.timeoutSec).toBe(8 * 3600 + 8 * 60 + 60);
+});
+
+it("runs a complete installed timer", () => {
+  const result = call(
+    {
+      "jig-dispatch.service":
+        '[Unit]\nDescription=Dispatch\n[Service]\nExecStart="/bun" "/launcher/launcher.ts" "--" "dispatch" "--apply"\n',
+      "jig-dispatch.timer": "[Timer]\nOnUnitActiveSec=5min\n",
+    },
+    { "launcher.ts": "launcher", "bunfig.toml": "preload = []" },
+  );
+  expect(result.ok).toBe(true);
+  if (result.ok)
+    expect(result.value.argv).toEqual([
+      "/bun",
+      "/launcher/launcher.ts",
+      "--",
+      "dispatch",
+      "--apply",
+      "--repo",
+      "/repo",
+    ]);
 });

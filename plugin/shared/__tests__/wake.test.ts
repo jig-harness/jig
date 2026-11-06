@@ -71,6 +71,47 @@ function runs(
 }
 
 describe("a wake's spacing", () => {
+  it("takes requests arriving during preparation in the same run", async () => {
+    const dir = wake();
+    const clock = fakeClock();
+    requestWake(dir, clock);
+    const r = runs(clock);
+    let preparations = 0;
+    const end = await waitAndRun(dir, {
+      clock,
+      busy: BUSY,
+      run: r.run,
+      prepare: async () => {
+        if (preparations++ === 0) requestWake(dir, clock);
+        return ok(undefined);
+      },
+    });
+    expect(end).toEqual({ end: "idle", runs: 1 });
+    expect(r.starts).toEqual([T0]);
+    expect(pendingRequests(dir)).toEqual([]);
+  });
+
+  it("spaces actual starts after slow command preparation", async () => {
+    const dir = wake();
+    const clock = fakeClock();
+    requestWake(dir, clock);
+    const r = runs(clock, [], (index) => {
+      if (index === 0) requestWake(dir, clock);
+    });
+    let prepared = 0;
+    await waitAndRun(dir, {
+      clock,
+      busy: BUSY,
+      prepare: async () => {
+        if (prepared++ === 0) clock.at += 30_000;
+        return ok(undefined);
+      },
+      run: r.run,
+    });
+    expect(r.starts).toEqual([T0 + 30_000, T0 + 90_000]);
+    expect(lastStart(dir)).toBe(T0 + 90_000);
+  });
+
   it("runs once for several requests made before the run starts", async () => {
     const dir = wake();
     const clock = fakeClock();
@@ -123,6 +164,24 @@ describe("a wake's spacing", () => {
 });
 
 describe("a wake's refused runs", () => {
+  it("keeps requests and the start timestamp untouched when preparation fails", async () => {
+    const dir = wake();
+    const clock = fakeClock();
+    requestWake(dir, clock);
+    const r = runs(clock);
+    const end = await waitAndRun(dir, {
+      clock,
+      busy: BUSY,
+      run: r.run,
+      prepare: async () => failed("unstarted", "missing launcher"),
+    });
+    expect(end).toEqual({ end: "failed", runs: 0 });
+    expect(r.starts).toEqual([]);
+    expect(lastStart(dir)).toBeNull();
+    expect(pendingRequests(dir)).toHaveLength(1);
+    expect(requestWake(dir, clock).startWaiter).toBe(true);
+  });
+
   it("keeps the requests of a refused run and tries again after the minute", async () => {
     const dir = wake();
     const clock = fakeClock();
