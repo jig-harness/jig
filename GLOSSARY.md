@@ -788,7 +788,21 @@ make, use the entry's term instead.
 - **Facet** — a label that refines another and means nothing without it,
   such as the stakeholder label beside a human-in-the-loop flag; the
   *label taxonomy* says which label it requires, and the label validator
-  rejects it alone.
+  rejects it alone. Not an *issue facet*.
+- **Issue facet** (facet, where only issues' facts are meant) — one of the
+  facts every work item carries beside its labels, its type, its priority
+  and its size, held by the *tracker interface* as a value that means the
+  same in every repository: a type from the *label taxonomy*'s type list,
+  a priority from 1 (urgent) to 4 (low) or none, a size from the
+  taxonomy's size group. Where the tracker keeps the value is its
+  *facet store*; the skills read the value, never the label or field
+  behind it ([design](design/tracker-facets.md)).
+- **Facet store** (store) — where a tracker keeps one *issue facet*: the
+  tracker's own field for it (`native`, such as GitHub's or Jira's issue
+  type), a custom field the repository names (`field`), a label per value
+  (`label`), or the repository's own command (`command`). Each facet has a
+  default store per *tracker adapter*, and a repository sets its own in
+  `issue_tracker.facets` ([design](design/tracker-facets.md)).
 - **Sensitivity flag** — a *flag label* marking a change that carries extra
   obligations, such as a database migration, a published contract, personal
   data or a manual operational step. `decide` reads them under fixed names:

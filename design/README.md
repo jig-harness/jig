@@ -71,6 +71,7 @@ with the review.
 | [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 38; Later: a repository's theme |
 | [The dispatch board, what is driven and what is ready to merge](dispatch-board.md) | 36 |
 | [Addresses: asking and telling the stations of the line](addresses.md) | 39 |
+| [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | Not in the plan yet |
 
 ## Starting a design
 
