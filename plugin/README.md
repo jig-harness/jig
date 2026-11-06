@@ -785,8 +785,10 @@ In a session, [`/jig:operator`](skills/operator/SKILL.md) runs `jig ask`
 and `jig send` for you: ask it "where does 456 stand" or "what is waiting on
 me", or tell it "hold 456". A status comes back as the same card every
 time: `jig ask`'s own answer, then four lines saying where the work stands,
-what it waits on, what you can do and what was not read. Anything else it
-answers in sentences.
+what it waits on, what you can do and what was not read. `/jig:operator
+456` asks that of pull request 456, or of issue 456 when no pull request
+has that number, and `/jig:operator` on its own lists what waits on a
+person, one line per entry. Anything else it answers in sentences.
 
 **The address.** A station on a piece of work has an
 [address](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),

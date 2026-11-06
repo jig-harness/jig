@@ -303,6 +303,9 @@ just read, so any session on any machine can be the operator, and a session
 that ends loses nothing. A person who wants one address's status without a
 session runs `jig ask` and reads its plain answer.
 
+- **The skill run on its own** answers "what is waiting on me", and a
+  bare number is the status of that pull request, or of the item of that
+  number where no pull request has it.
 - **"What is waiting on me"** is `jig ask --waiting --person <login>` once
   step 5 has built, one read; before it, `jig ask --waiting`. The operator opens an address only to say more about one entry.
 - **The status of a pull request** is `jig ask drive@<repository>#<PR>`,

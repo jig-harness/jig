@@ -56,8 +56,16 @@ read `#` as the start of a comment.
   machine's dispatch file lists one repository of that name. Inside a
   checkout of the repository leave it out (`jig ask drive <PR>`); `ask`
   then uses the repository the checkout belongs to.
-- **A bare number** is a pull request's `drive`, unless the person said
-  item, issue, ticket or pick-up.
+- **A bare number** (`/jig:operator 456`) is a status question about
+  pull request 456: ask its `drive`. When the person said item, issue,
+  ticket or pick-up, ask its `pickup` instead. When the `drive` answer
+  exits `1` with no such pull request, ask the `pickup` of the same number
+  once, since on GitHub Issues an issue and a pull request share their
+  numbers; when that is refused for the key's form (exit `2`: the tracker
+  writes its keys another way) or names nothing too, say that no pull
+  request or item has that number.
+- **A tracker key** (`ENG-123`, letters, a dash and a number) is a
+  `pickup`.
 - **Ambiguous?** Ask one question and wait: which pull request, which
   repository, which question to answer. Never guess a pull request's
   number, never search for one, and never take it from a title that only
@@ -73,6 +81,7 @@ read `#` as the start of a comment.
 
 | The person asks | Run |
 | --- | --- |
+| nothing: the skill run on its own | `jig ask --waiting`, answered as [the waiting card](#the-waiting-card) |
 | where a pull request stands | `jig ask drive@<owner>/<name> <PR>` |
 | what is waiting on them | `jig ask --waiting` |
 | what was said to and by a station | `jig ask drive@<owner>/<name> <PR> --thread` |
@@ -121,6 +130,28 @@ two sessions, reads the same form:
 
 The lines say where the work stands now: for a merged pull request, at its
 follow-up. Add nothing after the card until the person asks something more.
+
+### The waiting card
+
+`/jig:operator` on its own, and "what is waiting on me", get the same card
+every time, from one `jig ask --waiting`:
+
+```markdown
+**Waiting on a person**, as the dispatcher's tick at <its time> found it:
+
+**<owner>/<name>**: <how many> waiting
+- `<address>`: <the act that settles it>, since <the date>. <the title>
+  <when the entry names a question for a person: the question, quoted as the record's words>
+
+**Not listed:** drives that are running or that settle by themselves. Name a pull request or an item for its status card.
+```
+
+One repository block per repository the answer lists, in its order, and
+one line per entry, in its order; with nothing waiting, the line `Nothing
+waits on a person.` in place of the blocks. Open no address to fill the
+card. On a machine that dispatches nothing, `ask` says there is no line to
+read: say that in place of the card, and ask which pull request or item
+to look at.
 
 ### Filling in the card
 

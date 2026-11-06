@@ -244,6 +244,27 @@ describe("its status card", () => {
   });
 });
 
+describe("its waiting card and bare requests", () => {
+  test("answers the skill run on its own with jig ask --waiting, as the waiting card", () => {
+    expect(body).toContain(
+      "| nothing: the skill run on its own | `jig ask --waiting`, answered as [the waiting card](#the-waiting-card) |",
+    );
+    const card = /### The waiting card\n([\s\S]*?)\n### /.exec(body)?.[1] ?? "";
+    for (const part of [
+      "**Waiting on a person**, as the dispatcher's tick at",
+      "**<owner>/<name>**: <how many> waiting",
+      "**Not listed:** drives that are running",
+      "`Nothing\nwaits on a person.`",
+    ])
+      expect(card).toContain(part);
+  });
+
+  test("takes a bare number as a pull request, then the item of that number", () => {
+    expect(body).toContain("- **A bare number** (`/jig:operator 456`)");
+    expect(body).toContain("ask the `pickup` of the same number\n  once");
+  });
+});
+
 describe("its rules for sending", () => {
   test("states each rule a send follows", () => {
     for (const rule of [
