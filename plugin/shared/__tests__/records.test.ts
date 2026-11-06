@@ -210,6 +210,7 @@ describe("the registry", () => {
     expect(enveloped.map((k) => k.name).sort()).toEqual([
       "dispatch-followup",
       "dispatch-launch-claim",
+      "drive-answer",
       "drive-ledger",
       "drive-merge-ready",
       "drive-takeover-claim",

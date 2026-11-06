@@ -256,13 +256,24 @@ export async function askPickup(
   ctx: AskContext,
   tracker: RepoTracker,
 ): Promise<StationAnswer> {
-  const { reading, address, name } = ctx;
+  return (await readPickup(ctx, tracker)).answer;
+}
+
+/** The `pickup` station's answer, and the item as the tracker read it (`null` when it did not read or names none): for `jig send`, which checks a request against it. */
+export async function readPickup(
+  ctx: AskContext,
+  tracker: RepoTracker,
+): Promise<{ answer: StationAnswer; issue: Issue | null }> {
+  const { reading, address } = ctx;
   const found = await trackerRead(ctx, () =>
     openTracker(tracker.config, tracker.root).getIssue(address.key),
   );
   if ("why" in found) {
     reading.note({ record: "tracker-claim", read: false, detail: found.why });
-    return { ...nothing("unknown", found.why), found: true };
+    return {
+      answer: { ...nothing("unknown", found.why), found: true },
+      issue: null,
+    };
   }
   reading.note({
     record: "tracker-claim",
@@ -270,8 +281,21 @@ export async function askPickup(
     ...(found.value === null ? { detail: "no such item" } : {}),
   });
   if (found.value === null)
-    return nothing("no such item", `the tracker has no item ${address.key}`);
+    return {
+      answer: nothing("no such item", `the tracker has no item ${address.key}`),
+      issue: null,
+    };
   const issue = found.value;
+  return { answer: await issueAnswer(ctx, tracker, issue), issue };
+}
+
+/** The answer for an item the tracker read. */
+async function issueAnswer(
+  ctx: AskContext,
+  tracker: RepoTracker,
+  issue: Issue,
+): Promise<StationAnswer> {
+  const { address, name } = ctx;
   const local = await dispatcherReads(
     ctx,
     (r) => r.record.action === "pickup" && r.record.item === address.key,

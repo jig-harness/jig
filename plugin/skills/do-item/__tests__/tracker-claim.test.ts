@@ -475,3 +475,50 @@ describe("Jira adapter: the claim's reads and write", () => {
     expect(await t.assignees("ENG-2")).toEqual([]);
   });
 });
+
+describe("each adapter: the user an identity names", () => {
+  it("GitHub names a login's user, and refuses a login with none", async () => {
+    const { t, calls } = gitHub((call) =>
+      call.variables.login === "factory-bot"
+        ? { user: { id: "U_factory", login: "factory-bot" } }
+        : { user: null },
+    );
+    expect(await t.user("factory-bot")).toEqual({
+      id: "U_factory",
+      name: "factory-bot",
+    });
+    expect(calls.map((c) => c.op)).toEqual(["TrackerUser"]);
+    await expect(t.user("nobody-here")).rejects.toThrow(
+      'GitHub has no user "nobody-here"',
+    );
+  });
+
+  it("Linear names the one user an email or a display name matches, and refuses none or two", async () => {
+    const users: Record<string, Array<{ id: string; name: string }>> = {
+      "factory@example.com": [{ id: "u-f", name: "Factory" }],
+      twin: [
+        { id: "u-1", name: "Twin" },
+        { id: "u-2", name: "Twin" },
+      ],
+    };
+    const transport: LinearTransport = async (query, variables) => {
+      expect(query).toContain("query TrackerUsers");
+      return { users: { nodes: users[String(variables.who)] ?? [] } };
+    };
+    const t = linearTracker({ team: "ENG", states: STATES, transport });
+    expect(await t.user("factory@example.com")).toEqual({
+      id: "u-f",
+      name: "Factory",
+    });
+    await expect(t.user("twin")).rejects.toThrow("more than one Linear user");
+    await expect(t.user("ghost")).rejects.toThrow("names no Linear user");
+  });
+
+  it("Jira names the account an id confirms", async () => {
+    const { t } = jira(routes({ "GET user": FACTORY }));
+    expect(await t.user(FACTORY.accountId)).toEqual({
+      id: FACTORY.accountId,
+      name: FACTORY.accountId,
+    });
+  });
+});

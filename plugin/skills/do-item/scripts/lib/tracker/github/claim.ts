@@ -1,10 +1,15 @@
 /**
  * What claiming an issue reads and writes on GitHub: the login the token
- * acts as, every assignee of an issue, and an assignment that replaces them.
- * A user is named by its node id, compared exactly, and its login.
+ * acts as, every assignee of an issue, an assignment that replaces them, and
+ * the user a login names. A user is named by its node id, compared exactly,
+ * and its login.
  */
 
-import type { Tracker, TrackerUser } from "../port.ts";
+import {
+  type Tracker,
+  TrackerRequestError,
+  type TrackerUser,
+} from "../port.ts";
 import type { Client } from "./client.ts";
 import { record, str } from "./read.ts";
 import { GitHubApiError } from "./transport.ts";
@@ -24,6 +29,8 @@ query TrackerAssignees($owner: String!, $name: String!, $number: Int!) {
   }
 }`;
 
+const USER = `query TrackerUser($login: String!) { user(login: $login) { id login } }`;
+
 const ASSIGN = `mutation TrackerAssign($input: UpdateIssueInput!) {
   updateIssue(input: $input) { issue { id } }
 }`;
@@ -35,7 +42,7 @@ function userOf(value: unknown, where: string): TrackerUser {
 
 export function claimOperations(
   client: Client,
-): Pick<Tracker, "viewer" | "assignees" | "assign"> {
+): Pick<Tracker, "viewer" | "assignees" | "assign" | "user"> {
   /** The issue's node id and every assignee; throws when the issue is absent or the list is cut. */
   async function read(
     key: string,
@@ -77,6 +84,16 @@ export function claimOperations(
     async assign(key, user) {
       const { id } = await read(key);
       await client.mutate(ASSIGN, { input: { id, assigneeIds: [user.id] } });
+    },
+    async user(identity) {
+      const login = identity.trim();
+      const data = record(await client.transport(USER, { login }), "data");
+      if (data.user === null || data.user === undefined)
+        throw new TrackerRequestError(
+          "unresolved",
+          `GitHub has no user ${JSON.stringify(login)}`,
+        );
+      return userOf(data.user, `user ${login}`);
     },
   };
 }

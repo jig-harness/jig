@@ -178,6 +178,7 @@ describe("jig dispatch --apply on Codex accounts", () => {
         token: null,
         anthropicKey: null,
         openaiKey: null,
+        launch: id,
       },
     ]);
     await waitFor("the exit", () => exitWritten(w, id));

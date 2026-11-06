@@ -291,8 +291,9 @@ Every station on a piece of work has an address, such as
 who holds the station, what state it is in and what it waits on. It also
 shows what was said to the station and by it. It reads the tracker, the
 pull request and the dispatching machine's records.
-`jig send <address> <verb>` will write the assignment, label or comment
-the line already acts on, from a closed list of verbs. An operator skill
+`jig send <address> <verb>` writes the assignment, label, comment or
+mailbox directive the line already acts on, from a closed list of verbs,
+and checks first that the station can take it. An operator skill
 will turn a question such as "what is waiting on me" into those
 commands. Nothing new is stored, and no agent has to keep running for an
 address to answer.

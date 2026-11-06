@@ -768,7 +768,8 @@ stops admit it on a mechanical state:
   and hands the answers to every pass as human verdicts
   (`$DRIVE_PR_PASS_NOTICE`) until one exits `0`, across later re-arms too.
   A comment the drive itself writes (one opening
-  with an outcome token, or carrying a hidden marker) is never an answer.
+  with an outcome token, or carrying a hidden marker other than the record
+  of an answer `jig send` wrote) is never an answer.
   With any item unanswered nothing is unparked, and the drive stops `8` at
   its first gate again, naming what it still waits on; at the `wide`
   autonomy level, except where every unanswered item has the class

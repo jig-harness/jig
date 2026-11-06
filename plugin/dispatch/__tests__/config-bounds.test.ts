@@ -77,6 +77,17 @@ describe("the machine file's shared records and owner", () => {
   });
 });
 
+describe("the machine file's send switch", () => {
+  const read = (body: string) => config(body)() as { send: boolean };
+
+  it("lets jig send write unless the file says send: false, and refuses anything but true or false", () => {
+    expect(read("").send).toBe(true);
+    expect(read("send: true\n").send).toBe(true);
+    expect(read("send: false\n").send).toBe(false);
+    expect(config("send: never\n")).toThrow("send must be true or false");
+  });
+});
+
 describe("the machine file's account directories", () => {
   it("refuses two accounts for one vendor and configuration directory", () => {
     const read = config(

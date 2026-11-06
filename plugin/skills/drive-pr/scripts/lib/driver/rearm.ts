@@ -24,7 +24,8 @@
  *     verdicts. With any item unanswered nothing is
  *     unparked, and the drive stops `HITL_PARKED` at its first gate as
  *     before. A comment the drive itself writes (one opening with an outcome
- *     token, or carrying a hidden marker) is never read as an answer, and a
+ *     token, or carrying a hidden marker other than the record of an answer
+ *     `jig send` wrote, `answer-comment.ts`) is never read as an answer, and a
  *     pull-request comment counts only in the stated `answer <key>:` form:
  *     the drive posts with the operator's own credentials, so a comment that
  *     merely mentions a parked key must not unpark it.
@@ -66,6 +67,8 @@ import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 
 import { TRUSTED_ASSOCIATIONS } from "../../summary-findings.ts";
+
+import { withoutAnswerRecord } from "./../answer-comment.ts";
 
 import { pinsEmptyPassArgs } from "./../pass-args.ts";
 
@@ -264,13 +267,16 @@ function closesFence(line: string, marker: string, open: string): boolean {
   );
 }
 
-/** A comment a person wrote after the park, not one the drive wrote. */
+/**
+ * A comment a person wrote after the park, not one the drive wrote: the one
+ * hidden marker it may carry is the record of an answer `jig send` wrote.
+ */
 export function isAnswer(c: CommentLike, after: number): boolean {
   return (
     TRUSTED_ASSOCIATIONS.has(c.association) &&
     Date.parse(c.at) > after &&
     !/^\*\*(accepted|rejected|wont-fix|deferred|moot)\*\*/.test(c.body) &&
-    !c.body.includes("<!--")
+    !withoutAnswerRecord(c.body).includes("<!--")
   );
 }
 
@@ -358,7 +364,13 @@ async function answersTo(
   return {
     answers: candidates
       .filter((c) => isAnswer(c, after))
-      .map(({ author, at, url, body }) => ({ author, at, url, body })),
+      .map(({ author, at, url, body }) => ({
+        author,
+        at,
+        url,
+        // The pass reads the person's words, not the record beside them.
+        body: withoutAnswerRecord(body),
+      })),
     complete: thread !== null && conversation !== null,
   };
 }

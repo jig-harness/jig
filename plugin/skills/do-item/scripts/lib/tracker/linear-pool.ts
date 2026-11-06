@@ -127,7 +127,7 @@ export function assignedOperations(
   opts: AssignedOptions,
 ): Pick<
   Tracker,
-  "assignedIssues" | "assignedBy" | "viewer" | "assignees" | "assign"
+  "assignedIssues" | "assignedBy" | "viewer" | "assignees" | "assign" | "user"
 > {
   const { team, states, transport, pageAll } = opts;
   return {

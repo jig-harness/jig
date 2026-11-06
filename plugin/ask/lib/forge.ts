@@ -1,12 +1,14 @@
 /**
  * What `jig ask` reads on the forge: a pull request, its comments, its
- * timeline and the login the forge client is signed in as. Every read is a
+ * timeline, the login the forge client is signed in as and, for `jig send`,
+ * the repository's configuration on its default branch. Every read is a
  * conditional request (`shared/gh-conditional.ts`), so a resource that has
  * not changed since the last read on this machine costs nothing against the
  * forge's limit, which every drive on the machine shares; each is counted,
  * runs under its source's deadline and returns a failure as a value. A
  * reading the forge confirms unchanged is a current reading.
  */
+import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { ghConditionalGet } from "../../shared/gh-conditional.ts";
@@ -174,6 +176,30 @@ export async function readLabelEvents(
       ];
     }),
   );
+}
+
+/**
+ * The repository's configuration file as its default branch holds it,
+ * which is what the dispatcher's tick reads, never a checkout's copy;
+ * `null` when the branch has none.
+ */
+export async function readDefaultConfig(
+  reading: Reading,
+  repo: string,
+): Promise<Outcome<string | null, "unreadable">> {
+  const encoded = OVERLAY_RELPATH.split("/").map(encodeURIComponent).join("/");
+  const got = await get(reading, `repos/${repo}/contents/${encoded}`);
+  if (!got.ok)
+    return got.failure.code === "absent"
+      ? ok(null)
+      : failed("unreadable", got.failure.reason);
+  const v = json(got.value);
+  if (!isRecord(v) || v.encoding !== "base64" || typeof v.content !== "string")
+    return failed(
+      "unreadable",
+      `${OVERLAY_RELPATH} on ${repo}'s default branch came back without its content`,
+    );
+  return ok(Buffer.from(v.content, "base64").toString("utf8"));
 }
 
 /** The login the forge client is signed in as; `null` when it cannot say, and every answer then trusts only the authors the forge vouches for. */

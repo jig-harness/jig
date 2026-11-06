@@ -988,6 +988,7 @@ These are set per machine or per run, not committed:
 | `AWAIT_ROUND_CHECKS_MAX_AGE` | Seconds a still-waiting read of a pull request's checks may be reused while nothing on GitHub changed; default 300, `0` always reads |
 | `JIG_TURN_BUDGET`, `JIG_TURN_BUDGET_MARGIN`, `JIG_TURN_BUDGET_REFIRE` | The turn-budget hook's cap (default 1000; `0` turns the hook off), the margin before it at which the hook warns (default 50), and how often it warns again (unset or `0`: once more when half the margin remains) |
 | `JIG_TURN_BUDGET_STATE_DIR` | Where the turn-budget hook keeps its per-session state; default `jig-turn-budget` under the temporary directory |
+| `JIG_LAUNCH` | Set by the line, never by a person: the launch record a dispatched session runs under (the dispatcher's wrapper sets it), or the driver a drive's pass belongs to. While it is set, [`jig send`](README.md#telling-a-station-what-to-do) refuses the commands that are a person's |
 | `JIG_REFOCUS` | `1` or `0` puts `do-item`'s intent-chain snapshot in the Refocus calibration's on or off arm; unset, odd issue numbers are on |
 | `BASH_MAX_TIMEOUT_MS` | Claude Code's own variable, not Jig's: the longest `timeout` an agent may give a background command in an unattended session, 2 hours unless raised. Set it to `28800000` so a drive can outlast 2 hours (see [the background time limit](skills/drive-pr/README.md#the-background-time-limit)) |
 | `DRIVE_PR_*` (others) | Round limits, timeouts and repair budgets; listed in the [drive-pr README](skills/drive-pr/README.md) |
@@ -1145,8 +1146,8 @@ take commands from a person. With the default prefix:
 | `jig:stale` | the dispatcher | the drive's stop no longer settles the pull request: it converged, then conflicted with its base or its head moved, or it stopped on a conflict. The dispatcher re-drives it |
 | `jig:held` | the dispatcher | the pull request waits its turn in a serialized change area (below): the dispatcher drives it once it leads |
 | `jig:followed-up` | the dispatcher | merged, and its follow-up is done |
-| `jig:drive` | a person | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists. The adoption rule (`dispatch.adopt`, below) does the same for a repository's own recent pull requests without the label |
-| `jig:hold` | a person | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
+| `jig:drive` | a person, by hand or with `jig send … drive` | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists. The adoption rule (`dispatch.adopt`, below) does the same for a repository's own recent pull requests without the label |
+| `jig:hold` | a person, by hand or with `jig send … hold` (and `release`) | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
 
 A serialized change area (`serialize: true` on an area of the
 [change-area catalog](#drive) that `drive.change_areas_catalog` names, read
@@ -1232,6 +1233,7 @@ dashboard:
   listen: 100.64.0.7:8765           # jig dispatch dashboard; private or loopback only
 records:
   shared: forge                     # where another host reads this host's launches
+send: true                          # false refuses every jig send from this machine
 ```
 
 | Setting | Default / meaning |
@@ -1251,6 +1253,7 @@ records:
 | `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's or an item's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and the dispatch configuration is refused when that budget exceeds 2,147,483,647 milliseconds (about 24.86 days, the longest a timer holds; each duration alone may be at most 24 days); a tick opens at most two workspaces, one of them kept for the notices workspace when the machine file enables `notify` for any repository, and a launch that needs a workspace beyond that waits for the next tick |
 | `receipts_days` | 30; days receipts and ended launch records are kept. The outcome log is never removed |
 | `records.shared` | `forge`, the only value; where this host publishes the records another host dispatching the same repository reads: a claim per drive launch on the pull request it concerns (its launch record, its host and, once it ended, its end), and the follow-up marker with the follow-up's answer. A value this version does not know is refused. The claims coordinate launches and never authorize anything a person does; the forge cannot create a comment only if none exists, so two hosts can each read themselves the holder of one launch, and the stage's own refusal (the drive's lock and ledger claim, `do-item`'s claim) is the backstop |
+| `send` | `true`; whether [`jig send`](README.md#telling-a-station-what-to-do) may write a request from this machine. `false` refuses every send, `--dry-run` included, so a machine whose sessions should only ask the line can say so once. Read by `jig send` alone; the dispatcher ignores it |
 | `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives

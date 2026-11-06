@@ -1,13 +1,13 @@
 /**
  * What claiming an issue reads and writes on Linear: the user the API key
  * acts as (`viewer`), the issue's assignee (a Linear issue has at most one),
- * and an assignment by user id. A user is named by its id, compared
- * exactly, and its display name.
+ * an assignment by user id, and the one user an email or a display name
+ * names. A user is named by its id, compared exactly, and its display name.
  */
 
 import { isRecord } from "../../../../../shared/guards.ts";
 import type { LinearTransport } from "./linear.ts";
-import type { Tracker, TrackerUser } from "./port.ts";
+import { type Tracker, TrackerRequestError, type TrackerUser } from "./port.ts";
 
 /** An answer the claim cannot use: not the shape its query asked for, or a write Linear did not confirm. */
 class LinearClaimError extends Error {}
@@ -16,6 +16,13 @@ const VIEWER = `query TrackerViewer { viewer { id name } }`;
 
 const ASSIGNEE = `
 query TrackerAssignee($id: String!) { issue(id: $id) { id assignee { id name } } }`;
+
+const USERS = `
+query TrackerUsers($who: String!) {
+  users(filter: { or: [{ email: { eqIgnoreCase: $who } }, { displayName: { eqIgnoreCase: $who } }] }, first: 2) {
+    nodes { id name }
+  }
+}`;
 
 const ASSIGN = `
 mutation TrackerAssign($id: String!, $input: IssueUpdateInput!) {
@@ -36,7 +43,7 @@ function userOf(v: unknown, where: string): TrackerUser {
 
 export function claimOperations(
   transport: LinearTransport,
-): Pick<Tracker, "viewer" | "assignees" | "assign"> {
+): Pick<Tracker, "viewer" | "assignees" | "assign" | "user"> {
   async function read(
     key: string,
   ): Promise<{ id: string; assignee: TrackerUser | null }> {
@@ -74,6 +81,19 @@ export function claimOperations(
         throw new LinearClaimError(
           `Linear did not assign ${key} to ${user.name}`,
         );
+    },
+    async user(identity) {
+      const who = identity.trim();
+      const data = record(await transport(USERS, { who }), "data");
+      const nodes = record(data.users, "users").nodes;
+      if (!Array.isArray(nodes))
+        throw new LinearClaimError("users.nodes: expected a list");
+      if (nodes.length !== 1)
+        throw new TrackerRequestError(
+          "unresolved",
+          `${JSON.stringify(who)} names ${nodes.length === 0 ? "no" : "more than one"} Linear user by email or display name`,
+        );
+      return userOf(nodes[0], `user ${who}`);
     },
   };
 }

@@ -8,7 +8,8 @@
  * beside its code, and the lifecycle verbs (`runtime/verbs.ts`: install,
  * uninstall, upgrade, doctor, status, receipts, run) act on them through one
  * interface. Beside them it registers the commands that run and exit with
- * nothing to install, `jig ask` (`ask/component.ts`). All of
+ * nothing to install, `jig ask` (`ask/component.ts`) and `jig send`
+ * (`send/component.ts`). All of
  * it is one Optique parser, so `jig --help`, `jig help <command>`,
  * `<command> --help` and `jig completion <shell>` come from the same
  * definitions that parse.
@@ -18,6 +19,7 @@ import { GcConfigurationError } from "./shared/gc-error.ts";
 import { gcComponent } from "./gc/component.ts";
 import { dispatchComponent } from "./dispatch/component.ts";
 import { askComponent } from "./ask/component.ts";
+import { sendComponent } from "./send/component.ts";
 import { runMain as dispatchRun } from "./dispatch/run.ts";
 import type { CommandComponent, Component } from "./runtime/component.ts";
 import { runVerb, verbCommands } from "./runtime/verbs.ts";
@@ -29,7 +31,11 @@ import { map, message, or, runParser } from "./shared/vendor/optique.mjs";
 const COMPONENTS: readonly Component[] = [gcComponent, dispatchComponent];
 
 /** Every command beside the verbs: the components', then the ones the verbs never act on. */
-const COMMANDS: readonly CommandComponent[] = [...COMPONENTS, askComponent];
+const COMMANDS: readonly CommandComponent[] = [
+  ...COMPONENTS,
+  askComponent,
+  sendComponent,
+];
 
 const verbs = verbCommands(COMPONENTS.map((component) => component.name));
 
@@ -74,7 +80,7 @@ export function parseCommandLine(
   parser: typeof program = program,
 ) {
   return runParser(parser, "jig", argv, {
-    brief: message`Jig's machine-level tools: resource collection and the dispatcher, the commands that install, upgrade, check, remove, report on and run them, and asking a station of the line where it stands.`,
+    brief: message`Jig's machine-level tools: resource collection and the dispatcher, the commands that install, upgrade, check, remove, report on and run them, asking a station of the line where it stands, and telling it what to do.`,
     showChoices: true,
     help: {
       command: true,

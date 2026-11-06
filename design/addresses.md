@@ -21,12 +21,14 @@ record the line already acts on. An operator skill turns a person's
 sentence into those commands. No agent stays resident to hold an
 address, and no new store holds what is said to one.
 
-This is the design of [plan.md](plan.md) item 39. Step 1 of the build
-order is built: `jig ask`, with `--thread` and `--waiting`, in
+This is the design of [plan.md](plan.md) item 39. Steps 1 and 2 of the
+build order are built: `jig ask`, with `--thread` and `--waiting`, in
 `plugin/ask/` and `plugin/shared/address.ts`
 ([plugin/README.md § Asking a station where it stands](../plugin/README.md#asking-a-station-where-it-stands)),
 the outcome log's key column, and the rule it rests on,
-[ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md).
+[ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md);
+and `jig send`, in `plugin/send/`
+([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do)).
 The other steps are open.
 
 ## How it works
@@ -235,7 +237,7 @@ itself.
 | `drive` | `drive` | the `drive` command label on a pull request with no ledger | the tick, which arms a drive |
 | `hold`, `release` | `drive`, `followup` | the `hold` label, added or removed | the tick, which keeps every stage off a held pull request |
 | `answer <key> <text>` | `drive` | a comment on the pull request with the line `answer <key>: <text>` | the re-arm, which hands the answer to the drive's passes as the person's verdict |
-| `pause`, `resume`, `stop`, `hold-push` | `drive` | a directive in the mailbox of the working tree that holds the drive, addressed to its driver generation | the driver, where it reads directives today: `hold-push` before each push |
+| `pause`, `resume`, `stop`, `hold-push` | `drive` | a directive in the mailbox of the working tree that holds the drive: a `stop` addressed to its driver generation; a `pause` or a `hold-push` for the pull request in that tree until a `resume` names it, since the mailbox lets only a `stop` name a generation and every driver holds its pushes on a directive of any other shape | the driver, where it reads directives today: `hold-push` before each push |
 
 Each of these gestures exists today, each with its own command and its own
 checks. `send` gives them one form, so an interface that steers the line
@@ -256,13 +258,16 @@ checks:
   refuses when the machine is signed in as someone else. An `answer` is a
   comment on the pull request, readable by whoever can read that pull
   request, and `send` says so. The comment carries the record envelope,
-  which names the writer and its host.
+  which names the writer and its host. The re-arm counts no comment that
+  carries a hidden marker, which marks a script's comment, so its readers
+  set this one record aside before they apply that rule.
 - **`send` adds no authority.** Each reader keeps its own rule for whose
   record counts: an assignment made by a person with write access, a
   comment from a trusted author.
 - **A person's commands are refused in a session the line started.** A
   dispatched launch and a drive's pass run with `JIG_LAUNCH` set to their
-  launch record, and `send` refuses `assign`, `drive`, `hold`, `release`
+  launch record (the pass of a drive nobody dispatched, which has none, to
+  its driver), and `send` refuses `assign`, `drive`, `hold`, `release`
   and `answer` when it is set. This stops a skill's mistake. It does not
   stop a session that sets out to act as its person: such a session can
   clear the variable or call the forge itself, as it can today, because it

@@ -172,6 +172,7 @@ export function fakeTracker(
     viewer: unsupported("viewer"),
     assignees: unsupported("assignees"),
     assign: unsupported("assign"),
+    user: unsupported("user"),
     async openIssues(query) {
       queries.push(query);
       if (

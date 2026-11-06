@@ -44,6 +44,11 @@ const DRIVES = resolve(
   "drives.ts",
 );
 
+/** The listing script: the drive's, unless a test names another. */
+function drivesScript(): string {
+  return process.env.JIG_ASK_DRIVES_SCRIPT || DRIVES;
+}
+
 /** The dispatch file, or why it does not read; `null` when there is none. */
 export function machineFile(): Outcome<MachineConfig | null, "unreadable"> {
   return attempt("unreadable", "the dispatch file does not read", () =>
@@ -190,7 +195,7 @@ export async function driveRow(
 ): Promise<Outcome<DriveRow | null, "unreadable">> {
   const sec = reading.sourceSec();
   if (sec === 0) return failed("unreadable", PAST_DEADLINE);
-  const r = await run(tsArgv(DRIVES, ["--json"]), {
+  const r = await run(tsArgv(drivesScript(), ["--json"]), {
     cwd: path,
     // The listing reads the tree a drive pass pins over its directory; this one reads the checkout's.
     env: Object.fromEntries(
