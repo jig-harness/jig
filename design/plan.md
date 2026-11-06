@@ -60,37 +60,34 @@ request per boundary, in this order:
   pass identity of its own, a token only the driver holds, or a mark on the
   pass's own comments that the readers refuse as an answer, decided in one
   place, `plugin/shared/trusted-authors.ts`. A pass then cannot answer its
-  own park or write the drive ledger
-  ([#399](https://github.com/jig-harness/jig/issues/399)).
+  own park or write the drive ledger.
 - **The push and the merge**: inside a drive pass, a push that does not go
   through `plugin/skills/drive-pr/scripts/guarded-push.ts` and every merge
   command are refused by something that runs (a plugin hook, a deny rule
   the drive installs for its pass, or a pre-push check that sees every
   push), and the refusal reaches the pass. A raw `git push` then no longer
   escapes a person's `hold-push`, and a person's own session is not
-  affected ([#401](https://github.com/jig-harness/jig/issues/401)).
+  affected.
 - **A loosened ratchet**: a `Ratchet-Loosen` trailer counts only with
   evidence a person gave it, such as a commit the person signed or an
   approval recorded on the pull request, and the ratchet says which
-  evidence it read ([#403](https://github.com/jig-harness/jig/issues/403)).
+  evidence it read.
 - **The machine's state**: the dispatch and drive records under
   `~/.local/state/jig/` that a script decides from are verified when read,
   or a direct edit is otherwise detected, and the reader's report names the
   refusal. Which records need it, and whether detection is enough, is part
-  of the work ([#400](https://github.com/jig-harness/jig/issues/400)).
+  of the work.
 - **Resolving a thread**:
   `plugin/skills/resolve-review-comments/scripts/resolve-thread.ts` refuses,
   with a named exit, a thread that carries no reply from the resolving
-  login posted after its last reviewer comment
-  ([#402](https://github.com/jig-harness/jig/issues/402)).
+  login posted after its last reviewer comment.
 - **The installed copy**: before a scheduled job runs, the launcher
   (`plugin/runtime/launcher.ts`) confirms that the plugin copy matches a
   released version, for example by a digest the release records, and
-  refuses with a named reason in the job's receipt otherwise
-  ([#404](https://github.com/jig-harness/jig/issues/404)).
+  refuses with a named reason in the job's receipt otherwise.
 - **The site's sync record**: in Jig, the gates fail a change to
   `website/content-sync.yaml` that `scripts/website-sync.ts --advance` did
-  not make ([#405](https://github.com/jig-harness/jig/issues/405)).
+  not make.
 
 How each boundary is held is part of its work. A boundary no mechanism can
 hold stays, and the map records it as an accepted risk. A person's command
@@ -564,8 +561,8 @@ Today's `issue_tracker.types`, `issue_tracker.github.priority_labels` and
 `issue_tracker.jira.field_labels` become the label or field form of their
 facet. Every filing path (`file-issue`, `file-deferred.ts`,
 `report-bug.ts`, the issue forms) sets and checks all three, and a weekly
-check reports the issues missing one. It closes
-[#345](https://github.com/jig-harness/jig/issues/345).
+check reports the issues missing one. It includes reading and writing the
+tracker's own issue type, not only a type label.
 
 Done when a repository on each adapter files and reads all three in its
 configured store, and Jig's own repository keeps them in GitHub's fields
