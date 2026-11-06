@@ -387,6 +387,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.149.1] - 2026-11-06
+
+### Changed
+
+- The [`code-stats` skill's page](plugin/skills/code-stats/README.md) links to Jig's own report at jig-harness.dev/stats/, as an example of the skill's output.
+
 ## [0.149.0] - 2026-11-06
 
 ### Added
@@ -5444,7 +5450,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.149.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.149.1...HEAD
+[0.149.1]: https://github.com/jig-harness/jig/compare/v0.149.0...v0.149.1
 [0.149.0]: https://github.com/jig-harness/jig/compare/v0.148.1...v0.149.0
 [0.148.1]: https://github.com/jig-harness/jig/compare/v0.148.0...v0.148.1
 [0.148.0]: https://github.com/jig-harness/jig/compare/v0.147.0...v0.148.0
