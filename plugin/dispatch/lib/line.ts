@@ -19,7 +19,7 @@ import type {
   QueueGroup,
 } from "./dashboard-contract.ts";
 import type { LaunchAction, ReadRecord } from "./launches.ts";
-import { holds, targetOf } from "./launches.ts";
+import { holds, pullUrl, targetOf } from "./launches.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
 import { stuckWhy } from "./stuck-launches.ts";
@@ -183,11 +183,6 @@ function isNeed(action: Action): action is Action & { cause: NeedCause } {
 
 function isItemTarget(target: string): boolean {
   return prNumber(target) === null;
-}
-
-/** A pull request's link when no read gave one: the forge is GitHub, which `lib/forge.ts` reads through `gh`. */
-function pullUrl(slug: string, pr: number): string {
-  return `https://github.com/${slug}/pull/${pr}`;
 }
 
 /** The lookups one repository's lines share. */

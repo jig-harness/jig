@@ -526,6 +526,17 @@ async function retryMarked(
     held.set(record.pr, record.id);
     if (!retryable(record)) continue;
     const action = { target: `PR #${record.pr}`, stage: "followup" } as Action;
+    if (ctx.section.followupCommand === null) {
+      report.launches.push({
+        ...waits(
+          action,
+          `no dispatch.followup_command: the pending launch of ${record.id} is not replayed while follow-ups are not configured`,
+          record.account,
+        ),
+        record: record.id,
+      });
+      continue;
+    }
     const safety = await replaySafety(repo, ctx, record);
     if (safety !== null && "never" in safety) {
       record.noReplay = safety.never;

@@ -19,7 +19,7 @@
  * wrapper may still claim it.
  */
 import type { LaunchRecord, ReadRecord } from "./launches.ts";
-import { targetOf } from "./launches.ts";
+import { pullUrl, targetOf } from "./launches.ts";
 import { stuckNotice } from "./notices.ts";
 import type { Action } from "./types.ts";
 
@@ -78,6 +78,7 @@ export function stuckAction(
       account: record.account,
       workspace,
       marker: record.marker,
+      url: record.pr === null ? null : pullUrl(slug, record.pr),
       why,
     }),
     ...(workspace === null ? {} : { workspace }),

@@ -157,6 +157,7 @@ export function stuckNotice(
     account: string;
     workspace: string | null;
     marker: number | null;
+    url: string | null;
     why: string;
   },
 ): Notice {
@@ -172,6 +173,7 @@ export function stuckNotice(
         : [
             `Its follow-up marker (comment ${stuck.marker}) stays on the pull request, and once the record is cleared it reads as a failed follow-up: delete the marker to have the follow-up start again.`,
           ]),
+      ...(stuck.url === null ? [] : [stuck.url]),
     ],
   );
 }

@@ -163,6 +163,9 @@ describe("a follow-up whose launch never ran after its marker was posted", () =>
     expect(notifyWrites(w).at(-1)?.join(" ")).toContain(
       `jig dispatch clear ${record.id}`,
     );
+    expect(notifyWrites(w).at(-1)?.join(" ")).toContain(
+      `https://github.com/${SLUG}/pull/9`,
+    );
     expect(readRecord(record.id, dispatchState(w))?.noReplay).toContain(
       "comment 50",
     );
@@ -177,5 +180,25 @@ describe("a follow-up whose launch never ran after its marker was posted", () =>
 
     expectSpawnExit(await w.dispatch(["clear", record.id]), 0);
     expect(recordIds(w)).toEqual([]);
+  });
+
+  it("waits, and is not marked never replayable, while the repository sets no follow-up command", async () => {
+    const w = fixture();
+    const record = await stoppedBeforeTheAnswer(w);
+    w.setConfig(CONFIG.replace("  followup_command: /followup\n", ""));
+
+    const next = await applyTick(w, false);
+    expect(launches(next)).toEqual([
+      expect.objectContaining({
+        target: "PR #9",
+        outcome: "waits",
+        record: record.id,
+        detail: expect.stringContaining("dispatch.followup_command"),
+      }),
+    ]);
+    expect(claudeRuns(w)).toEqual([]);
+    expect(
+      readRecord(record.id, dispatchState(w))?.noReplay ?? null,
+    ).toBeNull();
   });
 });

@@ -121,9 +121,11 @@ guards keep one stage from starting twice:
   token and marker, as a drive's pending launch is, once a fresh read finds
   it safe: no hold label, the record's own marker still the earliest
   trusted one, naming it and carrying no end, and no session joined to the
-  pull request. A read that fails waits for the next tick; one that finds
-  otherwise means the replay can never be proven safe, and the record is
-  stuck (see Launch records). While such a record holds the follow-up, no
+  pull request. A hold label, a read that fails, or a repository with no
+  `dispatch.followup_command` waits for the next tick; a marker that is
+  gone, no longer the earliest or answered, or a session joined to the
+  pull request means the replay can never be proven safe, and the record
+  is stuck (see Launch records). While such a record holds the follow-up, no
   new one starts for the pull request.
 
   The marker is also the claim a follow-up started by hand honours, since

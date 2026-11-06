@@ -427,6 +427,11 @@ export function targetOf(record: Pick<LaunchRecord, "item" | "pr">): string {
   return record.item ?? `PR #${String(record.pr)}`;
 }
 
+/** A pull request's link when no read gave one: the forge is GitHub, which `lib/forge.ts` reads through `gh`. */
+export function pullUrl(slug: string, pr: number): string {
+  return `https://github.com/${slug}/pull/${pr}`;
+}
+
 function isAttempt(value: unknown): value is LaunchAttempt {
   return (
     isMapping(value) &&
