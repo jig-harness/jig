@@ -25,6 +25,7 @@ import {
   machineFile,
   waitFor,
   exitWritten,
+  recordIds,
 } from "./launch-fixtures.ts";
 
 const CONFIG = `issue_tracker:
@@ -151,5 +152,8 @@ describe("the line a tick leaves", () => {
     );
     expect(receipt.exitStatus).toBe(1);
     expect(receipt.completed).toBe(true);
+    const launch = receipt.repos[0]?.launches[0];
+    expect(launch?.outcome).toBe("launched");
+    expect(recordIds(w)).toContain(launch?.record ?? "");
   });
 });
