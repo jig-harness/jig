@@ -61,6 +61,8 @@ function recordedWord(n: LineNeed): string {
 
 function goLabelOf(n: LineNeed): string {
   if (n.pr === null) return "Open in the tracker";
+  // A stuck launch record has no drive handoff to read; its session is inspected and the record cleared.
+  if (n.stuckRecord != null) return "Open the pull request";
   if (n.cause === "needs-person") return "Read the handoff on the pull request";
   if (
     n.cause === "followup-failed" ||
@@ -101,6 +103,10 @@ function needEvidence(
           ? n.notified.outcome
           : `${clock(Date.parse(n.notified.at), timeZone)}${to}`,
     });
+  }
+  if (n.stuckRecord != null) {
+    const clear = `jig dispatch clear ${n.stuckRecord}`;
+    rows.push({ k: "clear", v: clear, copy: clear });
   }
   n.workspaces.forEach((path, i) => {
     rows.push({ k: `workspace ${i + 1}`, v: path, copy: path });

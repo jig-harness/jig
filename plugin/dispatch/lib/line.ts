@@ -308,6 +308,10 @@ function needsOf(
         action.cause === "double-claim"
           ? view.workspacesHolding(action.target)
           : [],
+      stuckRecord:
+        text(action.evidence, "stuck") === null
+          ? null
+          : text(action.evidence, "record"),
     };
   });
   const refused = view.report.unplaced

@@ -1908,8 +1908,8 @@ make, use the entry's term instead.
   stage and its account's *slot*, and is never followed by a second launch.
 - **Stuck launch record** — a *launch record* still pending that no tick
   launches again: both launches went unanswered, a follow-up's replay can
-  never be proven safe, or it names no workspace. Unlike an ordinary pending
-  record, which the next tick retries, and an unknown one, whose session
+  never be proven safe, or it names no workspace. Unlike a retryable pending
+  record, which the next tick launches again, and an unknown one, whose session
   may still be running, it waits for a person to clear it. The
   *dispatcher* notifies it as needing a person.
 - **Slot** — one session the *dispatcher* may hold on a subscription

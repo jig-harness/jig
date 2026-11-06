@@ -600,6 +600,7 @@ describe("buildLine", () => {
         cause: "needs-person",
         stage: "followup",
         target: "PR #456",
+        stuckRecord: stuck.record.id,
         reason: expect.stringContaining(
           `jig dispatch clear ${stuck.record.id}`,
         ),

@@ -64,6 +64,8 @@ export interface LineNeed {
   notified: LineNotified | null;
   /** For a double claim: the workspaces that hold the item. */
   workspaces: string[];
+  /** For a stuck launch record: its id, which `jig dispatch clear` takes. */
+  stuckRecord?: string | null;
 }
 
 /** An account's wall as the newest tick read it. */

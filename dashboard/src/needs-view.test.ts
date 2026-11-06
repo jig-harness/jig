@@ -184,6 +184,16 @@ describe("a need's words", () => {
     );
   });
 
+  it("sends a stuck launch record to its session and the clear command", () => {
+    const view = needView({ ...NEED, stuckRecord: "launch-9" }, CLOCK);
+    expect(view.goLabel).toBe("Open the pull request");
+    expect(view.evidence).toContainEqual({
+      k: "clear",
+      v: "jig dispatch clear launch-9",
+      copy: "jig dispatch clear launch-9",
+    });
+  });
+
   it("says there is no link, and offers the key, when no record gives one", () => {
     const view = needView(
       {
