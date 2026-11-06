@@ -555,10 +555,63 @@ async function commentsOf(
   };
 }
 
+/** One parked question of a drive, and whether a trusted comment after the park answers it. */
+export interface ParkedQuestion {
+  key: string;
+  kind: string;
+  /** The decision's question, as the drive framed it. */
+  reason: string;
+  answered: boolean;
+}
+
+/** The ledger's parked questions, each answered or not by the re-arm's rule for a pull-request comment; a reply on a parked thread is not read here. */
+export function parkedQuestions(
+  ledger: Ledger,
+  comments: readonly CommentFields[],
+): ParkedQuestion[] {
+  return ledger.parked.map((p) => ({
+    key: p.key,
+    kind: p.kind,
+    reason: p.reason,
+    answered: answered(p.key, p.at, comments),
+  }));
+}
+
+/**
+ * What one reading of a drive found, beside its answer: for `jig send`,
+ * which checks a request against the same records before it writes.
+ */
+export interface DriveReading {
+  answer: StationAnswer;
+  /** The pull request; `null` when the key names none. */
+  pull: { doc: PullDoc; read: boolean } | null;
+  /** Its comments; `null` when they did not read. */
+  comments: CommentFields[] | null;
+  /** The drive ledger, why it does not read, or `null` when there is none. */
+  ledger: Ledger | string | null;
+  /** The drive as its own listing in a checkout here reads it. */
+  row: DriveRow | null;
+  /** This machine's launch records of the drive. */
+  records: ReadRecord[];
+}
+
 /** The `drive` station's answer. */
 export async function askDrive(ctx: AskContext): Promise<StationAnswer> {
+  return (await readDrive(ctx)).answer;
+}
+
+/** The `drive` station's answer, and the records it read. */
+export async function readDrive(ctx: AskContext): Promise<DriveReading> {
   const pull = await pullFor(ctx);
-  if (pull.absent) return pull.answer;
+  if (pull.absent)
+    return {
+      answer: pull.answer,
+      pull: null,
+      comments: null,
+      ledger: null,
+      row: null,
+      records: [],
+    };
   const { doc } = pull;
   const pr = doc.number;
   const { raw, comments } = await commentsOf(ctx, pr);
@@ -597,7 +650,7 @@ export async function askDrive(ctx: AskContext): Promise<StationAnswer> {
   const base = await baseHeadOf(ctx, read, doc);
   const entries = recordEntries(reads, read, ctx);
   if (ctx.thread) entries.push(...(await threadReads(reads, ctx)));
-  return {
+  const answer: StationAnswer = {
     found: true,
     title: doc.title === "" ? null : doc.title,
     url: doc.url,
@@ -610,6 +663,14 @@ export async function askDrive(ctx: AskContext): Promise<StationAnswer> {
         : waitsOnOf(read, reads, ctx, holder !== "none", base),
     last: lastOf(reads),
     entries,
+  };
+  return {
+    answer,
+    pull: { doc, read: pull.read },
+    comments,
+    ledger,
+    row: reads.row,
+    records: reads.records,
   };
 }
 

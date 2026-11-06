@@ -41,6 +41,11 @@ import { nextDriverGeneration } from "./../state/mailbox-stop.ts";
 
 import { registerCleanup } from "./../../../../../shared/cleanup.ts";
 
+import {
+  LAUNCH_VARIABLE,
+  passLaunch,
+} from "./../../../../../shared/launched-session.ts";
+
 import { driverRuntime } from "./runtime.ts";
 
 import { startHeartbeat } from "./identity.ts";
@@ -401,6 +406,11 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   // nothing, and the driver counted the round. Empty when the driver could not
   // resolve its own root, in which case the pass keeps the old behaviour.
   if (diag.worktree !== "") process.env.DRIVE_PR_WORKTREE = diag.worktree;
+
+  // A pass is a session the line started, so `jig send` refuses it a
+  // person's commands: it carries the launch this driver inherited from the
+  // dispatcher's wrapper, else this driver's own name.
+  process.env[LAUNCH_VARIABLE] = passLaunch(process.env, pr, generation);
 
   // DURABLE knowledge of where this drive's state lives, handed to every pass
   // so the fence never has to re-derive it from a `.git` marker that may be

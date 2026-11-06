@@ -55,6 +55,7 @@ const MACHINE: MachineConfig = {
   receiptsDays: 30,
   dashboardListen: null,
   sharedRecords: "forge",
+  send: true,
 };
 
 const NOTHING_STORED: RepoStored = {

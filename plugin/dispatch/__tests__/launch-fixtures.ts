@@ -146,6 +146,8 @@ export function driveRuns(w: World): Array<{
   codexHome: string | null;
   anthropicKey: string | null;
   openaiKey: string | null;
+  /** The launch the wrapper named in the drive's environment (`JIG_LAUNCH`). */
+  launch: string | null;
 }> {
   const path = join(w.dir, "drive-runs.jsonl");
   if (!existsSync(path)) return [];

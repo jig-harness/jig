@@ -1,12 +1,15 @@
 /**
- * A world for `jig ask`: a fake `gh` that answers the conditional reads
- * (`gh api -i <path>`) from JSON files named after the path and records each
- * call, a checkout whose remote names the test repository, an empty home of
+ * A world for `jig ask` and `jig send`: a fake `gh` that answers the
+ * conditional reads (`gh api -i <path>`) from JSON files named after the
+ * path, records each call, and logs the writes `jig send` makes (a label
+ * edit, a comment posted) without making them, a checkout whose remote
+ * names the test repository, an empty home of
  * its own, and helpers that write the dispatcher's records into that home the
  * way a tick would. `jig ask` runs as a child with that home, so nothing it
  * reads or migrates is the real one.
  */
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -43,6 +46,17 @@ if (args[0] === "api" && args[1] === "-i") {
   process.stdout.write("HTTP/2.0 200 OK\\r\\nEtag: \\"x\\"\\r\\n\\r\\n" + JSON.stringify(body));
   process.exit(0);
 }
+// The writes jig send makes: a label edit, and a comment posted.
+if (args[0] === "pr" && args[1] === "edit") {
+  fs.appendFileSync(F + "/gh-writes.log", JSON.stringify(args) + "\\n");
+  process.exit(0);
+}
+if (args[0] === "api" && args[1] === "--method" && args[2] === "POST") {
+  fs.appendFileSync(F + "/gh-writes.log", JSON.stringify(args) + "\\n");
+  const pr = (args[3].match(/issues\\/(\\d+)\\/comments/) || [])[1];
+  process.stdout.write(JSON.stringify({ id: 901, html_url: "https://github.com/" + process.env.ASK_FAKE_REPO + "/pull/" + pr + "#issuecomment-901" }));
+  process.exit(0);
+}
 process.stderr.write("fake gh: unhandled " + args.join(" ") + "\\n");
 process.exit(1);
 `;
@@ -62,11 +76,18 @@ export interface AskWorld {
   api(path: string, body: unknown): void;
   /** Every forge call the fake answered. */
   calls(): string[];
-  ask(
-    args: string[],
-    cwd?: string,
-  ): Promise<{ exitCode: number | null; stdout: string; stderr: string }>;
+  /** Every write the fake took (`gh pr edit`, a comment posted), as its arguments. */
+  writes(): string[][];
+  ask(args: string[], cwd?: string): Promise<Spawned>;
+  /** `jig <args>`, a child with the world's home and environment. */
+  jig(args: string[], cwd?: string): Promise<Spawned>;
   close(): void;
+}
+
+export interface Spawned {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
 }
 
 function git(cwd: string, ...args: string[]): void {
@@ -110,7 +131,22 @@ export function askWorld(): AskWorld {
     JIG_GH_CACHE: "off",
     GH_TOKEN: "test-token",
     ASK_FAKE_DIR: dir,
+    ASK_FAKE_REPO: REPO,
   });
+  const jig = async (args: string[], cwd = repo): Promise<Spawned> => {
+    const child = Bun.spawn(
+      [process.execPath, "--no-env-file", `--config=${BUNFIG}`, JIG, ...args],
+      { cwd, env, stdout: "pipe", stderr: "pipe" },
+    );
+    const deadline = setTimeout(() => child.kill(), 60_000);
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    clearTimeout(deadline);
+    return { exitCode, stdout, stderr };
+  };
   return {
     root,
     home,
@@ -128,27 +164,17 @@ export function askWorld(): AskWorld {
       readFileSync(join(dir, "gh-calls.log"), "utf8")
         .split("\n")
         .filter((l) => l !== ""),
-    async ask(args, cwd = repo) {
-      const child = Bun.spawn(
-        [
-          process.execPath,
-          "--no-env-file",
-          `--config=${BUNFIG}`,
-          JIG,
-          "ask",
-          ...args,
-        ],
-        { cwd, env, stdout: "pipe", stderr: "pipe" },
-      );
-      const deadline = setTimeout(() => child.kill(), 60_000);
-      const [stdout, stderr, exitCode] = await Promise.all([
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-        child.exited,
-      ]);
-      clearTimeout(deadline);
-      return { exitCode, stdout, stderr };
+    writes: () => {
+      const log = join(dir, "gh-writes.log");
+      return existsSync(log)
+        ? readFileSync(log, "utf8")
+            .split("\n")
+            .filter((l) => l !== "")
+            .map((l) => JSON.parse(l) as string[])
+        : [];
     },
+    ask: (args, cwd) => jig(["ask", ...args], cwd),
+    jig,
     close: () => {
       closeStateDb(state);
       rmSync(root, { recursive: true, force: true });

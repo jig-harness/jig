@@ -22,6 +22,7 @@ import {
   prComments,
   threadComments,
 } from "./driver/rearm.ts";
+import { withoutAnswerRecord } from "./answer-comment.ts";
 import { fail } from "./cli.ts";
 import { isProvisionalReply, qualifyingOutcome } from "./outcome.ts";
 import { run, tsArgv } from "./proc.ts";
@@ -37,12 +38,16 @@ const text = (v: unknown): string => (typeof v === "string" ? v : "");
 
 /**
  * A comment a person wrote, not one the drive's scripts wrote: any comment
- * from an owner, member or collaborator that carries no hidden marker. A
+ * from an owner, member or collaborator that carries no hidden marker but
+ * the record of an answer `jig send` wrote (`answer-comment.ts`). A
  * person's `**accepted** — fix it` counts too: an outcome token in a
  * person's own words is still that person's verdict.
  */
 export function isPersonsComment(association: string, body: string): boolean {
-  return TRUSTED_ASSOCIATIONS.has(association) && !body.includes("<!--");
+  return (
+    TRUSTED_ASSOCIATIONS.has(association) &&
+    !withoutAnswerRecord(body).includes("<!--")
+  );
 }
 
 /** The index of the last trusted provisional reply in a thread's comments, `-1` for none. */

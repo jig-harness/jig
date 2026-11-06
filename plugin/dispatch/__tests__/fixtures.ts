@@ -283,6 +283,7 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
   codexHome: process.env.CODEX_HOME ?? null,
   anthropicKey: process.env.ANTHROPIC_API_KEY ?? null,
   openaiKey: process.env.OPENAI_API_KEY ?? null,
+  launch: process.env.JIG_LAUNCH ?? null,
 }) + "\\n");
 const until = Date.now() + 60000;
 while (fs.existsSync(F + "/drive-hold") && Date.now() < until) Bun.sleepSync(50);

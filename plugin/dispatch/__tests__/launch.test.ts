@@ -209,6 +209,8 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
     expect(run?.argv).toEqual(["7", ...PASS]);
     expect(run?.configDir).toBe(b.dir);
     expect(run?.token).toBeNull();
+    // A session the line started carries its launch record, so `jig send` refuses it a person's commands.
+    expect(run?.launch).toBe(launched?.record);
     expect(realpathSync(run?.cwd ?? "")).toBe(realpathSync(ws));
     await waitFor("the exit", () => exitWritten(w, launched?.record ?? ""));
   });

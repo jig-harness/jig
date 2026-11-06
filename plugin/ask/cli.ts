@@ -124,29 +124,70 @@ function labelPrefixAt(checkout: string | null): string | null {
   return section.ok ? section.value.labels.prefix : null;
 }
 
-/** An address as written, resolved in full and its key checked; every refusal a usage error. */
-function resolved(args: AskArguments) {
-  if (args.address === undefined)
-    usage(
+/**
+ * An address as written, resolved in full and its key checked, with what
+ * resolving it read; every refusal goes to `refuse`, a usage error. `jig
+ * send` resolves its address the same way.
+ */
+export function resolveAddress(
+  text: string | undefined,
+  second: string | undefined,
+  refuse: (reason: string) => never,
+) {
+  if (text === undefined)
+    refuse(
       `name an address, station@owner/name#key; the stations are ${stationList()}`,
     );
-  const written = parseAddress(args.address, args.key);
-  if (!written.ok) usage(written.failure.reason);
+  const written = parseAddress(text, second);
+  if (!written.ok) refuse(written.failure.reason);
   const machine = machineFile();
   const choices = repositoryChoices(machine.ok ? machine.value : null);
   const repo = resolveRepository(written.value.repo, choices);
-  if (!repo.ok) usage(repo.failure.reason);
+  if (!repo.ok) refuse(repo.failure.reason);
   const checkout = checkoutOf(repo.value, choices);
   const { station } = written.value;
-  const tracker = station === "pickup" ? trackerOf(repo.value, checkout) : null;
+  const tracker =
+    station === "pickup" ? trackerOf(repo.value, checkout, refuse) : null;
   const key = checkKey(station, written.value.key, tracker?.keys ?? null);
-  if (!key.ok) usage(key.failure.reason);
+  if (!key.ok) refuse(key.failure.reason);
   const address: Address = { station, repo: repo.value, key: key.value };
   return { address, machine, choices, checkout, tracker };
 }
 
+export type ResolvedAddress = ReturnType<typeof resolveAddress>;
+
+/** What a station's readers read with, for an address resolved here. */
+export function contextFor(
+  found: ResolvedAddress,
+  r: Reading,
+  login: string | null,
+  view: Pick<AskContext, "thread" | "window"> = {
+    thread: false,
+    window: { since: null, all: false },
+  },
+): AskContext {
+  const { address, choices, checkout } = found;
+  const dispatcher = dispatcherRoot();
+  return {
+    reading: r,
+    address,
+    name: formatAddress(address),
+    ...view,
+    login,
+    dispatcher,
+    host: dispatcher === null ? null : ourHost(dispatcher),
+    checkout,
+    dispatches: choices.known.some((k) => k.slug === address.repo),
+    labelPrefix: labelPrefixAt(checkout),
+  };
+}
+
 /** A pick-up's tracker, from a checkout of its repository here; a usage error where there is none. */
-function trackerOf(repo: string, checkout: string | null): RepoTracker {
+function trackerOf(
+  repo: string,
+  checkout: string | null,
+  usage: (reason: string) => never,
+): RepoTracker {
   if (checkout === null)
     usage(
       `no checkout of ${repo} on this machine names its tracker, so the item key cannot be checked or read; run it in a checkout of the repository, or one the dispatch file lists`,
@@ -199,7 +240,8 @@ function answerOf(found: StationAnswer, ctx: AskContext): AskAnswer {
 export async function askMain(args: AskArguments): Promise<number> {
   if (args.waiting) return waitingMain(args);
   if (args.person !== undefined) usage("--person goes with --waiting");
-  const { address, machine, choices, checkout, tracker } = resolved(args);
+  const resolved = resolveAddress(args.address, args.key, usage);
+  const { address, machine, tracker } = resolved;
   const r = reading();
   if (!machine.ok)
     r.note({
@@ -208,20 +250,10 @@ export async function askMain(args: AskArguments): Promise<number> {
       local: true,
       detail: machine.failure.reason,
     });
-  const dispatcher = dispatcherRoot();
-  const ctx: AskContext = {
-    reading: r,
-    address,
-    name: formatAddress(address),
+  const ctx = contextFor(resolved, r, await loginFor(r, address), {
     thread: args.thread || args.all || args.since !== undefined,
     window: { since: args.since ?? null, all: args.all },
-    login: await loginFor(r, address),
-    dispatcher,
-    host: dispatcher === null ? null : ourHost(dispatcher),
-    checkout,
-    dispatches: choices.known.some((k) => k.slug === address.repo),
-    labelPrefix: labelPrefixAt(checkout),
-  };
+  });
   const found =
     tracker !== null
       ? await askPickup(ctx, tracker)

@@ -413,6 +413,13 @@ export interface Tracker {
   assignees(key: string): Promise<TrackerUser[]>;
   /** Assign the issue to `user` alone, replacing any other assignee. */
   assign(key: string, user: TrackerUser): Promise<void>;
+  /**
+   * The user an identity names, in the form `dispatch.identity` takes (a
+   * GitHub login; a Linear user's email or display name; a Jira account
+   * id, or an email or display name that matches one user). Throws a
+   * `TrackerRequestError` (`unresolved`) when it names no user or several.
+   */
+  user(identity: string): Promise<TrackerUser>;
 
   // ── Filing and planning ──
   /**
