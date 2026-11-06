@@ -68,6 +68,30 @@ console.log(JSON.stringify(result.receipt));
 process.exit(result.receipt.exitStatus);
 `;
 
+/** A tick over an ended follow-up record older than the retention, whose outcome write fails \`FAILS\` times (every time when negative), then reports the rows left. */
+const aged = (fails: number) => `import { mock } from "bun:test";
+const outcomes = ${JSON.stringify(`${DISPATCH}/lib/followup-outcomes.ts`)};
+const real = await import(outcomes);
+const realSettle = real.settleFollowups;
+let calls = 0;
+mock.module(outcomes, () => ({ ...real, settleFollowups: (...args) => { if (${fails} < 0 || calls++ < ${fails}) throw new TypeError("a write failed"); return realSettle(...args); } }));
+const { writeRecord, recordExit } = await import(${JSON.stringify(`${DISPATCH}/lib/launches.ts`)});
+const { stateDb } = await import(${JSON.stringify(`${DISPATCH}/lib/state.ts`)});
+const id = "20260101T000000Z-aaaaaaaa";
+writeRecord({ version: 1, id, token: "t", action: "followup", repo: ${JSON.stringify(SLUG)}, repoPath: "/r", pr: 7, account: "a", vendor: "claude", configDir: "/c", wallBackoffMs: 1, replaces: null, facts: "", createdAt: "2026-01-01T00:00:00.000Z", workspace: null, attempts: [], item: null, agentId: null, model: null, effort: null, released: false, command: null, marker: null });
+recordExit(id, { at: "2026-01-01T01:00:00.000Z", code: 0, signal: null });
+const { runTick } = await import(${JSON.stringify(`${DISPATCH}/tick.ts`)});
+const result = await runTick({ repos: process.argv.slice(2), followupSince: "2026-10-30T00:00:00Z" });
+if ("held" in result) process.exit(3);
+const db = stateDb();
+console.log(JSON.stringify({
+  receipt: result.receipt,
+  rows: db.query("SELECT id FROM launches WHERE id = ?").all(id).length,
+  outcomes: db.query("SELECT outcome FROM followup_outcomes WHERE pr = 7").all().length,
+}));
+process.exit(result.receipt.exitStatus);
+`;
+
 const CONFIG = `issue_tracker:
   adapter: github
   github:
@@ -227,5 +251,35 @@ describe("follow-up outcomes that cannot be written", () => {
     expect(receipt.completed).toBe(false);
     expect(receipt.exitStatus).toBe(1);
     expect(receipt.repos.map((r) => r.path)).toEqual([w.repo]);
+  });
+});
+
+describe("an ended follow-up whose outcome cannot be written", () => {
+  async function ageing(fails: number) {
+    const { w } = fixture();
+    const entry = join(w.root, "aged.ts");
+    writeFileSync(entry, aged(fails));
+    const r = await w.dispatch([w.repo], entry);
+    expectSpawnExit(r, 1);
+    return JSON.parse(r.stdout) as {
+      receipt: TickReceipt;
+      rows: number;
+      outcomes: number;
+    };
+  }
+
+  it("keeps its launch row past the retention while every write fails", async () => {
+    const { receipt, rows, outcomes } = await ageing(-1);
+    expect(rows).toBe(1);
+    expect(outcomes).toBe(0);
+    expect(receipt.completed).toBe(false);
+  });
+
+  it("writes it at the close when only the start failed, and prunes it after", async () => {
+    const { receipt, rows, outcomes } = await ageing(1);
+    expect(outcomes).toBe(1);
+    expect(rows).toBe(0);
+    // The defect the start kept stays on the receipt.
+    expect(receipt.defect?.phase).toBe("start");
   });
 });
