@@ -176,22 +176,24 @@ the new store in its configuration. An explicit `store` always wins. The
 field default reaches only a repository with no labels for the facet and
 no store named, such as a new one.
 
-**A store the default selected stays selected.** Detection is a function of
-shared tracker state, so every clone reaches the same answer. The fallback
-label of a type the organization has no issue type for (`docs` beside Bug,
-Feature and Task) is a write the native type store makes itself, so it is
-not evidence for the labels store: only a label that is not such a fallback
-counts. The first detection that selects a store for a facet is also kept in
-the clone's [machine-local store](../GLOSSARY.md), beside the hour-long cache
-of what detection read, as a tripwire and nothing more: deleting it loses no
-decision, because the next detection reads the same shared state. When later
-evidence would select another store, a label appearing for the facet, a field
-deleted or its options changed, reads and writes of that facet in a clone
-that kept the earlier answer fail closed with an error naming both stores,
-and `facetStores()` shows the change in every clone, until the configuration
-names a store. The audit reports a repository whose facet has no named
-store, so a repository relying on a default has it committed rather than
-remembered.
+**A store the default selected stays selected, from shared state alone.**
+Detection reads only the tracker, so every clone reaches the same answer and
+no clone holds a memory the others lack. A facet's value written to the
+native store (an issue type, a field value) is evidence for the native store;
+a label of the facet is evidence for the labels store, whatever wrote it. A
+label counts even when it looks like the native store's fallback (`docs`
+beside Bug, Feature and Task), since an established repository's own `docs`
+label is indistinguishable from one the native store wrote. Native evidence
+and label evidence together are not resolved by guessing: the facet is in
+conflict, and reads and writes of it fail closed in every clone, with an
+error naming both stores, until the configuration names one; `facetStores()`
+shows the conflict. The one pairing that is not a conflict is the native
+store's own fallback: labels that name only types the organization has no
+issue type for, beside issues that carry native types. So a repository that
+began on the native store stays there when someone adds a label, and one that
+began on labels stays there when an organization adds a field. The audit
+reports a repository whose facet has no named store, so a repository relying
+on a default has it committed rather than inferred.
 
 This rule is load-bearing. GitHub's issue fields have been
 [generally available since 2026-07-02](https://github.blog/changelog/2026-07-02-issue-fields-are-now-generally-available/)
@@ -592,11 +594,12 @@ stopped is resumed by running it again:
    destination first and is then retired. A source and a destination both
    changed since the copy conflict: the issue is left as it is and listed, and
    the run is not complete until a person settles each one. An issue with no
-   snapshot is told apart by when it was filed: one filed before the switch
-   and missed by the copy is copied and retired in one update, while one
-   filed after the switch wrote only the destination stores, has no source
-   representation to read and is left alone, its destination checked as for
-   any other.
+   snapshot (one the copy missed, or one filed through a clone still on the
+   old configuration) is not told apart by when it was filed: both
+   representations are read. A source value alone is copied and retired in
+   one update; a destination value alone is left as it is and checked as for
+   any other; both, and equal, retire the source; both, and different, are a
+   conflict listed for a person.
    The source representation is removed only where the source is a label or
    a field; a destination label is never removed. Closed issues keep their
    labels as history, and no label is deleted while a closed issue carries
