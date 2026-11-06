@@ -69,7 +69,7 @@ process.exit(result.receipt.exitStatus);
 `;
 
 /** A tick over an ended follow-up record older than the retention, whose outcome write fails \`FAILS\` times (every time when negative), then reports the rows left. */
-const aged = (fails: number) => `import { mock } from "bun:test";
+const aged = (fails: number, repo: string) => `import { mock } from "bun:test";
 const outcomes = ${JSON.stringify(`${DISPATCH}/lib/followup-outcomes.ts`)};
 const real = await import(outcomes);
 const realSettle = real.settleFollowups;
@@ -78,7 +78,7 @@ mock.module(outcomes, () => ({ ...real, settleFollowups: (...args) => { if (${fa
 const { writeRecord, recordExit } = await import(${JSON.stringify(`${DISPATCH}/lib/launches.ts`)});
 const { stateDb } = await import(${JSON.stringify(`${DISPATCH}/lib/state.ts`)});
 const id = "20260101T000000Z-aaaaaaaa";
-writeRecord({ version: 1, id, token: "t", action: "followup", repo: ${JSON.stringify(SLUG)}, repoPath: "/r", pr: 7, account: "a", vendor: "claude", configDir: "/c", wallBackoffMs: 1, replaces: null, facts: "", createdAt: "2026-01-01T00:00:00.000Z", workspace: null, attempts: [], item: null, agentId: null, model: null, effort: null, released: false, command: null, marker: null });
+writeRecord({ version: 1, id, token: "t", action: "followup", repo: ${JSON.stringify(repo)}, repoPath: "/r", pr: 7, account: "a", vendor: "claude", configDir: "/c", wallBackoffMs: 1, replaces: null, facts: "", createdAt: "2026-01-01T00:00:00.000Z", workspace: null, attempts: [], item: null, agentId: null, model: null, effort: null, released: false, command: null, marker: null });
 recordExit(id, { at: "2026-01-01T01:00:00.000Z", code: 0, signal: null });
 const { runTick } = await import(${JSON.stringify(`${DISPATCH}/tick.ts`)});
 const result = await runTick({ repos: process.argv.slice(2), followupSince: "2026-10-30T00:00:00Z" });
@@ -255,10 +255,10 @@ describe("follow-up outcomes that cannot be written", () => {
 });
 
 describe("an ended follow-up whose outcome cannot be written", () => {
-  async function ageing(fails: number) {
+  async function ageing(fails: number, repo = SLUG) {
     const { w } = fixture();
     const entry = join(w.root, "aged.ts");
-    writeFileSync(entry, aged(fails));
+    writeFileSync(entry, aged(fails, repo));
     const r = await w.dispatch([w.repo], entry);
     expectSpawnExit(r, 1);
     return JSON.parse(r.stdout) as {
@@ -275,8 +275,8 @@ describe("an ended follow-up whose outcome cannot be written", () => {
     expect(receipt.completed).toBe(false);
   });
 
-  it("writes it at the close when only the start failed, and prunes it after", async () => {
-    const { receipt, rows, outcomes } = await ageing(1);
+  it("writes it at the close when only the start failed and its repository had no turn this tick, and prunes it after", async () => {
+    const { receipt, rows, outcomes } = await ageing(1, "example-org/omitted-repo");
     expect(outcomes).toBe(1);
     expect(rows).toBe(0);
     // The defect the start kept stays on the receipt.
