@@ -387,6 +387,13 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.149.2] - 2026-11-06
+
+### Fixed
+
+- `jig ask` no longer migrates the machine's databases. It opens the dispatcher's state database (launch records and outcome log) and the drive's database read-only, so a command anyone can run at any moment never decides when the owner's database moves to a newer schema. Against a database an older schema holds, it reads what that schema allows or names the source in `sources` as not read, saying the owner's next run brings it forward; the outcome log before its `target` column is one of those, since no index finds its rows and a scan could be neither complete nor bounded. The dispatcher's and the drive's own runs keep their additive migrations.
+- `drives-read-only.ts --json`, the drive's listing for a reader that is not a driver, lists the drive's locks without creating, migrating or importing into the drive's database: a database that is already current is listed as it is, none is no drives, and one a driver must first bring forward is declined with exit 4 and the reason on stderr.
+
 ## [0.149.1] - 2026-11-06
 
 ### Changed
@@ -5450,7 +5457,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.149.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.149.2...HEAD
+[0.149.2]: https://github.com/jig-harness/jig/compare/v0.149.1...v0.149.2
 [0.149.1]: https://github.com/jig-harness/jig/compare/v0.149.0...v0.149.1
 [0.149.0]: https://github.com/jig-harness/jig/compare/v0.148.1...v0.149.0
 [0.148.1]: https://github.com/jig-harness/jig/compare/v0.148.0...v0.148.1
