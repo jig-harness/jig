@@ -387,6 +387,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.151.0] - 2026-11-06
+
+### Added
+
+- `jig send` wakes the dispatcher's tick for the repository after it writes an `assign`, `drive`, `hold`, `release` or `answer`, when this machine's dispatch file lists the repository with the stage the tick acts under. The tick runs as the installed timer runs it, when idle and no sooner than a minute after the last one the wake started, instead of at the next timer run; several sends within that minute start one tick, and a tick refused because another holds the tick lock is tried again a minute later. The `next` line says which: "the dispatcher's tick for owner/name, woken now". Mailbox directives wake nothing, since the driver reads them at its next round ([plugin/README.md § Telling a station what to do](plugin/README.md#telling-a-station-what-to-do)).
+
 ## [0.150.1] - 2026-11-06
 
 ### Fixed
@@ -5518,7 +5524,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.150.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.151.0...HEAD
+[0.151.0]: https://github.com/jig-harness/jig/compare/v0.150.1...v0.151.0
 [0.150.1]: https://github.com/jig-harness/jig/compare/v0.150.0...v0.150.1
 [0.150.0]: https://github.com/jig-harness/jig/compare/v0.149.4...v0.150.0
 [0.149.4]: https://github.com/jig-harness/jig/compare/v0.149.3...v0.149.4
