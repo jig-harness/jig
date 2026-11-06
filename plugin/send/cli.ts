@@ -149,7 +149,12 @@ export async function sendMain(args: SendArguments): Promise<number> {
   const request = parseRequest(written.value.station, rest, usage);
   const refusedHere = standing(request);
   if (refusedHere !== null) return refusal(refusedHere);
-  const resolved = resolveAddress(text, second, usage);
+  const resolved = resolveAddress(
+    text,
+    second,
+    usage,
+    request.verb === "assign",
+  );
   const planned = await planFor(resolved, request, args.as);
   if (!planned.ok) return refusal(planned.failure.reason);
   const plan = planned.value;

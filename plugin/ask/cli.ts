@@ -127,12 +127,15 @@ function labelPrefixAt(checkout: string | null): string | null {
 /**
  * An address as written, resolved in full and its key checked, with what
  * resolving it read; every refusal goes to `refuse`, a usage error. `jig
- * send` resolves its address the same way.
+ * send` resolves its address the same way. With `keyAsWritten` a pick-up's
+ * key is left as written for the caller to check against another tracker
+ * than the checkout's.
  */
 export function resolveAddress(
   text: string | undefined,
   second: string | undefined,
   refuse: (reason: string) => never,
+  keyAsWritten = false,
 ) {
   if (text === undefined)
     refuse(
@@ -148,7 +151,11 @@ export function resolveAddress(
   const { station } = written.value;
   const tracker =
     station === "pickup" ? trackerOf(repo.value, checkout, refuse) : null;
-  const key = checkKey(station, written.value.key, tracker?.keys ?? null);
+  const key = checkKey(
+    station,
+    written.value.key,
+    keyAsWritten && tracker !== null ? (k) => k : (tracker?.keys ?? null),
+  );
   if (!key.ok) refuse(key.failure.reason);
   const address: Address = { station, repo: repo.value, key: key.value };
   return { address, machine, choices, checkout, tracker };

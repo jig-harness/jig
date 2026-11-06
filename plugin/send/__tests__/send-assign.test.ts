@@ -154,4 +154,15 @@ describe("jig send assign", () => {
     expect(r.stderr).toContain("not an item key of the tracker");
     expect(writes(ops)).toEqual([]);
   });
+
+  it("checks the item key against the default branch's tracker, not the checkout's", async () => {
+    const { w, ops } = world();
+    writeFileSync(
+      join(w.repo, ".config", "jig.yaml"),
+      "issue_tracker:\n  adapter: linear\n  team: ENG\n",
+    );
+    const r = await w.send([`pickup@${REPO}#14`, "assign"]);
+    expectSpawnExit(r, 0);
+    expect(writes(ops)).toEqual(["TrackerAssign"]);
+  });
 });

@@ -25,6 +25,7 @@ import { issueKeysOf } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { CanonicalState } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { type RepoTracker, readPickup } from "../../ask/lib/pickup.ts";
 import { readDefaultConfig } from "../../ask/lib/forge.ts";
+import { formatAddress } from "../../shared/address.ts";
 import { within } from "../../ask/lib/reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
 import { type Planned, refused, writerLogin } from "./plan.ts";
@@ -33,8 +34,10 @@ import { type Planned, refused, writerLogin } from "./plan.ts";
 async function tickSettings(
   ctx: AskContext,
   repoTracker: RepoTracker,
-): Promise<Outcome<{ tracked: RepoTracker; identity: string }, "refused">> {
-  const { repo, key } = ctx.address;
+): Promise<
+  Outcome<{ tracked: RepoTracker; identity: string; key: string }, "refused">
+> {
+  const { repo } = ctx.address;
   const where = `${OVERLAY_RELPATH} on ${repo}'s default branch`;
   const text = await readDefaultConfig(ctx.reading, repo);
   if (!text.ok)
@@ -53,26 +56,36 @@ async function tickSettings(
       `assign writes the item assigned to the factory identity, and ${repo} names none: set dispatch.identity in ${OVERLAY_RELPATH}`,
     );
   const keys = issueKeysOf(config);
-  if (keys === null || !keys.is(key))
+  const key = keys?.normalize(ctx.address.key) ?? null;
+  if (keys === null || key === null)
     return refused(
-      `${key} is not an item key of the tracker ${where} names${keys === null ? "" : `, whose keys look like ${keys.example}`}`,
+      `${ctx.address.key} is not an item key of the tracker ${where} names${keys === null ? "" : `, whose keys look like ${keys.example}`}`,
     );
   return ok({
-    tracked: { ...repoTracker, config, identity, states: section.states },
+    tracked: {
+      ...repoTracker,
+      config,
+      keys: (input) => keys.normalize(input),
+      identity,
+      states: section.states,
+    },
     identity,
+    key,
   });
 }
 
 /** The plan of an assignment, or why the item cannot take it. */
 export async function planAssign(
-  ctx: AskContext,
+  written: AskContext,
   repoTracker: RepoTracker,
   as: string | undefined,
 ): Promise<Planned> {
-  const { repo, key } = ctx.address;
-  const settings = await tickSettings(ctx, repoTracker);
+  const { repo } = written.address;
+  const settings = await tickSettings(written, repoTracker);
   if (!settings.ok) return settings;
-  const { tracked, identity } = settings.value;
+  const { tracked, identity, key } = settings.value;
+  const address = { ...written.address, key };
+  const ctx: AskContext = { ...written, address, name: formatAddress(address) };
   const tracker = openTracker(tracked.config, tracked.root);
   let viewer: string | null = null;
   try {
@@ -97,12 +110,15 @@ export async function planAssign(
       `${key} is assigned to ${issue.assignee}; assigning it to ${identity} would take it from them, so unassign it first if that is meant`,
     );
   const states = tracked.states as CanonicalState[];
-  const inState = states.some((s) => tracker.stateName(s) === issue.state.name);
+  const moveFor = (stateName: string): CanonicalState | null =>
+    states.some((s) => tracker.stateName(s) === stateName)
+      ? null
+      : (states[0] ?? null);
   if (issue.state.type === "started")
     return refused(
       `${key} is ${issue.state.name}, a state of work in progress; assign does not move it back to a dispatch state`,
     );
-  const move = inState ? null : (states[0] ?? null);
+  const move = moveFor(issue.state.name);
   return ok({
     address: ctx.name,
     repo,
@@ -119,7 +135,7 @@ export async function planAssign(
     undo: `assign ${key} to nobody on the tracker before the tick starts the pick-up`,
     notice: null,
     write: async () => {
-      const wrote = await assignPickup(tracker, key, identity, move);
+      const wrote = await assignPickup(tracker, key, identity, move, moveFor);
       return wrote.ok ? ok(issue.url ?? key) : wrote;
     },
   });
