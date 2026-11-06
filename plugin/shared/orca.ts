@@ -9,7 +9,10 @@
  * puts its command in `ORCA_CLI_COMMAND`, or its directory in
  * `ORCA_CLI_BIN_DIR`. A run that no Orca terminal started, such as `jig gc`
  * under the machine's scheduler, finds it only where its configuration names
- * it. Outside Orca, and with none configured, nothing here makes a call.
+ * it. Outside Orca, and with none configured, nothing here makes a call,
+ * except for a caller that uses `orcaCommandOrInstalled`, such as the
+ * dispatcher's tick, which falls back to the name Orca installs its command
+ * under, found on `PATH`.
  */
 import { join } from "node:path";
 import { swallow } from "./errors.ts";
