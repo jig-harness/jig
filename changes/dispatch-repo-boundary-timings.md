@@ -1,0 +1,26 @@
+---
+release: minor
+---
+
+### Added
+
+- Each `jig dispatch` receipt records how many milliseconds each phase took:
+  every phase of each repository's turn (`open`, `tracker`, `forge`,
+  `claims`, `runtime`, `observe`, `plan`, `log`, `apply`, `labels`,
+  `shared`) and the tick's own start, repositories and close. The tick's
+  text output prints them one line per repository, and `jig dispatch
+  receipts` prints how long each tick took and how many defects it recorded.
+  A receipt written by an earlier version reads as before.
+
+### Fixed
+
+- A bug or an unexpected write failure in one repository's turn no longer
+  ends the whole tick. That repository's report says which phase it stopped
+  in, with the error's stack, and keeps what its earlier phases did; the
+  other repositories are read, planned and acted on, the tick writes its
+  receipt and exits 1. A failure in the tick's closing steps still writes
+  the receipt, marked incomplete.
+- The tick lock records its holder's start time and the host's boot, so a
+  lock left by a tick that died is taken over even when its process id was
+  reused after a restart or by another process. A lock written by an
+  earlier version is still judged by its process id.
