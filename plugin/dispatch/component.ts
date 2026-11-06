@@ -22,7 +22,7 @@ import type {
   LastRun,
 } from "../runtime/component.ts";
 import type { InstalledJob } from "../runtime/installed-job.ts";
-import { orcaCommand } from "../shared/orca.ts";
+import { orcaCommandOrInstalled } from "../shared/orca.ts";
 import { scheduledStatus } from "../runtime/job-status.ts";
 import {
   type DispatchArguments,
@@ -86,12 +86,13 @@ function lastRun(): LastRun | null {
 /**
  * Whether Orca's command resolves in the environment the installed timer
  * runs with, or, with no timer, in this one: `ORCA_CLI_COMMAND`, else the
- * command in `ORCA_CLI_BIN_DIR`, else `orca` on `PATH`.
+ * command in `ORCA_CLI_BIN_DIR`, else the name Orca installs it under on
+ * `PATH` (`orca-ide` on Linux, `orca` elsewhere).
  */
 function orcaCheck(job: InstalledJob | null): DoctorCheck {
   const id = "dispatch:orca";
   const env = job?.env ?? process.env;
-  const command = orcaCommand(env) ?? "orca";
+  const command = orcaCommandOrInstalled(env);
   const found = Bun.which(command, { PATH: env.PATH ?? "" });
   const where = job === null ? "" : " in the installed timer's environment";
   return found !== null

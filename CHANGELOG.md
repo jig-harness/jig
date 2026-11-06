@@ -387,6 +387,80 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.151.0] - 2026-11-06
+
+### Added
+
+- `jig send` wakes the dispatcher's tick for the repository after it writes an `assign`, `drive`, `hold`, `release` or `answer`, when this machine's dispatch file lists the repository with the stage the tick acts under. The tick runs as the installed timer runs it, when idle and no sooner than a minute after the last one the wake started, instead of at the next timer run; several sends within that minute start one tick, and a tick refused because another holds the tick lock is tried again a minute later. The `next` line says which: "the dispatcher's tick for owner/name, woken now". Mailbox directives wake nothing, since the driver reads them at its next round ([plugin/README.md § Telling a station what to do](plugin/README.md#telling-a-station-what-to-do)).
+
+## [0.150.1] - 2026-11-06
+
+### Fixed
+
+- Followup passes leave routine local branches, retired workspaces and scratch
+  notes to periodic cleanup, even when no collector covers them yet. Their
+  retention no longer calls for a human decision or a failed followup result.
+  The lifecycle guidance and audit criterion keep active operational
+  scaffolding and evidence of unlanded work in scope.
+
+## [0.150.0] - 2026-11-06
+
+### Added
+
+- The dispatcher records each recurring class as a reflection finding. Where
+  reflection is on for a repository (a `reflection` section in any
+  configuration layer, the repository's own read from its default branch), a
+  `jig dispatch --apply` tick on the host that owns the repository appends,
+  after its launches, one finding per recurring class per week: an error
+  about the dispatcher as a Jig tool, its class `dispatch-recurring-<class>`
+  (such as `dispatch-recurring-gates-failed`), with the repository, the
+  stage, the days, the row count, the reasons the rows give most often and
+  the dashboard filter that shows them. Its id is derived from the
+  repository, the stage, the class and the week, so later ticks that week
+  record nothing new and each week the class still recurs counts toward its
+  escalation in `/jig:review-reflections` run in Jig. The append runs under
+  `reflection.timeout_sec`, cut to the time the tick has left, in batches, with
+  the store command run in the repository's checkout; a store that fails or does not answer is named on
+  the receipt, the tick's exit status stays as it was, and the next tick
+  sends the same finding again. A tick without `--apply` lists what it would
+  record. It records only: it changes no cap, expectation or nudge
+  ([the plugin's README](plugin/README.md#the-dispatcher)).
+
+### Changed
+
+- The dashboard's recurring classes count a drive stopped for a person, and
+  every other event row that carries a class, beside the rows of ended
+  sessions, and are counted per stage: a class recurs on one stage of a
+  repository on at least three of the last seven host days. Each row of the
+  list names its stage, and its button filters the log to that stage.
+
+## [0.149.4] - 2026-11-06
+
+### Changed
+
+- `/jig:operator` answers a status question (where a pull request, a tracker item or a follow-up stands) as the same card every time: `jig ask`'s own answer as it printed it, then four lines saying where the work stands, what it waits on, what you can do (with the drive doctor's recovery command quoted for you to run) and what the answer could not read. `/jig:operator 456` is that status for pull request 456, or for issue 456 when no pull request has that number.
+- `/jig:operator` on its own lists what waits on a person as a fixed card too: one block per repository, one line per entry with the act that settles it and since when, the question quoted where an entry names one, and a closing line saying running drives are not listed. Threads and other questions are still answered in sentences. See [plugin/skills/operator/SKILL.md](plugin/skills/operator/SKILL.md).
+- `jig ask --waiting` carries recorded stage and parked questions in its JSON and text answers, so the waiting card can quote them from one read; malformed stage questions make the stored line unreadable. Cards relay unavailable tick and launch history without asserting that nothing waits or no previous launch exists.
+
+## [0.149.3] - 2026-11-06
+
+### Fixed
+
+- On Linux, a dispatcher tick that no Orca terminal started (a wake-up from
+  Orca's plugin, or any run without `ORCA_CLI_COMMAND`) reads and starts
+  sessions through `orca-ide`, the name Orca installs its command under
+  there. It ran a bare `orca`, which on a desktop with GNOME's screen reader
+  installed is the screen reader: every such tick failed its runtime read
+  (`orca repo list failed (exit 1): … dbind-CRITICAL …`) and started
+  nothing. `jig doctor`'s `dispatch:orca` check looks for the same command.
+
+## [0.149.2] - 2026-11-06
+
+### Fixed
+
+- `jig ask` no longer migrates the machine's databases. It opens the dispatcher's state database (launch records and outcome log) and the drive's database read-only, so a command anyone can run at any moment never decides when the owner's database moves to a newer schema. Against a database an older schema holds, it reads what that schema allows or names the source in `sources` as not read, saying the owner's next run brings it forward; the outcome log before its `target` column is one of those, since no index finds its rows and a scan could be neither complete nor bounded. The dispatcher's and the drive's own runs keep their additive migrations.
+- `drives-read-only.ts --json`, the drive's listing for a reader that is not a driver, lists the drive's locks without creating, migrating or importing into the drive's database: a database that is already current is listed as it is, none is no drives, and one a driver must first bring forward is declined with exit 4 and the reason on stderr.
+
 ## [0.149.1] - 2026-11-06
 
 ### Changed
@@ -5450,7 +5524,13 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.149.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.151.0...HEAD
+[0.151.0]: https://github.com/jig-harness/jig/compare/v0.150.1...v0.151.0
+[0.150.1]: https://github.com/jig-harness/jig/compare/v0.150.0...v0.150.1
+[0.150.0]: https://github.com/jig-harness/jig/compare/v0.149.4...v0.150.0
+[0.149.4]: https://github.com/jig-harness/jig/compare/v0.149.3...v0.149.4
+[0.149.3]: https://github.com/jig-harness/jig/compare/v0.149.2...v0.149.3
+[0.149.2]: https://github.com/jig-harness/jig/compare/v0.149.1...v0.149.2
 [0.149.1]: https://github.com/jig-harness/jig/compare/v0.149.0...v0.149.1
 [0.149.0]: https://github.com/jig-harness/jig/compare/v0.148.1...v0.149.0
 [0.148.1]: https://github.com/jig-harness/jig/compare/v0.148.0...v0.148.1

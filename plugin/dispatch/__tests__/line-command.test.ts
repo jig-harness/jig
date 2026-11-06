@@ -230,6 +230,11 @@ describe("jig dispatch line --json", () => {
   };
 
   it.each([
+    [
+      "an array stage question",
+      { needs: [{ ...NEED, question: ["first", "second"] }] },
+    ],
+    ["a numeric stage question", { needs: [{ ...NEED, question: 3 }] }],
     ["a null decision", { needs: [{ ...NEED, decisions: [null] }] }],
     [
       "a decision line that is not text",

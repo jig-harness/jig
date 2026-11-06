@@ -40,6 +40,8 @@ export interface WaitingEntry {
   reason: string;
   url: string | null;
   title: string | null;
+  /** Recorded stage and parked questions, verbatim; older parks use their recorded lines. */
+  questions: string[];
 }
 
 /** What `--waiting` answers. */
@@ -77,6 +79,10 @@ function entryOf(need: LineNeed): WaitingEntry | null {
     reason: need.reason,
     url: need.url,
     title: need.title,
+    questions: [
+      ...(need.question ? [need.question] : []),
+      ...need.decisions.map((d) => d.question ?? d.lines.join("\n")),
+    ].filter((q) => q.length > 0),
   };
 }
 

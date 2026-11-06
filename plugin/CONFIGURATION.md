@@ -782,7 +782,10 @@ notes and no skill asks for a reflection. Since every repository writes to the
 same store, it normally lives in the user layer (`~/.jig/jig.yaml`), which
 turns reflection on for every repository on the machine; a repository's own
 file can turn it on for everyone working in it, override the store, or turn it
-off with `enabled: false`.
+off with `enabled: false`. The [dispatcher](README.md#the-dispatcher) reads the
+section for each repository it ticks, the repository's layer from its default
+branch as it reads its `dispatch` section, and records there each class that
+recurs on the repository.
 
 ```yaml
 reflection:
@@ -791,16 +794,16 @@ reflection:
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `reflection` | mapping | Reflection is off | reflect, review-reflections, drive-pr, resolve-review-comments, do-item | Its presence turns reflection on |
-| `reflection.enabled` | `true`, `false` | `true` when the section exists | reflect, review-reflections, drive-pr, resolve-review-comments | `false` turns reflection off: in a repository's file for that repository, or `JIG__REFLECTION__ENABLED=false` for one run |
-| `reflection.store` | `filesystem`, `notion`, `github`, `command` | `filesystem` | reflect, review-reflections | Which store answers: the [filesystem store](skills/reflect/README.md#filesystem-store), the [Notion store](skills/reflect/README.md#notion-store), the [GitHub store](skills/reflect/README.md#github-store), or `reflection.command` |
-| `reflection.path` | folder; `~` is the home directory, a relative path is the repository's | `~/.jig/reflections` (under `JIG_HOME`) | reflect, review-reflections | The filesystem store's folder |
-| `reflection.command` | a command line, or a list of words | **Required** with `store: command` | reflect, review-reflections | The store command; the operation is appended to it. No shell runs it |
-| `reflection.notion.database` | a Notion database id, or a link to it | **Required** with `store: notion` | reflect, review-reflections | The database `notion-store.ts init` created. The integration's secret is read from the `NOTION_TOKEN` environment variable, never from a file |
-| `reflection.github.repository` | `owner/name` | **Required** with `store: github` | reflect, review-reflections | The repository whose issues hold the reflections, often a private one kept for them. Requests go through `gh`, signed in as it is; the account needs write access, and the repository a `jig-reflection` label (`check` names the command that creates it) |
+| `reflection` | mapping | Reflection is off | reflect, review-reflections, drive-pr, resolve-review-comments, do-item, dispatch | Its presence turns reflection on |
+| `reflection.enabled` | `true`, `false` | `true` when the section exists | reflect, review-reflections, drive-pr, resolve-review-comments, dispatch | `false` turns reflection off: in a repository's file for that repository, or `JIG__REFLECTION__ENABLED=false` for one run |
+| `reflection.store` | `filesystem`, `notion`, `github`, `command` | `filesystem` | reflect, review-reflections, dispatch | Which store answers: the [filesystem store](skills/reflect/README.md#filesystem-store), the [Notion store](skills/reflect/README.md#notion-store), the [GitHub store](skills/reflect/README.md#github-store), or `reflection.command` |
+| `reflection.path` | folder; `~` is the home directory, a relative path is the repository's | `~/.jig/reflections` (under `JIG_HOME`) | reflect, review-reflections, dispatch | The filesystem store's folder |
+| `reflection.command` | a command line, or a list of words | **Required** with `store: command` | reflect, review-reflections, dispatch | The store command; the operation is appended to it. No shell runs it |
+| `reflection.notion.database` | a Notion database id, or a link to it | **Required** with `store: notion` | reflect, review-reflections, dispatch | The database `notion-store.ts init` created. The integration's secret is read from the `NOTION_TOKEN` environment variable, never from a file |
+| `reflection.github.repository` | `owner/name` | **Required** with `store: github` | reflect, review-reflections, dispatch | The repository whose issues hold the reflections, often a private one kept for them. Requests go through `gh`, signed in as it is; the account needs write access, and the repository a `jig-reflection` label (`check` names the command that creates it) |
 | `reflection.journal` | file path | `<git-dir>/jig/reflection-journal.jsonl` | reflect, resolve-review-comments | The worktree's journal; a path git would track, or a file it already tracks, is refused. Parking still uses it when the section says `enabled: false` |
 | `reflection.escalate_after` | whole number, at least 1 | `3` | reflect, review-reflections | The recurrence count at which a class is escalated to one tracker issue |
-| `reflection.timeout_sec` | whole number of seconds, at most 86400 | `120` | reflect, review-reflections | The deadline for one store operation; `list` and `diagnose` get five times as long |
+| `reflection.timeout_sec` | whole number of seconds, at most 86400 | `120` | reflect, review-reflections, dispatch | The deadline for one store operation; `list` and `diagnose` get five times as long |
 | `reflection.mode` | `quick`, `comprehensive` | `quick` | reflect | The reflection's default depth: what went wrong only, or also what worked and what could improve |
 
 Escalation reads `issue_tracker.labels.pattern_prefix` (a class's issue is
@@ -1135,8 +1138,9 @@ The expectation fields (`drive_rounds_flat`, `pickup_within` and
 expectation is reported as drifting, and, where the machine file enables
 `notify` and the run applies, notified once and written to the outcome log
 (a run that only reports writes no row for it); the dispatcher never acts on drift, and never changes these
-values itself: when a class keeps recurring on the dashboard, the change is
-a person's, through `reflect` and `review-reflections` (see
+values itself: a class that keeps recurring is recorded as a reflection
+finding where [`reflection`](#reflection) is on, and the change is a
+person's, through `review-reflections` (see
 [the plugin's README](README.md#the-dispatcher)).
 
 The dispatch labels (`dispatch.labels`) put the dispatcher's state on each
@@ -1244,7 +1248,7 @@ send: true                          # false refuses every jig send from this mac
 | Setting | Default / meaning |
 |---------|-------------------|
 | `repositories[].path` | Required; the repository's local checkout. Several hosts may list one repository, each in its own machine file, with one of them its owner (`owner`) |
-| `repositories[].owner` | `true`; whether this host owns the repository's notifications, dispatch labels and outcome-log rows, and its board. Set it `false` on every host but one that lists the repository: such a host launches, re-arms, re-drives and takes over through the shared records (`records.shared`) as the owner does, and never notifies for the repository, never writes its labels and never writes outcome-log rows for stops it did not launch, so each is written once. A session it launched that waits or drifts is reported on that host, not notified. Every run's report names the host that owns the repository, and says so when another host's claims say they own it too |
+| `repositories[].owner` | `true`; whether this host owns the repository's notifications, dispatch labels and outcome-log rows, its board and its reflection findings. Set it `false` on every host but one that lists the repository: such a host launches, re-arms, re-drives and takes over through the shared records (`records.shared`) as the owner does, and never notifies for the repository, never writes its labels, never writes outcome-log rows for stops it did not launch and never records a recurring class as a reflection finding, so each is written once. A session it launched that waits or drifts is reported on that host, not notified. Every run's report names the host that owns the repository, and says so when another host's claims say they own it too |
 | `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives, and a re-drive, once per change, of a converged drive whose pull request now conflicts with its base or whose head moved past the head the drive verified, and of a drive that stopped on a conflict (exit `9`). `pickup` starts a `do-item` session per item the repository's `dispatch` section makes a pickup, only where the session runtime can bind an interactive session to its account: Orca cannot yet, so each is reported with that reason and nothing is started. `followup` starts a headless pass running `dispatch.followup_command` per merged pull request, bound to an admitted account through its configuration directory as a drive's pass is, under the pass deadline and with the host's `drive.pass_args` (or, on a Codex account, `drive.codex_bypass`); a pass that stops on a question for a person is notified with it. `notify` sends each notification once (with Orca, the workspace's comment, marked unread). `steer` sends the one nudge, `Your usage limit has reset. Continue`, once to an interactive session the runtime reports waiting after its account's wall reset; no other stage implies it |
 | `repositories[].followup_since` | None; when the follow-up stage started for it. Without it, the previous run's receipt keeps the start |
 | `accounts[].name` | Required; the account's name here, which launch records and walls are kept under |

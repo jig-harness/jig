@@ -83,7 +83,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 12;
+const DISPATCH_DB = 13;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 3;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -246,6 +246,11 @@ const DISPATCHER: RecordKind[] = [
     "dispatch/lib/launches.ts",
     "settled_ends",
   ),
+  dispatchTable(
+    "dispatch-reflection-finding",
+    "dispatch/lib/reflection-findings.ts",
+    "reflection_findings",
+  ),
   plain(
     "machine",
     "dispatch-receipt",
@@ -265,6 +270,13 @@ const DISPATCHER: RecordKind[] = [
     "dispatch-wall",
     "dispatch/lib/walls.ts",
     `${DISPATCH_DIR}walls/<account>/<ms>-<8 hex>.json`,
+    0,
+  ),
+  plain(
+    "machine",
+    "dispatch-wake",
+    "shared/wake.ts",
+    `${DISPATCH_DIR}wake/<digest>/pending/<request>, waiter, started, last-run.log`,
     0,
   ),
   plain(

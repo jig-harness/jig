@@ -6,7 +6,7 @@
  * `stop` at each round boundary.
  *
  * The tree, its mailbox and the driver generation come from the drive's own
- * listing in a checkout here (`drives.ts --json`), as `jig ask` reads them.
+ * listing in a checkout here, read as `jig ask` reads it (`drives-read-only.ts`).
  * A `stop` is addressed to that generation, so it ends that driver alone,
  * as `drives.ts --stop` addresses its own. The mailbox's format lets only a
  * `stop` name a generation, and every driver holds its pushes on a
@@ -146,6 +146,16 @@ const UNDO: Record<
     `jig send ${name} ${r.verb === "resume" ? r.target : "resume"}`,
 };
 
+/** Why no driver can be sent a directive: none holds the drive, or the listing that would say was not read. */
+function noDriverReason(ctx: AskContext, verb: MailboxRequest["verb"]): string {
+  const unread = ctx.reading
+    .sources()
+    .records.find((s) => s.record === "drive-lock" && !s.read);
+  if (unread !== undefined)
+    return `the drive's listing was not read (${unread.detail ?? "no reason given"}), so whether a driver on this machine holds ${ctx.name} is not known: send again once it is`;
+  return `no driver on this machine holds ${ctx.name}${ctx.checkout === null ? " (no checkout of the repository here to read the drive's listing in)" : ""}: a ${verb} directive reaches a running driver`;
+}
+
 /** The plan of a mailbox verb, or why the drive cannot take it here. */
 export async function planMailbox(
   ctx: AskContext,
@@ -166,9 +176,7 @@ export async function planMailbox(
     tree === null ||
     (needsDriver && (!tree.live || tree.generation === null))
   )
-    return refused(
-      `no driver on this machine holds ${ctx.name}${ctx.checkout === null ? " (no checkout of the repository here to read the drive's listing in)" : ""}: a ${request.verb} directive reaches a running driver`,
-    );
+    return refused(noDriverReason(ctx, request.verb));
   const gate = foldGateState(tree.dir, ctx.address.key);
   if (!gate.ok)
     return refused(
@@ -195,6 +203,8 @@ export async function planMailbox(
     record: `${what}, a directive in the mailbox of ${tree.worktree}`,
     where: inboxPath(tree.dir),
     reader: READER[request.verb](g),
+    // The driver reads its mailbox at its next round: no tick to wake.
+    tick: null,
     undo: UNDO[request.verb](ctx.name, request),
     notice: null,
     write: () => writeDirective(tree, pr, login, request),

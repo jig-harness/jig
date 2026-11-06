@@ -115,6 +115,18 @@ source that does not answer in time is reported unread, and the answer
 prints without it. The outcome log gains a key column with an index, in an
 additive migration, so `last` is one lookup in a table that only grows.
 
+**It opens the machine's databases read-only.** `ask` runs far more often
+than the owners of those databases do, so it never chooses when one
+migrates: the dispatcher's state database (launch records, outcome log)
+and the drive's database are opened without creating, migrating or writing
+anything. Where a schema is older than `ask` needs, `ask` reports the source in
+`sources` as not read (the outcome log, before its key column, is one),
+saying the owner's next run brings it forward; it never fills a field from a guess.
+The drive's listing takes the same rule: `drives-read-only.ts` lists a
+database that is already current and declines one a driver must first
+bring forward. The dispatcher's and the drive's own runs keep
+their additive migrations.
+
 **Away from the machine that dispatched the work**, `ask` answers from the
 forge and the tracker: the state, what it waits on, the thread, and from
 the [shared records](../plugin/RECORDS.md) which host holds a launch and
@@ -124,7 +136,7 @@ were not read.
 
 **A drive nobody dispatched** has no launch record and may have no ledger
 yet. `drive@repository#key` then reads the drive's own listing in a
-checkout of the repository on the machine (`drives.ts --json`), which
+checkout of the repository on the machine (`drives-read-only.ts`), which
 classifies each driver lock as the doctor does without the recovery that
 `--doctor` writes, and prints the doctor's verdict and the recovery command
 as it gives them. It never runs that command. A drive that left state but
@@ -230,8 +242,8 @@ prototype may show that it needs a change.
 ### `jig send`: a request is a record
 
 `jig send <address> <verb>` writes one record, of a kind the line already
-reads, and exits. `send` types nothing into a session and starts nothing
-itself.
+reads, and exits. `send` types nothing into a session, and the only thing
+it starts is a wake of the tick that reads its record (below).
 
 | Verb | To | The record it writes | Read by |
 | --- | --- | --- | --- |
@@ -281,11 +293,32 @@ checks:
 - **A verb whose record the repository has switched off is refused**, with
   the setting named: `drive`, `hold` and `release` need dispatch labels on.
   A machine can refuse every `send` (`send: false` in its dispatch file).
+- **A request the tick reads wakes the tick.** After `assign`, `drive`,
+  `hold`, `release` or `answer` (whose reader, the re-arm, the tick
+  starts), a real send wakes that repository's tick when this machine's
+  dispatch file lists the repository with the stage the tick acts under
+  (`pickup` for `assign`, `followup` for a follow-up's `hold` and
+  `release`, `rearm` for the rest). The wake follows the rule the Orca
+  plugin's wake-up follows ([Waking the
+  dispatcher](orca-integration.md)): a detached waiter runs `jig dispatch
+  --apply --repo <path>` the way the installed timer does, one tick at a
+  time for a repository, no sooner than a minute after the last one it
+  started. The request is pending on disk under the dispatcher's state
+  directory, since `send` exits at once, so several sends within that
+  minute start one tick, and a send made while a tick runs starts one
+  trailing tick after the running tick ends and the minute has passed. A tick refused because another
+  holds the machine-wide tick lock keeps the request and is tried again
+  after the minute, a bounded number of times; the waiter then exits, so
+  nothing stays resident. The record stays the request: a wake that is lost
+  leaves it to the next timer sweep. A mailbox directive wakes nothing,
+  since the driver reads it at its next round, and a dry run, a refused send
+  and a machine that refuses every send wake nothing either.
 - **`--dry-run`** prints what a real send would, without writing. A real
   send ends with the link to what it wrote and the reader that acts on it:
-  the dispatcher's next tick, or the drive's next round. The forge can take
-  a moment to list a new comment, so that link, not an `ask` right after
-  it, is the proof the request landed.
+  the dispatcher's tick for the repository, woken now or when idle and at least a minute after the last start,
+  or its next tick when the send woke none, or the drive's next round. The
+  forge can take a moment to list a new comment, so that link, not an `ask`
+  right after it, is the proof the request landed.
 - **What can be taken back.** `release` undoes a `hold`; a `drive` label
   can be removed until the tick has armed the drive; `resume` withdraws a
   directive. An `answer` the re-arm has read cannot be taken back, which
@@ -295,11 +328,17 @@ checks:
 
 `/jig:operator` is the skill a person talks to. It turns "where does 456
 stand", "what is waiting on me" or "hold 456" into `jig ask` and `jig
-send`, and answers in sentences. It holds no state: what it knows it has
+send`, and answers in sentences, except for a status, which is one fixed
+card: `ask`'s own answer, then where the work stands, what it waits on,
+what the person can do and what was not read, so the same question reads
+the same in every session. It holds no state: what it knows it has
 just read, so any session on any machine can be the operator, and a session
 that ends loses nothing. A person who wants one address's status without a
 session runs `jig ask` and reads its plain answer.
 
+- **The skill run on its own** answers "what is waiting on me", and a
+  bare number is the status of that pull request, or of the item of that
+  number where no pull request has it.
 - **"What is waiting on me"** is `jig ask --waiting --person <login>` once
   step 5 has built, one read; before it, `jig ask --waiting`. The operator opens an address only to say more about one entry.
 - **The status of a pull request** is `jig ask drive@<repository>#<PR>`,
@@ -378,7 +417,9 @@ whichever comes later.
 - **A queue or an inbox that a daemon holds.** `ask` and `send` run and
   exit, and what they read and write are the records of
   [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md). A request waits
-  for its reader's next run, as a label does today.
+  for its reader's next run, as a label does today. The wake a send starts
+  holds no copy of the request: it only has the tick read the record
+  sooner, and its waiter exits once that tick has run.
 - **Free text to a running session.** The dispatcher composes no prompt
   for a session, and `send` gives nobody a way to. A person who wants to
   talk to a session opens its workspace.
@@ -407,12 +448,3 @@ whichever comes later.
   of work gets is derived by rules
   ([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)),
   and who holds a station is read from records.
-
-## Review
-
-Critiqued by four reviewers with fresh context (subagents that did not
-write it, as a critical chief technology officer, a security auditor, a
-performance engineer and a cost optimizer) on 2026-11-05, against the
-draft written before the first commit, which no commit holds. The pull
-request's reviewer then read commit 20805261 on 2026-11-05. The reports are
-in the pull request that added this design.
