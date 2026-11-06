@@ -80,7 +80,12 @@ request per boundary, in this order:
 - **Resolving a thread**:
   `plugin/skills/resolve-review-comments/scripts/resolve-thread.ts` refuses,
   with a named exit, a thread that carries no reply from the resolving
-  login posted after its last reviewer comment.
+  login posted after its last reviewer comment. This binds only a pass that
+  uses the script: a pass holding the person's login can send the
+  `resolveReviewThread` mutation directly. The work either enforces the
+  check where the credential is used or records that bypass as an accepted
+  risk, and the script's check is not called mechanical enforcement until
+  it does.
 - **The installed copy**: before a scheduled job runs, the launcher
   (`plugin/runtime/launcher.ts`) confirms that the plugin copy matches a
   released version, for example by a digest the release records, and
@@ -537,29 +542,32 @@ Done when every page Jig's tooling draws takes its colours from
 `theme.ts`, follows the reader's light or dark setting, carries Jig's mark,
 and each genre's contrast test holds its light and dark pairs.
 
-### 41. Configurable issue facets: type, priority and size
+### 41. Configurable issue attributes: type, priority and size
 
 An issue's type, priority and size are kept differently by each way an
 issue is filed: in the tracker's own field, in a label, or nowhere, so a
 tracker cannot sort or filter on them. The
-[tracker interface](../GLOSSARY.md) has no type or size, each adapter fixes
-in code where priority is kept, and only `file-issue` checks that an issue
-it files is complete. What it will build: the tracker interface carries an
-issue's type, priority and size as canonical values, and where each of the
-three is kept is per-repository configuration (`issue_tracker.facets`): the
-tracker's own field, a named custom field, labels, or the repository's own
-command, with a documented default per adapter:
+[tracker interface](../GLOSSARY.md) has no type or size, an adapter's
+priority storage is configurable only as far as the GitHub label map
+(`issue_tracker.github.priority_labels`) goes, with no choice between the
+tracker's field, a custom field, labels or a command, and only `file-issue`
+checks that an issue it files is complete. What it will build: the tracker
+interface carries an issue's type, priority and size as canonical values, and
+where each of the three is kept is per-repository configuration
+(`issue_tracker.attributes`): the tracker's own field, a named custom field,
+labels, or the repository's own command, with a documented default per
+adapter:
 
 - **GitHub Issues**: the issue type; the organization's Priority field; the
   Effort field when its options carry the size names, else size labels.
-- **Jira**: the issue type, matched by name; the priority field; size only
-  once a field is named.
+- **Jira**: the issue type, matched by name; the priority field; size as
+  labels until a size field is named.
 - **Linear**: labels for type and size; its priority field; the estimate as
   an option for size.
 
 Today's `issue_tracker.types`, `issue_tracker.github.priority_labels` and
 `issue_tracker.jira.field_labels` become the label or field form of their
-facet. Every filing path (`file-issue`, `file-deferred.ts`,
+attribute. Every filing path (`file-issue`, `file-deferred.ts`,
 `report-bug.ts`, the issue forms) sets and checks all three, and a weekly
 check reports the issues missing one. It includes reading and writing the
 tracker's own issue type, not only a type label.

@@ -182,7 +182,7 @@ will follow the reader's light or dark setting and carry Jig's mark as its
 icon. Every text colour will meet WCAG AA, the Web Content Accessibility
 Guidelines' minimum contrast, in both modes.
 
-### 41. Configurable issue facets: type, priority and size
+### 41. Configurable issue attributes: type, priority and size
 
 Every issue records its type, priority and size, so a team can sort and
 filter its tracker by them. A team chooses where its tracker keeps each one:
