@@ -763,7 +763,9 @@ repository turns on and lacks, and creates them with `--yes`. The earlier
 and is the one form that sets an interval other than the machine file's.
 
 The session runtime it reads and launches in is
-[Orca](https://www.onorca.dev) (`orca` on `PATH`, or `ORCA_CLI_COMMAND`),
+[Orca](https://www.onorca.dev) (`ORCA_CLI_COMMAND`, else `orca-ide` on
+`PATH` on Linux and `orca` elsewhere, the names Orca installs its command
+under; on Linux a bare `orca` is often GNOME's screen reader),
 behind an interface a second runtime can be added to. The repository's
 values are its [`dispatch` section](CONFIGURATION.md#dispatch), read from
 its default branch on the forge.
