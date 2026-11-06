@@ -114,6 +114,8 @@ export interface LineSession {
   launch: "pending" | "alive" | "unknown";
   /** Why the state is `unknown`; `null` otherwise. */
   launchReason: string | null;
+  /** Set when the record is pending and no tick launches it again (both launches unanswered, or a follow-up's replay not provably safe): why. It needs a person, and holds its slot until they clear it. Absent from a line written before it was kept. */
+  stuck?: string | null;
   /** `null` for a drive's headless pass, whose process is the only runtime record. */
   agent: LineAgent | null;
   /** A drive's ledger round; `null` for any other stage or when it does not read. */

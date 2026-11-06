@@ -33,7 +33,11 @@
  *
  * Pending, alive and unknown records hold their stage and their account's
  * slot; an unknown or a pending record whose launch cannot be retried
- * holds them until a person clears it (`jig dispatch clear`). An
+ * holds them until a person clears it (`jig dispatch clear`). A pending
+ * record no tick will launch again is **stuck** (`stuck-launches.ts`):
+ * each of its launches went unanswered, or a follow-up's replay could not
+ * be proven safe (`noReplay`), and it is notified to a person and shown as
+ * needing one rather than as an ordinary pending launch. An
  * interactive session's record is also read beside its agent
  * (`actions/pickup-hold.ts`): while its wrapper is alive, the record ends
  * when the runtime reports the agent finished.
@@ -125,6 +129,8 @@ export interface LaunchRecord {
   command: string | null;
   /** The id of the follow-up marker comment the tick posted for it; `null` until posted, and for any other record. */
   marker: number | null;
+  /** Why no tick launches this pending record again: a replay the fresh read could not prove safe. A person clears it. Absent or `null` while it may be replayed. */
+  noReplay?: string | null;
   /** A drive's ledger round when it was launched, which its outcome row's rounds count from; `null` when unknown. */
   round?: number | null;
   /** For a re-drive: why it was launched, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
@@ -340,9 +346,15 @@ function optionalSeconds(value: unknown): boolean {
 /** The fields a later version added, each absent or of its type. */
 function optionalFields(value: Record<string, unknown>): boolean {
   return (
-    ["agentId", "model", "effort", "command", "sessionId", "mark"].every((k) =>
-      optionalText(value[k]),
-    ) &&
+    [
+      "agentId",
+      "model",
+      "effort",
+      "command",
+      "sessionId",
+      "mark",
+      "noReplay",
+    ].every((k) => optionalText(value[k])) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&

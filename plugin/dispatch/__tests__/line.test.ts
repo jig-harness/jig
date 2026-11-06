@@ -13,6 +13,7 @@ import {
   type RepoStored,
 } from "../lib/line.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
+import { planStuck } from "../lib/stuck-launches.ts";
 import type { Action, DrivenPr, RepoReport } from "../lib/types.ts";
 
 const REPO = "example-org/web";
@@ -570,6 +571,40 @@ describe("buildLine", () => {
       workspace: "/srv/work/web/pr-456",
       samples: [{ round: 3, threads: 5 }],
     });
+  });
+
+  it("shows a pending record whose two launches went unanswered as needing a person, and an ordinary pending one as pending", () => {
+    const lost = { at: NOW, outcome: "lost" as const, detail: "no answer" };
+    const pending = { kind: "pending" as const };
+    const stuck = record(
+      { action: "followup", marker: 77, attempts: [lost, lost] },
+      pending,
+    );
+    const retried = record(
+      { id: "20261103T160000Z-cccccccc", pr: 457, attempts: [lost] },
+      pending,
+    );
+    const records = [stuck, retried];
+    const line = buildLine(
+      input({
+        reports: [report({ actions: planStuck(REPO, records) })],
+        records,
+      }),
+    );
+    expect(line.sessions.map((s) => [s.target, s.launch, s.stuck])).toEqual([
+      ["PR #456", "pending", expect.stringContaining("(lost, lost)")],
+      ["PR #457", "pending", null],
+    ]);
+    expect(line.needs).toEqual([
+      expect.objectContaining({
+        cause: "needs-person",
+        stage: "followup",
+        target: "PR #456",
+        reason: expect.stringContaining(
+          `jig dispatch clear ${stuck.record.id}`,
+        ),
+      }),
+    ]);
   });
 
   it("joins an interactive session to its agent, its wall and the nudge that answered it", () => {

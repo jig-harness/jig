@@ -45,6 +45,7 @@ import {
 } from "../runtime/port.ts";
 import { passTimeoutSeconds } from "../../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { PICKUP_SKILL } from "../session.ts";
+import { retryable } from "../stuck-launches.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
@@ -170,9 +171,6 @@ export function rotated<T>(
   const start = Math.floor(state.tick / divisor) % items.length;
   return [...items.slice(start), ...items.slice(0, start)];
 }
-
-/** A pending record's launch is retried once, under its own key. */
-const MAX_ATTEMPTS = 2;
 
 export type Opened =
   | { workspace: { id: string; path: string }; cleanupFailure?: string }
@@ -424,15 +422,6 @@ export async function openedFor(
   if ("outcome" in opened) return opened;
   const stale = await changedWhileOpening(state, action, slots);
   return stale === null ? opened : { outcome: stale };
-}
-
-/** Whether a pending record's launch can still be replayed: it has a workspace, its last attempt got no answer and an attempt remains. */
-export function retryable(record: LaunchRecord): boolean {
-  return (
-    record.workspace !== null &&
-    record.attempts.at(-1)?.outcome !== "sent" &&
-    record.attempts.length < MAX_ATTEMPTS
-  );
 }
 
 /** The pending records of `repo` whose launch got no answer and may be replayed once, of the actions `kinds` names. */

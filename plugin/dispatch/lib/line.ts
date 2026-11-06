@@ -18,10 +18,11 @@ import type {
   NeedCause,
   QueueGroup,
 } from "./dashboard-contract.ts";
-import type { ReadRecord } from "./launches.ts";
+import type { LaunchAction, ReadRecord } from "./launches.ts";
 import { holds, targetOf } from "./launches.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
+import { stuckWhy } from "./stuck-launches.ts";
 import type {
   Action,
   DrivenPr,
@@ -156,6 +157,21 @@ function needStage(cause: NeedCause): LineNeed["stage"] {
   return "rearm";
 }
 
+const LAUNCH_ACTIONS: ReadonlySet<string> = new Set<LaunchAction>([
+  "rearm",
+  "takeover",
+  "pickup",
+  "followup",
+]);
+
+/** The stage a need is about: the launch's own, for a cause about one launch record, else its cause's. */
+function stageOfNeed(action: Action & { cause: NeedCause }): LineNeed["stage"] {
+  const stage = action.evidence.stage;
+  return typeof stage === "string" && LAUNCH_ACTIONS.has(stage)
+    ? (stage as LaunchAction)
+    : needStage(action.cause);
+}
+
 function isNeed(action: Action): action is Action & { cause: NeedCause } {
   return (
     action.stage === "notify" &&
@@ -270,7 +286,7 @@ function needsOf(
         : view.stored.notified.get(action.notice.key);
     return {
       cause: action.cause,
-      stage: needStage(action.cause),
+      stage: stageOfNeed(action),
       repo: view.slug,
       target: action.target,
       pr,
@@ -568,6 +584,7 @@ function sessionOf(
     createdAt: record.createdAt,
     launch: state.kind,
     launchReason: state.kind === "unknown" ? state.reason : null,
+    stuck: stuckWhy(read),
     agent: agentOf(read, view),
     ...ledgerOf(evidence),
     samples: record.samples ?? [],

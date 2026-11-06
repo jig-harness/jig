@@ -126,6 +126,7 @@ const RECORDED: Record<RecordedSet, Record<string, RoleKey>> = {
   "launch record": {
     alive: "working",
     pending: "waiting",
+    stuck: "needs",
     unknown: "unknown",
     died: "badly",
   },
