@@ -387,6 +387,25 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.149.0] - 2026-11-06
+
+### Added
+
+- The dispatch dashboard's What needs you shows the question a follow-up stopped on, and the workspace each notice was sent to.
+
+### Changed
+
+- The dispatcher sends every notification for a repository to one place: the repository's notices workspace, or the workspace on the branch the new `dispatch.notices_branch` setting names. It no longer writes a notice into the workspace joined to the pull request or item, such as an agent's tree or a follow-up's workspace, which a person following many repositories does not visit. Each message now names the workspace the stage ran in, where its handoff is ([CONFIGURATION.md](plugin/CONFIGURATION.md#dispatch)).
+- A notification whose cause still stands is sent again after `dispatch.renotify_after` (a day by default), saying since when it has waited, until the cause goes, rather than once per cause for good. `0s` keeps the old behaviour of sending each one once.
+
+### Fixed
+
+- A follow-up claim that no run will finish no longer holds the follow-up for good. A marker a person's run posted and never marked done, or another host's with no answer, that is older than the new `dispatch.followup_stale_after` (a day by default) with no session joined to its pull request is released once: the dispatcher deletes it and starts the follow-up again at its next run, and the report says whose claim it was. A claim on the same pull request that goes stale again is notified to a person instead of released a second time.
+- Pending stale-claim releases survive a lost deletion response and are completed from the next full marker listing, including their outcome event, before a follow-up can start again. Release-history reads use only the pull requests being classified. Named notification destinations preserve personal comments even when an agent has run there, and stale tick-marker notices name the result command instead of the manual-marker command.
+- Notification delivery rechecks the selected branch and named destination's comment ownership under its write lock. Repeat clocks advance only after the receipt confirms that repeat's text and the unread mark.
+- Named destinations preserve personal additions to read notices. Read history that exactly matches a recorded dispatcher write is replaced, so repeats do not fill the comment permanently; batch sizing and delivery use the same comment projection, and ownership is recorded only for confirmed dispatcher content.
+- Intended dispatcher-only comments are saved from the fresh card projection under the delivery lock before writing, so an exact fresh read recovers ownership after a lost response or interrupted tick. Personal additions never match that recovery record.
+
 ## [0.148.1] - 2026-11-06
 
 ### Fixed
@@ -5425,7 +5444,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.148.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.149.0...HEAD
+[0.149.0]: https://github.com/jig-harness/jig/compare/v0.148.1...v0.149.0
 [0.148.1]: https://github.com/jig-harness/jig/compare/v0.148.0...v0.148.1
 [0.148.0]: https://github.com/jig-harness/jig/compare/v0.147.0...v0.148.0
 [0.147.0]: https://github.com/jig-harness/jig/compare/v0.146.0...v0.147.0
