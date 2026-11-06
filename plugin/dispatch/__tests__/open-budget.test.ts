@@ -57,9 +57,9 @@ it("charges failed opens to the budget too", async () => {
   expect(await openWithinBudget(s, repo, launch)).toHaveProperty("waits");
 });
 
-it("does not open unless a full workspace timeout and receipt reserve fit the remaining deadline", async () => {
+it("reserves the repository lookup, workspace timeout and receipt before opening", async () => {
   const s = state();
-  s.startedAt = Date.now() - 6 * 3_600_000 + 1500;
+  s.startedAt = Date.now() - 6 * 3_600_000 + 2500;
   expect(await openWithinBudget(s, repo, launch)).toEqual({
     waits: expect.stringContaining("workspace_timeout"),
   });

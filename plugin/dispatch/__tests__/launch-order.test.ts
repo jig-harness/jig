@@ -39,6 +39,27 @@ it("lets every target lead on successive opportunities of a background stage", (
   }
 });
 
+it("rotates notifications when one failed open consumes the reserved allowance", async () => {
+  const attempted = new Set<number>();
+  for (let tick = 0; tick < 8; tick++) {
+    let noticeAvailable = true;
+    await applyInTurns(
+      Array.from({ length: 4 }, (_, repo) => ({
+        apply: async () => {
+          /* Launches leave only the reserved notification open. */
+        },
+        finish: async () => {
+          if (!noticeAvailable) return;
+          noticeAvailable = false;
+          attempted.add(repo);
+        },
+      })),
+      tick,
+    );
+  }
+  expect([...attempted].sort()).toEqual([0, 1, 2, 3]);
+});
+
 it("lets each background stage lead in every repository under sustained drive traffic", async () => {
   for (const count of [1, 2, 4]) {
     const led = Array.from({ length: count }, () => new Set<string>());

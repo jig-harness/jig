@@ -31,7 +31,7 @@ export async function applyInTurns(
   ];
   for (const group of groups)
     for (const repository of ordered) await repository.apply(group);
-  for (const repository of repositories) await repository.finish();
+  for (const repository of ordered) await repository.finish();
 }
 
 /** The launch callbacks belonging to this global group. */

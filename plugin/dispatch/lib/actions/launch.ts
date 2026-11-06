@@ -219,11 +219,11 @@ export async function openWithinBudget(
   if (
     state.startedAt !== undefined &&
     enforcedDeadlineMs(state.machine) - (Date.now() - state.startedAt) <
-      state.machine.workspaceTimeoutMs + state.machine.runtimeTimeoutMs
+      state.machine.workspaceTimeoutMs + 2 * state.machine.runtimeTimeoutMs
   )
     return {
       waits:
-        "the tick deadline has no room for another workspace_timeout and its receipt; a later tick opens this one",
+        "the tick deadline has no room for the repository lookup, another workspace_timeout and its receipt; a later tick opens this one",
     };
   const notice = "notices" in target;
   const waiting = openBudgetWait(state, notice);
