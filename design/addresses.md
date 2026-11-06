@@ -115,6 +115,18 @@ source that does not answer in time is reported unread, and the answer
 prints without it. The outcome log gains a key column with an index, in an
 additive migration, so `last` is one lookup in a table that only grows.
 
+**It opens the machine's databases read-only.** `ask` runs far more often
+than the owners of those databases do, so it never chooses when one
+migrates: the dispatcher's state database (launch records, outcome log)
+and the drive's database are opened without creating, migrating or writing
+anything. Where a schema is older than `ask` needs, `ask` reports the source in
+`sources` as not read (the outcome log, before its key column, is one),
+saying the owner's next run brings it forward; it never fills a field from a guess.
+The drive's listing takes the same rule: `drives-read-only.ts` lists a
+database that is already current and declines one a driver must first
+bring forward. The dispatcher's and the drive's own runs keep
+their additive migrations.
+
 **Away from the machine that dispatched the work**, `ask` answers from the
 forge and the tracker: the state, what it waits on, the thread, and from
 the [shared records](../plugin/RECORDS.md) which host holds a launch and
@@ -124,7 +136,7 @@ were not read.
 
 **A drive nobody dispatched** has no launch record and may have no ledger
 yet. `drive@repository#key` then reads the drive's own listing in a
-checkout of the repository on the machine (`drives.ts --json`), which
+checkout of the repository on the machine (`drives-read-only.ts`), which
 classifies each driver lock as the doctor does without the recovery that
 `--doctor` writes, and prints the doctor's verdict and the recovery command
 as it gives them. It never runs that command. A drive that left state but

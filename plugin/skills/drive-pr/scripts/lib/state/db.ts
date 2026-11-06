@@ -39,6 +39,7 @@ import {
   inTransaction,
   type Migration,
   openDatabase,
+  openReadOnly,
 } from "../../../../../shared/records/db.ts";
 import { fail } from "../cli.ts";
 import { importStateDir } from "./import.ts";
@@ -204,6 +205,7 @@ export function dbPathFor(stateDir: string): string {
  * cannot be opened at all, with exit 1.
  */
 export function driveDb(stateDir: string): DriveDb {
+  if (process.env[READ_ONLY_ENV] === "1") return driveDbReadOnly(stateDir);
   const path = dbPathFor(stateDir);
   const opened = openDatabase({ path, migrations: MIGRATIONS });
   if (!opened.ok)
@@ -263,6 +265,111 @@ export function peekImport(stateDir: string): ImportRecord | null {
   } finally {
     db.close();
   }
+}
+
+/** What opening the drive's database for `stateDir`'s clone would do. */
+export type DriveDbReadiness =
+  | { readonly state: "absent" }
+  | { readonly state: "current" }
+  | { readonly state: "behind" | "unreadable"; readonly reason: string };
+
+/** The environment variable that makes `driveDb` open read-only (`1`). */
+export const READ_ONLY_ENV = "JIG_DRIVE_DB_READ_ONLY";
+
+/** `readiness`, with the read-only connection kept open when the database is current. */
+function inspect(
+  stateDir: string,
+):
+  | { readonly readiness: Exclude<DriveDbReadiness, { state: "current" }> }
+  | { readonly readiness: { state: "current" }; readonly db: Database } {
+  const opened = openReadOnly({
+    path: dbPathFor(stateDir),
+    migrations: MIGRATIONS,
+  });
+  if (!opened.ok)
+    return {
+      readiness: { state: "unreadable", reason: opened.failure.reason },
+    };
+  if (opened.value === null) return { readiness: { state: "absent" } };
+  const { db, version, behind } = opened.value;
+  if (behind) {
+    db.close();
+    return {
+      readiness: {
+        state: "behind",
+        reason: `the drive's database is at schema version ${version}, and a driver's next run brings it forward`,
+      },
+    };
+  }
+  try {
+    const imported =
+      db
+        .query("SELECT 1 FROM imports WHERE clone = ?")
+        .get(basename(stateDir)) !== null;
+    if (imported) return { readiness: { state: "current" }, db };
+    db.close();
+    return {
+      readiness: {
+        state: "behind",
+        reason:
+          "the drive's database has not read this clone's state directory in, and a driver's next run does",
+      },
+    };
+  } catch (err) {
+    swallow(err, "the drive's database could not be read");
+    db.close();
+    return {
+      readiness: {
+        state: "unreadable",
+        reason: "the drive's database could not be read",
+      },
+    };
+  }
+}
+
+/**
+ * Whether `driveDb(stateDir)` would open the clone's database without
+ * writing, found without creating, migrating or importing anything: `absent`
+ * when no driver ever created it, `current` when opening it changes nothing,
+ * `behind` when it would migrate the schema or read this clone's state
+ * directory in, `unreadable` when a newer plugin wrote it or it cannot be
+ * opened. For a reader that must leave the disk as it is.
+ */
+export function driveDbReadiness(stateDir: string): DriveDbReadiness {
+  const found = inspect(stateDir);
+  if ("db" in found) found.db.close();
+  return found.readiness;
+}
+
+/** The read-only connections this process holds, one per clone directory (readiness and every row filter are the clone's): callers never close one. */
+const readOnlyHeld = new Map<string, DriveDb>();
+
+/**
+ * `driveDb` for a reader that must never write: the connection is read-only
+ * for as long as the process holds it, so a change between the readiness check
+ * and this open (the file removed or replaced, the import row gone) declines
+ * with exit 4 instead of creating, migrating or importing.
+ */
+function driveDbReadOnly(stateDir: string): DriveDb {
+  const held = readOnlyHeld.get(stateDir);
+  if (held !== undefined) return held;
+  const found = inspect(stateDir);
+  if ("db" in found) {
+    const drive = {
+      db: found.db,
+      clone: basename(stateDir),
+      path: dbPathFor(stateDir),
+    };
+    readOnlyHeld.set(stateDir, drive);
+    return drive;
+  }
+  const r = found.readiness;
+  fail(
+    4,
+    r.state === "absent"
+      ? "drive-state.ts: the drive's database is gone, and only a driver creates it"
+      : `drive-state.ts: ${r.reason}`,
+  );
 }
 
 /** The database's instance id: what a driver hands its passes so they can tell it is still the same database. */
