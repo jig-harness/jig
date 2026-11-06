@@ -1,0 +1,958 @@
+# The hub, one place to watch and steer the line: design
+
+**What problem this solves.** Jig's execution line runs work through its
+[stations](../GLOSSARY.md) (pick-up, drive, follow-up), often across
+machines: a headless Linux host running the [dispatcher](../GLOSSARY.md)
+and Orca's server, work started from a laptop, a look from a phone. Where a
+piece of work stands is spread out. The dispatch dashboard shows one host's
+dispatcher and no pull request that host does not hold; `jig ask` answers
+one [address](../GLOSSARY.md) at a time; checks, threads and whether a pull
+request can merge are on the forge. Nothing shows an item, its pull request
+and its follow-up as one thing, nothing shows progress before a pull
+request exists, and answering a parked question means a terminal. With this
+built, one page, the [hub](../GLOSSARY.md), opens on what waits for the
+person, places every piece of work on a board, opens each one end to end
+with its thread, and carries a chat with the [operator](../GLOSSARY.md)
+that explains why work is stuck and drafts what to do, for the person to
+confirm. A host serves the page read-only on its loopback address, a laptop
+serves it to any browser and reads each host over SSH (Secure Shell), and
+Orca, where a person uses it, opens it in its own browser. The page talks
+to its own hub through one protocol, and hubs read each other through a
+second, which a shared control plane can later serve without the page
+changing.
+
+This is the design of [plan.md](plan.md) item 42. Nothing of it is built.
+It serves the setup the dispatcher is built for: a host that dispatches
+while people start and steer work from their own machines. Its first stage
+is of use wherever the dispatcher runs; the later stages matter where work
+runs on more than one machine, and whether they are built is decided once
+the first is in use ([Build order](#build-order)). It grows from the
+dispatch dashboard and the line it serves
+([dark-factory-dispatch.md § Control](dark-factory-dispatch.md#control-observe-record-report-steer),
+item 33), from `jig ask`, `jig send` and `/jig:operator`
+([addresses.md](addresses.md), item 39), and from the Jig plugin for Orca
+([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca),
+item 34). Most of its status per pull request is the
+[dispatch board](dispatch-board.md), item 36, designed and not built, which
+the hub builds first. Each of those designs says in its own text what this
+one changes, and so do
+[ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md), for a resident
+reader on loopback, and
+[ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md),
+for the conversation record.
+
+## How it works
+
+### The rules it keeps
+
+- **Jig stays whole without Orca.** Every view works in any browser, the
+  machines talk to each other over SSH, and nothing the hub needs runs in
+  Orca. Orca adds conveniences, each with a Herdr or plain-text equivalent:
+  opening the hub inside Orca, jumping to a workspace or a terminal, the
+  panel and the status bar.
+- **No host gains a route that accepts a request.** A host's hub listens on
+  127.0.0.1 (loopback, which nothing outside the machine reaches) and
+  answers reads only. A laptop reaches it over SSH, which authenticates
+  both ends.
+- **Every write is the person's**, made with their own credential on the
+  forge or the tracker, through `jig send` or, for a merge, the pinned merge
+  command. A host's hub writes nothing; a laptop's writes from stage 3
+  ([When the hub writes](#when-the-hub-writes)).
+- **The hub stores no copy of the line.** Each read derives its views from
+  the records the line keeps ([plugin/RECORDS.md](../plugin/RECORDS.md)).
+  What it holds in memory, each source's last snapshot and a minute of
+  forge answers, is gone when it stops. The one thing it stores is the
+  person's conversation with the operator.
+
+```mermaid
+flowchart LR
+  LB[any browser on the laptop,<br/>Orca's included] --> LH[jig hub on the laptop:<br/>loopback]
+  OB[Orca's browser in a<br/>host workspace, optional] -.->|loopback, through the paired host| HH[jig hub on the host:<br/>loopback, read-only]
+  PH[a phone's browser] -.->|optional front:<br/>HTTPS, read-only| HH
+  LH -->|source feed over SSH:<br/>jig hub rpc| HH
+  HH --> HR[(host records:<br/>line, log, drives)]
+  LH --> LR[(laptop records,<br/>conversations)]
+  HH -->|reads| F[(forge and tracker)]
+  LH -->|reads; from stage 3 writes<br/>as the person| F
+  CP[shared control plane, later] -.->|the same source feed,<br/>the host dials out| HH
+```
+
+### A piece of work, and its views
+
+The hub's unit is a [piece of work](../GLOSSARY.md): a tracker item, the
+pull request it opens and that pull request's follow-up, joined by their
+aliases (the item key, the branch, the pull request). A pull request with
+no item is one, and so is an item with no pull request yet.
+
+| View | It answers | Built from |
+| --- | --- | --- |
+| **Inbox**, where the hub opens | What waits on me: parks with their framed decisions, approve-first pull requests, a follow-up's question, stalled pickups, double claims, a host that stopped answering | the line's needs, the Ready to merge lanes, each source's state |
+| **Board** | What is in flight, and where: Coming, Picking up, Driven, Needs you, Ready to merge, Merged | item 36's board read and placement, with pickup progress |
+| **Ready to merge** | What waits for a merge, in order: merge now, approve first, update next | item 36's [merge-ready predicate](dispatch-board.md#ready-exactly) |
+| **Work**, an opened card | One piece of work end to end: its stations, each round with its times and unresolved threads, checks, the CI hold, the follow-up, its thread | `jig ask` and the [drive ledger](../GLOSSARY.md) |
+| **History** | What ended and why, filterable, by piece of work too | the outcome log |
+| **Hosts** | Each source's last tick and how overdue, accounts and walls, failed reads, protocol version | each host's line and `hello` |
+
+**Where the facts come from.** The Inbox, the Board, Ready to merge and
+Hosts are drawn from the line each tick writes, with the forge facts its
+board read gathered, so drawing them makes no forge or tracker call, and
+they are as fresh as the tick the page's strip names. The hub reads the
+forge itself only for what no tick holds: an opened Work card's thread,
+through `jig ask --thread`, whose forge reads are conditional, so an
+unchanged pull request costs nothing against the forge's limit; a piece of
+work no line holds, such as a drive a person started on a laptop with no
+dispatcher, through `jig ask` in the same way; and, from stage 3, the
+operator's reads and the dry run. Every page the hub serves shares those
+answers, which it keeps for a minute per pull request and head. The hub's
+own forge reads keep the board read's floor: when an answer's `rateLimit`
+shows less than a fifth of the hour's budget left, the hub stops reading,
+and its cards say "not read: the forge budget is kept for the drives". So
+however many pages are open, the hub never spends what the line's ticks and
+drives need, and that is measured, not assumed: each tick's receipt records
+the budget left, and `jig hub status` the points the hub spent in the last
+hour.
+
+The Inbox is read again at each request: nothing is queued in it, and
+acting on an entry writes the record its station reads. Every card ends
+with the tick and the host it was read at.
+
+**Marks on every pull request card.** To item 36's status row (conflicts,
+checks, threads, merge;
+[dispatch-board.md](dispatch-board.md#the-status-row-on-every-pull-request-card))
+the hub adds:
+
+- **Round**: "round 4 · 18 min", from the ledger's `rounds[]`, so any
+  machine shows it, not only the one that launched the drive.
+- **Threads, by bot and not a bot.** An unattended drive works only the
+  threads an app opened (on GitHub, a GitHub App: `--bots-only`) and leaves
+  the rest to a person, so the unresolved count is split the same way, to
+  show which wait on one. An author is a bot when the forge types it as one
+  (`__typename` `Bot`), the test the drive applies; any other author is "not
+  a bot", never called a person, since an account the forge types as a user
+  may be a script's. An author costs more to read than a thread's
+  resolution, so the split covers the board read's detail set only (about
+  20 pull requests per repository), other cards show the total, and the
+  receipt records the split's cost. Across a host that cost is bounded by
+  the detail set's size in each repository and by the board read's budget
+  floor, below which the tick reads no board at all.
+- **CI hold.** Under the [CI hold](../GLOSSARY.md) label, required checks
+  fail on purpose, so a held card says "held", never "failing", and is
+  never in merge now. Once the board keeps each card's history (stage 1's
+  step 7), the mark names the last head a tick saw built, "held: not built
+  since `a1b2c3d`"; before that, and wherever no tick saw one, it says
+  "held: not built at this head". A failing check that is not required
+  still reads failing.
+
+A Picking up card shows the pickup's last phase, when it was reported and
+whether its session lives: "validating · 6 min ago · session alive".
+
+**Opening the workspace.** Where the session runs on the machine whose hub
+serves the page, a card opens its workspace and terminal: in Orca through
+`orca terminal switch`, in Herdr through its attach command. Anywhere else
+the card shows the path and the command as text.
+
+### Progress before a pull request
+
+`do-item` and `work-batch` write a `pickup-progress` record on the machine
+that runs the session, through a script called at each phase boundary
+(`plugin/skills/do-item/scripts/progress.ts`, best-effort, exit 0). Its
+phases follow the skill's steps: claimed, scouting, implementing, gate
+review, validating, pre-PR review, PR opened, armed. Its waits are a
+person's input, a suggested batch, a pattern stop and "cannot tell". The
+claim and arm scripts write their own phases, so those cannot be skipped;
+the session writes the rest, so a card shows the last phase, its age and
+"reported by the session", and nothing launches or stops because of it. A
+work-batch mints a batch key at its anchor, and members join and leave with
+when and why. Once the pull request exists, its branch name and the
+record's pull request number link the item to it. `jig gc` removes a record
+7 days after its last report, whether the pickup reached its pull request,
+which the drive ledger then follows, or its session is gone.
+
+On the machine, the record costs no tracker call per tick and works the
+same for every tracker adapter. A hidden tracker comment edited in place
+would reach every machine, but every tick would read each in-progress
+item's comments, and every adapter would need to edit comments. The cost:
+until stage 2, a host's page sees only the pickups that host runs.
+
+### Threads
+
+A **thread** is one piece of work's correspondence: the entries
+`jig ask --thread` derives for each of its addresses, in one list
+([addresses.md § The thread](addresses.md#the-thread-of-an-address)). The
+hub stores none of it. Its entries grow under `ask`'s version 1:
+
+- **Each entry gets a stable id.** A question gets its key, its class and a
+  status (open, answered, acted on, expired); an answer gets `inReplyTo`,
+  who answered and that person's permission on the repository.
+- **An answered park stays.** The ledger keeps resolved parks
+  (`resolvedParks[]`, the last 10), so a park stays in the thread, with its
+  answer, after the re-arm clears it.
+- **One thread per piece of work.** Its addresses fold by the aliases the
+  source feed joins, and a work-batch's batch key is its members' thread.
+
+The thread list holds a thread only while it holds something for a person:
+an unanswered question, an act a merge waits on, a follow-up's question. A
+click hides it in that browser alone, as the dashboard keeps a reader's
+theme; the hub stores nothing for it.
+
+### When the hub writes
+
+On a host, drive passes run with the person's forge login, so a pass's
+answer looks like the person's. A commit button on a local port could be
+pressed by any process running as the person, a pass included, which could
+then answer its own park in the person's name. So the hub writes nothing
+until [item 40](plan.md) settles how a comment a pass posts under the
+person's login is told from the person's own. Stage 3 then settles which
+proof that a person is present each commit asks for, a passkey prompt being
+one kind. Until then a person writes with `jig send` in a terminal or with
+the Orca panel's answer box, and a card offers the answer line to copy.
+
+**The Orca panel's writes.** The panel's answer box and merge button run
+`jig send` and the pinned merge command as the person, reached by a click
+in Orca's window. Nothing Jig knows of drives a plugin's panel from outside
+that window: Orca's command line drives workspaces, terminals and Orca's
+browser. That is not tried yet, so the panel's own build step tries it, and
+the panel acts only on an event the browser marks as the user's own
+(`isTrusted`). A pass that can post a comment under the person's login
+needs no panel to answer its own park, so until item 40 the panel opens no
+hole a pass does not already have. Once item 40 tells a person's answer
+from a pass's, the panel's writes are held to the same rule as the hub's.
+
+**If item 40 never settles**, the hub never writes. Stage 3 still builds
+the chat, which explains and drafts without writing: its plan cards offer
+the command to copy, and a person answers with `jig send` or the panel.
+Stages 1 and 2 stand on their own, since the status of each pull request
+and every piece of work across machines are what a person asks to see.
+
+### The operator chat
+
+The chat explains and drafts, and never sends. The operator reads the
+thread, the diff, the review threads and a failing check's log, answers
+"why is this stuck" or "what would you answer, and why", and proposes a
+plan the person confirms with a click. An answer's words are always the
+person's. These rules keep every write theirs:
+
+- **Read-only tools.** `/jig:operator`'s `allowed-tools` pre-approves
+  `jig send` rather than limiting the agent to it, so the hub's operator
+  has its own: `ask`, `line`, read-only forge reads (a diff, one review
+  thread, one check's log), and `propose`, which plans one of `jig send`'s
+  closed verbs on this thread's own work, never another target and never
+  `answer`. Thread text is quoted data: anyone can comment on a pull
+  request, so text written to steer the operator only reaches a plan the
+  person still reads.
+- **The server renders every plan card from its own dry run**
+  (`jig send --dry-run --json`), never from the model's words: the full
+  repository and its visibility, the target and its head, the join that
+  makes the target this thread's work with its evidence, the verb, the
+  exact text with invisible characters shown, the login it writes as and
+  whether that login's answer counts, and "proposed by the assistant" with
+  the entries it read.
+- **Answers come from the decision card only.** It shows the whole
+  [framed decision](../GLOSSARY.md)
+  ([ADR-0010](../docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)):
+  the question, each option with what it changes and costs, the
+  recommendation and why, the class, the steps a person must take, and what
+  the run already did. Picking an option sends `answer <key>: <letter>`,
+  which the pass resolves against its own record. Typed text goes as typed.
+- **The commit checks, then writes.** It runs the dry run again with
+  `--expect <digest>` and refuses if anything changed, then checks the
+  proof that a person is present, and only then writes, with the person's
+  login, and reads the comment back to check its author. A plan is used
+  once and expires after 5 minutes: the first commit of a plan id creates
+  its result exclusively, and any other commit of that plan, at the same
+  moment or replayed, returns that result instead of writing. The thread's
+  conversation record lists each commit: the plan id, the dry run's digest,
+  the kind of proof, the login, the time and the forge's answer.
+- **The runner is one implementation behind an interface, locked down.**
+  The hub hands a runner the system prompt, the replayed turns and its tool
+  server (a Model Context Protocol server started for the turn) and reads
+  back its events, and the runner proves its lockdown before each turn. For
+  Claude Code that is `claude -p --tools "" --strict-mcp-config` with only
+  the hub's tool server, no setting sources, no slash commands, the hub's
+  own system prompt, a configuration directory of its own and an empty
+  working directory, and before each turn the hub checks the `system/init`
+  event's tool list against its allowlist. A runner whose check fails, such
+  as a flag its command line no longer takes or a tool list that differs,
+  runs no turn, and the chat says which check failed, so a change in the
+  agent's command line closes the chat rather than opening it. A turn is
+  one process with `--no-session-persistence`, so no agent stays resident
+  and the runner keeps no transcript for another session to edit. A second
+  runner is added beside the first without touching the hub. Codex is
+  unsupported until it has a mode with no shell: its read-only sandbox can
+  still read tokens.
+- **What a turn reads, and what is kept.** The conversation record holds
+  the person's turns and the operator's answers, never a tool's output, so
+  a thread's context grows with what was said, not with what was read; each
+  turn reads again what it needs. Before anything reaches the model, a
+  check's log is cut to its failed step's last 200 lines, a diff to the
+  files and hunks the thread names, and strings shaped like tokens or keys
+  are masked. The record keeps each turn's tokens in and out, and the chat
+  shows a thread's total and each turn's time, the runner's cold start
+  included. A turn and a thread each stop at a token ceiling the user file
+  sets, and a turn the account's own limit refuses says so while the rest
+  of the hub works.
+- **Where the context goes.** A turn sends what it read to the model
+  provider of the account the runner signs in with: the person's own,
+  named in the user file (`hub.operator_account`), never an account the
+  dispatch file lists. The repositories it reads are ones the line already
+  drives, whose diffs and threads the line's sessions already send to a
+  provider. A repository whose configuration turns `hub.operator_reads`
+  off gets no operator reads of its diff, threads or logs, and the chat
+  says so. The chat runs on the laptop alone, so nothing a front's viewer
+  does reaches a provider.
+- **The conversation stays on one machine.** It runs as the person, on the
+  laptop, and is kept as a `hub-conversation` record under the machine's
+  state folder (`~/.local/state/jig/hub/`), one file per thread at mode
+  `0600` in a folder at `0700`. No station and not `ask` reads it, and the
+  page shows it apart from the thread's records. A thread settles when its
+  follow-up is done, or when its item and pull request close without a
+  merge; a `jig gc` kind removes the record 30 days after that, or 90 days
+  after its last turn, whichever comes first, and a person deletes a
+  conversation from the chat at any time. It holds no thread facts, only
+  what the person and the operator said and the commits made from the
+  thread, for when the person comes back.
+
+**The chat's parts come from assistant-ui**: its unstyled primitives
+(`@assistant-ui/react`, MIT licensed) on its `ExternalStoreRuntime`, with
+the thread list through its external-store adapter. Jig's styles and the
+renderer every card uses ([What the page trusts](#what-the-page-trusts-and-what-reaches-it))
+sit on top, and the plan card is its approval part. It is bundled into the
+built page from a pinned version and updated in batches. It adds about
+145 KiB gzipped, in a bundle loaded only when a chat opens, which the read
+views never fetch, and it must need nothing the page's content security
+policy refuses, such as `eval` or workers.
+
+### The views API, from a page to its hub
+
+The page talks only to its own hub, through the [views API](../GLOSSARY.md),
+each answer in [ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)'s
+envelope: the value, or a coded failure with a reason.
+
+- **Calls**: `hello`, `work.list(filter)`, `work.get(key)` with its thread,
+  `host.list`, `inbox`, `log.rows`, `receipt.get(host, run)`, and `changes`
+  over server-sent events (a stream the browser holds open). Stage 3 adds
+  `plan`, `commit` and `operator.turn`. There is no `wake`: a commit says
+  how its effect will arrive (`notice {how: wake | push | next-tick,
+  expectedBy}`), a wake being the one `jig send` makes.
+- **`hello`** returns `{protocol {major, minor}, instance, jig {version,
+  channel}, now, viewer {login per forge, proof}, front {kind, login,
+  capabilities}?, sources[] {host, name, state, since, protocol, jig,
+  clockOffsetMs, capabilities[]}, scope}`. A source is fresh, overdue,
+  unreachable, refused or incompatible. A different major version is
+  refused, naming the side to update; minor versions only add, and unknown
+  fields are ignored. Version 1's scope is what the person's machine
+  reads, narrowed, for a viewer a front names, by that viewer's grant
+  ([A front on a private network](#a-front-on-a-private-network)).
+- **Changes**: an opaque cursor that combines one per source. One watch per
+  hub, shared by every open stream, produces the notices: it checks the
+  records' versions (the database's data version, the drive and pickup
+  files' change times) every 5 seconds, and each source's changes arrive on
+  its one SSH connection. Nothing polls the forge for a notice: forge facts
+  change at the tick that reads them, and a Work card's own reads say when
+  they were made. With no page open the hub watches nothing and closes its
+  sources after a minute, and opens them again at the next request. A
+  notice names the work or host keys that changed, and the page reads again
+  only those. Delivery is at least once, notices merge, and `reset` is sent
+  when a cursor can no longer be served. The event id is the cursor, so a
+  reconnect resumes.
+- **Plans** carry `{planId, as {login, medium}, via, basis, expiresAt}`.
+  The plan id is the idempotency key
+  ([The operator chat](#the-operator-chat)). Actors are typed (person,
+  station, host, service). A person's act is made with that person's
+  credential, never by a host or a service under its own login.
+
+### What the page trusts, and what reaches it
+
+The hub's answers name private repositories, threads, accounts and paths,
+read with the person's forge login. So the server answers only its own
+pages, and the page treats every text it shows as data. Stage 2's server
+ships with each of these from its first version:
+
+- **Only its own address.** A request must name the hub's own address in
+  its `Host` header (its loopback address and port, or the front's name),
+  so a site that points its own name at 127.0.0.1 to reach the hub is
+  refused. A request that carries another site's `Origin` is refused, and
+  the hub sends no header that lets another site read an answer or the
+  stream.
+- **A strict content security policy.** The page loads scripts, styles and
+  images only from the hub, connects only to the hub, may not be framed by
+  another page (`frame-ancestors 'none'`), and runs no `eval` and no
+  workers.
+- **Text anyone can write stays text.** Pull request titles, review
+  threads, check logs, a source's records and the operator's replies all go
+  through one renderer, the dashboard's markdown renderer with HTML off. It
+  shows a remote image as its link text and never fetches it, so no image
+  can carry the page's data to another server, and it shows a link with its
+  full address, followed only on a click.
+- **From stage 3, a write is a `POST`** with a JSON body from the hub's own
+  origin and a proof that a person is present, so a form on another site
+  cannot commit.
+- **Local processes.** Any process running as the person already holds
+  what the hub shows, the person's forge login included, so the hub hides
+  nothing from it. A process of another account on the same machine holds
+  none of it and could still reach loopback, so the hub suits a machine
+  whose accounts with a login shell are all the person's; `jig doctor hub`
+  warns on one that is not.
+
+### The source feed, from a host to a hub
+
+A hub reads another machine through the [source feed](../GLOSSARY.md),
+which a shared control plane later serves over connections the hosts open.
+
+- **`snapshot()` and `changes(since)`** return records in their
+  [envelope](../GLOSSARY.md), each with `{host, incarnation, kind, key,
+  generation, at, visibility}`. The incarnation is an id the dispatcher's
+  state database gets when it is created, so records from a recreated
+  database are told apart. A snapshot holds live work only: the newest
+  line, each live drive's ledger and each pickup's progress record, so its
+  size is bounded by the line's own bounds, and History is read from the
+  host when the page asks, never sent in a snapshot. A cursor stays
+  servable while the host's incarnation is the same, a record that ended is
+  sent as gone, and a cursor from another incarnation gets `reset` and a
+  new snapshot. One fold library turns records and forge and tracker reads
+  into the work and host views, and every hub and a shared control plane
+  run it.
+- **Its transport is `ssh <host> jig hub rpc`**, JSON lines over SSH, with
+  no token and no new socket; later, a connection the host opens. The
+  laptop's hub uses a key of its own, made by `jig install hub` and given
+  with `IdentitiesOnly`, never the person's agent. Each host's
+  `authorized_keys` holds that key with `restrict,command="jig hub rpc"`,
+  which the install prints, so the key runs the feed and nothing else: no
+  shell, no agent and no port forwarding.
+- **Every record a source sends is untrusted.** The laptop checks it
+  against the feed's schema, drops one that fails and counts it on the
+  Hosts view, renders its text as text, hands it to the operator as quoted
+  data, and takes a source's `work.merged` only for keys that source holds.
+  A host's records show as that host's, never as the laptop's own, and the
+  laptop acts on none of them.
+- **Every fact is stamped** with the host's stable id, the dispatcher's
+  incarnation and a display name, and a visibility class: *public* facts
+  are safe on the forge, *fleet* facts belong to one person's machines (an
+  account, a workspace id, a terminal handle), *machine* facts are paths.
+  The page writes "this machine" itself, from a fact's host and `hello`'s.
+  Every reader in version 1 is the host's owner, or a person a front names
+  within that grant's scope, who gets public facts only.
+- **What version 1 carries is each for a reader it has now**: the host
+  stamp, since a laptop reads several hosts; the incarnation, since a
+  recreated database's cursors must reset; the visibility class, since a
+  front's viewer gets public facts only and the page writes "this machine"
+  from it; `capabilities[]`, since an isolated host or an older Jig answers
+  less, and the page greys what a source cannot answer; `minReader`, since
+  the Jig plugin for Orca reads the line; and, from stage 3, the plans'
+  typed actors. No field is there for the shared control plane alone.
+- **A piece of work is a set of aliases** (item keys, pull request
+  references), joined on every read from the tracker's issue links, the
+  branch name and the pickup records, each join with its evidence. A join
+  counts only on evidence the repository's own people wrote: a pickup
+  record, a tracker link, or a branch in the repository itself, never a
+  fork's, on a pull request whose author is the repository's own
+  (association `OWNER`, `MEMBER` or `COLLABORATOR`). A pull request that
+  matches only by name, from a fork or an outside author, stays a piece of
+  work of its own, so it never widens what `propose` may target. A
+  `work.merged {from, to}` change keeps the thread when a pull request is
+  linked to its item later.
+- **The line stays at version 1** and grows optional fields: the board,
+  pickups, rounds, the CI hold, and a `runId` and `readAt` per repository.
+  `minReader` says which readers it still suits; the Jig plugin for Orca,
+  which reads version 1 exactly today, reads by it before the first new
+  field ships. A tick for one repository, such as one `jig send` wakes,
+  replaces that repository's part of the line, while the line's own times
+  and the receipt stay with full ticks, so a woken tick cannot hide a
+  stopped timer.
+
+### Where it runs
+
+| Machine | What runs | Reached from | Writes |
+| --- | --- | --- | --- |
+| Host | `jig hub rpc`, which SSH starts for each laptop's connection; `jig hub` resident only where Orca's browser or a front reaches the host's page; every database opened read-only | a laptop's hub over `ssh <host> jig hub rpc`; Orca's browser in a workspace on the host; a phone through a front | none |
+| Laptop | `jig hub`, on demand or installed, reading its own records and each host over SSH | any browser on the laptop, Orca's included | from stage 3, commits as the person |
+| Orca, optional | the plugin's inbox panel and status bar, and an "Open the hub" command | the person's Orca app | the panel's answer box and merge button, as the person |
+| Phone | a browser through a front, or Orca's phone app on a host workspace | | none |
+
+**A host's hub** needs no token: every way in from another machine (SSH,
+Orca's paired host, a front) authenticates the person first, so no token
+sits in a URL a browser's history or a screenshot can leak. Orca's browser
+in a workspace on a paired host reaches that host's loopback, as Orca
+documents for remote workspaces.
+
+**A laptop's hub** reads each host that `hub.sources` lists in the user
+file, by the SSH target `ssh` already knows, and the forge and the tracker
+as the person. Its Inbox says "host unreachable since 09:12" when a host
+stops answering. A host that is off tells nobody when no hub of the
+person's is running: stage 1 has no laptop hub, and a phone's page through
+the host's own front fails to open with the host. Telling a person then
+needs a watcher outside the host, which is one of ADR-0013's conditions for
+reopening (Left out).
+
+**In Orca**, the plugin keeps its inbox panel, with the merge button that
+runs a merge-now card's pinned command as the person, and its status bar,
+and adds "Open the hub", which opens the board and each piece of work in
+Orca's browser. The panel's inbox follows the Inbox's rules rather than
+rules of its own: the fold library derives the Inbox, and the panel's
+worker reads it through `jig ask --waiting --json`, which runs the same
+fold, so a rule is changed and tested in one place. Notifications stay
+Orca's notices, each linking to its Inbox item.
+
+**What a team runs, stage by stage.** Stage 1 adds nothing to run:
+`jig dispatch dashboard` as today. From stage 2 a laptop runs `jig hub` by
+hand when the person wants the page, or installs it, and a host needs
+nothing resident for a laptop to read it: SSH starts `jig hub rpc` for each
+connection, and it exits with the connection. Only a host whose page Orca's
+browser or a front reaches keeps `jig hub` resident, through
+`jig install hub`; a front adds the socket's install, which needs root, and
+a person with Tailscale's operator rights. A hub that fails costs only the
+page: the line does not depend on it, its job restarts it, and
+`jig hub status` and `jig doctor hub` say what is wrong.
+
+Not tried yet: whether Orca's phone app opens a loopback page through the
+paired host, and whether `orca terminal switch` run on a host reveals the
+tab in a paired laptop's window. Before stage 2 is planned, both are tried
+with a throwaway page on loopback, and the front's socket and headers with
+them. If Orca's phone app cannot open the page, a phone reaches the hub
+through a front only; if Serve cannot reach the socket, the front waits,
+and a phone reads stage 1's page as it does today.
+
+### A front on a private network
+
+A *front* ([private-network front](../GLOSSARY.md)) is an optional layer
+that publishes the loopback hub to a private network, with a certificate
+and the viewer's identity. Tailscale Serve is its first implementation; a
+reverse proxy with an identity provider, or an SSH tunnel, does the job
+without Tailscale. This is checked against
+[Tailscale's Serve documentation](https://tailscale.com/kb/1312/serve) and
+its 1.104 command line, not yet with the hub.
+
+- **A real HTTPS address for the phone.**
+  `tailscale serve --bg --https=443 unix:/run/jig-hub/front.sock` publishes
+  the host's hub at `https://<host>.<tailnet>.ts.net`, on the tailnet (the
+  private network Tailscale runs), with a certificate Tailscale obtains.
+  The page is then a secure context, one a browser trusts with passkeys,
+  the clipboard, installing the page on a phone and later web push, which
+  a plain tailnet address over HTTP is not. The tailnet decides who
+  reaches the hub, so no Jig token is needed. The machine's name lands in
+  public certificate logs.
+- **A socket only the front reaches.** The machine's service manager
+  creates the socket at install, owned by root at mode `0600` in a folder
+  only root writes, and hands it to the hub's service, which runs as the
+  person. Tailscale's daemon, running as root, reaches it; no process of
+  the person's does, which is why installing it needs root. The hub trusts
+  the identity headers on that socket alone. On its loopback port it
+  ignores them: every request there is the machine's own person and sees
+  the owner's view, which a header neither narrows nor widens. A serve that
+  targets the loopback port would show every viewer the owner's view, so
+  `jig doctor hub` fails on it.
+- **Who is looking.** Serve adds `Tailscale-User-Login` to each request and
+  strips any copy a client sent; `hello` names that viewer, with
+  `tailscale-serve` as its proof. The host's owner is the login that owns
+  the host's node in `tailscale status --json`. A tagged device, which the
+  tailnet's policy names by a tag (as servers usually are) rather than by a
+  person's login, sends no login, so a request from one sees nothing. A
+  host that is itself tagged has no owner, so there every viewer needs a
+  grant.
+- **What each person may see.** A grant in the tailnet's policy carries an
+  app capability under `jig-harness.dev/cap/hub`, such as
+  `{owners: ["org-a"]}`. Serve with `--accept-app-caps` forwards it as
+  `Tailscale-App-Capabilities` (Tailscale 1.92 or later), and it becomes
+  the viewer's scope per repository. Without a grant only the host's owner
+  sees anything. Scope comes with the front because without it every
+  tailnet member who reaches the host would see the owner's whole view; the
+  grant carries it with no account in Jig, so it costs a filter and its
+  tests.
+- **Scope is applied in one place.** The server filters every answer and
+  every notice by the viewer's scope before it leaves: `work.list`,
+  `work.get`, `inbox`, `log.rows`, `host.list`, `receipt.get` and the keys
+  `changes` names alike. A viewer other than the owner gets the public
+  facts of the repositories the scope names, never a fleet or machine fact
+  (an account, a wall, a workspace, a terminal, a path) and never a
+  receipt, which are the owner's. A test of each call and of the stream
+  holds it.
+- **A grant shows what the owner can read.** The hub reads every
+  repository with the owner's forge login, so a grant shows its viewer what
+  the owner reads in the repositories it names. The grant is the tailnet's
+  policy, written by whoever administers the tailnet; `jig doctor hub`
+  lists each login the grants name with the repositories it would see, so
+  a wrong grant can be seen. A front's viewer only reads: the chat runs on
+  the laptop alone.
+- **Laptop to host.** Tailscale SSH can carry `ssh <host> jig hub rpc`,
+  with tailnet identity in place of SSH keys. Its rules grant a login
+  rather than one command, so the restricted key
+  ([The source feed](#the-source-feed-from-a-host-to-a-hub)) stays the
+  default.
+- **It does not unblock writes.** Tailscale says who is looking, not whose
+  forge login writes. It makes a proof-of-presence prompt possible on the
+  phone; writes still wait for item 40.
+- **Derived, not declared.** `jig doctor hub` reads `tailscale serve status
+  --json` and fails on Tailscale Funnel, which publishes to the open
+  internet; on `--tcp` mode, which passes the encrypted connection through
+  with no identity; and on a serve that targets the hub's loopback port.
+  `jig install hub --front tailscale` prints the commands that install the
+  socket, for a person with root, and the serve command, for a person with
+  Tailscale's operator rights.
+
+### The size it is built for, and its deadlines
+
+Per laptop hub, 5 hosts. Per host, the size the board is built for
+([dispatch-board.md § The size it is built for](dispatch-board.md#the-size-it-is-built-for)):
+10 repositories, with 100 open pull requests in each. Per hub, 10 pages
+open at once, on the person's own devices and those of the people a front
+names. The outcome log grows by one row per ended launch, and nothing
+removes a row. The fixtures of the hub's tests are built at that size, and
+a test fails a view that answers slower than its target:
+
+- **A view drawn from the line** (the Inbox, the Board, Ready to merge,
+  Hosts) answers within 1 second, since it folds records read on its own
+  machine or already held from a source, and makes no forge or SSH call.
+- **An opened Work card** shows what the line holds at once and its thread
+  within 5 seconds. It reads one thread per address of the piece of work,
+  4 at a time, each read conditional.
+- **History** reads one page of 100 rows within a time window, the
+  dashboard's default one, through the log's indexes by time and by
+  repository and target, so a filtered read stays under a second at a year
+  of rows.
+- **The page a phone loads** is the read views alone, the chat's bundle
+  being fetched only when a chat opens, and the browser suites record its
+  size and its first paint at phone width, so growth is seen from one build
+  to the next.
+
+Its deadlines keep one slow call or source from holding the rest, and its
+own figures say when it is slow:
+
+- **Every child ends at its deadline.** SSH connects within 10 seconds and
+  checks the connection every 15 (`ServerAliveInterval`, two misses
+  allowed), so a host that stops answering shows unreachable within about
+  45 seconds. Each feed call ends within 10 seconds, each forge read within
+  15, `jig send --dry-run` within 30 and an operator turn within 2 minutes.
+  A source that fails is tried again after 5 seconds, then after twice the
+  last wait, up to 5 minutes, each wait lengthened by up to a fifth at
+  random.
+- **One source never holds the page.** A request answers at once from what
+  the hub holds of each source. A source that stopped answering shows its
+  work as of its last answer, marked stale with that time, and every other
+  source's work is unchanged. A test hangs one source and finds every view
+  still within its target.
+- **The hub's own figures.** `jig hub status` prints each view's last and
+  slowest answer time of the last 100, the forge points the hub spent in
+  the last hour, its open streams, each source's reconnects and its
+  resident memory. `jig doctor hub` fails when a view's slowest answer is
+  past twice its target, or when the budget floor has stopped the hub's
+  forge reads.
+
+### Install and upgrade
+
+- **`hub` is a component** of the `jig` command beside `dispatch` and `gc`
+  ([plugin/README.md](../plugin/README.md#the-jig-command)), with
+  `install`, `uninstall`, `status` and `doctor`. Its job is of a new
+  `resident` kind: on systemd a simple service restarted on failure but not
+  on exit `2`, with a start limit, and lingering (so it runs with nobody
+  logged in) checked at install; on launchd `KeepAlive` with a throttle.
+  Cron is refused with "run `jig hub` by hand"; Windows is out of scope, as
+  for every installed job.
+- **The hub never upgrades itself.** The launcher's resident mode has no
+  deadline, resolves the installed copy every minute and restarts the hub
+  when it is new, so the timers stay the only upgraders. A restart drops
+  every stream and source: pages reconnect and get `reset`, since their
+  cursors lived in the hub's memory, and each source is opened again after
+  a random wait of up to 30 seconds, so a laptop reading several hosts that
+  upgraded together does not reopen them all at once. A snapshot is the
+  size of a line, so a reset costs one line per host.
+- **It runs with what the dispatcher resolves**: the dispatcher job's
+  `PATH` and the forge command line's configuration, so both resolve the
+  same Jig and forge login, and none of the rest of the dispatcher's
+  environment. `doctor` flags a mismatch, and any variable the hub was
+  given and does not read.
+- **It never migrates a database.** Every read opens read-only, the Hosts
+  view shows `source-too-new` or `source-too-old`, and a test fails if the
+  hub imports an open that migrates.
+- **An isolated host stays supported.** A hub run as a service user with no
+  network and a copy of the database shows the views from the line alone,
+  and threads as not read.
+- **The Orca plugin installs from released copies**: on laptops from a
+  Jig-owned Orca catalog of pinned releases, which Orca keeps current (Orca
+  has no command-line install verb); on a host as an immutable folder per
+  version, staged by `jig` and dev-loaded. The catalog is how the plugin's
+  own releases reach Orca, not a channel for the hub: the plugin already
+  ships from its own repository, and its release step adds each release to
+  the catalog, while the hub's page ships with Jig alone, at one version.
+  Dev-loading on laptops too would leave each one on the version a person
+  last loaded. A version asking for new access is reported as "Orca plugin
+  update needs review", never approved by `jig`; `doctor` fails when a
+  dev-loaded and a catalog copy run at once.
+
+### Closing a way in
+
+Each way in is closed where it is granted, and the hub holds no credential
+of its own, so it notices at its next read:
+
+- **A laptop**: remove its key's line from each host's `authorized_keys`.
+  The laptop's next connection is refused, and its Hosts view says refused.
+- **A front's viewer**: remove the grant from the tailnet's policy, or the
+  login or device from the tailnet. Serve sends the capability with each
+  request, so the next request sees the narrower scope.
+- **The forge login a hub reads with**: revoke it on the forge and replace
+  it in the dispatcher's environment, which the hub's job copies. The hub's
+  next read fails, its cards say not read, and `jig doctor hub` names the
+  failure.
+- **The operator's account**: sign it out of the runner's configuration
+  directory, or revoke its key. The next turn fails with its reason, and
+  the rest of the hub is unchanged.
+- **A host that may be compromised**: remove it from `hub.sources`. Until
+  then its records show as that host's and are acted on by nothing on the
+  laptop.
+
+### A reader, not a daemon
+
+[ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md) keeps Jig's
+components on records with no resident coordinator. The hub coordinates
+nothing: it holds no request, no component reads from it, and the line
+never waits on it, so stopping it changes nothing the line does. Where it
+is resident, it is the dashboard grown, so Jig still has one kind of
+listening server, on loopback or on a socket only a front reaches. This
+design adds a condition for reopening ADR-0013: a second person who acts
+through a host's hub, or who needs a scope Jig itself keeps rather than one
+a front's grant carries.
+
+[ADR-0012](../docs/adr/ADR-0012-failures-as-values.md) reopens its choice
+of programming model when Jig holds a resident process with real
+concurrency, and the hub stays below that line. A request reads its
+records in one short read transaction and closes it before it folds them
+with forge facts, so no forge, tracker or SSH call is awaited inside one,
+and a `changes` stream holds its cursor between notices, not a
+transaction. A test serves the page through a tick and finds the tick's
+checkpoint of the write-ahead log completes, and `jig doctor hub` reports
+that log's size. A source is an `ssh` child whose lines the hub parses; an
+operator turn is a child process it only pipes; each child ends at its
+deadline. Its only shared state is the cursors and, from stage 3, the plans
+it issued. A plan's single use is settled on the file system, not in the
+hub's memory: the first commit creates the plan's result exclusively, and
+another commit of the same plan waits within its deadline for that result
+and returns it. No request cancels another's work, and no two requests
+write the same state. A step that needs either, such as a turn that
+outlives its request, crosses the line, and ADR-0012 is reopened before
+that step is built.
+
+### Where it lives
+
+`jig hub` is `plugin/hub/`, registered in `plugin/jig.ts`: `jig hub` serves
+the page on loopback and prints its address, and `jig hub rpc` speaks the
+source feed on standard input and output. The page grows from the
+dashboard's (`plugin/dispatch/dashboard-page/`), and from stage 2
+`jig dispatch dashboard` starts the same server, read-only, on loopback.
+The fold library is in `plugin/shared/`, for the dispatcher, `ask` and the
+hub alike. `pickup-progress` and `hub-conversation` are registered records
+on the machine medium.
+
+The configuration it adds, each documented in `plugin/CONFIGURATION.md` by
+the step that adds it: `hub.sources` and `hub.operator_account`, the hosts
+a laptop's hub reads and the runner's configuration directory, in the user
+file (`$JIG_HOME/jig.yaml`) only; `hub.operator_turn_tokens` and
+`hub.operator_thread_tokens`, the token ceilings of a turn and of a thread,
+in the same file, with defaults stage 3 sets from the turns its tests
+measure; and `hub.operator_reads` in a repository's
+`.config/jig.yaml`, on unless set to `false`. The capability
+`jig-harness.dev/cap/hub` lives in the tailnet's policy, not in Jig.
+
+### Toward a shared control plane
+
+The glossary calls each host's dispatcher Jig's first
+[control plane](../GLOSSARY.md). The [shared control plane](../GLOSSARY.md)
+is one service that reads the forge and the tracker once for many hosts,
+hands them work and serves the source feed through connections the hosts
+open, so neither the page nor a host's records change. Handing out work
+goes past ADR-0013, so it needs a decision record of its own, which stages
+1 to 3 do not. These are written down now so nothing before it closes the
+way:
+
+- **A host keeps authority over what it did.** The control plane stores
+  records and derives columns and threads when it reads them, and keeps no
+  phase column of its own: a mirror of a pull request's state drifts from
+  the pull request.
+- **No launch without the winning claim on the one medium that decides.**
+  A tick's plan or the control plane's offer is only a proposal. Which
+  medium decides is a setting on the repository's entry that every host
+  dispatching the repository agrees on. During a migration the control
+  plane posts the forge claim for each grant, and a grant counts only once
+  the forge's read-back shows it winning.
+- **A person's act is made with that person's credential.**
+- **Hosts connect out; nothing connects in.** A host dials out and pulls
+  work when a slot frees, and its reports carry an idempotency key, so one
+  sent twice counts once.
+- **A nudge carries no content and is safe to lose.** Correctness comes
+  from the records and a periodic reconcile.
+- **Seam: the tick's world view apart from its machine view.** The world
+  view is the forge's and the tracker's facts, with
+  `fresh(target, notOlderThan)` for the re-check before each act; the
+  machine view is the runtime's sessions, the launch records and the walls,
+  and is never remote. The tick's observe phase mixes the two and writes
+  records, so the split follows the tick's split into observe, plan and
+  apply.
+- **Seam: pickups get a shared claim before anything hands them out.** A
+  pickup has no claim before its session starts, so it is the stage most
+  likely to launch twice. `SharedTarget` widens to a work key and a pickup
+  claim is added; until then, dispatching one repository's pickups from
+  several hosts is unsupported.
+
+None of this is built before the control plane's own stage: version 1
+carries no field for it alone, and the seams are built just before it, so
+a control plane that takes another shape costs nothing already built. A
+parked decision is then one card that every surface shows. Waiting for the
+decision record: hosting and the database; webhook intake and reconcile;
+host enrollment, a device grant that yields a per-host credential; how
+people sign in; whether it stores references only or comment text too; the
+assignment policy; the owner host's duties (notices, labels) moving to it.
+Its trigger is one of ADR-0013's conditions for reopening, the one this
+design adds among them. Where it lives is a person's decision.
+
+## Build order
+
+One pull request per step, each shippable alone, so a stage's size is its
+list of steps.
+
+**What decides stages 2 and 3.** This design commits to stage 1. Stages 2
+and 3 are planned in detail, and built or not, once stage 1 is in use, by a
+person, from what using it shows: the waiting loss measured from then on
+(stage 1's steps 3 and 4 record it), and what the person still pieces
+together from terminals and the forge. A small loss, or a page that already
+answers where work stands, shrinks or stops them, and their parts of this
+design are then dropped. Item 36's measurement of the waiting loss is a
+baseline for stage 1, not a gate: the board is what a person asked for, so
+its placement, the design round and the board view are built whatever the
+counts show.
+
+**Stage 1: the per-pull-request status, on the dashboard that exists.** It
+is most of what a person asks to see, every later stage needs it, and using
+it shows what the later stages must add. It adds no server, no write route
+and no chat. Steps 1, 2, 5 and 6 can start at once; 3 needs 1 and 2; 4
+needs 3; 7 needs 3, 5 and 6; 8 needs 7's fixtures; 9 needs 8.
+
+1. **Rounds and resolved parks in the drive ledger**, under its current
+   version, the last 10 of each, cut first as the ledger nears its
+   65,536-byte cap. A reader takes a missing field as unknown, never as zero
+   rounds, and the previous release's takeover keeps the drive running.
+2. **The Orca plugin reads any line whose `minReader` it meets**, ignoring
+   fields it does not know, and otherwise says to update the plugin.
+3. **The board read, with the marks**: item 36's step 2
+   ([its build order](dispatch-board.md#build-order)) with the round, the
+   threads by bot and not a bot, and the CI hold, which reads "held: not
+   built at this head" until step 7 keeps each card's history.
+4. **Ready to merge on today's dashboard**: item 36's step 3 with the marks,
+   its server opening every database read-only, so serving the page leaves
+   a database one schema behind unchanged byte for byte.
+5. **The line refreshed from one repository's tick**, with `runId`,
+   `readAt` and `minReader`, a stopped timer still shown overdue.
+6. **A pickup's progress before its pull request**: the record, its script
+   and calls, its `jig gc` kind, and the tick's and `jig ask pickup@`'s
+   reads of it.
+7. **Every card on the board**: item 36's step 4, with Picking up fed by
+   step 6 and the CI hold naming the last head a tick saw built.
+8. **The hub's design round**, in place of item 36's step 5: one brief from
+   [`design-brief-builder`](../plugin/skills/design-brief-builder/SKILL.md),
+   from the fixtures of steps 3 to 7, for the whole hub with the chat: the
+   Inbox, the Board, Ready to merge, the Work page with its thread, and the
+   plan and decision cards, at desktop, Orca's browser pane and phone
+   width, light and dark. It keeps item 36's scenarios and adds a park with
+   three decisions, a thread from pickup to follow-up, a CI hold beside a
+   broken build, a batch of five items mid-pickup, an unreachable host and
+   a laptop with two sources. It draws stage 3's cards and the chat now,
+   because one round is one person's session and the layout (where the
+   chat and the cards sit at phone width) is what a second round would
+   redo; if item 40 changes what a write asks for, a card is redrawn inside
+   that layout. The earlier round forbade any control that looks like a
+   write, so the cards that write are drawn as stage 3. The round itself is
+   a person's; it lands under [`prototypes/`](prototypes/rubric.md) with
+   its scorecard.
+9. **The Board and Work views** as the round designed them, item 36's step
+   6 among them, with the Help view explaining the columns, the Ready
+   conditions, the marks and what `only_labeled` leaves out.
+
+**Stage 2: each piece of work across machines.** Before it is planned, a
+throwaway page tries Orca's phone app and the front
+([Where it runs](#where-it-runs)).
+
+1. `jig ask`'s thread additions, the fold by aliases with its rule for
+   joins, and the thread list.
+2. `jig send --json` with `--expect`.
+3. The `jig hub` server: the views API with its checks of the address, the
+   origin and the content security policy, the source feed over
+   `jig hub rpc` with its restricted key, and the fold library.
+4. The views the server adds to stage 1's: the Inbox, Hosts, and History by
+   piece of work, with `jig ask --waiting` deriving the Inbox.
+5. The `resident` job kind and `jig install hub`, with
+   `jig dispatch dashboard` starting the hub's server on loopback.
+6. The private-network front: the socket the service manager hands the
+   hub, the scope filter on every call and notice, and `jig doctor hub`'s
+   checks of Tailscale Serve. With it, `jig dispatch dashboard` drops the
+   private-address bind (`dashboard.listen`) and the token in its URL, and
+   a dispatch file that still sets `dashboard.listen` gets a warning naming
+   the front.
+7. The Orca plugin's "Open the hub", and opening a workspace from a card,
+   for Orca and for Herdr; the panel's inbox read through
+   `jig ask --waiting --json`.
+8. The Orca catalog and the host's staged install.
+9. A link from each notice to its Inbox item.
+
+**Stage 3: the chat, and writes once item 40 settles whose write is a
+person's.** Steps 2 and 3 need nothing from item 40; until step 1 is
+built, a plan card offers its command to copy.
+
+1. Proof that a person is present, `plan` and `commit` with the commit's
+   entry in the thread's record, and the merge button with the pinned
+   command.
+2. The runner interface, Claude Code's runner and the hub's tool server,
+   with its token ceilings.
+3. The assistant-ui chat, the `hub-conversation` record and its `jig gc`
+   kind.
+
+**The shared control plane, last**: its decision record, once its trigger
+holds. Before it, the tick splits its world view from its machine view,
+after its split into observe, plan and apply, and pickups get a shared
+claim.
+
+## Left out
+
+- **A merge button outside the Orca panel, until stage 3's proof of
+  presence.** The page gives the link and the
+  [pinned merge command](dispatch-board.md#the-merge-command); the panel's
+  button runs that command as the person, with no route into a host.
+- **A forwarded dashboard per host, or the forge's own views, in place of
+  stages 2 and 3.** Forwarding a host's dashboard over SSH (`ssh -L`) is
+  how a laptop reads stage 1's page; it shows one host per tab, joins
+  nothing across machines and shows nothing before a pull request. The
+  forge's pull request and notification views show no pickup, no framed
+  decision and nothing the dispatcher read. Whether that is enough is what
+  stage 1 in use shows, and stages 2 and 3 are built only if it is not.
+- **A watcher for a host that stopped.** Telling a person that a host
+  stopped, when nothing of theirs is running, needs a watcher outside the
+  host, which is one of ADR-0013's conditions for reopening. Until then a
+  laptop's Inbox says so while its hub runs.
+- **Free text to a running session.** The hub composes no prompt for a
+  session, as `jig send` does not; a person who wants to talk to one opens
+  its workspace.
+- **A mailbox directive to a driver on another machine.** The mailbox
+  belongs to one working tree; stopping a drive elsewhere stays that
+  machine's act.
+- **A wake on the page.** A page that starts a tick is a route into the
+  host; a commit's notice says how its effect arrives instead.
+- **A thread store held by the hub.** Threads are derived from records at
+  each read; the conversation record is all the hub keeps, and nothing
+  reads it as a thread.
+- **The hub inside the Orca plugin.** A panel has no network, so it would
+  mean bundling Jig's page into the plugin's repository: a second release
+  channel for the page, version skew, and the hub's main surface tied to
+  Orca.
+- **A tailnet address with a token per device as the way in.** It needs
+  pairing, rotation and revocation, and every token holder sees every
+  repository the host dispatches, across organizations.
+- **Funnel.** A front publishes the hub to a private network only.
+- **The shared control plane itself.** It waits for its decision record
+  and its trigger.
+
+## Review
+
+Critiqued on 2026-11-06 by reviewers with fresh context: the red-team
+skill's personas (a critical chief technology officer, a security auditor,
+a performance engineer and a cost optimizer), each in a new session that
+saw only its brief and this design, read as an architecture document; and
+a consistency review that read it beside the designs and decision records
+it amends. Both read the working tree on commit `2b5b8991`, which held this
+design uncommitted. The reports are in the pull request that adds this
+design.

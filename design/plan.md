@@ -75,7 +75,8 @@ the report, then re-arms within account caps with the timer, then pickups,
 then follow-ups and notifications, then control: a permanent outcome
 log, one row per ended launch with an outcome class from a
 closed list, a dashboard that filters it (`jig dispatch dashboard`, no
-report files), drift from each stage's expectation reported and notified
+report files, which grows into item 42's hub and keeps its command),
+drift from each stage's expectation reported and notified
 but never acted on, recurring classes routed to `reflect`, and one
 mechanical nudge (`steer`, "continue" after a usage limit resets) with no
 open-ended prompt, then the re-drive of a converged pull request the
@@ -142,12 +143,23 @@ request's status row need (conflicts, checks with the failing ones named,
 unresolved threads, the derived merge state); every card says whether it
 settles by waiting or waits on a person, and which act; a pull request that
 becomes ready is notified once per head; and the outcome log records when
-work became ready and why it left. Later, a board view places every piece
+work became ready and why it left. The hub (item 42) adds marks to every
+status row: the drive's round and its time, from the ledger; the
+unresolved threads split by bot and not a bot, on the board read's detail
+set only, its cost in the receipt; and the CI hold, under which required
+checks fail on purpose, so a held card reads held, never failing, and is
+never in merge now. Later, a board view places every piece
 of work in one column (coming, picking up, driven, needs you, ready to
 merge, merged), each card moving in any direction and saying where it came
-from when it moved back. Built in the design's order: the waiting loss
-measured from the existing log first, then Ready to merge in the tick and
-on the page, then the board's placement, a design round and the board view.
+from when it moved back. Built in the design's order, as the first stage
+of the hub (item 42): the waiting loss measured from the existing log
+first, then Ready to merge in the tick and on the page, then the board's
+placement, a design round and the board view. The measurement is a
+baseline, not a gate: the board's placement, the design round and the
+board view are built whatever its counts show, since the board is what a
+person asked for. The design round covers the whole hub, its views, cards and chat, so
+the layout holds when the hub's writes arrive, and the board view comes
+with the hub's Work page.
 
 Done when, on a host running Orca, a converged pull request whose review the
 forge witnesses and that the forge lets merge is in merge now with its
@@ -160,9 +172,88 @@ one whose base then conflicts leaves Ready to merge with its cause, a
 failing board read leaves the tick's launches as they were, a drive a
 person armed by hand shows on the board as claimed, every pull request
 card shows its conflicts, checks, threads and merge state with the failing
-checks named, and the history view filtered to yesterday shows how many
+checks named, a pull request under the CI hold reads held and is never in
+merge now, and the history view filtered to yesterday shows how many
 pull requests became ready, were merged, are still waiting, and were lost
 to waiting.
+
+### 42. The hub: one place to watch and steer the line
+
+Where a piece of work stands is spread over machines and tools: the
+dispatch dashboard shows one host's dispatcher and no pull request that
+host does not hold, `jig ask` answers one address at a time, and checks,
+threads and whether a pull request can merge are on the forge. Nothing
+shows a tracker item, its pull request and its follow-up as one piece of
+work, nothing shows a pickup's progress before its pull request exists,
+and answering a parked question takes a terminal.
+[design/hub.md](hub.md) has how it works. What it will build: the
+dispatch dashboard (item 33) grown into one page, `jig hub` in
+`plugin/hub/`, that opens on an Inbox of what waits on the person and adds
+a Board, Ready to merge, a Work page for each piece of work with its
+thread, History and Hosts, each derived from the line's records at every
+read and none of them stored; marks on item 36's status row (the
+drive's round and its time, the unresolved threads by bot and not a bot,
+and the CI hold, which reads held and never failing); a `pickup-progress`
+record that `do-item` and `work-batch` write at each phase, so a Picking
+up card shows the last phase and its age; item 39's thread grown under
+`ask`'s version 1 into one thread per piece of work; the views API from a
+page to its own hub and the source feed from a host to a hub over
+`ssh <host> jig hub rpc`, every fact stamped with its host and a
+visibility class, so a shared control plane can later serve the same feed;
+a host's hub read-only on loopback, answering only its own pages, a
+laptop's hub that serves any browser and reads each host over SSH (Secure
+Shell) with a key that runs the feed and nothing else, and Orca, where a
+person uses it, opening the hub in its own browser; an optional
+private-network front, Tailscale Serve first, that gives a phone an HTTPS
+name and the viewer's login, scopes what each person sees by the grants of
+the tailnet (Tailscale's private network), trusts that login only on a
+Unix socket only Tailscale's daemon reaches, and refuses Tailscale Funnel,
+which publishes to the open internet; `hub` as a component of the `jig`
+command beside `dispatch` and `gc`, installed as a new `resident` job kind
+only where Orca's browser or a front reaches a host's page, which never
+upgrades itself and never migrates a database; and an operator chat that
+explains and drafts and never sends, its plan cards rendered from
+`jig send`'s own dry run and its conversation kept on the person's laptop
+as a `hub-conversation` record that `jig gc` removes 30 days after the
+thread settles. The hub's views read the forge facts the tick already
+read, and its own forge reads keep the board read's budget floor, so an
+open page never spends what the drives need. Jig stays whole without Orca:
+every view works in any browser, the machines talk over SSH, and each
+thing Orca adds has a Herdr or plain-text equivalent. Every write is the
+person's, made with their own credential, and the hub writes nothing until
+item 40 settles how a comment a pass posts under the person's login is
+told from the person's own; each commit then asks for proof that a person
+is present. Nothing of it is built. Built in stages, one pull request per
+step: the per-pull-request status on the dashboard that exists (rounds and
+resolved parks in the drive ledger, item 36's board read, Ready to merge
+and placement with the marks, a line one repository's tick refreshes,
+pickup progress, then one design round for the whole hub and the Board and
+Work views); then each piece of work across machines (item 39's thread
+additions, `jig send --json` with `--expect`, the `jig hub` server, its
+Inbox, Hosts and History views and its install, the private-network front,
+the Orca plugin's "Open the hub" command and its install from a catalog);
+then the chat, and writes once item 40 settles. Stages 2 and 3 are planned in detail once stage
+1 is in use, and a person decides from what using it shows whether each is
+built; the shared control plane waits for a decision record of its own
+(Later: a control-plane service for the shared records).
+
+Done when, on a headless host running the dispatcher, every pull request
+card shows its round and its unresolved threads, split by bot and not a
+bot on every card in the board read's detail set and as a total on the
+others, and, under the CI hold, "held" in place of failing, never in merge
+now; a
+pickup shows its last phase and its age before its pull request exists; a
+tick that reads one repository refreshes that repository's part of the
+page while a stopped timer still reads overdue; serving the page leaves a
+database one schema behind unchanged byte for byte; a laptop's hub shows
+each host's work, read over SSH, beside its own in any browser, with the
+host's hub listening on loopback only, and says since when a host stopped
+answering; one piece of work opens as one Work page, its item, pull
+request and follow-up under one thread; Orca's browser opens the same
+page; a phone through the front sees only the repositories its grant
+names; and, once item 40 has settled, a commit from the hub writes only as
+the person, after proof that they are present and a dry run that still
+matches, while the operator chat proposes and never sends.
 
 ### 35. One jig command line
 
@@ -771,8 +862,13 @@ guard record before its last registry read and the plugin's
 `agent.launch.before` hook, reading that record without an awaited call,
 refuses a launch into a worktree gc holds; a spike on binding a launch to
 its account through the same hook; the plugin's status bar item; and the
-Jig panel, which opens on the person's inbox with the board and the
-addresses beside it. Also open: what Jig asks of Orca (usage per account
+Jig panel, which stays the person's inbox, with an answer box and, on a
+merge-now entry, a button that runs the pinned merge command as the
+person. The board and each piece of work open in the hub (item 42), which
+the plugin's "Open the hub" command opens in Orca's own browser. Orca
+stays optional: every view of the hub works in any browser,
+and each thing the plugin adds has a Herdr or plain-text equivalent. Also
+open: what Jig asks of Orca (usage per account
 from the command line; a phone push only when an agent needs input; a hook
 before a workspace's removal; filed by a person, each with its pull request
 offered). One pull request per step, in the design's order.
@@ -847,7 +943,20 @@ and the rule it rests on,
 commands in a session the line started
 ([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do));
 and the operator skill, `/jig:operator`
-([plugin/skills/operator/](../plugin/skills/operator/SKILL.md)).
+([plugin/skills/operator/](../plugin/skills/operator/SKILL.md)). Also
+open, for the hub (item 42), which builds them as its stage 2's first
+step: the thread grows under `ask`'s version 1, each entry with a stable
+id, a question with its key, its class and a status (open, answered, acted
+on, expired), an answer with the question it replies to, who answered and
+that person's permission on the repository, and an answered park kept from
+the drive ledger's resolved parks; the addresses of one piece of work fold
+into one thread by its aliases (the item key, the branch, the pull
+request), each join with its evidence and only on evidence the
+repository's own people wrote, and a work-batch's batch key makes
+its members one thread; and `ask` lists the threads that hold something
+for a person (an open question, an act a merge waits on, a follow-up's
+question) only while they hold it, storing nothing when a reader hides
+one.
 
 Done when `jig ask` answers the address of a pick-up, a drive and a
 follow-up on the machine that dispatched them and, from the forge and the
@@ -857,8 +966,11 @@ shows for an address is the one `jig ask --thread` prints; each verb of
 `jig send` writes a record its reader acts on at its next run, and a
 session the line started is refused the verbs that are a person's; the
 operator answers "where does this stand" and "what waits on me" from those
-commands alone; every ended launch names what follows it; and every parked
-question names the person it waits on.
+commands alone; every ended launch names what follows it; every parked
+question names the person it waits on; an answered park stays in its
+thread with its answer and status; and a pick-up, the drive of the pull
+request it opened and that pull request's follow-up read as one thread,
+which leaves the thread list once nothing in it waits on a person.
 
 ## Later
 
@@ -953,15 +1065,27 @@ question names the person it waits on.
   dispatch one repository publish who holds a launch and how it ended on the
   forge, and each reads the others' at its next tick
   ([plugin/RECORDS.md](../plugin/RECORDS.md#on-the-forge-and-the-tracker)).
-  A small service with a database, which the hosts write to and a person
-  reads, not a message bus, joins as a second implementation behind the same
-  interface (`plugin/shared/records/shared.ts`) under its own
-  `records.shared` value. Build it when one of
+  A service that keeps those records for many hosts is the
+  [shared control plane](hub.md#toward-a-shared-control-plane) the hub's
+  design describes: one service with a database that reads the forge and
+  the tracker once for many hosts, keeps the hosts' records as a second
+  implementation behind the same interface
+  (`plugin/shared/records/shared.ts`) under its own `records.shared` value,
+  hands the hosts their work and serves the hub's source feed through
+  connections the hosts open. Handing out work coordinates the hosts, which
+  ADR-0013 declines, so the service gets a decision record of its own,
+  written when one of
   [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md#when-to-reopen)'s
   conditions holds: hosts dispatching one repository must see each other's
   state within seconds rather than at their next tick, a nudge to a running
-  session needs a connection rather than a terminal keystroke, or someone
-  outside a host must be told that a dispatching host has stopped.
+  session needs a connection rather than a terminal keystroke, someone
+  outside a host must be told that a dispatching host has stopped, or a
+  second person acts through a host's hub, or needs a scope Jig itself
+  keeps rather than one a private-network front's grant carries. Until then the
+  invariants and seams that
+  [design/hub.md](hub.md#toward-a-shared-control-plane) lists keep the way
+  open, among them a shared claim for pickups, without which one
+  repository's pickups are dispatched from one host only.
 - **The mailbox as every session's inbox.** The
   [drive mailbox](../GLOSSARY.md) reaches a drive's driver only, and the
   dispatcher's one nudge, the `continue` it types into a session whose usage

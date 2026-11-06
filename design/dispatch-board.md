@@ -20,8 +20,9 @@ checks running) from work that waits until a person acts (an approval
 nobody gave, a park): left alone, the second kind waits forever.
 
 How much ready work waits, and how much of it is lost to a conflict, is
-measured first ([Build order](#build-order)): the outcome log already holds
-the re-drives of converged pull requests that went stale, with their cause.
+measured first, as a baseline ([Build order](#build-order)): the outcome log
+already holds the re-drives of converged pull requests that went stale, with
+their cause.
 
 With this built, a **Ready to merge** list leads the page: the converged
 pull requests grouped by the next known act
@@ -42,7 +43,10 @@ history view says how long ready work waited and how much was lost.
 This is the design of [plan.md](plan.md) item 36. It builds on item 33,
 [the dispatcher](dark-factory-dispatch.md), every step of which is built:
 the tick, its ledger classes, the serialized areas and the outcome log the
-board reads.
+board reads. The [hub](../GLOSSARY.md), the page the dashboard grows into
+([hub.md](hub.md), item 42), builds the board as its first stage, adds the
+round, the threads by bot and not a bot and the CI hold to the status row,
+and lets a tick for one repository refresh its part of the line.
 
 ## How it works
 
@@ -80,10 +84,12 @@ A card says what it is (pull request or item, its title and link, its
 repository), how long it has been in its column, the status row below when
 it is an open pull request, and what the column needs said:
 
-- **Driven:** the drive's round, its unresolved threads per round where
-  this machine launched it (the samples the line carries), and who drives
-  it: "this machine, account X" when a launch record confirms it, else
-  "claimed in its ledger by host Y", a claim the board shows as a claim. A
+- **Driven:** the drive's rounds with their times and unresolved threads,
+  from the ledger's `rounds[]` whichever machine launched it (for a ledger
+  without them, the samples the line carries where this machine launched
+  it), and who drives it: "this machine, account X" when a launch record
+  confirms it, else "claimed in its ledger by host Y", a claim the board
+  shows as a claim. A
   claimed drive whose heartbeat passes the lease window is the `silent`
   class and is marked so.
 - **Needs you:** what it carries today: the framed decisions with their
@@ -128,7 +134,9 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    merge queue (`isMergeQueueEnabled`), whose own rules then decide.
 8. Its author is the repository's own (association `OWNER`, `MEMBER` or
    `COLLABORATOR`), or a person approved it.
-9. It carries no `hold` label.
+9. It carries neither the `hold` label nor the
+   [CI hold](../GLOSSARY.md) label (`ci.hold_label`), under which its
+   required checks fail on purpose.
 
 Condition 2 is Jig's own, and no repository setting turns it off.
 Convergence is a claim about one head: the reviewer reviewed that head,
@@ -171,6 +179,7 @@ this order:
 | The facts | Column, lane | What the card says | Waits on |
 | --- | --- | --- | --- |
 | a draft | Needs you | converged as a draft: marking it ready summons the reviewers that skip drafts | a person: mark it ready |
+| the CI hold label | Needs you | held, never "failing"; the drive removes the label as it converges, so it was added again after | a person: remove the label (the checks run again on the same head), or re-arm the drive |
 | an unresolved thread | Needs you | a thread was opened after the drive converged | a person: answer it, or re-arm the drive |
 | the reviewer app's check on the head is missing, failed or skipped | Needs you | the review the ledger reports is not witnessed on this head | a person: re-arm the drive |
 | `reviewDecision` `CHANGES_REQUESTED` | Needs you | who requested changes, and when | a person: that reviewer re-reviews, or the drive is re-armed to address it |
@@ -184,9 +193,9 @@ this order:
 | `BLOCKED` for none of these | Needs you | the forge blocks the merge on a rule the board cannot tell (signed commits, a deployment): open the pull request | a person |
 
 The rows are first match, and every row that names a blocker other than an
-approval (a failed or running check, a thread, an unread or behind branch)
-comes before the approval rows, with a confirmed failure ahead of a pending
-check, so a pull request enters approve first only once
+approval (a CI hold, a failed or running check, a thread, an unread or
+behind branch) comes before the approval rows, with a confirmed failure
+ahead of a pending check, so a pull request enters approve first only once
 the other conditions the board reads are established. The board reads no
 signature or deployment requirement, and `REVIEW_REQUIRED` with `BLOCKED`
 does not rule one out, so an approve-first card never says approval is the
@@ -268,14 +277,43 @@ hint with its detail on hover, tap or focus, as the page's other hints do:
 
 | Mark | On the card | In its hint |
 | --- | --- | --- |
+| Round | the round and its time, as "round 4 · 18 min": how long the current round has run, or the last round's length once the drive stopped; none before a drive | each round the ledger keeps, with its start, its end and its unresolved threads at the end |
 | Conflicts | none, conflicting, behind, or not known yet | the forge's mergeability and merge state, and the base branch |
-| Checks | running, green, failing, or none | for a failing pull request, each failing check by name with its app, "required" or "not required", and its run; for the others, the state |
-| Threads | the number of unresolved review threads | the count, linked to the pull request's conversation |
+| Checks | running, green, failing, held, or none | for a failing pull request, each failing check by name with its app, "required" or "not required", and its run; for the others, the state |
+| CI hold | "held: not built since `a1b2c3d`", "held: not built at this head", or none | the label, that its required checks fail on purpose while it stays, and that removing it runs them again on the same head |
+| Threads | the unresolved review threads: "2 bot · 1 not a bot" for a pull request in the detail set, the total for the others | the count, each thread's author for the split, linked to the pull request's conversation |
 | Merge | merge now, approve first, update next, or not ready | the [Ready conditions](#ready-exactly) as a checklist, each met or not with the fact behind it, and for each one not met whether waiting settles it or which person's act does |
 
 The merge mark is the one derived state among them: the predicate's
 answer, so "why is this not ready" is answered on the card. Every hint ends
-with the tick it was read at.
+with the tick it was read at. The round, the CI hold and the split threads
+are the hub's ([hub.md](hub.md#a-piece-of-work-and-its-views)):
+
+- **Round.** The ledger's `rounds[]` keeps the last 10 rounds, so every
+  machine shows them, not only the one that launched the drive. A ledger
+  without `rounds[]` gives its round number with the times not known,
+  never zero rounds.
+- **CI hold.** Under the CI hold label the required checks fail on purpose
+  (the [held-head check](../GLOSSARY.md)), so they read held, never
+  failing, and a held pull request is never in merge now (condition 9). A
+  failing check that is not required still reads failing. From step 4, the
+  head the mark names is the last one a tick saw with its required checks
+  completed and the label off, kept with the card in `board_seen`; before
+  step 4, and wherever no tick saw one, the mark says "held: not built at
+  this head".
+- **Threads, by bot and not a bot.** An unattended drive works only the
+  threads an app opened (on GitHub, a GitHub App: `--bots-only`) and
+  leaves the rest to a person, so the split shows which of the unresolved
+  threads wait on one. A thread's author is its first comment's, as the
+  drive tells who opened a thread. It is a bot when the forge types it as
+  one (`__typename` `Bot`), the test `--bots-only` applies, so an account
+  `review.bots` names that the forge types as a user counts as not a bot,
+  as the drive treats it. Any other author is "not a bot", never called a
+  person, since an account the forge types as a user may be a script's.
+  An author costs more to read than a thread's resolution, so the split
+  covers the detail set only ([§ The board read](#the-board-read)); across
+  a machine its cost is bounded by the detail set's size in each
+  repository and by the budget floor.
 
 ### The board read
 
@@ -297,13 +335,20 @@ budget with them:
   request its head commit's id (`headRefOid`), a few fields (`isDraft`,
   `mergeStateStatus`, `reviewDecision`, `isMergeQueueEnabled`,
   `authorAssociation`), its head commit's check rollup state, and its
-  review threads' resolution (up to 100).
+  review threads' id and resolution (up to 100).
 - **The detail**, one query naming each pull request of the detail set by
   number: the converged pull requests, the ones in Needs you, and any whose
   rollup is failing. Per pull request: its head commit's id, its head's
   check contexts (up to 100, each with whether it is required, its app and
-  its link), its review requests and its reviewers' latest reviews (up to
-  20 each).
+  its link), its labels (for the `hold` and CI hold labels), its review
+  requests and its reviewers' latest reviews (up to 20 each). The same
+  query reads, by the ids the listing found, the first comment's author
+  (`login` and `__typename`) of each unresolved thread, for the split of
+  the thread mark.
+
+A held pull request the marks must tell from a broken build is in the
+detail set already: it is converged, or its required checks fail and its
+rollup with them.
 
 Every fact about a pull request is bound to one head. The head commit's id
 in the planning listing, the board listing and the detail must be the same,
@@ -313,18 +358,21 @@ more for that pull request, and where they still differ the card is "not
 read at this tick" and is never in Ready to merge, so a card never combines
 one head's verification with another head's checks.
 
-Nothing reads the comments under a thread, which is where a query's cost
-multiplies: the forge prices a query by the requests its connections need,
-one per connection per parent node, at 100 requests a point. The listing
-costs about two points per 100 open pull requests and the detail about one
-point per 25 pull requests in its set, so a repository at the
-[size this is built for](#the-size-it-is-built-for) costs about 4 points a
-tick, about 50 an hour at a five-minute interval, and ten repositories
-about a tenth of the 5,000 points an hour one login gets. The receipt
-records each board read's cost and the budget left (the query's
-`rateLimit`), so the figure is measured, not assumed. When the budget left
-is below a fifth of the hour's, the tick skips the board read, and the
-cards say "not read: the forge budget is kept for the drives".
+The comments under a thread are where a query's cost multiplies: the forge
+prices a query by the requests its connections need, one per connection
+per parent node, at 100 requests a point. So nothing reads more than one
+comment of a thread, and only of an unresolved thread in the detail set,
+fetched by its id, 100 ids a query at most: about one point per 100 such
+threads. The listing costs about two points per 100 open pull requests and
+the rest of the detail about one point per 20 pull requests in its set, so
+a repository at the [size this is built for](#the-size-it-is-built-for)
+costs about 4 points a tick, about 50 an hour at a five-minute interval,
+and ten repositories about a tenth of the 5,000 points an hour one login
+gets. The receipt records each board read's cost, the author split's
+apart, and the budget left (the query's `rateLimit`), so the figure is
+measured, not assumed. When the budget left is below a fifth of the
+hour's, the tick skips the board read, and the cards say "not read: the
+forge budget is kept for the drives".
 
 A connection that reports another page (`hasNextPage`) on one pull request,
 whether checks, threads, review requests or latest reviews, gets follow-up
@@ -377,7 +425,7 @@ forwards. The moves a person meets:
 | Driven → Ready to merge | the drive converged, the review is witnessed on its head and the forge allows the merge |
 | Ready to merge → Coming or Driven | the base came to conflict, or its head moved past the verified head: the dispatcher re-drives it |
 | Ready to merge → Coming | another pull request merged and this one is now behind its base |
-| Ready to merge → Needs you | a check failed after convergence, a reviewer requested changes or opened a thread, the forge blocks the merge, it became a draft, or its re-drive stopped |
+| Ready to merge → Needs you | a check failed after convergence, a reviewer requested changes or opened a thread, the CI hold label was added, the forge blocks the merge, it became a draft, or its re-drive stopped |
 | Approve first → Merge now | a requested reviewer approved |
 | Ready to merge → Merged | a person merged it |
 | Driven → Needs you | the drive parked or stopped |
@@ -460,11 +508,20 @@ separate state roots, each served by its own dashboard instance; a shared
 root with per-repository scoping on every dashboard read is not offered
 until that scoping is specified and enforced.
 
+The page that grows from the dashboard is the [hub](hub.md), which serves
+the board beside its other views and is reached in other ways: a host's
+hub listens on loopback with no token and only answers reads, a laptop's
+hub reads each host over SSH (Secure Shell), and a phone reaches a host's hub through an
+optional front on a private network that names the viewer and scopes what
+each person sees ([hub.md § Where it runs](hub.md#where-it-runs)). Until
+the hub serves it, the board is read as above.
+
 The [Jig panel in Orca](orca-integration.md#the-jig-plugin-for-orca) is a
 second reader. It reads the same line through the plugin's worker, which
 runs `jig` as the person on their own machine, so it has no listen address
-and no token, and nothing outside Orca's window reaches it. Its Board view
-shows the columns this page shows, to the person running Orca there.
+and no token, and nothing outside Orca's window reaches it. Its inbox panel
+shows the cards that wait on the person running Orca there, and the board
+itself opens on the hub in Orca's browser.
 
 The person the dispatcher reaches is the board's first reader, but not the
 only person who merges or approves. A merge-now card names no merger: the
@@ -503,9 +560,9 @@ episode's rows share it:
   merge, with the lane left, the lane entered and the time spent in the
   lane left as its duration;
 - **left ready**, when it leaves, with the cause as the reason (`merged`,
-  `conflicting`, `head moved`, `behind`, `check failed`, `blocked`,
-  `draft`, `closed`), the lane it left from and the time it was in that
-  lane as its duration.
+  `conflicting`, `head moved`, `behind`, `check failed`, `ci hold`,
+  `blocked`, `draft`, `closed`), the lane it left from and the time it was
+  in that lane as its duration.
 
 The wait of an episode is the sum of its lane durations, so a pull request
 that waited a day for an approval and an hour to be merged shows both. The
@@ -552,13 +609,36 @@ card unchanged. The list is bounded: 100 cards a column, with the count of
 the rest; 10 failing checks a card, with the count of the rest; the stood
 down group as its count and its 20 newest. A line written by a tick from
 before the board has no `board`, and the page says the board appears at the
-next tick rather than placing cards itself.
+next tick rather than placing cards itself. The line stays at version 1:
+`board` and the hub's other additions are optional fields, and the line's
+`minReader` names the oldest reader that can still read it
+([hub.md § The source feed](hub.md#the-source-feed-from-a-host-to-a-hub)).
+
+A tick for one repository, such as one `jig send` wakes, replaces that
+repository's part of the line and leaves the rest as the last tick wrote
+it. The part of one repository is its entries in `sessions`, `needs`,
+`queue` and `board`, each of which names its repository, and its entry in
+`repos`, which carries the `runId` and `readAt` of the tick that last read
+it. The rest belongs to the whole machine, and only a tick that read every
+repository the machine file lists writes it: the line's own `version`,
+`runId`, `startedAt`, `finishedAt` and `exitStatus`, `apply` and
+`applyWithheld`, `intervalMs`, `longestTickMs` and `recentTicksMs`,
+`plugin`, `timeZone`, `minReader`, the accounts with their slots and
+walls, `lastAccount`, and the receipt kept beside the line. So a timer that stopped still shows as
+overdue while woken ticks run, and a session a woken tick launched shows in
+its repository's sessions at once and in its account's slots at the next
+full tick.
 
 The receipt records, per tick, the board read's duration and cost, the
 forge budget left, the cards placed per column and the line's size in
 bytes, so a board grown slow or costly is seen from one tick to the next.
 
 ## Build order
+
+The [hub](hub.md#build-order) builds these steps as its first stage, in the
+order its build order gives: the drive ledger carries its rounds before
+step 2 shows them, and the line takes a tick for one repository before
+step 4.
 
 1. **Measure the waiting loss with what the log holds.** No code: on the
    host that dispatches a working repository, `jig dispatch log --since
@@ -574,16 +654,17 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
    and duration, not the launch time (launch is end minus duration), and
    rate a successful follow-up as `converged` too, so the rows are told
    apart by stage before they are counted. The
-   counts go into the plan item, and a person decides from them whether
-   steps 4 to 6 are built. Steps 2 and 3 are built either way: they are
-   the queue a person asked for, and they measure the loss from then on.
+   counts go into the plan item as a baseline, not a gate: every later
+   step is built whatever they show, and steps 2 and 3 measure the loss
+   from then on.
 2. **Ready to merge in the tick.** The predicate in `lib/merge-ready.ts`
    with a test for each condition and each row of the placement table, and
    `announce-merge-ready.ts` calling it; the board read with its deadline,
    budget floor, overflow follow-up and `UNKNOWN` re-read, isolated from
-   planning; the merge command's strict forms; `jig dispatch`'s report
-   listing the merge queue; the `ready` notification; the event rows;
-   the receipt's figures. Done when, on a repository with a required merge
+   planning; the status row with the round, the CI hold and the threads by
+   bot and not a bot; the merge command's strict forms; `jig dispatch`'s
+   report listing the merge queue; the `ready` notification; the event
+   rows; the receipt's figures. Done when, on a repository with a required merge
    queue and one without: a converged, witnessed, mergeable pull request
    is reported in merge now with its pinned command; one blocked on a
    required review is in approve first naming the reviewers requested or
@@ -591,8 +672,10 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
    whose ledger says `0` at a head its reviewer never checked is in Needs
    you; one whose base then conflicts leaves with a left-ready row and its
    cause; a merge puts one pull request in update next and the rest in
-   Coming; each reaches a person's phone once; and a board read made to
-   fail leaves that tick's launches as they were.
+   Coming; one under the CI hold reads held, never failing, and is never
+   in merge now; one with a bot's thread and another author's reads
+   "1 bot · 1 not a bot"; each reaches a person's phone once; and a board
+   read made to fail leaves that tick's launches as they were.
 3. **Ready to merge on the page.** A Ready to merge list at the top of the
    Now view, with its lanes, the status rows, `waitsOn` and the pinned
    command; the strip's counts; the history view's counts. Done when the
@@ -601,22 +684,26 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
 4. **Every card placed.** `lib/board.ts` places every card in its column,
    with a test for each row of the column and move tables; `board_seen`
    keeps each card's column history; the line carries `board` within its
-   bounds; the status row reaches every open pull request. Done when a
-   drive a person armed by hand shows in Driven as claimed, a tick for one
-   repository keeps the other repositories' column times, and a tick at
-   the design size keeps the line within its bounds.
-5. **The design round.** A brief from
+   bounds, a tick for one repository replacing that repository's cards
+   ([§ The line grows one list](#the-line-grows-one-list)); the status row
+   reaches every open pull request. Done when a drive a person armed by
+   hand shows in Driven as claimed, a tick for one repository keeps the
+   other repositories' cards and column times, and a tick at the design
+   size keeps the line within its bounds.
+5. **The design round** is the hub's
+   ([hub.md § Build order](hub.md#build-order)): one brief from
    [`design-brief-builder`](../plugin/skills/design-brief-builder/SKILL.md)
-   for the board view: the columns at desktop and phone widths, the
-   scenarios of a quiet line, a full merge queue, a morning of backward
-   moves and a long Needs you, light and dark. The round lands under
-   [`prototypes/`](prototypes/rubric.md) with its scorecard, which covers
-   every scenario, width and theme.
+   for the whole hub, the board view among its views, from the fixtures of
+   steps 2 to 4. It keeps this design's scenarios (a quiet line, a full
+   merge queue, a morning of backward moves and a long Needs you) at
+   desktop and phone widths, light and dark, and adds the hub's. The round
+   lands under [`prototypes/`](prototypes/rubric.md) with its scorecard,
+   which covers every scenario, width and theme.
 6. **The board view.** The board as the round designed it, a view beside
-   Now; the Help view explains each column, the Ready conditions and what
-   `only_labeled` leaves out. Done when the browser suites open the board
-   for each scenario at phone and desktop width in one theme, the
-   scorecard covering the rest.
+   Now; the Help view explains each column, the Ready conditions, the
+   status row's marks and what `only_labeled` leaves out. Done when the
+   browser suites open the board for each scenario at phone and desktop
+   width in one theme, the scorecard covering the rest.
 
 ## Left out
 
@@ -628,6 +715,9 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
   route, so a person's click runs the drive's pinned merge command as that
   person, in their own app
   ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)).
+  The hub gains one in its third stage, on a laptop and behind proof that
+  a person is there
+  ([hub.md § When the hub writes](hub.md#when-the-hub-writes)).
 - **Moving a card by hand.** A column is derived from the records, so a
   dragged card would be overruled at the next tick. A person moves work by
   acting on its record: answering, labelling `hold` or `drive`, merging.
@@ -656,10 +746,10 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
   item flags an overdue tick while Orca runs. A host that is off cannot
   send that itself, and flags nothing in either place; telling a person
   needs a watcher elsewhere, which is outside the dispatcher.
-- **Who wrote each thread.** Splitting the unresolved threads into a
-  reviewer bot's and a person's needs each thread's comments, the most
-  expensive read the board could make; the thread mark links to the
-  conversation, which shows the authors.
+- **Who wrote each thread, outside the detail set.** A thread's author
+  costs a request per thread, so the split by bot and not a bot covers the
+  detail set only; on every other card the thread mark shows the total and
+  links to the conversation, which shows the authors.
 - **Ordering the queue by predicted conflict.** Knowing which ready pull
   requests touch the same files as others would need a file read per pull
   request each tick; the serialized areas already name the contention a
@@ -673,3 +763,5 @@ Critiqued by four reviewers with fresh context (subagents that did not
 write it, as a critical chief technology officer, a security auditor, a
 performance engineer and a cost optimizer) on 2026-11-04 against commit
 `08703e16`.
+What the hub adds to it was critiqued with the hub's design on 2026-11-06
+([hub.md § Review](hub.md#review)).

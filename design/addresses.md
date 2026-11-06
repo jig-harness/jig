@@ -33,6 +33,13 @@ and step 3, the operator skill, in
 [plugin/skills/operator/](../plugin/skills/operator/SKILL.md). The other
 steps are open.
 
+The [hub](../GLOSSARY.md), one page to watch and steer the line
+([hub.md](hub.md), item 42), reads the line through these commands. It
+grows the thread
+([What the thread gains for the hub](#what-the-thread-gains-for-the-hub))
+and runs an operator of its own beside the skill
+([The operator skill](#the-operator-skill)).
+
 ## How it works
 
 ### An address names a station on a piece of work
@@ -227,6 +234,51 @@ show the same one. An interface that draws threads reads `jig ask --thread
 this design's to fix, in the first build step. Until then an interface's
 prototype may show that it needs a change.
 
+### What the thread gains for the hub
+
+The [hub](hub.md#threads) shows one thread per
+[piece of work](../GLOSSARY.md), across machines, and names single entries
+in it. So the thread grows under `ask`'s version 1, each addition an added
+field, and the answer's version stays the same. The hub reads the thread
+through `jig ask` like any other interface and stores none of it. When each
+part is built is in the [build order](#build-order).
+
+- **Each entry has a stable `id`**, the same at every read, so an interface
+  can point at one entry and an answer can name the question it answers.
+- **A `question` carries its `key`, its `class` and a `status`.** The key
+  is the one an `answer <key>:` line names. The class is the
+  human-in-the-loop registry class the park names
+  ([ADR-0010](../docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)).
+  The status is `open`, `answered`, `acted` (the drive acted on the answer)
+  or `expired` (the park ended unanswered).
+- **An `answer` carries `inReplyTo`**, the id of the question it answers,
+  who answered (their forge login), and the permission the forge gives that
+  login on the repository, so a reader sees why the answer counted.
+- **An answered park stays in the thread.** The drive ledger keeps its
+  resolved parks (`resolvedParks[]`, the last 10), each with its key, its
+  question, when it was answered and when the re-arm cleared it. A question
+  and its answer are read from there once the re-arm has cleared the park.
+- **One thread per piece of work.** A piece of work has an address at each
+  station: `pickup@` for its item, `drive@` and `followup@` for its pull
+  request. `ask` folds their entries into one thread by the piece of work's
+  aliases (the item key, the branch, the pull request). The aliases are
+  joined from the tracker's issue links, the branch name and the pickup's
+  records, and each join carries its evidence. A join counts only on
+  evidence the repository's own people wrote: a pickup record, a tracker
+  link, or a branch in the repository itself, never a fork's, on a pull
+  request whose author is the repository's own. A pull request that matches
+  only by name stays a thread of its own. Every entry keeps its own
+  `from` and `to`, so the folded thread still says which station spoke. A
+  work-batch's batch key joins its member items, so a batch is one thread.
+  A fold that reads the tracker counts that read in `sources`, as every read
+  does.
+- **The threads that hold something for a person.** Beside `--waiting`'s
+  addresses, `ask` lists the threads that hold an open question, an act a
+  merge waits on or a follow-up's question, one entry per piece of work. A
+  thread leaves the list once nothing in it waits on a person. Hiding one is
+  the reader's own choice: the hub keeps it in that browser, and `ask`
+  stores nothing for it.
+
 ### `jig send`: a request is a record
 
 `jig send <address> <verb>` writes one record, of a kind the line already
@@ -313,8 +365,21 @@ session runs `jig ask` and reads its plain answer.
   thread carries the question's words but not its key. Until it does, the
   operator asks the person for the key, which the framed decision and the
   dispatcher's notification show as `answer <key>: …`, and relays the
-  parked keys a refused `send` names. Carrying the key on the entry is an
-  added field of `ask`'s answer, so its version stays the same.
+  parked keys a refused `send` names. Carrying the key on the entry is one
+  of the thread's additions
+  ([What the thread gains for the hub](#what-the-thread-gains-for-the-hub)),
+  so `ask`'s version stays the same.
+
+**The hub's operator is a separate runner.** The skill's `allowed-tools`
+pre-approves `jig ask` and `jig send` rather than limiting the agent to
+them: the session keeps every other tool its runtime gives it, and what
+keeps a send the person's is their instruction in the same conversation.
+That suits a person in a terminal. The hub's chat reads thread text that
+anyone can write on a pull request, so it does not run this skill. It runs
+a locked-down runner with tools of its own: reads only, and a `propose`
+that plans one of `send`'s verbs for the person to confirm, never an
+`answer`. That operator explains and drafts and never sends
+([hub.md § The operator chat](hub.md#the-operator-chat)).
 
 ### What a launch hands on, and who a park waits on
 
@@ -345,7 +410,9 @@ in `plugin/jig.ts` beside `dispatch` and `gc`. Both read and write records
 through what their owners export (`plugin/shared/records/`, the
 dispatcher's `lib/`, the drive's state modules). Where an owner has no read
 narrow enough, such as one drive's verdict or one key's outcomes, the owner
-gains it. The operator is `plugin/skills/operator/`.
+gains it. The operator is `plugin/skills/operator/`. The fold by aliases
+is the hub's fold library in `plugin/shared/`, which `ask` shares with the
+dispatcher and the hub.
 
 ## Build order
 
@@ -369,6 +436,11 @@ before it is in use and has shown the next is wanted.
 acts, in the pull request that builds item 36's predicate or in step 1,
 whichever comes later.
 
+The thread's additions are built in the hub's steps
+([hub.md § Build order](hub.md#build-order)): resolved parks in the drive
+ledger in its stage 1, and the entry ids, the question's and the answer's
+fields, the fold by aliases and the list of threads in its stage 2.
+
 ## Left out
 
 - **A resident agent per station.** A station is held while a launch runs
@@ -378,7 +450,9 @@ whichever comes later.
 - **A queue or an inbox that a daemon holds.** `ask` and `send` run and
   exit, and what they read and write are the records of
   [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md). A request waits
-  for its reader's next run, as a label does today.
+  for its reader's next run, as a label does today. The hub's Inbox is read
+  from the records again at each request and holds nothing
+  ([hub.md § A reader, not a daemon](hub.md#a-reader-not-a-daemon)).
 - **Free text to a running session.** The dispatcher composes no prompt
   for a session, and `send` gives nobody a way to. A person who wants to
   talk to a session opens its workspace.
@@ -391,7 +465,13 @@ whichever comes later.
   Both read what no record holds, and a transcript can hold a secret.
   Either joins when `ask` is in use and a question it cannot answer from
   records has come up often enough to name, with its own flag, and no read
-  escalates to it.
+  escalates to it. The hub's `hub-conversation` record is no transcript of
+  a station: it is the person's history of their chat with the hub's
+  operator, kept on one machine at mode `0600`. No station and not `ask`
+  ever reads it, it is replayed only as the context of that chat's next
+  turn and never as a request, and a `jig gc` kind removes it 30 days after
+  its thread settles
+  ([hub.md § The operator chat](hub.md#the-operator-chat)).
 - **Addresses for standing roles**, such as the review arbiter or the agent
   a change area names. They leave no records keyed by a piece of work, and
   `do-item`'s routing already says which agent a change gets. A role joins
@@ -416,3 +496,5 @@ performance engineer and a cost optimizer) on 2026-11-05, against the
 draft written before the first commit, which no commit holds. The pull
 request's reviewer then read commit 20805261 on 2026-11-05. The reports are
 in the pull request that added this design.
+What the hub adds to it was critiqued with the hub's design on 2026-11-06
+([hub.md § Review](hub.md#review)).
