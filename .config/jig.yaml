@@ -26,11 +26,13 @@ dispatch:
   # `jig install dispatch --repo <clone> --yes` creates the labels.
   labels:
     enabled: true
-  # Drive the host's own recent pull requests (the login the dispatcher reads
-  # the forge as, updated within a week, drafts included) without waiting for
-  # a `jig:drive` label; `jig:hold` keeps one out.
+  # Drive the maintainers' own recent pull requests (updated within a week,
+  # drafts included) without waiting for a `jig:drive` label; `jig:hold`
+  # keeps one out. The authors are named because the host opens pull
+  # requests under one login and reads the forge under another.
   adopt:
     enabled: true
+    authors: [liqweed, ophir-docomply]
 design_brief:
   # Where finished design bundles land, one folder per flow, and what the
   # design-handback landing check needs. The browser script finds the
