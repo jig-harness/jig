@@ -56,6 +56,18 @@ console.log(JSON.stringify(result.receipt));
 process.exit(result.receipt.exitStatus);
 `;
 
+/** A tick whose follow-up outcomes cannot be written, at the start and again at the close. */
+const SETTLE_DEFECT = `import { mock } from "bun:test";
+const outcomes = ${JSON.stringify(`${DISPATCH}/lib/followup-outcomes.ts`)};
+const real = await import(outcomes);
+mock.module(outcomes, () => ({ ...real, settleFollowups: () => { throw new TypeError("a write failed"); } }));
+const { runTick } = await import(${JSON.stringify(`${DISPATCH}/tick.ts`)});
+const result = await runTick({ repos: process.argv.slice(2), followupSince: "2026-10-30T00:00:00Z" });
+if ("held" in result) process.exit(3);
+console.log(JSON.stringify(result.receipt));
+process.exit(result.receipt.exitStatus);
+`;
+
 const CONFIG = `issue_tracker:
   adapter: github
   github:
@@ -202,5 +214,18 @@ describe("the receipt's timings", () => {
     const listed = await w.dispatch(["receipts"]);
     expectSpawnExit(listed, 0);
     expect(listed.stdout).toMatch(/exit 0 in \d/);
+  });
+});
+
+describe("follow-up outcomes that cannot be written", () => {
+  it("keeps the startup defect on the receipt, not completed, while every repository still has its turn", async () => {
+    const { w } = fixture();
+    const { receipt } = await run(w, "settle-defect.ts", SETTLE_DEFECT, [
+      w.repo,
+    ]);
+    expect(receipt.defect?.phase).toBe("start");
+    expect(receipt.completed).toBe(false);
+    expect(receipt.exitStatus).toBe(1);
+    expect(receipt.repos.map((r) => r.path)).toEqual([w.repo]);
   });
 });

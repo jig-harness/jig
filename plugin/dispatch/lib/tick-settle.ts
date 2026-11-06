@@ -49,6 +49,7 @@ export async function settleOutcomes(
   receipt: TickReceipt,
   context: TickContext,
   days: number | undefined,
+  keepFollowups = false,
 ): Promise<boolean> {
   const records = allRecords(context);
   // A repository this tick read gave its records their rows in `logRepo`,
@@ -68,7 +69,12 @@ export async function settleOutcomes(
   if (unlogged.length > 0) receipt.unloggedOutcomes = unlogged;
   // A record that ended without its outcome row in the log is kept: its end is written with the row.
   pruneLaunches(
-    records.filter((r) => !hasEnded(r) || r.record.endedAt !== undefined),
+    records.filter(
+      (r) =>
+        (!hasEnded(r) || r.record.endedAt !== undefined) &&
+        // A follow-up whose outcome could not be written is kept until it is.
+        !(keepFollowups && r.record.action === "followup"),
+    ),
     context.nowMs,
     days ?? 30,
   );

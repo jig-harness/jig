@@ -60,7 +60,7 @@ import {
 import { copyLog, writeTickLine } from "./lib/tick-line.ts";
 import { defectReport, runTurn, startTurn } from "./lib/tick-repo.ts";
 import { settleOutcomes } from "./lib/tick-settle.ts";
-import type { RepoReport } from "./lib/types.ts";
+import type { Defect, RepoReport } from "./lib/types.ts";
 import {
   newRunId,
   pruneReceipts,
@@ -90,7 +90,7 @@ interface StartedTick {
   receipt: TickReceipt;
   context: TickContext;
   withheld: string | undefined;
-  /** Whether settling the launch records' follow-up outcomes failed; each repository's turn settles its own again. */
+  /** Whether settling the launch records' follow-up outcomes failed; each repository's turn settles its own again, and the close retries. */
   settleFailed: boolean;
 }
 
@@ -102,12 +102,14 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
   const read = await readLaunches();
   // An ended follow-up's outcome is written before its record can expire.
   let settleFailed = false;
+  let startDefect: Defect | undefined;
   try {
     settleFollowups(read.records);
   } catch (error) {
     // A failed write must not stop every repository's turn; the turns settle their own records again.
     settleFailed = true;
-    logDefect("the follow-up outcomes", defectOf("start", error), error);
+    startDefect = defectOf("start", error);
+    logDefect("the follow-up outcomes", startDefect, error);
   }
   const attempt = applyState(
     options,
@@ -130,6 +132,7 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
     exitStatus: 0,
     ...(withheld === undefined ? {} : { applyWithheld: withheld }),
     ...accountsReport(machine, apply),
+    ...(startDefect === undefined ? {} : { defect: startDefect }),
     unreadableLaunches: read.unreadable,
     repos: [],
   };
@@ -178,11 +181,27 @@ async function closeTick(
 ): Promise<void> {
   const { receipt, context, withheld, settleFailed } = started;
   const machine = context.options.machine ?? null;
-  const failed = await settleOutcomes(receipt, context, machine?.receiptsDays);
+  // Settle again before anything expires: a record whose outcome is still unwritten is kept.
+  let unsettled = settleFailed;
+  if (unsettled) {
+    try {
+      settleFollowups(allRecords(context));
+      unsettled = false;
+    } catch (error) {
+      logDefect("the follow-up outcomes", defectOf("close", error), error);
+    }
+  }
+  const failed = await settleOutcomes(
+    receipt,
+    context,
+    machine?.receiptsDays,
+    unsettled,
+  );
   const copied = copyLog(receipt);
   receipt.exitStatus =
     failed || !copied || settleFailed || withheld !== undefined ? 1 : 0;
-  receipt.completed = true;
+  // A defect the start kept on the receipt stays: the tick ran, but not whole.
+  receipt.completed = receipt.defect === undefined;
   receipt.finishedAt = new Date().toISOString();
   // The dashboard's copy is written here, so it carries the phases timed so far; the receipt file adds `close`.
   receipt.phasesMs = { ...timer.ms };
