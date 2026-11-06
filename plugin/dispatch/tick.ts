@@ -163,7 +163,10 @@ async function runRepos(
 }
 
 /** The closing steps: the records of repositories not read settled, the outcome log copied, the exit decided, the line written. */
-async function closeTick(started: StartedTick): Promise<void> {
+async function closeTick(
+  started: StartedTick,
+  timer: PhaseTimer<TickPhase>,
+): Promise<void> {
   const { receipt, context, withheld } = started;
   const machine = context.options.machine ?? null;
   const failed = await settleOutcomes(receipt, context, machine?.receiptsDays);
@@ -171,6 +174,8 @@ async function closeTick(started: StartedTick): Promise<void> {
   receipt.exitStatus = failed || !copied || withheld !== undefined ? 1 : 0;
   receipt.completed = true;
   receipt.finishedAt = new Date().toISOString();
+  // The dashboard's copy is written here, so it carries the phases timed so far; the receipt file adds `close`.
+  receipt.phasesMs = { ...timer.ms };
   writeTickLine(receipt, {
     machine,
     repos: context.options.repos,
@@ -189,7 +194,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     const { receipt } = started;
     try {
       await timer.time("repos", () => runRepos(receipt, started.context));
-      await timer.time("close", () => closeTick(started));
+      await timer.time("close", () => closeTick(started, timer));
     } catch (error) {
       // A defect outside every repository's turn: the receipt is still written, and says the tick did not complete.
       receipt.defect = defectOf(timer.current ?? "close", error);

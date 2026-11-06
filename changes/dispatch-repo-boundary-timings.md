@@ -19,8 +19,10 @@ release: minor
   in and what was thrown there, and keeps what its earlier phases did. The
   error's stack goes to the tick's error output, which the journal keeps.
   The other repositories are read, planned and acted on, and the tick writes
-  its receipt and exits 1. A failure in the tick's closing steps still writes
-  the receipt, marked incomplete.
+  its receipt and exits 1. A bug in the tick's closing steps still writes
+  the receipt, marked incomplete. A closing step that reports its own
+  failure (the outcome log not copied, the dashboard line not written)
+  leaves the receipt complete, with exit status 1 and the failure said on it.
 - The tick lock records its holder's start time and the host's boot beside
   its process id (`tick.lock.holder`), so a lock left by a tick that died is
   taken over even when its process id was reused after a restart or by

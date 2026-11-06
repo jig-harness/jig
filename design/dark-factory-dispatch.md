@@ -105,13 +105,13 @@ when it fails. The phase names are the ones a receipt times.
 | `forge` | `tick-forge.ts` | open pull requests, the login, each one's ledger, the merges in the follow-up window and their markers | none | a failed record; drives and follow-ups not planned |
 | `claims` | `tick-shared.ts` | every host's launch claims | none | per pull request: a listing that does not read reaches the plan as unknown |
 | `runtime` | `tick-observe.ts` | the runtime's session list | none | a failed record; nothing is joined |
-| `observe` | `tick-observe.ts` | each running drive's unresolved threads, each waiting session's wall, the change-area catalog | thread samples, a pickup's opened mark, waiting episodes, the owner's serialization holds | reported as unplaced |
-| `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges | none of its own: it computes |
+| `observe` | `tick-observe.ts` | each running drive's unresolved threads, each waiting session's wall, the change-area catalog | thread samples, a pickup's opened mark, waiting episodes, the owner's serialization holds, and the account's usage-limit wall under `walls/<account>/` | reported as unplaced |
+| `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles | a write the database refuses is a defect: it stops this repository in phase `plan` |
 | `log` | `tick-settle.ts` | the ended launch records, the ledgers | one outcome row per ended record, with its end | reported; the record is kept until its row lands |
 | `apply` | `tick-apply.ts` | each target read again just before its launch | the launch record, the forge claim or marker, the runtime's launch, nudges, notices | per action: refused, reported, tried again next tick |
 | `labels` | `tick-labels.ts` | the ledgers | the state labels on pull requests | per write, reported |
 | `shared` | `tick-shared.ts` | the forge's rate limit | none | the budget reported as unreadable |
-| Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-line.ts` | the receipt, the launch records | outcome rows for repositories not read, the month files, the line, the receipt | each part that fails is said on the receipt; exit status 1 |
+| Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-line.ts` | the receipt, the launch records | outcome rows for repositories not read, the month files, the line, the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1. A defect in a closing step marks the receipt not completed |
 
 **A defect stops only its own repository.** Every read and every action
 above turns its expected failures into a record or a refusal on the report.
@@ -127,7 +127,9 @@ stack: that goes to the tick's error output, beside the same sentence,
 which the timer's journal keeps. The remaining repositories run, the tick
 still closes and writes its receipt, and it exits 1. A defect in the closing steps still
 writes the receipt, marked not completed, with the defect on it; `jig
-dispatch receipts` lists it as incomplete and counts its defects.
+dispatch receipts` lists it as incomplete and counts its defects. A closing
+step that returns its own failure (the outcome log not copied, the line not
+written) is not a defect: the receipt stays complete, with exit status 1.
 
 **Each phase is timed.** A repository's report carries the milliseconds of
 each phase of its turn (`phasesMs`), and the receipt the tick's own
@@ -140,11 +142,15 @@ before.
 they stand when the turn starts, never the apply state that launches
 change. It does write Control's records to the state database: thread
 samples and a pickup's opened mark on launch records, waiting episodes,
-and the owner's serialization holds. The plan writes the idle clock,
-released pickups and settled nudges. Each write is one transaction on rows
-of its own repository, but all of them go to the one `state.sqlite`, so
-observing several repositories at once would make them wait on that
-database's write lock in turn.
+and the owner's serialization holds. It also publishes an account's
+usage-limit wall as files under `walls/<account>/`, which sessions of every
+repository on that account read; the wall is written before the waiting
+episode that names it, and the two are not one transaction. The plan writes
+the idle clock, released pickups, settled nudges and follow-up outcomes.
+Each database write is one transaction on rows of its own repository, but
+all of them go to the one `state.sqlite`, so observing several repositories
+at once would make them wait on that database's write lock in turn, and the
+walls would be shared across them.
 
 ### Guards against a second launch
 

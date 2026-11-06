@@ -193,24 +193,29 @@ export async function observeRepo(
 
   // The forge: the open pull requests and their ledgers, the merges, and the launch claims of every host.
   const labels = section.labels.enabled ? section.labels : null;
-  const shared = openShared(repo.slug, opened.owner);
-  const forge = await timer.time("forge", () =>
-    readForge(repo, report, section, labels, nowMs, shared.records),
-  );
-  const ctx = shared.context(forge.login);
-  const claims = await timer.time("claims", () =>
-    readDriveClaims(ctx, forge, records),
-  );
+  let shared!: ReturnType<typeof openShared>;
+  const forge = await timer.time("forge", () => {
+    shared = openShared(repo.slug, opened.owner);
+    return readForge(repo, report, section, labels, nowMs, shared.records);
+  });
+  let ctx!: ReturnType<typeof shared.context>;
+  const claims = await timer.time("claims", () => {
+    ctx = shared.context(forge.login);
+    return readDriveClaims(ctx, forge, records);
+  });
 
   // The runtime: which of them a session holds.
-  const join = joinTargets(tracked.keys, values, forge);
+  let join!: ReturnType<typeof joinTargets>;
   const sessions = await timer.time("runtime", async () => {
+    join = joinTargets(tracked.keys, values, forge);
     const read = await readSessions(runtime, repo, join);
     report.records.push(runtimeRead(runtime, repo, read, section));
     return read;
   });
 
+  let held!: ReturnType<typeof heldPullRequests>;
   const serialized = await timer.time("observe", async () => {
+    held = heldPullRequests(labels, [...forge.open, ...forge.merged]);
     const threads = tickThreadReader(repo.slug);
     await observeRunning(
       { records, timeoutMs: context.options.machine?.runtimeTimeoutMs },
@@ -235,7 +240,6 @@ export async function observeRepo(
       threads,
     );
   });
-  const held = heldPullRequests(labels, [...forge.open, ...forge.merged]);
   return {
     opened,
     tracked,

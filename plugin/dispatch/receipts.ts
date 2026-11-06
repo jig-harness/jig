@@ -301,7 +301,8 @@ function lockText(path: string): string | null {
  */
 function holderOf(path: string, text: string | null): ProcessIdentity | null {
   const pid = text?.trim() ?? "";
-  if (!/^[1-9][0-9]*$/.test(pid)) return null;
+  if (!/^[1-9][0-9]*$/.test(pid) || !Number.isSafeInteger(Number(pid)))
+    return null;
   try {
     const recorded = decodeIdentity(readFileSync(holderFile(path), "utf8"));
     if (
