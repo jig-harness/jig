@@ -28,7 +28,7 @@ import {
   earlierRecord,
   machineFile,
 } from "./launch-fixtures.ts";
-import { notifyWrites } from "./pickup-fixtures.ts";
+import { notifyWrites, withOrigin } from "./pickup-fixtures.ts";
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -76,6 +76,8 @@ describe("stage drift", () => {
     const w = world();
     current = w;
     w.setConfig(CONFIG);
+    // A person is told in the notices workspace, opened from the default branch.
+    withOrigin(w);
     w.setPrs("open", [openPr(7, "feature/7")]);
     const ws = join(w.root, "ws-7");
     mkdirSync(ws, { recursive: true });

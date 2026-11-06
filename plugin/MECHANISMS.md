@@ -352,8 +352,9 @@ development and shipped as a version.
   only on a private or loopback address and refuses a request without its token.
   A notification is a note on the workspace the session runtime shows a
   person (with Orca, the workspace's comment). It counts as sent only when
-  that note, read back, carries the message's key line, and is not sent
-  again while its cause stands (`dispatch/lib/notices.ts`).
+  that note, read back, carries the message's key line. While its cause
+  stands, it is sent again after `dispatch.renotify_after` unless it is
+  still unread; `0s` sends each cause once (`dispatch/lib/notices.ts`).
 - **Reasoned.** A dispatched interactive session records how it ended with
   `jig dispatch result <record> <token> done|failed` (`dispatch/result.ts`).
   That answer is the session's own judgement; the script refuses another
@@ -387,14 +388,20 @@ development and shipped as a version.
   it. Of two trusted markers the commands stand down for the earlier
   comment; the dispatcher instead reports a conflict, naming the earlier,
   and plans no follow-up until a person settles the duplicate
-  (`dispatch/lib/plan-followups.ts`). Refuses: exit 3 when an earlier marker
+  (`dispatch/lib/plan-followups.ts`). A claim no run will finish (a person's
+  not marked done, or another host's with no answer, past
+  `dispatch.followup_stale_after` with no session joined to its pull request)
+  the owner host deletes once per pull request, recorded in its state
+  database (`dispatch/lib/actions/release-claims.ts`), and notifies a person
+  when a claim on it goes stale again. Refuses: exit 3 when an earlier marker
   holds the follow-up, exit 2 for a comment that is not a trusted marker,
   exit 1 when the markers cannot be read or the read-back never lists the
   marker it posted.
 - **Reasoned.** The follow-up session decides what the merge still owes and
   does it; it calls the marker commands at the points its instructions name.
 - **If it fails.** The follow-up session stops on any non-zero exit. A
-  failed follow-up is notified once and never started again; a person
+  failed follow-up is notified on the configured cadence and never started
+  again; a person
   deletes its marker to have it run again.
 
 ### Shared records: several hosts on one repository

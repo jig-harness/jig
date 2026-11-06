@@ -38,7 +38,7 @@ import {
   world,
 } from "./fixtures.ts";
 import { account, driveRuns, waitFor } from "./launch-fixtures.ts";
-import { claudeRuns } from "./pickup-fixtures.ts";
+import { claudeRuns, withOrigin } from "./pickup-fixtures.ts";
 
 const JIG = resolve(import.meta.dir, "../../jig.ts");
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
@@ -338,6 +338,8 @@ describe("two hosts dispatching one repository", () => {
 
   it("leaves the notifications and the history rows to the host that owns the repository", async () => {
     const w = fixture();
+    // The owner tells a person in the notices workspace, opened from the default branch.
+    withOrigin(w);
     w.setComments(7, [ledgerComment(701, stoppedLedger(7, 12))]);
     const a = host(w, "a", {
       stages: ["rearm", "notify"],

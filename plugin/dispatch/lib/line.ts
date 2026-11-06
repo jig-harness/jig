@@ -144,7 +144,8 @@ export function decisionOf(park: {
 
 /** The stage a cause is about. */
 function needStage(cause: NeedCause): LineNeed["stage"] {
-  if (cause === "followup-failed") return "followup";
+  if (cause === "followup-failed" || cause === "followup-stale")
+    return "followup";
   if (cause === "nudge-unanswered") return "steer";
   if (
     cause === "stalled" ||
@@ -282,6 +283,7 @@ function needsOf(
         at ??
         sightedSince(previous, view.slug, action, nowIso),
       reason: action.reason,
+      question: text(action.evidence, "question"),
       decisions: (view.drive(pr)?.waiting ?? []).map(decisionOf),
       notified:
         notification === undefined
@@ -313,6 +315,7 @@ function needsOf(
           firstSeen(previous, view.slug, u.target, "assigner-cannot-write") ??
           nowIso,
         reason: u.reason,
+        question: null,
         decisions: [],
         notified: null,
         workspaces: [],

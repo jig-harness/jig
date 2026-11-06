@@ -19,6 +19,7 @@ const ACTS: Record<NeedCause, PersonAct> = {
   "needs-person": "re-arm",
   "stopped-unknown": "re-arm",
   "followup-failed": "re-run the follow-up",
+  "followup-stale": "re-run the follow-up",
   "double-claim": "choose the session that keeps the item",
   stalled: "look at the stalled pickup",
   "nudge-unanswered": "answer the waiting session",

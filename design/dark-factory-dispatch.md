@@ -81,7 +81,7 @@ guards keep one stage from starting twice:
   The tick therefore checks the sessions instead: an item that more than
   one running session joins to (two workspaces, or a workspace beside a
   still-running launch record for another one) is reported as a double
-  claim and notified once, and the tick starts nothing for it. A manual
+  claim and notified, and the tick starts nothing for it. A manual
   pickup on another host is not in this host's runtime report, so it stays
   invisible until it opens its pull request.
 - **A marker on the pull request for the follow-up**, which has no claim of
@@ -111,7 +111,7 @@ guards keep one stage from starting twice:
   outcome of done means the follow-up is done; a launch record
   still running holds it; a failed outcome, a launch record that died, or
   a tick's marker whose launch record and outcome are both absent on this
-  machine is a failed follow-up, notified once and never relaunched by the
+  machine is a failed follow-up, notified and never relaunched by the
   tick. A person settles it by deleting the marker, which makes the
   follow-up wanted again, then running the follow-up or leaving it to the
   next tick. The marker lives on the forge, so a lost launch record does not
@@ -135,7 +135,8 @@ guards keep one stage from starting twice:
   outcome and the tick has no record that could; a person settles it by
   marking it done when the run succeeded without marking it, or, as the
   tick's are, by deleting it when the run failed, which makes the
-  follow-up wanted again. Whoever posts a marker, the tick or a
+  follow-up wanted again. Such a hold ends when the claim goes stale (see
+  Stale follow-up claims, below). Whoever posts a marker, the tick or a
   manual run, reads the markers back after posting, and of two trusted
   markers on one pull request the earlier comment wins, as the drive's
   takeover claims do: both are claims of one module,
@@ -159,6 +160,48 @@ guards keep one stage from starting twice:
   answer onto the marker (`outcome: done` or `failed`), so another host
   dispatching the repository reads its done from its failed (see Several
   hosts).
+
+  **Stale follow-up claims.** A claim whose end no tick can see (a manual
+  run's not marked done, or another host's with no answer written) is
+  stale once it is older than `dispatch.followup_stale_after` (a day by
+  default) and no session the runtime reports is joined to its pull
+  request. The run that made it stopped short (on a question, a crash, a
+  closed session) and will not come back to it, and a follow-up is what a
+  merge still owes: tags, tracker items, status pages. Held silently, that
+  debt is never paid, and the only sign of it is a line in each tick's
+  journal. The host that owns the repository therefore releases a stale
+  claim, once per pull request: just before, it reads the markers again
+  (the stale one still the earliest trusted marker, still not marked done
+  or answered), the runtime (still no session joined) and the hold label,
+  writes a pending release record in its state database (one row per
+  repository and pull request, `followup_releases`), deletes the marker,
+  and marks the record released in one transaction with an event row
+  (class `stalled`) in the outcome log. An unconfirmed deletion keeps
+  the pending record: the response may have been lost after the deletion.
+  A fresh complete marker listing completes a pending release whose marker
+  is gone, with its event row, before planning another follow-up. A pending
+  record whose marker is still there is retried after the same fresh checks.
+  Nothing starts in the tick that
+  releases: the next tick finds no marker and starts the follow-up as it
+  would for any merge. A claim on the same pull request that goes stale
+  after that (the restarted follow-up's, or a person's later run) is not
+  released a second time: it is notified to a person (cause
+  `followup-stale`), with its age, whose claim it is and the earlier
+  release, and repeated on the notifications' cadence until a person marks
+  it done or deletes it. Once is the bound because a single release
+  recovers a run that stopped short, which is what the hold usually is, and
+  two in a row say the follow-up itself needs a person; a release that
+  could repeat would start a follow-up again and again behind a failure no
+  run settles. A claim inside the window, one a running session is joined
+  to, one whose age does not read, and one the runtime cannot say about are
+  held as before, reported with their author and age and with the window
+  that releases them. The tick's own claims are not released this way:
+  their end is on this host's records, so a failed one is notified as a
+  failed follow-up and a running one ends with its launch. A person's claim
+  and another host's count alike, since the marker is the one record either
+  leaves, and the report and the notice say whose claim it was. Only the
+  owner releases, as it alone notifies, so the release record on its host
+  is the only one, and two hosts never release one claim twice.
 - **A claim on the forge for every drive launch.** Beside each drive's
   launch record, after the record holds its slot and before the runtime's
   `launch`, the tick posts a launch claim on the pull request, one of the
@@ -288,16 +331,16 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | running, heartbeat past the lease window | silent | takes it over only when this machine's launch record, or another host's launch claim, started that driver; otherwise reports it |
 | stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
 | stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
-| stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies once per stop, with the exit and the drive's handoff |
+| stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies per stop, with the exit and the drive's handoff |
 | stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
 | stopped `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
-| stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies once per stop, with the drive's handoff |
+| stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies per stop, with the drive's handoff |
 | stopped `16` (quota-parked) | re-armable | re-arms on an admitted account other than the one its launch record names, when one does, or after the wall's reset |
 | stopped `8` (parked), every parked item answered | re-armable | re-arms on any admitted account |
 | stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive) | re-armable | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to |
-| stopped `8`, an item unanswered | parked | notifies once per park |
+| stopped `8`, an item unanswered | parked | notifies per park |
 | stopped `11` or `13` | refused | nothing; another driver holds it |
-| stopped on any other exit (`1`, `2`, `6`, `7`, `12`, `14`, `15`, or one this table does not know) | needs a person | notifies once per stop, with the exit and the drive's handoff |
+| stopped on any other exit (`1`, `2`, `6`, `7`, `12`, `14`, `15`, or one this table does not know) | needs a person | notifies per stop, with the exit and the drive's handoff |
 
 The tick reads every pull request merged after the date the follow-up
 stage was switched on for the repository (`followup_since` in the machine
@@ -628,13 +671,12 @@ implementation:
   is still unread (see Notifications) and keeping the comment's dispatched
   marks, which Orca's phone app shows. A workspace's comment carries a kickoff
   prompt until its agent starts, so the tick never writes one on a
-  workspace that may yet start an agent with it. The target is the item's
-  or pull request's workspace when its agent has started; otherwise
-  (a drive a person or another machine started, a pull request with no
-  local workspace, a pickup whose agent never started) it is a
-  notification workspace the dispatcher keeps per repository, on the
-  default branch, into which it never launches an agent, its comment
-  naming the item or pull request the message is about. A new one runs no
+  workspace that may yet start an agent with it. The target is the
+  repository's one destination (see Notifications): the workspace on the
+  branch `dispatch.notices_branch` names, else a notification workspace the
+  dispatcher keeps per repository, on the default branch, into which it
+  never launches an agent, its comment naming the item or pull request each
+  message is about and the workspace its stage ran in. A new one runs no
   create hook and has its first terminal closed (`orca terminal close
   --all`). Once a tick's
   messages are sent, the tick removes it (`orca worktree rm
@@ -644,7 +686,8 @@ implementation:
   every record whole; never one written that tick, nor one holding a
   comment that is not the dispatcher's, an agent, changes git reports or a
   commit no remote branch holds. The next message that needs it opens it
-  again; a cause already sent is not sent again;
+  again; a cause still standing is sent again on the configured cadence,
+  unless it is still unread with the message;
 - `steer` as the nudge's text sent to the session's terminal, after the
   terminal's screen is read for the checks in Control. Orca reaches a
   running agent's terminal by the id `orca worktree ps --json` reports:
@@ -788,7 +831,7 @@ cannot set them.
 **Sessions that wait.** A pickup is an interactive skill, and with nobody
 to answer a question it stops and states it, as every Jig skill does
 without a person. An agent the runtime reports waiting for longer than
-`dispatch.blocked_after` is reported and notified once; it keeps its slot
+`dispatch.blocked_after` is reported and notified; it keeps its slot
 until it ends or a person ends it, so a cap full of waiting sessions is
 visible in every report rather than silent. A follow-up's pass cannot
 wait: one that cannot finish without a person carries out what does not
@@ -893,14 +936,56 @@ waits on the authenticated Windows smoke.
 
 ### Notifications
 
-A notification goes out once per cause, its launch record or receipt
+A notification goes out for each cause, its launch record or receipt
 naming what was sent: a drive parked with an item unanswered, carrying the
 parked questions (item 32's framed decision, built); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
-stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a session waiting past
+stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a session waiting past
 `blocked_after`; a running stage drifting from its expectation, and a
-session still waiting on a wall after its one nudge (see Control).
+session still waiting on a wall after its one nudge (see Control). Every
+message carries the cause or the question, the pull request's link and
+where the handoff is, and names the workspaces the stage ran in.
+
+**One destination per repository.** Every notification for a repository goes
+to one workspace: the one on the branch `dispatch.notices_branch` names,
+when the repository names one, else the repository's notices workspace,
+which the tick opens from the default branch when it needs it and removes
+once its job is done. It never goes to the workspace joined to the pull
+request or item. The person this serves dispatches many repositories from
+one machine and does not visit workspaces one by one: a notice written into
+an agent's tree, or into the workspace a follow-up ran in, is a notice
+nobody reads, and the only standing record of it is the tick's journal. A
+single place per repository is one a person can say they watch. The
+workspace a person names is theirs: the tick never opens or removes it, and
+a notice waits, reported, while no workspace on that branch is open or its
+comment is a person's, rather than going somewhere else. That is also why
+the destination is named by a branch, in the repository's `dispatch`
+section: a branch reads the same on every host, where a workspace's path is
+one machine's.
+
+**Repeated until it is settled.** A cause still standing
+`dispatch.renotify_after` (a day by default) after it was last sent is sent
+again, its message saying it still waits and since when, and again at that
+cadence until the cause leaves the plan: the park is answered, the drive
+re-armed or stopped, the follow-up's marker deleted. A notice sent once per
+head and then suppressed forever is one a person who missed it never hears
+of again. A repeat is skipped while the destination is still unread with the
+message, since sending it again says nothing new, and its clock starts from
+then. `0s` sends each cause once. A drift is an observation rather than
+something a person must do, so it is sent once for the life of its key and
+never repeated. The suppression record keeps the first send, which the
+dashboard dates the wait from, and the last, which the repeat is timed from;
+a repeat writes no second event row to the outcome log, since the cause's
+row was written when it was first sent.
+
+**On the dashboard.** The board's What needs you lists every cause the plan
+notifies, whether or not it has been sent: its pull request or item, the
+cause, the question when the stage stated one (a park's framed decisions, a
+follow-up's `Question:`), how long it has waited (from the stop's last
+ledger write, else the first send, else the first tick that saw it) and the
+workspace it was sent to. It is the one view over the line's waits, read
+from the same plan the notifications come from, so the two never disagree.
 
 A workspace holds one comment, so a message never replaces one a person has
 not read. The tick joins every cause it notifies to one target in a tick
@@ -959,11 +1044,13 @@ per kind of record, each row under a unique key:
 - **Waiting episodes**: one row per interactive session and wall it met,
   keyed by the wall's observation time.
 - **Suppression records** of notifications: one row per repository and
-  cause, dropped when the cause goes.
+  cause, with its first and its last send, dropped when the cause goes.
 - **Nudge records**: one row per session and waiting episode, written
   pending before the send, its delivery marked once after.
 - **Follow-up outcome records**: one row per repository and merged pull
   request, the latest attempt's.
+- **Follow-up release records**: one row per repository and merged pull
+  request, the one stale claim the tick released on it.
 - **Idle clocks** of claimed items: one row per repository and item.
 - **The outcome log**: one row per key, which nothing removes, written in
   the same transaction as what it records (see Control).
@@ -1030,7 +1117,9 @@ cannot close, is in
   whose launch record ended and still has none, the backstop for a wrapper
   killed before its write and a forge that refused it. A claim whose launch
   record is gone from its host ends as died. A claim whose host never writes
-  its end holds the pull request until a person deletes the comment.
+  its end holds the pull request until a person deletes the comment; a
+  follow-up's marker with no answer is released once it goes stale (see
+  Stale follow-up claims).
 
 The tick reads every host's claims for each pull request it classifies and
 places them beside its own launch records. A launch another host's current
@@ -1040,7 +1129,7 @@ re-drive of the same change and an arm at the same head count as if this
 host had launched them, so a re-drive is launched once per change across
 hosts and a stop on a conflict another host re-drove is a person's. A
 follow-up another host ran reads as done or failed once that host wrote its
-answer, and as held by that host until then. A driver another host started
+answer, and as held by that host until then, or until its claim goes stale. A driver another host started
 (its claim made before the driver's run began, and its launch not ended
 before it) whose ledger heartbeat is past the lease window is taken over by
 this host under the ledger's own rule; a claim alone, however old, never

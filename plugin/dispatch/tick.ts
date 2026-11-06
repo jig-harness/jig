@@ -83,6 +83,7 @@ import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
 import { hostCodexOptIn, lastAccount, slotTable } from "./lib/accounts.ts";
 import { readOutcomes, settleFollowups } from "./lib/followup-outcomes.ts";
+import { readReleases, reconcileReleases } from "./lib/followup-releases.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
 import type { RepoLineInput } from "./lib/line.ts";
 import { hasEnded } from "./lib/log.ts";
@@ -360,7 +361,7 @@ async function gatherRepo(
     created,
     held,
     serialized,
-    shared: { host: ctx.host, drives: claims },
+    shared: { host: ctx.host, drives: claims, owner: ctx.owner },
     ...(onlyLabeled ? { inScope } : {}),
   });
   if (onlyLabeled) report.inScope = [...inScope];
@@ -531,13 +532,11 @@ async function applyStages(
   if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
   // A host that does not own the repository never notifies for it: the owner does, once.
   if (enabled.has("notify") && inputs.shared.owner)
-    await applyNotices(
-      apply,
-      repo,
-      report,
-      inputs.sessions,
-      section.noticesLingerMs,
-    );
+    await applyNotices(apply, repo, report, inputs.sessions, {
+      lingerMs: section.noticesLingerMs,
+      renotifyAfterMs: section.renotifyAfterMs,
+      branch: section.noticesBranch,
+    });
 }
 
 /** This machine's launch records, the ones this tick writes included. */
@@ -668,6 +667,13 @@ function planRepo(
   const plan = planTick({
     ...input,
     outcomes: readOutcomes(repo),
+    releases: reconcileReleases(
+      readReleases(
+        repo,
+        input.merged.map((pr) => pr.number),
+      ),
+      input.merged,
+    ),
     launches: records,
     idleSince: readIdle(repo),
     nowMs,

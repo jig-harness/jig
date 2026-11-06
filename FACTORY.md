@@ -118,11 +118,13 @@ checks it.
 
 Some stops only a person can settle: a question a drive
 [parked](GLOSSARY.md) for a person, a failed follow-up, a pickup that
-stalled. The dispatcher tells a person once per cause. With Orca, the message
-becomes the comment on the workspace of the pull request or item, and the
-dispatcher marks that workspace unread, which Orca's phone app shows. A
-person answers a parked question with a comment on the pull request, and the
-next tick re-arms the drive.
+stalled. The dispatcher sends every such message for a repository to one
+place: its [notices workspace](GLOSSARY.md), or a workspace the team names.
+With Orca, the message becomes that workspace's comment, and the dispatcher
+marks the workspace unread, which Orca's phone app shows. A message whose
+cause still stands goes again the next day. A person answers a parked
+question with a comment on the pull request, and the next tick re-arms the
+drive.
 
 A running stage can fall short of what it should achieve: a drive whose open
 review threads stop falling, or a pickup with no pull request in time. That is

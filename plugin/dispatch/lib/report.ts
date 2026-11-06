@@ -7,6 +7,7 @@ import type {
   LabelWrite,
   LaunchOutcome,
   NotifyOutcome,
+  ReleaseOutcome,
   RepoReport,
   RetireOutcome,
   SharedReport,
@@ -35,6 +36,10 @@ function retireLine(n: RetireOutcome): string {
   return `  ${n.outcome.padEnd(10)} notices ${n.workspace}: ${n.detail}`;
 }
 
+function releaseLine(r: ReleaseOutcome): string {
+  return `  ${r.outcome.padEnd(8)} release ${r.target} (marker comment ${r.marker}, ${r.claimant}): ${r.detail}`;
+}
+
 function steerLine(s: SteerOutcome): string {
   return `  ${s.outcome.padEnd(10)} steer  ${s.target} (record ${s.record}, wall ${s.episode}): ${s.detail}`;
 }
@@ -45,6 +50,7 @@ function outcomeLines(r: RepoReport): string[] {
   const notified = r.notifications ?? [];
   return [
     ...r.launches.map(launchLine),
+    ...(r.releases ?? []).map(releaseLine),
     ...(r.steers ?? []).map(steerLine),
     ...notified.map(noticeLine),
     ...(r.noticesWorkspace === undefined

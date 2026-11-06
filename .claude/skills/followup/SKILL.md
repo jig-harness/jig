@@ -93,7 +93,10 @@ jig dispatch marker done "$PR" --comment "$MARKER"
 A session the dispatcher started records its result with the
 `jig dispatch result` command its prompt names instead. A run that stops
 short leaves its marker as it is: the dispatcher reports it, and a person
-marks it done or deletes it to have the follow-up run again.
+marks it done or deletes it to have the follow-up run again. Once it is
+older than `dispatch.followup_stale_after` with no session on the pull
+request, the dispatcher deletes it itself, once, and starts the follow-up
+again; so mark your marker done as soon as the last act succeeds.
 
 ## Step 1: the arms
 

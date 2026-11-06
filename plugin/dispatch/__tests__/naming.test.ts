@@ -178,7 +178,7 @@ describe("jig dispatch names what it starts", () => {
     );
   });
 
-  it("keeps the mark when a notification rewrites the workspace's comment", async () => {
+  it("keeps the marks when a notification goes to the notices workspace, leaving the drive's own workspace as it was", async () => {
     const mark = "⚙ dispatched · rearm #7 · launch 20261030T200000Z-aaaaaaaa";
     const { w, ws } = rearmable((path) => [
       { branch: "feature/7-parked", linkedPR: 7, path, comment: mark },
@@ -186,12 +186,13 @@ describe("jig dispatch names what it starts", () => {
     // Stopped on an exit only a person settles: notified, never re-armed.
     w.setComments(7, [ledgerComment(701, stoppedLedger(7, 7))]);
     const receipt = await tick(w);
-    expect(receipt.repos[0]?.notifications).toEqual([
-      expect.objectContaining({ target: "PR #7", outcome: "sent" }),
-    ]);
-    const { comment } = shown(w, ws);
-    expect(comment.split("\n")[0]).toBe(mark);
+    const [sent] = receipt.repos[0]?.notifications ?? [];
+    expect(sent).toMatchObject({ target: "PR #7", outcome: "sent" });
+    expect(shown(w, ws).comment).toBe(mark);
+    const { comment } = shown(w, sent?.workspace ?? "");
+    expect(comment.split("\n")[0]).toBe("⚙ dispatched · notices");
     expect(comment).toContain(`[jig dispatch: ${SLUG} PR #7 stopped 7`);
+    expect(comment).toContain(`Its workspace: ${ws}`);
   });
 
   it("names a follow-up's new workspace and its tab, and keeps the mark on the record", async () => {

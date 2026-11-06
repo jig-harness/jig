@@ -17,6 +17,9 @@ import {
   statePath,
 } from "../lib/state.ts";
 
+/** The schema version before the log gained its `target` column. */
+const BEFORE_TARGET = 8;
+
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) {
@@ -96,12 +99,15 @@ describe("the outcome log's key column", () => {
     const r = root();
     writeRow(ended("a", "PR #7", "2026-11-01T10:00:00.000Z"), r);
     closeStateDb(r);
-    // The database as the version before the column left it.
+    // The database as the version before the column left it, without the columns later versions added.
     const old = new Database(statePath(r));
     old.run("DROP INDEX log_target");
     old.run("ALTER TABLE log DROP COLUMN target");
-    old.run(`PRAGMA user_version = ${SCHEMA_VERSION - 1}`);
-    old.run("UPDATE db_meta SET version = ?", [SCHEMA_VERSION - 1]);
+    old.run("ALTER TABLE notices DROP COLUMN sent_at");
+    old.run("ALTER TABLE notices_content DROP COLUMN pending");
+    old.run("DROP TABLE followup_releases");
+    old.run(`PRAGMA user_version = ${BEFORE_TARGET}`);
+    old.run("UPDATE db_meta SET version = ?", [BEFORE_TARGET]);
     old.close();
 
     expect(

@@ -79,6 +79,7 @@ if (single !== null) {
     if (at < 0) continue;
     if (method === "DELETE") all.splice(at, 1); else all[at].body = input.body;
     fs.writeFileSync(F + "/" + name, JSON.stringify(all));
+    if (method === "DELETE" && fs.existsSync(F + "/comment-delete-lost")) { process.stderr.write("gh: response lost\\n"); process.exit(1); }
     out("{}");
   }
   process.stderr.write("gh: Not Found (HTTP 404)\\n");
@@ -234,6 +235,7 @@ if (args[0] === "worktree" && (args[1] === "set" || args[1] === "show")) {
     if (args.includes("--unread")) row.unread = true;
     if (args.includes("--display-name")) row.displayName = args[args.indexOf("--display-name") + 1];
     fs.writeFileSync(F + "/orca-ps.json", JSON.stringify(ps));
+    if (fs.existsSync(F + "/orca-set-lost")) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "response_lost" } })); process.exit(1); }
   }
   answer({ worktree: { id: row.worktreeId, path: row.path, comment: row.comment, isUnread: row.unread === true, displayName: row.displayName } });
 }

@@ -83,7 +83,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 9;
+const DISPATCH_DB = 12;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 3;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -222,6 +222,11 @@ const DISPATCHER: RecordKind[] = [
     "dispatch-followup-outcome",
     "dispatch/lib/followup-outcomes.ts",
     "followup_outcomes",
+  ),
+  dispatchTable(
+    "dispatch-followup-release",
+    "dispatch/lib/followup-releases.ts",
+    "followup_releases",
   ),
   dispatchTable("dispatch-idle", "dispatch/lib/idle.ts", "idle"),
   dispatchTable("dispatch-hold", "dispatch/lib/serial-holds.ts", "holds"),

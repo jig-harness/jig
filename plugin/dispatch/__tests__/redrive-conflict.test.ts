@@ -39,6 +39,7 @@ import {
   terminalCreates,
   waitFor,
 } from "./launch-fixtures.ts";
+import { withOrigin } from "./pickup-fixtures.ts";
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -85,6 +86,8 @@ function fixture(
   const w = world();
   current = w;
   w.setConfig(yaml);
+  // A person is told in the notices workspace, opened from the default branch.
+  withOrigin(w);
   w.setPrs("open", [openPr(7, HEAD, pr)]);
   w.setComments(7, [
     ledgerComment(701, stoppedLedger(7, exit, { verifiedSha: HEAD_SHA })),
