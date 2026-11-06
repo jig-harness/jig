@@ -341,7 +341,7 @@ export function driveDbReadiness(stateDir: string): DriveDbReadiness {
   return found.readiness;
 }
 
-/** The read-only connections this process holds, one per database, as `driveDb` holds one writable connection: callers never close it. */
+/** The read-only connections this process holds, one per clone directory (readiness and every row filter are the clone's): callers never close one. */
 const readOnlyHeld = new Map<string, DriveDb>();
 
 /**
@@ -351,13 +351,16 @@ const readOnlyHeld = new Map<string, DriveDb>();
  * with exit 4 instead of creating, migrating or importing.
  */
 function driveDbReadOnly(stateDir: string): DriveDb {
-  const path = dbPathFor(stateDir);
-  const held = readOnlyHeld.get(path);
+  const held = readOnlyHeld.get(stateDir);
   if (held !== undefined) return held;
   const found = inspect(stateDir);
   if ("db" in found) {
-    const drive = { db: found.db, clone: basename(stateDir), path };
-    readOnlyHeld.set(path, drive);
+    const drive = {
+      db: found.db,
+      clone: basename(stateDir),
+      path: dbPathFor(stateDir),
+    };
+    readOnlyHeld.set(stateDir, drive);
     return drive;
   }
   const r = found.readiness;

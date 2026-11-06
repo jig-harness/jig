@@ -7,9 +7,15 @@
  */
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { closeDatabase } from "../../../shared/records/db.ts";
 import { DRIVE_DB_VERSION, dbPathFor } from "../scripts/lib/state/db.ts";
@@ -128,6 +134,33 @@ describe("drives-read-only.ts --json", () => {
     expectSpawnExit(r, 4);
     expect(r.stderr).toContain("has not read this clone's state directory in");
     expect(readFileSync(db).equals(before)).toBe(true);
+  });
+
+  it("checks each clone's readiness when one process reads two clones of one database", async () => {
+    const { stateDir } = drivenClone();
+    const sibling = join(dirname(stateDir), "other-clone");
+    mkdirSync(sibling);
+    const script = `
+      const { driveDb } = await import(${JSON.stringify(join(import.meta.dir, "..", "scripts", "lib", "state", "db.ts"))});
+      try {
+        driveDb(process.argv[1]);
+        driveDb(process.argv[2]);
+      } catch (e) {
+        process.exit(e.code ?? 1);
+      }
+    `;
+    const child = Bun.spawnSync(
+      [process.execPath, "-e", script, stateDir, sibling],
+      {
+        env: { ...process.env, JIG_DRIVE_DB_READ_ONLY: "1" },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expectSpawnExit(child, 4);
+    expect(child.stderr.toString()).toContain(
+      "has not read this clone's state directory in",
+    );
   });
 
   it("takes --json alone", async () => {

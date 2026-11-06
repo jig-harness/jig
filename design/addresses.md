@@ -119,10 +119,9 @@ additive migration, so `last` is one lookup in a table that only grows.
 than the owners of those databases do, so it never chooses when one
 migrates: the dispatcher's state database (launch records, outcome log)
 and the drive's database are opened without creating, migrating or writing
-anything. Where a schema is older than `ask` needs, `ask` reads what that
-schema holds (the outcome log, before its key column, is found by the text
-of its rows), or reports the source in `sources` as not read, saying the
-owner's next run brings it forward; it never fills a field from a guess.
+anything. Where a schema is older than `ask` needs, `ask` reports the source in
+`sources` as not read (the outcome log, before its key column, is one),
+saying the owner's next run brings it forward; it never fills a field from a guess.
 The drive's listing takes the same rule: `drives-read-only.ts` lists a
 database that is already current and declines one a driver must first
 bring forward. The dispatcher's and the drive's own runs keep
