@@ -153,11 +153,13 @@ guards keep one stage from starting twice:
 
 - **One tick at a time per machine.** A tick takes an exclusive lock under
   `~/.local/state/jig/dispatch/`; a second tick that finds it held exits at
-  once and says which process holds it. The lock names its holder by the
+  once and says which process holds it. The lock holds its holder's process
+  id, which every version of the tick reads, and beside it the
   [process identity](../GLOSSARY.md) every lock of the plugin records
   (host, boot, process id and start time), so a lock left by a tick that
   died is taken over even when its process id has since been reused: by a
-  process started after a restart, or by another process altogether.
+  process started after a restart, or by another process altogether. A
+  lock with no identity beside it is judged by its process id alone.
 - **A fresh read before each launch.** With `--apply`, the tick reads the
   action's own facts again just before it starts it: the item still
   assigned and in a dispatch state, the ledger still re-armable, no running

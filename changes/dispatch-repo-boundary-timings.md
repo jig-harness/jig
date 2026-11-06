@@ -20,7 +20,8 @@ release: minor
   other repositories are read, planned and acted on, the tick writes its
   receipt and exits 1. A failure in the tick's closing steps still writes
   the receipt, marked incomplete.
-- The tick lock records its holder's start time and the host's boot, so a
-  lock left by a tick that died is taken over even when its process id was
-  reused after a restart or by another process. A lock written by an
-  earlier version is still judged by its process id.
+- The tick lock records its holder's start time and the host's boot beside
+  its process id (`tick.lock.holder`), so a lock left by a tick that died is
+  taken over even when its process id was reused after a restart or by
+  another process. A tick of an earlier version still reads the lock, and a
+  lock it took is judged by its process id, as before.

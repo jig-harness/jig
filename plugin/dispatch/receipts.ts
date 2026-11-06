@@ -11,12 +11,13 @@
  * a receipt of a refused read names the repository without its window.
  *
  * One tick runs per machine, under the tick lock beside the receipts. The
- * lock names its holder by the identity every lock of the plugin records
+ * lock holds its holder's pid, which every version of the tick reads, and
+ * `tick.lock.holder` beside it the identity every lock of the plugin records
  * (`shared/liveness.ts`): host, boot, pid and start time. A lock whose
  * holder ran before this host last restarted, or whose pid now belongs to a
  * process that started at another time, is abandoned and taken over; one
- * whose holder cannot be judged is kept. A lock in the earlier form, a bare
- * pid, is judged by that pid alone.
+ * whose holder cannot be judged is kept. A lock with no identity beside it,
+ * which an earlier version took, is judged by its pid alone.
  */
 import {
   closeSync,
@@ -254,12 +255,32 @@ function publishOnce(path: string, text: string): boolean {
   }
 }
 
-/**
- * The lock file, holding this process's identity (`shared/liveness.ts`): its
- * host, its boot, its pid and its start time, published by `publishOnce`.
- */
+/** A lock or guard file holding this process's pid, published by `publishOnce`. */
 function publishLock(path: string): boolean {
-  return publishOnce(path, encodeIdentity(lockIdentity()));
+  return publishOnce(path, String(process.pid));
+}
+
+/** Where the identity of a lock's holder is recorded, beside the pid the lock itself holds. */
+const holderFile = (path: string) => `${path}.holder`;
+
+/**
+ * Record this process's identity (`shared/liveness.ts`) beside the lock it
+ * has just taken: its host, its boot, its pid and its start time. The lock
+ * itself keeps only the pid, which every version of the tick reads. A record
+ * that cannot be written leaves the lock judged by its pid alone.
+ */
+function recordHolder(path: string): void {
+  const staged = `${holderFile(path)}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    writeFileSync(staged, encodeIdentity(lockIdentity()), { mode: 0o600 });
+    renameSync(staged, holderFile(path));
+  } catch (err) {
+    swallow(
+      err,
+      `${holderFile(path)} cannot be written; the pid alone decides`,
+    );
+    rmSync(staged, { force: true });
+  }
 }
 
 /** A lock file's text; `null` when it cannot be read. */
@@ -273,18 +294,30 @@ function lockText(path: string): string | null {
 }
 
 /**
- * The holder a lock file's text names: an identity, or a bare pid in the
- * earlier form, which is judged by its pid alone; `null` while it is empty,
- * finished, or names no holder.
+ * The holder a lock's text names: the identity recorded beside it when that
+ * names the same pid and was written no earlier than the lock, else the pid
+ * alone, as a lock with no record beside it (a guard, or one an earlier
+ * version took) is judged; `null` while the lock is empty or finished.
  */
-function holderOf(text: string | null): ProcessIdentity | null {
-  const trimmed = text?.trim() ?? "";
-  if (/^[1-9][0-9]*$/.test(trimmed)) return legacyIdentity(Number(trimmed));
-  return trimmed === "" ? null : decodeIdentity(trimmed);
+function holderOf(path: string, text: string | null): ProcessIdentity | null {
+  const pid = text?.trim() ?? "";
+  if (!/^[1-9][0-9]*$/.test(pid)) return null;
+  try {
+    const recorded = decodeIdentity(readFileSync(holderFile(path), "utf8"));
+    if (
+      recorded !== null &&
+      String(recorded.pid) === pid &&
+      statSync(holderFile(path)).mtimeMs >= statSync(path).mtimeMs
+    )
+      return recorded;
+  } catch (err) {
+    swallow(err, `no holder recorded beside ${path}; its pid decides`);
+  }
+  return legacyIdentity(Number(pid));
 }
 
 function lockHolder(path: string): ProcessIdentity | null {
-  return holderOf(lockText(path));
+  return holderOf(path, lockText(path));
 }
 
 /**
@@ -300,7 +333,7 @@ function holderGone(holder: ProcessIdentity): boolean {
 
 /** Whether the lock file at `path`, whose text is `text`, is abandoned: its holder gone, or none written within the grace. */
 function abandoned(path: string, text: string | null): boolean {
-  const holder = holderOf(text);
+  const holder = holderOf(path, text);
   return holder === null ? olderThan(path, LOCK_GRACE_MS) : holderGone(holder);
 }
 
@@ -358,7 +391,9 @@ function replaceSeen(path: string, seen: string | null): boolean {
   const now = lockText(path);
   if (now !== seen || !abandoned(path, now)) return false;
   rmSync(path, { force: true });
-  return publishLock(path);
+  if (!publishLock(path)) return false;
+  recordHolder(path);
+  return true;
 }
 
 /**
@@ -429,13 +464,19 @@ export function takeTickLock(
   const path = join(root, "tick.lock");
   const release = () => {
     // Only the owner removes the lock: a replaced one belongs to another tick.
-    if (lockHolder(path)?.pid === process.pid) rmSync(path, { force: true });
+    // Its record goes first, so the lock is never left naming a holder it does not have.
+    if (lockHolder(path)?.pid !== process.pid) return;
+    rmSync(holderFile(path), { force: true });
+    rmSync(path, { force: true });
   };
   for (let attempt = 0; attempt < 2; attempt++) {
-    if (publishLock(path)) return { release };
+    if (publishLock(path)) {
+      recordHolder(path);
+      return { release };
+    }
     const seen = lockText(path);
     if (!abandoned(path, seen)) {
-      const holder = holderOf(seen);
+      const holder = holderOf(path, seen);
       const who =
         holder === null ? "a process not yet named" : describeIdentity(holder);
       return { heldBy: `${who} (${path})` };
