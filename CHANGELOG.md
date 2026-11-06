@@ -387,6 +387,33 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.149.4] - 2026-11-06
+
+### Changed
+
+- `/jig:operator` answers a status question (where a pull request, a tracker item or a follow-up stands) as the same card every time: `jig ask`'s own answer as it printed it, then four lines saying where the work stands, what it waits on, what you can do (with the drive doctor's recovery command quoted for you to run) and what the answer could not read. `/jig:operator 456` is that status for pull request 456, or for issue 456 when no pull request has that number.
+- `/jig:operator` on its own lists what waits on a person as a fixed card too: one block per repository, one line per entry with the act that settles it and since when, the question quoted where an entry names one, and a closing line saying running drives are not listed. Threads and other questions are still answered in sentences. See [plugin/skills/operator/SKILL.md](plugin/skills/operator/SKILL.md).
+- `jig ask --waiting` carries recorded stage and parked questions in its JSON and text answers, so the waiting card can quote them from one read; malformed stage questions make the stored line unreadable. Cards relay unavailable tick and launch history without asserting that nothing waits or no previous launch exists.
+
+## [0.149.3] - 2026-11-06
+
+### Fixed
+
+- On Linux, a dispatcher tick that no Orca terminal started (a wake-up from
+  Orca's plugin, or any run without `ORCA_CLI_COMMAND`) reads and starts
+  sessions through `orca-ide`, the name Orca installs its command under
+  there. It ran a bare `orca`, which on a desktop with GNOME's screen reader
+  installed is the screen reader: every such tick failed its runtime read
+  (`orca repo list failed (exit 1): … dbind-CRITICAL …`) and started
+  nothing. `jig doctor`'s `dispatch:orca` check looks for the same command.
+
+## [0.149.2] - 2026-11-06
+
+### Fixed
+
+- `jig ask` no longer migrates the machine's databases. It opens the dispatcher's state database (launch records and outcome log) and the drive's database read-only, so a command anyone can run at any moment never decides when the owner's database moves to a newer schema. Against a database an older schema holds, it reads what that schema allows or names the source in `sources` as not read, saying the owner's next run brings it forward; the outcome log before its `target` column is one of those, since no index finds its rows and a scan could be neither complete nor bounded. The dispatcher's and the drive's own runs keep their additive migrations.
+- `drives-read-only.ts --json`, the drive's listing for a reader that is not a driver, lists the drive's locks without creating, migrating or importing into the drive's database: a database that is already current is listed as it is, none is no drives, and one a driver must first bring forward is declined with exit 4 and the reason on stderr.
+
 ## [0.149.1] - 2026-11-06
 
 ### Changed
@@ -5450,7 +5477,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.149.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.149.4...HEAD
+[0.149.4]: https://github.com/jig-harness/jig/compare/v0.149.3...v0.149.4
+[0.149.3]: https://github.com/jig-harness/jig/compare/v0.149.2...v0.149.3
+[0.149.2]: https://github.com/jig-harness/jig/compare/v0.149.1...v0.149.2
 [0.149.1]: https://github.com/jig-harness/jig/compare/v0.149.0...v0.149.1
 [0.149.0]: https://github.com/jig-harness/jig/compare/v0.148.1...v0.149.0
 [0.148.1]: https://github.com/jig-harness/jig/compare/v0.148.0...v0.148.1

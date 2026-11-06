@@ -39,7 +39,7 @@ runs, what it hands over to.
 | [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/jig:resolve-review-comments` | One review round of [drive-pr](skills/drive-pr/README.md); hands contested findings to the `review-arbiter` agent and design questions to [decide](skills/decide/SKILL.md) |
 | [resolve-conflicts](skills/resolve-conflicts/README.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files (those the repository lists in its configuration or declares in its change-area catalog), records every decision in the commit message, checks that no change was silently dropped, verifies staged work belongs to the operation, and applies repository obligations to the whole resolved diff; replays past merges to report where they conflicted, why, and the change that removes each cause | `/jig:resolve-conflicts` | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge |
 | [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running or its CI-repair budget is spent; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow |
-| [operator](skills/operator/SKILL.md) | Answers a person's question about the line in sentences (where a pull request, item or follow-up stands, what waits on a person, what was said to a station) from [`jig ask`](#asking-a-station-where-it-stands), and sends their command to a station (hold, release, drive, an answer to a parked question, a mailbox directive) with [`jig send`](#telling-a-station-what-to-do), only on their instruction and after showing them the dry run; holds no state of its own | `/jig:operator` | Reads and writes the records [do-item](skills/do-item/SKILL.md), [drive-pr](skills/drive-pr/README.md) and the follow-up leave and act on; hands the work of a station to that station's skill, and a question about how Jig works to [jig](skills/jig/README.md) |
+| [operator](skills/operator/SKILL.md) | Answers a person's question about the line (where a pull request, item or follow-up stands, what waits on a person, what was said to a station) from [`jig ask`](#asking-a-station-where-it-stands), a status as one fixed card and anything else in sentences, and sends their command to a station (hold, release, drive, an answer to a parked question, a mailbox directive) with [`jig send`](#telling-a-station-what-to-do), only on their instruction and after showing them the dry run; holds no state of its own | `/jig:operator` | Reads and writes the records [do-item](skills/do-item/SKILL.md), [drive-pr](skills/drive-pr/README.md) and the follow-up leave and act on; hands the work of a station to that station's skill, and a question about how Jig works to [jig](skills/jig/README.md) |
 
 **Review a change.** Check work against the repository's own standards before and during review: `change-areas` says what the change owes, `review` and `github-actions` check it.
 
@@ -763,7 +763,10 @@ repository turns on and lacks, and creates them with `--yes`. The earlier
 and is the one form that sets an interval other than the machine file's.
 
 The session runtime it reads and launches in is
-[Orca](https://www.onorca.dev) (`orca` on `PATH`, or `ORCA_CLI_COMMAND`),
+[Orca](https://www.onorca.dev) (`ORCA_CLI_COMMAND`, else the command in
+`ORCA_CLI_BIN_DIR`, else `orca-ide` on `PATH` on Linux and `orca` elsewhere,
+the names Orca installs its command under; on Linux a bare `orca` is often
+GNOME's screen reader),
 behind an interface a second runtime can be added to. The repository's
 values are its [`dispatch` section](CONFIGURATION.md#dispatch), read from
 its default branch on the forge.
@@ -783,7 +786,12 @@ jig ask --waiting [--json]
 
 In a session, [`/jig:operator`](skills/operator/SKILL.md) runs `jig ask`
 and `jig send` for you: ask it "where does 456 stand" or "what is waiting on
-me", or tell it "hold 456", and it answers in sentences.
+me", or tell it "hold 456". A status comes back as the same card every
+time: `jig ask`'s own answer, then four lines saying where the work stands,
+what it waits on, what you can do and what was not read. `/jig:operator
+456` asks that of pull request 456, or of issue 456 when no pull request
+has that number, and `/jig:operator` on its own lists what waits on a
+person, one line per entry. Anything else it answers in sentences.
 
 **The address.** A station on a piece of work has an
 [address](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
@@ -823,16 +831,17 @@ never calls the tracker. A `pickup` reads the item through the tracker the
 repository's configuration names, and makes no forge call. On the machine
 that dispatched the work it also reads the dispatcher's launch records, its
 outcome log and, for a drive, the drive's own listing in a checkout of the
-repository (`drives.ts --json`), whose doctor verdict and recovery command
-it prints and never runs. On a machine that never dispatched, it answers
+repository (`drives-read-only.ts`), whose doctor verdict and recovery command
+it prints and never runs. It opens these databases read-only and migrates
+none: against one an older schema holds, it reads what that schema allows or
+names the source in `sources` as not read until the owner's next run brings
+it forward. On a machine that never dispatched, it answers
 from the forge and the tracker, and `sources` says the launch records were
 not read. A source that does not answer within 15 seconds is reported
 unread, and no source starts after the answer's 45 seconds; the answer
 prints without it. A read that fails is reported in `sources`, never filled
-in from a guess. Opening the dispatcher's database brings an older schema
-forward, as every reader of it does; nothing else on the machine is written
-but the forge's response cache that every drive shares
-(`~/.cache/jig/gh-cache/`).
+in from a guess. Nothing on the machine is written but the forge's response
+cache that every drive shares (`~/.cache/jig/gh-cache/`).
 
 **`--thread`** adds the address's correspondence, each entry one record
 that already exists: a `request` (a `drive` or `hold` dispatch label, shown
@@ -853,7 +862,9 @@ each waits for, across the repositories the machine dispatches, from the
 newest tick's line, which the dispatcher keeps for its dashboard: it makes
 no forge or tracker call, and it says when that tick ran. On a machine that
 dispatches nothing it says there is no line to read. `--person <login>` is
-refused until a park records whom it waits on.
+refused until a park records whom it waits on. Each entry carries its recorded
+stage and parked questions in `questions` in JSON and as `question:` lines
+in text; parks without a separate question use their recorded decision lines.
 
 **`--json`** prints the answer as one object carrying its version, `v` (1):
 later versions add fields and never rename one. The fields only this
@@ -936,7 +947,7 @@ clear the variable or call the forge itself, as it could before.
 
 **The mailbox verbs.** The working tree, its mailbox and the driver
 generation come from the drive's own listing in a checkout of the
-repository here (`drives.ts --json`). A `stop` is addressed to that
+repository here (`drives-read-only.ts`). A `stop` is addressed to that
 generation, so it ends that driver at its next round boundary and a later
 driver ignores it (`drives.ts --stop` also cancels the running pass at
 once). The mailbox lets only a `stop` name a generation, so a `pause` or a

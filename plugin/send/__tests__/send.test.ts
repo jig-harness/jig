@@ -322,6 +322,23 @@ describe("jig send to a drive's mailbox", () => {
     expect(nobody.stderr).toContain("no driver on this machine holds");
     expect(inbox(w)).toEqual([]);
   });
+
+  it("does not say no driver holds the drive when its listing was declined, and writes nothing", async () => {
+    const w = world();
+    const declined = join(w.root, "declined-drives.ts");
+    writeFileSync(
+      declined,
+      `process.stderr.write("drives-read-only.ts: the drive's database is at schema version 3, and a driver's next run brings it forward\\n"); process.exit(4);\n`,
+    );
+    w.env.JIG_ASK_DRIVES_SCRIPT = declined;
+    pullRequest(w, 13, [], [ledgerOn(711, parkedLedger(13))]);
+    const r = await w.send([`drive@${REPO}#13`, "hold-push"]);
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("the drive's listing was not read");
+    expect(r.stderr).toContain("a driver's next run brings it forward");
+    expect(r.stderr).not.toContain("no driver on this machine holds");
+    expect(inbox(w)).toEqual([]);
+  });
 });
 
 describe("jig send writes through the record's owner", () => {

@@ -2,11 +2,13 @@
  * What `jig ask` reads on this machine: the dispatch file's repositories and
  * the checkout it runs in, the dispatcher's state database (launch records,
  * the outcome log, the newest tick's line) through the dispatcher's own
- * readers, and a drive's own records through the drive's listing
- * (`drives.ts --json`), which classifies each drive the way its doctor does
- * and writes nothing. None of it is created or migrated here when it does
- * not exist yet: a machine that never dispatched has no launch records, and
- * the answer says so.
+ * readers over a read-only connection, and a drive's own records through
+ * the drive's listing (`drives-read-only.ts`), which classifies
+ * each drive the way its doctor does. None of it is created, migrated or
+ * written here: a machine that never dispatched has no launch records, and
+ * the answer says so; a database an older schema holds is read as far as
+ * that schema allows, or named in the sources as not read until its owner's
+ * next run brings it forward.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -15,17 +17,22 @@ import type {
   RepositoryChoices,
 } from "../../shared/address.ts";
 import { consumerRoot } from "../../shared/consumer.ts";
+import { swallow } from "../../shared/errors.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { run, tsArgv } from "../../shared/proc.ts";
+import {
+  databaseInstance,
+  type ReadOnlyDatabase,
+} from "../../shared/records/db.ts";
+import { digest } from "../../shared/records/writer.ts";
 import {
   readMachineConfig,
   type MachineConfig,
 } from "../../dispatch/lib/machine-config.ts";
 import { type ReadRecord, readLaunches } from "../../dispatch/lib/launches.ts";
 import { type LogRow, rowsFor } from "../../dispatch/lib/log.ts";
-import { hostOf } from "../../dispatch/lib/shared-launches.ts";
-import { statePath } from "../../dispatch/lib/state.ts";
+import { readOnlyStateDb, statePath } from "../../dispatch/lib/state.ts";
 import { stateRoot } from "../../dispatch/receipts.ts";
 import {
   remoteUrl,
@@ -41,7 +48,7 @@ const DRIVES = resolve(
   "skills",
   "drive-pr",
   "scripts",
-  "drives.ts",
+  "drives-read-only.ts",
 );
 
 /** The listing script: the drive's, unless a test names another. */
@@ -92,6 +99,26 @@ export function dispatcherRoot(): string | null {
   return existsSync(statePath(root)) ? root : null;
 }
 
+/**
+ * The dispatcher's state database under `root`, read-only, with the reason
+ * it cannot be used otherwise; the caller closes it. A database behind this
+ * plugin's schema is returned as it is.
+ */
+function openState(root: string): Outcome<ReadOnlyDatabase, "unreadable"> {
+  const opened = readOnlyStateDb(root);
+  if (!opened.ok) return failed("unreadable", opened.failure.reason);
+  return opened.value === null
+    ? failed("unreadable", "there is no dispatcher database")
+    : ok(opened.value);
+}
+
+/** What a failed read of a database behind this plugin's schema adds: the owner brings it forward. */
+function behindNote(state: ReadOnlyDatabase): string {
+  return state.behind
+    ? ` (the dispatcher's database is at schema version ${state.version}; its next run brings it forward)`
+    : "";
+}
+
 /** This machine's launch records that `keep` accepts, with their state, or why they do not read. */
 export async function launchesWhere(
   root: string,
@@ -99,14 +126,22 @@ export async function launchesWhere(
 ): Promise<
   Outcome<{ records: ReadRecord[]; unreadable: string[] }, "unreadable">
 > {
+  const state = openState(root);
+  if (!state.ok) return state;
   try {
-    const { records, unreadable } = await readLaunches(root);
+    const { records, unreadable } = await readLaunches(
+      root,
+      undefined,
+      state.value.db,
+    );
     return ok({ records: records.filter(keep), unreadable });
   } catch (error) {
     return failed(
       "unreadable",
-      `the launch records do not read: ${error instanceof Error ? error.message : String(error)}`,
+      `the launch records do not read: ${error instanceof Error ? error.message : String(error)}${behindNote(state.value)}`,
     );
+  } finally {
+    state.value.db.close();
   }
 }
 
@@ -120,9 +155,15 @@ export function outcomeRows(
   repo: string,
   target: string,
 ): LogRow[] {
-  const read = attempt("unreadable", "the outcome log does not read", () =>
-    rowsFor(repo, target, root),
-  );
+  const state = openState(root);
+  const read = state.ok
+    ? attempt(
+        "unreadable",
+        `the outcome log does not read${behindNote(state.value)}`,
+        () => rowsFor(repo, target, root, state.value.db),
+      )
+    : state;
+  if (state.ok) state.value.db.close();
   reading.note(
     read.ok
       ? { record: "dispatch-outcome", read: true, local: true }
@@ -138,8 +179,18 @@ export function outcomeRows(
 
 /** This host as its launch claims name it, or `null` when that cannot be read. */
 export function ourHost(root: string): string | null {
-  const read = attempt("unreadable", "", () => hostOf(root));
-  return read.ok ? read.value : null;
+  const state = openState(root);
+  if (!state.ok) return null;
+  try {
+    const instance = databaseInstance(state.value.db);
+    // A database from before it recorded its instance names no host; none is guessed.
+    return instance === "" ? null : digest(instance);
+  } catch (error) {
+    swallow(error, "the dispatcher database's instance could not be read");
+    return null;
+  } finally {
+    state.value.db.close();
+  }
 }
 
 /** One drive as the drive's own listing reads it. */
@@ -184,7 +235,8 @@ function rowOf(v: Record<string, unknown>): DriveRow {
 
 /**
  * The drive of pull request `pr` as the drive's own listing in the checkout
- * at `path` reads it (`drives.ts --json`: its driver lock and the doctor's
+ * at `path` reads it (`drives-read-only.ts`, which runs `drives.ts --json` over a
+ * database that is already current: its driver lock and the doctor's
  * verdict on it, which it reads without writing); `null` when that clone
  * holds no driver lock for it.
  */
@@ -204,6 +256,13 @@ export async function driveRow(
     timeoutSec: sec,
     stderr: "pipe",
   });
+  if (r.code === 4)
+    // The listing declined because reading would have migrated or imported into the drive's database.
+    return failed(
+      "unreadable",
+      r.stderr.replace(/^drives-read-only\.ts: /, "").trim() ||
+        "the drive's database is not current, and a driver's next run brings it forward",
+    );
   if (r.code !== 0)
     return failed(
       "unreadable",

@@ -195,7 +195,7 @@ drive a person or another machine runs is not on the page either, and
 nothing tells work that settles by itself from work that waits on a
 person. [design/dispatch-board.md](dispatch-board.md) has how it works:
 one predicate, `plugin/skills/drive-pr/scripts/lib/merge-ready.ts`, which
-the tick and `announce-merge-ready.ts` both call, places a converged pull
+the tick, `announce-merge-ready.ts` and `jig ask` all call, places a converged pull
 request in a lane of Ready to merge (merge now, with a merge command pinned
 to the verified head and built only from values of a strict form; approve
 first, naming requested reviewers or that nobody was asked and saying other

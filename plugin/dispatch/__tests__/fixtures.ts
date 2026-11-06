@@ -4,8 +4,8 @@
  * answers the calls the tick adds (the repository view, the configuration
  * file on the default branch, the pull request listings, and a comment's
  * update or removal on whichever pull request holds it, an update refused
- * while `comment-edit-fail` exists); a fake `orca`
- * answering `repo list` and `worktree ps` from files, listing the worktrees
+ * while `comment-edit-fail` exists); a fake Orca command (on `PATH` under
+ * the name Orca installs it under, `orca-ide` on Linux) answering `repo list` and `worktree ps` from files, listing the worktrees
  * it creates there under the name asked for, and keeping a workspace's
  * comment, unread mark and name (`worktree set`, `worktree show`) in that
  * file; and the GitHub
@@ -31,6 +31,7 @@ import {
   ledgerFromState,
 } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { freshState } from "../../skills/drive-pr/scripts/lib/state/schema.ts";
+import { orcaInstalledName } from "../../shared/orca.ts";
 
 export const SLUG = "example-org/example-repo";
 const JIG = resolve(import.meta.dir, "../../jig.ts");
@@ -469,7 +470,7 @@ export function world(): World {
   mkdirSync(home, { recursive: true });
   mkdirSync(bin, { recursive: true });
   writeFakeProgram(join(bin, "gh"), WRAPPER(join(dir, "..", "bin", "gh")));
-  writeFakeProgram(join(bin, "orca"), FAKE_ORCA);
+  writeFakeProgram(join(bin, orcaInstalledName()), FAKE_ORCA);
   writeFakeProgram(join(bin, "claude"), FAKE_CLAUDE);
   writeFakeProgram(join(bin, "codex"), FAKE_CODEX);
   writeFileSync(join(root, "fake-drive.js"), FAKE_DRIVE);

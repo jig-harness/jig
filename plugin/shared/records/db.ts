@@ -303,6 +303,52 @@ export function openDatabase(spec: DatabaseSpec): Outcome<Database, OpenCode> {
   return opened;
 }
 
+/** A database opened for reading only, and whether its owner's next open would write to it. */
+export interface ReadOnlyDatabase {
+  readonly db: Database;
+  /** The schema version the file is at. */
+  readonly version: number;
+  /** Whether opening it through `openDatabase` would migrate it or write its meta row. */
+  readonly behind: boolean;
+}
+
+/**
+ * The database at `spec.path` opened read-only, for a reader that must not
+ * choose when its owner's database migrates: nothing is created, migrated or
+ * written, and the connection is the caller's to close. `null` when there is
+ * no file. A database a newer plugin wrote that needs a newer reader is
+ * refused (`newer-schema`) as `openDatabase` refuses it; an older one is
+ * returned as it is, `behind` set, for the caller to read what its schema
+ * holds.
+ */
+export function openReadOnly(
+  spec: DatabaseSpec,
+): Outcome<ReadOnlyDatabase | null, OpenCode> {
+  if (!existsSync(spec.path)) return ok(null);
+  let db: Database | undefined;
+  try {
+    db = new Database(spec.path, { readonly: true });
+    db.run(`PRAGMA busy_timeout = ${BUSY_MS}`);
+    const refused = refusal(db, spec);
+    if (refused !== null) {
+      db.close();
+      return refused;
+    }
+    return ok({
+      db,
+      version: userVersion(db),
+      behind: needsWrite(db, spec),
+    });
+  } catch (error) {
+    db?.close();
+    return failed(
+      "unopenable",
+      `${spec.path} cannot be opened: ${error instanceof Error ? error.message : String(error)}`,
+      error,
+    );
+  }
+}
+
 /** Close and forget this process's connection to `path`, when it holds one. */
 export function closeDatabase(path: string): void {
   connections.get(path)?.db.close();
