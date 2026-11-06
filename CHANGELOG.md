@@ -387,6 +387,16 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.150.1] - 2026-11-06
+
+### Fixed
+
+- Followup passes leave routine local branches, retired workspaces and scratch
+  notes to periodic cleanup, even when no collector covers them yet. Their
+  retention no longer calls for a human decision or a failed followup result.
+  The lifecycle guidance and audit criterion keep active operational
+  scaffolding and evidence of unlanded work in scope.
+
 ## [0.150.0] - 2026-11-06
 
 ### Added
@@ -5508,7 +5518,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.150.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.150.1...HEAD
+[0.150.1]: https://github.com/jig-harness/jig/compare/v0.150.0...v0.150.1
 [0.150.0]: https://github.com/jig-harness/jig/compare/v0.149.4...v0.150.0
 [0.149.4]: https://github.com/jig-harness/jig/compare/v0.149.3...v0.149.4
 [0.149.3]: https://github.com/jig-harness/jig/compare/v0.149.2...v0.149.3
