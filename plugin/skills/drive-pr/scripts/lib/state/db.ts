@@ -39,6 +39,7 @@ import {
   inTransaction,
   type Migration,
   openDatabase,
+  openReadOnly,
 } from "../../../../../shared/records/db.ts";
 import { fail } from "../cli.ts";
 import { importStateDir } from "./import.ts";
@@ -260,6 +261,56 @@ export function peekImport(stateDir: string): ImportRecord | null {
   } catch (err) {
     swallow(err, "the drive's import record could not be read");
     return null;
+  } finally {
+    db.close();
+  }
+}
+
+/** What opening the drive's database for `stateDir`'s clone would do. */
+export type DriveDbReadiness =
+  | { readonly state: "absent" }
+  | { readonly state: "current" }
+  | { readonly state: "behind" | "unreadable"; readonly reason: string };
+
+/**
+ * Whether `driveDb(stateDir)` would open the clone's database without
+ * writing, found without creating, migrating or importing anything: `absent`
+ * when no driver ever created it, `current` when opening it changes nothing,
+ * `behind` when it would migrate the schema or read this clone's state
+ * directory in, `unreadable` when a newer plugin wrote it or it cannot be
+ * opened. For a reader that must leave the disk as it is.
+ */
+export function driveDbReadiness(stateDir: string): DriveDbReadiness {
+  const opened = openReadOnly({
+    path: dbPathFor(stateDir),
+    migrations: MIGRATIONS,
+  });
+  if (!opened.ok) return { state: "unreadable", reason: opened.failure.reason };
+  if (opened.value === null) return { state: "absent" };
+  const { db, version, behind } = opened.value;
+  try {
+    if (behind)
+      return {
+        state: "behind",
+        reason: `the drive's database is at schema version ${version}, and a driver's next run brings it forward`,
+      };
+    const imported =
+      db
+        .query("SELECT 1 FROM imports WHERE clone = ?")
+        .get(basename(stateDir)) !== null;
+    return imported
+      ? { state: "current" }
+      : {
+          state: "behind",
+          reason:
+            "the drive's database has not read this clone's state directory in, and a driver's next run does",
+        };
+  } catch (err) {
+    swallow(err, "the drive's database could not be read");
+    return {
+      state: "unreadable",
+      reason: "the drive's database could not be read",
+    };
   } finally {
     db.close();
   }

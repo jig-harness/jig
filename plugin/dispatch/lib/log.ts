@@ -191,20 +191,35 @@ export function insertRow(db: Database, row: LogRow): boolean {
  * name it: `PR #<n>`, or an item's key), in the order they were written;
  * none before the database exists. One lookup through the `target` index,
  * which also reads the rows a copy one release behind wrote without it
- * (their target is in the row's own text).
+ * (their target is in the row's own text). A reader that must not migrate
+ * the database passes its own read-only connection as `db` (`null` for none):
+ * on a schema before the `target` column, the rows are found by their text.
  */
 export function rowsFor(
   repo: string,
   target: string,
   root = stateRoot(),
+  db: Database | null = existingStateDb(root),
 ): LogRow[] {
-  const db = existingStateDb(root);
   if (db === null) return [];
-  const selected = db
-    .query(
-      "SELECT row FROM log WHERE repo = ? AND (target = ? OR (target IS NULL AND CASE WHEN json_valid(row) THEN json_extract(row, '$.target') END = ?)) ORDER BY seq",
-    )
-    .all(repo, target, target) as Array<{ row: string }>;
+  const byText =
+    "CASE WHEN json_valid(row) THEN json_extract(row, '$.target') END = ?";
+  const hasColumn = (
+    db.query("PRAGMA table_info(log)").all() as Array<{ name: string }>
+  ).some((c) => c.name === "target");
+  const selected = (
+    hasColumn
+      ? db
+          .query(
+            `SELECT row FROM log WHERE repo = ? AND (target = ? OR (target IS NULL AND ${byText})) ORDER BY seq`,
+          )
+          .all(repo, target, target)
+      : db
+          .query(
+            `SELECT row FROM log WHERE repo = ? AND ${byText} ORDER BY seq`,
+          )
+          .all(repo, target)
+  ) as Array<{ row: string }>;
   return rowsOf(selected).filter((r) => r.target === target);
 }
 

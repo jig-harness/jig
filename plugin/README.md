@@ -823,16 +823,17 @@ never calls the tracker. A `pickup` reads the item through the tracker the
 repository's configuration names, and makes no forge call. On the machine
 that dispatched the work it also reads the dispatcher's launch records, its
 outcome log and, for a drive, the drive's own listing in a checkout of the
-repository (`drives.ts --json`), whose doctor verdict and recovery command
-it prints and never runs. On a machine that never dispatched, it answers
+repository (`drives-read-only.ts`), whose doctor verdict and recovery command
+it prints and never runs. It opens these databases read-only and migrates
+none: against one an older schema holds, it reads what that schema allows or
+names the source in `sources` as not read until the owner's next run brings
+it forward. On a machine that never dispatched, it answers
 from the forge and the tracker, and `sources` says the launch records were
 not read. A source that does not answer within 15 seconds is reported
 unread, and no source starts after the answer's 45 seconds; the answer
 prints without it. A read that fails is reported in `sources`, never filled
-in from a guess. Opening the dispatcher's database brings an older schema
-forward, as every reader of it does; nothing else on the machine is written
-but the forge's response cache that every drive shares
-(`~/.cache/jig/gh-cache/`).
+in from a guess. Nothing on the machine is written but the forge's response
+cache that every drive shares (`~/.cache/jig/gh-cache/`).
 
 **`--thread`** adds the address's correspondence, each entry one record
 that already exists: a `request` (a `drive` or `hold` dispatch label, shown
@@ -936,7 +937,7 @@ clear the variable or call the forge itself, as it could before.
 
 **The mailbox verbs.** The working tree, its mailbox and the driver
 generation come from the drive's own listing in a checkout of the
-repository here (`drives.ts --json`). A `stop` is addressed to that
+repository here (`drives-read-only.ts`). A `stop` is addressed to that
 generation, so it ends that driver at its next round boundary and a later
 driver ignores it (`drives.ts --stop` also cancels the running pass at
 once). The mailbox lets only a `stop` name a generation, so a `pause` or a
