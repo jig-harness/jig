@@ -57,6 +57,7 @@ import {
 import { carries, holdsNotice, unobservedTarget } from "../notices.ts";
 import {
   MAX_COMMENT,
+  NOTICES_BRANCH,
   NOTICES_NAME,
   type RuntimeReceipt,
   type SessionsReport,
@@ -81,9 +82,6 @@ import {
   recordComment,
 } from "./notices-content.ts";
 import { retireNotices } from "./retire-notices.ts";
-
-/** The branch of a repository's notices workspace. */
-const NOTICES_BRANCH = "jig-dispatch-notices";
 
 /** The comments the dispatcher's opens gave a workspace before its comments carried the dispatched mark. */
 const OWN_COMMENT =

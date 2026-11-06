@@ -302,6 +302,8 @@ export function tabTitle(stage: NamedStage, key: string): string {
 
 /** The name, and the comment's mark, of the repository's notices workspace, which no launch record names. */
 export const NOTICES_NAME = `${DISPATCHED}${SEPARATOR}notices`;
+/** The default branch of a repository's notices workspace. */
+export const NOTICES_BRANCH = "jig-dispatch-notices";
 
 /** What a workspace the dispatcher opens is named and marked with. */
 export interface Dispatched {

@@ -346,34 +346,121 @@ describe("buildLine", () => {
     expect(line.needs.map((n) => n.workspace)).toEqual(["/srv/followup", null]);
   });
 
-  it("excludes a notices workspace even if it is joined to the target", () => {
-    const line = buildLine(
-      input({
-        reports: [report({ actions: [PARK] })],
-        inputs: reads({
-          sessions: {
-            ok: true,
-            source: "fake",
-            workspaces: [
-              {
-                id: "notices",
-                path: "/srv/notices",
-                branch: "jig-dispatch-notices",
+  it.each(["⚙ dispatched · notices", "jig dispatch notices"])(
+    "excludes a renamed notices workspace with comment %s even if joined",
+    (comment) => {
+      const line = buildLine(
+        input({
+          reports: [report({ actions: [PARK] })],
+          inputs: reads({
+            sessions: {
+              ok: true,
+              source: "fake",
+              workspaces: [
+                {
+                  id: "notices",
+                  path: "/srv/notices",
+                  branch: "jig-dispatch-notices",
+                  items: [],
+                  prs: [456],
+                  agents: [],
+                  unverifiableTerminals: 0,
+                  comment,
+                  name: "renamed notices",
+                  unread: false,
+                },
+              ],
+            },
+          }),
+        }),
+      );
+      expect(line.needs[0]?.workspace).toBeNull();
+    },
+  );
+
+  it.each(["working", "done"])(
+    "keeps distinct joined workspaces ambiguous when one agent is %s",
+    (state) => {
+      const line = buildLine(
+        input({
+          reports: [report({ actions: [PARK] })],
+          inputs: reads({
+            sessions: {
+              ok: true,
+              source: "fake",
+              workspaces: ["one", "two"].map((id) => ({
+                id,
+                path: `/srv/${id}`,
+                branch: id,
                 items: [],
                 prs: [456],
-                agents: [],
+                agents:
+                  id === "one"
+                    ? [{ id: "agent", state, agentType: null, since: null }]
+                    : [],
                 unverifiableTerminals: 0,
-                comment: "⚙ dispatched · notices",
-                name: "renamed notices",
+                comment: "",
                 unread: false,
-              },
-            ],
-          },
+                name: id,
+              })),
+            },
+          }),
         }),
-      }),
-    );
-    expect(line.needs[0]?.workspace).toBeNull();
-  });
+      );
+      expect(line.needs[0]?.workspace).toBeNull();
+    },
+  );
+
+  it.each(["joined", "unknown-launch", "same-path"])(
+    "reconciles a holding record with %s claims",
+    (claim) => {
+      const path = "/srv/work/web/pr-456";
+      const line = buildLine(
+        input({
+          reports: [report({ actions: [PARK] })],
+          records: [
+            record(),
+            ...(claim === "unknown-launch"
+              ? [record({ id: "another", workspace: null })]
+              : []),
+          ],
+          inputs: reads({
+            sessions: {
+              ok: true,
+              source: "fake",
+              workspaces:
+                claim === "unknown-launch"
+                  ? []
+                  : [
+                      {
+                        id: "joined",
+                        path: claim === "same-path" ? path : "/srv/other",
+                        branch: "feature/456",
+                        items: [],
+                        prs: [456],
+                        agents: [
+                          {
+                            id: "agent",
+                            state: "working",
+                            agentType: null,
+                            since: null,
+                          },
+                        ],
+                        unverifiableTerminals: 0,
+                        comment: "",
+                        unread: false,
+                        name: "joined",
+                      },
+                    ],
+            },
+          }),
+        }),
+      );
+      expect(line.needs[0]?.workspace).toBe(
+        claim === "same-path" ? path : null,
+      );
+    },
+  );
 
   it("uses the stage record for an unanswered nudge when runtime reads fail", () => {
     const line = buildLine(
