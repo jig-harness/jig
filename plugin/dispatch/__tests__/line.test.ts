@@ -411,7 +411,7 @@ describe("buildLine", () => {
     },
   );
 
-  it.each(["joined", "unknown-launch", "same-path"])(
+  it.each(["joined", "unknown-launch", "unknown-joined", "same-path"])(
     "reconciles a holding record with %s claims",
     (claim) => {
       const path = "/srv/work/web/pr-456";
@@ -434,7 +434,12 @@ describe("buildLine", () => {
                   : [
                       {
                         id: "joined",
-                        path: claim === "same-path" ? path : "/srv/other",
+                        path:
+                          claim === "unknown-joined"
+                            ? ""
+                            : claim === "same-path"
+                              ? path
+                              : "/srv/other",
                         branch: "feature/456",
                         items: [],
                         prs: [456],

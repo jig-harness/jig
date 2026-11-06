@@ -8,7 +8,8 @@ import {
 import type { Action, RepoReport } from "./types.ts";
 
 function unique(paths: string[]): string | null {
-  const known = [...new Set(paths.filter((p) => p !== ""))];
+  if (paths.some((p) => p === "")) return null;
+  const known = [...new Set(paths)];
   return known.length === 1 ? (known[0] ?? null) : null;
 }
 
