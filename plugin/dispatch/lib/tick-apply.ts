@@ -99,7 +99,7 @@ export async function actObserved(
   context: TickContext,
   observation: RepoObservation,
   hooks: {
-    guard: (run: () => Promise<void>) => Promise<void>;
+    guard: (run: () => Promise<void>, inApply?: boolean) => Promise<void>;
     after: () => Promise<void>;
   },
 ): Promise<void> {
@@ -131,10 +131,12 @@ export async function actObserved(
         applyStages(apply, opened.stages, report, inputs, group),
       ),
     finish: () =>
-      hooks.guard(async () => {
-        await applyStages(apply, opened.stages, report, inputs, "finish");
-        await hooks.after();
-      }),
+      hooks
+        .guard(() =>
+          applyStages(apply, opened.stages, report, inputs, "finish"),
+        )
+        // `after` times its own phases; the same exception boundary, outside the apply timer.
+        .then(() => hooks.guard(hooks.after, false)),
   });
 }
 

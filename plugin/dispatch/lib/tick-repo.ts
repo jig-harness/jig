@@ -73,10 +73,11 @@ export async function runTurn(
   } else {
     // The launches run after every repository is gathered; a defect in one stops this repository's remaining turns only.
     let stopped = false;
-    const guard = async (run: () => Promise<void>) => {
+    // Work that times its own phases (the close) runs with `inApply` false, so apply is not charged for it.
+    const guard = async (run: () => Promise<void>, inApply = true) => {
       if (stopped) return;
       try {
-        await timer.time("apply", run);
+        await (inApply ? timer.time("apply", run) : run());
       } catch (error) {
         stopped = true;
         defectReport(turn, error);
