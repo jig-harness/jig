@@ -132,7 +132,7 @@ function readsTheMachine(machine: MachineConfig, repos: string[]): boolean {
 }
 
 /** Add health to the previous snapshot without replacing its state or receipt. */
-function addTick(receipt: TickReceipt): Outcome<void> {
+function addTick(receipt: TickReceipt, sweep: boolean): Outcome<void> {
   const previous = readLine();
   if (!previous.ok) return previous;
   if (previous.value === null) return ok(undefined);
@@ -153,15 +153,24 @@ function addTick(receipt: TickReceipt): Outcome<void> {
     "the dashboard's recent ticks were not brought up to date",
     () =>
       writeLine(
-        { ...line, ticks: withTick(line.ticks, tickHealthOf(receipt, false)) },
+        { ...line, ticks: withTick(line.ticks, tickHealthOf(receipt, sweep)) },
         receiptText,
       ),
   );
 }
 
 /** Keep a partial or failed tick in history, preserving the last complete snapshot. */
-export function recordTickHealth(receipt: TickReceipt): void {
-  const added = addTick(receipt);
+export function recordTickHealth(
+  receipt: TickReceipt,
+  machine: MachineConfig,
+): void {
+  const added = addTick(
+    receipt,
+    readsTheMachine(
+      machine,
+      receipt.repos.map((repo) => repo.path),
+    ),
+  );
   if (added.ok) return;
   receipt.lineFailed = added.failure.reason;
   receipt.exitStatus = 1;
@@ -188,7 +197,7 @@ export function writeTickLine(
   const { machine, records } = tick;
   if (machine === null) return;
   if (!readsTheMachine(machine, tick.repos)) {
-    recordTickHealth(receipt);
+    recordTickHealth(receipt, machine);
     return;
   }
   const written = attempt(

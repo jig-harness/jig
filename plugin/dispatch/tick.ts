@@ -265,7 +265,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       receipt.finishedAt = new Date().toISOString();
       logDefect("the tick", receipt.defect, error);
       receipt.phasesMs = { ...timer.ms };
-      if (options.machine) recordTickHealth(receipt);
+      if (options.machine) recordTickHealth(receipt, options.machine);
     }
     receipt.phasesMs = { ...timer.ms };
     const path = writeReceipt(receipt);

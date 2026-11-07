@@ -55,7 +55,7 @@ const real = await import(settle);
 const { logRepo } = real;
 mock.module(settle, () => ({ logRepo, settleOutcomes: async () => { throw new TypeError("a bug in the closing steps"); } }));
 const { runTick } = await import(${JSON.stringify(`${DISPATCH}/tick.ts`)});
-const { readMachineConfig } = await import('/home/ophir/orca/workspaces/jig/gear-dispatched-rearm-578/plugin/dispatch/lib/machine-config.ts');
+const { readMachineConfig } = await import(${JSON.stringify(`${DISPATCH}/lib/machine-config.ts`)});
 const result = await runTick({ machine: readMachineConfig(), repos: process.argv.slice(2), followupSince: "2026-10-30T00:00:00Z" });
 if ("held" in result) process.exit(3);
 console.log(JSON.stringify(result.receipt));
@@ -178,51 +178,61 @@ describe("a defect in one repository's turn", () => {
 });
 
 describe("a defect in the tick's closing steps", () => {
-  it("still writes the receipt, not completed, with the defect and the repositories' reports", async () => {
-    const { w } = fixture();
-    machineFile(w, [account(w, "a", "a@example.com")]);
-    const seed = await w.dispatch(["--json"]);
-    expectSpawnExit(seed, 0);
-    const first = JSON.parse(seed.stdout) as TickReceipt;
-    const { receipt, stderr } = await run(
-      w,
-      "closing-defect.ts",
-      CLOSING_DEFECT,
-      [w.repo],
-    );
-    expect(receipt.completed).toBe(false);
-    expect(receipt.exitStatus).toBe(1);
-    expect(receipt.defect).toEqual({
-      code: "defect",
-      phase: "close",
-      reason:
-        "a TypeError was thrown in the close phase: a bug in the closing steps",
-    });
-    expect(receipt.repos[0]?.actions.map((a) => a.target)).toEqual([
-      "#12",
-      "PR #7",
-    ]);
-    expect(stderr).toContain(
-      "a defect stopped the tick: a TypeError was thrown in the close phase: a bug in the closing steps\nTypeError: a bug in the closing steps\n    at ",
-    );
-    const db = new Database(join(dispatchState(w), "state.sqlite"));
-    const stored = db
-      .query("SELECT line FROM tick_line WHERE id = 1")
-      .get() as { line: string };
-    db.close();
-    const line = JSON.parse(stored.line) as LineSnapshot;
-    expect(line.runId).toBe(first.runId);
-    expect(line.ticks?.at(-1)).toMatchObject({
-      runId: receipt.runId,
-      exitStatus: 1,
-      defects: 1,
-      sweep: false,
-    });
-    const listed = await w.dispatch(["receipts"]);
-    expectSpawnExit(listed, 0);
-    expect(listed.stdout).toContain("incomplete");
-    expect(listed.stdout).toContain("1 defect(s)");
-  });
+  it.each([true, false])(
+    "still writes the receipt and preserves repository coverage (full sweep: %s)",
+    async (sweep) => {
+      const { w, second } = fixture();
+      machineFile(w, [account(w, "a", "a@example.com")]);
+      const seed = await w.dispatch(["--json"]);
+      expectSpawnExit(seed, 0);
+      const first = JSON.parse(seed.stdout) as TickReceipt;
+      if (!sweep)
+        machineFile(w, [account(w, "a", "a@example.com")], {
+          repositories: [
+            { path: w.repo, stages: ["rearm"] },
+            { path: second, stages: ["rearm"] },
+          ],
+        });
+      const { receipt, stderr } = await run(
+        w,
+        "closing-defect.ts",
+        CLOSING_DEFECT,
+        [w.repo],
+      );
+      expect(receipt.completed).toBe(false);
+      expect(receipt.exitStatus).toBe(1);
+      expect(receipt.defect).toEqual({
+        code: "defect",
+        phase: "close",
+        reason:
+          "a TypeError was thrown in the close phase: a bug in the closing steps",
+      });
+      expect(receipt.repos[0]?.actions.map((a) => a.target)).toEqual([
+        "#12",
+        "PR #7",
+      ]);
+      expect(stderr).toContain(
+        "a defect stopped the tick: a TypeError was thrown in the close phase: a bug in the closing steps\nTypeError: a bug in the closing steps\n    at ",
+      );
+      const db = new Database(join(dispatchState(w), "state.sqlite"));
+      const stored = db
+        .query("SELECT line FROM tick_line WHERE id = 1")
+        .get() as { line: string };
+      db.close();
+      const line = JSON.parse(stored.line) as LineSnapshot;
+      expect(line.runId).toBe(first.runId);
+      expect(line.ticks?.at(-1)).toMatchObject({
+        runId: receipt.runId,
+        exitStatus: 1,
+        defects: 1,
+        sweep,
+      });
+      const listed = await w.dispatch(["receipts"]);
+      expectSpawnExit(listed, 0);
+      expect(listed.stdout).toContain("incomplete");
+      expect(listed.stdout).toContain("1 defect(s)");
+    },
+  );
 });
 
 describe("the receipt's timings", () => {
