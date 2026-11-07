@@ -433,6 +433,8 @@ describe("Jira adapter: candidate pools", () => {
       title: "Issue ENG-1",
       url: "https://example.atlassian.net/browse/ENG-1",
       priority: 2,
+      type: null,
+      size: null,
       createdAt: "2026-01-01T09:00:00.000Z",
       state: { id: "10000", name: "Todo", type: "unstarted" },
       assignee: { id: MEMBER.accountId, name: "Dana Lee" },

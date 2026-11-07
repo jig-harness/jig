@@ -881,14 +881,22 @@ tick calls again, is **stuck**: both of its launches went unanswered (or
 one went unanswered and the runtime answered the other as not started),
 since an unanswered launch
 may have started a session and a third call is never made, or a follow-up's
-replay could not be proven safe (see Guards against a second launch). A
+replay could not be proven safe (see Guards against a second launch), or the
+runtime answered its last launch as started longer ago than the machine
+file's `unclaimed_after` (15 minutes by default) and no wrapper has claimed
+it. The wrapper claims its record before anything else, seconds after its
+terminal starts, and the workspace is opened before the launch call, so a
+claim that has not come by then is not coming; within it, a wrapper slow to
+start is never mistaken for one, and while the runtime cannot say which
+sessions run the tick waits for a read that can. Past it, a session the
+runtime joins to the record's target is named in why the record is stuck:
+that wrapper may have started its stage without claiming the record, so the
+record keeps its slot and a person checks that session before clearing it. A
 stuck record is notified to a person as needing them (see Notifications),
 shown on the dashboard as needing a person rather than as an ordinary
 pending launch, and holds its stage and slot until a person checks for a
 session it started and clears it (`jig dispatch clear <record>`, which
-refuses a record whose process is alive). A record whose last launch the
-runtime answered as started is never stuck, since its wrapper may still
-claim it. The next
+refuses a record whose process is alive). The next
 tick reads the records: a record whose process is alive under that same
 identity holds its stage; one that ended carries the stage's answer; one
 whose identity cannot be checked (another boot, an unreadable process

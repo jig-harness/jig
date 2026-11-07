@@ -5,7 +5,11 @@
  * function.
  */
 
-import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
+import {
+  facetInputs,
+  parseTrackerConfig,
+} from "../scripts/lib/tracker/config.ts";
+import { resolveFacets } from "../scripts/lib/tracker/facets/config.ts";
 import { markdownToAdf } from "../scripts/lib/tracker/jira/adf.ts";
 import { type Client, jiraClient } from "../scripts/lib/tracker/jira/client.ts";
 import { jiraModel } from "../scripts/lib/tracker/jira/model.ts";
@@ -225,6 +229,8 @@ export const assignable =
 
 export interface Overlay {
   issue_tracker?: Record<string, unknown>;
+  /** The label taxonomy's types and sizes; absent, the repository has none. */
+  taxonomy?: { types: string[]; sizes: string[] | null };
 }
 
 /** A Jira tracker over the fake transport, configured like an overlay. */
@@ -250,6 +256,12 @@ export function jira(
     model: jiraModel(config.states, config.jira),
     settings: config.jira,
     transport: f.transport,
+    facets: resolveFacets(
+      facetInputs(config),
+      overlay.taxonomy === undefined
+        ? null
+        : { path: "label-taxonomy.yaml", ...overlay.taxonomy },
+    ),
   });
   return { t: jiraTracker(client), calls: f.calls, client };
 }

@@ -187,6 +187,16 @@ const result = command(
     outcome: argument(string({ metavar: "done|failed" }), {
       description: message`How the session ended.`,
     }),
+    pr: optional(
+      option("--pr", countValue("PR"), {
+        description: message`The pull request a completed pickup opened; its next owner is the drive station.`,
+      }),
+    ),
+    none: optional(
+      option("--none", string({ metavar: "REASON" }), {
+        description: message`Why a completed pickup needs no pull request. Mutually exclusive with --pr.`,
+      }),
+    ),
   }),
   { brief: message`Record how a dispatched interactive session ended.` },
 );
@@ -441,14 +451,29 @@ function repositories(options: Tick, machine: MachineConfig | null): string[] {
 
 type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
 
+/** Forward a session result and its mutually exclusive handoff arguments. */
+function sessionResultMain(
+  args: Extract<Subcommand, { action: "result" }>,
+): number {
+  if (args.pr !== undefined && args.none !== undefined) {
+    console.error("jig dispatch result: pass either --pr or --none, not both");
+    return 2;
+  }
+  return resultMain([
+    args.record,
+    args.token,
+    args.outcome,
+    ...(args.pr === undefined ? [] : ["--pr", String(args.pr)]),
+    ...(args.none === undefined ? [] : ["--none", args.none]),
+  ]);
+}
+
 /** A subcommand's run: everything but the tick. */
 function subcommandMain(
   args: Subcommand,
   script: string,
 ): number | Promise<number> {
-  if (args.action === "result")
-    // An interactive session's own answer, under its launch record's token.
-    return resultMain([args.record, args.token, args.outcome]);
+  if (args.action === "result") return sessionResultMain(args);
   if (args.action === "receipts") return showReceipts(args.runId);
   if (args.action === "log")
     return logMain({

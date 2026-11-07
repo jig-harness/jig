@@ -23,11 +23,13 @@
  * A row's key is unique in the table, and a row is written in the same
  * transaction as what it records (a record's end, a suppression record, a
  * nudge's delivery mark): the two land together or not at all, so a tick
- * that stops between them leaves nothing for the next one to repair. Each
+ * that stops between them leaves nothing for the next one to repair.
+ * A late session result refreshes its ended row in the result transaction. Each
  * row is kept as the JSON line the text copy (`log-export.ts`) and
  * `jig dispatch log --jsonl` print, beside the columns the dashboard
  * filters on.
  */
+import { derivedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -40,7 +42,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
-import { questionOf } from "./session.ts";
+import { sessionResultClass } from "./session-result-class.ts";
 import { existingStateDb, stateDb } from "./state.ts";
 
 /**
@@ -79,6 +81,8 @@ export interface EndedRow {
   rounds: number | null;
   class: OutcomeClass;
   reason: string;
+  /** Absent on rows written before handoffs were kept. */
+  next?: NextOwner | null;
 }
 
 /** One cause the tick observed. */
@@ -145,7 +149,10 @@ function isRow(value: unknown): value is LogRow {
 export function parseLine(line: string): LogRow | null {
   try {
     const value: unknown = JSON.parse(line);
-    return isRow(value) ? value : null;
+    if (!isRow(value)) return null;
+    if (value.kind === "ended" && value.next !== undefined)
+      value.next = normalizeNext(value.next);
+    return value;
   } catch (error) {
     swallow(error, "a line of the outcome log that is not a row is skipped");
     return null;
@@ -349,15 +356,11 @@ function sessionClass(
   r: ReadRecord,
   endedAt: string,
 ): { class: OutcomeClass; reason: string } {
-  if (r.result === "done") return { class: "converged", reason: "result done" };
-  const question = questionOf(r.state);
-  if (question !== null)
-    return {
-      class: "parked for a person",
-      reason: `stopped on a question: ${question}`,
-    };
-  if (r.result === "failed")
-    return { class: "gates failed", reason: "result failed" };
+  const result = sessionResultClass(
+    r.result,
+    r.state.kind === "ended" ? r.state.exit.said : undefined,
+  );
+  if (result !== null) return result;
   const s = r.state;
   if (s.kind === "ended" && s.exit.startup !== undefined)
     return {
@@ -459,5 +462,9 @@ export function endedRow(
         : null,
     class: placed.class,
     reason,
+    next:
+      record.action === "pickup" && r.result === "done"
+        ? (r.next ?? null)
+        : derivedNext(record.action, placed.class, reason),
   };
 }

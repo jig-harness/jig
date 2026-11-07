@@ -488,6 +488,7 @@ describe("from get_issue.ts to the type", () => {
           url: null,
           state: { name: "Todo", type: "unstarted" },
           labels: conn([]),
+          priority: 0,
           parent: null,
           children: conn([]),
           assignee: null,

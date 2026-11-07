@@ -78,6 +78,12 @@ export async function observeTurn(
     },
     timer,
   );
+  const { forge, tracked, sessions } = observation;
+  // Observations belong to the tick even when a later phase fails.
+  context.lineInputs.set(
+    path,
+    lineInputOf(forge.drives, forge, tracked, sessions),
+  );
   return { turn, opened, observation };
 }
 
@@ -87,7 +93,7 @@ export async function actTurn(
   context: TickContext,
 ): Promise<RepoReport> {
   const { turn, opened, observation } = observed;
-  const { path, timer } = turn;
+  const { timer } = turn;
   const { report } = opened;
   const { forge } = observation;
   if (context.apply !== null)
@@ -98,7 +104,7 @@ export async function actTurn(
   );
   const close = async () => {
     await timer.time("labels", () => projectObserved(context, observation));
-    await timer.time("shared", () => closeShared(context, observation, path));
+    await timer.time("shared", () => closeShared(context, observation));
     timed(report, timer);
   };
   if (context.apply === null) {
@@ -128,12 +134,8 @@ export async function actTurn(
 }
 
 /** The shared records' report, and what the line and the tick's close read of this repository. */
-function closeShared(
-  context: TickContext,
-  observation: RepoObservation,
-  path: string,
-): void {
-  const { forge, tracked, sessions } = observation;
+function closeShared(context: TickContext, observation: RepoObservation): void {
+  const { forge } = observation;
   const report = observation.opened.report;
   report.shared = sharedReport(
     observation.shared,
@@ -143,10 +145,6 @@ function closeShared(
   );
   // The budget is the host's: read once, as the tick started.
   if (forge.ok) context.reads.budgets.push(report.shared);
-  context.lineInputs.set(
-    path,
-    lineInputOf(forge.drives, forge, tracked, sessions),
-  );
 }
 
 /** A turn's phases in the order they start, which the report keeps whatever order overlapping phases end in. */

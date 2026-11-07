@@ -17,6 +17,7 @@
  *     bun tracker.ts relations <issue-key>
  *     bun tracker.ts relate <issue-key> <blocks|related|duplicate> <target-key>
  *     bun tracker.ts available-labels             # every label issues can carry
+ *     bun tracker.ts facet-stores                 # where type, priority and size are kept
  *
  * `issue-states` reads item keys, one per line, and prints each key's
  * current state as `open`, `closed` (completed, canceled or duplicate) or
@@ -34,11 +35,18 @@
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, ops_pending, duplicate.
  *
- * `create` reads `{ title, description?, labels?, priority?, parent?,
- * project? }`; `update` reads `{ title?, description?, priority?, parent?,
- * project?, addLabels?, removeLabels? }`, where `parent: null` removes the
- * parent. Labels and the project are named; priority runs from 0 (none) to
- * 4 (low). A key either does not know is a usage error.
+ * `create` reads `{ title, description?, labels?, type?, priority?, size?,
+ * parent?, project? }`; `update` reads `{ title?, description?, type?,
+ * priority?, size?, parent?, project?, addLabels?, removeLabels? }`, where
+ * `parent: null` removes the parent and `type: null` or `size: null` the
+ * value. Labels and the project are named; priority runs from 0 (none) to
+ * 4 (low); a type or a size is a value of its facet, written to the store
+ * `issue_tracker.facets` keeps it in. A key either does not know is a usage
+ * error.
+ *
+ * `facet-stores` prints where each facet is kept and why, each named
+ * store's health, and what detection and the organization's discovery saw;
+ * it reads and changes nothing else.
  *
  * `relate <a> duplicate <b>` records `a` as a duplicate of `b` (the tracker
  * may close `a`). `relations` reports each relation from the issue's side:
@@ -86,7 +94,8 @@ const USAGE = `usage:
   tracker.ts search [--include-closed] [--] <text>   (-- ends the options)
   tracker.ts relations <issue-key>
   tracker.ts relate <issue-key> <${RELATION_TYPES.join("|")}> <target-key>
-  tracker.ts available-labels`;
+  tracker.ts available-labels
+  tracker.ts facet-stores`;
 
 async function readStdin(): Promise<string> {
   process.stdin.setEncoding("utf8");
@@ -123,12 +132,22 @@ const PARENT: Kind = {
   ok: (v) => v === null || typeof v === "string",
   want: "an issue key or null",
 };
+const FACET_VALUE: Kind = {
+  ok: (v) => typeof v === "string" && v.trim() !== "",
+  want: "a nonempty value of the facet",
+};
+const FACET_CHANGE: Kind = {
+  ok: (v) => v === null || FACET_VALUE.ok(v),
+  want: "a nonempty value of the facet, or null to remove it",
+};
 
 const NEW_ISSUE_FIELDS: Record<string, Kind> = {
   title: TEXT,
   description: TEXT,
   labels: LABEL_NAMES,
+  type: FACET_VALUE,
   priority: PRIORITY,
+  size: FACET_VALUE,
   parent: TEXT,
   project: TEXT,
 };
@@ -136,7 +155,9 @@ const NEW_ISSUE_FIELDS: Record<string, Kind> = {
 const PATCH_FIELDS: Record<string, Kind> = {
   title: TEXT,
   description: TEXT,
+  type: FACET_CHANGE,
   priority: PRIORITY,
+  size: FACET_CHANGE,
   parent: PARENT,
   project: TEXT,
   addLabels: LABEL_NAMES,
@@ -399,6 +420,12 @@ const OPERATIONS: Record<string, Operation> = {
     takes: "no argument",
     indent: true,
     run: () => openTracker().listLabels(),
+  },
+  "facet-stores": {
+    arity: 0,
+    takes: "no argument",
+    indent: true,
+    run: () => openTracker().facetStores(),
   },
 };
 

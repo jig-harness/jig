@@ -14,13 +14,19 @@
 
 import { type RunResult, run } from "../../../../drive-pr/scripts/lib/proc.ts";
 import { pager, postGraphQL, runClient } from "./graphql.ts";
-import { assignedOperations, OPEN, poolFilter } from "./linear-pool.ts";
 import {
-  CLOSED_STATE_TYPES,
+  assignedOperations,
+  OPEN,
+  OPEN_CHILDREN_QUERY,
+  POOL_ISSUE_QUERY,
+  POOL_QUERY,
+  poolFilter,
+} from "./linear-pool.ts";
+import * as lf from "./linear-facets.ts";
+import {
   type CanonicalState,
   type CommentFact,
   type FoundComment,
-  type Issue,
   type IssueComment,
   type IssueComments,
   type IssueFact,
@@ -30,7 +36,6 @@ import {
   type IssueSummary,
   type LabelledIssueState,
   type LedgerIssue,
-  type PoolIssue,
   type StartedIssueActivity,
   type Tracker,
   type TrackerLabel,
@@ -286,6 +291,31 @@ export function labelNames(v: unknown, where: string): string[] {
   });
 }
 
+/** A label page that may have more: its names, and whether it had more. */
+function labelPage(
+  v: unknown,
+  where: string,
+): { names: string[]; truncated: boolean } {
+  const labels = record(v, `${where}.labels`);
+  if (!Array.isArray(labels.nodes))
+    throw new ShapeError(`${where}.labels: nodes missing`);
+  const info = labels.pageInfo;
+  if (!isRecord(info) || typeof info.hasNextPage !== "boolean")
+    throw new ShapeError(`${where}.labels.pageInfo: unreadable`);
+  return {
+    names: labels.nodes.map((l) =>
+      str(record(l, `${where}.labels[]`).name, `${where}.labels[].name`),
+    ),
+    truncated: info.hasNextPage,
+  };
+}
+
+/** A priority Linear reports: an integer, 0 (none) to 4 (low). */
+function priorityOf(v: unknown, where: string): number {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 4)
+    throw new ShapeError(`${where}.priority: expected an integer 0 to 4`);
+  return v;
+}
 function stateOf(v: unknown, where: string): IssueState {
   const s = record(v, where);
   return {
@@ -311,7 +341,7 @@ const LABELS = "labels(first: 100) { pageInfo { hasNextPage } nodes { name } }";
 const ISSUE_QUERY = `
 query TrackerIssue($id: String!) {
   issue(id: $id) {
-    id identifier title description url updatedAt
+    id identifier title description url updatedAt priority
     state { name type }
     ${LABELS}
     parent { identifier title }
@@ -337,7 +367,7 @@ function summaryOf(v: unknown, where: string): IssueSummary {
 }
 
 /** Parse one `issue` node of `ISSUE_QUERY`. */
-export function parseIssue(v: unknown): Issue {
+export function parseIssue(v: unknown): lf.CoreIssue {
   const n = record(v, "issue");
   const where = `issue ${typeof n.identifier === "string" ? n.identifier : "?"}`;
   const children = record(n.children, `${where}.children`);
@@ -362,6 +392,7 @@ export function parseIssue(v: unknown): Issue {
     ...(typeof n.updatedAt === "string" ? { updatedAt: n.updatedAt } : {}),
     state: stateOf(n.state, `${where}.state`),
     labels: labelNames(n.labels, where),
+    priority: priorityOf(n.priority, where),
     nativeType: null, // Linear has no issue types of its own
     parent:
       parent === null
@@ -600,15 +631,8 @@ query TrackerLedgerResources($label: String!, $project: String!, $withProject: B
 export function parseLedgerNode(raw: unknown): LedgerIssue {
   const n = record(raw, "ledger issue");
   const where = `ledger issue ${typeof n.identifier === "string" ? n.identifier : "?"}`;
-  const labels = record(n.labels, `${where}.labels`);
-  if (!Array.isArray(labels.nodes))
-    throw new ShapeError(`${where}.labels: nodes missing`);
-  if (
-    !isRecord(labels.pageInfo) ||
-    typeof labels.pageInfo.hasNextPage !== "boolean"
-  )
-    throw new ShapeError(`${where}.labels.pageInfo: unreadable`);
-  const truncated = labels.pageInfo.hasNextPage ? ["labels"] : [];
+  const labels = labelPage(n.labels, where);
+  const truncated = labels.truncated ? ["labels"] : [];
   for (const key of ["completedAt", "canceledAt", "parent", "project"])
     if (!(key in n))
       throw new ShapeError(`${where}.${key}: missing from response`);
@@ -640,9 +664,7 @@ export function parseLedgerNode(raw: unknown): LedgerIssue {
     priority: n.priority,
     parent,
     project,
-    labels: labels.nodes.map((l) =>
-      str(record(l, `${where}.labels[]`).name, `${where}.labels[].name`),
-    ),
+    labels: labels.names,
     truncated,
   };
 }
@@ -736,50 +758,11 @@ export function parseLabelledNode(
 
 // ── Candidate pools ────────────────────────────────────────────────────────
 
-const POOL_FIELDS = `
-  identifier title url priority createdAt
-  state { id name type }
-  assignee { id name }
-  ${LABELS}
-  children(first: 1, filter: { state: { type: { nin: ${JSON.stringify(CLOSED_STATE_TYPES)} } } }) {
-    pageInfo { hasNextPage }
-    nodes { id }
-  }
-`;
-
-const POOL_QUERY = `
-query TrackerPool($filter: IssueFilter!, $after: String) {
-  issues(first: 100, after: $after, filter: $filter) {
-    pageInfo { hasNextPage endCursor }
-    nodes { ${POOL_FIELDS} }
-  }
-}`;
-
-const OPEN_CHILDREN_QUERY = `
-query TrackerOpenChildren($id: String!, $filter: IssueFilter!, $after: String) {
-  issue(id: $id) {
-    children(first: 100, after: $after, filter: $filter) {
-      pageInfo { hasNextPage endCursor }
-      nodes { ${POOL_FIELDS} }
-    }
-  }
-}`;
-
-const POOL_ISSUE_QUERY = `
-query TrackerPoolIssue($id: String!) { issue(id: $id) { ${POOL_FIELDS} } }`;
-
 /** Parse one pool node; a truncated label page is recorded, not fatal. */
-export function parsePoolIssue(raw: unknown): PoolIssue {
+export function parsePoolIssue(raw: unknown): lf.CorePoolIssue {
   const n = record(raw, "pool issue");
   const where = `pool issue ${typeof n.identifier === "string" ? n.identifier : "?"}`;
-  const labels = record(n.labels, `${where}.labels`);
-  if (!Array.isArray(labels.nodes))
-    throw new ShapeError(`${where}.labels: nodes missing`);
-  if (
-    !isRecord(labels.pageInfo) ||
-    typeof labels.pageInfo.hasNextPage !== "boolean"
-  )
-    throw new ShapeError(`${where}.labels.pageInfo: unreadable`);
+  const labels = labelPage(n.labels, where);
   const children = record(n.children, `${where}.children`);
   if (
     !Array.isArray(children.nodes) ||
@@ -787,14 +770,7 @@ export function parsePoolIssue(raw: unknown): PoolIssue {
     typeof children.pageInfo.hasNextPage !== "boolean"
   )
     throw new ShapeError(`${where}.children: unreadable`);
-  const priority = n.priority;
-  if (
-    typeof priority !== "number" ||
-    !Number.isInteger(priority) ||
-    priority < 0 ||
-    priority > 4
-  )
-    throw new ShapeError(`${where}.priority: expected an integer 0 to 4`);
+  const priority = priorityOf(n.priority, where);
   const state = record(n.state, `${where}.state`);
   const assignee =
     n.assignee === null ? null : record(n.assignee, `${where}.assignee`);
@@ -816,11 +792,9 @@ export function parsePoolIssue(raw: unknown): PoolIssue {
             id: str(assignee.id, `${where}.assignee.id`),
             name: str(assignee.name, `${where}.assignee.name`),
           },
-    labels: labels.nodes.map((l) =>
-      str(record(l, `${where}.labels[]`).name, `${where}.labels[].name`),
-    ),
+    labels: labels.names,
     hasOpenChildren: children.nodes.length > 0 || children.pageInfo.hasNextPage,
-    truncated: labels.pageInfo.hasNextPage ? ["labels"] : [],
+    truncated: labels.truncated ? ["labels"] : [],
   };
 }
 
@@ -994,6 +968,7 @@ export interface LinearTrackerOptions {
   team: string;
   states: Record<CanonicalState, string>;
   transport: LinearTransport;
+  facets?: lf.Facets; // default: every facet at the adapter's default
 }
 
 /** The Linear implementation of the tracker port. */
@@ -1082,7 +1057,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     return str(node.id, `project '${name}'.id`);
   }
 
-  const tracker: Tracker = {
+  const tracker: lf.CoreTracker = {
     adapter: "linear",
     team,
     stateName: (state) => states[state],
@@ -1596,5 +1571,5 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       );
     },
   };
-  return tracker;
+  return lf.linearFacets(tracker, opts.facets);
 }

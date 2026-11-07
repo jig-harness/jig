@@ -59,6 +59,9 @@ describe("GitHub adapter: reading an issue", () => {
       updatedAt: "2026-01-02T00:00:00Z",
       state: { name: "In Progress", type: "started" },
       labels: ["bug"],
+      type: "bug",
+      priority: 2,
+      size: null,
       nativeType: "Bug",
       parent: { identifier: "#3", title: "Issue 3" },
       children: [

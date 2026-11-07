@@ -281,6 +281,7 @@ const MIGRATIONS: readonly Migration[] = [
   );
   `,
   },
+  { additive: true, sql: "ALTER TABLE launches ADD COLUMN result_next TEXT;" },
 ];
 
 /** The schema version this plugin writes. */

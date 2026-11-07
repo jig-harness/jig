@@ -11,8 +11,9 @@ version: 1
 # label is the source the skills read: `issue_tracker.types` in
 # `.config/jig.yaml` maps bug and feature to themselves and docs, chore and
 # infra to the task work type. Set GitHub's own issue type to match as well
-# (bug: Bug, feature: Feature, the rest: Task) until the tracker scripts write
-# it themselves (https://github.com/jig-harness/jig/issues/345).
+# (Bug, Feature, Docs, Chore, Infra): the tracker scripts write it only where
+# `issue_tracker.facets.type` names the issue type as its store
+# (plugin/CONFIGURATION.md § issue_tracker), which this repository does not.
 types:
   - id: bug
     notes: a defect against documented or expected behaviour
