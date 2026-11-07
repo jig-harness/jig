@@ -49,13 +49,17 @@ export function planObserved(
   if (onlyLabeled) report.inScope = [...forge.inScope];
 }
 
-/** Whether `now` holds a launch record `before` did not: some tick launched in between. */
+/** A record's execution state: a replay moves it without making a new record. */
+const executionOf = ({ record, state }: Pick<ReadRecord, "record" | "state">) =>
+  `${record.attempts.length}:${state.kind === "pending"}`;
+
+/** Whether `now` holds a launch record `before` did not, or one `before` read at another point of its execution: some tick launched in between. */
 export function launchedMeanwhile(
-  before: ReadonlyArray<Pick<ReadRecord, "record">>,
-  now: ReadonlyArray<Pick<ReadRecord, "record">>,
+  before: ReadonlyArray<Pick<ReadRecord, "record" | "state">>,
+  now: ReadonlyArray<Pick<ReadRecord, "record" | "state">>,
 ): boolean {
-  const known = new Set(before.map((r) => r.record.id));
-  return now.some((r) => !known.has(r.record.id));
+  const known = new Map(before.map((r) => [r.record.id, executionOf(r)]));
+  return now.some((r) => known.get(r.record.id) !== executionOf(r));
 }
 
 /**

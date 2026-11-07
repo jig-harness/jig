@@ -8,6 +8,7 @@
  * starts. The apply state these change as they go, the slot table, the
  * records and the deadline, is built here once per tick.
  */
+import type { Contention } from "./contention.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { hostCodexOptIn, lastAccount, slotTable } from "./accounts.ts";
 import {
@@ -126,7 +127,7 @@ export async function actObserved(
     join: observation.join,
     sessions: observation.sessions,
     shared: ctx,
-    unplaced: afterWait(context, observation.serialized).unplaced,
+    unplaced: withheldFromReplay(afterWait(context, observation.serialized)),
   };
   context.pending.push({
     apply: (group) =>
@@ -141,6 +142,16 @@ export async function actObserved(
         // `after` times its own phases; the same exception boundary, outside the apply timer.
         .then(() => hooks.guard(hooks.after, false)),
   });
+}
+
+/** The pull requests no pending launch of theirs is replayed for: those whose place cannot be told, and those held behind another member of their group. */
+export function withheldFromReplay(
+  serialized: Pick<Contention, "held" | "unplaced">,
+): ReadonlyMap<number, string> {
+  const out = new Map(serialized.unplaced);
+  for (const [pr, { area, leader }] of serialized.held)
+    if (!out.has(pr)) out.set(pr, `held in ${area} behind PR #${leader}`);
+  return out;
 }
 
 /** What `--apply` acts on for one repository, as its tick read it. */
