@@ -195,12 +195,38 @@ entry says as its text, mark it as the record's words, and link its
 record. A `question` entry is a decision the drive parked; an `answer`
 entry is a trusted person's reply.
 
+## Recovering a stranded CI hold
+
+A CI hold keeps the configured expensive checks from running. It is separate
+from the dispatcher hold: the `release` verb clears the dispatcher's
+hold and does not release a CI hold.
+
+When `jig ask` names a remaining CI hold, include its diagnosis and recovery
+in the status card. A recent running ledger does not establish that its
+process is alive or on another machine. Relay the local liveness evidence,
+review status on the current head, and every missing release prerequisite.
+Do not offer direct release as safe when the driver is live, ownership is
+unknown, the head moved or is unreviewed, a human decision remains, or a
+required read failed.
+
+An explicit request to release the CI hold is station work: hand it to
+`/jig:drive-pr`, specifically its README section "Recovering a stranded CI
+hold", with the repository, PR, expected head and the recovery command the
+answer prints. That procedure runs the existing guarded CI-hold release
+mechanism from the matching clean worktree, without re-arming the driver.
+Do not translate the request into a dispatcher release or a raw label edit.
+A status question alone never authorizes release.
+
+After recovery, report label removal and the fresh CI run on the expected
+head separately from CI success. Review convergence and a successful release
+are not proof that full CI passed.
+
 ## What it sends
 
 | The person says | Send |
 | --- | --- |
 | hold a pull request; keep the line off it | `jig send drive@<owner>/<name> <PR> hold --dry-run` |
-| release it | `jig send drive@<owner>/<name> <PR> release --dry-run` |
+| release its dispatcher hold | `jig send drive@<owner>/<name> <PR> release --dry-run` |
 | hold a merged pull request's follow-up | `jig send followup@<owner>/<name> <PR> hold --dry-run` |
 | release a merged pull request's follow-up | `jig send followup@<owner>/<name> <PR> release --dry-run` |
 | drive a pull request that has no drive yet | `jig send drive@<owner>/<name> <PR> drive --dry-run` |

@@ -54,6 +54,7 @@ import {
   openSync,
   readSync,
 } from "node:fs";
+import { swallow } from "../../../../../shared/errors.ts";
 
 export type QuotaWindow = "short" | "weekly" | "unknown";
 
@@ -439,14 +440,23 @@ export function forEachDirEntry(
   try {
     handle = opendirSync(dir);
   } catch (err) {
-    return isConfirmedAbsence(err);
+    if (isConfirmedAbsence(err)) return true;
+    swallow(
+      err,
+      "directory scan could not be opened; absence is not confirmed",
+    );
+    return false;
   }
   try {
     for (;;) {
       let entry: Dirent | null;
       try {
         entry = handle.readSync();
-      } catch {
+      } catch (err) {
+        swallow(
+          err,
+          "directory scan could not be completed; absence is not confirmed",
+        );
         return false;
       }
       if (entry === null) return true;

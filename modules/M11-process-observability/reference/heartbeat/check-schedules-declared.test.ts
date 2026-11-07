@@ -26,7 +26,7 @@ describe("the command", () => {
     expectSpawnExit(r, 0);
     for (const id of ["nightly", "weekly", "hourly-smoke"])
       expect(r.stdout).toContain(`OK   ${id}`);
-    expect(r.stdout).not.toContain("ci");
+    expect(r.stdout).not.toMatch(/^OK\s+ci(?:\s|$)/m);
   });
 
   test("a scheduled workflow the registry does not name fails and is named", () => {
