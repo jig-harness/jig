@@ -1274,7 +1274,12 @@ orders against a tick's. The database runs in write-ahead logging mode,
 so the dashboard and `jig dispatch log` read while a tick writes. Its
 schema carries a version: a database at an older one is migrated forward
 in one transaction, and one a newer plugin wrote is refused, with its
-version named, by every command that opens it.
+version named, by every command that opens it. The dashboard's server
+opens it through the reader that migrates it until the hub's first stage
+(its step 4) makes the server, and the hub it grows into, open it
+read-only, never migrating it and showing a schema older or newer than
+their own as such
+([hub.md § Install and upgrade](hub.md#install-and-upgrade)).
 
 What another host must know of this host's launches is not kept here: it
 is published as shared records on the forge (see Several hosts). The local
@@ -1502,11 +1507,18 @@ browser's own storage.
 The first is the **line**, one row of the state database (`tick_line`): the
 needs, the accounts with their slots and walls, the sessions, the queue and the
 repositories as a tick found them, with that tick's receipt. A tick that read
-every repository the machine file lists replaces it at its end; a tick for one
-repository leaves it. Every read behind it stays in the tick: process liveness,
-walls, the machine file, titles, framed decisions. So the page says once, in
+every repository the machine file lists replaces it at its end. A tick for one
+repository leaves it, until the hub's first stage (its step 5) lets that tick
+replace only that repository's part (its needs, sessions and queue, and its
+entry among the repositories, stamped with that tick's run and read time) and
+leave the rest to the full ticks: the line's own times, the accounts and the
+receipt
+([dispatch-board.md § The line grows one list](dispatch-board.md#the-line-grows-one-list)).
+Every read behind it stays in the tick: process liveness, walls, the machine
+file, titles, framed decisions. So the page says once, in
 its strip, how old the tick it shows is, never "live"; a timer that stopped
-shows as a tick older than the interval plus the longest recent tick; and a host
+shows as a tick older than the interval plus the longest recent tick, as it
+still does once ticks for one repository refresh their part; and a host
 may serve the page from a copy of the database and nothing else, which is how an
 isolated service runs it. The
 line is a view: a tick that cannot write it says so on its receipt and exits
@@ -1527,14 +1539,30 @@ report: no report file is ever generated. The filter is the page's query
 string, so a view is a link.
 
 The server runs while the command runs, started and stopped by a person
-(from a terminal on the host, which Orca's phone app reaches); nothing
-installs or keeps it running, so the dispatcher stays without a resident
-process. It listens on the address the machine file names
-(`dashboard.listen`, no default), and refuses an address outside the
-private and loopback ranges, so no route into the host is opened beyond
-the network the host already trusts. The URL it prints carries a token
-minted at start, and a request without it is refused: these records name
-repositories, items and accounts.
+(from a terminal on the host, which Orca's phone app reaches); the
+dispatcher installs nothing that keeps it running. It listens on the
+address the machine file names (`dashboard.listen`, no default), and
+refuses an address outside the private and loopback ranges, so no route
+into the host is opened beyond the network the host already trusts. The
+URL it prints carries a token minted at start, and a request without it is
+refused: these records name repositories, items and accounts.
+
+The dashboard grows into the [hub](hub.md), which `jig install hub`
+installs as a resident reader where Orca's browser or a
+[private-network front](../GLOSSARY.md) reaches a host's page: it holds no
+request, no component reads from it and the line never waits on it, so
+stopping it changes nothing the line does, and it opens every database
+read-only and never migrates one
+([hub.md § A reader, not a daemon](hub.md#a-reader-not-a-daemon)). The
+dispatcher itself stays without a resident process. The hub's server on a
+host listens on loopback, or on a socket only a front reaches, and needs
+no token, since every way in from another machine authenticates the person
+first. From the hub's second stage
+`jig dispatch dashboard` starts that server; once the hub's front is built,
+the dashboard drops the private-address bind (`dashboard.listen`) and the
+token in its URL, a machine file that still sets `dashboard.listen` gets a
+warning naming the front, and a phone reaches the page through the front
+([hub.md § Where it runs](hub.md#where-it-runs)).
 
 Each read answers with its value or a coded failure with a reason for a person,
 and a bug is caught once around the routes and logged with its stack
@@ -1892,3 +1920,5 @@ Critiqued in two rounds by reviewers with fresh context (subagents that
 did not write it): the whole design on 2026-10-30 against commit
 `c2c8083e`, and the Control section, written after that round, on
 2026-10-31 against commit `de08d1ce`.
+What the hub adds to it was critiqued with the hub's design on 2026-11-06
+([hub.md § Review](hub.md#review)).
