@@ -387,6 +387,18 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.154.0] - 2026-11-07
+
+### Changed
+
+- **Breaking:** The dispatcher now treats a drive that stopped with no recorded exit as an accident and re-arms it within a budget of 3 attempts per pull request in a rolling hour. To keep a drive stopped, use `drives.ts --stop`, a mailbox stop or pause, or the hold label; a recorded no-exit stop no longer keeps it stopped. Hard termination of both the driver and its launch wrapper can leave a running ledger outside this recovery path. Legacy no-exit ledgers receive at most one automatic attempt. Repeated no-cause stops notify a person once with the drive's handoff.
+
+### Fixed
+
+- Deliberate stops publish and verify the person's intent and optional reason before signalling, so a failed final ledger write cannot let another host re-arm them. Stop-bearing ledgers use format version 2; older Jig copies refuse them and must be updated before driving those pull requests.
+- With ledger mirroring enabled, a stop refuses to signal a driver whose published ownership cannot yet be verified. Hold dispatch and retry after startup publishes its ledger; the driver now publishes that ownership immediately after initialization.
+- Cancelled launch reservations retain durable evidence when withdrawal fails, so settlement does not charge recovery allowance for a wrapper that never executed. Executed and interrupted launches still consume their allowance across hosts.
+
 ## [0.153.0] - 2026-11-07
 
 ### Changed
@@ -5574,7 +5586,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.153.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.154.0...HEAD
+[0.154.0]: https://github.com/jig-harness/jig/compare/v0.153.0...v0.154.0
 [0.153.0]: https://github.com/jig-harness/jig/compare/v0.152.0...v0.153.0
 [0.152.0]: https://github.com/jig-harness/jig/compare/v0.151.0...v0.152.0
 [0.151.0]: https://github.com/jig-harness/jig/compare/v0.150.1...v0.151.0
