@@ -130,60 +130,60 @@ function tickOf(o: {
   };
 }
 
+function sweepAt(
+  i: number,
+  minute: number,
+  spent: number,
+  tookMs: number,
+): LineTick {
+  const all = [WEB, API, MOB, DOC, INF];
+  if (i === 7)
+    return tickOf({
+      minute,
+      sweep: false,
+      repos: all.filter((r) => r !== WEB).map((r) => repoOf(r, 0.9)),
+      busy: [PATHS[WEB] ?? WEB],
+      remaining: 3_420 - spent,
+    });
+  if (i === 4)
+    return tickOf({
+      minute,
+      sweep: true,
+      repos: all.map((r) => repoOf(r, 0.7)),
+      remaining: 380,
+      defects: 1,
+      busy: [PATHS[WEB] ?? WEB],
+      lowBudget: ["thread samples", "serialization's reads"],
+    });
+  if (i === 2)
+    return tickOf({
+      minute,
+      sweep: true,
+      repos: all.map((r) =>
+        repoOf(r, r === API ? 0.2 : 1, r === API ? "forge" : null),
+      ),
+      remaining: 4_610,
+      defects: 1,
+    });
+  return tickOf({
+    minute,
+    sweep: true,
+    repos: all.map((r) => repoOf(r, i === 9 ? 2.4 : 1 + (i % 3) * 0.08)),
+    remaining: (i > 4 ? 3_600 : 4_900) - spent,
+    ...(i === 0 ? { tookMs } : {}),
+  });
+}
+
 /**
  * The strip of a line whose newest tick started at `newest` (minutes since the
  * fixture day's midnight) and took `tookMs`, the oldest first.
  */
 export function recentTicks(newest: number, tookMs: number): LineTick[] {
-  const all = [WEB, API, MOB, DOC, INF];
   const ticks: LineTick[] = [];
   for (let i = SWEEPS - 1; i >= 0; i--) {
     const minute = newest - i * INTERVAL_MIN;
     const spent = (SWEEPS - 1 - i) * 41;
-    if (i === 7)
-      ticks.push(
-        tickOf({
-          minute,
-          sweep: false,
-          repos: all.filter((r) => r !== WEB).map((r) => repoOf(r, 0.9)),
-          busy: [PATHS[WEB] ?? WEB],
-          remaining: 3_420 - spent,
-        }),
-      );
-    else if (i === 4)
-      ticks.push(
-        tickOf({
-          minute,
-          sweep: true,
-          repos: all.map((r) => repoOf(r, 0.7)),
-          remaining: 380,
-          defects: 1,
-          busy: [PATHS[WEB] ?? WEB],
-          lowBudget: ["thread samples", "serialization's reads"],
-        }),
-      );
-    else if (i === 2)
-      ticks.push(
-        tickOf({
-          minute,
-          sweep: true,
-          repos: all.map((r) =>
-            repoOf(r, r === API ? 0.2 : 1, r === API ? "forge" : null),
-          ),
-          remaining: 4_610,
-          defects: 1,
-        }),
-      );
-    else
-      ticks.push(
-        tickOf({
-          minute,
-          sweep: true,
-          repos: all.map((r) => repoOf(r, i === 9 ? 2.4 : 1 + (i % 3) * 0.08)),
-          remaining: (i > 4 ? 3_600 : 4_900) - spent,
-          ...(i === 0 ? { tookMs } : {}),
-        }),
-      );
+    ticks.push(sweepAt(i, minute, spent, tookMs));
     if (i > 0 && i % 2 === 1)
       ticks.push(
         tickOf({
