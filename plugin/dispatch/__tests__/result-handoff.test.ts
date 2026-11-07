@@ -82,6 +82,10 @@ it("normalizes invalid outcome handoffs while reading legacy rows", () => {
     {},
     { address: " " },
     { address: "garbage" },
+    ...["drive", "followup", "pickup"].flatMap((station) => [
+      { address: `${station}#42` },
+      { address: `${station}@repo#42` },
+    ]),
     { address: "drive@example/repo#42", none: "done" },
     { person: "maintainer", act: "merge", none: "done" },
     { none: "done", act: "merge" },
@@ -97,6 +101,15 @@ it("normalizes invalid outcome handoffs while reading legacy rows", () => {
       JSON.stringify({ ...row, next: { address: "drive@example/repo#42" } }),
     ),
   ).toMatchObject({ next: { address: "drive@example/repo#42" } });
+  for (const station of ["drive", "followup", "pickup"])
+    expect(
+      parseLine(
+        JSON.stringify({
+          ...row,
+          next: { address: `${station}@example/repo#42` },
+        }),
+      ),
+    ).toMatchObject({ next: { address: `${station}@example/repo#42` } });
 });
 
 for (const late of [false, true]) {

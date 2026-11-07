@@ -1,5 +1,9 @@
 /** What an ended launch hands to: a station, a person's act, or nobody. */
-import { parseAddress, checkKey } from "../../shared/address.ts";
+import {
+  parseAddress,
+  checkKey,
+  resolveRepository,
+} from "../../shared/address.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import type { LaunchAction } from "./launches.ts";
@@ -32,6 +36,9 @@ export function normalizeNext(n: unknown): NextOwner | null {
     const address = parseAddress(n.address);
     if (!address.ok) return null;
     const a = address.value;
+    // Persisted handoffs must resolve without a checkout or dispatch configuration.
+    if (!resolveRepository(a.repo, { known: [], checkout: null }).ok)
+      return null;
     if (a.station !== "pickup" && !checkKey(a.station, a.key, null).ok)
       return null;
     return { address: n.address };
