@@ -150,6 +150,28 @@ await settleOwnClaims({ records, host: hostOf(), slug: ${JSON.stringify(SLUG)}, 
   expect(settledEnds(dispatchState(w)).has(id)).toBe(true);
 });
 
+it("settles a startup marker in the supplied state root, not the default one", async () => {
+  const { w, id } = await refusedStartupRelease();
+  const alt = join(w.root, "alt-state");
+  mkdirSync(alt, { recursive: true });
+  const settle = join(w.root, "settle-alt-root.ts");
+  writeFileSync(
+    settle,
+    `import { readLaunches } from ${JSON.stringify(resolve(import.meta.dir, "../lib/launches.ts"))};
+import { settleOwnClaims, hostOf } from ${JSON.stringify(resolve(import.meta.dir, "../lib/shared-launches.ts"))};
+import { forgeShared } from ${JSON.stringify(resolve(import.meta.dir, "../../shared/records/shared-forge.ts"))};
+import { resolveLogin } from ${JSON.stringify(resolve(import.meta.dir, "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts"))};
+const records = forgeShared({ login: await resolveLogin() });
+records.release = async () => ({ ok: false, failure: { code: "not-found", reason: "already absent" } });
+const launches = (await readLaunches()).records.filter((r) => r.record.id === ${JSON.stringify(id)});
+await settleOwnClaims({ records, host: hostOf(), slug: ${JSON.stringify(SLUG)}, owner: true, login: null, root: ${JSON.stringify(alt)} }, new Map(), [], launches, new Map(), new Date().toISOString());
+`,
+  );
+  expectSpawnExit(await w.dispatch([], settle), 0);
+  expect(settledEnds(alt).has(id)).toBe(true);
+  expect(settledEnds(dispatchState(w)).has(id)).toBe(false);
+});
+
 it("retries the exact startup marker release after the tick's forge refusal", async () => {
   const w = fixture();
   writeFileSync(join(w.dir, "comment-delete-fail"), "");

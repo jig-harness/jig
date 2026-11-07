@@ -510,7 +510,7 @@ export async function settleOwnClaims(
 ): Promise<string[]> {
   const byId = new Map(records.map((r) => [r.record.id, r]));
   const retryFailures: string[] = [];
-  const settled = settledEnds();
+  const settled = settledEnds(ctx.root);
   for (const r of records) {
     if (
       r.record.repo === ctx.slug &&
@@ -518,7 +518,9 @@ export async function settleOwnClaims(
       !settled.has(r.record.id) &&
       (startupScope === undefined || startupScope.has(Number(r.record.pr)))
     )
-      retryFailures.push(...(await settleRecordClaims(ctx, r, nowIso)));
+      retryFailures.push(
+        ...(await settleRecordClaims(ctx, r, nowIso, ctx.root)),
+      );
   }
   const ends = [
     ...driveEnds(claims, ctx.host, byId, nowIso),
