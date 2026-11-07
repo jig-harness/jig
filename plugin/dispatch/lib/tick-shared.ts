@@ -7,6 +7,7 @@
  */
 import type { SharedRecords, SharedOp } from "../../shared/records/shared.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
+import { settleNoCauseStops } from "./no-cause-stops.ts";
 import { settleConflictStops } from "./actions/drive-hold.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { type ReadRecord, settledEnds } from "./launches.ts";
@@ -102,6 +103,12 @@ export async function readDriveClaims(
     ),
     claims,
     ctx.host,
+  );
+  forge.drives = settleNoCauseStops(
+    forge.drives,
+    records.filter((r) => r.record.repo === ctx.slug),
+    claims,
+    Date.now(),
   );
   return claims;
 }

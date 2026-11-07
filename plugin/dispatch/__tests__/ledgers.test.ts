@@ -35,13 +35,25 @@ describe("classifyLedger", () => {
       "stopped-by-person",
       "stopped-by-person",
     ]);
-    expect(classOf(undefined)).toBe("stopped-unknown");
+    expect(classOf(undefined)).toBe("re-armable");
     expect(classOf(16)).toBe("re-armable");
     expect(classOf(4)).toBe("re-armable");
     expect([11, 13].map((e) => classOf(e))).toEqual(["refused", "refused"]);
     expect([1, 2, 6, 7, 12, 14, 15, 99].map((e) => classOf(e))).toEqual(
       Array(8).fill("needs-person"),
     );
+  });
+
+  it("holds a globally recorded operator stop while its driver is still running", () => {
+    const ledger = running(10);
+    ledger.driver.personStop = {
+      at: new Date(NOW).toISOString(),
+      reason: "maintenance",
+    };
+    const placed = classifyLedger(ledger, NOW, WINDOW);
+    expect(placed.class).toBe("stopped-by-person");
+    expect(placed.why).toContain("stop requested by a person");
+    expect(placed.why).toContain("driver still recorded running");
   });
 
   it("re-arms a park only once every parked item is answered", () => {

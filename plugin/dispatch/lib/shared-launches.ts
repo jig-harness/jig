@@ -29,6 +29,10 @@
  *   past the lease window is taken over by this host, under the ledger's own
  *   rule, never by a claim alone.
  */
+import {
+  NO_CAUSE_FACTS,
+  recoveryReservationRefusal,
+} from "./no-cause-stops.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
@@ -349,7 +353,7 @@ export function launchClaimer(ctx: SharedContext): LaunchClaimer {
           uncertain: true,
         };
       const a = answer.value;
-      if (a.kind === "holds") return { claim: a.id };
+      if (a.kind === "holds") return checkedReservation(ctx, record, a.id);
       const why = lostWhy(a);
       // Only another claim's standing is a loss; a read that does not settle is not.
       const uncertain = !["held", "earlier", "done"].includes(a.kind);
@@ -365,6 +369,32 @@ export function launchClaimer(ctx: SharedContext): LaunchClaimer {
     async release(record, claim) {
       await ctx.records.release(targetOf(record), claim);
     },
+  };
+}
+
+/** The claim holds other hosts off while the latest history decides the recovery allowance. */
+async function checkedReservation(
+  ctx: SharedContext,
+  record: LaunchRecord,
+  own: number,
+): Promise<{ claim: number } | { refused: string; uncertain?: boolean }> {
+  const history = record.facts.startsWith(NO_CAUSE_FACTS)
+    ? await ctx.records.list({ repo: ctx.slug, pr: Number(record.pr) }, "drive")
+    : null;
+  const why =
+    history === null
+      ? null
+      : recoveryReservationRefusal(record, own, history, Date.now());
+  if (why === null) return { claim: own };
+  const released = await ctx.records.release(
+    { repo: ctx.slug, pr: Number(record.pr) },
+    own,
+  );
+  return {
+    refused: released.ok
+      ? why
+      : `${why}; its claim could not be withdrawn: ${released.failure.reason}`,
+    uncertain: !released.ok,
   };
 }
 

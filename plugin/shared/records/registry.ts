@@ -85,7 +85,7 @@ const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
 const DISPATCH_DB = 13;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 3;
+const DRIVE_DB = 4;
 const RRC = "skills/resolve-review-comments/scripts/";
 const REFLECT = "skills/reflect/scripts/";
 
@@ -566,7 +566,7 @@ const FORGE: RecordKind[] = [
     owner: `${STATE}ledger-mirror.ts`,
     at: "one comment on the pull request",
     markers: ["drive-pr-ledger", "drive-pr-ledger-data"],
-    version: 1,
+    version: 2,
     key: PR_NUMBER,
   },
   {

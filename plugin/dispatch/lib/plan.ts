@@ -365,6 +365,7 @@ const LAUNCHABLE: ReadonlySet<LedgerClass> = new Set([
   "stale",
   "re-armable",
   "unarmed",
+  "stopped-unknown",
 ]);
 
 /** The holds of another host's claims that leave a drive quiet, by the class the report gives it. */
