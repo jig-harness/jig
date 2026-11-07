@@ -28,7 +28,7 @@ import {
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { manualMarker } from "../lib/followup-marker.ts";
 import { recordExit } from "../lib/launches.ts";
-import { existingStateDb, stateDb } from "../lib/state.ts";
+import { closeStateDb, existingStateDb, stateDb } from "../lib/state.ts";
 import {
   keptClaims,
   keptMarkers,
@@ -235,6 +235,24 @@ describe("a merge whose updatedAt has not moved", () => {
     expect(listings(w, 9)).toBe(1);
   });
 
+  it("is read again when its comments were listed before the merged listing was observed", async () => {
+    const w = fixture();
+    // Listed as open first (its comments read then), merged by the time the
+    // merged listing is read: those comments predate the newer updatedAt.
+    w.setPrs("open", [openPr(9, "feature/9-done")]);
+    settledMerge(w, "2026-10-31T13:00:00Z");
+    await report(w);
+    // The open listing reads PR #9's comments every tick, so the count of
+    // merges kept unchanged is what shows whether the first tick kept them.
+    const second = await report(w);
+    expect(second.repos[0]?.records).toContainEqual(
+      expect.objectContaining({
+        record: "forge",
+        detail: expect.stringContaining("(0 unchanged since a tick read"),
+      }),
+    );
+  });
+
   it("is read again after the tick posts a marker on it", async () => {
     const w = fixture();
     w.setPrs("merged", [
@@ -389,48 +407,53 @@ describe("a kept merge read", () => {
 
   it("reads only rows whose markers and claims have their complete shapes", () => {
     const root = mkdtempSync(join(tmpdir(), "merge-reads-"));
-    const marker = {
-      id: 1,
-      login: "a",
-      createdAt: "2026-10-31T13:00:00Z",
-      trusted: true,
-    };
-    const put = (pr: number, markers: unknown) =>
+    try {
+      const marker = {
+        id: 1,
+        login: "a",
+        createdAt: "2026-10-31T13:00:00Z",
+        trusted: true,
+      };
+      const put = (pr: number, markers: unknown) =>
+        stateDb(root)
+          .query(
+            "INSERT INTO merge_reads (repo, pr, updated_at, read_at_ms, login, markers) VALUES (?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            SLUG,
+            pr,
+            kept.updatedAt,
+            1,
+            "dispatcher",
+            JSON.stringify(markers),
+          );
+      put(1, [{ ...marker, run: { kind: "manual", done: false } }]);
+      put(2, [{ ...marker, run: { kind: "manual", done: "false" } }]);
+      put(3, [{ ...marker, run: { kind: "tick" } }]);
+      put(4, [{ ...marker, run: { kind: "other" } }]);
+      put(5, [{ ...marker, run: { kind: "unreadable", reason: "x" } }]);
+      expect([...readMergeReads(SLUG, root).keys()].sort()).toEqual([1, 5]);
       stateDb(root)
         .query(
-          "INSERT INTO merge_reads (repo, pr, updated_at, read_at_ms, login, markers) VALUES (?, ?, ?, ?, ?, ?)",
+          "UPDATE merge_reads SET claims = ?, claims_read_at_ms = 1 WHERE pr = 1",
         )
         .run(
-          SLUG,
-          pr,
-          kept.updatedAt,
-          1,
-          "dispatcher",
-          JSON.stringify(markers),
+          JSON.stringify([
+            {
+              id: 2,
+              stage: "drive",
+              login: "a",
+              createdAt: "t",
+              trusted: true,
+              says: { ok: true, value: {} },
+            },
+          ]),
         );
-    put(1, [{ ...marker, run: { kind: "manual", done: false } }]);
-    put(2, [{ ...marker, run: { kind: "manual", done: "false" } }]);
-    put(3, [{ ...marker, run: { kind: "tick" } }]);
-    put(4, [{ ...marker, run: { kind: "other" } }]);
-    put(5, [{ ...marker, run: { kind: "unreadable", reason: "x" } }]);
-    expect([...readMergeReads(SLUG, root).keys()].sort()).toEqual([1, 5]);
-    stateDb(root)
-      .query(
-        "UPDATE merge_reads SET claims = ?, claims_read_at_ms = 1 WHERE pr = 1",
-      )
-      .run(
-        JSON.stringify([
-          {
-            id: 2,
-            stage: "drive",
-            login: "a",
-            createdAt: "t",
-            trusted: true,
-            says: { ok: true, value: {} },
-          },
-        ]),
-      );
-    expect(readMergeReads(SLUG, root).get(1)?.claims).toBeNull();
+      expect(readMergeReads(SLUG, root).get(1)?.claims).toBeNull();
+    } finally {
+      closeStateDb(root);
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
