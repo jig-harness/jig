@@ -2047,7 +2047,9 @@ make, use the entry's term instead.
 - **Act lock** — the one lock (`tick.lock`) a *dispatcher* *tick* holds
   while it acts: plans, launches and writes labels. One tick acts per
   machine; a tick waits for it up to two minutes. Taken after the tick's
-  *observe locks*, and the only lock a tick waits for.
+  *observe locks* for its reads, and the only lock a tick waits for. Its
+  close tries the observe locks of repositories it did not read, without
+  waiting.
 - **Dispatched mark** — the line that says the *dispatcher* started a
   session in a workspace: a short mark, the stage, the key and the *launch
   record*'s id (`⚙ dispatched · rearm #456 · launch <id>`). It is kept in

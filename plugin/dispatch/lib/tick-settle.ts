@@ -66,16 +66,23 @@ function claimUnobserved(records: ReadRecord[]): {
     claimed.set(key, free);
     return free;
   };
-  const free = records.filter((r) => {
-    // Both locks are asked for, so a record that is busy by one holds nothing back from the next.
-    const byPath = claim(`path:${resolve(r.record.repoPath)}`, () =>
-      takeObserveLock(r.record.repoPath),
-    );
-    const bySlug = claim(`slug:${r.record.repo}`, () =>
-      takeRepositoryLock(r.record.repo),
-    );
-    return byPath && bySlug;
-  });
+  let free: ReadRecord[];
+  try {
+    free = records.filter((r) => {
+      // Both locks are asked for, so a record that is busy by one holds nothing back from the next.
+      const byPath = claim(`path:${resolve(r.record.repoPath)}`, () =>
+        takeObserveLock(r.record.repoPath),
+      );
+      const bySlug = claim(`slug:${r.record.repo}`, () =>
+        takeRepositoryLock(r.record.repo),
+      );
+      return byPath && bySlug;
+    });
+  } catch (error) {
+    // A later acquisition failed: no caller has the release, so the earlier locks go now.
+    for (const lock of taken) lock.release();
+    throw error;
+  }
   return {
     records: free,
     release: () => {

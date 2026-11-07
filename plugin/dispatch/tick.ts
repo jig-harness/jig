@@ -314,11 +314,12 @@ async function actAll(
     locks.get(path)?.release();
     locks.delete(path);
   }
-  if (observe.busy.size > 0)
-    receipt.busy = [...observe.busy].map(([path, heldBy]) => ({
-      path,
-      heldBy,
-    }));
+  // In the order the repositories were named, not the order their reads finished.
+  const busy = [...new Set(order)].flatMap((path) => {
+    const heldBy = observe.busy.get(path);
+    return heldBy === undefined ? [] : [{ path, heldBy }];
+  });
+  if (busy.length > 0) receipt.busy = busy;
 }
 
 /** One repository's act part inside the per-repository boundary. */

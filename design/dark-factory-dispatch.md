@@ -121,15 +121,17 @@ close of a tick takes the same locks before it logs the ended records of
 a repository it did not read, and leaves those of one another tick
 observes to that tick. A lock acquisition that fails is a defect of that
 repository's turn, and the tick awaits every started observation before it
-gives any lock up. A repository another tick holds is left to that tick: a repository another tick holds is left to that tick, named on the
+gives any lock up. A repository another tick holds is left to that tick, named on the
 receipt (`busy`), and neither read nor acted on. A tick that finds every
 repository it names held ends as one that found the lock held (exit 3),
 which is what a wake-up's waiter retries after its minute. The act lock is
-taken only after every observe lock the tick will hold, and is the only
+taken only after every observe lock the tick holds for its reads, and is the only
 lock a tick waits for: up to two minutes, looking again every quarter of a
 second, after which the tick ends the same way. A tick holding the act lock
-takes no observe lock and waits for nothing, so no two ticks wait on each
-other. A repository's observe lock is kept until its turn in the act phase
+waits for nothing, so no two ticks wait on each other. Its one exception to
+taking no observe lock is the close, which tries the observe locks of the
+repositories it did not read, without waiting, to log their ended records,
+and leaves any it cannot take to the tick that holds it. A repository's observe lock is kept until its turn in the act phase
 is done, so no tick acts on a repository from reads made before another
 tick acted on it; then it is given up, and a wake-up for that repository
 can start while the tick finishes the others. A single-repository tick (the
