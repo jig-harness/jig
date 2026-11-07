@@ -71,7 +71,8 @@ function pickupPrompt(
     "",
     "jig dispatch started this session for an item assigned to the factory identity; nobody is at the keyboard.",
     "When you stop, record how the pickup ended, once:",
-    `- its pull request is open and its drive armed: ${resultCommand(record, "done")}`,
+    `- its pull request is open and its drive armed: ${resultCommand(record, "done")} --pr <the pull request number>`,
+    `- no pull request was needed (a duplicate or work already made): ${resultCommand(record, "done")} --none "<why>"`,
     `- you stopped short of that (a refusal, a question, a failure): ${resultCommand(record, "failed")}`,
   ].join("\n");
 }

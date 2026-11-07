@@ -115,6 +115,7 @@ export function lastOfRow(row: EndedRow): Last {
     at: row.at,
     reason: row.reason,
     from: "outcome log",
+    next: row.next ?? null,
   };
 }
 

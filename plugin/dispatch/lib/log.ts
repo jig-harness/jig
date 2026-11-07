@@ -28,6 +28,7 @@
  * `jig dispatch log --jsonl` print, beside the columns the dashboard
  * filters on.
  */
+import { derivedNext, type NextOwner } from "./next-owner.ts";
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -79,6 +80,8 @@ export interface EndedRow {
   rounds: number | null;
   class: OutcomeClass;
   reason: string;
+  /** Absent on rows written before handoffs were kept. */
+  next?: NextOwner;
 }
 
 /** One cause the tick observed. */
@@ -440,5 +443,9 @@ export function endedRow(
         : null,
     class: placed.class,
     reason,
+    next:
+      record.action === "pickup" && r.result === "done" && r.next != null
+        ? r.next
+        : derivedNext(record.action, placed.class, reason),
   };
 }
