@@ -1002,7 +1002,8 @@ repository with the stage the tick acts under (`pickup` for `assign`,
 dispatch --apply --repo <path>` the way the installed timer does, when idle
 and no sooner than a minute after the last tick it started, rather than
 at the next timer run. Several sends within that minute start one tick. A tick that
-finds another holding the tick lock is tried again a minute later; the
+finds another tick reading that repository, or acting for longer than it
+waits, is tried again a minute later; the
 waiter exits when nothing is pending, or after starting 10 ticks; the record stays the request, so the
 next timer run reads it whatever happens to the wake. What the waiter did
 is in `~/.local/state/jig/dispatch/wake/<digest>/last-run.log`. A mailbox

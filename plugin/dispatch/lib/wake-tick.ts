@@ -12,8 +12,8 @@
  * the tick the way the installed timer does: the job's own launcher command
  * and environment, read back from the scheduler, with `dispatch --apply
  * --repo <path>` as its arguments. With no timer installed it runs this copy
- * of the plugin's `jig.ts`. A tick that ends with exit 3 found the tick lock
- * held and is tried again after the minute. The waiter's notes, and each
+ * of the plugin's `jig.ts`. A tick that ends with exit 3 found its
+ * repository or the act lock held and is tried again after the minute. The waiter's notes, and each
  * run's command, exit code and output, go to `last-run.log` beside the wake.
  *
  * `JIG_WAKE_COMMAND`, a JSON array, names the command a test runs in place
@@ -41,7 +41,7 @@ import {
   tickDeadlineMs,
 } from "./machine-config.ts";
 
-/** The exit of a tick that found another holding the tick lock (`dispatch/cli.ts`). */
+/** The exit of a tick that found another holding its repository or the act lock (`dispatch/cli.ts`). */
 const LOCK_HELD_EXIT = 3;
 
 const PLUGIN = resolve(import.meta.dir, "..", "..");

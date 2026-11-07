@@ -485,8 +485,11 @@ interface Reading {
   comments?: (pr: number) => Promise<Listing>;
 }
 
+/** Runs a forge read when the tick's pool has a place for it (`pool.ts`). */
+export type Admit = <T>(read: () => Promise<T>) => Promise<T>;
+
 /** A reading's reader of base branch heads: pull requests on one base share one read. */
-function baseHeads(slug: string): Reading["baseHead"] {
+function baseHeads(slug: string, admit: Admit): Reading["baseHead"] {
   const read = new Map<string, Promise<BaseHead>>();
   return (branch) => {
     if (branch === undefined || branch === "")
@@ -495,7 +498,7 @@ function baseHeads(slug: string): Reading["baseHead"] {
       });
     const known = read.get(branch);
     if (known !== undefined) return known;
-    const head = branchHead(slug, branch).then(
+    const head = admit(() => branchHead(slug, branch)).then(
       (oid): BaseHead => ({ oid }),
       (error: unknown): BaseHead => ({ unreadable: failureText(error) }),
     );
@@ -584,6 +587,7 @@ export async function readDrives(
   labels: LabelConfig | null = null,
   adoption: Adoption | null = null,
   comments?: (pr: number) => Promise<Listing>,
+  admit: Admit = (read) => read(),
 ): Promise<DrivenPr[]> {
   const reading: Reading = {
     slug,
@@ -592,7 +596,7 @@ export async function readDrives(
     windowMs: stallThresholdMs(),
     labels,
     adoption,
-    baseHead: baseHeads(slug),
+    baseHead: baseHeads(slug, admit),
     ...(comments === undefined ? {} : { comments }),
   };
   const out: DrivenPr[] = [];
