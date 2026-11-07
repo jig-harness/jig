@@ -66,7 +66,8 @@
  */
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
-import { accountsReport, rotated, timeLeftMs } from "./lib/actions/launch.ts";
+import { accountsReport, timeLeftMs } from "./lib/actions/launch.ts";
+import { applyInTurns } from "./lib/apply-order.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
@@ -166,6 +167,7 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
     apply: null,
     lineInputs: new Map(),
     reflections: [],
+    pending: [],
     reads: tickReads(runtime, options.poolSize),
   };
   return { receipt, context, withheld: undefined, settleFailed: false };
@@ -297,15 +299,18 @@ async function actAll(
   await startAct(started);
   const { receipt, context } = started;
   const { apply, options } = context;
-  const order = apply === null ? options.repos : rotated(apply, options.repos);
-  // The reflection route takes the repositories in the order they acted.
-  context.reflections.sort(
-    (a, b) => order.indexOf(a.path) - order.indexOf(b.path),
-  );
+  const order = options.repos;
+  const acted: string[] = [];
   for (const path of new Set(order)) {
     const observed = observe.observed.get(path);
     if (observed === undefined) continue;
     receipt.repos.push(await boundedAct(observed, context));
+    acted.push(path);
+  }
+  // The launches wait until every repository is gathered, so none holds the tick's time against another's.
+  await applyInTurns(context.pending, apply?.tick ?? 0);
+  // A repository's observe lock is kept until its launches and close are done.
+  for (const path of acted) {
     locks.get(path)?.release();
     locks.delete(path);
   }

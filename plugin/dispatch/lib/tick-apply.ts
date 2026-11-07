@@ -16,11 +16,11 @@ import {
   type FreshDrive,
 } from "./actions/drive.ts";
 import { applyFollowups } from "./actions/followup.ts";
-import { rotated } from "./actions/launch.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { applyPickups } from "./actions/pickup.ts";
 import { applySteers } from "./actions/steer.ts";
 import { adoptionOf } from "./adopt.ts";
+import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
 import { readOutcomes } from "./followup-outcomes.ts";
 import { openPullRequest, pullRequestLabels } from "./forge.ts";
 import { carriesSet, hasCommand } from "./labels.ts";
@@ -90,10 +90,19 @@ export function applyState(
   };
 }
 
-/** Act on one observed and planned repository; nothing without `--apply`. */
+/**
+ * Act on one observed and planned repository; nothing without `--apply`.
+ * Its own claims end now; its launches and notifications are handed to
+ * `context.pending`, run in turns once every repository is gathered, and
+ * `after` runs when its last turn is done; `guard` bounds each of them.
+ */
 export async function actObserved(
   context: TickContext,
   observation: RepoObservation,
+  hooks: {
+    guard: (run: () => Promise<void>, inApply?: boolean) => Promise<void>;
+    after: () => Promise<void>;
+  },
 ): Promise<void> {
   const apply = context.apply;
   if (apply === null) return;
@@ -106,7 +115,7 @@ export async function actObserved(
     outcomes: readOutcomes(repo.slug),
     nowMs: context.nowMs,
   });
-  await applyStages(apply, opened.stages, report, {
+  const inputs: ApplyInputs = {
     repo,
     runtime: context.runtime,
     section,
@@ -116,6 +125,19 @@ export async function actObserved(
     join: observation.join,
     sessions: observation.sessions,
     shared: ctx,
+  };
+  context.pending.push({
+    apply: (group) =>
+      hooks.guard(() =>
+        applyStages(apply, opened.stages, report, inputs, group),
+      ),
+    finish: () =>
+      hooks
+        .guard(() =>
+          applyStages(apply, opened.stages, report, inputs, "finish"),
+        )
+        // `after` times its own phases; the same exception boundary, outside the apply timer.
+        .then(() => hooks.guard(hooks.after, false)),
   });
 }
 
@@ -142,6 +164,7 @@ async function applyStages(
   enabled: ReadonlySet<string>,
   report: RepoReport,
   inputs: ApplyInputs,
+  group: LaunchGroup | "finish",
 ): Promise<void> {
   const { repo, runtime, section, tracked, login, join } = inputs;
   const fresh = () => readSessions(runtime, repo, join);
@@ -209,7 +232,14 @@ async function applyStages(
         });
     },
   ];
-  for (const stage of rotated(apply, stages, "stages")) await stage();
+  for (const stage of launchStageOrder(
+    stages,
+    group,
+    apply.tick ?? 0,
+    apply.repos ?? 1,
+  ))
+    await stage();
+  if (group !== "finish") return;
   // The nudges first: a nudge that went unanswered is notified in the same tick.
   if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
   // A host that does not own the repository never notifies for it: the owner does, once.

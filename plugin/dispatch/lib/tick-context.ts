@@ -6,6 +6,7 @@
  * them again under the act lock, and builds the apply state from that read.
  */
 import type { ApplyState } from "./actions/drive.ts";
+import type { PendingRepository } from "./apply-order.ts";
 import type { ReadRecord } from "./launches.ts";
 import type { RepoLineInput } from "./line.ts";
 import type { MachineConfig } from "./machine-config.ts";
@@ -42,6 +43,8 @@ export interface TickContext {
   lineInputs: Map<string, RepoLineInput>;
   /** Each repository's reflection settings, for the route at the tick's end. */
   reflections: RepoReflection[];
+  /** The repositories whose launches wait for every repository to be gathered, to be applied in turns. */
+  pending: PendingRepository[];
   /** What the tick reads once and shares between its repositories' observe phases. */
   reads: TickReads;
 }

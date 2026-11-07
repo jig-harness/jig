@@ -275,7 +275,7 @@ const FULL = "no account has a free slot: a 2/2, b 1/1";
  * What the tick that read and acted on each repository before reading the
  * next admitted on the fixture above: the account turn, the opens spent on
  * workspaces that fail to open, the slots filled, and the second turn left
- * waiting on them.
+ * waiting on them, each of its parked drives.
  */
 const SEQUENTIAL = [
   ["first", "PR #7", "a", "launched", LAUNCHED],
@@ -283,8 +283,7 @@ const SEQUENTIAL = [
   ["first", "PR #9", "a", "refused", unopened(9)],
   ["first", "PR #10", "a", "refused", unopened(10)],
   ["first", "PR #11", "a", "launched", LAUNCHED],
-  ["second", "PR #9", null, "waits", FULL],
-  ["second", "PR #10", null, "waits", FULL],
+  ...[7, 8, 9, 10, 11].map((n) => ["second", `PR #${n}`, null, "waits", FULL]),
 ];
 
 const SERIAL_CATALOG = `areas:

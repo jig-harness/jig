@@ -57,6 +57,7 @@ const MACHINE: MachineConfig = {
   wallBackoffMs: 3_600_000,
   runtimeTimeoutMs: 60_000,
   workspaceTimeoutMs: 60_000,
+  opensPerTick: 4,
   receiptsDays: 30,
   dashboardListen: null,
   sharedRecords: "forge",

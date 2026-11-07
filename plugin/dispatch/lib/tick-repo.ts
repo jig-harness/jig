@@ -87,28 +87,62 @@ export async function actTurn(
   const { turn, opened, observation } = observed;
   const { path, timer } = turn;
   const { report } = opened;
-  const { forge, tracked, sessions } = observation;
+  const { forge } = observation;
   await timer.time("plan", () => planObserved(context, observation));
   await timer.time("log", () =>
     logRepo(context, opened.repo.slug, report, forge.drives),
   );
-  await timer.time("apply", () => actObserved(context, observation));
-  await timer.time("labels", () => projectObserved(context, observation));
-  await timer.time("shared", async () => {
-    report.shared = sharedReport(
-      observation.shared,
-      observation.ctx,
-      observation.claims,
-      forge,
+  const close = async () => {
+    await timer.time("labels", () => projectObserved(context, observation));
+    await timer.time("shared", () => closeShared(context, observation, path));
+    timed(report, timer);
+  };
+  if (context.apply === null) {
+    await timer.time("apply", () => Promise.resolve());
+    await close();
+  } else {
+    // The launches run after every repository is gathered; a defect in one stops this repository's remaining turns only.
+    let stopped = false;
+    // Work that times its own phases (the close) runs with `inApply` false, so apply is not charged for it.
+    const guard = async (run: () => Promise<void>, inApply = true) => {
+      if (stopped) return;
+      try {
+        await (inApply ? timer.time("apply", run) : run());
+      } catch (error) {
+        stopped = true;
+        defectReport(turn, error);
+      } finally {
+        // The timer adds a turn's time when the turn returns, so the receipt's copy is taken after it.
+        timed(report, timer);
+      }
+    };
+    await timer.time("apply", () =>
+      actObserved(context, observation, { guard, after: close }),
     );
-    // The budget is the host's: read once, as the tick started.
-    if (forge.ok) context.reads.budgets.push(report.shared);
-    context.lineInputs.set(
-      path,
-      lineInputOf(forge.drives, forge, tracked, sessions),
-    );
-  });
+  }
   return timed(report, timer);
+}
+
+/** The shared records' report, and what the line and the tick's close read of this repository. */
+function closeShared(
+  context: TickContext,
+  observation: RepoObservation,
+  path: string,
+): void {
+  const { forge, tracked, sessions } = observation;
+  const report = observation.opened.report;
+  report.shared = sharedReport(
+    observation.shared,
+    observation.ctx,
+    observation.claims,
+    forge,
+  );
+  // The budget is the host's: read once, as the tick started.
+  if (forge.ok) context.reads.budgets.push(report.shared);
+  context.lineInputs.set(
+    path,
+    lineInputOf(forge.drives, forge, tracked, sessions),
+  );
 }
 
 /** A turn's phases in the order they start, which the report keeps whatever order overlapping phases end in. */
