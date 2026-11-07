@@ -20,7 +20,8 @@
  * refuses as exit `11` does, naming the verdict: a driver that is making
  * progress is never stopped, and a dead one's leftovers are pushed or
  * discarded by a person first, since a successor driving around them would
- * strand or overwrite them.
+ * strand or overwrite them. A missing tree admits a dead holder and resumes from the
+ * remote head; an existing unregistered tree or failed inspection still refuses.
  *
  * Everything that can refuse runs before the holder is stopped: the pass
  * command's check, the quota re-arm, the held batch's read, and this tree's
@@ -43,7 +44,7 @@ import { worktreePathKey } from "./../state/actor.ts";
 
 import type { HeldItem } from "./../state/schema.ts";
 
-import { gatherWorktreeLeftovers, worktreeVanished } from "./../leftovers.ts";
+import { gatherWorktreeLeftovers } from "./../worktree-leftovers.ts";
 
 import { drives, driveState } from "./paths.ts";
 
@@ -245,7 +246,7 @@ async function admitDeadHolder(
   console.error(
     vanished === null
       ? `${gone} and left nothing in its tree; taking the drive over.`
-      : `${gone} and its tree (${vanished}) no longer exists; taking the drive over. Inspect branch refs and reflogs in shared Git storage for recoverable commits before redoing work.`,
+      : `${gone} and its tree (${vanished}) is missing; local work may need recovery. Inspect branch refs and reflogs in shared Git storage for recoverable commits before redoing work; taking the drive over and resuming from the remote head.`,
   );
   return vanished;
 }
@@ -274,9 +275,9 @@ async function requireNoLeftovers(
   row: DoctorRowJson,
 ): Promise<string | null> {
   const tree = row.diag?.worktree ?? "";
-  const leftovers = tree === "" ? null : await gatherWorktreeLeftovers(tree);
-  if (leftovers === null && tree !== "" && (await worktreeVanished(tree)))
-    return tree;
+  const leftovers =
+    tree === "" ? null : await gatherWorktreeLeftovers(tree, process.cwd());
+  if (leftovers === "missing") return tree;
   if (leftovers === null)
     refuse(
       pr,

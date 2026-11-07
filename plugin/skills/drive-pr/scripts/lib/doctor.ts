@@ -23,8 +23,10 @@
  * scattered across the branches below:
  *
  *   1. Fail closed first — an unreadable/contested lock or an unreadable
- *      stored state is `UNKNOWN` before anything else is even asked.
- *   2. No live driver + leftovers in the worktree → `DEAD_WITH_LEFTOVERS`.
+ *      stored state is `UNKNOWN`, except independently confirmed missing
+ *      trees or leftovers can establish `DEAD` or `DEAD_WITH_LEFTOVERS`.
+ *   2. No live driver + a confirmed missing tree → `DEAD`. Otherwise,
+ *      leftovers in the worktree → `DEAD_WITH_LEFTOVERS`.
  *      Checked BEFORE the quota-park and human-parked checks below, because a
  *      drive that parked (or had items parked) and then had its DRIVER die is
  *      still, first and foremost, a tree with stranded work — the park or the
@@ -37,11 +39,11 @@
  *      below, so it is deferred to the trailing `UNKNOWN` default (7)
  *      instead of returned here — see `classifyDrive`'s own comment on
  *      `uninspectableLeftoversReason` for the bug this closed.
- *      A holder whose process is confirmed gone (`holderGone`) with nothing
- *      left to save — a clean tree, or a tree that no longer exists
- *      (`treeVanished`), whose working files are gone — is `DEAD`,
- *      also returned here, since directory absence admits a takeover. Shared
- *      Git storage may still hold commits for the successor to recover.
+ *      A holder whose process is confirmed gone (`processConfirmedGone`) with
+ *      nothing left to save — a clean tree, or a missing one — is `DEAD`,
+ *      also returned here, since a clean or absent tree admits a takeover.
+ *      Shared Git storage may still hold commits of a missing tree for the
+ *      successor to recover.
  *   3. A recorded quota park → `QUOTA_PARKED`. Outranks both `WEDGED` and
  *      `NEEDS_HUMAN` below because a park is TIME-BOUNDED and self-resolving
  *      in the ordinary case (the window reopens) — including the SLEEP path
@@ -147,6 +149,7 @@ export function stallThresholdMs(): number {
 export type DoctorVerdict =
   | "HEALTHY"
   | "WEDGED"
+  | "DEAD"
   | "DEAD_WITH_LEFTOVERS"
   | "DEAD"
   | "QUOTA_PARKED"
@@ -163,18 +166,8 @@ export interface DoctorLeftovers {
 export interface DoctorInput {
   /** Lock liveness as `drives.ts` already computes it (`readLock`). */
   lockState: "live" | "stale" | "empty" | "contested" | "unreadable";
-  /**
-   * The holder's process is confirmed gone by its recorded identity
-   * (`holderGone` in `lib/driver/locks.ts`); absent reads as not confirmed.
-   */
-  holderGone?: boolean;
-  /**
-   * The driven worktree no longer exists: its directory is gone
-   * (`worktreeVanished`); a directory git no longer lists still holds working
-   * files and does not count. Read
-   * only when `leftovers` is `null`; absent reads as not vanished.
-   */
-  treeVanished?: boolean;
+  /** Only true certifies that the local holder process is gone. */
+  processConfirmedGone?: boolean;
   /** ms since `DriveState.lastProgressAt`, `null` when unknown/never/unreadable. */
   progressAgeMs: number | null;
   /** Whether the stored state could be read (and shape-validated) at all. */
@@ -184,8 +177,8 @@ export interface DoctorInput {
   parkedCount: number;
   /** Each parked decision's question, so the row names them; absent: the count. */
   parkedQuestions?: string[];
-  /** Worktree leftovers; `null` when the worktree could not be inspected. */
-  leftovers: DoctorLeftovers | null;
+  /** `missing` confirms absence; `null` means inspection could not answer. */
+  leftovers: DoctorLeftovers | "missing" | null;
   stallThresholdMs: number;
   /**
    * The PR number, verbatim from the lock row — plain data, not I/O; folded
@@ -303,25 +296,26 @@ function needsHumanReason(input: DoctorInput): string {
 }
 
 /**
- * A holder confirmed gone with nothing left to save → `DEAD`: its tree is
- * clean, or no longer exists. Commits from a missing tree can remain in the
- * clone's shared Git storage. `null` otherwise, including a tree
- * that exists but could not be inspected.
+ * A holder confirmed gone with a clean tree → `DEAD`: nothing is left to
+ * save, so a takeover is admitted. `null` otherwise: a tree that could not be
+ * inspected, or a recorded quota or human park, which keeps its own verdict
+ * (a missing tree is answered in `classifyDrive`).
  */
 function deadHolder(input: DoctorInput): DoctorRow | null {
-  if (input.holderGone !== true) return null;
+  if (input.processConfirmedGone !== true) return null;
+  if (input.quotaPark !== null || input.parkedCount > 0) return null;
   const l = input.leftovers;
-  if (l !== null && !l.uncommitted && !l.unpushed && l.unconcludedOp === null)
+  if (
+    l !== null &&
+    l !== "missing" &&
+    !l.uncommitted &&
+    !l.unpushed &&
+    l.unconcludedOp === null
+  )
     return {
       verdict: "DEAD",
       reason:
         "no live driver: its process is gone, and its worktree holds nothing unpushed or uncommitted; a takeover is admitted",
-      recovery: null,
-    };
-  if (l === null && input.treeVanished === true && input.worktreePath !== null)
-    return {
-      verdict: "DEAD",
-      reason: `no live driver: its process is gone, and its worktree ${input.worktreePath} no longer exists, so its working files cannot be inspected; commits may remain in shared Git storage — inspect branch refs and reflogs before redoing work; a takeover is admitted`,
       recovery: null,
     };
   return null;
@@ -341,23 +335,27 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
       recovery: null,
     };
   }
-  // Unreadable state does NOT preempt an independently-established
-  // DEAD_WITH_LEFTOVERS: `gatherDoctorInput` runs the leftovers probe off the
-  // WORKTREE, unconditionally on whether the state snapshot parsed (review
-  // finding) — so a stale claim with an old or malformed stored state, sitting
-  // over confirmed uncommitted changes, unpushed commits, or an unconcluded
-  // git operation, has already answered "is something lost in this tree"
-  // before this function ever looks at the stored state. Reporting UNKNOWN
-  // over that would discard evidence this classifier already has, and is
-  // reachable immediately after a rollout that (like this PR) intentionally
-  // rejects every pre-existing state shape. Every other unreadable-state case
-  // still returns UNKNOWN here exactly as before — branch 2 below cannot
-  // itself construct DEAD_WITH_LEFTOVERS unless this same combination holds.
+  const confirmedDead =
+    noLiveDriver(input.lockState) && input.processConfirmedGone === true;
+  let uninspectableLeftoversReason: string | null = null;
+  if (noLiveDriver(input.lockState) && input.leftovers === "missing") {
+    if (confirmedDead)
+      return {
+        verdict: "DEAD",
+        reason: `no live driver, and the working tree (${input.worktreePath}) is missing; local work may need recovery; commits may remain in shared Git storage, so inspect branch refs and reflogs before redoing work; resume from the remote head`,
+        recovery: null,
+      };
+    uninspectableLeftoversReason =
+      "the working tree is missing, but the holder process is not confirmed gone";
+  }
+  // Independently confirmed stranded work remains actionable even when
+  // the stored state is unreadable. A stale heartbeat alone proves no death.
   if (
     !input.stateReadable &&
     !(
-      noLiveDriver(input.lockState) &&
+      confirmedDead &&
       input.leftovers !== null &&
+      input.leftovers !== "missing" &&
       (input.leftovers.uncommitted ||
         input.leftovers.unpushed ||
         input.leftovers.unconcludedOp !== null)
@@ -389,7 +387,6 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   // `doctor.test.ts`'s "an uninspectable worktree does not preempt a KNOWN
   // quota park"). So it is DEFERRED to the trailing fallback (7) instead,
   // and used there ONLY if nothing more specific claimed the row first.
-  let uninspectableLeftoversReason: string | null = null;
   if (noLiveDriver(input.lockState)) {
     const dead = deadHolder(input);
     if (dead !== null) return dead;
@@ -406,9 +403,11 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
           ? "no live driver, and this lock records no worktree to inspect for leftovers"
           : "no live driver, and the worktree could not be inspected for leftovers";
     } else if (
-      input.leftovers.uncommitted ||
-      input.leftovers.unpushed ||
-      input.leftovers.unconcludedOp !== null
+      confirmedDead &&
+      input.leftovers !== "missing" &&
+      (input.leftovers.uncommitted ||
+        input.leftovers.unpushed ||
+        input.leftovers.unconcludedOp !== null)
     ) {
       return {
         verdict: "DEAD_WITH_LEFTOVERS",

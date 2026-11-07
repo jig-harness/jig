@@ -1,8 +1,8 @@
 /**
  * dead-holder.test.ts — a driver confirmed gone with nothing left to save:
- * the doctor's `DEAD` verdict over plain inputs, and `worktreeVanished`, the
- * read that tells a tree that no longer exists from one that cannot be
- * inspected.
+ * the doctor's `DEAD` verdict over plain inputs, and the leftovers probe's
+ * `missing`, the read that tells a tree that no longer exists from one that
+ * cannot be inspected.
  */
 
 import { afterAll, describe, expect, it } from "bun:test";
@@ -24,26 +24,22 @@ import {
   type DoctorInput,
   STALL_THRESHOLD_MIN_DEFAULT,
 } from "../scripts/lib/doctor.ts";
-import {
-  gatherWorktreeLeftovers,
-  worktreeVanished,
-} from "../scripts/lib/leftovers.ts";
+import { gatherWorktreeLeftovers } from "../scripts/lib/worktree-leftovers.ts";
 
 const NOW = new Date("2026-09-12T12:00:00.000Z");
 const TREE = "/tmp/gone-worktree";
 
-/** A stale lock whose holder is gone, its tree unreadable and vanished. */
+/** A stale lock whose holder is gone and whose tree is confirmed missing. */
 function deadInput(overrides: Partial<DoctorInput> = {}): DoctorInput {
   return {
     lockState: "stale",
-    holderGone: true,
-    treeVanished: true,
+    processConfirmedGone: true,
     progressAgeMs: 60_000,
     stateReadable: true,
     passChild: null,
     quotaPark: null,
     parkedCount: 0,
-    leftovers: null,
+    leftovers: "missing",
     stallThresholdMs: STALL_THRESHOLD_MIN_DEFAULT * 60_000,
     pr: "4242",
     worktreePath: TREE,
@@ -57,14 +53,13 @@ describe("classifyDrive — a dead holder with nothing left to save", () => {
   it("is DEAD when its process is gone and its tree no longer exists, naming the tree", () => {
     const row = classifyDrive(deadInput(), NOW);
     expect(row.verdict).toBe("DEAD");
-    expect(row.reason).toContain(`${TREE} no longer exists`);
+    expect(row.reason).toContain(`${TREE}) is missing`);
     expect(row.reason).toContain("shared Git storage");
   });
 
   it("is DEAD when its process is gone and its tree is clean", () => {
     const row = classifyDrive(
       deadInput({
-        treeVanished: false,
         leftovers: { uncommitted: false, unpushed: false, unconcludedOp: null },
       }),
       NOW,
@@ -75,7 +70,6 @@ describe("classifyDrive — a dead holder with nothing left to save", () => {
   it("stays DEAD_WITH_LEFTOVERS when its tree still holds work", () => {
     const row = classifyDrive(
       deadInput({
-        treeVanished: false,
         leftovers: { uncommitted: false, unpushed: true, unconcludedOp: null },
       }),
       NOW,
@@ -84,13 +78,13 @@ describe("classifyDrive — a dead holder with nothing left to save", () => {
   });
 
   it("stays UNKNOWN for a tree that exists but could not be inspected", () => {
-    const row = classifyDrive(deadInput({ treeVanished: false }), NOW);
+    const row = classifyDrive(deadInput({ leftovers: null }), NOW);
     expect(row.verdict).toBe("UNKNOWN");
     expect(row.reason).toContain("could not be inspected");
   });
 
   it("stays UNKNOWN for a vanished tree whose process is not confirmed gone", () => {
-    const row = classifyDrive(deadInput({ holderGone: false }), NOW);
+    const row = classifyDrive(deadInput({ processConfirmedGone: false }), NOW);
     expect(row.verdict).toBe("UNKNOWN");
   });
 
@@ -118,31 +112,32 @@ describe("classifyDrive — a dead holder with nothing left to save", () => {
   });
 });
 
-describe("worktreeVanished", () => {
+describe("gatherWorktreeLeftovers — a tree that is gone or cannot be read", () => {
   const scratch = mkdtempSync(join(tmpdir(), "jig-dead-holder-"));
   afterAll(() => {
     chmodSync(scratch, 0o755);
     rmSync(scratch, { recursive: true, force: true });
   });
+  const probe = (tree: string) => gatherWorktreeLeftovers(tree, process.cwd());
 
-  it("is true for a directory that no longer exists", async () => {
-    expect(await worktreeVanished(join(scratch, "deleted-tree"))).toBe(true);
+  it("is missing for a directory that no longer exists", async () => {
+    expect(await probe(join(scratch, "deleted-tree"))).toBe("missing");
   });
 
-  it("is false for an existing directory git does not list as a worktree", async () => {
+  it("is uninspectable for an existing directory git does not list as a worktree", async () => {
     const stray = join(scratch, "stray");
     mkdirSync(stray);
-    expect(await worktreeVanished(stray)).toBe(false);
+    expect(await probe(stray)).toBeNull();
   });
 
-  it("is false for an existing directory with unusual path characters", async () => {
+  it("is uninspectable for an existing directory with unusual path characters", async () => {
     const name = byPlatform("Windows forbids newlines in path components", {
       windows: "tree with spaces",
       posix: "tree\nwith-newline",
     });
     const tree = join(scratch, name);
     mkdirSync(tree);
-    expect(await worktreeVanished(tree)).toBe(false);
+    expect(await probe(tree)).toBeNull();
   });
 
   it("keeps an uninspectable tree with working files UNKNOWN", async () => {
@@ -153,17 +148,15 @@ describe("worktreeVanished", () => {
       `gitdir: ${join(scratch, "missing-admin")}\n`,
     );
     writeFileSync(join(tree, "local.txt"), "recoverable working files\n");
-    const leftovers = await gatherWorktreeLeftovers(tree);
+    const leftovers = await probe(tree);
     expect(leftovers).toBeNull();
-    const treeVanished = await worktreeVanished(tree);
-    expect(treeVanished).toBe(false);
-    expect(
-      classifyDrive(deadInput({ leftovers, treeVanished }), NOW).verdict,
-    ).toBe("UNKNOWN");
+    expect(classifyDrive(deadInput({ leftovers }), NOW).verdict).toBe(
+      "UNKNOWN",
+    );
   });
 
-  it("is false for a worktree git lists", async () => {
-    expect(await worktreeVanished(process.cwd())).toBe(false);
+  it("reads a worktree git lists", async () => {
+    expect(await probe(process.cwd())).not.toBe("missing");
   });
 
   it.skipIf(
@@ -171,12 +164,12 @@ describe("worktreeVanished", () => {
       "file-system",
       "chmod cannot deny directory access on Windows",
     ) || process.getuid?.() === 0,
-  )("is false for a path that cannot be read", async () => {
+  )("is uninspectable for a path that cannot be read", async () => {
     const locked = join(scratch, "locked");
     mkdirSync(join(locked, "tree"), { recursive: true });
     chmodSync(locked, 0o000);
     try {
-      expect(await worktreeVanished(join(locked, "tree"))).toBe(false);
+      expect(await probe(join(locked, "tree"))).toBeNull();
     } finally {
       chmodSync(locked, 0o755);
     }

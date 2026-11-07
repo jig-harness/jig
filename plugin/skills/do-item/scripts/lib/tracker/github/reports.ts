@@ -20,11 +20,10 @@ import type {
   IssueFact,
   LabelledIssueState,
   LedgerIssue,
-  PoolIssue,
   StartedIssueActivity,
-  Tracker,
   WindowSpec,
 } from "../port.ts";
+import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
 import type { Client } from "./client.ts";
@@ -45,7 +44,7 @@ import { GitHubApiError } from "./transport.ts";
 import type { CommentNode } from "./tracker.ts";
 
 type ReportOps = Pick<
-  Tracker,
+  CoreTracker,
   | "issuesByKeys"
   | "issuesInWindow"
   | "startedIssueActivity"
@@ -57,6 +56,8 @@ type ReportOps = Pick<
   | "openChildren"
   | "poolIssue"
   | "assignedIssues"
+  | "openPopulation"
+  | "facetReport"
 >;
 
 /** What the reports borrow from the pickup operations. */
@@ -114,7 +115,10 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     };
   }
 
-  function pool(issue: GhIssue, raw: Record<string, unknown>): PoolIssue {
+  async function pool(
+    issue: GhIssue,
+    raw: Record<string, unknown>,
+  ): Promise<CorePoolIssue> {
     const labels = wholeLabels(issue);
     const state = model.stateOf({ ...issue, labels });
     const kids = onePage(raw.subIssues, `issue ${issue.key}.subIssues`);
@@ -122,7 +126,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       identifier: issue.key,
       title: issue.title,
       url: issue.url,
-      priority: model.priorityOf(labels),
+      ...(await client.facets.read(issue, raw, labels)),
       createdAt: issue.createdAt,
       // The state's id is its canonical key: GitHub has no state objects,
       // and a claim re-check compares ids.
@@ -141,6 +145,15 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       ),
       truncated: [],
     };
+  }
+
+  /** Each read issue in pool form, one at a time: a facet may need a read of its own. */
+  async function pools(
+    read: Array<{ issue: GhIssue; raw: Record<string, unknown> }>,
+  ): Promise<CorePoolIssue[]> {
+    const out: CorePoolIssue[] = [];
+    for (const { issue, raw } of read) out.push(await pool(issue, raw));
+    return out;
   }
 
   /** The labelled issues of the home repository, every state; refuses an unknown label. */
@@ -187,7 +200,10 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       : str(last.createdAt, `${where}.createdAt`);
   }
 
-  function ledgerEntry(issue: GhIssue): LedgerIssue {
+  async function ledgerEntry(
+    issue: GhIssue,
+    raw: Record<string, unknown>,
+  ): Promise<LedgerIssue> {
     const state = model.stateOf(issue);
     const abandoned = state === "canceled" || state === "duplicate";
     return {
@@ -196,7 +212,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       completedAt: completedAt(issue, model),
       canceledAt: abandoned ? issue.closedAt : null,
       stateType: STATE_TYPES[state],
-      priority: model.priorityOf(issue.labels),
+      priority: (await client.facets.read(issue, raw, issue.labels)).priority,
       parent: issue.parent?.key ?? null,
       project: issue.milestone,
       labels: model.visibleLabels(issue.labels),
@@ -351,9 +367,9 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
           : await client.list({ milestoneNumber: String(milestone.number) })),
       ];
       const byKey = new Map<string, LedgerIssue>();
-      for (const { issue } of read) {
+      for (const { issue, raw } of read) {
         if (byKey.has(issue.key)) continue;
-        byKey.set(issue.key, ledgerEntry(issue));
+        byKey.set(issue.key, await ledgerEntry(issue, raw));
         onPage?.(byKey.size);
       }
       return [...byKey.values()];
@@ -389,16 +405,16 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
           OPEN_CHILDREN,
         ))
           if (!byKey.has(found.issue.key)) byKey.set(found.issue.key, found);
-      return [...byKey.values()]
-        .filter(({ issue }) => {
+      return pools(
+        [...byKey.values()].filter(({ issue }) => {
           const labels = wholeLabels(issue);
           const has = (l: string) => labels.some((x) => same(x, l));
           return (
             query.withSomeOf.every((list) => list.some(has)) &&
             !(query.withNoneOf ?? []).some(has)
           );
-        })
-        .map(({ issue, raw }) => pool(issue, raw));
+        }),
+      );
     },
 
     async openChildren(key) {
@@ -407,20 +423,26 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
           "invalid",
           `not an issue key of ${home.owner}/${home.name}: ${key}`,
         );
-      return (await readers.children(key, OPEN_CHILDREN))
-        .filter(
+      return pools(
+        (await readers.children(key, OPEN_CHILDREN)).filter(
           ({ issue }) =>
             issue.open &&
             same(issue.ref.owner, home.owner) &&
             same(issue.ref.name, home.name),
-        )
-        .map(({ issue, raw }) => pool(issue, raw));
+        ),
+      );
     },
 
     async poolIssue(key) {
       const found = await client.issue(client.ref(key), OPEN_CHILDREN);
       return found === null ? null : pool(found.issue, found.raw);
     },
+
+    async openPopulation() {
+      return pools(await client.list({ states: ["OPEN"] }, OPEN_CHILDREN));
+    },
+
+    facetReport: () => client.facets.report(),
 
     async assignedIssues(identity, states) {
       if (states.length === 0)
@@ -432,24 +454,23 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       // the listing is open-only unless a closed state is asked for.
       const closed = states.some((s) => CLOSED_STATES.has(s));
       const open = states.some((s) => !CLOSED_STATES.has(s));
-      return (
-        await client.list(
-          {
-            states: [
-              ...(open ? ["OPEN" as const] : []),
-              ...(closed ? ["CLOSED" as const] : []),
-            ],
-            assignee: identity,
-          },
-          OPEN_CHILDREN,
-        )
-      )
-        .filter(({ issue }) =>
+      const read = await client.list(
+        {
+          states: [
+            ...(open ? ["OPEN" as const] : []),
+            ...(closed ? ["CLOSED" as const] : []),
+          ],
+          assignee: identity,
+        },
+        OPEN_CHILDREN,
+      );
+      return pools(
+        read.filter(({ issue }) =>
           states.includes(
             model.stateOf({ ...issue, labels: wholeLabels(issue) }),
           ),
-        )
-        .map(({ issue, raw }) => pool(issue, raw));
+        ),
+      );
     },
   };
 }

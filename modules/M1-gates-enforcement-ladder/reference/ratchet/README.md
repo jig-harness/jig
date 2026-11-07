@@ -20,7 +20,11 @@ above the chosen limit from growing, including in test files.
   using the head's configuration, support files and installed tools for both.
   A tool upgrade or a newly ratcheted rule therefore moves both counts alike.
   No baseline file is committed, so parallel pull requests that remove
-  findings never conflict over one.
+  findings never conflict over one. During a merge the working tree already
+  holds the incoming side, so the base is the one the merge commit will have
+  (`git merge-base <target> HEAD MERGE_HEAD`): a finding the target branch
+  gained after the change was written, merged in, is the target's, not the
+  change's.
 - **File size counts excess lines.** The `file-lines` counter sums
   `max(0, physical lines - limit)` under `excess-lines` across tracked and untracked files
   matching its `files` regular expression, except those matching `exclude`.

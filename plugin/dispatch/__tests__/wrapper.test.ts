@@ -203,13 +203,28 @@ describe("jig dispatch install", () => {
     expect(r.stdout).toMatch(/jig[-.]dispatch/);
     expect(r.stdout).toContain("--apply");
     expect(r.stdout).toContain(
-      "Preview only. Repeat with --yes to write the job.",
+      "Preview only. Repeat with --yes to write the jobs.",
     );
     expect(
       existsSync(
         join(w.home, ".config", "systemd", "user", "jig-dispatch.timer"),
       ),
     ).toBe(false);
+  });
+
+  it("previews the change probe's job beside the tick's, and its removal when the machine file turns it off", async () => {
+    const w = world();
+    current = w;
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    const on = await w.dispatch(["install"]);
+    expectSpawnExit(on, 0);
+    expect(on.stdout).toMatch(/jig[-.]dispatch[-.]probe/);
+    expect(on.stdout).toMatch(cadence(1));
+    expect(on.stdout).toContain("probe");
+    machineFile(w, [account(w, "a", "a@example.com")], { change_probe: false });
+    const off = await w.dispatch(["install"]);
+    expectSpawnExit(off, 0);
+    expect(off.stdout).toContain("the jig-dispatch-probe job is removed");
   });
 
   it("refuses --yes from a checkout, and without a machine file", async () => {

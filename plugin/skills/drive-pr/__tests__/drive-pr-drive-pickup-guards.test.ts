@@ -33,6 +33,7 @@ import {
   stale,
   loginAccount,
   loginEnv,
+  trackedLinkedTree,
   trackedTree,
 } from "./drive-pr-pickup-fixtures.ts";
 
@@ -243,7 +244,8 @@ describe("drive.ts --take-over admits and refuses by the holder", () => {
 
   it("admits a dead holder whose tree is clean, recording it DEAD", async () => {
     const { dir, stateDir } = await merged();
-    plantPrLock(stateDir, await deadPid(), trackedTree("takeover-dead"));
+    const tree = trackedLinkedTree("takeover-dead");
+    plantPrLock(stateDir, await deadPid(), tree);
     await progressAt(stateDir, new Date().toISOString());
     const r = await runDriveIn(dir, stateDir, [
       "--take-over",
@@ -267,7 +269,7 @@ describe("drive.ts --take-over admits and refuses by the holder", () => {
     await progressAt(stateDir, new Date().toISOString());
     const row = (await doctorRows(stateDir)).find((r) => r.key === "999");
     expect(row?.doctor?.verdict).toBe("DEAD");
-    expect(row?.doctor?.reason).toContain(`${tree} no longer exists`);
+    expect(row?.doctor?.reason).toContain(`(${tree}) is missing`);
     const r = await runDriveIn(dir, stateDir, [
       "--take-over",
       "--no-head-sync",
@@ -275,7 +277,7 @@ describe("drive.ts --take-over admits and refuses by the holder", () => {
       ...NOOP,
     ]);
     expectSpawnExit({ ...r, stdout: null }, 5);
-    expect(r.stderr).toContain("no longer exists");
+    expect(r.stderr).toContain("is missing");
     expect(r.stderr).toContain("taking the drive over");
     const after = JSON.parse((await state(stateDir, ["get", "999"])).stdout);
     expect(after.takeovers).toHaveLength(1);

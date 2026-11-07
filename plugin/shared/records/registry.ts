@@ -83,7 +83,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 14;
+const DISPATCH_DB = 15;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 4;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -295,6 +295,13 @@ const DISPATCHER: RecordKind[] = [
   ),
   plain(
     "machine",
+    "dispatch-probe",
+    "dispatch/lib/change-probe.ts",
+    `${DISPATCH_DIR}probe/state.json`,
+    1,
+  ),
+  plain(
+    "machine",
     "dispatch-outcome-log",
     "dispatch/lib/log-export.ts",
     `${DISPATCH_DIR}log-<year>-<month>.jsonl`,
@@ -350,7 +357,7 @@ const MACHINE: RecordKind[] = [
     "machine",
     "scheduled-job",
     "runtime/scheduler.ts",
-    "a systemd user timer, a launchd job or a crontab line per component, and its launcher copy under ~/.local/state/jig/<component>/launcher/",
+    "a systemd user timer, a launchd job or a crontab line per component job, and its launcher copy under ~/.local/state/jig/<component>/launcher/ (the dispatcher's change probe: ~/.local/state/jig/dispatch/probe/launcher/)",
     0,
   ),
   plain(

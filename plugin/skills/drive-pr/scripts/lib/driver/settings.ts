@@ -279,6 +279,9 @@ export const MAILBOX_PAUSE_TIMEOUT_EXIT = driverOnlyExitCode(
 /** A takeover claim from another clone, newer than this driver's own, wins the drive. */
 export const TAKEN_OVER_EXIT = driverOnlyExitCode("TAKEN_OVER");
 
+/** The converged head's CI still fails once the CI-repair passes are spent. */
+export const CI_REPAIR_SPENT_EXIT = driverOnlyExitCode("CI_REPAIR_SPENT");
+
 /**
  * The result of one `runRepairPass` call, kept apart from a raw process exit
  * code: the spawned command is caller-supplied and its exit space is its

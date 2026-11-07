@@ -1,7 +1,9 @@
 /**
- * The Linear adapter's pool filters and assignment reads: the filter a
- * candidate pool reads with, the issues assigned to one user in the given
- * states, and who made an issue's current assignment, from the issue's
+ * The Linear adapter's pool queries, filters and assignment reads: what a
+ * pool reads of each issue, the filter a candidate pool reads with, every
+ * open issue of the team, the issues
+ * assigned to one user in the given states, and who made an issue's
+ * current assignment, from the issue's
  * history, with the claim's reads and write (`linear-claim.ts`). `linear.ts`
  * hands in its pool query and parser, so the assignment reads return the
  * pool form the candidate pools do.
@@ -17,14 +19,46 @@ import {
   type Assigner,
   type CanonicalState,
   CLOSED_STATE_TYPES,
-  type PoolIssue,
   type PoolQuery,
-  type Tracker,
   TrackerRequestError,
 } from "./port.ts";
+import type { CorePoolIssue, CoreTracker } from "./facets/tracker.ts";
 
 /** An issue's assignment that cannot be traced to the user who made it. */
 class AssignmentError extends Error {}
+
+/** What a pool reads of each issue: its open children read one deep, as a flag. */
+const POOL_FIELDS = `
+  identifier title url priority createdAt
+  state { id name type }
+  assignee { id name }
+  labels(first: 100) { pageInfo { hasNextPage } nodes { name } }
+  children(first: 1, filter: { state: { type: { nin: ${JSON.stringify(CLOSED_STATE_TYPES)} } } }) {
+    pageInfo { hasNextPage }
+    nodes { id }
+  }
+`;
+
+export const POOL_QUERY = `
+query TrackerPool($filter: IssueFilter!, $after: String) {
+  issues(first: 100, after: $after, filter: $filter) {
+    pageInfo { hasNextPage endCursor }
+    nodes { ${POOL_FIELDS} }
+  }
+}`;
+
+export const OPEN_CHILDREN_QUERY = `
+query TrackerOpenChildren($id: String!, $filter: IssueFilter!, $after: String) {
+  issue(id: $id) {
+    children(first: 100, after: $after, filter: $filter) {
+      pageInfo { hasNextPage endCursor }
+      nodes { ${POOL_FIELDS} }
+    }
+  }
+}`;
+
+export const POOL_ISSUE_QUERY = `
+query TrackerPoolIssue($id: String!) { issue(id: $id) { ${POOL_FIELDS} } }`;
 
 /** The filter of an issue that is not finished. */
 export const OPEN = { state: { type: { nin: [...CLOSED_STATE_TYPES] } } };
@@ -73,7 +107,7 @@ export interface AssignedOptions {
   transport: LinearTransport;
   pageAll: Pager;
   poolQuery: string;
-  parsePool: (raw: unknown) => PoolIssue;
+  parsePool: (raw: unknown) => CorePoolIssue;
 }
 
 const USER = "id email displayName name";
@@ -126,12 +160,29 @@ function assigner(actor: unknown, key: string, team: string): Assigner {
 export function assignedOperations(
   opts: AssignedOptions,
 ): Pick<
-  Tracker,
-  "assignedIssues" | "assignedBy" | "viewer" | "assignees" | "assign" | "user"
+  CoreTracker,
+  | "assignedIssues"
+  | "assignedBy"
+  | "viewer"
+  | "assignees"
+  | "assign"
+  | "user"
+  | "openPopulation"
 > {
   const { team, states, transport, pageAll } = opts;
   return {
     ...claimOperations(transport),
+    async openPopulation() {
+      const filter = { and: [{ team: { key: { eq: team } } }, OPEN] };
+      const nodes = await pageAll(
+        transport,
+        opts.poolQuery,
+        { filter },
+        (d) => d.issues,
+        `open issues of ${team}`,
+      );
+      return nodes.map(opts.parsePool);
+    },
     async assignedIssues(identity, wanted) {
       if (wanted.length === 0)
         throw new TrackerRequestError(

@@ -39,7 +39,7 @@ import {
  *                            status board polling this mode consumes.
  *   drives.ts --doctor [--pr N]  one classified verdict per drive in the state
  *                            universe — HEALTHY, WEDGED,
- *                            DEAD_WITH_LEFTOVERS, DEAD, QUOTA_PARKED, NEEDS_HUMAN
+ *                            DEAD, DEAD_WITH_LEFTOVERS, QUOTA_PARKED, NEEDS_HUMAN
  *                            or UNKNOWN, plus a recovery command where one
  *                            exists. See `lib/doctor.ts` for the classifier
  *                            and its precedence order; first reconciles confirmed-dead local acquisitions (terminal-states.md).
@@ -131,7 +131,6 @@ import {
   noLiveDriver,
   stallThresholdMs,
 } from "./lib/doctor.ts";
-import { gatherWorktreeLeftovers, worktreeVanished } from "./lib/leftovers.ts";
 import { ciHoldDoctor } from "./lib/ci-hold-doctor.ts";
 import {
   findPassChild,
@@ -149,8 +148,6 @@ import {
   lockLabel,
 } from "./lib/driver/locks.ts";
 
-/** Re-exported for the callers that read it from this listing. */
-export { gatherWorktreeLeftovers };
 import { READ_ONLY_ENV, dbPathFor, driveDb } from "./lib/state/db.ts";
 import { lockRows } from "./lib/state/lock.ts";
 import {
@@ -400,6 +397,9 @@ function readStateSnapshot(
   }
 }
 
+export { gatherWorktreeLeftovers } from "./lib/worktree-leftovers.ts";
+import { gatherWorktreeLeftovers } from "./lib/worktree-leftovers.ts";
+
 /**
  * Assemble one row's `DoctorInput` — the I/O `classifyDrive` never does.
  *
@@ -458,18 +458,12 @@ async function gatherDoctorInput(
   // rather than restated here, so there is no second copy to drift out of step
   // with its precedence order.
   const leftovers =
-    worktreePath !== null && noLiveDriver(row.state)
-      ? await gatherWorktreeLeftovers(worktreePath)
+    worktreePath !== null && isLocal && noLiveDriver(row.state)
+      ? await gatherWorktreeLeftovers(worktreePath, process.cwd())
       : null;
-  // A tree the probe could not read may simply be gone, which is a finding.
-  const treeVanished =
-    worktreePath !== null && leftovers === null && noLiveDriver(row.state)
-      ? await worktreeVanished(worktreePath)
-      : false;
   return {
     lockState: row.state,
-    holderGone: row.holderGone === true,
-    treeVanished,
+    processConfirmedGone: row.holderGone === true,
     progressAgeMs,
     stateReadable: snapshot.ok,
     passChild,

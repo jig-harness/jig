@@ -242,8 +242,9 @@ jig dispatch [--apply] [--repo <path>]... [--followup-since <date>] [--json]
 ```
 
 `jig dispatch --help` lists its options, and `jig dispatch dashboard --help`,
-`jig dispatch log --help`, `jig dispatch line --help` and
-`jig dispatch clear --help` list those of each subcommand. For each
+`jig dispatch log --help`, `jig dispatch line --help`,
+`jig dispatch clear --help` and `jig dispatch probe --help` list those of
+each subcommand. For each
 repository (`--repo`, else the machine file's, else the current one) it
 prints every action it would take, each with the record that wants it and
 the evidence: a pickup for an item assigned to the repository's factory
@@ -291,7 +292,12 @@ converged drive's change is its pull request's head, conflicting or not. A
 drive that stopped on a conflict (exit `9`) is re-driven once per pair of its
 pull request's head and its base branch's head, whatever the forge reports of
 it by then, and a person is told only when that re-drive leaves it stopped `9`
-at the same pair; a head or a base that moves is a new attempt. A record
+at the same pair; a head or a base that moves is a new attempt. A drive that
+stalled (exit `14`) or whose CI-repair passes were spent (exit `21`) is
+re-driven once per head commit, a stall that left work in its tree only in
+that tree, and a person is told when the same head stops the same way again;
+a stop a person is told of says so when its pull request also conflicts with
+its base. A record
 claimed on this host before it last restarted has died, since a restart ends
 every process, and its outcome row says so; hosts are told apart by the
 [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
@@ -348,7 +354,14 @@ workspace (a new branch named by `pull_requests.branch_name`, its issue
 linked), and the session starts on `/jig:do-item <key>` with the model and
 effort of the item's route. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
-refuses another record's token and a second answer. The session holds its
+refuses another record's token and a second answer. A completed pickup adds
+`--pr <number>` for the pull request it opened, or `--none "<reason>"` when
+no pull request was needed. A `done` without either is refused. Every ended
+launch's outcome keeps its next owner: a station address, a person and their
+act, or nobody with a reason. `jig ask` shows this as `last.next`; older
+outcomes that did not keep it say it was not recorded. A converged drive
+hands to a repository maintainer to merge, and a completed follow-up hands
+to nobody. The session holds its
 slot while the runtime reports its agent working or waiting, and gives it
 back when the agent finishes. `do-item` claims the item itself
 (`tracker.ts claim`: refused when the item is already in progress or
@@ -378,7 +391,7 @@ reports a Claude Code session started that way is not shown. It switches on
 once both are settled.
 
 ```sh
-bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 ```
 
 **Follow-ups** (the `followup` stage) start one headless pass per pull
@@ -624,7 +637,7 @@ the recorded result, or the last state):
 | stalled | the drive's stall, `STALLED` (`14`), or its round limit, `MAX_ROUNDS` (`6`); a driver replaced by a takeover |
 | died | a process gone without an exit; a session that ended with no result |
 | refused | a stage's own refusal or a stop it was given: `UNSUPPORTED_CLI` (`2`), `NOT_SETTLED` (`4`), `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`), `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`), `TAKEN_OVER` (`20`), and `PR_NOT_OPEN` on a closed pull request |
-| gates failed | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`); a result `failed` |
+| gates failed | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`), `CI_REPAIR_SPENT` (`21`); a result `failed` |
 | double claim | an item more than one session joins to (an event row) |
 | unknown | anything else, with its last state |
 
@@ -805,7 +818,32 @@ code [resource collection](gc/README.md) uses: a systemd user timer, a
 launchd job or a crontab line; `jig install` with no component named
 installs it too once the machine file exists. Install it on the host that
 runs the sessions (with Orca, the Orca server's host).
-`jig uninstall dispatch --machine --yes` removes it. `jig install dispatch
+`jig uninstall dispatch --machine --yes` removes it. Beside it, the same
+install writes the [change probe](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
+timer, which runs `jig dispatch probe --apply` every minute: one search on
+the forge over every repository the machine file dispatches (each with a
+stage enabled) for the pull requests updated since the last probe (a
+review, a comment, a label, a push, a merge or a close) and every open
+one's checks, which wakes the tick of each repository where something
+changed, under the rule `jig send`'s wakes follow (below), and of no other.
+A minute with no change starts no tick. On GitHub that search is one
+GraphQL call for a single page of results (measured at 1 point of the 5,000
+an hour; further pages add calls and points), apart from the REST limit, made
+from outside every checkout, so the account `gh` uses there must see every
+repository: one it cannot see is named in each probe's output, and its
+changes wait for the sweep. A probe that cannot read the forge wakes
+nothing, says why and exits `1`; the sweep runs on its own timer either way.
+Only one applying probe runs at a time: one that finds another running does
+nothing. A probe whose wake or state write failed prints why and exits `3`.
+The probe wakes the repositories together and waits for their ticks before it exits, since a scheduler
+ends what a job leaves running, and the wake's log
+(`~/.local/state/jig/dispatch/wake/<digest>/last-run.log`) names the probe as
+who asked. `jig dispatch probe`, without `--apply`, says what it would wake
+and writes nothing. `change_probe: false` in the machine file turns it off:
+a probe run then reads nothing, and the next install removes its timer.
+`jig upgrade` refreshes the probe's timer with the tick's; a machine whose
+dispatcher timer was installed before the probe existed gets the probe's at
+its next `jig install dispatch --yes`. `jig install dispatch
 --repo <path>` also lists the [dispatch labels](#the-dispatcher) that
 repository turns on and lacks, and creates them with `--yes`. The earlier
 `jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
@@ -1013,7 +1051,10 @@ repository with the stage the tick acts under (`pickup` for `assign`,
 `send` wakes that repository's tick: a [waiter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in the background runs `jig
 dispatch --apply --repo <path>` the way the installed timer does, when idle
 and no sooner than a minute after the last tick it started, rather than
-at the next timer run. Several sends within that minute start one tick. A tick that
+at the next timer run. The change probe (above) wakes ticks under the same
+rule: requests pending before a tick starts are taken by that one tick, and
+a request made after it started is taken by one trailing tick. Several sends
+pending together start one tick. A tick that
 finds another holding the tick lock is tried again a minute later; the
 waiter exits when nothing is pending, or after starting 10 ticks; the record stays the request, so the
 next timer run reads it whatever happens to the wake. What the waiter did

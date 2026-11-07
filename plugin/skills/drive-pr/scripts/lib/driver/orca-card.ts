@@ -52,6 +52,10 @@ const FAILURE_STOPS: readonly (readonly [string, string])[] = [
     "converged, but its worktree holds changes no round shipped",
   ],
   ["STALLED", "stalled: its passes changed nothing"],
+  [
+    "CI_REPAIR_SPENT",
+    "stopped: CI still fails with its CI-repair passes spent",
+  ],
   ["PASS_DEADLINE", "stopped: its passes kept running out of time"],
 ];
 

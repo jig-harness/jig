@@ -151,7 +151,7 @@ its `--json` report; the canonical (exit, state) pairing is code, not this
 table — [`terminal-states.ts`](scripts/lib/status/terminal-states.ts),
 checked against this and the other prose restatements by
 [`__tests__/terminal-states-consistency.ts`](https://github.com/jig-harness/jig/blob/main/plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts).
-`PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT` and `TAKEN_OVER` are the
+`PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT`, `TAKEN_OVER` and `CI_REPAIR_SPENT` are the
 exception: named exits `drive.ts` returns directly, never through this report — a
 consumer polling `--json` for one of these states will never see it there.
 
@@ -165,13 +165,15 @@ consumer polling `--json` for one of these states will never see it there.
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
+| `CI_REPAIR_SPENT` | 21 | The review converged, the fresh exact-head CI verdict still names failing checks, and the CI-repair passes (`DRIVE_PR_CI_REPAIR_ROUNDS`) are spent. A CI repair, not a person's decision: repair it with [`/jig:fix-ci`](../fix-ci/SKILL.md), or re-arm, which starts with a fresh budget. Under `jig dispatch` the dispatcher re-drives it once per head commit. With repair disabled (`0`), or a verdict that names no failing check, the stop stays `1` |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
 In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
 person must settle on the workspace card: a park, a usage-limit stop and
 every failure stop (an operational failure, a usage error, the round budget
 spent, a failed reviewer check, an unworkable conflict, an unclean converged
-worktree, a stall, a recurring pass deadline) mark the card unread with the
+worktree, a stall, a recurring pass deadline, CI still red with its repair
+passes spent) mark the card unread with the
 stop's one-line reason as its comment, the park's question first among them;
 on a card still unread, the reason is appended to the comment a person has
 not read yet. A converged drive, a closed pull request, a stop a person asked
@@ -590,8 +592,7 @@ outlives the session that spawned it, so its console is not where you look:
   normal exit, including both quota-park exits and the HITL-park exit, so a
   parked drive that exited cleanly leaves no lock behind — see
   `listStateOnlyRows` in `drives.ts`) — and
-  classifies each one — `HEALTHY`, `WEDGED`, `DEAD_WITH_LEFTOVERS`, `DEAD`
-  (its process gone, and its tree clean or no longer there),
+  classifies each one — `HEALTHY`, `WEDGED`, `DEAD`, `DEAD_WITH_LEFTOVERS`,
   `QUOTA_PARKED`, `NEEDS_HUMAN` or `UNKNOWN` (never a false `HEALTHY` — see
   `lib/doctor.ts`'s own precedence-order header) — with a recovery command
   where one exists; combines with `--json` (a genuinely different payload
@@ -820,8 +821,8 @@ takeover is admitted with no person needed, as the plain arm recovers that
 holder's lock. Unpushed commits may remain in the clone's shared Git storage;
 the takeover records the tree (`vanishedTree`) and the first pass's `TAKEN OVER`
 notice directs it to inspect branch refs and [reflogs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#git-reflog) before redoing work.
-A tree that exists but cannot be inspected stays
-`UNKNOWN` and is refused. Against any other holder it refuses as exit `11`
+An existing tree that is unregistered or cannot be
+inspected stays `UNKNOWN` and is refused. Against any other holder it refuses as exit `11`
 does, naming the verdict. A wedged holder is stopped through `drives.ts` `--stop`, with
 the identity check that command performs, bound by `--expect-started` to the
 acquisition its doctor row named. Once it holds the locks, the
@@ -1238,7 +1239,9 @@ state directory holding all of it: read that file before acting.
 | `RESTARTED AFTER A PASS DEADLINE` | The previous pass was killed at its deadline; its uncommitted edits and unpushed commits are listed and are still in the tree | Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual. When it names an inherited head, add `--inherited-head <sha>` to § 1's gate (without it the gate reads unpushed commits as `HEAD_LAG`, and a tree with only uncommitted edits as converged) and push them through `finish-round.ts` with the round's own fixes |
 | `UNPUSHED COMMITS` | Local HEAD carries commits the PR's head lacks: a pass ended without pushing them, or the drive was armed over them. They are listed, with the uncommitted edits, and are still in the tree | Validate what is sound and push it through `finish-round.ts` with the round's own fixes; discard what is not on purpose. Add the `--inherited-head <sha>` it names to § 1's gate: without it the gate reads the unpushed commits as `HEAD_LAG` |
 | `UNCOMMITTED EDITS` | The tree holds edits no commit carries: a pass ended without committing them. They are listed and are still in the tree | Validate what is sound and push it through `finish-round.ts` with the round's own fixes; discard what is not on purpose. Add the `--inherited-head <sha>` it names to § 1's gate: without it the gate can read the PR as converged over the edits |
-| `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14` | Act on the open work; if you decide not to, end the handoff narrative with one paragraph saying what you decided and why — the stop prints it |
+| `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14`. It lists what the tree holds now | Finish what the tree holds first (§ 5, **A tree the round inherits**), then act on the open work. If a step refuses and you stop, or you decide not to act, end the handoff narrative with one paragraph naming the step that refused (its script, exit code and state) and what would unblock it, or what you decided and why — the stop prints what this round recorded |
+| `RE-ARMED AFTER A STALL` | The drive before this one stopped with exit `14`; the notice carries what its passes recorded last, and says when it left work in this tree, which this drive then takes as its own to finish | Finish what the tree holds first (§ 5, **A tree the round inherits**), find why those passes did not act and act on it; if a step refuses and you stop, record it (§ 8) |
+| `RE-ARMED AFTER THE CI-REPAIR BUDGET WAS SPENT` | The drive before this one stopped with exit `21`: CI still failed on its converged head after its repair passes | Work the round as usual; this drive has its own CI-repair passes, which the driver dispatches once the review converges again |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
 | `RE-ARMED TO DECIDE PROVISIONALLY` | At the `wide` level, parked items of the class `escalated` that nobody answered are unparked, one `[kind] key` line each | Check each again first: the level read afresh (an off-hours window may have closed), and `decide`'s `wide` conditions (no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence; for a thread, a recorded `escalate` ruling of the class `escalated`). Where one fails, park the item again under its class (§ 4). Otherwise decide it this round, provisionally and with a reply outcome only: a thread with `provisional-reply.ts`, a finding with `decide`'s ruling recorded as `decide-provisional` (§ 8) |
@@ -1387,7 +1390,8 @@ Then:
   `base-sync.ts` exiting `3` on `MERGE_HEAD` means the tree held that merge
   before this pass started. Run that skill's Step 2 and Step 5 over it: where
   its check passes and `MERGE_HEAD` is still the base's tip, the merge is
-  resolved, so go on from its Step 6. Otherwise abort it as its Step 8 does,
+  resolved, so go on from its Step 6 (`round-plan.ts` plans an open merge
+  whose conflicts are resolved). Otherwise abort it as its Step 8 does,
   verify the tree is clean, and start from its Step 1. A merge this round
   started and does not conclude is aborted for you when the pass ends, and the
   round has achieved nothing.
@@ -1406,7 +1410,8 @@ have taken anyway, which is the honest outcome, and burns no further budget.
 The budgets are `DRIVE_PR_CI_REPAIR_ROUNDS` (default 2) and
 `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1), both in-memory per driver
 process and both disabled by `0`, which stops on the first red CI or
-conflict without a repair pass. See § Terminal states.
+conflict without a repair pass. A spent CI-repair budget stops with exit
+`21` (`CI_REPAIR_SPENT`). See § Terminal states.
 
 ### 1. Gate
 
@@ -2409,6 +2414,29 @@ bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts" [PR]
 tree that gains the base branch after the plan was resolved is not the tree
 that was planned for.
 
+**A tree the round inherits is finished first.** When the tree already holds
+work no earlier pass shipped (uncommitted edits, a merge left open, local
+commits), finish that work before this command, in this order:
+
+1. A merge left open (`MERGE_HEAD`) with every conflict resolved: run
+   `round-plan.ts` below and what it prints. It plans an open merge against
+   the merge base its commit will have, so the plan is the change's files,
+   not the base's. Then conclude the merge with a commit, by
+   [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md) Steps 5 to 7
+   where the repository uses it. With a conflict still unresolved, resolve it
+   by that skill from its Step 2, or abort the merge and start from its
+   Step 1.
+2. Uncommitted edits with no merge open: run the plan over the dirty tree,
+   and commit what is sound; discard what is not on purpose.
+3. Then run this command, which now meets a clean tree, and the rest of the
+   round. `finish-round.ts` pushes the inherited commits with the round's own.
+
+Each of `base-sync.ts`, the plan and `finish-round.ts` refuses the partial
+state on its own, by design: the order above is what gets a round past all
+three. If the base merge cannot be finished this round, still push the
+round's validated commits, so the work is on the pull request, and say why the
+merge stopped.
+
 This is a **piggyback, not a cadence**, and the distinction is the whole
 design. Pulling the base in "occasionally to stay fresh" is not cheap: each
 base merge pushes a new head, which burns a review round against the reviewer's
@@ -2438,7 +2466,7 @@ loop cannot see, such as converging and wanting the local gates and the
 |---|---|---|
 | `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which — do not infer it from the code. Continue |
 | `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge <remote>/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
-| `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For an open merge in a `conflict-resolve` round, § 0 says what to do. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
+| `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For an open merge the round inherited, finish it as **A tree the round inherits** above says; in a `conflict-resolve` round, § 0 says what to do. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
 | `11` | Another live session holds this working tree's tree lease (never under `--check`) | Stop, as for `finish-round.ts`'s `11` below |
 | `2` / `1` | Usage error, including a worktree that drives a branch other than the PR's head branch (a detached tree drives the branch its attach recorded) / a step failed | Fix the invocation, or read the step's diagnostic. For the branch mismatch in a driver pass (`$DRIVE_PR_TARGET` set), attach the PR (`bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`): run by this pass, under the environment its driver handed it, the attach takes its driver's locks as its own and repairs the tree as the driver's attach does; if it refuses, stop the round and report it. With no live driver, attach the PR (`bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`), which checks out its head branch or, when another tree holds it, its head commit detached; if the attach refuses, stop and report it for a human. Never rename the workspace's branch, create a branch with another name, or move another worktree to make the check pass |
@@ -2478,7 +2506,9 @@ bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts" [PR]
 It resolves the validation plan for the PR's **whole** diff against the PR's
 own base (`<remote>/<base>`: for a stacked layer, the layer below; [README.md §
 Consumer configuration](README.md#consumer-configuration) says when it uses
-the integration branch instead, and when it refuses) and prints exactly what to run. The plan is the repository's: when it sets
+the integration branch instead, and when it refuses) and prints exactly what to run.
+An open merge whose conflicts are all resolved is planned against the merge
+base its commit will have; any other unconcluded operation is refused. The plan is the repository's: when it sets
 `drive.validation_plan_command`, `round-plan.ts` runs that command with the
 changed files on stdin and prints the plan it returns — local checks,
 verification checks, an optional remote test box, and review skills to run;
@@ -2896,6 +2926,14 @@ it in this report, as the handoff does. Then refresh the handoff:
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" handoff [PR]
 ```
+
+**A round that ends without pushing names what stopped it.** When a step
+refuses and the round cannot get past it, end the handoff narrative with one
+paragraph: the step that refused (its script, its exit code and the state it
+named, such as `finish-round.ts` exit `3`, `REFUSED_UNCLEAN`), what the tree
+holds, and what would unblock it. Write it in this round, even when an
+earlier pass wrote one: a stall stop prints what the last round recorded, so
+the paragraph a person reads is the refusal that stands now.
 
 Your per-round report is qualitative. The quantitative half — what the loop has
 cost so far — is § What the loop cost below, and `drive.ts` prints it for you
