@@ -507,23 +507,31 @@ export function deadlineNotice(
   ].join("\n");
 }
 
-/** The notice the extra round after a stall reads in `$DRIVE_PR_PASS_NOTICE`. */
-export function stallNotice(diagnostics: string[]): string {
+/**
+ * The notice the extra round after a stall reads in `$DRIVE_PR_PASS_NOTICE`:
+ * the diagnostics, what the tree holds now (`leftovers`, the lines
+ * `describeLeftovers` prints), and what to record if the pass stops.
+ */
+export function stallNotice(
+  diagnostics: string[],
+  leftovers: string[] = [],
+): string {
   return [
     "STALLED: the last passes changed nothing this driver can observe. This is the one extra round before the drive stops.",
     ...diagnostics.map((line) => line.trim()),
-    "Act on the open work, or, if you decide not to, write one paragraph at the end of the handoff narrative saying what you decided and why: the stop prints it.",
+    ...(leftovers.length === 0
+      ? []
+      : ["What this tree holds now:", ...leftovers]),
+    "Work this tree holds is this round's to finish first: validate it, commit it (concluding an open merge), sync the base, then push (SKILL.md § 5, A tree the round inherits).",
+    "Act on the open work. If a step refuses and you stop, or you decide not to act, end the handoff narrative with one paragraph naming the step that refused (its script, exit code and state) and what would unblock it, or what you decided and why: the stop prints it.",
   ].join("\n");
 }
 
 /**
- * The last lines the passes wrote under the handoff file's narrative marker:
- * what they recorded deciding. Empty when there is no narrative to read.
+ * Every line the passes wrote under the handoff file's narrative marker, in
+ * order. Empty when there is no narrative to read.
  */
-export async function recordedDecisions(
-  pr: string,
-  maxLines = 12,
-): Promise<string[]> {
+export async function narrativeLines(pr: string): Promise<string[]> {
   let text: string;
   try {
     const path = await handoffPath(pr);
@@ -546,6 +554,32 @@ export async function recordedDecisions(
           line.trim() !== "" &&
           !/^\*\*Resume:\*\* `\/drive-pr \d+`$/.test(line),
       )
-      .slice(-maxLines)
   );
+}
+
+/**
+ * The last lines the passes wrote under the handoff file's narrative marker:
+ * what they recorded deciding. Empty when there is no narrative to read.
+ */
+export async function recordedDecisions(
+  pr: string,
+  maxLines = 12,
+): Promise<string[]> {
+  return (await narrativeLines(pr)).slice(-maxLines);
+}
+
+/**
+ * The narrative lines written after `before` was read: `now` past the part
+ * it shares with `before`. A narrative rewritten since shares less, so more
+ * of it reads as new rather than any of it being dropped.
+ */
+export function linesSince(before: readonly string[], now: string[]): string[] {
+  let shared = 0;
+  while (
+    shared < before.length &&
+    shared < now.length &&
+    before[shared] === now[shared]
+  )
+    shared++;
+  return now.slice(shared);
 }

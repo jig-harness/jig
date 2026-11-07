@@ -46,6 +46,7 @@ import {
 } from "../../shared/records/shared.ts";
 import { settleNoCauseStops } from "../../dispatch/lib/no-cause-stops.ts";
 import { settleConflictStops } from "../../dispatch/lib/actions/drive-hold.ts";
+import { settlesWithPerson } from "../../dispatch/lib/redrive-settle.ts";
 import { isDrive } from "../../dispatch/lib/launches.ts";
 import { settleSharedConflictStops } from "../../dispatch/lib/shared-launches.ts";
 import { driveClass, lastEnded } from "../../dispatch/lib/log.ts";
@@ -209,14 +210,18 @@ function stoppedState(
   };
 }
 
-/** Why a stop on a conflict is a person's to settle, when this machine or another host already re-drove it for the change it shows now; `null` otherwise. */
+/** Why a stop on a conflict, a stall or a spent CI-repair budget is a person's to settle, when this machine or another host already re-drove it for the change it shows now; `null` otherwise. */
 function conflictSettled(
   placed: Classified,
   ledger: Ledger,
   r: DriveReads,
   host: string | null,
 ): string | null {
-  if (placed.class !== "stale" || placed.stale?.conflictStop !== true)
+  if (
+    placed.class !== "stale" ||
+    placed.stale === undefined ||
+    !settlesWithPerson(placed.stale)
+  )
     return null;
   const own = settleConflictStops(
     [
@@ -232,6 +237,7 @@ function conflictSettled(
           generation: ledger.generation,
           exit: ledger.driver.exit ?? null,
           heartbeat: ledger.driver.heartbeat,
+          mergeable: r.pull.mergeable ?? null,
         },
       },
     ],
@@ -244,6 +250,13 @@ function conflictSettled(
     host ?? "",
   );
   return settled?.class === "needs-person" ? settled.why : null;
+}
+
+/** A stall bound to its tree is re-driven only there, and whether an open workspace holds it is the dispatcher's read of its runtime, not this one's. */
+function staleWhy(placed: { why: string; stale?: { tree?: unknown } }): string {
+  return placed.stale?.tree === undefined
+    ? placed.why
+    : `${placed.why}; the dispatcher refuses it, and a person recovers the work, where no open workspace on its host holds that tree`;
 }
 
 /** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
@@ -315,8 +328,9 @@ function waitsOnOf(
     case "parked":
       return { person: "answer", why: placed.why };
     case "re-armable":
-    case "stale":
       return rearm(placed.why);
+    case "stale":
+      return rearm(staleWhy(placed));
     case "refused":
     case "unplaced":
       return { waiting: placed.why };

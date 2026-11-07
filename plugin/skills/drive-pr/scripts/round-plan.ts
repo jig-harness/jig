@@ -216,6 +216,79 @@ async function resolveFiles(
  * whose stated invariant is that every ambiguous case KEEPS the cumulative
  * answer. Type-check it so a regression is a loud stop.
  */
+/**
+ * The refusal drive-pr `SKILL.md` § 5's validation plan's resolve snippet
+ * makes, for the five markers the shared probe checks (MERGE_HEAD,
+ * CHERRY_PICK_HEAD, REVERT_HEAD, rebase-merge, rebase-apply). The snippet
+ * also refuses on `sequencer/todo`; the probe does not yet, for any of its
+ * callers. Mid-operation, `git diff <base>` compares against a working tree
+ * that still holds the whole incoming operation, so the plan inflates to it:
+ * measured at 78 files and a Testbox demand, versus 13 once the merge was
+ * committed. An unreadable probe fails closed — "cannot confirm" is not
+ * "confirmed none".
+ *
+ * One case is planned rather than refused, and `true` says so: a merge whose
+ * conflicts are all resolved, under the cumulative plan. Its tree is the one
+ * the merge commit will hold, so it is planned against the merge base that
+ * commit will have (the three-way `git merge-base` in `main`), and the plan
+ * is the 13 files, not the 78. Refusing it left no way to validate a merge
+ * before concluding it, which every caller must (`/jig:resolve-conflicts`
+ * Step 6, and § 5 for a merge a round inherits). A delta plan is still
+ * refused mid-merge, since its base is a verified SHA the incoming side is
+ * diffed against too.
+ */
+async function openOperation(
+  root: string,
+  mode: "cumulative" | "delta",
+): Promise<boolean> {
+  const op = await unconcludedGitOpMarker(gitCallTimeoutSeconds(), {
+    cwd: root,
+  });
+  if (!op.ok) {
+    fail(
+      1,
+      "round-plan: cannot establish that no git operation is open (the git-dir probe did not complete) — refusing to emit a plan",
+    );
+  }
+  if (op.marker === null) return false;
+  if (op.marker === "MERGE_HEAD" && mode === "cumulative") {
+    if (await resolvedMerge(root)) return true;
+    fail(
+      1,
+      "round-plan: an unconcluded git operation is present (MERGE_HEAD) — refusing to resolve.",
+      "A merge is planned once every conflict is resolved: some path is still unmerged (git ls-files --unmerged lists them).",
+      "Resolve them, or abort the merge (git merge --abort), then re-run.",
+    );
+  }
+  fail(
+    1,
+    `round-plan: an unconcluded git operation is present (${op.marker}) — refusing to resolve.`,
+    ...(op.marker === "MERGE_HEAD"
+      ? [
+          "A delta plan cannot be resolved mid-merge; the cumulative plan (the default) plans an open merge once its conflicts are resolved.",
+        ]
+      : [
+          "Mid-operation, the diff against the base includes the whole incoming operation,",
+          "not just this branch, so the plan would validate the wrong file set.",
+          "Conclude it (commit the merge / git rebase --continue) or abort it",
+          "(git merge/cherry-pick/revert/rebase --abort; git am --abort for a paused am), then re-run.",
+        ]),
+  );
+}
+
+/**
+ * Whether the open merge in `root` has every conflict resolved: `true` when
+ * the index holds no unmerged entry, `false` while one remains. A probe that
+ * fails reads as unresolved, so the merge is refused as before.
+ */
+async function resolvedMerge(root: string): Promise<boolean> {
+  const unmerged = await git(["-C", root, "ls-files", "--unmerged"], {
+    stderr: "inherit",
+    timeoutSec: gitCallTimeoutSeconds(),
+  });
+  return unmerged.code === 0 && unmerged.stdout.trim() === "";
+}
+
 function testboxRequiredOf(plan: ResolvedPlan): boolean | null {
   const v = plan.validation?.testbox?.required;
   return typeof v === "boolean" ? v : null;
@@ -260,36 +333,7 @@ async function main(): Promise<number> {
   if (rootRes.code !== 0) return rootRes.code;
   const root = rootRes.stdout.trim();
 
-  // The refusal drive-pr `SKILL.md` § 5's validation plan's resolve snippet
-  // makes, for the five markers the shared probe checks (MERGE_HEAD,
-  // CHERRY_PICK_HEAD, REVERT_HEAD, rebase-merge, rebase-apply). The snippet
-  // also refuses on `sequencer/todo`; the probe does not yet, for any of its
-  // callers. Mid-merge, `git diff <base>` compares against a working tree that
-  // still holds the whole incoming operation, so the plan inflates to it:
-  // measured at 78 files and a Testbox demand, versus 13 once the merge was
-  // committed. `PR_CONFLICTING` makes a mid-merge invocation the likely case,
-  // not an edge one. Both modes, since a delta base is diffed against that same
-  // working tree. An unreadable probe fails closed — "cannot confirm" is not
-  // "confirmed none".
-  const op = await unconcludedGitOpMarker(gitCallTimeoutSeconds(), {
-    cwd: root,
-  });
-  if (!op.ok) {
-    fail(
-      1,
-      "round-plan: cannot establish that no git operation is open (the git-dir probe did not complete) — refusing to emit a plan",
-    );
-  }
-  if (op.marker !== null) {
-    fail(
-      1,
-      `round-plan: an unconcluded git operation is present (${op.marker}) — refusing to resolve.`,
-      "Mid-operation, the diff against the base includes the whole incoming operation,",
-      "not just this branch, so the plan would validate the wrong file set.",
-      "Conclude it (commit the merge / git rebase --continue) or abort it",
-      "(git merge/cherry-pick/revert/rebase --abort; git am --abort for a paused am), then re-run.",
-    );
-  }
+  const merging = await openOperation(root, mode);
 
   // Printed first, ahead of everything else the plan says — before this
   // round's own heavy checks run into the same guard. JSON output is piped
@@ -325,13 +369,20 @@ async function main(): Promise<number> {
     const resolved = await prBaseRef(root, pr);
     if ("error" in resolved) fail(1, `round-plan: ${resolved.error}`);
     const ref = resolved.ref;
-    const mb = await git(["merge-base", ref, "HEAD"], {
-      stderr: "inherit",
-    });
+    // `git merge-base A B C` is the merge base of A and a merge of B and C:
+    // for an open merge, the base its commit will have.
+    const mb = await git(
+      ["merge-base", ref, "HEAD", ...(merging ? ["MERGE_HEAD"] : [])],
+      { stderr: "inherit" },
+    );
     if (mb.code !== 0) {
       fail(1, `round-plan: cannot resolve merge-base against ${ref}`);
     }
     base = mb.stdout.trim();
+    if (merging && !json)
+      process.stdout.write(
+        `round-plan: an open merge is planned against ${short(base)}, the merge base its commit will have; conclude it once the plan passes.\n\n`,
+      );
   } else {
     base = since;
     const exists = await git(["cat-file", "-e", `${base}^{commit}`], {

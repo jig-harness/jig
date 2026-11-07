@@ -289,7 +289,12 @@ converged drive's change is its pull request's head, conflicting or not. A
 drive that stopped on a conflict (exit `9`) is re-driven once per pair of its
 pull request's head and its base branch's head, whatever the forge reports of
 it by then, and a person is told only when that re-drive leaves it stopped `9`
-at the same pair; a head or a base that moves is a new attempt. A record
+at the same pair; a head or a base that moves is a new attempt. A drive that
+stalled (exit `14`) or whose CI-repair passes were spent (exit `21`) is
+re-driven once per head commit, a stall that left work in its tree only in
+that tree, and a person is told when the same head stops the same way again;
+a stop a person is told of says so when its pull request also conflicts with
+its base. A record
 claimed on this host before it last restarted has died, since a restart ends
 every process, and its outcome row says so; hosts are told apart by the
 [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
@@ -612,7 +617,7 @@ the recorded result, or the last state):
 | stalled | the drive's stall, `STALLED` (`14`), or its round limit, `MAX_ROUNDS` (`6`); a driver replaced by a takeover |
 | died | a process gone without an exit; a session that ended with no result |
 | refused | a stage's own refusal or a stop it was given: `UNSUPPORTED_CLI` (`2`), `NOT_SETTLED` (`4`), `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`), `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`), `TAKEN_OVER` (`20`), and `PR_NOT_OPEN` on a closed pull request |
-| gates failed | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`); a result `failed` |
+| gates failed | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`), `CI_REPAIR_SPENT` (`21`); a result `failed` |
 | double claim | an item more than one session joins to (an event row) |
 | unknown | anything else, with its last state |
 

@@ -12,7 +12,11 @@ import { ciHold, driveStatus } from "./paths.ts";
 
 import { sleep } from "./../cli.ts";
 
-import { UNLABEL_SETTLE_SECONDS, FINAL_CI_POLL_SECONDS } from "./settings.ts";
+import {
+  CI_REPAIR_SPENT_EXIT,
+  UNLABEL_SETTLE_SECONDS,
+  FINAL_CI_POLL_SECONDS,
+} from "./settings.ts";
 
 import { span } from "./../../../../../shared/trace.ts";
 
@@ -603,10 +607,14 @@ export async function evaluateFinalCi(
     console.error(
       `review converged and the required checks ran, but the fresh non-reviewer CI verdict is '${finalVerdict || "unknown"}'; stopping for /fix-ci`,
     );
+    // A spent budget is its own stop: the fix is a CI repair, which a
+    // re-armed drive starts with a fresh budget, not a decision for a
+    // person, and a caller reading the exit alone must tell it from a crash.
     if (finalVerdict.startsWith("failing:") && context.ciRepairBudget > 0) {
       console.error(
-        `  (${context.ciRepairs} CI-repair pass(es) already run — the budget is spent.)`,
+        `  (${context.ciRepairs} of ${context.ciRepairBudget} CI-repair pass(es) already run — the budget is spent: exit ${CI_REPAIR_SPENT_EXIT}, CI_REPAIR_SPENT.)`,
       );
+      return CI_REPAIR_SPENT_EXIT;
     }
     return 1;
   }

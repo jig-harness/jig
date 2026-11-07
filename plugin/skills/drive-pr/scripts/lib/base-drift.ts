@@ -79,7 +79,9 @@ export function refuseOpenOperation(marker: string): never {
     process.env.DRIVE_PR_ROUND_TASK === "conflict-resolve" &&
       marker === "MERGE_HEAD"
       ? "This conflict-resolve round did not start it: finish that merge, or abort it and start over, as SKILL.md § 0 says."
-      : "Conclude or abort it first: git merge --abort / git cherry-pick --abort / git revert --abort / git rebase --abort",
+      : marker === "MERGE_HEAD"
+        ? "The round inherits it: with every conflict resolved, run round-plan.ts (it plans an open merge) and what it prints, conclude the merge with a commit, then re-run this; with conflicts left, resolve them or abort it (git merge --abort). SKILL.md § 5 says how."
+        : "Conclude or abort it first: git merge --abort / git cherry-pick --abort / git revert --abort / git rebase --abort",
   );
 }
 

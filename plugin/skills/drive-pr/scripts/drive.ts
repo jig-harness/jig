@@ -193,6 +193,7 @@ export {
   MAILBOX_STOPPED_EXIT,
   MAILBOX_PAUSE_TIMEOUT_EXIT,
   TAKEN_OVER_EXIT,
+  CI_REPAIR_SPENT_EXIT,
   passTimeoutSeconds,
   finalCiWitnessPolls,
   ciRepairRounds,
