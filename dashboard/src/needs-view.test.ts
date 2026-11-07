@@ -335,6 +335,17 @@ describe("whether What needs you exists", () => {
     );
     expect(needCount({ ...both, needs: [] }, NOW)).toBe(1);
   });
+  it("lists a stuck launch record under To check, not To decide", () => {
+    const line: LineSnapshot = {
+      ...lineOf("quiet"),
+      needs: [{ ...NEED, stuckRecord: "launch-9" }],
+    };
+    expect(
+      needRows(line, CLOCK)
+        .filter((r) => r.type === "head")
+        .map((r) => (r as { head: string }).head),
+    ).toEqual(["To check"]);
+  });
   it("does with a need, or with a session not moving", () => {
     expect(hasNeedRows(lineOf("loud"), NOW)).toBe(true);
     const line = lineOf("quiet");

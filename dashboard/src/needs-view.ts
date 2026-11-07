@@ -157,6 +157,11 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
   };
 }
 
+/** Whether a need is a decision: a stuck launch record is released on the host, so it is checked, not decided. */
+function toDecide(n: LineNeed): boolean {
+  return n.stuckRecord == null && TO_DECIDE.has(n.cause);
+}
+
 function byAge(a: LineNeed, b: LineNeed): number {
   return Date.parse(a.since) - Date.parse(b.since);
 }
@@ -164,8 +169,8 @@ function byAge(a: LineNeed, b: LineNeed): number {
 /** The needs in the order the page lists them: to decide before to check, oldest first in each. */
 export function orderedNeeds(needs: LineNeed[]): LineNeed[] {
   return [
-    ...needs.filter((n) => TO_DECIDE.has(n.cause)).sort(byAge),
-    ...needs.filter((n) => !TO_DECIDE.has(n.cause)).sort(byAge),
+    ...needs.filter((n) => toDecide(n)).sort(byAge),
+    ...needs.filter((n) => !toDecide(n)).sort(byAge),
   ];
 }
 
@@ -195,11 +200,11 @@ export function needRows(line: LineSnapshot, clockNow: Clock): NeedRow[] {
   };
   const ordered = orderedNeeds(line.needs);
   push(
-    ordered.filter((n) => TO_DECIDE.has(n.cause)),
+    ordered.filter((n) => toDecide(n)),
     "To decide, on the pull request",
   );
   push(
-    ordered.filter((n) => !TO_DECIDE.has(n.cause)),
+    ordered.filter((n) => !toDecide(n)),
     "To check",
   );
   const stuck = notMoving(line, clockNow.nowMs);
