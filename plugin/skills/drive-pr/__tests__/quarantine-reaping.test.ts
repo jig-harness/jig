@@ -1,4 +1,5 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it, spyOn } from "bun:test";
+import * as fs from "node:fs";
 import {
   existsSync,
   mkdirSync,
@@ -74,6 +75,71 @@ function reap(root: string, dir: string, del = false) {
   };
 }
 describe("obsolete file-lock quarantine", () => {
+  it("keeps descendants changed while later members are measured", () => {
+    for (const addition of [false, true]) {
+      const { dir } = setup();
+      const paths = quarantine(dir);
+      const stat = fs.lstatSync;
+      let changed = false;
+      const probe = spyOn(fs, "lstatSync").mockImplementation(((
+        path: fs.PathLike,
+        options?: fs.StatOptions,
+      ) => {
+        if (String(path) === paths[1] && !changed) {
+          changed = true;
+          writeFileSync(
+            join(paths[0] as string, addition ? "fresh" : "tombstone"),
+            "new data",
+          );
+        }
+        return stat(path, options);
+      }) as typeof fs.lstatSync);
+      try {
+        expect(
+          judgeQuarantine(
+            dir,
+            paths.map((path) => basename(path)),
+          ).action,
+        ).toBe("keep");
+        expect(changed).toBe(true);
+      } finally {
+        probe.mockRestore();
+      }
+    }
+  });
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "Windows chmod cannot remove all POSIX read bits",
+    ),
+  )("keeps a mode-000 regular file", () => {
+    const { dir } = setup();
+    const paths = quarantine(dir);
+    fs.chmodSync(paths[1] as string, 0);
+    try {
+      expect(
+        judgeQuarantine(
+          dir,
+          paths.map((path) => basename(path)),
+        ).action,
+      ).toBe("keep");
+    } finally {
+      fs.chmodSync(paths[1] as string, 0o600);
+    }
+  });
+  it("reports and retires displaced reaper locks and recovery gates without an import", () => {
+    const { root, dir } = setup();
+    for (const suffix of [
+      ".stale.owner.generation",
+      ".recovering.stale.owner.generation",
+    ]) {
+      const path = join(dir, `.reap-state-delete.lock${suffix}`);
+      mkdirSync(path);
+      age(path);
+    }
+    expect(reap(root, dir).retire[0]?.entries).toBe(2);
+    expect(reap(root, dir, true).entriesRemoved).toBe(2);
+  });
   it("keeps a family when a fresh member appeared after the initial listing", () => {
     const { dir } = setup();
     quarantine(dir);
@@ -117,6 +183,7 @@ describe("obsolete file-lock quarantine", () => {
       "pr-drive-999.lock",
       "drive-pr-999.json.lock.recovering",
       ".reap-state-delete.lock",
+      ".reap-state-delete.lock.recovering",
     ]) {
       const { root, dir } = setup();
       const paths = quarantine(dir);

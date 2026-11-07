@@ -715,7 +715,7 @@ A release before the database kept the drive's machine state as files in the clo
 
 Stop every drive before upgrading, or let it reach a terminal state: a drive still running the earlier release keeps writing files the database no longer reads, and its state after the import reaches this clone only through its ledger on the pull request, which a later drive seeds from when it is newer.
 
-Displaced lock quarantine entries (`<lock>.stale.<generation>` and
+Displaced [lock quarantine](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) entries (`<lock>.stale.<generation>` and
 `<lock>.recovering.stale.<generation>`, directories or marker files) are not
 imported state. The reaper reports them as `quarantine:<clone>` with their
 entry count and bytes, and retires the family after every entry and descendant

@@ -1,5 +1,11 @@
 /** Retirement of displaced locks from the file-based state layout. */
-import { lstatSync, readdirSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  lstatSync,
+  readdirSync,
+  type Stats,
+} from "node:fs";
 import { join } from "node:path";
 import { swallow } from "../../../../../shared/errors.ts";
 import { FORMER_QUARANTINE, isFormerLock } from "./import.ts";
@@ -12,15 +18,38 @@ interface Measurement {
   newest: number;
 }
 
+interface Snapshot {
+  metadata: string;
+  children: string[] | null;
+}
+
+function metadata(stat: Stats): string {
+  return [
+    stat.dev,
+    stat.ino,
+    stat.mode,
+    stat.size,
+    stat.mtimeMs,
+    stat.ctimeMs,
+  ].join(":");
+}
+
 /** Count bytes and newest writes without following a link outside this family. */
-function measure(path: string): Measurement | null {
+function measure(
+  path: string,
+  snapshots: Map<string, Snapshot>,
+): Measurement | null {
   const stat = lstatSync(path);
   if (!stat.isFile() && !stat.isDirectory()) return null;
+  accessSync(path, constants.R_OK);
+  if (stat.isFile() && (Number(stat.mode) & 0o444) === 0) return null;
+  const children = stat.isDirectory() ? readdirSync(path).sort() : null;
+  snapshots.set(path, { metadata: metadata(stat), children });
   let bytes = stat.size;
   let newest = stat.mtimeMs;
-  if (stat.isDirectory())
-    for (const name of readdirSync(path)) {
-      const child = measure(join(path, name));
+  if (children)
+    for (const name of children) {
+      const child = measure(join(path, name), snapshots);
       if (child === null) return null;
       bytes += child.bytes;
       newest = Math.max(newest, child.newest);
@@ -44,16 +73,30 @@ export function judgeQuarantine(
   let bytes = 0;
   let newest = 0;
   try {
+    const snapshots = new Map<string, Snapshot>();
     for (const name of names) {
-      const entry = measure(join(stateDir, name));
+      const entry = measure(join(stateDir, name), snapshots);
       if (entry === null)
         return {
           action: "keep",
           bytes: null,
-          reason: "quarantine contains a link or another unsupported entry",
+          reason: "quarantine contains an unreadable or unsupported entry",
         };
       bytes += entry.bytes;
       newest = Math.max(newest, entry.newest);
+    }
+    for (const [path, snapshot] of snapshots) {
+      if (
+        metadata(lstatSync(path)) !== snapshot.metadata ||
+        (snapshot.children !== null &&
+          JSON.stringify(readdirSync(path).sort()) !==
+            JSON.stringify(snapshot.children))
+      )
+        return {
+          action: "keep",
+          bytes,
+          reason: "quarantine descendants changed during the sweep",
+        };
     }
     const current = readdirSync(stateDir);
     if (current.some(isFormerLock))

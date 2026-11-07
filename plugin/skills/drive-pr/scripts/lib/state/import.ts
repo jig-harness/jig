@@ -59,7 +59,7 @@ const FORMER = {
 
 /** The names an earlier release put a `.lock` mutex beside: a name the release never wrote is not one of its leftovers. */
 const LOCK_ANCHOR =
-  "(?:drive-pr-[0-9]+\\.json|drive-tree-lease-wt-[0-9a-f]{16}(?:\\.json)?|pr-drive-lease-[0-9]+-wt-[0-9a-f]{16}\\.json|drive-pr-remote-lock-[0-9]+|pr-drive-[0-9]+|pr-drive-worktree-[0-9a-f]{16}|ledger-driver-[0-9]+\\.json)";
+  "(?:\\.reap-state-delete|drive-pr-[0-9]+\\.json|drive-tree-lease-wt-[0-9a-f]{16}(?:\\.json)?|pr-drive-lease-[0-9]+-wt-[0-9a-f]{16}\\.json|drive-pr-remote-lock-[0-9]+|pr-drive-[0-9]+|pr-drive-worktree-[0-9a-f]{16}|ledger-driver-[0-9]+\\.json)";
 
 /** A displaced legacy lock or recovery gate, never read by the database. */
 export const FORMER_QUARANTINE = new RegExp(
@@ -70,7 +70,7 @@ export const FORMER_QUARANTINE = new RegExp(
 const FORMER_LOCK = new RegExp(`^${LOCK_ANCHOR}\\.lock(?:\\.recovering)?$`);
 
 export function isFormerLock(name: string): boolean {
-  return FORMER_LOCK.test(name) || name === ".reap-state-delete.lock";
+  return FORMER_LOCK.test(name);
 }
 
 /**
