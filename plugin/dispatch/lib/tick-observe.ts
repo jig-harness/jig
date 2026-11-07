@@ -34,6 +34,7 @@ import { previousFollowupSince } from "../receipts.ts";
 import type {
   JoinTargets,
   SessionRuntime,
+  SessionsReader,
   SessionsReport,
 } from "./runtime/port.ts";
 import { branchPattern, readSection, trackerConfigOf } from "./section.ts";
@@ -53,6 +54,7 @@ import type { readDrives } from "./sources/ledgers.ts";
 import { readPickups } from "./sources/tracker.ts";
 import { emptyReport, type TickOptions } from "./tick-context.ts";
 import { type ForgeRead, readForge } from "./tick-forge.ts";
+import type { TickReads } from "./tick-reads.ts";
 import { openShared, readDriveClaims, type TickShared } from "./tick-shared.ts";
 import { failureText } from "./text.ts";
 import type {
@@ -71,6 +73,8 @@ export interface ObserveContext {
   nowMs: number;
   /** This machine's launch records as the turn starts. */
   records: ReadRecord[];
+  /** What the tick reads once and shares between its repositories' observe phases. */
+  reads: TickReads;
 }
 
 /** A repository opened for its tick: its target, its dispatch section, its machine-file entry and the report the tick fills. */
@@ -202,7 +206,7 @@ export async function observeRepo(
   timer: PhaseTimer<RepoPhase>,
 ): Promise<RepoObservation> {
   const { repo, values, section, where, report } = opened;
-  const { runtime, nowMs, records } = context;
+  const { runtime, nowMs, records, reads } = context;
   const tracked = await timer.time("tracker", () =>
     readTracker(values, repo, section, report, where),
   );
@@ -211,20 +215,34 @@ export async function observeRepo(
   const labels = section.labels.enabled ? section.labels : null;
   let shared!: ReturnType<typeof openShared>;
   const forge = await timer.time("forge", () => {
-    shared = openShared(repo.slug, opened.owner);
-    return readForge(repo, report, section, labels, nowMs, shared.records);
+    shared = openShared(repo.slug, opened.owner, reads.comments);
+    return readForge(
+      repo,
+      report,
+      section,
+      labels,
+      nowMs,
+      shared.records,
+      reads,
+    );
   });
   let ctx!: ReturnType<typeof shared.context>;
   const claims = await timer.time("claims", () => {
     ctx = shared.context(forge.login);
-    return readDriveClaims(ctx, forge, records);
+    return readDriveClaims(
+      ctx,
+      forge,
+      records,
+      shared.records(forge.login),
+      nowMs,
+    );
   });
 
   // The runtime: which of them a session holds.
   let join!: ReturnType<typeof joinTargets>;
   const sessions = await timer.time("runtime", async () => {
     join = joinTargets(tracked.keys, values, forge);
-    const read = await readSessions(runtime, repo, join);
+    const read = await readSessions(runtime, repo, join, reads.sessions);
     report.records.push(runtimeRead(runtime, repo, read, section));
     return read;
   });
@@ -384,14 +402,15 @@ async function readTracker(
   return tracked;
 }
 
-/** The runtime's answer; a rejected read is a failed report, never an escape. */
+/** The runtime's answer, through `read` where the observe phase passes the tick's reader; a rejected read is a failed report, never an escape. */
 export async function readSessions(
   runtime: SessionRuntime,
   repo: RepoTarget,
   join: JoinTargets,
+  read: SessionsReader = (r, j) => runtime.sessions(r, j),
 ): Promise<SessionsReport> {
   try {
-    return await runtime.sessions(repo, join);
+    return await read(repo, join);
   } catch (error) {
     return {
       ok: false,

@@ -53,6 +53,7 @@ export async function runTurn(
       runtime: context.runtime,
       nowMs: context.nowMs,
       records: allRecords(context),
+      reads: context.reads,
     },
     timer,
   );
@@ -64,12 +65,18 @@ export async function runTurn(
   await timer.time("apply", () => actObserved(context, observation));
   await timer.time("labels", () => projectObserved(context, observation));
   await timer.time("shared", async () => {
-    report.shared = await sharedReport(
+    report.shared = sharedReport(
       observation.shared,
       observation.ctx,
       observation.claims,
       forge,
     );
+    // The budget is the host's: read once, when the tick closes.
+    if (forge.ok)
+      context.reads.budgets.push({
+        report: report.shared,
+        records: observation.ctx.records,
+      });
     context.lineInputs.set(
       path,
       lineInputOf(forge.drives, forge, tracked, sessions),

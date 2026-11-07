@@ -102,16 +102,16 @@ when it fails. The phase names are the ones a receipt times.
 | Apply state (`start`) | `tick-apply.ts` | the launch records, `tick-index` | the rotation cursor | cursor unwritable: no launches |
 | `open` | `tick-observe.ts` | `gh repo view`, `.config/jig.yaml` on the default branch | none | the repository is refused and reported; the others go on |
 | `tracker` | `tick-observe.ts` | the items assigned in a dispatch state | none | a failed record; no pickups planned |
-| `forge` | `tick-forge.ts` | open pull requests, the login, each one's ledger, the merges in the follow-up window and their markers | none | a failed record; drives and follow-ups not planned |
-| `claims` | `tick-shared.ts` | every host's launch claims | none | per pull request: a listing that does not read reaches the plan as unknown |
-| `runtime` | `tick-observe.ts` | the runtime's session list | none | a failed record; nothing is joined |
+| `forge` | `tick-forge.ts` | open pull requests, the login (once per tick), each one's ledger and park answers from its comment listing, the merges in the follow-up window and the markers of each merge whose `updatedAt` moved | the merges' kept marker reads | a failed record; drives and follow-ups not planned |
+| `claims` | `tick-shared.ts` | every host's launch claims, from the same comment listings; on a merge whose ended launches owe their ends, the claims kept at its `updatedAt` | the merges' kept claims | per pull request: a listing that does not read reaches the plan as unknown |
+| `runtime` | `tick-observe.ts` | the runtime's session list, its host-wide listings read once per tick | none | a failed record; nothing is joined |
 | `observe` | `tick-observe.ts` | each running drive's unresolved threads, each waiting session's wall, the change-area catalog | thread samples, a pickup's opened mark, waiting episodes, the owner's serialization holds, and the account's usage-limit wall under `walls/<account>/` | reported as unplaced |
 | `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles | a write the database refuses is a defect: it stops this repository in phase `plan` |
 | `log` | `tick-settle.ts` | the ended launch records, the ledgers | one outcome row per ended record, with its end | reported; the record is kept until its row lands |
 | `apply` | `tick-apply.ts` | each target read again just before its launch | the launch record, the forge claim or marker, the runtime's launch, nudges, notices | per action: refused, reported, tried again next tick |
 | `labels` | `tick-labels.ts` | the ledgers | the state labels on pull requests | per write, reported |
-| `shared` | `tick-shared.ts` | the forge's rate limit | none | the budget reported as unreadable |
-| Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-line.ts` | the receipt, the launch records | outcome rows for repositories not read, the month files, the line, the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1. A defect in a closing step marks the receipt not completed |
+| `shared` | `tick-shared.ts` | the shared records' reads and writes this turn | none | none |
+| Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit (once, put on every repository's report) | outcome rows for repositories not read, the month files, the line, the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
 
 **A defect stops only its own repository.** Every read and every action
 above turns its expected failures into a record or a refusal on the report.
@@ -137,6 +137,68 @@ each phase of its turn (`phasesMs`), and the receipt the tick's own
 line per repository, and `jig dispatch receipts` prints how long each tick
 took. A receipt written before phases were timed has neither, and reads as
 before.
+
+**What a tick reads once.** The observe phases of every repository share
+one set of reads, made when the tick starts (`tick-reads.ts`). Each pull
+request's comments are listed at most once per tick (`tick-comments.ts`),
+and that one listing gives its drive ledger, the answers to its parks,
+every host's launch claims on it and, on a merge, its follow-up markers. A
+listing is filled through one promise per pull request, so two readers
+that ask at once share one read, and a listing that failed is the answer
+for the rest of the tick. What belongs to the host rather than to a
+repository is read once too, the first time a repository needs it, and
+every repository is answered from it: the forge's login, Orca's repository
+and workspace listings (the runtime's `sessionsOnce`), and, as the tick
+closes, the forge's rate limit, which every repository's report then
+carries. A runtime listing that fails fails each repository's record alike,
+as a read of its own would have. The login is the exception: when it cannot
+be established it is unknown (`null`) rather than a failure, the forge
+record still reads, and what depends on it (the trust of a comment as the
+dispatcher's own, a kept read) is treated as not known to hold.
+
+**What is never read from them.** Every read just before a launch goes to
+the forge and the runtime: the drive read again before a re-arm or a
+takeover, the markers, labels and sessions a follow-up reads again before
+it starts, a claim posted and read back, the listing before a claim's end
+is written and before a stale claim is released. The guards against a
+second launch rest on what those say now. A write the tick makes on a pull
+request (a claim or marker posted, an end written, a marker deleted) drops
+that pull request's listing, so nothing later in the tick reads its
+comments as they were before it.
+
+**A merge already read is not read again.** The follow-up markers of each
+merge are kept in the state database (`merge_reads`) beside the pull
+request's `updatedAt` as the merged listing gave it when they were read. A
+new comment moves `updatedAt`, and so does an edit of one (another host's
+answer written onto its marker, a person's run marked done); the listing
+gives it with no extra call. While it has not moved, the tick plans from
+the kept markers instead of listing the comments again, so a merge whose
+follow-up is settled, done on this host, marked done by a person or
+answered by another host, costs nothing after its first read, and a new
+marker on it is seen at the next tick. The forge does not document that
+deleting a comment moves `updatedAt`, so a kept read stands for at most an
+hour, after which the merge is read again whatever its `updatedAt` says. A
+kept read also records the forge login it was read as, since a comment's
+trust depends on it, and stands only for that login; a read is kept only from
+comments listed after the merged listing, never from a listing the tick held
+from an earlier observation of the pull request. A
+merge with a stale-claim release still pending is read every tick, since
+only a fresh listing completes the release (see Stale follow-up claims); a
+write the tick makes on a merge drops its kept read, so the next tick reads
+it; a merge that leaves the follow-up window loses its row. Planning from
+kept markers starts nothing by itself: a follow-up wanted, or a stale
+claim to release, reads the markers again first.
+
+The same holds for the launch claims of a merge on which this host's own
+drive launches ended but still owe their ends (a record is read for its
+claims until every end it owed is written). Those claims are kept in the
+merge's row and read in place of the forge's under the same rule and
+cadence, only while every launch record this host has on the pull request
+has ended and, as the claims were last read, none of them is a trusted
+claim that does not read and the current claim is not another host's with
+no end. Another host's end is an edit, which moves `updatedAt`. These claims
+admit no launch: a merged pull request is never re-armed, and writing an
+end lists the claims from the forge first, then drops the kept row.
 
 **What observing writes.** The observe phase reads the launch records as
 they stand when the turn starts, never the apply state that launches
@@ -319,9 +381,9 @@ guards keep one stage from starting twice:
 | Record | Read through | What the tick takes from it |
 | --- | --- | --- |
 | The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
-| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed |
-| The session runtime | in Orca, `orca worktree ps --json` | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
-| The shared records | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts` | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts) |
+| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels; each pull request's comments listed once per tick and shared by every record read from them, a merge's markers read only when its `updatedAt` moved since they were kept (see One tick, step by step) | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed |
+| The session runtime | in Orca, `orca repo list --json` and `orca worktree ps --json`, each read once per tick for every repository | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
+| The shared records | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts`; the observe phase reads them from the tick's comment listings, a launch's own reads and writes go to the forge | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts) |
 
 **The tracker.** The interface gains one read, `assignedIssues(identity,
 states)`: the issues assigned to that user in those states, in the pool
@@ -1164,6 +1226,13 @@ per kind of record, each row under a unique key:
   a recurring class, keyed by the finding's id, holding the event as its
   first append sent it, pending until the store reports it stored (see
   Control).
+- **Merge reads**: one row per repository and merged pull request in the
+  follow-up window, the markers a tick last read on it, and the launch
+  claims where this host's ended launches still owed their ends, at its
+  `updatedAt` then; replaced by each read and removed by a write the tick
+  makes on it
+  (see One tick, step by step). They only save reads: a row that does not
+  read is a read the next tick makes.
 
 The receipts stay files, one per tick, since a receipt is a run's
 narrative for a person and for the morning report. The account walls stay
