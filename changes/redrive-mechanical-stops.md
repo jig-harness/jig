@@ -11,11 +11,11 @@ release: minor
   (`DRIVE_PR_CI_REPAIR_ROUNDS=0`) still stops `1`.
 - `jig dispatch` re-drives a stall (exit `14`) and a spent CI-repair budget
   (exit `21`) once per head commit, on any account, and tells a person when
-  the same head stops the same way again. A stall that left work in its tree
-  is re-driven only in that tree; with no open workspace holding it, a person
+  the same head stops the same way again. A stall that left work in its tree,
+  or whose stop never measured it, is re-driven only in that tree; with no open workspace holding it, a person
   is told. The re-armed drive's first pass is told the stop and, after a
   stall, what its passes recorded last, and it takes the edits the stall left
-  as its own to finish.
+  as its own to finish, only when it is armed in the tree that stalled.
 - A stop the dispatcher hands a person says so when the pull request also
   conflicts with its base.
 

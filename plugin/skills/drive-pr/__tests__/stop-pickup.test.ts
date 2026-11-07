@@ -34,13 +34,15 @@ async function pickupAfter(
     [
       process.execPath,
       "-e",
-      'const m = await import(process.env.JIG_TEST_MODULE); console.log(JSON.stringify(await m.stopPickup("7", JSON.parse(process.env.JIG_TEST_STATE))));',
+      'const m = await import(process.env.JIG_TEST_MODULE); const a = await import(process.env.JIG_TEST_ACTOR); const h = await import(process.env.JIG_TEST_MIRROR); const here = (await a.resolveActor()) + "@" + h.hostLabel(); const s = JSON.parse(process.env.JIG_TEST_STATE); s.events = s.events.map((e) => (e.tree === "HERE" ? { ...e, tree: here } : e)); console.log(JSON.stringify(await m.stopPickup("7", s)));',
     ],
     {
       env: {
         ...process.env,
         DRIVE_PR_HANDOFF_DIR: handoff,
         JIG_TEST_MODULE: join(SCRIPTS, "lib", "driver", "stop-pickup.ts"),
+        JIG_TEST_ACTOR: join(SCRIPTS, "lib", "state", "actor.ts"),
+        JIG_TEST_MIRROR: join(SCRIPTS, "lib", "state", "ledger-mirror.ts"),
         JIG_TEST_STATE: JSON.stringify({ ...freshState(7), events }),
       },
       stdout: "pipe",
@@ -56,12 +58,17 @@ async function pickupAfter(
   return JSON.parse(stdout) as Pickup;
 }
 
-const stop = (cause: string, leftWork?: true): DriveEvent => ({
+/** `tree` "HERE" is the tree the pickup runs in. */
+const stop = (
+  cause: string,
+  leftWork?: boolean,
+  tree = "HERE",
+): DriveEvent => ({
   at: "2026-11-07T10:00:00.000Z",
   round: 4,
   kind: "stop",
   cause,
-  ...(leftWork === undefined ? {} : { leftWork }),
+  ...(leftWork === undefined ? {} : { leftWork, tree }),
 });
 
 describe("stopPickup", () => {
@@ -76,8 +83,19 @@ describe("stopPickup", () => {
     expect(r.inheritsEdits).toBe(true);
   });
 
-  it("leaves the tree's edits a person's when the stall left no work", async () => {
+  it("leaves the tree's edits a person's when the stall left work in another tree", async () => {
+    const r = await pickupAfter([stop("14", true, "wt-0123456789abcdef@h")]);
+    expect(r.notice).toContain("It left work in another tree");
+    expect(r.inheritsEdits).toBe(false);
+  });
+
+  it("leaves the tree's edits a person's when the stop never measured its tree", async () => {
     const r = await pickupAfter([stop("14")]);
+    expect(r.inheritsEdits).toBe(false);
+  });
+
+  it("leaves the tree's edits a person's when the stall measured no work", async () => {
+    const r = await pickupAfter([stop("14", false)]);
     expect(r.notice).toStartWith("RE-ARMED AFTER A STALL");
     expect(r.notice).toContain("recorded nothing");
     expect(r.notice).not.toContain("It left work");

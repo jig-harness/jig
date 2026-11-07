@@ -251,6 +251,13 @@ function conflictSettled(
   return settled?.class === "needs-person" ? settled.why : null;
 }
 
+/** A stall bound to its tree is re-driven only there, and whether an open workspace holds it is the dispatcher's read of its runtime, not this one's. */
+function staleWhy(placed: { why: string; stale?: { tree?: unknown } }): string {
+  return placed.stale?.tree === undefined
+    ? placed.why
+    : `${placed.why}; the dispatcher refuses it, and a person recovers the work, where no open workspace on its host holds that tree`;
+}
+
 /** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
 function waitsOnOf(
   ledger: Ledger,
@@ -320,8 +327,9 @@ function waitsOnOf(
     case "parked":
       return { person: "answer", why: placed.why };
     case "re-armable":
-    case "stale":
       return rearm(placed.why);
+    case "stale":
+      return rearm(staleWhy(placed));
     case "refused":
     case "unplaced":
       return { waiting: placed.why };

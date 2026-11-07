@@ -125,6 +125,26 @@ describe("classifyLedger", () => {
     ).toBeUndefined();
   });
 
+  it("binds a stall whose stop never measured its tree, and frees one measured clean", () => {
+    const ledger = stoppedLedger(7, 14);
+    const forge = { head: "c".repeat(40), mergeable: "MERGEABLE" };
+    const stall = (leftWork?: boolean) => ({
+      at: new Date(NOW).toISOString(),
+      round: 3,
+      kind: "stop" as const,
+      cause: "14",
+      ...(leftWork === undefined ? {} : { leftWork }),
+    });
+    ledger.events = [stall()];
+    const legacy = classifyLedger(ledger, NOW, WINDOW, undefined, forge);
+    expect(legacy.stale?.tree?.actor).toBe(ledger.driver.actor);
+    expect(legacy.why).toContain("never measured");
+    ledger.events = [stall(false)];
+    expect(
+      classifyLedger(ledger, NOW, WINDOW, undefined, forge).stale?.tree,
+    ).toBeUndefined();
+  });
+
   it("holds a globally recorded operator stop while its driver is still running", () => {
     const ledger = running(10);
     ledger.driver.personStop = {

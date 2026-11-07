@@ -94,12 +94,9 @@ describe("drive.ts stall stop", () => {
       expectSpawnExit({ ...r, stdout: null }, 14);
       expect(await lastStop(stateDir, repo.dir)).toMatchObject({
         cause: "14",
-        ...(dirty ? { leftWork: true } : {}),
+        leftWork: dirty,
       });
-      if (!dirty)
-        expect(await lastStop(stateDir, repo.dir)).not.toHaveProperty(
-          "leftWork",
-        );
+      expect(await lastStop(stateDir, repo.dir)).toHaveProperty("tree");
     }
   }, 240_000);
 

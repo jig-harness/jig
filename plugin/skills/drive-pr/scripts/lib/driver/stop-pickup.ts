@@ -8,11 +8,15 @@
  *
  * Its first pass is told the stop and, for a stall, what the stalled passes
  * recorded last, until one pass completes (`carriedNotice`). A stall that
- * left work in its tree (the stop event's `leftWork`) hands that work on:
- * the tree's edits at arm count as the drive's to settle (`unpushed.ts`),
- * where edits found at arm are otherwise taken as a person's and left alone.
+ * left work in the tree this drive is armed in (the stop event's `leftWork`
+ * and `tree`) hands that work on: the tree's edits at arm count as the
+ * drive's to settle (`unpushed.ts`), where edits found at arm are otherwise
+ * taken as a person's and left alone. A stop that measured nothing, or one
+ * from another tree or host, hands on nothing: the edits here are not its.
  */
+import { resolveActor } from "./../state/actor.ts";
 import { lastStopEvent } from "./../state/events.ts";
+import { hostLabel } from "./../state/ledger-mirror.ts";
 import type { DriveState } from "./../state/schema.ts";
 import { recordedDecisions } from "./restart.ts";
 import { CI_REPAIR_SPENT_EXIT, STALLED_EXIT } from "./settings.ts";
@@ -42,6 +46,8 @@ export async function stopPickup(
   if (code !== STALLED_EXIT) return { notice: "", inheritsEdits: false };
   const decided = await recordedDecisions(pr);
   const leftWork = stop?.leftWork === true;
+  const here = stop?.tree === `${await resolveActor()}@${hostLabel()}`;
+  const inherits = leftWork && here;
   return {
     notice: [
       `RE-ARMED AFTER A STALL: the drive before this one stopped with exit ${STALLED_EXIT} (STALLED) at round ${stop?.round ?? "?"}: its passes changed nothing the driver could observe, for the stall threshold and one extra round.`,
@@ -51,13 +57,17 @@ export async function stopPickup(
             "What its passes recorded last (the end of the handoff narrative):",
             ...decided.map((line) => `  ${line}`),
           ]),
-      ...(leftWork
+      ...(inherits
         ? [
             "It left work in this tree: it is this round's to finish first (SKILL.md § 5, A tree the round inherits).",
           ]
-        : []),
+        : leftWork
+          ? [
+              `It left work in another tree (${stop?.tree}), not this one: edits here are not its, so leave them alone.`,
+            ]
+          : []),
       "Find why those passes did not act, act on it, and if a step refuses and you stop, end the handoff narrative naming the step that refused and what would unblock it.",
     ].join("\n"),
-    inheritsEdits: leftWork,
+    inheritsEdits: inherits,
   };
 }

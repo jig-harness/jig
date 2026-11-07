@@ -44,8 +44,9 @@
  * its exit, so it is re-driven once for each; once this machine or another
  * host re-drove that change and the ledger still stopped the same way, it is
  * a person's (`settleConflictStops`). A stall whose stop recorded work left
- * in its tree (the ledger's last `stop` event, `leftWork`) names that tree,
- * where its re-drive must run (`stall-tree.ts`). One whose head is not known
+ * in its tree, or never measured it (the ledger's last `stop` event,
+ * `leftWork`), names that tree, where its re-drive must run
+ * (`stall-tree.ts`). One whose head is not known
  * is `unplaced`.
  *
  * A ledger that cannot be read (its comments, a version this reader does
@@ -230,6 +231,12 @@ export function conflictNote(mergeable: unknown): string {
     : "";
 }
 
+function stallTreeWhy(leftWork: boolean | undefined): string {
+  return leftWork === true
+    ? "in the tree it stalled in, which holds work it left"
+    : "in the tree it stalled in, whose work was never measured";
+}
+
 /**
  * A ledger that stopped `STALLED` or `CI_REPAIR_SPENT`, read beside its
  * pull request's head: `stale`, keyed on that head and the exit, and
@@ -251,13 +258,13 @@ function mechanicalStopClass(
   const last = lastStopEvent(ledger.events ?? []);
   const tree =
     stop.kind === "stall" &&
-    last?.leftWork === true &&
-    last.cause === String(exit)
+    last?.leftWork !== false &&
+    last?.cause === String(exit)
       ? ledgerTree(ledger)
       : null;
   return {
     class: "stale",
-    why: `stopped ${exit} (${stop.words}): re-drive ${tree === null ? "on any account" : "in the tree it stalled in, which holds work it left"}, once for head ${short(head)}`,
+    why: `stopped ${exit} (${stop.words}): re-drive ${tree === null ? "on any account" : stallTreeWhy(last?.leftWork)}, once for head ${short(head)}`,
     stale: {
       cause: `stopped ${exit}, ${stop.words}`,
       change: `head ${head}, stopped ${exit}`,

@@ -36,6 +36,10 @@ import { recordDriveEvent } from "./rearm.ts";
 
 import { driverRuntime } from "./runtime.ts";
 
+import { resolveActor } from "./../state/actor.ts";
+
+import { hostLabel } from "./../state/ledger-mirror.ts";
+
 import {
   currentAutonomy,
   describeAutonomy,
@@ -111,9 +115,10 @@ export async function checkRoundStall(
     const economyReport = await loopEconomy(context.pr);
     process.stderr.write(await leftoverReport());
     process.stderr.write(economyReport);
-    driverRuntime.stopLeftWork = leftWork(
-      await passLeftovers({ fingerprint: false }),
-    );
+    driverRuntime.stopLeftWork = {
+      leftWork: leftWork(await passLeftovers({ fingerprint: false })),
+      tree: `${await resolveActor()}@${hostLabel()}`,
+    };
     return STALLED_EXIT;
   }
 

@@ -15,10 +15,13 @@
  *   - `stop`: the driver exited, its cause the exit code (`0` converged,
  *     `8` HITL-parked, …) or `unknown` (a thrown refusal or a crash), so a
  *     report reads how the drive last ended from the state as well as from
- *     the ledger. A dry run records none. `leftWork` marks a stop that left
- *     work in its tree no push carries (uncommitted edits, an open git
- *     operation, unpushed commits): the dispatcher re-drives such a stall
- *     only in that tree, and a re-arm inherits the edits as its own.
+ *     the ledger. A dry run records none. `leftWork` records, on a stall,
+ *     whether the stop measured work in its tree that no push carries
+ *     (uncommitted edits, an open git operation, unpushed commits), and
+ *     `tree` names that tree (`<actor>@<host>`): the dispatcher re-drives a
+ *     stall that left work only in that tree, and a re-arm in that tree
+ *     inherits the edits as its own. A stop without `leftWork` was never
+ *     measured, so it is read as possibly holding work.
  *
  * Takeovers have their own record (`takeover.ts`). Optional in a stored
  * state: a file written before the field existed reads as no events.
@@ -44,8 +47,10 @@ export interface DriveEvent {
   round: number;
   kind: EventKind;
   cause: string;
-  /** On a `stop`: it left work in its tree that no push carries. */
-  leftWork?: true;
+  /** On a `stop`: whether it measured work in its tree that no push carries; absent when it never measured. */
+  leftWork?: boolean;
+  /** On a `stop` that measured: the tree it ran in, `<actor>@<host>`. */
+  tree?: string;
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -65,7 +70,10 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     Number.isFinite(Date.parse(v.at)) &&
     Number.isSafeInteger(v.round) &&
     (v.round as number) >= 0 &&
-    (v.leftWork === undefined || (v.leftWork === true && v.kind === "stop"))
+    (v.leftWork === undefined ||
+      (typeof v.leftWork === "boolean" && v.kind === "stop")) &&
+    (v.tree === undefined ||
+      (typeof v.tree === "string" && v.tree !== "" && v.kind === "stop"))
   );
 }
 
@@ -103,7 +111,7 @@ export function lastStopEvent(
   return events.findLast((e) => e.kind === "stop");
 }
 
-/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, and `"leftWork": true` on a stop that left work in its tree). */
+/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, and `"leftWork"` with `"tree"` on a stop that measured its tree). */
 export async function recordEvent(
   store: StateStore,
   raw: string,
@@ -123,6 +131,7 @@ export async function recordEvent(
       kind: input.kind,
       cause: input.cause,
       ...(input.leftWork === undefined ? {} : { leftWork: input.leftWork }),
+      ...(input.tree === undefined ? {} : { tree: input.tree }),
     };
     if (!isDriveEvent(event))
       fail(
