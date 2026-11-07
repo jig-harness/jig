@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
@@ -351,3 +352,31 @@ it.each(["transcript", "unreadable scan", "truncated scan"])(
     expect(wallOf("a", Date.now(), dispatchState(w))).toBeNull();
   },
 );
+
+it("withholds a startup verdict when a project directory is a symbolic link", () => {
+  const root = join(process.cwd(), ".context", `startup-link-${process.pid}`);
+  rmSync(root, { recursive: true, force: true });
+  const configDir = join(root, "config");
+  const elsewhere = join(root, "elsewhere");
+  mkdirSync(join(configDir, "projects"), { recursive: true });
+  mkdirSync(elsewhere, { recursive: true });
+  try {
+    const record = {
+      action: "followup",
+      vendor: "claude",
+      sessionId: "11111111-2222-3333-4444-555555555555",
+      configDir,
+    } as unknown as Parameters<typeof failedStartup>[0];
+    const started = Date.now() - 10_000;
+    expect(failedStartup(record, 1, started, "", started + 5_000)).toBe(
+      "unstarted",
+    );
+    writeFileSync(join(elsewhere, `${record.sessionId}.jsonl`), "{}\n");
+    symlinkSync(elsewhere, join(configDir, "projects", "linked"), "dir");
+    expect(
+      failedStartup(record, 1, started, "", started + 5_000),
+    ).toBeUndefined();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

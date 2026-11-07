@@ -27,6 +27,12 @@ function transcriptFiles(configDir: string, deadline: number): string[] | null {
   const root = join(configDir, "projects");
   const read = forEachDirEntry(root, (entry) => {
     if (!budget()) return false;
+    // A link may lead to transcripts this scan does not follow, so it cannot
+    // confirm absence.
+    if (entry.isSymbolicLink()) {
+      complete = false;
+      return false;
+    }
     if (!entry.isDirectory()) return true;
     const dir = join(root, entry.name);
     if (
