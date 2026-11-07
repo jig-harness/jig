@@ -38,6 +38,7 @@ export interface Holder {
 const PERSON_ACTS = [
   "answer",
   "re-arm",
+  "release the CI hold",
   "merge",
   "re-run the follow-up",
   "choose the session that keeps the item",

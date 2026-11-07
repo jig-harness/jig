@@ -10,7 +10,10 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  expectSpawnExit,
+  expectSpawnExitNot,
+} from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import {
@@ -31,7 +34,12 @@ import {
   renderClaim,
 } from "../scripts/lib/state/ledger.ts";
 import { cloneId } from "../scripts/lib/state/ledger-mirror.ts";
-import { leaseRef } from "../scripts/lib/state/lease.ts";
+import {
+  readLease,
+  readTreeLease,
+  treeLeaseRef,
+  leaseRef,
+} from "../scripts/lib/state/lease.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
 import {
   SCRIPTS,
@@ -43,7 +51,10 @@ import {
 import { scopedStateDir } from "./scoped-state-dir.ts";
 import {
   driverRecordRow,
+  lockRow,
+  removeLock,
   putLease,
+  putTreeLease,
   putLock,
   writeState,
 } from "./state-rows.ts";
@@ -666,6 +677,112 @@ describe("recovering the ledger of a driver that could not write it", () => {
     }
   });
 
+  it("reserves released recovery retries and preserves an unpublished successor after a forge failure", async () => {
+    const s = stage();
+    await plantRecord(s, true);
+    writeFileSync(join(s.forge.dir, "fail-patch"), "");
+    expectSpawnExit(await drives(s, ["--doctor"]), 0);
+    expect(driverOf(s)?.state).toBe("running");
+    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
+    rmSync(join(s.forge.dir, "fail-patch"));
+    plantLock({ ...s, started: "2026-11-07T15:00:00.000Z" }, process.pid);
+    const successor = lockRow(s.leaf, "pr-drive-999");
+    expectSpawnExit(await drives(s, ["--doctor"]), 0);
+    expect(driverOf(s)?.state).toBe("running");
+    expect(lockRow(s.leaf, "pr-drive-999")).toEqual(successor);
+    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
+    removeLock(s.leaf, "pr-drive-999");
+    expectSpawnExit(await drives(s, ["--doctor"]), 0);
+    expect(driverOf(s)?.state).toBe("stopped");
+    expect(lockRow(s.leaf, "pr-drive-999")).toBeNull();
+  });
+
+  it("retries after a recovery process dies while reserving the PR and publishing its witness", async () => {
+    const s = stage();
+    await plantRecord(s, false);
+    const row = driverRecordRow(s.leaf, "999");
+    if (row === null) throw new Error("missing fixture driver record");
+    const ready = join(s.forge.dir, "recovery-reserved");
+    const helper = join(s.forge.dir, "interrupted-recovery.ts");
+    const record = {
+      worktree: s.forge.repo,
+      started: s.started,
+      pid: row.pid,
+      host: row.host,
+    };
+    writeFileSync(
+      helper,
+      `import {writeFileSync} from "node:fs";
+      import {reserveDeadDriver} from ${JSON.stringify(join(SCRIPTS, "lib/driver-recovery.ts"))};
+      await reserveDeadDriver(${JSON.stringify(s.leaf)},"999",${JSON.stringify(record)},async()=>{
+        writeFileSync(${JSON.stringify(ready)},"ready");
+        await new Promise(()=>setInterval(()=>{},1000));
+      },true);`,
+    );
+    const child = Bun.spawn([process.execPath, helper], {
+      cwd: s.forge.repo,
+      env: s.forge.env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    try {
+      await poll(() => existsSync(ready), {
+        everyMs: 10,
+        deadlineMs: Date.now() + 5000,
+        until: Boolean,
+      });
+      expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
+    } finally {
+      child.kill("SIGKILL");
+      const [exitCode, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expectSpawnExitNot({ exitCode, stdout, stderr }, 0);
+    }
+    expectSpawnExit(await drives(s, ["--doctor"]), 0);
+    expect(driverOf(s)?.state).toBe("stopped");
+    expect(lockRow(s.leaf, "pr-drive-999")).toBeNull();
+  });
+
+  it("recovery does not retain the calling session's PR or tree lease", async () => {
+    const s = stage();
+    await plantRecord(s, true);
+    const proc = Bun.spawn(scriptArgv(join(SCRIPTS, "drives.ts"), "--doctor"), {
+      cwd: s.forge.repo,
+      env: {
+        ...s.forge.env,
+        DRIVE_PR_STATE_DIR: s.leaf,
+        CLAUDE_PID: String(process.pid),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expectSpawnExit({ stdout, stderr, exitCode }, 0);
+    expect(driverOf(s)?.state).toBe("stopped");
+    expect(readLease(leaseRef(s.leaf, "999", s.actor))).toBeNull();
+    expect(readTreeLease(treeLeaseRef(s.leaf, s.actor))).toBeNull();
+  });
+
+  it("recovery preserves a live session's existing admission when the write is refused", async () => {
+    const s = stage();
+    await plantRecord(s, true);
+    const ref = leaseRef(s.leaf, "999", s.actor);
+    const tree = treeLeaseRef(s.leaf, s.actor);
+    const lease = putLease(ref, { pid: process.pid });
+    const treeLease = putTreeLease(tree, { pid: process.pid, pr: "999" });
+    expectSpawnExit(await drives(s, ["--doctor"]), 0);
+    expect(driverOf(s)?.state).toBe("running");
+    expect(readLease(ref)).toEqual(lease);
+    expect(readTreeLease(tree)).toEqual(treeLease);
+  });
+
   it("records the recovered stop locally, so an earlier run's exit never speaks for it", async () => {
     const s = stage();
     // The drive converged once, then was re-armed and stopped by a signal.
@@ -738,4 +855,27 @@ catch (e) { console.log("EXIT " + e.code); }`,
     expectSpawnExit({ stdout, stderr, exitCode }, 0);
     expect(stdout).toContain("EXIT 13");
   });
+});
+
+it("scoped doctor leaves an unrelated released driver record and ledger untouched", async () => {
+  const s = stage();
+  await plantRecord(s, true);
+  const before = s.forge.comments()[0]?.body;
+  expectSpawnExit(await drives(s, ["--doctor", "--json", "--pr", "998"]), 0);
+  expect(driverRecordRow(s.leaf, "999")).not.toBeNull();
+  expect(s.forge.comments()[0]?.body).toBe(before);
+});
+
+it("record cleanup retains its witness when saved state is malformed", () => {
+  const s = stage();
+  writeDriverRecord(s.leaf, "999", {
+    worktree: s.forge.repo,
+    started: s.started,
+    pid: 1,
+    host: "h",
+    released: true,
+  });
+  writeState(s.leaf, "999", "{broken");
+  expect(() => removeDriverRecord(s.leaf, "999", s.started)).not.toThrow();
+  expect(driverRecordRow(s.leaf, "999")).not.toBeNull();
 });

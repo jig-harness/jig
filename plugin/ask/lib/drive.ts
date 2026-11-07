@@ -86,6 +86,7 @@ import {
   loggedRecords,
 } from "./thread.ts";
 import type { ReadRecord } from "../../dispatch/lib/launches.ts";
+import type { CiHoldDiagnosis } from "../../skills/drive-pr/scripts/lib/ci-hold-diagnosis.ts";
 import type { LogRow } from "../../dispatch/lib/log.ts";
 
 /** What the drive's reads found. */
@@ -360,12 +361,17 @@ function driverHolder(
   const driven =
     ledger?.driver.state === "running" &&
     Date.now() - beat <= stallThresholdMs();
-  const local = r.row?.lock === "live";
+  if (sameDriver(r.row, ledger) && r.row?.doctor?.ciHold?.driver === "dead")
+    return "none";
+  const local =
+    r.row?.lock === "live" &&
+    (r.row.doctor?.ciHold === undefined ||
+      r.row.doctor.ciHold.driver === "alive");
   if (!driven && !local) return "none";
   const doctor = r.row?.doctor;
   const why = local
     ? `a driver nobody dispatched holds its lock in this clone${doctor ? `; the doctor reads it ${doctor.verdict}` : ""}`
-    : "the ledger names a running driver; its clone's lock is not on this machine";
+    : "the ledger reports a running driver; its process liveness and ownership are unknown";
   const account = r.row?.account ?? null;
   return {
     stage: "drive",
@@ -712,12 +718,16 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
     title: doc.title === "" ? null : doc.title,
     url: doc.url,
     holder,
-    state,
-    stateDetail: detail,
-    waitsOn:
-      !pull.read || doc.state !== "OPEN" || read === null
-        ? "none"
-        : waitsOnOf(read, reads, ctx, holder !== "none", base),
+    state:
+      pull.read &&
+      doc.state === "OPEN" &&
+      locallyStopped(reads.row, read, holder)
+        ? "stopped"
+        : state,
+    stateDetail: [detail, ...diagnosticDetail(reads.row, read, holder)].join(
+      "; ",
+    ),
+    waitsOn: driveWait(reads, read, ctx, holder, { read: pull.read, base }),
     last: lastOf(reads),
     entries,
   };
@@ -784,4 +794,136 @@ async function rowOf(ctx: AskContext, pr: number): Promise<DriveRow | null> {
     ...(row.ok ? doctorDetail(row.value) : { detail: row.failure.reason }),
   });
   return row.ok ? row.value : null;
+}
+
+/** Select the station's wait after reconciling the current pull request and local diagnosis. */
+function driveWait(
+  reads: DriveReads,
+  ledger: Ledger | null,
+  ctx: AskContext,
+  holder: Holder | "none",
+  facts: { read: boolean; base: PrFacts["base"] },
+): WaitsOn {
+  if (!facts.read)
+    return {
+      waiting:
+        "the pull request could not be read; its head and CI hold are unknown",
+    };
+  if (reads.pull.state !== "OPEN") return "none";
+  const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
+  if (diagnosis !== null) return diagnosis;
+  return ledger === null
+    ? "none"
+    : waitsOnOf(ledger, reads, ctx, holder !== "none", facts.base);
+}
+
+/** The doctor names a stranded hold's guarded recovery; an unproven running ledger names a missing probe. */
+function diagnosticWait(
+  row: DriveRow | null,
+  ledger: Ledger | null,
+  doc: PullDoc,
+  holder: Holder | "none",
+): WaitsOn | null {
+  if (ledger !== null && ledger.parked.length > 0) return null;
+  const diagnosis = row?.doctor?.ciHold;
+  if (diagnosis !== undefined && diagnosis.held !== false) {
+    return holdWait(
+      diagnosis,
+      sameDriver(row, ledger),
+      doc.head,
+      holder === "none",
+    );
+  }
+  if (
+    ledger?.driver.state === "running" &&
+    (holder === "none" || holder.process !== "alive")
+  ) {
+    return {
+      waiting:
+        diagnosis?.driver === "dead"
+          ? `the local driver stopped while its ledger still reports running; ${diagnosis.driverReason}; inspect the drive doctor before re-arming`
+          : "the ledger reports running, but driver liveness and ownership are unknown; inspect the owning driver's process or drive doctor",
+    };
+  }
+  return null;
+}
+
+/** The shared diagnosis supplies the release proof; these reads must still describe the same run and head. */
+function holdWait(
+  diagnosis: CiHoldDiagnosis,
+  matched: boolean,
+  head: string,
+  unheld: boolean,
+): WaitsOn {
+  const reason = `${diagnosis.driverReason}; ${diagnosis.reason}`;
+  const current = diagnosis.head === head;
+  if (
+    matched &&
+    current &&
+    unheld &&
+    diagnosis.recovery !== null &&
+    diagnosis.driver === "dead" &&
+    diagnosis.review === "converged"
+  )
+    return {
+      person: "release the CI hold",
+      why: `${reason}; recovery: ${diagnosis.recovery}; this starts full CI, whose success remains to be checked`,
+    };
+  const missing = [reason];
+  if (!matched)
+    missing.push(
+      "the local diagnosis does not identify the ledger writer, so ownership remains unknown",
+    );
+  if (!current)
+    missing.push(
+      "the diagnosis does not establish the current pull request head",
+    );
+  return { waiting: missing.join("; ") };
+}
+
+/** Only an identified stopped run with no active holder can override its ledger. */
+function locallyStopped(
+  row: DriveRow | null,
+  ledger: Ledger | null,
+  holder: Holder | "none",
+): boolean {
+  return (
+    sameDriver(row, ledger) &&
+    row?.doctor?.ciHold?.driver === "dead" &&
+    holder === "none"
+  );
+}
+
+/** A process probe applies only to the run that wrote the forge ledger. */
+function sameDriver(row: DriveRow | null, ledger: Ledger | null): boolean {
+  const diagnosis = row?.doctor?.ciHold;
+  return (
+    ledger !== null &&
+    diagnosis !== undefined &&
+    typeof diagnosis.actor === "string" &&
+    diagnosis.actor === ledger.driver.actor &&
+    typeof diagnosis.started === "string" &&
+    diagnosis.started === ledger.driver.started &&
+    diagnosis.ledgerGeneration === ledger.generation
+  );
+}
+
+/** Separate what the ledger reports from what a local probe has established. */
+function diagnosticDetail(
+  row: DriveRow | null,
+  ledger: Ledger | null,
+  holder: Holder | "none",
+): string[] {
+  const detail: string[] = [];
+  if (
+    ledger?.driver.state === "running" &&
+    (holder === "none" || holder.process !== "alive")
+  )
+    detail.push(
+      "ledger reports running, but process liveness is not established by that ledger",
+    );
+  const diagnosis = row?.doctor?.ciHold;
+  if (diagnosis !== undefined)
+    detail.push(diagnosis.driverReason, diagnosis.reason);
+  return detail;
 }

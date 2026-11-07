@@ -46,6 +46,7 @@
  * carries (`endedAt`), written in the same transaction as that row.
  */
 import { readNext, type NextOwner } from "./next-owner.ts";
+import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
@@ -129,6 +130,8 @@ export interface LaunchRecord {
   command: string | null;
   /** The id of the follow-up marker comment the tick posted for it; `null` until posted, and for any other record. */
   marker: number | null;
+  /** Why no tick launches this pending record again: a replay the fresh read could not prove safe. A person clears it. Absent or `null` while it may be replayed. */
+  noReplay?: string | null;
   /** A drive's ledger round when it was launched, which its outcome row's rounds count from; `null` when unknown. */
   round?: number | null;
   /** For a re-drive: why it was launched, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
@@ -184,6 +187,7 @@ export interface LaunchClaim extends ProcessIdentity {
 }
 
 export interface LaunchExit {
+  startup?: "quota" | "unstarted"; // headless stop before any result or transcript
   at: string;
   /** The stage's exit code; `null` when it ended on a signal. */
   code: number | null;
@@ -350,6 +354,7 @@ function optionalFields(value: Record<string, unknown>): boolean {
     ["agentId", "model", "effort", "command", "sessionId", "mark"].every((k) =>
       optionalText(value[k]),
     ) &&
+    optionalText(value.noReplay) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
@@ -869,10 +874,10 @@ export function pruneLaunches(
 ): string[] {
   const cutoff = nowMs - days * 86_400_000;
   const kept = latestRefusals(records);
-  for (const id of latestPickups(records)) kept.add(id);
-  for (const id of latestRedrives(records)) kept.add(id);
-  for (const id of latestArms(records)) kept.add(id);
   const settled = settledEnds(root);
+  for (const id of unsettledStartups(records, settled)) kept.add(id);
+  for (const latest of [latestPickups, latestRedrives, latestArms])
+    for (const id of latest(records)) kept.add(id);
   for (const r of records)
     if (cancelledBeforeExecution(r) && !settled.has(r.record.id))
       kept.add(r.record.id);
