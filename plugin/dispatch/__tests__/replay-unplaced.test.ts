@@ -5,10 +5,14 @@
  * does not start beside the leader another tick chose.
  */
 import { describe, expect, it } from "bun:test";
-import { applyDrives, type FreshDrive } from "../lib/actions/drive.ts";
+import {
+  type ApplyState,
+  applyDrives,
+  type FreshDrive,
+} from "../lib/actions/drive.ts";
 import type { LaunchRecord } from "../lib/launches.ts";
 import { emptyReport } from "../lib/tick-context.ts";
-import type { SessionsReport } from "../lib/types.ts";
+import type { SessionsReport } from "../lib/runtime/port.ts";
 
 const SLUG = "o/r";
 const repo = { path: "/r", slug: SLUG, defaultBranch: "main" };
@@ -33,7 +37,7 @@ function state(records: LaunchRecord[]) {
       state: { kind: "pending" },
       result: null,
     })),
-  } as never;
+  } as unknown as ApplyState & { records: unknown[] };
 }
 
 describe("replaying a pending drive launch", () => {
