@@ -507,8 +507,25 @@ version 1, and the new reader accepts both.
 A stopped ledger with no exit and no person's-stop record is an accident:
 the dispatcher re-arms it on an admitted account to resume its durable state.
 Hard termination of both driver and launch wrapper can leave a running ledger
-with a stale heartbeat instead. No-exit recovery does not cover that state;
-without a recognized launch owner it remains silent until a person intervenes.
+with a stale heartbeat instead. With `--apply` and the re-arm stage enabled,
+the owning dispatcher reconciles a confirmed-dead local acquisition even when
+no launch record started it. A durable released witness, or the exact driver's
+persisted observations showing no surviving observed or registered pass,
+authorizes the recovery. Every pass launch records pending before spawn and
+retains creation identities and POSIX process groups; a missing identity,
+unreadable sample or unfinished launch withholds recovery. The observation
+belongs to the original lock token, and recovery reserves that exact token
+before publishing the stop, so an unpublished successor is preserved. The
+reservation and released witness commit together. Every forge retry reserves
+the slot again; a reservation left by a confirmed-dead recovery is reclaimed
+only when its label binds the same acquisition.
+The guarded write marks its ledger stopped with no cause and releases the
+recovery's own leases before planning within the no-cause budget. Foreign
+holders, unreadable liveness, surviving work and legacy records without a
+witness or observations stay running. These are observations of cooperative
+passes, not containment of arbitrary descendants (ADR-0008).
+Without a recognized launch owner or local termination evidence, the silent
+drive is notified and appears in `jig ask --waiting`; its state label is parked.
 The default budget is 3 no-cause re-arms per pull request in a rolling hour,
 across accounts; completing a round does not reset it. Once spent, the next
 no-cause stop needs a person and is notified once with the drive's handoff.
@@ -518,7 +535,7 @@ the budget; a new ledger then follows the ordinary budget.
 | Ledger says | Class | The tick |
 | --- | --- | --- |
 | running, heartbeat inside the lease window | driven | nothing |
-| running, heartbeat past the lease window | silent | takes it over only when this machine's launch record, or another host's launch claim, started that driver; otherwise reports it |
+| running, heartbeat past the lease window | silent | reconciles a confirmed local stop from a released witness or durable pass observations when re-arms are enabled; otherwise takes it over when this machine's launch record or another host's launch claim started it, or notifies a person and lists it as waiting |
 | stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
 | stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
 | stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies per stop, with the exit and the drive's handoff |

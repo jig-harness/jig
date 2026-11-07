@@ -108,7 +108,6 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
 /** The ledger classes that need nothing from the tick but a line in the report. */
 const QUIET: ReadonlySet<LedgerClass> = new Set([
   "driven",
-  "silent",
   "done",
   "stopped-by-person",
   "refused",
@@ -119,6 +118,7 @@ const NOTIFY: ReadonlyMap<LedgerClass, NotifyCause> = new Map([
   ["stopped-unknown", "stopped-unknown"],
   ["parked", "parked"],
   ["needs-person", "needs-person"],
+  ["silent", "needs-person"],
 ] as const);
 
 export function planTick(input: PlanInput): Plan {
@@ -460,7 +460,8 @@ function planDrive(
     plan.unplaced.push({ target, record: "forge", reason: pr.why });
     return;
   }
-  const cause = NOTIFY.get(pr.class);
+  const cause =
+    takeover !== null || foreign !== null ? undefined : NOTIFY.get(pr.class);
   want(
     {
       stage: cause === undefined ? "rearm" : "notify",

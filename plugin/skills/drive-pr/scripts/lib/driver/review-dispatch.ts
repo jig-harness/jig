@@ -1,3 +1,4 @@
+import { runObservedPass } from "../driver-observation.ts";
 /** Prepare quota attribution, charge the attempt at dispatch and join all post-pass acquisition work. */
 import type { DriveRoundContext } from "./round-context.ts";
 
@@ -264,7 +265,7 @@ export async function dispatchReviewPass(
   }
   context.passIdentity = resolveAccountIdentity(context.agent);
   const passRes = await span("pass", { round }, () =>
-    run(prepared?.argv ?? context.agent, {
+    runObservedPass(prepared?.argv ?? context.agent, {
       stdout: "inherit",
       stderr: "inherit",
       detached: true,

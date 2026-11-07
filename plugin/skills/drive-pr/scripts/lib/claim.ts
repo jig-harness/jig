@@ -13,8 +13,10 @@
  * which PR the holder is driving, from which worktree, since when, and where
  * its durable log is. Diagnostics are advisory by design: a lock without them
  * (or with unparsable ones) is a valid lock whose holder has nothing to show,
- * never a protocol error, so refusals and listings degrade to pid and host,
- * and nothing that decides liveness or recovery reads them.
+ * never a protocol error, so refusals and listings degrade to pid and host.
+ * Holder liveness ignores diagnostics. Guarded ledger recovery additionally
+ * matches the recorded acquisition; temporary recovery labels bind that
+ * acquisition so a confirmed-dead recovery can be retried.
  */
 
 import { definedFields } from "../../../../shared/defined-fields.ts";

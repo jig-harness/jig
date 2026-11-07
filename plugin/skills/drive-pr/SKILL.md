@@ -687,9 +687,14 @@ outlives the session that spawned it, so its console is not where you look:
   itself; `--stop` writes it once the driver and its pass tree are witnessed
   gone, and after a signal stop `--stop` or `--doctor` against the driver
   record it marked released with its locks does the same, each only while
-  the ledger still names that driver. A driver that kept its locks, over a
-  pass it could not witness gone or killed outright, leaves its ledger
-  running.
+  the ledger still names that driver. Review and repair passes persist
+  acquisition-bound process observations before spawning. After an abrupt
+  local stop, dispatch or doctor can reconcile the ledger when those
+  observations prove the driver and its observed and registered work gone.
+  Recovery reserves the PR slot and leaves its temporary session leases free.
+  Missing, foreign, surviving or uncertain evidence leaves the ledger running;
+  dispatch notifies once and includes it in the waiting list. See
+  [terminal states](references/terminal-states.md) for the recovery guards.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
   root: the database and one `<clone-key>/` directory per clone (the hash of
   its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved
