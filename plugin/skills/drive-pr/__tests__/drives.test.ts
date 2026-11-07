@@ -1577,7 +1577,6 @@ describe("printHuman surfaces DEAD_WITH_LEFTOVERS on a stale row", () => {
     // no remote configured at all reddens this test for the wrong reason
     // (an unrelated fail-closed null, not this M6 fix) — found while first
     // writing this fixture without one.
-    const stateDir = freshStateDir();
     const repo = mkdtempSync(join(tmpdir(), "m6-repo-"));
     const home = mkdtempSync(join(tmpdir(), "m6-home-"));
     const env = cleanEnv({ HOME: home });
@@ -1597,6 +1596,7 @@ describe("printHuman surfaces DEAD_WITH_LEFTOVERS on a stale row", () => {
     // checks for its PRESENCE (`unconcludedGitOpMarker`), no real conflict
     // needed, matching `gatherWorktreeLeftovers`'s own test fixtures above.
     writeFileSync(join(repo, ".git", "MERGE_HEAD"), `${"a".repeat(40)}\n`);
+    const stateDir = freshStateDir(repo);
     try {
       const pid = await deadPid();
       const claim = holder(pid, hostname(), {
@@ -1610,7 +1610,7 @@ describe("printHuman surfaces DEAD_WITH_LEFTOVERS on a stale row", () => {
       // reached, reading UNKNOWN instead — a real gap in this fixture, found
       // while first writing it, not a finding about the implementation.
       writeState(stateDir, "7030", freshState(7030));
-      const r = await runDrives([], { stateDir });
+      const r = await runDrives([], { stateDir, cwd: repo });
       expect(r.exitCode).toBe(0);
       expect(r.stdout).toContain("stale");
       expect(r.stdout).toContain("MERGE_HEAD");
@@ -1771,10 +1771,10 @@ describe("gatherWorktreeLeftovers", () => {
     }
   });
 
-  it("a nonexistent worktree path degrades to null rather than reading the caller's own cwd", async () => {
+  it("a nonexistent worktree path is missing rather than reading the caller's own cwd", async () => {
     expect(
       await gatherWorktreeLeftovers("/definitely/does/not/exist/anywhere"),
-    ).toBeNull();
+    ).toBe("missing");
   });
 
   function withBareOrigin(repo: { dir: string; home: string }): {
@@ -1861,7 +1861,9 @@ describe("gatherWorktreeLeftovers", () => {
         `${"a".repeat(40)}\n`,
       );
       const leftovers = await gatherWorktreeLeftovers(repo.dir);
-      expect(leftovers?.unconcludedOp).toBe("MERGE_HEAD");
+      expect(leftovers !== "missing" && leftovers?.unconcludedOp).toBe(
+        "MERGE_HEAD",
+      );
     } finally {
       origin.cleanup();
       repo.cleanup();

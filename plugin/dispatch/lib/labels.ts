@@ -83,7 +83,17 @@ export interface LabelSpec {
 }
 
 const STATE_COLOR = "c5def5";
+/** Green, so a pull request ready for a person to merge stands out from one still driven. */
+const CONVERGED_COLOR = "0e8a16";
+/** Red, so a pull request waiting on a person stands out from one still driven. */
+const PARKED_COLOR = "d93f0b";
 const COMMAND_COLOR = "fbca04";
+
+/** The states that have a color of their own; the rest take `STATE_COLOR`. */
+const STATE_COLORS: Partial<Record<StateName, string>> = {
+  converged: CONVERGED_COLOR,
+  parked: PARKED_COLOR,
+};
 
 /** The full name of one label under the repository's prefix. */
 function labelName(config: LabelConfig, name: StateName | CommandName): string {
@@ -95,7 +105,7 @@ export function labelSet(config: LabelConfig): LabelSpec[] {
   return [
     ...PROJECTED_STATES.map((s) => ({
       name: labelName(config, s),
-      color: STATE_COLOR,
+      color: STATE_COLORS[s] ?? STATE_COLOR,
       description: MEANINGS[s],
     })),
     ...COMMANDS.map((c) => ({

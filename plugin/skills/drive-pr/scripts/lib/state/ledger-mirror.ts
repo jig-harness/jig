@@ -356,12 +356,15 @@ export async function seedLedgerCommand(
  * The clone key alone is the identity: the label only says where it lives.
  */
 export function cloneId(stateDir: string): string {
+  return `${basename(stateDir)}@${hostLabel()}`;
+}
+
+/** This host's label in a ledger's clone (`cloneId`). */
+export function hostLabel(): string {
   const host = thisHost();
-  const label =
-    host.hostId !== ""
-      ? host.hostId.slice(0, 16)
-      : createHash("sha256").update(hostname()).digest("hex").slice(0, 16);
-  return `${basename(stateDir)}@${label}`;
+  return host.hostId !== ""
+    ? host.hostId.slice(0, 16)
+    : createHash("sha256").update(hostname()).digest("hex").slice(0, 16);
 }
 
 /**
