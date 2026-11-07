@@ -62,6 +62,7 @@ const MACHINE: MachineConfig = {
   dashboardListen: null,
   sharedRecords: "forge",
   send: true,
+  changeProbe: true,
 };
 
 const NOTHING_STORED: RepoStored = {

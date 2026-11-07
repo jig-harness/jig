@@ -11,7 +11,9 @@
  *
  * - **A pending flag.** Each request is a file in the wake's `pending/`
  *   folder, created under a name no other request takes, so requests never
- *   overwrite each other.
+ *   overwrite each other. The file holds who asked and why (`send`, or the
+ *   change probe's `probe: …` line), and the waiter's note for the run that
+ *   takes it names them.
  * - **One waiter.** A detached process waits and runs the target; it holds
  *   the `waiter` file, published by a link that fails while one exists, and
  *   a second waiter exits at once. A requester starts a waiter only when no
@@ -206,16 +208,34 @@ export interface Requested {
   when: "now" | "soon";
 }
 
-/** Record a request in the wake at `dir`, and say whether a waiter must be started for it. */
+/** The reasons the requests `names` give, in their order; one that is gone or names none is left out. */
+export function requestReasons(
+  dir: string,
+  names: readonly string[],
+): string[] {
+  return names.flatMap((name) => {
+    const text = readOptional(join(pendingDir(dir), name))?.trim() ?? "";
+    return text === "" ? [] : [text.split("\n", 1)[0] as string];
+  });
+}
+
+/**
+ * Record a request in the wake at `dir`, with who asked and why (`reason`,
+ * one line), and say whether a waiter must be started for it.
+ */
 export function requestWake(
   dir: string,
   clock: Pick<Clock, "now"> = systemClock,
+  reason = "",
 ): Requested {
   const pending = pendingDir(dir);
   mkdirSync(pending, { recursive: true, mode: 0o700 });
   const now = clock.now();
   const name = `${String(now).padStart(15, "0")}-${process.pid}-${randomBytes(4).toString("hex")}`;
-  writeFileSync(join(pending, name), "", { flag: "wx", mode: 0o600 });
+  writeFileSync(join(pending, name), reason.replace(/[\r\n]+/g, " "), {
+    flag: "wx",
+    mode: 0o600,
+  });
   const waiting = liveHolder(dir) !== null;
   const last = lastStart(dir);
   const spaced = last === null || now - last >= WAKE_SPACING_MS;
@@ -295,10 +315,17 @@ async function turn(
     return null;
   }
   count.runs++;
-  deps.note?.(`the run exited ${ran.value}, taking ${taken.length} requests`);
+  deps.note?.(`the run exited ${ran.value}, ${taking(dir, taken)}`);
   for (const name of taken)
     rmSync(join(pendingDir(dir), name), { force: true });
   return null;
+}
+
+/** The requests a run took, in words, with who asked and why where they say. */
+function taking(dir: string, taken: readonly string[]): string {
+  const reasons = requestReasons(dir, taken);
+  const why = reasons.length === 0 ? "" : ` (${reasons.join("; ")})`;
+  return `taking ${taken.length} requests${why}`;
 }
 
 /**
