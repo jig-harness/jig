@@ -35,6 +35,7 @@ import {
   loginAccount,
   loginEnv,
   trackedTree,
+  trackedLinkedTree,
 } from "./drive-pr-pickup-fixtures.ts";
 
 useDrivePrSuite();
@@ -499,7 +500,7 @@ describe("drive.ts --take-over", () => {
   }, 120_000);
 
   it("refuses a dead holder on this machine while its tree holds leftovers", async () => {
-    const tree = trackedTree("takeover-leftovers");
+    const tree = trackedLinkedTree("takeover-leftovers");
     writeFileSync(join(tree, "stranded.txt"), "unfinished fix\n");
     const { dir, stateDir } = writeFixture(
       { prState: "MERGED" },

@@ -592,7 +592,7 @@ outlives the session that spawned it, so its console is not where you look:
   normal exit, including both quota-park exits and the HITL-park exit, so a
   parked drive that exited cleanly leaves no lock behind — see
   `listStateOnlyRows` in `drives.ts`) — and
-  classifies each one — `HEALTHY`, `WEDGED`, `DEAD_WITH_LEFTOVERS`,
+  classifies each one — `HEALTHY`, `WEDGED`, `DEAD`, `DEAD_WITH_LEFTOVERS`,
   `QUOTA_PARKED`, `NEEDS_HUMAN` or `UNKNOWN` (never a false `HEALTHY` — see
   `lib/doctor.ts`'s own precedence-order header) — with a recovery command
   where one exists; combines with `--json` (a genuinely different payload
@@ -810,7 +810,10 @@ It reads the holder's `drives.ts` `--doctor` verdict and is admitted only
 against a holder that is `WEDGED`, or whose process is confirmed gone with nothing left
 in its tree (no uncommitted changes, unpushed commits or unconcluded git
 operation; on this machine the takeover refuses, naming them, until they are
-pushed or discarded). Against any other holder it refuses as exit `11` does,
+pushed or discarded). A confirmed-dead holder whose tree is missing is admitted: the checkout
+is unavailable and local work may need recovery; the drive resumes from the
+remote head. An existing unregistered or unreadable tree still refuses.
+Against any other holder it refuses as exit `11` does,
 naming the verdict. A wedged holder is stopped through `drives.ts` `--stop`, with
 the identity check that command performs, bound by `--expect-started` to the
 acquisition its doctor row named. Once it holds the locks, the
