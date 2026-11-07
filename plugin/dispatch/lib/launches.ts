@@ -61,6 +61,8 @@ import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/t
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
+import { cancelledBeforeExecution } from "./cancellation.ts";
+export { cancelledBeforeExecution } from "./cancellation.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction = "rearm" | "takeover" | "pickup" | "followup";
@@ -744,16 +746,6 @@ export async function readLaunches(
   return { records, unreadable };
 }
 
-/** Cancellation is proof only without a wrapper identity, exit or uncertain runtime receipt. */
-export function cancelledBeforeExecution(r: ReadRecord): boolean {
-  return (
-    r.record.cancelledAt !== undefined &&
-    r.state.kind === "died" &&
-    r.state.process.pid === 0 &&
-    r.record.attempts.every((a) => a.outcome === "failed")
-  );
-}
-
 /** The states that hold their stage and their account's slot. */
 export function holds(state: LaunchState): boolean {
   return (
@@ -890,6 +882,10 @@ export function pruneLaunches(
   for (const id of latestPickups(records)) kept.add(id);
   for (const id of latestRedrives(records)) kept.add(id);
   for (const id of latestArms(records)) kept.add(id);
+  const settled = settledEnds(root);
+  for (const r of records)
+    if (cancelledBeforeExecution(r) && !settled.has(r.record.id))
+      kept.add(r.record.id);
   const removed = records
     .filter(({ record, state }) => {
       const at = kept.has(record.id) ? null : finishedAt(record, state);

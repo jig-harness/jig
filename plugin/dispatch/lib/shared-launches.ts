@@ -541,6 +541,7 @@ export async function settleOwnClaims(
   settleEnds(
     settledRecords(claims, ctx.host, records, written, nowIso),
     nowIso,
+    ctx.root,
   );
   return failures;
 }

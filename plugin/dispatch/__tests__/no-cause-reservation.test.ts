@@ -19,6 +19,7 @@ import { launchClaimer, settleOwnClaims } from "../lib/shared-launches.ts";
 import { noCauseFacts, settleNoCauseStops } from "../lib/no-cause-stops.ts";
 import {
   readLaunches,
+  settledEnds,
   type LaunchRecord,
   type ReadRecord,
 } from "../lib/launches.ts";
@@ -490,6 +491,9 @@ for (const legacy of [false, true]) {
           (await readLaunches(root)).records,
           new Map(),
           new Date().toISOString(),
+        );
+        expect([...settledEnds(root)].sort()).toEqual(
+          local.map((r) => r.record.id).sort(),
         );
         expect(
           history
