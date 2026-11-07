@@ -155,6 +155,15 @@ const DRIVE_STATE: RecordKind[] = [
     `${DRIVE}lib/ledger-stop.ts`,
     "driver_records",
   ),
+  {
+    ...driveFile(
+      "drive-observation",
+      `${DRIVE}lib/driver-observation.ts`,
+      "drive-observation-<PR>-<acquisition hash>.json",
+      "driver-observation",
+    ),
+    version: 1,
+  },
   driveTable("drive-state-import", `${STATE}import.ts`, "imports"),
   driveTable("drive-counter", `${STATE}db.ts`, "counters"),
   driveTable(
@@ -286,6 +295,13 @@ const DISPATCHER: RecordKind[] = [
   ),
   plain(
     "machine",
+    "dispatch-probe",
+    "dispatch/lib/change-probe.ts",
+    `${DISPATCH_DIR}probe/state.json`,
+    1,
+  ),
+  plain(
+    "machine",
     "dispatch-outcome-log",
     "dispatch/lib/log-export.ts",
     `${DISPATCH_DIR}log-<year>-<month>.jsonl`,
@@ -341,7 +357,7 @@ const MACHINE: RecordKind[] = [
     "machine",
     "scheduled-job",
     "runtime/scheduler.ts",
-    "a systemd user timer, a launchd job or a crontab line per component, and its launcher copy under ~/.local/state/jig/<component>/launcher/",
+    "a systemd user timer, a launchd job or a crontab line per component job, and its launcher copy under ~/.local/state/jig/<component>/launcher/ (the dispatcher's change probe: ~/.local/state/jig/dispatch/probe/launcher/)",
     0,
   ),
   plain(

@@ -387,6 +387,95 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.157.0] - 2026-11-07
+
+### Added
+
+- The dispatcher's change probe: `jig install dispatch` now also writes a
+  timer that runs `jig dispatch probe --apply` every minute. It makes one
+  search on the forge over every repository the machine file dispatches
+  (on GitHub one GraphQL call for a single page of results, 1 point of the 5,000 an hour; further pages add calls and points) and wakes the
+  tick of each repository where a pull request was reviewed, commented on,
+  labelled, pushed to, merged or closed, or its checks changed, since the
+  last probe, so such a change starts that repository's tick within about a
+  minute rather than at the next sweep. A minute with no change starts no
+  tick, and a probe that cannot read the forge wakes nothing and says why.
+  `jig dispatch probe` without `--apply` says what it would wake and writes
+  nothing. Turn it off with `change_probe: false` in
+  `~/.jig/dispatch.yaml`. `jig upgrade` keeps and refreshes the probe's
+  timer; on a machine whose dispatcher timer is already installed, run
+  `jig install dispatch --yes` once to add it.
+- Each wake of a repository's tick now records who asked and why
+  (`send: …` or `probe: …`), and the wake's `last-run.log` names them
+  beside the tick it ran.
+- `/jig:drive-pr` stops with its own exit, `21` (`CI_REPAIR_SPENT`), when the
+  review converged but CI still fails after its CI-repair passes, so a caller
+  can tell that CI repair from a crash (`1`). A harness that reads exit `1`
+  as "CI still red" reads `21` for a spent budget now; repair disabled
+  (`DRIVE_PR_CI_REPAIR_ROUNDS=0`) still stops `1`.
+- `jig dispatch` re-drives a stall (exit `14`) and a spent CI-repair budget
+  (exit `21`) once per head commit, on any account, and tells a person when
+  the same head stops the same way again. A stall that left work in its tree,
+  or whose stop never measured it, is re-driven only in that tree; with no open workspace holding it, a person
+  is told. The re-armed drive's first pass is told the stop and, after a
+  stall, what its passes recorded last, and it takes the edits the stall left
+  as its own to finish, only when it is armed in the tree that stalled.
+- A stop the dispatcher hands a person says so when the pull request also
+  conflicts with its base.
+
+### Changed
+
+- The `jig:converged` label is created green and `jig:parked` red, so a pull request ready for a person to merge, or stopped on something only a person settles, stands out from one the dispatcher still drives. A repository that already has these labels keeps their colors until someone changes them (`gh label edit jig:converged --color 0e8a16`, `gh label edit jig:parked --color d93f0b`).
+
+### Fixed
+
+- A drive round that inherits a base merge an earlier pass left open, with its
+  conflicts resolved but not committed, can now finish instead of stalling:
+  `round-plan.ts` plans an open merge against the merge base its commit will
+  have, so the pass can validate the merge before concluding it, and
+  `/jig:drive-pr` tells the pass to finish what the tree holds (validate,
+  commit, then sync the base and push) before the round's own work. A merge
+  with a conflict still unresolved, and any other unfinished git operation,
+  is still refused.
+- The [ratchet](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md)
+  measures a working tree in the middle of a merge against the merge base the
+  merge commit will have, so a finding the target branch gained and the change
+  merged in no longer counts as the change's.
+- A stalled drive (exit `14`) tells its extra round what the tree holds, and
+  its stop prints what that round's pass recorded: the refusal that stops the
+  round now, not an earlier pass's. When that pass recorded nothing, the stop
+  says the lines it prints predate it. A pass that ends a round without
+  pushing names the step that refused and what would unblock it.
+
+## [0.156.4] - 2026-11-07
+
+### Fixed
+
+- The drive state reaper reports obsolete file-lock quarantine entries with
+  their count and bytes, independently of the clone's import retention. It
+  keeps them even after 24 hours without a write: neither an unchanged
+  snapshot nor the database mutex excludes suspended legacy writers.
+- The dispatcher backs off a Claude account when a headless follow-up exits
+  before starting a session, and releases that attempt's marker so another
+  admitted account can retry automatically. Its outcome distinguishes a
+  recognized quota notice from an unknown startup failure; a session with a
+  transcript still counts as a pass that died.
+
+## [0.156.3] - 2026-11-07
+
+### Fixed
+
+- The dispatcher now reports silent drives through notifications, `jig ask --waiting` and a parked state label. With re-arms enabled, it recovers a confirmed-dead local driver from a released witness or persisted pass observations before planning a retry within the no-cause budget, including hand-armed drives killed abruptly. Pending launches, surviving work, unreadable liveness and legacy acquisitions without termination evidence still require inspection.
+- Doctor and stop recovery use a temporary session and release their own PR and tree leases, so a diagnostic cannot leave the calling session blocking the replacement driver.
+- Persisted pass observations recognize Windows locks without creation timestamps, preserve uncertainty across timezone changes, and retire confirmed-dead process history during sampling.
+
+## [0.156.2] - 2026-11-07
+
+### Fixed
+
+- `jig dispatch` no longer leaves a pending launch record that no tick will launch again looking like an ordinary pending launch. A record whose two launches both went unanswered is now notified to a person (cause `needs-person`, once, then on `dispatch.renotify_after`) and shown on the dashboard as needing a person, with why and the `jig dispatch clear <record>` that releases its slot.
+- A follow-up whose marker was posted but whose launch never ran, because the tick stopped before the runtime answered, is launched again at the next tick under the same launch record, token and marker, once a fresh read finds its marker still the earliest trusted one naming it, no hold label and no session joined to the pull request. When that read finds otherwise, the record is notified as needing a person instead, and no second follow-up starts for the pull request while it holds it. Such a record could previously only be found by reading the launch records, and `jig dispatch clear` refused it.
+
 ## [0.156.1] - 2026-11-07
 
 ### Fixed
@@ -5621,7 +5710,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.157.0...HEAD
+[0.157.0]: https://github.com/jig-harness/jig/compare/v0.156.4...v0.157.0
+[0.156.4]: https://github.com/jig-harness/jig/compare/v0.156.3...v0.156.4
+[0.156.3]: https://github.com/jig-harness/jig/compare/v0.156.2...v0.156.3
+[0.156.2]: https://github.com/jig-harness/jig/compare/v0.156.1...v0.156.2
 [0.156.1]: https://github.com/jig-harness/jig/compare/v0.156.0...v0.156.1
 [0.156.0]: https://github.com/jig-harness/jig/compare/v0.155.0...v0.156.0
 [0.155.0]: https://github.com/jig-harness/jig/compare/v0.154.0...v0.155.0

@@ -112,6 +112,7 @@ export type SessionKind =
   | "working"
   | "takeover"
   | "pending"
+  | "stuck"
   | "waitWall"
   | "waitOther"
   | "drift"
@@ -130,7 +131,7 @@ function wallHasPassed(s: LineSession, nowMs: number): boolean {
 /** Which kind of fact a session's record states, first match in this order. */
 export function sessionKind(s: LineSession, nowMs: number): SessionKind {
   if (s.launch === "unknown") return "unknown";
-  if (s.launch === "pending") return "pending";
+  if (s.launch === "pending") return s.stuck == null ? "pending" : "stuck";
   const state = s.agent?.state;
   if (state === "waiting" || state === "blocked" || s.waiting !== null)
     return wallHasPassed(s, nowMs) ? "waitWall" : "waitOther";
@@ -144,6 +145,7 @@ export function isStuck(kind: SessionKind): boolean {
     kind === "waitWall" ||
     kind === "waitOther" ||
     kind === "drift" ||
+    kind === "stuck" ||
     kind === "unknown"
   );
 }
@@ -257,6 +259,8 @@ function factOf(
       return created >= tickMs
         ? "pending, launched this tick, not claimed yet"
         : "pending, not claimed yet";
+    case "stuck":
+      return `launch record stuck pending, ${since}, needs a person`;
     case "waitWall":
     case "waitOther":
       return waitFact(s, clockNow);
@@ -283,6 +287,8 @@ function roleFor(s: LineSession, kind: SessionKind): Role {
       return roleOf("launch record", "unknown");
     case "pending":
       return roleOf("launch record", "pending");
+    case "stuck":
+      return roleOf("launch record", "stuck");
     case "waitWall":
     case "waitOther":
       return roleOf("agent state", s.agent?.state ?? "waiting");
@@ -308,6 +314,15 @@ function specificEvidence(
           k: "to release",
           v: "a person runs jig dispatch clear",
           copy: "jig dispatch clear",
+        },
+      ];
+    case "stuck":
+      return [
+        ...(s.stuck == null ? [] : [{ k: "why", v: s.stuck }]),
+        {
+          k: "to release",
+          v: "a person checks for a session it started, then runs jig dispatch clear",
+          copy: `jig dispatch clear ${s.record}`,
         },
       ];
     case "waitWall":

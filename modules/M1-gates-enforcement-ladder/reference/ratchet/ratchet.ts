@@ -23,7 +23,8 @@
 //   --config  JSON wiring: which commands produce findings and which
 //             configuration files to compare (see README.md)
 //   --base    branch to compare against (default: RATCHET_BASE, else
-//             origin/main); the merge base with HEAD is measured
+//             origin/main); the merge base with HEAD is measured, and during
+//             a merge the base the merge commit will have
 //   --report  print the current counts only; no comparison, always exits 0
 // Exit: 0 pass (or skipped locally without a base, and said so), 1 a count
 // grew or a rule was loosened, 2 could not check: a usage or configuration
@@ -905,6 +906,15 @@ function loadConfigText(text: string): RatchetConfig | undefined {
     : undefined;
 }
 
+// The merge base the working tree is measured against: during a merge, the one
+// the merge commit will have (`git merge-base <base> HEAD MERGE_HEAD`), since
+// the tree already holds the incoming side, whose findings are not the change's.
+function baseOf(root: string, baseRef: string): string | undefined {
+  const merge = git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], root);
+  const heads = merge === undefined ? ["HEAD"] : ["HEAD", "MERGE_HEAD"];
+  return git(["merge-base", baseRef, ...heads], root);
+}
+
 function main(args: string[]): number {
   const opts = options(args);
   const top = git(["rev-parse", "--show-toplevel"], process.cwd());
@@ -919,7 +929,7 @@ function main(args: string[]): number {
     printReport(head);
     return 0;
   }
-  const mergeBase = git(["merge-base", "HEAD", opts.baseRef], root);
+  const mergeBase = baseOf(root, opts.baseRef);
   if (!mergeBase) return missingBase(opts.baseRef);
 
   const base = measureBase(root, mergeBase, config);

@@ -1244,6 +1244,7 @@ dashboard:
 records:
   shared: forge                     # where another host reads this host's launches
 send: true                          # false refuses every jig send from this machine
+change_probe: true                  # false turns off the minute-by-minute change probe
 ```
 
 | Setting | Default / meaning |
@@ -1258,19 +1259,22 @@ send: true                          # false refuses every jig send from this mac
 | `accounts[].identity` | Required; the email address or account id the drive's identity resolver reads from that directory. A launch whose directory resolves to anything else, or to nothing, starts nothing and is reported |
 | `accounts[].max_per_account` | 2; the sessions the dispatcher may hold on the account at once (its slots). Sessions a person starts on the same account are not counted, so lower it when you share the account |
 | `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
-| `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on its usage limit (exit `16`) when the drive recorded no reset |
+| `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on its usage limit (exit `16`) when the drive recorded no reset, and after an unsuccessful Claude Code follow-up startup that writes no transcript, result or question within its first minute. The startup backoff applies whether or not its output contains a recognized quota notice |
 | `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
 | `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's or an item's workspace. `opens_per_tick` times this plus eight times `runtime_timeout` is one tick's budget, and the dispatch configuration is refused when that budget exceeds 2,147,483,647 milliseconds (about 24.86 days, the longest a timer holds; each duration alone may be at most 24 days). The installed tick deadline covers that budget, with a six-hour minimum |
 | `opens_per_tick` | `4`; positive whole number of workspace opens allowed in one tick, limited further by the accounts' free slots. One open is kept for the notices workspace when the machine file enables `notify` for any repository; the budget must then be at least `2`, so launches can still proceed. A launch that needs another open waits for the next tick, with its receipt naming the budget or account constraint. A value whose workspace opens and runtime calls exceed the timer range is refused, naming `opens_per_tick` |
 | `receipts_days` | 30; days receipts and ended launch records are kept. The outcome log is never removed |
 | `records.shared` | `forge`, the only value; where this host publishes the records another host dispatching the same repository reads: a claim per drive launch on the pull request it concerns (its launch record, its host and, once it ended, its end), and the follow-up marker with the follow-up's answer. A value this version does not know is refused. The claims coordinate launches and never authorize anything a person does; the forge cannot create a comment only if none exists, so two hosts can each read themselves the holder of one launch, and the stage's own refusal (the drive's lock and ledger claim, `do-item`'s claim) is the backstop |
 | `send` | `true`; whether [`jig send`](README.md#telling-a-station-what-to-do) may write a request from this machine. `false` refuses every send, `--dry-run` included, so a machine whose sessions should only ask the line can say so once. Read by `jig send` alone; the dispatcher ignores it |
+| `change_probe` | `true`; whether the change probe runs: every minute, `jig dispatch probe --apply` (its own timer, which `jig install dispatch` writes beside the tick's) reads the forge once for the pull requests of every repository listed here with a stage, and wakes the tick of each repository where one was updated or its checks changed since the last probe. `false` makes a probe read and wake nothing, and the next `jig install dispatch --yes` removes its timer. Read by `jig dispatch probe` and the dispatcher's install |
 | `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
 per run), `walls/` (each account's usage-limit wall, which lifts at its
-latest recorded reset), the tick lock, the rotation cursor (`tick-index`)
+latest recorded reset), the tick lock, the rotation cursor (`tick-index`),
+`wake/` (each repository's pending wakes and their log), `probe/` (the
+change probe's state, `state.json`, and its timer's launcher copy)
 and the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
 removes. Everything else is one
 SQLite database, `state.sqlite`: the launch records (one per launch,

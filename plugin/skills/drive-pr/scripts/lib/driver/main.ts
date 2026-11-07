@@ -35,6 +35,7 @@ import type { ClaimDiag } from "./../claim.ts";
 import { type DriveLock, acquire, prLockName, release } from "./locks.ts";
 import { markDriverRecordReleased } from "./../ledger-stop.ts";
 
+import { startDriverObservation } from "../driver-observation.ts";
 import { installDriverLifecycle, createDriverRegistry } from "./lifecycle.ts";
 
 import { nextDriverGeneration } from "./../state/mailbox-stop.ts";
@@ -68,6 +69,7 @@ import {
 } from "./takeover.ts";
 
 import { pickUpDrive } from "./takeover-complete.ts";
+import { stopPickup } from "./stop-pickup.ts";
 
 import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
@@ -374,14 +376,8 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   // guarantee to a driver-by-hand, which takes no lock at all.
   process.env.DRIVE_PR_SESSION = String(process.pid);
 
-  // The ACQUISITION token behind that pid, exported beside it so a pass can
-  // bind "this lock claim" to "the driver that spawned me" rather than to a
-  // number the OS reuses. A pid alone cannot: a dead driver's still-fresh
-  // claim whose pid the OS then handed to THIS driver reads live (same-host,
-  // alive) and self (pid matches), and the pass would wave through a lock its
-  // parent never took. This file already treats
-  // `diag.started` as the instance token when correlating a worktree lock to
-  // a PR lock; `drives.ts` compares the same value against this variable.
+  // The acquisition token distinguishes this driver's claim from a reused
+  // pid. Both locks and drives.ts compare the same diag.started value.
   process.env.DRIVE_PR_SESSION_STARTED = diag.started;
 
   // Once both the tree and the PR are ours: the tree is put on the PR's head
@@ -398,7 +394,14 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
         `drive.ts: PR #${pr} is not open; its restart count still stands`,
       );
   });
-  createDriverRegistry(held);
+  const registry = createDriverRegistry(held);
+  await startDriverObservation(
+    stateDir,
+    pr,
+    diag.started,
+    registry,
+    prLock.nonce as string,
+  );
   driverRuntime.driverLogRotates = true;
 
   // The TREE this drive drives, so a pass measures local HEAD there rather
@@ -490,12 +493,18 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   // every later exit attempts its stopped ledger under the same ownership.
   await using settlement = ledgerSettlement(pr, held, dryRun);
   await publishStartup(pr);
-  const firstPassNotice = await pickUpDrive(pr, plan, pickup, {
-    agent,
-    botsOnly,
-    dryRun,
-    windowReopened,
-  });
+  const afterStop = await stopPickup(pr, pickup);
+  const firstPassNotice = [
+    await pickUpDrive(pr, plan, pickup, {
+      agent,
+      botsOnly,
+      dryRun,
+      windowReopened,
+    }),
+    afterStop.notice,
+  ]
+    .filter((part) => part !== "")
+    .join("\n\n");
 
   // A dry run inspects; it does not work a round. Counting it would inflate
   // the round total the bound is measured against.
@@ -537,6 +546,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
     markReadyPolicy,
     deadlineRetryBudget,
     firstPassNotice,
+    inheritsEdits: afterStop.inheritsEdits,
   });
   const exit = await settlement.done(roundsExit);
   return exit;

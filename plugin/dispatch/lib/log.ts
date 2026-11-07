@@ -295,6 +295,7 @@ const DRIVE_EXITS: ReadonlyMap<number, [OutcomeClass, string]> = new Map([
   [DRIVE_EXIT.PR_CONFLICTING, ["gates failed", "conflicting with its base"]],
   [DRIVE_EXIT.WORKTREE_UNCLEAN, ["gates failed", "worktree unclean"]],
   [DRIVE_EXIT.PASS_DEADLINE, ["gates failed", "pass deadline"]],
+  [DRIVE_EXIT.CI_REPAIR_SPENT, ["gates failed", "CI-repair passes spent"]],
 ]);
 
 /** What the classifier needs beyond the record: whether a takeover replaced it, and a merged-or-closed drive's pull request state. */
@@ -358,6 +359,20 @@ function sessionClass(
   if (r.result === "failed")
     return { class: "gates failed", reason: "result failed" };
   const s = r.state;
+  if (s.kind === "ended" && s.exit.startup !== undefined)
+    return {
+      class: s.exit.startup === "quota" ? "quota wall" : "refused",
+      reason: `session could not start: ${s.exit.startup === "quota" ? "vendor usage-limit notice" : "quick unsuccessful exit without a transcript"}; exit ${s.exit.code}`,
+    };
+  return sessionEndClass(r, endedAt);
+}
+
+/** Classify a session that supplied neither a result nor a startup failure. */
+function sessionEndClass(
+  r: ReadRecord,
+  endedAt: string,
+): { class: OutcomeClass; reason: string } {
+  const s = r.state;
   const how =
     s.kind === "ended"
       ? s.agent === undefined
@@ -416,7 +431,11 @@ export function endedRow(
   const redriven =
     record.redrive?.conflictStop === true
       ? "a drive that stopped on a conflict"
-      : "a stale converged pull request";
+      : record.redrive?.mechanicalStop === "stall"
+        ? "a drive that stalled"
+        : record.redrive?.mechanicalStop === "ci-repair"
+          ? "a drive whose CI-repair passes were spent"
+          : "a stale converged pull request";
   const reason =
     record.redrive == null
       ? placed.reason

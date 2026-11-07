@@ -27,9 +27,16 @@
  * answer onto the marker (`shared-launches.ts`), where another host reads
  * it. A stale claim the plan names is released first (`release-claims.ts`),
  * and nothing is launched for it in the same tick.
+ *
+ * A record left pending with its marker posted, by a tick that stopped
+ * before the runtime's answer or whose answer was lost, is launched again
+ * under the same record, token and marker once the fresh read proves that
+ * safe (`retryMarked`); one it disproves is stuck, for a person
+ * (`stuck-launches.ts`).
  */
 import type {
   ClaimAnswer,
+  SharedClaim,
   SharedTarget,
 } from "../../../shared/records/shared.ts";
 import { localWriter } from "../../../shared/records/writer.ts";
@@ -42,9 +49,11 @@ import {
   type LaunchRecord,
   newRecordId,
   newToken,
+  type ReadRecord,
   recordExit,
   writeRecord,
 } from "../launches.ts";
+import { retryable, stuckAction } from "../stuck-launches.ts";
 import {
   type Dispatched,
   dispatched,
@@ -60,6 +69,7 @@ import type {
   RepoTarget,
 } from "../types.ts";
 import {
+  accountBlocked,
   admitAccount,
   type ApplyState,
   dropRecord,
@@ -69,6 +79,7 @@ import {
   openedFor,
   openWithinBudget,
   outOfTime,
+  replay,
   rotated,
   waits,
 } from "./launch.ts";
@@ -353,7 +364,7 @@ async function claimAndLaunch(
   if (lost !== null) return refused(action, lost, name);
   const after = outOfTime(state);
   if (after === null) return headless(await launchHeld(state, record), record);
-  // Past the deadline nothing launches, and a marked record with no attempt has no replay path: give the claim back.
+  // Past the deadline nothing launches: the claim goes back rather than wait on a later tick's replay.
   const gone = await relinquish(
     state,
     repo,
@@ -415,6 +426,140 @@ async function dropUnmarked(
   return unsettled;
 }
 
+/** Why a marked record's replay waits (`wait`), or can never be proven safe (`never`); `null` when it may go ahead. */
+type ReplaySafety = { wait: string } | { never: string } | null;
+
+type Marked = LaunchRecord & { pr: number; marker: number };
+
+/**
+ * The fresh read a marked record's replay needs: no hold on the pull
+ * request, the record's own marker still the earliest trusted one, naming
+ * it and carrying no end, and no session joined to the pull request. A read
+ * that fails waits; one that finds otherwise can never prove the replay
+ * safe.
+ */
+async function replaySafety(
+  repo: RepoTarget,
+  ctx: FollowupContext,
+  record: Marked,
+): Promise<ReplaySafety> {
+  const hold = await heldNow(ctx, record.pr);
+  if (hold !== null) return { wait: hold };
+  const claims = await ctx.shared.records.list(
+    targetOf(repo, record.pr),
+    "followup",
+  );
+  if (!claims.ok) return { wait: claims.failure.reason };
+  const lost = markerLost(record, claims.value);
+  if (lost !== null) return { never: lost };
+  return sessionsFree(ctx, record.pr);
+}
+
+/** Why the record's own marker no longer holds its follow-up for it; `null` while it does. */
+function markerLost(
+  record: Marked,
+  claims: readonly SharedClaim[],
+): string | null {
+  const [first] = claims.filter((c) => c.trusted);
+  const own = `its marker (comment ${record.marker})`;
+  if (first === undefined) return `${own} is gone from the pull request`;
+  if (first.id !== record.marker)
+    return `${own} is no longer the earliest trusted one (comment ${first.id} by ${first.login} is)`;
+  if (!first.says.ok || first.says.value.record !== record.id)
+    return `${own} no longer names this record`;
+  return first.says.value.end === null ? null : `${own} already carries an end`;
+}
+
+/** Whether no session is joined to the pull request, read afresh. */
+async function sessionsFree(
+  ctx: FollowupContext,
+  pr: number,
+): Promise<ReplaySafety> {
+  let sessions: SessionsReport;
+  try {
+    sessions = await ctx.sessions();
+  } catch (error) {
+    return { wait: `the runtime cannot be read again: ${failureText(error)}` };
+  }
+  const held = holding(sessions, (w) => w.prs.includes(pr));
+  if (held.kind === "unknown") return { wait: held.reason };
+  return held.kind === "running"
+    ? {
+        never: `a session is joined to its pull request: ${held.workspaces.map((w) => w.path).join(", ")}`,
+      }
+    : null;
+}
+
+/** Whether a read record is a pending follow-up of `repo` with its marker posted. */
+function isMarkedPending(
+  r: ReadRecord,
+  repo: RepoTarget,
+): r is ReadRecord & { record: Marked } {
+  return (
+    r.record.action === "followup" &&
+    r.record.repo === repo.slug &&
+    r.record.pr !== null &&
+    r.record.marker !== null &&
+    r.state.kind === "pending"
+  );
+}
+
+/**
+ * Replay the launch of each pending follow-up of `repo` whose marker is
+ * posted, under its own record, token and marker, once `replaySafety` and
+ * the account allow it; the wrapper's claim on the record keeps a launch
+ * that did start meanwhile from running twice. One the fresh read can never
+ * prove safe is marked so (`noReplay`) and notified in this tick. Returns
+ * the pull requests such a record holds, by the record, which no new
+ * follow-up starts for.
+ */
+async function retryMarked(
+  state: ApplyState,
+  repo: RepoTarget,
+  report: RepoReport,
+  ctx: FollowupContext,
+): Promise<Map<number, string>> {
+  const held = new Map<number, string>();
+  const marked = state.records.filter((r) => isMarkedPending(r, repo));
+  for (const r of marked) {
+    const { record } = r;
+    held.set(record.pr, record.id);
+    if (!retryable(record)) continue;
+    const action = { target: `PR #${record.pr}`, stage: "followup" } as Action;
+    if (ctx.section.followupCommand === null) {
+      report.launches.push({
+        ...waits(
+          action,
+          `no dispatch.followup_command: the pending launch of ${record.id} is not replayed while follow-ups are not configured`,
+          record.account,
+        ),
+        record: record.id,
+      });
+      continue;
+    }
+    const safety = await replaySafety(repo, ctx, record);
+    if (safety !== null && "never" in safety) {
+      record.noReplay = safety.never;
+      writeRecord(record, state.root);
+      report.actions.push(stuckAction(repo.slug, r, safety.never));
+      report.launches.push({
+        ...refused(
+          action,
+          `the pending launch of ${record.id} is never replayed: ${safety.never}`,
+          record.account,
+        ),
+        record: record.id,
+      });
+      continue;
+    }
+    const blocked = safety?.wait ?? (await accountBlocked(state, record));
+    report.launches.push(
+      headless(await replay(state, record, action, blocked), record),
+    );
+  }
+  return held;
+}
+
 /** `--apply` for one repository's follow-ups. */
 export async function applyFollowups(
   state: ApplyState,
@@ -427,15 +572,21 @@ export async function applyFollowups(
     (a) => a.stage === "followup" && !isRelease(a),
   );
   const unsettled = await dropUnmarked(state, repo, ctx);
+  const held = await retryMarked(state, repo, report, ctx);
   for (const action of rotated(state, wanted, "targets")) {
-    const held = unsettled.has(Number(action.target.replace(/\D/g, "")));
-    report.launches.push(
-      held
-        ? waits(
-            action,
-            "an unmarked record's marker could not be read; it is reconciled first",
-          )
-        : await launchOne(state, repo, action, ctx),
-    );
+    const pr = Number(action.target.replace(/\D/g, ""));
+    const holder = held.get(pr);
+    if (unsettled.has(pr))
+      report.launches.push(
+        waits(
+          action,
+          "an unmarked record's marker could not be read; it is reconciled first",
+        ),
+      );
+    else if (holder !== undefined)
+      report.launches.push(
+        waits(action, `launch record ${holder} still holds its follow-up`),
+      );
+    else report.launches.push(await launchOne(state, repo, action, ctx));
   }
 }
