@@ -331,6 +331,7 @@ describe("Linear adapter: issue pickup", () => {
     updatedAt: "2026-10-01T00:00:00.000Z",
     state: { name: "In Progress", type: "started" },
     labels: labels("epic"),
+    priority: 2,
     parent: null,
     children: page([
       {
@@ -352,6 +353,11 @@ describe("Linear adapter: issue pickup", () => {
     expect(issue?.labels).toEqual(["epic"]);
     expect(issue?.children[0]?.labels).toEqual(["manual-ops"]);
     expect([issue?.assignee, issue?.nativeType]).toEqual(["Dev", null]);
+    expect([issue?.type, issue?.priority, issue?.size]).toEqual([
+      null,
+      2,
+      null,
+    ]);
   });
 
   it("returns null for an issue the tracker does not have", async () => {

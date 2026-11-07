@@ -12,6 +12,7 @@
 
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
+import { defaultFacets, type Facets } from "../facets/config.ts";
 import { TrackerRequestError } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
 import {
@@ -74,6 +75,8 @@ export interface Client {
   readonly model: JiraModel;
   readonly settings: JiraSettings;
   readonly transport: JiraTransport;
+  /** The repository's facets, resolved. */
+  readonly facets: Facets;
   /** One issue; `null` when it does not exist or is not visible. */
   issue(key: string, signal?: AbortSignal): Promise<JiraIssue | null>;
   /** One issue that must exist. */
@@ -243,6 +246,8 @@ export interface ClientOptions {
   model: JiraModel;
   settings: JiraSettings;
   transport: JiraTransport;
+  /** The repository's facets; default: every facet at the adapter's default. */
+  facets?: Facets;
 }
 
 /** `promise`, or a refusal as soon as `signal` aborts; the promise itself runs on. */
@@ -307,6 +312,7 @@ export function jiraClient(opts: ClientOptions): Client {
     model,
     settings,
     transport,
+    facets: opts.facets ?? defaultFacets("jira"),
 
     async issue(key, signal) {
       // Resolved before the issue's own 404 handler: a failed field read is

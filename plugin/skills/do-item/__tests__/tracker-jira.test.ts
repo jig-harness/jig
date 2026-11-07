@@ -101,6 +101,9 @@ describe("Jira adapter: reading an issue", () => {
       updatedAt: "2026-01-02T09:00:00.000Z",
       state: { name: "In Progress", type: "started" },
       labels: ["bug"],
+      type: "bug",
+      priority: 2,
+      size: null,
       nativeType: "Bug",
       parent: { identifier: "ENG-3", title: "Issue ENG-3" },
       children: [
