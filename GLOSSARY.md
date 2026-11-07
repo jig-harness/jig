@@ -69,10 +69,12 @@ make, use the entry's term instead.
   declared in the change note's entry: the level it is taken at (`machine`,
   `configuration` or `instructions`), whether it is `required` or `advised`,
   and optional hints that detect whether a repository is affected. The check
-  that reads them is `jig reconcile`.
+  that reads them is `jig reconcile`. Planned, not built yet: see
+  [the design](design/consumer-actions.md).
 - **Reconciled version** — the Jig version a *consumer repository* last took
   every consumer action up to, recorded in its configuration as
-  `jig.reconciled`; the check reads only the changes after it.
+  `jig.reconciled`; the check reads only the changes after it. Planned, not
+  built yet: see [the design](design/consumer-actions.md).
 - **Invariant** — the tool-independent statement of a practice ("every
   committed generated file has a drift check"), as opposed to any particular
   tool that implements it.

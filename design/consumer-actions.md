@@ -25,7 +25,7 @@ and the Breaking-changes arm of [`/followup`](../.claude/skills/followup/SKILL.m
 
 ## How it works
 
-### Three levels, two strengths
+### Levels and strengths
 
 A change asks something at one or more **levels**, the place where the
 consumer acts:
@@ -93,10 +93,15 @@ fits them.
 
 An action's **id** is the release's version and the first eight hex digits of
 the SHA-256 of its normalized description (the entry's text before the
-declaration, whitespace collapsed), for example `0.157.0#3fa9c2b1`. It does not
-depend on the entry's position, so reordering or regenerating a release does
-not change it, and a dismissal a repository committed keeps matching. Two
-entries with the same text in one release share an id and are one action.
+declaration, whitespace collapsed) together with its normalized declaration
+(strength, levels, instruction and hints), for example `0.157.0#3fa9c2b1`. It
+does not depend on the entry's position, so reordering or regenerating a
+release does not change it, and a dismissal a repository committed keeps
+matching. Two entries in one release with the same description and the same
+declaration are one action; the same description with a different declaration
+is two actions with two ids, so neither obligation is lost and a dismissal
+applies to one. The changelog check refuses two entries that differ only in
+their declaration's whitespace.
 
 ### The record in the plugin
 
@@ -121,9 +126,13 @@ automates the past.
 
 The record's integrity is the plugin's: it arrives with the plugin the machine
 installed, through the channel `jig doctor` already checks. The check refuses
-a record whose schema it does not know, whose versions are above the
-installed one, or whose ids do not match their text, and says so; it does not
-sign the record (see [Left out](#left-out)).
+a record whose schema it does not know or whose ids do not match their text,
+and says so; it does not sign the record (see [Left out](#left-out)). For the
+installed plugin's record it also refuses versions above the installed one.
+For a record a person names with `--record`, the ceiling is that record's own
+highest version: the person chose the file, so the range ends at the release
+the file describes, and a machine that has not upgraded can still read the
+record of a newer release.
 
 ### What derives, and what a note must say
 
@@ -157,18 +166,26 @@ never writes it.
   item says "unless it already names a later version". Merging two items out
   of order never moves it back, and one open item covers every release up to
   its version, so the field is never set past a release whose item is open.
-- **The baseline.** The check reads the actions after the baseline and up to
-  the installed version. The baseline is, in order: `jig.reconciled`; else the
-  plugin version of the repository's last audit record; else the first
-  release in the record. Because the record starts at one release and lists
-  only releases with an action, a first run reports at most the actions since
-  that release, however old the audit record is.
+- **The baseline.** For the repository-level actions (`configuration` and
+  `instructions`) the check reads the actions after `jig.reconciled` and up to
+  the end of the range (the installed version, or a named record's highest).
+  Without `jig.reconciled` it reads from the record's first release,
+  **including** that release, so a first run never skips an action in the
+  first recorded release. The plugin version of a last audit record is shown
+  beside the report as context; an audit does not establish that a release's
+  actions were taken, so it is never a baseline. Because the record starts at
+  one release, a first run reports at most the actions since that release.
+  `machine` actions ignore the baseline: they are evaluated on every host
+  against the host's state, from the record's first release, so a host whose
+  state is stale is reported even when another host moved `jig.reconciled`
+  past the action.
 - **Nothing applies.** A run that finds every action not applicable has
   nothing to commit, and a repository does not open a pull request only to
   move a number. The machine's record (below) holds a `checked_through`
-  version per repository, so the same actions are not reported again on that
-  host. A run elsewhere, without that record, evaluates them again, which is
-  cheap and local.
+  version per repository together with the tree identity and record it was
+  evaluated against, so the same actions are not reported again on that host
+  while neither has changed. A run elsewhere, without that record, evaluates
+  them again, which is cheap and local.
 - **A dismissal** (the action does not apply, with a reason) is written into
   the same change as `jig.reconcile_dismissed`, a list of `<id>: <reason>`,
   with a reason of at least a sentence. A dismissed **required** action is
@@ -177,11 +194,14 @@ never writes it.
   dismissals whose id is at or below `jig.reconciled` as removable.
 
 A separate record on the machine, in the dispatcher's state, holds only what
-was **reported**: for each repository, the ids notified, the ids filed with
-their tracker item, `checked_through`, the last result's counts and the time.
-It is not the source of truth for what the repository has taken.
+was **reported**: for each repository, the ids notified with the time each was
+first notified, the time each was first observed resolved (no longer open in
+a run, or covered by `jig.reconciled`), the ids filed with their tracker
+item, `checked_through` with the default-branch tree identity and the record
+version it was evaluated against, the last result's counts and the time. It
+is not the source of truth for what the repository has taken.
 
-### One check, three ways to run it
+### One check, run in several ways
 
 The check is `jig reconcile`, a component of the `jig` command
 ([plan item 35](plan.md)), so the dispatcher can run it without an agent. A
@@ -190,7 +210,7 @@ that need judgment: reading a hint's matches in context, wording the items.
 
 ```text
 jig reconcile [--repo <path>] [--record <file>] [--from <version>] [--json]
-jig reconcile file [--repo <path>] --entry <id> [--entry <id> ...]
+jig reconcile file [--repo <path>] [--record <file>] --entry <id> [--entry <id> ...] [--into <item>]
 ```
 
 - **The first form reads only** and prints the report: **required**,
@@ -199,21 +219,31 @@ jig reconcile file [--repo <path>] --entry <id> [--entry <id> ...]
   nothing required, `4` at least one required entry is open, `1` it could not
   read, `2` usage. A job or script branches on `4`. `--record` reads a record
   at a path instead of the installed plugin's, which `/followup` uses on
-  Jig's own checkout.
+  Jig's own checkout. The filing form takes `--record` too, so an id from a
+  newer release can be filed from a machine that has not upgraded; the filed
+  item names the record's version.
 - **The second form files** one tracker item for the entries a person named
   with `--entry`, through the repository's own tracker configuration
   (`issue_tracker.*`, [Tracker operations](../plugin/skills/do-item/SKILL.md#tracker-operations)).
   It refuses without `--entry`. The item covers every named entry from every
   release up to the highest, so a repository ten releases behind gets one
   item, not ten. It has a section for required entries, one for advised, one
-  for the ones that need a look, and ends with the step that sets
-  `jig.reconciled` (and records dismissals). The item carries the marker
-  `jig-reconcile: <ids>` in its body. Before creating anything the command
-  searches the repository's tracker for an open item with that marker for any
-  of the ids, and it adds to that item as a comment instead of opening a
-  second. It writes the machine record after the tracker write; a crash
-  between them is repaired by the search on the next run. At most three
-  attempts a day per repository, then it stops and says so.
+  for the ones that need a look, and one listing every other open
+  repository-level action up to the highest version as *not filed here*. It
+  ends with the step that sets `jig.reconciled` and records dismissals. That
+  step sets the version to the one just below the **earliest** action not yet
+  taken or dismissed, never to the highest version covered, so an action
+  nobody named stays above the baseline and is reported again. The item
+  carries the marker `jig-reconcile: <ids>` in its body. Before creating
+  anything the command searches the repository's open items for the marker, in
+  bodies and in comments. When exactly one open item matches any of the ids it
+  adds to that item: it edits the body's marker to the union of the ids (a
+  tracker that cannot edit a body gets the marker in a new comment, which the
+  search reads) and comments the new entries. When several open items match,
+  it files nothing and lists them; a person chooses one with `--into <item>`.
+  It writes the machine record after the tracker write; a crash between them
+  is repaired by the search on the next run. At most three attempts a day per
+  repository, then it stops and says so.
 - **`jig doctor`** prints one line, "N Jig changes to reconcile, as of <time>",
   with the command, from the machine record's last result. It runs no scan, so
   doctor stays fast and offline, and it prints nothing when no record exists.
@@ -225,15 +255,21 @@ The check reads only what the repository tracks and only what a hint names.
 - **Which files.** `config:` reads `.config/jig.yaml`. `text:` searches the
   tracked files that are instructions or runbooks: `AGENTS.md`, `CLAUDE.md`,
   every tracked `*.md` under the root, `docs/`, `runbooks/`, `.claude/` and
-  `.agents/`, up to 1 MiB each and 2,000 files per run; a repository may add
-  or narrow the set with `reconcile.text_globs`. `file:` matches the tracked
+  `.agents/`, up to 1 MiB each and 2,000 files per run, read in path order; a
+  repository may add or narrow the set with `reconcile.text_globs`. A search
+  that skips a file over the size cap, or stops at the file cap, is
+  **incomplete**: a `text:` hint with no match in an incomplete search is
+  reported as needs a look, naming what was skipped, never as not applicable,
+  and the result is not recorded in `checked_through`. `file:` matches the tracked
   file list. Files are read from Git's tree, not the working directory, so an
   untracked `.env` or an ignored file is never read, a symbolic link is not
   followed, and a path outside the root cannot be named.
 - **What a report contains.** Evidence is the **path and line number** of a
-  match and the hint that matched. A `text:` match adds the line cut to 80
-  characters with any token-shaped string masked. A `file:` match reports the
-  path only, never the content. A `plugin-source` hint reports its kind, never
+  match and the hint that matched. A `text:` match reports the path and line
+  only: the matched line's content is not exported, because masking
+  token-shaped strings does not protect ordinary text such as a password
+  phrase or a customer's address. A person who wants the line reads it in the
+  checkout at that path. A `file:` match reports the path only. A `plugin-source` hint reports its kind, never
   the settings. The same evidence goes into a filed item and a notification,
   so nothing is in them that is not in the report.
 - **Where the files come from.** From a person's checkout, `--repo`. From the
@@ -251,11 +287,15 @@ consumer, so it is read as **untrusted data**, as any tracker text is.
   ([the dispatcher](dark-factory-dispatch.md)), so an item no person assigned
   is never carried out unread. A person reads it and assigns it.
 - The check files only into the tracker the **repository's own** configuration
-  names, and only when that tracker belongs to the same organization and
-  repository as the repository the check ran against; otherwise it refuses and
-  reports it. One machine driving several organizations, with one set of
-  credentials per organization, cannot send one's evidence into another's
-  tracker through a committed configuration change.
+  names, and only when that tracker matches the binding the **machine**
+  holds for the repository, independent of the committed file: the
+  repository's entry in the dispatch file names its tracker (a GitHub
+  repository, or a Linear or Jira team key and workspace, whichever adapter
+  it uses), and a run from a person's checkout compares the committed
+  `issue_tracker.*` with the tracker the person's own user file names for it.
+  Where no such binding exists the check files nothing and prints the tracker
+  it would use for a person to confirm. A committed configuration change
+  therefore cannot send one organization's evidence into another's tracker.
 - The filing command in a notification is a command line the person runs; its
   inputs are ids, validated against the record's format, and the command passes
   them to the tracker scripts as arguments, never through a shell.
@@ -288,10 +328,13 @@ notified is per machine.
   the dispatch file.
 - **When it runs.** A tick considers a repository when the installed plugin
   version is newer than the version it last checked, or when its default
-  branch moved (one `git ls-remote`) while a required or needs-a-look entry
-  is open, so the merge of a repository's own reconcile change is noticed. At
-  most once an hour per repository, and a repository with no action in the
-  record since its baseline costs one version comparison.
+  branch's tree identity differs from the one in `checked_through` (one
+  `git ls-remote`, then the fetch), whatever the last result was, so a merge
+  that adds an obsolete phrase after an earlier clean result is noticed. A
+  repository with a `machine` action in range is also considered at least once
+  a day, since the host's state can change with neither version nor branch
+  moving. At most once an hour per repository, and a repository with no action
+  in the record since its baseline costs one version comparison.
 - **Its bounds.** Each repository gets 60 seconds. A tick runs the stage for at
   most two repositories, rotating, and stops when it has spent two minutes of
   the tick, so a release day delays no re-arm or pickup. A repository that
@@ -315,15 +358,19 @@ file, not Jig, is the list of consumers the check reaches. Jig names none.
 
 `/followup` runs after a release is tagged and before a machine has
 necessarily upgraded, so the arm cannot read the installed plugin. Its
-Breaking-changes arm runs `jig reconcile --json --record
-plugin/consumer-actions.json` from the Jig checkout at the release's tag, once
-for each repository the machine's dispatch file lists, one at a time with the
-stage's 60-second bound. The question "which repositories are consumers" is
+Breaking-changes arm runs, once for each repository the machine's dispatch
+file lists and one at a time with the stage's 60-second bound,
+`jig reconcile --json --repo <that repository's clone> --record <tag
+checkout>/plugin/consumer-actions.json`. The record is read from the Jig
+checkout at the release's tag, the repository from the stage's own clone of
+it, so the two are resolved independently. The question "which repositories are consumers" is
 answered by the file, so the arm no longer stops on it. When the file lists no
 repository, the arm says so and ends. The arm files nothing in Jig's tracker
-about a consumer: it reports counts ("N repositories have required actions")
-and names no repository in Jig's own content, which keeps the origin-reference
-boundary and keeps one organization's evidence out of another's session. A
+about a consumer: a small script runs the commands, discards each report and
+prints only counts ("N repositories have required actions") to the session, so
+no consumer's evidence enters the agent's context. It names no repository in
+Jig's own content, which keeps the origin-reference boundary and keeps one
+organization's evidence out of another's session. A
 person files each repository's item with `jig reconcile file`.
 
 `/jig:jig`'s "what changed, and what do I need to do" row points at
@@ -398,7 +445,10 @@ One pull request per step, each shippable alone:
 How it is judged: after step 3 has run for a month, the plan item is judged on
 how many required actions a repository took within a week of the notification
 and how many entries stayed in needs-a-look; those figures decide whether
-hints need more structure. They are read from the machine record.
+hints need more structure. They are read from the machine record's per-id
+first-notified and first-observed-resolved times; the resolution is the
+interval between runs, since a repository's change is seen at the run after
+it merges.
 
 ## Left out
 
@@ -426,5 +476,5 @@ hints need more structure. They are read from the machine record.
 
 Red-teamed on 2026-11-07 in fresh context by four personas (critical chief
 technology officer, security auditor, performance engineer, cost optimizer)
-against the design as first drafted on `a8e16188`: all four returned
-`revise`. Every finding is settled in the text above.
+against the design as first committed, `fc4330ac`. The verdicts and what
+settled them are in pull request #580.
