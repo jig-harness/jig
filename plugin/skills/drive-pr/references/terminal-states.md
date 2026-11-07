@@ -609,12 +609,33 @@ refusal. Once a driver's shutdown begins it starts no new command, so a stop
 writes from outside it (`lib/ledger-stop.ts`): `drives.ts`'s `--stop` marks
 the ledger stopped once the driver and its captured pass tree are witnessed
 gone, and `--stop` or `--doctor` against the driver record a driver marks
-released as it releases its locks (`ledger-driver-<PR>.json` in the state
-directory), does the same, which is the recovery after a signal stop or a
-last write that failed. A lock left behind is no such evidence: a driver
-that kept its locks over a pass it could not witness gone, or was killed
-outright, may have left that pass running, so its ledger stays running and
-its record stays unmarked. Each writes only while
+released as it releases its locks (in the drive database's `driver_records`
+table), does the same, which is the recovery after a signal stop or a
+last write that failed. `--doctor` therefore writes: it reconciles released
+local acquisitions whose driver is gone, preserving any recorded person's
+stop and leaving a successor's ledger untouched. It uses a temporary recovery
+session and releases only that session's PR and tree leases when the write
+finishes or fails; it never retains the calling interactive session's lease.
+The dispatcher performs the same guarded recovery for a silent drive with
+`--apply` and re-arms enabled, before planning it within the no-cause budget.
+A lock alone is insufficient after an abrupt kill. New acquisitions persist
+versioned observations bound to their exact lock token and shared driver
+identity. A pending write precedes every review or repair pass spawn; observed
+creation identities and POSIX process groups survive parent loss. Recovery
+requires a readable local process table, no unfinished or uncertain launch,
+and no surviving observed or registered work. Sampling retires identities only
+when the shared liveness judge confirms death, and groups only when no live
+member remains. Timezone-shifted creation times stay uncertain. Windows locks
+omit creation time; their nonce, acquisition time and driver PID bind the
+separately captured driver identity. It reserves the original PR
+lock and commits the released witness in the same transaction, so a successor
+cannot be replaced. Forge retries reserve the slot again. A temporary recovery
+label binds its exact recorded acquisition; only a confirmed-dead recovery
+with that binding can be reclaimed after an interruption.
+Older untracked acquisitions retain the conservative released-witness rule.
+This is the cooperative observation scope of ADR-0008, not containment of
+unseen descendants. Observation files are removed when a released witness
+replaces them, or with the PR's retired state family. Each writes only while
 the ledger still names that driver as running (its tree, clone and run) with
 no claim in force from another clone past its recorded position, its own
 claim arbitrated as the live driver arbitrates it, re-checked against every

@@ -634,6 +634,9 @@ export async function doctorVerb(
   if (args.json)
     console.log(JSON.stringify({ ok: failed.length === 0, checks }, null, 2));
   else {
+    console.log(
+      "Installation and configuration checks; for drive diagnosis use jig ask drive <PR> in its repository.",
+    );
     for (const check of checks) console.log(formatCheck(check));
     console.log(
       failed.length === 0

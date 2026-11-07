@@ -280,7 +280,18 @@ guards keep one stage from starting twice:
   tick. A person settles it by deleting the marker, which makes the
   follow-up wanted again, then running the follow-up or leaving it to the
   next tick. The marker lives on the forge, so a lost launch record does not
-  start a second follow-up on this machine.
+  start a second follow-up on this machine. A launch record still pending
+  with its marker posted (the tick stopped before the runtime answered its
+  launch, or the answer was lost) is launched again under the same record,
+  token and marker, as a drive's pending launch is, once a fresh read finds
+  it safe: no hold label, the record's own marker still the earliest
+  trusted one, naming it and carrying no end, and no session joined to the
+  pull request. A hold label, a read that fails, or a repository with no
+  `dispatch.followup_command` waits for the next tick; a marker that is
+  gone, no longer the earliest or answered, or a session joined to the
+  pull request means the replay can never be proven safe, and the record
+  is stuck (see Launch records). While such a record holds the follow-up, no
+  new one starts for the pull request.
 
   The marker is also the claim a follow-up started by hand honours, since
   a person can start one after the tick reads no marker and before it posts
@@ -529,8 +540,25 @@ version 1, and the new reader accepts both.
 A stopped ledger with no exit and no person's-stop record is an accident:
 the dispatcher re-arms it on an admitted account to resume its durable state.
 Hard termination of both driver and launch wrapper can leave a running ledger
-with a stale heartbeat instead. No-exit recovery does not cover that state;
-without a recognized launch owner it remains silent until a person intervenes.
+with a stale heartbeat instead. With `--apply` and the re-arm stage enabled,
+the owning dispatcher reconciles a confirmed-dead local acquisition even when
+no launch record started it. A durable released witness, or the exact driver's
+persisted observations showing no surviving observed or registered pass,
+authorizes the recovery. Every pass launch records pending before spawn and
+retains creation identities and POSIX process groups; a missing identity,
+unreadable sample or unfinished launch withholds recovery. The observation
+belongs to the original lock token, and recovery reserves that exact token
+before publishing the stop, so an unpublished successor is preserved. The
+reservation and released witness commit together. Every forge retry reserves
+the slot again; a reservation left by a confirmed-dead recovery is reclaimed
+only when its label binds the same acquisition.
+The guarded write marks its ledger stopped with no cause and releases the
+recovery's own leases before planning within the no-cause budget. Foreign
+holders, unreadable liveness, surviving work and legacy records without a
+witness or observations stay running. These are observations of cooperative
+passes, not containment of arbitrary descendants (ADR-0008).
+Without a recognized launch owner or local termination evidence, the silent
+drive is notified and appears in `jig ask --waiting`; its state label is parked.
 The default budget is 3 no-cause re-arms per pull request in a rolling hour,
 across accounts; completing a round does not reset it. Once spent, the next
 no-cause stop needs a person and is notified once with the drive's handoff.
@@ -540,7 +568,7 @@ the budget; a new ledger then follows the ordinary budget.
 | Ledger says | Class | The tick |
 | --- | --- | --- |
 | running, heartbeat inside the lease window | driven | nothing |
-| running, heartbeat past the lease window | silent | takes it over only when this machine's launch record, or another host's launch claim, started that driver; otherwise reports it |
+| running, heartbeat past the lease window | silent | reconciles a confirmed local stop from a released witness or durable pass observations when re-arms are enabled; otherwise takes it over when this machine's launch record or another host's launch claim started it, or notifies a person and lists it as waiting |
 | stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
 | stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
 | stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies per stop, with the exit and the drive's handoff |
@@ -749,10 +777,19 @@ the stage's exit when it ends. A record that has neither a process
 identity nor an agent id is **pending**: it holds its stage and slot, and
 its launch is retried only under its own token, which the tick hands
 `launch` as the launch's key (see The session runtime interface), never as
-a fresh launch. A record still pending at a later tick, with its launch's
-answer lost and no keyed retry that produced one, is an unknown, reported,
-holding its stage and slot until a person clears it (`jig dispatch clear
-<record>`, which refuses a record whose process is alive). The next
+a fresh launch. A record still pending at a later tick, whose launch no
+tick calls again, is **stuck**: both of its launches went unanswered (or
+one went unanswered and the runtime answered the other as not started),
+since an unanswered launch
+may have started a session and a third call is never made, or a follow-up's
+replay could not be proven safe (see Guards against a second launch). A
+stuck record is notified to a person as needing them (see Notifications),
+shown on the dashboard as needing a person rather than as an ordinary
+pending launch, and holds its stage and slot until a person checks for a
+session it started and clears it (`jig dispatch clear <record>`, which
+refuses a record whose process is alive). A record whose last launch the
+runtime answered as started is never stuck, since its wrapper may still
+claim it. The next
 tick reads the records: a record whose process is alive under that same
 identity holds its stage; one that ended carries the stage's answer; one
 whose identity cannot be checked (another boot, an unreadable process
@@ -1157,7 +1194,7 @@ parked questions (item 32's framed decision, built, or the stored
 reason for a park with no decision record); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
-stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a session waiting past
+stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a session waiting past
 `blocked_after`; a running stage drifting from its expectation, and a
 session still waiting on a wall after its one nudge (see Control). Every
 message carries the cause or the question, the pull request's link and

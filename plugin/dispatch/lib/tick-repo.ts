@@ -6,7 +6,8 @@
  * (tick-labels.ts), and report the shared records' reads and writes
  * (tick-shared.ts). Each phase hands the next what it read; the report is
  * filled as they go, and each phase's milliseconds are kept on it
- * (`phasesMs`).
+ * (`phasesMs`). Applying ticks reconcile abandoned local ledgers before
+ * planning; that reconciliation time is charged to apply.
  *
  * A turn is run inside the tick's boundary: what throws out of it is a
  * defect (`defectReport`), which stops this repository's turn only. The
@@ -18,10 +19,11 @@ import { actObserved } from "./tick-apply.ts";
 import { allRecords, emptyReport, type TickContext } from "./tick-context.ts";
 import { projectObserved } from "./tick-labels.ts";
 import { lineInputOf } from "./tick-line.ts";
-import { observeRepo, openRepo } from "./tick-observe.ts";
+import { observeRepo, openRepo, type RepoObservation } from "./tick-observe.ts";
 import { planObserved } from "./tick-plan.ts";
 import { logRepo } from "./tick-settle.ts";
 import { sharedReport } from "./tick-shared.ts";
+import { recoverLedgers } from "./recover-ledgers.ts";
 import type { RepoPhase, RepoReport } from "./types.ts";
 
 /** One repository's turn as it runs: its phases' clock, and its report once the repository opened. */
@@ -57,32 +59,68 @@ export async function runTurn(
     },
     timer,
   );
-  const { forge, tracked, sessions } = observation;
+  const { forge } = observation;
+  if (context.apply !== null)
+    await timer.time("apply", () => recoverLedgers(context, observation));
   await timer.time("plan", () => planObserved(context, observation));
   await timer.time("log", () =>
     logRepo(context, opened.repo.slug, report, forge.drives),
   );
-  await timer.time("apply", () => actObserved(context, observation));
-  await timer.time("labels", () => projectObserved(context, observation));
-  await timer.time("shared", async () => {
-    report.shared = sharedReport(
-      observation.shared,
-      observation.ctx,
-      observation.claims,
-      forge,
+  const close = async () => {
+    await timer.time("labels", () => projectObserved(context, observation));
+    await timer.time("shared", () => closeShared(context, observation, path));
+    timed(report, timer);
+  };
+  if (context.apply === null) {
+    await timer.time("apply", () => Promise.resolve());
+    await close();
+  } else {
+    // The launches run after every repository is gathered; a defect in one stops this repository's remaining turns only.
+    let stopped = false;
+    // Work that times its own phases (the close) runs with `inApply` false, so apply is not charged for it.
+    const guard = async (run: () => Promise<void>, inApply = true) => {
+      if (stopped) return;
+      try {
+        await (inApply ? timer.time("apply", run) : run());
+      } catch (error) {
+        stopped = true;
+        defectReport(turn, error);
+      } finally {
+        // The timer adds a turn's time when the turn returns, so the receipt's copy is taken after it.
+        timed(report, timer);
+      }
+    };
+    await timer.time("apply", () =>
+      actObserved(context, observation, { guard, after: close }),
     );
-    // The budget is the host's: read once, when the tick closes.
-    if (forge.ok)
-      context.reads.budgets.push({
-        report: report.shared,
-        records: observation.ctx.records,
-      });
-    context.lineInputs.set(
-      path,
-      lineInputOf(forge.drives, forge, tracked, sessions),
-    );
-  });
+  }
   return timed(report, timer);
+}
+
+/** The shared records' report, and what the line and the tick's close read of this repository. */
+function closeShared(
+  context: TickContext,
+  observation: RepoObservation,
+  path: string,
+): void {
+  const { forge, tracked, sessions } = observation;
+  const report = observation.opened.report;
+  report.shared = sharedReport(
+    observation.shared,
+    observation.ctx,
+    observation.claims,
+    forge,
+  );
+  // The budget is the host's: read once, when the tick closes.
+  if (forge.ok)
+    context.reads.budgets.push({
+      report: report.shared,
+      records: observation.ctx.records,
+    });
+  context.lineInputs.set(
+    path,
+    lineInputOf(forge.drives, forge, tracked, sessions),
+  );
 }
 
 function timed(report: RepoReport, timer: PhaseTimer<RepoPhase>): RepoReport {
