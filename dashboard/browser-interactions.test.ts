@@ -8,7 +8,7 @@ import { queued, drive } from "./fixture-line.ts";
  */
 import { describe, expect } from "bun:test";
 import { chromium } from "playwright-core";
-import { open, shortControls, shows, until } from "./browser-page.ts";
+import { open, settled, shortControls, shows, until } from "./browser-page.ts";
 import {
   browserSuite,
   LAPTOP,
@@ -578,6 +578,7 @@ browserIt(
     });
     let stalled = true;
     try {
+      await settled(page);
       await page.route("**/pr?*", async (route) => {
         if (stalled) await pending;
         await route.fulfill({
