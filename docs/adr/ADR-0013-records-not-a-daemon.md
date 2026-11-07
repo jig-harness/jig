@@ -5,7 +5,7 @@ status: draft
 description: "Jig's components share registered records on the machine, in the working tree and on the forge and tracker, and each derives what to do from records it does not own; no resident daemon or message bus coordinates them, one resident reader per machine may serve a person's view of them, and the record names the conditions for reopening that"
 lifecycle: permanent
 version: "1.1"
-last_updated: 2026-11-06
+last_updated: 2026-11-07
 owner: maintainers
 decision_date: 2026-11-04
 supersedes: ~
@@ -150,6 +150,9 @@ coordinator.
 `scripts/check-records-registry.ts` in the gates fails a hidden-marker
 literal, a drive state-file family or a SQLite table under `plugin/` that
 the registry does not hold, and a registry entry the code no longer names.
+The gate parses source with oxc-parser rather than a tokenizer because regular
+expressions, division and nested template expressions determine where SQL
+string and template literals begin and end.
 That no component opens a listening socket other than the dashboard's,
 which the hub grows from, is not checked, nor that the hub listens only on
 loopback or on a front's socket; review holds both.
