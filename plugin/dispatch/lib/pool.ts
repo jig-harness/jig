@@ -14,7 +14,10 @@ export interface Pool {
 }
 
 export function pool(size: number = OBSERVE_POOL_SIZE): Pool {
-  const limit = Math.max(1, Math.floor(size));
+  // NaN and Infinity are no bound: they fall back to the default.
+  const limit = Number.isFinite(size)
+    ? Math.max(1, Math.floor(size))
+    : OBSERVE_POOL_SIZE;
   let active = 0;
   const waiting: (() => void)[] = [];
   // A freed place passes straight to the next waiting read, so none can overtake it.

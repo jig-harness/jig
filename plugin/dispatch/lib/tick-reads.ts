@@ -97,13 +97,13 @@ export function tickReads(
       written: (repo, pr) => forgetMergeRead(repo, pr),
     }),
     login: () => {
-      login ??= resolveLogin();
+      login ??= reads.run(() => resolveLogin());
       return login;
     },
     sessions: lazySessions(runtime),
     budgets: [],
     budget: () => {
-      budget ??= readBudget();
+      budget ??= reads.run(readBudget);
       return budget;
     },
     pool: reads,

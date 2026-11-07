@@ -59,7 +59,7 @@ flowchart LR
 
 A tick runs in two **phases**. In the **observe phase** every repository
 is read at once: each under its own **observe lock**, and every read
-through one pool that keeps at most six in flight, well inside the forge's
+through one pool that keeps at most six in flight (the forge's login and rate limit, each read once per tick, and the base heads of conflicting drives among them), well inside the forge's
 secondary rate limits. Within one repository, the sources that do not
 depend on each other are read side by side: the tracker beside the forge,
 then every host's launch claims beside the runtime. In the **act phase**,
@@ -111,9 +111,17 @@ flowchart TD
 ```
 
 **The locks, and their order.** A tick takes each repository's observe
-lock (`observe/<digest>.lock` under the state directory, one per
-repository path) as it starts reading that repository, and never waits for
-one: a repository another tick holds is left to that tick, named on the
+lock (`observe/<digest>.lock` under the state directory) as it starts
+reading that repository, and never waits for one. The lock is taken twice
+over: for the checkout's path, before anything is read, and for the forge
+repository, once the observation knows which repository the checkout is,
+because the records an observation reads and writes belong to the
+repository, so two checkouts of one repository exclude each other. The
+close of a tick takes the same locks before it logs the ended records of
+a repository it did not read, and leaves those of one another tick
+observes to that tick. A lock acquisition that fails is a defect of that
+repository's turn, and the tick awaits every started observation before it
+gives any lock up. A repository another tick holds is left to that tick: a repository another tick holds is left to that tick, named on the
 receipt (`busy`), and neither read nor acted on. A tick that finds every
 repository it names held ends as one that found the lock held (exit 3),
 which is what a wake-up's waiter retries after its minute. The act lock is
@@ -144,8 +152,9 @@ tick reads them again, settles their follow-up outcomes, and builds the
 apply state from that read: the slot table, the account whose turn is next
 and the rotation cursor, so a launch another tick made while this one was
 reading holds its slot and is seen as running by the plan. The deadline a
-launch is checked against (`outOfTime`) counts from the start of the act
-phase. Every target is read once more just before its launch, as before.
+launch is checked against (`outOfTime`) counts from the start of the
+invocation, not of the act phase: the launcher's own clock has been running
+since then, through the observe phase and any wait for the act lock. Every target is read once more just before its launch, as before.
 
 **The budget gate.** The forge's budget is read once per tick, as the
 observe phase starts, beside its first reads. While less than a tenth of

@@ -34,4 +34,23 @@ describe("pool", () => {
     ).rejects.toThrow("refused");
     expect(await reads.run(async () => "next")).toBe("next");
   });
+
+  it("falls back to the default size for a size that is no bound", async () => {
+    for (const size of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const reads = pool(size);
+      let active = 0;
+      let most = 0;
+      await Promise.all(
+        Array.from({ length: 20 }, () =>
+          reads.run(async () => {
+            active += 1;
+            most = Math.max(most, active);
+            await Bun.sleep(3);
+            active -= 1;
+          }),
+        ),
+      );
+      expect(most).toBe(6);
+    }
+  });
 });

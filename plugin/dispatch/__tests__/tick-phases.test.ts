@@ -11,6 +11,7 @@
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
+import { hostname } from "node:os";
 import {
   existsSync,
   mkdirSync,
@@ -20,7 +21,10 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { bootId } from "../../shared/liveness.ts";
+import { processTable } from "../../shared/process-table.ts";
 import { dump } from "../../shared/yaml.ts";
+import { readRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import {
@@ -34,7 +38,9 @@ import {
 } from "./fixtures.ts";
 import {
   account,
+  claimed,
   dispatchState,
+  earlierRecord,
   exitWritten,
   waitFor,
 } from "./launch-fixtures.ts";
@@ -78,13 +84,15 @@ process.exit(result.receipt.exitStatus);
 `;
 
 let current: World | null = null;
+const closers: Array<() => void> = [];
 afterEach(() => {
+  for (const close of closers.splice(0)) close();
   current?.close();
   current = null;
 });
 
-/** A world with a quota-parked pull request and a second checkout of the same repository. */
-function fixture(): { w: World; second: string } {
+/** A world with a quota-parked pull request, a second checkout of the same repository, and a checkout of another one. */
+function fixture(): { w: World; second: string; other: string } {
   const w = world();
   current = w;
   w.setConfig(CONFIG);
@@ -92,7 +100,9 @@ function fixture(): { w: World; second: string } {
   w.setComments(7, [ledgerComment(701, stoppedLedger(7, 16))]);
   const second = join(w.root, "second");
   mkdirSync(second, { recursive: true });
-  return { w, second };
+  const other = join(w.root, "other");
+  mkdirSync(other, { recursive: true });
+  return { w, second, other };
 }
 
 function entry(w: World, name: string, script: string): string {
@@ -113,7 +123,7 @@ const paths = (r: TickReceipt) => r.repos.map((repo) => repo.path);
 
 describe("a tick for one repository beside a sweep", () => {
   it("reads and acts on its repository while another tick observes a different one, and leaves a repository another tick holds alone", async () => {
-    const { w, second } = fixture();
+    const { w, second, other } = fixture();
     const blocking = entry(w, "blocking.ts", tickScript({}, true));
     const plain = entry(w, "plain.ts", tickScript({ actLockWaitMs: 1000 }));
     let sweepDone = false;
@@ -128,9 +138,15 @@ describe("a tick for one repository beside a sweep", () => {
     expect(existsSync(observeLock(w, w.repo))).toBe(true);
     expect(existsSync(actLock(w))).toBe(false);
 
-    const wake = await w.dispatch([second], plain);
+    const wake = await w.dispatch([other], plain);
     expectSpawnExit(wake, 0);
-    expect(paths(JSON.parse(wake.stdout) as TickReceipt)).toEqual([second]);
+    expect(paths(JSON.parse(wake.stdout) as TickReceipt)).toEqual([other]);
+    expect(sweepDone).toBe(false);
+
+    // Another checkout of the repository the sweep observes: the repository is held, whichever checkout names it.
+    const sibling = await w.dispatch([second], plain);
+    expectSpawnExit(sibling, 3);
+    expect(sibling.stderr).toContain("observe/");
     expect(sweepDone).toBe(false);
 
     // The repository the sweep holds: a tick for it reads nothing and ends as one that found it held.
@@ -148,17 +164,17 @@ describe("a tick for one repository beside a sweep", () => {
   }, 60_000);
 
   it("names the repositories another tick holds on its receipt, and still acts on the rest", async () => {
-    const { w, second } = fixture();
+    const { w, other } = fixture();
     const blocking = entry(w, "blocking.ts", tickScript({}, true));
     const plain = entry(w, "plain.ts", tickScript({ actLockWaitMs: 1000 }));
     const sweep = w.dispatch([w.repo], blocking);
     await waitFor("the sweep to observe", () =>
       existsSync(join(w.dir, "observing")),
     );
-    const both = await w.dispatch([w.repo, second], plain);
+    const both = await w.dispatch([w.repo, other], plain);
     expectSpawnExit(both, 0);
     const receipt = JSON.parse(both.stdout) as TickReceipt;
-    expect(paths(receipt)).toEqual([second]);
+    expect(paths(receipt)).toEqual([other]);
     expect(receipt.busy?.map((b) => b.path)).toEqual([w.repo]);
     writeFileSync(join(w.dir, "release"), "");
     expectSpawnExit(await sweep, 0);
@@ -347,5 +363,58 @@ describe("a low budget", () => {
           ),
         }),
       );
+  }, 60_000);
+
+  /** PR #7's drive, this machine's launch of it, its wrapper alive at round 2 with three unresolved threads. */
+  async function runningDrive(): Promise<{ w: World; id: string }> {
+    const { w } = fixture();
+    const id = "20261101T080000Z-aaaaaaaa";
+    const ledger = stoppedLedger(7, undefined, { round: 2 });
+    w.setComments(7, [
+      ledgerComment(701, {
+        ...ledger,
+        driver: {
+          ...ledger.driver,
+          state: "running",
+          heartbeat: new Date().toISOString(),
+        },
+      } as Ledger),
+    ]);
+    writeFileSync(join(w.dir, "threads-7"), "3");
+    const wrapper = Bun.spawn(["sleep", "120"]);
+    closers.push(() => wrapper.kill());
+    const row = (await processTable())?.find((r) => r.pid === wrapper.pid);
+    earlierRecord(w, {
+      id,
+      account: "a",
+      createdAt: new Date().toISOString(),
+      round: 2,
+    });
+    claimed(w, id, {
+      hostId: "",
+      host: hostname(),
+      bootId: bootId(),
+      pid: wrapper.pid,
+      start: row?.start ?? "",
+      claimedAt: new Date().toISOString(),
+    });
+    return { w, id };
+  }
+
+  it("samples a running drive's unresolved threads while the budget is not low", async () => {
+    const { w, id } = await runningDrive();
+    expectSpawnExit(await w.dispatch(["--json"]), 0);
+    expect(calls(w).some((c) => c.includes("reviewThreads"))).toBe(true);
+    expect(
+      readRecord(id, dispatchState(w))?.samples?.map((s) => s.round),
+    ).toEqual([2]);
+  }, 60_000);
+
+  it("does not sample a running drive's threads below a tenth of the limit", async () => {
+    const { w, id } = await runningDrive();
+    writeFileSync(join(w.dir, "rate-remaining"), "120");
+    expectSpawnExit(await w.dispatch(["--json"]), 0);
+    expect(calls(w).some((c) => c.includes("reviewThreads"))).toBe(false);
+    expect(readRecord(id, dispatchState(w))?.samples ?? []).toEqual([]);
   }, 60_000);
 });

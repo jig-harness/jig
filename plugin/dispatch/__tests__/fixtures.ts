@@ -44,7 +44,8 @@ const args = process.argv.slice(2);
 fs.appendFileSync(F + "/gh-calls.log", args.join(" ") + "\\n");
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
 if (args[0] === "repo" && args[1] === "view" && args.includes("nameWithOwner,defaultBranchRef"))
-  out({ nameWithOwner: "${SLUG}", defaultBranchRef: { name: "main" } });
+  // A checkout named "other" is another repository; every other is ${SLUG}.
+  out({ nameWithOwner: process.cwd().endsWith("/other") ? "example-org/other-repo" : "${SLUG}", defaultBranchRef: { name: "main" } });
 if (args[0] === "api" && args[1] === "rate_limit")
   // What is left: 4990 unless rate-remaining says otherwise.
   out({ resources: { core: { limit: 5000, remaining: fs.existsSync(F + "/rate-remaining") ? Number(fs.readFileSync(F + "/rate-remaining", "utf8")) : 4990, reset: 1793000000 } } });
@@ -489,6 +490,14 @@ export function world(): World {
         id: "repo-1",
         path: forge.repo,
         gitRemoteIdentity: { canonicalKey: `github.com/${SLUG}` },
+      },
+      // The repository a checkout named "other" belongs to (the fake gh's repository view).
+      {
+        id: "repo-2",
+        path: `${forge.repo}-other`,
+        gitRemoteIdentity: {
+          canonicalKey: "github.com/example-org/other-repo",
+        },
       },
     ],
   });

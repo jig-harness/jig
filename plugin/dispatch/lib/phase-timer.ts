@@ -35,15 +35,26 @@ export class PhaseTimer<P extends string> {
 
 /**
  * Await every promise, then return their values, or throw the first
- * rejection: a phase run beside another never outlives the step that
- * started both.
+ * rejection in time: a phase run beside another never outlives the step
+ * that started both, and the error thrown is the one `PhaseTimer` named the
+ * phase of.
  */
 export async function settled<T extends readonly unknown[]>(
   ...promises: { [K in keyof T]: Promise<T[K]> }
 ): Promise<T> {
-  const results = await Promise.allSettled(promises);
-  const rejected = results.find((r) => r.status === "rejected");
-  if (rejected !== undefined) throw (rejected as PromiseRejectedResult).reason;
+  const first: { reason?: unknown; failed: boolean } = { failed: false };
+  const results = await Promise.allSettled(
+    promises.map((p) =>
+      p.catch((reason: unknown) => {
+        if (!first.failed) {
+          first.failed = true;
+          first.reason = reason;
+        }
+        throw reason;
+      }),
+    ),
+  );
+  if (first.failed) throw first.reason;
   return results.map(
     (r) => (r as PromiseFulfilledResult<unknown>).value,
   ) as unknown as T;

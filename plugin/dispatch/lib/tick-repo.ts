@@ -44,16 +44,24 @@ export function startTurn(path: string): RepoTurn {
 /** A repository's observe part done: what it read, for its act part; or the report that ends its turn. */
 export type Observed =
   | { turn: RepoTurn; opened: OpenedRepo; observation: RepoObservation }
-  | { report: RepoReport };
+  | { report: RepoReport }
+  | { busy: string };
 
-/** Open and observe one repository; the report that refuses it when it does not open. */
+/**
+ * Open and observe one repository; the report that refuses it when it does
+ * not open. `claim` takes the repository's own lock once its slug is known
+ * and returns who holds it when another tick does: nothing is read then.
+ */
 export async function observeTurn(
   turn: RepoTurn,
   context: TickContext,
+  claim: (slug: string) => string | null = () => null,
 ): Promise<Observed> {
   const { path, timer } = turn;
   const opened = await timer.time("open", () => openRepo(path, context));
   if (!("repo" in opened)) return { report: timed(opened, timer) };
+  const heldBy = claim(opened.repo.slug);
+  if (heldBy !== null) return { busy: heldBy };
   turn.report = opened.report;
   const { owner, reflection } = opened;
   context.reflections.push({ slug: opened.repo.slug, path, reflection, owner });

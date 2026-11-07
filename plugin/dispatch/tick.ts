@@ -103,6 +103,7 @@ import {
   type TickPhase,
   type TickReceipt,
   takeObserveLock,
+  takeRepositoryLock,
   takeTickLock,
   writeReceipt,
 } from "./receipts.ts";
@@ -160,6 +161,7 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
     options,
     runtime,
     nowMs: now.getTime(),
+    startedMs: Date.now(),
     launches: read.records,
     apply: null,
     lineInputs: new Map(),
@@ -169,9 +171,12 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
   return { receipt, context, withheld: undefined, settleFailed: false };
 }
 
+/** A repository's observation that was made, as opposed to one another tick held. */
+type Settled = Exclude<Observed, { busy: string }>;
+
 /** The observe phase's result: each repository's observation by path, and the repositories another tick holds. */
 interface ObservedAll {
-  observed: Map<string, Observed>;
+  observed: Map<string, Settled>;
   busy: Map<string, string>;
 }
 
@@ -188,17 +193,41 @@ async function observeAll(
   // The budget decides the optional reads: read once, while the first reads run.
   void context.reads.budget();
   // A repository named twice is read once.
+  // Checkouts of one repository in this tick share the repository's lock: the first holds it.
+  const claimed = new Set<string>();
+  // Every observation is awaited, taking its lock included, before any lock is given up.
   await Promise.all(
     [...new Set(context.options.repos)].map(async (path) => {
-      const lock = takeObserveLock(path);
-      if ("heldBy" in lock) {
-        out.busy.set(path, lock.heldBy);
-        return;
-      }
-      locks.set(path, lock);
       const turn = startTurn(path);
+      const own: Held[] = [];
+      const give = () => {
+        for (const lock of own) lock.release();
+        locks.delete(path);
+      };
       try {
-        out.observed.set(path, await observeTurn(turn, context));
+        const lock = takeObserveLock(path);
+        if ("heldBy" in lock) {
+          out.busy.set(path, lock.heldBy);
+          return;
+        }
+        own.push(lock);
+        locks.set(path, {
+          release: () => {
+            for (const held of own) held.release();
+          },
+        });
+        const observed = await observeTurn(turn, context, (slug) => {
+          if (claimed.has(slug)) return null;
+          const repository = takeRepositoryLock(slug);
+          if ("heldBy" in repository) return repository.heldBy;
+          claimed.add(slug);
+          own.push(repository);
+          return null;
+        });
+        if ("busy" in observed) {
+          out.busy.set(path, observed.busy);
+          give();
+        } else out.observed.set(path, observed);
       } catch (error) {
         out.observed.set(path, { report: defectReport(turn, error) });
       }
@@ -220,7 +249,7 @@ async function waitForActLock(waitMs: number): Promise<Lock> {
 /**
  * The act phase's start, under the act lock: this machine's launch records
  * read again, their follow-up outcomes settled, and the apply state built
- * from them, its deadline counted from here.
+ * from them, its deadline counted from the start of the invocation.
  */
 async function startAct(started: StartedTick): Promise<void> {
   const { receipt, context } = started;
@@ -241,6 +270,7 @@ async function startAct(started: StartedTick): Promise<void> {
     read.records,
     context.nowMs,
     read.unreadable,
+    context.startedMs,
   );
   // `--apply` with a machine file that was then withheld says why.
   started.withheld =
@@ -288,7 +318,7 @@ async function actAll(
 
 /** One repository's act part inside the per-repository boundary. */
 async function boundedAct(
-  observed: Observed,
+  observed: Settled,
   context: TickContext,
 ): Promise<RepoReport> {
   if ("report" in observed) return observed.report;

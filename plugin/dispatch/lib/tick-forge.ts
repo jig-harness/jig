@@ -126,6 +126,7 @@ export async function readForge(
       labels,
       adoption,
       (pr) => reads.comments.read(repo.slug, pr),
+      (read) => reads.pool.run(read),
     );
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));

@@ -34,6 +34,8 @@ export interface TickContext {
   options: TickOptions;
   runtime: SessionRuntime;
   nowMs: number;
+  /** When this invocation began, on the clock the launcher's deadline runs on; the apply state counts its deadline from here. */
+  startedMs: number;
   launches: ReadRecord[];
   apply: ApplyState | null;
   /** What each repository's tick read beside its report, by path, for the line. */

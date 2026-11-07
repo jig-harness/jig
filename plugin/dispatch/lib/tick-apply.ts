@@ -62,6 +62,7 @@ export function applyState(
   records: ReadRecord[],
   nowMs: number,
   unreadable: string[],
+  startedAt: number,
 ): ApplyState | { withheld: string } | null {
   const machine = options.machine ?? null;
   if (!options.apply || machine === null) return null;
@@ -83,7 +84,7 @@ export function applyState(
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),
     codexOptIn: hostCodexOptIn(),
-    startedAt: Date.now(),
+    startedAt,
     tick,
     repos: options.repos.length,
   };

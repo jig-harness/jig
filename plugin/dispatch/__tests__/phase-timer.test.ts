@@ -39,4 +39,21 @@ describe("PhaseTimer", () => {
     expect(timer.current).toBe("tracker");
     expect(timer.ms.forge ?? 0).toBeGreaterThanOrEqual(30);
   });
+
+  it("throws the error of the phase that threw first when both fail, whatever their order as arguments", async () => {
+    const timer = new PhaseTimer<"tracker" | "forge">();
+    await expect(
+      settled(
+        timer.time("tracker", async () => {
+          await Bun.sleep(40);
+          throw new Error("tracker");
+        }),
+        timer.time("forge", async () => {
+          await Bun.sleep(5);
+          throw new Error("forge");
+        }),
+      ),
+    ).rejects.toThrow("forge");
+    expect(timer.current).toBe("forge");
+  });
 });

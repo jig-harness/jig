@@ -2037,6 +2037,17 @@ make, use the entry's term instead.
   `dispatch.notices_linger`, or it is unread and every cause it carries is gone, the
   dispatcher removes it with its branch, unless it holds anything a person
   made.
+- **Observe lock** — the lock a *dispatcher* *tick* holds on a repository
+  while it reads it and until it is done acting on it, so no other tick
+  acts on that repository from reads made before this one acted. It is one
+  per repository path, and a second one per forge repository, so two
+  checkouts of one repository exclude each other. A tick never waits for an
+  observe lock: a repository another tick holds is left to that tick and
+  named on the receipt. Taken before the *act lock*.
+- **Act lock** — the one lock (`tick.lock`) a *dispatcher* *tick* holds
+  while it acts: plans, launches and writes labels. One tick acts per
+  machine; a tick waits for it up to two minutes. Taken after the tick's
+  *observe locks*, and the only lock a tick waits for.
 - **Dispatched mark** — the line that says the *dispatcher* started a
   session in a workspace: a short mark, the stage, the key and the *launch
   record*'s id (`⚙ dispatched · rearm #456 · launch <id>`). It is kept in

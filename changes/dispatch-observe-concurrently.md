@@ -17,7 +17,7 @@ release: minor
   tick of this version and one of an earlier version never act at once. A
   tick waits up to two minutes for another tick's act phase, and leaves a
   repository another tick is reading to that tick, listing it under `busy` on
-  its receipt.
+  its receipt. Two checkouts of one repository count as one repository.
 - The forge's rate limit is now read once, as the tick starts. While less
   than a tenth of it is left, the tick skips the running drives' thread
   samples and serialization's reads. Without serialization's reads, no

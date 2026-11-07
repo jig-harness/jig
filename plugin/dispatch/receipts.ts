@@ -526,6 +526,20 @@ export function takeTickLock(root = stateRoot()): Lock {
  * reads another tick made before acting on it.
  */
 export function takeObserveLock(path: string, root = stateRoot()): Lock {
-  const digest = createHash("sha256").update(resolve(path)).digest("hex");
+  return takeObserveKey(resolve(path), root);
+}
+
+/**
+ * A forge repository's observe lock: the records an observation reads and
+ * writes belong to the repository, not to a checkout of it, so two checkouts
+ * of one repository exclude each other through this lock, taken once the
+ * observation knows which repository its checkout is.
+ */
+export function takeRepositoryLock(slug: string, root = stateRoot()): Lock {
+  return takeObserveKey(`repository:${slug}`, root);
+}
+
+function takeObserveKey(key: string, root: string): Lock {
+  const digest = createHash("sha256").update(key).digest("hex");
   return takeLockAt(join(root, "observe", `${digest.slice(0, 16)}.lock`));
 }
