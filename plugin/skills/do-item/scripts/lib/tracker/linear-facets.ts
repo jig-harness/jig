@@ -24,15 +24,26 @@ export function linearFacets(
   core: CoreTracker,
   facets: Facets = defaultFacets("linear"),
 ): Tracker {
-  const native = facets.priority.store === "native";
+  checkLinearFacets(facets);
+  return withFacets(
+    core,
+    facets,
+    new Set(facets.priority.store === "native" ? ["priority"] : []),
+  );
+}
+
+/**
+ * Refuse a Linear facet configuration the adapter cannot honour. Pure, so the
+ * audit refuses what the adapter refuses without opening a tracker.
+ */
+export function checkLinearFacets(facets: Facets): void {
   // Linear's own priority numbers are written and read as they are, so a map
   // onto other numbers could not be honoured in either direction.
-  if (native)
+  if (facets.priority.store === "native")
     for (const [i, name] of PRIORITY_NAMES.entries())
       if (facets.priority.map?.toTracker(name) !== String(i + 1))
         throw new TrackerConfigError(
           "issue_tracker.facets.priority.values",
           "issue_tracker.facets.priority.values cannot remap Linear's native priority, which is always urgent 1 to low 4; keep priority in labels to name other values",
         );
-  return withFacets(core, facets, new Set(native ? ["priority"] : []));
 }

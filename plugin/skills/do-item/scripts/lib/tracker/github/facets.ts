@@ -237,7 +237,7 @@ function typeNodes(
 /** A field value's field name and its value as text. */
 function fieldValueOf(
   n: Record<string, unknown>,
-): { field: string; value: string } | null {
+): { field: string; value: string; numeric?: true } | null {
   const field = n.field;
   if (field === null || typeof field !== "object" || !("name" in field))
     return null;
@@ -248,12 +248,32 @@ function fieldValueOf(
     typeof n.name === "string"
   )
     return { field: name, value: n.name };
-  if (
-    (n.__typename === "IssueFieldNumberValue" && typeof n.value === "number") ||
-    (n.__typename === "IssueFieldTextValue" && typeof n.value === "string")
-  )
-    return { field: name, value: String(n.value) };
+  if (n.__typename === "IssueFieldNumberValue" && typeof n.value === "number")
+    return { field: name, value: String(n.value), numeric: true };
+  if (n.__typename === "IssueFieldTextValue" && typeof n.value === "string")
+    return { field: name, value: n.value };
   return null;
+}
+
+/**
+ * Refuse a GitHub facet configuration that keeps two facets in one issue
+ * field. Pure, so the audit refuses what the adapter refuses offline.
+ */
+export function checkGitHubFacets(facets: Facets): void {
+  const owners = new Map<string, Facet>();
+  for (const f of ["type", "priority", "size"] as const) {
+    const s = facets[f];
+    if (!usable(s) || s.store === "label") continue;
+    if (f !== "priority" && s.store !== "field") continue;
+    const name = fold(s.field ?? "Priority");
+    const other = owners.get(name);
+    if (other !== undefined && other !== s.facet)
+      throw new TrackerConfigError(
+        `issue_tracker.facets.${s.facet}`,
+        `issue_tracker.facets.${s.facet} keeps ${s.facet} in the issue field '${s.field ?? "Priority"}', which also keeps ${other}; one field cannot hold two facets`,
+      );
+    owners.set(name, s.facet);
+  }
 }
 
 export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
@@ -268,21 +288,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     .map(kept)
     .filter((s): s is ResolvedFacet => s !== null && s.store === "field");
   const nativePriority = kept("priority");
-  const fieldKept = [
-    ...fieldStores,
-    ...(nativePriority === null ? [] : [nativePriority]),
-  ];
-  const owners = new Map<string, Facet>();
-  for (const s of fieldKept) {
-    const name = fold(s.field ?? "Priority");
-    const other = owners.get(name);
-    if (other !== undefined && other !== s.facet)
-      throw new TrackerConfigError(
-        `issue_tracker.facets.${s.facet}`,
-        `issue_tracker.facets.${s.facet} keeps ${s.facet} in the issue field '${s.field ?? "Priority"}', which also keeps ${other}; one field cannot hold two facets`,
-      );
-    owners.set(name, s.facet);
-  }
+  checkGitHubFacets(facets);
   const own = new Set<Facet>(["priority"]);
   if (typeKept !== null) own.add("type");
   if (kept("size") !== null) own.add("size");
@@ -362,7 +368,9 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     }
     if (field.dataType === "NUMBER") {
       const n = Number(name);
-      const numbers = (s.map?.entries ?? []).map(([, t]) => Number(t));
+      const numbers = (s.map?.entries ?? [])
+        .map(([, t]) => Number(t))
+        .filter(Number.isFinite);
       if (new Set(numbers).size !== numbers.length)
         throw new TrackerRequestError(
           "invalid",
@@ -432,12 +440,17 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
 
   function fromField(
     s: ResolvedFacet,
-    values: Array<{ field: string; value: string }>,
+    values: Array<{ field: string; value: string; numeric?: true }>,
   ): string | null {
     const found = values.find((v) => same(v.field, fieldName(s)));
     if (found === undefined) return null;
     const exact = s.map?.fromTracker(found.value) ?? null;
-    if (exact !== null || s.map === null || found.value.trim() === "")
+    if (
+      exact !== null ||
+      s.map === null ||
+      found.numeric !== true ||
+      found.value.trim() === ""
+    )
       return exact;
     // A number field returns the number, not its configured spelling.
     const n = Number(found.value);
@@ -460,7 +473,10 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
                 record(n, `issue ${issue.key}.issueFieldValues[${i}]`),
               ),
             )
-            .filter((v): v is { field: string; value: string } => v !== null)
+            .filter(
+              (v): v is { field: string; value: string; numeric?: true } =>
+                v !== null,
+            )
         : [];
     const out: {
       priority: number;

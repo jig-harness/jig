@@ -174,21 +174,23 @@ export function withFacets(
     value: string | null,
     patch: IssuePatch,
   ): void {
-    const target = value === null ? null : codec.labelOf(value);
     const adds = (patch.addLabels ?? []).filter((l) => codec.owns(l));
-    const clash = adds.find((l) => target === null || fold(l) !== fold(target));
+    const clash = adds.find((l) => value === null || codec.read([l]) !== value);
     if (clash !== undefined)
       throw new TrackerRequestError(
         "invalid",
         `the label '${clash}' to add is a ${codec.facet} label, but the ${codec.facet} given is ${value === null ? "none" : `'${value}'`}`,
       );
     const dropped =
-      target !== null &&
-      (patch.removeLabels ?? []).some((l) => fold(l) === fold(target));
-    if (dropped)
+      value === null
+        ? undefined
+        : (patch.removeLabels ?? []).find(
+            (l) => codec.owns(l) && codec.read([l]) === value,
+          );
+    if (dropped !== undefined)
       throw new TrackerRequestError(
         "invalid",
-        `the label '${target}' to remove is the ${codec.facet} '${value}' this write sets`,
+        `the label '${dropped}' to remove is the ${codec.facet} '${value}' this write sets`,
       );
   }
 
@@ -222,6 +224,13 @@ export function withFacets(
           priority.read([label]) as string,
         );
         add(label);
+      } else {
+        const other = issue.labels.find((l) => priority.owns(l));
+        if (other !== undefined)
+          throw new TrackerRequestError(
+            "invalid",
+            `the label '${other}' is a priority label, but the priority given is none`,
+          );
       }
     }
     return rest.createIssue(out);
@@ -281,8 +290,26 @@ export function withFacets(
         out[f] = checkFacetValue(facets[f], patch[f] as string);
     }
     if (codecs.has("priority")) delete out.priority;
+    // An added alias of a value the facet change sets is redundant, not a clash.
+    const owned = (l: string) =>
+      [...LABEL_FACETS, "priority" as const].some((f) => {
+        const codec = codecs.get(f);
+        return (
+          patch[f] !== undefined &&
+          patch[f] !== null &&
+          codec !== undefined &&
+          codec.owns(l)
+        );
+      });
+    const redundant = new Set(
+      (patch.addLabels ?? []).filter(owned).map((l) => fold(l)),
+    );
+    if (redundant.size > 0)
+      out.addLabels = (patch.addLabels ?? []).filter(
+        (l) => !redundant.has(fold(l)),
+      );
     if (labels.add.length > 0)
-      out.addLabels = [...(patch.addLabels ?? []), ...labels.add];
+      out.addLabels = [...(out.addLabels ?? []), ...labels.add];
     if (labels.remove.length > 0)
       out.removeLabels = [...(patch.removeLabels ?? []), ...labels.remove];
     // A facet already at its value is no change, and no error either; an

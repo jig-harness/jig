@@ -444,6 +444,25 @@ describe("the facets on Linear and Jira, with today's behaviour", () => {
     expect((await t.poolIssue("ENG-1"))?.priority).toBe(0);
   });
 
+  it("refuses a priority label when a create asks for no priority", async () => {
+    const { t } = linear({
+      facets: { priority: { store: "label", prefix: "P:" } },
+    });
+    await expect(
+      t.createIssue({
+        title: "x",
+        description: "",
+        labels: ["P:high"],
+        priority: 0,
+      }),
+    ).rejects.toThrow(/priority label/);
+  });
+
+  it("takes an added alias of the type it sets as no contradiction", async () => {
+    const { t } = linear();
+    await t.updateIssue("ENG-1", { type: "bug", addLabels: ["type:bug"] });
+  });
+
   it("changes a size on Linear in one update, from the issue's labels", async () => {
     const { t, calls } = linear();
     await t.updateIssue("ENG-1", { size: "small", type: null });

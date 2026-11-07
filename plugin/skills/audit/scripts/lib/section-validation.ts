@@ -22,6 +22,8 @@ import {
   validSettings,
 } from "../../../design-brief-builder/scripts/contracts.ts";
 import { parseDocsSettings } from "../../../docs/scripts/lib/settings.ts";
+import { checkGitHubFacets } from "../../../do-item/scripts/lib/tracker/github/facets.ts";
+import { checkLinearFacets } from "../../../do-item/scripts/lib/tracker/linear-facets.ts";
 import { parseRouting } from "../../../do-item/scripts/lib/routing.ts";
 import {
   facetsOf,
@@ -122,7 +124,11 @@ export function skillValidation(
   attempt("do-item (pull-request policy)", () => parsePrPolicy(config));
   attempt("do-item (tracker)", () => {
     parseWorkTypes(config); // refuses a do_issue section before anything else
-    facetsOf(parseTrackerConfig(config), root);
+    const tracker = parseTrackerConfig(config);
+    const facets = facetsOf(tracker, root);
+    // The adapters' own offline checks, so --offline refuses what they refuse.
+    if (tracker.adapter === "linear") checkLinearFacets(facets);
+    if (tracker.adapter === "github") checkGitHubFacets(facets);
   });
   attempt("do-item (routing)", () =>
     parseRouting(config, parseWorkTypes(config)),
