@@ -9,6 +9,8 @@
  */
 
 import { TrackerConfigError } from "../config-error.ts";
+import { defaultFacets, type Facets } from "../facets/config.ts";
+import { type GitHubFacets, gitHubFacets } from "./facets.ts";
 import type { GitHubSettings } from "./settings.ts";
 import { TrackerRequestError } from "../port.ts";
 import type { GitHubModel } from "./model.ts";
@@ -25,7 +27,12 @@ import {
 } from "./read.ts";
 import { type IssueRef, type Repo, requireRef, slug } from "./refs.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
-import { GitHubApiError, type GitHubTransport, pageAll } from "./transport.ts";
+import {
+  credentialOf,
+  GitHubApiError,
+  type GitHubTransport,
+  pageAll,
+} from "./transport.ts";
 
 /** Which of a repository's issues a listing reads; every field narrows it. */
 export interface IssueListing {
@@ -45,7 +52,11 @@ export interface Client {
   readonly model: GitHubModel;
   readonly ctx: ReadContext;
   readonly transport: GitHubTransport;
-  /** The fields `parseIssue` reads, for a query of the caller's own. */
+  /** The facets the adapter keeps in GitHub's own fields, and priority. */
+  readonly facets: GitHubFacets;
+  /** The repository's facets, resolved. */
+  readonly facetSlots: Facets;
+  /** The fields `parseIssue` reads and the facets' own, for a query of the caller's own. */
   readonly fields: string;
   ref(key: string): IssueRef;
   /** One issue, with `extra` fields read beside the usual ones; `null` when it does not exist. */
@@ -150,6 +161,10 @@ export interface ClientOptions {
   model: GitHubModel;
   settings: GitHubSettings;
   transport: GitHubTransport;
+  /** The repository's facets; default: every facet at the adapter's default. */
+  facets?: Facets;
+  /** Names the credential the transport uses, for messages; default from the environment. */
+  credential?: string;
 }
 
 export function gitHubClient(opts: ClientOptions): Client {
@@ -159,7 +174,19 @@ export function gitHubClient(opts: ClientOptions): Client {
       ? { url: settings.project.url, statusField: settings.statusField }
       : null;
   const ctx: ReadContext = { home, board };
-  const fields = issueFields(board);
+  const facetSlots =
+    opts.facets ?? defaultFacets("github", settings.priorityLabels);
+  const facets = gitHubFacets({
+    facets: facetSlots,
+    home,
+    model,
+    transport,
+    credential: opts.credential ?? credentialOf(),
+  });
+  const fields =
+    facets.fields === ""
+      ? issueFields(board)
+      : `${issueFields(board)}\n${facets.fields}`;
   const repoVars = { owner: home.owner, name: home.name };
 
   let repoId: Promise<string> | undefined;
@@ -171,6 +198,8 @@ export function gitHubClient(opts: ClientOptions): Client {
     model,
     ctx,
     transport,
+    facets,
+    facetSlots,
     fields,
     ref: (key) => requireRef(key, home),
 

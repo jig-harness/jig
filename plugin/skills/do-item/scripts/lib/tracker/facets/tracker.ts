@@ -1,0 +1,402 @@
+/**
+ * The facets every adapter shares: an adapter (its core) reads and writes
+ * the facets it keeps in the tracker's own fields, and `withFacets` adds the
+ * rest from labels, checks every facet value a write names, narrows a pool
+ * by facet, lists the incomplete issues and reports each facet's store.
+ *
+ * A facet the core keeps is read from what the core returns; one kept in
+ * labels is read from the issue's labels, and written by adding its value's
+ * label and taking the facet's other labels off. A change of such a facet
+ * reads the issue's labels first, so a write never leaves two values.
+ */
+
+import { checkPriority } from "../requests.ts";
+import {
+  type CanonicalState,
+  FACETS,
+  type Facet,
+  type FacetStores,
+  type FacetValues,
+  type FacetStoreReport,
+  type IncompleteIssue,
+  type IncompletePage,
+  type IncompleteQuery,
+  type Issue,
+  type IssuePatch,
+  type NewIssue,
+  type PoolIssue,
+  type PoolQuery,
+  type Tracker,
+  TrackerRequestError,
+} from "../port.ts";
+import { TrackerConfigError } from "../config-error.ts";
+import {
+  baseReport,
+  type FacetSlot,
+  type Facets,
+  type ResolvedFacet,
+  usable,
+} from "./config.ts";
+import {
+  type LabelCodec,
+  labelCodec,
+  priorityFromLabels,
+  priorityLabel,
+} from "./label.ts";
+import { canonical, fold } from "./values.ts";
+
+/** An issue as an adapter's core reads it: the facets it keeps, at most. */
+export type CoreIssue = Omit<Issue, "type" | "size"> &
+  Partial<Pick<Issue, "type" | "size">>;
+
+/** A pool issue as an adapter's core reads it. */
+export type CorePoolIssue = Omit<PoolIssue, "type" | "size"> &
+  Partial<Pick<PoolIssue, "type" | "size">>;
+
+/** The adapter's own part of `facetStores`. */
+export interface CoreFacetReport {
+  facets: Partial<
+    Record<Facet, Pick<FacetStoreReport, "health" | "detection">>
+  >;
+  discovery: FacetStores["discovery"];
+}
+
+/** What an adapter implements; `withFacets` makes it a `Tracker`. */
+export interface CoreTracker
+  extends Omit<
+    Tracker,
+    | "getIssue"
+    | "openIssues"
+    | "openChildren"
+    | "poolIssue"
+    | "assignedIssues"
+    | "incompleteIssues"
+    | "facetStores"
+  > {
+  getIssue(key: string): Promise<CoreIssue | null>;
+  openIssues(query: PoolQuery): Promise<CorePoolIssue[]>;
+  openChildren(key: string): Promise<CorePoolIssue[]>;
+  poolIssue(key: string): Promise<CorePoolIssue | null>;
+  assignedIssues(
+    identity: string,
+    states: ReadonlyArray<CanonicalState>,
+  ): Promise<CorePoolIssue[]>;
+  /** Every open issue of this team, in pool form, read whole. */
+  openPopulation(): Promise<CorePoolIssue[]>;
+  /** Store health, detection and discovery, where the adapter has them. */
+  facetReport?(): Promise<CoreFacetReport>;
+}
+
+/** The value `value` names among a facet's values, refusing one it does not. */
+export function checkFacetValue(slot: FacetSlot, value: string): string {
+  if (!usable(slot)) {
+    if (slot.problem !== null)
+      throw new TrackerConfigError("issue_tracker.taxonomy", slot.problem);
+    throw new TrackerRequestError(
+      "invalid",
+      `this repository has no ${slot.facet} facet: its label taxonomy has no ${slot.facet} group`,
+    );
+  }
+  const found = canonical(slot.values, value);
+  if (found === null)
+    throw new TrackerRequestError(
+      "invalid",
+      `'${value}' is not a ${slot.facet} of this repository (${slot.values.join(", ")})`,
+    );
+  return found;
+}
+
+const LABEL_FACETS = ["type", "size"] as const;
+
+/** Whether a patch changes anything. */
+function changes(patch: IssuePatch): boolean {
+  return Object.values(patch).some((v) =>
+    Array.isArray(v) ? v.length > 0 : v !== undefined,
+  );
+}
+
+/**
+ * The tracker an adapter's core makes: `coreFacets` names the facets the
+ * core reads and writes itself; every other facet with a store is a label
+ * store, kept here.
+ */
+export function withFacets(
+  core: CoreTracker,
+  facets: Facets,
+  coreFacets: ReadonlySet<Facet>,
+): Tracker {
+  const { openPopulation, facetReport, ...rest } = core;
+  const codecs = new Map<Facet, LabelCodec>();
+  for (const f of FACETS) {
+    const slot = facets[f];
+    if (usable(slot) && slot.store === "label" && !coreFacets.has(f))
+      codecs.set(f, labelCodec(slot));
+  }
+
+  function withValues<T extends CoreIssue | CorePoolIssue>(
+    issue: T,
+  ): T & FacetValues {
+    const read = (f: "type" | "size"): string | null => {
+      const codec = codecs.get(f);
+      if (codec !== undefined) return codec.read(issue.labels ?? []);
+      return coreFacets.has(f) ? (issue[f] ?? null) : null;
+    };
+    const priority = codecs.get("priority");
+    return {
+      ...issue,
+      type: read("type"),
+      size: read("size"),
+      priority:
+        priority === undefined
+          ? issue.priority
+          : priorityFromLabels(priority, issue.labels ?? []),
+    };
+  }
+
+  /** Refuse labels that name another value of a facet the write sets. */
+  function refuseContradiction(
+    codec: LabelCodec,
+    labels: ReadonlyArray<string>,
+    value: string,
+  ): void {
+    const other = labels.find(
+      (l) => codec.owns(l) && codec.read([l]) !== value,
+    );
+    if (other !== undefined)
+      throw new TrackerRequestError(
+        "invalid",
+        `the label '${other}' is the ${codec.facet} '${codec.read([other])}', but the ${codec.facet} given is '${value}'`,
+      );
+  }
+
+  async function createIssue(issue: NewIssue) {
+    const out: NewIssue = { ...issue, labels: [...issue.labels] };
+    const add = (label: string) => {
+      if (!out.labels.some((l) => fold(l) === fold(label)))
+        out.labels.push(label);
+    };
+    for (const f of LABEL_FACETS) {
+      const given = issue[f];
+      if (given === undefined) continue;
+      const value = checkFacetValue(facets[f], given);
+      const codec = codecs.get(f);
+      if (codec === undefined) out[f] = value;
+      else {
+        delete out[f];
+        refuseContradiction(codec, issue.labels, value);
+        add(codec.labelOf(value));
+      }
+    }
+    const priority = codecs.get("priority");
+    if (priority !== undefined && issue.priority !== undefined) {
+      checkPriority(issue.priority);
+      delete out.priority;
+      const label = priorityLabel(priority, issue.priority);
+      if (label !== null) add(label);
+    }
+    return rest.createIssue(out);
+  }
+
+  /** The label changes a patch's label-kept facets make, from the issue's labels. */
+  async function facetLabels(
+    key: string,
+    patch: IssuePatch,
+  ): Promise<{ add: string[]; remove: string[] }> {
+    const changes: Array<[LabelCodec, string | null]> = [];
+    for (const f of LABEL_FACETS) {
+      const given = patch[f];
+      const codec = codecs.get(f);
+      if (given === undefined || codec === undefined) continue;
+      changes.push([
+        codec,
+        given === null ? null : checkFacetValue(facets[f], given),
+      ]);
+    }
+    const priority = codecs.get("priority");
+    if (priority !== undefined && patch.priority !== undefined) {
+      checkPriority(patch.priority);
+      const name = priorityLabel(priority, patch.priority);
+      changes.push([
+        priority,
+        name === null ? null : (priority.read([name]) as string),
+      ]);
+    }
+    if (changes.length === 0) return { add: [], remove: [] };
+    const current = await rest.poolIssue(key);
+    if (current === null)
+      throw new TrackerRequestError(
+        "unresolved",
+        `issue ${key} does not exist`,
+      );
+    if (current.truncated.includes("labels"))
+      throw new TrackerRequestError(
+        "invalid",
+        `issue ${key} has more labels than one read takes, so a facet kept in labels cannot be changed safely`,
+      );
+    const add: string[] = [];
+    const remove: string[] = [];
+    for (const [codec, value] of changes) {
+      const change = codec.change(current.labels, value);
+      add.push(...change.add);
+      remove.push(...change.remove);
+    }
+    return { add, remove };
+  }
+
+  async function updateIssue(key: string, patch: IssuePatch) {
+    const labels = await facetLabels(key, patch);
+    const out: IssuePatch = { ...patch };
+    for (const f of LABEL_FACETS) {
+      if (patch[f] === undefined) continue;
+      if (codecs.has(f)) delete out[f];
+      else if (patch[f] !== null)
+        out[f] = checkFacetValue(facets[f], patch[f] as string);
+    }
+    if (codecs.has("priority")) delete out.priority;
+    if (labels.add.length > 0)
+      out.addLabels = [...(patch.addLabels ?? []), ...labels.add];
+    if (labels.remove.length > 0)
+      out.removeLabels = [...(patch.removeLabels ?? []), ...labels.remove];
+    // A facet already at its value is no change, and no error either; an
+    // empty patch still reaches the adapter, which refuses it.
+    if (!changes(out) && changes(patch)) return;
+    await rest.updateIssue(key, out);
+  }
+
+  function poolFilter(query: PoolQuery): (issue: PoolIssue) => boolean {
+    const oneOf = Object.entries(query.facets?.oneOf ?? {}).map(
+      ([f, list]) =>
+        [
+          f as "type" | "size",
+          (list ?? []).map((v) => checkFacetValue(facets[f as Facet], v)),
+        ] as const,
+    );
+    const missing = query.facets?.missing ?? [];
+    for (const f of missing) requireStore(f);
+    return (issue) =>
+      oneOf.every(
+        ([f, list]) => issue[f] !== null && list.includes(issue[f]),
+      ) &&
+      (missing.length === 0 || missing.some((f) => lacks(issue, f, false)));
+  }
+
+  function requireStore(f: Facet): ResolvedFacet {
+    if (!(FACETS as readonly string[]).includes(f))
+      throw new TrackerRequestError(
+        "invalid",
+        `'${f}' is not a facet (${FACETS.join(", ")})`,
+      );
+    const slot = facets[f];
+    if (!usable(slot))
+      throw new TrackerRequestError(
+        "invalid",
+        slot.problem ?? `this repository has no ${f} facet`,
+      );
+    return slot;
+  }
+
+  const isEpic = (issue: PoolIssue) =>
+    issue.labels.some((l) => fold(l) === fold(facets.epic));
+
+  /** Whether an issue lacks `f`; an epic needs no size where `epicExempt`. */
+  function lacks(issue: PoolIssue, f: Facet, epicExempt: boolean): boolean {
+    if (f === "size" && epicExempt && isEpic(issue)) return false;
+    return f === "priority" ? issue.priority === 0 : issue[f] === null;
+  }
+
+  async function incompleteIssues(
+    query: IncompleteQuery,
+  ): Promise<IncompletePage> {
+    if (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100)
+      throw new TrackerRequestError(
+        "invalid",
+        `an incomplete-issues page holds 1 to 100 issues, not ${JSON.stringify(query.limit)}`,
+      );
+    for (const f of query.missing) requireStore(f);
+    const open = (await openPopulation()).map(withValues);
+    const outside = open.filter((i) => i.state.type !== "triage");
+    const counts: IncompletePage["counts"] = {};
+    for (const f of query.missing) {
+      const required = outside.filter((i) => !(f === "size" && isEpic(i)));
+      counts[f] = {
+        required: required.length,
+        lacking: required.filter((i) => lacks(i, f, false)).length,
+      };
+    }
+    const retired = query.retired.map(fold);
+    const listed: Array<IncompleteIssue & { createdAt: string }> = [];
+    for (const i of outside) {
+      if (i.state.type !== "backlog" && i.state.type !== "unstarted") continue;
+      const missing = query.missing.filter((f) => lacks(i, f, true));
+      const carried = i.labels.filter((l) => retired.includes(fold(l)));
+      if (missing.length === 0 && carried.length === 0) continue;
+      listed.push({
+        identifier: i.identifier,
+        url: i.url,
+        state: { name: i.state.name, type: i.state.type },
+        missing,
+        retired: carried,
+        createdAt: i.createdAt,
+      });
+    }
+    const cursorOf = (i: { createdAt: string; identifier: string }) =>
+      `${i.createdAt}|${i.identifier}`;
+    listed.sort((a, b) => cursorOf(a).localeCompare(cursorOf(b)));
+    const after = query.after ?? null;
+    const from =
+      after === null ? listed : listed.filter((i) => cursorOf(i) > after);
+    const page = from.slice(0, query.limit);
+    const last = page.at(-1);
+    return {
+      issues: page.map(({ createdAt: _, ...i }) => i),
+      next:
+        from.length > page.length && last !== undefined ? cursorOf(last) : null,
+      counts,
+    };
+  }
+
+  return {
+    ...rest,
+    async getIssue(key) {
+      const issue = await rest.getIssue(key);
+      return issue === null ? null : withValues(issue);
+    },
+    async openIssues(query) {
+      const keep = poolFilter(query);
+      const { facets: _, ...labels } = query;
+      return (await rest.openIssues(labels)).map(withValues).filter(keep);
+    },
+    async openChildren(key) {
+      return (await rest.openChildren(key)).map(withValues);
+    },
+    async poolIssue(key) {
+      const issue = await rest.poolIssue(key);
+      return issue === null ? null : withValues(issue);
+    },
+    async assignedIssues(identity, states) {
+      return (await rest.assignedIssues(identity, states)).map(withValues);
+    },
+    createIssue,
+    updateIssue,
+    incompleteIssues,
+    async facetStores() {
+      const extra: CoreFacetReport =
+        facetReport === undefined
+          ? {
+              facets: {},
+              discovery: {
+                status: "none",
+                reason: `the ${core.adapter} adapter discovers no organization's fields`,
+              },
+            }
+          : await facetReport();
+      return {
+        facets: FACETS.map((f) => ({
+          ...baseReport(facets[f]),
+          ...extra.facets[f],
+        })),
+        discovery: extra.discovery,
+      };
+    },
+  };
+}
