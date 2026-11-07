@@ -17,3 +17,5 @@ release: minor
 - Rearm requests remain reserved across hosts until their label removal is
   acknowledged, including after a lost runtime receipt or launch-record
   retention. An explicit request can retry an ended admission refusal.
+  Acknowledgment retries leave requests pending when the tick deadline is
+  reached.

@@ -74,3 +74,22 @@ return { pending: hold.kind, held: "refused" in pendingAdmission, ended: acknowl
 `),
   ).toEqual({ pending: "held", held: true, ended: "ended" });
 });
+
+it("leaves delivered rearm acknowledgments pending when the tick has no time left", async () => {
+  expect(
+    await probe(`
+const { applyDrives } = await import(${JSON.stringify(resolve(import.meta.dir, "../lib/actions/drive.ts"))});
+const { writeRecord, readRecord } = await import(${JSON.stringify(resolve(import.meta.dir, "../lib/launches.ts"))});
+writeRecord(record, ctx.root);
+const state = {
+  machine: { intervalMs: 300000, runtimeTimeoutMs: 1000, workspaceTimeoutMs: 1000 },
+  startedAt: Date.now() - 7 * 3600000,
+  records: [{ record, state: { kind: "ended", exit: { at, code: 1, signal: null }, process: null }, result: null }],
+  root: ctx.root,
+};
+const report = { actions: [], launches: [] };
+await applyDrives(state, { slug: ctx.slug }, report, {}, {});
+return { waits: report.launches.map(r => r.detail.includes("timer allows")), consumed: readRecord(record.id, ctx.root)?.rearmConsumed === true };
+`),
+  ).toEqual({ waits: [true], consumed: false });
+});

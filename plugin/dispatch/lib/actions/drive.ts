@@ -482,6 +482,12 @@ async function retryRequests(
       "waiting to acknowledge the accepted rearm request",
       record.account,
     );
+    const late = outOfTime(state);
+    if (late !== null) {
+      result.detail += `: ${late}`;
+      report.launches.push(result);
+      continue;
+    }
     const consumed = await consumeRearm(record, state.root);
     if (!consumed.ok) {
       result.detail += `: ${consumed.failure.reason}`;
