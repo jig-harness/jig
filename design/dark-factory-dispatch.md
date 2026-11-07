@@ -1747,7 +1747,7 @@ the last probe, so a change the search index reports late is still found,
 and each open pull request's head and checks) and wakes, under the same
 rule, only the repositories where something changed: a minute with no
 change starts no tick, and a probe that cannot read the forge wakes nothing
-and is logged. On GitHub the search is one GraphQL call, 1 point of the
+and is logged. On GitHub the search is one GraphQL call for a single page of results (further pages add calls and points), 1 point of the
 5,000 an hour, measured with eleven repositories and sixty-odd open pull
 requests, about sixty calls an hour. The probe has a timer of its own
 rather than a place in the tick's: the two run at different intervals, a

@@ -798,12 +798,15 @@ review, a comment, a label, a push, a merge or a close) and every open
 one's checks, which wakes the tick of each repository where something
 changed, under the rule `jig send`'s wakes follow (below), and of no other.
 A minute with no change starts no tick. On GitHub that search is one
-GraphQL call, 1 point of the 5,000 an hour, apart from the REST limit, made
+GraphQL call for a single page of results (measured at 1 point of the 5,000
+an hour; further pages add calls and points), apart from the REST limit, made
 from outside every checkout, so the account `gh` uses there must see every
 repository: one it cannot see is named in each probe's output, and its
 changes wait for the sweep. A probe that cannot read the forge wakes
 nothing, says why and exits `1`; the sweep runs on its own timer either way.
-The probe waits for the ticks it wakes before it exits, since a scheduler
+Only one applying probe runs at a time: one that finds another running does
+nothing. A probe whose wake or state write failed prints why and exits `3`.
+The probe wakes the repositories together and waits for their ticks before it exits, since a scheduler
 ends what a job leaves running, and the wake's log
 (`~/.local/state/jig/dispatch/wake/<digest>/last-run.log`) names the probe as
 who asked. `jig dispatch probe`, without `--apply`, says what it would wake

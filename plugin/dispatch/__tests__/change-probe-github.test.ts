@@ -48,7 +48,7 @@ describe("the probe's GitHub call", () => {
     expect(query).toContain(
       'r1: repository(owner: "acme", name: "api") { nameWithOwner }',
     );
-    expect(query).toContain("statusCheckRollup { state }");
+    expect(query).toContain("statusCheckRollup { state contexts");
     expect(
       probeSearches(["acme/web", "acme/api"], "2026-11-07T10:00:00Z"),
     ).toEqual({
@@ -113,7 +113,13 @@ describe("the probe's GitHub call", () => {
           nodes: [{ commit: { oid: "abc", statusCheckRollup: null } }],
         },
       }),
-    ).toEqual({ slug: "acme/web", number: 12, head: "abc", checks: "NONE" });
+    ).toEqual({
+      slug: "acme/web",
+      number: 12,
+      head: "abc",
+      checks: "NONE",
+      detail: "-",
+    });
     expect(
       openPr({ number: 12, repository: { nameWithOwner: "not a slug" } }),
     ).toBeNull();

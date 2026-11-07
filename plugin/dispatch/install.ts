@@ -39,6 +39,7 @@ import {
   tickBudgetMs,
 } from "./lib/machine-config.ts";
 import { stateRoot } from "./receipts.ts";
+import { WAKE_ATTEMPTS, WAKE_SPACING_MS } from "../shared/wake.ts";
 
 /** `jig dispatch install`'s options, as dispatch/cli.ts parses them. */
 interface InstallOptions {
@@ -89,7 +90,8 @@ export function dispatchJobSpec(
 /**
  * The change probe's job, every minute, with its own state directory under
  * the dispatcher's, so its launcher copy and logs are its own. It waits for
- * the ticks it wakes, so its deadline is the tick's.
+ * the ticks it wakes, together, and a waiter starts up to `WAKE_ATTEMPTS`
+ * runs a `WAKE_SPACING_MS` apart, so its deadline covers that many ticks'.
  */
 export function probeJobSpec(
   machine: MachineConfig | null = null,
@@ -106,7 +108,10 @@ export function probeJobSpec(
     schedule: { everyMinutes: 1 },
     ...(tick.deadlineSec === undefined
       ? {}
-      : { deadlineSec: tick.deadlineSec }),
+      : {
+          deadlineSec:
+            WAKE_ATTEMPTS * (tick.deadlineSec + WAKE_SPACING_MS / 1000),
+        }),
   };
 }
 
@@ -136,9 +141,18 @@ async function updateJobs(changes: readonly JobChange[]): Promise<string[]> {
       );
     }
   } catch (error) {
-    for (const snapshot of previous.reverse()) await restoreScheduler(snapshot);
+    // Every job is put back on its own: one that will not restore does not stop the rest.
+    const unrestored: string[] = [];
+    for (const snapshot of previous.reverse())
+      try {
+        await restoreScheduler(snapshot);
+      } catch (restoreError) {
+        unrestored.push((restoreError as Error).message);
+      }
     throw new GcError(
-      `${(error as Error).message}; the previous scheduler jobs are restored`,
+      unrestored.length === 0
+        ? `${(error as Error).message}; the previous scheduler jobs are restored`
+        : `${(error as Error).message}; some scheduler jobs could not be restored: ${unrestored.join("; ")}`,
     );
   }
   return written;

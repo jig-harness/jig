@@ -34,6 +34,7 @@ import { type Clock, systemClock } from "../../shared/clock.ts";
 import { errnoCode } from "../../shared/errors.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { releaseHolder, takeHolder } from "../../shared/wake.ts";
 import { stateRoot } from "../receipts.ts";
 import type { MachineConfig } from "./machine-config.ts";
 
@@ -53,12 +54,14 @@ export interface ChangedPr {
   updatedAt: string;
 }
 
-/** An open pull request's head commit and the state of its checks (`NONE` without any). */
+/** An open pull request's head commit and the state of its checks (`NONE` without any), and of each check. */
 export interface OpenPr {
   slug: string;
   number: number;
   head: string;
   checks: string;
+  /** A digest of each check's name and result, so one check ending moves it while the aggregate `checks` stays. */
+  detail: string;
 }
 
 /** What one probe read from the forge. */
@@ -91,7 +94,7 @@ export interface ProbeState {
   probedAt: number;
   /** Each pull request seen updated inside the window: `slug#number` to its `updatedAt`. */
   updated: Record<string, string>;
-  /** Each open pull request's head and checks: `slug#number` to `<head> <state>`. */
+  /** Each open pull request's head and checks: `slug#number` to `<head> <state> <digest of each check>`. */
   checks: Record<string, string>;
   /** Each checkout's forge repository, and when it was read. */
   slugs: Record<string, { slug: string; at: number }>;
@@ -110,6 +113,15 @@ function stringMap(value: unknown): Record<string, string> | null {
   return entries.every(([, v]) => typeof v === "string")
     ? (Object.fromEntries(entries) as Record<string, string>)
     : null;
+}
+
+/** Whether `value` is a time a date can hold, in epoch milliseconds. */
+function isTime(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    Number.isFinite(new Date(value).getTime())
+  );
 }
 
 /** The kept state; `null` when there is none. One that does not read is a failure, for the caller to start over from. */
@@ -135,13 +147,12 @@ export function readProbeState(
   if (
     !isRecord(value) ||
     value.v !== 1 ||
-    typeof value.probedAt !== "number" ||
+    !isTime(value.probedAt) ||
     updated === null ||
     checks === null ||
     slugs === null ||
     !Object.values(slugs).every(
-      (s) =>
-        isRecord(s) && typeof s.slug === "string" && typeof s.at === "number",
+      (s) => isRecord(s) && typeof s.slug === "string" && isTime(s.at),
     )
   )
     return failed("unreadable", `${statePath(dir)} is not a probe's state`);
@@ -229,14 +240,14 @@ function checksMoved(
   const checks: Record<string, string> = {};
   for (const pr of read) {
     const key = `${pr.slug}#${pr.number}`;
-    checks[key] = `${pr.head} ${pr.checks}`;
+    checks[key] = `${pr.head} ${pr.checks} ${pr.detail}`;
     const before = seen[key];
     if (before === undefined || before === checks[key]) continue;
     note(
       changes,
       pr.slug,
       before.split(" ")[0] === pr.head
-        ? `#${pr.number} checks ${pr.checks}`
+        ? `#${pr.number} checks ${pr.checks}${before.split(" ")[1] === pr.checks ? " (a check moved)" : ""}`
         : `#${pr.number} head ${pr.head.slice(0, 7)}`,
     );
   }
@@ -271,7 +282,7 @@ export interface ProbeChange {
 
 /** What one probe did. */
 export interface ProbeReport {
-  status: "off" | "probed";
+  status: "off" | "probed" | "busy";
   /** The repositories it read. */
   probed: string[];
   since: string | null;
@@ -324,24 +335,27 @@ async function slugs(
   return { slugs: resolved, unresolved };
 }
 
-/** Wake each change's checkouts, one after another; whether every wake recorded. */
+/** Wake each change's checkouts together, each waiting on its own tick; whether every wake recorded. */
 async function wakeAll(
   changes: readonly ProbeChange[],
   wake: ProbeDeps["wake"],
 ): Promise<boolean> {
-  let woken = true;
-  for (const change of changes) {
-    change.woke = {};
-    for (const path of change.paths) {
-      const woke = await wake(
-        path,
-        `probe: ${change.slug} ${change.what.join(", ")}`,
-      );
-      change.woke[path] = woke.ok ? woke.value : woke.failure.reason;
-      woken &&= woke.ok;
-    }
-  }
-  return woken;
+  const woken = await Promise.all(
+    changes.flatMap((change) => {
+      change.woke = {};
+      return change.paths.map(async (path) => {
+        const woke = await wake(
+          path,
+          `probe: ${change.slug} ${change.what.join(", ")}`,
+        );
+        (change.woke as Record<string, string>)[path] = woke.ok
+          ? woke.value
+          : woke.failure.reason;
+        return woke.ok;
+      });
+    }),
+  );
+  return woken.every(Boolean);
 }
 
 const EMPTY: ProbeReport = {
@@ -384,7 +398,9 @@ function reported(
  * One probe over the repositories the machine file dispatches (those with a
  * stage enabled). With `apply`, it wakes each changed repository's tick and
  * keeps what it saw; without, it only says what it would wake. A forge that
- * does not read is a failure: nothing is woken and the kept state stays.
+ * does not read is a failure: nothing is woken and the kept state stays. An
+ * applying probe holds `lock/` under `dir` throughout; one that finds it held
+ * does nothing and reports `busy`.
  */
 export async function probe(
   machine: MachineConfig,
@@ -393,6 +409,24 @@ export async function probe(
 ): Promise<Outcome<ProbeReport, "unreadable">> {
   if (!machine.changeProbe) return ok(EMPTY);
   const dir = deps.dir ?? probeRoot();
+  if (!apply) return probeOnce(machine, false, deps, dir);
+  // One applying probe at a time, whatever starts it: two would read the same
+  // state, wake twice, and the older to finish would overwrite the newer's.
+  const lock = join(dir, "lock");
+  if (!takeHolder(lock)) return ok({ ...EMPTY, status: "busy" });
+  try {
+    return await probeOnce(machine, true, deps, dir);
+  } finally {
+    releaseHolder(lock);
+  }
+}
+
+async function probeOnce(
+  machine: MachineConfig,
+  apply: boolean,
+  deps: ProbeDeps,
+  dir: string,
+): Promise<Outcome<ProbeReport, "unreadable">> {
   const now = (deps.clock ?? systemClock).now();
   const kept = readProbeState(dir);
   const previous = kept.ok ? kept.value : null;

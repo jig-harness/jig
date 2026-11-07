@@ -9,22 +9,25 @@
  * - `updated:>=<since>` — the pull requests updated since then, open, merged
  *   or closed: a comment, a review, a label, a push, a merge and a close
  *   each move a pull request's `updatedAt`;
- * - `is:open` — every open pull request's head commit and the state of its
- *   checks (`statusCheckRollup`), since a check that ends does not move
- *   `updatedAt`.
+ * - `is:open` — every open pull request's head commit, the state of its
+ *   checks (`statusCheckRollup`) and each check's name and result (the first
+ *   100), since a check that ends does not move `updatedAt` and the
+ *   aggregate state can stay while one of several checks ends.
  *
  * Beside them it looks each repository up, so one the signed-in account
  * cannot see is named (`unseen`) rather than read as a repository where
  * nothing changed: a search leaves such a repository out without an error.
  * A search with more than one page of results is paged in further calls,
- * each holding only the searches that still have pages. GitHub prices the
- * call in its GraphQL points (1 point of 5,000 an hour), apart from the
- * REST limit; the cost each call reports is returned with what it read.
+ * each holding only the searches that still have pages. GitHub prices each
+ * call in its GraphQL points (5,000 an hour), apart from the REST limit; the
+ * cost each call reports is returned with what it read, so a probe of one
+ * page per search is one call and further pages add calls and points.
  *
  * The call runs from the home directory, outside every checkout, so a `gh`
  * that chooses its account by the checkout's remote uses the account it
  * uses outside one; that account must be able to read every repository.
  */
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { isRecord } from "../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
@@ -47,7 +50,7 @@ type Search = "changed" | "open";
 
 const FIELDS: Record<Search, string> = {
   changed: "number updatedAt repository { nameWithOwner }",
-  open: "number repository { nameWithOwner } commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } }",
+  open: "number repository { nameWithOwner } commits(last: 1) { nodes { commit { oid statusCheckRollup { state contexts(first: 100) { totalCount nodes { __typename ... on CheckRun { name status conclusion } ... on StatusContext { context state } } } } } } }",
 };
 
 /** One call's query: the searches still to read, after their cursors, and on the first call each repository's lookup. */
@@ -216,15 +219,39 @@ export function openPr(node: unknown): OpenPr | null {
   const head =
     Array.isArray(commits) && isRecord(commits[0]) ? commits[0].commit : null;
   if (!isRecord(head) || typeof head.oid !== "string") return null;
-  const rollup = isRecord(head.statusCheckRollup)
-    ? head.statusCheckRollup.state
-    : null;
+  const roll = isRecord(head.statusCheckRollup) ? head.statusCheckRollup : null;
+  const rollup = roll === null ? null : roll.state;
   return {
     slug,
     number: node.number,
     head: head.oid,
     checks: typeof rollup === "string" ? rollup : "NONE",
+    detail: checkDigest(roll),
   };
+}
+
+/** A short digest of each check's name and result in a rollup, and of how many there are; `-` without any. */
+function checkDigest(roll: Record<string, unknown> | null): string {
+  const contexts =
+    roll !== null && isRecord(roll.contexts) ? roll.contexts : null;
+  const nodes =
+    contexts !== null && Array.isArray(contexts.nodes) ? contexts.nodes : [];
+  const lines = nodes.flatMap((node) => {
+    if (!isRecord(node)) return [];
+    const name = String(node.name ?? node.context ?? "");
+    return [
+      `${name}=${String(node.status ?? "")}/${String(node.conclusion ?? node.state ?? "")}`,
+    ];
+  });
+  if (lines.length === 0) return "-";
+  const total =
+    typeof contexts?.totalCount === "number"
+      ? contexts.totalCount
+      : lines.length;
+  return createHash("sha256")
+    .update(`${total}\n${lines.sort().join("\n")}`)
+    .digest("hex")
+    .slice(0, 12);
 }
 
 /** Runs one call; `gh` exits 1 for an answer with errors, which `readPage` still reads. */

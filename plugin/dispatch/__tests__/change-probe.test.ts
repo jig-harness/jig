@@ -8,9 +8,16 @@
  * the probe off write and wake nothing.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { encodeIdentity, lockIdentity } from "../../shared/liveness.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import {
   FIRST_WINDOW_MS,
@@ -42,6 +49,8 @@ interface FakePr {
   updatedAt: number;
   head: string;
   checks: string;
+  /** The digest of each check; the aggregate `checks` can stay while it moves. */
+  detail?: string;
   open: boolean;
   /** The forge's search reports the pull request only from this time on: its index is late. */
   indexedAt?: number;
@@ -82,6 +91,7 @@ function fakeForge(clock: { at: number }) {
             number: pr.number,
             head: pr.head,
             checks: pr.checks,
+            detail: pr.detail ?? "-",
           })),
         unseen: [],
         calls: 1,
@@ -353,6 +363,79 @@ describe("the change probe", () => {
     });
     expect(failing.ok && failing.value.unkept).toBe("a wake did not record");
     expect(existsSync(join(w.dir, "state.json"))).toBe(false);
+  });
+  it("wakes when one of several checks ends while the aggregate state stays", async () => {
+    const w = world();
+    w.forge.prs = [
+      pr("acme/web", 12, T0 - 3_600_000, { checks: "PENDING", detail: "aaa" }),
+    ];
+    await w.run();
+    w.clock.at = T0 + 60_000;
+    (w.forge.prs[0] as FakePr).detail = "bbb";
+    await w.run();
+    expect(w.wakes).toEqual([
+      {
+        path: WEB,
+        reason: "probe: acme/web #12 checks PENDING (a check moved)",
+      },
+    ]);
+  });
+
+  it("starts over from a state whose times a date cannot hold", async () => {
+    const w = world();
+    writeFileSync(
+      join(w.dir, "state.json"),
+      '{"v":1,"probedAt":1e309,"updated":{},"checks":{},"slugs":{}}',
+    );
+    expect(readProbeState(w.dir).ok).toBe(false);
+    writeFileSync(
+      join(w.dir, "state.json"),
+      '{"v":1,"probedAt":9e15,"updated":{},"checks":{},"slugs":{}}',
+    );
+    expect(readProbeState(w.dir).ok).toBe(false);
+    w.forge.prs = [pr("acme/web", 12, T0 - 10_000)];
+    const r = await w.run();
+    expect(r.ok && r.value.restarted).toContain("is not a probe's state");
+  });
+
+  it("does nothing while another applying probe holds the lock, and releases it after", async () => {
+    const w = world();
+    w.forge.prs = [pr("acme/web", 12, T0 - 10_000)];
+    mkdirSync(join(w.dir, "lock"), { recursive: true });
+    writeFileSync(
+      join(w.dir, "lock", "waiter"),
+      encodeIdentity(lockIdentity()),
+    );
+    const busy = await w.run();
+    expect(busy.ok && busy.value.status).toBe("busy");
+    expect(w.wakes).toEqual([]);
+    expect(w.forge.searches).toEqual([]);
+    rmSync(join(w.dir, "lock"), { recursive: true });
+    await w.run();
+    expect(w.wakes.length).toBe(1);
+    expect(existsSync(join(w.dir, "lock", "waiter"))).toBe(false);
+  });
+
+  it("wakes the changed repositories together, not one after another", async () => {
+    const w = world();
+    w.forge.prs = [
+      pr("acme/web", 12, T0 - 10_000),
+      pr("acme/api", 3, T0 - 10_000),
+    ];
+    let live = 0;
+    let peak = 0;
+    await probe(machine(), true, {
+      clock: w.clock,
+      forge: w.probeForge,
+      dir: w.dir,
+      wake: async () => {
+        peak = Math.max(peak, ++live);
+        await new Promise((r) => setTimeout(r, 20));
+        live--;
+        return ok("woken");
+      },
+    });
+    expect(peak).toBe(2);
   });
 });
 

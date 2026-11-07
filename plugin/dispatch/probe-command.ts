@@ -21,6 +21,8 @@ import { wakeTickHere } from "./lib/wake-tick.ts";
 
 /** Exit when the forge did not read and nothing was woken. */
 const PROBE_UNREAD_EXIT = 1;
+/** Exit when an applied probe's wake did not record or its state was not written: the report is printed, the job fails. */
+const PROBE_UNKEPT_EXIT = 3;
 
 export interface ProbeOptions {
   apply: boolean;
@@ -51,6 +53,8 @@ async function wakeHere(
 
 /** The report in lines, for a person and the scheduler's log. */
 function formatProbe(report: ProbeReport): string {
+  if (report.status === "busy")
+    return "another probe is running, so this one did nothing";
   if (report.status === "off")
     return `the change probe is off: change_probe is false in ${machineConfigPath()}`;
   const lines = [
@@ -106,5 +110,5 @@ export async function probeMain(
       ? JSON.stringify(result.value, null, 2)
       : formatProbe(result.value),
   );
-  return 0;
+  return result.value.unkept === undefined ? 0 : PROBE_UNKEPT_EXIT;
 }

@@ -7,7 +7,7 @@ release: minor
 - The dispatcher's change probe: `jig install dispatch` now also writes a
   timer that runs `jig dispatch probe --apply` every minute. It makes one
   search on the forge over every repository the machine file dispatches
-  (on GitHub one GraphQL call, 1 point of the 5,000 an hour) and wakes the
+  (on GitHub one GraphQL call for a single page of results, 1 point of the 5,000 an hour; further pages add calls and points) and wakes the
   tick of each repository where a pull request was reviewed, commented on,
   labelled, pushed to, merged or closed, or its checks changed, since the
   last probe, so such a change starts that repository's tick within about a

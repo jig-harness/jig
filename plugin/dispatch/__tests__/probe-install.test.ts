@@ -9,6 +9,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { WAKE_ATTEMPTS, WAKE_SPACING_MS } from "../../shared/wake.ts";
 import { jobFiles, launcherDirectory } from "../../runtime/scheduler.ts";
 import { dispatchJobSpec, probeJobSpec } from "../install.ts";
 
@@ -24,7 +25,9 @@ describe("the change probe's job", () => {
     expect(launcherDirectory(probe)).toBe(
       join(launcherDirectory(tick), "..", "probe", "launcher"),
     );
-    expect(probe.deadlineSec).toBe(tick.deadlineSec);
+    expect(probe.deadlineSec).toBe(
+      WAKE_ATTEMPTS * ((tick.deadlineSec ?? 0) + WAKE_SPACING_MS / 1000),
+    );
     const job = {
       command: ["bun", "launcher.ts", "--", ...probe.args],
       env: {},

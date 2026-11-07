@@ -137,6 +137,21 @@ function ownerGone(holder: ProcessIdentity, claim: string): boolean {
   return verdict.ok && verdict.value.state === "dead";
 }
 
+/**
+ * Hold `dir` for this process alone, as a waiter holds a wake: `false` while
+ * a live process holds it, and a dead holder's claim is replaced. For a
+ * caller that needs one process at a time, not a wake.
+ */
+export function takeHolder(dir: string): boolean {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return takeWaiter(dir);
+}
+
+/** Give up what `takeHolder` took. */
+export function releaseHolder(dir: string): void {
+  releaseWaiter(dir);
+}
+
 /** Take the waiter file for this process; `false` when a live waiter holds it. */
 function takeWaiter(dir: string): boolean {
   const path = waiterPath(dir);
