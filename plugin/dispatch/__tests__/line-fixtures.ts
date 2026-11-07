@@ -26,7 +26,7 @@ export function report(fields: Partial<RepoReport> = {}): RepoReport {
   };
 }
 
-export const MACHINE: MachineConfig = {
+const MACHINE: MachineConfig = {
   path: "/home/person/.jig/dispatch.yaml",
   repositories: [
     {
