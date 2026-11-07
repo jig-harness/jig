@@ -49,11 +49,10 @@ weigh against it.
   day Jig holds a resident process with real concurrency. A coordinator
   daemon is that process. A reader that answers each request from one read
   of the records, with no state that two requests change, is not.
-- **An early wake-up is planned without one.** The planned `jig` plugin
-  for Orca would run a tick when an agent's status changes
+- **An early wake-up works without one.** The `jig` plugin
+  for Orca runs a tick when an agent waits, blocks or finishes
   ([design/orca-integration.md](../../design/orca-integration.md#the-jig-plugin-for-orca)),
-  with the machine's timer catching what an event misses. Until that
-  integration is built, the timer supplies the wake-ups.
+  with the machine's timer catching what an event misses.
 - **A person needs one view of the line.** The [hub](../../GLOSSARY.md)
   ([design/hub.md](../../design/hub.md)) shows every
   [piece of work](../../GLOSSARY.md) across a person's machines, and a page

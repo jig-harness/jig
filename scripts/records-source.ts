@@ -55,7 +55,7 @@ function escapeValue(raw: string): string {
     const point = Number.parseInt(digits, 16);
     return point <= 0x10ffff ? String.fromCodePoint(point) : raw;
   }
-  if (code === "\n" || code === "\r\n" || code === "\r") return "";
+  if (/^(?:\r\n|[\n\r\u2028\u2029])$/.test(code)) return "";
   return ESCAPES[code] ?? code;
 }
 
@@ -77,7 +77,7 @@ function append(
     const value = sourceEscape && !verbatim ? escapeValue(part) : part;
     sql.text += value;
     for (let n = 0; n < value.length; n++) sql.lines.push(line);
-    line += part.split("\n").length - 1;
+    line += part.split(/[\n\u2028\u2029]/).length - 1;
     at += part.length;
   }
 }
@@ -173,11 +173,13 @@ export function sourceLiterals(source: string): SqlSource[] {
   // the source snippets checked by callers. Never walk an error-recovered tree.
   let parsed = parseSync("source.ts", source, {
     sourceType: "module",
+    showSemanticErrors: true,
     preserveParens: false,
   });
   if (parsed.errors.length)
     parsed = parseSync("source.ts", source, {
       sourceType: "commonjs",
+      showSemanticErrors: true,
       preserveParens: false,
     });
   if (parsed.errors.length)

@@ -1,6 +1,38 @@
 import { expect, test } from "bun:test";
 import { sourceLiterals } from "./records-source.ts";
 
+test("scope-dependent invalid source is rejected in module and CommonJS modes", () => {
+  for (const prefix of ["", "return; "]) {
+    expect(() =>
+      sourceLiterals(
+        `${prefix}let foo; let foo; const sql = 'CREATE TABLE birds (id TEXT)';`,
+      ),
+    ).toThrow();
+  }
+});
+
+test("Unicode line separators inside literals retain declaration source lines", () => {
+  for (const separator of ["\u2028", "\u2029"]) {
+    for (const quote of ["`", '"', "'"]) {
+      const text = `/*${separator}*/ CREATE TABLE birds (id TEXT)`;
+      const [sql] = sourceLiterals(`const sql = ${quote}${text}${quote};`);
+      expect(sql?.text).toBe(text);
+      expect(sql?.lines[text.indexOf("CREATE")]).toBe(2);
+    }
+  }
+});
+
+test("escaped Unicode line continuations do not emit SQL characters", () => {
+  for (const separator of ["\u2028", "\u2029"]) {
+    const [sql] = sourceLiterals(
+      `const sql = "/*\\${separator}*/ CREATE TABLE birds (id TEXT)";`,
+    );
+    expect(sql?.text).toBe("/**/ CREATE TABLE birds (id TEXT)");
+    expect(sql?.lines[5]).toBe(2);
+    expect(sql?.lines.length).toBe(sql?.text.length);
+  }
+});
+
 test("literal text and source lines after a regex and division", () => {
   const source = [
     "const regex = /['`]/;",
