@@ -457,7 +457,10 @@ whichever comes later.
 The thread's additions are built in the hub's steps
 ([hub.md § Build order](hub.md#build-order)): resolved parks in the drive
 ledger in its stage 1, and the entry ids, the question's and the answer's
-fields, the fold by aliases and the list of threads in its stage 2.
+fields, the fold by aliases and the list of threads in its stage 2. Its
+stage 3 adds to the `drive-answer` record `jig send` writes, beside the
+envelope, the plan id, the dry run's digest and the kind of proof that a
+person is present, with `via: hub`.
 
 ## Left out
 

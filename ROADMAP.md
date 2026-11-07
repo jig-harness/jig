@@ -84,6 +84,20 @@ whoever drives it, in one column: coming, picking up, driven, needs you,
 ready to merge, or merged. Work moves in any direction, and a pull request
 that was ready and moved back says why. Merging stays a person's.
 
+### 39. Addresses: asking and telling the stations of the line
+
+Every station on a piece of work has an address, such as
+`drive@jig#456`: the drive of pull request 456. `jig ask <address>` says
+who holds the station, what state it is in and what it waits on. It also
+shows what was said to the station and by it. It reads the tracker, the
+pull request and the dispatching machine's records.
+`jig send <address> <verb>` writes the assignment, label, comment or
+mailbox directive the line already acts on, from a closed list of verbs,
+and checks first that the station can take it. The operator skill,
+`/jig:operator`, turns a question such as "what is waiting on me" into
+those commands. Nothing new is stored, and no agent has to keep running for an
+address to answer.
+
 ### 42. The hub: one place to watch and steer the line
 
 One page shows a person every piece of work in flight, across the machines
@@ -105,22 +119,9 @@ own repositories. A chat with the [operator](GLOSSARY.md), the agent a
 person asks about the line, explains why work is stuck and drafts what to
 do. A person confirms every action, and the words of an answer are always
 theirs. The hub writes nothing until each write can show that a person made
-it.
-
-
-### 39. Addresses: asking and telling the stations of the line
-
-Every station on a piece of work has an address, such as
-`drive@jig#456`: the drive of pull request 456. `jig ask <address>` says
-who holds the station, what state it is in and what it waits on. It also
-shows what was said to the station and by it. It reads the tracker, the
-pull request and the dispatching machine's records.
-`jig send <address> <verb>` writes the assignment, label, comment or
-mailbox directive the line already acts on, from a closed list of verbs,
-and checks first that the station can take it. The operator skill,
-`/jig:operator`, turns a question such as "what is waiting on me" into
-those commands. Nothing new is stored, and no agent has to keep running for an
-address to answer.
+it. The first stage puts each pull request's status on the dispatch
+dashboard a team already runs. A person decides on the rest once that stage
+is in use.
 
 ### 35. One jig command line
 

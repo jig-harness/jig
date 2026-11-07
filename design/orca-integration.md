@@ -351,14 +351,22 @@ links its pull request and opens the Orca workspace that holds the work
 (`workspace.open`, host API 1.3).
 
 - **An answer** typed in a park's entry goes out through
-  `jig send <address> answer`, as the person. Only a click in Orca's window
-  reaches the box, so it is one of the places a person answers while the
-  hub writes nothing
-  ([hub.md § When the hub writes](hub.md#when-the-hub-writes)). The box and
-  the merge button act only on an event the browser marks as the user's own
-  (`isTrusted`), and the inbox's step tries Orca's command line against
-  them: it drives workspaces, terminals and Orca's browser, and nothing Jig
-  knows of drives a plugin's panel.
+  `jig send <address> answer`, as the person. It is one of the places a
+  person answers while the hub writes nothing
+  ([hub.md § When the hub writes](hub.md#when-the-hub-writes)). That only a
+  click in Orca's window reaches the box is not tried yet. The box and the
+  merge button act only on an event the browser marks as the user's own
+  (`isTrusted`), which stops a script that sends them made-up events but
+  not input a process running as the person injects through the operating
+  system; such a process already holds the person's login, and can post a
+  comment or run a merge command under it with no panel. The inbox's step
+  tries Orca's command line and a paired host's connection against them:
+  the command line drives workspaces, terminals and Orca's browser, and
+  nothing Jig knows of drives a plugin's panel. If the try finds a way to
+  drive the panel from outside Orca's window, the answer box and the merge
+  button are held back until
+  [item 40](plan.md#40-the-pass-trust-boundary-as-mechanisms) settles, and
+  the panel offers the answer line to copy.
 - **A merge button** on a merge-now entry: a person's click runs the
   drive's pinned merge command, exactly as the line gives it and only after
   it passes the command's strict forms, as that person and nothing else. A

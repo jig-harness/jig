@@ -284,7 +284,7 @@ hint with its detail on hover, tap or focus, as the page's other hints do:
 | Conflicts | none, conflicting, behind, or not known yet | the forge's mergeability and merge state, and the base branch |
 | Checks | running, green, failing, held, or none | for a failing pull request, each failing check by name with its app, "required" or "not required", and its run; for the others, the state |
 | CI hold | "held: not built since `a1b2c3d`", "held: not built at this head", or none | the label, that its required checks fail on purpose while it stays, and that removing it runs them again on the same head |
-| Threads | the unresolved review threads: "2 bot · 1 not a bot" for a pull request in the detail set, the total for the others | the count, each thread's author for the split, linked to the pull request's conversation |
+| Threads | the unresolved review threads: "2 bot · 1 not a bot" for a pull request in the detail set whose authors were read, the total for the others | the count, each thread's author for the split, linked to the pull request's conversation |
 | Merge | merge now, approve first, update next, or not ready | the [Ready conditions](#ready-exactly) as a checklist, each met or not with the fact behind it, and for each one not met whether waiting settles it or which person's act does |
 
 The merge mark is the one derived state among them: the predicate's
@@ -314,9 +314,9 @@ are the hub's ([hub.md](hub.md#a-piece-of-work-and-its-views)):
   as the drive treats it. Any other author is "not a bot", never called a
   person, since an account the forge types as a user may be a script's.
   An author costs more to read than a thread's resolution, so the split
-  covers the detail set only ([§ The board read](#the-board-read)); across
-  a machine its cost is bounded by the detail set's size in each
-  repository and by the budget floor.
+  covers the detail set only, under a cap of its own per repository and
+  tick ([§ The board read](#the-board-read)), and a card with a thread
+  whose author the cap or the budget floor left unread shows the total.
 
 ### The board read
 
@@ -346,8 +346,9 @@ budget with them:
   its link), its labels (for the `hold` and CI hold labels), its review
   requests and its reviewers' latest reviews (up to 20 each). The same
   query reads, by the ids the listing found, the first comment's author
-  (`login` and `__typename`) of each unresolved thread, for the split of
-  the thread mark.
+  (`login` and `__typename`) of each unresolved thread the board has not
+  seen before, for the split of the thread mark, within the author cap
+  below.
 
 A held pull request the marks must tell from a broken build is in the
 detail set already: it is converged, or its required checks fail and its
@@ -366,11 +367,24 @@ prices a query by the requests its connections need, one per connection
 per parent node, at 100 requests a point. So nothing reads more than one
 comment of a thread, and only of an unresolved thread in the detail set,
 fetched by its id, 100 ids a query at most: about one point per 100 such
-threads. The listing costs about two points per 100 open pull requests and
-the rest of the detail about one point per 20 pull requests in its set, so
-a repository at the [size this is built for](#the-size-it-is-built-for)
-costs about 4 points a tick, about 50 an hour at a five-minute interval,
-and ten repositories about a tenth of the 5,000 points an hour one login
+threads. A thread's first author never changes, so from step 4 each author
+read is kept by thread id with the card's history (`board_seen`), and only
+a thread the board has not seen before is read. The author reads have a
+cap of their own, 2 points per repository per tick (200 threads). A detail
+set at the [size this is built for](#the-size-it-is-built-for) holds 6,000
+unresolved threads, about 60 points to read once: uncapped, a tick that
+reads them all, as a first tick does and as every tick before step 4
+would, spends that per repository, and ten repositories at twelve ticks an
+hour would spend more than the hour's budget on authors alone. A card with
+a thread whose author the cap or the budget floor left unread shows the
+total only, and the next tick reads the next threads. Before step 4 keeps
+authors, nothing records which threads were read, so each tick reads the
+authors of the first 200 unresolved threads of the detail set again, and a
+card past them shows the total. The listing costs about two
+points per 100 open pull requests and the rest of the detail about one
+point per 20 pull requests in its set, so a repository at that size costs
+at most about 5 points a tick, about 60 an hour at a five-minute interval,
+and ten repositories about an eighth of the 5,000 points an hour one login
 gets. The receipt records each board read's cost, the author split's
 apart, and the budget left (the query's `rateLimit`), so the figure is
 measured, not assumed. When the budget left is below a fifth of the
@@ -437,12 +451,14 @@ forwards. The moves a person meets:
 
 When each card entered its column and its lane, and where it was before,
 is kept in a table of the state database (`board_seen`), keyed by
-repository and target, not in the line: a tick for one repository, or one that could not
-write the line, keeps every other card's time. A card that moved back (left
-Ready to merge for anything but Merged, or moved left on the board) shows
-where it came from, when, and the cause ("was ready 3 h; its base now
-conflicts") until it moves again or the host's day ends. Those are the
-moves a person most needs to see: work that was ready and was lost to
+repository and target, not in the line: a tick for one repository, or one
+that could not write the line, keeps every other card's time. With each
+card, `board_seen` also keeps, for the split of the thread mark, the first
+author of each of its unresolved threads by thread id. A card that moved
+back (left Ready to merge for anything but Merged, or moved left on the
+board) shows where it came from, when, and the cause ("was ready 3 h; its
+base now conflicts") until it moves again or the host's day ends. Those are
+the moves a person most needs to see: work that was ready and was lost to
 waiting.
 
 A card whose facts did not read at this tick stays in the column it was in,
@@ -690,8 +706,8 @@ step 4.
    lost ready work, at phone and desktop width.
 4. **Every card placed.** `lib/board.ts` places every card in its column,
    with a test for each row of the column and move tables; `board_seen`
-   keeps each card's column history; the line carries `board` within its
-   bounds, a tick for one repository replacing that repository's cards
+   keeps each card's column history and its threads' authors; the line
+   carries `board` within its bounds, a tick for one repository replacing that repository's cards
    ([§ The line grows one list](#the-line-grows-one-list)); the status row
    reaches every open pull request. Done when a drive a person armed by
    hand shows in Driven as claimed, a tick for one repository keeps the
