@@ -22,6 +22,7 @@
  * wall_backoff: 1h
  * runtime_timeout: 1m
  * workspace_timeout: 50m
+ * opens_per_tick: 4
  * receipts_days: 30
  * dashboard:
  *   listen: 100.64.0.7:8765
@@ -94,6 +95,8 @@ export interface MachineConfig {
   wallBackoffMs: number;
   runtimeTimeoutMs: number;
   workspaceTimeoutMs: number;
+  /** Workspace opens per tick, including the reserved notices open. */
+  opensPerTick: number;
   receiptsDays: number;
   /** The address `jig dispatch dashboard` listens on (`dashboard.listen`); `null` when the file names none. */
   dashboardListen: Listen | null;
@@ -109,6 +112,7 @@ const DEFAULTS = {
   wallBackoffMs: 60 * 60_000,
   runtimeTimeoutMs: 60_000,
   workspaceTimeoutMs: OPEN_LIMIT_MS,
+  opensPerTick: 4,
   receiptsDays: 30,
 } as const;
 
@@ -119,6 +123,7 @@ const TOP_KEYS = [
   "wall_backoff",
   "runtime_timeout",
   "workspace_timeout",
+  "opens_per_tick",
   "receipts_days",
   "dashboard",
   "records",
@@ -293,16 +298,18 @@ function distinct<T>(items: T[], key: (t: T) => string, what: string): T[] {
 /** The longest a timer holds: the tick's overall deadline is armed with it. */
 const MAX_TIMER_MS = 2_147_483_647;
 
-/** The workspaces one tick may open: its budget covers this many opens, and a launch that needs another waits for the next tick. */
-export const OPENS_PER_TICK = 2;
+/** The default workspaces one tick may open, including the notices reservation. */
+export const OPENS_PER_TICK = DEFAULTS.opensPerTick;
 
 /** What one tick may spend at the file's limits: its workspace opens and eight runtime calls, in milliseconds. */
 export function tickBudgetMs(limits: {
   workspaceTimeoutMs: number;
   runtimeTimeoutMs: number;
+  opensPerTick?: number;
 }): number {
   return (
-    OPENS_PER_TICK * limits.workspaceTimeoutMs + 8 * limits.runtimeTimeoutMs
+    (limits.opensPerTick ?? OPENS_PER_TICK) * limits.workspaceTimeoutMs +
+    8 * limits.runtimeTimeoutMs
   );
 }
 
@@ -316,6 +323,7 @@ export const MIN_TICK_DEADLINE_MS = 6 * 3600 * 1000;
 export function tickDeadlineMs(limits: {
   workspaceTimeoutMs: number;
   runtimeTimeoutMs: number;
+  opensPerTick?: number;
 }): number {
   return Math.max(MIN_TICK_DEADLINE_MS, tickBudgetMs(limits));
 }
@@ -323,9 +331,16 @@ export function tickDeadlineMs(limits: {
 /** The machine file's values, with defaults. */
 function parseMachineConfig(values: unknown, where: string): MachineConfig {
   const config = parseValues(values, where);
+  if (
+    config.opensPerTick < 2 &&
+    config.repositories.some((repo) => repo.stages.includes("notify"))
+  )
+    throw new MachineConfigError(
+      `${where}: opens_per_tick must be at least 2 when notify is enabled, to keep one open for launches beside the notices reservation`,
+    );
   if (tickBudgetMs(config) > MAX_TIMER_MS)
     throw new MachineConfigError(
-      `${where}: workspace_timeout and runtime_timeout together allow a tick longer than 24d (2 workspace opens plus 8 runtime calls); shorten them`,
+      `${where}: opens_per_tick, workspace_timeout and runtime_timeout together allow a tick longer than 24d (${config.opensPerTick} workspace opens plus 8 runtime calls); lower opens_per_tick or shorten the timeouts`,
     );
   return config;
 }
@@ -370,6 +385,11 @@ function parseValues(values: unknown, where: string): MachineConfig {
       top.workspace_timeout,
       "workspace_timeout",
       DEFAULTS.workspaceTimeoutMs,
+    ),
+    opensPerTick: count(
+      top.opens_per_tick,
+      "opens_per_tick",
+      DEFAULTS.opensPerTick,
     ),
     receiptsDays: count(
       top.receipts_days,

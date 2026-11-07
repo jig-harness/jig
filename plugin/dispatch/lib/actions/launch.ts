@@ -77,8 +77,10 @@ export interface ApplyState {
    * it, so the pass command does what was judged.
    */
   codexOptIn: CodexOptIn;
-  /** The workspaces this tick has opened so far, within `OPENS_PER_TICK`. */
+  /** The workspaces this tick has opened so far, within `opens_per_tick`. */
   opened?: number;
+  /** Opens spent on notices, which do not consume the launches' allowance. */
+  noticesOpened?: number;
   /** When the tick began, for its overall deadline. */
   startedAt?: number;
   /** The index of this tick among the applying ticks, which rotates the order of everything that shares the allowance. */
@@ -123,12 +125,36 @@ export function enforcedDeadlineMs(
     : tickDeadlineMs(machine);
 }
 
+/** The kill grace a timed-out child may take beyond its timeout before it settles. */
+const KILL_GRACE_MS = 2000;
+
+/** The longest `calls` runtime calls of `timeoutMs` each take to settle: a call rounds up to whole seconds and may spend its kill grace. */
+export function settleMs(timeoutMs: number, calls = 1): number {
+  return calls * (Math.ceil(timeoutMs / 1000) * 1000 + KILL_GRACE_MS);
+}
+
+/** The runtime calls one launch makes after its timeout: the mark, the terminal, the run tab and the agent read-back. */
+const LAUNCH_CALLS = 4;
+
 /** What the tick has left of its launcher's deadline, less the time its receipt needs; `null` for a tick that keeps no start. */
 export function timeLeftMs(state: ApplyState): number | null {
   if (state.startedAt === undefined) return null;
   const allowed =
     enforcedDeadlineMs(state.machine) - state.machine.runtimeTimeoutMs;
   return allowed - (Date.now() - state.startedAt);
+}
+
+/**
+ * Why the tick cannot settle a runtime launch now; `null` when it can. The
+ * launch is admitted on its settlement bound, not its timeout, and the
+ * receipt's reserve is already out of the time left.
+ */
+export function launchRoom(state: ApplyState): string | null {
+  const left = timeLeftMs(state);
+  return left !== null &&
+    left < settleMs(state.machine.runtimeTimeoutMs, LAUNCH_CALLS)
+    ? "the tick deadline has no room for the launch and its receipt; a later tick retries this one"
+    : null;
 }
 
 /**
@@ -146,8 +172,8 @@ export function outOfTime(state: ApplyState): string | null {
   return `this tick has used the ${Math.ceil(allowed / 1000)}s its timer allows; a later tick starts this one`;
 }
 
-/** The stages a repository's tick applies (rearm, pickup, followup), for the targets' radix. */
-const STAGES_PER_REPO = 3;
+/** Two launch groups and two background stages per repository complete a target turn. */
+const TARGET_TURN_PER_REPO = 4;
 
 /** The level of the hierarchy a rotation orders; each is a digit of the tick index, the repositories the lowest. */
 export type RotationLevel = "repositories" | "stages" | "targets";
@@ -155,12 +181,10 @@ export type RotationLevel = "repositories" | "stages" | "targets";
 /**
  * `items` in this tick's order: rotated by a digit of the tick's own index, a
  * counter that advances once per applying tick whatever the timer's interval.
- * The repositories, the stages within one and the targets within a stage share
- * the tick's allowance of opens, so each level turns once per full turn of
- * the levels above it (the index counted in mixed radix: repositories, then
- * stages, then targets). A repository that leads on every even tick then
- * leads with each of its stages in turn, and an item whose open fails every
- * time cannot keep every later one waiting.
+ * Target order advances after both launch groups and both background stages
+ * have led every repository. A failed open at the front of one stage then
+ * cannot keep every later target waiting across successive opportunities.
+ * The global repository and stage order is applied by `apply-order.ts`.
  */
 export function rotated<T>(
   state: ApplyState,
@@ -174,7 +198,7 @@ export function rotated<T>(
       ? 1
       : level === "stages"
         ? repos
-        : repos * STAGES_PER_REPO;
+        : repos * TARGET_TURN_PER_REPO;
   const start = Math.floor(state.tick / divisor) % items.length;
   return [...items.slice(start), ...items.slice(0, start)];
 }
@@ -184,9 +208,34 @@ export type Opened =
   | { waits: string }
   | { refused: string };
 
+/** Total and launch-specific allowances count notices once. */
+function openAllowance(state: ApplyState) {
+  const done = state.opened ?? 0;
+  const keeps = state.machine.repositories.some((r) =>
+    r.stages.includes("notify"),
+  );
+  const budget = state.machine.opensPerTick ?? OPENS_PER_TICK;
+  return {
+    done,
+    keeps,
+    budget,
+    cap: keeps ? budget - 1 : budget,
+    launches: done - (state.noticesOpened ?? 0),
+  };
+}
+
+/** Why the next workspace open would exhaust this tick's allowance. */
+function openBudgetWait(state: ApplyState, notice: boolean): string | null {
+  const { done, keeps, budget, cap, launches } = openAllowance(state);
+  if (done < budget && (notice || launches < cap)) return null;
+  const reservation =
+    notice || !keeps ? "" : " for launches (one is kept for notifications)";
+  return `this tick has opened the ${notice ? budget : cap} workspaces its per-tick budget covers${reservation}; a later tick opens this one`;
+}
+
 /**
  * Open a workspace through the runtime, within the tick's budget: a tick
- * opens at most `OPENS_PER_TICK`, one of them kept for the notices workspace, and a launch that needs another waits for
+ * opens at most `opens_per_tick` (four by default), one of them kept for the notices workspace, and a launch that needs another waits for
  * the next tick rather than run past the deadline the timer gives it.
  */
 export async function openWithinBudget(
@@ -196,18 +245,22 @@ export async function openWithinBudget(
 ): Promise<Opened> {
   const late = outOfTime(state);
   if (late !== null) return { waits: late };
-  const done = state.opened ?? 0;
-  // One open is kept for the notices workspace, so a queue of launches never starves the notifications that reach a person.
-  const keeps = state.machine.repositories.some((r) =>
-    r.stages.includes("notify"),
-  );
-  const cap =
-    "notices" in target || !keeps ? OPENS_PER_TICK : OPENS_PER_TICK - 1;
-  if (done >= cap)
+  if (
+    state.startedAt !== undefined &&
+    enforcedDeadlineMs(state.machine) - (Date.now() - state.startedAt) <
+      state.machine.workspaceTimeoutMs +
+        2 * state.machine.runtimeTimeoutMs +
+        2 * KILL_GRACE_MS
+  )
     return {
-      waits: `this tick has opened the ${cap} workspaces its budget covers${"notices" in target || !keeps ? "" : " for launches (one is kept for notifications)"}; a later tick opens this one`,
+      waits:
+        "the tick deadline has no room for the repository lookup, another workspace_timeout and its receipt; a later tick opens this one",
     };
-  state.opened = done + 1;
+  const notice = "notices" in target;
+  const waiting = openBudgetWait(state, notice);
+  if (waiting !== null) return { waits: waiting };
+  state.opened = (state.opened ?? 0) + 1;
+  if (notice) state.noticesOpened = (state.noticesOpened ?? 0) + 1;
   let opened: RuntimeReceipt;
   try {
     opened = await state.runtime.openWorkspace(repo, target);
@@ -455,7 +508,7 @@ export async function replay(
   action: Action,
   blocked: string | null,
 ): Promise<LaunchOutcome> {
-  const late = blocked ?? outOfTime(state);
+  const late = blocked ?? outOfTime(state) ?? launchRoom(state);
   if (late !== null)
     return waits(
       action,
@@ -468,15 +521,24 @@ export async function replay(
   return outcome(record, attempt, true);
 }
 
+/** An identity check's answer, or that the tick has no time for one: a deferral, not a verdict on the account. */
+type IdentityAnswer = IdentityCheck | { waits: string };
+
 async function identityOf(
   state: ApplyState,
   slots: Slots,
-): Promise<IdentityCheck> {
+): Promise<IdentityAnswer> {
+  // Every identity check, including the one after an open, must leave the receipt's reserve intact,
+  // and a resolver that must be killed takes its grace beyond the timeout.
+  const timeoutSec = Math.ceil(state.machine.runtimeTimeoutMs / 1000);
+  const left = timeLeftMs(state);
+  if (left !== null && left < settleMs(state.machine.runtimeTimeoutMs))
+    return {
+      waits:
+        "the tick deadline has no room for the identity check and its receipt; a later tick retries this one",
+    };
   // Read afresh each time: a login file can change between two launches.
-  return checkIdentity(
-    slots.account,
-    Math.ceil(state.machine.runtimeTimeoutMs / 1000),
-  );
+  return checkIdentity(slots.account, timeoutSec);
 }
 
 /** Why the account a pending record names cannot take its replayed launch now; `null` when it can. */
@@ -500,6 +562,7 @@ export async function accountBlocked(
   if (slots.wall !== null)
     return `${slots.account.name} is walled until ${slots.wall.resetAt}`;
   const identity = await identityOf(state, slots);
+  if ("waits" in identity) return identity.waits;
   return identity.ok ? null : `identity check: ${identity.reason}`;
 }
 
@@ -546,9 +609,13 @@ export async function admitAccount(
   for (;;) {
     const admitted = admission(state, action, failed);
     if ("waits" in admitted)
-      return { outcome: refusal ?? waits(action, admitted.waits) };
+      return {
+        outcome: refusal ?? waits(action, admitted.waits),
+      };
     const slots = admitted.admitted;
     const identity = await identityOf(state, slots);
+    if ("waits" in identity)
+      return { outcome: waits(action, identity.waits, slots.account.name) };
     if (identity.ok) return { slots };
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
@@ -578,6 +645,10 @@ async function changedWhileOpening(
       name,
     );
   const after = await identityOf(state, slots);
+  if ("waits" in after) return waits(action, after.waits, name);
+  // The launch that follows is a runtime call of its own.
+  const late = after.ok ? launchRoom(state) : null;
+  if (late !== null) return waits(action, late, name);
   return after.ok
     ? null
     : refused(
@@ -629,6 +700,19 @@ export async function launchHeld(
   state: ApplyState,
   record: LaunchRecord,
 ): Promise<LaunchOutcome> {
+  // The claim and every wait before this point may have spent the time admitted for the launch.
+  const late = launchRoom(state);
+  if (late !== null) {
+    release(state, record);
+    return {
+      target: targetOfRecord(record),
+      action: record.action,
+      outcome: "waits",
+      account: record.account,
+      record: null,
+      detail: late,
+    };
+  }
   const attempt = await callLaunch(state, record);
   if (attempt.outcome === "failed" && releasable(record))
     release(state, record);
