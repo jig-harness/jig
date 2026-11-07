@@ -633,7 +633,11 @@ outlives the session that spawned it, so its console is not where you look:
   nonexistent PR number, never a repository/auth/transport error), no lease
   is live on it, and nothing in the family was touched for `--min-age-days`
   (default 7); and the files an earlier release kept there, once the
-  database's import of them is 30 days old. A closed-but-unmerged PR is
+  database's import of them is 30 days old. Displaced file-lock quarantine
+  entries form a separate family, reported with count and bytes but kept:
+  neither an idle snapshot nor the database mutex excludes legacy writers.
+  This applies whether or not the clone was imported.
+  A closed-but-unmerged PR is
   deliberately kept — GitHub permits reopening it with no time limit. A name
   it does not recognise is never removed, and every gate fails closed. It
   also expires trace days older than 14 days. The database's rows are not
@@ -695,9 +699,16 @@ outlives the session that spawned it, so its console is not where you look:
   itself; `--stop` writes it once the driver and its pass tree are witnessed
   gone, and after a signal stop `--stop` or `--doctor` against the driver
   record it marked released with its locks does the same, each only while
-  the ledger still names that driver. A driver that kept its locks, over a
-  pass it could not witness gone or killed outright, leaves its ledger
-  running.
+  the ledger still names that driver. Review and repair passes persist
+  acquisition-bound process observations before spawning. After an abrupt
+  local stop, dispatch or doctor can reconcile the ledger when those
+  observations prove the driver and its observed and registered work gone.
+  Sampling retires only confirmed-dead identities and empty process groups;
+  timezone-shifted or unreadable creation times retain their evidence.
+  Recovery reserves the PR slot and leaves its temporary session leases free.
+  Missing, foreign, surviving or uncertain evidence leaves the ledger running;
+  dispatch notifies once and includes it in the waiting list. See
+  [terminal states](references/terminal-states.md) for the recovery guards.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
   root: the database and one `<clone-key>/` directory per clone (the hash of
   its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved

@@ -60,6 +60,7 @@ import { factsOf } from "./actions/drive-hold.ts";
 import type { LaunchClaimer } from "./actions/launch.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
+import { retryableStartup } from "./session-startup.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
@@ -68,6 +69,7 @@ import {
   type LaunchRecord,
   type ReadRecord,
   settleEnds,
+  settledEnds,
   writeRecord,
   cancelledBeforeExecution,
 } from "./launches.ts";
@@ -508,8 +510,22 @@ export async function settleOwnClaims(
   records: readonly ReadRecord[],
   outcomes: ReadonlyMap<number, FollowupOutcome>,
   nowIso: string,
+  startupScope?: ReadonlySet<number>,
 ): Promise<string[]> {
   const byId = new Map(records.map((r) => [r.record.id, r]));
+  const retryFailures: string[] = [];
+  const settled = settledEnds(ctx.root);
+  for (const r of records) {
+    if (
+      r.record.repo === ctx.slug &&
+      retryableStartup(r) &&
+      !settled.has(r.record.id) &&
+      (startupScope === undefined || startupScope.has(Number(r.record.pr)))
+    )
+      retryFailures.push(
+        ...(await settleRecordClaims(ctx, r, nowIso, ctx.root)),
+      );
+  }
   const ends = [
     ...driveEnds(claims, ctx.host, byId, nowIso),
     ...merged.flatMap((pr) =>
@@ -524,9 +540,15 @@ export async function settleOwnClaims(
       ),
     ),
   ];
-  const failures: string[] = [];
+  const failures: string[] = [...retryFailures];
   const written = new Set<number>();
   for (const o of ends) {
+    if (
+      o.stage === "followup" &&
+      o.end.state === "ended" &&
+      o.end.outcome === null
+    )
+      continue;
     const r = await ctx.records.end(
       { repo: ctx.slug, pr: o.pr },
       o.stage,
@@ -580,6 +602,7 @@ async function settleRecordClaims(
   ctx: Pick<SharedContext, "records" | "host">,
   r: ReadRecord,
   nowIso: string,
+  root = stateRoot(),
 ): Promise<string[]> {
   const owed = owedAtExit(r, nowIso);
   if (owed === null) return [];
@@ -594,16 +617,48 @@ async function settleRecordClaims(
   const unread = unreadClaims(read);
   const failures: string[] =
     unread === null ? [] : [`PR #${owed.pr}: ${unread}`];
-  const matches = readable(read.value).filter(
-    (c) =>
-      c.says.value.record === r.record.id &&
-      (c.says.value.host === ctx.host ||
-        (owed.stage === "followup" && c.says.value.host === null)),
+  const matches = ownRecordClaims(
+    read.value,
+    r.record.id,
+    ctx.host,
+    owed.stage,
   );
+  if (retryableStartup(r)) {
+    const ids = matches.filter(open).map((c) => c.id);
+    // The listing can lag a post or omit a marker already deleted by a tick.
+    // Delete the recorded id as well: only a successful deletion or an explicit
+    // not-found response confirms that this launch's marker no longer exists.
+    if (
+      !matches.some((c) => c.id === r.record.marker) &&
+      r.record.marker !== null
+    ) {
+      ids.push(r.record.marker);
+    }
+    const released = await releaseStartupClaims(ctx, target, ids);
+    if (
+      r.record.marker !== null &&
+      failures.length === 0 &&
+      released.length === 0
+    )
+      settleEnds([r.record.id], nowIso, root);
+    return [...failures, ...released];
+  }
   if (matches.length === 0)
     return [
+      ...failures,
       `PR #${owed.pr}: no readable claim for launch record ${r.record.id} was observed`,
     ];
+  return [...failures, ...(await writeRecordEnds(ctx, target, owed, matches))];
+}
+
+/** Publish each readable still-open claim's end, keeping independent write failures. */
+async function writeRecordEnds(
+  ctx: Pick<SharedContext, "records" | "host">,
+  target: { repo: string; pr: number },
+  owed: { stage: SharedStage; pr: number; end: LaunchEnd },
+  matches: ReadClaim[],
+): Promise<string[]> {
+  const failures: string[] = [];
   for (const c of matches) {
     if (!open(c)) continue;
     const done = await ctx.records.end(
@@ -621,22 +676,57 @@ async function settleRecordClaims(
   return failures;
 }
 
+/** Match readable claims to this host's record, including legacy hostless follow-ups. */
+function ownRecordClaims(
+  claims: SharedClaim[],
+  record: string,
+  host: string,
+  stage: SharedStage,
+): ReadClaim[] {
+  return readable(claims).filter(
+    (c) =>
+      c.says.value.record === record &&
+      (c.says.value.host === host ||
+        (stage === "followup" && c.says.value.host === null)),
+  );
+}
+
+/** A startup that never began releases only its own still-open claims. */
+async function releaseStartupClaims(
+  ctx: Pick<SharedContext, "records">,
+  target: { repo: string; pr: number },
+  ids: number[],
+): Promise<string[]> {
+  const failures: string[] = [];
+  for (const id of ids) {
+    const released = await ctx.records.release(target, id);
+    if (!released.ok && released.failure.code !== "not-found")
+      failures.push(
+        `PR #${target.pr}: the unstarted follow-up's marker ${id} could not be released: ${released.failure.reason}`,
+      );
+  }
+  return failures;
+}
+
 /**
  * The wrapper's settle, right after it records the stage's exit: the end of
  * its own launch's claims, written at once so another host reads it when the
  * launch ends. Every forge call, the read of the login among them, goes
  * through `ghCall` under `AT_EXIT_CALL_SEC`. Best effort: it returns why an
- * end was not written, and the tick's settle writes it.
+ * end was not written, and the tick's settle writes it. Retryable startup
+ * markers are released only by the tick, which reads current dispatch scope.
  */
 export async function settleAtExit(
   r: ReadRecord,
   root = stateRoot(),
 ): Promise<string[]> {
+  // Startup marker deletion needs the tick's current scope and dispute checks.
+  if (retryableStartup(r)) return [];
   const nowIso = new Date().toISOString();
   if (owedAtExit(r, nowIso) === null) return [];
   const login = await resolveLogin(AT_EXIT_CALL_SEC);
   const records = forgeShared({ login, timeoutSec: AT_EXIT_CALL_SEC });
-  return settleRecordClaims({ records, host: hostOf(root) }, r, nowIso);
+  return settleRecordClaims({ records, host: hostOf(root) }, r, nowIso, root);
 }
 
 /**

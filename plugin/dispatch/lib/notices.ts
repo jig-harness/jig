@@ -90,6 +90,15 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
 
 /** A drive stopped on an exit only a person settles, or with no exit at all. */
 export function stopNotice(slug: string, pr: DrivenPr): Notice {
+  if (pr.class === "silent")
+    return notice(
+      `${slug} PR #${pr.number} silent, ledger generation ${generation(pr)}, started ${String(pr.evidence.started ?? "unknown")}`,
+      [
+        `PR #${pr.number} (${pr.title}): its drive heartbeat expired and its termination cannot be confirmed. ${pr.why}.`,
+        "Inspect the driver and any surviving pass before re-arming it. Read the drive handoff in its workspace.",
+        pr.url,
+      ],
+    );
   const exit = pr.evidence.exit;
   const stop =
     exit === null || exit === undefined ? "with no exit" : `${String(exit)}`;

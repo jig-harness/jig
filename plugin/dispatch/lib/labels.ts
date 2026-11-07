@@ -145,7 +145,7 @@ const BY_CLASS: Record<
   StateName | null | "unknown"
 > = {
   driven: "driving",
-  silent: "driving",
+  silent: "parked",
   refused: "driving",
   "re-armable": "driving",
   stale: "stale",
