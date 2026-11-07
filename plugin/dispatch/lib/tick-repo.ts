@@ -68,7 +68,7 @@ export async function runTurn(
     timed(report, timer);
   };
   if (context.apply === null) {
-    await timer.time("apply", async () => {});
+    await timer.time("apply", () => Promise.resolve());
     await close();
   } else {
     // The launches run after every repository is gathered; a defect in one stops this repository's remaining turns only.
