@@ -134,8 +134,11 @@ export function judgeQuarantine(
       reason: "quarantine touched within the last 24 hours",
     };
   return {
-    action: "retire",
+    action: "keep",
     bytes,
-    reason: "quarantine is older than 24 hours and no legacy lock is present",
+    // Snapshots detect some writes, but cannot exclude a suspended legacy
+    // writer resuming after its last check. The database mutex does not
+    // coordinate those writers, so even an unchanged old family is kept.
+    reason: "legacy writer exclusion cannot be established for quarantine",
   };
 }

@@ -27,9 +27,9 @@
  *   they may be the only copy of what they held. A dry run reads the import
  *   record without opening the database for writing, so it creates and
  *   imports nothing.
- * - `quarantine:<clone>`: displaced legacy locks and recovery gates, retired
- *   after 24 hours without a write and only with no legacy lock present.
- *   Their retention is independent of whether or when the clone was imported.
+ * - `quarantine:<clone>`: displaced legacy locks and recovery gates, reported
+ *   with count and bytes but kept because legacy writers cannot be excluded.
+ *   They are kept independently of whether or when the clone was imported.
  *
  * A name no family recognises is never removed. Every gate fails
  * CLOSED: an entry that cannot be read keeps its family.

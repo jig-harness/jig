@@ -984,8 +984,8 @@ make, use the entry's term instead.
   same code, because of timing, shared state or an unreliable dependency.
 - **Lock quarantine** — displaced lock directories or recovery marker files
   kept under a distinct name so a later lock holder cannot mistake them for
-  the current lock. The drive's state reaper removes obsolete entries only
-  after its idle period and safety checks. This stores old lock artifacts;
+  the current lock. The drive's state reaper reports these entries but keeps
+  them because it cannot exclude legacy writers. This stores old lock artifacts;
   *flaky-test quarantine* sets aside unreliable tests.
 - **Flaky-test quarantine** — setting a *flaky test* aside so its failures
   stop blocking merges while it is fixed, without hiding them: the test keeps

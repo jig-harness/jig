@@ -718,13 +718,11 @@ Stop every drive before upgrading, or let it reach a terminal state: a drive sti
 Displaced [lock quarantine](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) entries (`<lock>.stale.<generation>` and
 `<lock>.recovering.stale.<generation>`, directories or marker files) are not
 imported state. The reaper reports them as `quarantine:<clone>` with their
-entry count and bytes, and retires the family after every entry and descendant
-has been idle for 24 hours. Any legacy lock or recovery gate still present
-keeps the family, including one whose holder cannot be read; an unreadable
-quarantine entry also keeps it. This applies even when the clone was never
-imported, independently of the other files' 30-day import retention. Only the
-reaper with `--delete`, under its own lock, retires them. Stop all earlier
-drivers before running it; an earlier driver's suspended holder can resume.
+entry count and bytes, and keeps the family even with `--delete`. A suspended
+legacy writer can resume after the last snapshot check; the database mutex
+does not exclude it. Neither 24 hours without a write nor the absence of a
+legacy lock proves exclusion. This applies even when the clone was never
+imported, independently of the other files' 30-day import retention.
 
 ## Relocating the state dir
 

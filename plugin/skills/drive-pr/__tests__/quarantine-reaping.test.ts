@@ -75,6 +75,30 @@ function reap(root: string, dir: string, del = false) {
   };
 }
 describe("obsolete file-lock quarantine", () => {
+  it("keeps an already-verified descendant written during verification", () => {
+    const { dir } = setup();
+    const paths = quarantine(dir);
+    const stat = fs.lstatSync;
+    let visits = 0;
+    const probe = spyOn(fs, "lstatSync").mockImplementation(((
+      path: fs.PathLike,
+      options?: fs.StatOptions,
+    ) => {
+      if (String(path) === paths[1] && ++visits === 2)
+        writeFileSync(join(paths[0] as string, "tombstone"), "new data");
+      return stat(path, options);
+    }) as typeof fs.lstatSync);
+    try {
+      expect(
+        judgeQuarantine(
+          dir,
+          paths.map((path) => basename(path)),
+        ).action,
+      ).toBe("keep");
+    } finally {
+      probe.mockRestore();
+    }
+  });
   it("keeps descendants changed while later members are measured", () => {
     for (const addition of [false, true]) {
       const { dir } = setup();
@@ -127,7 +151,7 @@ describe("obsolete file-lock quarantine", () => {
       fs.chmodSync(paths[1] as string, 0o600);
     }
   });
-  it("reports and retires displaced reaper locks and recovery gates without an import", () => {
+  it("keeps displaced reaper locks and recovery gates without writer exclusion", () => {
     const { root, dir } = setup();
     for (const suffix of [
       ".stale.owner.generation",
@@ -137,8 +161,8 @@ describe("obsolete file-lock quarantine", () => {
       mkdirSync(path);
       age(path);
     }
-    expect(reap(root, dir).retire[0]?.entries).toBe(2);
-    expect(reap(root, dir, true).entriesRemoved).toBe(2);
+    expect(reap(root, dir).keep[0]?.bytes).toBeGreaterThan(0);
+    expect(reap(root, dir, true).entriesRemoved).toBe(0);
   });
   it("keeps a family when a fresh member appeared after the initial listing", () => {
     const { dir } = setup();
@@ -150,19 +174,19 @@ describe("obsolete file-lock quarantine", () => {
     writeFileSync(join(dir, "pr-drive-999.lock.stale.new-generation"), "new");
     expect(judgeQuarantine(dir, initial).action).toBe("keep");
   });
-  it("reports count and bytes without importing, then deletes old entries independently of import retention", () => {
+  it("reports count and bytes without importing and keeps old entries on delete", () => {
     const { root, dir } = setup();
     const paths = quarantine(dir);
     const dry = reap(root, dir);
     expect(existsSync(join(dirname(dir), DB_FILE))).toBe(false);
-    expect(dry.retire).toHaveLength(1);
-    expect(dry.retire[0]?.id).toBe(`quarantine:${basename(dir)}`);
-    expect(dry.retire[0]?.entries).toBe(2);
-    expect(dry.retire[0]?.bytes).toBeGreaterThanOrEqual(13);
+    expect(dry.retire).toHaveLength(0);
+    expect(dry.keep[0]?.id).toBe(`quarantine:${basename(dir)}`);
+    expect(dry.keep[0]?.bytes).toBeGreaterThanOrEqual(13);
+    expect(dry.keep[0]?.reason).toContain("writer exclusion");
     for (const path of paths) expect(existsSync(path)).toBe(true);
     const wet = reap(root, dir, true);
-    expect(wet.entriesRemoved).toBe(2);
-    for (const path of paths) expect(existsSync(path)).toBe(false);
+    expect(wet.entriesRemoved).toBe(0);
+    for (const path of paths) expect(existsSync(path)).toBe(true);
   });
   it("keeps the entire family when a member or a descendant is recent", () => {
     for (const descendant of [false, true]) {
