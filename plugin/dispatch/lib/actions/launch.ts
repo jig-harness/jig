@@ -125,7 +125,7 @@ export function enforcedDeadlineMs(
 }
 
 /** The kill grace a timed-out child may take beyond its timeout before it settles. */
-export const KILL_GRACE_MS = 2000;
+const KILL_GRACE_MS = 2000;
 
 /** The longest `calls` runtime calls of `timeoutMs` each take to settle: a call rounds up to whole seconds and may spend its kill grace. */
 export function settleMs(timeoutMs: number, calls = 1): number {
