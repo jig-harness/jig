@@ -115,13 +115,14 @@ export interface WaitingPark {
  * Why a drive's stop no longer settles its pull request: `cause` in words, for
  * the report and the outcome log; `change` names the state that made it so,
  * for which a re-drive is launched once: for a converged drive its head and
- * whether it conflicts, for a stop on a conflict (`conflictStop`) its head and
- * its base branch's head.
+ * whether it conflicts, for a stop on a conflict (`conflictStop`: stopped `9`,
+ * or parked on a pull request that conflicts) its head and its base branch's
+ * head.
  */
 export interface StaleCause {
   cause: string;
   change: string;
-  /** The drive stopped `9`: a re-drive that leaves it so at this change is a person's to settle. */
+  /** The drive stopped `9`, or parked (`8`) on a pull request that conflicts: a re-drive that leaves it so at this change is a person's to settle. */
   conflictStop?: true;
   /** Changes an earlier launch of the same record may have acted on before a replay moved `change` on; each counts as re-driven. */
   earlier?: string[];

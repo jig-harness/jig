@@ -13,8 +13,9 @@
  * - a `stale` ledger this machine already re-drove for the same change, however
  *   that launch ended, is not launched again: a re-drive is launched once per
  *   change, so a drive that stops the same way again does not start a loop. A
- *   converged one is reported; one that stopped on a conflict is a person's to
- *   settle (`settleConflictStops`);
+ *   converged one is reported; one that stopped on a conflict, or parked on a
+ *   pull request that conflicts, is a person's to settle
+ *   (`settleConflictStops`);
  * - a pull request with no ledger that its `drive` label asks to arm, which
  *   this machine already armed at the same head commit, is reported, not
  *   armed again: an arm that ended without leaving a ledger would otherwise
@@ -38,6 +39,7 @@ import {
   redrivenChanges,
   UNARMED_FACTS,
 } from "../launches.ts";
+import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { DrivenPr } from "../types.ts";
 
 export type DriveHold =
@@ -192,7 +194,8 @@ function redriven(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
 
 /**
  * Each drive as the plan and the labels read it once this machine's launch
- * records are read beside it: a ledger that stopped `PR_CONFLICTING`, this
+ * records are read beside it: a ledger that stopped `PR_CONFLICTING`, or
+ * parked on a pull request that conflicts, this
  * machine already having re-driven the change it shows now, is a person's to
  * settle, however
  * that re-drive ended (a stop of its own, or a refusal or a crash that left the
@@ -208,11 +211,30 @@ export function settleConflictStops(
     if (pr.stale?.conflictStop !== true) return pr;
     const hold = driveHold(pr, records);
     if (hold.kind !== "redriven") return pr;
-    const { stale: _settled, ...rest } = pr;
-    return {
-      ...rest,
-      class: "needs-person",
-      why: `stopped 9, and launch record ${hold.record.record.id} already re-drove it for this change and ${endOf(hold.record)}: only a person settles it until its head or its base moves (see the drive's handoff)`,
-    };
+    return settledConflict(
+      pr,
+      `launch record ${hold.record.record.id} already re-drove it for this change and ${endOf(hold.record)}`,
+    );
   });
+}
+
+/**
+ * A stop on a conflict whose re-drive for the change it shows now is spent: a
+ * person's. A park stays parked, so its notice still carries the decisions it
+ * waits on beside the conflict; any other stop needs a person.
+ */
+export function settledConflict(pr: DrivenPr, redriven: string): DrivenPr {
+  const { stale, ...rest } = pr;
+  const until = "until its head or its base moves (see the drive's handoff)";
+  return pr.evidence.exit === DRIVE_EXIT.HITL_PARKED
+    ? {
+        ...rest,
+        class: "parked",
+        why: `${stale?.cause ?? pr.why}, and ${redriven}: a person answers its parks and settles the conflict ${until}`,
+      }
+    : {
+        ...rest,
+        class: "needs-person",
+        why: `stopped on a conflict with its base, and ${redriven}: only a person settles it ${until}`,
+      };
 }

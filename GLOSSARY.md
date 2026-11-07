@@ -1209,7 +1209,9 @@ make, use the entry's term instead.
   past, still mergeable at the verified head, is left alone. A drive that
   stopped on a conflict it could not repair is re-driven too, once for each
   pair of its pull request's head and its base branch's head, and a person is
-  told only if that re-drive stops the same way.
+  told only if that re-drive stops the same way. So is a drive parked on a
+  question for a person whose pull request comes to conflict with its base:
+  the re-drive merges the base and parks again on the questions still open.
 - **Permission mode (of a pass)** — the setting of an agent tool that
   decides which of its actions ask a person first. Claude Code's
   `default` mode asks before most edits and commands; a pass of a *PR

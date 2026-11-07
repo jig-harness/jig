@@ -18,6 +18,7 @@
  * | stopped `QUOTA_PARKED` (`16`) | re-armable |
  * | stopped `HITL_PARKED` (`8`), every parked item answered | re-armable |
  * | stopped `NOT_SETTLED` (`4`) | re-armable |
+ * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |
  * | stopped `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`) | refused |
  * | stopped on any other exit | needs-person |
@@ -36,6 +37,17 @@
  * the drive's rounds take it from there. Once this machine re-drove that
  * change and the ledger still stopped `PR_CONFLICTING`, it is a person's
  * (`settleConflictStops`).
+ *
+ * A parked ledger is read beside its pull request's mergeability too: a
+ * pull request waiting on a person must not also wait on a merge of its
+ * base. Conflicting, it is re-driven like a stop on a conflict, once for each
+ * pair of its head and its base branch's head: the drive's first gate
+ * reports the conflict before the park, its conflict-resolve round merges
+ * the base, and the drive parks again on the questions still unanswered. A
+ * re-drive that leaves it parked or stopped `PR_CONFLICTING` at the same pair
+ * hands it back to a person (`settleConflictStops`): a conflict the drive
+ * could not resolve, such as two requirements that contradict each other, is
+ * that person's decision too.
  *
  * A ledger that cannot be read (its comments, a version this reader does
  * not know, a damaged body, an unreadable heartbeat or park answer) is
@@ -164,35 +176,54 @@ function convergedClass(ledger: Ledger, forge: PrFacts): Classified {
   };
 }
 
+/** The pair of a pull request's head and its base branch's head a conflict's re-drive is keyed on, or why it cannot be told. */
+function conflictPair(
+  forge: PrFacts,
+): { head: string; base: string; conflicting: boolean } | { unread: string } {
+  const facts = readFacts(forge);
+  if ("unread" in facts) return facts;
+  const base = forge.base ?? { unreadable: "it was not read" };
+  if ("unreadable" in base)
+    return {
+      unread: `the head of its base branch does not read (${base.unreadable})`,
+    };
+  return { ...facts, base: base.oid };
+}
+
+/** A stop on a conflict, re-driven once for the pair of heads it was read at. */
+function conflictRedrive(
+  cause: string,
+  pair: { head: string; base: string },
+): Classified {
+  return {
+    class: "stale",
+    why: `${cause}: re-drive on any account, once for head ${short(pair.head)} and base ${short(pair.base)}`,
+    stale: {
+      cause,
+      change: `head ${pair.head}, base ${pair.base}`,
+      conflictStop: true,
+    },
+  };
+}
+
 /**
  * A ledger that stopped `PR_CONFLICTING`, read beside its pull request: `stale`, conflicting
  * or not, keyed on the pair of its head and its base branch's head, and
  * `unplaced` while either or its mergeability cannot be told.
  */
 function conflictStopClass(forge: PrFacts): Classified {
-  const unplaced = (why: string): Classified => ({
-    class: "unplaced",
-    why: `stopped ${DRIVE_EXIT.PR_CONFLICTING} (conflicting with its base), and ${why}, so the change a re-drive would act on cannot be told`,
-  });
-  const facts = readFacts(forge);
-  if ("unread" in facts) return unplaced(facts.unread);
-  const base = forge.base ?? { unreadable: "it was not read" };
-  if ("unreadable" in base)
-    return unplaced(
-      `the head of its base branch does not read (${base.unreadable})`,
-    );
-  const cause = facts.conflicting
-    ? "stopped on a conflict with its base, and still conflicting"
-    : "stopped on a conflict with its base, which the forge no longer reports";
-  return {
-    class: "stale",
-    why: `${cause}: re-drive on any account, once for head ${short(facts.head)} and base ${short(base.oid)}`,
-    stale: {
-      cause,
-      change: `head ${facts.head}, base ${base.oid}`,
-      conflictStop: true,
-    },
-  };
+  const pair = conflictPair(forge);
+  if ("unread" in pair)
+    return {
+      class: "unplaced",
+      why: `stopped ${DRIVE_EXIT.PR_CONFLICTING} (conflicting with its base), and ${pair.unread}, so the change a re-drive would act on cannot be told`,
+    };
+  return conflictRedrive(
+    pair.conflicting
+      ? "stopped on a conflict with its base, and still conflicting"
+      : "stopped on a conflict with its base, which the forge no longer reports",
+    pair,
+  );
 }
 
 /** The class of each exit the table names but `CONVERGED`, `HITL_PARKED` and `PR_CONFLICTING`, which read the pull request and its parks. */
@@ -252,24 +283,48 @@ function runningClass(
       };
 }
 
-function parkClass(park: ParkReading | undefined): Classified {
+function parkClass(park: ParkReading | undefined, forge: PrFacts): Classified {
   if (park === undefined || "unreadable" in park)
     return {
       class: "unplaced",
       why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), and the answers to ${park === undefined ? "its parks" : park.unreadable} could not be read`,
     };
-  return park.waiting.length === 0
-    ? {
-        class: "re-armable",
-        why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), every parked item answered (${park.answered}): re-arm on any account`,
-      }
-    : {
-        class: "parked",
-        why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), waiting on ${park.waiting.join(", ")}: a person answers`,
-      };
+  if (park.waiting.length === 0)
+    return {
+      class: "re-armable",
+      why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), every parked item answered (${park.answered}): re-arm on any account`,
+    };
+  const waiting = `waiting on ${park.waiting.join(", ")}`;
+  return (
+    parkConflictClass(waiting, forge) ?? {
+      class: "parked",
+      why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), ${waiting}: a person answers`,
+    }
+  );
 }
 
-/** What a stop's evidence adds: the heads and the mergeability a ledger that stopped `CONVERGED` or `PR_CONFLICTING` was read beside. */
+/**
+ * A park whose pull request conflicts with its base: `stale`, keyed on the
+ * pair of its head and its base branch's head, so the drive merges the base
+ * and parks again; `unplaced` while that pair cannot be told; `null` while
+ * the forge does not report it conflicting, mergeability still computing
+ * included, so the park stands.
+ */
+function parkConflictClass(waiting: string, forge: PrFacts): Classified | null {
+  if (forge.mergeable !== "CONFLICTING") return null;
+  const pair = conflictPair(forge);
+  if ("unread" in pair)
+    return {
+      class: "unplaced",
+      why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), ${waiting}, and conflicting with its base, but ${pair.unread}, so the change a re-drive would act on cannot be told`,
+    };
+  return conflictRedrive(
+    `parked ${waiting}, and conflicting with its base`,
+    pair,
+  );
+}
+
+/** What a stop's evidence adds: the heads and the mergeability a ledger that stopped `CONVERGED`, `PR_CONFLICTING` or `HITL_PARKED` was read beside. */
 function stopEvidence(ledger: Ledger, forge: PrFacts): Evidence {
   if (ledger.driver.state !== "stopped") return {};
   const read = { headSha: forge.head, mergeable: forge.mergeable };
@@ -278,7 +333,16 @@ function stopEvidence(ledger: Ledger, forge: PrFacts): Evidence {
       verifiedSha: ledger.verifiedSha === "" ? null : ledger.verifiedSha,
       ...read,
     };
-  if (ledger.driver.exit !== DRIVE_EXIT.PR_CONFLICTING) return {};
+  const { exit } = ledger.driver;
+  const conflict =
+    exit === DRIVE_EXIT.PR_CONFLICTING ||
+    (exit === DRIVE_EXIT.HITL_PARKED && forge.base !== undefined);
+  return conflict ? conflictEvidence(forge) : {};
+}
+
+/** The heads and the mergeability a ledger's conflict was read beside. */
+function conflictEvidence(forge: PrFacts): Evidence {
+  const read = { headSha: forge.head, mergeable: forge.mergeable };
   const { base } = forge;
   return {
     baseSha: base !== undefined && "oid" in base ? base.oid : null,
@@ -318,7 +382,7 @@ function ledgerEvidence(
   };
 }
 
-/** A ledger's class, first match wins; `park` is read only for `HITL_PARKED`, `forge` only for `CONVERGED` and `PR_CONFLICTING`. */
+/** A ledger's class, first match wins; `park` is read only for `HITL_PARKED`, `forge` only for `CONVERGED`, `PR_CONFLICTING` and `HITL_PARKED`. */
 export function classifyLedger(
   ledger: Ledger,
   nowMs: number,
@@ -342,7 +406,7 @@ export function classifyLedger(
       class: "re-armable",
       why: "stopped with no recorded cause: re-arming within the per-pull-request recovery budget",
     };
-  if (exit === DRIVE_EXIT.HITL_PARKED) return parkClass(park);
+  if (exit === DRIVE_EXIT.HITL_PARKED) return parkClass(park, forge);
   if (exit === DRIVE_EXIT.CONVERGED) return convergedClass(ledger, forge);
   if (exit === DRIVE_EXIT.PR_CONFLICTING) return conflictStopClass(forge);
   return (
@@ -504,7 +568,7 @@ function baseHeads(slug: string): Reading["baseHead"] {
   };
 }
 
-/** What the forge reports of a pull request beside its ledger, its base branch's head for a ledger that stopped `PR_CONFLICTING`. */
+/** What the forge reports of a pull request beside its ledger, its base branch's head for a ledger that stopped `PR_CONFLICTING`, or parked on a pull request that conflicts. */
 async function factsOf(
   pr: OpenPr,
   ledger: Ledger,
@@ -514,8 +578,12 @@ async function factsOf(
     head: pr.headRefOid ?? null,
     mergeable: pr.mergeable ?? null,
   };
-  return ledger.driver.state === "stopped" &&
-    ledger.driver.exit === DRIVE_EXIT.PR_CONFLICTING
+  const { state, exit } = ledger.driver;
+  const readsBase =
+    state === "stopped" &&
+    (exit === DRIVE_EXIT.PR_CONFLICTING ||
+      (exit === DRIVE_EXIT.HITL_PARKED && facts.mergeable === "CONFLICTING"));
+  return readsBase
     ? { ...facts, base: await r.baseHead(pr.baseRefName) }
     : facts;
 }
@@ -554,13 +622,14 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   };
 }
 
-/** The unanswered decisions a parked ledger carries into its notification. */
+/** The unanswered decisions a parked ledger carries into its notification, its conflict's re-drive included. */
 function waitingOf(
   classified: Classified,
   park: ParkReading | undefined,
 ): { waiting?: WaitingPark[] } {
   if (
-    classified.class !== "parked" ||
+    (classified.class !== "parked" &&
+      classified.stale?.conflictStop !== true) ||
     park === undefined ||
     "unreadable" in park
   )

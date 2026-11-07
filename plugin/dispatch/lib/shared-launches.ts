@@ -54,7 +54,7 @@ import {
 } from "../../shared/records/shared.ts";
 import { digest, localWriter } from "../../shared/records/writer.ts";
 import { stateRoot } from "../receipts.ts";
-import { factsOf } from "./actions/drive-hold.ts";
+import { factsOf, settledConflict } from "./actions/drive-hold.ts";
 import type { LaunchClaimer } from "./actions/launch.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
@@ -267,7 +267,8 @@ function armedOrRedriven(
 
 /**
  * Each drive as the plan reads it once another host's claims are read
- * beside it: a ledger that stopped on a conflict, another host having
+ * beside it: a ledger that stopped on a conflict, or parked on a pull
+ * request that conflicts, another host having
  * re-driven the change it shows now and that launch having ended, is a
  * person's to settle, as when this host re-drove it.
  */
@@ -280,12 +281,10 @@ export function settleSharedConflictStops(
     if (pr.stale?.conflictStop !== true) return pr;
     const hold = foreignHold(pr, claims.get(pr.number), host);
     if (hold.kind !== "redriven" || open(hold.claim)) return pr;
-    const { stale: _settled, ...rest } = pr;
-    return {
-      ...rest,
-      class: "needs-person",
-      why: `stopped on a conflict with its base, and ${claimWords(hold.claim)} already re-drove it for this change and has ended: only a person settles it until its head or its base moves (see the drive's handoff)`,
-    };
+    return settledConflict(
+      pr,
+      `${claimWords(hold.claim)} already re-drove it for this change and has ended`,
+    );
   });
 }
 
