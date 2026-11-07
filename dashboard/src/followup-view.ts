@@ -15,6 +15,7 @@ const RUNNING: Record<SessionKind, string> = {
   working: "Follow-up running",
   takeover: "Follow-up running",
   pending: "Follow-up starting",
+  stuck: "Follow-up needs attention",
   waitWall: "Follow-up waiting",
   waitOther: "Follow-up waiting",
   drift: "Follow-up stalled",
