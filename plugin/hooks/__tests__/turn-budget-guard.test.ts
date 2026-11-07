@@ -192,6 +192,50 @@ test("Codex response usage records count once and a new task resets the count", 
   expect(stateOf(s).count).toBe(1);
 });
 
+test.each([undefined, null, [], "usage"].map((payload) => ({ payload })))(
+  "invalid Codex usage payload %j reports a stalled format after a valid response",
+  ({ payload }) => {
+    const s = session();
+    line(s, { type: "token_usage_record", payload: { response_id: "resp_1" } });
+    quiet(call(s), "valid response");
+    for (let i = 0; i < STALLED_AFTER; i++)
+      line(s, { type: "token_usage_record", payload });
+    const run = call(s);
+    expectSpawnExit(run, 1, "invalid usage payloads");
+    expect(run.stderr).toContain("not in the format this guard reads");
+    expect(stateOf(s).count).toBe(1);
+  },
+);
+
+test.each([false, true])(
+  "legacy parser cache is rescanned when appended=%j",
+  (append) => {
+    const s = session();
+    for (let i = 0; i < 90; i++)
+      line(s, {
+        type: "token_usage_record",
+        payload: { response_id: `r_${i}` },
+      });
+    fires(call(s), "seed current checkpoint");
+    const file = join(s.stateDir, s.id, "state.json");
+    const legacy = JSON.parse(readFileSync(file, "utf8"));
+    delete legacy.parserVersion;
+    Object.assign(legacy, {
+      count: 0,
+      ids: [],
+      fired: 0,
+      warnedUnsupported: true,
+    });
+    writeFileSync(file, JSON.stringify(legacy));
+    if (append)
+      line(s, { type: "token_usage_record", payload: { response_id: "new" } });
+    expect(countOf(fires(call(s), "legacy cache rescan"))).toBe(
+      append ? 91 : 90,
+    );
+    quiet(call(s), "current cache does not repeat warning");
+  },
+);
+
 test("under the margin the hook is silent", () => {
   const s = session();
   turns(s, 80);

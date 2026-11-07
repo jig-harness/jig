@@ -89,6 +89,8 @@ import { join } from "node:path";
 import { isMapping as isRecord } from "../shared/config-layers.ts";
 
 export interface State {
+  /** Parser semantics that produced this checkpoint; older caches are rescanned. */
+  parserVersion: number;
   /** Bytes of the transcript consumed so far. */
   offset: number;
   /** Distinct request ids since the last prompt. */
@@ -131,6 +133,7 @@ export interface Thresholds {
 
 const DEFAULT_BUDGET = 1000;
 const DEFAULT_MARGIN = 50;
+const PARSER_VERSION = 1;
 /**
  * Complete records since the last prompt (or the start) after which a
  * transcript that yielded no round-trip in them is reported as a format this
@@ -163,6 +166,7 @@ function couldNotCheck(reason: string): never {
 
 export function freshState(): State {
   return {
+    parserVersion: PARSER_VERSION,
     offset: 0,
     count: 0,
     fired: 0,
@@ -190,6 +194,7 @@ const isString = (value: unknown): boolean => typeof value === "string";
 
 /** Each field of a stored state and the check its value must pass. */
 const SHAPE: [keyof State, (value: unknown) => boolean][] = [
+  ["parserVersion", (value) => value === PARSER_VERSION],
   ["offset", whole],
   ["count", whole],
   ["fired", whole],
@@ -217,6 +222,8 @@ export type Kind =
   | undefined;
 
 function classifyCodex(type: unknown, payload: unknown): Kind {
+  if (type === "token_usage_record" && !isRecord(payload))
+    return "unrecognised";
   if (!isRecord(payload)) return undefined;
   if (type === "event_msg" && payload.type === "task_started") return "prompt";
   if (type === "token_usage_record") {
@@ -230,7 +237,7 @@ function classifyCodex(type: unknown, payload: unknown): Kind {
  * What one complete line is: a round-trip (its request id), a prompt, an
  * assistant record without a request id this guard reads, a line that is not
  * JSON (with the parser's reason), or none of these. A record of any of these
- * kinds carries one of the three strings, so a line without all of them is
+ * kinds carries a recognised marker, so a line without any of them is
  * skipped unparsed; the parser, not the substring, decides.
  */
 export function classify(line: string): Kind {
