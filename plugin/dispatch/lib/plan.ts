@@ -502,7 +502,12 @@ function planDrive(
       record: "forge",
       reason: unread ?? wantReason(pr, takeover, foreign, holder),
       evidence: { url: pr.url, head: pr.head, ...pr.evidence },
-      ...stageFields(slug, pr, cause, launches),
+      ...stageFields(
+        slug,
+        unread === null ? pr : { ...pr, why: unread },
+        cause,
+        launches,
+      ),
       ...takeoverFields(takeover, foreign, holder),
     },
     (w) => w.prs.includes(pr.number),

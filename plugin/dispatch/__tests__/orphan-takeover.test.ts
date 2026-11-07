@@ -167,6 +167,8 @@ describe("a silent driver no launch started", () => {
     expect(action?.reason).toContain(
       `this clone's drive doctor reads its holder HEALTHY (${reason}): only a dead or wedged holder is taken over, so it is reported`,
     );
+    // The person's notification carries the doctor's reading too.
+    expect(action?.notice?.text).toContain(`holder HEALTHY (${reason})`);
   });
 
   it("is reported when no driver of this clone holds its lock", async () => {

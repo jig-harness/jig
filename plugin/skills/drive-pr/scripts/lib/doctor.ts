@@ -169,8 +169,9 @@ export interface DoctorInput {
    */
   holderGone?: boolean;
   /**
-   * The driven worktree no longer exists: its directory is gone, or git no
-   * longer lists it as a worktree of the clone (`worktreeVanished`). Read
+   * The driven worktree no longer exists: its directory is gone
+   * (`worktreeVanished`); a directory git no longer lists still holds working
+   * files and does not count. Read
    * only when `leftovers` is `null`; absent reads as not vanished.
    */
   treeVanished?: boolean;
