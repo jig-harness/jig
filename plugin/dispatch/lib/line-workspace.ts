@@ -47,7 +47,8 @@ export function needWorkspace(
     (w) =>
       w.name !== NOTICES_NAME &&
       !w.comment.split("\n").some((line) => line.trim() === NOTICES_NAME) &&
-      w.branch !== (report.section?.noticesBranch ?? NOTICES_BRANCH) &&
+      w.branch !== NOTICES_BRANCH &&
+      w.branch !== report.section?.noticesBranch &&
       (pr === null ? w.items.includes(target) : w.prs.includes(Number(pr[1]))),
   );
   return unique([...paths, ...joined.map((w) => w.path)]);

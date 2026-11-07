@@ -13,7 +13,12 @@ import {
   type RepoStored,
 } from "../lib/line.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
-import type { Action, DrivenPr, RepoReport } from "../lib/types.ts";
+import type {
+  Action,
+  DispatchSection,
+  DrivenPr,
+  RepoReport,
+} from "../lib/types.ts";
 
 const REPO = "example-org/web";
 const PATH = "/srv/work/web";
@@ -377,6 +382,40 @@ describe("buildLine", () => {
       expect(line.needs[0]?.workspace).toBeNull();
     },
   );
+
+  it("excludes the default notices branch even when the destination branch is custom", () => {
+    const line = buildLine(
+      input({
+        reports: [
+          report({
+            actions: [PARK],
+            section: { noticesBranch: "desk" } as DispatchSection,
+          }),
+        ],
+        inputs: reads({
+          sessions: {
+            ok: true,
+            source: "fake",
+            workspaces: [
+              {
+                id: "notices",
+                path: "/srv/notices",
+                branch: "jig-dispatch-notices",
+                items: [],
+                prs: [456],
+                agents: [],
+                unverifiableTerminals: 0,
+                comment: "jig dispatch notices",
+                name: "renamed notices",
+                unread: false,
+              },
+            ],
+          },
+        }),
+      }),
+    );
+    expect(line.needs[0]?.workspace).toBeNull();
+  });
 
   it.each(["working", "done"])(
     "keeps distinct joined workspaces ambiguous when one agent is %s",
