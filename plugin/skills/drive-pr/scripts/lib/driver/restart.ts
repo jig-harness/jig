@@ -441,7 +441,11 @@ async function probeEntries(
  * descends from the PR head.
  */
 export function inheritedHeadOf(l: PassLeftovers): string {
-  const leftWork = l.unpushed !== 0 || l.uncommitted !== "";
+  const leftWork =
+    l.unpushed !== 0 ||
+    l.uncommitted !== "" ||
+    l.operation !== null ||
+    !l.operationProbed;
   return l.head !== null && leftWork ? l.head : "";
 }
 

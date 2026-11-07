@@ -74,6 +74,15 @@ describe("inheritedHeadOf", () => {
   it("names nothing for a clean, pushed tree", () => {
     expect(inheritedHeadOf(leftovers("", 0))).toBe("");
   });
+
+  it("names the head over an open operation whose status is clean", () => {
+    expect(
+      inheritedHeadOf(leftovers("", 0, { operation: "merge in progress" })),
+    ).toBe(HEAD);
+    expect(
+      inheritedHeadOf(leftovers("", 0, { operationProbed: false })),
+    ).toBe(HEAD);
+  });
 });
 
 describe("leftoverHeadOf", () => {
