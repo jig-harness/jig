@@ -10,8 +10,9 @@
  * that schema allows, or named in the sources as not read until its owner's
  * next run brings it forward.
  */
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import type {
   KnownRepository,
   RepositoryChoices,
@@ -21,6 +22,7 @@ import { swallow } from "../../shared/errors.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { run, tsArgv } from "../../shared/proc.ts";
+import { FORGE_ACCOUNTING_UNAVAILABLE } from "../../shared/trace.ts";
 import {
   databaseInstance,
   type ReadOnlyDatabase,
@@ -38,6 +40,7 @@ import {
   remoteUrl,
   repoFromRemote,
 } from "../../skills/do-item/scripts/lib/tracker/github/refs.ts";
+import type { CiHoldDiagnosis } from "../../skills/drive-pr/scripts/lib/ci-hold-diagnosis.ts";
 import { PAST_DEADLINE, type Reading } from "./reading.ts";
 
 /** The drive's own listing, a sibling skill's script. */
@@ -198,7 +201,12 @@ export interface DriveRow {
   /** The driver lock: `live`, `stale`, `empty`, `contested` or `unreadable`. */
   lock: string;
   host: string | null;
-  doctor: { verdict: string; reason: string; recovery: string | null } | null;
+  doctor: {
+    verdict: string;
+    reason: string;
+    recovery: string | null;
+    ciHold?: CiHoldDiagnosis;
+  } | null;
   /** The driver's claim: its worktree, its generation, its account and its mailbox. */
   worktree: string | null;
   generation: number | null;
@@ -217,14 +225,7 @@ function rowOf(v: Record<string, unknown>): DriveRow {
   return {
     lock: text(v.state) ?? "unreadable",
     host: text(v.host),
-    doctor:
-      doctor === null
-        ? null
-        : {
-            verdict: text(doctor.verdict) ?? "UNKNOWN",
-            reason: text(doctor.reason) ?? "",
-            recovery: text(doctor.recovery),
-          },
+    doctor: doctor === null ? null : doctorOf(doctor),
     worktree: text(diag.worktree),
     generation: typeof diag.generation === "number" ? diag.generation : null,
     account,
@@ -233,12 +234,50 @@ function rowOf(v: Record<string, unknown>): DriveRow {
   };
 }
 
+/** Parse the doctor's optional diagnostic fields without guessing at missing evidence. */
+function doctorOf(
+  doctor: Record<string, unknown>,
+): NonNullable<DriveRow["doctor"]> {
+  return {
+    verdict: text(doctor.verdict) ?? "UNKNOWN",
+    reason: text(doctor.reason) ?? "",
+    recovery: text(doctor.recovery),
+    ...(isRecord(doctor.ciHold) ? { ciHold: ciHoldOf(doctor.ciHold) } : {}),
+  };
+}
+
+function ciHoldOf(hold: Record<string, unknown>): CiHoldDiagnosis {
+  return {
+    driver:
+      hold.driver === "alive" || hold.driver === "dead"
+        ? hold.driver
+        : "unknown",
+    actor: text(hold.actor),
+    started: text(hold.started),
+    ledgerGeneration:
+      typeof hold.ledgerGeneration === "number" ? hold.ledgerGeneration : null,
+    generation: typeof hold.generation === "number" ? hold.generation : null,
+    driverReason:
+      text(hold.driverReason) ?? "driver liveness could not be read",
+    head: text(hold.head),
+    label: text(hold.label),
+    held: typeof hold.held === "boolean" ? hold.held : null,
+    review:
+      hold.review === "converged" || hold.review === "pending"
+        ? hold.review
+        : "unknown",
+    reason: text(hold.reason) ?? "CI hold evidence could not be read",
+    recovery: text(hold.recovery),
+    worktree: text(hold.worktree),
+  };
+}
+
 /**
  * The drive of pull request `pr` as the drive's own listing in the checkout
- * at `path` reads it (`drives-read-only.ts`, which runs `drives.ts --json` over a
+ * at `path` reads it (`drives-read-only.ts`, which runs `drives.ts --doctor --json` over a
  * database that is already current: its driver lock and the doctor's
  * verdict on it, which it reads without writing); `null` when that clone
- * holds no driver lock for it.
+ * holds neither a driver lock nor a retained drive blocker for it.
  */
 export async function driveRow(
   reading: Reading,
@@ -247,15 +286,53 @@ export async function driveRow(
 ): Promise<Outcome<DriveRow | null, "unreadable">> {
   const sec = reading.sourceSec();
   if (sec === 0) return failed("unreadable", PAST_DEADLINE);
-  const r = await run(tsArgv(drivesScript(), ["--json"]), {
-    cwd: path,
-    // The listing reads the tree a drive pass pins over its directory; this one reads the checkout's.
-    env: Object.fromEntries(
-      Object.entries(process.env).filter(([k]) => k !== "DRIVE_PR_WORKTREE"),
-    ),
-    timeoutSec: sec,
-    stderr: "pipe",
-  });
+  const accounting = mkdtempSync(join(tmpdir(), "jig-ask-forge-"));
+  const countFile = join(accounting, "calls");
+  let r: Awaited<ReturnType<typeof run>>;
+  let accountingUnavailable = false;
+  try {
+    r = await run(tsArgv(drivesScript(), ["--json", "--pr", String(pr)]), {
+      cwd: path,
+      // The listing reads the tree a drive pass pins over its directory; this one reads the checkout's.
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(
+            ([k]) => k !== "DRIVE_PR_WORKTREE",
+          ),
+        ),
+        JIG_FORGE_CALL_COUNT_FILE: countFile,
+      },
+      timeoutSec: sec,
+      stderr: "pipe",
+    });
+    accountingUnavailable = r.stderr.includes(FORGE_ACCOUNTING_UNAVAILABLE);
+  } finally {
+    try {
+      const calls = existsSync(countFile) ? readFileSync(countFile).length : 0;
+      for (let i = 0; i < calls; i++) reading.forgeCall();
+      if (accountingUnavailable)
+        reading.note({
+          record: "drive forge call accounting",
+          read: false,
+          detail: "forge call count is incomplete: accounting unavailable",
+        });
+    } catch (err) {
+      swallow(err, "accounting failures must not discard the drive listing");
+      reading.note({
+        record: "drive forge call accounting",
+        read: false,
+        detail: "forge call count is unavailable",
+      });
+    }
+    try {
+      rmSync(accounting, { recursive: true, force: true });
+    } catch (err) {
+      swallow(
+        err,
+        "temporary accounting cleanup must not discard the drive listing",
+      );
+    }
+  }
   if (r.code === 4)
     // The listing declined because reading would have migrated or imported into the drive's database.
     return failed(
