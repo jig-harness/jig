@@ -39,6 +39,34 @@ describe("ratchet against the merge base", () => {
     expect(r.ratchet().code).toBe(1);
   });
 
+  // The target branch gains a finding the change never touched, and the
+  // change merges it in: during the merge and after it, that finding is the
+  // target's, and the change's own finding still counts.
+  test("a finding the target gained and the change merged in is not the change's", () => {
+    const r = repo(base);
+    const git = (...args: string[]) => {
+      const out = sh(r.dir, "git", args);
+      expect(`${out.code}: ${out.out}`).toStartWith("0:");
+    };
+    r.write("b.ts", "export const own = 1;\n");
+    r.commit("own change");
+    git("checkout", "-q", "main");
+    r.write("c.ts", "// TODO on the target\n");
+    r.commit("target residual");
+    git("checkout", "-q", "work");
+    git("merge", "-q", "--no-commit", "--no-ff", "main");
+    expect(r.ratchet()).toMatchObject({ code: 0 });
+    r.write("b.ts", "// TODO own\n");
+    expect(r.ratchet().code).toBe(1);
+    r.write("b.ts", "export const own = 1;\n");
+    r.commit("merge the target");
+    git("checkout", "-q", "main");
+    r.write("d.ts", "// TODO after the merge\n");
+    r.commit("a later target residual");
+    git("checkout", "-q", "work");
+    expect(r.ratchet()).toMatchObject({ code: 0 });
+  });
+
   test("moving findings between files passes", () => {
     const r = repo(base);
     r.write("a.ts", "// TODO one\n");

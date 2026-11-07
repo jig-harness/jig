@@ -76,6 +76,7 @@ import type { DriveState } from "./../state/schema.ts";
 import type { DriveLock } from "./locks.ts";
 import { driveState } from "./paths.ts";
 import { readDriveState, recordDriveEvent } from "./rearm.ts";
+import { driverRuntime } from "./runtime.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
 import type { TakeoverPlan } from "./takeover.ts";
 
@@ -595,7 +596,13 @@ export function ledgerSettlement(
     // ledger and keeps the record: the recovery (`lib/ledger-stop.ts`)
     // records the stop and then writes the ledger, in that order.
     const recorded =
-      dryRun || (await recordDriveEvent(pr, "stop", String(code ?? "unknown")));
+      dryRun ||
+      (await recordDriveEvent(
+        pr,
+        "stop",
+        String(code ?? "unknown"),
+        driverRuntime.stopLeftWork,
+      ));
     if (driver === null) return;
     if (!recorded) {
       console.error(
