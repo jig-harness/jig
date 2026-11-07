@@ -12,8 +12,8 @@
  *   the comment already carries is recorded as sent without being sent
  *   again. A cause that still stands `dispatch.renotify_after` after it was
  *   last sent is sent again, marked as a repeat, unless the destination is
- *   still unread with it (`0s` sends each cause once). A drift is an
- *   observation, sent once for the life of its key. A suppression record is
+ *   still unread with it (`0s` sends each cause once). A drift or exhausted no-cause recovery is
+ *   sent once for the life of its key. A suppression record is
  *   dropped when its cause leaves a tick that read every record whole (the
  *   park was answered, the drive moved on), so a cause that is settled is
  *   never repeated and new facts always notify.
@@ -765,7 +765,9 @@ async function sendNotices(
           key: c.notice.key,
           at,
           workspace,
-          lasting: c.cause === "drifting",
+          lasting:
+            c.cause === "drifting" ||
+            (c.cause === "stopped-unknown" && c.evidence.noCause === true),
         },
         // A cause about a stage this machine launched has its ended row instead.
         c.launched === true ? null : eventRow(repo.slug, c, at),

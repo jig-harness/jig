@@ -77,6 +77,7 @@ export const LEDGER_KIND = "drive-ledger";
 
 /** The ledger shape this version reads and writes: the envelope's `v`, and `ledgerVersion` beside it. */
 export const LEDGER_VERSION = 1;
+const OPERATOR_STOP_LEDGER_VERSION = 2;
 
 /** GitHub's issue-comment body limit, measured here in UTF-8 bytes. */
 export const FORGE_BODY_LIMIT = 65_536;
@@ -107,6 +108,10 @@ export interface LedgerDriver {
   /** `stopped` once the driver has exited, with its exit code. */
   state: "running" | "stopped";
   exit?: number;
+  /** Explicit operator stop, preserved when a forced termination has no exit. */
+  personStop?: { at: string; reason: string };
+  /** This writer distinguishes operator stops from accidental no-exit stops. */
+  recoveryVersion?: 1;
   /** The driver's lock acquisition time: which run of that tree it is. */
   started?: string;
   /** Its claim position: its own claim's id, or the position its clone's ledger recorded when it continued that ledger. */
@@ -272,7 +277,7 @@ function ledgerData(l: Ledger, writer: Writer): string {
   return encode(
     {
       kind: LEDGER_KIND,
-      v: LEDGER_VERSION,
+      v: l.ledgerVersion,
       key: String(l.pr),
       writer,
       at: l.driver.heartbeat,
@@ -297,6 +302,13 @@ function summaryText(text: string): string {
     .trim();
 }
 
+function stopSummary(
+  stop: NonNullable<LedgerDriver["personStop"]>,
+  state: LedgerDriver["state"],
+): string {
+  return `${state === "running" ? "Stop requested" : "Stopped"} by a person at ${stop.at}${stop.reason === "" ? "" : `: ${summaryText(stop.reason)}`}.`;
+}
+
 function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
   const d = l.driver;
   const lines = [
@@ -305,6 +317,8 @@ function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
     "",
     `Round ${l.round}, phase \`${l.phase === "" ? "unset" : l.phase}\` · driver \`${d.actor}\` ${d.state === "running" ? "running" : `stopped${d.exit === undefined ? "" : ` (exit ${d.exit})`}`}, last heartbeat ${d.heartbeat} · ${l.parked.length} parked, ${l.held.length} held, ${l.takeovers.length} takeover(s)`,
   ];
+  if (d.personStop !== undefined)
+    lines.push("", stopSummary(d.personStop, d.state));
   if (parkedList && l.parked.length > 0) {
     lines.push("", "Parked, awaiting a person:");
     for (const p of l.parked)
@@ -339,7 +353,14 @@ export function renderLedger(
   limit = FORGE_BODY_LIMIT,
   writer: Writer = localWriter("forge"),
 ): { body: string; ledger: Ledger } | { error: string } {
-  let l: Ledger = { ...ledger, cut: [] };
+  let l: Ledger = {
+    ...ledger,
+    ledgerVersion:
+      ledger.driver.personStop === undefined
+        ? ledger.ledgerVersion
+        : OPERATOR_STOP_LEDGER_VERSION,
+    cut: [],
+  };
   let body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
   l = {
@@ -390,6 +411,17 @@ function isLedgerHeld(v: unknown): v is LedgerHeld {
   );
 }
 
+function isRecoveryFields(v: Record<string, unknown>): boolean {
+  if (v.recoveryVersion !== undefined && v.recoveryVersion !== 1) return false;
+  if (v.personStop === undefined) return true;
+  return (
+    isRecord(v.personStop) &&
+    isText(v.personStop.at) &&
+    Number.isFinite(Date.parse(v.personStop.at)) &&
+    isText(v.personStop.reason)
+  );
+}
+
 function isLedgerDriver(v: unknown): v is LedgerDriver {
   return (
     isRecord(v) &&
@@ -399,6 +431,7 @@ function isLedgerDriver(v: unknown): v is LedgerDriver {
     Number.isFinite(Date.parse(v.heartbeat)) &&
     (v.state === "running" || v.state === "stopped") &&
     (v.exit === undefined || isCount(v.exit)) &&
+    isRecoveryFields(v) &&
     (v.started === undefined ||
       (isText(v.started) && Number.isFinite(Date.parse(v.started)))) &&
     (v.position === undefined || isCount(v.position))
@@ -492,10 +525,10 @@ function envelopedFields(data: Record<string, unknown>): LedgerFields {
  */
 function ledgerFields(data: Record<string, unknown>): LedgerFields {
   const version = data.ledgerVersion;
-  if (isCount(version) && version > LEDGER_VERSION)
+  if (isCount(version) && version > OPERATOR_STOP_LEDGER_VERSION)
     return { kind: "unknown-version", version };
   if ("kind" in data) return envelopedFields(data);
-  return version === LEDGER_VERSION
+  return version === LEDGER_VERSION || version === OPERATOR_STOP_LEDGER_VERSION
     ? { fields: data }
     : malformed(
         `ledgerVersion ${JSON.stringify(version) ?? "is missing"} is not a version`,
@@ -792,11 +825,12 @@ export interface StoppedDriver {
 export function ledgerOfStoppedDriver(
   snapshot: LedgerSnapshot,
   who: StoppedDriver,
+  allowStopped = false,
 ): { ledger: Ledger; own: ClaimComment | null } | { why: string } {
   const parsed = snapshot.canonical?.parsed;
   if (parsed?.kind !== "ledger") return { why: "there is no ledger to mark" };
   const d = parsed.ledger.driver;
-  if (d.state !== "running")
+  if (!mayMarkDriver(d, who, allowStopped))
     return { why: "it already says its driver stopped" };
   if (
     d.clone !== who.clone ||
@@ -818,6 +852,16 @@ export function ledgerOfStoppedDriver(
       why: `another clone's claim (comment ${claim.id}) took the drive over`,
     };
   return { ledger: parsed.ledger, own };
+}
+
+/** An explicit stop may finish publication after its own driver already stopped. */
+function mayMarkDriver(
+  driver: LedgerDriver,
+  who: StoppedDriver,
+  allowStopped: boolean,
+): boolean {
+  if (driver.state === "running") return true;
+  return allowStopped && who.started !== "" && driver.started === who.started;
 }
 
 /** The highest id among the claims in force, `0` for none. */

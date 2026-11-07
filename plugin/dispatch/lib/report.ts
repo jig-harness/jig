@@ -66,7 +66,11 @@ function outcomeLines(r: RepoReport): string[] {
 function repoLines(r: RepoReport, apply: boolean): string[] {
   const verb = apply ? "wants" : "would";
   const lines = [`${r.slug ?? "(unknown repository)"} (${r.path})`];
-  if (r.refused !== null) return [...lines, `  refused: ${r.refused}`];
+  const took = phaseLine("  took     ", r.phasesMs);
+  if (r.refused !== null && r.defect === undefined)
+    return [...lines, `  refused: ${r.refused}`, ...took];
+  // A defect stopped the turn: what its earlier phases did is still listed.
+  if (r.refused !== null) lines.push(`  DEFECT   ${r.refused}`);
   for (const x of r.records)
     lines.push(
       `  read ${x.ok ? "ok    " : "FAILED"} ${x.record.padEnd(7)} ${x.source}: ${x.detail}`,
@@ -87,8 +91,29 @@ function repoLines(r: RepoReport, apply: boolean): string[] {
     ...labelLines(r.labels),
     ...serialLines(r.serialized),
     ...sharedLines(r.shared),
+    ...took,
   );
   return lines;
+}
+
+/** A duration as a person reads it: milliseconds below a second, else seconds to one decimal. */
+export function elapsed(ms: number): string {
+  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
+}
+
+/** Each timed phase and the time all of them took, on one line; none for a receipt written before phases were timed. */
+function phaseLine(
+  lead: string,
+  phases: Partial<Record<string, number>> | undefined,
+): string[] {
+  const timed = Object.entries(phases ?? {}).filter(
+    (e): e is [string, number] => typeof e[1] === "number",
+  );
+  if (timed.length === 0) return [];
+  const total = timed.reduce((n, [, ms]) => n + ms, 0);
+  return [
+    `${lead}${elapsed(total)}: ${timed.map(([phase, ms]) => `${phase} ${elapsed(ms)}`).join(", ")}`,
+  ];
 }
 
 /** The shared records' part: which host owns the repository, and what sharing cost this tick. */
@@ -194,6 +219,10 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
       ? []
       : [`outcome log: ${receipt.logCopyFailed}`]),
     ...receipt.repos.flatMap((r) => [...repoLines(r, receipt.apply), ""]),
+    ...(receipt.defect === undefined
+      ? []
+      : [`DEFECT: the tick did not complete: ${receipt.defect.reason}`]),
+    ...phaseLine("Tick took ", receipt.phasesMs),
     ...reflectionLines(receipt.reflection),
     `Receipt: ${path}`,
   ].join("\n");

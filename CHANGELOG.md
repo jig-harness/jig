@@ -387,6 +387,74 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.154.0] - 2026-11-07
+
+### Changed
+
+- **Breaking:** The dispatcher now treats a drive that stopped with no recorded exit as an accident and re-arms it within a budget of 3 attempts per pull request in a rolling hour. To keep a drive stopped, use `drives.ts --stop`, a mailbox stop or pause, or the hold label; a recorded no-exit stop no longer keeps it stopped. Hard termination of both the driver and its launch wrapper can leave a running ledger outside this recovery path. Legacy no-exit ledgers receive at most one automatic attempt. Repeated no-cause stops notify a person once with the drive's handoff.
+
+### Fixed
+
+- Deliberate stops publish and verify the person's intent and optional reason before signalling, so a failed final ledger write cannot let another host re-arm them. Stop-bearing ledgers use format version 2; older Jig copies refuse them and must be updated before driving those pull requests.
+- With ledger mirroring enabled, a stop refuses to signal a driver whose published ownership cannot yet be verified. Hold dispatch and retry after startup publishes its ledger; the driver now publishes that ownership immediately after initialization.
+- Cancelled launch reservations retain durable evidence when withdrawal fails, so settlement does not charge recovery allowance for a wrapper that never executed. Executed and interrupted launches still consume their allowance across hosts.
+
+## [0.153.0] - 2026-11-07
+
+### Changed
+
+- `jig dispatch` reads less per tick. Each pull request's comments are
+  listed once per tick and shared between its drive ledger, its park
+  answers, its launch claims and its follow-up markers; the forge's login
+  and rate limit and Orca's repository and workspace listings are read once
+  per tick instead of once per repository. A merge whose `updatedAt` has
+  not moved since its follow-up markers were last read is planned from the
+  markers kept in the dispatcher's state database (a new `merge_reads`
+  table) instead of being read again, as are the launch claims of a merge
+  whose drive launches on this host all ended; every merge is read again at
+  least once an hour. The reads just before a launch still go to the forge
+  and the runtime. Each repository's report now carries the forge budget
+  left after the whole tick.
+
+## [0.152.0] - 2026-11-07
+
+### Added
+
+- Each `jig dispatch` receipt records how many milliseconds each phase took:
+  every phase of each repository's turn (`open`, `tracker`, `forge`,
+  `claims`, `runtime`, `observe`, `plan`, `log`, `apply`, `labels`,
+  `shared`) and the tick's own start, repositories and close. The tick's
+  text output prints them one line per repository, and `jig dispatch
+  receipts` prints how long each tick took and how many defects it recorded.
+  A receipt written by an earlier version reads as before.
+
+### Fixed
+
+- A bug or an unexpected write failure in one repository's turn no longer
+  ends the whole tick. That repository's report says which phase it stopped
+  in and what was thrown there, and keeps what its earlier phases did. The
+  error's stack goes to the tick's error output, which the journal keeps.
+  The other repositories are read, planned and acted on, and the tick writes
+  its receipt and exits 1. A bug in the tick's closing steps still writes
+  the receipt, marked incomplete. A closing step that reports its own
+  failure (the outcome log not copied, the dashboard line not written)
+  leaves the receipt complete, with exit status 1 and the failure said on it.
+- The tick lock records its holder's start time and the host's boot beside
+  its process id (`tick.lock.holder`), so a lock left by a tick that died is
+  taken over even when its process id was reused after a restart or by
+  another process. A tick of an earlier version still reads the lock, and a
+  lock it took is judged by its process id, as before.
+- `jig dispatch` keeps a follow-up's launch record until its outcome is
+  written: a failed write at the start of a tick is retried at its close, and
+  while it still fails those records are not pruned. The failure stays on the
+  receipt as its defect, so the receipt is not completed.
+
+## [0.151.0] - 2026-11-06
+
+### Added
+
+- `jig send` wakes the dispatcher's tick for the repository after it writes an `assign`, `drive`, `hold`, `release` or `answer`, when this machine's dispatch file lists the repository with the stage the tick acts under. The tick runs as the installed timer runs it, when idle and no sooner than a minute after the last one the wake started, instead of at the next timer run; several sends within that minute start one tick, and a tick refused because another holds the tick lock is tried again a minute later. The `next` line says which: "the dispatcher's tick for owner/name, woken now". Mailbox directives wake nothing, since the driver reads them at its next round ([plugin/README.md § Telling a station what to do](plugin/README.md#telling-a-station-what-to-do)).
+
 ## [0.150.1] - 2026-11-06
 
 ### Fixed
@@ -5518,7 +5586,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.150.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.154.0...HEAD
+[0.154.0]: https://github.com/jig-harness/jig/compare/v0.153.0...v0.154.0
+[0.153.0]: https://github.com/jig-harness/jig/compare/v0.152.0...v0.153.0
+[0.152.0]: https://github.com/jig-harness/jig/compare/v0.151.0...v0.152.0
+[0.151.0]: https://github.com/jig-harness/jig/compare/v0.150.1...v0.151.0
 [0.150.1]: https://github.com/jig-harness/jig/compare/v0.150.0...v0.150.1
 [0.150.0]: https://github.com/jig-harness/jig/compare/v0.149.4...v0.150.0
 [0.149.4]: https://github.com/jig-harness/jig/compare/v0.149.3...v0.149.4

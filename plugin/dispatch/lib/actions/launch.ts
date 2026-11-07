@@ -684,7 +684,7 @@ export function dropPendingRecord(
   state: ApplyState,
   record: LaunchRecord,
 ): boolean {
-  if (!removeRecordIf(record.id, { claim: null, exit: null }, state.root))
+  if (!removeRecordIf(record.id, { claim: null, exit: null }, state.root, true))
     return false;
   state.records = state.records.filter((r) => r.record.id !== record.id);
   const slots = slotsOf(state.table, record);
@@ -732,7 +732,8 @@ export async function startRecord(
   holdRecord(state, record, slots);
   const taken = claimer === undefined ? null : await claimer.claim(record);
   if (taken !== null && "refused" in taken) {
-    dropRecord(state, record);
+    if (record.cancelledAt !== undefined) dropPendingRecord(state, record);
+    else dropRecord(state, record);
     return {
       target: targetOfRecord(record),
       action: record.action,
