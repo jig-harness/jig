@@ -162,39 +162,24 @@ describe("recovery reservation", () => {
   });
 
   for (const legacy of [false, true]) {
-    it(`counts shared executed losers without local records for the ${legacy ? "legacy" : "modern"} budget`, async () => {
-      const drive = pr(legacy);
-      const facts = noCauseFacts(drive);
-      const history = [
-        claim(1, "ordinary stop"),
-        ...[2, 3, 4].map((id) => claim(id, facts)),
-      ];
-      for (const c of history) if (c.says.ok) c.says.value.attempt = 1;
-      expect(
-        settleNoCauseStops(
-          [drive],
-          [],
-          new Map([[7, ok(history)]]),
-          Date.now(),
-        )[0]?.class,
-      ).toBe("stopped-unknown");
-      const candidate = record(facts);
-      const reserved = claim(5, facts, candidate.id, false);
-      if (reserved.says.ok) reserved.says.value.attempt = 2;
-      const { result, released } = await reserve(candidate, 5, [
-        ...history,
-        reserved,
-      ]);
-      expect(result).toMatchObject({
-        refused: expect.stringContaining(
-          legacy ? "legacy no-exit" : "budget 3",
-        ),
-      });
-      expect(released).toEqual([5]);
-      // Mirrored claims for one launch consume its allowance only once.
-      for (const c of history.slice(1))
-        if (c.says.ok) c.says.value.record = "same-launch";
-      if (!legacy)
+    it.each(["ended", "died"] as const)(
+      `counts shared %s losers without local records for the ${legacy ? "legacy" : "modern"} budget`,
+      async (state) => {
+        const drive = pr(legacy);
+        const facts = noCauseFacts(drive);
+        const history = [
+          claim(1, "ordinary stop"),
+          ...[2, 3, 4].map((id) => claim(id, facts)),
+        ];
+        for (const c of history) if (c.says.ok) c.says.value.attempt = 1;
+        if (state === "died")
+          for (const c of history.slice(1))
+            if (c.says.ok)
+              c.says.value.end = {
+                state,
+                at: c.says.value.at,
+                reason: "the claimed wrapper disappeared without an exit",
+              };
         expect(
           settleNoCauseStops(
             [drive],
@@ -202,8 +187,34 @@ describe("recovery reservation", () => {
             new Map([[7, ok(history)]]),
             Date.now(),
           )[0]?.class,
-        ).toBe("re-armable");
-    });
+        ).toBe("stopped-unknown");
+        const candidate = record(facts);
+        const reserved = claim(5, facts, candidate.id, false);
+        if (reserved.says.ok) reserved.says.value.attempt = 2;
+        const { result, released } = await reserve(candidate, 5, [
+          ...history,
+          reserved,
+        ]);
+        expect(result).toMatchObject({
+          refused: expect.stringContaining(
+            legacy ? "legacy no-exit" : "budget 3",
+          ),
+        });
+        expect(released).toEqual([5]);
+        // Mirrored claims for one launch consume its allowance only once.
+        for (const c of history.slice(1))
+          if (c.says.ok) c.says.value.record = "same-launch";
+        if (!legacy)
+          expect(
+            settleNoCauseStops(
+              [drive],
+              [],
+              new Map([[7, ok(history)]]),
+              Date.now(),
+            )[0]?.class,
+          ).toBe("re-armable");
+      },
+    );
     it(`counts executed losing reservations against the ${legacy ? "legacy" : "modern"} budget`, () => {
       const drive = pr(legacy);
       const facts = noCauseFacts(drive);

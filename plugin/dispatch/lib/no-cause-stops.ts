@@ -75,11 +75,13 @@ function attemptsOf(
   return attempts;
 }
 
-/** Winners reserve allowance; a completed loser proves allowance was spent too. */
+/** Winners reserve allowance; any recorded end retains a loser's spent allowance.
+ * A reservation withdrawn before execution is deleted rather than given an end.
+ */
 function budgetClaims(claims: SharedClaim[]) {
   const won = new Set(winners(claims).map((c) => c.id));
   return readable(claims).filter(
-    (c) => won.has(c.id) || c.says.value.end?.state === "ended",
+    (c) => won.has(c.id) || c.says.value.end !== null,
   );
 }
 
