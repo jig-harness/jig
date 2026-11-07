@@ -73,7 +73,8 @@ make, use the entry's term instead.
   [the design](design/consumer-actions.md).
 - **Reconciled version** — the Jig version a *consumer repository* last took
   every consumer action up to, recorded in its configuration as
-  `jig.reconciled`; the check reads only the changes after it. Planned, not
+  `jig.reconciled`; for repository-level actions the check reads only the
+  changes after it. Planned, not
   built yet: see [the design](design/consumer-actions.md).
 - **Invariant** — the tool-independent statement of a practice ("every
   committed generated file has a drift check"), as opposed to any particular

@@ -721,7 +721,7 @@ instructions; required or advised; hints that say how to detect it), which the
 changelog check validates and the release step derives into a record in the
 plugin; a repository records the version it last reconciled with
 (`jig.reconciled`); `jig reconcile` reads the record between that version and
-the installed one, tests each action against the repository and reports
+the installed one (machine actions are checked on every host regardless), tests each action against the repository and reports
 required, advised, needs-a-look and not-applicable with file and line
 evidence, and files the repository's own tracker items only for what a person
 approved; a `reconcile` dispatch stage runs it per dispatched repository and

@@ -162,7 +162,7 @@ repository's own statement, made by the repository's own change. The check
 never writes it.
 
 - **Only moves forward.** The value is a version, compared as a version. The
-  change that sets it sets it to the highest version its item covered, and the
+  change that sets it sets it as the filing step says (below), and the
   item says "unless it already names a later version". Merging two items out
   of order never moves it back, and one open item covers every release up to
   its version, so the field is never set past a release whose item is open.
@@ -188,15 +188,20 @@ never writes it.
   them again, which is cheap and local.
 - **A dismissal** (the action does not apply, with a reason) is written into
   the same change as `jig.reconcile_dismissed`, a list of `<id>: <reason>`,
-  with a reason of at least a sentence. A dismissed **required** action is
+  with a reason of at least a sentence. The same list records an action that
+  was **taken** but sits above the baseline because another action in its
+  release or an earlier one is still outstanding, with a reason that begins
+  `done:`, so a partly handled release does not report it again; both kinds
+  of entry are listed as removable once the baseline passes them. A dismissed **required** action is
   still evaluated: when its hint still matches, the report lists it as
   `dismissed, evidence present`, so a field cannot silence it. The check lists
-  dismissals whose id is at or below `jig.reconciled` as removable.
+  entries whose id is at or below `jig.reconciled` as removable.
 
 A separate record on the machine, in the dispatcher's state, holds only what
 was **reported**: for each repository, the ids notified with the time each was
-first notified, the time each was first observed resolved (no longer open in
-a run, or covered by `jig.reconciled`), the ids filed with their tracker
+first notified, the time each was first observed resolved (a repository-level
+action: no longer open in a run, or covered by `jig.reconciled`; a `machine`
+action: no longer open in a run on this host, whatever `jig.reconciled` says), the ids filed with their tracker
 item, `checked_through` with the default-branch tree identity and the record
 version it was evaluated against, the last result's counts and the time. It
 is not the source of truth for what the repository has taken.
@@ -231,9 +236,11 @@ jig reconcile file [--repo <path>] [--record <file>] --entry <id> [--entry <id> 
   for the ones that need a look, and one listing every other open
   repository-level action up to the highest version as *not filed here*. It
   ends with the step that sets `jig.reconciled` and records dismissals. That
-  step sets the version to the one just below the **earliest** action not yet
-  taken or dismissed, never to the highest version covered, so an action
-  nobody named stays above the baseline and is reported again. The item
+  step sets the version to the highest released version below the
+  **earliest** action not yet taken or dismissed, so an action nobody named
+  stays above the baseline and is reported again; when every action the item
+  covers is taken or dismissed, it sets the highest version covered. A value
+  that would not move `jig.reconciled` forward is left as it is. The item
   carries the marker `jig-reconcile: <ids>` in its body. Before creating
   anything the command searches the repository's open items for the marker, in
   bodies and in comments. When exactly one open item matches any of the ids it
@@ -333,8 +340,9 @@ notified is per machine.
   that adds an obsolete phrase after an earlier clean result is noticed. A
   repository with a `machine` action in range is also considered at least once
   a day, since the host's state can change with neither version nor branch
-  moving. At most once an hour per repository, and a repository with no action
-  in the record since its baseline costs one version comparison.
+  moving. At most once an hour per repository, and a repository with no
+  repository-level action in the record since its baseline and no `machine`
+  action in range costs one version comparison.
 - **Its bounds.** Each repository gets 60 seconds. A tick runs the stage for at
   most two repositories, rotating, and stops when it has spent two minutes of
   the tick, so a release day delays no re-arm or pickup. A repository that
@@ -394,7 +402,8 @@ asks. Neither runs the other.
 
 - **Only the last audit record as the baseline.** Records go stale, and the
   audit does not run on a schedule; the field is the repository's statement
-  and is read in one place. The audit record stays a fallback.
+  and is read in one place. The audit record is shown as context, never used
+  as a baseline.
 - **A machine-only record.** It differs per host, is lost with the host, and
   cannot say what the repository has taken. It stays as a cache of what was
   reported and what needed nothing.
