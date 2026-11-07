@@ -141,7 +141,7 @@ export interface StaleCause {
    */
   recovery?: true;
   /**
-   * For a stall that left work in its tree: that tree, as the ledger names it
+   * For a stall or a pass deadline that left work in its tree: that tree, as the ledger names it
    * (`wt-<key>`), and whether it is on this host. The re-drive runs there,
    * never in a fresh tree, which would not carry the work.
    */

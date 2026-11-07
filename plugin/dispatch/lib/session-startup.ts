@@ -2,7 +2,7 @@
  * The follow-ups a tick runs again rather than handing to a person: a
  * headless session that stopped before it could start, retried for as long as
  * it does, and a pass that died during its work with no result and no
- * question, run again once (`retriedDeath`).
+ * question, run again once while its death is recent (`retriedDeath`).
  */
 import { statSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -14,6 +14,7 @@ import type { LaunchRecord, ReadRecord } from "./launches.ts";
 import { RECOVERY_FACTS } from "./recovery-facts.ts";
 import { questionOf } from "./session.ts";
 import { swallow } from "../../shared/errors.ts";
+import { SESSION_LEASE_MIN } from "../../shared/liveness.ts";
 
 /** Startup failures are limited to the first minute of the vendor process. */
 const STARTUP_MS = 60_000;
@@ -139,9 +140,29 @@ export function isRerun(record: Pick<LaunchRecord, "facts">): boolean {
   return record.facts.startsWith(RECOVERY_FACTS);
 }
 
-/** A follow-up that died during its work for the first time: its marker is released, and it runs again once. */
-export function retriedDeath(r: ReadRecord): boolean {
-  return diedWithoutResult(r) && !isRerun(r.record);
+/**
+ * How long after its death a follow-up is still the tick's to run again: the
+ * session lease (`SESSION_LEASE_MIN`), after which what a session held counts
+ * as abandoned. A tick, which runs every few minutes, releases a death's
+ * marker well inside it; an older death, a record kept from before deaths
+ * were run again among them, keeps the failed follow-up's notice, since a
+ * person may already have settled it.
+ */
+const RETRY_WITHIN_MS = SESSION_LEASE_MIN * 60_000;
+
+/** When a follow-up's record ended: its exit's time, else when its outcome row was timed, else when it was made; `NaN` when none reads. */
+function endedAtMs(r: ReadRecord): number {
+  if (r.state.kind === "ended") return Date.parse(r.state.exit.at);
+  return Date.parse(r.record.endedAt ?? r.record.createdAt);
+}
+
+/** A follow-up that died during its work for the first time, within the retry window: its marker is released, and it runs again once. */
+export function retriedDeath(r: ReadRecord, nowMs = Date.now()): boolean {
+  return (
+    diedWithoutResult(r) &&
+    !isRerun(r.record) &&
+    nowMs - endedAtMs(r) <= RETRY_WITHIN_MS
+  );
 }
 
 /** Whether a follow-up's end is a retry rather than an outcome: a startup that never began, or a first death. */

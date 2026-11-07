@@ -276,11 +276,15 @@ guards keep one stage from starting twice:
   outcome of done means the follow-up is done; a launch record
   still running holds it; a pass that died during its work, its wrapper
   gone or its pass ended on a signal or a failing exit with no result
-  recorded and no question stated, is run again once: the tick releases the
-  marker it left, whether or not an answer was written onto it, and a later
-  tick starts the follow-up again under a record whose facts carry the
-  recovery tag, within the pull request's recovery budget (see Launch
-  records). A failed outcome, a run again that died too, or a tick's marker
+  recorded and no question stated, is run again once while its death is
+  recent (within the session lease, 6 hours): the tick releases the marker
+  it left, whether or not an answer was written onto it, and a later tick
+  starts the follow-up again under a record whose facts carry the recovery
+  tag, within the pull request's recovery budget (see Launch records). Only
+  the death whose marker a tick released this way makes the next follow-up a
+  run again; one a person asks for by deleting a failed marker is a new
+  follow-up. An older death, a failed outcome, a run again that died too, or
+  a tick's marker
   whose launch record and outcome are both absent on this machine is a
   failed follow-up, notified and never relaunched by the tick. A person settles it by deleting the marker, which makes the
   follow-up wanted again, then running the follow-up or leaving it to the
@@ -521,7 +525,12 @@ the same head, as for a conflict stop; a head that moves is a new attempt.
 A drive that stopped `15` (a pass reached its deadline again after the
 driver spent its restarts, `drive.pass_deadline_retries`) is re-driven the
 same way, once per head commit on any admitted account: the tree keeps what
-the killed passes did, and a fresh pass usually finishes it. A deadline whose
+the killed passes did, and a fresh pass usually finishes it. Like a stall's,
+its stop records whether it left work in its tree and which tree that is, so
+a stop that left work, or never measured it, is re-driven only in that tree,
+whose re-armed drive takes the edits as its own to finish: on another host it
+is left to that host, and with no open workspace holding the tree here, a
+person is told. A deadline whose
 kill could not be witnessed never reads `15`: that driver keeps its locks and
 leaves its ledger running, so it is a silent drive (below). Exit `1` names a
 crash, a failed pass or an unreadable state, not a next step, and stays a
@@ -584,7 +593,9 @@ acquisition time) in this machine's drive database, and calls it ended only on
 the evidence its own recovery accepts, a released witness whose driver pid no
 longer runs, or persisted observations showing the driver and every observed
 or registered pass gone. `drive.ts --take-over` still decides whether the
-takeover is admitted. One takeover is made per ledger facts: once it ends
+takeover is admitted. Only this takeover draws on the recovery budget: one of
+a driver a launch started is planned as before, whatever this host shows of
+it. One takeover is made per ledger facts: once it ends
 leaving the ledger as it was, a person is told. Where the host cannot show
 the run ended (the driver's clone is on another host, its process table does
 not read, no record of the run, a pass that may still act), the silent drive
@@ -593,7 +604,8 @@ parked.
 
 The re-arms of stops with no recorded cause and the re-drives of the stops
 whose next step is mechanical (a recurring pass deadline, a failure on a
-conflicting pull request, a silent driver this host shows gone, a follow-up
+conflicting pull request, a silent driver no launch started that this host
+shows gone, a follow-up
 whose session died) draw on one recovery budget per pull request: 3
 attempts in a rolling hour, across accounts and hosts, counted from this
 host's launch records and every host's launch claims by the tag on their
@@ -615,7 +627,7 @@ ordinary budget.
 | stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies per stop, with the exit and the drive's handoff |
 | stopped `14` (stalled) or `21` (CI still failing with its repair passes spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit | stale | re-arms on any admitted account; a stall that left work in its tree, or whose stop never measured it, re-arms only in that tree: on another host it is left to that host, and with no open workspace holding it here, a person is told |
 | stopped `14` or `21`, this machine or another host already having re-driven that head with that exit, however that launch ended | needs a person | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does |
-| stopped `15` (a pass reached its deadline with its restarts spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit, budget available | stale | re-arms on any admitted account |
+| stopped `15` (a pass reached its deadline with its restarts spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit, budget available | stale | re-arms on any admitted account; a stop that left work in its tree, or never measured it, re-arms only in that tree: on another host it is left to that host, and with no open workspace holding it here, a person is told |
 | stopped `1`, the pull request conflicting with its base, neither this machine's records nor another host's launch claims holding a re-drive of its head and its base branch's head, budget available | stale | re-arms on any admitted account, so the drive's conflict-resolve round runs |
 | stopped `15`, or `1` on a conflicting pull request, already re-driven at that change however that launch ended, or the budget spent | needs a person | notifies per stop, with the exit and the drive's handoff, or that the recovery budget is spent |
 | stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |

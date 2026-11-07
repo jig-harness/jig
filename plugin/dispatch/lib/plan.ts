@@ -44,6 +44,7 @@ import type { FollowupRelease } from "./followup-releases.ts";
 import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
+import { goneUnlaunched } from "./recovery-facts.ts";
 import { conflictNote } from "./sources/ledgers.ts";
 import { workspaceOfTree } from "./stall-tree.ts";
 import { planFollowups } from "./plan-followups.ts";
@@ -84,6 +85,8 @@ export interface PlanInput {
   outcomes: ReadonlyMap<number, FollowupOutcome>;
   /** The stale follow-up claims this host released, by pull request. */
   releases?: ReadonlyMap<number, FollowupRelease>;
+  /** The launch records whose follow-up marker a tick released as a retry (`settledEnds`). */
+  retried?: ReadonlySet<string>;
   sessions: SessionsReport;
   /** Each pull request's creation time; a pickup's pull request is one created after its launch. */
   created?: ReadonlyMap<number, string>;
@@ -195,6 +198,7 @@ export function planTick(input: PlanInput): Plan {
         staleAfterMs: input.section.followupStaleAfterMs,
         releases: input.releases ?? new Map(),
         owner: input.shared?.owner ?? true,
+        retried: input.retried ?? new Set(),
         nowMs: input.nowMs,
       },
       plan,
@@ -362,9 +366,7 @@ const QUIET_HOLDS: ReadonlyMap<DriveHold["kind"], LedgerClass> = new Map([
 
 /** What showed a silent driver no launch started gone, when this host may take it over; `null` otherwise. */
 function goneDriver(pr: DrivenPr): string | null {
-  return pr.class === "silent" && pr.evidence.driverGone === true
-    ? String(pr.evidence.driverCheck)
-    : null;
+  return goneUnlaunched(pr) ? String(pr.evidence.driverCheck) : null;
 }
 
 /** Why the plan wants a drive's action, in one sentence. */

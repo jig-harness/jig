@@ -37,7 +37,12 @@
  * says how a launch is counted, not what the ledger said.
  */
 import { noCauseFacts } from "../no-cause-stops.ts";
-import { isRecovery, RECOVERY_FACTS, sameFacts } from "../recovery-facts.ts";
+import {
+  goneUnlaunched,
+  isRecovery,
+  RECOVERY_FACTS,
+  sameFacts,
+} from "../recovery-facts.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   holds,
@@ -242,7 +247,7 @@ export function settleSilentTakeovers(
   records: ReadRecord[],
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (pr.class !== "silent" || pr.evidence.driverGone !== true) return pr;
+    if (!goneUnlaunched(pr)) return pr;
     const facts = factsOf(pr);
     const mine = records.filter(
       (r) =>

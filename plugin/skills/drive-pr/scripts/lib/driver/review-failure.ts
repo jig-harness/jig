@@ -13,6 +13,10 @@ import { detectQuotaBlock } from "./../quota/index.ts";
 
 import { handleQuotaBlock } from "./review-quota.ts";
 
+import { driverRuntime } from "./runtime.ts";
+
+import { measureStop } from "./stop-measure.ts";
+
 import { unpushedCountAdvice } from "./../driven-branch.ts";
 
 import { git, gitCallTimeoutSeconds } from "./../proc.ts";
@@ -128,6 +132,8 @@ async function restartAfterDeadline(
       { timeoutSec: gitCallTimeoutSeconds() },
     )}.`,
   );
+  // What the killed passes left stays in this tree, where a re-drive must run.
+  driverRuntime.stopLeftWork = await measureStop();
   return PASS_DEADLINE_EXIT;
 }
 

@@ -1220,10 +1220,10 @@ make, use the entry's term instead.
   the *dispatcher* starts work on one pull request again after a stop nobody
   decided: a drive that stopped with no recorded cause, a *re-drive* of a
   recurring pass deadline or of a failure on a conflicting pull request, the
-  takeover of a silent driver whose run its host shows ended, and the run
-  again of a follow-up whose session died. Every kind counts against the one
-  budget (3 by default), so a stop that keeps recurring ends as a notice to a
-  person rather than a loop.
+  takeover of a silent driver no launch started whose run its host shows
+  ended, and the run again of a follow-up whose session died. Every kind
+  counts against the one budget of 3, so a stop that keeps recurring ends as a
+  notice to a person rather than a loop.
 - **Permission mode (of a pass)** — the setting of an agent tool that
   decides which of its actions ask a person first. Claude Code's
   `default` mode asks before most edits and commands; a pass of a *PR

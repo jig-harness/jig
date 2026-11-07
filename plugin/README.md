@@ -298,7 +298,8 @@ re-driven once per head commit, a stall that left work in its tree only in
 that tree, and a person is told when the same head stops the same way again;
 a stop a person is told of says so when its pull request also conflicts with
 its base. A pass deadline that recurred past the drive's restarts (exit `15`)
-is re-driven once per head commit too, and a failure (exit `1`) while the
+is re-driven once per head commit too, one that left work in its tree only in
+that tree, and a failure (exit `1`) while the
 pull request conflicts with its base once per pair of its head and its base
 branch's head, so its conflict-resolve round runs. These re-drives, the
 takeover of a silent driver no launch started and the run again of a
@@ -438,7 +439,8 @@ and never started again: delete its marker to have it run again. A pass that
 died during its work (its wrapper gone, or a signal or a failing exit) with
 no result and no question is run again once: the tick releases its marker,
 answered or not, and a later tick starts the follow-up again, within the pull
-request's recovery budget; a second death is notified. A pass that cannot finish without a person stops and
+request's recovery budget, while the death is under 6 hours old; a second
+death is notified. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
 that question, and the outcome log counts it as parked for a person.
 

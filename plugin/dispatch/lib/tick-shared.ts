@@ -19,6 +19,7 @@ import {
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import { settleNoCauseStops } from "./no-cause-stops.ts";
 import {
+  driveHold,
   settleConflictStops,
   settleSilentTakeovers,
 } from "./actions/drive-hold.ts";
@@ -32,6 +33,7 @@ import {
 } from "./merge-reads.ts";
 import {
   type DriveClaims,
+  foreignHold,
   hostOf,
   ownersSeen,
   readSharedDrives,
@@ -234,15 +236,39 @@ export function settleDrives(
   claims: DriveClaims,
 ): DrivenPr[] {
   const own = records.filter((r) => r.record.repo === ctx.slug);
+  const placed = markUnlaunched(drives, own, claims, ctx.host);
   return settleNoCauseStops(
     settleSharedConflictStops(
-      settleSilentTakeovers(settleConflictStops(drives, own), own),
+      settleSilentTakeovers(settleConflictStops(placed, own), own),
       claims,
       ctx.host,
     ),
     own,
     claims,
     Date.now(),
+  );
+}
+
+/**
+ * Each silent drive whose driver this host shows gone, marked `unlaunched`
+ * when neither this host's launch records nor another host's claims place it
+ * (start its driver, hold it, or answer it with a refusal): only that
+ * takeover is a re-drive the recovery budget counts. A takeover of a driver
+ * a launch started is planned as it always was.
+ */
+function markUnlaunched(
+  drives: readonly DrivenPr[],
+  own: ReadRecord[],
+  claims: DriveClaims,
+  host: string,
+): DrivenPr[] {
+  return drives.map((pr) =>
+    pr.class === "silent" &&
+    pr.evidence.driverGone === true &&
+    driveHold(pr, own).kind === "none" &&
+    foreignHold(pr, claims.get(pr.number), host).kind === "none"
+      ? { ...pr, evidence: { ...pr.evidence, unlaunched: true } }
+      : pr,
   );
 }
 

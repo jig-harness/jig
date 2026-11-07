@@ -16,8 +16,8 @@ import {
 } from "../../../skills/drive-pr/scripts/lib/proc.ts";
 import type { Ledger } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { hostLabel } from "../../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
-import { swallow } from "../../../shared/errors.ts";
 import { isRecord } from "../../../shared/guards.ts";
+import { failureText } from "../text.ts";
 
 /** Whether this host shows a silent ledger's driver gone, and what it showed. */
 export interface DriverPresence {
@@ -52,25 +52,39 @@ export async function driverPresence(
     stderr: "pipe",
     timeoutSec: helperTimeoutSeconds(),
   });
-  const said = result.code === 0 ? parsed(result.stdout) : null;
-  if (said === null)
+  const said = answerOf(result);
+  if ("unread" in said)
     return {
       gone: false,
-      why: `this host could not show whether its driver's run ended (driver-presence.ts exited ${result.code}${result.stderr.trim() === "" ? "" : `: ${result.stderr.trim().split("\n")[0]}`})`,
+      why: `this host could not show whether its driver's run ended (driver-presence.ts ${said.unread})`,
     };
   return { gone: said.verdict === "gone", why: said.why };
 }
 
-function parsed(stdout: string): { verdict: string; why: string } | null {
-  try {
-    const v: unknown = JSON.parse(stdout);
-    return isRecord(v) &&
-      typeof v.verdict === "string" &&
-      typeof v.why === "string"
-      ? { verdict: v.verdict, why: v.why }
-      : null;
-  } catch (error) {
-    swallow(error, "driver-presence.ts printed no verdict");
-    return null;
+/** The helper's verdict, or what it did instead of printing one. */
+function answerOf(result: {
+  code: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+}): { verdict: string; why: string } | { unread: string } {
+  if (result.timedOut)
+    return { unread: `did not answer within ${helperTimeoutSeconds()}s` };
+  if (result.code !== 0) {
+    const first = result.stderr.trim().split("\n")[0] ?? "";
+    return {
+      unread: `exited ${result.code}${first === "" ? "" : `: ${first}`}`,
+    };
   }
+  let v: unknown;
+  try {
+    v = JSON.parse(result.stdout);
+  } catch (error) {
+    return { unread: `printed no verdict: ${failureText(error)}` };
+  }
+  return isRecord(v) &&
+    typeof v.verdict === "string" &&
+    typeof v.why === "string"
+    ? { verdict: v.verdict, why: v.why }
+    : { unread: "printed an answer without a verdict and a reason" };
 }

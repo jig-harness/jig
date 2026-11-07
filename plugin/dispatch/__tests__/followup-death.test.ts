@@ -17,9 +17,15 @@ import { MARKER } from "../lib/followup-marker.ts";
 import { readRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { mergedPr, SLUG, type World, world } from "./fixtures.ts";
+import { hostname } from "node:os";
+import { bootId } from "../../shared/liveness.ts";
+import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
+import { tickMarker } from "../lib/followup-marker.ts";
 import {
   account,
+  claimed,
   dispatchState,
+  earlierRecord,
   exitWritten,
   machineFile,
   waitFor,
@@ -145,3 +151,64 @@ function failedBody(record: string): string {
     ),
   );
 }
+
+const OLD_DEATH = "20261030T200000Z-aaaaaaaa";
+
+/** A follow-up of PR #9 this machine ran long ago, whose pass died with exit 143 and no result. */
+function oldDeath(w: World): void {
+  earlierRecord(w, {
+    id: OLD_DEATH,
+    account: "a",
+    action: "followup",
+    pr: 9,
+    facts: "merged 2026-10-31T12:00:00Z",
+  });
+  claimed(
+    w,
+    OLD_DEATH,
+    {
+      hostId: "",
+      host: hostname(),
+      bootId: bootId(),
+      pid: 1,
+      start: "x",
+      claimedAt: "2026-10-30T20:00:00.000Z",
+    },
+    143,
+  );
+}
+
+it("leaves a death older than the retry window a failed follow-up, its marker kept", async () => {
+  const w = fixture();
+  oldDeath(w);
+  w.setComments(9, [
+    forgeComment(
+      902,
+      tickMarker(OLD_DEATH, {
+        pr: 9,
+        writer: { host: "sha256:0123456789abcdef" },
+      }),
+      "drive-bot",
+    ),
+  ]);
+  const r = await applyTick(w, false);
+  expect(launches(r)).toEqual([]);
+  expect(r.repos[0]?.actions).toContainEqual(
+    expect.objectContaining({
+      stage: "notify",
+      target: "PR #9",
+      cause: "followup-failed",
+    }),
+  );
+  expect(markers(w).map((m) => m.id)).toEqual([902]);
+}, 90_000);
+
+it("starts a follow-up a person asked for again as a new one, not a run again of an old death", async () => {
+  const w = fixture();
+  oldDeath(w);
+  // A person deleted the failed marker: the follow-up is wanted again.
+  const [launched] = launches(await applyTick(w, false));
+  expect(launched).toMatchObject({ action: "followup", outcome: "launched" });
+  const record = readRecord(String(launched?.record), dispatchState(w));
+  expect(record?.facts).toBe("merged 2026-10-31T12:00:00Z");
+}, 90_000);

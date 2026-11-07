@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { hostname } from "node:os";
+import { bootId } from "../../shared/liveness.ts";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeDriverRecord } from "../../skills/drive-pr/scripts/lib/ledger-stop.ts";
@@ -25,8 +26,10 @@ import {
 } from "./fixtures.ts";
 import {
   account,
+  claimed,
   dispatchState,
   driveRuns,
+  earlierRecord,
   exitWritten,
   machineFile,
   waitFor,
@@ -107,6 +110,60 @@ async function tick(w: World): Promise<TickReceipt> {
 const launches = (r: TickReceipt) => r.repos[0]?.launches ?? [];
 const notified = (r: TickReceipt) =>
   (r.repos[0]?.notifications ?? []).map((n) => [n.target, n.cause, n.outcome]);
+
+/** An ended launch record of this machine on PR #7, claimed at `claimedAt`, acting on `facts`. */
+function ended(w: World, id: string, claimedAt: string, facts: string): void {
+  earlierRecord(w, { id, account: "a", facts, createdAt: claimedAt });
+  claimed(
+    w,
+    id,
+    {
+      hostId: "",
+      host: hostname(),
+      bootId: bootId(),
+      pid: 1,
+      start: "x",
+      claimedAt,
+    },
+    0,
+  );
+}
+
+describe("jig dispatch and a silent driver a launch started, which this host shows gone", () => {
+  it("takes it over as before, outside the recovery budget, even with the budget spent", async () => {
+    const w = fixture(`${CLONE}@${hostLabel()}`, await deadPid());
+    // This machine's record started the driver: the run began after its claim, before its exit.
+    const owner = "20261030T190000Z-aaaaaaaa";
+    ended(
+      w,
+      owner,
+      "2026-10-30T19:00:00.000Z",
+      "generation 2, exit null, heartbeat x",
+    );
+    const plan = async () => {
+      const r = await w.dispatch(["--json"]);
+      expectSpawnExit(r, 0);
+      return (JSON.parse(r.stdout) as TickReceipt).repos[0]?.actions ?? [];
+    };
+    const [takeover] = await plan();
+    expect(takeover).toMatchObject({ stage: "rearm", takeover: owner });
+    expect(takeover?.takeoverGone).toBeUndefined();
+    expect(takeover?.facts?.startsWith("recovery: ")).toBe(false);
+
+    // Three recovery re-drives in the hour leave the attributed takeover alone.
+    const now = Date.now();
+    for (const n of [1, 2, 3])
+      ended(
+        w,
+        `20261030T21000${n}Z-bbbbbbb${n}`,
+        new Date(now - n * 60_000).toISOString(),
+        `recovery: generation ${n}, exit 15, heartbeat y`,
+      );
+    const [still] = await plan();
+    expect(still).toMatchObject({ stage: "rearm", takeover: owner });
+    expect(still?.reason).not.toContain("repeated recovery re-drives");
+  }, 90_000);
+});
 
 describe("jig dispatch --apply and a silent driver no launch started", () => {
   it("takes it over where this host shows its run ended, once per ledger facts", async () => {

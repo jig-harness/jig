@@ -20,9 +20,23 @@ export function budgeted(facts: string): boolean {
   return facts.startsWith(NO_CAUSE_FACTS) || facts.startsWith(RECOVERY_FACTS);
 }
 
-/** Whether a drive's launch is a re-drive the recovery budget counts: a stale stop it marks so, or a silent driver this host shows gone. */
+/**
+ * Whether a drive's launch is a re-drive the recovery budget counts: a stale
+ * stop it marks so, or the takeover of a silent driver no launch started
+ * (`unlaunched`) whose run this host shows ended. The takeover of a driver a
+ * launch started is not counted.
+ */
 export function isRecovery(pr: DrivenPr): boolean {
-  return pr.stale?.recovery === true || pr.evidence.driverGone === true;
+  return pr.stale?.recovery === true || goneUnlaunched(pr);
+}
+
+/** Whether a silent drive's driver was started by no launch of any host, and this host shows its run ended. */
+export function goneUnlaunched(pr: DrivenPr): boolean {
+  return (
+    pr.class === "silent" &&
+    pr.evidence.driverGone === true &&
+    pr.evidence.unlaunched === true
+  );
 }
 
 /** `facts` without the recovery tag. */

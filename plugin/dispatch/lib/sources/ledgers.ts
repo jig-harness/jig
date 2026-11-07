@@ -52,7 +52,8 @@
  *
  * A ledger that stopped `PASS_DEADLINE`, the driver having spent its
  * restarts from a pass killed at its deadline, is re-driven the same way,
- * once per head commit, by a fresh pass. One that stopped `INDETERMINATE`
+ * once per head commit, by a fresh pass, and bound to its tree as a stall is,
+ * since the killed passes' work stays there. One that stopped `INDETERMINATE`
  * (`1`) while its pull request conflicts with its base is re-driven once per
  * pair of its head and its base branch's head, the change a stop on a
  * conflict is keyed on, so the drive's conflict-resolve round runs once for
@@ -323,10 +324,10 @@ export function conflictNote(mergeable: unknown): string {
     : "";
 }
 
-function stallTreeWhy(leftWork: boolean | undefined): string {
+function stopTreeWhy(leftWork: boolean | undefined): string {
   return leftWork === true
-    ? "in the tree it stalled in, which holds work it left"
-    : "in the tree it stalled in, whose work was never measured";
+    ? "in the tree it stopped in, which holds work it left"
+    : "in the tree it stopped in, whose work was never measured";
 }
 
 /**
@@ -349,14 +350,14 @@ function mechanicalStopClass(
     };
   const last = lastStopEvent(ledger.events ?? []);
   const tree =
-    stop.kind === "stall" &&
+    stop.kind !== "ci-repair" &&
     last?.leftWork !== false &&
     (last === undefined || last.cause === String(exit))
       ? ledgerTree(ledger)
       : null;
   return {
     class: "stale",
-    why: `stopped ${exit} (${stop.words}): re-drive ${tree === null ? "on any account" : stallTreeWhy(last?.leftWork)}, once for head ${short(head)}`,
+    why: `stopped ${exit} (${stop.words}): re-drive ${tree === null ? "on any account" : stopTreeWhy(last?.leftWork)}, once for head ${short(head)}`,
     stale: {
       cause: `stopped ${exit}, ${stop.words}`,
       change: `head ${head}, stopped ${exit}`,

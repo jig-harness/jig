@@ -859,7 +859,7 @@ function driveWait(
   if (reads.pull.state !== "OPEN") return "none";
   if (facts.presence?.gone === true)
     return {
-      waiting: `its heartbeat is past the lease window and this host shows its driver's run ended (${facts.presence.why}): a dispatcher takes it over, within the pull request's recovery budget, and drive.ts --take-over decides`,
+      waiting: `its heartbeat is past the lease window and this host shows its driver's run ended (${facts.presence.why}): a dispatcher may take it over, once per ledger state and within the pull request's recovery budget, and drive.ts --take-over decides`,
     };
   const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
   if (diagnosis !== null) return diagnosis;

@@ -12,7 +12,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { SharedClaim } from "../../shared/records/shared.ts";
+import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.ts";
+import type { DriveEvent } from "../../skills/drive-pr/scripts/lib/state/events.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
+import { hostLabel } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { settleConflictStops } from "../lib/actions/drive-hold.ts";
 import { type ReadRecord, readRecord } from "../lib/launches.ts";
 import { noCauseFacts, settleNoCauseStops } from "../lib/no-cause-stops.ts";
@@ -45,9 +48,23 @@ const HEAD = "a".repeat(40);
 const BASE = "c".repeat(40);
 const MOVED = "b".repeat(40);
 
-/** A drive of PR #7 as the tick reads it once its ledger is classified beside `forge`. */
-function drive(exit: number, forge: PrFacts): DrivenPr {
-  const ledger = stoppedLedger(7, exit);
+/** The stop event of a stop that measured its tree: whether it left work there. */
+const measured = (exit: number, leftWork: boolean): DriveEvent => ({
+  at: "2026-11-07T11:00:00.000Z",
+  round: 3,
+  kind: "stop",
+  cause: String(exit),
+  leftWork,
+  tree: "wt-0123456789abcdef@h",
+});
+
+/** A drive of PR #7 as the tick reads it once its ledger is classified beside `forge`; a deadline stop measured its tree clean unless `events` say otherwise. */
+function drive(
+  exit: number,
+  forge: PrFacts,
+  events: DriveEvent[] = exit === 15 ? [measured(15, false)] : [],
+): DrivenPr {
+  const ledger = stoppedLedger(7, exit, { events });
   return {
     number: 7,
     url: `https://github.com/${SLUG}/pull/7`,
@@ -116,6 +133,11 @@ describe("a recovery stop's ledger", () => {
     expect(again?.why).toContain(
       "only a person settles it until its head moves",
     );
+    // The killed passes' work stays in their tree: a stop that left work, or never measured, is bound to it.
+    for (const events of [[measured(15, true)], []])
+      expect(
+        drive(15, { head: HEAD, mergeable: "MERGEABLE" }, events).stale?.tree,
+      ).toEqual({ actor: "wt-0123456789abcdef", here: false });
     // A new head is a new attempt.
     const moved = drive(15, { head: MOVED, mergeable: "MERGEABLE" });
     expect(settleConflictStops([moved], [redrove(placed, 15)])[0]?.class).toBe(
@@ -232,17 +254,23 @@ describe("the recovery budget", () => {
     expect(
       settle(drive(14, { head: MOVED, mergeable: "MERGEABLE" }), spent)?.class,
     ).toBe("stale");
-    // A silent driver this host shows gone is notified, not taken over.
+    // A silent driver no launch started, which this host shows gone, is notified, not taken over.
     const silent: DrivenPr = {
       ...deadline,
       class: "silent",
-      evidence: { ...deadline.evidence, driverGone: true },
+      evidence: { ...deadline.evidence, driverGone: true, unlaunched: true },
     };
     const { stale: _none, ...gone } = silent;
     expect(settle(gone, spent)).toMatchObject({
       class: "silent",
       evidence: { driverGone: false },
     });
+    // One a launch started is not the budget's.
+    const attributed = {
+      ...gone,
+      evidence: { ...gone.evidence, unlaunched: false },
+    };
+    expect(settle(attributed, spent)).toEqual(attributed);
   });
 });
 
@@ -258,9 +286,16 @@ afterEach(() => {
   current = null;
 });
 
-/** The ledger as a drive that just stopped `exit` wrote it, its heartbeat now. */
-function stop(exit: number | undefined, generation: number): Ledger {
-  const ledger = stoppedLedger(7, exit);
+/** The ledger as a drive that just stopped `exit` wrote it, its heartbeat now; a deadline stop measured its tree clean unless `extra` says otherwise. */
+function stop(
+  exit: number | undefined,
+  generation: number,
+  extra: Partial<Ledger> = {},
+): Ledger {
+  const ledger = stoppedLedger(7, exit, {
+    ...(exit === 15 ? { events: [measured(15, false)] } : {}),
+    ...extra,
+  });
   return {
     ...ledger,
     generation,
@@ -268,6 +303,7 @@ function stop(exit: number | undefined, generation: number): Ledger {
       ...ledger.driver,
       heartbeat: new Date().toISOString(),
       ...(exit === undefined ? { recoveryVersion: 1 as const } : {}),
+      ...extra.driver,
     },
   };
 }
@@ -288,6 +324,14 @@ function fixture(
   w.setWorkspaces([{ branch: "feature/7", linkedPR: 7, path: ws }]);
   machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm", "notify"]);
   return w;
+}
+
+/** PR #7, its drive's ledger written for its workspace's path. */
+function treeFixture(ledger: (ws: string) => Ledger): { w: World; ws: string } {
+  const w = fixture({ mergeable: "MERGEABLE" }, stop(15, 3));
+  const ws = join(w.root, "ws-7");
+  w.setComments(7, [ledgerComment(701, ledger(ws))]);
+  return { w, ws };
 }
 
 async function tick(w: World): Promise<TickReceipt> {
@@ -324,6 +368,33 @@ describe("jig dispatch --apply re-drives a recovery stop", () => {
     expect(notified(second)).toEqual([["PR #7", "needs-person", "sent"]]);
     expect(second.repos[0]?.actions[0]?.notice?.text).toContain(
       `launch record ${record} already re-drove it for this change and ended 15: only a person settles it until its head moves`,
+    );
+  }, 180_000);
+
+  it("re-drives a pass deadline that left work only in the tree it stopped in", async () => {
+    const leftWork = (actor: (ws: string) => string) => (ws: string) =>
+      stop(15, 3, {
+        events: [measured(15, true)],
+        driver: {
+          ...stoppedLedger(7, 15).driver,
+          actor: actor(ws),
+          clone: `clone-a@${hostLabel()}`,
+        },
+      });
+    const own = treeFixture(leftWork((ws) => `wt-${worktreePathKey(ws)}`));
+    const record = await redrive(own.w, 15);
+    expect(readRecord(record, dispatchState(own.w))?.workspace?.path).toBe(
+      own.ws,
+    );
+    current?.close();
+
+    // No open workspace holds the tree: a person recovers the work.
+    const gone = treeFixture(leftWork(() => "wt-0123456789abcdef"));
+    const r = await tick(gone.w);
+    expect(launches(r)).toEqual([]);
+    expect(notified(r)).toEqual([["PR #7", "needs-person", "sent"]]);
+    expect(r.repos[0]?.actions[0]?.notice?.text).toContain(
+      "which no open workspace on this host holds",
     );
   }, 180_000);
 

@@ -1,5 +1,5 @@
 /**
- * The tree a stall left work in, which its re-drive must run in: a fresh
+ * The tree a stall or a pass deadline left work in, which its re-drive must run in: a fresh
  * tree would not carry uncommitted edits or unpushed commits. The drive
  * ledger names the tree by its key (`wt-<key>`, drive-pr's `resolveActor`)
  * and the host it is on (the label after the `@` of its clone), so this host

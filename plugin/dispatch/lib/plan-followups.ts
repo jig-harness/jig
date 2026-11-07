@@ -80,6 +80,8 @@ export interface FollowupInput {
   releases: ReadonlyMap<number, FollowupRelease>;
   /** Whether this host owns the repository: only the owner releases a claim. */
   owner: boolean;
+  /** The launch records whose marker a tick released as a retry, and whose claims owe nothing more (`settledEnds`). */
+  retried: ReadonlySet<string>;
   nowMs: number;
 }
 
@@ -298,7 +300,7 @@ function planTickMarker(
     });
     return;
   }
-  if (found !== undefined && retriedDeath(found)) {
+  if (found !== undefined && retriedDeath(found, input.nowMs)) {
     plan.running.push({
       target,
       stage: "followup",
@@ -393,16 +395,28 @@ function planTick(
 }
 
 /**
- * This host's follow-up of a pull request that died with no result, which a
- * follow-up launched now runs again; `undefined` when none did.
+ * The follow-up of a pull request that a follow-up launched now runs again:
+ * this host's latest follow-up of it, when that one died for the first time
+ * and a tick released its marker as a retry (`retried`); `undefined`
+ * otherwise. A follow-up a person asked for again by deleting a failed
+ * marker is a new one, not a run again.
  */
 function deathOf(input: FollowupInput, pr: number): ReadRecord | undefined {
-  return input.launches.findLast(
-    (r) =>
-      r.record.repo === input.slug &&
-      r.record.pr === pr &&
-      diedWithoutResult(r),
-  );
+  const latest = input.launches
+    .filter(
+      (r) =>
+        r.record.repo === input.slug &&
+        r.record.pr === pr &&
+        r.record.action === "followup",
+    )
+    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
+    .at(-1);
+  return latest !== undefined &&
+    diedWithoutResult(latest) &&
+    !isRerun(latest.record) &&
+    input.retried.has(latest.record.id)
+    ? latest
+    : undefined;
 }
 
 /** A merged pull request with no trusted follow-up marker: the tick wants one, run again after a death within the recovery budget. */

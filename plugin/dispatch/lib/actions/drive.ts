@@ -258,7 +258,7 @@ async function workspaceFor(
   named: Dispatched,
   tree?: string,
 ): Promise<Opened> {
-  // A stall that left work runs where the work is, or not at all: a fresh
+  // A stall or a deadline that left work runs where the work is, or not at all: a fresh
   // tree would not carry it.
   if (tree !== undefined) {
     const own = sessions.ok
@@ -266,7 +266,7 @@ async function workspaceFor(
       : undefined;
     return own === undefined
       ? {
-          refused: `the stall left work in its tree (${tree}), which no open workspace holds now; a fresh tree would not carry it`,
+          refused: `the stop left work in its tree (${tree}), which no open workspace holds now; a fresh tree would not carry it`,
         }
       : { workspace: { id: own.id, path: own.path } };
   }

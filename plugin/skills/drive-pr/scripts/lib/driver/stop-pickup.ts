@@ -1,30 +1,36 @@
 /**
  * A drive armed after a stop whose next step is the drive's own: a stall
- * (`STALLED`, exit `14`) or CI still red with its repair passes spent
- * (`CI_REPAIR_SPENT`, exit `21`). The dispatcher re-drives both once per head
- * commit, and a person may re-arm either. The stop is the drive state's last
+ * (`STALLED`, exit `14`), CI still red with its repair passes spent
+ * (`CI_REPAIR_SPENT`, exit `21`) or a pass deadline with its restarts spent
+ * (`PASS_DEADLINE`, exit `15`). The dispatcher re-drives each once per head
+ * commit, and a person may re-arm any. The stop is the drive state's last
  * `stop` event, which the ledger carries to another clone, so the new drive
  * reads it wherever it runs.
  *
  * Its first pass is told the stop and, for a stall, what the stalled passes
- * recorded last, until one pass completes (`carriedNotice`). A stall that
- * left work in the tree this drive is armed in (the stop event's `leftWork`
- * and `tree`) hands that work on: the tree's edits at arm count as the
- * drive's to settle (`unpushed.ts`), where edits found at arm are otherwise
- * taken as a person's and left alone. A stop that measured nothing, or one
- * from another tree or host, hands on nothing: the edits here are not its.
+ * recorded last, until one pass completes (`carriedNotice`). A stall or a
+ * deadline that left work in the tree this drive is armed in (the stop
+ * event's `leftWork` and `tree`, `stop-measure.ts`) hands that work on: the
+ * tree's edits at arm count as the drive's to settle (`unpushed.ts`), where
+ * edits found at arm are otherwise taken as a person's and left alone. A stop
+ * that measured nothing, or one from another tree or host, hands on nothing:
+ * the edits here are not its.
  */
 import { resolveActor } from "./../state/actor.ts";
 import { lastStopEvent } from "./../state/events.ts";
 import { hostLabel } from "./../state/ledger-mirror.ts";
 import type { DriveState } from "./../state/schema.ts";
 import { recordedDecisions } from "./restart.ts";
-import { CI_REPAIR_SPENT_EXIT, STALLED_EXIT } from "./settings.ts";
+import {
+  CI_REPAIR_SPENT_EXIT,
+  PASS_DEADLINE_EXIT,
+  STALLED_EXIT,
+} from "./settings.ts";
 
 export interface StopPickup {
   /** What the first pass is told; `''` when the last stop was neither. */
   notice: string;
-  /** The tree's edits at arm are the stalled drive's, to finish. */
+  /** The tree's edits at arm are the stopped drive's, to finish. */
   inheritsEdits: boolean;
 }
 
@@ -43,11 +49,21 @@ export async function stopPickup(
       ].join("\n"),
       inheritsEdits: false,
     };
-  if (code !== STALLED_EXIT) return { notice: "", inheritsEdits: false };
-  const decided = await recordedDecisions(pr);
+  if (code !== STALLED_EXIT && code !== PASS_DEADLINE_EXIT)
+    return { notice: "", inheritsEdits: false };
   const leftWork = stop?.leftWork === true;
   const here = stop?.tree === `${await resolveActor()}@${hostLabel()}`;
   const inherits = leftWork && here;
+  if (code === PASS_DEADLINE_EXIT)
+    return {
+      notice: [
+        `RE-ARMED AFTER A PASS DEADLINE: the drive before this one stopped with exit ${PASS_DEADLINE_EXIT} (PASS_DEADLINE) at round ${stop?.round ?? "?"}: its passes reached their deadline again after the driver spent its restarts (drive.pass_deadline_retries).`,
+        ...leftWorkLines(inherits, leftWork, stop?.tree),
+        "Finish the round in smaller steps than the killed passes tried, so it ends inside the deadline.",
+      ].join("\n"),
+      inheritsEdits: inherits,
+    };
+  const decided = await recordedDecisions(pr);
   return {
     notice: [
       `RE-ARMED AFTER A STALL: the drive before this one stopped with exit ${STALLED_EXIT} (STALLED) at round ${stop?.round ?? "?"}: its passes changed nothing the driver could observe, for the stall threshold and one extra round.`,
@@ -57,17 +73,26 @@ export async function stopPickup(
             "What its passes recorded last (the end of the handoff narrative):",
             ...decided.map((line) => `  ${line}`),
           ]),
-      ...(inherits
-        ? [
-            "It left work in this tree: it is this round's to finish first (SKILL.md § 5, A tree the round inherits).",
-          ]
-        : leftWork
-          ? [
-              `It left work in another tree (${stop?.tree}), not this one: edits here are not its, so leave them alone.`,
-            ]
-          : []),
+      ...leftWorkLines(inherits, leftWork, stop?.tree),
       "Find why those passes did not act, act on it, and if a step refuses and you stop, end the handoff narrative naming the step that refused and what would unblock it.",
     ].join("\n"),
     inheritsEdits: inherits,
   };
+}
+
+/** What the first pass is told of the work the stop left: this round's to finish here, another tree's to leave alone, or nothing. */
+function leftWorkLines(
+  inherits: boolean,
+  leftWork: boolean,
+  tree: string | undefined,
+): string[] {
+  if (inherits)
+    return [
+      "It left work in this tree: it is this round's to finish first (SKILL.md § 5, A tree the round inherits).",
+    ];
+  return leftWork
+    ? [
+        `It left work in another tree (${tree}), not this one: edits here are not its, so leave them alone.`,
+      ]
+    : [];
 }
