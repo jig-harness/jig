@@ -119,10 +119,13 @@ of each hour to the drives and `jig send`, whose own spend the tick's floor
 guards as it does with no hub. A Work card reads, for its pull request, the
 pull request and its comments, and its timeline when a label request is on
 it: two or three forge requests for a pull request whose comments and
-timeline each fit one page of 100 entries, which its follow-up shares. Each
-further 100 comments or timeline entries is one more request, up to the 30
-pages `jig ask` reads of each, so a pull request with 201 comments costs
-three comment requests beside the pull request's own read. Each item costs
+timeline each number fewer than 100 entries, which its follow-up shares. A
+listing ends at the first page of fewer than 100, so each further 100
+comments or timeline entries is one more request, up to the 30 pages `jig
+ask` reads of each, and a count that is an exact multiple of 100 costs one
+more, empty request to show the end: a pull request with 201 comments costs
+three comment requests beside the pull request's own read, and one with
+exactly 100 comments and 100 timeline entries five forge requests. Each item costs
 one tracker read, its issue links among them. So a pull request of that
 size with its item and follow-up costs two or three forge requests and one
 tracker read, and a five-item batch the same forge requests and five
@@ -354,7 +357,13 @@ person's. These rules keep every write theirs:
   it ends, fails or is killed at its deadline; a turn whose reservation does
   not fit is refused with the allowance left. The file is rewritten under
   its own lock, held only for that read and write, and a new day starts a
-  new allowance.
+  new allowance. Each reservation records its hub process and that
+  process's start time, and the hub settles an orphan, a reservation whose
+  process is gone with no settlement, when it starts and again under the
+  lock before it refuses a turn for want of allowance. It settles the
+  orphan to the tokens the turn's record shows it used, and to the whole
+  reserved ceiling when the record shows none, so a crash costs at most the
+  one ceiling it held, never the rest of the day.
 - **Where the context goes.** A turn sends what it read to the model
   provider of the account the runner signs in with: the person's own,
   named in the user file (`hub.operator_account`), never an account the
