@@ -78,6 +78,26 @@ describe("lock.ts named lock", () => {
     lock.dispose();
   });
 
+  it("repeated dead-holder recovery leaves one row while held and no residue after release", async () => {
+    const dir = stateDir();
+    const pid = await deadPid();
+    const files = readdirSync(dir);
+    for (let i = 0; i < 100; i++) {
+      putLock(dir, "drive-pr-999", { pid, token: `gone-${i}` });
+      const lock = createLock(dir, "drive-pr-999", "probe", "999");
+      try {
+        await lock.acquire(5);
+        expect(lockNames(dir)).toEqual(["drive-pr-999"]);
+        const current = readdirSync(dir);
+        expect(current).toEqual(files);
+      } finally {
+        lock.dispose();
+      }
+      expect(lockNames(dir)).toEqual([]);
+    }
+    expect(readdirSync(dir)).toEqual(files);
+  });
+
   it("breaks a live holder's lock once it has not been renewed within the window", async () => {
     const dir = stateDir();
     putLock(dir, "drive-pr-999", {
