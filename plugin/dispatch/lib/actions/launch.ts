@@ -510,11 +510,17 @@ async function identityOf(
   state: ApplyState,
   slots: Slots,
 ): Promise<IdentityCheck> {
+  // Every identity check, including the one after an open, must leave the receipt's reserve intact.
+  const timeoutSec = Math.ceil(state.machine.runtimeTimeoutMs / 1000);
+  const left = timeLeftMs(state);
+  if (left !== null && left < timeoutSec * 1000)
+    return {
+      ok: false,
+      reason:
+        "the tick deadline has no room for the identity check and its receipt; a later tick retries this one",
+    };
   // Read afresh each time: a login file can change between two launches.
-  return checkIdentity(
-    slots.account,
-    Math.ceil(state.machine.runtimeTimeoutMs / 1000),
-  );
+  return checkIdentity(slots.account, timeoutSec);
 }
 
 /** Why the account a pending record names cannot take its replayed launch now; `null` when it can. */

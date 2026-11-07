@@ -1,5 +1,10 @@
-import { expect, it } from "bun:test";
-import { openWithinBudget, type ApplyState } from "../lib/actions/launch.ts";
+import { expect, it, spyOn } from "bun:test";
+import * as accounts from "../lib/accounts.ts";
+import {
+  openWithinBudget,
+  openedFor,
+  type ApplyState,
+} from "../lib/actions/launch.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
 import type { RepoTarget } from "../lib/types.ts";
 
@@ -64,4 +69,45 @@ it("reserves the repository lookup, workspace timeout and receipt before opening
     waits: expect.stringContaining("workspace_timeout"),
   });
   expect(s.opened).toBeUndefined();
+});
+
+it("preserves the receipt reserve when the open leaves too little time to recheck identity", async () => {
+  const s = state();
+  let now = Date.now();
+  const clock = spyOn(Date, "now").mockImplementation(() => now);
+  const identity = spyOn(accounts, "checkIdentity").mockResolvedValue({
+    ok: true,
+  });
+  try {
+    s.startedAt = now - 6 * 3_600_000 + 3100;
+    s.table = [];
+    s.records = [];
+    s.runtime.openWorkspace = async () => {
+      now += 2000;
+      return {
+        ok: true,
+        detail: "opened",
+        workspace: { id: "1", path: "/tmp/ws" },
+      };
+    };
+    const result = await openedFor(
+      s,
+      { target: "PR #7", stage: "rearm" } as Parameters<typeof openedFor>[1],
+      {
+        account: { name: "test" },
+        wall: null,
+        wallUnrecorded: false,
+      } as Parameters<typeof openedFor>[2],
+      openWithinBudget(s, repo, launch),
+    );
+    expect(result).toHaveProperty(
+      "outcome.detail",
+      expect.stringContaining("receipt"),
+    );
+    expect(identity).not.toHaveBeenCalled();
+    expect(s.opened).toBe(1);
+  } finally {
+    identity.mockRestore();
+    clock.mockRestore();
+  }
 });
