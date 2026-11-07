@@ -13,18 +13,7 @@ export function readNext(value: string | null | undefined): NextOwner | null {
   if (value == null) return null;
   try {
     const n: unknown = JSON.parse(value);
-    if (!isMapping(n)) return null;
-    if (typeof n.address === "string" && n.address.trim())
-      return { address: n.address };
-    if (
-      typeof n.person === "string" &&
-      n.person.trim() &&
-      typeof n.act === "string" &&
-      n.act.trim()
-    )
-      return { person: n.person, act: n.act };
-    if (typeof n.none === "string" && n.none.trim()) return { none: n.none };
-    return null;
+    return normalizeNext(n);
   } catch (error) {
     swallow(
       error,
@@ -32,6 +21,22 @@ export function readNext(value: string | null | undefined): NextOwner | null {
     );
     return null;
   }
+}
+
+/** Validate a persisted handoff before any consumer renders it. */
+export function normalizeNext(n: unknown): NextOwner | null {
+  if (!isMapping(n)) return null;
+  if (typeof n.address === "string" && n.address.trim())
+    return { address: n.address };
+  if (
+    typeof n.person === "string" &&
+    n.person.trim() &&
+    typeof n.act === "string" &&
+    n.act.trim()
+  )
+    return { person: n.person, act: n.act };
+  if (typeof n.none === "string" && n.none.trim()) return { none: n.none };
+  return null;
 }
 
 /** The handoff fixed by the line; unknown ends explicitly keep no next owner. */

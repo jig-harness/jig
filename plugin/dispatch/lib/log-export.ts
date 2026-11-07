@@ -10,8 +10,9 @@
  * a row with that key, by writing the file whole, once, with the rows added
  * and renaming it into place: a tick that stops mid-copy leaves the file as it
  * was, and the next copies the same rows again without a second line for
- * any. A line the file already holds is kept as it is, so a copy written
- * before the database existed, or before it was replaced, is never lost.
+ * any. A late result refreshes its existing line. Other lines are kept, so a
+ * copy written before the database existed, or before it was replaced, is
+ * never lost.
  */
 import {
   closeSync,
@@ -163,16 +164,27 @@ function copyMonth(
       mark,
       high,
       (r) => {
-        if (monthOf(r.at) !== month || held.has(r.key)) return;
+        if (monthOf(r.at) !== month) return;
         if (fd === null) {
           fd = openSync(temporary, "wx", 0o600);
           created = true;
-          // A line the file holds is kept as it is, blank lines apart.
+          // Refresh a result recorded after its ended row was exported.
           const out = fd;
           eachLine(path, (text) => {
-            if (text !== "") writeAllSync(out, `${text}\n`);
+            if (text === "") return;
+            const key = parseLine(text)?.key;
+            const revision =
+              key === undefined
+                ? null
+                : (db
+                    .query(
+                      "SELECT row FROM log WHERE key = ? AND seq > ? AND seq <= ?",
+                    )
+                    .get(key, mark, high) as { row: string } | null);
+            writeAllSync(out, `${revision?.row ?? text}\n`);
           });
         }
+        if (held.has(r.key)) return;
         writeAllSync(fd, `${r.row}\n`);
         held.add(r.key);
         added++;

@@ -23,12 +23,13 @@
  * A row's key is unique in the table, and a row is written in the same
  * transaction as what it records (a record's end, a suppression record, a
  * nudge's delivery mark): the two land together or not at all, so a tick
- * that stops between them leaves nothing for the next one to repair. Each
+ * that stops between them leaves nothing for the next one to repair.
+ * A late session result refreshes its ended row in the result transaction. Each
  * row is kept as the JSON line the text copy (`log-export.ts`) and
  * `jig dispatch log --jsonl` print, beside the columns the dashboard
  * filters on.
  */
-import { derivedNext, type NextOwner } from "./next-owner.ts";
+import { derivedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -81,7 +82,7 @@ export interface EndedRow {
   class: OutcomeClass;
   reason: string;
   /** Absent on rows written before handoffs were kept. */
-  next?: NextOwner;
+  next?: NextOwner | null;
 }
 
 /** One cause the tick observed. */
@@ -148,7 +149,10 @@ function isRow(value: unknown): value is LogRow {
 export function parseLine(line: string): LogRow | null {
   try {
     const value: unknown = JSON.parse(line);
-    return isRow(value) ? value : null;
+    if (!isRow(value)) return null;
+    if (value.kind === "ended" && value.next !== undefined)
+      value.next = normalizeNext(value.next);
+    return value;
   } catch (error) {
     swallow(error, "a line of the outcome log that is not a row is skipped");
     return null;
