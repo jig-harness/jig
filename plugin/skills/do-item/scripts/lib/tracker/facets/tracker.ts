@@ -62,17 +62,16 @@ export interface CoreFacetReport {
 }
 
 /** What an adapter implements; `withFacets` makes it a `Tracker`. */
-export interface CoreTracker
-  extends Omit<
-    Tracker,
-    | "getIssue"
-    | "openIssues"
-    | "openChildren"
-    | "poolIssue"
-    | "assignedIssues"
-    | "incompleteIssues"
-    | "facetStores"
-  > {
+export interface CoreTracker extends Omit<
+  Tracker,
+  | "getIssue"
+  | "openIssues"
+  | "openChildren"
+  | "poolIssue"
+  | "assignedIssues"
+  | "incompleteIssues"
+  | "facetStores"
+> {
   getIssue(key: string): Promise<CoreIssue | null>;
   openIssues(query: PoolQuery): Promise<CorePoolIssue[]>;
   openChildren(key: string): Promise<CorePoolIssue[]>;
@@ -169,6 +168,30 @@ export function withFacets(
       );
   }
 
+  /** Refuse explicit label edits that contradict the facet value a patch sets. */
+  function refuseEditContradiction(
+    codec: LabelCodec,
+    value: string | null,
+    patch: IssuePatch,
+  ): void {
+    const target = value === null ? null : codec.labelOf(value);
+    const adds = (patch.addLabels ?? []).filter((l) => codec.owns(l));
+    const clash = adds.find((l) => target === null || fold(l) !== fold(target));
+    if (clash !== undefined)
+      throw new TrackerRequestError(
+        "invalid",
+        `the label '${clash}' to add is a ${codec.facet} label, but the ${codec.facet} given is ${value === null ? "none" : `'${value}'`}`,
+      );
+    const dropped =
+      target !== null &&
+      (patch.removeLabels ?? []).some((l) => fold(l) === fold(target));
+    if (dropped)
+      throw new TrackerRequestError(
+        "invalid",
+        `the label '${target}' to remove is the ${codec.facet} '${value}' this write sets`,
+      );
+  }
+
   async function createIssue(issue: NewIssue) {
     const out: NewIssue = { ...issue, labels: [...issue.labels] };
     const add = (label: string) => {
@@ -192,7 +215,14 @@ export function withFacets(
       checkPriority(issue.priority);
       delete out.priority;
       const label = priorityLabel(priority, issue.priority);
-      if (label !== null) add(label);
+      if (label !== null) {
+        refuseContradiction(
+          priority,
+          issue.labels,
+          priority.read([label]) as string,
+        );
+        add(label);
+      }
     }
     return rest.createIssue(out);
   }
@@ -207,19 +237,17 @@ export function withFacets(
       const given = patch[f];
       const codec = codecs.get(f);
       if (given === undefined || codec === undefined) continue;
-      changes.push([
-        codec,
-        given === null ? null : checkFacetValue(facets[f], given),
-      ]);
+      const value = given === null ? null : checkFacetValue(facets[f], given);
+      refuseEditContradiction(codec, value, patch);
+      changes.push([codec, value]);
     }
     const priority = codecs.get("priority");
     if (priority !== undefined && patch.priority !== undefined) {
       checkPriority(patch.priority);
       const name = priorityLabel(priority, patch.priority);
-      changes.push([
-        priority,
-        name === null ? null : (priority.read([name]) as string),
-      ]);
+      const value = name === null ? null : (priority.read([name]) as string);
+      refuseEditContradiction(priority, value, patch);
+      changes.push([priority, value]);
     }
     if (changes.length === 0) return { add: [], remove: [] };
     const current = await rest.poolIssue(key);
@@ -261,6 +289,16 @@ export function withFacets(
     // empty patch still reaches the adapter, which refuses it.
     if (!changes(out) && changes(patch)) return;
     await rest.updateIssue(key, out);
+  }
+
+  /** A census or a facet filter read from partial labels would miscount, so it refuses. */
+  function refuseTruncatedLabels(issues: ReadonlyArray<CorePoolIssue>): void {
+    const cut = issues.find((i) => i.truncated?.includes("labels"));
+    if (cut !== undefined)
+      throw new TrackerRequestError(
+        "invalid",
+        `issue ${cut.identifier} has more labels than one read takes, so its facets cannot be read exactly`,
+      );
   }
 
   function poolFilter(query: PoolQuery): (issue: PoolIssue) => boolean {
@@ -313,7 +351,9 @@ export function withFacets(
         `an incomplete-issues page holds 1 to 100 issues, not ${JSON.stringify(query.limit)}`,
       );
     for (const f of query.missing) requireStore(f);
-    const open = (await openPopulation()).map(withValues);
+    const population = await openPopulation();
+    refuseTruncatedLabels(population);
+    const open = population.map(withValues);
     const outside = open.filter((i) => i.state.type !== "triage");
     const counts: IncompletePage["counts"] = {};
     for (const f of query.missing) {
@@ -364,7 +404,9 @@ export function withFacets(
     async openIssues(query) {
       const keep = poolFilter(query);
       const { facets: _, ...labels } = query;
-      return (await rest.openIssues(labels)).map(withValues).filter(keep);
+      const pool = await rest.openIssues(labels);
+      if (query.facets !== undefined) refuseTruncatedLabels(pool);
+      return pool.map(withValues).filter(keep);
     },
     async openChildren(key) {
       return (await rest.openChildren(key)).map(withValues);
@@ -375,6 +417,16 @@ export function withFacets(
     },
     async assignedIssues(identity, states) {
       return (await rest.assignedIssues(identity, states)).map(withValues);
+    },
+    async ledger(query, onPage) {
+      const issues = await rest.ledger(query, onPage);
+      const codec = codecs.get("priority");
+      if (codec === undefined) return issues;
+      return issues.map((i) =>
+        i.truncated.includes("labels")
+          ? i
+          : { ...i, priority: priorityFromLabels(codec, i.labels) },
+      );
     },
     createIssue,
     updateIssue,

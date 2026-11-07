@@ -397,7 +397,13 @@ function resolved(
 ): ResolvedFacet {
   const store = entry?.store ?? base.defaultStore;
   const why = entry === undefined ? base.defaultWhy : "configured";
-  if (store === "label")
+  if (store === "label") {
+    for (const key of Object.keys(entry?.labels ?? {}))
+      if (canonical(base.values, key) === null)
+        throw new TrackerConfigError(
+          at(facet, "labels"),
+          `${at(facet, "labels")} names '${key}', which is not a ${facet} of this repository (${base.values.join(", ")})`,
+        );
     return {
       facet,
       store,
@@ -409,6 +415,7 @@ function resolved(
       field: null,
       map: null,
     };
+  }
   return {
     facet,
     store,

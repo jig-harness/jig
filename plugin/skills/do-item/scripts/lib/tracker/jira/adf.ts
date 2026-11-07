@@ -131,7 +131,7 @@ const table: BlockReader = (lines, at) => {
 const quote: BlockReader = (lines, at) => {
   const body: string[] = [];
   let end = at;
-  for (let m = QUOTE.exec(lines[end] ?? ""); m !== null; ) {
+  for (let m = QUOTE.exec(lines[end] ?? ""); m !== null;) {
     body.push(m[1] as string);
     m = QUOTE.exec(lines[++end] ?? "");
   }

@@ -370,9 +370,11 @@ export function gitHubClient(opts: ClientOptions): Client {
           );
         const p = record(owner.projectV2, "projectV2");
         const field = p.field;
-        if (
-          !(field !== null && typeof field === "object" && "options" in field)
-        )
+        if (!(
+          field !== null &&
+          typeof field === "object" &&
+          "options" in field
+        ))
           throw new TrackerConfigError(
             "issue_tracker.github.status_field",
             `issue_tracker.github.status_field names '${settings.statusField}', which is not a single-select field of ${project.url}`,

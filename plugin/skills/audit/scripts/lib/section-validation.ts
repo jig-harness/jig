@@ -23,7 +23,10 @@ import {
 } from "../../../design-brief-builder/scripts/contracts.ts";
 import { parseDocsSettings } from "../../../docs/scripts/lib/settings.ts";
 import { parseRouting } from "../../../do-item/scripts/lib/routing.ts";
-import { parseTrackerConfig } from "../../../do-item/scripts/lib/tracker/config.ts";
+import {
+  facetsOf,
+  parseTrackerConfig,
+} from "../../../do-item/scripts/lib/tracker/config.ts";
 import { parseWorkTypes } from "../../../do-item/scripts/lib/work-types.ts";
 import { parsePrPolicy } from "../../../drive-pr/scripts/lib/pr-policy.ts";
 import { parseSeverityFormats } from "../../../drive-pr/scripts/lib/severity-formats.ts";
@@ -119,7 +122,7 @@ export function skillValidation(
   attempt("do-item (pull-request policy)", () => parsePrPolicy(config));
   attempt("do-item (tracker)", () => {
     parseWorkTypes(config); // refuses a do_issue section before anything else
-    parseTrackerConfig(config);
+    facetsOf(parseTrackerConfig(config), root);
   });
   attempt("do-item (routing)", () =>
     parseRouting(config, parseWorkTypes(config)),

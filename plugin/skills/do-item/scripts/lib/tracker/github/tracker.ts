@@ -361,18 +361,14 @@ export function gitHubTracker(client: Client): Tracker {
     key: string,
   ): IssueRelation[] {
     return [
-      ...onePage(raw.blockedBy, `${key}.blockedBy`).map(
-        (n): IssueRelation => ({
-          type: "blocked_by",
-          issue: refKey(n, `${key}.blockedBy`),
-        }),
-      ),
-      ...onePage(raw.blocking, `${key}.blocking`).map(
-        (n): IssueRelation => ({
-          type: "blocks",
-          issue: refKey(n, `${key}.blocking`),
-        }),
-      ),
+      ...onePage(raw.blockedBy, `${key}.blockedBy`).map((n): IssueRelation => ({
+        type: "blocked_by",
+        issue: refKey(n, `${key}.blockedBy`),
+      })),
+      ...onePage(raw.blocking, `${key}.blocking`).map((n): IssueRelation => ({
+        type: "blocks",
+        issue: refKey(n, `${key}.blocking`),
+      })),
     ];
   }
 

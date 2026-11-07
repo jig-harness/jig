@@ -19,6 +19,7 @@
  * never "the organization has no field".
  */
 
+import { TrackerConfigError } from "../config-error.ts";
 import type { CoreFacetReport } from "../facets/tracker.ts";
 import { type Facets, type ResolvedFacet, usable } from "../facets/config.ts";
 import { detection, type Evidence } from "../facets/detect.ts";
@@ -157,6 +158,12 @@ function errorTypes(message: string): string[] {
   ];
 }
 
+/** The first line of a message up to any embedded body, at most 120 characters. */
+function oneLine(message: string): string {
+  const first = message.split(/\r?\n/)[0] ?? "";
+  return (first.split(/[{[]/)[0] ?? "").trim().slice(0, 120);
+}
+
 /**
  * A failed read or write as one line of at most 300 characters: what was
  * read, the credential and GitHub's status, never a body or a header.
@@ -168,7 +175,10 @@ export function facetFailure(
 ): GitHubApiError {
   if (!(err instanceof GitHubApiError))
     return new GitHubApiError(
-      `${what} with ${credential} failed: ${String(err instanceof Error ? err.message : err).slice(0, 120)}`,
+      `${what} with ${credential} failed: ${oneLine(err instanceof Error ? err.message : String(err))}`.slice(
+        0,
+        300,
+      ),
     );
   const types = errorTypes(err.message);
   const http = /HTTP (\d{3})/.exec(err.message)?.[1];
@@ -258,6 +268,21 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     .map(kept)
     .filter((s): s is ResolvedFacet => s !== null && s.store === "field");
   const nativePriority = kept("priority");
+  const fieldKept = [
+    ...fieldStores,
+    ...(nativePriority === null ? [] : [nativePriority]),
+  ];
+  const owners = new Map<string, Facet>();
+  for (const s of fieldKept) {
+    const name = fold(s.field ?? "Priority");
+    const other = owners.get(name);
+    if (other !== undefined && other !== s.facet)
+      throw new TrackerConfigError(
+        `issue_tracker.facets.${s.facet}`,
+        `issue_tracker.facets.${s.facet} keeps ${s.facet} in the issue field '${s.field ?? "Priority"}', which also keeps ${other}; one field cannot hold two facets`,
+      );
+    owners.set(name, s.facet);
+  }
   const own = new Set<Facet>(["priority"]);
   if (typeKept !== null) own.add("type");
   if (kept("size") !== null) own.add("size");
@@ -337,6 +362,12 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     }
     if (field.dataType === "NUMBER") {
       const n = Number(name);
+      const numbers = (s.map?.entries ?? []).map(([, t]) => Number(t));
+      if (new Set(numbers).size !== numbers.length)
+        throw new TrackerRequestError(
+          "invalid",
+          `issue_tracker.facets.${s.facet}.values gives two ${s.facet} values the same number in the field '${field.name}'`,
+        );
       if (!Number.isFinite(n))
         throw new TrackerRequestError(
           "invalid",
@@ -404,9 +435,16 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     values: Array<{ field: string; value: string }>,
   ): string | null {
     const found = values.find((v) => same(v.field, fieldName(s)));
-    return found === undefined
-      ? null
-      : (s.map?.fromTracker(found.value) ?? null);
+    if (found === undefined) return null;
+    const exact = s.map?.fromTracker(found.value) ?? null;
+    if (exact !== null || s.map === null || found.value.trim() === "")
+      return exact;
+    // A number field returns the number, not its configured spelling.
+    const n = Number(found.value);
+    return (
+      s.map.entries.find(([, t]) => t.trim() !== "" && Number(t) === n)?.[0] ??
+      null
+    );
   }
 
   async function read(
@@ -690,8 +728,10 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
         repository(owner: $owner, name: $name) { ${nativeCounts.join("\n")} }
       }`);
     const count = (r: Record<string, unknown>, key: string) => {
-      const v = r[key];
-      return v === undefined ? 0 : Number(record(v, key).totalCount);
+      const total = record(r[key], key).totalCount;
+      if (!Number.isInteger(total) || (total as number) < 0)
+        throw new GitHubApiError(`${key}.totalCount: unreadable`);
+      return total as number;
     };
     const out: Partial<Record<Facet, FacetDetection>> = {};
     for (const f of unnamed) {
@@ -701,7 +741,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
         problem?: string;
       };
       out[f] = detection({
-        labelEvidence: count(first, `l_${f}`) > 0,
+        labelEvidence: labelsOf(f).length > 0 && count(first, `l_${f}`) > 0,
         nativeEvidence: c.evidence.some(
           (_, i) => count(second, `n_${f}_${i}`) > 0,
         ),
@@ -740,9 +780,10 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     const values = usable(s) ? s.values : [];
     if (f === "type") {
       const named = values.filter((v) => types.some((t) => same(t, v)));
+      // Evidence counts every populated issue type, not only the canonical ones.
       const missing = values.filter((v) => !named.includes(v));
       return {
-        evidence: named.map((v) => `{ type: ${JSON.stringify(v)} }`),
+        evidence: types.map((t) => `{ type: ${JSON.stringify(t)} }`),
         candidate: types.length === 0 ? null : { store: "native" },
         ...(missing.length === 0 || types.length === 0
           ? {}

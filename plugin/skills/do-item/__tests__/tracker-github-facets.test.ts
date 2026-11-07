@@ -428,6 +428,7 @@ describe("GitHub facets: detection and the organization's discovery", () => {
             ...STORES.repository,
             l_type: { totalCount: 12 },
             l_priority: { totalCount: 30 },
+            l_size: { totalCount: 0 },
           },
         };
       if (c.op === "TrackerFacetNativeEvidence") {

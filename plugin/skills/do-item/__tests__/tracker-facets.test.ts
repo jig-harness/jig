@@ -18,6 +18,7 @@ import {
   type LinearTransport,
   linearTracker,
 } from "../scripts/lib/tracker/linear.ts";
+import { linearFacets } from "../scripts/lib/tracker/linear-facets.ts";
 import { parseNewIssue, parsePatch } from "../scripts/tracker.ts";
 import { gitHub, issueNode, conn, JIG_TAXONOMY } from "./github-fixtures.ts";
 import { jira, routes } from "./jira-fixtures.ts";
@@ -567,6 +568,33 @@ describe("tracker.ts create and update take the facets", () => {
     );
     expect(() => parseNewIssue('{"title":"x","type":null}')).toThrow(
       "'type' must be",
+    );
+  });
+});
+
+describe("issue_tracker.facets: values and maps the configuration must keep", () => {
+  it("refuses a label key that is not a value of the facet", () => {
+    expect(() =>
+      facets({
+        adapter: "github",
+        facets: { size: { store: "label", labels: { smal: "S" } } },
+      }),
+    ).toThrow("not a size of this repository");
+  });
+
+  it("refuses a Linear priority map onto other numbers", () => {
+    const remapped = facets({
+      adapter: "linear",
+      team: "ENG",
+      facets: {
+        priority: {
+          store: "native",
+          values: { urgent: "4", high: "3", medium: "2", low: "1" },
+        },
+      },
+    });
+    expect(() => linearFacets({} as never, remapped)).toThrow(
+      "cannot remap Linear's native priority",
     );
   });
 });
