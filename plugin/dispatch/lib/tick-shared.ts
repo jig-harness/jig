@@ -114,7 +114,7 @@ async function addEndedLaunches(
     claims.set(pr, listing);
     const updatedAt = merged.get(pr)?.updatedAt;
     if (nowMs !== undefined && listing.ok && updatedAt !== undefined)
-      writeKeptClaims(ctx.slug, pr, updatedAt, listing.value, nowMs);
+      writeKeptClaims(ctx.slug, pr, updatedAt, listing.value, nowMs, ctx.login);
   }
 }
 
@@ -151,7 +151,14 @@ function fromKept(
   const kept = readMergeReads(ctx.slug);
   const toRead: number[] = [];
   for (const [pr, own] of extra) {
-    const reuse = keptEnded(kept.get(pr), merged.get(pr), own, ctx.host, nowMs);
+    const reuse = keptEnded(
+      kept.get(pr),
+      merged.get(pr),
+      own,
+      ctx.host,
+      nowMs,
+      ctx.login,
+    );
     if (reuse === null) toRead.push(pr);
     else claims.set(pr, { ok: true, value: reuse });
   }
@@ -173,11 +180,12 @@ function keptEnded(
   own: readonly ReadRecord[],
   host: string,
   nowMs: number,
+  login: string | null,
 ): SharedClaim[] | null {
   if (pr === undefined) return null;
   if (!own.every((r) => r.state.kind === "ended" || r.state.kind === "died"))
     return null;
-  const claims = keptClaims(kept, pr, nowMs);
+  const claims = keptClaims(kept, pr, nowMs, login);
   if (claims === null || unreadable(claims).length > 0) return null;
   const now = current(claims);
   return now !== null && openClaim(now) && now.says.value.host !== host

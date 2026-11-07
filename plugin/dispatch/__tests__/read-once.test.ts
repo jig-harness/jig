@@ -12,10 +12,12 @@ import { afterEach, describe, expect, it } from "bun:test";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { claimBody } from "../../shared/records/forge-claims.ts";
@@ -26,13 +28,16 @@ import {
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { manualMarker } from "../lib/followup-marker.ts";
 import { recordExit } from "../lib/launches.ts";
-import { existingStateDb } from "../lib/state.ts";
+import { existingStateDb, stateDb } from "../lib/state.ts";
 import {
+  keptClaims,
   keptMarkers,
   MERGE_REREAD_MS,
   type MergeRead,
+  readMergeReads,
 } from "../lib/merge-reads.ts";
 import { tickComments, type Listing } from "../lib/tick-comments.ts";
+import { tickReads } from "../lib/tick-reads.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   ledgerComment,
@@ -344,25 +349,88 @@ describe("a kept merge read", () => {
   const kept: MergeRead = {
     updatedAt: "2026-10-31T13:00:00Z",
     readAtMs: 1_000_000,
+    login: "dispatcher",
     markers: [],
     claims: null,
   };
+  const same = { updatedAt: kept.updatedAt };
 
   it("stands while the updatedAt is the same and it is younger than the cadence", () => {
-    expect(
-      keptMarkers(kept, { updatedAt: kept.updatedAt }, kept.readAtMs + 1),
-    ).toEqual([]);
-    expect(
-      keptMarkers(kept, { updatedAt: "2026-10-31T14:00:00Z" }, 1_000_001),
-    ).toBeNull();
-    expect(keptMarkers(kept, {}, 1_000_001)).toBeNull();
+    expect(keptMarkers(kept, same, kept.readAtMs + 1, "dispatcher")).toEqual(
+      [],
+    );
     expect(
       keptMarkers(
         kept,
-        { updatedAt: kept.updatedAt },
-        kept.readAtMs + MERGE_REREAD_MS,
+        { updatedAt: "2026-10-31T14:00:00Z" },
+        1_000_001,
+        "dispatcher",
       ),
     ).toBeNull();
+    expect(keptMarkers(kept, {}, 1_000_001, "dispatcher")).toBeNull();
+    expect(
+      keptMarkers(kept, same, kept.readAtMs + MERGE_REREAD_MS, "dispatcher"),
+    ).toBeNull();
+  });
+
+  it("does not stand for another forge login, or when either login is unknown", () => {
+    expect(keptMarkers(kept, same, 1_000_001, "someone-else")).toBeNull();
+    expect(keptMarkers(kept, same, 1_000_001, null)).toBeNull();
+    expect(
+      keptMarkers({ ...kept, login: null }, same, 1_000_001, "dispatcher"),
+    ).toBeNull();
+    const withClaims = {
+      ...kept,
+      claims: { readAtMs: 1_000_000, claims: [] },
+    };
+    expect(keptClaims(withClaims, same, 1_000_001, "dispatcher")).toEqual([]);
+    expect(keptClaims(withClaims, same, 1_000_001, "someone-else")).toBeNull();
+  });
+
+  it("reads only rows whose markers and claims have their complete shapes", () => {
+    const root = mkdtempSync(join(tmpdir(), "merge-reads-"));
+    const marker = {
+      id: 1,
+      login: "a",
+      createdAt: "2026-10-31T13:00:00Z",
+      trusted: true,
+    };
+    const put = (pr: number, markers: unknown) =>
+      stateDb(root)
+        .query(
+          "INSERT INTO merge_reads (repo, pr, updated_at, read_at_ms, login, markers) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          SLUG,
+          pr,
+          kept.updatedAt,
+          1,
+          "dispatcher",
+          JSON.stringify(markers),
+        );
+    put(1, [{ ...marker, run: { kind: "manual", done: false } }]);
+    put(2, [{ ...marker, run: { kind: "manual", done: "false" } }]);
+    put(3, [{ ...marker, run: { kind: "tick" } }]);
+    put(4, [{ ...marker, run: { kind: "other" } }]);
+    put(5, [{ ...marker, run: { kind: "unreadable", reason: "x" } }]);
+    expect([...readMergeReads(SLUG, root).keys()].sort()).toEqual([1, 5]);
+    stateDb(root)
+      .query(
+        "UPDATE merge_reads SET claims = ?, claims_read_at_ms = 1 WHERE pr = 1",
+      )
+      .run(
+        JSON.stringify([
+          {
+            id: 2,
+            stage: "drive",
+            login: "a",
+            createdAt: "t",
+            trusted: true,
+            says: { ok: true, value: {} },
+          },
+        ]),
+      );
+    expect(readMergeReads(SLUG, root).get(1)?.claims).toBeNull();
   });
 });
 
@@ -388,9 +456,26 @@ describe("the tick's comment listings", () => {
     expect(a).toEqual({ ok: true, value: [{ id: 7 }] });
     expect(b).toBe(a);
     expect(asked).toEqual([7]);
+    expect(comments.startedAt(SLUG, 7)).toBeGreaterThan(0);
+    expect(comments.startedAt(SLUG, 8)).toBeNull();
     comments.forget(SLUG, 7);
+    expect(comments.startedAt(SLUG, 7)).toBeNull();
     await comments.read(SLUG, 7);
     expect(asked).toEqual([7, 7]);
     expect(written).toEqual([7]);
+  });
+});
+
+describe("the tick's shared reads", () => {
+  it("make the runtime's sessions reader on first use, so a throwing factory is the read's failure", async () => {
+    const runtime = {
+      sessionsOnce: () => {
+        throw new Error("no reader");
+      },
+    } as unknown as Parameters<typeof tickReads>[0];
+    const reads = tickReads(runtime);
+    await expect(reads.sessions({} as never, {} as never)).rejects.toThrow(
+      "no reader",
+    );
   });
 });

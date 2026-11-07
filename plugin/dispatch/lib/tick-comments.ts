@@ -35,6 +35,12 @@ export type Listing = Outcome<unknown[], "unreadable">;
 export interface TickComments {
   /** The comments of `pr` in `repo`, listed at most once this tick. */
   read(repo: string, pr: number): Promise<Listing>;
+  /**
+   * When the listing of `pr` began, in epoch milliseconds, or `null` when
+   * none is held. A listing certifies a kept read only for a pull request
+   * observation made before it began.
+   */
+  startedAt(repo: string, pr: number): number | null;
   /** Drop the listing of a pull request this tick wrote on. */
   forget(repo: string, pr: number): void;
 }
@@ -51,18 +57,24 @@ export function tickComments(
   const list =
     options.list ?? ((target) => listComments(target, {} satisfies Deadline));
   const listings = new Map<string, Promise<Listing>>();
+  const started = new Map<string, number>();
   return {
     read(repo, pr) {
       const key = keyOf(repo, pr);
       let listing = listings.get(key);
       if (listing === undefined) {
+        started.set(key, Date.now());
         listing = list({ repo, number: pr });
         listings.set(key, listing);
       }
       return listing;
     },
+    startedAt(repo, pr) {
+      return started.get(keyOf(repo, pr)) ?? null;
+    },
     forget(repo, pr) {
       listings.delete(keyOf(repo, pr));
+      started.delete(keyOf(repo, pr));
       options.written?.(repo, pr);
     },
   };

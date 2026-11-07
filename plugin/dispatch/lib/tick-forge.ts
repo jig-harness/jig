@@ -109,6 +109,7 @@ export async function readForge(
     );
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));
+    const observedMs = Date.now();
     const listed =
       section.followupCommand === null
         ? []
@@ -119,6 +120,11 @@ export async function readForge(
       repo.slug,
       managed(listed),
       nowMs,
+      out.login,
+      (pr) => {
+        const began = reads.comments.startedAt(repo.slug, pr);
+        return began !== null && began >= observedMs;
+      },
     );
     out.merged = marked.merged;
     if (labels?.onlyLabeled === true)
@@ -196,13 +202,19 @@ function labelNote(labels: LabelConfig | null, unlabeled: number): string {
  * comments do not read carries why. The markers a tick kept of a pull
  * request whose `updatedAt` has not moved since are used as they are
  * (`merge-reads.ts`); the rest are read, and kept for the next tick.
- * `kept` counts the pull requests whose kept markers were used.
+ * `kept` counts the pull requests whose kept markers were used. Markers are
+ * kept only when `after` says their comments were listed after the merged
+ * listing was read: a listing the tick held from an earlier observation of
+ * the pull request (the open one, another checkout's turn) may predate an
+ * edit that listing's `updatedAt` already shows.
  */
 async function withMarkers(
   shared: SharedRecords,
   slug: string,
   merged: MergedPr[],
   nowMs: number,
+  login: string | null,
+  after: (pr: number) => boolean,
 ): Promise<{ merged: MarkedPr[]; kept: number }> {
   const kept = readMergeReads(slug);
   const pending = pendingReleases(
@@ -217,7 +229,7 @@ async function withMarkers(
   for (const pr of merged) {
     const reuse = pending.has(pr.number)
       ? null
-      : keptMarkers(kept.get(pr.number), pr, nowMs);
+      : keptMarkers(kept.get(pr.number), pr, nowMs, login);
     if (reuse !== null) {
       out.push({ ...pr, markers: reuse });
       reused += 1;
@@ -225,7 +237,11 @@ async function withMarkers(
     }
     const markers = await readMarkers(shared, slug, pr.number);
     out.push({ ...pr, markers });
-    if (pr.updatedAt !== undefined && !("unreadable" in markers))
+    if (
+      pr.updatedAt !== undefined &&
+      !("unreadable" in markers) &&
+      after(pr.number)
+    )
       fresh.push({ pr: pr.number, updatedAt: pr.updatedAt, markers });
   }
   writeMergeReads(
@@ -233,6 +249,7 @@ async function withMarkers(
     fresh,
     merged.map((p) => p.number),
     nowMs,
+    login,
   );
   return { merged: out, kept: reused };
 }

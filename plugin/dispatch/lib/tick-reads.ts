@@ -34,6 +34,19 @@ export interface TickReads {
   budgets: BudgetWanted[];
 }
 
+/**
+ * The runtime's sessions reader, made the first time a repository reads
+ * sessions, so a runtime whose `sessionsOnce` throws fails that read inside
+ * the repository's boundary rather than the tick's start.
+ */
+function lazySessions(runtime: SessionRuntime): SessionsReader {
+  let reader: SessionsReader | null = null;
+  return async (repo, join) => {
+    reader ??= runtime.sessionsOnce?.() ?? ((r, j) => runtime.sessions(r, j));
+    return await reader(repo, join);
+  };
+}
+
 /** One tick's shared reads; a write the tick makes on a merged pull request drops its kept marker read too. */
 export function tickReads(runtime: SessionRuntime): TickReads {
   let login: Promise<string | null> | null = null;
@@ -45,9 +58,7 @@ export function tickReads(runtime: SessionRuntime): TickReads {
       login ??= resolveLogin();
       return login;
     },
-    sessions:
-      runtime.sessionsOnce?.() ??
-      ((repo, join) => runtime.sessions(repo, join)),
+    sessions: lazySessions(runtime),
     budgets: [],
   };
 }

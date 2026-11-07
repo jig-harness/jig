@@ -150,8 +150,11 @@ repository is read once too, the first time a repository needs it, and
 every repository is answered from it: the forge's login, Orca's repository
 and workspace listings (the runtime's `sessionsOnce`), and, as the tick
 closes, the forge's rate limit, which every repository's report then
-carries. A host-wide read that fails fails each repository's record alike,
-as a read of its own would have.
+carries. A runtime listing that fails fails each repository's record alike,
+as a read of its own would have. The login is the exception: when it cannot
+be established it is unknown (`null`) rather than a failure, the forge
+record still reads, and what depends on it (the trust of a comment as the
+dispatcher's own, a kept read) is treated as not known to hold.
 
 **What is never read from them.** Every read just before a launch goes to
 the forge and the runtime: the drive read again before a re-arm or a
@@ -175,6 +178,10 @@ answered by another host, costs nothing after its first read, and a new
 marker on it is seen at the next tick. The forge does not document that
 deleting a comment moves `updatedAt`, so a kept read stands for at most an
 hour, after which the merge is read again whatever its `updatedAt` says. A
+kept read also records the forge login it was read as, since a comment's
+trust depends on it, and stands only for that login; a read is kept only from
+comments listed after the merged listing, never from a listing the tick held
+from an earlier observation of the pull request. A
 merge with a stale-claim release still pending is read every tick, since
 only a fresh listing completes the release (see Stale follow-up claims); a
 write the tick makes on a merge drops its kept read, so the next tick reads
