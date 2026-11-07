@@ -43,6 +43,7 @@ import {
   type RepoObservation,
   type Tracked,
 } from "./tick-observe.ts";
+import { afterWait } from "./tick-plan.ts";
 import { endOwnClaims } from "./tick-shared.ts";
 import type {
   DispatchSection,
@@ -125,6 +126,7 @@ export async function actObserved(
     join: observation.join,
     sessions: observation.sessions,
     shared: ctx,
+    unplaced: afterWait(context, observation.serialized).unplaced,
   };
   context.pending.push({
     apply: (group) =>
@@ -152,6 +154,8 @@ interface ApplyInputs {
   join: JoinTargets;
   sessions: SessionsReport;
   shared: SharedContext;
+  /** Pull requests whose place in a serialized group this tick cannot tell, by number and why. */
+  unplaced: ReadonlyMap<number, string>;
 }
 
 /**
@@ -192,6 +196,7 @@ async function applyStages(
     },
     held: (pr) => labels !== null && hasCommand(labels, pr.labels, "hold"),
     claimer: launchClaimer(inputs.shared),
+    unplaced: inputs.unplaced,
   };
   const stages = [
     async () => {

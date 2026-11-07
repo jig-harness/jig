@@ -159,10 +159,12 @@ reading holds its slot and is seen as running by the plan. The deadline a
 launch is checked against (`outOfTime`) counts from the start of the
 invocation, not of the act phase: the launcher's own clock has been running
 since then, through the observe phase and any wait for the act lock. Every target is read once more just before its launch, as before.
-A tick that had to wait for the act lock may have read its serialized groups
-before the tick it waited for launched into them, one of an earlier version
-that takes no observe lock; it starts no re-arm in a group that tick, and the
-next tick reads the group afresh.
+A tick that had to wait for the act lock, or that finds under it a launch
+record its startup read did not hold, may have read its serialized groups
+before another tick launched into them, one of an earlier version that takes
+no observe lock; it starts no re-arm in a group that tick, and replays no
+pending launch of a pull request in one, keeping the record; the next tick
+reads the group afresh.
 
 **The budget gate.** The forge's budget is read once per tick, as the
 observe phase starts, beside its first reads. While less than a tenth of

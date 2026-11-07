@@ -46,6 +46,15 @@ export function planObserved(
   if (onlyLabeled) report.inScope = [...forge.inScope];
 }
 
+/** Whether `now` holds a launch record `before` did not: some tick launched in between. */
+export function launchedMeanwhile(
+  before: ReadonlyArray<Pick<ReadRecord, "record">>,
+  now: ReadonlyArray<Pick<ReadRecord, "record">>,
+): boolean {
+  const known = new Set(before.map((r) => r.record.id));
+  return now.some((r) => !known.has(r.record.id));
+}
+
 /**
  * After a wait for the act lock, the groups serialization read may predate
  * the launches of the tick that held it, which an earlier version makes

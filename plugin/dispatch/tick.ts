@@ -96,6 +96,7 @@ import {
 } from "./lib/tick-repo.ts";
 import { routeRecurrences } from "./lib/reflection-route.ts";
 import { settleOutcomes } from "./lib/tick-settle.ts";
+import { launchedMeanwhile } from "./lib/tick-plan.ts";
 import type { RepoReport } from "./lib/types.ts";
 import {
   type Lock,
@@ -264,6 +265,10 @@ async function startAct(started: StartedTick): Promise<void> {
   const { receipt, context } = started;
   const { options, runtime } = context;
   const read = await readLaunches();
+  // A launch record the startup read did not hold was made by a tick that acted meanwhile, one of an
+  // earlier version perhaps, which takes no observe lock: the free act lock does not say it did not.
+  if (launchedMeanwhile(context.launches, read.records))
+    context.actWaited = true;
   // An ended follow-up's outcome is written before its record can expire.
   try {
     settleFollowups(read.records);
