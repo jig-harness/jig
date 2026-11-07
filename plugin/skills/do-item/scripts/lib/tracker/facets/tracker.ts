@@ -62,16 +62,17 @@ export interface CoreFacetReport {
 }
 
 /** What an adapter implements; `withFacets` makes it a `Tracker`. */
-export interface CoreTracker extends Omit<
-  Tracker,
-  | "getIssue"
-  | "openIssues"
-  | "openChildren"
-  | "poolIssue"
-  | "assignedIssues"
-  | "incompleteIssues"
-  | "facetStores"
-> {
+export interface CoreTracker
+  extends Omit<
+    Tracker,
+    | "getIssue"
+    | "openIssues"
+    | "openChildren"
+    | "poolIssue"
+    | "assignedIssues"
+    | "incompleteIssues"
+    | "facetStores"
+  > {
   getIssue(key: string): Promise<CoreIssue | null>;
   openIssues(query: PoolQuery): Promise<CorePoolIssue[]>;
   openChildren(key: string): Promise<CorePoolIssue[]>;
@@ -280,6 +281,17 @@ export function withFacets(
     return { add, remove };
   }
 
+  /** A patch's added labels less the aliases of a value its facet change sets, or undefined when none is redundant. */
+  function withoutRedundantAdds(patch: IssuePatch): string[] | undefined {
+    const redundant = (l: string) =>
+      [...LABEL_FACETS, "priority" as const].some((f) => {
+        const value = patch[f];
+        return value !== undefined && value !== null && codecs.get(f)?.owns(l);
+      });
+    const adds = patch.addLabels ?? [];
+    return adds.some(redundant) ? adds.filter((l) => !redundant(l)) : undefined;
+  }
+
   async function updateIssue(key: string, patch: IssuePatch) {
     const labels = await facetLabels(key, patch);
     const out: IssuePatch = { ...patch };
@@ -290,24 +302,8 @@ export function withFacets(
         out[f] = checkFacetValue(facets[f], patch[f] as string);
     }
     if (codecs.has("priority")) delete out.priority;
-    // An added alias of a value the facet change sets is redundant, not a clash.
-    const owned = (l: string) =>
-      [...LABEL_FACETS, "priority" as const].some((f) => {
-        const codec = codecs.get(f);
-        return (
-          patch[f] !== undefined &&
-          patch[f] !== null &&
-          codec !== undefined &&
-          codec.owns(l)
-        );
-      });
-    const redundant = new Set(
-      (patch.addLabels ?? []).filter(owned).map((l) => fold(l)),
-    );
-    if (redundant.size > 0)
-      out.addLabels = (patch.addLabels ?? []).filter(
-        (l) => !redundant.has(fold(l)),
-      );
+    const kept = withoutRedundantAdds(patch);
+    if (kept !== undefined) out.addLabels = kept;
     if (labels.add.length > 0)
       out.addLabels = [...(out.addLabels ?? []), ...labels.add];
     if (labels.remove.length > 0)

@@ -247,11 +247,13 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
         } catch (err) {
           // A number that is no issue (absent, or a pull request) is absent
           // from the answer; GitHub reports it beside the issues it found.
-          if (!(
-            err instanceof GitHubApiError &&
-            err.notFound &&
-            err.data !== null
-          ))
+          if (
+            !(
+              err instanceof GitHubApiError &&
+              err.notFound &&
+              err.data !== null
+            )
+          )
             throw err;
           data = err.data;
         }
