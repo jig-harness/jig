@@ -79,6 +79,7 @@ async function runDrives(
   // the env var absent, so drives.ts must fall through to its own
   // `resolveStateDir()` git query and handle that failing.
   const env = cleanEnv({
+    DRIVE_PR_LEDGER: "off",
     ...(opts.stateDir === null ? {} : { DRIVE_PR_STATE_DIR: opts.stateDir }),
     ...(opts.env ?? {}),
   });

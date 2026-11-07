@@ -71,7 +71,12 @@ import { pickUpDrive } from "./takeover-complete.ts";
 
 import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
-import { armLedger, ledgerIdentity, ledgerSettlement } from "./ledger.ts";
+import {
+  armLedger,
+  ledgerIdentity,
+  ledgerSettlement,
+  publishStartup,
+} from "./ledger.ts";
 
 import { cardAfterDrive } from "./orca-card.ts";
 
@@ -481,9 +486,10 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
     current,
     armCommand(driveTs, pr, botsOnly, " --take-over", agent),
   );
-  // From here the ledger says this driver is running, so whatever ends the
-  // drive (an exit, a thrown refusal, a stop) marks it stopped.
+  // Ownership and the seeded state are durable before this driver publishes;
+  // every later exit attempts its stopped ledger under the same ownership.
   await using settlement = ledgerSettlement(pr, held, dryRun);
+  await publishStartup(pr);
   const firstPassNotice = await pickUpDrive(pr, plan, pickup, {
     agent,
     botsOnly,

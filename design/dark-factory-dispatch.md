@@ -486,9 +486,34 @@ to discard: the pass finishes it or starts it over (`drive-pr` `SKILL.md` § 0),
 and a tree that holds one behind a moved head refuses the attach, which leaves
 the ledger stopped `9`, so a person is told.
 
-A stopped ledger with no exit has no known origin: `drives.ts --stop`
-records one, and so does the driver's own recovery after a crash, a thrown
-refusal or a signal, so the tick cannot read a person's decision into it.
+A deliberate stop records the person's decision, with their reason when
+given. Mailbox stops and pauses keep exits `18` and `19`; `drives.ts --stop`
+records an explicit person's stop even when it must force the process to end.
+A person's stop stays stopped until a person releases it. The hold label
+also prevents launches while it stands.
+
+With ledger mirroring enabled, `drives.ts --stop` verifies the published
+ownership before signalling. An initializing driver, or an unreadable ledger,
+is refused without a signal: hold dispatch and retry once ownership reads.
+The driver publishes its ownership immediately after initialization.
+
+Stop intent is published and verified on the forge before signalling the
+driver. Ledger writes are serialized so an older in-flight write cannot erase
+it. A running driver with recorded stop intent is held against automatic
+re-arms and takeovers. Stop-bearing ledgers use format version 2 so older
+readers refuse them instead of ignoring the stop; ordinary ledgers remain
+version 1, and the new reader accepts both.
+
+A stopped ledger with no exit and no person's-stop record is an accident:
+the dispatcher re-arms it on an admitted account to resume its durable state.
+Hard termination of both driver and launch wrapper can leave a running ledger
+with a stale heartbeat instead. No-exit recovery does not cover that state;
+without a recognized launch owner it remains silent until a person intervenes.
+The default budget is 3 no-cause re-arms per pull request in a rolling hour,
+across accounts; completing a round does not reset it. Once spent, the next
+no-cause stop needs a person and is notified once with the drive's handoff.
+A legacy no-exit ledger receives at most one automatic attempt, regardless of
+the budget; a new ledger then follows the ordinary budget.
 
 | Ledger says | Class | The tick |
 | --- | --- | --- |
@@ -498,8 +523,9 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
 | stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies per stop, with the exit and the drive's handoff |
 | stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
-| stopped `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
-| stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies per stop, with the drive's handoff |
+| stopped with an explicit person's-stop record, or `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
+| stopped with no exit and no person's-stop record, budget available | re-armable | re-arms on an admitted account; a legacy ledger gets at most one attempt |
+| stopped with no exit and no person's-stop record, budget spent | stopped-unknown: repeated no-cause stops, needs a person | notifies once with the drive's handoff and says the drive stopped repeatedly with no recorded cause |
 | stopped `16` (quota-parked) | re-armable | re-arms on an admitted account other than the one its launch record names, when one does, or after the wall's reset |
 | stopped `8` (parked), every parked item answered | re-armable | re-arms on any admitted account |
 | stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive) | re-armable | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to |

@@ -214,7 +214,7 @@ export function stageMeaning(stage: string): string {
 /** Where a queued target came from, for the popover its chip opens. */
 const SOURCE_MEANINGS: Record<string, string> = {
   "re-armable":
-    "A drive that stopped in a way the dispatcher may restart by itself, such as on a usage limit or once every parked item is answered.",
+    "A drive the dispatcher may restart by itself: stopped with no recorded cause (re-arming within its budget), on a usage limit, or once every parked item is answered. A drive stopped by a person stays stopped.",
   "label drive":
     "A pull request carrying the drive label, which asks the dispatcher to arm a drive on it.",
   held: "Kept off by a hold label or behind a serialized leader: no stage starts on it while that stands.",
