@@ -6,7 +6,7 @@ import {
   winners,
 } from "../../shared/records/shared.ts";
 import type { ReadRecord } from "./launches.ts";
-import { isDrive } from "./launches.ts";
+import { cancelledBeforeExecution, isDrive } from "./launches.ts";
 import type { DriveClaims } from "./shared-launches.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import type { LaunchRecord } from "./launches.ts";
@@ -49,6 +49,9 @@ function attemptsOf(
   claims: DriveClaims,
 ): Map<string, { facts: string; at: string }> {
   const attempts = new Map<string, { facts: string; at: string }>();
+  const cancelled = new Set(
+    records.filter(cancelledBeforeExecution).map((r) => r.record.id),
+  );
   const shared = claims.get(pr.number);
   const won = shared?.ok ? winners(shared.value) : [];
   const winningIds = new Set(won.map((c) => c.id));
@@ -59,6 +62,7 @@ function attemptsOf(
   );
   for (const r of records)
     if (
+      !cancelled.has(r.record.id) &&
       isDrive(r.record) &&
       r.record.pr === pr.number &&
       (!losingRecords.has(r.record.id) || executed(r))
@@ -69,20 +73,26 @@ function attemptsOf(
       });
   for (const c of budgetClaims(shared?.ok ? shared.value : [])) {
     const s = c.says.value;
-    if (s.facts !== null && !attempts.has(String(s.record)))
+    if (
+      s.facts !== null &&
+      !cancelled.has(String(s.record)) &&
+      !attempts.has(String(s.record))
+    )
       attempts.set(String(s.record), { facts: s.facts, at: s.at });
   }
   return attempts;
 }
 
-/** Winners reserve allowance; any recorded end retains a loser's spent allowance.
- * A reservation withdrawn before execution is deleted rather than given an end.
- */
+/** Winners reserve allowance; ended losers retain spent allowance unless cancellation is proven. */
 function budgetClaims(claims: SharedClaim[]) {
   const won = new Set(winners(claims).map((c) => c.id));
-  return readable(claims).filter(
-    (c) => won.has(c.id) || c.says.value.end !== null,
-  );
+  return readable(claims).filter((c) => {
+    const end = c.says.value.end;
+    return (
+      !(end?.state === "died" && end.executed === false) &&
+      (won.has(c.id) || end !== null)
+    );
+  });
 }
 
 /** A losing reservation is excluded only while no execution evidence exists. */

@@ -1,14 +1,30 @@
+import { startRecord, type ApplyState } from "../lib/actions/launch.ts";
+import { claimBody, readClaim } from "../../shared/records/forge-claims.ts";
+import {
+  endedClaim,
+  launchClaim,
+  LAUNCH_CLAIM,
+  saysOf,
+} from "../../shared/records/launch-claims.ts";
 import { Defect } from "../../shared/errors.ts";
 /** A stale plan cannot spend a recovery allowance another host consumed before reservation. */
 import { describe, expect, it } from "bun:test";
-import { ok } from "../../shared/outcome.ts";
+import { failed, ok } from "../../shared/outcome.ts";
 import type {
   SharedClaim,
   SharedRecords,
+  LaunchDraft,
 } from "../../shared/records/shared.ts";
-import { launchClaimer } from "../lib/shared-launches.ts";
+import { launchClaimer, settleOwnClaims } from "../lib/shared-launches.ts";
 import { noCauseFacts, settleNoCauseStops } from "../lib/no-cause-stops.ts";
-import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
+import {
+  readLaunches,
+  type LaunchRecord,
+  type ReadRecord,
+} from "../lib/launches.ts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { DrivenPr } from "../lib/types.ts";
 
 function pr(legacy: boolean): DrivenPr {
@@ -349,3 +365,159 @@ describe("recovery reservation", () => {
     });
   }
 });
+
+for (const legacy of [false, true]) {
+  for (const winning of [false, true]) {
+    it(`does not charge failed withdrawals of ${winning ? "winning" : "losing"} reservations against the ${legacy ? "legacy" : "modern"} budget`, async () => {
+      const root = mkdtempSync(join(tmpdir(), "jig-cancel-reservation-"));
+      try {
+        const facts = noCauseFacts(pr(legacy));
+        const first = claim(1, "ordinary stop");
+        const history = [first];
+        const records = {
+          medium: "forge",
+          claim: async (_target, draft) => {
+            const id = history.length + 1;
+            const c = claim(id, facts, String(draft.record), false);
+            if (c.says.ok) {
+              c.says.value.attempt = winning ? id : 1;
+              c.says.value.host = "candidate-host";
+            }
+            history.push(c);
+            return winning
+              ? ok({ kind: "holds", id, attempt: id })
+              : ok({ kind: "earlier", id, by: first });
+          },
+          release: async () => failed("not-released", "withdrawal unavailable"),
+          list: async () =>
+            winning
+              ? failed("unreadable", "history temporarily unavailable")
+              : ok(history),
+          listRepository: async () => new Map(),
+          check: async () => {
+            throw new Defect("unexpected check");
+          },
+          budget: async () => {
+            throw new Defect("unexpected budget");
+          },
+          end: async (_target, _stage, id, end) => {
+            const c = history.find((c) => c.id === id);
+            if (c?.says.ok) {
+              const draft: LaunchDraft = {
+                stage: "drive",
+                pr: 7,
+                run: "tick",
+                action: "rearm",
+                record: c.says.value.record,
+                host: "candidate-host",
+                owner: true,
+                facts,
+                writer: { host: "candidate-host" },
+              };
+              const initial = readClaim(
+                LAUNCH_CLAIM,
+                claimBody(LAUNCH_CLAIM, launchClaim(draft, 1)),
+              );
+              if (!initial?.ok) throw new Defect("claim did not round-trip");
+              const written = endedClaim(
+                "drive",
+                initial.value,
+                7,
+                end,
+                draft.writer,
+              );
+              const reread = readClaim(
+                LAUNCH_CLAIM,
+                claimBody(LAUNCH_CLAIM, written),
+              );
+              if (!reread?.ok) throw new Defect("end did not round-trip");
+              c.says.value.end = saysOf("drive", reread.value, 7).end;
+            }
+            return ok(undefined);
+          },
+        } satisfies SharedRecords;
+        const ctx = {
+          records,
+          slug: "example-org/example-repo",
+          host: "candidate-host",
+          owner: true,
+          login: "drive-bot",
+          root,
+        };
+        const slots = {
+          account: {
+            name: "a",
+            vendor: "claude",
+            configDir: "/config",
+            identity: "a@example.com",
+            maxPerAccount: 1,
+          },
+          held: 0,
+          wall: null,
+          wallUnrecorded: false,
+        };
+        const state = {
+          root,
+          records: [],
+          table: [slots],
+          last: null,
+        } as unknown as ApplyState;
+        for (const suffix of ["aaaaaaaa", "bbbbbbbb", "cccccccc"]) {
+          const candidate = {
+            ...record(facts),
+            id: `20261107T000000Z-${suffix}`,
+          };
+          expect(
+            (await startRecord(state, candidate, slots, launchClaimer(ctx)))
+              .outcome,
+          ).toBe("refused");
+          expect(slots.held).toBe(0);
+        }
+        const local = (await readLaunches(root)).records;
+        expect(
+          settleNoCauseStops(
+            [pr(legacy)],
+            local,
+            new Map([[7, ok(history)]]),
+            Date.now(),
+          )[0]?.class,
+        ).toBe("re-armable");
+        // The next tick must retain proof that these missing wrappers never executed.
+        await settleOwnClaims(
+          ctx,
+          new Map([[7, ok(history)]]),
+          [],
+          (await readLaunches(root)).records,
+          new Map(),
+          new Date().toISOString(),
+        );
+        expect(
+          history
+            .slice(1)
+            .every(
+              (c) =>
+                c.says.ok &&
+                c.says.value.end?.state === "died" &&
+                c.says.value.end.executed === false,
+            ),
+        ).toBe(true);
+        expect(
+          settleNoCauseStops(
+            [pr(legacy)],
+            [],
+            new Map([[7, ok(history)]]),
+            Date.now(),
+          )[0]?.class,
+        ).toBe("re-armable");
+        const candidate = record(facts);
+        const reserved = claim(5, facts, candidate.id, false);
+        if (reserved.says.ok) reserved.says.value.attempt = 5;
+        expect(
+          (await reserve(candidate, 5, [...history, reserved])).result,
+        ).toEqual({ claim: 5 });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+}

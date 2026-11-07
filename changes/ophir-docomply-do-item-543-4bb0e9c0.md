@@ -10,3 +10,4 @@ release: minor
 
 - Deliberate stops publish and verify the person's intent and optional reason before signalling, so a failed final ledger write cannot let another host re-arm them. Stop-bearing ledgers use format version 2; older Jig copies refuse them and must be updated before driving those pull requests.
 - With ledger mirroring enabled, a stop refuses to signal a driver whose published ownership cannot yet be verified. Hold dispatch and retry after startup publishes its ledger; the driver now publishes that ownership immediately after initialization.
+- Cancelled launch reservations retain durable evidence when withdrawal fails, so settlement does not charge recovery allowance for a wrapper that never executed. Executed and interrupted launches still consume their allowance across hosts.

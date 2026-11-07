@@ -66,6 +66,8 @@ import {
   type LaunchRecord,
   type ReadRecord,
   settleEnds,
+  writeRecord,
+  cancelledBeforeExecution,
 } from "./launches.ts";
 import { stateDb } from "./state.ts";
 import type { DrivenPr, FollowupMarker, MarkedPr } from "./types.ts";
@@ -88,6 +90,8 @@ export interface SharedContext {
   login: string | null;
   /** The read-back's rule; the shared records' own when absent. */
   rule?: ReadBackRule;
+  /** State root for durable cancellation evidence; defaults to this dispatcher's. */
+  root?: string;
 }
 
 /** Each drive's launch claims, by pull request, or why they did not read. */
@@ -358,7 +362,7 @@ export function launchClaimer(ctx: SharedContext): LaunchClaimer {
       // Only another claim's standing is a loss; a read that does not settle is not.
       const uncertain = !["held", "earlier", "done"].includes(a.kind);
       if (!("id" in a)) return { refused: why, uncertain };
-      const released = await ctx.records.release(target, a.id);
+      const released = await withdrawUnstarted(ctx, record, a.id);
       return {
         refused: released.ok
           ? why
@@ -367,7 +371,7 @@ export function launchClaimer(ctx: SharedContext): LaunchClaimer {
       };
     },
     async release(record, claim) {
-      await ctx.records.release(targetOf(record), claim);
+      await withdrawUnstarted(ctx, record, claim);
     },
   };
 }
@@ -386,16 +390,30 @@ async function checkedReservation(
       ? null
       : recoveryReservationRefusal(record, own, history, Date.now());
   if (why === null) return { claim: own };
-  const released = await ctx.records.release(
-    { repo: ctx.slug, pr: Number(record.pr) },
-    own,
-  );
+  const released = await withdrawUnstarted(ctx, record, own);
   return {
     refused: released.ok
       ? why
       : `${why}; its claim could not be withdrawn: ${released.failure.reason}`,
     uncertain: !released.ok,
   };
+}
+
+/** A failed withdrawal leaves a durable cancellation for the next tick to publish. */
+async function withdrawUnstarted(
+  ctx: SharedContext,
+  record: LaunchRecord,
+  own: number,
+) {
+  const released = await ctx.records.release(
+    { repo: ctx.slug, pr: Number(record.pr) },
+    own,
+  );
+  if (!released.ok && record.attempts.every((a) => a.outcome === "failed")) {
+    record.cancelledAt ??= new Date().toISOString();
+    writeRecord(record, ctx.root ?? stateRoot());
+  }
+  return released;
 }
 
 /** The shared claim a drive's launch record makes. */
@@ -452,6 +470,13 @@ function endOfRecord(
       state: "died",
       at: nowIso,
       reason: "its launch record is gone from the host that made it",
+    };
+  if (cancelledBeforeExecution(r))
+    return {
+      state: "died",
+      at: r.record.cancelledAt ?? nowIso,
+      reason: "its reservation was cancelled before execution",
+      executed: false,
     };
   if (holds(r.state)) return null;
   if (r.state.kind === "died")

@@ -147,6 +147,8 @@ export interface LaunchRecord {
   episodes?: WaitingEpisode[];
   /** When the record ended, as its outcome row is timed; written in the same transaction as that row, so a record with it has its row. */
   endedAt?: string;
+  /** A reservation cancelled before runtime execution whose shared withdrawal needs retrying. */
+  cancelledAt?: string;
 }
 
 /** A drive's unresolved review threads at one ledger round. */
@@ -351,6 +353,7 @@ function optionalFields(value: Record<string, unknown>): boolean {
     (value.codexBypass === undefined ||
       typeof value.codexBypass === "boolean") &&
     optionalTime(value.endedAt) &&
+    optionalTime(value.cancelledAt) &&
     optionalTime(value.openedAt) &&
     isRedrive(value.redrive)
   );
@@ -687,7 +690,16 @@ function stateOf(
       exit: { ...exit, signal: exit.signal ?? null },
       process: claim ?? null,
     };
-  if (claim === undefined) return { kind: "pending" };
+  if (claim === undefined) {
+    const record = parseJson(row.record, `launch record ${row.id}`);
+    if (isMapping(record) && typeof record.cancelledAt === "string")
+      return {
+        kind: "died",
+        reason: "its reservation was cancelled before execution",
+        process: NO_PROCESS,
+      };
+    return { kind: "pending" };
+  }
   if (claim === null)
     return {
       kind: "unknown",
@@ -730,6 +742,16 @@ export async function readLaunches(
     });
   }
   return { records, unreadable };
+}
+
+/** Cancellation is proof only without a wrapper identity, exit or uncertain runtime receipt. */
+export function cancelledBeforeExecution(r: ReadRecord): boolean {
+  return (
+    r.record.cancelledAt !== undefined &&
+    r.state.kind === "died" &&
+    r.state.process.pid === 0 &&
+    r.record.attempts.every((a) => a.outcome === "failed")
+  );
 }
 
 /** The states that hold their stage and their account's slot. */
@@ -951,15 +973,22 @@ export async function inspectRow(
 /**
  * Remove a row only while its claim and exit are still what `seen` read:
  * a wrapper that claimed it, or an exit written, since leaves it in place.
- * Returns whether the row was removed.
+ * A cancelled pending row can be retained as settlement evidence; true still gives its slot back.
  */
 export function removeRecordIf(
   id: string,
   seen: Pick<InspectedRow, "claim" | "exit">,
   root = stateRoot(),
+  keepCancelled = false,
 ): boolean {
   const db = stateDb(root);
   return inTransaction(db, () => {
+    if (keepCancelled) {
+      const row = launchRow(id, root);
+      if (row === null || row.claim !== seen.claim || row.exit !== seen.exit)
+        return false;
+      if (recordOf(row, root)?.cancelledAt !== undefined) return true;
+    }
     const result = db
       .query("DELETE FROM launches WHERE id = ? AND claim IS ? AND exit IS ?")
       .run(id, seen.claim, seen.exit);
