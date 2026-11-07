@@ -67,12 +67,20 @@ function attemptsOf(
         facts: r.record.facts,
         at: r.record.createdAt,
       });
-  for (const c of won) {
+  for (const c of budgetClaims(shared?.ok ? shared.value : [])) {
     const s = c.says.value;
     if (s.facts !== null && !attempts.has(String(s.record)))
       attempts.set(String(s.record), { facts: s.facts, at: s.at });
   }
   return attempts;
+}
+
+/** Winners reserve allowance; a completed loser proves allowance was spent too. */
+function budgetClaims(claims: SharedClaim[]) {
+  const won = new Set(winners(claims).map((c) => c.id));
+  return readable(claims).filter(
+    (c) => won.has(c.id) || c.says.value.end?.state === "ended",
+  );
 }
 
 /** A losing reservation is excluded only while no execution evidence exists. */
@@ -136,7 +144,7 @@ export function recoveryReservationRefusal(
   )
     return "the recovery reservation could not be verified in its latest claim history";
   const attempts = new Map<string, { facts: string; at: string }>();
-  for (const claim of winners(history.value)) {
+  for (const claim of budgetClaims(history.value)) {
     const s = claim.says.value;
     if (claim.id >= own || s.record === record.id || s.facts === null) continue;
     attempts.set(String(s.record), { facts: s.facts, at: s.at });
