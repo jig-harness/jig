@@ -590,7 +590,8 @@ outlives the session that spawned it, so its console is not where you look:
   normal exit, including both quota-park exits and the HITL-park exit, so a
   parked drive that exited cleanly leaves no lock behind — see
   `listStateOnlyRows` in `drives.ts`) — and
-  classifies each one — `HEALTHY`, `WEDGED`, `DEAD_WITH_LEFTOVERS`,
+  classifies each one — `HEALTHY`, `WEDGED`, `DEAD_WITH_LEFTOVERS`, `DEAD`
+  (its process gone, and its tree clean or no longer there),
   `QUOTA_PARKED`, `NEEDS_HUMAN` or `UNKNOWN` (never a false `HEALTHY` — see
   `lib/doctor.ts`'s own precedence-order header) — with a recovery command
   where one exists; combines with `--json` (a genuinely different payload
@@ -794,15 +795,24 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" <PR> --take-over --bots-only -- claud
 ```
 
 It reads the holder's `drives.ts` `--doctor` verdict and is admitted only
-against a holder that is `WEDGED`, or whose process is confirmed gone with nothing left
-in its tree (no uncommitted changes, unpushed commits or unconcluded git
-operation; on this machine the takeover refuses, naming them, until they are
-pushed or discarded). Against any other holder it refuses as exit `11` does,
-naming the verdict. A wedged holder is stopped through `drives.ts` `--stop`, with
+against a holder that is `WEDGED`, or whose process is confirmed gone by its
+recorded identity (its pid answers no signal, or now belongs to a process
+with another start time or boot) with nothing left in its tree: no
+uncommitted changes, unpushed commits or unconcluded git operation (on this
+machine the takeover refuses, naming them, until they are pushed or
+discarded), or no tree at all. A tree that no longer exists (its directory
+is gone, or git no longer lists it as a worktree of the clone) holds nothing
+anyone can push or save, so the doctor reads its holder `DEAD` and the
+takeover is admitted with no person needed, as the plain arm recovers that
+holder's lock; what existed only in that tree is already lost, and the
+takeover records the tree (`vanishedTree`) and says so in the first pass's
+`TAKEN OVER` notice. A tree that exists but cannot be inspected stays
+`UNKNOWN` and is refused. Against any other holder it refuses as exit `11`
+does, naming the verdict. A wedged holder is stopped through `drives.ts` `--stop`, with
 the identity check that command performs, bound by `--expect-started` to the
 acquisition its doctor row named. Once it holds the locks, the
 takeover records itself in the drive state (`takeovers`: from which tree and
-account to which, the verdict, the round), runs
+account to which, the verdict, the round, the vanished tree), runs
 `reconcile-replied-threads.ts` before the first triage, and resumes at the
 drive's durable round. Held items carry over by their state: a hold whose
 fix was pushed is resolved by the round as usual; a hold whose promised fix
@@ -839,7 +849,10 @@ older driver writes no heartbeat and reads no claim.
 
 Do not stop a driver that is making progress; take over one that is `WEDGED`
 or dead, or another clone's whose ledger heartbeat is past the lease window,
-with `--take-over`. Never drive beside a driver whose claim is newer than
+with `--take-over`. Where the dispatcher's `rearm` stage runs, it launches
+that takeover itself for a drive whose ledger heartbeat is past the lease
+window and whose holder this clone's doctor reads `WEDGED` or `DEAD`,
+whoever armed it. Never drive beside a driver whose claim is newer than
 yours.
 
 ## Entry mode: arm the driver, or work one round (decide first)

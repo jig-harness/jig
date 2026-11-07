@@ -41,6 +41,9 @@ export function planObserved(
     held: observation.held,
     serialized: observation.serialized,
     shared: { host: ctx.host, drives: claims, owner: ctx.owner },
+    ...(observation.holders === undefined
+      ? {}
+      : { holders: observation.holders }),
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];

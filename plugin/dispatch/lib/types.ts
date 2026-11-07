@@ -127,6 +127,15 @@ export interface StaleCause {
   earlier?: string[];
 }
 
+/** What the repository clone's drive doctor (`drives.ts --doctor`) reads of a pull request's lock holder. */
+export interface HolderReading {
+  /** The doctor's verdict: `WEDGED`, `DEAD`, `HEALTHY`, `UNKNOWN`, … */
+  verdict: string;
+  reason: string;
+  /** The lock's state: `live`, `stale`, `empty`, … */
+  lock: string;
+}
+
 /** One open pull request whose comments hold a drive ledger. */
 export interface DrivenPr {
   number: number;
@@ -251,6 +260,8 @@ export interface Action {
   takeover?: string;
   /** For a takeover of a driver another host started: that host's launch claim, which names the launch. */
   takeoverClaim?: { id: number; host: string; record: string };
+  /** For a takeover of a driver no launch started: what this clone's drive doctor read of its holder. */
+  takeoverHolder?: HolderReading;
   /** For a re-drive: why the drive's stop no longer settles its pull request. */
   redrive?: StaleCause;
   /** For a notification: its cause. */

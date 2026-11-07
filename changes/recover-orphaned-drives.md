@@ -1,0 +1,8 @@
+---
+release: minor
+---
+
+### Changed
+
+- `drive-pr`: a driver whose process is confirmed gone and whose working tree no longer exists (the directory is gone, or git no longer lists it as a worktree of the clone) is now a dead holder with nothing left: `drives.ts --doctor` reads it `DEAD`, a new verdict also given to a gone holder whose tree is clean, and `drive.ts --take-over` admits it with no person needed, as the plain arm's lock recovery already did. Whatever existed only in the vanished tree is already lost: the takeover records the tree in its `takeovers` entry (`vanishedTree`, kept off the ledger) and says so in the first pass's `TAKEN OVER` notice. A holder is confirmed gone by its recorded identity (its pid answers no signal, or now belongs to a process with another start time or boot), the rule the lock's own recovery uses. A tree that exists but cannot be inspected stays `UNKNOWN` and is refused.
+- `jig dispatch`: a drive whose ledger fell silent past the lease window and whose driver no launch record of this machine and no launch claim of another host started is now taken over by the `rearm` stage when the repository clone's drive doctor (`drives.ts --json`, read only in a tick where a drive fell silent) reads its holder `DEAD` or `WEDGED`; `drive.ts --take-over` checks it again before anything is stopped. A holder that is alive and making progress, or a driver in a clone this host cannot read, is reported with the doctor's reading, as is any pull request a person's `hold` label is on.

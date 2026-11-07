@@ -267,8 +267,10 @@ until the plugin is updated.
 enables for each repository: the `rearm` stage, and the `pickup`,
 `followup`, `notify` and `steer` stages below. With `rearm`, each re-arm
 of a stopped drive, and each takeover of a wedged driver this machine
-started (or another host did: see several hosts, below),
-runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
+started (or another host did: see several hosts, below), or of a driver
+nobody's launch started whose ledger fell silent past the lease window and
+whose holder the clone's drive doctor (`drives.ts --json`) reads `DEAD` or
+`WEDGED`, runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
 of the pull request's workspace, opened from the pull request when none
 holds it, through a small wrapper (`dispatch/run.ts`). The wrapper bills
 the pass to an account the machine file lists, through that account's

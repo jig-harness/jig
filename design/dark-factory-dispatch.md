@@ -384,6 +384,7 @@ guards keep one stage from starting twice:
 | The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels; each pull request's comments listed once per tick and shared by every record read from them, a merge's markers read only when its `updatedAt` moved since they were kept (see One tick, step by step) | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed |
 | The session runtime | in Orca, `orca repo list --json` and `orca worktree ps --json`, each read once per tick for every repository | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
 | The shared records | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts`; the observe phase reads them from the tick's comment listings, a launch's own reads and writes go to the forge | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts) |
+| The drive doctor | `drives.ts --json` from drive-pr, run read-only in the repository clone the machine file lists, only in a tick where a drive fell silent | each pull request's lock holder and the doctor's verdict on it (`DEAD`, `WEDGED`, `HEALTHY`, …): whether a silent driver no launch started is taken over |
 
 **The tracker.** The interface gains one read, `assignedIssues(identity,
 states)`: the issues assigned to that user in those states, in the pool
@@ -508,7 +509,8 @@ A stopped ledger with no exit and no person's-stop record is an accident:
 the dispatcher re-arms it on an admitted account to resume its durable state.
 Hard termination of both driver and launch wrapper can leave a running ledger
 with a stale heartbeat instead. No-exit recovery does not cover that state;
-without a recognized launch owner it remains silent until a person intervenes.
+the takeover does, once the clone's drive doctor reads the dead driver's
+holder `DEAD`, whether or not a launch owner is still recognized.
 The default budget is 3 no-cause re-arms per pull request in a rolling hour,
 across accounts; completing a round does not reset it. Once spent, the next
 no-cause stop needs a person and is notified once with the drive's handoff.
@@ -518,7 +520,7 @@ the budget; a new ledger then follows the ordinary budget.
 | Ledger says | Class | The tick |
 | --- | --- | --- |
 | running, heartbeat inside the lease window | driven | nothing |
-| running, heartbeat past the lease window | silent | takes it over only when this machine's launch record, or another host's launch claim, started that driver; otherwise reports it |
+| running, heartbeat past the lease window | silent | takes it over when this machine's launch record, or another host's launch claim, started that driver, or when the clone's drive doctor reads its holder `DEAD` or `WEDGED`; otherwise reports it with the doctor's reading |
 | stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
 | stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
 | stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies per stop, with the exit and the drive's handoff |
@@ -739,7 +741,14 @@ machine's launch record started is planned for takeover although that
 record is alive, since a wedged driver stays alive by definition; whether
 the takeover is admitted stays `drive.ts --take-over`'s decision. The
 takeover runs in that record's slot rather than needing a free one (see
-Admission by account). A refusal (`drive.ts`
+Admission by account). A `silent` drive whose driver no launch record of
+this machine and no launch claim of another host started (a person armed
+it, or the record that did is gone) is taken over too, on a free slot,
+when the repository clone's drive doctor (`drives.ts --json`, read in the
+clone the machine file lists) reads its holder `DEAD` (its process
+confirmed gone, its tree clean or no longer there) or `WEDGED`; the tick
+reports it with the doctor's reading otherwise. A dead driver's orphaned
+drive is cleanup no person needs to do. A refusal (`drive.ts`
 exiting `11`, `13`, `16` or `20`; `do-item` finding the item already
 claimed) is recorded as the stage's own answer and never fought: an action
 whose facts have not changed since the refusal is reported, not launched
@@ -1094,10 +1103,13 @@ waits on the authenticated Windows smoke.
   ([ADR-0003](../docs/adr/ADR-0003-a-person-merges.md)).
 - **Answer a park.** A parked question is a person's; the tick notifies and
   waits for the answer on the pull request.
-- **Stop a driver that is making progress.** It takes over only a driver its
-  own machine started, whose ledger heartbeat is past the lease window, and
-  only through `drive.ts --take-over`, which admits it against a wedged or
-  dead driver alone. A driver another machine or a person started is
+- **Stop a driver that is making progress.** It takes over only a driver
+  whose ledger heartbeat is past the lease window: one this machine's launch
+  record or another host's launch claim started, or one no launch started
+  whose holder the repository clone's drive doctor reads `DEAD` or
+  `WEDGED`; and only through `drive.ts --take-over`, which admits it against
+  a wedged or dead driver alone. A driver whose holder is alive and making
+  progress, or runs in a clone this machine's doctor cannot read, is
   reported, never taken over.
 - **Re-arm a drive a person may have stopped** (a mailbox stop or pause,
   or a stop with no exit), or relaunch a stalled pickup.

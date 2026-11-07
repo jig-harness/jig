@@ -10,10 +10,13 @@
  * Admitted against exactly two holders, both decided by `drives.ts --doctor`
  * rather than by the caller: one whose verdict is `WEDGED` (a live driver,
  * progress older than the stall threshold, no pass process under it), and one
- * whose process is confirmed gone with nothing left in its working tree (no
- * uncommitted changes, no unpushed commits, no unconcluded git operation). A
- * lock reads stale also when its process is alive with an old heartbeat, so
- * staleness alone never admits it. Against any other holder the takeover
+ * whose process is confirmed gone by its recorded identity with nothing left
+ * in its working tree (no uncommitted changes, no unpushed commits, no
+ * unconcluded git operation), or whose working tree no longer exists: nothing
+ * in a vanished tree can be pushed or saved, so what it held unpushed is
+ * already lost, and the takeover records the tree and says so. A lock reads
+ * stale also when its process is alive with an old heartbeat, so staleness
+ * alone never admits it. Against any other holder the takeover
  * refuses as exit `11` does, naming the verdict: a driver that is making
  * progress is never stopped, and a dead one's leftovers are pushed or
  * discarded by a person first, since a successor driving around them would
@@ -30,9 +33,9 @@
  */
 import { ExitError, fail, isDigits, sleep } from "./../cli.ts";
 
-import { helperTimeoutSeconds, pidAlive, run, tsArgv } from "./../proc.ts";
+import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 
-import { type ClaimDiag, samePidNamespace } from "./../claim.ts";
+import type { ClaimDiag } from "./../claim.ts";
 
 import { accountHash, formatAccountIdentity } from "./../identity.ts";
 
@@ -40,7 +43,7 @@ import { worktreePathKey } from "./../state/actor.ts";
 
 import type { HeldItem } from "./../state/schema.ts";
 
-import { gatherWorktreeLeftovers } from "../../drives.ts";
+import { gatherWorktreeLeftovers, worktreeVanished } from "./../leftovers.ts";
 
 import { drives, driveState } from "./paths.ts";
 
@@ -71,6 +74,8 @@ interface DoctorRowJson {
   hostId?: string | undefined;
   platform?: string | null;
   diag: ClaimDiag | null;
+  /** The holder's process is confirmed gone by its recorded identity. */
+  holderGone?: boolean;
   doctor: { verdict: string; reason: string; recovery: string | null } | null;
 }
 
@@ -85,6 +90,8 @@ export interface TakeoverPlan {
   held: HeldItem[];
   /** Admitted on another clone's stale ledger heartbeat: claimed on the PR. */
   crossClone?: true;
+  /** The dead holder's working tree, which no longer existed: what it held unpushed is lost. */
+  vanishedTree?: string;
 }
 
 /** The doctor's row for `pr`; `null` when no lock or state names it. */
@@ -112,6 +119,7 @@ function isDoctorRow(v: unknown): v is DoctorRowJson {
     (v.pid === null || typeof v.pid === "number") &&
     (v.host === null || typeof v.host === "string") &&
     (v.diag === null || isRecord(v.diag)) &&
+    (v.holderGone === undefined || typeof v.holderGone === "boolean") &&
     (v.doctor === null ||
       (isRecord(v.doctor) && typeof v.doctor.verdict === "string"))
   );
@@ -201,13 +209,10 @@ export async function decideTakeover(
   }
   const verdict = row.doctor?.verdict ?? "UNKNOWN";
   let admitted: TakeoverPlan["verdict"];
+  let vanished: string | null = null;
   if (row.state === "live" && verdict === "WEDGED") admitted = "WEDGED";
   else if (row.state === "stale") {
-    requireProcessGone(pr, row);
-    await requireNoLeftovers(pr, row);
-    console.error(
-      `drive.ts --take-over: PR #${pr}'s previous driver (pid ${row.pid ?? "?"}) is gone and left nothing in its tree; taking the drive over.`,
-    );
+    vanished = await admitDeadHolder(pr, row);
     admitted = "DEAD";
   } else
     refuse(
@@ -222,15 +227,36 @@ export async function decideTakeover(
     fromAccount: row.diag === null ? null : accountHash(row.diag.account),
     holderStarted: row.diag?.started ?? null,
     held: await heldSnapshot(pr),
+    ...(vanished === null ? {} : { vanishedTree: vanished }),
   };
+}
+
+/**
+ * Admit a stale holder confirmed gone with nothing left to save, or refuse;
+ * returns its tree when that no longer exists, else `null`.
+ */
+async function admitDeadHolder(
+  pr: string,
+  row: DoctorRowJson,
+): Promise<string | null> {
+  requireProcessGone(pr, row);
+  const vanished = await requireNoLeftovers(pr, row);
+  const gone = `drive.ts --take-over: PR #${pr}'s previous driver (pid ${row.pid ?? "?"}) is gone`;
+  console.error(
+    vanished === null
+      ? `${gone} and left nothing in its tree; taking the drive over.`
+      : `${gone} and its tree (${vanished}) no longer exists, so anything it held unpushed is lost; taking the drive over from the pull request's remote head.`,
+  );
+  return vanished;
 }
 
 /** A stale lock admits a takeover only when its process is confirmed gone. */
 function requireProcessGone(pr: string, row: DoctorRowJson): void {
-  // A claim from this machine under an earlier host name is checked here, by
-  // its host id; one from another machine or pid namespace is never confirmed gone.
-  if (row.pid !== null && samePidNamespace(row) && !pidAlive(row.pid, ""))
-    return;
+  // Judged by the holder's recorded identity, as the lock's own recovery
+  // judges it (`holderGone`): a pid that answers no signal, or now belongs to
+  // a process with another start time or boot. A claim from another machine
+  // or pid namespace is never confirmed gone.
+  if (row.holderGone === true) return;
   refuse(
     pr,
     row,
@@ -239,12 +265,18 @@ function requireProcessGone(pr: string, row: DoctorRowJson): void {
   );
 }
 
+/**
+ * Refuses a dead holder whose tree holds leftovers or cannot be inspected;
+ * returns the tree when it no longer exists, else `null` for a clean one.
+ */
 async function requireNoLeftovers(
   pr: string,
   row: DoctorRowJson,
-): Promise<void> {
+): Promise<string | null> {
   const tree = row.diag?.worktree ?? "";
   const leftovers = tree === "" ? null : await gatherWorktreeLeftovers(tree);
+  if (leftovers === null && tree !== "" && (await worktreeVanished(tree)))
+    return tree;
   if (leftovers === null)
     refuse(
       pr,
@@ -266,6 +298,7 @@ async function requireNoLeftovers(
       `Its previous driver is gone (DEAD_WITH_LEFTOVERS) and ${tree} still holds ${found.join(", ")}.`,
       `Push or discard them first (git -C ${JSON.stringify(tree)} status --short), then take over.`,
     );
+  return null;
 }
 
 let stoppedNotice: Disposable | null = null;

@@ -39,7 +39,7 @@ import {
  *                            status board polling this mode consumes.
  *   drives.ts --doctor       one classified verdict per drive in the state
  *                            universe — HEALTHY, WEDGED,
- *                            DEAD_WITH_LEFTOVERS, QUOTA_PARKED, NEEDS_HUMAN
+ *                            DEAD_WITH_LEFTOVERS, DEAD, QUOTA_PARKED, NEEDS_HUMAN
  *                            or UNKNOWN, plus a recovery command where one
  *                            exists. See `lib/doctor.ts` for the classifier
  *                            and its precedence order.
@@ -126,29 +126,30 @@ import { fail, isDigits, runMain, sleep, testPacing } from "./lib/cli.ts";
 import {
   classifyDrive,
   type DoctorInput,
-  type DoctorLeftovers,
   type DoctorRow,
   formatStopCommand,
   noLiveDriver,
   stallThresholdMs,
 } from "./lib/doctor.ts";
-import { attachedTree } from "./lib/driven-branch.ts";
+import { gatherWorktreeLeftovers, worktreeVanished } from "./lib/leftovers.ts";
 import {
   findPassChild,
   type PassChildAnswer,
   type ProcRow,
   snapshotProcesses,
 } from "./lib/pass-child.ts";
-import {
-  git,
-  gitCallTimeoutSeconds,
-  gitIdentityEnv,
-  pidAlive,
-  unconcludedGitOpMarker,
-} from "./lib/proc.ts";
+import { git, gitCallTimeoutSeconds, pidAlive } from "./lib/proc.ts";
 import { liveDrives, reportMain } from "./lib/morning-report.ts";
 import { type DriveState, isUsableState } from "./lib/state/schema.ts";
-import { claimAlive, inspectLock, lockLabel } from "./lib/driver/locks.ts";
+import {
+  claimAlive,
+  holderGone,
+  inspectLock,
+  lockLabel,
+} from "./lib/driver/locks.ts";
+
+/** Re-exported for the callers that read it from this listing. */
+export { gatherWorktreeLeftovers };
 import { dbPathFor, driveDb } from "./lib/state/db.ts";
 import { lockRows } from "./lib/state/lock.ts";
 import {
@@ -210,6 +211,8 @@ interface LockRow {
   nonce: string | null;
   refreshAgeSec: number | null;
   diag: ClaimDiag | null;
+  /** The holder's process is confirmed gone by its recorded identity (`holderGone`); absent with no claim. */
+  holderGone?: boolean;
   /**
    * This claim's owner is the reader's OWN parent driver — see
    * `ownParentDriver`. Carried on the row rather than derived at each print
@@ -282,6 +285,7 @@ function readLock(
     ? Math.max(0, Math.round(ageMs / 1000))
     : null;
   row.state = claimAlive(claim) ? "live" : "stale";
+  row.holderGone = holderGone(claim);
   return row;
 }
 
@@ -446,78 +450,6 @@ function readStateSnapshot(
 }
 
 /**
- * What a driven worktree still holds, for `classifyDrive`'s
- * `DEAD_WITH_LEFTOVERS` check. `null` on ANY probe failure — including a
- * resolvable-but-empty upstream — rather than reporting a partial answer:
- * `DoctorLeftovers` has no per-field "unknown", so a probe this function cannot
- * complete must fail the WHOLE record rather than guess a boolean for the field
- * it could not determine.
- *
- * Three SEPARATE probes, deliberately not folded into `drive.ts`'s own
- * `leftoverReport`: that function has no notion of "unpushed" at all (a
- * stalled pass's own worktree is presumed pushed already, since a converged
- * drive certifies that before it ever returns), and it targets the CURRENT
- * process's cwd — this one targets an ARBITRARY other worktree by path.
- *
- * Exported for `drives.test.ts` — the fail-closed
- * nulls (no upstream, a missing worktree, a torn/absent git dir) are cheap to
- * exercise directly against a real scratch repo, without paying for a whole
- * `drives.ts --doctor` subprocess round trip per case.
- */
-export async function gatherWorktreeLeftovers(
-  worktree: string,
-): Promise<DoctorLeftovers | null> {
-  const timeoutSec = gitCallTimeoutSeconds();
-  // `env: gitIdentityEnv()` on EVERY probe below, not just `cwd`: a hook
-  // exports `GIT_DIR`/`GIT_WORK_TREE` into an operator's shell, and with a
-  // leaked `GIT_DIR` git resolves refs from another repository, so `--doctor`
-  // would report a stranger's unpushed commits as this drive's leftovers.
-  const env = gitIdentityEnv();
-  const dirty = await git(
-    [
-      "status",
-      "--porcelain",
-      "--untracked-files=normal",
-      "--ignore-submodules=none",
-    ],
-    { stderr: "ignore", timeoutSec, cwd: worktree, env },
-  );
-  if (dirty.code !== 0) return null;
-  const op = await unconcludedGitOpMarker(timeoutSec, { cwd: worktree, env });
-  if (!op.ok) return null;
-  // A missing upstream is a question this probe cannot answer, not a count:
-  // checked structurally before `rev-list` counts against it. A detached
-  // tree an attach prepared counts against its driven branch's remote ref.
-  let upstreamRef = "@{u}";
-  const upstream = await git(
-    ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
-    { stderr: "ignore", timeoutSec, cwd: worktree, env },
-  );
-  if (upstream.code !== 0) {
-    const record = await attachedTree(git, worktree, { timeoutSec, env });
-    if (record === null) return null;
-    upstreamRef = `refs/remotes/${record.remote}/${record.branch}`;
-  }
-  const unpushedCount = await git(
-    ["rev-list", "--count", `${upstreamRef}..HEAD`],
-    {
-      stderr: "ignore",
-      timeoutSec,
-      cwd: worktree,
-      env,
-    },
-  );
-  if (unpushedCount.code !== 0) return null;
-  const n = Number.parseInt(unpushedCount.stdout.trim(), 10);
-  if (!Number.isFinite(n)) return null;
-  return {
-    uncommitted: dirty.stdout !== "",
-    unpushed: n > 0,
-    unconcludedOp: op.marker,
-  };
-}
-
-/**
  * Assemble one row's `DoctorInput` — the I/O `classifyDrive` never does.
  *
  * `procs` is the ONE process-table snapshot the whole sweep shares
@@ -578,8 +510,15 @@ async function gatherDoctorInput(
     worktreePath !== null && noLiveDriver(row.state)
       ? await gatherWorktreeLeftovers(worktreePath)
       : null;
+  // A tree the probe could not read may simply be gone, which is a finding.
+  const treeVanished =
+    worktreePath !== null && leftovers === null && noLiveDriver(row.state)
+      ? await worktreeVanished(worktreePath)
+      : false;
   return {
     lockState: row.state,
+    holderGone: row.holderGone === true,
+    treeVanished,
     progressAgeMs,
     stateReadable: snapshot.ok,
     passChild,

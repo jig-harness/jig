@@ -37,6 +37,11 @@
  *      below, so it is deferred to the trailing `UNKNOWN` default (7)
  *      instead of returned here — see `classifyDrive`'s own comment on
  *      `uninspectableLeftoversReason` for the bug this closed.
+ *      A holder whose process is confirmed gone (`holderGone`) with nothing
+ *      left to save — a clean tree, or a tree that no longer exists
+ *      (`treeVanished`), whose unpushed work is already lost — is `DEAD`,
+ *      also returned here, since a takeover is admitted for it and nothing a
+ *      person could push or discard remains.
  *   3. A recorded quota park → `QUOTA_PARKED`. Outranks both `WEDGED` and
  *      `NEEDS_HUMAN` below because a park is TIME-BOUNDED and self-resolving
  *      in the ordinary case (the window reopens) — including the SLEEP path
@@ -143,6 +148,7 @@ export type DoctorVerdict =
   | "HEALTHY"
   | "WEDGED"
   | "DEAD_WITH_LEFTOVERS"
+  | "DEAD"
   | "QUOTA_PARKED"
   | "NEEDS_HUMAN"
   | "UNKNOWN";
@@ -157,6 +163,17 @@ export interface DoctorLeftovers {
 export interface DoctorInput {
   /** Lock liveness as `drives.ts` already computes it (`readLock`). */
   lockState: "live" | "stale" | "empty" | "contested" | "unreadable";
+  /**
+   * The holder's process is confirmed gone by its recorded identity
+   * (`holderGone` in `lib/driver/locks.ts`); absent reads as not confirmed.
+   */
+  holderGone?: boolean;
+  /**
+   * The driven worktree no longer exists: its directory is gone, or git no
+   * longer lists it as a worktree of the clone (`worktreeVanished`). Read
+   * only when `leftovers` is `null`; absent reads as not vanished.
+   */
+  treeVanished?: boolean;
   /** ms since `DriveState.lastProgressAt`, `null` when unknown/never/unreadable. */
   progressAgeMs: number | null;
   /** Whether the stored state could be read (and shape-validated) at all. */
@@ -283,6 +300,31 @@ function needsHumanReason(input: DoctorInput): string {
     : `${input.parkedCount} item(s) parked awaiting a human decision`;
 }
 
+/**
+ * A holder confirmed gone with nothing left to save → `DEAD`: its tree is
+ * clean, or no longer exists, so nothing in it can be pushed or saved (what
+ * was unpushed there is already lost). `null` otherwise, including a tree
+ * that exists but could not be inspected.
+ */
+function deadHolder(input: DoctorInput): DoctorRow | null {
+  if (input.holderGone !== true) return null;
+  const l = input.leftovers;
+  if (l !== null && !l.uncommitted && !l.unpushed && l.unconcludedOp === null)
+    return {
+      verdict: "DEAD",
+      reason:
+        "no live driver: its process is gone, and its worktree holds nothing unpushed or uncommitted; a takeover is admitted",
+      recovery: null,
+    };
+  if (l === null && input.treeVanished === true && input.worktreePath !== null)
+    return {
+      verdict: "DEAD",
+      reason: `no live driver: its process is gone, and its worktree ${input.worktreePath} no longer exists, so nothing in it can be pushed or saved (anything it held unpushed is lost); a takeover is admitted`,
+      recovery: null,
+    };
+  return null;
+}
+
 export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   // 1. Fail closed first. A lock row the listing could not interpret
   // (`contested`, `unreadable`) has established NOTHING positive about this
@@ -347,6 +389,8 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   // and used there ONLY if nothing more specific claimed the row first.
   let uninspectableLeftoversReason: string | null = null;
   if (noLiveDriver(input.lockState)) {
+    const dead = deadHolder(input);
+    if (dead !== null) return dead;
     if (input.leftovers === null) {
       // `worktreePath === null` means the probe was never even ATTEMPTED
       // (no claim to read a worktree from at all — an `empty` lock, or a

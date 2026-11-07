@@ -3,8 +3,9 @@
  * one entry per takeover, oldest first. It says who stopped driving and who
  * took over (the working-tree actor and the hashed billing account of each),
  * the doctor verdict that admitted it, the round it resumed at, the held
- * items not verified as pushed that it reopened and those it could not, and
- * whether the reconciliation ran.
+ * items not verified as pushed that it reopened and those it could not,
+ * whether the reconciliation ran, and the previous driver's working tree when
+ * it no longer existed (anything held unpushed there was lost).
  *
  * Optional in a stored state, like `drivenBranch`: a stored state written
  * before the field existed reads as no takeovers, since nothing about a
@@ -44,6 +45,8 @@ export interface TakeoverRecord {
   reopenFailed?: string[];
   /** `reconcile-replied-threads.ts` ran and exited 0 before the first triage. */
   reconciled?: boolean;
+  /** The previous driver's working tree, which no longer existed: what it held unpushed was lost. */
+  vanishedTree?: string;
 }
 
 function isNullableAccount(v: unknown): boolean {
@@ -58,6 +61,16 @@ function isKeyList(v: unknown): boolean {
   return (
     Array.isArray(v) &&
     v.every((k) => typeof k === "string" && k.length > 0 && !/[\n\r]/.test(k))
+  );
+}
+
+/** The record's optional fields: each absent or well-formed. */
+function optionalFieldsWellFormed(t: Record<string, unknown>): boolean {
+  return (
+    (t.reopenFailed === undefined || isKeyList(t.reopenFailed)) &&
+    (t.reconciled === undefined || typeof t.reconciled === "boolean") &&
+    (t.vanishedTree === undefined ||
+      (typeof t.vanishedTree === "string" && t.vanishedTree !== ""))
   );
 }
 
@@ -77,8 +90,7 @@ export function isTakeoverRecord(v: unknown): v is TakeoverRecord {
     Number.isInteger(t.round) &&
     t.round >= 0 &&
     isKeyList(t.reopened) &&
-    (t.reopenFailed === undefined || isKeyList(t.reopenFailed)) &&
-    (t.reconciled === undefined || typeof t.reconciled === "boolean")
+    optionalFieldsWellFormed(t)
   );
 }
 
@@ -90,7 +102,8 @@ export function isOptionalTakeovers(v: unknown): boolean {
 /**
  * `drive-state.ts takeover <PR>`: append the record `drive.ts --take-over`
  * hands over on standard input as JSON (`fromActor`, `fromAccount`,
- * `toAccount`, `verdict`, `reopened`, `reopenFailed`, `reconciled`). The taking tree's actor, the time and
+ * `toAccount`, `verdict`, `reopened`, `reopenFailed`, `reconciled`,
+ * `vanishedTree`). The taking tree's actor, the time and
  * the round are this command's own, never the caller's.
  */
 export async function recordTakeover(
@@ -124,6 +137,9 @@ export async function recordTakeover(
       ...(input.reconciled === undefined
         ? {}
         : { reconciled: input.reconciled }),
+      ...(input.vanishedTree === undefined
+        ? {}
+        : { vanishedTree: input.vanishedTree }),
     };
     if (!isTakeoverRecord(record)) {
       invalid = JSON.stringify(input);

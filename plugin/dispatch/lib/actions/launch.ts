@@ -406,9 +406,13 @@ function kindOf(action: Action): LaunchOutcome["action"] {
   return isTakeover(action) ? "takeover" : "rearm";
 }
 
-/** Whether a drive's action takes over a wedged driver: one this host's record started, or one another host's claim did. */
+/** Whether a drive's action takes over a driver: one this host's record started, one another host's claim did, or one no launch started whose holder this clone's doctor reads dead or wedged. */
 export function isTakeover(action: Action): boolean {
-  return action.takeover !== undefined || action.takeoverClaim !== undefined;
+  return (
+    action.takeover !== undefined ||
+    action.takeoverClaim !== undefined ||
+    action.takeoverHolder !== undefined
+  );
 }
 
 export function waits(
