@@ -216,8 +216,9 @@ the tracker's own field, a custom field, or labels. Each tracker Jig
 supports has a documented default. On GitHub Issues that is the issue type
 and the organization's own issue fields. A repository that already keeps
 them in labels keeps them there until it moves.
-Every way Jig's tools file an issue sets all three and checks them, and a
-weekly check reports any issue that lacks one.
+Every way Jig's tools file an issue sets the type. Filings through the
+tracker interface set and check all three, and a weekly check reports any
+issue that lacks one, including those filed by hand or from a form.
 
 ### 12. More tracker adapters
 

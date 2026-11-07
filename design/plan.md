@@ -697,9 +697,13 @@ Today's `issue_tracker.types`, `issue_tracker.github.priority_labels`,
 `issue_tracker.jira.field_labels` and `issue_tracker.jira.priorities` become
 the label or field form of their facet, and the native-type read the
 interface already has is kept. Every filing path (`file-issue`,
-`file-deferred.ts`, `report-bug.ts`, the issue forms) sets all three, one
-check inside every write warns and then refuses an incomplete filing, and a
-weekly sweep reports the issues missing one. A command of the repository's
+`file-deferred.ts`, `report-bug.ts`, the issue forms) sets the type; the
+interface filings (`file-issue`, `tracker.ts create`, `file-deferred.ts`)
+set all three, with no size on an epic. One check inside the write warns
+and then refuses an incomplete interface filing. The paths that leave
+priority and size to triage (`report-bug.ts`, the issue forms, an agent by
+hand) are caught afterwards, and a weekly sweep reports the issues missing
+one. A command of the repository's
 own as a store waits until a repository needs one. Built in the design's
 order: the interface with the label store and GitHub's stores, defaults
 left as they are; the callers and the filing check; the move, the sweep and
