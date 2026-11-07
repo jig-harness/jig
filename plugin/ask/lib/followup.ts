@@ -1,3 +1,4 @@
+import { derivedNext } from "../../dispatch/lib/next-owner.ts";
 /**
  * The `followup` station of a merged pull request: who holds its follow-up,
  * whether it is claimed, done or failed, and how its last pass ended, from
@@ -136,12 +137,18 @@ function lastOfMarker(marker: ReadClaim): Last | null {
       at,
       reason: end.reason,
       from: "launch claim",
+      next: derivedNext("followup", "died", end.reason),
     };
   return {
     class: end.outcome === "done" ? "converged" : "gates failed",
     at,
     reason: `result ${end.outcome ?? "unrecorded"}`,
     from: "launch claim",
+    next: derivedNext(
+      "followup",
+      end.outcome === "done" ? "converged" : "gates failed",
+      `result ${end.outcome ?? "unrecorded"}`,
+    ),
   };
 }
 

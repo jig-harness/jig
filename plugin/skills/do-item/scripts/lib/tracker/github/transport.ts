@@ -183,6 +183,21 @@ export function ghTransport(): GitHubTransport {
   };
 }
 
+/**
+ * The credential the transport the environment asks for uses, by where it
+ * comes from: never the token itself or the account it signs in as.
+ */
+export function credentialOf(env = process.env): string {
+  const token = env.GH_TOKEN?.trim()
+    ? "GH_TOKEN"
+    : env.GITHUB_TOKEN?.trim()
+      ? "GITHUB_TOKEN"
+      : null;
+  if (env.JIG_GITHUB_GRAPHQL_URL?.trim())
+    return `${token ?? "no token"} at JIG_GITHUB_GRAPHQL_URL`;
+  return token === null ? "gh's signed-in account" : `gh with ${token}`;
+}
+
 /** The token for the HTTPS transport, or `null`. */
 export function resolveGitHubToken(env = process.env): string | null {
   return env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim() || null;

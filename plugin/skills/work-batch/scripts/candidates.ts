@@ -897,6 +897,9 @@ export function parsePoolIssues(raw: unknown): PoolIssue[] {
       labels: issue.labels as string[],
       hasOpenChildren: issue.hasOpenChildren as boolean,
       truncated: issue.truncated as string[],
+      // A reader of an earlier release wrote no facets: none of either.
+      type: typeof issue.type === "string" ? issue.type : null,
+      size: typeof issue.size === "string" ? issue.size : null,
     };
   });
 }

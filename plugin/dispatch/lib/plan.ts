@@ -48,6 +48,7 @@ import {
   foreignHold,
 } from "./shared-launches.ts";
 import { failed } from "../../shared/outcome.ts";
+import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
@@ -92,6 +93,8 @@ export interface PlanInput {
   serialized?: Pick<Contention, "held" | "unplaced">;
   /** The shared records read this tick: this host, and each drive's launch claims (`shared-launches.ts`). */
   shared?: { host: string; drives: DriveClaims; owner?: boolean };
+  /** The machine file's `unclaimed_after`: past it, a launch answered as started that no wrapper claimed is stuck. */
+  unclaimedAfterMs?: number;
   nowMs: number;
 }
 
@@ -214,7 +217,13 @@ export function planTick(input: PlanInput): Plan {
   plan.actions.push(...drift.actions);
   plan.running.push(...drift.running);
   // A pending record no tick launches again waits on a person.
-  plan.actions.push(...planStuck(input.slug, input.launches));
+  plan.actions.push(
+    ...planStuck(input.slug, input.launches, {
+      nowMs: input.nowMs,
+      unclaimedAfterMs: input.unclaimedAfterMs ?? UNCLAIMED_AFTER_MS,
+      sessions,
+    }),
+  );
   holdBack(plan, input.held ?? new Set(), input.inScope);
   if (input.serialized !== undefined) serialBack(plan, input.serialized);
   return plan;

@@ -37,7 +37,15 @@ export function checkPatch(key: string, patch: IssuePatch): void {
   const add = patch.addLabels ?? [];
   const remove = patch.removeLabels ?? [];
   const fields = (
-    ["title", "description", "priority", "parent", "project"] as const
+    [
+      "title",
+      "description",
+      "type",
+      "priority",
+      "size",
+      "parent",
+      "project",
+    ] as const
   ).filter((f) => patch[f] !== undefined);
   if (fields.length === 0 && add.length === 0 && remove.length === 0)
     throw new TrackerRequestError(
