@@ -7,8 +7,9 @@
  * The machine's checks: Bun's version; `claude` and `codex` resolving
  * outside every git checkout (a job never records an agent tool inside one,
  * which a worktree cleanup or a branch could change or remove); the plugin
- * in each harness and what it follows; and the `jig` command's launcher
- * copy. Each component's: its own checks (`Component.doctor`: its machine
+ * in each harness and what it follows; the `jig` command's launcher copy;
+ * and the latest scheduled upgrade, which fails while that attempt failed
+ * (`upgrade-record.ts`). Each component's: its own checks (`Component.doctor`: its machine
  * file, the programs its work needs), then its job's launcher copy against
  * the installed plugin's, the programs its job names, and its last run's
  * receipt. Last, the audit's configuration-fit check on the repository,
@@ -49,6 +50,7 @@ import {
   installedCommandText,
 } from "./path-command.ts";
 import { recordedPrograms } from "./refresh.ts";
+import { upgradeCheck } from "./upgrade-record.ts";
 import {
   detectScheduler,
   launcherDirectory,
@@ -610,6 +612,7 @@ async function doctorChecks(options: {
     ...HARNESSES.map(pathCheck),
     ...pluginChecks(),
     await commandCheck(runtime, options.script),
+    upgradeCheck(),
   ];
   for (const component of options.components)
     if (options.names.length === 0 || options.names.includes(component.name))

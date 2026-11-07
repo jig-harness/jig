@@ -993,6 +993,9 @@ These are set per machine or per run, not committed:
 | `AWAIT_ROUND_CHECKS_MAX_AGE` | Seconds a still-waiting read of a pull request's checks may be reused while nothing on GitHub changed; default 300, `0` always reads |
 | `JIG_TURN_BUDGET`, `JIG_TURN_BUDGET_MARGIN`, `JIG_TURN_BUDGET_REFIRE` | The turn-budget hook's cap (default 1000; `0` turns the hook off), the margin before it at which the hook warns (default 50), and how often it warns again (unset or `0`: once more when half the margin remains) |
 | `JIG_TURN_BUDGET_STATE_DIR` | Where the turn-budget hook keeps its per-session state; default `jig-turn-budget` under the temporary directory |
+| `JIG_LAUNCHER_ROLE` | Set by the line, never by a person: `command` in the `jig` command's script and `wake` for a woken dispatcher tick, so the launcher does not upgrade the plugin first; unset, the launcher runs a timer's job and upgrades first ([`upgrade`](#upgrade-user-file-only)) |
+| `JIG_SCHEDULED_UPGRADE` | Set by the line, never by a person: the launcher passes a timer's job what its scheduled upgrade came to, a line of JSON, which the job writes into its receipt as `upgrade` |
+| `JIG_UPGRADE_SCHEDULED` | Set by the line, never by a person: `1` tells the installed copy's `jig upgrade --jobs-only` that a timer's job runs it, so it leaves a loaded launchd job's file for the next `jig upgrade` a person runs |
 | `JIG_LAUNCH` | Set by the line, never by a person: the launch record a dispatched session runs under (the dispatcher's wrapper sets it), or the driver a drive's pass belongs to. While it is set, [`jig send`](README.md#telling-a-station-what-to-do) refuses the commands that are a person's |
 | `JIG_REFOCUS` | `1` or `0` puts `do-item`'s intent-chain snapshot in the Refocus calibration's on or off arm; unset, odd issue numbers are on |
 | `BASH_MAX_TIMEOUT_MS` | Claude Code's own variable, not Jig's: the longest `timeout` an agent may give a background command in an unattended session, 2 hours unless raised. Set it to `28800000` so a drive can outlast 2 hours (see [the background time limit](skills/drive-pr/README.md#the-background-time-limit)) |
@@ -1017,6 +1020,37 @@ clones:
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `clones` | map of `owner/name` to a local clone path, absolute or starting with `~/` | No clone is known: arming another repository's pull request prints the command to run in a checkout of it | drive-pr | The drive is armed in that clone's primary checkout, as for a pull request with no working tree: in the tree that holds the pull request, else in a new one under that repository's `gc.worktree_roots`. The clone must be a checkout of the repository its key names. Keys compare without regard to case |
+
+## `upgrade` (user file only)
+
+Whether this machine's timers keep the plugin current, and how often at
+most ([automatic updates](README.md#automatic-updates)). Before each job a
+timer starts, its launcher runs `jig upgrade --scheduled` from the installed
+plugin copy; with no `upgrade` section it does, at most once an hour
+whichever timer fires first. Only the user file (`~/.jig/jig.yaml`, or
+`$JIG_HOME/jig.yaml`) sets it: it describes one machine, and a repository's
+file or the environment is not read for it.
+
+```yaml
+upgrade:
+  every: 6h
+```
+
+`upgrade: off` (or `false`) opts the machine out, as does
+`jig install --no-upgrade`, which writes `upgrade.enabled: false` and
+keeps the section's other settings. A section that does not read fails the
+timers' upgrades and `jig doctor`'s `upgrade` check, naming the file; the
+jobs still run.
+
+| Setting in the user file's `upgrade` section | Default / meaning |
+|----------------------------------------------|-------------------|
+| `every` | `1h`; the shortest time between two scheduled upgrades, as a whole number of minutes, hours or days (`30m`, `1h`, `2d`). An attempt, whatever it came to, withholds the next one for this long: two timers firing within it upgrade once, and a failed upgrade is not tried again inside it. Read by `jig upgrade --scheduled` and `jig doctor` |
+| `enabled` | `true`; `false` opts the machine out, as `upgrade: off` does. Written by `jig install --no-upgrade`; read by `jig upgrade --scheduled` and `jig doctor` |
+
+The latest attempt is kept under `~/.local/state/jig/upgrade/`: when it ran
+and what it came to. A machine whose marketplace is pinned to a tag or
+another ref receives nothing, and a plugin Claude Code loads in place from a
+local marketplace folder is skipped; each says so in the job's receipt.
 
 ## `gc`
 

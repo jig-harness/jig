@@ -193,6 +193,32 @@ describe("jig dispatch receipts", () => {
     expectSpawnExit(listed, 0);
     expect(listed.stdout.trim().split("\n")).toHaveLength(2);
   });
+
+  it("carries the plugin upgrade its launcher ran into the receipt, and the listing shows it", async () => {
+    const w = fixture();
+    const upgrade = {
+      outcome: "updated",
+      detail: "claude 0.2.0 -> 0.3.0",
+      at: "2026-11-07T04:00:00.000Z",
+      from: "0.2.0",
+      to: "0.3.0",
+    };
+    const r = await w.dispatch(["--repo", w.repo, "--json"], undefined, {
+      JIG_SCHEDULED_UPGRADE: JSON.stringify(upgrade),
+    });
+    expectSpawnExit(r, 0);
+    expect((JSON.parse(r.stdout) as TickReceipt).upgrade).toEqual(
+      upgrade as TickReceipt["upgrade"],
+    );
+    const listed = await w.dispatch(["receipts"]);
+    expectSpawnExit(listed, 0);
+    expect(listed.stdout).toContain("  upgrade 0.2.0 -> 0.3.0  ");
+    const report = await w.dispatch(["--repo", w.repo], undefined, {
+      JIG_SCHEDULED_UPGRADE: JSON.stringify({ ...upgrade, outcome: "failed" }),
+    });
+    expectSpawnExit(report, 0);
+    expect(report.stdout).toContain("upgrade: failed: claude 0.2.0 -> 0.3.0");
+  });
 });
 
 describe("jig dispatch --apply", () => {

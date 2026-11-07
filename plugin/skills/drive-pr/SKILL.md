@@ -722,7 +722,11 @@ outlives the session that spawned it, so its console is not where you look:
   `--since` (a time such as `2026-10-29T06:00Z`, or a span such as `12h`). For each: its
   terminal state and what it means for the person, the provisional
   decisions first, the takeovers and re-arms, the parked decisions framed in
-  full, the issues filed and the deferred entries not yet filed.
+  full, the issues filed and the deferred entries not yet filed; then the
+  dispatcher's part and the plugin upgrades the timers ran (`upgrades`).
+  Where timers keep the plugin current, a drive's rounds may span plugin
+  versions: the driver keeps the copy it started with, and each pass runs
+  the copy installed when it starts.
 
 An exit-`11` refusal names the holder's pid/host and, when its claim carries
 the diagnostics line, the PR it is driving, its worktree, its log, its

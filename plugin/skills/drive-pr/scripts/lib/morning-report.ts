@@ -17,7 +17,9 @@
  * its launches, refusals and notifications (`morning-report-dispatch.ts`);
  * and the workspaces it launched into, found by the dispatched mark on
  * their launch records, each with the name it carries now, read from the
- * session runtime under its deadline (`dispatch/lib/dispatched.ts`).
+ * session runtime under its deadline (`dispatch/lib/dispatched.ts`); and the
+ * plugin upgrades the timers ran since then, each that moved the plugin or
+ * failed, from the jobs' receipts (`morning-report-upgrades.ts`).
  * Of a clone's own state and the
  * ledger, the newer speaks for a pull request both describe: the ledger
  * when another clone wrote a later generation of it, else the state, which
@@ -46,6 +48,7 @@ import {
   dispatchSince,
 } from "./morning-report-dispatch.ts";
 import { renderMorningReport } from "./morning-report-render.ts";
+import { type UpgradeEntry, upgradesSince } from "./morning-report-upgrades.ts";
 import { resolveStateDir, stateRows } from "./state/store.ts";
 import { ghCall } from "./proc.ts";
 import { readReversals, type ReversalRead } from "./provisional.ts";
@@ -118,6 +121,8 @@ export interface MorningReport {
   dispatchLabels: DispatchLabels[];
   /** The workspaces the dispatcher launched into since the report's time, by the mark on their launch records, with the name each carries now. */
   dispatchedWorkspaces: DispatchedWorkspace[];
+  /** The plugin upgrades the timers ran on this machine since the report's time that moved the plugin or failed. */
+  upgrades: UpgradeEntry[];
   /** What could not be read, each a sentence. */
   unread: string[];
 }
@@ -625,6 +630,8 @@ export async function gatherMorningReport(opts: {
   unread.push(...dispatched.unread);
   const workspaces = await dispatchedSince(since);
   unread.push(...workspaces.unread);
+  const upgrades = upgradesSince(since);
+  unread.push(...upgrades.unread);
   return {
     now: opts.now.toISOString(),
     since: opts.since,
@@ -633,6 +640,7 @@ export async function gatherMorningReport(opts: {
     dispatch: dispatched.entries,
     dispatchLabels: dispatched.labels,
     dispatchedWorkspaces: workspaces.workspaces,
+    upgrades: upgrades.entries,
     unread,
   };
 }

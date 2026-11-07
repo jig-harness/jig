@@ -138,7 +138,7 @@ development and shipped as a version.
 |------|---------------------|--------------------------|--------------------|--------------|
 | [Gates](#gates-and-the-validation-plan) | `gates.command`; CI | implementer before the push; drive pass every round | the session that ran them; CI's required check | the session whose change failed them |
 | [Change areas](#gates-and-the-validation-plan) | `skills/change-areas/scripts/` | review, drive pass, fix-ci, through the plan | the session that read the plan (exit 2) | whoever maintains the catalog |
-| [`jig` command and timers](#the-jig-command-and-its-timers) | `jig.ts`, `runtime/verbs.ts`, `gc/install.ts`, `dispatch/install.ts`, `runtime/launcher.ts`, `runtime/upgrade.ts`, `runtime/doctor.ts` | none | `jig doctor`; the scheduler's own log; a person | a Jig change |
+| [`jig` command and timers](#the-jig-command-and-its-timers) | `jig.ts`, `runtime/verbs.ts`, `gc/install.ts`, `dispatch/install.ts`, `runtime/launcher.ts`, `runtime/upgrade.ts`, `runtime/scheduled-upgrade.ts`, `runtime/upgrade-record.ts`, `runtime/doctor.ts` | none | `jig doctor`; the jobs' receipts; the scheduler's own log; a person | a Jig change |
 | [Resource collection](#resource-collection-jig-gc) | `gc/` | none | its receipts (`jig receipts gc`) | a person; a Jig change |
 | [Dispatcher's tick](#the-dispatchers-tick) | `dispatch/tick.ts`, `dispatch/run.ts` | the sessions it starts | its receipt; the morning report | a person; a Jig change |
 | [Dispatcher's records](#the-dispatchers-records-receipts-outcome-log-dashboard-notifications) | `dispatch/receipts.ts`, `dispatch/lib/log.ts`, `dispatch/dashboard.ts`, `dispatch/lib/notices.ts` | a dispatched session records its result | the dashboard; the morning report | a person, through `/jig:reflect` |
@@ -216,8 +216,22 @@ development and shipped as a version.
   (`runtime/refresh.ts`, `runtime/installed-job.ts`). It writes nothing
   where nothing differs. A tool that updates the plugin on its own
   ([automatic updates](README.md#automatic-updates)) leaves the launcher
-  copies as they were. `jig doctor` (`runtime/doctor.ts`) checks Bun, the
-  agent tools, the plugin in each tool, each launcher copy, the programs
+  copies as they were. Before a timer's job, the launcher runs the
+  installed copy's `jig upgrade --scheduled` under its own deadline, then
+  asks the agent tool again which copy is installed and runs the job on it;
+  whatever the upgrade came to, the job runs, and gets the upgrade's line
+  for its receipt in `JIG_SCHEDULED_UPGRADE`. The `jig` command's script and
+  a woken tick mark their launches (`JIG_LAUNCHER_ROLE`) and do not upgrade.
+  `jig upgrade --scheduled` (`runtime/scheduled-upgrade.ts`) reads the user
+  file's `upgrade` setting, withholds the upgrade on a machine that opted
+  out, takes the interval under a lock by writing a stamp
+  (`runtime/upgrade-record.ts`) unless the latest one is younger than
+  `upgrade.every`, withholds it for a harness pinned to a tag or ref, skips
+  a plugin loaded in place from a local folder, and otherwise runs the same
+  update and refresh as `jig upgrade`, leaving a loaded launchd job's file
+  alone. `jig doctor` (`runtime/doctor.ts`) checks Bun, the
+  agent tools, the plugin in each tool, each launcher copy, the latest
+  scheduled upgrade, the programs
   each job names, each component's own needs (`Component.doctor`), the
   last receipts and the repository's configuration fit, and names a fix for
   each failure; it changes nothing. `jig ask` (`ask/cli.ts`), registered
@@ -226,8 +240,8 @@ development and shipped as a version.
   it writes no record. `jig send` (`send/cli.ts`), registered the same way,
   reads the station through `jig ask`'s readers, refuses a request it cannot
   take, and writes one record through the writer its owner exports.
-- **Reasoned.** None. A person installs, upgrades and checks; no session is
-  involved.
+- **Reasoned.** None. A person installs and checks, a person or a timer
+  upgrades; no session is involved.
 - **If it fails.** A job that cannot find the installed copy stops with a
   message naming what to run; the scheduler's own log holds it, and
   `jig doctor` names the check that fails and its fix. A person reads it.

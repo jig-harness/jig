@@ -537,3 +537,91 @@ test.skipIf(
   expectSpawnExit(result, 1);
   expect(result.stderr.toString()).toContain("run jig install again");
 });
+
+/** A plugin copy too old for `jig upgrade --scheduled`, which logs each run and the upgrade it was passed. */
+function oldCopy(root: string, log: string): string {
+  const directory = join(root, "old");
+  mkdirSync(join(directory, "gc"), { recursive: true });
+  writeFileSync(join(directory, "gc", "bunfig.toml"), "");
+  writeFileSync(
+    join(directory, "jig.ts"),
+    `require("node:fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), upgrade: process.env.JIG_SCHEDULED_UPGRADE ?? null }) + "\\n");
+if (process.argv[2] === "upgrade") { console.error("Unexpected option: --scheduled"); process.exit(2); }
+`,
+  );
+  return realpathSync(directory);
+}
+
+test.skipIf(
+  skipsOnWindows(
+    "powershell",
+    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+  ),
+)(
+  "a timer's job upgrades first and runs on whatever copy is there when the upgrade fails; the jig command never upgrades",
+  () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    const log = join(root, "runs.log");
+    const copy = oldCopy(root, log);
+    const { launcher, config } = installedLauncher(root);
+    const claude = join(root, "claude");
+    writeFakeProgram(
+      claude,
+      `#!/usr/bin/env bun\nconsole.log(JSON.stringify([{ id: "jig@jig", scope: "user", installPath: ${JSON.stringify(copy)} }]));\n`,
+    );
+    const start = (role?: string) =>
+      Bun.spawnSync(
+        [
+          process.execPath,
+          "--no-env-file",
+          `--config=${config}`,
+          launcher,
+          `--claude=${claude}`,
+          "--",
+          "gc",
+          "--scheduled",
+        ],
+        {
+          env: {
+            ...process.env,
+            JIG_LAUNCHER_ROLE: role,
+            JIG_SCHEDULED_UPGRADE:
+              '{"outcome":"updated","detail":"stale","at":"x"}',
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: 30000,
+        },
+      );
+    const runs = () =>
+      readFileSync(log, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map(
+          (line) =>
+            JSON.parse(line) as { argv: string[]; upgrade: string | null },
+        );
+
+    expectSpawnExit(start(), 0);
+    const [upgrade, job] = runs();
+    expect(upgrade?.argv).toEqual([
+      "upgrade",
+      "--scheduled",
+      `--claude-program=${claude}`,
+    ]);
+    // The upgrade's own run inherits no earlier result.
+    expect(upgrade?.upgrade).toBeNull();
+    expect(job?.argv).toEqual(["gc", "--scheduled"]);
+    expect(JSON.parse(job?.upgrade as string)).toMatchObject({
+      outcome: "failed",
+      detail: expect.stringContaining(
+        "exited 2 without a result: Unexpected option: --scheduled",
+      ),
+    });
+
+    expectSpawnExit(start("command"), 0);
+    expect(runs().slice(2)).toEqual([
+      { argv: ["gc", "--scheduled"], upgrade: null },
+    ]);
+  },
+);

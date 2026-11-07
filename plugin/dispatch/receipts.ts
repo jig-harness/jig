@@ -45,6 +45,7 @@ import {
   lockIdentity,
   type ProcessIdentity,
 } from "../shared/liveness.ts";
+import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
 import type { ReflectionReport } from "./lib/reflection-route.ts";
 import { failureText } from "./lib/text.ts";
@@ -80,6 +81,8 @@ export interface TickReceipt {
   defect?: Defect;
   /** The classes that recur, as the reflection route recorded them, left them pending or would record them; absent when it had nothing to do. */
   reflection?: ReflectionReport;
+  /** The plugin upgrade the launcher ran before this tick (`runtime/upgrade-record.ts`); absent from a tick no timer started. */
+  upgrade?: ScheduledUpgrade;
   repos: RepoReport[];
 }
 

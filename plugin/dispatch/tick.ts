@@ -70,6 +70,7 @@ import { defectReport, runTurn, startTurn } from "./lib/tick-repo.ts";
 import { routeRecurrences } from "./lib/reflection-route.ts";
 import { settleOutcomes } from "./lib/tick-settle.ts";
 import type { Defect, RepoReport } from "./lib/types.ts";
+import { takeScheduledUpgrade } from "../runtime/upgrade-record.ts";
 import {
   newRunId,
   pruneReceipts,
@@ -101,6 +102,16 @@ interface StartedTick {
   withheld: string | undefined;
   /** Whether settling the launch records' follow-up outcomes failed; each repository's turn settles its own again, and the close retries. */
   settleFailed: boolean;
+}
+
+/**
+ * The plugin upgrade the launcher ran before this tick, as the receipt's
+ * field: taken out of the environment, so the sessions the tick launches
+ * never carry it.
+ */
+function upgradeField(): Pick<TickReceipt, "upgrade"> {
+  const upgrade = takeScheduledUpgrade();
+  return upgrade === undefined ? {} : { upgrade };
 }
 
 /** Read this machine's launch records and build the apply state and the receipt the tick fills. */
@@ -139,6 +150,7 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
     completed: false,
     apply: apply !== null,
     exitStatus: 0,
+    ...upgradeField(),
     ...(withheld === undefined ? {} : { applyWithheld: withheld }),
     ...accountsReport(machine, apply),
     ...(startDefect === undefined ? {} : { defect: startDefect }),

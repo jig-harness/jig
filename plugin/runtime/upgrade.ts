@@ -9,7 +9,10 @@
  * refreshes nothing itself unless it is the installed copy: it runs that
  * copy's `jig upgrade --jobs-only --json` and reads its report. The result is
  * one structure (`UpgradeResult`): what each harness and each installed job
- * became.
+ * became. A scheduled upgrade (`scheduled-upgrade.ts`) refreshes the same
+ * way, telling the installed copy so in `JIG_UPGRADE_SCHEDULED=1`: a loaded
+ * launchd job is then not rewritten, since that would stop the job running
+ * the upgrade.
  */
 import { realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -55,7 +58,12 @@ interface UpgradeOptions {
   script: string;
   /** Where the commands it runs and its progress are printed. */
   say: Say;
+  /** A timer's job runs this upgrade: a refresh leaves loaded launchd jobs as they are. */
+  scheduled?: boolean;
 }
+
+/** The variable that tells the installed copy's refresh a timer's job runs it. */
+const SCHEDULED_REFRESH = "JIG_UPGRADE_SCHEDULED";
 
 function announcer(say: Say): Announce {
   return (command) => say(`$ ${command.join(" ")}`);
@@ -117,6 +125,7 @@ async function updatedPrograms(
   const programs: { claude?: string; codex?: string } = {
     ...(await recordedPrograms(options.components)),
     ...pluginPrograms(),
+    ...options.request?.programs,
   };
   const current = harnesses.filter((result) =>
     CURRENT.includes(result.outcome),
@@ -132,7 +141,7 @@ async function updatedPrograms(
  * The refresh, by the plugin copy a harness names now: in this process when
  * that is this copy, otherwise by running it.
  */
-async function refreshFromInstalled(
+export async function refreshFromInstalled(
   options: UpgradeOptions,
   harnesses: readonly HarnessResult[],
 ): Promise<RefreshResult[]> {
@@ -142,15 +151,19 @@ async function refreshFromInstalled(
   } catch (error) {
     return failed((error as Error).message);
   }
+  const scheduled = options.scheduled === true;
   return entry === realpathSync(options.script)
-    ? refreshInstalled(options.components, announcer(options.say))
-    : refreshByRunning(entry, options.say);
+    ? refreshInstalled(options.components, announcer(options.say), {
+        scheduled,
+      })
+    : refreshByRunning(entry, options.say, scheduled);
 }
 
 /** The installed copy's `jig upgrade --jobs-only --json`, run, and its report. */
 async function refreshByRunning(
   entry: string,
   say: Say,
+  scheduled: boolean,
 ): Promise<RefreshResult[]> {
   const command = [
     process.execPath,
@@ -163,7 +176,11 @@ async function refreshByRunning(
   ];
   say(`$ ${command.join(" ")}`);
   const timeoutSec = commandTimeoutMs() / 1000;
-  const child = await run(command, { timeoutSec, stderr: "inherit" });
+  const child = await run(command, {
+    timeoutSec,
+    stderr: "inherit",
+    ...(scheduled ? { env: { ...process.env, [SCHEDULED_REFRESH]: "1" } } : {}),
+  });
   const report = jobsReport(child.stdout);
   const ended = child.timedOut
     ? `did not finish within ${timeoutSec}s`
@@ -185,7 +202,9 @@ async function upgrade(options: UpgradeOptions): Promise<UpgradeResult> {
   if (options.request === null)
     return {
       harnesses: [],
-      jobs: await refreshInstalled(options.components, announcer(options.say)),
+      jobs: await refreshInstalled(options.components, announcer(options.say), {
+        scheduled: options.scheduled === true,
+      }),
     };
   const harnesses = upgradeHarnesses(options.request, options.say);
   return { harnesses, jobs: await refreshFromInstalled(options, harnesses) };
@@ -252,7 +271,12 @@ export async function upgradeVerb(
   const say: Say = args.json ? console.error : console.log;
   if (args.jobsOnly) checkJobsOnly(args, context.script);
   const request = args.jobsOnly ? null : requestOf(args);
-  const result = await upgrade({ request, ...context, say });
+  const result = await upgrade({
+    request,
+    ...context,
+    say,
+    scheduled: args.jobsOnly && process.env[SCHEDULED_REFRESH] === "1",
+  });
   if (args.json) console.log(JSON.stringify(result, null, 2));
   else report(result, say);
   return upgradeExit(result, args.jobsOnly);

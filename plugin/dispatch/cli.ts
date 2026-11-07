@@ -55,6 +55,7 @@ import {
 import { elapsed, formatReceipt } from "./lib/report.ts";
 import { markerMain } from "./marker.ts";
 import { readReceipt, receiptPaths, type TickReceipt } from "./receipts.ts";
+import { upgradeLine } from "../runtime/upgrade-record.ts";
 import { resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
 
@@ -367,14 +368,19 @@ function defects(r: TickReceipt): string {
   return n === 0 ? "" : `, ${n} defect(s)`;
 }
 
-/** One line per receipt that reads: its run, outcome, duration, size, defects and file. */
+/** The upgrade the launcher ran before the tick, where it ran one. */
+function upgraded(r: TickReceipt): string {
+  return r.upgrade === undefined ? "" : `  upgrade ${upgradeLine(r.upgrade)}`;
+}
+
+/** One line per receipt that reads: its run, outcome, duration, size, defects, upgrade and file. */
 function listReceipts(paths: readonly string[]): void {
   for (const path of paths) {
     const r = readReceipt(path);
     if (r === null) continue;
     const actions = r.repos.reduce((n, repo) => n + repo.actions.length, 0);
     console.log(
-      `${r.runId}  ${r.startedAt}  ${r.completed ? `exit ${r.exitStatus}` : "incomplete"}${took(r)}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)${defects(r)}  ${path}`,
+      `${r.runId}  ${r.startedAt}  ${r.completed ? `exit ${r.exitStatus}` : "incomplete"}${took(r)}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)${defects(r)}${upgraded(r)}  ${path}`,
     );
   }
 }
