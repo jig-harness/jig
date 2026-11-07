@@ -580,6 +580,14 @@ function ledgerOf(
   };
 }
 
+/** Why the plan found a record stuck, from its notice; `null` when it did not. */
+function plannedStuck(view: RepoView | undefined, id: string): string | null {
+  const action = view?.report.actions.find(
+    (a) => a.evidence.record === id && text(a.evidence, "stuck") !== null,
+  );
+  return action === undefined ? null : text(action.evidence, "stuck");
+}
+
 function sessionOf(
   read: ReadRecord,
   view: RepoView | undefined,
@@ -609,7 +617,8 @@ function sessionOf(
     createdAt: record.createdAt,
     launch: state.kind,
     launchReason: state.kind === "unknown" ? state.reason : null,
-    stuck: stuckWhy(read),
+    // A launch unclaimed past unclaimed_after is stuck on the tick's clock and sessions: the plan's notice says why.
+    stuck: stuckWhy(read) ?? plannedStuck(view, record.id),
     agent: agentOf(read, view),
     ...ledgerOf(evidence),
     samples: record.samples ?? [],
