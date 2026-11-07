@@ -318,8 +318,9 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 
 which clears only a record the tick cannot settle: an unknown one, a
 pending one whose launch cannot be retried (a stuck one: both of its
-launches went unanswered, or a follow-up's replay could not be proven
-safe, which the tick notifies as needing a person), or one that does not read
+launches went unanswered, a follow-up's replay could not be proven
+safe, or a launch answered as started went unclaimed past the machine
+file's `unclaimed_after`, which the tick notifies as needing a person), or one that does not read
 and whose claim is not alive. It refuses a running record, readable or
 not (stop its session first), and, among the records that read, an ended
 or died one and a pending one whose launch can still be retried: those
@@ -361,7 +362,14 @@ workspace (a new branch named by `pull_requests.branch_name`, its issue
 linked), and the session starts on `/jig:do-item <key>` with the model and
 effort of the item's route. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
-refuses another record's token and a second answer. The session holds its
+refuses another record's token and a second answer. A completed pickup adds
+`--pr <number>` for the pull request it opened, or `--none "<reason>"` when
+no pull request was needed. A `done` without either is refused. Every ended
+launch's outcome keeps its next owner: a station address, a person and their
+act, or nobody with a reason. `jig ask` shows this as `last.next`; older
+outcomes that did not keep it say it was not recorded. A converged drive
+hands to a repository maintainer to merge, and a completed follow-up hands
+to nobody. The session holds its
 slot while the runtime reports its agent working or waiting, and gives it
 back when the agent finishes. `do-item` claims the item itself
 (`tracker.ts claim`: refused when the item is already in progress or
@@ -391,7 +399,7 @@ reports a Claude Code session started that way is not shown. It switches on
 once both are settled.
 
 ```sh
-bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 ```
 
 **Follow-ups** (the `followup` stage) start one headless pass per pull

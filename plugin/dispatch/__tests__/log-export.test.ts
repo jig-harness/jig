@@ -5,7 +5,7 @@
  * files hold the same rows. A copy that cannot be written fails, and the
  * next one copies the same rows.
  */
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import {
   mkdirSync,
   mkdtempSync,
@@ -121,6 +121,23 @@ describe("the outcome log's text", () => {
     rmSync(join(root, "log-2026-01.jsonl"), { recursive: true });
     expect(exportLog(root)).toBe(1);
     expect(monthLines(root).map((l) => JSON.parse(l).key)).toEqual(["a"]);
+  });
+
+  it("reads archived revisions in batches instead of querying every line", () => {
+    const root = mkdtempSync(join(tmpdir(), "jig-log-"));
+    roots.push(root);
+    for (let i = 0; i < 5010; i++)
+      writeRow(row(`old${i}`, "2026-01-02T03:04:05.000Z"), root);
+    exportLog(root);
+    writeRow(row("new", "2026-01-02T03:04:05.000Z"), root);
+    const queries = spyOn(stateDb(root), "query");
+    try {
+      expect(exportLog(root)).toBe(1);
+      expect(queries.mock.calls.length).toBeLessThan(20);
+      expect(monthLines(root)).toHaveLength(5011);
+    } finally {
+      queries.mockRestore();
+    }
   });
 
   it("copies every row written before it began, across batches", () => {
