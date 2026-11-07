@@ -351,12 +351,19 @@ describe("buildLine", () => {
     expect(line.needs.map((n) => n.workspace)).toEqual(["/srv/followup", null]);
   });
 
-  it.each(["⚙ dispatched · notices", "jig dispatch notices"])(
-    "excludes a renamed notices workspace with comment %s even if joined",
-    (comment) => {
+  it.each([
+    ["⚙ dispatched · notices", null],
+    ["jig dispatch notices", null],
+    ["jig dispatch notices", "desk"],
+  ])(
+    "excludes a renamed notices workspace with comment %s and destination %s even if joined",
+    (comment, noticesBranch) => {
+      const section = noticesBranch
+        ? ({ noticesBranch } as DispatchSection)
+        : null;
       const line = buildLine(
         input({
-          reports: [report({ actions: [PARK] })],
+          reports: [report({ actions: [PARK], section })],
           inputs: reads({
             sessions: {
               ok: true,
@@ -382,40 +389,6 @@ describe("buildLine", () => {
       expect(line.needs[0]?.workspace).toBeNull();
     },
   );
-
-  it("excludes the default notices branch even when the destination branch is custom", () => {
-    const line = buildLine(
-      input({
-        reports: [
-          report({
-            actions: [PARK],
-            section: { noticesBranch: "desk" } as DispatchSection,
-          }),
-        ],
-        inputs: reads({
-          sessions: {
-            ok: true,
-            source: "fake",
-            workspaces: [
-              {
-                id: "notices",
-                path: "/srv/notices",
-                branch: "jig-dispatch-notices",
-                items: [],
-                prs: [456],
-                agents: [],
-                unverifiableTerminals: 0,
-                comment: "jig dispatch notices",
-                name: "renamed notices",
-                unread: false,
-              },
-            ],
-          },
-        }),
-      }),
-    );
-    expect(line.needs[0]?.workspace).toBeNull();
-  });
 
   it.each(["working", "done"])(
     "keeps distinct joined workspaces ambiguous when one agent is %s",
