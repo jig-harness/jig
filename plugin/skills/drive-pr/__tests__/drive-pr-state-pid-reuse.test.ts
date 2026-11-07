@@ -5,13 +5,7 @@
 
 import { describe, expect, it } from "bun:test";
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync } from "node:fs";
 
 import { hostname } from "node:os";
 
@@ -21,15 +15,24 @@ import { ExitError } from "../scripts/lib/cli";
 
 import { pidCheckCommand } from "../scripts/lib/proc";
 
-import { claimPathFor } from "../scripts/lib/state/claims";
+import { driveDb, nextCount } from "../scripts/lib/state/db";
 
 import {
   assertLeaseUnchanged,
-  clearAllLeases,
-  leasePathFor,
+  type Lease,
+  type LeaseRef,
+  leaseRef,
 } from "../scripts/lib/state/lease";
 
 import { createLock } from "../scripts/lib/state/lock";
+
+import {
+  claimRow,
+  putLease,
+  putLock,
+  readLease,
+  removeLease,
+} from "./state-rows.ts";
 
 import {
   ACTOR,
@@ -70,15 +73,24 @@ describe("drive-state.ts durability", () => {
       // tests do: seed a lease under THIS TEST'S OWN pid (always alive, so
       // `pidAlive` cannot tell the fixture apart from a real collision) while
       // giving the CLAIMING call a DIFFERENT `$DRIVE_PR_SESSION_STARTED` than
-      // the one on disk — the token `drive.ts` mints once per launch.
+      // the one stored — the token `drive.ts` mints once per launch.
 
-      function deadPredecessorLease(generation: string): string {
-        return JSON.stringify({
-          holder: "session",
+      /**
+       * Write a predecessor's lease on PR 999 under this test's own pid, its
+       * generation drawn from the database's counter as a real admission's
+       * is, so a later admission cannot be handed the same number.
+       */
+      function seedPredecessorLease(
+        d: string,
+        over: Partial<Lease> = {},
+      ): {
+        ref: LeaseRef;
+        lease: Lease;
+      } {
+        const ref = leaseRef(d, "999", ACTOR);
+        const lease = putLease(ref, {
           pid: process.pid,
           host: hostname(),
-          platform: process.platform,
-          actor: ACTOR,
           worktree: "/tmp/dead-predecessor-tree",
           startedAt: new Date(Date.now() - 60_000).toISOString(),
           // Fresh — well inside the default staleness window — so a fix that
@@ -86,16 +98,16 @@ describe("drive-state.ts durability", () => {
           // recognizing the recycled pid, would still show this test red.
           lastSeen: new Date(Date.now() - 60_000).toISOString(),
           command: "hold",
-          generation,
+          generation: nextCount(driveDb(d), "lease-generation"),
           sessionStarted: OLDER_SESSION_TOKEN,
+          ...over,
         });
+        return { ref, lease };
       }
 
       it("a reused pid inside the staleness window MINTS a new generation rather than being refused or renewed", async () => {
         const d = stateDirFor("pid-reuse-mints");
-        const path = leasePathFor(d, "999", ACTOR);
-        const oldGeneration = "a".repeat(32);
-        writeFileSync(path, deadPredecessorLease(oldGeneration));
+        const { ref, lease: old } = seedPredecessorLease(d);
 
         const r = await state(d, ["bump-round", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(process.pid),
@@ -110,22 +122,21 @@ describe("drive-state.ts durability", () => {
           "took over a drive lease on PR #999 whose pid",
         );
 
-        const after = JSON.parse(readFileSync(path, "utf8"));
-        expect(after.generation).not.toBe(oldGeneration);
-        expect(after.sessionStarted).toBe(NEWER_SESSION_TOKEN);
+        const after = readLease(ref);
+        expect(after?.generation).toBeGreaterThan(old.generation);
+        expect(after?.sessionStarted).toBe(NEWER_SESSION_TOKEN);
       });
 
       it("a command admitted under the OLD generation is refused by assertLeaseUnchanged once the reused-pid takeover lands", async () => {
         const d = stateDirFor("pid-reuse-fences-old-admission");
-        const path = leasePathFor(d, "999", ACTOR);
-        writeFileSync(path, deadPredecessorLease("b".repeat(32)));
-        // The lease shape a command admitted under the dead predecessor's
+        const { ref } = seedPredecessorLease(d);
+        // The lease a command admitted under the dead predecessor's
         // generation would have been handed — read back rather than
         // hand-built, so it is provably the same record `claimLease` would
         // have returned.
-        const admittedUnderOldGeneration = JSON.parse(
-          readFileSync(path, "utf8"),
-        );
+        const admittedUnderOldGeneration = readLease(ref);
+        if (admittedUnderOldGeneration === null)
+          throw new Error("the seeded lease is missing");
 
         const r = await state(d, ["bump-round", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(process.pid),
@@ -155,15 +166,13 @@ describe("drive-state.ts durability", () => {
         // generation" probe above), then have a pass carrying the ORIGINAL
         // dead predecessor's token try to mutate next.
         const d = stateDirFor("pid-reuse-stale-pass-cannot-take-back");
-        const path = leasePathFor(d, "999", ACTOR);
-        writeFileSync(path, deadPredecessorLease("c".repeat(32)));
+        const { ref } = seedPredecessorLease(d);
 
         await state(d, ["bump-round", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(process.pid),
           DRIVE_PR_SESSION_STARTED: NEWER_SESSION_TOKEN,
         });
-        const takenOverByNewDriver = JSON.parse(readFileSync(path, "utf8"));
-        expect(takenOverByNewDriver.sessionStarted).toBe(NEWER_SESSION_TOKEN);
+        expect(readLease(ref)?.sessionStarted).toBe(NEWER_SESSION_TOKEN);
 
         // The stale pass — same (pid, host) by construction, but the OLDER
         // token the dead predecessor minted — must be refused, not admitted
@@ -175,8 +184,7 @@ describe("drive-state.ts durability", () => {
         expect(r.exitCode).toBe(11);
 
         // And the lease is untouched — still the live, newer driver's.
-        const after = JSON.parse(readFileSync(path, "utf8"));
-        expect(after.sessionStarted).toBe(NEWER_SESSION_TOKEN);
+        expect(readLease(ref)?.sessionStarted).toBe(NEWER_SESSION_TOKEN);
       });
 
       it("a TOKENLESS caller gets NO fast-path takeover of a FRESH token-bearing lease — no timestamp on its own side means no proof", async () => {
@@ -201,8 +209,7 @@ describe("drive-state.ts durability", () => {
         const d = stateDirFor(
           "pid-reuse-tokenless-caller-no-fastpath-fresh-lease",
         );
-        const path = leasePathFor(d, "999", ACTOR);
-        writeFileSync(path, deadPredecessorLease("d".repeat(32)));
+        const { ref } = seedPredecessorLease(d);
 
         const r = await state(d, ["bump-round", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(process.pid),
@@ -211,8 +218,7 @@ describe("drive-state.ts durability", () => {
         expect(r.exitCode).toBe(11);
 
         // Untouched — the fresh token-bearing lease still stands.
-        const after = JSON.parse(readFileSync(path, "utf8"));
-        expect(after.sessionStarted).toBe(OLDER_SESSION_TOKEN);
+        expect(readLease(ref)?.sessionStarted).toBe(OLDER_SESSION_TOKEN);
       });
 
       it("...but the SAME tokenless caller IS admitted once that lease is genuinely STALE — the fallback this predicate defers to, not a dead end", async () => {
@@ -223,23 +229,10 @@ describe("drive-state.ts durability", () => {
         // downgrade to the older staleness wait for this combination,
         // not a permanent refusal.
         const d = stateDirFor("pid-reuse-tokenless-caller-admitted-once-stale");
-        const path = leasePathFor(d, "999", ACTOR);
-        writeFileSync(
-          path,
-          JSON.stringify({
-            holder: "session",
-            pid: process.pid,
-            host: hostname(),
-            platform: process.platform,
-            actor: ACTOR,
-            worktree: "/tmp/dead-predecessor-tree",
-            startedAt: STALE_LASTSEEN,
-            lastSeen: STALE_LASTSEEN,
-            command: "hold",
-            generation: "i".repeat(32),
-            sessionStarted: OLDER_SESSION_TOKEN,
-          }),
-        );
+        const { ref } = seedPredecessorLease(d, {
+          startedAt: STALE_LASTSEEN,
+          lastSeen: STALE_LASTSEEN,
+        });
 
         const r = await state(d, ["bump-round", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(process.pid),
@@ -253,8 +246,7 @@ describe("drive-state.ts durability", () => {
         });
         expect(r.exitCode).toBe(0);
 
-        const after = JSON.parse(readFileSync(path, "utf8"));
-        expect(after.sessionStarted).toBe("");
+        expect(readLease(ref)?.sessionStarted).toBe("");
       });
 
       it("a malformed (non-ISO, or ISO-looking but non-round-tripping) CALLER token fails isRecycledPid CLOSED, not open", async () => {
@@ -264,8 +256,7 @@ describe("drive-state.ts durability", () => {
         // takeover must not trust an unparseable ordering; it must refuse,
         // the same as it would for a genuinely live rival.
         const d = stateDirFor("pid-reuse-malformed-caller-token-fails-closed");
-        const path = leasePathFor(d, "999", ACTOR);
-        writeFileSync(path, deadPredecessorLease("e".repeat(32)));
+        const { ref } = seedPredecessorLease(d);
 
         const r = await state(d, ["bump-round", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(process.pid),
@@ -273,13 +264,12 @@ describe("drive-state.ts durability", () => {
         });
         expect(r.exitCode).toBe(11);
 
-        const after = JSON.parse(readFileSync(path, "utf8"));
-        expect(after.sessionStarted).toBe(OLDER_SESSION_TOKEN);
+        expect(readLease(ref)?.sessionStarted).toBe(OLDER_SESSION_TOKEN);
       });
 
       it("a malformed (non-ISO) ON-DISK LEASE token fails isRecycledPid CLOSED, not open", async () => {
         // The mirror of the probe above: the token that fails to parse can be
-        // on either side. A tampered or pre-validation lease file with a
+        // on either side. A tampered lease row with a
         // garbage `sessionStarted` must not be trusted as "provably older"
         // just because SOME ordering comparison happens to return true on it.
         // `'1999-01-01'` is deliberately chosen, not arbitrary garbage: it
@@ -292,23 +282,9 @@ describe("drive-state.ts durability", () => {
         // lexicographic comparison — unlike a value that sorts "after" any
         // real instant regardless of validation.
         const d = stateDirFor("pid-reuse-malformed-lease-token-fails-closed");
-        const path = leasePathFor(d, "999", ACTOR);
-        writeFileSync(
-          path,
-          JSON.stringify({
-            holder: "session",
-            pid: process.pid,
-            host: hostname(),
-            platform: process.platform,
-            actor: ACTOR,
-            worktree: "/tmp/dead-predecessor-tree",
-            startedAt: new Date(Date.now() - 60_000).toISOString(),
-            lastSeen: new Date(Date.now() - 60_000).toISOString(),
-            command: "hold",
-            generation: "f".repeat(32),
-            sessionStarted: "1999-01-01",
-          }),
-        );
+        const { ref } = seedPredecessorLease(d, {
+          sessionStarted: "1999-01-01",
+        });
 
         const r = await state(d, ["bump-round", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(process.pid),
@@ -316,8 +292,7 @@ describe("drive-state.ts durability", () => {
         });
         expect(r.exitCode).toBe(11);
 
-        const after = JSON.parse(readFileSync(path, "utf8"));
-        expect(after.sessionStarted).toBe("1999-01-01");
+        expect(readLease(ref)?.sessionStarted).toBe("1999-01-01");
       });
 
       it("a TOKEN-BEARING caller gets NO fast-path takeover of a FRESH tokenless lease either — the mirror direction", async () => {
@@ -329,36 +304,13 @@ describe("drive-state.ts durability", () => {
         // this is the same invariant demonstrated from the other side, not a
         // logically distinct scenario.
         //
-        // Historically this went through an intermediate "D2 (tokenless)
-        // legitimately takes over from a token-bearing dead predecessor, THEN
-        // a stale token-bearing pass tries to reclaim D2's fresh lease"
-        // narrative — that story no longer applies as written, because the
-        // same criterion also closes the FORWARD direction (a tokenless
-        // caller's own fast-path takeover of a token-bearing lease, see the
-        // probe far above), so there is no longer an instant "D2 takes over"
-        // step to build on. The fresh, tokenless lease is constructed
-        // directly instead; the invariant under test — a token-bearing
-        // caller cannot fast-path a takeover of it — is unchanged.
+        // The fresh, tokenless lease is constructed directly: no tokenless
+        // caller can take a token-bearing lease over on the fast path (the
+        // probe far above), so there is no instant takeover to build it from.
         const d = stateDirFor(
           "pid-reuse-token-bearing-caller-no-fastpath-fresh-tokenless-lease",
         );
-        const path = leasePathFor(d, "999", ACTOR);
-        writeFileSync(
-          path,
-          JSON.stringify({
-            holder: "session",
-            pid: process.pid,
-            host: hostname(),
-            platform: process.platform,
-            actor: ACTOR,
-            worktree: "/tmp/dead-predecessor-tree",
-            startedAt: new Date(Date.now() - 60_000).toISOString(),
-            lastSeen: new Date(Date.now() - 60_000).toISOString(),
-            command: "hold",
-            generation: "g".repeat(32),
-            sessionStarted: "",
-          }),
-        );
+        const { ref } = seedPredecessorLease(d, { sessionStarted: "" });
 
         const r = await state(d, ["bump-round", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(process.pid),
@@ -367,8 +319,7 @@ describe("drive-state.ts durability", () => {
         expect(r.exitCode).toBe(11);
 
         // Untouched — the fresh tokenless lease still stands.
-        const after = JSON.parse(readFileSync(path, "utf8"));
-        expect(after.sessionStarted).toBe("");
+        expect(readLease(ref)?.sessionStarted).toBe("");
       });
 
       it("a genuine renewal by the SAME session (matching token) still preserves its generation", async () => {
@@ -381,39 +332,38 @@ describe("drive-state.ts durability", () => {
         // above already covers) through `isMine`'s TOKEN-MATCH branch. A
         // regression there — say, a mutation that always returns `false` once
         // both tokens are non-empty — would make `isMine` misreport this
-        // renewal as foreign. Under the FINAL `isRecycledPid` criterion this
+        // renewal as foreign. The `isRecycledPid` criterion
         // does NOT also flip `isRecycledPid` true: both sides carry the
         // IDENTICAL token here, so the parsed instants are equal, and the
         // comparison is strict `<` — equal fails it either way. `leaseAlive`
         // still reads true (genuinely alive, fresh `lastSeen`), so the
-        // regression is instead caught by `underLocks`'s own "already being
-        // driven" `fail(11)` refusal (`leaseAlive(held) && !isRecycledPid(...)`,
-        // a few lines above `mintsNewGeneration`) rather than by a generation
-        // mismatch. Either mechanism makes this probe correctly redden under
-        // that regression.
+        // regression is instead caught by `claimLease`'s own "already being
+        // driven" `fail(11)` refusal (`reportPrTakeover`'s
+        // `leaseAlive(held) && !isRecycledPid(...)`) rather than by a
+        // generation mismatch. Either mechanism makes this probe correctly
+        // redden under that regression.
         const d = stateDirFor("pid-reuse-genuine-renewal");
-        const path = leasePathFor(d, "999", ACTOR);
+        const ref = leaseRef(d, "999", ACTOR);
 
         await state(d, ["bump-round", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(process.pid),
           DRIVE_PR_SESSION_STARTED: NEWER_SESSION_TOKEN,
         });
-        const first = JSON.parse(readFileSync(path, "utf8"));
-        expect(first.sessionStarted).toBe(NEWER_SESSION_TOKEN);
+        const first = readLease(ref);
+        expect(first?.sessionStarted).toBe(NEWER_SESSION_TOKEN);
 
         const r = await state(d, ["bump-attempt", "999", "--head", "aaa"], {
           DRIVE_PR_SESSION: String(process.pid),
           DRIVE_PR_SESSION_STARTED: NEWER_SESSION_TOKEN,
         });
         expect(r.exitCode).toBe(0);
-        const renewed = JSON.parse(readFileSync(path, "utf8"));
-        expect(renewed.generation).toBe(first.generation);
+        expect(readLease(ref)?.generation).toBe(first?.generation);
       });
     });
 
     it("clear-lease takes the state mutex, so it cannot land mid-mutation", async () => {
       // The fence and the write it guards are not atomic against a revocation
-      // that needs only the LEASE mutex: clearing between the two let the
+      // that skips the state mutex: clearing between the two would let the
       // admitted command write anyway, and a successor could then claim the
       // absent lease and write under the same actor — the same corruption, in
       // a narrower window.
@@ -456,8 +406,8 @@ describe("drive-state.ts durability", () => {
     it("names a liveness check the HOLDER’s platform can run, not the reader’s", async () => {
       // The refusal promises a check the operator can execute, so the command
       // must match the machine the pid lives on. Inferring it from the local
-      // platform handed a Windows holder `ssh <host> ps -p <pid>`, which that
-      // host has no `ps` for. The lease records
+      // platform would hand a Windows holder `ssh <host> ps -p <pid>`, which
+      // that host has no `ps` for. The lease records
       // `platform`, and this reads it back.
       const other = `${hostname()}-elsewhere`;
       expect(pidCheckCommand(42, other, "win32")).toBe(
@@ -480,60 +430,33 @@ describe("drive-state.ts durability", () => {
     });
 
     it("acquire honours a caller-supplied cap below the configured timeout", async () => {
-      // The primitive behind `clearAllLeases`'s aggregate budget. `reset` holds
-      // the PR's state mutex across the whole sweep, and each lease lock's
-      // `acquire()` may wait up to the configured timeout — so a sweep that
-      // waits per-lock costs N × that, growing with the number of trees that
-      // have ever driven the PR. The sweep therefore
-      // hands each `acquire()` the time REMAINING in one shared deadline.
-      //
-      // Tested here rather than end-to-end through `reset`, deliberately: the
-      // sweep already aborts on the first lock it cannot take, so a reset over
-      // unacquirable locks costs one timeout whether or not a budget exists,
-      // and an end-to-end probe cannot tell the two apart. What the aggregate
-      // budget actually changes is the case where each acquire SUCCEEDS after a
-      // long wait, and the mechanism that bounds it is this cap.
+      // A caller waiting through several locks under one deadline (the
+      // remote-mutation fence, a claim's takeover) hands each `acquire()` the
+      // time remaining in it, so one wedged lock cannot cost the whole
+      // configured timeout. The cap must bound THIS call's wait below the
+      // configured one (`DRIVE_PR_LOCK_TIMEOUT`, 30s unless this process's
+      // environment says otherwise).
       const d = stateDirFor("acquire-cap");
-      const target = join(d, "capped.json");
-      // A fresh, non-stale lock nothing will release.
-      mkdirSync(`${target}.lock`, { recursive: true });
-      writeFileSync(join(`${target}.lock`, "owner.someone-else"), "");
+      // A fresh lock held by this live process under another acquisition's
+      // token: nothing will release it, and it is not stale.
+      putLock(d, "capped", { label: "someone-else" });
 
-      const prev = {
-        t: process.env.DRIVE_PR_LOCK_TIMEOUT,
-        s: process.env.DRIVE_PR_LOCK_STALE_MIN,
-      };
-      process.env.DRIVE_PR_LOCK_TIMEOUT = "30";
-      process.env.DRIVE_PR_LOCK_STALE_MIN = "60";
-      try {
-        const lock = createLock(target, "test", "999");
-        const started = Date.now();
-        await expect(lock.acquire(1)).rejects.toThrow();
-        const elapsed = Date.now() - started;
-        // Tight enough to actually guard the contract. A loose bound (the
-        // first version allowed 15s against a 30s timeout) would stay green if
-        // production turned a 1s cap into 10s — it would only have caught the
-        // cap being ignored ENTIRELY. 4s leaves room
-        // for spawn and poll granularity on a loaded machine without admitting
-        // any plausible wrong multiplier.
-        expect(elapsed).toBeLessThan(4_000);
-        lock.dispose();
-      } finally {
-        // Assigning undefined would store the string "undefined".
-        for (const [key, value] of [
-          ["DRIVE_PR_LOCK_TIMEOUT", prev.t],
-          ["DRIVE_PR_LOCK_STALE_MIN", prev.s],
-        ] as const) {
-          if (value === undefined) delete process.env[key];
-          else process.env[key] = value;
-        }
-      }
+      const lock = createLock(d, "capped", "test", "999");
+      const started = Date.now();
+      await expect(lock.acquire(1)).rejects.toThrow();
+      const elapsed = Date.now() - started;
+      // Tight enough to actually guard the contract: a loose bound would stay
+      // green if production turned a 1s cap into 10s, and would catch only the
+      // cap being ignored ENTIRELY. 4s leaves room for poll granularity on a
+      // loaded machine without admitting any plausible wrong multiplier.
+      expect(elapsed).toBeLessThan(4_000);
+      lock.dispose();
     });
 
     it("fences claim-held --kind finding, which takes the lock directly", async () => {
       // `claimFinding` is the ONE path that calls `store.lock.acquire()` rather
       // than going through `store.locked`, so the fence installed at admission
-      // never fired for it — and it is the path where that costs most: a
+      // would never fire for it — and it is the path where that costs most: a
       // revoked session would validate the held record, return a claim token,
       // and dispatch a NON-idempotent summary answer beside its successor's,
       // leaving a duplicate standing claim on the PR.
@@ -583,16 +506,23 @@ describe("drive-state.ts durability", () => {
         ],
         S,
       );
-      // Long enough to be past `claimLease` and blocked on the state lock.
-      await new Promise((r) => setTimeout(r, 800));
-      rmSync(leasePathFor(d, "999", ACTOR), { force: true });
+      // The claim row is created after admission and before the state lock is
+      // taken, so once it exists the claim is past `claimLease` and on its way
+      // to block behind the stalled command.
+      const claimDeadline = Date.now() + 8000;
+      while (claimRow(d, "999", "held", "FP") === null) {
+        if (Date.now() > claimDeadline)
+          throw new Error("claim-held never created its claim");
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      removeLease(leaseRef(d, "999", ACTOR));
 
       const r = await claiming;
       expect(r.exitCode).toBe(11);
       expect(r.stderr).toContain("taken over while this command waited");
-      // And the lock-free claim file it created moments earlier is cleaned up:
+      // And the lock-free claim it created moments earlier is cleaned up:
       // leaving it would wedge the key behind a claim no dispatch will follow.
-      expect(existsSync(claimPathFor(d, "999", "FP"))).toBe(false);
+      expect(claimRow(d, "999", "held", "FP")).toBeNull();
       await stalled;
     });
 
@@ -611,115 +541,8 @@ describe("drive-state.ts durability", () => {
       expect(r.stderr).toContain(`pid ${gone}`);
       expect(r.stderr).toContain("not running");
       // Refused BEFORE anything was written — no phantom lease, no state.
-      expect(existsSync(leasePathFor(d, "999", ACTOR))).toBe(false);
+      expect(readLease(leaseRef(d, "999", ACTOR))).toBeNull();
       expect((await state(d, ["get", "999"])).stdout).toContain('"rounds": 0');
-    });
-
-    it("reset does the fallible lease sweep BEFORE discarding durable state", async () => {
-      // `reset` used to delete the state file, handoff, orphan marker and claim
-      // files and only then sweep the leases — so a sweep that threw left
-      // everything already gone, a prefix of leases swept, and a non-zero exit
-      // indistinguishable from "changed nothing".
-      //
-      // Modelled with a lease whose lock can never be taken, which makes the
-      // sweep throw: the state file must survive, so the retry a caller
-      // reaches for is operating on the state they think it is.
-      const d = stateDirFor("reset-order");
-      await state(d, ["bump-round", "999", "--head", "aaa"], {
-        DRIVE_PR_SESSION: String(process.pid),
-      });
-      expect(existsSync(join(d, "drive-pr-999.json"))).toBe(true);
-
-      // A foreign lease file whose lock is held and not stale.
-      const foreign = leasePathFor(d, "999", "wt-00000000000000ff");
-      writeFileSync(
-        foreign,
-        JSON.stringify({
-          holder: "session",
-          pid: 999_999,
-          host: "nowhere",
-          platform: "linux",
-          actor: "wt-00000000000000ff",
-          worktree: "/tmp/probe-tree",
-          startedAt: "2020-01-01T00:00:00.000Z",
-          lastSeen: "2020-01-01T00:00:00.000Z",
-          command: "hold",
-          generation: "f".repeat(32),
-          sessionStarted: "",
-        }),
-      );
-      mkdirSync(`${foreign}.lock`, { recursive: true });
-      writeFileSync(join(`${foreign}.lock`, "owner.someone-else"), "");
-
-      const r = await state(d, ["reset", "999"], {
-        DRIVE_PR_SESSION: String(process.pid),
-        DRIVE_PR_LOCK_TIMEOUT: "1",
-        DRIVE_PR_LOCK_STALE_MIN: "60",
-      });
-      expect(r.exitCode).not.toBe(0);
-      // The whole point: durable state is untouched, so the exit really does
-      // mean "no change" and a retry is sound.
-      expect(existsSync(join(d, "drive-pr-999.json"))).toBe(true);
-    });
-
-    it("a sweep that cannot take every lock deletes NO lease, not a prefix", async () => {
-      // Ordering the sweep before `reset`'s state deletions made the state half
-      // of "a non-zero exit means no change" true and left the LEASE half
-      // false: the loop deleted each stale lease as it went, so a lock failure
-      // partway through had already removed the earlier ones.
-      //
-      // Two sweepable leases either side of one whose lock cannot be taken —
-      // the middle file's lock proves acquisition reaches it, and the last
-      // proves the failure is not simply "we never got that far".
-      const d = stateDirFor("sweep-all-or-nothing");
-      const files: string[] = [];
-      for (let i = 0; i < 3; i++) {
-        const actor = `wt-${String(i).padStart(16, "0")}`;
-        const f = leasePathFor(d, "999", actor);
-        writeFileSync(
-          f,
-          JSON.stringify({
-            holder: "session",
-            pid: 999_999,
-            host: "nowhere",
-            platform: "linux",
-            actor,
-            worktree: "/tmp/probe-tree",
-            startedAt: "2020-01-01T00:00:00.000Z",
-            lastSeen: "2020-01-01T00:00:00.000Z",
-            command: "hold",
-            generation: String(i).padStart(32, "0"),
-            sessionStarted: "",
-          }),
-        );
-        files.push(f);
-      }
-      // Wedge exactly one lock. `leaseFilesFor` sorts by readdir order, so
-      // wedging the MIDDLE one leaves sweepable files on both sides of it.
-      const wedged = `${files[1]}.lock`;
-      mkdirSync(wedged, { recursive: true });
-      writeFileSync(join(wedged, "owner.someone-else"), "");
-
-      const prev = {
-        t: process.env.DRIVE_PR_LOCK_TIMEOUT,
-        s: process.env.DRIVE_PR_LOCK_STALE_MIN,
-      };
-      process.env.DRIVE_PR_LOCK_TIMEOUT = "1";
-      process.env.DRIVE_PR_LOCK_STALE_MIN = "60";
-      try {
-        await expect(clearAllLeases(d, "999", null)).rejects.toThrow();
-        // Every lease still present — the sweep is all-or-nothing.
-        for (const f of files) expect(existsSync(f)).toBe(true);
-      } finally {
-        // Assigning undefined would store the string "undefined".
-        for (const [key, value] of [
-          ["DRIVE_PR_LOCK_TIMEOUT", prev.t],
-          ["DRIVE_PR_LOCK_STALE_MIN", prev.s],
-        ] as const) {
-          if (value === undefined) delete process.env[key];
-          else process.env[key] = value;
-        }
-      }
     });
   });
 });

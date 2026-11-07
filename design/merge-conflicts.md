@@ -17,7 +17,11 @@ the report (step 1 of the build order) are built: `history.ts` in the
 So is the live record (step 2): `events.ts` in the same skill, which keeps
 the map's decision and reason for each path instead of letting the next
 operation overwrite them. M11’s metric, the cross-PR scoreboard and M12’s audited practice are built
-too (step 3). Hotspots entering the learning loop remain open.
+too (step 3), and so is the learning loop (step 4): the
+[`reflect` skill](../plugin/skills/reflect/README.md)'s `hotspots` operation
+turns each hotspot of the report into a reflection finding whose class is
+its cause. What remains is how Jig keeps its own plan, which the measure
+decides ([§ The plan and the roadmap](#the-plan-and-the-roadmap)).
 
 ## What a replay of Jig's own history shows
 
@@ -227,7 +231,19 @@ temporary directory).
   [reflection store](../plugin/skills/reflect/README.md), with its cause as
   the finding's class, so the existing loop (`review-reflections` grouping
   findings and escalating a recurring class to one tracker issue) turns it
-  into a change. No second escalation path is built.
+  into a change. No second escalation path is built. `reflect.ts hotspots
+  <report.json>` reads the report's JSON, so the replay stays a read-only
+  report and everything about the store stays in the `reflect` skill, which
+  reads the cause list from `resolve-conflicts` by its sibling path. Each
+  hotspot is one finding in the worktree's journal: the path as its target,
+  its most frequent cause as its class, its count and causes in its title
+  and description, and the report's remedy as its fix. The finding is keyed
+  by its repository, path and cause: measured again while the journal holds
+  it, it is revised to the new count; once the store holds it, a new
+  measurement adds nothing, unless its fix was implemented before the
+  report's range began, which makes the cause's return a finding of its
+  own. `reflect`'s `plan` and `contribute` then escalate and store it like
+  any finding.
 
 ### The plan and the roadmap
 

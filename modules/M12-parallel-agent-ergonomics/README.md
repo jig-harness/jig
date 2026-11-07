@@ -205,7 +205,11 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
     cherry-picks and reverts resolved in this clone. Keep its coverage limits with the findings: silence from
     the live record is not proof of a conflict-free branch. Feed recurring
     causes into the existing [M8 learning loop](../M8-learning-loop/) rather
-    than creating a second issue queue.
+    than creating a second issue queue: the
+    [`reflect`](../../plugin/skills/reflect/README.md) skill's `hotspots`
+    operation enters each measured hotspot into the reflection store as a
+    finding whose class is its cause, so a cause that recurs across files
+    escalates to one tracker issue.
 
 The whole copyable model — all its rules in one place, ready to drop into a docs
 tree — is [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md).
@@ -225,8 +229,11 @@ check; a tool's refusing removal protects only the conditions it checks.
 [Jig's resource collector](../../plugin/gc/README.md) supplies the runner,
 receipts, confirmed repository bounds, scheduler installation and adapters
 for drive-pr state and scratch scopes. Scratch is report-only until fixture
-registration covers every holder. Worktree reports evaluate lifecycle evidence; collection waits for the
-operated reaper migration and session opener's shared lock. The machine policy
+registration covers every holder. Worktree reports evaluate lifecycle evidence. A worktree a
+[workspace runtime](../../GLOSSARY.md) manages is collected through that
+runtime, whose registry of the agents working in it stands in for the session
+opener's shared lock ([the runtime binding](mappings.md#machine-resource-collection-schedules)).
+Any other worktree's collection waits for the operated reaper migration and that lock. The machine policy
 can tighten a repository declaration and cannot widen it.
 
 ## Maturity levels

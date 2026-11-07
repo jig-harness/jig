@@ -61,7 +61,8 @@ bullet), so a long batch stays navigable without turning into a document.
 This section is the one canonical home of the writing rules. Every surface
 that asks a human for a call links here and does not restate them. Those
 surfaces are the `/jig:decide` escalations and elaborations, a
-`jig:review-arbiter` `escalate` ruling, and any planning skill's
+`jig:review-arbiter` `escalate` ruling, the decision record of a drive's park
+(drive-pr § 4), and any planning skill's
 section on what the human must decide or review. The reader is often a
 product, legal or business stakeholder. English may not be their first
 language, so a long sentence costs the most for the person who has to decide.
@@ -113,7 +114,10 @@ verbs for two actions. The linter never flags hedges.
 
 The linter is advisory. It exits `1` when it finds a hard flag. That exit code
 informs the author and is never a reason to stop. No continuous-integration
-workflow, hook or validation plan runs it on text that people write.
+workflow, hook or validation plan runs it on text that people write, except a
+ratchet that counts its findings over documents a repository names and
+refuses only a rise in a document's count (the linter's README, § Advisory
+only).
 Provenance and licence of the upstream linter it derives from:
 `<skill-dir>/scripts/ste-lint/README.md`.
 

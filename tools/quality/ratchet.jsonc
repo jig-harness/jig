@@ -9,6 +9,12 @@
 // The skill-authoring counter holds each of the plugin's skill files to its
 // own count per rule (M0's skill-authoring check); its script is a support
 // path, so the base is measured with the head's version of it.
+// The voice counter holds each visitor document's count of findings under
+// docs/VOICE.md's caps. Its rules are the documents and its entries the
+// findings, so each document's total is compared, and a document whose total
+// grew is listed with the new sentences quoted. Its script is a support path,
+// and so is the imported linter it delegates its rules to, so the base is
+// measured with the head's rules.
 {
   "counters": [
     {
@@ -46,6 +52,11 @@
       ]
     },
     {
+      "name": "voice",
+      "format": "json",
+      "command": ["bun", "scripts/check-voice.ts", "--json"]
+    },
+    {
       "name": "suppressions",
       "format": "grep",
       "files": "\\.(ts|tsx|js|mjs|cjs)$",
@@ -65,6 +76,8 @@
   "support": [
     "tools/quality/grit",
     "modules/M15-contracts-errors/reference/lint-rules",
-    "modules/M0-instruction-architecture/reference/skill-authoring/check-skill-authoring.ts"
+    "modules/M0-instruction-architecture/reference/skill-authoring/check-skill-authoring.ts",
+    "scripts/check-voice.ts",
+    "plugin/skills/decide/scripts/ste-lint"
   ]
 }

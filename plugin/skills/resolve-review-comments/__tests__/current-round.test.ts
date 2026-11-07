@@ -2,52 +2,53 @@
  * current-round.test.ts — the round-ordinal read behind the triage rubric's
  * round-4 cutoff.
  *
- * Unit half: the counter-file parse. Probe half: the entry script against a
- * throwaway git repo, with GIT_DIR/GIT_WORK_TREE scrubbed from the child env —
- * a leaked GIT_DIR from a hook or parent process would silently point the
- * probe (or worse, a future write) at the REAL repo's git dir.
+ * Unit half: what counts as an ordinal. Probe half: the entry script against
+ * a throwaway git repo and a throwaway drive database, with GIT_DIR/GIT_WORK_TREE
+ * scrubbed from the child env — a leaked GIT_DIR from a hook or parent process
+ * would silently point the probe at the REAL repo's git dir.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import type { SpawnSyncReturns } from "node:child_process";
 import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseRoundCount } from "../scripts/current-round.ts";
+import { isRoundOrdinal } from "../scripts/current-round.ts";
 import { copySkillScripts } from "./scripts-harness.ts";
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "current-round.ts");
-describe("parseRoundCount", () => {
-  it("parses a counted round", () => {
-    expect(parseRoundCount("4\n")).toBe(4);
-  });
-
-  it("reads an absent file as 0", () => {
-    expect(parseRoundCount(null)).toBe(0);
-  });
-
-  it("reads junk and empty as 0, never a crash", () => {
-    expect(parseRoundCount("")).toBe(0);
-    expect(parseRoundCount("   ")).toBe(0);
-    expect(parseRoundCount("4x\n")).toBe(0);
-    expect(parseRoundCount("-2")).toBe(0);
+const DRIVE_STATE = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "drive-pr",
+  "scripts",
+  "drive-state.ts",
+);
+describe("isRoundOrdinal", () => {
+  it("accepts a counted round", () => {
+    expect(isRoundOrdinal("4\n")).toBe(true);
+    expect(isRoundOrdinal(`${Number.MAX_SAFE_INTEGER}`)).toBe(true);
   });
 
   // A bare digit test passes all of these. The first is the dangerous one:
-  // parseInt returns Infinity, the script printed the literal `Infinity`, and
-  // a `round >= 4` consumer armed the decline-only cutoff off corrupt state —
-  // the exact inversion of the fail-open contract.
-  it("refuses a non-canonical or unrepresentable ordinal", () => {
-    expect(parseRoundCount("9".repeat(400))).toBe(0);
-    expect(parseRoundCount(`${Number.MAX_SAFE_INTEGER + 2}`)).toBe(0);
-    expect(parseRoundCount("0")).toBe(0);
-    expect(parseRoundCount("004")).toBe(0);
-    // …while the forms the producer actually writes still parse.
-    expect(parseRoundCount("1\n")).toBe(1);
-    expect(parseRoundCount(`${Number.MAX_SAFE_INTEGER}`)).toBe(
-      Number.MAX_SAFE_INTEGER,
-    );
+  // parseInt returns Infinity, the script would print the literal `Infinity`,
+  // and a `round >= 4` consumer would arm the decline-only cutoff off corrupt
+  // state — the exact inversion of the fail-open contract.
+  it("refuses junk, a non-canonical form and an unrepresentable ordinal", () => {
+    for (const bad of [
+      "",
+      "   ",
+      "4x",
+      "-2",
+      "0",
+      "004",
+      "9".repeat(400),
+      `${Number.MAX_SAFE_INTEGER + 2}`,
+    ])
+      expect({ bad, ok: isRoundOrdinal(bad) }).toEqual({ bad, ok: false });
   });
 });
 
@@ -117,41 +118,41 @@ describe("current-round.ts probes", () => {
     expect(r.stdout.trim()).toBe("0");
   });
 
-  it("prints the counted ordinal from the git-dir counter", () => {
-    writeFileSync(join(repo, ".git", "resolve-review-rounds-4242"), "5\n");
-    const r = runScript(["4242"]);
-    expect(r.status).toBe(0);
-    expect(r.stdout.trim()).toBe("5");
-  });
+  /** `drive-state.ts <args>` against the throwaway database, as a loop calls it. */
+  const driveState = (args: string[]) => {
+    const r = spawnSync(process.execPath, [DRIVE_STATE, ...args], {
+      cwd: repo,
+      env: childEnv(),
+      encoding: "utf8",
+    });
+    expectSpawnExit({ ...r, exitCode: r.status }, 0);
+    return r.stdout.trim();
+  };
 
-  // Fails OPEN on the value — arming a decline-only rule on state that could
-  // not be established is the direction that loses findings — but never
-  // SILENTLY: an absent counter is normal, a corrupt one is not, and stdout
-  // alone cannot tell them apart.
-  it("reads a corrupt counter as 0 rather than failing the triage, and says so", () => {
-    writeFileSync(join(repo, ".git", "resolve-review-rounds-4243"), "oops\n");
+  it("prints the review round a hand-driven loop counted, one per distinct head", () => {
+    driveState(["count-round", "4243", "--head", "a".repeat(40)]);
+    driveState(["count-round", "4243", "--head", "a".repeat(40)]);
+    driveState(["count-round", "4243", "--head", "b".repeat(40)]);
     const r = runScript(["4243"]);
     expect(r.status).toBe(0);
-    expect(r.stdout.trim()).toBe("0");
-    expect(r.stderr).toContain("holds no round ordinal");
+    expect(r.stdout.trim()).toBe("2");
   });
 
-  it("reads an unreadable counter as 0, and says so", () => {
-    // A directory where the file belongs: an errno that is deterministically
-    // not ENOENT on every platform, without depending on a chmod the test
-    // user (root in a container) may be able to ignore.
-    mkdirSync(join(repo, ".git", "resolve-review-rounds-4244"));
-    const r = runScript(["4244"]);
-    expect(r.status).toBe(0);
-    expect(r.stdout.trim()).toBe("0");
-    expect(r.stderr).toContain("is unreadable");
+  it("keeps the ordinal when the loop converges and settles its rounds", () => {
+    driveState(["count-round", "4244", "--head", "a".repeat(40)]);
+    expect(driveState(["settle-rounds", "4244"])).toBe("1");
+    expect(driveState(["open-rounds", "4244"])).toBe("0");
+    expect(runScript(["4244"]).stdout.trim()).toBe("1");
+    // The next head counts on from there.
+    driveState(["count-round", "4244", "--head", "b".repeat(40)]);
+    expect(runScript(["4244"]).stdout.trim()).toBe("2");
   });
 
-  it("stays silent on the normal absent-counter path", () => {
+  it("stays silent on the normal nothing-counted path", () => {
     const r = runScript(["4245"]);
     expect(r.status).toBe(0);
     expect(r.stdout.trim()).toBe("0");
-    expect(r.stderr).not.toContain("current-round: counter");
+    expect(r.stderr).not.toContain("current-round:");
   });
 
   /**
@@ -191,27 +192,7 @@ describe("current-round.ts probes", () => {
     };
   };
 
-  it("takes the higher ordinal across the local counter and sibling CLI boundary", () => {
-    const counter = join(repo, ".git", "resolve-review-rounds-4270");
-    for (const [local, sibling, expected] of [
-      [7, 1, 7],
-      [1, 3, 3],
-    ]) {
-      writeFileSync(counter, `${local}\n`);
-      const r = withStubbedDriveState(String(sibling));
-      try {
-        expect(r.status).toBe(0);
-        expect(r.stdout.trim()).toBe(String(expected));
-      } finally {
-        r.cleanup();
-        rmSync(counter, { force: true });
-      }
-    }
-  });
-
-  // The round-3 fix tightened the counter FILE's parse and left this sibling
-  // input on a bare digit test — the same defect, one path over.
-  it("refuses a non-canonical ordinal from drive-pr too, and says so", () => {
+  it("refuses a non-canonical ordinal from drive-state.ts, and says so", () => {
     for (const bad of ["9".repeat(400), "9007199254740992", "004", "-1"]) {
       const r = withStubbedDriveState(bad);
       try {
@@ -227,7 +208,7 @@ describe("current-round.ts probes", () => {
     const zero = withStubbedDriveState("0");
     try {
       expect(zero.stdout.trim()).toBe("0");
-      expect(zero.stderr).not.toContain("drive-pr round count");
+      expect(zero.stderr).not.toContain("review round count");
     } finally {
       zero.cleanup();
     }
@@ -256,7 +237,7 @@ describe("current-round.ts probes", () => {
       );
       expect(r.status).toBe(0);
       expect(r.stdout.trim()).toBe("0");
-      expect(r.stderr).not.toContain("drive-pr round count");
+      expect(r.stderr).not.toContain("review round count");
     } finally {
       rmSync(solo, { recursive: true, force: true });
     }

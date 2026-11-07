@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  clonePath,
   environmentLayer,
   fieldInMessage,
   formatField,
@@ -142,6 +143,109 @@ for (const field of [
     user(`${field}\n`);
     expect(() => loadLayeredConfig(repo)).toThrow("describes one repository");
   });
+
+test("a repository's file refuses the machine's own clones map", () => {
+  repository("clones:\n  example/app: /work/app\n");
+  expect(() => loadLayeredConfig(repo)).toThrow("describes one machine");
+});
+
+describe("the fields only the host sets", () => {
+  /** The environment of one read: this test's Jig home and `extra`, nothing else. */
+  const hostEnv = (extra: Record<string, string> = {}) => ({
+    JIG_HOME: home,
+    ...extra,
+  });
+
+  test.each([
+    ["drive.pass_args", "drive:\n  pass_args: [--permission-mode, default]\n"],
+    ["drive.pass_args", "drive:\n  pass_args: []\n"],
+    ["drive.pass_args", "drive:\n  pass_args: null\n"],
+    ["drive.codex_bypass", "drive:\n  codex_bypass: true\n"],
+    ["drive.codex_bypass", "drive:\n  codex_bypass: false\n"],
+  ])("a repository's file refuses %s: %j", (field, text) => {
+    repository(text);
+    expect(() => loadLayeredConfig(repo, hostEnv())).toThrow(field);
+    expect(() => loadLayeredConfig(repo, hostEnv())).toThrow(
+      join(repo, ".config", "jig.yaml"),
+    );
+    expect(() => loadLayeredConfig(repo, hostEnv())).toThrow(
+      join(home, "jig.yaml"),
+    );
+  });
+
+  test.each([
+    ["null", "drive: null\n"],
+    ["nothing", "drive:\n"],
+    ["a list", "drive: []\n"],
+    ["text", "drive: off\n"],
+    ["a timestamp", "drive: 2026-10-12\n"],
+  ])(
+    "a repository's file refuses a drive section that holds %s, which would replace the host's whole section",
+    (_, text) => {
+      user("drive:\n  pass_args: [--permission-mode, default]\n");
+      repository(text);
+      expect(() => loadLayeredConfig(repo, hostEnv())).toThrow(
+        "drive.pass_args",
+      );
+    },
+  );
+
+  test("the repository's text a caller supplies is refused as its file is", () => {
+    expect(() =>
+      loadLayeredConfig(repo, hostEnv(), "drive:\n  pass_args: []\n"),
+    ).toThrow("drive.pass_args");
+  });
+
+  test("a file JIG_OVERLAY names is the repository's layer, and refuses them too", () => {
+    const overlay = join(dir, "elsewhere.yaml");
+    writeFileSync(overlay, "drive:\n  codex_bypass: true\n");
+    expect(() =>
+      loadLayeredConfig(repo, hostEnv({ JIG_OVERLAY: overlay })),
+    ).toThrow("elsewhere.yaml");
+  });
+
+  test("a user file and a variable set them, and a repository's other drive fields merge beside them", () => {
+    user("drive:\n  pass_args: [--permission-mode, default]\n");
+    repository("drive:\n  pass_model: opus\n");
+    expect(loadLayeredConfig(repo, hostEnv()).values.drive).toEqual({
+      pass_args: ["--permission-mode", "default"],
+      pass_model: "opus",
+    });
+    expect(
+      loadLayeredConfig(
+        repo,
+        hostEnv({
+          JIG__DRIVE__PASS_ARGS: "[--verbose]",
+          JIG__DRIVE__CODEX_BYPASS: "true",
+        }),
+      ).values.drive,
+    ).toEqual({
+      pass_args: ["--verbose"],
+      codex_bypass: true,
+      pass_model: "opus",
+    });
+  });
+});
+
+test("clones maps a repository slug to a local clone, from the user file", () => {
+  user("clones:\n  Example/App: ~/work/app\n  example/api: /srv/api\n");
+  const { values } = loadLayeredConfig(repo);
+  const env = { HOME: "/home/someone" };
+  expect(clonePath(values, "example/app", env)).toBe(
+    join("/home/someone", "work/app"),
+  );
+  expect(clonePath(values, "example/api", env)).toBe("/srv/api");
+  expect(clonePath(values, "example/web", env)).toBeUndefined();
+  expect(clonePath({}, "example/app", env)).toBeUndefined();
+});
+
+test.each([
+  ["a relative path", { "example/app": "work/app" }, "absolute path"],
+  ["a key that is not owner/name", { app: "/work/app" }, "not owner/name"],
+  ["a list", ["/work/app"], "must map"],
+])("clones refuses %s", (_, clones, message) => {
+  expect(() => clonePath({ clones }, "example/app")).toThrow(message);
+});
 
 test("the environment may override a repository's own field for one run", () => {
   repository("repository:\n  base_branch: main\n");
@@ -345,10 +449,10 @@ test("a value that contains itself is refused; a shared one is not", () => {
 });
 
 test("a timestamp is a value, not a mapping, at the root and in a section", () => {
-  user("drive:\n  reviews_drafts: true\n");
-  repository("drive: 2026-10-12\n");
+  user("review:\n  sticky_marker: x\n");
+  repository("review: 2026-10-12\n");
   const merged = loadLayeredConfig(repo).values;
-  expect(merged.drive).toBeInstanceOf(Date);
+  expect(merged.review).toBeInstanceOf(Date);
   repository("2026-10-12\n");
   expect(() => loadLayeredConfig(repo)).toThrow(
     "Jig configuration must be a mapping",

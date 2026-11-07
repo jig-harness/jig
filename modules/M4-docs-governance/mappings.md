@@ -21,9 +21,11 @@ The pattern throughout: hooks are the fast, bypassable convenience; CI
 re-runs the same checks and is the authority (see M1).
 
 The recipes name the scripts as `<m4>/…`, where `<m4>` is
-`modules/M4-docs-governance/reference` inside a pinned Jig checkout, or inside
-a vendored copy that keeps Jig's layout (the `modules/` and `lib/` folders side
-by side; see below for why the frontmatter checker needs `lib/`).
+`plugin/skills/docs/scripts` inside a pinned Jig checkout: the gates are the
+[`docs` skill](../../plugin/skills/docs/README.md)'s, which also runs them all
+in one pass. A vendored copy keeps the plugin's layout (the skill's folder
+under `skills/`, beside `shared/`; see below for why the frontmatter checker
+needs `shared/`).
 
 ### GitHub Actions
 
@@ -39,7 +41,7 @@ jobs:
     env:
       BASE: origin/${{ github.base_ref }}  # the target branch, passed as data
       M4: <m4>
-      VENDORED: ""                     # a vendored copy: its <m4> and lib/ paths, space-separated
+      VENDORED: ""                     # a vendored copy: its <m4> and shared/ paths, space-separated
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
         with: { fetch-depth: 0 }        # the merge base, new-doc detection and the scar lint need history
@@ -68,7 +70,7 @@ jobs:
         run: bun "$M4/index/generate-index.ts" --check
       - name: Scar-lint self-test (blocking)
         if: steps.scope.outputs.docs
-        run: bun test "$M4/scar-lint/check-descarring-scars.test.ts"
+        run: bun test "$M4/../__tests__/check-descarring-scars.test.ts"
       - name: Scar-lint scan (advisory)
         if: steps.scope.outputs.docs
         run: |
@@ -83,7 +85,7 @@ The schema is listed with the documents because a change to it changes what
 every document must satisfy: a new path rule or a narrowed enum is checked
 against the whole tree, not only the documents the pull request touches. A
 vendored checker counts the same way, so when you vendor it, set `VENDORED` to
-its `<m4>` and `lib/` paths: that one value feeds both the step that selects
+its `<m4>` and `shared/` paths: that one value feeds both the step that selects
 the work and the comparison that decides on the whole tree. On GitLab, add
 those paths to the job's `changes:` list as well as to `VENDORED`. Renamed
 documents (`R`) are checked at their new path, since a move into another
@@ -126,7 +128,7 @@ docs-governance:
       fi
     - DIFF_RANGE="$CI_MERGE_REQUEST_DIFF_BASE_SHA...HEAD" bun "$M4/stale-last-updated/stale-last-updated.ts" --ci
     - bun "$M4/index/generate-index.ts" --check
-    - bun test "$M4/scar-lint/check-descarring-scars.test.ts"
+    - bun test "$M4/../__tests__/check-descarring-scars.test.ts"
   # advisory scar scan as a separate allow_failure job:
 docs-scars:
   allow_failure: true
@@ -158,13 +160,15 @@ unset base variable turns `$BASE...HEAD` into `...HEAD`) is an error in every
 mode, so run the job only where its base exists: on `pull_request` events, or
 GitLab's merge-request pipelines as above.
 
-The M4 scripts need only `<m4>` (`docs.ts` and `stamp/` are shared inside it),
-except the frontmatter checker: it parses the schema with js-yaml from Jig's
-`lib/vendor/`, at `../../../../lib/vendor/js-yaml.mjs` from
+The M4 scripts need only `<m4>` (`lib/docs.ts` and `stamp/` are shared inside
+it), except the frontmatter checker: it parses the schema with the js-yaml
+build the plugin vendors, at `../../../../shared/vendor/js-yaml.mjs` from
 `<m4>/frontmatter-check/`. That is why `<m4>` sits in a checkout or a copy
-with Jig's layout, `modules/M4-docs-governance/reference/` beside `lib/`, and
-not on its own at the repository root. Without `lib/` the checker exits 2
-rather than reading the schema another way.
+with the plugin's layout, `skills/docs/scripts/` with `shared/` two levels
+above the skill, and not on its own at the repository root. Without `shared/`
+the checker exits 2 rather than reading the schema another way. The scar
+lint's self-test sits beside `<m4>` in the skill's `__tests__/`, which a Jig
+checkout holds and a plugin install leaves out.
 
 ## Hook managers (index auto-stage + fast frontmatter feedback)
 
@@ -228,7 +232,7 @@ it could not classify. Per tracker:
 
 | Tracker | Provider |
 |---------|----------|
-| Jig's tracker interface (Linear or GitHub Issues: the adapter `issue_tracker.adapter` names) | `bun <jig>/plugin/skills/do-item/scripts/tracker.ts issue-states` with `issue_tracker` in `.config/jig.yaml` and the adapter's credential in the environment (`LINEAR_API_KEY` for Linear; a signed-in `gh` for GitHub Issues). It reads the state category of each item through the tracker interface: `completed`, `canceled` and `duplicate` are `closed`, a missing item is `not_found`, and an issue the tracker reports without a category fails the run. Keys are `ENG-123` or `#123` |
+| Jig's tracker interface (Linear, GitHub Issues or Jira: the adapter `issue_tracker.adapter` names) | `bun <jig>/plugin/skills/do-item/scripts/tracker.ts issue-states` with `issue_tracker` in `.config/jig.yaml` and the adapter's credential in the environment (`LINEAR_API_KEY` for Linear; a signed-in `gh` for GitHub Issues; `JIRA_EMAIL` and `JIRA_API_TOKEN` for Jira). It reads the state category of each item through the tracker interface: `completed`, `canceled` and `duplicate` are `closed`, a missing item is `not_found`, and an issue the tracker reports without a category fails the run. Keys are `ENG-123` or `#123` |
 | Jira | `GET /rest/api/3/issue/<key>?fields=status`, mapping `status.statusCategory.key` of `done` to `closed` and of `new` or `indeterminate` to `open`, and failing on any other category (an `undefined` one included); a 404 to `not_found`; every other status code fails the provider |
 | A plan file in the repository | A script that reads the item's status from the file; no credential, so it can run in the pull-request check beside the static half |
 

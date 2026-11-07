@@ -49,6 +49,7 @@ criteria:
     observe:
       - "the pipeline doc requires a fresh-context adversarial review each stage"
       - "an accepted artifact carries a review record (reviewed: key or a ## Review section)"
+      - "with Jig's plugin: `/jig:red-team` runs the review of a PRD or an architecture document by persona, each in fresh context, and the accepted document's review record cites the report it wrote"
 
   - id: descarring-applied
     level: standard

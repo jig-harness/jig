@@ -115,6 +115,7 @@
  */
 
 import { runMain } from "../../../shared/cli.ts";
+import { attachedTreePr } from "../../../shared/proc.ts";
 import { codeScanningOf } from "./lib/code-scanning.ts";
 import { ghOrExit, repoViewOrExit } from "./lib/gh.ts";
 
@@ -188,6 +189,17 @@ function parseArgs(args: string[]): { pr: string; flags: Set<string> } | null {
   return { pr, flags };
 }
 
+/**
+ * The current branch's pull request, or, on a detached tree a drive attached,
+ * the one its record names: such a tree has no branch for `gh` to read.
+ */
+async function currentPr(): Promise<string> {
+  return (
+    (await attachedTreePr()) ||
+    (await gh(["pr", "view", "--json", "number", "-q", ".number"])).trim()
+  );
+}
+
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2));
   if (parsed === null) return 2;
@@ -195,8 +207,7 @@ async function main(): Promise<number> {
   let botsOnly = parsed.flags.has("--bots-only");
   const includeResolved = parsed.flags.has("--include-resolved");
   const readAlerts = !parsed.flags.has("--no-alerts");
-  if (pr === "")
-    pr = (await gh(["pr", "view", "--json", "number", "-q", ".number"])).trim();
+  if (pr === "") pr = await currentPr();
 
   // $RRC_TARGET_PR and $RRC_BOTS_ONLY are converge.ts's out-of-band statement of
   // which PR the run is about and whether the pass is scoped to bot threads.

@@ -1,11 +1,11 @@
 ---
 title: "ADR-0005: Herdr is the primary workspace runtime Jig's tooling targets"
 type: adr
-status: approved
+status: amended
 description: "Jig's practices name no workspace runtime; its runnable tooling is built and tested for Herdr first, and other runtimes are supported through the same interfaces"
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-10-21
+version: "1.1"
+last_updated: 2026-10-30
 owner: maintainers
 decision_date: 2026-10-16
 supersedes: ~
@@ -93,3 +93,17 @@ when `HERDR_ENV` is set (`plugin/skills/reflect/__tests__/events.test.ts`).
 The Herdr workspace tool and the launcher's Herdr provider carry their own
 tests (`tools/herdr/__tests__/`, `tools/launcher/herdr-provider.test.ts`),
 and the tool's README lists the Herdr commands and output it relies on.
+
+## Amendments
+
+### 2026-10-30 — the dispatcher targets Orca first (v1.1)
+
+Touches the Decision section. The [dispatcher](../../GLOSSARY.md), which
+starts the execution line's stages as agent sessions with nobody at the
+keyboard, is built and tested for Orca first, through a session runtime
+interface a Herdr implementation can join later
+([ADR-0011](ADR-0011-the-dispatcher-targets-orca-first.md) gives the
+reasons). Every other part of Jig that touches a workspace runtime (the
+launcher, M12's lifecycle mappings, the tools that open, attach to, steer,
+resume and remove a worktree with its agent) keeps Herdr as its first
+target.

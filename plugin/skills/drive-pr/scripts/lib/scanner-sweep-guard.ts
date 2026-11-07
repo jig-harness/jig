@@ -1,0 +1,376 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  alertNumberOf,
+  isCodeScanningLogin,
+  readAlert,
+} from "../../../resolve-review-comments/scripts/lib/code-scanning.ts";
+import { swallow } from "../../../../shared/errors.ts";
+import { TRUSTED_ASSOCIATIONS } from "../summary-findings.ts";
+import { isTransparentFollowUp } from "./bot-confirmation.ts";
+import { hasLeaveOpenMarker, qualifyingOutcome } from "./outcome.ts";
+import { ghCall, run, tsArgv } from "./proc.ts";
+
+const resolveThread = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+  "resolve-review-comments",
+  "scripts",
+  "resolve-thread.ts",
+);
+
+/** The alert states that let a code-scanning thread close, per outcome. */
+const SETTLED_STATES: Record<"declined" | "moot", ReadonlySet<string>> = {
+  declined: new Set(["dismissed"]),
+  moot: new Set(["fixed", "closed", "dismissed"]),
+};
+
+/**
+ * A code-scanning finding answered with a merit outcome can close only over
+ * a settled alert: a declined one (`rejected`/`wont-fix`/`deferred`) once
+ * dismissal is verified, a plain `moot` once the alert is fixed, closed or
+ * dismissed (resolve-review-comments SKILL.md's code-scanning outcome table).
+ * `alert` is `undefined` for a thread with no alert; one GitHub's code
+ * scanning account opened (`openedByCodeScanning`) always has one, so there
+ * `undefined` means the alert could not be identified and the thread stays
+ * open.
+ */
+export function mayResolveDeclinedAlert(
+  alert: unknown,
+  outcome: "declined" | "moot" = "declined",
+  openedByCodeScanning = false,
+): boolean {
+  if (alert === undefined) return !openedByCodeScanning;
+  if (typeof alert !== "object" || alert === null || Array.isArray(alert))
+    return false;
+  const record = alert as Record<string, unknown>;
+  return (
+    typeof record.state === "string" &&
+    SETTLED_STATES[outcome].has(record.state) &&
+    record.unreadable === undefined
+  );
+}
+
+/**
+ * Whether GitHub's code scanning account opened the thread. Such a thread's
+ * `moot` is never held: the alert's state, not a push, is what proves it
+ * (`mayResolveDeclinedAlert`).
+ */
+function openedByCodeScanning(
+  opening: { author: string | null } | undefined,
+): boolean {
+  return isCodeScanningLogin(opening?.author);
+}
+
+/**
+ * Whether `triage-thread.ts` holds a `moot` on the thread opened by `opening`
+ * for a push. A reconciled `moot` (`existingOutcome`) is held unless its
+ * reply carries LEAVE_OPEN_MARKER, a fresh one as `--moot-pending-push`
+ * says. A code-scanning thread's `moot` is never held, fresh or reconciled:
+ * it is judged on its alert (`resolveDeclinedThread`), since a held moot's
+ * later release would resolve without reading the alert.
+ */
+export function mootHeld(
+  opening: { author: string | null } | undefined,
+  mootPendingPush: boolean,
+  existingOutcome: string | null,
+  existingBody: string | null,
+): boolean {
+  if (openedByCodeScanning(opening)) {
+    if (mootPendingPush) {
+      console.error(
+        "triage-thread.ts: --moot-pending-push does not apply to a code-scanning thread; its moot stands only once the alert is fixed, closed or dismissed.",
+      );
+    }
+    return false;
+  }
+  return existingOutcome === "moot"
+    ? !hasLeaveOpenMarker(existingBody ?? "")
+    : mootPendingPush;
+}
+
+/** The outcomes that resolve a thread without a push. */
+const DECLINED_OUTCOMES = new Set(["rejected", "wont-fix", "deferred"]);
+
+/**
+ * Whether the last qualifying reply `outcome` (body `body`) on the thread
+ * opened by `opening` is a merit disposition, one that supersedes an earlier
+ * `accepted`/`moot` hold: a declined outcome, or a `moot` that `mootHeld`
+ * never holds (LEAVE_OPEN_MARKER, or a code-scanning thread). Both of
+ * `triage-thread.ts`'s stale-hold cleanups, `--cleanup-only` and the
+ * already-resolved retry, decide by it.
+ */
+export function confirmedMeritSupersession(
+  opening: { author: string | null } | undefined,
+  outcome: string | null,
+  body: string | null,
+): boolean {
+  if (outcome !== null && DECLINED_OUTCOMES.has(outcome)) return true;
+  return outcome === "moot" && !mootHeld(opening, false, outcome, body);
+}
+
+/**
+ * Whether an unresolved, unheld thread opened by `opening` and answered
+ * `outcome` is fully triaged in `finish-round.ts`'s untriaged-thread check: a
+ * code-scanning thread answered with a merit outcome or `moot` waits on its
+ * alert, not on a hold, and the replied-thread sweep closes it once
+ * `sweepVerdict` finds the alert settled. A `moot` resting on this round's
+ * own fix settles only after the push, so refusing the push would deadlock it.
+ */
+export function awaitsAlert(
+  opening: { author: string | null } | undefined,
+  outcome: string | null,
+): boolean {
+  return (
+    openedByCodeScanning(opening) &&
+    outcome !== null &&
+    (DECLINED_OUTCOMES.has(outcome) || outcome === "moot")
+  );
+}
+
+/** A review comment as `list-unresolved-threads.ts` reports it. */
+interface ThreadComment {
+  author: string | null;
+  authorAssociation: string | null;
+  body: string | null;
+  url: string | null;
+}
+
+/**
+ * `awaitsAlert` for an unresolved, unheld thread, judged on its latest
+ * trusted qualifying reply when every comment after it is a trusted bot's
+ * transparent follow-up (`isTransparentFollowUp`): a bot confirming the
+ * owner's reply does not make the thread untriaged. The opening comment is
+ * the finding, never a reply, and a truncated thread fails closed.
+ */
+export function threadAwaitsAlert(t: {
+  commentsTruncated: boolean;
+  comments: ThreadComment[];
+}): boolean {
+  if (t.commentsTruncated) return false;
+  for (let i = t.comments.length - 1; i >= 1; i--) {
+    const c = t.comments[i];
+    if (c === undefined) return false;
+    const trusted =
+      c.authorAssociation !== null &&
+      TRUSTED_ASSOCIATIONS.has(c.authorAssociation);
+    const outcome = trusted ? qualifyingOutcome(c.body ?? "")?.outcome : null;
+    if (outcome) return awaitsAlert(t.comments[0], outcome);
+    const confirmation =
+      typeof c.url === "string" &&
+      isTransparentFollowUp(
+        { authorLogin: c.author, body: c.body },
+        qualifyingOutcome,
+      );
+    if (!confirmation) return false;
+  }
+  return false;
+}
+
+/**
+ * What the replied-thread sweep does with a reply of `outcome` that carries
+ * no LEAVE_OPEN_MARKER: `null` to hold it for a push (`accepted`, or a `moot`
+ * on a thread GitHub's code scanning account did not open); else resolve it
+ * now, unless `leftOpen` names the alert state that is not yet confirmed.
+ */
+export function sweepVerdict(
+  outcome: string,
+  opening: { author: string | null } | undefined,
+  alert: unknown,
+): { leftOpen?: string } | null {
+  const scanning = openedByCodeScanning(opening);
+  const kind = DECLINED_OUTCOMES.has(outcome)
+    ? "declined"
+    : outcome === "moot" && scanning
+      ? "moot"
+      : null;
+  if (kind === null) return null;
+  if (mayResolveDeclinedAlert(alert, kind, scanning)) return {};
+  return {
+    leftOpen: kind === "moot" ? "fixed, closed or dismissed" : "dismissed",
+  };
+}
+
+/** The repository and pull request of review thread `threadId`, or `null`. */
+async function threadRepository(
+  threadId: string,
+  timeoutSec: number,
+): Promise<{ owner: string; repo: string; pr: string } | null> {
+  const r = await ghCall(
+    [
+      "api",
+      "graphql",
+      "-f",
+      "query=query($id:ID!){ node(id:$id){ ... on PullRequestReviewThread { pullRequest { number repository { owner { login } name } } } } }",
+      "-f",
+      `id=${threadId}`,
+      "-q",
+      '.data.node.pullRequest | [.repository.owner.login, .repository.name, (.number | tostring)] | join(" ")',
+    ],
+    { timeoutSec },
+  );
+  const [owner = "", repo = "", pr = ""] = r.stdout.trim().split(" ");
+  if (r.code !== 0 || owner === "" || repo === "" || !/^[0-9]+$/.test(pr))
+    return null;
+  return { owner, repo, pr };
+}
+
+/**
+ * The alert behind thread `threadId`, in the shape `mayResolveDeclinedAlert`
+ * judges: `undefined` unless GitHub's code scanning account opened it, as
+ * `list-unresolved-threads.ts` reports it. A code-scanning thread whose
+ * repository cannot be read, or whose comment names no single alert of that
+ * repository, yields `null`, which keeps it open.
+ */
+export async function declinedAlertOf(
+  threadId: string,
+  opening: { author: string | null; body: string | null } | undefined,
+  timeoutSec: number,
+): Promise<unknown> {
+  if (opening === undefined || !isCodeScanningLogin(opening.author))
+    return undefined;
+  const where = await threadRepository(threadId, timeoutSec);
+  if (where === null) return null;
+  const number = alertNumberOf(
+    opening.body,
+    opening.author,
+    where.owner,
+    where.repo,
+  );
+  if (number === null) return null;
+  return readAlert(where.owner, where.repo, number, where.pr);
+}
+
+/**
+ * Whether `resolve-held-thread.ts` may resolve held thread `threadId`, held
+ * with `outcome`: `false` when the hold is a `moot`, GitHub's code scanning
+ * account opened the thread, and its alert is not fixed, closed or
+ * dismissed; `null` when the thread's opening comment or its author cannot
+ * be read. Such a
+ * hold predates `mootHeld`'s rule. Read before the drain's final comment and
+ * head checks, so nothing slower than those stands between them and the
+ * mutation.
+ */
+export async function heldThreadMayResolve(
+  threadId: string,
+  outcome: string,
+  timeoutSec: number,
+): Promise<boolean | null> {
+  if (outcome !== "moot") return true;
+  const r = await ghCall(
+    [
+      "api",
+      "graphql",
+      "-f",
+      "query=query($id:ID!){ node(id:$id){ ... on PullRequestReviewThread { comments(first:1){ nodes { author { login } body } } } } }",
+      "-f",
+      `id=${threadId}`,
+    ],
+    { timeoutSec },
+  );
+  if (r.code !== 0) return null;
+  let opening: { author?: { login?: unknown } | null; body?: unknown };
+  try {
+    opening = JSON.parse(r.stdout)?.data?.node?.comments?.nodes?.[0];
+  } catch (err) {
+    swallow(err, "heldThreadMayResolve: unparsable opening-comment read");
+    return null;
+  }
+  if (typeof opening !== "object" || opening === null) return null;
+  // `author: null` is a deleted account, never code scanning's; an absent
+  // author or one without a login leaves the scanner question unanswered.
+  const login = opening.author === null ? null : opening.author?.login;
+  if (login !== null && typeof login !== "string") return null;
+  const comment = {
+    author: login,
+    body: typeof opening.body === "string" ? opening.body : null,
+  };
+  if (!awaitsAlert(comment, outcome)) return true;
+  const alert = await declinedAlertOf(threadId, comment, timeoutSec);
+  return mayResolveDeclinedAlert(alert, "moot", true);
+}
+
+/**
+ * `resolve-held-thread.ts`'s mutation for held thread `threadId`: resolve
+ * it when `mayResolve` (`heldThreadMayResolve`) says so. When it is `false`
+ * the thread stays open (`code` 0, `stdout` `false`) and the replied-thread
+ * sweep closes it once the alert settles, as for a fresh code-scanning moot;
+ * when it is `null` nothing is mutated and `code` is 1.
+ */
+export async function resolveHeldUnlessAlertOpen(
+  threadId: string,
+  mayResolve: boolean | null,
+  timeoutSec: number,
+): Promise<{ code: number; stdout: string }> {
+  if (mayResolve === null) {
+    console.error(
+      `resolve-held-thread.ts: cannot read thread '${threadId}''s opening comment to judge its alert.`,
+    );
+    return { code: 1, stdout: "" };
+  }
+  if (!mayResolve) {
+    console.error(
+      `resolve-held-thread.ts: thread '${threadId}''s code scanning alert is not confirmed fixed, closed or dismissed — hold drained, thread left open for the replied-thread sweep.`,
+    );
+    return { code: 0, stdout: "false\n" };
+  }
+  return run(tsArgv(resolveThread, [threadId]), {
+    timeoutSec,
+    stderr: "inherit",
+  });
+}
+
+/**
+ * `finish-round.ts`'s report entry for held thread `key` that
+ * `resolve-held-thread.ts` drained with exit 0: `left-open`, with the
+ * script's stderr shown and kept as its `diagnostic`, when it printed
+ * `false` (`resolveHeldUnlessAlertOpen`); else `resolved`.
+ */
+export function drainedThreadResult(
+  key: string,
+  kind: string,
+  res: { stdout: string; stderr: string },
+): {
+  key: string;
+  kind: string;
+  action: "resolved" | "left-open";
+  code: 0;
+  diagnostic?: string;
+} {
+  if (res.stdout.trim() !== "false")
+    return { key, kind, action: "resolved", code: 0 };
+  if (res.stderr.trim() !== "") process.stderr.write(res.stderr);
+  return { key, kind, action: "left-open", code: 0, diagnostic: res.stderr };
+}
+
+/**
+ * Resolve thread `threadId` for merit outcome `outcome`, unless it is a
+ * code-scanning thread whose alert is not settled for it
+ * (`mayResolveDeclinedAlert`): then it stays open and `exit` is `4`. `code` is
+ * `resolve-thread.ts`'s own exit, `0` when skipped.
+ */
+export async function resolveDeclinedThread(
+  threadId: string,
+  opening: { author: string | null; body: string | null } | undefined,
+  timeoutSec: number,
+  outcome: string,
+): Promise<{ code: number; exit: 0 | 4 }> {
+  const kind = outcome === "moot" ? "moot" : "declined";
+  const alert = await declinedAlertOf(threadId, opening, timeoutSec);
+  if (!mayResolveDeclinedAlert(alert, kind)) {
+    console.error(
+      kind === "moot"
+        ? `triage-thread.ts: thread ${threadId}'s code scanning alert is not confirmed fixed, closed or dismissed — left open. A finding over an open alert is not moot.`
+        : `triage-thread.ts: thread ${threadId}'s code scanning alert is not confirmed dismissed — left open. Dismiss it with dismiss-alert.ts, then re-run.`,
+    );
+    return { code: 0, exit: 4 };
+  }
+  const resolved = await run(tsArgv(resolveThread, [threadId]), {
+    timeoutSec,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  return { code: resolved.code, exit: 0 };
+}

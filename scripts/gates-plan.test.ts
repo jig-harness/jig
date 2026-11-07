@@ -38,6 +38,7 @@ test("the gate set runs its cheap stages first and --fast runs only those", asyn
     "bun scripts/check-glossary-coverage.ts",
     "bun scripts/check-no-tracker-refs.ts",
     "bun scripts/check-tracker-boundary.ts",
+    "bun scripts/check-records-registry.ts",
     "bun scripts/check-licences.ts",
     "bun scripts/check-workflow-safety.ts",
     "bun scripts/check-workflow-conventions.ts",
@@ -51,5 +52,6 @@ test("the gate set runs its cheap stages first and --fast runs only those", asyn
     "bun scripts/check-roadmap.ts",
     "bun scripts/check-plugin.ts",
     "bun scripts/check-skill-shell-neutrality.ts",
+    "bun scripts/check-voice.ts",
   ]);
 });

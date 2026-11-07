@@ -10,7 +10,7 @@ function evidence(overrides: Partial<WorktreeEvidence> = {}): WorktreeEvidence {
     dirty: false,
     hiddenIndexChanges: false,
     operation: null,
-    ignoredContent: false,
+    ignoredContent: { rebuildable: [], other: [] },
     requests: [{ state: "MERGED", head: "a".repeat(40) }],
     localOnlyCommits: false,
     mergedHeadCovers: true,
@@ -91,6 +91,54 @@ test("unknown forge, process, ancestry and idle evidence fails closed", () => {
 });
 test("ignored local content needs independent preservation evidence", () => {
   expect(
-    classifyWorktree(evidence({ ignoredContent: true }), guard).state,
+    classifyWorktree(
+      evidence({ ignoredContent: { rebuildable: [], other: [".env"] } }),
+      guard,
+    ),
+  ).toMatchObject({
+    state: "finding",
+    reason: expect.stringContaining(".env"),
+  });
+});
+test("a dependency directory alongside another ignored path still vetoes, naming the other path", () => {
+  const proof = classifyWorktree(
+    evidence({
+      ignoredContent: {
+        rebuildable: ["node_modules/.bin/tsc"],
+        other: [".context/notes.md"],
+      },
+    }),
+    guard,
+  );
+  expect(proof.state).toBe("finding");
+  expect(proof.reason).toContain(".context/notes.md");
+  expect(proof.reason).not.toContain("node_modules");
+});
+test("a dependency directory is the only ignored content and does not veto", () => {
+  expect(
+    classifyWorktree(
+      evidence({
+        ignoredContent: {
+          rebuildable: ["node_modules/.bin/tsc", "website/node_modules/x"],
+          other: [],
+        },
+      }),
+      guard,
+    ).state,
+  ).toBe("dead");
+});
+test("a runtime's registry stands in for session admission, and only it", () => {
+  const coordinated = classifyWorktree(evidence({ coordinated: true }), guard);
+  expect(coordinated.state).toBe("dead");
+  expect(coordinated.reportOnly).toBeUndefined();
+  expect(coordinated.reason).toContain("registry shows no agent");
+  for (const overrides of [{ held: true }, { idleMs: 0 }, { dirty: true }])
+    expect(
+      classifyWorktree(evidence({ ...overrides, coordinated: true }), guard)
+        .state,
+    ).toBe("live");
+  expect(
+    classifyWorktree(evidence({ requests: [], coordinated: true }), guard)
+      .state,
   ).toBe("finding");
 });

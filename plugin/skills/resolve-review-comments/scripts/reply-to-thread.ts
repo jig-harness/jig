@@ -2,9 +2,12 @@
 import {
   hasLeaveOpenMarker,
   hasNoOutcomeMarker,
+  hasProvisionalMarker,
   LEAVE_OPEN_MARKER,
   LEAVE_OPEN_MARKER_PRODUCER_ENV,
   NO_OUTCOME_MARKER,
+  PROVISIONAL_MARKER,
+  PROVISIONAL_MARKER_PRODUCER_ENV,
 } from "../../../shared/reply-markers.ts";
 import { siblingSkill } from "../../../shared/consumer.ts";
 /**
@@ -169,7 +172,7 @@ export function skillsParentIsIntact(parent = SKILLS_ROOT): boolean {
  *
  * ABSENCE of a lease is not a refusal — that is the standalone path this skill
  * has to keep working, and the fence itself makes that call (it exits 0 when
- * there is no git dir for drive state to live in, no lease file, a lease that
+ * there is no git dir for drive state to live in, no lease, a lease that
  * is this session's own, or a foreign one whose owner is gone). Only a lease
  * held by another LIVE session refuses.
  *
@@ -522,6 +525,20 @@ function validateReplyMarkers(body: string): void {
       `reply-to-thread.ts: this body's own trailing line already matches LEAVE_OPEN_MARKER ('${LEAVE_OPEN_MARKER}') — refusing to post it.`,
       "Remove that trailing line, or use triage-thread.ts --leave-open instead — the only",
       "sanctioned producer of a reply carrying that marker.",
+    );
+  }
+
+  // A provisional reply is reversible by a person's comment and skipped by
+  // every sweep, so only drive-pr's `provisional-reply.ts`, which checks the
+  // autonomy level and records the decision, may post one.
+  if (
+    hasProvisionalMarker(body) &&
+    process.env[PROVISIONAL_MARKER_PRODUCER_ENV] !== "1"
+  ) {
+    fail(
+      2,
+      `reply-to-thread.ts: this body's own trailing line matches PROVISIONAL_MARKER ('${PROVISIONAL_MARKER}') — refusing to post it.`,
+      "Post a provisional decision with drive-pr's provisional-reply.ts, its only producer.",
     );
   }
 

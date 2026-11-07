@@ -40,6 +40,7 @@ point differs per tool.
 | plain `git worktree` | a wrapper script/alias around `git worktree add` | a wrapper around `git worktree remove` that changes into the worktree being removed, runs the remove hook there, and removes the worktree only when it succeeds | git itself has no add/remove hook event; the wrapper is the seam |
 | Herdr | Jig's Herdr plugin ([`tools/herdr/plugin`](../../tools/herdr/README.md#the-worktree-hooks)) answers `worktree.created` by running `.config/worktree-hooks/create` inside the worktree the event names (`data.worktree.path` in `HERDR_PLUGIN_EVENT_JSON`); `tools/herdr/workspace.ts open` waits for it before starting an agent, and runs it itself where the plugin is not installed | `tools/herdr/workspace.ts remove` resolves the worktree, runs `.config/worktree-hooks/remove` inside it and parks its reflection findings on the machine that holds it, and removes it through `herdr worktree remove` only when both succeed | Herdr runs a plugin's commands in the plugin's own directory, so a create hook that read its working directory would give every worktree the same identity and port slot; `worktree.removed` fires after the checkout is gone, so it can only notify, never park |
 | Orca | the [Orca workspace tool](../../tools/orca/README.md)'s `open` (the launcher's `orca` provider) runs `.config/worktree-hooks/create` inside the new worktree once its branch is named, before the agent starts, and marks the run in the worktree's git directory so it runs once; a worktree created in the Orca app runs Orca's own setup hook instead (Settings → Repository, or `scripts.setup` in the repository's `orca.yaml`), which can name the same file | `tools/orca/workspace.ts remove` runs `.config/worktree-hooks/remove` inside the worktree, parks its reflection findings when the clone is on this machine, and removes it through `orca worktree rm` only when both succeed; Orca's own delete runs an `orca.yaml` archive hook only when asked (`--run-hooks`) and has no other pre-remove point | Orca names a new branch after the worktree under its own prefix, so the tool renames it before the hook runs; Orca reads the branch from git and follows |
+| Worktrunk | a blocking `pre-start` hook in the repository's `.config/wt.toml` (`pre-start = ".config/worktree-hooks/create"`); Worktrunk runs it inside the new worktree, before any `post-start` hook runs | a blocking `pre-remove` hook (`pre-remove = ".config/worktree-hooks/remove"`) runs inside the worktree being removed, before it is deleted; its failure aborts the removal, so unsent reflection findings are parked or the worktree stays, provided the hook ran | Worktrunk asks before it first runs a repository's project hooks, and again when one changes; declining skips every project command for the operation and the removal continues, so the hook must be approved before the first removal and after each change to it, because a refusal is not a removal veto and deletes the git directory holding unsent findings; `post-remove` runs in the primary worktree after the checkout is gone, so it can only notify, never park |
 | another [workspace runtime](../../GLOSSARY.md) (such as Conductor) | the runtime's post-create / workspace-setup hook | the runtime's pre-remove / teardown hook | the runtime already brackets a session — the natural home for both |
 | `direnv` / per-directory env | `.envrc` calls `allocate-port.ts` on entry and exports `PORT` | none (no teardown event) | derived ports mean no cleanup is needed |
 | tmux / shell session per worktree | shell rc sources a per-worktree env file | a shell `EXIT` trap prints the reflection nudge | lightweight; good when there is no formal manager |
@@ -259,6 +260,11 @@ the reported cause: derive counts, move release versions after the merge,
 or keep entries in separate files; an overlapping change still needs a
 decision about the work itself. Record the hotspot's cause, remedy or keep
 decision, reason and revisit condition in the repository's learning loop.
+With Jig's reflection on, `bun <skill-dir>/../reflect/scripts/reflect.ts hotspots <scratch>/merge-conflicts.json`
+notes each hotspot as a reflection finding whose class is its cause; the
+reflection's escalation and review then record the remedy, or a keep
+decision: a dismissal whose reason says the cause is kept on purpose and
+names the condition for revisiting it.
 Compare like windows after the change rather than treating an empty or
 partial report as proof that the cause is gone.
 
@@ -267,16 +273,25 @@ partial report as proof that the cause is gone.
 The invariant is a daily report and a weekly collection, with explicit
 executable paths and environment. The installed plugin copy owns the command;
 a worktree checkout cannot host a job that may remove that checkout.
-`bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc install` previews the repository bounds and installs
-on confirmation (`--yes`). See [the command](../../plugin/gc/README.md) for
-its configuration, proof requirements and rollout limits.
+`jig install gc` previews the repository bounds and installs on
+confirmation (`--yes`); the first install, before the plugin's `jig` command
+is on `PATH`, runs from the installed copy as
+`bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts install`.
+See [the command](../../plugin/gc/README.md) for its configuration, proof
+requirements and rollout limits.
 
 | Platform scheduler | Installed file or entry | Cadence | See the last run | Remove |
 |--------------------|-------------------------|---------|------------------|--------|
-| macOS launchd | `~/Library/LaunchAgents/dev.jig.gc.plist` | `StartCalendarInterval.Hour`, from machine `gc.hour` | `launchctl print gui/<uid>/dev.jig.gc`; collection receipts | `gc install --uninstall --machine --yes` |
-| Linux systemd user timer | `~/.config/systemd/user/jig-gc.service` and `jig-gc.timer` | `OnCalendar`, from machine `gc.hour` | `systemctl --user status jig-gc.timer`; `journalctl --user -u jig-gc.service`; receipts | `gc install --uninstall --machine --yes` |
-| cron fallback | Current user's crontab, marked `# jig-gc` | Daily hour field from machine `gc.hour` | Collection receipts; scheduler's own mail or logs | `gc install --uninstall --machine --yes` |
+| macOS launchd | `~/Library/LaunchAgents/dev.jig.gc.plist` | `StartCalendarInterval.Hour`, from machine `gc.hour` | `jig status gc`; `launchctl print gui/<uid>/dev.jig.gc`; collection receipts | `jig uninstall gc --machine --yes` |
+| Linux systemd user timer | `~/.config/systemd/user/jig-gc.service` and `jig-gc.timer` | `OnCalendar`, from machine `gc.hour` | `jig status gc`; `systemctl --user status jig-gc.timer`; `journalctl --user -u jig-gc.service`; receipts | `jig uninstall gc --machine --yes` |
+| cron fallback | Current user's crontab, marked `# jig-gc` | Daily hour field from machine `gc.hour` | `jig status gc`; collection receipts; scheduler's own mail or logs | `jig uninstall gc --machine --yes` |
 
 The command chooses collection on machine `gc.collect_day` or under
 `gc.min_free_bytes` pressure; other daily runs report. Removing one repository
 keeps the job while another repository or machine-level kind remains.
+
+Worktree collection through a workspace runtime: Orca is the runtime
+supported so far. It applies on a machine whose `gc.orca.command` names Orca;
+the runtime's agent registry stands in for the opener's lock, an agent that has
+not finished or an unreadable registry keeps the worktree, and the removal goes
+through Orca. See [the Orca binding](../../plugin/gc/README.md#worktrees-orca-manages).

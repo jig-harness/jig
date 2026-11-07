@@ -7,6 +7,12 @@ import { passExitDisposition } from "./settings.ts";
 
 import { handleFailedReviewPass } from "./review-failure.ts";
 
+import { reportPassLeftovers } from "./restart.ts";
+
+import { clearPendingVerdicts } from "./../state/pass-handoff.ts";
+
+import { resolveStateDir } from "./../state/store.ts";
+
 export async function runReviewPassPhase(
   context: DriveRoundContext,
   apiHead: string,
@@ -35,6 +41,18 @@ export async function runReviewPassPhase(
     return dispatchReviewPassResult;
   const { passRes, passHandle } = dispatchReviewPassResult;
   const disposition = passExitDisposition(passRes.code);
+  // A pass that completed has acted on what it was carried. Until one does (a
+  // quota wall retried, say), every pass is told again. Whether it pushed what
+  // it inherited is not taken on its word: the next gate measures the tree
+  // again (`unpushed.ts`) and hands on any commit it left unpushed.
+  if (disposition.kind === "ok") {
+    context.passNotice = "";
+    context.carriedNotice = "";
+    clearPendingVerdicts(await resolveStateDir(), context.pr);
+    context.inheritedHead = "";
+    // Edits the tree held before this pass ran are not its to hand on.
+    context.uncommittedBeforePass = context.uncommittedMeasured;
+  }
   // A directive sent WHILE this pass ran must still be honored before a
   // non-success terminal result for it is reported, PR_NOT_OPEN included.
   // NOT extended to the
@@ -57,6 +75,7 @@ export async function runReviewPassPhase(
     console.error(
       `pass reported the PR is no longer open on round ${round}; stopping`,
     );
+    await reportPassLeftovers("What the pass left in the tree:");
     return disposition.exit;
   }
   if (disposition.kind === "failed") {

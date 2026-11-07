@@ -1,7 +1,7 @@
 ---
-// Level A in full: the stages as a row of stations with what each
-// hands on, the review band at every stage, the stages in text, and the
-// skills that run them.
+// Deciding what to build, in full: the stages as a row of stations with
+// what each hands on, the review band at every stage, the stages in text,
+// and the skills that run them.
 import "../../styles/factory.css";
 import ActorChip from "../ActorChip.astro";
 import DesignRow from "./DesignRow.astro";
@@ -18,7 +18,7 @@ const designSkills = await Promise.all(
 const designPerson = await inline(f.designPerson);
 ---
 
-  <SectionHead id="design" label="A · Design and planning: the feature pipeline" note={`${countWord(f.pipeline.length)} stages, each reviewed before the next uses it`} />
+  <SectionHead id="design" label="The feature pipeline, stage by stage" note={`${countWord(f.pipeline.length)} stages, each reviewed before the next uses it`} />
   <figure class="level-fig" aria-label={`The ${countWord(f.pipeline.length)} design stages, who runs each, and what each hands on`}>
     <DesignRow />
   </figure>

@@ -62,6 +62,9 @@ Read in this order when starting a session here:
   tooling is bound to it, as one implementation beside what else is
   supported or planned. How Jig itself is developed belongs in
   CONTRIBUTING.md, the `AGENTS.md` files, `design/` and code comments.
+- **Voice.** The visitor pages (README.md, FACTORY.md, FEATURES.md,
+  ROADMAP.md and the site's own copy) follow the
+  [voice guide](docs/VOICE.md).
 - **Values vs mechanisms.** Material taken from a working repository is split:
   the repo-agnostic mechanism goes into `reference/` (or a skill), that
   repository's values become placeholders, configuration or neutral

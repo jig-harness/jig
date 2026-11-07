@@ -164,31 +164,27 @@ executable is absent from `PATH`; an unread round counter leaves the damping
 rule unarmed. Explicit `bun` invocation also works
 on Windows, where the executable shebang alone does not launch the script.
 
-It prints the highest ordinal any review loop in this clone has counted for
-the PR: `await-round.ts`'s per-head counter in the git dir (the continuous
-`/resolve-review-comments` path), and `drive-pr`'s own durable `rounds` (the
-`/drive-pr` path, which never invokes `await-round.ts`). Reading only the
-first would leave this rule inert under `/drive-pr`.
+It prints the PR's review round: the one record, keyed by head, that every
+review loop working the PR counts into, kept in `drive-pr`'s database.
+`await-round.ts` counts a round there on the continuous
+`/resolve-review-comments` path, a drive counts its own rounds there, and the
+drive's ledger carries the same number.
 
-It is a **lower bound**, not an exact count: the two counters cover disjoint
-heads, so a PR that ran three continuous rounds, converged, and then switched
-to `/drive-pr` reports 1–3 for the next three. The error only ever runs low,
-which only delays a rule that declines findings, so it is stated rather than
-fixed — the alternative is one counter shared across both skills.
+That makes the ordinal **PR-scoped, not session-scoped** — deliberately. A
+continuous loop's convergence settles its rounds for its reflection prompt
+without lowering the ordinal, so a fresh session on a PR already taken to
+round 6 reads 6 and arms the ladder at once. That is the reading this rule is
+built from: it prices a round, and a PR that has had six has had six,
+whichever loop counted them.
 
-That makes the ordinal **PR-scoped, not session-scoped** — deliberately.
-`await-round.ts` clears its counter at convergence and `drive-pr` does not, so
-a fresh session on a PR a drive already took to round 6 reads 6 and arms the
-ladder at once. That is the reading this rule is built from: it prices a
-round, and a PR that has had six has had six, whichever loop counted them.
-
-`0` means nothing counted a round here, and the ladder simply does not arm.
-Three ways to get it, and only the first two are ordinary — a fresh worktree
-or a counter reset at convergence; a **one-shot manual pass**, which runs
-neither loop and so counts nothing, leaving the ladder permanently unarmed for
-that mode by design; and a counter that exists but cannot be read, or holds
-something that is not a canonical positive ordinal, which the script announces
-on stderr. Read that line as an anomaly to look at, not as a fresh session.
+`0` means nothing counted a round for the PR, and the ladder simply does not
+arm. Three ways to get it, and only the first two are ordinary — a fresh PR,
+or this skill installed without `drive-pr` beside it, where nothing keeps the
+count; a **one-shot manual pass**, which runs neither loop and so counts
+nothing, leaving the ladder permanently unarmed for that mode by design; and
+a count that could not be read, or is not a canonical positive ordinal, which
+the script announces on stderr. Read that line as an anomaly to look at, not
+as a fresh session.
 
 The value fails open in every one of those cases, deliberately, and so does
 every other uncertainty the ladder meets — an unreadable or invalid config, a
@@ -548,7 +544,14 @@ follow-up is filed, so the caller finalizes them after acting (the commit
 sha, the issue link) and only then posts; `rejected` and `wont-fix` drafts
 change nothing downstream and may post as-is. For `escalate` there is no
 draft — the outcome awaits the human, and any interim status reply goes out
-with `--no-outcome`.
+with `--no-outcome` — except under a drive at the `wide` autonomy level,
+where an `escalate` with the class `escalated` and `human-decision: no` comes
+with a `provisional-draft`: the reply outcome the arbiter would choose were
+the call the agent's, `rejected`, `wont-fix` or `deferred`, never a fix. The
+caller posts it with drive-pr's `provisional-reply.ts`, which marks it a
+**provisional decision**: a person reverses it by commenting on the thread,
+and until then reconciliation and triage skip the thread (a different sense
+from the provisional *drafts* above, which are finalized before they post).
 
 Arbiter ground rules (enforced by its agent definition):
 

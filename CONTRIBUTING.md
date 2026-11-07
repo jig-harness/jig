@@ -8,10 +8,10 @@ under `plugin/`.
 
 **Contributing from outside the maintainers?** Read
 [Outside contributions](#outside-contributions) first: it says what is
-welcome and where to raise it. Work is reported on GitHub Issues, which
-anyone can use. The maintainers also track their own work in an issue tracker
-that outside contributors cannot see; the steps below that depend on it are
-marked "maintainers", and a contributor can skip them.
+welcome and where to raise it. Work is tracked on
+[GitHub Issues](https://github.com/jig-harness/jig/issues), which anyone can
+read and file into; the steps below marked "maintainers" need write access to
+the repository, and a contributor can skip them.
 
 ## Commits and pull requests
 
@@ -86,9 +86,15 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    resolved. Between rounds the drive holds CI with the `ci:hold` label
    (`ci.hold_label`, [M13's hold](modules/M13-pipeline-economy/README.md#7-hold)):
    while it is on, the `gates` check fails without running the jobs, and
-   removing it runs them in full. A drive that stopped can leave the label
-   behind; remove it by hand (`gh pr edit <PR> --remove-label ci:hold`),
-   never by rerunning the held run.
+   removing it runs them in full. Any other label's event starts a mirror
+   run: it skips the heavy jobs, cancels no run, and its `gates` waits for the
+   newest real run on the head and repeats its result, holding a runner while
+   it waits. The label only saves CI: a drive adopts one it did not add, and
+   a person stops a running drive with `drives.ts --stop`. The dispatcher's
+   `jig:hold` label prevents new launches and re-arms. A drive that
+   stopped for good can leave the label behind; remove it by hand
+   (`gh pr edit <PR> --remove-label ci:hold`), never by rerunning the held
+   run.
 4. The pull request may merge once a round after Ready has settled: every
    reviewer has reported on the current head, no thread or summary finding is
    left unanswered, and the required checks are green. A person merges; an
@@ -97,9 +103,21 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    ([.claude/skills/followup/](.claude/skills/followup/SKILL.md)): the
    tracker item and deferred findings, the release tag, what the merge did
    to the website, the status pages and documents that cite them, the
-   consumer repositories, and cleanup. Its fixes go in one follow-up pull
+   consumer repositories, and active scaffolding. Routine local branch,
+   workspace and scratch-note cleanup is left to periodic maintenance. Its fixes go in one follow-up pull
    request. A contributor's pull request owes nothing here; the maintainer
    who merges it runs this step.
+
+**A host that drives Jig opts in.** Jig's pull requests edit its own skills
+under `.claude/skills/**`, and a pass started without a terminal is denied every
+write there unless its permission prompts are off. So a host that drives Jig
+sets `drive: { pass_args: [--permission-mode, bypassPermissions] }` in its own
+user file once it has checked what its account can reach, and `codex_bypass: true`
+beside it for a Codex account
+([a host's opt-in](plugin/CONFIGURATION.md#a-hosts-opt-in-to-bypass)). This
+repository's own file sets neither, since every Jig script refuses a
+repository's file that does. To drive one pull request on a host that has not
+opted in, arm it with `--pass-args "--permission-mode bypassPermissions"`.
 
 ## Jig's own skills
 
@@ -128,56 +146,61 @@ bun modules/M0-instruction-architecture/reference/sync-skills-mirror.ts
 
 ### Filing issues from this repository (maintainers)
 
-This section is for Jig's maintainers, who file their work in a tracker
-(Linear) that outside contributors cannot reach. A contributor opens a
-[GitHub issue](https://github.com/jig-harness/jig/issues/new/choose) with the
-bug or "Proposed change" template, or a
-[discussion](https://github.com/jig-harness/jig/discussions) for a question or
-an idea ([Outside contributions](#outside-contributions)), and needs nothing
-below. A maintainer who accepts such an issue files the tracked work from it
-and links the two.
+Jig's work is the repository's own
+[GitHub Issues](https://github.com/jig-harness/jig/issues), named in
+[`.config/jig.yaml`](.config/jig.yaml) (`issue_tracker.adapter: github`): an
+issue's open state is a `state:` label, its priority a `priority:` label,
+and every other label comes from the [label taxonomy](label-taxonomy.yaml)
+at the root. A roadmap item has an `epic` issue labelled `roadmap`; the
+item's steps are its sub-issues, and a pull request that builds one says
+`Part of #<epic>` or `Closes #<sub-issue>`.
 
-`/jig:file-issue` needs a [label taxonomy](GLOSSARY.md) to check the labels
-before it writes an issue. Jig's maintainers use the taxonomy in their
-maintained external standards checkout; the organization's label names and
-other tracker values stay outside this repository.
+A maintainer files with `/jig:file-issue`, which checks the labels against
+the taxonomy before it writes, and picks work up with `/jig:do-item #<n>`.
+A contributor opens an issue with the bug or "Proposed change" template, or
+a [discussion](https://github.com/jig-harness/jig/discussions) for a question
+or an idea ([Outside contributions](#outside-contributions)); a maintainer
+who accepts it labels it from the taxonomy and, when it is a step of a
+roadmap item, makes it a sub-issue of that item's epic.
 
-On each machine, make that checkout available and merge this setting into
-the existing `issue_tracker` section of `$HOME/.jig/jig.yaml` (or
-`$JIG_HOME/jig.yaml` when `JIG_HOME` is set):
-
-```yaml
-issue_tracker:
-  taxonomy: /absolute/path/to/standards-checkout/policies/label-taxonomy.yaml
-```
-
-Use an absolute path: relative paths resolve against the repository being
-worked on, and `~` in the setting is not expanded. This user setting applies
-to every repository on the machine unless repository or environment
-configuration overrides it. Keep the path and the organization's taxonomy
-out of tracked files.
-
-From a Jig checkout, set `plugin_dir` to the installed Jig plugin's absolute
-path and check the resolved setting, the taxonomy, and the proposed labels:
+From a checkout, with `plugin_dir` the installed Jig plugin's absolute path,
+check the taxonomy and a set of proposed labels:
 
 ```sh
 plugin_dir=/absolute/path/to/installed/jig/plugin
-bun "$plugin_dir/skills/resolve-review-comments/scripts/jig-config.ts" issue_tracker.taxonomy
 bun "$plugin_dir/skills/file-issue/scripts/check-label-taxonomy.ts"
 bun "$plugin_dir/skills/file-issue/scripts/validate-labels.ts" --check-tracker "<label>" "<another-label>"
 ```
 
-Replace the label placeholders with the intended labels, quoting names that
-contain spaces. The first command reports which configuration layer supplies the
-path; the second checks the taxonomy without tracker access. The last also
-needs credentials that can read labels in the configured tracker team.
-With the Linear adapter, provide `LINEAR_API_KEY` or `LINEAR_API_TOKEN` to
-the shell running the command, or sign in to the `linear` command-line
-client. An agent's MCP connection alone does not authenticate this script.
+Replace the label placeholders with the intended labels. The first checks
+the taxonomy alone; the second also reads the repository's labels through
+the signed-in `gh` command-line client.
 
-On a fresh machine, finish this setup before filing. A missing or unreadable
-taxonomy stops the skill before it writes; a path in user configuration
-does not fetch the external checkout.
+## Where models write Jig's code
+
+At run time no model executes or changes Jig's implementation: the
+dispatcher, `jig gc`, the launcher and the drive's loop control are scripts,
+and the sessions they start write the consuming repository's code. Models do
+read Jig's skill instructions (a skill's description every session, the rest
+when the skill runs), and a running session does not modify the installed
+plugin
+([the mechanism map](plugin/MECHANISMS.md#when-a-model-reads-or-writes-jigs-own-code)).
+While Jig is being developed, models write its code all the time, since
+Jig is built with its own tools:
+
+- an implementer building a step of a plan, picked up by `/jig:do-item`;
+- a drive pass fixing what a reviewer flagged, in whatever file the reviewer
+  flagged, the dispatcher's own code included;
+- a follow-up or site-update session (`followup`, `website-update`) editing
+  status pages and the site's copy.
+
+What a part is held to follows from who writes it and who runs it:
+
+| Kind of code | Written by | Read or run at run time by | Held to |
+|--------------|------------|----------------------------|---------|
+| Loop control and machine tools: `plugin/dispatch/`, `plugin/gc/`, `plugin/skills/drive-pr/scripts/` and the gates | models, during development | scripts only | the test rules in [AGENTS.md](AGENTS.md) (a test seen to fail before its pass is trusted); for `drive-pr`, a deadline on every outbound call ([plugin/AGENTS.md](plugin/AGENTS.md#changing-drive-pr)); and the safety contracts the [mechanism map](plugin/MECHANISMS.md) states for each subsystem, such as keeping a resource whose identity cannot be read |
+| Skill instructions: `SKILL.md`, references, lens files, the arbiter's definition | models and people, during development | models: a skill's description every session, its `SKILL.md` when the skill runs, a reference when `SKILL.md` sends the agent there | the context budget; for skill files, the skill-authoring counts [the ratchet](#the-ratchet) keeps from growing (the arbiter's definition, `plugin/agents/review-arbiter.md`, is not a skill file and is outside them); and, for `drive-pr` alone, tests that its scripts' exit codes and its prose agree (`plugin/skills/drive-pr/__tests__/terminal-states*.test.ts`) |
+| A consuming repository's own code and records | models, at run time | that repository's gates and reviewers | that repository's gates, review rounds, and a person's merge |
 
 ## Toolchain
 
@@ -234,7 +257,10 @@ design. Run all with one command: `bun run gates`. The set, cheapest first:
    no origin references; plugin code reaching Linear only through the
    tracker interface (`scripts/check-tracker-boundary.ts`, with the files
    that still bypass it, each under its reason, in
-   `scripts/tracker-boundary-allow.txt`); the licence files and NOTICE complete
+   `scripts/tracker-boundary-allow.txt`); every hidden marker, drive state
+   family and table the plugin's code names held by the
+   [records registry](GLOSSARY.md), and every registry entry still named
+   (`scripts/check-records-registry.ts`); the licence files and NOTICE complete
    (`scripts/check-licences.ts`); no workflow that runs a fork's code with
    secrets (M7's PR-target safety lint); the workflows meeting M13's pipeline
    conventions (the workflow-convention lint, with its heavy suites in
@@ -376,9 +402,11 @@ setting): adding those layers to Jig is future work.
 `bun run quality` (M1's [ratchet gate](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md))
 fails a change that adds a finding to a rule at `warn` in `biome.json`, to a
 flag in `tsconfig.ratchet.json`, a suppression comment, the total source
-lines above the 1000-line limit per file, or any plugin skill file's count of
-a skill-authoring rule (M0's check, compared per file), measured against the
-merge base.
+lines above the 1000-line limit per file, any plugin skill file's count of
+a skill-authoring rule (M0's check, compared per file), or a visitor
+document's count of findings under the [voice guide](docs/VOICE.md)'s caps
+(`scripts/check-voice.ts`, which the gates also run to report each count),
+measured against the merge base.
 The size counter covers source and test code, including website
 styles and templates; it excludes fixtures, seeds, vendored code and build
 outputs. Split by responsibility at the source. Do not pad the exclusion
@@ -421,8 +449,11 @@ bun modules/M2-generated-artifact-freshness/reference/inventory/run-generated-ch
 ```
 
 The example indexes open with a "generated" header naming their generator.
-The lockfiles and the vendored parsers cannot carry one, since each must stay
-byte for byte what its generator writes, so their entry is their marker.
+The lockfiles and the vendored js-yaml builds cannot carry one, since each
+must stay byte for byte what its generator writes, so their entry is their
+marker; the bundle `tools/plugin/vendor-optique.ts` builds opens with a line
+naming that command. The dashboard's built page is minified, so its entry is
+its marker too.
 
 A new derived file gets its entry in the pull request that adds it; the
 runner refuses an entry without a check.
@@ -563,9 +594,21 @@ work as part of the plugin:
   missing, and accept older files. Never bake a repository's values into
   `SKILL.md`.
 - **Dependencies:** the plugin cache has no `node_modules`. Use Bun's
-  built-ins (its own APIs and the `node:` modules it provides), or vendor a dependency's own single-file build beside the script
-  with its licence and a test that keeps it identical to the pinned package
-  (as `plugin/shared/vendor/js-yaml.mjs` is).
+  built-ins (its own APIs and the `node:` modules it provides), or vendor a
+  library beside the code that uses it, with its licence, its line in
+  `NOTICE` and a test that keeps it identical to the pinned package
+  ([ADR-0001](docs/adr/ADR-0001-bun-typescript-toolchain.md)). A library that
+  ships a single-file build is vendored as that file
+  (`plugin/shared/vendor/js-yaml.mjs`). One that ships none is vendored as an
+  unminified bundle Jig builds from the pinned package, which the test
+  rebuilds and compares byte for byte: `plugin/shared/vendor/optique.mjs` is
+  Optique, the command-line parser, built by `bun tools/plugin/vendor-optique.ts`
+  from the names `tools/plugin/optique-entry.ts` lists, so a script that
+  needs another of its functions adds the name there and runs that command.
+  A page the plugin serves is built the same way from source outside
+  `plugin/`, and minified, since a phone loads it: `plugin/dispatch/dashboard-page/`
+  is built by `bun dashboard/build.ts`
+  ([ADR-0001](docs/adr/ADR-0001-bun-typescript-toolchain.md)).
 - **Windows cancellation:** follow the scope and reconsideration conditions
   in [ADR-0008](docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md)
   when changing process launch, cancellation or the evidence that a

@@ -14,7 +14,22 @@ export async function ancestry(
   ancestor: string,
 ): Promise<boolean | null> {
   const result = await run(
-    ["git", "-C", root, "merge-base", "--is-ancestor", head, ancestor],
+    [
+      "git",
+      "--no-optional-locks",
+      // A replacement ref would fabricate ancestry between unrelated commits.
+      "--no-replace-objects",
+      "-c",
+      "core.fsmonitor=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+      "-C",
+      root,
+      "merge-base",
+      "--is-ancestor",
+      head,
+      ancestor,
+    ],
     { timeoutSec: 30, env: gitEnvironment() },
   );
   if (result.code === 0) return true;
@@ -125,6 +140,40 @@ export async function requests(
     const matched = request(value, source);
     return matched ? [matched] : [];
   });
+}
+/**
+ * The pull request numbered `pr` on `remote`'s repository, as `requests`
+ * reports one: for a detached tree a drive attached, which has no branch to
+ * list pull requests by (`shared/driven-tree.ts`).
+ */
+export async function requestByNumber(
+  root: string,
+  remote: string,
+  pr: number,
+): Promise<WorktreeRequest[]> {
+  const repository = forgeRepository(
+    await git(root, ["remote", "get-url", remote]),
+  );
+  const result = await run(
+    [
+      "gh",
+      "pr",
+      "view",
+      String(pr),
+      "--repo",
+      repository,
+      "--json",
+      "state,headRefOid,headRepository,headRepositoryOwner",
+    ],
+    { cwd: root, timeoutSec: 30, env: gitEnvironment() },
+  );
+  if (result.code !== 0)
+    throw new GcError(`Forge inventory unavailable: ${result.stderr}`);
+  const matched = request(
+    JSON.parse(result.stdout),
+    repository.slice(repository.indexOf("/") + 1),
+  );
+  return matched ? [matched] : [];
 }
 export async function processHolder(path: string): Promise<boolean | null> {
   const result = await run(["lsof", "-nP", "-F", "pfn", "+D", path], {

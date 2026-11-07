@@ -111,9 +111,9 @@ import { retryAttempts } from "../../../shared/retry.ts";
  *   2  usage error
  *   3  refused BEFORE pushing: dirty worktree, unconcluded git operation, or a
  *      working tree that could not be read at all
- *   4  refused BEFORE pushing: the initial required checks have not
- *      completed, the head moved, or an externally-owned CI hold label is
- *      present
+ *   4  refused BEFORE pushing: the required checks the CI hold waits for
+ *      have not completed on a PR that can run them, the head moved, or an
+ *      externally-owned CI hold label is present
  *   5  the PR is no longer open — nothing was pushed (guarded-push.ts's own 5,
  *      same code and meaning; drive-status.ts uses it identically). Also
  *      returned by the untriaged-thread check itself when it finds
@@ -145,9 +145,13 @@ import { retryAttempts } from "../../../shared/retry.ts";
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isTrustedBotConfirmation } from "./lib/bot-confirmation.ts";
+import { isTransparentFollowUp } from "./lib/bot-confirmation.ts";
 import { fail, isDigits, isGitSha, runMain, short } from "./lib/cli.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./lib/outcome.ts";
+import {
+  drainedThreadResult,
+  threadAwaitsAlert,
+} from "./lib/scanner-sweep-guard.ts";
 import {
   ciHoldTimeoutSeconds,
   ghCall,
@@ -217,7 +221,7 @@ interface HeldRecord {
   commentUrl?: string;
 }
 
-type ItemAction = "resolved" | "answered" | "refused";
+type ItemAction = "resolved" | "left-open" | "answered" | "refused";
 
 interface ItemResult {
   key: string;
@@ -272,11 +276,8 @@ function emit(report: Report, asJson: boolean): void {
 }
 
 function prefixLines(prefix: string, text: string): string {
-  return text
-    .split("\n")
-    .filter((l, i, all) => !(l === "" && i === all.length - 1))
-    .map((l) => `${prefix}${l}`)
-    .join("\n");
+  const body = text.endsWith("\n") ? text.slice(0, -1) : text;
+  return body === "" ? "" : `${prefix}${body.replaceAll("\n", `\n${prefix}`)}`;
 }
 
 /**
@@ -690,7 +691,7 @@ async function checkUntriagedThreads(
   // park instead.
   //
   // Both this call and the `held` read below are local, lock-guarded reads of
-  // this skill's own state file — not a `gh` network call — but they can still
+  // this skill's own stored state — not a `gh` network call — but they can still
   // stall on lock contention, so they carry the same `helperTimeoutSeconds()`
   // deadline as the `list-unresolved-threads.ts` spawn a few lines down, in
   // this same function (an unbounded `run()` here can hang this check, and
@@ -775,7 +776,7 @@ async function checkUntriagedThreads(
   );
   // `commentUrl` is REQUIRED by every writer for `kind: 'thread'` — `held`
   // above is already filtered to that kind, and `schema.ts`'s own
-  // `isUsableState` (lines 416-425) refuses the WHOLE state file at read time
+  // `isUsableState` (lines 416-425) refuses the WHOLE stored state at read time
   // if any thread hold lacks one. So `undefined` here cannot be a legitimate
   // record this clone's own writers produced; it is corrupt or hand-edited
   // state (or a malformed `drive-state.ts held` response this parser cannot
@@ -828,7 +829,7 @@ async function checkUntriagedThreads(
     return later.every(
       (c) =>
         typeof c.url === "string" &&
-        isTrustedBotConfirmation(
+        isTransparentFollowUp(
           { authorLogin: c.author, body: c.body },
           qualifyingOutcome,
         ),
@@ -842,7 +843,7 @@ async function checkUntriagedThreads(
    * confirmation. `currentReplyOutcome` cannot be reused here:
    * once a confirmation follows the held reply, the literal latest comment
    * IS that confirmation, which carries no outcome token by construction
-   * (`isTrustedBotConfirmation` requires exactly that) — comparing THAT
+   * (`isTransparentFollowUp` requires exactly that) — comparing THAT
    * against the held outcome would always read `null`, defeating the
    * tolerance above at the very next check. This performs the identical
    * "edited in place" catch `currentReplyOutcome` performs for the
@@ -922,11 +923,9 @@ async function checkUntriagedThreads(
   // legitimately-finished dispatch — a finished one would have resolved the
   // thread and it would not be in this list at all. It can only be
   // triage-thread.ts crashing between posting the reply and calling
-  // `resolve-thread.ts`. The one way a merit reply (or an unmarked moot)
-  // legitimately stays unresolved forever is the LEAVE_OPEN marker —
-  // `triage-thread.ts --leave-open` works identically across every non-hold
-  // outcome (its own header), so this check does too rather than
-  // special-casing `moot`.
+  // `resolve-thread.ts`. A merit reply (or an unmarked moot) stays unresolved
+  // legitimately under the LEAVE_OPEN marker, on any non-hold outcome, or on a
+  // code-scanning thread until its alert settles (`awaitsAlert`).
   function isThreadTriaged(t: UntriagedThreadLine): boolean {
     const key = t.threadId;
     const outcome = currentReplyOutcome(t);
@@ -958,6 +957,7 @@ async function checkUntriagedThreads(
         heldReplyOutcome(t, heldUrl) === heldOutcomeByKey.get(key)
       );
     }
+    if (threadAwaitsAlert(t)) return true;
     if (outcome === null) return false; // never triaged at all
     const latest = t.comments[t.comments.length - 1];
     // Marked leave-open: a deliberate choice to leave THIS thread unresolved,
@@ -1097,7 +1097,7 @@ async function checkUntriagedThreads(
       // `triage-thread.ts` — is just as broken for a truncated thread as plain
       // `triage-thread.ts` is. The one remedy that actually works is the
       // documented one.
-      return "this thread is comment-truncated (>100 comments) — triage-thread.ts refuses it unconditionally, so the only working remedy is drive-state.ts park [PR] --key <id> --reason '...' (SKILL.md § 4)";
+      return "this thread is comment-truncated (>100 comments) — triage-thread.ts refuses it unconditionally, so the only working remedy is drive-state.ts park [PR] --key <id> --kind thread --class human-thread with its decision record on stdin (SKILL.md § 4)";
     }
     const key = t.threadId;
     const outcome = currentReplyOutcome(t);
@@ -1335,7 +1335,7 @@ async function main(): Promise<number> {
     return done(
       4,
       "CI_HOLD_WAIT",
-      `the CI hold label is not safely owned on the current PR head; wait for initial CI or reconcile the external label, then re-run`,
+      `the CI hold is not ready on the current PR head; wait for the checks the ci-hold line names, then re-run`,
     );
   }
   if (holdRes.code !== 0) {
@@ -1363,16 +1363,20 @@ async function main(): Promise<number> {
     },
   );
   if (pushRes.stdout !== "") process.stderr.write(pushRes.stdout);
-  if (pushRes.code !== 0) {
+  // `disabled` and `conflicting` pushed without a hold, and `adopted` under a
+  // label this push did not add: none rolls back.
+  const unheld = ["disabled", "conflicting", "adopted"].includes(
+    holdRes.stdout.trim(),
+  );
+  if (pushRes.code !== 0 && !unheld) {
     const rollback = await run(
       tsArgv(ciHold, ["rollback", pr, "--expect-head", report.head]),
       { stderr: "inherit", timeoutSec: ciHoldTimeoutSeconds() },
     );
     if (rollback.code === 0) {
-      if (rollback.stdout.trim() !== "disabled")
-        console.error(
-          "finish-round.ts: the push provably did not land; released the CI hold label acquired for it",
-        );
+      console.error(
+        "finish-round.ts: the push provably did not land; released the CI hold label acquired for it",
+      );
     } else if (rollback.code !== 5) {
       console.error(
         `finish-round.ts: retained the CI hold label after the failed push because rollback could not prove the ref stayed unchanged (exit ${rollback.code})`,
@@ -1777,10 +1781,10 @@ async function resolveThreadItem(
     };
   }
   if (res.code === 3) {
-    // The state file itself is unreadable — `resolve-held-thread.ts`
+    // The stored state itself is unreadable — `resolve-held-thread.ts`
     // reaches this both through its own precheck `drive-state.ts held` call
     // and through `claim-held`, either of which propagates `store.ts`'s
-    // `ExitError(3)` verbatim on a malformed state file. Not a per-key
+    // `ExitError(3)` verbatim on a malformed stored state. Not a per-key
     // problem — `answerFindingItem` already treats the identical exit from
     // the finding path as a batch-level abort; this mirrors it, rather than
     // iterating the rest of an untrustworthy snapshot one silently-refused
@@ -1822,9 +1826,7 @@ async function resolveThreadItem(
       stale: res.code === 4,
     };
   }
-  return {
-    result: { key: item.key, kind: item.kind, action: "resolved", code: 0 },
-  };
+  return { result: drainedThreadResult(item.key, item.kind, res) };
 }
 
 /**
@@ -1896,7 +1898,7 @@ async function answerFindingItem(
         },
       };
     }
-    // Exit 3 is the state file itself being unreadable — not a per-key
+    // Exit 3 is the stored state itself being unreadable — not a per-key
     // problem, so the round stops rather than iterating an entire batch one
     // silently-failing key at a time. Exit 4 is a stale snapshot: re-read.
     // Everything else (1, and the usage codes) is per-key — skip it, keep
@@ -2029,7 +2031,7 @@ async function answerFindingItem(
         },
       };
     }
-    // Exit 3 is the state file itself being unreadable — not a per-key problem,
+    // Exit 3 is the stored state itself being unreadable — not a per-key problem,
     // the same "malformed, refuse" condition the claim step already aborts the
     // whole drain over (`claimRes.code === 3` above) and `resolveThreadItem`
     // mirrors for the thread path. Falling through to an ordinary per-item
@@ -2053,7 +2055,7 @@ async function answerFindingItem(
     // (correctly: it is what stops a duplicate comment) and whose recovery
     // that refusal itself prints. Reported as a refusal so the round does not
     // read as clean, and NOT retried here: the token is still valid, so a
-    // human or a re-run can release it, and a retry loop over a state file
+    // human or a re-run can release it, and a retry loop over a stored state
     // that just refused a write is not a recovery.
     return out;
   }

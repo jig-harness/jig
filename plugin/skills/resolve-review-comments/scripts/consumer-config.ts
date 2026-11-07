@@ -13,6 +13,7 @@
 
 import { fail, runMain } from "../../../shared/cli.ts";
 import {
+  botEntries,
   consumerRoot,
   overlayPath,
   readOverlay,
@@ -44,15 +45,13 @@ async function main(): Promise<number> {
   }
   const gates = text(section(overlay.gates).command);
   const tracker = section(overlay.issue_tracker);
-  const missing = [
-    gates === undefined && "gates.command",
-    !review.bots?.length && "review.bots",
-    text(review.deferral_team) === undefined && "review.deferral_team",
-  ].filter((field): field is string => typeof field === "string");
-  if (missing.length > 0)
+  // The only value the procedure cannot run without: a fix is pushed only
+  // after the repository's checks pass. Threads are worked whoever wrote
+  // them, and the deferral team is read only when a finding is deferred.
+  if (gates === undefined)
     fail(
       2,
-      `consumer-config: ${overlayPath()} lacks required values: ${missing.join(", ")}`,
+      `consumer-config: ${overlayPath()} lacks required values: gates.command`,
     );
   // The same validation await-round.ts applies, before any work starts.
   try {
@@ -77,7 +76,14 @@ async function main(): Promise<number> {
     ["repository", consumerRoot()],
     ["configuration", overlayPath()],
     ["gates.command", gates ?? ""],
-    ["review.bots", (review.bots ?? []).join(", ")],
+    [
+      "review.bots",
+      review.bots?.length
+        ? botEntries(review.bots)
+            .map((b) => b.login)
+            .join(", ")
+        : "(not set: any reviewer)",
+    ],
     [
       "review.job_pattern",
       text(review.job_pattern) ??
@@ -87,7 +93,11 @@ async function main(): Promise<number> {
       "review.required_checks",
       review.required_checks?.join(", ") ?? "(not set)",
     ],
-    ["review.deferral_team", review.deferral_team ?? ""],
+    [
+      "review.deferral_team",
+      text(review.deferral_team) ??
+        "(not set: needed only to defer; pass --team)",
+    ],
     ["issue_tracker.team", text(tracker.team) ?? "(not set)"],
     ["issue_tracker.file_command", text(tracker.file_command) ?? "(not set)"],
   ];

@@ -1,0 +1,208 @@
+/**
+ * The messages a tick sends a person, one per cause. Each message opens
+ * with its key line, `[jig dispatch: <key>]`, where the key names the facts
+ * its suppression record is keyed by (the repository, the pull request or
+ * item, and the ledger generation, exit, park, marker or record that make
+ * the cause): a read of the target's comment then shows whether the
+ * message arrived, and a cause whose facts change is a new message.
+ *
+ * A park's message is the drive's own framed decision for every parked
+ * item still unanswered, and how to answer it: a comment on the pull
+ * request with a line `answer <key>: …`, which the drive reads and the next
+ * tick re-arms on. Every message carries the cause or the question, the
+ * pull request's link and where its handoff is; the notify step adds the
+ * workspaces the stage ran in, since the message goes to the repository's
+ * one destination rather than to them.
+ */
+import { createHash } from "node:crypto";
+import type { DrivenPr, Notice, RepoReport } from "./types.ts";
+
+const TAG = "[jig dispatch: ";
+
+/** The most characters one message holds; its key line always stays. */
+const MAX_TEXT = 4000;
+
+/** The line that names a message's key. */
+function keyLine(key: string): string {
+  return `${TAG}${key}]`;
+}
+
+/** Whether a workspace's comment carries the message whose key is `key`. */
+export function carries(comment: string, key: string): boolean {
+  return comment.includes(keyLine(key));
+}
+
+/** Whether a workspace's comment holds any message of the dispatcher's. */
+export function holdsNotice(comment: string): boolean {
+  return comment.includes(TAG);
+}
+
+/** The longest key a message carries whole; a longer one is cut and ends in a digest of all of it, so two keys stay two. */
+const MAX_KEY = 200;
+
+/** The key as the message names it: whole when short, else its start and a digest of the whole. */
+function boundedKey(key: string): string {
+  if (key.length <= MAX_KEY) return key;
+  const digest = createHash("sha256").update(key).digest("hex").slice(0, 16);
+  return `${key.slice(0, MAX_KEY - digest.length - 2)}… ${digest}`;
+}
+
+/** Text with the key line's opening broken, so quoted text never reads as a message of its own. */
+function unTagged(text: string): string {
+  return text.replaceAll(TAG, "[jig dispatch - ");
+}
+
+/** A message: its key line, then its lines, cut to `MAX_TEXT`; the `tail` lines are never cut. */
+function notice(fullKey: string, lines: string[], tail: string[] = []): Notice {
+  const key = boundedKey(fullKey);
+  const head = keyLine(key);
+  const body = unTagged(lines.join("\n"));
+  const end = tail.length === 0 ? "" : `\n${unTagged(tail.join("\n"))}`;
+  const room = MAX_TEXT - head.length - 1 - end.length;
+  return {
+    key,
+    text: `${head}\n${body.length > room ? `${body.slice(0, Math.max(0, room - 1))}…` : body}${end}`,
+  };
+}
+
+/** The ledger generation a drive's evidence carries. */
+function generation(pr: DrivenPr): string {
+  return String(pr.evidence.generation ?? "unknown");
+}
+
+/** A drive parked with decisions unanswered: the framed decisions, and how to answer them. */
+export function parkNotice(slug: string, pr: DrivenPr): Notice {
+  const waiting = pr.waiting ?? [];
+  const keys = waiting.map((p) => `${p.kind} ${p.key}`).join(", ");
+  return notice(
+    `${slug} PR #${pr.number} parked, ledger generation ${generation(pr)}: ${keys}`,
+    [
+      `PR #${pr.number} (${pr.title}) is parked: ${waiting.length === 1 ? "one decision waits" : `${waiting.length} decisions wait`} for a person.`,
+      "",
+      ...waiting.flatMap((p) => [...p.lines, ""]),
+    ],
+    [
+      "Answer each on the pull request, in a comment with a line `answer <key>: …` (or on its thread). Once every one is answered, the next tick re-arms the drive. A decision above that is cut off is framed in full in the drive's ledger comment on the pull request.",
+      pr.url,
+    ],
+  );
+}
+
+/** A drive stopped on an exit only a person settles, or with no exit at all. */
+export function stopNotice(slug: string, pr: DrivenPr): Notice {
+  if (pr.class === "silent")
+    return notice(
+      `${slug} PR #${pr.number} silent, ledger generation ${generation(pr)}, started ${String(pr.evidence.started ?? "unknown")}`,
+      [
+        `PR #${pr.number} (${pr.title}): its drive heartbeat expired and its termination cannot be confirmed. ${pr.why}.`,
+        "Inspect the driver and any surviving pass before re-arming it. Read the drive handoff in its workspace.",
+        pr.url,
+      ],
+    );
+  const exit = pr.evidence.exit;
+  const stop =
+    exit === null || exit === undefined ? "with no exit" : `${String(exit)}`;
+  return notice(
+    `${slug} PR #${pr.number} stopped ${stop}, ledger generation ${generation(pr)}`,
+    [
+      `PR #${pr.number} (${pr.title}): its drive stopped ${stop}, which only a person settles. ${pr.why}.`,
+      `Read the drive's handoff, \`.context/pr-drive-${pr.number}.md\` in the workspace that drove it (named below while it is open), then re-arm it or stop it.`,
+      pr.url,
+    ],
+  );
+}
+
+/** A follow-up the tick started that failed, stopped on a question for a person (`question`), or whose record and outcome are gone. */
+export function followupFailedNotice(
+  slug: string,
+  pr: { number: number; url: string },
+  marker: number,
+  why: string,
+  question: string | null = null,
+): Notice {
+  return notice(`${slug} PR #${pr.number} follow-up failed, marker ${marker}`, [
+    question === null
+      ? `The follow-up of merged PR #${pr.number} failed: ${why}.`
+      : `The follow-up of merged PR #${pr.number} stopped on a question for a person: ${question}`,
+    "Delete its marker comment on the pull request: the marker holds the claim, so a run by hand stops behind it. Then run the follow-up by hand, or leave it for the next tick to start again. The tick never starts it again by itself.",
+    pr.url,
+  ]);
+}
+
+/** A follow-up claim that went stale after the tick released an earlier one on the pull request: a person settles it. */
+export function staleClaimNotice(
+  slug: string,
+  pr: { number: number; url: string },
+  claim: {
+    marker: number;
+    claimant: string;
+    age: string;
+    manual: boolean;
+    earlier: { marker: number; claimant: string; releasedAt: string | null };
+  },
+): Notice {
+  const { earlier } = claim;
+  const when = earlier.releasedAt === null ? "" : ` at ${earlier.releasedAt}`;
+  return notice(
+    `${slug} PR #${pr.number} follow-up claim stale, marker ${claim.marker}`,
+    [
+      `The follow-up of merged PR #${pr.number} is held by a claim nobody is finishing: ${claim.claimant} claimed it ${claim.age} ago (marker comment ${claim.marker}), has not marked it done, and no session is joined to it.`,
+      `The tick released an earlier stale claim on it once (marker comment ${earlier.marker}, ${earlier.claimant}'s)${when}, and does not release a second.`,
+      claim.manual
+        ? `Mark the marker done when that run succeeded (\`jig dispatch marker done ${pr.number} --comment ${claim.marker}\`), or delete it to have the follow-up start again.`
+        : "Have the originating host record that run's result through jig dispatch result with its record and token, or delete the marker comment to have the follow-up start again.",
+      pr.url,
+    ],
+  );
+}
+
+/** A pending launch record no tick will launch again (`stuck-launches.ts`): a person checks for a session it started, then clears it. */
+export function stuckNotice(
+  slug: string,
+  stuck: {
+    target: string;
+    action: string;
+    record: string;
+    account: string;
+    workspace: string | null;
+    marker: number | null;
+    url: string | null;
+    why: string;
+  },
+): Notice {
+  const where =
+    stuck.workspace === null ? "" : ` in its workspace (${stuck.workspace})`;
+  return notice(
+    `${slug} ${stuck.target} launch record ${stuck.record} stuck pending`,
+    [
+      `${stuck.target}: the ${stuck.action} launch record ${stuck.record} is pending and no tick launches it again: ${stuck.why}. It holds its stage and a slot of account ${stuck.account} until a person clears it.`,
+      `Look for a session it started${where}; once none runs for it, run \`jig dispatch clear ${stuck.record}\`.`,
+      ...(stuck.marker === null
+        ? []
+        : [
+            `Its follow-up marker (comment ${stuck.marker}) stays on the pull request, and once the record is cleared it reads as a failed follow-up: delete the marker to have the follow-up start again.`,
+          ]),
+      ...(stuck.url === null ? [] : [stuck.url]),
+    ],
+  );
+}
+
+/** A cause a pickup raises (a stalled pickup, a double claim, a session waiting), in the plan's own words. */
+export function pickupNotice(
+  slug: string,
+  key: string,
+  reason: string,
+): Notice {
+  return notice(`${slug} ${key}`, [`${slug}: ${reason}.`]);
+}
+
+/** Absence of a cause proves nothing when its target was not observed in scope. */
+export function unobservedTarget(report: RepoReport, target: string): boolean {
+  return (
+    report.unplaced.some((u) => u.target === target) ||
+    (report.withheld ?? []).includes(target) ||
+    (report.inScope !== undefined &&
+      /^PR #\d+$/.test(target) &&
+      !report.inScope.some((n) => target === `PR #${n}`))
+  );
+}

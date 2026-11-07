@@ -341,7 +341,7 @@ describe("merge-conflict scoreboard coverage", () => {
         limit: 300,
         concurrency: 1,
         skipPrs: false,
-        skipLinear: true,
+        skipTracker: true,
       },
       d,
     );
@@ -366,7 +366,7 @@ describe("merge-conflict scoreboard coverage", () => {
         limit: 1,
         concurrency: 1,
         skipPrs: false,
-        skipLinear: true,
+        skipTracker: true,
       },
       d,
     );

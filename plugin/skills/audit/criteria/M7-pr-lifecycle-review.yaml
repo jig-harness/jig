@@ -137,7 +137,8 @@ criteria:
       - "the lifecycle doc has a post-merge stage naming those classes, each ending owed or not owed with evidence ('nothing found' is not evidence)"
       - "the stage re-lists resolved threads and summary findings and confirms each deferred reply's referenced item exists, instead of relying on the reply's text"
       - "the stage picks the next item with a bias toward closure (a nearly-done epic, then operations that can be cleared, then a batch of small items) and leaves the pick to a person"
-      - "the stage reverts temporary scaffolding in the repository and outside it (timeouts, gates, drivers, branches, environments, flags) and asks for live verification only when the change has a runtime surface, has reached an environment and is not covered by CI"
+      - "the stage reverts temporary scaffolding in the repository and outside it (timeouts, gates, drivers, environments, flags) and asks for live verification only when the change has a runtime surface, has reached an environment and is not covered by CI"
+      - "routine local branches, retired workspaces and scratch notes are left to periodic cleanup, even without collector coverage, and do not make the follow-up incomplete or require a human retention decision; evidence of unlanded work or an active operational problem remains in scope"
       - "on recent merges, a closing comment or pass report records each class as owed or not owed (a scheduled or hook-run pass that only reports is advisory; mechanical needs a check that fails while a merge has a class nobody recorded)"
     since: 0.52.0
 
@@ -195,9 +196,11 @@ criteria:
       review driver; where the repository runs a post-merge stage or closes
       epics on a verdict, also picking the next item and reopening on a
       rejecting verdict or waiving a missing acceptance review) are listed in
-      one registry, and a hitl label revokes autonomous merge.
+      one registry, which reserves parking an autonomous run to its classes,
+      and a hitl label revokes autonomous merge.
     observe:
       - "a HITL decision registry enumerates the human-only decisions with a trigger each"
+      - "the registry has a row reserving parking (an autonomous run stopping for a person) to the registry's classes, each park carrying its class and a framed decision"
       - "a hitl label is defined and revokes autonomous merge for the linked PR"
       - "the registry names who may mark Ready: humans, plus the review driver when the repository delegates to it"
       - "where the repository runs a post-merge stage or closes epics on a verdict, the registry also lists picking the next item and reopening on a rejecting verdict or waiving a missing acceptance review, the latter naming an approver other than whoever runs the post-merge pass or the epic-closing step"

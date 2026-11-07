@@ -152,7 +152,7 @@ export const LIMITS = [
   "It counts a conflict once for each merge that meets it again.",
   "A merge git combines cleanly but that breaks the build is not a conflict to it.",
   "Merges of more than two parents (octopus merges) are not replayed; they are listed as skipped.",
-  "Causes are recognised from the regions' shape; the hand-check below says how often each was right.",
+  "Causes are recognised from the regions' shape; the hand-check records how often each was right.",
 ];
 
 /** The hand-checked accuracy of each cause, shipped beside the skill; null when it is missing or unreadable. */
@@ -207,7 +207,7 @@ function add(map: Partial<Record<Cause, number>>, cause: Cause, n = 1): void {
 }
 
 /** The most frequent cause; a tie goes to the earlier one in cause order. */
-function top(map: Partial<Record<Cause, number>>): Cause {
+export function mostFrequentCause(map: Partial<Record<Cause, number>>): Cause {
   let best: Cause = "overlap";
   let most = -1;
   for (const cause of CAUSES)
@@ -295,7 +295,7 @@ class Tallies {
   paths(hotspotMinMerges: number): PathSummary[] {
     return [...this.byPath.values()]
       .map((summary) => {
-        const topCause = top(summary.causes);
+        const topCause = mostFrequentCause(summary.causes);
         return {
           ...summary,
           topCause,

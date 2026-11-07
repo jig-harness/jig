@@ -22,6 +22,7 @@ import { checkTables } from "./check-md-tables.ts";
 import { checkGlossary } from "./check-glossary-coverage.ts";
 import { checkTracker } from "./check-no-tracker-refs.ts";
 import { checkTrackerBoundary } from "./check-tracker-boundary.ts";
+import { checkRecordsRegistry } from "./check-records-registry.ts";
 import { checkLicences } from "./check-licences.ts";
 import { checkChangelog } from "./check-changelog.ts";
 import { checkAuditFit } from "./check-audit-fit.ts";
@@ -38,6 +39,7 @@ import { checkSupplyChainLockstep } from "./check-supply-chain-lockstep.ts";
 import { checkPlugin } from "./check-plugin.ts";
 import { checkSkillShellNeutrality } from "./check-skill-shell-neutrality.ts";
 import { checkSkillFallbacks } from "./check-skill-fallbacks.ts";
+import { checkVoice } from "./check-voice.ts";
 const root = join(import.meta.dir, "..");
 
 /**
@@ -46,7 +48,10 @@ const root = join(import.meta.dir, "..");
  * workspace tool's serve a runtime that runs on macOS and Linux; and the Orca
  * workspace tool's reach the clone through `sh`, `test` and `mkdir` on its
  * host and the hook supervisor and process records the Herdr tool shares with
- * it, which read `/proc` or `ps`. Windows runs every other suite; a test
+ * it, which read `/proc` or `ps`; and the dispatcher's, whose session runtime
+ * is Orca, which runs only on POSIX hosts; and the gates workflow's mirror
+ * step's, which runs that step's script under bash as GitHub's Linux runner
+ * does. Windows runs every other suite; a test
  * inside one that needs POSIX skips itself on win32 and names the work that
  * lifts the skip.
  */
@@ -54,6 +59,8 @@ export const POSIX_ONLY_SUITES = [
   "tools/launcher/**",
   "tools/herdr/**",
   "tools/orca/**",
+  "plugin/dispatch/**",
+  "scripts/gates-mirror.test.ts",
 ];
 
 /**
@@ -178,6 +185,7 @@ export const CHECKS: Stage[] = [
   check("check-glossary-coverage.ts", checkGlossary),
   check("check-no-tracker-refs.ts", checkTracker),
   check("check-tracker-boundary.ts", checkTrackerBoundary),
+  check("check-records-registry.ts", checkRecordsRegistry),
   check("check-licences.ts", checkLicences),
   check("check-workflow-safety.ts", checkWorkflowSafety),
   check("check-workflow-conventions.ts", checkWorkflowConventions),
@@ -191,6 +199,7 @@ export const CHECKS: Stage[] = [
   check("check-roadmap.ts", checkRoadmap),
   check("check-plugin.ts", checkPlugin),
   check("check-skill-shell-neutrality.ts", checkSkillShellNeutrality),
+  check("check-voice.ts", checkVoice),
 ];
 
 /**

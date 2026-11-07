@@ -27,6 +27,7 @@ describe("GitHub adapter: reading an issue", () => {
           title: "Fix login",
           body: "Steps",
           labels: ["bug", "In Progress", "priority: high"],
+          issueType: "Bug",
           assignee: "dana",
           milestone: "Q3",
           parent: 3,
@@ -58,6 +59,7 @@ describe("GitHub adapter: reading an issue", () => {
       updatedAt: "2026-01-02T00:00:00Z",
       state: { name: "In Progress", type: "started" },
       labels: ["bug"],
+      nativeType: "Bug",
       parent: { identifier: "#3", title: "Issue 3" },
       children: [
         {
@@ -76,6 +78,26 @@ describe("GitHub adapter: reading an issue", () => {
       assignee: "dana",
       project: "Q3",
     });
+  });
+
+  it("asks for the issue type, and reads an issue without one as null", async () => {
+    const { t, calls } = gitHub(() =>
+      oneIssue(issueNode({ number: 5, extra: { subIssues: conn([]) } })),
+    );
+    expect((await t.getIssue("#5"))?.nativeType).toBeNull();
+    expect(calls[0]?.query).toContain("issueType { name }");
+  });
+
+  it("refuses an issue type it cannot read", async () => {
+    const { t } = gitHub(() =>
+      oneIssue(
+        issueNode({
+          number: 5,
+          extra: { subIssues: conn([]), issueType: { name: 7 } },
+        }),
+      ),
+    );
+    await expect(t.getIssue("#5")).rejects.toThrow("issueType.name");
   });
 
   it("reads a bare number, a web address and another repository's key", async () => {

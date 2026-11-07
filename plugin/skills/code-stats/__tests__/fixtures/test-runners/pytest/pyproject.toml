@@ -1,0 +1,6 @@
+[project]
+name = "shop"
+
+[tool.pytest.ini_options]
+testpaths = ["checks"]
+python_files = ["check_*.py"]

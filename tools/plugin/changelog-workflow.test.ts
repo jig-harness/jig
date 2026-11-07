@@ -240,7 +240,7 @@ test("the action refuses a command it does not have, before any setup", () => {
   const result = runStep(refuse, scratch, { ...INPUTS, command: "push" }, temp);
   expectSpawnExit(result, 2, "an unknown command");
   expect(result.stdout.toString()).toContain(
-    "command must be check, release or tag",
+    "command must be check, lint, release or tag",
   );
 });
 
@@ -328,6 +328,13 @@ const checkStep = (): Step => {
   return step;
 };
 
+/** The whole-changelog check's step, which has no id. */
+const lintStep = (): Step => {
+  const step = steps().find((s) => s.run?.includes("scripts/lint.ts"));
+  if (!step) throw new Error("action.yml has no lint step");
+  return step;
+};
+
 /**
  * A checkout whose Bun settings would run its own code in place of the
  * action's: a tsconfig.json whose `paths` maps every import (the entry script
@@ -387,6 +394,14 @@ test("the action runs its own scripts, whatever Bun settings the checkout holds"
   const check = runStep(checkStep(), dir, { ...inputs, base: "HEAD" }, temp);
   expectSpawnExit(check, 0, "the branch check");
   expect(check.stdout.toString()).toContain("(plugin ");
+  const lint = runStep(lintStep(), dir, { ...inputs, command: "lint" }, temp);
+  // The changelog names no versioning scheme and links no version: the
+  // action's own lint finds that, where the checkout's script would pass.
+  expectSpawnExit(lint, 1, "the whole-changelog check");
+  expect(lint.stdout.toString()).toContain("jig changelog lint (plugin ");
+  expect(lint.stderr.toString()).toContain(
+    "CHANGELOG.md:1: [keep-a-changelog/semver-statement]",
+  );
   expect(existsSync(join(dir, "ran-evil"))).toBe(false);
 });
 

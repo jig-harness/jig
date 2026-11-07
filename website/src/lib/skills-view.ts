@@ -2,6 +2,7 @@
  * Where each skill shows up: the modules it runs (from the module index) and
  * the factory stations it runs (from FACTORY.md).
  */
+import { stationLabel } from "./data/factory.ts";
 import { factory, modules } from "./data/index.ts";
 
 export function modulesRunBy(name: string): { id: string; title: string }[] {
@@ -22,9 +23,8 @@ export function stationsRunBy(
         (a.kind === "skill" || a.kind === "agent") && names.includes(a.name),
     );
     if (!runs) continue;
-    const level = s.id.startsWith("a") ? "Design" : "Execution";
     out.push({
-      label: `${level} ${s.n} · ${s.name}`,
+      label: stationLabel(s),
       href: `/factory/#station-${s.id}`,
     });
   }

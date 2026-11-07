@@ -4,17 +4,24 @@
  *
  *   issue_tracker:
  *     adapter: github          # which adapter answers; default `github`
- *     team: ENG                # Linear only: the key issue identifiers carry
+ *     team: ENG                # Linear and Jira: the key issue identifiers carry
  *     states:                  # canonical state → the tracker's own name
  *       in_progress: In Progress
  *     labels:                  # label role → the tracker's own label
  *       epic: epic
  *     github:                  # GitHub Issues only (`github.ts`)
- *       repository: owner/name # default: the `origin` remote's repository
+ *       repository: owner/name # default: the git remote's repository
  *       states_from: labels    # or `project`, a Projects board's Status field
  *       project: https://github.com/orgs/owner/projects/1
  *       status_field: Status
  *       priority_labels: { urgent: …, high: …, medium: …, low: … }
+ *     jira:                    # Jira Cloud only (`jira/settings.ts`)
+ *       site: https://example.atlassian.net
+ *       issue_type: Task
+ *       subtask_type: Sub-task
+ *       priorities: { urgent: Highest, high: High, medium: Medium, low: Low }
+ *       resolutions: { done: Done, canceled: Won't Do, duplicate: Duplicate }
+ *       link_types: { blocks: Blocks, related: Relates, duplicate: Duplicate }
  *
  * Every field is optional here; an operation that needs one it lacks fails
  * with a message naming the field.
@@ -30,6 +37,7 @@ import { CANONICAL_STATES, type CanonicalState } from "./port.ts";
 import { TrackerConfigError } from "./config-error.ts";
 import { type GitHubSettings, parseGitHubSettings } from "./github/settings.ts";
 import { gitHubModel } from "./github/model.ts";
+import { type JiraSettings, parseJiraSettings } from "./jira/settings.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 
 export interface TrackerConfig {
@@ -42,6 +50,8 @@ export interface TrackerConfig {
   labels: TrackerLabels;
   /** The GitHub adapter's settings, defaults filled in. */
   github: GitHubSettings;
+  /** The Jira adapter's settings, defaults filled in. */
+  jira: JiraSettings;
 }
 
 export const DEFAULT_ADAPTER = "github";
@@ -72,14 +82,36 @@ const ALIASABLE_STATES: ReadonlyArray<ReadonlyArray<CanonicalState>> = [
 ];
 
 /**
+ * On Jira, one `Done` status with a resolution per outcome is the common
+ * shape, and the resolution tells the closed states apart, so `done` may
+ * share their name too when the resolutions differ.
+ */
+const JIRA_CLOSED: ReadonlyArray<CanonicalState> = [
+  "done",
+  "canceled",
+  "duplicate",
+];
+
+/**
  * Refuse two states named alike outside one aliasable group. The skills map a
  * tracker's state name back to its canonical state (a child "in review" caps
  * its parent there); an `in_review` named like `in_progress` would read every
  * active child as parked.
  */
-function refuseAmbiguousStates(states: Record<CanonicalState, string>): void {
-  const group = (s: CanonicalState) =>
-    ALIASABLE_STATES.findIndex((g) => g.includes(s));
+function refuseAmbiguousStates(
+  states: Record<CanonicalState, string>,
+  adapter: string,
+  jira: JiraSettings,
+): void {
+  const r = jira.resolutions;
+  const resolved =
+    adapter === "jira" &&
+    new Set([r.done, r.canceled, r.duplicate].map((n) => n.toLowerCase()))
+      .size === 3;
+  const groups = resolved
+    ? [...ALIASABLE_STATES.filter((g) => !g.includes("canceled")), JIRA_CLOSED]
+    : ALIASABLE_STATES;
+  const group = (s: CanonicalState) => groups.findIndex((g) => g.includes(s));
   const seen = new Map<string, CanonicalState>();
   for (const s of CANONICAL_STATES) {
     const key = states[s].trim().toLowerCase();
@@ -130,7 +162,7 @@ function refuseTeamWithoutAdapter(adapter: unknown, team: unknown): void {
   if ((adapter === undefined || adapter === null) && team !== null)
     throw new TrackerConfigError(
       "issue_tracker.adapter",
-      `issue_tracker.team is set but issue_tracker.adapter is not, and the default adapter is ${DEFAULT_ADAPTER}, which has no team; set issue_tracker.adapter: linear to keep ${team} issue keys`,
+      `issue_tracker.team is set but issue_tracker.adapter is not, and the default adapter is ${DEFAULT_ADAPTER}, which has no team; set issue_tracker.adapter: linear (or jira) to keep ${team} issue keys`,
     );
 }
 
@@ -177,8 +209,9 @@ export function parseTrackerConfig(
       states[key as CanonicalState] = name;
     }
   }
-  refuseAmbiguousStates(states);
   const github = parseGitHubSettings(section.github);
+  const jira = parseJiraSettings(section.jira);
+  refuseAmbiguousStates(states, adapter, jira);
   refuseSharedLabels(adapter, states, github);
   return {
     adapter,
@@ -186,6 +219,7 @@ export function parseTrackerConfig(
     states,
     labels: parseTrackerLabels(overlay),
     github,
+    jira,
   };
 }
 

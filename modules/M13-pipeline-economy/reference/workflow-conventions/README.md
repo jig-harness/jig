@@ -139,7 +139,48 @@ recognize is a finding to rewrite or excuse, never a pass.
   triggering runs, a guard that skipped on every `labeled` event would let
   any unrelated label replace a failing head's result with a passing skip,
   while this one skips only a pull request that carries the hold label and
-  runs real CI on any other label event.
+  runs real CI on any other label event, unless the workflow answers that
+  event with a mirror (`ci-hold-mirror`). A job's `if:` in a workflow of the
+  hold may read the event only through `github.event.pull_request`, the pull
+  request's own state, its label set included, which is the same whatever
+  event started the run. A term that reads the event otherwise (its action,
+  its label, its sender, the whole event or the whole `github` context, by
+  property or index, in any case) is a finding, unless it is the mirror's
+  skip term: a job skipped on some events and not others can turn a failing
+  head into a passing one, and a form the lint cannot prove safe is never a
+  pass. Other contexts (`needs`, `inputs`) are no read of the event. The lint
+  reads job conditions only; a step that skips on a label event is review's to
+  check.
+- `ci-hold-mirror`: applies to a workflow that answers an event for another
+  label with a [mirror run](../../../../GLOSSARY.md): one where some job's
+  `if:` has the `&&`-joined term `!(github.event.label.name &&
+  github.event.label.name != '<label>')`, where a required job has a mirror
+  step, or whose `run-name` begins with that test. The term skips a job on an
+  event for any label but the hold's, and a pull request's other events carry
+  no label, so it is false on them. Such a workflow needs all of the
+  [mirror's shape](../../README.md#7-hold), since each part missing has a
+  failure of its own. Its workflow-level concurrency group's expression begins
+  with the test, `&&`, and a key that is exactly `github.run_id` or
+  `format('<text>{0}<text>', github.run_id)`, then `||`, so the run cancels
+  nothing; without it, the label's run cancels the real run in flight, and any
+  other key could read the run id and still come to one text for every run.
+  Its `run-name` is exactly `${{ <the test> && <mirror name> || <event test> &&
+  <real name> || '' }}`, the event test `github.event_name == '<event>'` for
+  the workflow's one pull-request trigger, or
+  `startsWith(github.event_name, 'pull_request')`, which covers both; each name a
+  quoted string or a `format()` whose pattern is one, the two with literal
+  starts that differ (neither begins the other). So every mirror run's name
+  starts one way and every real pull-request run's the other, and the mirror
+  step can leave mirror runs out without a title passing a real run off as
+  one; without it, mirrors can wait on each other until the deadline, or a
+  real run's title can hide it from the mirror. Each required job neither carries the term, since a skipped
+  required check counts as passing, nor lacks a mirror step: a `run:` step
+  whose whole `if:` is the test, optionally inside `${{ }}`, with no
+  `continue-on-error` on it or on its job, since a run without one judges the
+  jobs it skipped. And every heavy job carries the term, the saving the form
+  exists for. The lint reads where the mirror step stands, not what its script
+  does: that it passes only on the real run's success and fails closed
+  otherwise is review's to check, and Jig's own step has tests that run it.
 - `ci-hold-sentinel`: some job of a pull-request workflow that holds a
   required check fails while the label is present, and its failure reaches
   that check. The job is the required job, or one the required job needs
@@ -154,7 +195,10 @@ recognize is a finding to rewrite or excuse, never a pass.
   with no `if:`. Any other job condition, `false` included, may skip the job,
   and a skipped sentinel fails nothing. Neither the job nor that step may set `continue-on-error`,
   since a tolerated failure fails nothing. That step is where the held head
-  fails, so it is visibly not mergeable. Any other spelling, negated,
+  fails, so it is visibly not mergeable. In the required job itself it may
+  cancel its own run before failing; in a job the required one needs it must
+  only fail, since a cancelled run can leave the required job skipped. The
+  lint does not read the step's commands, so it does not check that. Any other spelling, negated,
   compared with `false` or combined with another condition, is not taken as
   the sentinel: a sentinel the lint misses is a finding to rewrite, a
   misread one would be a false pass. Its finding points at the configuration
@@ -323,5 +367,8 @@ correctly, stay with review.
 | `check-workflow-conventions.ts` | the gate: options, exceptions, report |
 | `inputs.ts` | reads the workflows, actions, configuration and exception list, failing closed |
 | `rules.ts` | the rules, one function each |
+| `workflow-reading.ts` | what the rules share: the finding they return, where in a workflow's text it points, how a job's `if:`, needs and steps read |
 | `check-workflow-conventions.test.ts` | paired self-test |
+| `check-workflow-conventions-mirror.test.ts` | the self-test of the CI hold's mirror form |
+| `test-support.ts` | what the self-tests share |
 | `fixtures/` | one small repository per case: a pass and a fail per rule, composite actions, unparseable input, a repeated key, stale, reasonless and unknown-rule exceptions, malformed configuration |

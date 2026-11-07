@@ -1,3 +1,4 @@
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import {
   scopedStateDir,
   linkedScratchTree,
@@ -13,19 +14,13 @@ import assert from "node:assert/strict";
  */
 
 import { afterAll, beforeAll, expect } from "bun:test";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
 import { resolveActor } from "../scripts/lib/state/actor";
 import { freshState } from "../scripts/lib/state/schema";
 import { worktreeLockName } from "../scripts/lib/state/store";
+import { readState, writeState } from "./state-rows.ts";
 // Imported, never restated: every fixture age below is derived from the
 // production floor, so raising it cannot silently leave a probe sitting
 // underneath it and passing vacuously.
@@ -39,11 +34,8 @@ export const REPO_ROOT = join(import.meta.dir, "..", "..", "..", "..");
 
 /** Seed historical global verification without bypassing the production gate. */
 export function writeVerifiedSha(stateDir: string, sha: string): void {
-  const path = join(stateDir, "drive-pr-999.json");
-  const state = existsSync(path)
-    ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>)
-    : freshState(999);
-  writeFileSync(path, JSON.stringify({ ...state, verifiedSha: sha }));
+  const state = readState(stateDir, "999") ?? freshState(999);
+  writeState(stateDir, "999", { ...state, verifiedSha: sha });
 }
 /**
  * The worktree lock's file name, resolved through the SAME function drive.ts
@@ -77,8 +69,10 @@ export const PREV = "7bd2ca906c111111111111111111111111111111";
 export const GIT_PUSH_FLAG_GUARD = `(
   [[ "$1" == push ]] || exit 2
   shift
-  # guarded-push.ts always calls \`git(['push', ...extra, 'origin', refspec])\`
-  # — the remote comes immediately before the refspec, never after it. Track
+  # guarded-push.ts always calls \`git(['push', ...extra, remote, refspec])\`
+  # — the remote comes immediately before the refspec, never after it. The
+  # remote is the one the repository.remote setting names: the environment
+  # layer's JIG__REPOSITORY__REMOTE when a probe sets it, else origin. Track
   # POSITION, not mere presence: checking "did 'origin' and a refspec token
   # occur somewhere" would still pass an accidentally swapped invocation
   # (\`git push <refspec> origin\`), which git itself rejects (the refspec is
@@ -97,8 +91,8 @@ export const GIT_PUSH_FLAG_GUARD = `(
     esac
     case "$stage" in
       remote)
-        [[ "$argument" == origin ]] || {
-          echo "git push: expected remote 'origin' first, got '$argument'" >&2; exit 2;
+        [[ "$argument" == "\${JIG__REPOSITORY__REMOTE:-origin}" ]] || {
+          echo "git push: expected remote '\${JIG__REPOSITORY__REMOTE:-origin}' first, got '$argument'" >&2; exit 2;
         }
         stage=refspec ;;
       refspec)
@@ -262,6 +256,9 @@ export interface Fixture {
     app: string;
     /** ISO timestamp, or null for a queued attempt that has not started. */
     started?: string | null;
+    completed_at?: string;
+    /** Links the check to its workflow run in `workflow-runs.json`. */
+    check_suite?: { id: number };
   }>;
   statuses?: Array<{ context: string; state: string; description: string }>;
   /** Statuses reachable only on a SECOND API page — i.e. only with --paginate. */
@@ -538,16 +535,10 @@ export let tmpRoot: string;
 export let binDir: string;
 /**
  * A per-suite scratch `$HOME`, so a probe that resolves `resolveStateDir`'s
- * default (no `$DRIVE_PR_STATE_DIR` override — deliberately, to test the
- * default itself) writes under `<suiteHome>/.local/state/jig/`, never the real
- * `~/.local/state/jig` on whatever machine runs this suite.
- * `gitCleanEnv` sets this for every subprocess the suite spawns; a test
- * that wants the real value (none currently do) overrides it explicitly in
- * its own `env`, which still wins over `gitCleanEnv`'s spread.
- *
- * A SUBPROCESS env, never an in-process `process.env.HOME =`: under Bun,
- * `os.homedir` ignores a runtime `$HOME` change, so an in-process fake is
- * silently ineffective.
+ * default writes under `<suiteHome>/.local/state/jig/`, never the real
+ * `~/.local/state/jig`. `gitCleanEnv` sets this for every subprocess the suite
+ * spawns. A SUBPROCESS env, never an in-process `process.env.HOME =`: under
+ * Bun, `os.homedir` ignores a runtime `$HOME` change.
  */
 export let suiteHome: string;
 /**
@@ -568,6 +559,7 @@ const SUITE_ENV_OVERRIDES = [
   "GH_CALL_TIMEOUT",
   "DRIVE_PR_HELPER_TIMEOUT",
   "DRIVE_PR_LOCK_RETRY_MS",
+  "DRIVE_PR_ATTACH",
   "DRIVE_PR_CLAUDE_PROJECTS_DIR",
   "DRIVE_PR_CODEX_SESSIONS_DIR",
   "JIG_OVERLAY",
@@ -993,13 +985,11 @@ export function useDrivePrSuite(): void {
     // retry interval is the handoff latency between contending claimants — at
     // the production default (1s) the concurrency probes spend almost all of
     // their wall-clock sleeping between polls, and under machine load that
-    // quantum amplified into per-test-budget blowups that present as failures
-    // (the stale-claim race probe: 49s idle, 423s at load ~9 against a 90s
-    // budget). 25ms keeps every probe's CONTENTION real — same processes, same
-    // syscalls, same interleavings — while removing only the sleeping. A test
-    // that needs the production pacing sets its own value in its spawn env
-    // (per-call env wins over this inherited default).
-    suitePacing = { DRIVE_PR_LOCK_RETRY_MS: "25" };
+    // quantum amplified into per-test-budget blowups. 25ms keeps every
+    // probe's contention real while removing only the sleeping; a test that
+    // needs the production pacing sets its own value in its spawn env.
+    // No attach: fixture PRs have no head to fetch (attach-pr.test.ts).
+    suitePacing = { DRIVE_PR_LOCK_RETRY_MS: "25", DRIVE_PR_ATTACH: "off" };
     Object.assign(process.env, suitePacing);
     // The consumer configuration every probe reads: the reviewer app the
     // fixtures post as, the base branch the scratch repositories carry, and
@@ -1098,7 +1088,7 @@ export DRIVE_PR_STUB_GH_NESTED=1
   if [[ "$requires_json" -eq 1 ]]; then
     case "$command:$json_fields" in
       'pr checks:name,bucket,state'|'repo view:owner,name'|\
-      'pr view:number'|'pr view:state'|'pr view:headRefOid'|\
+      'pr view:number'|'pr view:state'|'pr view:headRefOid'|'pr view:mergeable'|\
       'pr view:baseRefName'|'pr view:baseRefName,url'|'pr view:state,isDraft'|\
       'pr view:state,headRefOid,labels'|\
       'pr view:state,headRefOid,baseRefOid'|\
@@ -1338,13 +1328,21 @@ if [ "$has_input" -eq 1 ]; then
   # release-held call — a window the claim-step's own exit-3 abort cannot
   # cover, since the claim already succeeded before this point.
   if [ -f "$F/corrupt-state-on-post" ]; then
-    printf 'not json' > "\${DRIVE_PR_STATE_DIR:?}/drive-pr-999.json"
+    "${process.execPath}" "${join(import.meta.dir, "fixtures", "corrupt-state.ts")}" "\${DRIVE_PR_STATE_DIR:?}" 999
   fi
-  cat >> "$F/posted.jsonl"
+  input=$(cat)
+  printf '%s' "$input" >> "$F/posted.jsonl"
   n=1
   [ -f "$F/posted-seq" ] && n=$(( $(< "$F/posted-seq") + 1 ))
   printf '%s' "$n" > "$F/posted-seq"
   id=$(( \${DRIVE_PR_POSTED_ID_BASE:-9000} + n ))
+  # A claim this stub accepts (a merge-ready announcement or a takeover claim)
+  # is listed by the comment sweeps after it, as the real API lists a comment
+  # once it exists: the claim's read-back finds it there (see swept() below).
+  if printf '%s' "$input" | jq -e '.body | (startswith("**Safe to merge from the driver") or startswith("<!-- drive-pr-takeover-claim -->"))' >/dev/null 2>&1; then
+    printf '%s' "$input" | jq -c --argjson id "$id" \\
+      '{id: $id, body: .body, user: {login: "drive-user"}, author_association: "OWNER"}' >> "$F/accepted.jsonl"
+  fi
   out=$(jq -nc --argjson id "$id" \\
     '{id: $id, html_url: "https://example.invalid/posted/\\($id)"}')
   if [ -n "$filter" ]; then printf '%s' "$out" | jq -r "$filter"; else printf '%s' "$out"; fi
@@ -1382,10 +1380,42 @@ if [ "$announce_sweep" -eq 1 ] && [ -f "$F/dirty-after-sweeps" ]; then
   fi
 fi
 
+# $F/fail-sweeps-after: how many sweeps answer before the rest fail.
+if [ "$announce_sweep" -eq 1 ] && [ -f "$F/fail-sweeps-after" ]; then
+  m=0
+  [ -f "$F/fail-sweep-reads" ] && m=$(< "$F/fail-sweep-reads")
+  m=$(( m + 1 ))
+  printf '%s' "$m" > "$F/fail-sweep-reads"
+  if [ "$m" -gt "$(< "$F/fail-sweeps-after")" ]; then
+    echo "gh-stub: simulated read-back failure" >&2
+    exit 1
+  fi
+fi
+
 if [ -f "$F/paginate-fails" ] && [ "$announce_sweep" -eq 1 ]; then
   echo "gh-stub: simulated comment-sweep failure" >&2
   exit 1
 fi
+
+# What an announcement sweep lists: the comments in "$1", then each claim
+# this stub accepted, less every comment deleted since. DELETED
+# comments stop being returned, as the real API would have it. Without that, a
+# sweep taken AFTER a retraction still sees the comment it just removed — so
+# any probe about what the script does with a post-cleanup read would be
+# answering from pre-cleanup data, and could pass while the bug it targets
+# stands.
+swept() {
+  gone='[]'
+  if [ -f "$F/deleted.jsonl" ]; then
+    gone=$(jq -R -s 'split("\\n") | map(select(length > 0) | tonumber)' "$F/deleted.jsonl")
+  fi
+  accepted='[]'
+  [ -f "$F/accepted.jsonl" ] && accepted=$(jq -s '.' "$F/accepted.jsonl")
+  jq -c --argjson gone "$gone" --argjson accepted "$accepted" \\
+    '(. + $accepted) | map(select(.id as $i | ($gone | index($i)) == null))' \\
+    "$1" > "$F/swept-comments.json"
+  emit "$F/swept-comments.json"
+}
 
 # Model the residue of an INTERRUPTED earlier run: a real announcement, from a
 # trusted author, whose marker names a head the PR has since moved past. Present
@@ -1393,23 +1423,16 @@ fi
 # does creates it. Scoped to the live head the sweep cannot see it at all, so
 # this is the fixture that says whether the stale-announcement retraction works.
 if [ -f "$F/stale-announcement" ] && [ "$announce_sweep" -eq 1 ]; then
-  # DELETED comments stop being returned, as the real API would have it.
-  # Without that, a sweep taken AFTER a retraction still sees the comment it
-  # just removed — so any probe about what the script does with a post-cleanup
-  # read would be answering from pre-cleanup data, and could pass while the bug
-  # it targets stands.
-  gone='[]'
-  if [ -f "$F/deleted.jsonl" ]; then
-    gone=$(jq -R -s 'split("\\n") | map(select(length > 0) | tonumber)' "$F/deleted.jsonl")
-  fi
   jq -nc --arg o "\${DRIVE_PR_ANNOUNCE_OPENER_FIXTURE:-}" \\
          --arg stale "$(< "$F/stale-announcement")" \\
-         --argjson gone "$gone" \\
+         --arg bad "\${DRIVE_PR_MALFORMED:-}" \\
     '[{id: 7, body: ($o + "\\n\\nan earlier run was killed before it could withdraw this\\n\\n<!-- drive-pr-merge-ready: " + $stale + " -->"),
        user: {login: "other"}, author_association: "OWNER"}]
-     | map(select(.id as $i | ($gone | index($i)) == null))' \\
+     + (if $bad == "" then [] else
+         [{id: 8, body: ($o + "\\n\\nan announcement that ends with no head marker"),
+           user: {login: "other"}, author_association: "OWNER"}] end)' \\
     > "$F/stale-comments.json"
-  emit "$F/stale-comments.json"
+  swept "$F/stale-comments.json"
   exit 0
 fi
 
@@ -1430,10 +1453,19 @@ fi
 # EXACTLY — both strings are public — from an author GitHub does not vouch for.
 if [ -f "$F/race-after-post" ] && [ -f "$F/posted-seq" ] \\
    && [ "$announce_sweep" -eq 1 ]; then
+  # $DRIVE_PR_MALFORMED_LATE models a listing that lags: the malformed
+  # announcement is absent from the first post-write sweep and listed from the
+  # second on, which is the read-back's.
+  late_n=0
+  if [ -n "\${DRIVE_PR_MALFORMED_LATE:-}" ]; then
+    late_n=$(( $(cat "$F/late-n" 2>/dev/null || echo 0) + 1 ))
+    echo "$late_n" > "$F/late-n"
+  fi
   jq -nc --arg m "\${DRIVE_PR_MERGE_MARKER_FIXTURE:-}" \\
          --arg o "\${DRIVE_PR_ANNOUNCE_OPENER_FIXTURE:-}" \\
          --arg quoter "\${DRIVE_PR_QUOTER:-}" \\
          --arg forger "\${DRIVE_PR_FORGER:-}" \\
+         --arg bad "$([ -n "\${DRIVE_PR_MALFORMED:-}" ] && echo 1; [ "$late_n" -ge 2 ] && echo 1)" \\
          --argjson rid "\${DRIVE_PR_RIVAL_ID:-1}" \\
          --argjson ours "$(( \${DRIVE_PR_POSTED_ID_BASE:-9000} + $(< "$F/posted-seq") ))" \\
     '[{id: $rid, body: ($o + "\\n\\nthe rival driver got there first\\n\\n" + $m),
@@ -1445,7 +1477,10 @@ if [ -f "$F/race-after-post" ] && [ -f "$F/posted-seq" ] \\
            user: {login: "human"}, author_association: "COLLABORATOR"}] end)
      + (if $forger == "" then [] else
          [{id: 0, body: ($o + "\\n\\nthe review drive converged\\n\\n" + $m),
-           user: {login: "drive-by"}, author_association: "NONE"}] end)' \\
+           user: {login: "drive-by"}, author_association: "NONE"}] end)
+     + (if $bad == "" then [] else
+         [{id: 3, body: ($o + "\\n\\nan announcement that ends with no head marker"),
+           user: {login: "other"}, author_association: "OWNER"}] end)' \\
     > "$F/raced-comments.json"
   emit "$F/raced-comments.json"
   exit 0
@@ -1915,6 +1950,8 @@ for a in "$@"; do
       st=$(jq -r '.state // "OPEN"' "$F/pr-view.json")
       printf '{"data":{"node":{"__typename":"PullRequestReviewThread","id":"%s","pullRequest":{"number":999,"state":"%s"}}}}' "$tid" "$st"
       exit 0 ;;
+    *"pullRequest { number repository"*) printf '%s' '{"data":{"node":{"pullRequest":{"number":999,"repository":{"owner":{"login":"example-org"},"name":"example-repo"}}}}}' | jq -r "\${filter:-.}"; exit 0 ;;
+    repos/*/code-scanning/alerts/[0-9]*) cat "$F/alert-\${a##*/}.json"; exit $? ;;
   esac
 done
 
@@ -2045,6 +2082,7 @@ for a in "$@"; do
     graphql)             emit "$F/threads.json"; exit 0 ;;
     *issues/*/timeline*) emit "$F/timeline.json"; exit 0 ;;
     *check-runs*)        emit "$F/check-runs.json"; exit 0 ;;
+    *actions/runs*)      emit "$F/workflow-runs.json"; exit 0 ;;
     # Query string included: drive-status.ts paginates this endpoint with an
     # explicit \`?per_page=\`, and a stub matching only the bare path would make
     # every commit-status test read as "API unreadable" instead of exercising it.
@@ -2059,7 +2097,10 @@ for a in "$@"; do
         emit "$F/status.json"
       fi
       exit 0 ;;
-    *issues/*/comments*) emit "$F/issue-comments.json"; exit 0 ;;
+    *issues/*/comments*)
+      if [ "$announce_sweep" -eq 1 ]; then swept "$F/issue-comments.json"
+      else emit "$F/issue-comments.json"; fi
+      exit 0 ;;
     *pulls/*/comments*)  emit "$F/pull-comments.json"; exit 0 ;;
   esac
 done
@@ -2350,6 +2391,7 @@ export function writeFixture(
         started_at: c.started,
       })),
     });
+  w("workflow-runs.json", { workflow_runs: [] });
   w("timeline.json", []);
   w("metrics-meta.json", {
     data: {
@@ -2610,17 +2652,7 @@ export async function park(
   kind: "thread" | "finding",
 ) {
   const proc = Bun.spawn(
-    scriptArgv(
-      join(SCRIPTS, "drive-state.ts"),
-      "park",
-      "999",
-      "--key",
-      key,
-      "--kind",
-      kind,
-      "--reason",
-      "arbiter escalated",
-    ),
+    scriptArgv(join(SCRIPTS, "drive-state.ts"), ...parkArgs(key, kind)),
     {
       cwd: fixtureStateTree(stateDir),
       env: {
@@ -2628,6 +2660,9 @@ export async function park(
         DRIVE_PR_STATE_DIR: stateDir,
         DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
       },
+      stdin: new TextEncoder().encode(
+        parkRecord("Did the arbiter escalate it"),
+      ),
       stdout: "pipe",
       stderr: "pipe",
     },

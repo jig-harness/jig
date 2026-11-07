@@ -141,6 +141,7 @@ import {
   type IssueKeys,
   issueKeysOrNull,
 } from "../../do-item/scripts/lib/tracker/keys.ts";
+import { remoteName } from "../../../shared/consumer.ts";
 import { fail, runMain } from "./lib/cli.ts";
 import {
   anchorLine,
@@ -204,10 +205,23 @@ export function followUpPattern(keys: IssueKeys | null): RegExp {
   return new RegExp(keys?.source ?? ANY_KEY_SOURCE, "g");
 }
 
+let configuredRemote: string | undefined;
+
+/**
+ * The tip of `base` as this clone last fetched it, `<remote>/<base>` (the
+ * remote is `repository.remote`, else `origin`), or `HEAD` when the base is
+ * unknown.
+ */
+function baseTip(base: string): string {
+  if (base === "") return "HEAD";
+  configuredRemote ??= remoteName();
+  return `${configuredRemote}/${base}`;
+}
+
 /**
  * Commits touching `path` after `since` whose headline is a conventional `fix`.
  *
- * Walked from `origin/<base>` rather than HEAD: this worktree is on some
+ * Walked from `<remote>/<base>` rather than HEAD: this worktree is on some
  * feature branch, and its HEAD's ancestry stops at whenever it forked — so
  * every fix merged to the base after that point would be invisible, which is
  * exactly the population this looks for.
@@ -232,7 +246,7 @@ async function laterFixCommits(
   mergeOid: string,
   until: string,
 ): Promise<string[]> {
-  const tip = base === "" ? "HEAD" : `origin/${base}`;
+  const tip = baseTip(base);
   const haveMerge =
     mergeOid !== "" &&
     (
@@ -2171,7 +2185,7 @@ async function main(): Promise<number> {
           }
         }
       }
-      const tip = s.baseRefName === "" ? "HEAD" : `origin/${s.baseRefName}`;
+      const tip = baseTip(s.baseRefName);
       // The decline THREAD's own `createdAt`, not its PR's `mergedAt` — the
       // same precision fix as the candidate side. Deliberately `createdAt`
       // rather than `declinedAtOf` (settled, else raised): the decline first

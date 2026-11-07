@@ -8,35 +8,50 @@ import {
   processTable,
   type ProcessRow,
 } from "../../../shared/process-table.ts";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import {
-  driverStopRequested,
-  requestDriverStop,
-} from "../scripts/lib/stop-request.ts";
+  appendDirective,
+  outboxRecordsForPr,
+} from "../scripts/lib/state/mailbox.ts";
+import { immediateStop } from "../scripts/lib/state/mailbox-stop.ts";
 import {
   binDir,
   SCRIPTS,
   useDrivePrSuite,
   writeFixture,
 } from "./drive-pr-harness.ts";
-import { lockDirs } from "./drive-loop-harness.ts";
+import { lockDirs, lockHeld } from "./drive-loop-harness.ts";
 
 useDrivePrSuite();
 
+/** The driver acknowledgements in `mailbox`'s outbox for PR 999, as [directive id, generation]. */
+function acks(mailbox: string): Array<[string, number | undefined]> {
+  const out = outboxRecordsForPr(mailbox, "999");
+  if (!out.ok) throw new Error(out.why);
+  return out.records
+    .filter((r) => r.status === "ack")
+    .map((r) => [r.id, r.generation]);
+}
+
 describe("cooperative driver stop", () => {
-  it("addresses one acquisition, so an older request cannot stop a successor", () => {
-    const { stateDir } = writeFixture({ threads: [] });
-    requestDriverStop(stateDir, "old-generation");
-    expect(driverStopRequested(stateDir, "old-generation")).toBe(true);
-    expect(driverStopRequested(stateDir, "new-generation")).toBe(false);
+  it("addresses one driver generation, so an older stop cannot stop a successor", async () => {
+    const mailbox = mkdtempSync(join(tmpdir(), "drive-stop-address-"));
+    const stop = await appendDirective(mailbox, "999", "test", "stop", {
+      generation: 4,
+      now: true,
+    });
+    expect(immediateStop(mailbox, "999", 4)).toBe(stop.id);
+    expect(immediateStop(mailbox, "999", 5)).toBeNull();
+    expect(immediateStop(mailbox, "998", 4)).toBeNull();
   });
 
   it("cooperative stop waits for idle-driver helper cancellation before releasing resources", async () => {
-    const { dir } = writeFixture({ threads: [] });
+    const { dir, stateDir } = writeFixture({ threads: [] });
     const released = join(dir, "released");
     const helperPid = join(dir, "helper-pid");
     const cancelled = join(dir, "cancelled");
@@ -44,15 +59,16 @@ describe("cooperative driver stop", () => {
     const cleanupModule = new URL("../../../shared/cleanup.ts", import.meta.url)
       .href;
     const driveModule = new URL("../scripts/drive.ts", import.meta.url).href;
-    const requestModule = new URL(
-      "../scripts/lib/stop-request.ts",
+    const mailboxModule = new URL(
+      "../scripts/lib/state/mailbox.ts",
       import.meta.url,
     ).href;
+    const mailbox = join(dir, "mailbox");
     const script = `
       import {writeFileSync,existsSync} from 'node:fs';
       import {registerCleanup,registerSignalHandler} from ${JSON.stringify(cleanupModule)};
       import {installStopControls,finishDriverPassRegistrations} from ${JSON.stringify(driveModule)};
-      import {requestDriverStop} from ${JSON.stringify(requestModule)};
+      import {appendDirective} from ${JSON.stringify(mailboxModule)};
       const child=Bun.spawn([process.execPath,'-e','setInterval(()=>{},1000)',${JSON.stringify(helperPid)}],{stdout:'ignore',stderr:'ignore'});
       writeFileSync(${JSON.stringify(helperPid)},String(child.pid));
       registerCleanup(()=>writeFileSync(${JSON.stringify(released)},existsSync(${JSON.stringify(cancelled)})?'cancelled':'early'));
@@ -61,13 +77,13 @@ describe("cooperative driver stop", () => {
         child.kill();await child.exited;
         writeFileSync(${JSON.stringify(cancelled)},'done');
       });
-      installStopControls([{dir:${JSON.stringify(dir)},what:'fixture',nonce:'generation'}]);
+      installStopControls([{stateDir:${JSON.stringify(stateDir)},name:'pr-drive-999',what:'fixture',nonce:'acquisition'}],undefined,{dir:${JSON.stringify(mailbox)},pr:'999',generation:1});
       void (async()=>{
         await new Promise(resolve=>registerSignalHandler(()=>resolve()));
         await finishDriverPassRegistrations([]);
         writeFileSync(${JSON.stringify(mutation)},'advanced');
       })();
-      requestDriverStop(${JSON.stringify(dir)},'generation');
+      await appendDirective(${JSON.stringify(mailbox)},'999','test','stop',{generation:1,now:true});
       setInterval(()=>{},1000);
     `;
     const proc = Bun.spawn([process.execPath, "-e", script], {
@@ -84,6 +100,7 @@ describe("cooperative driver stop", () => {
       expect(readFileSync(released, "utf8")).toBe("cancelled");
       expect(existsSync(cancelled)).toBe(true);
       expect(existsSync(mutation)).toBe(false);
+      expect(acks(mailbox).map(([, generation]) => generation)).toEqual([1]);
     } finally {
       if (existsSync(helperPid)) {
         const targets = await captureProcessTree(
@@ -97,7 +114,7 @@ describe("cooperative driver stop", () => {
     }
   }, 60000);
 
-  it("--stop cancels an active pass and releases its driver's locks", async () => {
+  it("--stop cancels an active pass and releases its driver's locks, and the driver acknowledges it", async () => {
     const { dir, stateDir } = writeFixture({
       threads: [{ id: "PRRT_stop", path: "a.ts", bot: true }],
     });
@@ -108,8 +125,11 @@ describe("cooperative driver stop", () => {
       ...process.env,
       PATH: `${binDir}${delimiter}${process.env.PATH}`,
       DRIVE_PR_FIXTURES: dir,
+      // This process-lifecycle fixture has no mirrored ledger; publication is covered by ledger-stop.test.ts.
+      DRIVE_PR_LEDGER: "off",
       DRIVE_PR_STATE_DIR: stateDir,
       DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+      DRIVE_PR_MAILBOX_DIR: join(dir, "mailbox"),
       NODE_ENV: "test",
     };
     const driver = Bun.spawn(
@@ -180,9 +200,7 @@ describe("cooperative driver stop", () => {
         `driver process tree remained unreadable before the startup deadline; driver exit=${String(driver.exitCode)}\n${readFileSync(driverLog, "utf8")}`,
       ).not.toBeNull();
       if (captured === null) return;
-      expect(readdirSync(pr).filter((n) => n.startsWith("claim.")).length).toBe(
-        1,
-      );
+      expect(lockHeld(pr)).toBe(true);
       const stop = Bun.spawn(
         scriptArgv(join(SCRIPTS, "drives.ts"), "--stop", "999"),
         { env, stdout: "pipe", stderr: "pipe" },
@@ -205,8 +223,12 @@ describe("cooperative driver stop", () => {
       const [stdout, stderr] = await output;
       expectSpawnExit({ exitCode: code, stdout, stderr }, 143);
       expect(stderr).toContain("received stop request");
-      expect(existsSync(worktree)).toBe(false);
-      expect(existsSync(pr)).toBe(false);
+      const generation = Number(/driver generation (\d+)/.exec(stderr)?.[1]);
+      expect(acks(join(dir, "mailbox")).map(([, g]) => g)).toEqual([
+        generation,
+      ]);
+      expect(lockHeld(worktree)).toBe(false);
+      expect(lockHeld(pr)).toBe(false);
       expect(await identityTargetsGone(captured)).toBe(true);
     } finally {
       if (driver.exitCode === null) {

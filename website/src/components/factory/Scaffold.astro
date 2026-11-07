@@ -35,7 +35,7 @@ const phases = VERIFY_PHASES.map((name, i) => ({
 const JOB_PLATE = { context: "map", verification: "gauge", knowledge: "catalog" } as const;
 ---
 
-  <SectionHead id="scaffolding" label="A factory of agents runs on scaffolding" note={`${countWord(f.jobs.length)} jobs, and the modules that build each`} />
+  <SectionHead id="scaffolding" label="The scaffolding, job by job" note={`${countWord(f.jobs.length)} jobs, and the modules that build each`} />
   <p class="lead" set:html={await inline(f.scaffoldLead)} />
   <div class="jobs-table">
     <div class="th" aria-hidden="true"><span>Job</span><span>What it means</span><span>Jig's modules</span><span>Without it</span></div>

@@ -87,6 +87,17 @@ function parse(labels: string[], taxonomy: Taxonomy, errors: string[]) {
   return parsed;
 }
 
+/**
+ * Whether the taxonomy defines `label`: a type, a group label, a flag, a
+ * closed category label, or an open category's label whose slug matches.
+ */
+export function declaresLabel(taxonomy: Taxonomy, label: string): boolean {
+  const errors: string[] = [];
+  return (
+    parse([label], taxonomy, errors).unknown.length === 0 && errors.length === 0
+  );
+}
+
 /** The labels the issue lacks of `required`. */
 const lacking = (present: Set<string>, required: string[]) =>
   required.filter((label) => !present.has(label));

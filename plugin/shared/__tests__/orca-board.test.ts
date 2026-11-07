@@ -1,0 +1,477 @@
+import { describe, expect, test } from "bun:test";
+import { ExitError } from "../cli.ts";
+import { orcaAnswering } from "../../../lib/test-helpers/orca-answering.ts";
+import type { OrcaRunner } from "../orca.ts";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  BOARD_STAGES,
+  boardColumns,
+  mergedComment,
+  parseArgs,
+  updateBoard,
+} from "../orca-board.ts";
+import { withCardLock } from "../orca-card-lock.ts";
+
+const ORCA = { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
+const ID = "repo-1::/ws/app/feat-x";
+const noConfig = () => ({});
+
+const current = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
+const set = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
+const setArgs = (...flags: string[]) =>
+  ["worktree set --worktree", `id:${ID}`, ...flags, "--json"].join(" ");
+const showArgs = `worktree show --worktree id:${ID} --json`;
+const shown = (card: { comment: string; isUnread: boolean }) =>
+  JSON.stringify({ ok: true, result: { worktree: { id: ID, ...card } } });
+
+describe("outside Orca", () => {
+  test("makes no call and reads no configuration", async () => {
+    const { calls, runner } = orcaAnswering({});
+    let read = false;
+    const config = () => {
+      read = true;
+      return {};
+    };
+    for (const update of [
+      { stage: "in-review" as const },
+      { unread: true, comment: "PR #4 parked: which one?" },
+    ])
+      expect(await updateBoard(update, {}, runner, config)).toBe(
+        "orca-board: not in Orca; nothing to do",
+      );
+    expect(calls).toEqual([]);
+    expect(read).toBe(false);
+  });
+});
+
+describe("in an Orca terminal", () => {
+  test("sets the working directory's card and links the pull request", async () => {
+    const { calls, commands, runner } = orcaAnswering({
+      "worktree current --json": current,
+      [setArgs("--workspace-status", "in-review", "--pr", "42")]: set,
+    });
+    expect(
+      await updateBoard(
+        { stage: "in-review", pr: "42" },
+        ORCA,
+        runner,
+        noConfig,
+      ),
+    ).toBe("orca-board: in-review, PR #42 linked");
+    expect(calls).toEqual([
+      "worktree current --json",
+      setArgs("--workspace-status", "in-review", "--pr", "42"),
+    ]);
+    expect(commands).toEqual([ORCA.ORCA_CLI_COMMAND, ORCA.ORCA_CLI_COMMAND]);
+  });
+
+  test("marks the card unread with a comment, leaving its column alone", async () => {
+    const comment = "PR #42 parked: which release carries it?";
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+      [showArgs]: shown({ comment: "older note", isUnread: false }),
+      [setArgs("--unread", "--comment", comment)]: set,
+    });
+    expect(
+      await updateBoard({ unread: true, comment }, ORCA, runner, noConfig),
+    ).toBe("orca-board: marked unread, comment set");
+    expect(calls).toEqual([
+      "worktree current --json",
+      showArgs,
+      setArgs("--unread", "--comment", comment),
+    ]);
+  });
+
+  test("appends to the comment of a card a person has not read", async () => {
+    const comment = "PR #42 parked: which release carries it?";
+    const both = `[jig dispatch: x]\nPR #41 waits\n${comment}`;
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+      [showArgs]: shown({
+        comment: "[jig dispatch: x]\nPR #41 waits",
+        isUnread: true,
+      }),
+      [setArgs("--unread", "--comment", both)]: set,
+    });
+    expect(
+      await updateBoard({ unread: true, comment }, ORCA, runner, noConfig),
+    ).toBe("orca-board: marked unread, comment appended");
+    expect(calls[2]).toBe(setArgs("--unread", "--comment", both));
+  });
+
+  test("replaces the comment of a card that is not unread", async () => {
+    const comment = "merged; released as v0.121.0";
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+      [showArgs]: shown({ comment: "PR #42 parked: why?", isUnread: false }),
+      [setArgs("--workspace-status", "completed", "--comment", comment)]: set,
+    });
+    expect(
+      await updateBoard(
+        { stage: "completed", comment },
+        ORCA,
+        runner,
+        noConfig,
+      ),
+    ).toBe("orca-board: completed, comment set");
+    expect(calls[2]).toBe(
+      setArgs("--workspace-status", "completed", "--comment", comment),
+    );
+  });
+
+  test("does not append a line the unread comment already holds", () => {
+    expect(mergedComment("a\nb", true, "b")).toBe("a\nb");
+    expect(mergedComment("a", true, "b")).toBe("a\nb");
+    expect(mergedComment("a", false, "b")).toBe("b");
+    expect(mergedComment(null, true, "b")).toBe("b");
+    expect(mergedComment("  ", true, "b")).toBe("b");
+  });
+
+  test("deduplicates a multiline comment as one entry", () => {
+    expect(mergedComment("first\nsecond", true, "first\nsecond")).toBe(
+      "first\nsecond",
+    );
+    expect(mergedComment("x\nfirst\nsecond\ny", true, "first\nsecond")).toBe(
+      "x\nfirst\nsecond\ny",
+    );
+    expect(mergedComment("first", true, "first\nsecond")).toBe(
+      "first\nfirst\nsecond",
+    );
+  });
+
+  test("keeps an unread bulleted comment from reaching Orca as a flag", async () => {
+    const comment = "PR #42 parked: Why?";
+    const written = `Unread notes:\n- investigate release\n${comment}`;
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+      [showArgs]: shown({ comment: "- investigate release", isUnread: true }),
+      [setArgs("--unread", "--comment", written)]: set,
+    });
+    expect(
+      await updateBoard({ unread: true, comment }, ORCA, runner, noConfig),
+    ).toBe("orca-board: marked unread, comment appended");
+    expect(calls[2]).toBe(setArgs("--unread", "--comment", written));
+  });
+
+  test("writes nothing when the card's fields have an unexpected shape", async () => {
+    for (const worktree of [
+      { id: ID, comment: "unread decision" },
+      { id: ID, comment: 7, isUnread: false },
+      { id: ID, isUnread: true },
+    ]) {
+      const { calls, runner } = orcaAnswering({
+        "worktree current --json": current,
+        [showArgs]: JSON.stringify({ ok: true, result: { worktree } }),
+      });
+      const line = await updateBoard(
+        { unread: true, comment: "new" },
+        ORCA,
+        runner,
+        noConfig,
+      );
+      expect(line).toContain("nothing set");
+      expect(calls).toEqual(["worktree current --json", showArgs]);
+    }
+  });
+
+  test("warns instead of throwing when the lock cannot be taken", async () => {
+    const { runner } = orcaAnswering({
+      "worktree current --json": current,
+    });
+    const line = await updateBoard(
+      { unread: true, comment: "new" },
+      ORCA,
+      runner,
+      noConfig,
+      async () => {
+        throw new Error("EACCES: mkdir refused");
+      },
+    );
+    expect(line).toContain("⚠");
+    expect(line).toContain("EACCES");
+  });
+
+  test("writes nothing when the card cannot be read", async () => {
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+      [showArgs]: JSON.stringify({ ok: false, error: { code: "boom" } }),
+    });
+    expect(
+      await updateBoard(
+        { comment: "PR #4 parked: why?" },
+        ORCA,
+        runner,
+        noConfig,
+      ),
+    ).toContain("⚠ could not read the card's comment (exit 1)");
+    expect(calls).toEqual(["worktree current --json", showArgs]);
+  });
+
+  test("warns and writes nothing when another writer holds the card's lock", async () => {
+    const root = mkdtempSync(join(tmpdir(), "orca-card-lock-"));
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+    });
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const { promise: holding, resolve: taken } = Promise.withResolvers<void>();
+    const holder = withCardLock(
+      "/ws/app/feat-x",
+      async () => {
+        taken();
+        await held;
+      },
+      { root },
+    );
+    await holding;
+    const line = await updateBoard(
+      { unread: true, comment: "PR #4 parked: why?" },
+      ORCA,
+      runner,
+      noConfig,
+      (workspace, body) => withCardLock(workspace, body, { root, waitMs: 150 }),
+    );
+    release();
+    await holder;
+    expect(line).toContain("⚠ another writer held the card's comment");
+    expect(calls).toEqual(["worktree current --json"]);
+  });
+
+  test("passes every flag together, the comment as one argument", async () => {
+    const comment = "merged; release 0.121.0 owed";
+    const seen: string[][] = [];
+    const runner: OrcaRunner = async (_command, args) => {
+      seen.push(args);
+      return {
+        code: 0,
+        stdout:
+          args[1] === "show"
+            ? JSON.stringify({
+                ok: true,
+                result: {
+                  worktree: { id: ID, comment: null, isUnread: false },
+                },
+              })
+            : current,
+        stderr: "",
+      };
+    };
+    await updateBoard(
+      { stage: "completed", pr: "7", unread: true, comment },
+      ORCA,
+      runner,
+      noConfig,
+    );
+    expect(seen[1]).toEqual([
+      "worktree",
+      "show",
+      "--worktree",
+      `id:${ID}`,
+      "--json",
+    ]);
+    expect(seen[2]).toEqual([
+      "worktree",
+      "set",
+      "--worktree",
+      `id:${ID}`,
+      "--workspace-status",
+      "completed",
+      "--pr",
+      "7",
+      "--unread",
+      "--comment",
+      comment,
+      "--json",
+    ]);
+  });
+
+  test("moves the card to the column orca.board maps the stage onto", async () => {
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+      [setArgs("--workspace-status", "review")]: set,
+    });
+    const config = () => ({ orca: { board: { in_review: "review" } } });
+    expect(
+      await updateBoard({ stage: "in-review" }, ORCA, runner, config),
+    ).toBe("orca-board: review");
+    expect(calls[1]).toBe(setArgs("--workspace-status", "review"));
+  });
+
+  test("only warns, without calling Orca, when orca.board cannot be read", async () => {
+    const { calls, runner } = orcaAnswering({});
+    for (const config of [
+      () => ({ orca: { board: { shipping: "done" } } }),
+      () => ({ orca: { board: "in-review" } }),
+      () => {
+        throw new Error("the configuration file is not YAML");
+      },
+    ])
+      expect(
+        await updateBoard({ stage: "completed" }, ORCA, runner, config),
+      ).toContain("⚠");
+    expect(calls).toEqual([]);
+  });
+
+  test("never reads the configuration for an update without a stage", async () => {
+    const { runner } = orcaAnswering({
+      "worktree current --json": current,
+      [setArgs("--unread")]: set,
+    });
+    const config = () => {
+      throw new Error("read");
+    };
+    expect(await updateBoard({ unread: true }, ORCA, runner, config)).toBe(
+      "orca-board: marked unread",
+    );
+  });
+
+  test("refuses a comment Orca would read as a flag", async () => {
+    const { calls, runner } = orcaAnswering({});
+    expect(
+      await updateBoard({ comment: "--read" }, ORCA, runner, noConfig),
+    ).toContain("⚠");
+    expect(calls).toEqual([]);
+  });
+
+  test("leaves a directory Orca does not list alone", async () => {
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": JSON.stringify({
+        ok: false,
+        error: { code: "selector_not_found" },
+      }),
+    });
+    expect(
+      await updateBoard({ stage: "in-progress" }, ORCA, runner, noConfig),
+    ).toContain("does not list this directory");
+    expect(calls).toHaveLength(1);
+  });
+
+  test("warns, without updating, when the worktree lookup itself fails", async () => {
+    for (const done of [
+      { code: 127, stdout: "", stderr: "orca: command not found" },
+      { code: 124, stdout: current, stderr: "" },
+      { code: 1, stdout: "", stderr: "runtime unavailable" },
+    ]) {
+      const calls: string[] = [];
+      const runner: OrcaRunner = async (_command, args) => {
+        calls.push(args.join(" "));
+        return done;
+      };
+      expect(
+        await updateBoard({ stage: "in-progress" }, ORCA, runner, noConfig),
+      ).toContain(
+        `⚠ could not ask Orca which worktree this is (exit ${done.code})`,
+      );
+      expect(calls).toEqual(["worktree current --json"]);
+    }
+  });
+
+  test("warns when the update prints success but exits non-zero", async () => {
+    const runner: OrcaRunner = async (_command, args) =>
+      args[1] === "current"
+        ? { code: 0, stdout: current, stderr: "" }
+        : { code: 124, stdout: set, stderr: "" };
+    expect(
+      await updateBoard({ unread: true }, ORCA, runner, noConfig),
+    ).toContain("⚠ could not update the card (exit 124)");
+  });
+
+  test("only warns when Orca refuses the update", async () => {
+    const { runner } = orcaAnswering({
+      "worktree current --json": current,
+      [setArgs("--workspace-status", "shipping")]: JSON.stringify({
+        ok: false,
+        error: { code: "unknown_status" },
+      }),
+    });
+    const config = () => ({ orca: { board: { completed: "shipping" } } });
+    expect(
+      await updateBoard({ stage: "completed" }, ORCA, runner, config),
+    ).toContain("⚠ could not update the card (exit 1)");
+  });
+});
+
+describe("orca.board", () => {
+  test("defaults every stage to Orca's column of the same name", () => {
+    expect(boardColumns({})).toEqual({
+      ok: true,
+      columns: {
+        "in-progress": "in-progress",
+        "in-review": "in-review",
+        completed: "completed",
+      },
+    });
+    expect(boardColumns({ orca: { board: null } })).toEqual(boardColumns({}));
+  });
+
+  test("maps the stages it names and keeps the rest", () => {
+    expect(
+      boardColumns({
+        orca: { board: { in_progress: "doing", completed: "done" } },
+      }),
+    ).toEqual({
+      ok: true,
+      columns: {
+        "in-progress": "doing",
+        "in-review": "in-review",
+        completed: "done",
+      },
+    });
+  });
+
+  test("refuses an unknown stage or a value that is not a status id", () => {
+    for (const board of [
+      { in_review: "" },
+      { in_review: 3 },
+      { in_review: "In Review" },
+      { "in-review": "review" },
+    ])
+      expect(boardColumns({ orca: { board } })).toEqual({
+        ok: false,
+        problem: expect.stringMatching(/^orca\.board/),
+      });
+    expect(boardColumns({ orca: "board" })).toEqual({
+      ok: false,
+      problem: "orca must be a mapping",
+    });
+  });
+});
+
+describe("the command line", () => {
+  test("takes a stage, a pull request, the unread mark and a comment", () => {
+    expect(parseArgs(["in-progress"])).toEqual({ stage: "in-progress" });
+    expect(parseArgs(["in-review", "--pr", "7"])).toEqual({
+      stage: "in-review",
+      pr: "7",
+    });
+    expect(parseArgs(["--unread", "--comment", "PR #7 parked: why?"])).toEqual({
+      unread: true,
+      comment: "PR #7 parked: why?",
+    });
+    expect(
+      parseArgs(["--comment", "merged", "completed", "--pr", "7"]),
+    ).toEqual({ stage: "completed", comment: "merged", pr: "7" });
+    for (const stage of BOARD_STAGES)
+      expect(parseArgs([stage])).toEqual({ stage });
+  });
+
+  test("refuses anything else", () => {
+    for (const args of [
+      [],
+      ["--pr", "7"],
+      ["In Review"],
+      ["todo"],
+      ["in-review", "completed"],
+      ["in-review", "--pr"],
+      ["in-review", "--pr", "x7"],
+      ["in-review", "--issue", "7"],
+      ["in-review", "--pr", "7", "extra"],
+      ["--unread", "--unread"],
+      ["--comment"],
+      ["--comment", ""],
+      ["--comment", "--unread"],
+    ])
+      expect(() => parseArgs(args)).toThrow(ExitError);
+  });
+});

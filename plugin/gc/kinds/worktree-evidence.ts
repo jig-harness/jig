@@ -4,20 +4,44 @@ export interface WorktreeRequest {
   state: "OPEN" | "MERGED" | "CLOSED";
   head: string;
 }
+/**
+ * Ignored paths, split by whether a detected package manager's dependency
+ * directory accounts for them: `rebuildable` is derived from a tracked
+ * lockfile and vetoes nothing; `other` is everything else, and any entry
+ * still vetoes collection as local state with no independent preservation
+ * proof.
+ */
+export interface IgnoredContent {
+  rebuildable: string[];
+  other: string[];
+}
 export interface WorktreeEvidence {
   dirty: boolean;
   hiddenIndexChanges: boolean;
   operation: string | null;
-  ignoredContent: boolean;
+  ignoredContent: IgnoredContent;
   requests: WorktreeRequest[] | null;
   localOnlyCommits: boolean | null;
   mergedHeadCovers: boolean | null;
   aheadOfBase: number | null;
   held: boolean | null;
   idleMs: number | null;
+  /**
+   * A workspace runtime manages the worktree and its registry showed no agent
+   * in it (`orcaLiveness`), so collection runs through the runtime rather
+   * than waiting for the opener to share session admission.
+   */
+  coordinated?: boolean;
 }
 const unknown = (reason: string): Proof => ({ state: "unverified", reason });
 const live = (reason: string): Proof => ({ state: "live", reason });
+/** At most 5 names, so an ignored build directory of many files stays a short reason. */
+const NAMED_PATHS_LIMIT = 5;
+function namedPaths(paths: string[]): string {
+  const shown = paths.slice(0, NAMED_PATHS_LIMIT).join(", ");
+  const rest = paths.length - NAMED_PATHS_LIMIT;
+  return rest > 0 ? `${shown}, and ${rest} more` : shown;
+}
 export function localWorktreeVeto(
   facts: Pick<
     WorktreeEvidence,
@@ -28,14 +52,15 @@ export function localWorktreeVeto(
   if (facts.hiddenIndexChanges)
     return live("index flags hide possible changes from git status");
   if (facts.operation) return live(`in-progress ${facts.operation}`);
-  if (facts.ignoredContent)
+  if (facts.ignoredContent.other.length)
     return {
       state: "finding",
-      reason: "ignored local content has no independent preservation proof",
+      reason: `ignored local content (${namedPaths(facts.ignoredContent.other)}) has no independent preservation proof`,
     };
   return null;
 }
 function lifecycle(facts: WorktreeEvidence): Proof {
+  const coordinated = facts.coordinated === true;
   if (facts.localOnlyCommits === null)
     return unknown("remote commit coverage could not be verified");
   if (!facts.requests?.length) return withoutRequest(facts.aheadOfBase);
@@ -43,11 +68,12 @@ function lifecycle(facts: WorktreeEvidence): Proof {
   if (!merged && facts.localOnlyCommits)
     return live("closed pull request has commits on no remote branch");
   if (merged && facts.localOnlyCommits)
-    return mergedCoverage(facts.mergedHeadCovers);
+    return mergedCoverage(facts.mergedHeadCovers, coordinated);
   return candidate(
     merged
       ? "pull request merged; commits are retained on remote branches"
       : "pull request closed; every commit is retained on a remote branch",
+    coordinated,
   );
 }
 function withoutRequest(aheadOfBase: number | null): Proof {
@@ -60,14 +86,22 @@ function withoutRequest(aheadOfBase: number | null): Proof {
     reason: "worktree without a pull request has no registered session owner",
   };
 }
-function mergedCoverage(covered: boolean | null): Proof {
+function mergedCoverage(covered: boolean | null, coordinated: boolean): Proof {
   if (covered === null)
     return unknown("merged pull request head ancestry could not be verified");
   return covered
-    ? candidate("merged pull request head covers the worktree's commits")
+    ? candidate(
+        "merged pull request head covers the worktree's commits",
+        coordinated,
+      )
     : live("commits are outside remote branches and merged pull request heads");
 }
-function candidate(reason: string): Proof {
+function candidate(reason: string, coordinated: boolean): Proof {
+  if (coordinated)
+    return {
+      state: "dead",
+      reason: `${reason}; the runtime's registry shows no agent at work in it`,
+    };
   return {
     state: "dead",
     reason,

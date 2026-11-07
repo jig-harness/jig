@@ -70,6 +70,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { readRemoteName } from "../../../shared/consumer.ts";
 import { fail, isDigits, isGitSha, runMain, sleep } from "./lib/cli.ts";
 import { ghCall, git, readTimeoutEnv, resolvePr } from "./lib/proc.ts";
 import { repoOfUrl } from "./lib/repo-url.ts";
@@ -141,6 +142,14 @@ function withoutHoldRecheckEnv(
     ...rest
   } = env;
   return rest;
+}
+
+/** The remote to push to; a setting that cannot be read refuses the push. */
+function pushRemote(): string {
+  const read = readRemoteName();
+  if ("error" in read)
+    fail(1, `guarded-push: ${read.error} — refusing to push.`);
+  return read.remote;
 }
 
 async function main(): Promise<number> {
@@ -303,7 +312,11 @@ async function main(): Promise<number> {
     );
   }
 
-  // A PR's head can live in a FORK. `origin` is then the wrong remote
+  // The push goes through the drive's remote: `repository.remote`, else
+  // `origin` (`<remote>` below).
+  const remote = pushRemote();
+
+  // A PR's head can live in a FORK. `<remote>` is then the wrong remote
   // entirely: the push either fails, or — worse — updates a same-named branch
   // in the base repository, which the post-push head check catches only after
   // an irreversible write to someone else's branch. There is no safe guess
@@ -312,16 +325,16 @@ async function main(): Promise<number> {
   // The comparison is against the remote THE PUSH ACTUALLY WRITES TO, resolved
   // from git, not against whatever `gh repo view` calls "this repository".
   // Those are not the same thing: `gh` resolves through `$GH_REPO`, `gh repo
-  // set-default` and its own remote ordering, so a clone whose `origin` points
+  // set-default` and its own remote ordering, so a clone whose `<remote>` points
   // somewhere else passes a `gh`-derived comparison and then pushes the PR's
   // branch name into an unrelated repository — with the post-push head check
   // noticing only after the irreversible write. `git remote get-url --push` is
   // the one answer that IS the push destination: it honours
-  // `remote.origin.pushurl` and expands `url.*.pushInsteadOf` / `insteadOf`,
+  // `remote.<remote>.pushurl` and expands `url.*.pushInsteadOf` / `insteadOf`,
   // i.e. every rewrite git will apply.
   //
-  // We still push by the NAME `origin` rather than by the resolved URL, because
-  // a URL push updates no remote-tracking ref — `refs/remotes/origin/<branch>`
+  // We still push by the remote's NAME rather than by the resolved URL, because
+  // a URL push updates no remote-tracking ref — `refs/remotes/<remote>/<branch>`
   // would silently stop tracking the branch this driver just advanced, which is
   // the phantom-"N commits ahead" failure.
   //
@@ -332,16 +345,13 @@ async function main(): Promise<number> {
   // path where nobody is watching.
   //
   // EVERY configured push URL is resolved and checked, not just the first.
-  // `remote.origin.pushurl` is multi-valued, and `git push origin` writes to
-  // all of them — so validating one leaves a second, unrelated repository
+  // `remote.<remote>.pushurl` is multi-valued, and `git push <remote>` writes
+  // to all of them — so validating one leaves a second, unrelated repository
   // advanced irreversibly by a push this guard called safe. `--all` is git's
   // own answer to "which destinations is that".
-  const urlsRes = await git(
-    ["remote", "get-url", "--push", "--all", "origin"],
-    {
-      stderr: "ignore",
-    },
-  );
+  const urlsRes = await git(["remote", "get-url", "--push", "--all", remote], {
+    stderr: "ignore",
+  });
   const pushUrls =
     urlsRes.code === 0
       ? urlsRes.stdout.split("\n").filter((u) => u !== "")
@@ -349,7 +359,7 @@ async function main(): Promise<number> {
   if (pushUrls.length === 0) {
     fail(
       1,
-      "guarded-push: no push URL for the remote 'origin' — refusing to push.",
+      `guarded-push: no push URL for the remote '${remote}' — refusing to push.`,
       "Without it there is no way to tell which repository this push would write",
       "to, and the wrong one cannot be undone.",
     );
@@ -358,7 +368,7 @@ async function main(): Promise<number> {
     fail(
       1,
       `guarded-push: PR #${pr} reported no head repository — refusing to push.`,
-      "The head repository is what decides whether 'origin' is the right remote.",
+      `The head repository is what decides whether '${remote}' is the right remote.`,
     );
   }
   // Every destination must be the PR's head repository. One mismatch anywhere
@@ -370,18 +380,18 @@ async function main(): Promise<number> {
     if (pushRepo === "") {
       fail(
         1,
-        "guarded-push: cannot parse an owner/name out of origin's push URL",
+        `guarded-push: cannot parse an owner/name out of ${remote}'s push URL`,
         `(${pushUrl}) — refusing to push to a destination this script cannot name.`,
       );
     }
     if (pushRepo !== headRepo) {
       fail(
         2,
-        `guarded-push: PR #${pr}'s head is in ${headRepo}, but 'origin' pushes to`,
+        `guarded-push: PR #${pr}'s head is in ${headRepo}, but '${remote}' pushes to`,
         `${pushRepo} (${pushUrl}).`,
         `Pushing here would write the branch name '${headRef}' into a repository that`,
-        "is not the pull request's head — a fork PR, a mis-pointed 'origin', an extra",
-        "remote.origin.pushurl, or a gh resolution ($GH_REPO / gh repo set-default)",
+        `is not the pull request's head — a fork PR, a mis-pointed '${remote}', an extra`,
+        `remote.${remote}.pushurl, or a gh resolution ($GH_REPO / gh repo set-default)`,
         "that disagrees with git.",
         `Push to ${headRepo}:${headRef} yourself, or drive from a clone of it.`,
       );
@@ -644,7 +654,7 @@ async function main(): Promise<number> {
       holdAbortFile = join(abortDir, "hold-recheck-aborted");
     }
     push = await git(
-      ["push", ...extra, "origin", `${localSha}:refs/heads/${headRef}`],
+      ["push", ...extra, remote, `${localSha}:refs/heads/${headRef}`],
       {
         timeoutSec: pushTimeout.seconds,
         // `opts.env` REPLACES the child's environment, so extend

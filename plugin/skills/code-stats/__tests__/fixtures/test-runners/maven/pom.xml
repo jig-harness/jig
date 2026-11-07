@@ -1,0 +1,10 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>shop</groupId>
+  <artifactId>shop</artifactId>
+  <version>1</version>
+  <build>
+    <!-- Checks live beside the product, not under src/test. -->
+    <testSourceDirectory>${project.basedir}/qa</testSourceDirectory>
+  </build>
+</project>

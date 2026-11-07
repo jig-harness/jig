@@ -1,0 +1,3 @@
+# <glob> <reason>
+src/generated/** Generated from the schema; the generator has its own tests.
+src/legacy/** The legacy importer, replaced by src/orders.ts.

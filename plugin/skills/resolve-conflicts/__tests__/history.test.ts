@@ -835,6 +835,8 @@ describe("what the replay must not trust or run", () => {
   });
 
   it("runs no filter, even where the repository asks merges to renormalize", () => {
+    // Recorded before the filters exist: git 2.53 fails `add` under a dying one.
+    merge({ "a.txt": "x\n" }, { "a.txt": "y\n" }, { "a.txt": "z\n" });
     const marker = join(s.home, "filter-ran").replaceAll("\\", "/");
     s.git("config", "merge.renormalize", "true");
     for (const kind of ["clean", "smudge"])
@@ -844,9 +846,7 @@ describe("what the replay must not trust or run", () => {
       join(s.root, ".git", "info", "attributes"),
       "*.txt filter=touchy\n",
     );
-    merge({ "a.txt": "x\n" }, { "a.txt": "y\n" }, { "a.txt": "z\n" });
     s.git("config", "filter.touchy.process", `touch '${marker}'; false`);
-    rmSync(marker, { force: true });
     const rep = report();
     expect(existsSync(marker)).toBe(false);
     expect(rep.merges[0]?.conflicted).toBe(true);

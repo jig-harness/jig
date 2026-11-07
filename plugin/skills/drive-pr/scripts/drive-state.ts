@@ -20,15 +20,18 @@
  * the outcome vocabulary exists to feed. Neither shows up as an error.
  *
  * This entry is the CLI dispatcher; the mechanisms live in focused modules —
- * `lib/state/schema.ts` (shape + fail-closed predicate), `lib/state/lock.ts`
- * (the cross-driver mutex), `lib/state/store.ts` (fail-closed read, atomic
- * write, one-lock-hold update), `lib/state/handoff.ts` (the machine half of
- * the handoff file), `lib/state/orphans.ts` (the one-time orphan warning).
+ * `lib/state/schema.ts` (shape + fail-closed predicate), `lib/state/db.ts`
+ * (the drive's database), `lib/state/lock.ts` (the cross-driver mutex),
+ * `lib/state/store.ts` (fail-closed read, one-lock-hold update) and
+ * `lib/state/handoff.ts` (the machine half of the handoff file).
  *
  * Usage:
  *   drive-state.ts get          [PR]                 # whole state as JSON
- *   drive-state.ts rounds       [PR]                 # round count
- *   drive-state.ts bump-round   [PR] --head SHA      # count a NEW head as a round
+ *   drive-state.ts rounds       [PR]                 # the PR's review round (lib/state/review-rounds.ts)
+ *   drive-state.ts bump-round   [PR] --head SHA      # count a NEW head as the drive's round
+ *   drive-state.ts count-round  [PR] --head SHA      # count a head for a hand-driven loop; unleased
+ *   drive-state.ts open-rounds  [PR]                 # rounds since that loop last converged
+ *   drive-state.ts settle-rounds [PR]                # settle them at its convergence
  *   drive-state.ts attempts     [PR]                 # passes made on the current head
  *   drive-state.ts bump-attempt [PR] --head SHA      # count a pass on this head
  *   drive-state.ts verified     [PR]                 # last green-verified SHA ('' if none)
@@ -37,7 +40,7 @@
  *                                     # working tree holds — their per-hold push
  *                                     # provenance. Another driver's
  *                                     # holds are left untouched. A held FINDING
- *                                     # with an outstanding claim file (a dispatch
+ *                                     # with an outstanding claim (a dispatch
  *                                     # that may already have posted) keeps its
  *                                     # existing stamp instead of advancing to
  *                                     # this push, closing an interrupted-dispatch
@@ -46,9 +49,14 @@
  *   drive-state.ts set-verified [PR] --sha SHA       # record final full-CI proof
  *   drive-state.ts reflected    [PR]                 # round a /reflect was last recorded at
  *   drive-state.ts set-reflected [PR]                # record a completed /reflect at the current round
- *   drive-state.ts park         [PR] --key K --kind thread|finding --reason R
- *   drive-state.ts unpark       [PR] --key K
- *   drive-state.ts parked-keys  [PR]                 # newline-delimited keys
+ *   drive-state.ts park         [PR] --key K --kind thread|finding --class C  < record.md
+ *   drive-state.ts record-decision [PR]  < {"class","what","reverse","record"?,"key"?,"outcome"?}
+ *   drive-state.ts reverse-decision [PR] < {"key","by","url","at"}
+ *   drive-state.ts record-event [PR]     < {"kind","cause"}
+ *   drive-state.ts rule         [PR]  < {"key","verdict","class"?,"humanDecision"?}
+ *                                     # the review arbiter's ruling on a thread
+ *   drive-state.ts unpark       [PR] --key K [--key K …]   # all, or none
+ *   drive-state.ts parked-keys  [PR]  # newline-delimited keys (reversal-parked-keys: reversed provisional decisions')
  *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
  *                                     [--comment-url URL] [--unconfirmed]
  *                                     (--kind finding also requires the reason body on stdin)
@@ -84,7 +92,7 @@
  *                                     # batch read — a stale snapshot, not a refusal);
  *                                     # 11 = another live session holds the lease (below).
  *   drive-state.ts claim-held   [PR] --key K --kind finding --pushed-sha SHA
- *                                     # per-key filesystem mutex over a held FINDING,
+ *                                     # per-key claim over a held FINDING,
  *                                     # printing the claim token — plus the same
  *                                     # per-hold provenance check the thread branch
  *                                     # makes. Exit 1 = a live claim elsewhere, or the
@@ -124,12 +132,15 @@
  *                                     #: lastProgressAt + phase, clears any
  *                                     # recorded quota park. NOT the same as 'phase'
  *                                     # above — that one carries no progress semantics.
- *   drive-state.ts quota-park   [PR] --vendor V --window W [--reset-at ISO]
+ *   drive-state.ts quota-park   [PR] --vendor V --window W [--reset-at ISO] [--account HASH]
  *                                     # record the quota wall this drive parked on
  *                                     #, called by drive.ts immediately
  *                                     # before its QUOTA_PARKED_EXIT return. Does NOT
  *                                     # stamp progress — parking is its opposite.
- *   drive-state.ts handoff      [PR]                 # (re)write the handoff file
+ *   drive-state.ts takeover     [PR]                 # record a drive.ts --take-over (JSON on stdin)
+ *   drive-state.ts deadline-retries [PR] --set bump|clear  # the drive's pass-deadline restarts
+ *   drive-state.ts handoff      [PR]                 # (re)write the handoff file, and the ledger under a driver
+ *   drive-state.ts seed-ledger  [PR]                 # lay a newer ledger over this state (its body on stdin)
  *   drive-state.ts lease        [PR]                 # who is driving this PR from this
  *                                     # tree, as JSON ('' if nobody)
  *   drive-state.ts lease        [PR] --all           # every LIVE lease on this PR from
@@ -168,10 +179,10 @@
  *     hold records is the working TREE, so two agent sessions in one tree
  *     silently overwrite each other's holds and double-reply every thread.
  *   exit 13 — another live WORKING TREE is driving this PR. Same damage,
- *     reached across trees rather than within one: nothing used to stop two
- *     worktrees enumerating the same unresolved threads and each replying with
- *     its own outcome. Derived from the lease files themselves, so
- *     it self-clears exactly as the per-session half does.
+ *     reached across trees rather than within one: two worktrees enumerating
+ *     the same unresolved threads would each reply with its own outcome.
+ *     Derived from the leases themselves, so it self-clears exactly as the
+ *     per-session half does.
  *
  * `clear-lease` is the explicit recovery command for both — gating it behind
  * the lease it removes would make a refusal unrecoverable — so it is excluded
@@ -180,13 +191,7 @@
  * every one of them.
  */
 
-import {
-  existsSync,
-  readFileSync,
-  rmSync,
-  utimesSync,
-  writeFileSync,
-} from "node:fs";
+import { writeFileSync } from "node:fs";
 import {
   ciHoldTransitions,
   completedRequiredCi,
@@ -196,6 +201,7 @@ import {
 } from "./lib/ci-hold.ts";
 import { type CiPolicy, ciPolicy } from "./lib/ci-policy.ts";
 import { ciHoldLabelSetting } from "./lib/overlay.ts";
+import { timelineEvents } from "./lib/pr-timeline.ts";
 import {
   ExitError,
   fail,
@@ -213,17 +219,36 @@ import {
   resolvePr,
 } from "./lib/proc.ts";
 import { isActorId, resolveActor } from "./lib/state/actor.ts";
+import { recordTakeover } from "./lib/state/takeover.ts";
+import {
+  LEDGER_NOT_WRITTEN_EXIT,
+  mirrorLedger,
+  removeStateKeepingLedgerGeneration,
+  seedLedgerCommand,
+} from "./lib/state/ledger-mirror.ts";
+import { quotaPark } from "./lib/state/quota-park.ts";
+import { framedPark } from "./lib/state/framed-park.ts";
+import * as decisions from "./lib/state/decisions.ts";
+import { recordEvent } from "./lib/state/events.ts";
+import { recordRuling } from "./lib/state/rulings.ts";
+import { setReflected } from "./lib/state/reflected.ts";
+import { deadlineRetries } from "./lib/state/deadline-retries.ts";
+import { unpark } from "./lib/state/unpark.ts";
+import { clearPendingVerdicts } from "./lib/state/pass-handoff.ts";
 import {
   breakStaleClaimLocked,
   claimCreate,
-  claimFilesFor,
+  claimExists,
   claimIsLive,
-  claimPathFor,
+  claimLabel,
+  claimRefFor,
+  claimRefsFor,
   claimStaleMin,
   claimTokenMatches,
+  claimTouch,
   newClaimToken,
-  readyClaimPath,
-  removeClaimFile,
+  readyClaimRef,
+  removeClaim,
   tryBreakStaleClaim,
 } from "./lib/state/claims.ts";
 import { removeHandoff, renderHandoff } from "./lib/state/handoff.ts";
@@ -237,18 +262,16 @@ import {
   clearAllLeases,
   clearLease,
   type Lease,
-  leaseFilesFor,
   leaseHolderLabel,
   leaseLivenessHint,
-  leasePathFor,
+  leaseRef,
+  leaseRefsFor,
   leaseStaleMin,
   liveLeasesFor,
   readLease,
   resolveFenceContext,
-  unreadableLeaseFilesFor,
 } from "./lib/state/lease.ts";
-import { lockHeartbeatMs, sweepLockQuarantine } from "./lib/state/lock.ts";
-import { orphanMarkerPath } from "./lib/state/orphans.ts";
+import { lockHeartbeatMs } from "./lib/state/lock.ts";
 import {
   type DriveState,
   ESCALATION_INVARIANT_MAX_LENGTH,
@@ -260,7 +283,13 @@ import {
   structuralEscalationArmed,
   withProgress,
 } from "./lib/state/schema.ts";
-import { openStore } from "./lib/state/store.ts";
+import { openStore, type StateStore } from "./lib/state/store.ts";
+import {
+  bumpDriveRound,
+  clearReviewRounds,
+  ROUND_VERBS,
+  reviewRound,
+} from "./lib/state/review-rounds.ts";
 import {
   attributeStatuses,
   checkRunsFor,
@@ -268,13 +297,21 @@ import {
   commitStatusesFor,
   hasNonReviewerCi,
 } from "./lib/status/evidence.ts";
+import {
+  withoutRerunning,
+  withoutSuperseded,
+  workflowRunsBehind,
+} from "./lib/status/workflow-runs.ts";
 
 function usage(): void {
   console.error(`usage: drive-state.ts <command> [PR] [flags]
 
   get          [PR]                 whole state as JSON
-  rounds       [PR]                 round count
-  bump-round   [PR] --head SHA      count a NEW head as a round
+  rounds       [PR]                 the PR's review round
+  bump-round   [PR] --head SHA      count a NEW head as the drive's round
+  count-round  [PR] --head SHA      count a head for a hand-driven loop
+  open-rounds  [PR]                 rounds since that loop last converged
+  settle-rounds [PR]                settle them at its convergence
   attempts     [PR]                 passes made on the current head
   bump-attempt [PR] --head SHA      count a pass on this head
   verified     [PR]                 last green-verified SHA ('' if none)
@@ -325,10 +362,14 @@ function usage(): void {
                                     claim back instead of re-deriving it
 . Omitting it clears any prior
                                     claim rather than preserving it.
-  park         [PR] --key K --kind thread|finding --reason R
-  unpark       [PR] --key K
-  parked-keys  [PR]                 newline-delimited keys
-  hold         [PR] --key K --kind thread|finding --outcome accepted|moot
+  park         [PR] --key K --kind thread|finding --class C  (decision record on stdin)
+  record-decision [PR]              a decision the agent took, JSON on stdin
+  reverse-decision [PR]             a person's reversal of a provisional decision, JSON on stdin
+  record-event [PR]                 a self-restart or re-arm, JSON on stdin
+  rule         [PR]                 the arbiter's ruling on a thread, JSON on stdin
+  unpark       [PR] --key K [--key K …]  every key, or none when one is not parked
+  parked-keys  [PR]                 newline-delimited keys (reversal-parked-keys: reversed provisional decisions')
+  hold        [PR] --key K --kind thread|finding --outcome accepted|moot
                [--comment-url URL] [--unconfirmed]
                     (--kind finding also requires the reason body on stdin)
                     (--comment-url: REQUIRED for --kind thread — the qualifying comment's url)
@@ -355,12 +396,18 @@ function usage(): void {
                                     sets lastProgressAt and phase, clears any
                                     recorded quota park. Distinct from 'phase'
                                     above, which has no progress semantics
-  quota-park   [PR] --vendor V --window W [--reset-at ISO]
-                                    record the quota wall this drive parked on
+  quota-park   [PR] --vendor V --window W [--reset-at ISO] [--account HASH]
+                                    record the quota wall this drive parked on,
+                                    and the hashed account it belongs to
 ; does NOT stamp progress —
                                     parking is the opposite of it. Cleared by
                                     the next progress event
-  handoff      [PR]                 (re)write the handoff file
+  takeover     [PR]                 record a drive.ts --take-over (JSON on stdin)
+  deadline-retries [PR] --set bump|clear
+                                    count a pass-deadline restart (prints the
+                                    count), or clear it when the drive ends
+  handoff      [PR]                 (re)write the handoff file, and the ledger under a driver
+  seed-ledger  [PR]                 lay a newer ledger over this state (its body on stdin)
   admit        [PR]                 exit 0 if this tree may act on this PR, 13 if
                                     another working tree is driving it. Takes no
                                     lease and mutates nothing — for callers whose
@@ -378,7 +425,7 @@ function usage(): void {
                                     is live — exit 13 at admission, or exit 9
                                     from its own sweep when that tree started
                                     driving after this one was admitted: the
-                                    state and claim files are shared with it
+                                    state and claims are shared with it
 
 Every state-mutating command EXCEPT clear-lease takes a session lease over (this
 working tree, this PR). It exits 11 when another live session in THIS tree holds
@@ -391,6 +438,12 @@ interface Args {
   cmd: string;
   pr: string;
   key: string;
+  /** Every `--key`, in argv order (`unpark` takes several). */
+  keys: string[];
+  /** Every `--parked-at`, in argv order: `unpark`'s park timestamps, one per `--key`. */
+  parkedAts: string[];
+  /** `unpark --every`: the named keys must be every park there is. */
+  every: boolean;
   kind: string;
   reason: string;
   sha: string;
@@ -431,40 +484,88 @@ interface Args {
   window: string;
   /** `quota-park --reset-at ISO`; `''` when the adapter could not resolve one. */
   resetAt: string;
+  /** `quota-park --account HASH`: whose wall it is; `''` when unknown. */
+  account: string;
+  /** `park --class C`: the decision class (`lib/state/framed-park.ts`). */
+  parkClass: string;
 }
+
+/** The `Args` fields a flag sets to its one value. */
+type ValueField = Exclude<
+  { [K in keyof Args]: Args[K] extends string ? K : never }[keyof Args],
+  "cmd" | "pr"
+>;
+
+/** Every flag that takes one value, and the field it sets. */
+const VALUE_FLAGS: Readonly<Record<string, ValueField>> = {
+  "--kind": "kind",
+  "--reason": "reason",
+  "--head": "sha",
+  "--sha": "sha",
+  "--pushed-sha": "pushedSha",
+  "--round": "restoreRound",
+  "--token": "token",
+  "--set": "phaseName",
+  "--outcome": "outcome",
+  "--comment-url": "commentUrl",
+  "--if-comment-url": "ifCommentUrl",
+  "--actor": "actor",
+  "--actor-name": "actorName",
+  "--event-id": "eventId",
+  "--created-at": "createdAt",
+  "--check-run-watermark": "checkRunWatermark",
+  "--verified-sha": "verifiedSha",
+  "--invariant": "invariant",
+  "--phase": "phaseArg",
+  "--vendor": "vendor",
+  "--window": "window",
+  "--reset-at": "resetAt",
+  "--account": "account",
+  "--class": "parkClass",
+};
+
+/** Every flag's value before the command line sets it. */
+const ARG_DEFAULTS: Omit<Args, "cmd" | "paths" | "keys" | "parkedAts"> = {
+  pr: "",
+  key: "",
+  every: false,
+  kind: "",
+  reason: "",
+  sha: "",
+  phaseName: "",
+  outcome: "",
+  unconfirmed: false,
+  commentUrl: "",
+  all: false,
+  pushedSha: "",
+  restoreRound: "",
+  ifPresent: false,
+  token: "",
+  ifCommentUrl: "",
+  actor: "",
+  verifiedSha: "",
+  eventId: "",
+  actorName: "",
+  createdAt: "",
+  checkRunWatermark: "",
+  stdin: false,
+  invariant: "",
+  phaseArg: "",
+  vendor: "",
+  window: "",
+  resetAt: "",
+  account: "",
+  parkClass: "",
+};
 
 function parseArgs(argv: string[]): Args {
   const cmd = argv.shift() ?? "";
   const a: Args = {
+    ...ARG_DEFAULTS,
     cmd,
-    pr: "",
-    key: "",
-    kind: "",
-    reason: "",
-    sha: "",
-    phaseName: "",
-    outcome: "",
-    unconfirmed: false,
-    commentUrl: "",
-    all: false,
-    pushedSha: "",
-    restoreRound: "",
-    ifPresent: false,
-    token: "",
-    ifCommentUrl: "",
-    actor: "",
-    verifiedSha: "",
-    eventId: "",
-    actorName: "",
-    createdAt: "",
-    checkRunWatermark: "",
+    keys: [],
+    parkedAts: [],
     paths: [],
-    stdin: false,
-    invariant: "",
-    phaseArg: "",
-    vendor: "",
-    window: "",
-    resetAt: "",
   };
   const take = (flag: string, i: number): string => {
     const value = argv[i + 1];
@@ -474,64 +575,28 @@ function parseArgs(argv: string[]): Args {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === undefined) continue;
+    const field = Object.hasOwn(VALUE_FLAGS, arg)
+      ? VALUE_FLAGS[arg]
+      : undefined;
+    if (field !== undefined) {
+      a[field] = take(arg, i++);
+      continue;
+    }
     switch (arg) {
+      // Every `--key` the parser consumed, in order, for `unpark`'s set: a
+      // value that merely reads `--key` is a value, not another flag.
       case "--key":
         a.key = take(arg, i++);
-        break;
-      case "--kind":
-        a.kind = take(arg, i++);
-        break;
-      case "--reason":
-        a.reason = take(arg, i++);
-        break;
-      case "--head":
-      case "--sha":
-        a.sha = take(arg, i++);
-        break;
-      case "--pushed-sha":
-        a.pushedSha = take(arg, i++);
-        break;
-      case "--round":
-        a.restoreRound = take(arg, i++);
-        break;
-      case "--token":
-        a.token = take(arg, i++);
-        break;
-      case "--set":
-        a.phaseName = take(arg, i++);
-        break;
-      case "--outcome":
-        a.outcome = take(arg, i++);
+        a.keys.push(a.key);
         break;
       case "--unconfirmed":
         a.unconfirmed = true;
         break;
-      case "--comment-url":
-        a.commentUrl = take(arg, i++);
-        break;
       case "--if-present":
         a.ifPresent = true;
         break;
-      case "--if-comment-url":
-        a.ifCommentUrl = take(arg, i++);
-        break;
-      case "--actor":
-        a.actor = take(arg, i++);
-        break;
-      case "--actor-name":
-        a.actorName = take(arg, i++);
-        break;
-      case "--event-id":
-        a.eventId = take(arg, i++);
-        break;
-      case "--created-at":
-        a.createdAt = take(arg, i++);
-        break;
-      case "--check-run-watermark":
-        a.checkRunWatermark = take(arg, i++);
-        break;
-      case "--verified-sha":
-        a.verifiedSha = take(arg, i++);
+      case "--every":
+        a.every = true;
         break;
       // Repeatable rather than a delimited list: an anchor path is an
       // arbitrary repository path, and every delimiter a list could use is a
@@ -542,26 +607,14 @@ function parseArgs(argv: string[]): Args {
       case "--path":
         a.paths.push(take(arg, i++));
         break;
+      case "--parked-at":
+        a.parkedAts.push(take(arg, i++));
+        break;
       case "--stdin":
         a.stdin = true;
         break;
       case "--all":
         a.all = true;
-        break;
-      case "--invariant":
-        a.invariant = take(arg, i++);
-        break;
-      case "--phase":
-        a.phaseArg = take(arg, i++);
-        break;
-      case "--vendor":
-        a.vendor = take(arg, i++);
-        break;
-      case "--window":
-        a.window = take(arg, i++);
-        break;
-      case "--reset-at":
-        a.resetAt = take(arg, i++);
         break;
       default:
         if (arg.startsWith("--")) fail(2, `unknown flag: ${arg}`);
@@ -575,24 +628,12 @@ function parseArgs(argv: string[]): Args {
  * Does an otherwise-unparseable JSON text still contain a string-literal
  * property KEY that DECODES to `target`, anywhere in the text?
  *
- * A raw byte-substring check (`text.includes('"' + target + '"')`) is defeated
- * the moment the key is escaped: JSON permits `ciHold` as a byte-for-byte
- * different spelling of the identical `ciHold` property name, so a
- * corrupt-but-escaped file names the key without ever containing the literal
- * bytes `"ciHold"`. Following the "parse the construct, don't pattern-match it"
- * rule, this scans the text as a sequence of JSON STRING LITERALS — respecting
- * `\`-escapes so a `"` or `\` inside an escape sequence is never mistaken for
- * the literal's own boundary — and hands each complete candidate to
- * `JSON.parse` itself to decode, rather than hand-rolling escape decoding. The
- * whole surrounding document need not be valid JSON; only the one
- * string-literal construct that matters here is parsed, precisely.
- *
- * A literal matching `target` in VALUE position — `{"reason":"ciHold"}` — is
- * not evidence of a `ciHold` property at all; only a literal immediately
- * followed by (optional whitespace, then) `:` is a property key. Treating
- * either position as a match refuses `reset` over corruption that never named
- * the key, over-blocking the exact recovery path this function exists to
- * preserve.
+ * A byte-substring check misses an escaped spelling of the same key, so this
+ * scans the text as JSON string literals (respecting `\`-escapes) and lets
+ * `JSON.parse` decode each candidate; the document need not be valid JSON. Only
+ * a literal followed by `:` is a key: a match in value position
+ * (`{"reason":"ciHold"}`) would refuse `reset` over corruption that never named
+ * the key.
  */
 function rawTextMentionsJsonKey(text: string, target: string): boolean {
   let i = 0;
@@ -651,7 +692,7 @@ function holdLabelName(): string {
 
 /**
  * The PR's CI-hold label-transition timeline, straight from GitHub — the live
- * source of truth a local state file can only ever cache. Shared by
+ * source of truth a local stored state can only ever cache. Shared by
  * `set-verified` (freshness proof) and `reset` (destructive-recovery guard): a
  * local file's raw bytes can be truncated before the `ciHold` key was ever
  * serialized — `freshState()` emits it after several other fields — so scanning
@@ -666,20 +707,25 @@ async function readCiHoldTimeline(
 ): Promise<ReturnType<typeof ciHoldTransitions>> {
   const label = holdLabel();
   if (label === null) return null;
-  const result = await ghCall([
-    "api",
-    "--paginate",
-    "--slurp",
-    `repos/{owner}/{repo}/issues/${pr}/timeline?per_page=100`,
-  ]);
-  if (result.code !== 0) return null;
-  try {
-    const pages = JSON.parse(result.stdout) as unknown;
-    return Array.isArray(pages) ? ciHoldTransitions(pages.flat(), label) : null;
-  } catch {
-    return null;
-  }
+  const events = await timelineEvents(pr);
+  return events === null ? null : ciHoldTransitions(events, label);
 }
+
+/** The commands whose record arrives on standard input. */
+const STDIN_COMMANDS = new Map<
+  string,
+  (store: StateStore, raw: string) => Promise<number>
+>([
+  [
+    "takeover",
+    async (store, raw) => recordTakeover(store, raw, await resolveActor()),
+  ],
+  ["seed-ledger", seedLedgerCommand],
+  ["record-decision", decisions.recordDecision],
+  ["reverse-decision", decisions.reverseDecision],
+  ["record-event", recordEvent],
+  ["rule", recordRuling],
+]);
 
 async function main(): Promise<number> {
   const a = parseArgs(process.argv.slice(2));
@@ -703,7 +749,7 @@ async function main(): Promise<number> {
    *
    * `reset` is on it for the cross-tree case too, and that is a decision rather
    * than an inheritance. It has its own live-foreign-lease refusal (exit 9,
-   * with a better diagnostic — it names the shared state and claim files it
+   * with a better diagnostic — it names the shared state and claims it
    * declines to delete), but that fires INSIDE the command, after admission has
    * already written this tree's lease. Left off the PR-wide gate, a refused
    * `reset` would leave a live lease behind that this session's next command
@@ -724,7 +770,7 @@ async function main(): Promise<number> {
    * lease whose holder is gone.
    *
    * The four `*-ready-mark` commands mutate the READY-MARK claim, a distinct
-   * lease from this one (`readyClaimPath`, guarding the draft→Ready transition
+   * lease from this one (`readyClaimRef`, guarding the draft→Ready transition
    * across WORKTREES) — but that distinction does not exempt them from THIS
    * one, which guards against a second SESSION in the same worktree. Left
    * off this list, `release-ready-mark`'s tokenless recovery path let a second
@@ -747,19 +793,23 @@ async function main(): Promise<number> {
     "set-escalated",
     "park",
     "unpark",
+    "record-decision",
+    "reverse-decision",
+    "record-event",
+    "rule",
     "hold",
     "claim-held",
     "unclaim-held",
     "restore-held",
     "release-held",
     "phase",
-    // Both mutate durable state (`lastProgressAt`/`quotaPark`), so
-    // both are leased on the same terms as `phase` immediately above — a
-    // second concurrent session stamping progress or a park behind the
-    // first's back is the identical corruption this list exists to prevent
-    // for every other writer here.
+    // Mutators of `lastProgressAt`, `quotaPark` and `takeovers`, leased on
+    // the same terms as `phase` above.
     "progress",
     "quota-park",
+    "takeover",
+    "seed-ledger",
+    "deadline-retries",
     "reset",
     "claim-ready-mark",
     "renew-ready-mark",
@@ -879,7 +929,7 @@ async function main(): Promise<number> {
         "is no claim of one that legitimately has no push to name.",
       );
     }
-    const path = claimPathFor(store.stateDir, pr, a.key);
+    const path = claimRefFor(store.stateDir, pr, a.key);
     const tok = newClaimToken();
     if (!claimCreate(path, tok)) {
       if (claimIsLive(path)) {
@@ -916,21 +966,22 @@ async function main(): Promise<number> {
     // ours), but the check costs nothing and this file does not trust "should
     // never happen" without verifying it.
     const releaseOwn = (): void => {
-      if (claimTokenMatches(path, tok)) removeClaimFile(path);
+      if (claimTokenMatches(path, tok)) removeClaim(path);
     };
     // The membership re-check below must be a LOCKED read, for the same reason
     // `unclaim-held` and `release-held` lock theirs.
     // `release-held --all` decides "is any key contended" and clears `.held`
     // inside ONE lock hold; an UNLOCKED read here could observe the pre-clear
     // snapshot after that hold's contended check already missed our brand-new
-    // claim file. Both sides would then believe they own the key, and `--all`'s
+    // claim. Both sides would then believe they own the key, and `--all`'s
     // cleanup deletes our claim out from under us while we go on to dispatch —
     // the duplicate top-level comment this whole primitive exists to prevent,
     // reached through the one read-then-act that skipped the mutex.
     //
     // `claimCreate` above stays lock-free and atomic on purpose — winning the
-    // slot is still a single `O_CREAT|O_EXCL` syscall, not a check-then-act a
-    // mutex could substitute for. Only the JSON READ is serialised here, and
+    // slot is one insert that does nothing when the row exists, not a
+    // check-then-act a mutex could substitute for. Only the READ is serialised
+    // here, and
     // create-then-check ordering is unchanged. `tryBreakStaleClaim` has already
     // fully released the lock before we get here, so this never nests.
     try {
@@ -954,7 +1005,7 @@ async function main(): Promise<number> {
       // a NON-idempotent summary answer beside its successor's, which is a
       // duplicate standing claim on the PR that no later round undoes.
       //
-      // The claim file is removed before the refusal propagates: it was
+      // The claim is removed before the refusal propagates: it was
       // created lock-free moments ago, and leaving it behind would wedge the
       // key behind a claim no dispatch will ever follow.
       try {
@@ -1017,7 +1068,7 @@ async function main(): Promise<number> {
           "its fix leaves a standing, wrong claim on the PR that no later round undoes.",
           "",
           "Two recoveries, and which one applies is decided by the PR, not by this",
-          "state file. Check whether this finding was ALREADY answered — an earlier",
+          "stored state. Check whether this finding was ALREADY answered — an earlier",
           "pass may have posted and then died before releasing it ('summary-findings.ts",
           `${pr} --json' reports its marker). If it was, the answer stands and the`,
           `entry is just stale: 'drive-state.ts release-held ${pr} --key ${a.key}`,
@@ -1061,27 +1112,16 @@ async function main(): Promise<number> {
     }
 
     case "rounds": {
-      process.stdout.write(`${store.read().state.rounds}\n`);
+      process.stdout.write(`${reviewRound(store, pr)}\n`);
       return 0;
     }
 
     case "bump-round": {
       if (a.sha === "") fail(2, "bump-round requires --head SHA");
-      // Count HEADS, not calls. A retried pass against an unchanged push is
-      // the same round; counting it would make a round budget measure driver
-      // retries. Progress is stamped ONLY on the genuine advance
-      // — the no-op branch below is exactly the re-read `withProgress`'s own
-      // header warns must not look like forward motion.
-      await store.update((s) =>
-        s.lastCountedHead === a.sha
-          ? s
-          : withProgress(
-              { ...s, rounds: s.rounds + 1, lastCountedHead: a.sha },
-              "round-advanced",
-              new Date(),
-            ),
-      );
-      process.stdout.write(`${store.read().state.rounds}\n`);
+      // Count HEADS, not calls: a retried pass against an unchanged push is
+      // the same round. The count is the review round record's
+      // (`review-rounds.ts`), shared with a hand-driven loop.
+      process.stdout.write(`${await bumpDriveRound(store, pr, a.sha)}\n`);
       return 0;
     }
 
@@ -1090,53 +1130,8 @@ async function main(): Promise<number> {
       return 0;
     }
 
-    case "set-reflected": {
-      // Stamp "a /reflect happened at this point" inside one update, so the
-      // reads of .rounds/.attempts and the writes of their baselines cannot
-      // straddle a concurrent bump. Recording a POSITION rather than a boolean
-      // is what lets the duty re-arm: reflectDepthPastLast measures forward
-      // from here, so a drive that runs long enough past the last reflect owes
-      // another one (SKILL.md § 3).
-      //
-      // BOTH counters are stamped because they are independent axes —
-      // `reflectDepthPastLast` documents why one stamp cannot serve them.
-      //
-      // `lastEscalatedRound` is stamped HERE TOO, in the same update: a
-      // `/reflect` is the step-back a structural escalation asks for, and the
-      // deeper one — it names the class across PRs, where `set-escalated` only
-      // records that this PR's recurrence was addressed. Leaving the escalation
-      // armed after a reflect would make the very next round demand a second
-      // step-back for a pattern that had just been examined, which is how an
-      // advisory signal gets learned as noise and then ignored when it is real.
-      // The reverse does NOT hold: `set-escalated` discharges only itself,
-      // because a narrow "I generalized the fix" is not a reflect.
-      //
-      // `lastEscalatedInvariant` is CLEARED here too, not carried
-      // forward: a `/reflect` is a step back from the whole class, not a
-      // restatement of whatever one file's prior `set-escalated --invariant`
-      // claimed. Leaving that text in place would let a later recurrence echo
-      // a narrow sentence as if the reflect had re-examined and re-affirmed
-      // it, when the reflect may never have touched that specific claim at
-      // all.
-      //
-      // `roundPaths` is re-pruned in this SAME update against the NEW
-      // `lastEscalatedRound` — see `pruneRoundPaths`'s own header for why
-      // advancing the acknowledgment without doing so writes a state
-      // `isUsableState` immediately rejects on the very next read.
-      await store.update((s) => {
-        const lastEscalatedRound = s.rounds;
-        return {
-          ...s,
-          lastEscalatedRound,
-          lastEscalatedInvariant: "",
-          lastReflectedRound: s.rounds,
-          lastReflectedAttempts: s.attempts,
-          roundPaths: pruneRoundPaths(s.roundPaths, lastEscalatedRound),
-        };
-      });
-      process.stdout.write(`${store.read().state.lastReflectedRound}\n`);
-      return 0;
-    }
+    case "set-reflected":
+      return setReflected(store);
 
     // The three commands below are the durable half of
     // `structuralEscalationDue`: one writes each round's finding anchors, one
@@ -1288,8 +1283,9 @@ async function main(): Promise<number> {
       // `lastEscalatedRound` that a LATER, genuine arming then echoes back as
       // though it were that arming's own acknowledgment.
       //
-      // `roundPaths` is re-pruned in this SAME update — see
-      // `set-reflected`'s identical comment and `pruneRoundPaths`'s header.
+      // `roundPaths` is re-pruned in this SAME update — see `set-reflected`'s
+      // identical comment (`lib/state/reflected.ts`) and `pruneRoundPaths`'s
+      // header.
       await store.update((s) => {
         if (s.rounds < 1) {
           fail(
@@ -1441,13 +1437,13 @@ async function main(): Promise<number> {
     //
     // Advances every held item's stamp to this push EXCEPT one narrow case: a
     // `finding` that ALREADY carries a stamp AND has a currently outstanding
-    // claim file. `claim-held --kind finding` locks a key with a SEPARATE
-    // filesystem claim rather than removing it from `held` (unlike a thread,
+    // claim. `claim-held --kind finding` locks a key with a SEPARATE
+    // claim row rather than removing it from `held` (unlike a thread,
     // whose claim atomically removes the entry) — so a finding can sit in
     // `held`, still bearing its OLD stamp, for the whole window between a
     // successful `claim-held` and an eventual `release-held`. If
     // `answer-summary-finding.ts` POSTed successfully in that window and the
-    // process then died before `release-held`, the claim file is still there
+    // process then died before `release-held`, the claim is still there
     // — live or gone stale, it does not matter, nothing removed it — and it
     // is exactly the signal that this item's stamp may already have been
     // dispatched under. Blindly advancing it to a later, unrelated push would
@@ -1460,15 +1456,15 @@ async function main(): Promise<number> {
     // boundary, not an extra condition bolted onto it: freeze exactly when a
     // dispatch COULD have happened under the recorded stamp. An unstamped
     // finding provably cannot have dispatched yet — `claimFinding` rejects an
-    // empty `--pushed-sha` before ever creating a claim file, and then
+    // empty `--pushed-sha` before ever creating a claim, and then
     // refuses whenever `item.verifiedSha !== a.pushedSha`, which an absent
-    // stamp can never satisfy — so a claim file sitting over an unstamped
+    // stamp can never satisfy — so a claim sitting over an unstamped
     // record is, by construction, a claim still in flight and not yet
     // validated, never a completed dispatch. Without this guard, a driver B
     // racing `claim-held` against driver A's own first-ever `stamp-held`
-    // for a brand-new hold could create a claim file a moment before A's
+    // for a brand-new hold could create a claim a moment before A's
     // call takes the lock; A's stamp would then be skipped (the raw
-    // `existsSync` check alone can't tell "in-flight, unvalidated claim"
+    // existence check alone can't tell "in-flight, unvalidated claim"
     // apart from "already dispatched"), and B's own claim attempt fails and
     // cleans up its file right after — leaving A's item permanently
     // unstamped even though nothing was ever actually dispatched against it.
@@ -1492,7 +1488,7 @@ async function main(): Promise<number> {
           "A looser check here (e.g. merely non-empty) lets a malformed value —",
           "CR/LF, a short SHA, stray punctuation — persist successfully and only",
           "fail isUsableState on the NEXT read, fail-closing the whole shared",
-          "state file for every driver of this PR.",
+          "stored state for every driver of this PR.",
         );
       }
       const me = await resolveActor();
@@ -1508,7 +1504,7 @@ async function main(): Promise<number> {
           if (
             h.kind === "finding" &&
             h.verifiedSha !== undefined &&
-            existsSync(claimPathFor(store.stateDir, pr, h.key))
+            claimExists(claimRefFor(store.stateDir, pr, h.key))
           ) {
             return h;
           }
@@ -1610,17 +1606,11 @@ async function main(): Promise<number> {
         }
         // ONE predicate for "does CI genuinely prove this head is done and
         // green" — called for the INITIAL proof below AND, unchanged, for every
-        // later re-check `stillFullyCurrent()` performs. Two rounds running, a
-        // re-check implemented as a SEPARATE, cheaper approximation of this
-        // same question fell out of sync with it: a aggregate-only
+        // later re-check `stillFullyCurrent()` performs: an aggregate-only
         // `ciVerdictOf` re-check treats `skipped` as passing, so a newer
         // skipped run for a required check could supersede the successful
-        // post-unlabel run without either refresh noticing, even though
-        // `completedRequiredCi` — the INITIAL proof's own predicate — would
-        // reject it. Sharing one implementation for "prove CI green" makes that
-        // class of drift impossible rather than merely unlikely, the same
-        // reasoning `stillFullyCurrent()` itself already applies to
-        // state/head/held/ timeline.
+        // post-unlabel run, even though `completedRequiredCi` rejects it.
+        // Sharing one implementation makes that class of drift impossible.
         async function proveCiGreen(): Promise<
           { ok: true } | { ok: false; reason: string }
         > {
@@ -1649,6 +1639,16 @@ async function main(): Promise<number> {
           if (allRuns === null || statuses === null) {
             return { ok: false, reason: "cannot read complete CI evidence" };
           }
+          const workflowRuns = await workflowRunsBehind(
+            "{owner}",
+            "{repo}",
+            a.sha,
+            allRuns,
+          );
+          runs = withoutRerunning(
+            withoutSuperseded(runs, workflowRuns),
+            workflowRuns,
+          );
           const apps = policy.requiredApps;
           const attributed =
             settledHold !== null
@@ -1702,7 +1702,13 @@ async function main(): Promise<number> {
                 "the required checks have not all succeeded on this head since the hold was last released",
             };
           }
-          const verdict = ciVerdictOf(allRuns, statuses, false, a.sha);
+          const verdict = ciVerdictOf(
+            allRuns,
+            statuses,
+            false,
+            a.sha,
+            workflowRuns,
+          );
           if (verdict !== "green") {
             return {
               ok: false,
@@ -1863,7 +1869,7 @@ async function main(): Promise<number> {
     // and the PR stayed a draft nothing would ever mark. An ordinary-failure
     // release does not help — a crash runs no failure branch by definition.
     //
-    // So the claim is a LEASE on the filesystem (`readyClaimPath`, the same
+    // So the claim is a LEASE in the database (`readyClaimRef`, the same
     // primitive and the same staleness window as the held-batch claims) and
     // `readyMarkedRound` is written only AFTER the event fires. Each says only
     // what it can prove: the lease says "someone is attempting this right now"
@@ -1891,7 +1897,7 @@ async function main(): Promise<number> {
       const claimSignal = process.env.DRIVE_PR_CLAIM_READY_TEST_SIGNAL;
       if (claimSignal) writeFileSync(claimSignal, "");
       if (claimStall > 0) await sleep(claimStall);
-      const path = readyClaimPath(store.stateDir, pr);
+      const path = readyClaimRef(store.stateDir, pr);
       const tok = newClaimToken();
       if (!claimCreate(path, tok)) {
         // `claimCreate` swallows the reason it failed, and exactly one of the
@@ -1900,12 +1906,12 @@ async function main(): Promise<number> {
         // full disk — is an ERROR, and answering `already` to it would tell
         // the caller a driver it could wait for exists when none does, then
         // spend the lock timeout discovering the same thing again below.
-        if (!existsSync(path)) {
+        if (!claimExists(path)) {
           fail(
             1,
-            `claim-ready-mark: cannot create PR #${pr}'s ready-mark lease at ${path}.`,
-            "Nothing is at that path, so this is not another driver holding it — the state",
-            "directory is unwritable. Refusing to report contention that does not exist.",
+            `claim-ready-mark: cannot create ${claimLabel(path)}.`,
+            "Nothing holds it, so this is not another driver holding it — the drive's",
+            "database is not writable. Refusing to report contention that does not exist.",
           );
         }
         if (claimIsLive(path)) {
@@ -1952,7 +1958,7 @@ async function main(): Promise<number> {
       // through the one cleanup path that hadn't been.
       if (store.read().state.readyMarkedRound !== 0) {
         await store.locked(async () => {
-          if (claimTokenMatches(path, tok)) removeClaimFile(path);
+          if (claimTokenMatches(path, tok)) removeClaim(path);
         });
         process.stdout.write("already\n");
         return 0;
@@ -1976,7 +1982,7 @@ async function main(): Promise<number> {
     // Verify-and-renew rather than verify alone, because a check on its own
     // leaves the same hole one call later: the lease could be seconds from
     // stale when it passes, and `gh pr ready` still has `$GH_CALL_TIMEOUT` to
-    // run. Resetting mtime here buys a FULL staleness window for a call
+    // run. Renewing the claim here buys a FULL staleness window for a call
     // bounded inside it, so the reclaim cannot land mid-dispatch.
     //
     // "Bounded inside it" is a RELATION BETWEEN TWO INDEPENDENT KNOBS, so it
@@ -2014,7 +2020,7 @@ async function main(): Promise<number> {
           "renewing into a window this configuration cannot cover.",
         );
       }
-      const path = readyClaimPath(store.stateDir, pr);
+      const path = readyClaimRef(store.stateDir, pr);
       // Locked for the same reason `commit-ready-mark` is: a bare
       // check-then-touch can renew a lease that a stale-claim recovery
       // replaced in between, handing this caller a fresh clock on a file it
@@ -2029,8 +2035,7 @@ async function main(): Promise<number> {
             "driver may have already done so, and firing again re-triggers paid review.",
           );
         }
-        const now = new Date();
-        utimesSync(path, now, now);
+        claimTouch(path, a.token);
         return 0;
       });
     }
@@ -2047,7 +2052,7 @@ async function main(): Promise<number> {
       // record a mark indistinguishable from no mark, and the next driver
       // would mark the PR Ready a second time.
       if (a.token === "") fail(2, "commit-ready-mark requires --token T");
-      const path = readyClaimPath(store.stateDir, pr);
+      const path = readyClaimRef(store.stateDir, pr);
       // The token CHECK, the durable WRITE, and the lease REMOVAL are one
       // atomic step under the per-PR lock — the same reasoning `unclaim-held`
       // already documents for its own check-then-remove: without the lock, an
@@ -2075,7 +2080,7 @@ async function main(): Promise<number> {
           readyMarkedRound: Math.max(state.rounds, state.attempts, 1),
         };
         store.write(next);
-        removeClaimFile(path);
+        removeClaim(path);
         await store.renderHandoff(next);
         return 0;
       });
@@ -2096,7 +2101,7 @@ async function main(): Promise<number> {
       // Lock-protected for the same reason `commit-ready-mark` is: an unlocked
       // check-then-remove can delete a DIFFERENT driver's fresh reclaim of a
       // lease that went stale between this call's own check and its removal.
-      const path = readyClaimPath(store.stateDir, pr);
+      const path = readyClaimRef(store.stateDir, pr);
       return store.locked(async () => {
         if (a.token !== "" && !claimTokenMatches(path, a.token)) {
           fail(
@@ -2104,64 +2109,26 @@ async function main(): Promise<number> {
             `release-ready-mark: PR #${pr}'s ready-mark claim is not yours (token mismatch, or the claim is gone).`,
           );
         }
-        removeClaimFile(path);
+        removeClaim(path);
         return 0;
       });
     }
 
     case "park": {
-      if (a.key === "")
-        fail(
-          2,
-          "park requires --key (a thread node id or finding fingerprint)",
-        );
-      // A key carrying CR or LF is not one key. `parked-keys` emits keys
-      // newline-delimited and drive-status splits that output on LF, so
-      // `PRRT_x<LF>PRRT_unrelated` parks ONE item and yields TWO match tokens
-      // — the second suppressing live work nobody parked, which is the
-      // opposite of what parking is for and is invisible in the state file's
-      // own shape. The channel is line-delimited, so the constraint belongs on
-      // what may enter it.
-      if (/[\n\r]/.test(a.key)) {
-        fail(
-          2,
-          "park: --key may not contain a newline or carriage return.",
-          "parked-keys is a line-delimited channel, so such a key becomes TWO",
-          "match tokens and the extra one suppresses work nobody parked.",
-        );
-      }
-      if (a.kind !== "thread" && a.kind !== "finding")
-        fail(2, `park requires --kind thread|finding (got '${a.kind}')`);
-      if (a.reason === "")
-        fail(
-          2,
-          "park requires --reason — a parked item with no framed decision is not a checkpoint, it is a dropped finding",
-        );
-      const kind = a.kind;
-      await store.update((s) => ({
-        ...s,
-        parked: [
-          ...s.parked.filter((p) => p.key !== a.key),
-          { key: a.key, kind, reason: a.reason, round: s.rounds },
-        ],
-      }));
-      return 0;
+      const parked = await framedPark(store, a);
+      await mirrorLedger(pr, store);
+      return parked;
     }
 
-    case "unpark": {
-      if (a.key === "") fail(2, "unpark requires --key");
-      await store.update((s) => ({
-        ...s,
-        parked: s.parked.filter((p) => p.key !== a.key),
-      }));
-      return 0;
-    }
+    case "unpark":
+      return unpark(store, a.keys, a.parkedAts, a.every);
 
-    case "parked-keys": {
-      for (const p of store.read().state.parked)
-        process.stdout.write(`${p.key}\n`);
-      return 0;
-    }
+    case "parked-keys":
+    case "reversal-parked-keys":
+      return decisions.printParkedKeys(
+        store.read().state,
+        a.cmd === "reversal-parked-keys",
+      );
 
     case "hold": {
       if (a.key === "")
@@ -2169,11 +2136,10 @@ async function main(): Promise<number> {
           2,
           "hold requires --key (a thread node id or finding fingerprint)",
         );
-      // The SAME newline ban `park` applies, and for the same mechanical
-      // reason: `held-keys` is a line-delimited channel too, so an embedded LF
-      // holds ONE item and emits TWO tokens, the second of which resolves a
-      // thread nobody held. The validator in
-      // schema.ts restates this rather than inventing a weaker one.
+      // The SAME newline ban `park` applies, for the same mechanical reason:
+      // `held-keys` is a line-delimited channel too, so an embedded LF holds
+      // ONE item and emits TWO tokens, the second resolving a thread nobody
+      // held. schema.ts's validator restates this rather than a weaker one.
       if (/[\n\r]/.test(a.key)) {
         fail(
           2,
@@ -2211,7 +2177,7 @@ async function main(): Promise<number> {
       // asymmetric because the two kinds are at different points in their own
       // lifecycle by hold time. A thread's reply is already posted to GitHub
       // (the `reply-to-thread.ts` call that precedes this one put it there),
-      // so the text survives independently of this state file. A finding's is
+      // so the text survives independently of this stored state. A finding's is
       // not: the only place `answer-summary-finding.ts --pushed-sha` can
       // legally run is step 6, after the push — so at hold time nothing has
       // been posted yet, and the reasoning exists nowhere but the triaging
@@ -2219,14 +2185,10 @@ async function main(): Promise<number> {
       // exists to survive) would leave a successor an outcome with nothing to
       // explain it.
       //
-      // Read from STDIN, not a `--reason` argument like `park` uses: this text
-      // is the verbatim reply body headed for `answer-summary-finding.ts`'s
-      // own stdin, i.e. the same class of arbitrary reviewer-adjacent prose
-      // (quotes, backticks, `$(...)`) that hardened that script's
-      // body handling against — a shell argument would let a caller's OWN
-      // quoting evaluate those before this script ever saw them. `park`'s
-      // reason is short, agent-authored decision framing, not reply prose; the
-      // two are not the same risk class.
+      // Read from STDIN, as `park`'s decision record is: this text is the
+      // verbatim reply body headed for `answer-summary-finding.ts`'s own
+      // stdin, arbitrary reviewer-adjacent prose (quotes, backticks, `$(...)`)
+      // that a shell argument would let a caller's own quoting evaluate.
       let heldReason: string | undefined;
       if (a.kind === "finding") {
         const body = await readStdinAll();
@@ -2268,7 +2230,7 @@ async function main(): Promise<number> {
       // contract's own invariant that the field is absent for `kind:
       // 'finding'`. `--unconfirmed` is worse than a no-op: it writes `round:
       // -1`, but a finding's claim protocol (`claim-held --kind finding` /
-      // `unclaim-held`) is a filesystem mutex with no round-based recovery
+      // `unclaim-held`) is a claim with no round-based recovery
       // path — nothing re-holds a stranded round -1 finding the way a live
       // pass's step 3 re-holds a thread, so an accidental invocation would
       // strand it indefinitely.
@@ -2352,10 +2314,10 @@ async function main(): Promise<number> {
         );
         return 0;
       }
-      // A `finding`'s claim file lives OUTSIDE `.held` (a separate filesystem
+      // A `finding`'s claim lives OUTSIDE `.held` (a separate row
       // mutex), so re-holding the state record alone leaves a prior
-      // dispatch's claim file standing. `stamp-held` refuses to stamp a held
-      // item while its claim file exists (see that case's own comment) — so an
+      // dispatch's claim standing. `stamp-held` refuses to stamp a held
+      // item while its claim exists (see that case's own comment) — so an
       // un-cleared stale one would make the fresh record permanently
       // unstampable, defeating the exact "re-hold via § 3" recovery this
       // command exists to provide.
@@ -2365,7 +2327,7 @@ async function main(): Promise<number> {
       // genuinely mid-dispatch on this key right now, and clearing its claim
       // file out from under it would let that driver's eventual
       // `release-held --token T` fail and risk a second dispatch, exactly the
-      // race the claim file exists to prevent. Refuse instead, so the operator
+      // race the claim exists to prevent. Refuse instead, so the operator
       // waits for the claim to be released or to age out.
       //
       // The staleness check/break and the held-record replacement below both
@@ -2375,7 +2337,7 @@ async function main(): Promise<number> {
       // `release-held`, `stamp-held`'s own claim-file check) already folds
       // its decision and its state mutation into a single lock hold; `hold`
       // was the last one that did not. Splitting them left a window: a
-      // `claim-held --kind finding` could create its own fresh claim file and
+      // `claim-held --kind finding` could create its own fresh claim and
       // take the lock BETWEEN this decision and the later `store.update`,
       // validate against the OLD (pre-replacement) record, and let its
       // caller's external dispatch proceed to POST an answer for a promise
@@ -2391,8 +2353,8 @@ async function main(): Promise<number> {
       // deadlocking visibly.
       await store.locked(async () => {
         if (kind === "finding") {
-          const claimPath = claimPathFor(store.stateDir, pr, a.key);
-          if (existsSync(claimPath) && !breakStaleClaimLocked(claimPath)) {
+          const claimPath = claimRefFor(store.stateDir, pr, a.key);
+          if (claimExists(claimPath) && !breakStaleClaimLocked(claimPath)) {
             fail(
               1,
               `hold: '${a.key}' has a LIVE claim — another driver appears to be`,
@@ -2450,7 +2412,7 @@ async function main(): Promise<number> {
     // batch.
     //
     // `--kind thread` is a compare-and-delete: the check and the removal in one
-    // lock hold. `--kind finding` is a per-key filesystem mutex that does NOT
+    // lock hold. `--kind finding` is a per-key claim that does NOT
     // remove the item, because a finding's dispatch and its release are
     // separate steps. Exclusivity is what findings needed on top of provenance:
     // two concurrent drivers reading the same `held` snapshot could both decide
@@ -2478,7 +2440,7 @@ async function main(): Promise<number> {
     // fault, not per-key contention; a caller that sees 1 recur across
     // several different keys in one pass should stop and inspect rather than
     // keep skipping; 2 = a usage error (bad flags, or the item's actual kind
-    // does not match `--kind`); 3 = the state file itself could not be read
+    // does not match `--kind`); 3 = the stored state itself could not be read
     // — not a per-key problem, stop the round entirely; 4 = (finding only)
     // the key is not (or no longer) in the held batch at all — the snapshot
     // the caller is iterating is stale, so it must re-read `held` before
@@ -2508,7 +2470,7 @@ async function main(): Promise<number> {
     //
     // The stamp is read off the ITEM, not off `state.verifiedSha`.
     // The PR-global field is moved by whichever driver pushed last, and this
-    // state file is shared by every driver working the PR — so on the
+    // stored state is shared by every driver working the PR — so on the
     // concurrent-driver case Conductor makes ordinary, it vouched for holds
     // whose fix the push never contained: driver A holds a thread and stalls
     // before pushing, driver B pushes unrelated work and calls `stamp-held`
@@ -2647,13 +2609,13 @@ async function main(): Promise<number> {
     // the whole staleness window. A crash needs no explicit call here at all:
     // an abandoned claim recovers on its own once `claim-held` finds it stale.
     // Meaningless for a thread — its claim-held is a one-shot atomic remove
-    // with no separate claim file to give back; `restore-held` is its failure
+    // with no separate claim to give back; `restore-held` is its failure
     // path instead.
     case "unclaim-held": {
       if (a.key === "") fail(2, "unclaim-held requires --key");
       if (a.token === "")
         fail(2, "unclaim-held requires --token (the one claim-held gave you)");
-      const path = claimPathFor(store.stateDir, pr, a.key);
+      const path = claimRefFor(store.stateDir, pr, a.key);
       // The match-then-remove must be ONE atomic step, under the SAME per-PR
       // lock `tryBreakStaleClaim` takes to break a stale claim — not two
       // separate, unlocked operations. Without the lock, an owner returning
@@ -2675,7 +2637,7 @@ async function main(): Promise<number> {
             `unclaim-held: '${a.token}' is not the live claim on '${a.key}' — nothing to release. It may already have expired or been reclaimed by someone else.`,
           );
         }
-        removeClaimFile(path);
+        removeClaim(path);
         return 0;
       });
     }
@@ -2708,7 +2670,7 @@ async function main(): Promise<number> {
       // `held`, so it needs the writer's invariant: without it a direct
       // `restore-held --key` call persists an entry `isUsableState` rejects on
       // the next read, and the store's refusal is fail-closed — so the drive
-      // stops entirely until a human edits the state file by hand. Fixing
+      // stops entirely until a human edits the state by hand. Fixing
       // `hold` alone missed this sibling; every writer into a line-delimited
       // channel needs this, not just the one that was reported.
       if (/[\n\r]/.test(a.key)) {
@@ -2807,7 +2769,7 @@ async function main(): Promise<number> {
           2,
           `restore-held: --verified-sha must be a full 40-character lowercase hex SHA-1 (got '${a.verifiedSha}') — the exact grammar 'claim-held' printed.`,
           "A looser check here lets a malformed value persist and only fail",
-          "isUsableState on the NEXT read, fail-closing the whole shared state file.",
+          "isUsableState on the NEXT read, fail-closing the whole shared stored state.",
         );
       }
       const outcome = a.outcome;
@@ -2881,7 +2843,7 @@ async function main(): Promise<number> {
           // scan.
           if (heldKeys.length === 0) return 0;
           const contended = heldKeys.filter((k) =>
-            claimIsLive(claimPathFor(store.stateDir, pr, k)),
+            claimIsLive(claimRefFor(store.stateDir, pr, k)),
           );
           if (contended.length > 0) {
             fail(
@@ -2925,7 +2887,7 @@ async function main(): Promise<number> {
           // reason `unclaim-held` states in full above: a removal decided
           // against one snapshot and executed against the path LATER deletes
           // whatever generation happens to occupy that path at execution time,
-          // not the one it was ever responsible for. `claimPathFor` is a pure
+          // not the one it was ever responsible for. `claimRefFor` is a pure
           // function of the key STRING — it encodes no generation — so once
           // `.held` is cleared and the lock released, a concurrent `hold` can
           // legitimately re-add the same key and a concurrent `claim-held` can
@@ -2946,7 +2908,7 @@ async function main(): Promise<number> {
           );
           if (preCleanupStall > 0) await sleep(preCleanupStall);
           for (const k of heldKeys)
-            removeClaimFile(claimPathFor(store.stateDir, pr, k));
+            removeClaim(claimRefFor(store.stateDir, pr, k));
           return 0;
         });
       }
@@ -3023,7 +2985,7 @@ async function main(): Promise<number> {
         // a finding, or a prior claim already expired/released), so there is no
         // owner to prove membership against and release proceeds exactly as an
         // uncontended release always has.
-        const claim = claimPathFor(store.stateDir, pr, a.key);
+        const claim = claimRefFor(store.stateDir, pr, a.key);
         if (claimIsLive(claim) && !claimTokenMatches(claim, a.token)) {
           fail(
             1,
@@ -3065,7 +3027,7 @@ async function main(): Promise<number> {
         // re-`hold` plus a fresh `claim-held` for this same key, landing in the
         // gap between an unlocked clear and an unlocked removal, would have
         // this call delete a generation it never owned.
-        removeClaimFile(claim);
+        removeClaim(claim);
         return 0;
       });
     }
@@ -3096,17 +3058,9 @@ async function main(): Promise<number> {
           `progress: --phase must be one of ${PROGRESS_PHASES.join(", ")} (got '${a.phaseArg}')`,
         );
       }
-      // Test-only hook, unset (no-op) by default — same shape as
-      // `DRIVE_PR_QUOTA_PARK_TEST_DELAY`. `drive.ts` fires the `pass-spawned`
-      // stamp fire-and-forget from `onSpawn` and now `await`s this exact
-      // subprocess before interpreting the pass result or writing state again:
-      // a delayed stamp that completed AFTER a later `recordQuotaPark()` write
-      // used to clobber `quotaPark` back to `null` via `withProgress`'s own
-      // unconditional clear, since neither write knew about the other. Proving
-      // the join actually orders them — rather than hoping real
-      // subprocess-spawn jitter happens to resolve this stamp first — needs a
-      // way to hold this write open deterministically while a quota wall lands
-      // on the same round.
+      // Test-only hook, unset (no-op) by default: holds this write open so a
+      // test can prove `drive.ts` joins the `pass-spawned` stamp before a
+      // later `recordQuotaPark()` write, which the stamp would otherwise clear.
       const delaySec = testDelaySeconds(
         "DRIVE_PR_PROGRESS_TEST_DELAY",
         "progress",
@@ -3127,52 +3081,14 @@ async function main(): Promise<number> {
     // through `withProgress` — parking is progress's opposite, and
     // `quotaPark`'s own comment on `DriveState` explains why the next genuine
     // progress event (not this call) is what clears it.
-    case "quota-park": {
-      if (a.vendor === "") fail(2, "quota-park requires --vendor V");
-      if (/[\n\r]/.test(a.vendor)) {
-        fail(2, "quota-park: --vendor must not contain a newline");
-      }
-      if (a.window === "") fail(2, "quota-park requires --window W");
-      if (/[\n\r]/.test(a.window)) {
-        fail(2, "quota-park: --window must not contain a newline");
-      }
-      if (a.resetAt !== "" && !Number.isFinite(Date.parse(a.resetAt))) {
-        fail(
-          2,
-          `quota-park: --reset-at must be a string Date.parse can read (got '${a.resetAt}')`,
-        );
-      }
-      // Test-only hook, unset (no-op) by default — same shape as
-      // `DRIVE_PR_CLAIM_HELD_TEST_DELAY` et al. `drive.ts`'s own
-      // `recordQuotaPark` awaits this exact subprocess; proving its caller
-      // handles a lock takeover that lands WHILE this await is still in
-      // flight needs a way to force that overlap deterministically, not
-      // hope real subprocess-spawn jitter happens to be slow enough.
-      const delaySec = testDelaySeconds(
-        "DRIVE_PR_QUOTA_PARK_TEST_DELAY",
-        "quota-park",
-      );
-      if (delaySec > 0) await sleep(delaySec);
-      await store.update((s) => ({
-        ...s,
-        quotaPark: {
-          vendor: a.vendor,
-          window: a.window,
-          resetAt: a.resetAt === "" ? null : a.resetAt,
-          at: new Date().toISOString(),
-        },
-      }));
-      return 0;
-    }
+    case "quota-park":
+      return quotaPark(store, a);
 
-    case "handoff": {
-      return store.locked(async () => {
-        const { state } = store.read();
-        const out = await renderHandoff(pr, state);
-        process.stdout.write(`${out}\n`);
-        return 0;
-      });
-    }
+    case "deadline-retries":
+      return deadlineRetries(store, a.phaseName);
+
+    case "handoff":
+      return handoff(pr, store);
 
     case "lease": {
       // Read-only, and ungated: asking who is driving must work FROM the
@@ -3194,8 +3110,6 @@ async function main(): Promise<number> {
       // caller of this one is asking a question whose empty answer is load-
       // bearing, and an empty array says "enumerated, found none" where a blank
       // line is indistinguishable from a command that printed nothing.
-      // `leaseFilesFor` throws rather than answering `[]` when the directory
-      // cannot be read, so `[]` is always a measurement.
       if (a.all) {
         const self = await resolveActor();
         const live: unknown[] = liveLeasesFor(store.stateDir, pr).map((l) => ({
@@ -3204,33 +3118,10 @@ async function main(): Promise<number> {
           // re-derive the actor to tell "someone else is driving" from "I am".
           self: l.actor === self,
         }));
-        // The files the gate BLOCKS on but cannot parse belong in this report
-        // too. Reporting only the readable ones let this command print `[]`
-        // immediately after an exit-13 refusal that one of these caused —
-        // telling an operator nobody holds the PR at the exact moment they
-        // were refused for the opposite reason, which is worse than no
-        // diagnostic.
-        //
-        // Same shape as a lease (`actor`, `worktree`, `self`) so one consumer
-        // reads both, with `unreadable: true` as the discriminant and no
-        // fabricated pid/session — the point is that those are exactly what
-        // could not be read.
-        for (const f of unreadableLeaseFilesFor(store.stateDir, pr)) {
-          live.push({
-            unreadable: true,
-            file: f,
-            actor: null,
-            worktree: null,
-            self: f === leasePathFor(store.stateDir, pr, self),
-            blocksUntil: "mtime + the staleness window",
-          });
-        }
         process.stdout.write(`${JSON.stringify(live, null, 2)}\n`);
         return 0;
       }
-      const l = readLease(
-        leasePathFor(store.stateDir, pr, await resolveActor()),
-      );
+      const l = readLease(leaseRef(store.stateDir, pr, await resolveActor()));
       process.stdout.write(
         l === null ? "\n" : `${JSON.stringify(l, null, 2)}\n`,
       );
@@ -3271,7 +3162,7 @@ async function main(): Promise<number> {
       // Taken under the STATE mutex, though it mutates no state itself. The
       // admission fence (`assertLeaseUnchanged`) runs inside a locked section
       // and is then followed by that section's write, and those two are not
-      // atomic against a revocation that needs only the LEASE mutex: clearing
+      // atomic against a revocation that touches only the lease row: clearing
       // between the check and the write let the admitted command write anyway,
       // after which a successor could claim the absent lease and write under
       // the same actor — the corruption the fence exists to exclude, in a
@@ -3280,9 +3171,8 @@ async function main(): Promise<number> {
       // inside one, which is what makes the fence hold through the mutation
       // rather than merely at its start.
       //
-      // Lock ORDER is state → lease, matching `reset` (which sweeps lease files
-      // while holding this same mutex). `claimLease` takes the lease mutex and
-      // never reaches for the state one, so no cycle exists in either
+      // Lock ORDER is the store's lock, then the leases' transaction, the
+      // same as `reset` and `claimLease`, so no cycle exists in either
       // direction.
       //
       // `--all` drops EVERY tree's lease on this PR, live ones included: the
@@ -3300,10 +3190,8 @@ async function main(): Promise<number> {
       // reason.
       if (a.all) {
         return await store.locked(async () => {
-          // Read for the REPORT before the sweep, since deletion is what makes
-          // them unreadable. Unreadable ones are still swept — `removed` below
-          // is the authoritative count, and these details are the addendum.
-          const before = leaseFilesFor(store.stateDir, pr)
+          // Read for the REPORT before the sweep removes them.
+          const before = leaseRefsFor(store.stateDir, pr)
             .map(readLease)
             .filter((l): l is Lease => l !== null);
           const { removed } = await clearAllLeases(
@@ -3324,11 +3212,6 @@ async function main(): Promise<number> {
           for (const l of before) {
             console.error(
               `  ${l.worktree || l.actor} — ${leaseHolderLabel(l)}, last seen ${l.lastSeen} ('${l.command}')`,
-            );
-          }
-          if (before.length < removed.length) {
-            console.error(
-              `  (+${removed.length - before.length} lease file(s) that could not be read as a lease record)`,
             );
           }
           return 0;
@@ -3360,13 +3243,7 @@ async function main(): Promise<number> {
     }
 
     case "reset": {
-      // The orphan-warning marker too — leaving it means a `reset` that makes
-      // the state file absent again (with a worktree-private orphan still
-      // sitting there) is judged against a marker written for the PREVIOUS
-      // absence, and the warning that condition exists to re-arm never fires
-      // again.
-      //
-      // The handoff is a snapshot of THIS file — deleting the JSON without it
+      // The handoff is a snapshot of THIS state — deleting the state without it
       // leaves a stale .md still showing the round/phase/held/parked state
       // that `reset` just discarded, while its own text tells a compacted
       // agent to prefer it. Same lock as every other mutator, for the same
@@ -3402,8 +3279,8 @@ async function main(): Promise<number> {
         // (network/auth failure) is refused for the identical reason an
         // inconclusive parse already is.
         let ciHoldEvidenceInconclusive = false;
-        if (existsSync(store.file)) {
-          const text = readFileSync(store.file, "utf8");
+        const text = store.stored();
+        if (text !== null) {
           let rawMentionsCiHold = false;
           let localEvidenceConfirmsAbsence = false;
           try {
@@ -3436,8 +3313,8 @@ async function main(): Promise<number> {
         }
         if (ciHoldEvidenceInconclusive) {
           console.error(
-            `drive-state.ts: refusing to reset PR #${pr} — its state file exists but does not confirm the absence of a ${holdLabelName()} transition, and live evidence could not rule one out either.`,
-            `\n  A missing/malformed \`ciHold\` field, or a file that fails to parse at all, is not evidence the transition it may have recorded is gone — only an explicit \`ciHold: null\` or GitHub's live '${holdLabelName()}' timeline can confirm there is nothing to preserve. Inspect ${store.file} and PR #${pr}'s timeline by hand: if there is truly no ${holdLabelName()} evidence worth preserving, remove the file directly rather than through reset; if there is, reconcile the live label with ci-hold.ts first.`,
+            `drive-state.ts: refusing to reset PR #${pr} — its stored state exists but does not confirm the absence of a ${holdLabelName()} transition, and live evidence could not rule one out either.`,
+            `\n  A missing/malformed \`ciHold\` field, or a file that fails to parse at all, is not evidence the transition it may have recorded is gone — only an explicit \`ciHold: null\` or GitHub's live '${holdLabelName()}' timeline can confirm there is nothing to preserve. Inspect ${store.where} ('drive-state.ts get ${pr}') and PR #${pr}'s timeline by hand: if there is truly no ${holdLabelName()} evidence worth preserving, write a confirmed \`ciHold: null\` rather than reset; if there is, reconcile the live label with ci-hold.ts first.`,
           );
           return 9;
         }
@@ -3455,53 +3332,28 @@ async function main(): Promise<number> {
           );
           return 9;
         }
-        // The FALLIBLE work first, before anything durable is discarded.
+        // Every session lease for this PR, from EVERY working tree — not just
+        // this one's: `reset` is the command a person reaches for to unwedge
+        // a drive, and the tree holding the wedged lease need not be the
+        // tree they stand in. Swept first, in one transaction, before
+        // anything else is discarded, so a sweep that refuses leaves
+        // everything as it was.
         //
-        // `clearAllLeases` enumerates a directory and takes a lock per lease
-        // file, and either can throw — so running it after the deletions meant
-        // a throw left the state file, handoff, orphan marker and claim files
-        // already gone, with only a PREFIX of the leases swept, and exited
-        // non-zero. A caller cannot tell that apart from a reset that changed
-        // nothing, so a retry is reasoning from a false transactional
-        // assumption.
-        //
-        // Ordered this way the failure is clean instead: nothing of THIS
-        // command's has been deleted yet, so the retry a caller reaches for is
-        // operating on the state they think it is. The deletions below are
-        // `rmSync(..., { force: true })` and `removeHandoff`, which do not
-        // throw on a missing target, so nothing after this point reintroduces
-        // the same problem.
-        //
-        // NOT "a non-zero exit means no change", which an earlier version of
-        // this comment claimed and turned out false: `clearAllLeases` can
-        // itself throw `PARTIAL sweep` when a lease deletion fails on
-        // EACCES/EPERM/EROFS, having removed some leases. That error names both
-        // halves precisely so this case is distinguishable. The three non-zero
-        // outcomes are distinct and a caller must read which it got: exit 9 (a
-        // live foreign lease) and an acquisition failure both leave everything
-        // untouched; a `PARTIAL sweep` has changed the lease set. Every session
-        // lease for this PR, from EVERY working tree — not just this one's.
-        // `reset` is the command a human reaches for to unwedge a drive, and
-        // the tree holding the wedged lease need not be the tree they are
-        // standing in.
-        //
-        // Except one that is still LIVE, in ANY tree including this one, which
-        // is preserved and returned. A live lease is by definition not the
-        // wedge anyone ran this to clear, and deleting it re-opens that tree to
-        // a second session alongside a command that may already be admitted —
-        // see `clearAllLeases`. Only the REPORT below is scoped to other trees:
-        // the caller's own preserved lease is not news to the caller, while a
-        // tree they cannot see from here is the only case they need told about.
+        // Except one that is still LIVE, in ANY tree including this one,
+        // which is preserved and returned: a live lease is not the wedge
+        // anyone ran this to clear, and deleting it re-opens that tree to a
+        // second session beside a command that may already be admitted (see
+        // `clearAllLeases`). Only the REPORT below is scoped to other trees.
         const { preservedForeign: preservedLeases, removed: removedLeases } =
           await clearAllLeases(store.stateDir, pr, admittedLease);
 
         // A live FOREIGN lease aborts the reset outright, before anything
         // shared is deleted.
         //
-        // Preserving that tree's lease is not enough on its own: the state file
-        // and the CLAIM FILES are shared by every tree driving this PR. A live
-        // session mid-dispatch of a held finding has already created its claim
-        // file and may not have posted yet — deleting it lets this tree rebuild
+        // Preserving that tree's lease is not enough on its own: the state and
+        // the CLAIMS are shared by every tree driving this PR. A live session
+        // mid-dispatch of a held finding has already created its claim and
+        // may not have posted yet — deleting it lets this tree rebuild
         // fresh state, see the finding as unaddressed, and dispatch the same
         // non-idempotent answer a second time, which is a duplicate standing
         // claim on the PR that no later round undoes.
@@ -3515,7 +3367,7 @@ async function main(): Promise<number> {
           for (const l of preservedLeases)
             console.error(
               `drive-state.ts: refusing to reset PR #${pr} — another working tree is driving it right now (${l.actor}, ${leaseHolderLabel(l)}, last seen ${l.lastSeen}).`,
-              `\n  Nothing has been deleted. The state file and the claim files are SHARED with that tree: dropping them while it is mid-dispatch lets this tree re-answer a finding it has already claimed, which duplicates a comment that cannot be withdrawn.`,
+              `\n  Nothing has been deleted. The state and the claims are SHARED with that tree: dropping them while it is mid-dispatch lets this tree re-answer a finding it has already claimed, which duplicates a comment that cannot be withdrawn.`,
               `\n  ${leaseLivenessHint(l)}`,
               `\n  If it is gone, it clears itself once ${leaseStaleMin()}m pass with drive state untouched — or run 'drive-state.ts clear-lease ${pr}' from that tree to take it over, then reset.`,
             );
@@ -3535,7 +3387,7 @@ async function main(): Promise<number> {
         // state mutex, between claiming and posting. So the claiming session's
         // own lease is `isOwn` — deliberately, since the session running this
         // reset may be the very same one — and yet its in-flight POST has not
-        // landed. Deleting the claim file there lets any later command see the
+        // landed. Deleting the claim there lets any later command see the
         // finding as unaddressed and answer it again, which is the duplicate
         // top-level comment the claim protocol exists to prevent.
         //
@@ -3544,85 +3396,81 @@ async function main(): Promise<number> {
         // in flight regardless of whose it is. Stale claims are not live by
         // `claimIsLive`'s own staleness test, so an abandoned one still does
         // not block the reset a human ran to clear it.
-        const liveClaims = claimFilesFor(store.stateDir, pr).filter(
-          claimIsLive,
-        );
+        const liveClaims = claimRefsFor(store.stateDir, pr).filter(claimIsLive);
         if (liveClaims.length > 0) {
-          // NOT the blanket "Nothing has been deleted" this branch used to
-          // print unconditionally: `clearAllLeases` above already ran its own
-          // phase 2 whenever it did not refuse outright, so a refusal reached
-          // here can follow a real, completed lease sweep. Claiming otherwise
-          // was accurate for the lease-refusal branch above (which returns
-          // before phase 2 ever runs) but false for this one.
+          // `clearAllLeases` above already swept the stale leases whenever it
+          // did not refuse outright, so a refusal reached here can follow a
+          // real, completed lease sweep.
           const leaseNote =
             removedLeases.length > 0
-              ? `${removedLeases.length} stale session lease(s) were already swept as part of this attempt (they were not live, so nothing driving was lost) — but the state file and the claim files were NOT.`
+              ? `${removedLeases.length} stale session lease(s) were already swept as part of this attempt (they were not live, so nothing driving was lost) — but the state and the claims were NOT.`
               : "Nothing has been deleted.";
           console.error(
             `drive-state.ts: refusing to reset PR #${pr} — ${liveClaims.length} live claim(s) on held finding(s), which means a dispatch may be in flight right now.`,
-            `\n  ${leaseNote} A finding's answer is posted OUTSIDE the state mutex, so deleting its claim file here would let the finding be answered a second time — a duplicate top-level comment that cannot be withdrawn.`,
-            `\n  ${liveClaims.map((f) => `  ${f}`).join("\n")}`,
+            `\n  ${leaseNote} A finding's answer is posted OUTSIDE the state mutex, so deleting its claim here would let the finding be answered a second time — a duplicate top-level comment that cannot be withdrawn.`,
+            `\n  ${liveClaims.map((f) => `  ${claimLabel(f)}`).join("\n")}`,
             `\n  A claim clears itself once ${claimStaleMin()}m pass untouched, or the dispatching driver releases it. Re-run the reset after that.`,
           );
           return 9;
         }
 
-        rmSync(store.file, { force: true });
-        rmSync(orphanMarkerPath(store.stateDir, pr), { force: true });
+        removeStateKeepingLedgerGeneration(store, Number(pr));
+        clearReviewRounds(store.stateDir, pr);
+        clearPendingVerdicts(store.stateDir, pr);
         await removeHandoff(pr);
-        // Every claim file for this PR too — live, or an abandoned
-        // `.released.` leftover. Without this, "forget everything for this PR"
-        // is a lie for up to a full staleness window: a live claim `reset`
-        // leaves behind still blocks `claim-held` on that key ("already
-        // claimed") after the JSON that would have explained why is already
-        // gone, and a human running `reset` specifically to unwedge a drive
-        // gets ten more minutes of exactly the wedge they were trying to
-        // clear.
-        for (const f of claimFilesFor(store.stateDir, pr))
-          rmSync(f, { force: true });
-        // The ready-mark lease is NOT one of those: it deliberately sits
-        // outside `claimPrefix` so the held-batch sweep never sees it, which
-        // means this sweep never saw it either.
-        // Same lie, same duration, same operator: `reset` recreates the JSON
-        // with `readyMarkedRound: 0` while an orphaned lease keeps
-        // `claim-ready-mark` reporting contention for a full staleness window
-        // — the PR cannot be marked Ready and the state gives no hint why.
-        rmSync(readyClaimPath(store.stateDir, pr), { force: true });
+        // Every claim on this PR too, held items' and the Ready mark's.
+        // Without this, "forget everything for this PR" is a lie for up to a
+        // full staleness window: a claim left behind still blocks
+        // `claim-held` on that key, or `claim-ready-mark`, after the state
+        // that would have explained why is gone.
+        for (const f of claimRefsFor(store.stateDir, pr)) removeClaim(f);
+        removeClaim(readyClaimRef(store.stateDir, pr));
         // No report loop here any more: a live foreign lease returns 9 above
         // before anything is deleted, so by this point `preservedLeases` is
         // necessarily empty. Reaching here means the reset was complete.
         return 0;
       });
-      if (resetResult === 0) {
-        // Every quarantine directory this PR's lock has ever tombstoned
-        // — `lock.ts`'s own `tombstone` never sweeps these, and
-        // `sweepLockQuarantine` does not either: it COMPACTS each one to an
-        // empty file rather than deleting it, so the permanent fence
-        // survives intact and this needs no precondition of its own (see its
-        // doc comment for why even this reset's own lease/claim checks above
-        // do not prove "no future observer"). `reset` is simply a
-        // convenient, low-traffic place to trigger it, not a safety
-        // requirement for it — which is exactly why this call sits OUTSIDE
-        // the `store.locked()` hold above, not inside it: `locked()`
-        // releases `lock` only after that callback returns, and releasing
-        // ALWAYS mints a fresh pair of tombstones (`release`'s own rename,
-        // plus `releaseRecoveringGate`'s own) for the generation this very
-        // reset just held. Sweeping before that release ran, as an earlier
-        // draft of this code did, left those two fresh tombstones
-        // uncompacted until some LATER reset happened to run — this way,
-        // reaching `resetResult === 0` (this reset actually completed, not
-        // refused) means the release has already happened, and this call
-        // compacts everything, including its own reset's trailing pair.
-        sweepLockQuarantine(store.file);
-      }
       return resetResult;
     }
 
     default:
-      console.error(`unknown command: ${a.cmd}`);
-      usage();
-      return 2;
+      return otherCommand(a, store, pr);
   }
+}
+
+/** `handoff`: (re)write the handoff file, and the ledger under a driver. */
+async function handoff(pr: string, store: StateStore): Promise<number> {
+  await store.locked(async () => {
+    const out = await renderHandoff(pr, store.read().state);
+    process.stdout.write(`${out}\n`);
+  });
+  // A ledger write that was attempted and did not land is told apart
+  // from success: a stop's last write keeps its recovery record on it.
+  return (await mirrorLedger(pr, store)) === "failed"
+    ? LEDGER_NOT_WRITTEN_EXIT
+    : 0;
+}
+
+/** A review round verb (`review-rounds.ts`), a command whose record arrives on standard input, or the usage refusal. */
+async function otherCommand(
+  a: Args,
+  store: StateStore,
+  pr: string,
+): Promise<number> {
+  const roundVerb = Object.hasOwn(ROUND_VERBS, a.cmd)
+    ? ROUND_VERBS[a.cmd]
+    : undefined;
+  if (roundVerb !== undefined) return roundVerb(store, pr, a.sha);
+  return stdinOrUnknown(a.cmd, store);
+}
+
+/** A command whose record arrives on standard input, or the usage refusal. */
+async function stdinOrUnknown(cmd: string, store: StateStore): Promise<number> {
+  const fromStdin = STDIN_COMMANDS.get(cmd);
+  if (fromStdin !== undefined) return fromStdin(store, await readStdinAll());
+  console.error(`unknown command: ${cmd}`);
+  usage();
+  return 2;
 }
 
 runMain("drive-state.ts", main);

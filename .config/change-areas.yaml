@@ -66,6 +66,27 @@ areas:
     impliedBy: [plugin-shared, shared-lib, toolchain]
     deployTier: plugin
     generated:
+      - outputs:
+          - "plugin/dispatch/dashboard-page/index.html"
+          - "plugin/dispatch/dashboard-page/refused.html"
+          - "plugin/dispatch/dashboard-page/bundle.LICENSE"
+        source:
+          - "package.json"
+          - "bun.lock"
+          - "mise.toml"
+          - "dashboard/**"
+          - "website/public/brand/jig-mark-adaptive.svg"
+          - "plugin/dispatch/lib/dashboard-contract.ts"
+        command: "bun dashboard/build.ts"
+        check: "bun dashboard/build.ts --check"
+        notes: >-
+          The page jig dispatch dashboard serves. The plugin runs from a copy
+          without node_modules, so it carries the page as one HTML document
+          with its script and styles inline, built by Bun from the source in
+          dashboard/src and the pinned packages, minified since
+          a phone loads it (ADR-0001), with the licence of each package the
+          bundler read. dashboard/build.test.ts rebuilds and
+          compares the files as well.
       - outputs: ["plugin/LICENSE", "plugin/NOTICE"]
         source: ["LICENSE", "NOTICE"]
         command: "cp LICENSE NOTICE plugin/"
@@ -73,6 +94,19 @@ areas:
         notes: >-
           The plugin installs only plugin/, so it carries byte copies of the
           root licence files; scripts/check-licences.ts compares them as well.
+      - outputs:
+          - "plugin/skills/docs/__tests__/fixtures/index/docs/INDEX.md"
+          - "plugin/skills/docs/__tests__/fixtures/index/docs/.orphans.md"
+        source:
+          - "plugin/skills/docs/scripts/index/generate-index.ts"
+          - "plugin/skills/docs/__tests__/fixtures/index/docs/**/*.md"
+        command: "bun exec \"DOCS_DIR=plugin/skills/docs/__tests__/fixtures/index/docs bun plugin/skills/docs/scripts/index/generate-index.ts\""
+        check: "bun exec \"DOCS_DIR=plugin/skills/docs/__tests__/fixtures/index/docs bun plugin/skills/docs/scripts/index/generate-index.ts --check\""
+        notes: >-
+          The docs skill's index generator over its test fixture. One
+          generator writes both (Bun's shell sets the variable on every
+          operating system); the orphan report's date is sticky, so it changes
+          only when the report's content does.
 
   plugin-shared:
     title: "The plugin's shared code: what more than one skill imports"
@@ -92,8 +126,29 @@ areas:
           The plugin runs from a copy without node_modules, so the plugin ships
           js-yaml's own build, byte for byte (no generated header: the file
           must stay what its generator writes). After updating js-yaml, copy
-          it again. tools/plugin/plugin.test.ts compares both files with the
+          it again. tools/plugin/vendored.test.ts compares both files with the
           installed js-yaml as well.
+      - outputs:
+          - "plugin/shared/vendor/optique.mjs"
+          - "plugin/shared/vendor/optique.d.mts"
+          - "plugin/shared/vendor/optique.LICENSE"
+        source:
+          - "package.json"
+          - "bun.lock"
+          - "mise.toml"
+          - "tools/plugin/optique-entry.ts"
+          - "tools/plugin/vendor-optique.ts"
+        command: "bun tools/plugin/vendor-optique.ts"
+        check: "bun tools/plugin/vendor-optique.ts --check"
+        notes: >-
+          Optique, the parser the jig command line is written with, ships no
+          single-file build, so the plugin carries Bun's unminified bundle of
+          the parts the command imports (tools/plugin/optique-entry.ts), the
+          declarations that name the package's own types, and its licence.
+          The bundle is what the pinned Bun writes for the pinned package, so
+          an update of either (mise.toml, package.json) is followed by a run
+          of the command. tools/plugin/vendored.test.ts rebuilds and compares
+          the three files as well.
 
   plugin-manifests:
     title: "The plugin manifests: name, version and description"
@@ -162,6 +217,16 @@ areas:
     impliedBy: [shared-lib, toolchain]
     deployTier: none
 
+  dashboard:
+    title: "The source of the page jig dispatch dashboard serves"
+    # Built into plugin/dispatch/dashboard-page/, whose generated-file entry
+    # lists this source; the page reads the dispatcher's types.
+    category: tooling
+    paths: ["dashboard/**"]
+    workspace: []
+    impliedBy: [plugin, shared-lib, toolchain]
+    deployTier: none
+
   module-reference:
     title: "Module reference code"
     category: tooling
@@ -178,18 +243,6 @@ areas:
         command: "bun modules/M2-generated-artifact-freshness/reference/triad/generate-index.ts modules/M2-generated-artifact-freshness/reference/triad/fixture/docs"
         check: "bun modules/M2-generated-artifact-freshness/reference/triad/check-index-fresh.ts modules/M2-generated-artifact-freshness/reference/triad/fixture/docs"
         notes: "The triad's worked example: its fixture index is itself a derived file."
-      - outputs:
-          - "modules/M4-docs-governance/reference/index/fixtures/docs/INDEX.md"
-          - "modules/M4-docs-governance/reference/index/fixtures/docs/.orphans.md"
-        source:
-          - "modules/M4-docs-governance/reference/index/generate-index.ts"
-          - "modules/M4-docs-governance/reference/index/fixtures/docs/**/*.md"
-        command: "bun exec \"DOCS_DIR=modules/M4-docs-governance/reference/index/fixtures/docs bun modules/M4-docs-governance/reference/index/generate-index.ts\""
-        check: "bun exec \"DOCS_DIR=modules/M4-docs-governance/reference/index/fixtures/docs bun modules/M4-docs-governance/reference/index/generate-index.ts --check\""
-        notes: >-
-          One generator writes both (Bun's shell sets the variable on every
-          operating system); the orphan report's date is sticky, so it changes
-          only when the report's content does.
 
   module-templates:
     title: "Module templates"
@@ -213,10 +266,12 @@ areas:
       - "biome.json"
       - ".fallowrc.jsonc"
       - "renovate.json5"
+      - ".sonarcloud.properties"
       - ".gitattributes"
       - ".gitignore"
       - ".github/**"
       - ".config/**"
+      - "label-taxonomy.yaml"
     workspace: []
     impliedBy: []
     deployTier: none
@@ -235,6 +290,15 @@ areas:
     title: "CI workflows"
     category: infra
     paths: [".github/workflows/**"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    reviewRisk: high
+
+  scanner-policy:
+    title: "What the code scanners analyse and skip"
+    category: infra
+    paths: [".sonarcloud.properties", ".github/codeql/**"]
     workspace: []
     impliedBy: []
     deployTier: none
@@ -301,7 +365,9 @@ areas:
     # renders or parses (website/src/content.config.ts and
     # website/src/lib/data/index.ts), and the audit skill with the code its
     # renderer imports, whose criteria, profiles and fixtures the build
-    # renders the module pages with. A document's
+    # renders the module pages with, and the code-stats skill's script with
+    # the configuration it reads, which the build runs for the code
+    # statistics page. A document's
     # link to any other file is checked by the gate set's link check, not by
     # the site's build. website/scripts/site-inputs.test.ts fails when the site's
     # build imports, or its content collection or a read takes in, a
@@ -323,11 +389,14 @@ areas:
       - "plugin/README.md"
       - "plugin/CONFIGURATION.md"
       - "plugin/EXTENDING.md"
+      - "plugin/MECHANISMS.md"
       - "plugin/skills/*/SKILL.md"
       - "plugin/skills/*/README.md"
       - "plugin/skills/audit/**"
       - "plugin/skills/decide/scripts/sheet-kit/**"
       - "plugin/skills/adr/scripts/locate.ts"
+      - "plugin/skills/code-stats/scripts/**"
+      - ".config/jig.yaml"
       - "plugin/agents/*.md"
       - "tools/*/README.md"
     workspace: []
@@ -356,3 +425,20 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    generated:
+      - outputs:
+          - "design/prototypes/dispatch-dashboard/generated/dispatch-dashboard.html"
+          - "design/prototypes/dispatch-dashboard/generated/decisions.html"
+          - "design/prototypes/dispatch-dashboard/generated/handoff.html"
+          - "design/prototypes/dispatch-dashboard/vendor/react.production.min.js"
+          - "design/prototypes/dispatch-dashboard/vendor/react-dom.production.min.js"
+        source:
+          - "design/prototypes/dispatch-dashboard/export.html"
+          - "tools/design/unpack-export.ts"
+        command: "bun tools/design/unpack-export.ts design/prototypes/dispatch-dashboard"
+        check: "bun tools/design/unpack-export.ts --check design/prototypes/dispatch-dashboard"
+        notes: >-
+          The design round's self-standing pages and React builds, unpacked
+          from the raw export. The check rebuilds them in memory and writes
+          nothing; a file in generated/ that the export does not yield counts
+          as stale too.

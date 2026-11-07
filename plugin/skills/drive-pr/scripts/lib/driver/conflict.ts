@@ -1,11 +1,17 @@
 /** Spend the conflict-repair budget before reporting a base-merge stop. */
-import { conflictRepairRounds } from "./settings.ts";
+import {
+  conflictFixCommands,
+  conflictRepairRounds,
+  fixRemote,
+} from "./settings.ts";
 
 import { driverRuntime } from "./runtime.ts";
 
 import type { DriveRoundContext } from "./round-context.ts";
 
 import { runRepairPass } from "./repair.ts";
+
+import { beforeConflictPass, mergeOpen } from "./conflict-merge.ts";
 
 export async function runConflictPhase(
   context: DriveRoundContext,
@@ -71,9 +77,13 @@ export async function runConflictPhase(
     `PR #${context.pr} conflicts with its base and has nothing left to work — stopping.`,
   );
   console.error(reasonLine);
+  if ((await mergeOpen()) === true)
+    console.error(
+      "  This tree still holds an open merge (MERGE_HEAD): conclude it, or run git merge --abort, before the fix below.",
+    );
   if (base !== "") {
     console.error(
-      `  Fix: bun "<skill-dir>/../../shared/command.ts" -- git fetch origin; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge origin/${base}, resolve, run the gates, push.`,
+      `  Fix: ${conflictFixCommands(base)}, resolve, run the gates, push.`,
     );
   } else {
     console.error(
@@ -91,7 +101,7 @@ async function attemptConflictRepair(
 ): Promise<number | "continue" | undefined> {
   if (context.dryRun || context.agent.length === 0) {
     console.error(
-      `(dry-run) would run a conflict-resolution pass against origin/${base}`,
+      `(dry-run) would run a conflict-resolution pass against ${fixRemote()}/${base}`,
     );
     return 9;
   }
@@ -108,6 +118,7 @@ async function attemptConflictRepair(
     // comment for why.
     `  Running conflict-resolution pass ${context.conflictRepairs + 1}/${conflictBudget} (DRIVE_PR_CONFLICT_REPAIR_ROUNDS=${conflictBudget}; 0 stops here instead).`,
   );
+  const settleMerge = await beforeConflictPass(context.pr, context.held);
   const resolve = await runRepairPass(
     context.agent,
     context.held,
@@ -139,6 +150,7 @@ async function attemptConflictRepair(
     );
     return 5;
   }
+  await settleMerge();
   if (resolveCode === 0) return "continue";
   console.error(
     "the conflict-resolution pass failed; stopping with the manual fix below.",

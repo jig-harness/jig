@@ -1,0 +1,105 @@
+{
+  "sources": [
+    {
+      "adapter": "body",
+      "ref": "#body/Spec",
+      "evidence": [
+        "section"
+      ]
+    },
+    {
+      "adapter": "body",
+      "ref": "#body/Acceptance criteria",
+      "evidence": [
+        "section"
+      ]
+    },
+    {
+      "adapter": "body",
+      "ref": "#body/Requirements",
+      "evidence": [
+        "section"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "FR-001",
+      "key": "#body/Spec#FR-001",
+      "text": "The order list can be exported as CSV.",
+      "source": 0
+    },
+    {
+      "id": "FR-002",
+      "key": "#body/Spec#FR-002",
+      "text": "Each export names its date range.",
+      "source": 0
+    },
+    {
+      "id": "req-798ad775",
+      "key": "#body/Requirements#req-798ad775",
+      "text": "Exports stream rows rather than building the file in memory",
+      "source": 2
+    },
+    {
+      "id": "NFR-1",
+      "key": "#body/Requirements#NFR-1",
+      "text": "Memory stays flat as the order count grows",
+      "source": 2
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "key": "#body/Spec#AC-1",
+      "text": "The first row holds the column names (FR-001)",
+      "requirement": "#body/Spec#FR-001",
+      "source": 0
+    },
+    {
+      "id": "ac-c4f73600",
+      "key": "#body/Acceptance criteria#ac-c4f73600",
+      "text": "An export of 10,000 orders finishes in under 2 seconds.",
+      "requirement": null,
+      "source": 1
+    },
+    {
+      "id": "ac-2158300e",
+      "key": "#body/Acceptance criteria#ac-2158300e",
+      "text": "An empty date range gives a file with the header row only",
+      "requirement": null,
+      "source": 1
+    },
+    {
+      "id": "AC-3",
+      "key": "#body/Acceptance criteria#AC-3",
+      "text": "A failed export says why (FR-002)",
+      "requirement": "#body/Spec#FR-002",
+      "source": 1
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1",
+      "key": "#body/Spec#1",
+      "text": "Write the exporter",
+      "done": false,
+      "source": 0
+    },
+    {
+      "id": "1.1",
+      "key": "#body/Spec#1.1",
+      "text": "Add the export button",
+      "done": true,
+      "source": 0
+    },
+    {
+      "id": "task-abbd43d4",
+      "key": "#body/Spec#task-abbd43d4",
+      "text": "Document the export",
+      "done": false,
+      "source": 0
+    }
+  ],
+  "unresolved": []
+}

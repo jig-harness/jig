@@ -3,6 +3,7 @@
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -19,6 +20,7 @@ import {
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
+import { writeState } from "./state-rows.ts";
 
 useDrivePrSuite();
 describe("finish-round.ts", () => {
@@ -166,16 +168,13 @@ describe("finish-round.ts", () => {
           ],
         },
         seedState: async ({ stateDir, fixtureDir, cwd }) => {
-          await seed(stateDir, fixtureDir, cwd, [
-            "park",
-            "999",
-            "--key",
-            "PRRT_parked",
-            "--kind",
-            "thread",
-            "--reason",
-            "commentsTruncated — triage-thread.ts itself refuses this one; see SKILL.md § 4",
-          ]);
+          await seed(
+            stateDir,
+            fixtureDir,
+            cwd,
+            parkArgs("PRRT_parked", "thread"),
+            parkRecord("Who answers a thread triage-thread.ts refuses"),
+          );
         },
       });
       expect(r.exitCode).toBe(0);
@@ -188,7 +187,7 @@ describe("finish-round.ts", () => {
     // `roundBase`, the FIRST drive-state.ts read this guard makes) swallowed
     // its own subprocess failure into `''` — indistinguishable from "no round
     // has verified yet" — and silently fell back to the cumulative
-    // merge-base, so a fully corrupt state file sailed straight past
+    // merge-base, so a fully corrupt stored state sailed straight past
     // `roundBase` and was only ever caught later, at the `parked-keys` read.
     // Now the SAME corruption is caught here first, before either of those
     // later reads is even attempted.
@@ -199,12 +198,9 @@ describe("finish-round.ts", () => {
         },
         seedState: async ({ stateDir }) => {
           // Malformed from the start — no well-formed write precedes this
-          // one. `drive-pr-999.json` is the exact per-PR state file every
+          // one. PR 999's state row is the exact per-PR state every
           // `drive-state.ts` subcommand against PR 999 reads.
-          writeFileSync(
-            join(stateDir, "drive-pr-999.json"),
-            '{"pr": 999, "rounds"',
-          );
+          writeState(stateDir, "999", '{"pr": 999, "rounds"');
         },
       });
       expect(r.exitCode).toBe(1);
@@ -380,6 +376,55 @@ describe("finish-round.ts", () => {
       expect(r.report.state).toBe("REFUSED_UNTRIAGED");
       expect(r.pushed).toBe("");
       expect(String(r.report.reason)).toContain("PRRT_human_untouched");
+    });
+
+    // A code-scanning thread's moot is never held: its alert settles only
+    // after the push that carries this round's fix, so the push must go.
+    const scanningMoot = (id: string, opener: string) => ({
+      id,
+      path: "seed.txt",
+      bot: true,
+      comments: [
+        { author: opener, authorAssociation: "NONE", body: "a finding" },
+        {
+          author: "example-user-2",
+          authorAssociation: "OWNER",
+          body: "**moot** — this round's unpushed fix removes the flagged code.",
+        },
+      ],
+    });
+
+    it("does not refuse an unheld moot on a thread GitHub's code scanning account opened", async () => {
+      const r = await finishRound({
+        fixture: {
+          threads: [scanningMoot("PRRT_scan_moot", "github-advanced-security")],
+        },
+      });
+      expect(r.report.state).toBe("FINISHED");
+      expect(r.pushed).not.toBe("");
+    });
+
+    it("does not refuse that moot once a trusted bot's confirmation follows it", async () => {
+      const thread = scanningMoot("PRRT_scan_conf", "github-advanced-security");
+      thread.comments.push({
+        author: "coderabbitai",
+        authorAssociation: "NONE",
+        body: "Thanks, confirmed.\n\n<!-- coderabbit-skip-review-comment-follow-up -->",
+      });
+      const r = await finishRound({ fixture: { threads: [thread] } });
+      expect(r.report.state).toBe("FINISHED");
+      expect(r.pushed).not.toBe("");
+    });
+
+    it("still refuses the identical unheld moot on another bot's thread", async () => {
+      const r = await finishRound({
+        fixture: {
+          threads: [scanningMoot("PRRT_bot_moot", "example-review-bot")],
+        },
+      });
+      expect(r.report.state).toBe("REFUSED_UNTRIAGED");
+      expect(r.pushed).toBe("");
+      expect(String(r.report.reason)).toContain("PRRT_bot_moot");
     });
 
     it("the identical human-started thread does NOT refuse a round finished with --bots-only", async () => {

@@ -6,19 +6,19 @@ severity_order:
   - blocker
 severity_mapping:
   low:
-    linear_priority: 4
+    priority: 4
     acceptance: Minor
   medium:
-    linear_priority: 3
+    priority: 3
     acceptance: Minor
   high:
-    linear_priority: 2
+    priority: 2
     acceptance: Major
   blocker:
-    linear_priority: 1
+    priority: 1
     acceptance: Blocker
   unknown:
-    linear_priority: 0
+    priority: 0
 categories:
   - correctness
   - data-integrity

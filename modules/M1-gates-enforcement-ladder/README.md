@@ -128,13 +128,13 @@ behind is a place the rule silently no longer applies.
    itself a finding. Exceptions therefore leave with what they excused,
    instead of piling up as places the rule quietly stopped applying.
    [M14](../M14-testing-strategy/README.md)'s testing gates bring exceptions
-   that belong here: the `fixed-delay:` token on a deliberate sleep, and the
-   exemptions file of its tests-with-changes gate, which turns "changed
-   files need tests" into a check. Neither yet prunes itself: the
-   tests-with-changes gate refuses an exemption without a reason but passes
-   one that no longer matches any file, and M14 ships no gate for the
-   `fixed-delay:` token. Both are M14 future work, so review those entries
-   by hand until it lands.
+   that belong here, and both prune themselves: the `fixed-delay:` token on
+   a deliberate sleep, which its
+   [fixed-delay gate](../M14-testing-strategy/reference/fixed-delay/)
+   fails when no delay sits beside it, and the exemptions file of its
+   [tests-with-changes gate](../M14-testing-strategy/reference/tests-with-changes/),
+   which turns "changed files need tests" into a check and fails an
+   exemption that matches no file.
 6. **Advisory→blocking pipeline and the gate lifecycle** — new gates may
    start advisory, but each advisory gate carries a promotion condition;
    advisory-forever is a tracked smell. Between the two sits the

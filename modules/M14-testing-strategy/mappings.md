@@ -96,17 +96,21 @@ the count can only fall.
 
 | Ecosystem | Polling with a deadline | Rule against fixed sleeps |
 |-----------|-------------------------|---------------------------|
-| TypeScript (Bun, any runtime) | [`reference/poll-until/`](reference/poll-until/) | a grep gate on `Bun.sleep(`, `setTimeout(` and `sleep(` in test and tooling code that accepts a `fixed-delay: <reason>` comment on the same line or the line above |
-| Vitest / Jest | `vi.waitFor(fn, { timeout, interval })`, `expect.poll` (Vitest); Testing Library's `waitFor` | the same grep gate |
+| TypeScript (Bun, any runtime) | [`reference/poll-until/`](reference/poll-until/) | [`reference/fixed-delay/`](reference/fixed-delay/) over test and tooling code: its default texts are `Bun.sleep(`, `setTimeout(`, `sleep(` and `time.sleep(`, and it accepts a `fixed-delay: <reason>` comment on the same line or the line above |
+| Vitest / Jest | `vi.waitFor(fn, { timeout, interval })`, `expect.poll` (Vitest); Testing Library's `waitFor` | the same gate |
 | Playwright | `expect.poll(fn, { timeout })`, `expect(fn).toPass()`, and auto-waiting assertions such as `toBeVisible()` | `eslint-plugin-playwright`'s `no-wait-for-timeout` |
-| Python | `tenacity` (`retry_if_result`, `stop_after_delay`, `wait_fixed`) | a grep gate on `time.sleep(` in tests that accepts the repository's own `# fixed-delay: <reason>` comment (Ruff `TID251` can ban it too, but its `# noqa` is a tool-native escape that M1's registry leaves out and that needs no reason) |
+| Python | `tenacity` (`retry_if_result`, `stop_after_delay`, `wait_fixed`) | [`reference/fixed-delay/`](reference/fixed-delay/) on the test files with `--pattern 'time.sleep(' --pattern 'asyncio.sleep('`, which accepts the repository's own `# fixed-delay: <reason>` comment (Ruff `TID251` can ban it too, but its `# noqa` is a tool-native escape that M1's registry leaves out and that needs no reason) |
 | Go | testify's `require.Eventually(t, cond, waitFor, tick)`; Gomega's `Eventually`; `wait.PollUntilContextTimeout` (`k8s.io/apimachinery`) | golangci-lint `forbidigo` on `^time\.Sleep$` in `_test.go` files |
 | JVM | Awaitility: `await().atMost(Duration.ofSeconds(30)).until(...)` | ArchUnit rule against `Thread.sleep` in test classes |
 
 Whatever the helper, the failure message names what was awaited, and the
 fixed-delay token is registered in
 [M1's suppression-token registry](../M1-gates-enforcement-ladder/templates/suppression-registry.md)
-with its consuming gate and placement.
+with its consuming gate, its placement and when it is stale (no delay on its
+line or the line below). The fixed-delay gate has no imports beyond Bun's
+and Node's built-ins, so a repository can copy `check-fixed-delay.ts` as it
+is, or run it from a pinned Jig checkout as the
+[tests-with-changes recipe](#tests-come-with-changes) does.
 
 ## Predicates where they execute
 

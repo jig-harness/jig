@@ -40,6 +40,15 @@ test("a repository whose map resolves, is linked and covers its skills passes", 
 test("an owner that is not a skill the plugin ships fails", () =>
   expect(checkLifecycleMap(scratch(repo("`/jig:gone`")))).toBe(1));
 
+test("a jig command the plugin registers resolves, one it does not fails", () => {
+  expect(
+    checkLifecycleMap(scratch(repo("`/jig:file-issue` and `jig status`"))),
+  ).toBe(0);
+  expect(
+    checkLifecycleMap(scratch(repo("`/jig:file-issue` and `jig nonexistent`"))),
+  ).toBe(1);
+});
+
 test("a plugin skill the map never names fails", () =>
   expect(
     checkLifecycleMap(

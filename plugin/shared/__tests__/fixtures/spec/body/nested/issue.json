@@ -1,0 +1,6 @@
+{
+  "found": true,
+  "identifier": "#42",
+  "title": "Rename a workspace",
+  "body": "## Spec\n\nRenaming keeps the workspace's history.\n\n- [ ] 2. Add the rename command\n  - [ ] 2.1 Validate the new name\n  - with a note that is not a task\n- [ ] 2.1 Validate the new name\n\n```markdown\n## Acceptance criteria\n- AC-9 inside a code block, never read\n```\n\n### Acceptance criteria\n\n- The new name shows everywhere at once\n  - including the sidebar\n- **AC-2** An empty name is refused (REQ-4)\n- [AC-5] A name in use is refused\n\n## Out of scope\n\n- [ ] 9. A task outside every recognised section\n"
+}

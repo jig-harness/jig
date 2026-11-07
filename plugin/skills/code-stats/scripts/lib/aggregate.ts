@@ -4,6 +4,7 @@
  * a field, or changes what one means, is a new version.
  */
 import { type FileStats, isUnclassified, type Kind } from "./model.ts";
+import type { Reading, Unreadable } from "./test-runners/index.ts";
 
 export const JSON_SCHEMA = "code-stats/v1";
 
@@ -100,6 +101,21 @@ export interface ReportInput {
   vendoredExcluded: Bucket;
   includeVendored: boolean;
   missing: number;
+  testRunners: TestRunnerSummary;
+}
+
+/** The test-runner configurations read, and those that could not be. */
+export interface TestRunnerSummary {
+  configurations: { reader: string; file: string }[];
+  unreadable: Unreadable[];
+}
+
+/** Each configuration file that gave a rule, once, and every unreadable one. */
+export function testRunnerSummary(reading: Reading): TestRunnerSummary {
+  const seen = new Map<string, { reader: string; file: string }>();
+  for (const { reader, file } of reading.rules)
+    seen.set(`${reader}\0${file}`, { reader, file });
+  return { configurations: [...seen.values()], unreadable: reading.unreadable };
 }
 
 const toObject = (map: Map<string, Bucket>) => Object.fromEntries(map);
@@ -141,6 +157,7 @@ export function jsonReport(input: ReportInput) {
       excludedBytes: input.vendoredExcluded.bytes,
     },
     missingFromWorkingTree: input.missing,
+    testRunners: input.testRunners,
     areas: input.areas.map((name) => ({
       name,
       description: input.areaDescriptions[name] ?? "",

@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { LEAVE_OPEN_MARKER } from "../scripts/lib/outcome.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 import { useDrivePrSuite } from "./drive-pr-harness.ts";
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
@@ -352,6 +353,64 @@ describe("finish-round.ts", () => {
         expect(r.report.state).toBe("FINISHED");
         expect(r.pushed).not.toBe("");
       });
+
+      // A listed bot's chat acknowledgement is transparent too; one that
+      // embeds a finding is a newer comment the guard refuses over.
+      for (const [label, body, finished] of [
+        [
+          "does NOT refuse when the held reply is followed ONLY by a listed bot's chat acknowledgement",
+          "<!-- coderabbit-ai-generated:v1 -->\nThanks: the fix is noted, and nothing further is requested.\n",
+          true,
+        ],
+        [
+          "STILL refuses when the chat acknowledgement embeds a finding",
+          "<!-- coderabbit-ai-generated:v1 -->\nThanks. One more:\n\n_⚠️ Potential issue_ | _🟠 Major_ | _⚡ Quick win_\n\nStill wrong.\n",
+          false,
+        ],
+      ] as const)
+        it(label, async () => {
+          const r = await finishRound({
+            fixture: {
+              threads: [
+                {
+                  id: "PRRT_acknowledged",
+                  path: "seed.txt",
+                  bot: true,
+                  comments: [
+                    { authorAssociation: "NONE", body: "a finding" },
+                    {
+                      author: "example-user-2",
+                      authorAssociation: "OWNER",
+                      body: "**accepted** — fixed in this round.",
+                    },
+                    { author: "coderabbitai", bot: true, body },
+                  ],
+                },
+              ],
+            },
+            seedState: async ({ stateDir, fixtureDir, cwd }) => {
+              await seed(stateDir, fixtureDir, cwd, [
+                "hold",
+                "999",
+                "--key",
+                "PRRT_acknowledged",
+                "--kind",
+                "thread",
+                "--outcome",
+                "accepted",
+                "--comment-url",
+                "https://example.invalid/PRRT_acknowledged/comment-1",
+              ]);
+            },
+          });
+          if (finished) {
+            expectSpawnExit(r, 0);
+            expect(r.report.state).toBe("FINISHED");
+          } else {
+            expectSpawnExit(r, 7);
+            expect(r.pushed).toBe("");
+          }
+        });
 
       // Near miss: the confirming bot's IDENTITY is right but the SHAPE is
       // not — no marker, so this is an ordinary (non-confirming) CodeRabbit

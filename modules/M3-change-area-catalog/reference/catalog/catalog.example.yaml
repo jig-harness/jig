@@ -93,6 +93,7 @@ areas:
         notes: "Regenerated from route definitions; M2's generic runner runs the check, its triad wires the hook."
     tracker:
       labels: [area:api]
+    serialize: true              # two pull requests that regenerate the schema conflict in it: drive them one at a time
 
   # ---- A path-only library area that fans OUT to its consumers -----------
   core-lib:

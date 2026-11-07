@@ -123,7 +123,9 @@ for (const complete of [false, true]) {
           "unknown",
           join(registry.dir, "unknown.tmp"),
         );
-      const locks = [{ dir: registry.dir, what: "fixture" }];
+      const locks = [
+        { stateDir: registry.dir, name: "pr-drive-999", what: "fixture" },
+      ];
       expect(await finishDriverPassRegistrations(locks, registry.dir)).toBe(
         false,
       );
@@ -145,7 +147,9 @@ test("a completed acquisition registry permits the next pass", async () => {
   const { finishDriverPassRegistrations } = await import("../scripts/drive.ts");
   const registry = createProcessRegistry();
   try {
-    const locks = [{ dir: registry.dir, what: "fixture" }];
+    const locks = [
+      { stateDir: registry.dir, name: "pr-drive-999", what: "fixture" },
+    ];
     expect(await finishDriverPassRegistrations(locks, registry.dir)).toBe(true);
     expect(locks.length).toBe(1);
   } finally {

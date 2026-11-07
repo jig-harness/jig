@@ -95,6 +95,29 @@ code outside the conventional folders falls through to `production` and
 counts as unclassified: a large share means the repository's layout needs a
 `code_stats` section, not that the numbers are wrong.
 
+## Test-runner configuration
+
+Before the `code_stats` configuration, the skill reads what the
+repository's test runners declare, as text and without running anything:
+jest's `testMatch`, `testRegex` and `roots`; vitest's `test.include` and
+`test.exclude`; pytest's `testpaths` and `python_files`; Gradle's `test`
+source set folders; Maven's `testSourceDirectory` and its `src/test/java`
+default. A code file one of them names is a test, and `--explain` names
+the reader, file and key, for example
+`kind: test — test runner jest: jest.config.js testMatch "**/*.check.js"`.
+A configuration that exists only when it runs (a function, a spread, a
+folder built in code) is reported as `unreadable: <path> (<why>)` in the
+terminal summary, `--explain` and `--json` (`testRunners.unreadable`), and
+nothing is claimed from it. Report such a line to the user; when its tests
+matter, `code_stats.kinds` names them. Two cases stop the run with an
+error instead: a file the run opens that the file system refuses to read
+(`cannot read <path> (<code>)`), and, unless `code_stats.modules` is set,
+a `pyproject.toml` or `package.json` at the root that does not parse,
+which module detection reads first. Only a configuration a reader selects
+and parses is reported unreadable. Report
+the error; do not work around it. The [README](README.md#test-runner-configuration)
+lists what each reader reads and cannot read.
+
 ## Fixing a weak classification
 
 Detect first, set a value where detection is wrong, supply a command as a
@@ -107,7 +130,7 @@ decided, then, in the repository's `.config/jig.yaml`:
    `content: true` makes YAML and JSON in that area count as data.
 2. **`code_stats.default_area`**: the name for files no area matches.
 3. **`code_stats.kinds`**: `{<kind>: [globs]}`, checked before built-in
-   detection, in the order written.
+   detection and the test runners' configuration, in the order written.
 4. **`code_stats.modules`**: globs naming module folders, replacing the
    manifests.
 5. **`code_stats.classify_command`**, only when globs cannot say it: a

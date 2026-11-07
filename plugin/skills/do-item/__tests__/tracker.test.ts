@@ -351,7 +351,7 @@ describe("Linear adapter: issue pickup", () => {
     expect(issue?.description).toBe("");
     expect(issue?.labels).toEqual(["epic"]);
     expect(issue?.children[0]?.labels).toEqual(["manual-ops"]);
-    expect(issue?.assignee).toBe("Dev");
+    expect([issue?.assignee, issue?.nativeType]).toEqual(["Dev", null]);
   });
 
   it("returns null for an issue the tracker does not have", async () => {

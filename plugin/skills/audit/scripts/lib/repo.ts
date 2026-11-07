@@ -1,6 +1,7 @@
 /**
  * Read-only access to the repository under audit: its tracked files, its
- * commands, and the forge's answers through `gh`.
+ * commits, the files a configured path reaches, and the plugin's installed
+ * versions. Commands run through the detector's `run` (`shared/detect.ts`).
  *
  * A probe reads tracked files only, so an untracked scratch file or an ignored
  * build output never counts as a practice the repository has, and a draft
@@ -8,16 +9,13 @@
  * names. A derivation reads the checkout as the skills would run in it, and
  * flags a configured program that is present but not tracked.
  */
-import { isMapping } from "../../../../shared/config-layers.ts";
 import {
   manifestVersion,
   pluginVersion,
 } from "../../../../shared/plugin-version.ts";
-import { spawnSync } from "node:child_process";
+import { run } from "../../../../shared/detect.ts";
 import {
-  existsSync,
   lstatSync,
-  readFileSync,
   readdirSync,
   readlinkSync,
   realpathSync,
@@ -34,39 +32,7 @@ import {
 } from "node:path";
 
 export { trackedFiles } from "../../../adr/scripts/locate.ts";
-export { pluginVersion };
-
-export interface RunResult {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-/**
- * Run a program without a shell. A program that cannot start, or that runs
- * past the deadline, is reported like a failed run (code -1) with the reason
- * in `stderr`, so a caller treats it as an unanswered question.
- */
-export function run(
-  program: string,
-  args: string[],
-  opts: { cwd: string; timeoutMs?: number; env?: NodeJS.ProcessEnv },
-): RunResult {
-  const result = spawnSync(program, args, {
-    cwd: opts.cwd,
-    env: opts.env ?? process.env,
-    encoding: "utf8",
-    timeout: opts.timeoutMs ?? 30_000,
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (result.error)
-    return { code: -1, stdout: "", stderr: result.error.message };
-  return {
-    code: result.status ?? -1,
-    stdout: result.stdout,
-    stderr: result.stderr,
-  };
-}
+export { pluginVersion, run };
 
 /**
  * Whether the repository at `root` holds `commit`: a record or report naming
@@ -76,43 +42,6 @@ export function hasCommit(root: string, commit: string): boolean {
   return (
     run("git", ["cat-file", "-e", `${commit}^{commit}`], { cwd: root }).code ===
     0
-  );
-}
-
-/** `gh` with JSON output parsed, or the reason it gave none. */
-export function ghJson(
-  args: string[],
-  cwd: string,
-): { ok: true; value: unknown } | { ok: false; reason: string } {
-  const result = run("gh", args, { cwd });
-  if (result.code !== 0)
-    return {
-      ok: false,
-      reason: (result.stderr || result.stdout).trim() || `exit ${result.code}`,
-    };
-  try {
-    return { ok: true, value: JSON.parse(result.stdout) };
-  } catch {
-    return { ok: false, reason: "gh returned no JSON" };
-  }
-}
-
-/** The repository's `package.json` scripts, or `null` without one. */
-export function packageScripts(root: string): Record<string, string> | null {
-  const path = join(root, "package.json");
-  if (!existsSync(path)) return null;
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(readFileSync(path, "utf8"));
-  } catch (error) {
-    throw new Error(`${path} is not valid JSON`, { cause: error });
-  }
-  const scripts = isMapping(manifest) ? manifest.scripts : undefined;
-  if (!isMapping(scripts)) return {};
-  return Object.fromEntries(
-    Object.entries(scripts).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string",
-    ),
   );
 }
 
@@ -213,23 +142,6 @@ export function newerInstalledVersion(
     )
     .sort(compareVersions);
   return newer.at(-1) ?? null;
-}
-
-/**
- * Whether a shell runs the tracked `file` (of stat `mode`) directly. Windows'
- * file system has no executable bit, so there the index's is read: the one a
- * checkout elsewhere takes.
- */
-export function runsDirectly(
-  root: string,
-  file: string,
-  mode: number,
-): boolean {
-  if (process.platform !== "win32") return (mode & 0o111) !== 0;
-  const listed = run("git", ["ls-files", "-s", "--", `:(top,literal)${file}`], {
-    cwd: root,
-  });
-  return listed.code === 0 && listed.stdout.startsWith("100755 ");
 }
 
 /**

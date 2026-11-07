@@ -1,12 +1,13 @@
 import { prBaseGh, addOrigin, realGitForShell } from "./round-plan-fixtures.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { editState } from "./state-rows.ts";
 /**
  * drive-pr suite: announce-merge-ready.ts, marker overrides, round-delta.ts, round-plan.ts, the PR-target channel and guarded-push.ts.
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
 import { beforeAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 
 import {
@@ -101,6 +102,72 @@ describe("round-plan.ts", () => {
     // is the most convincing possible way to read a scoping choice as an
     // all-clear. (This is why the assertion failed only in CI first time round.)
     expect(delta.stdout).toContain("DELTA plan");
+  });
+
+  it("diffs against the base of the remote repository.remote names, not origin's", async () => {
+    // A clone whose only remote is `upstream`: the round's base must be read
+    // through that remote's tracking ref, and its URL checked, with no
+    // `origin` anywhere.
+    const { dir: repo } = makeScratchRepo("rp-remote");
+    const stateDir = scopedStateDir(mkdtempSync(join(tmpRoot, "rp-")), repo);
+    const git = (args: string[]) => {
+      const r = Bun.spawnSync(["git", ...args], {
+        cwd: repo,
+        env: gitCleanEnv(),
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+    };
+    git(["remote", "add", "upstream", "https://github.com/acme/widgets.git"]);
+    git(["update-ref", "refs/remotes/upstream/develop", "HEAD~1"]);
+    mkdirSync(join(repo, "tools", "change-areas"), { recursive: true });
+    writeFileSync(
+      join(repo, "tools", "change-areas", "resolve.ts"),
+      `process.stdout.write(${JSON.stringify(
+        JSON.stringify({
+          seedAreas: [],
+          validation: {
+            localChecks: [],
+            verificationChecks: [],
+            testbox: { required: false },
+          },
+          reviewSkills: [],
+        }),
+      )});`,
+    );
+    const run = async (env: Record<string, string>) => {
+      const proc = Bun.spawn(
+        scriptArgv(join(SCRIPTS, "round-plan.ts"), "999"),
+        {
+          cwd: repo,
+          env: {
+            ...gitCleanEnv(),
+            PATH: `${prBaseGh()}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+            DRIVE_PR_STATE_DIR: stateDir,
+            ...env,
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      return { stdout, stderr, exitCode };
+    };
+
+    const configured = await run({ JIG__REPOSITORY__REMOTE: "upstream" });
+    expectSpawnExit(configured, 0);
+    expect(configured.stdout).toContain("round-plan (cumulative");
+
+    // Without the setting the drive looks for `origin`, which this clone
+    // does not have, and refuses rather than diffing against something else.
+    const unset = await run({});
+    expectSpawnExit(unset, 1);
+    expect(unset.stderr).toContain("no fetch URL for the remote 'origin'");
   });
 
   // ── Testbox decay ──────────────────────────────────────────────
@@ -333,7 +400,7 @@ ${second}
       expect(plan.testboxDecision.note).toContain(bogus.slice(0, 12));
     });
 
-    // A corrupted state file can carry a SYMBOLIC ref (e.g. `HEAD`) instead of
+    // A corrupted state can carry a SYMBOLIC ref (e.g. `HEAD`) instead of
     // a 40-character SHA and still pass `isUsableState`'s bare `typeof ===
     // 'string'` check —
     // `set-verified`'s own CLI validation refuses this shape outright, so the
@@ -350,10 +417,10 @@ ${second}
         repo,
       );
       await setVerified(stateDir, "f".repeat(40));
-      const statePath = join(stateDir, "drive-pr-999.json");
-      const state = JSON.parse(readFileSync(statePath, "utf8"));
-      state.verifiedSha = "HEAD";
-      writeFileSync(statePath, JSON.stringify(state));
+      editState(stateDir, "999", (state) => ({
+        ...state,
+        verifiedSha: "HEAD",
+      }));
 
       const { stdout } = await planIn(stateDir, resolverShim());
       const plan = JSON.parse(stdout);

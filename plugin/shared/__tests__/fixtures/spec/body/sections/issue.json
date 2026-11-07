@@ -1,0 +1,6 @@
+{
+  "found": true,
+  "identifier": "#41",
+  "title": "Export the order list as a spreadsheet",
+  "description": "Shop owners want the order list in a spreadsheet.\n\n## Spec\n\nThe export is described here; the criteria are below.\n\n- **FR-001**: The order list can be exported as CSV.\n- FR-002 Each export names its date range.\n- AC-1: The first row holds the column names (FR-001)\n- [ ] 1. Write the exporter\n- [x] 1.1 Add the export button\n- [ ] Document the export\n\n## Acceptance criteria\n\n- [ ] An export of 10,000 orders finishes in under 2 seconds.\n- [ ] An empty date range gives a file\n  with the header row only\n- AC-3 A failed export says why (FR-002)\n\n## Requirements\n\n1. Exports stream rows rather than building the file in memory\n2. NFR-1 Memory stays flat as the order count grows\n\n## Notes\n\n- This list is not a requirement.\n"
+}

@@ -99,14 +99,20 @@ While a pull request carries it:
 
 - these jobs skip: `<e2e, …>`, each by testing the pull request's labels for
   the label, never by the event that started the run;
-- `<the aggregator job>` fails at its first step with a message naming the
-  label, so a held head is never mergeable;
+- `<the aggregator job>` fails, or cancels its run, at its first step with a
+  message naming the label, so a held head is never mergeable;
 - every workflow above runs on `labeled` and `unlabeled` as well as on
   `opened`, `synchronize` and `reopened`, so applying the label fails the
   head at once and removing it runs everything again on the same head.
 
-Only results that started after the label's removal count. A driver that
-died leaves the label on: remove it by hand
+An event for any other label `<runs real CI | runs a mirror: the jobs above
+skip, the run takes a concurrency group of its own, and <the aggregator job>
+repeats the newest real run's result on the head, failing closed>`.
+
+Only results that started after the label's removal count. The label saves
+CI and steers nothing: the driver adopts a label it did not add and removes
+it at convergence. A driver that died leaves the label on, and when no
+driver will run again, remove it by hand
 (`<gh pr edit <PR> --remove-label ci:hold>`); never rerun the held run, which
 replays the event that carried the label. Merge queue:
 `<how a queued pull request is released, or "no merge queue">`.
@@ -200,7 +206,8 @@ in by its due date fails the check.
 - [ ] If a job of it is one the hold skips, or it reports a required check:
       it runs on both label events, the skip tests the pull request's labels
       for the hold label, and the held-head check's failure reaches the
-      required check.
+      required check; where other labels' events run a mirror, it skips on
+      them too, and the required job repeats the real result.
 - [ ] If it uses a cache: the cache is in the table above with its key
       scheme and bound, its credentials are checked non-empty before the
       first task, its hit rate goes to the job summary, and its jobs are in

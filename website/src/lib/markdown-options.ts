@@ -2,6 +2,7 @@
  * The Markdown options every page and fragment renders with, so a document
  * reads the same whether a page renders it whole or in parts.
  */
+import { unified } from "@astrojs/markdown-remark";
 import { rehypeBlocks } from "./rehype-blocks.ts";
 import { remarkRepoLinks } from "./remark-repo-links.ts";
 
@@ -12,7 +13,9 @@ export function markdownOptions(repoRoot: string) {
     // follows the light and dark theme without a second set of colors.
     syntaxHighlight: { type: "shiki" as const },
     shikiConfig: { theme: "css-variables" as const },
-    remarkPlugins: [remarkRepoLinks({ repoRoot })],
-    rehypePlugins: [rehypeBlocks],
+    processor: unified({
+      remarkPlugins: [remarkRepoLinks({ repoRoot })],
+      rehypePlugins: [rehypeBlocks],
+    }),
   };
 }

@@ -11,6 +11,7 @@ import {
   MAILBOX_STOPPED_EXIT,
   MAILBOX_PAUSE_TIMEOUT_EXIT,
   SINGLE_INSTANCE_LOCK_EXIT,
+  TAKEN_OVER_EXIT,
 } from "./settings.ts";
 
 import { FinalCiWait } from "./../final-ci-wait.ts";
@@ -23,9 +24,15 @@ import type { DriveRoundContext } from "./round-context.ts";
 
 import { runRoundIteration } from "./round-step.ts";
 
+import { clearDeadlineRetries, prReadsClosed } from "./restart.ts";
+
+import { ledgerRenewal, standDownOnNewerClaim } from "./ledger.ts";
+
 interface DriverRoundOptions {
   pr: string;
   mailboxDir: string;
+  /** This driver's generation, which an addressed mailbox `stop` names. */
+  generation: number;
   keepDraft: boolean;
   dryRun: boolean;
   agent: string[];
@@ -34,11 +41,16 @@ interface DriverRoundOptions {
   forward: string[];
   probeFlags: string[];
   markReadyPolicy: MarkReady;
+  /** `drive.pass_deadline_retries`, resolved before the locks were taken. */
+  deadlineRetryBudget: number;
+  /** What the first pass is told: a takeover, or the answers a re-arm read. */
+  firstPassNotice: string;
 }
 
 export async function runDriverRounds({
   pr,
   mailboxDir,
+  generation,
   keepDraft,
   dryRun,
   agent,
@@ -47,6 +59,8 @@ export async function runDriverRounds({
   forward,
   probeFlags,
   markReadyPolicy,
+  deadlineRetryBudget,
+  firstPassNotice,
 }: DriverRoundOptions): Promise<number> {
   const passes = 0;
   // Whether THIS run fired the draft→Ready transition. Not the durable claim —
@@ -102,7 +116,7 @@ export async function runDriverRounds({
   const prevFingerprint: string | null = null;
   const noopRounds = 0;
   // Repair-round budgets. In-memory for the reason `ciRepairRounds`
-  // documents — a new `DriveState` field would refuse every state file written
+  // documents — a new `DriveState` field would refuse every stored state written
   // before it existed, stopping the whole fleet's in-flight drives — and on
   // the `noopRounds` precedent directly above, whose reset-across-restarts
   // semantics operators already know from the skill's `README.md`.
@@ -132,8 +146,12 @@ export async function runDriverRounds({
     Number(pauseMaxRaw) <= 86400
       ? Number(pauseMaxRaw)
       : 1800;
-  const mailboxCheckpoint = async (): Promise<"clear" | "resumed" | number> => {
-    const outcome = await waitAtMailboxCheckpoint(mailboxDir, pr, pauseMaxSec);
+  const mailboxOnly = async (): Promise<"clear" | "resumed" | number> => {
+    const outcome = await waitAtMailboxCheckpoint(
+      { dir: mailboxDir, pr, generation },
+      pauseMaxSec,
+      ledgerRenewal(pr),
+    );
     switch (outcome) {
       case "clear":
       case "resumed":
@@ -149,7 +167,19 @@ export async function runDriverRounds({
         return SINGLE_INSTANCE_LOCK_EXIT;
       case "unreadable":
         return 1;
+      case "taken-over":
+        return TAKEN_OVER_EXIT;
     }
+  };
+  // The claim check only before a pass, not on every checkpoint: a quota
+  // wait polls the mailbox every few seconds for hours, and the claims are a
+  // forge read.
+  const mailboxCheckpoint = async (opts?: {
+    beforePass?: boolean;
+  }): Promise<"clear" | "resumed" | number> => {
+    const outcome = await mailboxOnly();
+    if (outcome !== "clear" || opts?.beforePass !== true) return outcome;
+    return (await standDownOnNewerClaim(pr)) ?? outcome;
   };
   const context: DriveRoundContext = {
     prevFingerprint,
@@ -169,11 +199,20 @@ export async function runDriverRounds({
     ciRepairBudget,
     dryRun,
     agent,
+    passIdentity: null,
     mailboxCheckpoint,
     held,
     witnessWaitHead,
     witnessWaitLimit,
     maxRoundsN,
+    deadlineRetryBudget,
+    stallExtraRound: false,
+    passNotice: "",
+    carriedNotice: firstPassNotice,
+    inheritedHead: "",
+    unpushedNotice: "",
+    uncommittedMeasured: null,
+    uncommittedBeforePass: null,
   };
   for (;;) {
     {
@@ -185,7 +224,21 @@ export async function runDriverRounds({
         markReadyPolicy,
       );
       if (stage === "continue") continue;
-      if (stage !== null) return stage;
+      if (stage === null) continue;
+      return dryRun ? stage : await endDrive(pr, stage);
     }
   }
+}
+
+/**
+ * The drive is over once it converged or the PR closed: its pass-deadline
+ * restarts stop counting against a later drive. A stop 5 clears the count only
+ * when a read confirms the closure, since a pass can exit 5 on its own. A count
+ * that could not be cleared ends the drive as a failure, so it is not reported
+ * over as an ordinary end.
+ */
+async function endDrive(pr: string, stage: number): Promise<number> {
+  if (stage !== 0 && stage !== 5) return stage;
+  if (stage === 5 && !(await prReadsClosed(pr))) return stage;
+  return (await clearDeadlineRetries(pr)) ? stage : 1;
 }

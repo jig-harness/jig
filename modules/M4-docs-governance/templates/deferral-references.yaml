@@ -4,7 +4,7 @@
 # follow-up will be filed") must name the item that carries it, and the item
 # must still be open. The static gate checks the first, the scheduled live
 # check the second.
-#   https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/reference/deferral-references/README.md
+#   https://github.com/jig-harness/jig/blob/main/plugin/skills/docs/scripts/deferral-references/README.md
 version: 1
 
 # The documents in scope, as globs from the repository root. Default: every

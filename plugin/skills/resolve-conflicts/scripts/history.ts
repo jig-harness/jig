@@ -6,7 +6,7 @@
  * each cause.
  *
  * Usage: bun history.ts [--days <n> | --since <date> [--until <date>] | --all]
- *                       [--json] [--limit <n>]
+ *                       [--json] [--limit <n>] [--propose-serialize]
  *   --days <n>      the last n days (default 30).
  *   --since <date>  merges committed on or after the date (YYYY-MM-DD, or an
  *                   ISO 8601 time with its offset); --until <date> ends the
@@ -14,6 +14,11 @@
  *   --all           the whole history.
  *   --json          the report as JSON (schema `merge-conflicts/v1`).
  *   --limit <n>     paths the terminal report lists (default 25; 0: all).
+ *   --propose-serialize
+ *                   print, instead of the report, the change areas to mark
+ *                   `serialize: true` in the change-area catalog
+ *                   (`drive.change_areas_catalog`): those a hotspot lies in
+ *                   alone, as the lines a person would add. Nothing is written.
  *
  * Each merge's two parents are merged again with `git merge-tree
  * --write-tree` (diff3 style, so every region carries its merge base). Git's
@@ -28,11 +33,17 @@
  * `changelog.version` (the repository's own `.config/jig.yaml`).
  *
  * Exit codes: 0 the report was printed; 1 a git call failed; 2 usage error,
- * not inside a git repository, invalid configuration, git older than 2.43, or
- * a partial clone with git older than 2.45.
+ * not inside a git repository, invalid configuration (with
+ * `--propose-serialize`, no change-area catalog configured or one that does
+ * not read), git older than 2.43, or a partial clone with git older than 2.45.
  */
 import { fail, runMain } from "../../../shared/cli.ts";
-import { consumerRoot } from "../../../shared/consumer.ts";
+import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
+import {
+  type ChangeAreaCatalog,
+  loadCatalogFile,
+} from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import { catalogPathFromOverlay } from "../../do-item/scripts/determine_agent.ts";
 import { prNumber } from "./conflict-map.ts";
 import { generatedEntries, hotspotMinMerges } from "./lib/classify.ts";
 import {
@@ -61,6 +72,7 @@ import {
   readObjects,
   withScratchObjects,
 } from "./lib/replay.ts";
+import { proposeSerialize, renderProposal } from "./lib/propose-serialize.ts";
 import {
   buildReport,
   loadConfidence,
@@ -75,11 +87,13 @@ const DEFAULT_LIMIT = 25;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const USAGE =
-  "usage: history.ts [--days <n> | --since <date> [--until <date>] | --all] [--json] [--limit <n>]";
+  "usage: history.ts [--days <n> | --since <date> [--until <date>] | --all] [--json] [--limit <n>] [--propose-serialize]";
 
 export interface Options {
   json: boolean;
   limit: number;
+  /** Print the areas to serialize instead of the report. */
+  proposeSerialize: boolean;
   /** Milliseconds since the epoch; null: open. */
   since: number | null;
   until: number | null;
@@ -127,6 +141,7 @@ function whole(value: string | undefined, min: number): number | null {
 interface Flags {
   json: boolean;
   all: boolean;
+  proposeSerialize: boolean;
   limit: number;
   days: number | null;
   since: string | undefined;
@@ -168,6 +183,7 @@ function readFlags(args: readonly string[]): Flags | string {
   const flags: Flags = {
     json: false,
     all: false,
+    proposeSerialize: false,
     limit: DEFAULT_LIMIT,
     days: null,
     since: undefined,
@@ -177,6 +193,7 @@ function readFlags(args: readonly string[]): Flags | string {
     const arg = args[i] as string;
     if (arg === "--json") flags.json = true;
     else if (arg === "--all") flags.all = true;
+    else if (arg === "--propose-serialize") flags.proposeSerialize = true;
     else {
       const store = VALUE_FLAGS[arg];
       const problem = store
@@ -212,15 +229,24 @@ export function parseArgs(
 ): Options | string {
   const flags = readFlags(args);
   if (typeof flags === "string") return flags;
-  const { json, limit } = flags;
+  const { json, limit, proposeSerialize } = flags;
   const named = flags.since !== undefined || flags.until !== undefined;
   if ([flags.all, flags.days !== null, named].filter(Boolean).length > 1)
     return "choose one range: --days, --since/--until, or --all";
   if (flags.all)
-    return { json, limit, since: null, until: null, label: "all history" };
+    return {
+      json,
+      limit,
+      proposeSerialize,
+      since: null,
+      until: null,
+      label: "all history",
+    };
   if (named) {
     const range = namedRange(flags);
-    return typeof range === "string" ? range : { json, limit, ...range };
+    return typeof range === "string"
+      ? range
+      : { json, limit, proposeSerialize, ...range };
   }
   const n = flags.days ?? DEFAULT_DAYS;
   const from = now - n * DAY_MS;
@@ -229,6 +255,7 @@ export function parseArgs(
   return {
     json,
     limit,
+    proposeSerialize,
     since: from,
     until: null,
     label: `the last ${n} day${n === 1 ? "" : "s"} (${day(from)} to ${day(now)})`,
@@ -401,9 +428,37 @@ function replayAll(
   return { merges, skipped };
 }
 
+/** The configured change-area catalog and its path as configured; a missing or unreadable one ends the run. */
+function configuredCatalog(): { catalog: ChangeAreaCatalog; where: string } {
+  let path: string | null;
+  let config: Record<string, unknown>;
+  try {
+    config = readConfig();
+    path = catalogPathFromOverlay(config);
+  } catch (err) {
+    return fail(2, `history: ${err instanceof Error ? err.message : err}`);
+  }
+  if (path === null)
+    return fail(
+      2,
+      "history: --propose-serialize needs the change-area catalog, and drive.change_areas_catalog names none",
+    );
+  try {
+    return {
+      catalog: loadCatalogFile(path),
+      where: String(
+        (config.drive as Record<string, unknown>).change_areas_catalog,
+      ),
+    };
+  } catch (err) {
+    return fail(2, `history: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 async function main(): Promise<number> {
   const options = parseArgs(process.argv.slice(2));
   if (typeof options === "string") fail(2, `history: ${options}`, USAGE);
+  const catalog = options.proposeSerialize ? configuredCatalog() : null;
   const repo = new Git(process.cwd());
   const version = checkGit(repo);
   if (repo.raw(["rev-parse", "--git-dir"]).code !== 0)
@@ -440,7 +495,18 @@ async function main(): Promise<number> {
     shallow,
     confidence: loadConfidence(),
   });
-  if (options.json) console.log(JSON.stringify(report, null, 2));
+  if (catalog !== null) {
+    const proposal = proposeSerialize(
+      report.paths,
+      catalog.catalog,
+      catalog.where,
+    );
+    console.log(
+      options.json
+        ? JSON.stringify(proposal, null, 2)
+        : renderProposal(proposal, range.label),
+    );
+  } else if (options.json) console.log(JSON.stringify(report, null, 2));
   else console.log(renderReport(report, options.limit));
   return 0;
 }

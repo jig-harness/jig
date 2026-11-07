@@ -43,7 +43,12 @@ be; concrete per-ecosystem wiring lives in [mappings.md](mappings.md).
    findings clear, then **de-scars** — the finished artifact carries no
    finding-lists or reviewer dialogue, only the result (see
    [M4](../M4-docs-governance/)). An artifact is either a draft you are shaping
-   or an accepted input the next stage trusts — there is no third state.
+   or an accepted input the next stage trusts — there is no third state. For
+   the requirements and architecture stages, the
+   [`/jig:red-team`](../../plugin/skills/red-team/SKILL.md) skill is the
+   runnable form: personas each read the document in fresh context and
+   write their findings to one report, which stays with the review while the
+   document's [stage-review record](reference/stage-review-record/) cites it.
 3. **Committed templates, made mechanical** — "use the template" is a habit
    until a gate checks it. The [required-sections gate](reference/required-sections/)
    fails a stage artifact missing a required heading (a PRD with no
@@ -196,6 +201,10 @@ What this module provides:
   template homes, CI) and the module's [maturity criteria](../../plugin/skills/audit/criteria/M6-feature-delivery-pipeline.yaml).
 
 Each gate has a paired self-test and fixtures beside it. The
+[`/jig:red-team`](../../plugin/skills/red-team/SKILL.md) skill runs the
+adversarial review of a PRD or an architecture document by persona, each in
+fresh context, and writes one findings report without editing the document.
+The
 [`/jig:design-brief-builder`](../../plugin/skills/design-brief-builder/SKILL.md)
 skill prepares the design-prototype loop's brief and audits it before the
 external session starts. It also merges the returned bundle with repository
@@ -204,8 +213,10 @@ fixes and runs its mechanical landing checks before acceptance.
 Deliberately left out: tiered time estimates, named critique personas, a
 model-routing table and specific tool picks (a named tracker, named
 scaffolding commands). They are one team's tuned choices, not a portable
-mechanism; the module keeps the stage contract and its gates, and leaves
-tool selection to [mappings.md](mappings.md). The lifecycle map gate checks that
+mechanism (the personas Jig's own review uses are in the
+[`red-team`](../../plugin/skills/red-team/references/personas.md) skill);
+the module keeps the stage contract and its gates, and leaves tool selection
+to [mappings.md](mappings.md). The lifecycle map gate checks that
 the names in the map resolve; it does not check that the stages are in the
 right order, which a reviewer of a change to the process asks of the table.
 A map is not generated from the skills' own metadata: the order work takes is

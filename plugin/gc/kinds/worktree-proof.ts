@@ -1,14 +1,19 @@
 /** Re-read local identity; preserve unknown evidence and the session-lock veto. */
-import { lstatSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
-import { layeredConfig } from "../../shared/consumer.ts";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
+import { isAbsolute, join, normalize, resolve } from "node:path";
+import { layeredConfig, remoteName } from "../../shared/consumer.ts";
+import { readDrivenTree, type DrivenTree } from "../../shared/driven-tree.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
+import { detectPackageManager } from "../../shared/detect/package-manager.ts";
+import { orcaFailure, orcaResult, runOrca } from "../../shared/orca.ts";
 import { gcGit as git } from "../git.ts";
 import type { Proof } from "../types.ts";
+import { guardLabel } from "./worktree-guard.ts";
 import {
   classifyWorktree,
   localWorktreeVeto,
+  type IgnoredContent,
   type WorktreeEvidence,
   type WorktreeRequest,
 } from "./worktree-evidence.ts";
@@ -17,6 +22,7 @@ import {
   ancestry,
   localOnlyCommits,
   processHolder,
+  requestByNumber,
   requests,
   worktreeActivity,
 } from "./worktree-git.ts";
@@ -25,17 +31,39 @@ export interface WorktreePolicy {
   remote: string;
   base: string;
 }
+/**
+ * The remote and integration branch a branched worktree's evidence is read
+ * against: `repository.remote` (`remoteName`, else `origin`) and
+ * `repository.base_branch`, else that remote's `HEAD`.
+ */
 export async function worktreePolicy(root: string): Promise<WorktreePolicy> {
+  const remote = worktreeRemote(root);
   const config = layeredConfig(root).values;
   const repository = isMapping(config.repository) ? config.repository : {};
   const base =
     typeof repository.base_branch === "string"
       ? repository.base_branch
-      : (await git(root, ["symbolic-ref", "refs/remotes/origin/HEAD"])).replace(
-          /^refs\/remotes\/origin\//,
-          "",
-        );
-  return { remote: "origin", base };
+      : await remoteHeadBranch(root, remote);
+  return { remote, base };
+}
+/** `repository.remote` (`remoteName`, else `origin`), as a collection error. */
+export function worktreeRemote(root: string): string {
+  try {
+    return remoteName(root);
+  } catch (error) {
+    throw new GcError(error instanceof Error ? error.message : String(error));
+  }
+}
+/** The branch `remote`'s `HEAD` points at. */
+export async function remoteHeadBranch(
+  root: string,
+  remote: string,
+): Promise<string> {
+  const prefix = `refs/remotes/${remote}/`;
+  return (await git(root, ["symbolic-ref", `${prefix}HEAD`])).replace(
+    prefix,
+    "",
+  );
 }
 async function operation(admin: string): Promise<string | null> {
   for (const name of [
@@ -56,6 +84,77 @@ async function operation(admin: string): Promise<string | null> {
   }
   return null;
 }
+/**
+ * Whether `directory` (a path under `root`) holds nothing but dependency
+ * directories: the shape of a wholly ignored workspace folder that git
+ * reports as one collapsed entry, hiding the `node_modules` inside it. A
+ * symbolic link or any other file is local state and fails it. The walk
+ * is bounded by `deadline` (checked on entering a directory and per entry,
+ * like `worktreeActivity`) and throws when it passes, so a huge ignored cache cannot hold the collector.
+ */
+function checkDeadline(deadline: number): void {
+  if (Date.now() > deadline)
+    throw new GcError("Ignored-content scan exceeded its deadline");
+}
+function onlyDependencyDirectories(
+  directory: string,
+  deadline: number,
+): boolean {
+  checkDeadline(deadline);
+  const children = readdirSync(directory);
+  if (children.length === 0) return false;
+  return children.every((child) => {
+    checkDeadline(deadline);
+    const path = join(directory, child);
+    const stat = lstatSync(path);
+    if (!stat.isDirectory()) return false;
+    return (
+      child === "node_modules" || onlyDependencyDirectories(path, deadline)
+    );
+  });
+}
+/** Whether the root holds a manifest and a recognised lockfile to rebuild from. */
+function rebuildInputs(root: string): boolean {
+  if (detectPackageManager(root).found === null) return false;
+  try {
+    return lstatSync(join(root, "package.json")).isFile();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+/**
+ * Ignored directories that a package manager's dependency directory accounts
+ * for, wherever they sit (a monorepo's nested `node_modules` counts too):
+ * rebuildable from the root's `package.json` and the lockfile
+ * `detectPackageManager` found, never meaningful local state. Only a real
+ * directory counts (git marks one with a trailing slash), so an ignored file
+ * or link named `node_modules` stays local state, as does a collapsed
+ * directory that holds anything beside dependency directories. No field
+ * declares an override, since every ecosystem that module recognises needs
+ * none; a lockfile-less ecosystem's own rebuildable directory would be
+ * grounds to add one.
+ */
+export function classifyIgnored(
+  root: string,
+  paths: string[],
+  deadline = Date.now() + 30_000,
+): IgnoredContent {
+  const inputs = rebuildInputs(root);
+  const rebuildable: string[] = [];
+  const other: string[] = [];
+  for (const path of paths) {
+    checkDeadline(deadline);
+    const directory = path.endsWith("/") ? path.slice(0, -1) : null;
+    const dependency =
+      inputs &&
+      directory !== null &&
+      (directory.split("/").pop() === "node_modules" ||
+        onlyDependencyDirectories(join(root, directory), deadline));
+    (dependency ? rebuildable : other).push(path);
+  }
+  return { rebuildable, other };
+}
 async function mergedHeadCoverage(
   root: string,
   head: string,
@@ -69,22 +168,162 @@ async function mergedHeadCoverage(
   }
   return unknown ? null : false;
 }
+/**
+ * Whether a detached tree's record still names the work its head holds.
+ * Descent from the attached commit does not tell the pull request's commits
+ * from a stacked pull request's, whose head descends from it too: a head some
+ * remote-tracking branch holds is that branch's work unless the record's own
+ * branch is among them, or the pull request's head contains it. The own
+ * branch is not required, since a merged pull request's is often deleted.
+ */
+async function describesHead(
+  path: string,
+  record: DrivenTree,
+  prs: WorktreeRequest[],
+): Promise<boolean> {
+  const holders = (
+    await git(path, [
+      "for-each-ref",
+      "--contains",
+      "HEAD",
+      "--format=%(refname)",
+      "refs/remotes",
+    ])
+  )
+    .split("\n")
+    .filter((ref) => ref !== "");
+  if (
+    holders.length === 0 ||
+    holders.includes(`refs/remotes/${record.remote}/${record.branch}`)
+  )
+    return true;
+  for (const pr of prs)
+    if ((await ancestry(path, "HEAD", pr.head)) === true) return true;
+  return false;
+}
+/** The recorded pull request of a detached tree whose head is still its work. */
+async function drivenRequests(
+  path: string,
+  record: DrivenTree,
+): Promise<WorktreeRequest[]> {
+  const prs = await requestByNumber(path, record.remote, record.pr);
+  if (!(await describesHead(path, record, prs)))
+    throw new GcError(
+      "HEAD is detached on another branch's work since a drive attached the worktree",
+    );
+  return prs;
+}
+/** A path as git spells a worktree: links resolved, where the path exists. */
+export function canonicalWorktree(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return normalize(path);
+    throw error;
+  }
+}
+/**
+ * Orca's own liveness evidence for a worktree it manages, from its registry
+ * (`orca worktree ps --json`): an agent Orca reports in any state but done
+ * (working, or waiting on a person) keeps the worktree, whatever git says.
+ * A registry that cannot be read, is cut short, or does not list the worktree
+ * proves nothing, so collection is refused. Null when Orca reports no agent
+ * still at work in it.
+ */
+export async function orcaLiveness(
+  command: string,
+  path: string,
+): Promise<Proof | null> {
+  const unread = (why: string): Proof => ({
+    state: "unverified",
+    reason: `Orca's registry (orca worktree ps) ${why}`,
+  });
+  const done = await runOrca(command, ["worktree", "ps", "--json"]);
+  const result = orcaResult(done);
+  if (result === null) return unread(`could not be read ${orcaFailure(done)}`);
+  if (result.truncated !== false || !Array.isArray(result.worktrees))
+    return unread("answered an incomplete list");
+  const own = canonicalWorktree(path);
+  // Every row for the path counts: a second row must not hide an agent the first omits.
+  const rows = result.worktrees.filter(
+    (entry: unknown) =>
+      isMapping(entry) &&
+      typeof entry.path === "string" &&
+      canonicalWorktree(entry.path) === own,
+  );
+  if (rows.length > 1) return unread("lists the worktree more than once");
+  const row = rows[0];
+  if (!isMapping(row)) return unread("does not list the worktree");
+  if (!Array.isArray(row.agents)) return unread("lists no agents for it");
+  for (const agent of row.agents) {
+    if (!isMapping(agent) || typeof agent.state !== "string")
+      return unread("lists an agent without a state");
+    if (agent.state !== "done")
+      return {
+        state: "live",
+        reason: `Orca's registry reports an agent ${agent.state} in the worktree`,
+      };
+  }
+  return null;
+}
+/** The runtime that manages a worktree, when one does: Orca, by its command. */
+export interface WorktreeRuntime {
+  orca: string;
+}
+/**
+ * The proof of a worktree a runtime manages. The runtime's registry is read
+ * first: an agent at work there is the most direct evidence the worktree is
+ * in use, and it is read again on every proof, the final one before removal
+ * included. Its showing no agent stands in for session admission. The proof
+ * says whether Jig's plugin for Orca guards launches now (`details.guard`),
+ * so a report says whether its collection would be guarded.
+ */
+export async function runtimeWorktreeProof(
+  path: string,
+  policy: WorktreePolicy,
+  idleDays: number,
+  runtime: WorktreeRuntime,
+): Promise<Proof> {
+  if (!lstatSync(path).isDirectory())
+    return { state: "finding", reason: "worktree root is not a directory" };
+  const registry = await orcaLiveness(runtime.orca, path);
+  const proof = registry ?? (await worktreeProof(path, policy, idleDays, true));
+  const guard = guardLabel();
+  return {
+    ...proof,
+    reason: `${proof.reason}; ${guard.reason}`,
+    details: {
+      ...(isMapping(proof.details) ? proof.details : {}),
+      guard: guard.label,
+    },
+  };
+}
 export async function worktreeProof(
   path: string,
   policy: WorktreePolicy,
   idleDays: number,
+  coordinated = false,
 ): Promise<Proof> {
   if (!lstatSync(path).isDirectory())
     return { state: "finding", reason: "worktree root is not a directory" };
-  const branch = await git(path, [
-    "symbolic-ref",
-    "--quiet",
-    "--short",
-    "HEAD",
-  ]);
+  const name = await git(path, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const head = await git(path, ["rev-parse", "HEAD"]);
   const dir = await git(path, ["rev-parse", "--git-dir"]);
   const admin = isAbsolute(dir) ? dir : resolve(path, dir);
+  // A detached tree a drive attached names its pull request, and the remote
+  // that pull request was fetched through, in its record, for as long as its
+  // head still descends from the commit attached and holds no other branch's
+  // work (`describesHead`). Unlike
+  // the drive's readers, no remote branch is required: a merged pull
+  // request's branch is often deleted, and that is when the tree is reported.
+  const record = name === "HEAD" ? readDrivenTree(admin) : null;
+  const driven =
+    record !== null && (await ancestry(path, record.head, head)) === true
+      ? record
+      : null;
+  if (name === "HEAD" && driven === null)
+    throw new GcError("HEAD is detached and no drive attached the worktree");
   const flags = await git(path, ["ls-files", "-v", "-z"]);
   const facts: WorktreeEvidence = {
     dirty: !!(await git(path, [
@@ -98,25 +337,48 @@ export async function worktreeProof(
       .split("\0")
       .some((entry) => /^[a-zS] /.test(entry)),
     operation: await operation(admin),
-    ignoredContent: !!(await git(path, [
-      "ls-files",
-      "--others",
-      "--ignored",
-      "--exclude-standard",
-      "-z",
-    ])),
+    ignoredContent: classifyIgnored(
+      path,
+      (
+        await git(path, [
+          "ls-files",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          // A wholly ignored directory (node_modules, in the common case) is
+          // one entry, not every file inside it: a dependency tree can hold
+          // tens of thousands, which would otherwise bloat every veto reason
+          // and receipt line that names it.
+          "--directory",
+          "-z",
+        ])
+      )
+        .split("\0")
+        .filter((entry) => entry !== ""),
+    ),
     requests: null,
     localOnlyCommits: null,
     mergedHeadCovers: null,
     aheadOfBase: null,
     held: null,
     idleMs: null,
+    coordinated,
   };
+  // Every return below carries the paths set aside as rebuildable, whatever
+  // the outcome, so the receipt says what was judged rebuildable even for a
+  // worktree that goes on to report `would-collect`.
+  const attach = (proof: Proof): Proof =>
+    facts.ignoredContent.rebuildable.length
+      ? { ...proof, details: { rebuildable: facts.ignoredContent.rebuildable } }
+      : proof;
   const local = localWorktreeVeto(facts);
-  if (local) return local;
-  facts.requests = await requests(path, policy.remote, branch);
+  if (local) return attach(local);
+  facts.requests =
+    driven === null
+      ? await requests(path, policy.remote, name)
+      : await drivenRequests(path, driven);
   if (facts.requests.some((pr) => pr.state === "OPEN"))
-    return classifyWorktree(facts, idleDays * 86_400_000);
+    return attach(classifyWorktree(facts, idleDays * 86_400_000));
   facts.localOnlyCommits = await localOnlyCommits(path, head);
   if (facts.localOnlyCommits)
     facts.mergedHeadCovers = await mergedHeadCoverage(
@@ -130,8 +392,8 @@ export async function worktreeProof(
   facts.idleMs = worktreeActivity(path, admin);
   if (
     (await git(path, ["rev-parse", "HEAD"])) !== head ||
-    (await git(path, ["symbolic-ref", "--quiet", "--short", "HEAD"])) !== branch
+    (await git(path, ["rev-parse", "--abbrev-ref", "HEAD"])) !== name
   )
     throw new GcError("Worktree identity changed during the proof");
-  return classifyWorktree(facts, idleDays * 86_400_000);
+  return attach(classifyWorktree(facts, idleDays * 86_400_000));
 }

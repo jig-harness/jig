@@ -107,10 +107,14 @@ Knowledge moves up three layers, each promoting into the next:
    the instruction file; start new docs from a template with valid
    frontmatter. This is **Lite**.
 2. Copy [`templates/frontmatter-schema.yaml`](templates/frontmatter-schema.yaml),
-   run [`reference/frontmatter-check/`](reference/frontmatter-check/) in CI on
-   changed docs, generate the index with [`reference/index/`](reference/index/)
-   and gate its freshness, and run [`reference/scar-lint/`](reference/scar-lint/)
-   as at least an advisory check. This is **Standard**.
+   run the [frontmatter check](../../plugin/skills/docs/scripts/frontmatter-check/README.md)
+   in CI on changed docs, generate the index with the
+   [index generator](../../plugin/skills/docs/scripts/index/README.md) and
+   gate its freshness, and run the
+   [scar lint](../../plugin/skills/docs/scripts/scar-lint/README.md) as at
+   least an advisory check. This is **Standard**. The
+   [`docs` skill](../../plugin/skills/docs/README.md) runs every check of
+   this module in one pass and lists the documents the tree still lacks.
 3. Before tightening any validator (a new required field, a narrowed enum,
    path rules, the YAML subset), bring the existing docs into line with a
    one-shot [codemod](../../GLOSSARY.md) first, or the tightened check blocks
@@ -120,22 +124,30 @@ Knowledge moves up three layers, each promoting into the next:
    **apply**, one commit per mapping family, so each can be reverted on its
    own. Values that occur once or twice go to a triage list for a person to
    decide; they are never corrected automatically.
-4. Make the scar lint block promotion to `approved`, run
-   [`reference/stale-last-updated/`](reference/stale-last-updated/) in CI and
-   the pre-commit hook, stamp generated docs with
-   [`reference/stamp/`](reference/stamp/), add path rules where a subtree
-   needs them, schedule the wiki-lint table, and track the backlog of raw
+4. Make the scar lint block promotion to `approved`, run the
+   [stale `last_updated` gate](../../plugin/skills/docs/scripts/stale-last-updated/README.md)
+   in CI and the pre-commit hook, stamp generated docs with the
+   [sticky stamp](../../plugin/skills/docs/scripts/stamp/README.md), add path
+   rules where a subtree needs them, schedule the wiki-lint table, and track the backlog of raw
    notes awaiting promotion. This is **Strict**.
 5. Where documents defer work to a tracker, copy
    [`templates/deferral-references.yaml`](templates/deferral-references.yaml),
-   run [`reference/deferral-references/`](reference/deferral-references/) with
-   `--all` and fix what it reports (file the item and name it, or say what is
+   run the
+   [deferral check](../../plugin/skills/docs/scripts/deferral-references/README.md)
+   with `--all` and fix what it reports (file the item and name it, or say what is
    true today), then run it on the staged change and on the pull request's
    range; that is the Standard rung. For Strict, add the scheduled liveness
    check from [`templates/deferral-liveness.yml`](templates/deferral-liveness.yml)
    with a provider for your tracker ([mappings](mappings.md#deferral-references)).
 
 ## Status
+
+The module's runnable form is the
+[`/jig:docs`](../../plugin/skills/docs/README.md) skill: one pass over a
+repository's docs tree that runs every gate below, flags drafts left stale
+and lists the documents the project's type calls for and the tree lacks. The
+gates live in the skill, each with its own command line for a hook or CI, and
+their self-tests and fixtures in the skill's `__tests__/`.
 
 What this module provides:
 
@@ -146,33 +158,39 @@ What this module provides:
   the closed vocabularies (types, statuses, lifecycle horizons, owners), a
   neutral canonical tag list, the "did you mean" suggestions and a tag merge
   map.
-- [`reference/frontmatter-check/`](reference/frontmatter-check/) — validates
-  every doc's frontmatter against that schema, read at run time, including
-  its path-scoped rules, and documents the YAML subset it reads.
-- [`reference/index/`](reference/index/) — generates `INDEX.md` and the
-  orphan report from frontmatter, with a `--check` freshness gate over both.
-- [`reference/stale-last-updated/`](reference/stale-last-updated/) — fails a
-  diff that changes a doc's body without advancing `last_updated`, over a CI
-  diff range or the staged changes.
-- [`reference/stamp/`](reference/stamp/) — sticky UTC stamping of
-  `last_updated` for generators.
-- [`reference/scar-lint/`](reference/scar-lint/) — finds scars in approved
-  docs, with code masked first, and reports named files it did not scan.
-- [`reference/deferral-references/`](reference/deferral-references/) — fails a
-  block of prose that holds a deferral marker phrase and names no item, over
-  the lines a diff adds or the whole tree; and, in separate steps that keep the
-  credential out of the check, fails a deferral whose items have all closed
-  or do not exist, from a tracker's answers it is given as a file.
 - [`templates/deferral-references.yaml`](templates/deferral-references.yaml)
   and [`templates/deferral-liveness.yml`](templates/deferral-liveness.yml) —
   the configuration (item patterns, marker phrases, scope) and the scheduled
   workflow, with the credential held by one step on the default branch.
-- [`reference/docs.ts`](reference/docs.ts) — the frontmatter reader the
-  scripts share: the YAML subset, with an error for each construct outside it.
 - [`mappings.md`](mappings.md) (CI providers, hook managers, schema formats)
   and the module's [maturity criteria](../../plugin/skills/audit/criteria/M4-docs-governance.yaml).
 
-Each reference script has a paired self-test beside it. The
+The gates, in the `docs` skill:
+
+- the [frontmatter check](../../plugin/skills/docs/scripts/frontmatter-check/README.md)
+  — validates every doc's frontmatter against that schema, read at run time,
+  including its path-scoped rules, and documents the YAML subset it reads;
+- the [index generator](../../plugin/skills/docs/scripts/index/README.md) —
+  generates `INDEX.md` and the orphan report from frontmatter, with a
+  `--check` freshness gate over both;
+- the [stale `last_updated` gate](../../plugin/skills/docs/scripts/stale-last-updated/README.md)
+  — fails a diff that changes a doc's body without advancing `last_updated`,
+  over a CI diff range or the staged changes;
+- the [sticky stamp](../../plugin/skills/docs/scripts/stamp/README.md) —
+  sticky UTC stamping of `last_updated` for generators;
+- the [scar lint](../../plugin/skills/docs/scripts/scar-lint/README.md) —
+  finds scars in approved docs, with code masked first, and reports named
+  files it did not scan;
+- the [deferral check](../../plugin/skills/docs/scripts/deferral-references/README.md)
+  — fails a block of prose that holds a deferral marker phrase and names no
+  item, over the lines a diff adds or the whole tree; and, in separate steps
+  that keep the credential out of the check, fails a deferral whose items
+  have all closed or do not exist, from a tracker's answers it is given as a
+  file;
+- the [frontmatter reader](../../plugin/skills/docs/scripts/lib/docs.ts) the
+  gates share: the YAML subset, with an error for each construct outside it.
+
+The
 [`/jig:descar`](../../plugin/skills/descar/SKILL.md) skill is the
 operating procedure for the de-scarring rule: it handles the part a lint
 cannot do. [`/jig:promote-memory`](../../plugin/skills/promote-memory/SKILL.md)
@@ -182,12 +200,12 @@ Deliberately left out: a tag-merge normalizer and a full canonical tag
 taxonomy, because a tag list is a repository's domain values; the schema
 template shows the mechanism (a canonical list plus a merge map) with neutral
 tags. The frontmatter codemod is a procedure (adoption step 3), not a
-reference script, for the same reason: its mapping tables are a repository's
+gate, for the same reason: its mapping tables are a repository's
 values.
 
 The deferral check does not judge that the item named is the right one, and
 its static half reads blocks of prose, not sentences. Both are stated, with
-the reasons, in the reference's README. It ships a tracker provider for the
+the reasons, in the check's README. It ships a tracker provider for the
 tracker interface Jig's skills use; the
 [mappings](mappings.md#deferral-references) sketch the others.
 

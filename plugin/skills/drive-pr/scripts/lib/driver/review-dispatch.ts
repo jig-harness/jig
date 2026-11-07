@@ -1,3 +1,4 @@
+import { runObservedPass } from "../driver-observation.ts";
 /** Prepare quota attribution, charge the attempt at dispatch and join all post-pass acquisition work. */
 import type { DriveRoundContext } from "./round-context.ts";
 
@@ -14,6 +15,8 @@ import { driverRuntime } from "./runtime.ts";
 
 import { snapshotQuotaSessions, prepareQuotaSpawn } from "./../quota/index.ts";
 
+import { resolveAccountIdentity } from "./../identity.ts";
+
 import { passEnv } from "./repair.ts";
 
 import { run, tsArgv, helperTimeoutSeconds } from "./../proc.ts";
@@ -23,6 +26,12 @@ import type { RunHandle } from "../proc.ts";
 import { driveState } from "./paths.ts";
 
 import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
+
+import { boundPassNotice } from "./../state/pass-handoff.ts";
+
+import { unpushedNoticeFor } from "./unpushed.ts";
+
+import { resolveStateDir } from "./../state/store.ts";
 
 import { fail } from "./../cli.ts";
 
@@ -135,6 +144,28 @@ export async function prepareReviewPass(context: DriveRoundContext): Promise<
   const preexistingSnapshot = snapshotQuotaSessions();
   const preexistingSessions = preexistingSnapshot.files;
   const baseEnv = passEnv();
+  // A stop the driver recovered from (a killed pass, a stall, a takeover, a
+  // re-arm with answers) is told to every review pass until one completes,
+  // and the commits the last gate found unpushed to every pass they remain
+  // for. One environment string has an OS limit, so a long notice reaches the
+  // pass through a file the variable names.
+  const stateDir = await resolveStateDir();
+  let notice: string;
+  try {
+    notice = boundPassNotice(
+      stateDir,
+      context.pr,
+      [context.passNotice, unpushedNoticeFor(context), context.carriedNotice]
+        .filter((part) => part !== "")
+        .join("\n\n"),
+    );
+  } catch (err) {
+    return fail(
+      1,
+      `cannot keep PR #${context.pr}'s pass notice whole in ${stateDir} (${String(err)}); stopping rather than dispatching a pass without it`,
+    );
+  }
+  if (notice !== "") baseEnv.DRIVE_PR_PASS_NOTICE = notice;
   const prepared = prepareQuotaSpawn(context.agent, baseEnv);
   if (prepared !== null) {
     // Said out loud, once per round. This is the only place the driver
@@ -189,8 +220,9 @@ export async function dispatchReviewPass(
   // Several awaited state/account reads separate the earlier round check
   // from this spawn, and a directive sent during one of them must still
   // prevent a new pass — this checkpoint is the LAST await before the
-  // charge below and the spawn that follows it.
-  const mailboxAtSpawn = await context.mailboxCheckpoint();
+  // charge below and the spawn that follows it, and it reads the ledger's
+  // claims too.
+  const mailboxAtSpawn = await context.mailboxCheckpoint({ beforePass: true });
   if (typeof mailboxAtSpawn === "number") return mailboxAtSpawn;
   if (mailboxAtSpawn === "resumed") return "continue";
   // Commit the durable charge and the local pass counter HERE, not
@@ -231,8 +263,9 @@ export async function dispatchReviewPass(
       `cannot record this pass against PR #${context.pr}'s head; stopping rather than driving unbounded`,
     );
   }
+  context.passIdentity = resolveAccountIdentity(context.agent);
   const passRes = await span("pass", { round }, () =>
-    run(prepared?.argv ?? context.agent, {
+    runObservedPass(prepared?.argv ?? context.agent, {
       stdout: "inherit",
       stderr: "inherit",
       detached: true,

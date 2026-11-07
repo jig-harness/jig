@@ -22,6 +22,59 @@ describe("finish-round.ts", () => {
   const findingsFinishRoundFixtures = createFindingsFinishRoundFixtures();
   const { seed, finishRound } = findingsFinishRoundFixtures;
 
+  it("reports a held code-scanning moot over an unsettled alert as left open, not resolved", async () => {
+    const r = await finishRound({
+      fixture: {
+        threads: [
+          {
+            id: "PRRT_scan",
+            bot: true,
+            comments: [
+              {
+                author: "github-advanced-security",
+                authorAssociation: "NONE",
+                body: "Unsafe path.\n\n[Show more details](https://github.com/example-org/example-repo/security/code-scanning/7)",
+              },
+              {
+                author: "example-user-2",
+                authorAssociation: "OWNER",
+                body: "**moot** — the code is gone.",
+              },
+            ],
+          },
+        ],
+      },
+      seedState: async ({ stateDir, fixtureDir, cwd }) => {
+        await seed(stateDir, fixtureDir, cwd, [
+          "bump-round",
+          "999",
+          "--head",
+          HEAD,
+        ]);
+        await seed(stateDir, fixtureDir, cwd, [
+          "hold",
+          "999",
+          "--key",
+          "PRRT_scan",
+          "--kind",
+          "thread",
+          "--outcome",
+          "moot",
+          "--comment-url",
+          "https://example.invalid/PRRT_scan/comment-1",
+        ]);
+      },
+    });
+    const items = r.report.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    expect(items[0]?.action).toBe("left-open");
+    expect(items[0]?.code).toBe(0);
+    expect(String(items[0]?.diagnostic)).toContain(
+      "not confirmed fixed, closed or dismissed",
+    );
+    expect(r.report.state).toBe("FINISHED");
+  });
+
   it("reports a per-item refusal and still drains the rest of the batch", async () => {
     const r = await finishRound({
       // `PRRT_stale` needs no live thread entry: `claim-held` refuses it on

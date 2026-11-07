@@ -8,6 +8,7 @@
  * are accepted wherever a key is.
  */
 
+import { consumerRoot, remoteName } from "../../../../../../shared/consumer.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { TrackerRequestError } from "../port.ts";
@@ -90,41 +91,45 @@ export function repoFromRemote(url: string): Repo | null {
 }
 
 /**
- * The `origin` remote's address in the repository at `cwd` (the working
- * directory when omitted), or `null` when there is none (git exits 1) or git
- * cannot run: either way the repository is not derivable, and `homeRepo`
- * names the field to set.
+ * The address of the repository's git remote (`repository.remote`, else
+ * `origin`) in the repository at `cwd` (the working directory when omitted),
+ * or `null` when there is none (git exits 1) or git cannot run: either way
+ * the repository is not derivable, and `homeRepo` names the field to set.
  */
-export function originUrl(cwd?: string): string | null {
+export function remoteUrl(cwd?: string): string | null {
+  const remote = remoteName(consumerRoot(cwd));
   try {
-    const r = Bun.spawnSync(["git", "config", "--get", "remote.origin.url"], {
-      ...(cwd === undefined ? {} : { cwd }),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const r = Bun.spawnSync(
+      ["git", "config", "--get", `remote.${remote}.url`],
+      {
+        ...(cwd === undefined ? {} : { cwd }),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     return r.exitCode === 0 ? r.stdout.toString().trim() : null;
   } catch (err) {
-    swallow(err, "git could not run, so the origin remote is unknown");
+    swallow(err, `git could not run, so the ${remote} remote is unknown`);
     return null;
   }
 }
 
 /**
  * The repository whose issues the adapter works on: the configured one,
- * else the one the `origin` remote points to. Throws naming the field when
- * neither is known.
+ * else the one the repository's git remote points to. Throws naming the
+ * field when neither is known.
  */
 export function homeRepo(
   configured: string | null,
-  origin: () => string | null = originUrl,
+  remote: () => string | null = remoteUrl,
 ): Repo {
   if (configured !== null) return repoOf(configured);
-  const url = origin();
+  const url = remote();
   const derived = url === null ? null : repoFromRemote(url);
   if (derived === null)
     throw new TrackerConfigError(
       "issue_tracker.github.repository",
-      `issue_tracker.github.repository is not set and the origin remote (${url ?? "none"}) is not a github.com repository; set it to owner/name`,
+      `issue_tracker.github.repository is not set and the git remote (${url ?? "none"}) is not a github.com repository; set it to owner/name`,
     );
   return derived;
 }

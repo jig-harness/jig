@@ -17,18 +17,14 @@ import {
 } from "node:path";
 import { consumerRoot, readConfig } from "../../../../shared/consumer.ts";
 import { jigHome } from "../../../../shared/config-layers.ts";
+import { detectHarness, type Harness } from "../../../../shared/harness.ts";
 import {
   type IssueKeys,
   issueKeysOrNull,
   keyFromBranch,
 } from "../../../do-item/scripts/lib/tracker/keys.ts";
 import { DEFAULT_BRANCH_PATTERN } from "../../../drive-pr/scripts/lib/pr-policy.ts";
-import {
-  type Change,
-  type Harness,
-  parseObject,
-  type Session,
-} from "./events.ts";
+import { type Change, parseObject, type Session } from "./events.ts";
 
 /**
  * The longest one git call may take. A call stalled on the repository's
@@ -263,31 +259,6 @@ export function jigVersion(scriptDir: string): string | null {
 }
 
 type Env = Record<string, string | undefined>;
-
-/**
- * The harness, from the variables it sets: Claude Code sets `CLAUDECODE` and
- * `CLAUDE_CODE_ENTRYPOINT`; Codex sets variables named `CODEX_…`; a wrapper
- * that runs the harness adds its own (Herdr's `HERDR_ENV=1`, Conductor's
- * `CONDUCTOR_…`, Orca's `ORCA_…`). `null` when nothing identifies one.
- */
-export function detectHarness(env: Env = process.env): Harness | null {
-  const names = Object.keys(env);
-  let name: string | null = null;
-  if (env.CLAUDECODE !== undefined) name = "claude-code";
-  else if (names.some((key) => key.startsWith("CODEX_"))) name = "codex";
-  let wrapper: string | null = null;
-  if (env.HERDR_ENV === "1") wrapper = "herdr";
-  else if (names.some((key) => key.startsWith("CONDUCTOR_")))
-    wrapper = "conductor";
-  else if (names.some((key) => key.startsWith("ORCA_"))) wrapper = "orca";
-  if (name === null && wrapper === null) return null;
-  return {
-    name,
-    version: null,
-    entrypoint: env.CLAUDE_CODE_ENTRYPOINT ?? null,
-    wrapper,
-  };
-}
 
 const STATABLE = ["skills", "model", "mode", "harness"] as const;
 

@@ -1,0 +1,168 @@
+# TEMPLATE — copy to your repo (e.g. docs/.frontmatter-schema.yaml) and adapt.
+# This is the machine-readable vocabulary every doc's frontmatter is validated
+# against. The frontmatter check in Jig's docs skill
+# (plugin/skills/docs/scripts/frontmatter-check/) reads a schema of this shape
+# at runtime. Enums below are neutral defaults — keep,
+# extend, or rename to fit your repo, but keep them CLOSED (a fixed vocabulary
+# is what makes docs queryable and prevents status/type sprawl).
+
+# Fields required on EVERY doc.
+required:
+  - title          # human-readable name
+  - type           # the doc's form/purpose (enum below)
+  - status         # lifecycle state (enum below)
+  - lifecycle      # retention horizon (enum below)
+  - last_updated   # YYYY-MM-DD
+  - owner          # accountable function (enum below)
+  - tags           # a list ([a, b] or one `- tag` line each); each in `tags:` below (max 8)
+
+# Required for NEW docs only (git --diff-filter=A). Existing docs are grandfathered.
+required_new:
+  - description    # one-line summary
+
+# Closed enums. Each carries a `suggestions:` map — common wrong values steered
+# to the canonical one, so the checker can emit a "did you mean" hint instead
+# of a blind reject. Add rows as you discover drift.
+
+type:
+  values: [guide, reference, architecture, plan, analysis, adr, retrospection, connection, runbook, prd]
+  meaning:
+    guide: explanatory / how-to / strategy prose
+    reference: lookup material — READMEs, catalogs, field tables
+    architecture: technical "how" — designs, data models, infra
+    plan: tactical sequencing — migration, testing, rollout
+    analysis: research, evaluations, comparisons
+    adr: architecture decision record (see M5)
+    retrospection: session logs, post-mortems (raw layer)
+    connection: cross-domain relationship page
+    runbook: operational runbook
+    prd: product requirements — what & why (see M6)
+  suggestions:
+    spec: reference
+    specification: reference
+    doc: guide
+    howto: guide
+    process: guide
+    decision: adr
+
+status:
+  values: [draft, approved, amended, active, deprecated, archived]
+  meaning:
+    draft: work in progress, not reviewed
+    approved: reviewed and accepted; must be scar-free (see de-scarring)
+    amended: an approved record formally evolved via an Amendments section
+    active: in use, may be updated in place
+    deprecated: superseded, kept for reference
+    archived: moved out of the live tree
+  suggestions:
+    accepted: approved
+    completed: approved
+    complete: approved
+    implemented: approved
+    proposed: draft
+    "in-progress": draft
+    review: draft
+    reviewed: draft
+    superseded: deprecated
+    obsolete: archived
+    historical: archived
+    living: active
+    current: active
+
+lifecycle:
+  values: [permanent, temporary, archive]
+  meaning:
+    permanent: long-lived reference
+    temporary: session-scoped / scratch, expected to be cleaned up
+    archive: retained historically
+  suggestions:
+    active: permanent
+    evolving: permanent
+    ephemeral: temporary
+    archived: archive
+
+owner:
+  values: [product, engineering, operations, design, docs]
+  suggestions:
+    eng: engineering
+    ops: operations
+
+# Optional facet, orthogonal to `type`: where a doc sits in the delivery
+# lifecycle, so a capability can be navigated by intent regardless of form.
+layer:
+  values: [product, architecture, planning]
+
+# Extra required fields, applied only when `type` matches. ADRs (M5) need
+# an immutable decision date and supersession links.
+type_specific:
+  adr:
+    - decision_date   # YYYY-MM-DD, distinct from last_updated; never changes
+    - supersedes      # ADR id, or ~ (null)
+    - superseded_by   # ADR id, or ~ (null)
+
+# Canonical tag list (max 8 per doc). Neutral seed — replace with your domains.
+# Convention: adding a tag means adding it here AND to the merge map (below),
+# so synonyms collapse instead of multiplying.
+tags:
+  # domain / product
+  - onboarding
+  - billing
+  - search
+  # engineering / infra
+  - backend
+  - frontend
+  - database
+  - infra
+  - performance
+  - security
+  - testing
+  - observability
+  # architecture / process
+  - architecture
+  - adr
+  - api
+  - design
+  - plan
+  - navigation
+
+# Tag merge map (mechanism, seeded generically). `alias: canonical` collapses a
+# synonym; `alias: null` drops noise (generic words, priority labels, status
+# words, one-off tokens). A normalizer applies this before validation.
+tag_merge:
+  ui: design
+  ux: design
+  "design-system": design
+  perf: performance
+  "quality-assurance": testing
+  e2e: testing
+  roadmap: plan
+  strategy: plan
+  # noise -> dropped
+  documentation: null
+  overview: null
+  summary: null
+  p0: null
+  p1: null
+  critical: null
+  "high-priority": null
+  complete: null
+
+# The template with its example path rules uncommented, for the path-rule
+# self-tests; fixtures/docs/ holds documents under both prefixes.
+path_rules:
+  - id: runbooks-name-their-service
+    paths: [docs/runbooks/]
+    message: an operator follows a runbook literally, so it names its service and holds no placeholder
+    required_fields: [service]
+    allowed_values:
+      type: [runbook]
+    forbidden_body_patterns:
+      - id: no-todo
+        pattern: "\\bTODO\\b"
+        message: a runbook carries no TODO placeholder
+  - id: archive-holds-archived-docs
+    paths: [docs/archive/]
+    message: a document moved under archive/ is archived
+    allowed_values:
+      status: [archived]
+      lifecycle: [archive]

@@ -1,6 +1,7 @@
 /** The terminal summary: headline numbers, then tables by area, kind, language and module. */
 import { type Bucket, groupBy, total, unclassified } from "./aggregate.ts";
 import type { FileStats, Kind } from "./model.ts";
+import type { Unreadable } from "./test-runners/index.ts";
 
 const COLOURS = {
   reset: "\x1b[0m",
@@ -245,6 +246,8 @@ export interface TerminalInput {
   vendoredExcluded: Bucket;
   includeVendored: boolean;
   missing: number;
+  /** Test-runner configuration files that could not be read. */
+  unreadable: readonly Unreadable[];
   topModules: number;
   htmlCommand: string;
   /** Whether to write ANSI colour codes. */
@@ -284,6 +287,10 @@ export function terminalReport(input: TerminalInput): string {
     "",
     `  ${c.bold}${defaultArea} code:${c.reset} ${fmt(prodCode)} LOC  ${c.dim}•${c.reset}  ${c.bold}${defaultArea} tests:${c.reset} ${fmt(prodTest)} LOC  ${c.dim}(test-to-code ratio ${(prodCode > 0 ? prodTest / prodCode : 0).toFixed(2)})${c.reset}`,
     `  ${c.bold}Unclassified:${c.reset} ${pct(u.files, files.length)} of files (${fmt(u.files)}), ${pct(u.codeLines, sum.code)} of LOC  ${c.dim}(kind other: ${fmt(u.kindOther)}; no area rule matched, so ${defaultArea}: ${fmt(u.defaultArea)})${c.reset}`,
+    ...input.unreadable.map(
+      (u) =>
+        `  ${c.yellow}Test runner ${visible(u.reader)}: unreadable: ${visible(u.path)} (${visible(u.why)})${c.reset}`,
+    ),
     heading(c, "By area (what the file is for)"),
     areaTable(c, files, areas),
     heading(c, "By kind (what the file is)"),

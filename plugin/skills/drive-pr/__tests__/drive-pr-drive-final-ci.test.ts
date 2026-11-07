@@ -142,7 +142,7 @@ describe("drive.ts loop control", () => {
         // it'd read the same whether the pass ran or not. This adds one
         // (`RAN_THE_PASS`) while keeping the task echo, so the assertion
         // below actually pins that the pass was never invoked.
-        'echo "pass for 999: RAN_THE_PASS TASK=$DRIVE_PR_ROUND_TASK DETAIL=$DRIVE_PR_ROUND_TASK_DETAIL" >&2; exit 0',
+        'echo "pass for 999: RAN_TH""E_PASS TASK=$DRIVE_PR_ROUND_TASK DETAIL=$DRIVE_PR_ROUND_TASK_DETAIL" >&2; exit 0',
       ],
       undefined,
       { env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" } },

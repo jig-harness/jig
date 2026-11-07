@@ -18,6 +18,8 @@ import { span } from "./../../../../../shared/trace.ts";
 
 import { ciPolicy } from "./../ci-policy.ts";
 
+import { failedRunsToTell } from "./failed-runs.ts";
+
 import { runRepairPass } from "./repair.ts";
 
 import { driverRuntime } from "./runtime.ts";
@@ -43,8 +45,8 @@ export async function releaseAndReadFinalCi(
   // `disabled` and nothing below waits on an unlabel). Release only
   // after convergence, the clean-tree certification, and the Ready
   // transition above have all settled. `ci-hold.ts` compares the
-  // persisted labelled timeline-event id before removing anything, so a
-  // human remove/re-add is never mistaken for a label this driver owns.
+  // persisted labelled timeline-event id before removing anything, and
+  // adopts a live label it holds no record of, then removes it.
   const finalCiSignals = await context.finalCiWait.prime();
   const release = await run(
     tsArgv(ciHold, ["release", context.pr, "--expect-head", reviewedHead]),
@@ -53,7 +55,7 @@ export async function releaseAndReadFinalCi(
   if (release.code === 5) return 5;
   if (release.code === 4) {
     console.error(
-      "review converged, but the CI hold label is externally owned or the head moved; not removing it or reporting merge-ready",
+      "review converged, but the head moved or the CI hold label changed during its release; not reporting merge-ready",
     );
     return 4;
   }
@@ -109,20 +111,6 @@ export async function releaseAndReadFinalCi(
     );
     return 1;
   }
-  // A fresh witness was just confirmed: `witnessWaits` is documented as
-  // counting a CONSECUTIVE unwitnessed streak on one head, but used to
-  // reset only on a head change. A same-head sequence — several `finalCi.code === 4`
-  // polls, then `code === 0` while an unrelated non-required check is
-  // still pending (the branch below loops on it), then a required
-  // check rerun returns `code === 4` again — resumed the earlier
-  // count instead of starting a fresh streak, so the bound could trip
-  // well short of its configured duration. `finalCi.code === 0` at
-  // this point means final-ready positively established a fresh
-  // required witness, so the streak is broken here regardless of
-  // which head it is on.
-  if (finalCi.code === 0) {
-    context.witnessWaits = 0;
-  }
   const finalStatusRes = await run(
     tsArgv(driveStatus, [context.pr, "--json", "--once", "--no-count"]),
     { stderr: "inherit", timeoutSec: driveStatusOnceTimeoutSeconds() },
@@ -134,6 +122,22 @@ export async function releaseAndReadFinalCi(
     finalStatus = {};
   }
   const finalVerdict = String(finalStatus.ci ?? "");
+  // A fresh witness was just confirmed: `witnessWaits` is documented as
+  // counting a CONSECUTIVE unwitnessed streak on one head, but used to
+  // reset only on a head change. A same-head sequence — several `finalCi.code === 4`
+  // polls, then `code === 0` while an unrelated non-required check is
+  // still pending (the branch below loops on it), then a required
+  // check rerun returns `code === 4` again — resumed the earlier
+  // count instead of starting a fresh streak, so the bound could trip
+  // well short of its configured duration. `finalCi.code === 0` at
+  // this point means final-ready positively established a fresh
+  // required witness, so the streak is broken here regardless of
+  // which head it is on. Except on a `cancelled:` verdict: without a hold,
+  // final-ready counts a cancelled required check as completed, so its
+  // `code === 0` witnesses nothing and must not restart the bound on it.
+  if (finalCi.code === 0 && !finalVerdict.startsWith("cancelled:")) {
+    context.witnessWaits = 0;
+  }
 
   return { finalStatus, finalStatusRes, finalVerdict, finalCi, finalCiSignals };
 }
@@ -341,6 +345,7 @@ export async function requiredFailureMayBeStale(
 async function repairConvergedCi(
   finalVerdict: string,
   context: DriveRoundContext,
+  failingRuns: unknown,
 ): Promise<number | "continue"> {
   const failing = finalVerdict.slice("failing:".length).trim();
   if (context.dryRun || context.agent.length === 0) {
@@ -373,6 +378,7 @@ async function repairConvergedCi(
     "ci-repair",
     failing,
     context.mailboxCheckpoint,
+    await failedRunsToTell(context.pr, failingRuns),
   );
   if (!repair.dispatched) {
     // The repair pass's OWN pre-spawn checkpoint (inside
@@ -442,16 +448,11 @@ async function repairConvergedCi(
   return "continue";
 }
 
-async function waitForCiWitness(
+/** Count one poll against the witness bound; `true` once it has run out. */
+function witnessBoundSpent(
   reviewedHead: string,
   context: DriveRoundContext,
-  staleRequiredFailure: boolean,
-  finalVerdict: string,
-  finalVerdictPending: boolean,
-  finalCiSignals: Awaited<
-    ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
-  >,
-): Promise<number | "continue"> {
+): boolean {
   // CONSECUTIVE ON ONE HEAD, not cumulative across the drive. A long
   // drive can legitimately reach this wait on several different heads
   // — once per convergence attempt — and a counter that never reset
@@ -468,10 +469,60 @@ async function waitForCiWitness(
   // bound is checked only when one was actually asked for. Without
   // this guard `0` would read as the TIGHTEST possible bound and stop
   // on the first poll, inverting the knob.
-  if (
+  return (
     context.witnessWaitLimit > 0 &&
     context.witnessWaits > context.witnessWaitLimit
-  ) {
+  );
+}
+
+/**
+ * Wait, on the witness bound, for a run to replace cancelled checks. Nothing is
+ * known about them, so the wait ends only in a read of that run or in the
+ * not-judgeable exit `4`: never a repair and never a pass, whatever
+ * `final-ready` said, which counts a cancelled required check as completed.
+ */
+async function waitForReplacement(
+  reviewedHead: string,
+  context: DriveRoundContext,
+  finalVerdict: string,
+  finalCiSignals: Awaited<
+    ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
+  >,
+): Promise<number | "continue"> {
+  if (witnessBoundSpent(reviewedHead, context)) {
+    console.error(
+      `review converged, but the verdict has stayed '${finalVerdict}': no run replaced the cancelled check(s) in ${Math.round((context.witnessWaitLimit * FINAL_CI_POLL_SECONDS) / 60)} minute(s).`,
+    );
+    console.error(
+      "  A cancelled check is unknown: not a failure to repair, and not a pass. Run the workflow",
+    );
+    console.error(
+      `  again on this head (the CI hold's release does; 'gh run rerun' of a run started under the hold replays its label),`,
+    );
+    console.error(
+      `  then re-arm. ($DRIVE_PR_FINAL_CI_WITNESS_POLLS=${context.witnessWaitLimit}; 0 waits forever.)`,
+    );
+    return 4;
+  }
+  console.error(
+    `review converged; waiting for a run to replace the cancelled check(s) (current verdict '${finalVerdict}')`,
+  );
+  context.finalCiWait.remember(reviewedHead, finalCiSignals, true);
+  await sleep(FINAL_CI_POLL_SECONDS);
+  return "continue";
+}
+
+async function waitForCiWitness(
+  reviewedHead: string,
+  context: DriveRoundContext,
+  staleRequiredFailure: boolean,
+  finalVerdict: string,
+  finalVerdictPending: boolean,
+  finalCiSignals: Awaited<
+    ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
+  >,
+): Promise<number | "continue"> {
+  if (witnessBoundSpent(reviewedHead, context)) {
     console.error(
       staleRequiredFailure
         ? `review converged, but the only failing check(s) reported ('${finalVerdict}') are required checks final-ready could not confirm are fresh, and no fresh exact-head witness appeared in ${Math.round((context.witnessWaitLimit * FINAL_CI_POLL_SECONDS) / 60)} minute(s).`
@@ -517,7 +568,15 @@ export async function evaluateFinalCi(
   finalCiSignals: Awaited<
     ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
   >,
+  failingRuns: unknown,
 ): Promise<number | "continue" | null> {
+  if (finalVerdict.startsWith("cancelled:"))
+    return await waitForReplacement(
+      reviewedHead,
+      context,
+      finalVerdict,
+      finalCiSignals,
+    );
   // POSITIVELY-NAMED failing checks, not merely "not green".
   // `unknown:` (commit statuses unreadable) and `''` (the status report
   // did not parse) are absences of evidence, not evidence of failure,
@@ -528,7 +587,7 @@ export async function evaluateFinalCi(
     !staleRequiredFailure &&
     context.ciRepairs < context.ciRepairBudget
   ) {
-    return await repairConvergedCi(finalVerdict, context);
+    return await repairConvergedCi(finalVerdict, context, failingRuns);
   }
   // A `pending:` verdict is never a stop condition: it reaches here
   // only when `finalCi.code === 4` (the branch above let it through

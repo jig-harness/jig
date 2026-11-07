@@ -169,6 +169,26 @@ describe("probe-base", () => {
     );
   });
 
+  test("fetches from the remote repository.remote names when --remote is not given", () => {
+    git(clone, "remote", "rename", "origin", "upstream");
+    const base = git(clone, "rev-parse", "upstream/main");
+    writeFileSync(join(clone, CHECK), FAILING);
+    const r = spawnSync(
+      process.execPath,
+      [SCRIPT, "--base", "main", ...CHECK_COMMAND],
+      {
+        cwd: clone,
+        env: { ...cleanEnv(), JIG__REPOSITORY__REMOTE: "upstream" },
+        encoding: "utf8",
+      },
+    );
+    const result = { exitCode: r.status, stdout: r.stdout, stderr: r.stderr };
+    expectSpawnExit(result, 0);
+    const v = verdict(result.stdout);
+    expect(v.base).toBe("upstream/main");
+    expect(v.base_commit).toBe(base);
+  });
+
   test("fetches into a ref of its own and leaves it behind neither FETCH_HEAD nor the ref", () => {
     git(clone, "fetch", "-q", "origin", "main");
     const before = readFileSync(join(clone, ".git", "FETCH_HEAD"), "utf8");

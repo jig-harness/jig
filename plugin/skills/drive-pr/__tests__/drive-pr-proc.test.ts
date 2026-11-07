@@ -70,11 +70,14 @@ describe("TRUSTED_ASSOCIATIONS has exactly one definition", () => {
   // `announce-merge-ready.ts` and `reconcile-replied-threads.ts` used to each
   // spawn `summary-findings.ts --trusted-associations` to read this vocabulary
   // back over a pipe — a 72KB module load to read a constant that was already
-  // exported from the same file. Both now `import` it directly. The claim
-  // worth pinning is not just "gating works" (the per-caller trust-gate tests
-  // below already exercise OWNER/MEMBER vs. an untrusted association, via a
-  // real spawn of each script — not a text scan): it is that there is
-  // nowhere left for a second, drifting copy to hide.
+  // exported from the same file. `reconcile-replied-threads.ts` now `import`s
+  // it directly, and `announce-merge-ready.ts` reads its announcements as
+  // claims of the shared forge-claims module, whose trust check is
+  // `shared/trusted-authors.ts`'s own rule over the same set. The claim worth
+  // pinning is not just "gating works" (the per-caller trust-gate tests below
+  // already exercise OWNER/MEMBER vs. an untrusted association, via a real
+  // spawn of each script — not a text scan): it is that there is nowhere left
+  // for a second, drifting copy to hide.
   //
   // Text-matching source is inherently one counterexample behind a hand-rolled
   // rewrite (e.g. a comment retaining the old call shape while the real code
@@ -101,14 +104,8 @@ describe("TRUSTED_ASSOCIATIONS has exactly one definition", () => {
   // string-built CLI flag for the retired `--trusted-associations` spawn) —
   // no test in this codebase defends against hostile obfuscation of its own
   // source, only against accidental drift.
-  const CONSUMERS = [
-    "announce-merge-ready.ts",
-    "reconcile-replied-threads.ts",
-    "lib/sample.ts",
-  ];
+  const CONSUMERS = ["reconcile-replied-threads.ts", "lib/sample.ts"];
   const USAGE: Record<string, RegExp> = {
-    "announce-merge-ready.ts":
-      /\bannouncements\(\s*pr\s*,\s*TRUSTED_ASSOCIATIONS\s*\)/,
     "reconcile-replied-threads.ts": /\bTRUSTED_ASSOCIATIONS\.has\(/,
     "lib/sample.ts": /\bTRUSTED_ASSOCIATIONS\.has\(/,
   };
@@ -156,8 +153,30 @@ describe("TRUSTED_ASSOCIATIONS has exactly one definition", () => {
     },
   );
 
+  it("announce-merge-ready.ts reads its announcements through the forge-claims module, whose trust check is the shared rule", () => {
+    const shared = join(SCRIPTS, "..", "..", "..", "shared");
+    const read = (path: string) =>
+      stripLineComments(readFileSync(path, "utf8"));
+    const announce = read(join(SCRIPTS, "lib", "announce.ts"));
+    const claims = read(join(shared, "records", "forge-claims.ts"));
+    const rule = read(join(shared, "trusted-authors.ts"));
+    expect(read(join(SCRIPTS, "announce-merge-ready.ts"))).toMatch(
+      /\bannouncements\(\s*pr\s*\)/,
+    );
+    expect(announce).toMatch(/\blist\(\s*onPr\(pr\)\s*,\s*MERGE_READY\s*\)/);
+    expect(claims).toMatch(
+      /import\s*\{[^}]*\bisTrustedAuthor\b[^}]*\}\s*from\s*['"]\.\.\/trusted-authors\.ts['"]/,
+    );
+    expect(claims).toMatch(
+      /\bisTrustedAuthor\(\s*login\s*,\s*association\s*,\s*self\s*\)/,
+    );
+    expect(rule).toMatch(/\bTRUSTED_ASSOCIATIONS\.has\(\s*association\s*\)/);
+    for (const live of [announce, claims])
+      expect(live).not.toMatch(/\bconst\s+TRUSTED_ASSOCIATIONS\s*=/);
+  });
+
   it("neither consumer spawns summary-findings.ts to read the vocabulary anymore", () => {
-    for (const rel of CONSUMERS) {
+    for (const rel of [...CONSUMERS, "announce-merge-ready.ts"]) {
       const live = stripLineComments(readFileSync(join(SCRIPTS, rel), "utf8"));
       expect(live).not.toContain("--trusted-associations");
     }
@@ -1525,7 +1544,7 @@ describe("driveStatusOnceTimeoutSeconds() outlives drive-status.ts --once's evid
       GIT_CALL_TIMEOUT: "45",
     });
     expect(result.driveStatus).toBe(
-      8 * result.helper + 12 * result.gh + 6 * result.git + 26 * 2,
+      8 * result.helper + 13 * result.gh + 6 * result.git + 27 * 2,
     );
     expect(result.driveStatus).toBeGreaterThan(result.helper);
   });
@@ -1543,10 +1562,10 @@ describe("driveStatusOnceTimeoutSeconds() outlives drive-status.ts --once's evid
 describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case sequential GitHub-call chain", () => {
   const PROC = join(SCRIPTS, "lib", "proc.ts");
   // The 15-call success chain, the CI policy's 2 sequential reads, and per
-  // proof (3) the commit-status list plus up to MAX_STATUS_PUBLISHERS app
-  // lookups. proc.ts mirrors that cap as a literal; reading it from
+  // proof (3) the workflow runs, the commit-status list and up to
+  // MAX_STATUS_PUBLISHERS app lookups. proc.ts mirrors that cap as a literal; reading it from
   // evidence.ts here makes a changed cap fail these assertions.
-  const CALLS = 15 + 2 + 3 * (1 + MAX_STATUS_PUBLISHERS);
+  const CALLS = 15 + 2 + 3 * (2 + MAX_STATUS_PUBLISHERS);
 
   function readTimeouts(env: Record<string, string>): {
     gh: number;

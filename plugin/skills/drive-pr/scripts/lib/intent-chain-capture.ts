@@ -42,7 +42,10 @@ export interface CaptureInput {
   headRefName: string;
   title: string;
   body: string;
-  /** `git rev-parse --abbrev-ref HEAD` of the worktree being driven. */
+  /**
+   * The branch the worktree being driven drives (`lib/driven-branch.ts`): its
+   * checked-out branch, or the branch a detached tree's attach recorded.
+   */
   checkedOutBranch: string;
   /** The `.context/` directory holding `intent-chain/`. */
   contextDir: string;

@@ -52,17 +52,18 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   a never-triaged thread on file B, so the guard correlates the held set
   against each candidate thread individually. A hold on *this* thread's own key still is not
   enough on its own: the hold's recorded `commentUrl` must also match the
-  thread's *latest* comment — **or** be followed only by a trusted reviewer
-  bot's own automated confirmation of it (`isThreadHoldCurrent`;
-  see the paragraph on this below). A reviewer or human can post a new
+  thread's *latest* comment — **or** be followed only by transparent
+  comments: a review bot's confirmation, or a listed bot's acknowledgement
+  that carries no outcome token and no finding (`isThreadHoldCurrent`, through
+  `lib/bot-confirmation.ts`; see the paragraph on this below). A reviewer or human can post a new
   comment on a thread after it was held but before this round's push
   completes, and a key-only match would still exempt it — silently closing
   the fresh comment with no outcome reply ever posted.
 - **(b) at least one unresolved review thread is anchored to a file this
   round's own local non-merge commits touch.** "This round's own non-merge
   commits" means since the last verified SHA (`bun "<skill-dir>/scripts/drive-state.ts" verified`) when
-  one validates, else the cumulative merge-base against `origin/<base>` (the
-  configured base branch) — `roundBase()` in `scripts/lib/round-delta.ts`, the
+  one validates, else the cumulative merge-base against `<remote>/<base>` (the
+  configured base branch, through `repository.remote`) — `roundBase()` in `scripts/lib/round-delta.ts`, the
   *same* fail-closed base resolution `round-plan.ts` shares (though
   `round-plan.ts`'s own validation file list uses its separately computed
   cumulative/delta base — `roundBase()`'s `rb.base` return goes unused there;
@@ -122,21 +123,33 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   with the *other* half of the dispatch never having happened. `isThreadTriaged`
   (the combined predicate `checkUntriagedThreads` actually filters on) treats
   this differently by outcome, and both halves of the gap matter —
-  `accepted`, and `moot` *without* the leave-open marker, always
-  create a *hold* when the dispatch completes, so for those two the exemption
-  requires a *current* hold to exist (`isThreadHoldCurrent`). `rejected`,
-  `wont-fix` and `deferred` never create a hold — `triage-thread.ts`'s normal
+  `accepted`, and `moot` *without* the leave-open marker, create a *hold*
+  when the dispatch completes, so for those the exemption requires a
+  *current* hold to exist (`isThreadHoldCurrent`). `rejected`, `wont-fix`
+  and `deferred` never create a hold — `triage-thread.ts`'s normal
   completion for them calls `resolve-thread.ts` and *resolves* the thread
   instead. Since this guard only ever sees threads `list-unresolved-
   threads.ts` reports as unresolved, an unmarked merit reply sitting here
-  cannot be a legitimately-finished dispatch (a finished one would have
-  resolved the thread and it would not be in this list at all) — it is
+  is ordinarily not a legitimately-finished dispatch (a finished one would
+  have resolved the thread and it would not be in this list at all) — it is
   `triage-thread.ts` crashing between the reply and the resolve, the same
   shape of gap as the accepted/moot one, just on the other side of the
-  fork. The *one* way a merit reply (or an unmarked moot) legitimately stays
-  unresolved forever is the LEAVE_OPEN marker — `bun "<skill-dir>/scripts/triage-thread.ts"
+  fork. Both rules have exceptions, where a merit reply (or an unmarked
+  moot) legitimately stays unresolved with no hold. The LEAVE_OPEN marker
+  is one — `bun "<skill-dir>/scripts/triage-thread.ts"
   --leave-open` works identically across every non-hold outcome (its own
-  header), not only `moot`, so this check does too. Either crash's remedy is
+  header), not only `moot`, so this check does too. A thread GitHub's code
+  scanning account opened is another (`awaitsAlert` in
+  `scripts/lib/scanner-sweep-guard.ts`): its merit reply or `moot` is never
+  held and waits on its alert rather than a hold or a resolve, and the
+  replied-thread sweep closes it once the alert is settled — a `moot`
+  resting on this round's own fix settles only after this very push. Do not
+  create a hold to recover such a thread; re-run `triage-thread.ts`, which
+  leaves it open (exit `4`) until the alert settles. A scanner `moot` held
+  before that rule drains through `resolve-held-thread.ts`, which reads the
+  alert too, ahead of its final comment and head checks, and over an
+  unsettled one drops the hold and leaves the thread open; the round's report
+  names that item `left-open`, not `resolved`. Either crash's remedy is
   the same *shape*, naming the correct missing half: re-run `bun "<skill-dir>/scripts/triage-thread.ts"`
   on the *same* thread with *any* valid outcome body on stdin (not an empty
   one: `triage-thread.ts` refuses *empty* stdin outright, before it ever
@@ -320,9 +333,10 @@ separate `claim-held`/`release-held` call for you to make; skip straight to
 dispatching via the wrapper. After the claim, the wrapper re-reads the
 thread's live comments and refuses (restoring the hold) when anything landed
 after the held reply — except a thread already resolved on GitHub, which
-drains without a mutation, and CodeRabbit's own confirmation follow-up
-(`coderabbit-skip-review-comment-follow-up` marker, no outcome token), which
-is compatible with the hold. Calling `release-held --key` on a thread
+drains without a mutation, and a transparent follow-up (a bot's
+confirmation marker, or the chat marker of a bot `review.bots` lists with no
+finding shape a severity format known to be the bot's reads, and no outcome
+token), which is compatible with the hold. Calling `release-held --key` on a thread
 afterward finds nothing there and refuses loudly, by the same "no silent
 no-op on an already-released key" design `release-held` uses everywhere else.
 A refusal — round mismatch, `verifiedSha` mismatch, or racing another claim —
@@ -352,8 +366,8 @@ needed.
 ## Concurrency: who may drive, and who may finish a hold
 
 **The provenance model, and what it does about a second driver.**
-This state file is shared by every driver of the PR — `drive-state.ts` keeps
-it in the per-clone state directory precisely so two linked worktrees see one
+This state is shared by every driver of the PR — `drive-state.ts` keys it
+by the clone in the drive's database precisely so two linked worktrees see one
 round budget and one held batch. A single PR-global `verifiedSha` would
 therefore be moved by whichever driver pushed last, and would then vouch for
 every held item on the PR: driver A holds a thread and stalls before pushing
@@ -429,7 +443,7 @@ you do need to know:
 lease above is scoped to *(working tree, PR)*, which is exactly right for two
 sessions driving the *same* PR — but leaves the *same* tree unguarded when two
 interactive sessions drive two *different* PRs: each resolves its own
-per-(tree, PR) lease file, neither sees the other's, and both are admitted
+per-(tree, PR) lease, neither sees the other's, and both are admitted
 into the *same* checkout, which they can then edit, commit, and push over one
 another. This is not a milder variant of the same-PR hazard — it is the
 identical damage (measured: two `drive.ts` processes in
@@ -464,7 +478,7 @@ topology is supported, and is the whole reason the actor is the tree. That is
 no reason to let both trees *triage*: two worktrees enumerating the same
 unresolved threads and each replying with its own outcome is the identical
 damage measured within one tree, reached across trees instead. The clone-wide
-state file gives them one round budget and one held batch; PR-wide admission
+state gives them one round budget and one held batch; PR-wide admission
 is the gate.
 
 So a claim answers two questions, and a refusal tells you which it is:
@@ -474,7 +488,7 @@ So a claim answers two questions, and a refusal tells you which it is:
 | `11` | Another live **session in your tree** holds it | Almost always stop. `clear-lease [PR]` if you know that session is gone |
 | `13` | Another live **working tree** is driving this PR | Stop. It names the tree's path, and its session pid when it has one |
 
-- It is **derived, not stored** — read off the lease files that already exist,
+- It is **derived, not stored** — read off the leases that already exist,
   by the same `leaseAlive` test — so it self-clears exactly as the per-session
   half does. A dead or idle worktree never wedges the PR for the others.
 - **A second worktree keeps every read** (`get`, `held`, `held-keys`,
@@ -498,7 +512,7 @@ So a claim answers two questions, and a refusal tells you which it is:
   out, because a driver told `SESSION_LEASE_HELD` goes looking in its own tree
   for a session that is not there.
 - **A runtime that identifies no session is covered too**. The refusal is
-  read off lease files, so it needs *one* side to have left one; a ladder
+  read off leases, so it needs *one* side to have left one; a ladder
   tier 3 that left none would admit two sessionless resolvers in two trees,
   and both would reply. So tier 3 writes a record whose
   **holder is the working tree** instead of a session. No pid is invented for
@@ -617,8 +631,8 @@ do not invoke it; it is wired in already. The following points apply:
   mutating `drive-state.ts` call. Only a lease held by *another live* session
   refuses; one whose owner is gone does not.
 - **But absence has to be established, not assumed.** Anything the fence cannot
-  read is a refusal, not an all-clear: a lease file it can enumerate but not
-  parse or open, a failed `git` probe in a tree that *is* a repository, or a
+  read is a refusal, not an all-clear: a database it cannot read, or one that is
+  not the database the driver opened, a failed `git` probe in a tree that *is* a repository, or a
   `drive-pr` installed with its fence script missing. "Is this a repository" is answered from the filesystem, never from
   git's exit status — `128` is git's generic fatal and also covers dubious
   ownership and corruption, where a live lease may well already exist.
@@ -684,7 +698,7 @@ stop and inspect (`bun "<skill-dir>/scripts/drive-state.ts" get [PR]`) rather th
 an entire batch one silently-failing key at a time. `4` means the snapshot
 you're iterating is stale, so re-read `held` before trusting anything else in
 it — do not assume the key is "already finished" without checking; `3` means
-the state file itself could not be read — the same "malformed, refuse"
+the stored state itself could not be read — the same "malformed, refuse"
 condition every other `drive-state.ts` command already fails closed on —
 which is not a per-key problem, so stop the round entirely rather than keep
 operating on unreadable state.

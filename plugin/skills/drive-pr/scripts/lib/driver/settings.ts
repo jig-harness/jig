@@ -1,9 +1,16 @@
 /** Read driver policy and derive exit codes from the terminal-state contract. */
-import { isDigits, fail, testPacing } from "../cli.ts";
+import { readRemoteName } from "../../../../../shared/consumer.ts";
+
+import { isDigits, fail, shellQuote, testPacing } from "../cli.ts";
 
 import { driverOnlyExitCode } from "../status/terminal-states.ts";
 
-import { maxRoundsSetting, DEFAULT_MAX_ROUNDS } from "../overlay.ts";
+import {
+  maxRoundsSetting,
+  DEFAULT_MAX_ROUNDS,
+  passDeadlineRetriesSetting,
+  DEFAULT_PASS_DEADLINE_RETRIES,
+} from "../overlay.ts";
 
 import { reflectionSwitch } from "../../../../reflect/scripts/lib/settings.ts";
 
@@ -269,6 +276,9 @@ export const MAILBOX_PAUSE_TIMEOUT_EXIT = driverOnlyExitCode(
   "MAILBOX_PAUSE_TIMEOUT",
 );
 
+/** A takeover claim from another clone, newer than this driver's own, wins the drive. */
+export const TAKEN_OVER_EXIT = driverOnlyExitCode("TAKEN_OVER");
+
 /**
  * The result of one `runRepairPass` call, kept apart from a raw process exit
  * code: the spawned command is caller-supplied and its exit space is its
@@ -417,6 +427,36 @@ export function ciRepairRounds(): number {
   );
 }
 
+/**
+ * The remote a printed conflict fix fetches and merges from:
+ * `repository.remote`, else `origin`. The placeholder `<remote>` when the
+ * setting cannot be read: the line is advice, and the drive's own reads of
+ * the setting are what report it.
+ */
+export function fixRemote(): string {
+  const read = readRemoteName();
+  return "remote" in read ? read.remote : "<remote>";
+}
+
+/**
+ * The printed conflict fix for a pull request whose base is `base`: fetch
+ * the remote, then merge its base. The remote and the base ref are each
+ * shell-quoted, since the line is a command a person may paste and the base
+ * name comes from the forge; the unreadable-setting placeholder stays bare,
+ * outside the quoted base, so filling it in never unquotes the base.
+ */
+export function conflictFixCommands(
+  base: string,
+  remote: string = fixRemote(),
+): string {
+  const placeholder = remote === "<remote>";
+  const fetched = placeholder ? remote : shellQuote(remote);
+  const merged = placeholder
+    ? `${remote}/${shellQuote(base)}`
+    : shellQuote(`${remote}/${base}`);
+  return `bun "<skill-dir>/../../shared/command.ts" -- git fetch ${fetched}; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge ${merged}`;
+}
+
 export function conflictRepairRounds(): number {
   return wholeEnv(
     process.env.DRIVE_PR_CONFLICT_REPAIR_ROUNDS,
@@ -465,6 +505,20 @@ export function resolveMaxRounds(flag: string | undefined): number {
   }
   try {
     return maxRoundsSetting() ?? DEFAULT_MAX_ROUNDS;
+  } catch (e) {
+    return fail(1, `drive.ts: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
+ * How many passes killed at their deadline one drive restarts from
+ * (`drive.pass_deadline_retries`). Read once, at the start of the drive, so
+ * the count and the budget it is compared against come from one reading; an
+ * unreadable value stops the drive rather than guessing a budget.
+ */
+export function resolvePassDeadlineRetries(): number {
+  try {
+    return passDeadlineRetriesSetting() ?? DEFAULT_PASS_DEADLINE_RETRIES;
   } catch (e) {
     return fail(1, `drive.ts: ${e instanceof Error ? e.message : String(e)}`);
   }

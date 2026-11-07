@@ -1899,7 +1899,7 @@ exit 1
       // A real, resolvable `origin` naming a DIFFERENT repository than the
       // stub `gh repo view` reports — a concrete mismatch, not merely an
       // absent remote (which would fail for the weaker reason "no fetch URL
-      // at all" and never exercise `verifyOriginIsPrRepo`'s comparison).
+      // at all" and never exercise `verifyRemoteIsPrRepo`'s comparison).
       execIn(baseRefRepo, [
         "remote",
         "add",

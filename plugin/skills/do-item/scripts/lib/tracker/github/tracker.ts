@@ -2,7 +2,7 @@
  * The GitHub Issues adapter of the tracker port (`port.ts`).
  *
  * It works on the issues of one repository (`issue_tracker.github.repository`,
- * else the `origin` remote's), whose keys are `#<n>`. How the port's
+ * else the git remote's, `repository.remote` or `origin`), whose keys are `#<n>`. How the port's
  * vocabulary maps onto GitHub:
  *
  * - workflow states: `model.ts` (close reasons, and labels or a board's
@@ -26,13 +26,17 @@ import {
   checkPatch,
   checkPriority,
   checkRelation,
+  checkSearchText,
+  refuseSameIssue,
   requireTitle,
 } from "../requests.ts";
 import type { Client } from "./client.ts";
 import { CLOSE_REASONS, isClosedState } from "./model.ts";
 import {
   type GhIssue,
+  ISSUE_TYPE,
   issueFields,
+  nativeTypeOf,
   onePage,
   PAGE,
   parseIssue,
@@ -42,6 +46,8 @@ import {
   wholeLabels,
 } from "./read.ts";
 import { keyOf, repoOf, slug } from "./refs.ts";
+import { assignerOperations } from "./assigner.ts";
+import { claimOperations } from "./claim.ts";
 import { reportOperations } from "./reports.ts";
 import { GitHubApiError, pageAll } from "./transport.ts";
 
@@ -525,7 +531,7 @@ export function gitHubTracker(client: Client): Tracker {
     async getIssue(key) {
       const found = await client.issue(
         client.ref(key),
-        `subIssues(first: ${PAGE}) { pageInfo { hasNextPage } nodes { ${fields} } }`,
+        `${ISSUE_TYPE} subIssues(first: ${PAGE}) { pageInfo { hasNextPage } nodes { ${fields} } }`,
       );
       if (found === null) return null;
       const { issue, raw } = found;
@@ -541,6 +547,7 @@ export function gitHubTracker(client: Client): Tracker {
         updatedAt: issue.updatedAt,
         state: model.issueState({ ...issue, labels: wholeLabels(issue) }),
         labels: model.visibleLabels(issue.labels),
+        nativeType: nativeTypeOf(raw.issueType, `issue ${key}`),
         parent:
           issue.parent === null
             ? null
@@ -586,6 +593,8 @@ export function gitHubTracker(client: Client): Tracker {
     },
 
     ...reportOperations(client, { comments, children }),
+    ...assignerOperations(client),
+    ...claimOperations(client),
 
     async createIssue(issue) {
       requireTitle(issue.title);
@@ -663,11 +672,7 @@ export function gitHubTracker(client: Client): Tracker {
     },
 
     async searchIssues(text, opts = {}) {
-      if (text.trim() === "")
-        throw new TrackerRequestError(
-          "invalid",
-          "a search needs non-empty text; empty text would read every issue",
-        );
+      checkSearchText(text);
       // GitHub's search matches words, not substrings; a phrase keeps the
       // words together. Quotes inside the text would end the phrase.
       const phrase = `"${text.replace(/"/g, " ").trim()}"`;
@@ -700,11 +705,7 @@ export function gitHubTracker(client: Client): Tracker {
       const a = await client.mustIssue(key);
       const b = await client.mustIssue(target);
       // `#1`, `1`, the qualified key and the address all name one issue.
-      if (a.id === b.id)
-        throw new TrackerRequestError(
-          "invalid",
-          `an issue cannot be related to itself: ${key} and ${target} are ${a.key}`,
-        );
+      refuseSameIssue([a.id, b.id], key, target, a.key);
       if (type === "blocks") {
         await client.mutate(M.addBlockedBy, {
           issueId: b.id,

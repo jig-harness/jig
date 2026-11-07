@@ -27,6 +27,7 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  */
 
 import { fail, isDigits, runMain } from "./lib/cli.ts";
+import { drivenBranchName } from "./lib/driven-branch.ts";
 import { captureIntentChain } from "./lib/intent-chain-capture.ts";
 import {
   ghCall,
@@ -83,13 +84,12 @@ async function main(): Promise<number> {
     typeof parsed?.[k] === "string" ? (parsed[k] as string) : "";
 
   // Scrubbed git env: an inherited GIT_DIR (hook-launched pass) outranks `cwd`.
-  const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"], {
-    stderr: "ignore",
+  // A detached tree an attach prepared drives the branch its record names.
+  const branch = await drivenBranchName(git, cwd, {
     timeoutSec: 10,
-    ...definedFields({ cwd }),
     env: gitIdentityEnv(),
   });
-  if (branch.code !== 0) fail(1, "cannot read the checked-out branch");
+  if (branch === null) fail(1, "cannot read the checked-out branch");
 
   const result = captureIntentChain({
     pr,
@@ -97,7 +97,7 @@ async function main(): Promise<number> {
     headRefName: str("headRefName"),
     title: str("title"),
     body: str("body"),
-    checkedOutBranch: branch.stdout.trim(),
+    checkedOutBranch: branch,
     contextDir: await intentChainRoot(),
     refresh,
     ...definedFields({ pickupId }),

@@ -1,17 +1,19 @@
 ---
 import CrossSection from "../components/CrossSection.astro";
+import DashboardShot from "../components/DashboardShot.astro";
 import Ladder from "../components/Ladder.astro";
 import LevelGlyph from "../components/LevelGlyph.astro";
 import ModuleMap from "../components/ModuleMap.astro";
 import Plate from "../components/Plate.astro";
 import JigModel from "../components/JigModel.astro";
 import SkillCommand from "../components/SkillCommand.astro";
+import Walkthrough from "../components/Walkthrough.astro";
 import Base from "../layouts/Base.astro";
-import { modules, profiles, readme } from "../lib/data/index.ts";
+import { features, modules, profiles, readme, walkthrough } from "../lib/data/index.ts";
 import { LEVEL_NAME } from "../lib/data/modules.ts";
 import { mdInline } from "../lib/markdown.ts";
 import type { PlateName } from "../lib/plates.ts";
-import { countWord } from "../lib/view.ts";
+import { countWord, headingId } from "../lib/view.ts";
 
 const count = modules().length;
 const r = readme();
@@ -20,12 +22,27 @@ const solo = allProfiles.find((p) => p.id === "solo-lite");
 if (!solo) throw new Error("profiles.yaml has no solo-lite profile");
 const soloCount = Object.keys(solo.targets).length;
 const levelNames = Object.values(LEVEL_NAME);
-const fxLead = await mdInline(r.factory.lead, "README.md");
+// The hero is the README's opening: the first sentence of what Jig is as
+// the headline, the rest of the statement below it, then the tagline.
+const [statementHead = "", ...statementRest] = r.opening.statement;
+const heroHead = await mdInline(statementHead, "README.md");
+const heroLede = await mdInline(statementRest.join(" "), "README.md");
+const heroTagline = await mdInline(r.opening.tagline.replace(/^\*\*|\*\*$/g, ""), "README.md");
+// What goes wrong: each feature's problem line from FEATURES.md, in its
+// order, linked to the feature's section on the features page.
+const problems = await Promise.all(
+  features().features.map(async (x) => ({
+    title: x.title,
+    href: `/features/#${headingId(x.title)}`,
+    html: `“${await mdInline(x.problem, "FEATURES.md")}”`,
+  })),
+);
+const run = walkthrough();
+const fxLine = await Promise.all(r.factory.line.map((p) => mdInline(p, "README.md")));
+const fxJobsLead = await mdInline(r.factory.jobsLead, "README.md");
 const fxJobs = await Promise.all(
   r.factory.jobs.map(async (j) => ({ lead: j.lead, html: await mdInline(j.body, "README.md") })),
 );
-const fxFits = await mdInline(r.factory.fits, "README.md");
-const fxStations = await mdInline(r.factory.stations, "README.md");
 
 // The plate beside each way of using Jig, by the way's number in the README:
 // a stencil set for the template, the wrench rack for the upgrade one module
@@ -68,13 +85,9 @@ const LIMITS = [
 
 <Base title="Jig">
   <section class="hero wrap">
-    <span class="label">Delivery practices for teams that build with AI coding agents</span>
-    <h1 class="display">Scaffolding that lets AI agents work your repository well — adopted one module at a time.</h1>
-    <p class="lede">
-      Jig is a modular collection of software-delivery practices for teams that build and maintain software with AI
-      coding agents. A jig, in a workshop, holds the work and guides the tool so every cut comes out the same; Jig's
-      skills and gates do that for agents.
-    </p>
+    <h1 class="display" set:html={heroHead} />
+    <p class="lede" set:html={heroLede} />
+    <p class="tagline" set:html={heroTagline} />
     <p class="sub">
       You don't adopt all of it: <a href="#map">{count} independent modules</a>, each at three levels. A one-person
       project starts with {countWord(soloCount)} modules at Lite. Every practice is a tool-independent rule first, mapped to your tools
@@ -87,7 +100,9 @@ const LIMITS = [
         <p>Ten minutes: what it is, what it never does, and how far a team like yours should go.</p>
         <div class="path-links">
           <a href="/features/">What you get: the skills, gates and loops, and what runs each →</a>
-          <a href="#factory">Jig as a software factory: what it runs on, and who runs each station ↓</a>
+          <a href="#run">One real run: a pull request of Jig's own, from opening to follow-up ↓</a>
+          <a href="#factory">Jig as a software factory: the line, and what it stands on ↓</a>
+          <a href="#dashboard">The morning after: one page says what needs you ↓</a>
           <a href="#limits">What Jig never does ↓</a>
           <a href="/adopt/existing/#profiles">Choose how far to go: {countWord(allProfiles.length)} profiles →</a>
         </div>
@@ -106,19 +121,71 @@ const LIMITS = [
     </div>
   </section>
 
+  <section id="problems" class="problems wrap band band-sunk" aria-labelledby="problems-h">
+    <div class="problems-head">
+      <span class="eyebrow">What goes wrong</span>
+      <h2 id="problems-h" class="display small-h">What a team says when nothing holds the work.</h2>
+      <p>Each line opens one of Jig's features. Follow it to what Jig does about it.</p>
+    </div>
+    <ul class="problem-list">
+      {
+        problems.map((p) => (
+          <li>
+            <a href={p.href}>
+              <span class="problem-line" set:html={p.html} />
+              <span class="problem-feature">{p.title} →</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+
+  <section id="run" class="run wrap band" aria-labelledby="run-h">
+    <div class="run-head">
+      <span class="eyebrow">One real run</span>
+      <h2 id="run-h" class="display small-h">A pull request of Jig's own, from opening to follow-up.</h2>
+      <p>
+        The change: {run.pr.change.charAt(0).toLowerCase() + run.pr.change.slice(1)} Every event below comes from the
+        pull request or the dispatcher's own records, at the station of the line where it happened.
+      </p>
+    </div>
+    <Walkthrough />
+  </section>
+
   <section id="factory" class="factory wrap band" aria-labelledby="factory-h">
     <div class="fx-text">
       <span class="eyebrow">Jig as a software factory</span>
-      <h2 id="factory-h" class="display">A factory of agents runs on scaffolding.</h2>
-      <p set:html={fxLead} />
+      <h2 id="factory-h" class="display">Agents run the line. Scaffolding holds the work.</h2>
+      {fxLine.map((html) => <p set:html={html} />)}
+      <p set:html={fxJobsLead} />
       <ul class="fx-jobs">
         {fxJobs.map((j) => <li><a class="label" href={`/factory/scaffolding/#job-${j.lead.toLowerCase()}`}>{j.lead}</a><span set:html={j.html} /></li>)}
       </ul>
-      <p set:html={fxFits} />
-      <p class="muted small" set:html={fxStations} />
-      <a class="more" href="/factory/">What the factory runs on, every station, and what is on the roadmap →</a>
+      <a class="more" href="/factory/">Every station, who runs it, and what stays with a person →</a>
     </div>
     <CrossSection variant="mini" />
+  </section>
+
+  <section id="dashboard" class="dash wrap band" aria-labelledby="dash-h">
+    <div class="dash-text">
+      <span class="eyebrow">With nobody at the keyboard</span>
+      <h2 id="dash-h" class="display small-h">In the morning, one page says what needs you.</h2>
+      <p>
+        Through the night the dispatcher keeps the line moving. Every few minutes it starts what should be running and is
+        not. It never merges.
+      </p>
+      <p>
+        Its dashboard opens on what only you can settle: each question a review stopped to ask, with the recommended
+        answer beside it. Next come the sessions each account runs, and what starts next.
+      </p>
+      <p>
+        Below that, a log says how each session ended, by day, repository or account. The page opens on a phone as well
+        as a desk. It changes nothing: you answer on the pull request it links to.
+      </p>
+      <a class="more" href="/factory/unattended/#unattended-the-outcome-log-and-its-dashboard">The dispatcher: what it starts, and what it never does →</a>
+    </div>
+    <DashboardShot caption="The dashboard as the plugin serves it, over its own sample data, on a desk and on a phone." />
   </section>
 
   <section id="map" class="map-strip wrap band" aria-labelledby="map-h">
@@ -311,6 +378,12 @@ const LIMITS = [
       aspect-ratio: 0.9;
     }
   }
+  .tagline {
+    margin: 0;
+    max-width: 60ch;
+    font-weight: 600;
+    text-wrap: pretty;
+  }
   .sub {
     margin: 0;
     font-size: 16px;
@@ -347,6 +420,86 @@ const LIMITS = [
     font-weight: 500;
     font-size: 15px;
     margin-top: auto;
+  }
+
+  /* What goes wrong: one card per feature, its problem line in the serif
+     as a quotation and the feature it opens below it. */
+  .problems-head {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .problems-head p {
+    margin: 0;
+    max-width: 60ch;
+  }
+  .problem-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+    gap: 12px;
+  }
+  .problem-list a {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--card);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .problem-list a:hover,
+  .problem-list a:focus-visible {
+    border-color: var(--accent);
+  }
+  .problem-line {
+    font: 19px/1.35 var(--serif);
+    text-wrap: pretty;
+  }
+  .problem-feature {
+    margin-top: auto;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .problem-list a:hover .problem-feature {
+    color: var(--accent-hover);
+  }
+
+  /* The recorded run: what it is on the left, the timeline on the right;
+     one column below 900px. */
+  .run {
+    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(20px, 3vw, 40px);
+  }
+  .run-head {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+  .run-head p {
+    margin: 0;
+    max-width: 52ch;
+    text-wrap: pretty;
+  }
+  @media (width > 900px) {
+    .run {
+      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+      align-items: start;
+    }
+    .run-head {
+      position: sticky;
+      top: var(--sticky-top);
+    }
   }
 
   .factory {
@@ -388,6 +541,32 @@ const LIMITS = [
   }
   .more {
     font-weight: 500;
+  }
+
+  /* The dispatch dashboard: what it answers on the left, its shot on the
+     right; one column below 900px. */
+  .dash {
+    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(24px, 4vw, 56px);
+  }
+  .dash-text {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+  .dash-text p {
+    margin: 0;
+    max-width: 52ch;
+    text-wrap: pretty;
+  }
+  @media (width > 900px) {
+    .dash {
+      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+      align-items: center;
+    }
   }
 
   /* The map strip: what the map means on the left, the map on the right. */

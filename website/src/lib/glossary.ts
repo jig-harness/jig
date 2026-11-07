@@ -11,6 +11,8 @@
  */
 
 export interface GlossaryEntry {
+  /** The term as text: the page and the tooltips print it as it is, so a
+   * code span's backticks are dropped. */
   term: string;
   anchor: string;
   group: string;
@@ -58,7 +60,7 @@ export function parseGlossary(markdown: string): GlossaryEntry[] {
     }
     const m = /^- \*\*(.+?)\*\* — (.*)$/.exec(line);
     if (m?.[1]) {
-      const term = m[1];
+      const term = m[1].replace(/`/g, "");
       const base = /^(.*?)\s*\(/.exec(term)?.[1] ?? term;
       let anchor = slug(base);
       for (let n = 2; seen.has(anchor); n++) anchor = `${slug(base)}-${n}`;

@@ -62,13 +62,17 @@ const layerRows = await Promise.all(
               <span class="adapter-name">Linear</span>
               <span class="muted">chosen with <code>adapter: linear</code></span>
             </div>
+            <div class="adapter">
+              <span class="adapter-name">Jira Cloud</span>
+              <span class="muted">chosen with <code>adapter: jira</code></span>
+            </div>
             <div class="adapter todo">
-              <ActorLine actor={{ kind: "todo", item: "12", text: "Jira, and a plan file kept in the repository" }} />
+              <ActorLine actor={{ kind: "todo", item: "12", text: "a plan file kept in the repository" }} />
             </div>
           </div>
         </div>
         <figcaption id="trk-cap">
-          The skills reach the tracker through the interface; <code>issue_tracker.adapter</code> chooses the adapter. Another tracker is a new adapter, not a change to the skills. <a href="/adopt/extending/#issue-tracker">The exceptions still open</a>, such as the review skill's deferral step calling Linear directly, and <a href="/adopt/extending/">what else can be extended</a>.
+          The skills reach the tracker through the interface; <code>issue_tracker.adapter</code> chooses the adapter. Another tracker is a new adapter, not a change to the skills. <a href="/adopt/extending/#issue-tracker">The exceptions on the roadmap</a>, such as the review skill's deferral step calling Linear directly, and <a href="/adopt/extending/">what else can be extended</a>.
         </figcaption>
       </figure>
     </aside>

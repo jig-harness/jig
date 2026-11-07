@@ -8,6 +8,7 @@
  * holds them, the order they come back in, or how many copies of one event a
  * store keeps.
  */
+import type { Harness } from "../../../../shared/harness.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { isMapping } from "../../../../shared/config-layers.ts";
 
@@ -27,13 +28,6 @@ export type Kind = (typeof KINDS)[number];
 export type Severity = (typeof SEVERITIES)[number];
 export type DecisionKind = (typeof DECISIONS)[number];
 export type Status = "open" | DecisionKind;
-
-export interface Harness {
-  name: string | null;
-  version: string | null;
-  entrypoint: string | null;
-  wrapper: string | null;
-}
 
 export interface Session {
   jig_version: string | null;

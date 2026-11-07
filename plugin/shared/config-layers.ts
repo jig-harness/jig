@@ -20,6 +20,10 @@
  * its tracker team). Set in the user layer they would apply to every
  * repository on the machine, which is never what was meant, so the user layer
  * refuses them; the environment layer may still override them for one run.
+ * A few others belong to the host, the machine a drive runs on: where it
+ * keeps a clone, how far it trusts an unattended pass. A repository's file
+ * is shared by everyone who clones it, and for a drive it is the pull
+ * request's own checkout, so the repository layer refuses those.
  *
  * `JIG_USER_LAYER=off` leaves the user layer out entirely, for a command
  * whose policy must come from one repository's file alone (an independent
@@ -42,19 +46,60 @@ export const ENV_PREFIX = "JIG__";
 /** Set to `off`, the user layer is not read. */
 const USER_LAYER_SWITCH = "JIG_USER_LAYER";
 
+/**
+ * The variables that choose which layers are read, beside the `JIG__`
+ * fields: a process that must read the configuration another one read
+ * needs these as well as the fields.
+ */
+export const LAYER_SELECTORS: readonly string[] = [
+  "JIG_HOME",
+  "JIG_OVERLAY",
+  USER_LAYER_SWITCH,
+];
+
+/** The layer selectors whose value is a path, read relative to the working directory. */
+export const PATH_LAYER_SELECTORS: readonly string[] = [
+  "JIG_HOME",
+  "JIG_OVERLAY",
+];
+
 /** Fields only a repository (or one run) may set; the user layer refuses them. */
 export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "gates.command",
   "gc.kinds",
   "gc.worktree_roots",
   "gc.scratch_prefixes",
+  // The dispatcher reads its section from the default branch alone.
+  "dispatch.identity",
+  "dispatch.states",
+  "dispatch.followup_command",
+  "dispatch.stalled_after",
+  "dispatch.blocked_after",
+  "dispatch.drive_rounds_flat",
+  "dispatch.pickup_within",
+  "dispatch.followup_within",
+  "dispatch.followup_stale_after",
+  "dispatch.notices_linger",
+  "dispatch.notices_branch",
+  "dispatch.renotify_after",
+  "dispatch.labels.enabled",
+  "dispatch.labels.prefix",
+  "dispatch.labels.only_labeled",
+  "dispatch.adopt.enabled",
+  "dispatch.adopt.authors",
+  "dispatch.adopt.within",
   "repository.base_branch",
   "issue_tracker.team",
   "issue_tracker.github.repository",
   "issue_tracker.github.project",
+  "issue_tracker.jira.site",
   "review.repo_slug",
   "review.repo_label",
   "ci.required_checks",
+  // The repository's autonomy ceiling and its human-in-the-loop classes: a
+  // person may choose a level up to the ceiling, never move it.
+  "autonomy.max_level",
+  "autonomy.park_classes",
   // The changelog skill reads its section from the repository's file alone,
   // so no field of it is one a user file may set.
   "changelog.file",
@@ -76,7 +121,76 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "code_stats.kinds",
   "code_stats.modules",
   "code_stats.classify_command",
+  // Where a repository keeps its docs tree and its schema.
+  "docs.root",
+  "docs.schema",
+  // Where a repository keeps its specs, and how its items name them.
+  "specs.adapters",
+  "specs.body_section",
 ];
+
+/**
+ * How far this host trusts an unattended pass. A repository's file cannot say:
+ * a pull request edits it, and a drive reads it from that pull request's own
+ * checkout. Bypass is therefore never asked for from there, and a host's
+ * choice is never cancelled from there.
+ */
+const HOST_TRUST = "is the host's choice of how far it trusts a drive's passes";
+
+/**
+ * Fields only the user file (or one run) may set, and why; a repository's
+ * file refuses them. They describe one person's machine, which a repository's
+ * file, shared by everyone who clones it, cannot know, or choose for it.
+ */
+const USER_ONLY: Readonly<Record<string, string>> = {
+  clones: "describes one machine",
+  "drive.pass_args": HOST_TRUST,
+  "drive.codex_bypass": HOST_TRUST,
+};
+
+/** The fields a repository's file refuses (`USER_ONLY`). */
+export const USER_ONLY_FIELDS: readonly string[] = Object.keys(USER_ONLY);
+
+const SLUG = /^[^/\s]+\/[^/\s]+$/;
+
+/** A configuration field holds what its reader cannot use. */
+class ConfigFieldError extends Error {
+  override name = "ConfigFieldError";
+}
+
+/**
+ * The local clone the `clones` map names for the repository `slug`
+ * (`owner/name`, compared without regard to case), or `undefined` when it
+ * names none. A path is absolute or starts with `~/`; anything else is an
+ * error naming the entry, as is a map that is not one.
+ */
+export function clonePath(
+  values: Record<string, unknown>,
+  slug: string,
+  env: Env = process.env,
+): string | undefined {
+  const clones = values.clones;
+  if (clones === undefined || clones === null) return undefined;
+  if (!isMapping(clones))
+    throw new ConfigFieldError(
+      "clones must map owner/name to a local clone path",
+    );
+  let found: string | undefined;
+  for (const [key, path] of Object.entries(clones)) {
+    if (!SLUG.test(key))
+      throw new ConfigFieldError(
+        `clones: ${JSON.stringify(key)} is not owner/name`,
+      );
+    if (typeof path !== "string" || !/^(?:~\/|\/|[A-Za-z]:[\\/])/.test(path))
+      throw new ConfigFieldError(
+        `clones.${key} must be an absolute path or start with ~/ (got ${JSON.stringify(path)})`,
+      );
+    const home = nonEmpty(env.HOME) ?? nonEmpty(env.USERPROFILE) ?? homedir();
+    if (key.toLowerCase() === slug.toLowerCase())
+      found = path.startsWith("~/") ? join(home, path.slice(2)) : path;
+  }
+  return found;
+}
 
 export type LayerName = "user" | "repository" | "environment";
 
@@ -322,6 +436,50 @@ function refuseRepositoryOnly(
 }
 
 /**
+ * The section above `field` that `values` holds as something other than a
+ * mapping, written as a field; `undefined` when there is none. Such a value
+ * replaces a lower layer's whole section (`mergeLayers`), so an empty
+ * `drive:` removes what the user file holds under it.
+ */
+function replacedSection(
+  values: Record<string, unknown>,
+  field: string,
+): string | undefined {
+  const path = toPath(field);
+  let current = values;
+  for (const [i, key] of path.slice(0, -1).entries()) {
+    if (!Object.hasOwn(current, key)) return undefined;
+    const next = current[key];
+    if (!isMapping(next)) return formatField(path.slice(0, i + 1));
+    current = next;
+  }
+  return undefined;
+}
+
+/**
+ * Refuse a repository layer that sets a field only the host may: whatever its
+ * value, an empty list or a `null` included, and through the section above
+ * it, since either would cancel what the host chose.
+ */
+function refuseUserOnly(
+  repository: Record<string, unknown>,
+  repositoryPath: string,
+  userPath: string,
+): void {
+  for (const [field, why] of Object.entries(USER_ONLY)) {
+    if (valueAt(repository, field) !== undefined)
+      throw new ConfigFieldError(
+        `${field} ${why}, so ${repositoryPath} cannot set it: set it in ${userPath}`,
+      );
+    const section = replacedSection(repository, field);
+    if (section !== undefined)
+      throw new ConfigFieldError(
+        `${field} ${why}, and ${repositoryPath} holds ${section} as something other than a mapping, which would replace the host's whole section: remove ${section} or give it fields`,
+      );
+  }
+}
+
+/**
  * An environment variable's value. A list or mapping in YAML flow form
  * (`[a, b]`, `{k: v}`), `true`, `false`, `null` and decimal numbers
  * (`400`, `+400`, `-0.5`, `.5`, `1e3`) take their YAML type, and a value in quotes (`"true"`, `'1.10'`) is the text inside them;
@@ -468,12 +626,14 @@ export function loadLayeredConfig(
       : repositoryText === null
         ? null
         : parseConfigText(repositoryText, repositoryPath);
-  if (repository !== null)
+  if (repository !== null) {
+    refuseUserOnly(repository, repositoryPath, userPath);
     layers.push({
       name: "repository",
       source: repositoryPath,
       values: repository,
     });
+  }
   const environment = environmentLayer(env);
   if (environment !== null) layers.push(environment);
   return {

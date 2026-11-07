@@ -228,26 +228,32 @@ review driver once the opening head's full run has completed and removed
 when review converges.
 
 > A pipeline may suppress expensive work on an intermediate head only while
-> a required check fails on that head, and only until a release that runs
-> everything again.
+> a required check does not pass on that head, and only until a release that
+> runs everything again.
 
 Every one of these holds, or the saving turns a failure into a pass:
 
-- **A required check fails, never skips, on every held head, from the
-  instant the hold is applied.** One step in the required job, or in a job
+- **A required check does not pass, and never skips, on every held head,
+  from the instant the hold is applied.** One step in the required job, or in a job
   it needs directly while itself running on `!cancelled()`, fails while the
   label is present: the [held-head check](../../GLOSSARY.md). The pipeline
   runs on the label's application, so the opening head's green is replaced
   at once rather than at the next push, which may never come. A held head
-  is visibly not mergeable from the first second to the release.
+  is visibly not mergeable from the first second to the release. A step in
+  the required job itself may instead cancel its own run, failing only where
+  the cancellation is refused or does not arrive: a cancelled required check
+  blocks the merge as a failed one does, and the difference shows after the
+  release (below). A step in a job the required one needs must fail: a
+  cancelled run can leave the required job unstarted and skipped, and a
+  skipped required job passes.
 - **Only the hold's own label skips work.** Each heavy job skips by testing
   whether the pull request carries the hold label, never by the kind of
   event that started the run. The pipeline now runs on every label event,
   and a run's result replaces the head's previous one, so a job that
   skipped on any `labeled` event would let an unrelated label turn a
   failing head into a passing skip. An unrelated label event on an unheld
-  pull request therefore runs real CI: the price of a run whose result
-  counts.
+  pull request therefore runs real CI, the price of a run whose result
+  counts, unless the pipeline answers it with a mirror (below).
 - **Releasing the hold reruns every required check on the same head.**
   Every workflow that honours the label, and every one reporting a required
   check, runs on the label's removal, in full: the released head is the one
@@ -259,9 +265,54 @@ Every one of these holds, or the saving turns a failure into a pass:
   started after it; one that started in the same second is rerun.
 
 The held-head check's message says why the head failed and how to release
-it: the label's name, and that removing it runs everything again. A driver
-that dies mid-round leaves the label on, and the pull request stays red
-until someone removes it; removing it by hand is the release and reruns
+it: the label's name, and that removing it runs everything again.
+
+**Other labels' events: the mirror.** Paying for a full run on every label
+event is cheap where labels rarely change. A repository whose labels change
+often pays it many times over: a tool that shows a pull request's state as
+labels, such as Jig's [dispatcher](../../GLOSSARY.md), changes them at each
+step, and one change removes one label and adds another, each its own event. Each event's run
+cancels the one before it on the same head, so the minutes are wasted, a run
+cancelled that early can leave a cancelled check that no later run replaces,
+and a label added just after a release cancels the run the driver is waiting
+for. Such a pipeline answers an event for any label but the hold's with a
+[mirror run](../../GLOSSARY.md):
+
+> A label event other than the hold's may skip work only when its run cancels
+> nothing and its required check repeats the newest real run's result on the
+> same head; otherwise it runs real CI.
+
+- **It skips every heavy job and cancels nothing.** The run takes a
+  concurrency slot of its own, since it covers nothing a real run checks
+  ([piece 3](#3-supersede)).
+- **Its required check repeats the real result, and fails closed.** It does
+  not simply skip. A provider may judge the required check by the newest run
+  alone: a run that skips the required job under its name passes the check, and
+  a run that reports no such check leaves it unreported, blocking a passing
+  head. So the required job runs, waits for the newest real run on the same
+  head to finish, and passes only when that run's required check passed. It
+  fails on any other result, when it finds no real run, when the provider's
+  interface does not answer, and at a deadline that outlasts the longest real
+  run.
+- **A mirror run is marked as one,** and a real run is named so it cannot be
+  taken for one, so a mirror repeats a real run only, and only one of its own
+  pull request; where the provider cannot say which pull request a run
+  belongs to, the mirror fails.
+- **The hold still wins.** On a held pull request the required job fails, or
+  cancels itself, as in any held run.
+
+A mirror waits as long as the real run it repeats, holding a runner, and the
+head reads as pending meanwhile. Its skipped heavy jobs may show under
+their own names as skipped; their real results stay with the real run.
+
+The drive's last push is usually a held one, since no one knows a push is
+the last until review passes it, so the head the merge waits for carries
+the held run beside the release's run. Where the provider still shows the
+held run once the release has passed, a held run that failed reads as a
+failure on a mergeable head; one that was cancelled reads as superseded
+([mappings.md](mappings.md#hold) says how each provider shows it). A driver
+that dies mid-round leaves the label on, and the pull request stays
+unmergeable until someone removes it; removing it by hand is the release and reruns
 everything. Never rerun the old run instead: a rerun replays the event that
 carried the label and fails on the same step.
 
@@ -274,10 +325,10 @@ policy page.
 The driver side is the [`drive-pr`](../../plugin/skills/drive-pr/README.md#ci-hold)
 skill (`ci.hold_label`); the workflow side is an opt-in block in
 [M1's skeleton](../M1-gates-enforcement-ladder/templates/ci-pr-gates.yml);
-[mappings.md](mappings.md#hold) gives the trigger, guard and held-head
-check per provider; the
+[mappings.md](mappings.md#hold) gives the trigger, guard, held-head check
+and mirror per provider; the
 [workflow-convention lint](reference/workflow-conventions/README.md#ci-hold)
-checks all three in the one shape it can prove safe.
+checks each in the one shape it can prove safe.
 
 ### 8. Cache
 
@@ -493,8 +544,8 @@ reading it.
 - **Standard** — a resolver reading the change-area catalog drives job
   selection, failing closed; one aggregator job is the required check; slow
   suites no merge waits for run on a schedule, with a cheap per-change proxy;
-  where a CI hold is used, a required check fails on every held head from
-  the instant the hold is applied, the pipeline runs on both label
+  where a CI hold is used, a required check does not pass on any held head
+  from the instant the hold is applied, the pipeline runs on both label
   transitions, and only the hold's own label skips work; every cache has a
   written key scheme covering the inputs that change its output,
   environment values included, pipelines that share a cache produce one
@@ -509,8 +560,9 @@ reading it.
 - **Strict** — the workflow conventions are checked by a lint that fails
   closed on input it cannot parse and accepts only reasoned exceptions, which
   fail once they suppress nothing, and it fails a job timeout above an hour;
-  where a CI hold is used, the lint checks its label events, its guard and
-  its held-head check; every cache has a retention bound that a prune or
+  where a CI hold is used, the lint checks its label events, its guard, its
+  held-head check and, where other labels' events run a mirror, the mirror's
+  shape; every cache has a retention bound that a prune or
   the store's eviction enforces, a declared cache that stores nothing is
   detected, a container build's cache mounts are checked on every step
   that reads the store, and only trusted contexts write to a shared cache

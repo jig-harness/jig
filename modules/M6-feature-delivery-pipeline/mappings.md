@@ -153,7 +153,11 @@ The design-prototype loop is an iterate-and-review skill over a UI surface.
 
 The fresh-context rule is the portable part; which runtime hosts it is a local
 choice. Model routing and named critique personas are deliberately not
-prescribed here. For the design loop's brief, the
+prescribed here. For the requirements and architecture stages, the
+[`/jig:red-team`](../../plugin/skills/red-team/SKILL.md) skill runs the
+review by persona, each persona in its own subagent or fresh agent run, and
+writes the findings to one report; its personas are one set of choices, kept
+in the skill. For the design loop's brief, the
 [`/jig:design-brief-builder`](../../plugin/skills/design-brief-builder/SKILL.md)
 skill assembles and audits the bundle an external design session receives,
 then merges and checks the returned bundle before it is accepted.

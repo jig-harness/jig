@@ -1,3 +1,4 @@
+import { FORGE_ACCOUNTING_UNAVAILABLE } from "./trace.ts";
 /** How much of a failed child's error output `RunResult.stderrTail` keeps. */
 export const STDERR_TAIL_BYTES = 4 * 1024;
 
@@ -22,8 +23,17 @@ export interface ProcessTimers {
   escalate?: NodeJS.Timeout;
   stop?: NodeJS.Timeout;
 }
+/** Inspect ignored diagnostics only when a parent requested forge accounting. */
+export function accountingStderr(mode: "pipe" | "inherit" | "ignore" = "pipe") {
+  return mode === "ignore" && process.env.JIG_FORGE_CALL_COUNT_FILE
+    ? "pipe"
+    : mode;
+}
+
 interface OutputOptions {
+  stderr?: "pipe" | "inherit" | "ignore";
   maxBufferBytes?: number;
+  onOutput?: (stream: "stdout" | "stderr", text: string) => void;
   onChunk?: (
     stream: "stdout" | "stderr",
     bytes: number,
@@ -37,6 +47,22 @@ interface OutputCancellation {
   timers: ProcessTimers;
 }
 
+/** A bounded marker scan relays accounting failure without retaining diagnostics. */
+function accountingOutput(): (text: string) => void {
+  const accounting = Boolean(process.env.JIG_FORGE_CALL_COUNT_FILE);
+  let window = "";
+  let reported = false;
+  return (text) => {
+    if (!accounting || reported) return;
+    const inspected = window + text;
+    if (inspected.includes(FORGE_ACCOUNTING_UNAVAILABLE)) {
+      console.error(FORGE_ACCOUNTING_UNAVAILABLE);
+      reported = true;
+    }
+    window = inspected.slice(-(FORGE_ACCOUNTING_UNAVAILABLE.length - 1));
+  };
+}
+
 /** Bounded capture keeps diagnostics after acceptance stops and ends runaway output. */
 export function captureProcessOutput(
   child: ChildProcess,
@@ -48,6 +74,7 @@ export function captureProcessOutput(
   let tail = "";
   let bytes = 0;
   let bufferExceeded = false;
+  const inspectAccounting = accountingOutput();
   const overflow = (): void => {
     if (bufferExceeded || cancellation.timedOut()) return;
     bufferExceeded = true;
@@ -62,6 +89,12 @@ export function captureProcessOutput(
     }, 2000);
   };
   const receive = (stream: "stdout" | "stderr", text: string): void => {
+    if (stream === "stderr") inspectAccounting(text);
+    // Ignored output never contributes to captured diagnostics or their budget.
+    // Keep only enough overlap to recognize a marker split across chunks.
+    if (stream === "stderr" && options.stderr === "ignore") {
+      return;
+    }
     if (stream === "stderr") tail = lastBytes(tail + text);
     const captured = !(bufferExceeded || cancellation.timedOut());
     const length = Buffer.byteLength(text);
@@ -69,6 +102,7 @@ export function captureProcessOutput(
       if (stream === "stdout") stdout += text;
       else stderr += text;
       bytes += length;
+      options.onOutput?.(stream, text);
     }
     options.onChunk?.(stream, length, captured);
     if (bytes > (options.maxBufferBytes ?? MAX_BUFFER_BYTES)) overflow();

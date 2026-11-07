@@ -39,6 +39,10 @@ on:
     # only `unlabeled`, so without it nothing runs again on the released head.
     # Listing any type replaces the three defaults, so they stay listed:
     #   types: [opened, synchronize, reopened, labeled, unlabeled]
+    # Every other label's event then runs the whole workflow. Where labels
+    # change often, answer those events with a mirror run instead, which skips
+    # the jobs below and repeats the newest real run's result in pr-gates
+    # (M13's mappings.md, § Hold, gives its shape).
 
 # Cancel in-progress runs for the same PR when new commits are pushed.
 concurrency:
@@ -219,7 +223,9 @@ jobs:
       # from the moment the label lands, and its message says how to release
       # it. Keep it first, in this job (which runs on `!cancelled()`, so a
       # heavy job the hold skipped cannot skip it too), with no
-      # continue-on-error: a tolerated failure fails nothing.
+      # continue-on-error: a tolerated failure fails nothing. To have the
+      # held run listed as cancelled rather than failed once the release
+      # passes, cancel the run before failing: M13's mappings.md, § Hold.
       # - name: Fail while held
       #   if: contains(github.event.pull_request.labels.*.name, '<hold label>')
       #   run: |

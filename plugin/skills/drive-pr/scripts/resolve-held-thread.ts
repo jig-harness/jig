@@ -46,7 +46,7 @@
  * fails.
  *
  * And the stamp is PER HOLD rather than PR-global, which is what makes it
- * survive a second driver. This state file is shared by every
+ * survive a second driver. This stored state is shared by every
  * driver working the PR, so a single `state.verifiedSha` was moved by
  * whichever of them pushed last and then vouched for all of them: driver A
  * holds a thread and stalls before pushing its fix, driver B pushes unrelated
@@ -106,23 +106,15 @@ interface LiveComment {
 
 /**
  * A comment landing AFTER the held reply is compatible with that reply only
- * when it is a reviewer bot's own automated confirmation. The strict "the held
- * reply is the latest comment" check exists to catch a human changing the
- * outcome; reviewer bots post a confirming follow-up within seconds of an
- * outcome reply, and `finish-round.ts` reaches this script only after a push
- * and a reviewer wait, so every hold used to lose that race (4–5 cycles, ~20
- * minutes, on one measured PR).
- *
- * The identity+shape predicate itself now lives in `./lib/bot-confirmation.ts`
- * — shared with `finish-round.ts`'s own pre-push untriaged-thread guard: that
- * guard used to judge strictly against the literal latest comment, so it
- * refused the round on the very confirmation this function exists to tolerate,
- * whenever CodeRabbit's confirmation landed before the push rather than during
- * this script's own post-push wait. One predicate for both callers is what
- * keeps them from drifting apart on the identical question again.
+ * when it is transparent: a listed review bot's confirmation, or its chat
+ * acknowledgement carrying no finding (`./lib/bot-confirmation.ts`, the one
+ * predicate `finish-round.ts`'s pre-push guard and the status gate share).
+ * Bots post such a follow-up within seconds of an outcome reply, and this
+ * script runs only after a push and a reviewer wait, so without it every
+ * hold would lose that race; a person's comment still refuses.
  */
-function isTrustedBotConfirmation(c: LiveComment): boolean {
-  return isTrustedBotConfirmationShared(
+function isTransparentFollowUp(c: LiveComment): boolean {
+  return isTransparentFollowUpShared(
     { authorLogin: c.author?.login ?? null, body: c.body },
     qualifyingOutcome,
   );
@@ -130,9 +122,13 @@ function isTrustedBotConfirmation(c: LiveComment): boolean {
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isTrustedBotConfirmation as isTrustedBotConfirmationShared } from "./lib/bot-confirmation.ts";
+import { isTransparentFollowUp as isTransparentFollowUpShared } from "./lib/bot-confirmation.ts";
 import { fail, isDigits, runMain, short } from "./lib/cli.ts";
 import { qualifyingOutcome } from "./lib/outcome.ts";
+import {
+  heldThreadMayResolve,
+  resolveHeldUnlessAlertOpen,
+} from "./lib/scanner-sweep-guard.ts";
 import {
   ghCall,
   git,
@@ -145,14 +141,6 @@ import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const driveState = join(here, "drive-state.ts");
-const resolveThread = join(
-  here,
-  "..",
-  "..",
-  "resolve-review-comments",
-  "scripts",
-  "resolve-thread.ts",
-);
 
 function prefixLines(prefix: string, text: string): string {
   return text
@@ -167,7 +155,7 @@ async function main(): Promise<number> {
   // Validated, not trusted verbatim: an override of `0` — or any non-positive
   // value — would silently reintroduce the exact unbounded hang this deadline
   // exists to prevent, and a non-numeric override is refused for the same
-  // reason a malformed drive-state file is refused rather than coerced:
+  // reason a malformed drive state is refused rather than coerced:
   // guessing a fallback here would hide a misconfiguration behind a script that
   // otherwise looks like it is bounding calls it is not.
   for (const name of ["GH_CALL_TIMEOUT", "DRIVE_PR_HELPER_TIMEOUT"]) {
@@ -648,6 +636,17 @@ async function main(): Promise<number> {
     });
   }
 
+  // A `moot` on a thread GitHub's code scanning account opened is never held
+  // now (`mootHeld`), but a hold recorded before that rule still drains here:
+  // its alert, not the push, is what proves it. The alert reads run first, so
+  // only the checks below stand between the last read and the mutation; an
+  // unreadable opening comment (`null`) restores the hold there.
+  const mayResolve = await heldThreadMayResolve(
+    key,
+    claimed.outcome,
+    helperTimeoutSec,
+  );
+
   const staleCheck = await ghCall(
     [
       "api",
@@ -770,7 +769,7 @@ query($id:ID!){
   // comment, or any body this script does not recognize, still refuses.
   const heldIdx = nodes.findIndex((n) => n.url === claimed.commentUrl);
   const later = heldIdx === -1 ? [] : nodes.slice(heldIdx + 1);
-  if (heldIdx === -1 || !later.every(isTrustedBotConfirmation)) {
+  if (heldIdx === -1 || !later.every(isTransparentFollowUp)) {
     await restoreOrDie(
       `thread '${key}''s latest comment moved past the hold's own reply — a newer comment landed since it was held`,
     );
@@ -826,10 +825,16 @@ query($id:ID!){
     return 2;
   }
 
-  const mutation = await run(tsArgv(resolveThread, [key]), {
-    timeoutSec: helperTimeoutSec,
-    stderr: "inherit",
-  });
+  // Over an unsettled alert the thread stays open with the hold drained
+  // (stdout `false`), the state `triage-thread.ts` leaves a fresh code-scanning
+  // moot in — `finish-round.ts` reports it `left-open`, counts it triaged
+  // (`awaitsAlert`), and the replied-thread sweep closes it once the alert is
+  // fixed, closed or dismissed.
+  const mutation = await resolveHeldUnlessAlertOpen(
+    key,
+    mayResolve,
+    helperTimeoutSec,
+  );
   if (mutation.code !== 0) {
     await restoreOrDie("resolveReviewThread failed or timed out");
     return mutation.code;

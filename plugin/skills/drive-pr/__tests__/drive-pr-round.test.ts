@@ -1,4 +1,4 @@
-import { prBaseGh, addOrigin, realGitForShell } from "./round-plan-fixtures.ts";
+import { realGitForShell } from "./round-plan-fixtures.ts";
 /**
  * drive-pr suite: announce-merge-ready.ts, marker overrides, round-delta.ts, round-plan.ts, the PR-target channel and guarded-push.ts.
  * Shared fixtures and probes live in drive-pr-harness.ts.
@@ -16,18 +16,17 @@ import {
 import { hostname, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import {
-  changedFilesSince,
-  changedFilesSinceExcludingMerges,
-} from "../scripts/lib/round-delta.ts";
-import {
   assertTreeMutationAllowed,
   type Session,
   stateDirIdentityToken,
-  treeLeasePathFor,
+  treeLeaseRef,
 } from "../scripts/lib/state/lease";
+import { treeLeaseLockName } from "../scripts/lib/state/lease-model";
 import { worktreeRoot } from "../scripts/lib/state/actor";
 import { createLock } from "../scripts/lib/state/lock";
 import { appendDirective } from "../scripts/lib/state/mailbox";
+import { lockRow, putTreeLease } from "./state-rows.ts";
+import { scopedStateDir } from "./scoped-state-dir.ts";
 
 import {
   SCRIPTS,
@@ -39,7 +38,6 @@ import {
   ACTOR,
   type Fixture,
   DORMANT_ARM,
-  tmpRoot,
   binDir,
   scratchClean,
   gitCleanEnv,
@@ -54,20 +52,12 @@ import { processTable } from "../../../shared/process-table.ts";
 import { recheckHookEntry } from "./push-hold-recheck-hook.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
-import {
-  byPlatform,
-  skipsOnWindows,
-} from "../../../../lib/test-helpers/windows-skip.ts";
+import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 
 useDrivePrSuite();
 
 /** A path as a shell script inside double quotes reads it on every platform. */
 const shellPath = (p: string): string => p.replaceAll("\\", "/");
-
-const NO_QUOTE_NAMES = skipsOnWindows(
-  "file-system",
-  "a double quote is not a legal file-name character on Windows, so the file cannot be created",
-);
 
 describe("announce-merge-ready.ts", () => {
   // The announcement's literal opening line, as the script composes it. The
@@ -86,6 +76,8 @@ describe("announce-merge-ready.ts", () => {
       quoter?: boolean;
       /** Add a lower-id, perfectly-shaped announcement from an untrusted author. */
       forger?: boolean;
+      /** Add a trusted announcement that ends with no head marker. */
+      malformed?: boolean;
       /** An earlier run's announcement, left standing for this (now stale) head. */
       staleAnnouncementFor?: string;
       /** Id of the rival's announcement in the race fixture. Default 1. */
@@ -115,6 +107,8 @@ describe("announce-merge-ready.ts", () => {
        * several this script makes.
        */
       dirtyAfterSweeps?: number;
+      /** Comment sweeps past this many fail (the claim read-back). */
+      failSweepsAfter?: number;
       /** A scratch edit lands in `cwd` DURING a comment DELETE call. */
       dirtyOnDelete?: boolean;
       /**
@@ -143,39 +137,33 @@ describe("announce-merge-ready.ts", () => {
     // dedicated negative probe below omits it deliberately.
     writeVerifiedSha(stateDir, f.head ?? HEAD);
     if (paginateFails) writeFileSync(join(dir, "paginate-fails"), "");
-    if (opts.raceAfterPost) writeFileSync(join(dir, "race-after-post"), "");
-    if (opts.staleAnnouncementFor) {
-      writeFileSync(join(dir, "stale-announcement"), opts.staleAnnouncementFor);
+    // Each option the fixture reads becomes a file of the same purpose: a
+    // flag is an empty file, a counter or a head holds its value.
+    const flagFiles: Array<[boolean | undefined, string]> = [
+      [opts.raceAfterPost, "race-after-post"],
+      [opts.dirtyOnDelete, "dirty-on-delete"],
+      [
+        opts.malformedIsDraftOnLiveStateReads,
+        "malformed-isdraft-on-live-state-reads",
+      ],
+      [opts.dirtyOnPost, "dirty-on-post"],
+    ];
+    const valueFiles: Array<[string | number | undefined, string]> = [
+      [opts.staleAnnouncementFor, "stale-announcement"],
+      [opts.dirtyAfterSweeps, "dirty-after-sweeps"],
+      [opts.failSweepsAfter, "fail-sweeps-after"],
+      [opts.dirtyAfterReads, "dirty-after-reads"],
+      [opts.commitAfterReads, "commit-after-reads"],
+      [opts.draftAfterLiveStateReads, "draft-after-live-state-reads"],
+    ];
+    for (const [on, name] of flagFiles) {
+      if (on) writeFileSync(join(dir, name), "");
     }
-    if (opts.dirtyAfterSweeps !== undefined) {
-      writeFileSync(
-        join(dir, "dirty-after-sweeps"),
-        String(opts.dirtyAfterSweeps),
-      );
+    for (const [value, name] of valueFiles) {
+      if (value !== undefined && value !== "") {
+        writeFileSync(join(dir, name), String(value));
+      }
     }
-    if (opts.dirtyOnDelete) writeFileSync(join(dir, "dirty-on-delete"), "");
-    if (opts.dirtyAfterReads !== undefined) {
-      writeFileSync(
-        join(dir, "dirty-after-reads"),
-        String(opts.dirtyAfterReads),
-      );
-    }
-    if (opts.commitAfterReads !== undefined) {
-      writeFileSync(
-        join(dir, "commit-after-reads"),
-        String(opts.commitAfterReads),
-      );
-    }
-    if (opts.draftAfterLiveStateReads !== undefined) {
-      writeFileSync(
-        join(dir, "draft-after-live-state-reads"),
-        String(opts.draftAfterLiveStateReads),
-      );
-    }
-    if (opts.malformedIsDraftOnLiveStateReads) {
-      writeFileSync(join(dir, "malformed-isdraft-on-live-state-reads"), "");
-    }
-    if (opts.dirtyOnPost) writeFileSync(join(dir, "dirty-on-post"), "");
     let entryScript = join(SCRIPTS, "announce-merge-ready.ts");
     if (opts.deleteAssociationBeforeLoad !== undefined) {
       entryScript = join(dir, "announce-mutation-wrapper.ts");
@@ -211,6 +199,7 @@ describe("announce-merge-ready.ts", () => {
           ...(opts.rivalId ? { DRIVE_PR_RIVAL_ID: opts.rivalId } : {}),
           ...(opts.quoter ? { DRIVE_PR_QUOTER: "1" } : {}),
           ...(opts.forger ? { DRIVE_PR_FORGER: "1" } : {}),
+          ...(opts.malformed ? { DRIVE_PR_MALFORMED: "1" } : {}),
           ...(opts.postedIdBase
             ? { DRIVE_PR_POSTED_ID_BASE: opts.postedIdBase }
             : {}),
@@ -348,6 +337,38 @@ describe("announce-merge-ready.ts", () => {
     expect(r.posted).toBe(false);
     expect(r.deleted).toContain("7");
     expect(r.stderr).toContain("'ci:hold' is still present");
+  });
+
+  it("withdraws a readable same-head announcement before refusing over a malformed one while 'ci:hold' is present", async () => {
+    const r = await announce({ ...CONVERGED, ciHeld: true }, false, {
+      staleAnnouncementFor: CONVERGED.head,
+      malformed: true,
+    });
+    expect(r).toMatchObject({ exitCode: 1, posted: false });
+    expect(r.deleted).toContain("7");
+    expect(r.deleted).not.toContain("8");
+    expect(r.stderr).toContain("naming no head");
+  });
+
+  it("withdraws its own post and refuses when a malformed announcement appears during the POST", async () => {
+    const r = await announce(CONVERGED, false, {
+      raceAfterPost: true,
+      malformed: true,
+      postedIdBase: "100",
+    });
+    expect(r).toMatchObject({ exitCode: 1, posted: true, deleted: ["101"] });
+    expect(r.stderr).toContain("naming no head");
+  });
+
+  it("withdraws its own post and refuses when a malformed announcement is listed only by the read-back", async () => {
+    const r = await announce(CONVERGED, false, {
+      raceAfterPost: true,
+      postedIdBase: "100",
+      env: { DRIVE_PR_MALFORMED_LATE: "1" },
+    });
+    expect(r).toMatchObject({ exitCode: 1, posted: true });
+    expect(r.deleted).toContain("101");
+    expect(r.stderr).toContain("read-back");
   });
 
   it("refuses to announce a converged PR that is still a draft", async () => {
@@ -779,6 +800,12 @@ describe("announce-merge-ready.ts", () => {
     expect(r.deleted).toEqual(["9001"]);
     expect(r.stderr).toContain("uncommitted state");
     expect(r.stderr).toContain("withdrawing this announcement");
+  });
+
+  it("WITHDRAWS its own announcement when the claim read-back cannot list comments", async () => {
+    const r = await announce(CONVERGED, false, { failSweepsAfter: 2 });
+    expect(r).toMatchObject({ exitCode: 1, posted: true, deleted: ["9001"] });
+    expect(r.stderr).toContain("could not re-read comments");
   });
 
   it("re-checks cleanliness after withdrawing a duplicate in the race path too", async () => {
@@ -1516,117 +1543,6 @@ describe("summary-findings marker overrides", () => {
   });
 });
 
-describe("round-delta.ts", () => {
-  // The helpers under test run git in this process. Inherited routing
-  // variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE from a hook or a parent
-  // git process) override `-C dir` and would point them at the real checkout,
-  // so each call runs with those variables dropped and the environment
-  // restored afterwards.
-  async function inScrubbedEnv<T>(
-    extra: Record<string, string>,
-    fn: () => Promise<T>,
-  ): Promise<T> {
-    const saved = { ...process.env };
-    try {
-      for (const k of Object.keys(process.env))
-        if (k.startsWith("GIT_") || k.startsWith("DRIVE_PR_"))
-          delete process.env[k];
-      Object.assign(process.env, extra);
-      return await fn();
-    } finally {
-      for (const k of Object.keys(process.env))
-        if (!(k in saved)) delete process.env[k];
-      Object.assign(process.env, saved);
-    }
-  }
-
-  // Git quotes a pathname containing a literal `"` or `\` regardless of
-  // `core.quotePath` — that setting only
-  // controls the SEPARATE non-ASCII-escaping behavior. A `\n`-split of
-  // quoted `--name-only`/`ls-files` output would keep the surrounding quotes
-  // (and backslash-escape any embedded `"`), which then never matches
-  // `finish-round.ts`'s `touched.has(t.path)` comparison against GitHub's
-  // own unescaped path — silently failing the untriaged-thread guard OPEN
-  // for exactly the files whose names make this matter. `-z` NUL-delimits
-  // every entry with no quoting at all, so this reproduces the reviewer's own
-  // repro script directly against the real functions.
-  it.skipIf(NO_QUOTE_NAMES)(
-    "changedFilesSinceExcludingMerges resolves a filename containing a literal double-quote unescaped",
-    async () => {
-      const dir = mkdtempSync(join(tmpRoot, "round-delta-quote-"));
-      const env = gitCleanEnv();
-      const git = (...args: string[]) =>
-        Bun.spawnSync(["git", ...args], {
-          cwd: dir,
-          env,
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-      git("init", "-q", "-b", "main");
-      git("config", "user.email", "probe@example.invalid");
-      git("config", "user.name", "drive-pr probe");
-      git("config", "commit.gpgsign", "false");
-      git("config", "core.autocrlf", "false");
-      git("config", "core.hooksPath", "/dev/null");
-      writeFileSync(join(dir, "seed.ts"), "seed\n");
-      git("add", "-A");
-      git("commit", "-qm", "seed", "--no-verify");
-      const since = git("rev-parse", "HEAD").stdout.toString().trim();
-      // `changedFilesSinceExcludingMerges` excludes everything reachable from
-      // `origin/develop` — give it one, pointed at the same seed commit, so
-      // the quoted-path commit below is the only thing "this round" touched.
-      git("update-ref", "refs/remotes/origin/develop", since);
-      const quotedName = 'a"b.ts';
-      writeFileSync(join(dir, quotedName), "quoted\n");
-      git("add", "-A");
-      git("commit", "-qm", "quoted path", "--no-verify");
-
-      addOrigin(dir);
-      const result = await inScrubbedEnv(
-        { PATH: `${prBaseGh()}${delimiter}${process.env.PATH}` },
-        () => changedFilesSinceExcludingMerges(dir, "999", since, 30),
-      );
-      expect(result).not.toBeNull();
-      expect(result).toContain(quotedName);
-    },
-  );
-
-  it.skipIf(NO_QUOTE_NAMES)(
-    "changedFilesSince resolves a filename containing a literal double-quote unescaped",
-    async () => {
-      const dir = mkdtempSync(join(tmpRoot, "round-delta-quote-diff-"));
-      const env = gitCleanEnv();
-      const git = (...args: string[]) =>
-        Bun.spawnSync(["git", ...args], {
-          cwd: dir,
-          env,
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-      git("init", "-q", "-b", "main");
-      git("config", "user.email", "probe@example.invalid");
-      git("config", "user.name", "drive-pr probe");
-      git("config", "commit.gpgsign", "false");
-      git("config", "core.autocrlf", "false");
-      git("config", "core.hooksPath", "/dev/null");
-      writeFileSync(join(dir, "seed.ts"), "seed\n");
-      git("add", "-A");
-      git("commit", "-qm", "seed", "--no-verify");
-      const since = git("rev-parse", "HEAD").stdout.toString().trim();
-      const quotedName = 'a"b.ts';
-      writeFileSync(join(dir, quotedName), "quoted\n");
-      git("add", "-A");
-      git("commit", "-qm", "quoted path", "--no-verify");
-
-      const result = await inScrubbedEnv({}, () =>
-        changedFilesSince(dir, since, 30),
-      );
-      expect(result).not.toBeNull();
-      expect(result).toContain(quotedName);
-    },
-  );
-});
-
 describe("drive-status.ts PR-target channel", () => {
   it("refuses when the pass resolved a different PR than the driver is watching", async () => {
     // The out-of-band assertion, not an inference from prompt text: a prompt
@@ -1679,6 +1595,11 @@ describe("guarded-push.ts", () => {
      * to EVERY one of them, so the guard has to check every one of them.
      */
     pushUrls?: string[];
+    /**
+     * The only remote name the stubbed `git remote get-url` answers for
+     * (default `origin`); any other name fails as an unknown argument.
+     */
+    remote?: string;
     /** Seconds the stubbed `git push` blocks for, to exercise the deadline. */
     slowPushSec?: number;
     /** A native descendant waits for an explicit release after cancellation. */
@@ -1789,7 +1710,7 @@ describe("guarded-push.ts", () => {
         "#!/usr/bin/env bash",
         'case "$1" in',
         '  rev-parse) case "$*" in "rev-parse HEAD"|"rev-parse --git-dir"|"rev-parse --git-common-dir"|"rev-parse --show-toplevel") ;; *) echo "git rev-parse: unknown argument: $*" >&2; exit 2 ;; esac ;;',
-        '  remote) [ "$*" = "remote get-url --push --all origin" ] || { echo "git remote: unknown argument: $*" >&2; exit 2; } ;;',
+        `  remote) [ "$*" = "remote get-url --push --all ${opts.remote ?? "origin"}" ] || { echo "git remote: unknown argument: $*" >&2; exit 2; } ;;`,
         `  push) ${GIT_PUSH_FLAG_GUARD} ;;`,
         '  *) echo "unexpected fake git command: $*" >&2; exit 2 ;;',
         "esac",
@@ -1833,16 +1754,11 @@ describe("guarded-push.ts", () => {
           // ALWAYS, not only when a probe asks to seed drive state: the git
           // stub above answers ANY `rev-parse` (including `--git-common-dir`)
           // with `localHead`, so without this override `resolveFenceContext`
-          // resolves a garbage "state dir" — harmless for the old read-only
-          // tree fence (a nonexistent path reads as "no lease", i.e. pass), but
-          // `assertTreeMutationAllowed` now ACQUIRES a lock there too: creating
-          // a lock file under a directory that does not exist is not "no
-          // lease", it is a real failure the lock's own retry loop cannot
-          // distinguish from contention, and it burns the full
-          // `DRIVE_PR_LOCK_TIMEOUT` (30s) before every unseeded guarded-push
-          // probe in this suite. Both vars, never one alone — an override
-          // without its identity token fails closed, which would make every
-          // probe here measure that refusal instead of whatever the probe
+          // would resolve a garbage common directory rather than this
+          // fixture's clone, and the fences would judge (and take their locks
+          // in) a database no probe seeded. Both vars, never one alone — an
+          // override without its identity token fails closed, which would make
+          // every probe here measure that refusal instead of whatever the probe
           // actually tests.
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
@@ -1870,7 +1786,26 @@ describe("guarded-push.ts", () => {
   it("pushes while the PR is open", async () => {
     const r = await guardedPush({ threads: [] });
     expect(r.exitCode).toBe(0);
-    expect(r.stderr).toContain("PUSHED");
+    expect(r.stderr).toContain("PUSHED push origin ");
+  });
+
+  it("checks and pushes through the remote repository.remote names", async () => {
+    const r = await guardedPush(
+      { threads: [] },
+      { remote: "upstream", env: { JIG__REPOSITORY__REMOTE: "upstream" } },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stderr).toContain("PUSHED push upstream ");
+  });
+
+  it("refuses to push when repository.remote is not a usable remote name", async () => {
+    const r = await guardedPush(
+      { threads: [] },
+      { env: { JIG__REPOSITORY__REMOTE: "-upstream" } },
+    );
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("repository.remote must be a git remote name");
+    expect(r.stderr).not.toContain("PUSHED");
   });
 
   it("--expect-head refuses BEFORE pushing when local HEAD moved since the caller’s own preflight read", async () => {
@@ -1916,13 +1851,13 @@ describe("guarded-push.ts", () => {
   });
 
   it("refuses to push while a DIFFERENT live session holds this tree", async () => {
-    // Until this fix, guarded-push.ts called into NO session fence at all —
-    // an orphaned pass (its own session dead, the tree already taken over by
-    // a replacement session working a different PR) could push straight
-    // through, cross-shipping this pass's uncommitted work onto the other
-    // session's PR. Seeded directly (rather than via drive-state.ts) so the
-    // probe is exactly what the fence itself reads, independent of the
-    // claim path that normally writes it.
+    // Without a session fence in guarded-push.ts, an orphaned pass (its own
+    // session dead, the tree already taken over by a replacement session
+    // working a different PR) could push straight through, cross-shipping
+    // this pass's uncommitted work onto the other session's PR. Seeded
+    // directly (rather than via drive-state.ts) so the probe is exactly what
+    // the fence itself reads, independent of the claim path that normally
+    // writes it.
     const foreign = Bun.spawn(["sleep", "600"], {
       stdout: "ignore",
       stderr: "ignore",
@@ -1932,30 +1867,13 @@ describe("guarded-push.ts", () => {
         { threads: [] },
         {
           seedState: (stateDir) => {
-            const path = treeLeasePathFor(stateDir, ACTOR);
-            const now = new Date().toISOString();
-            writeFileSync(
-              path,
-              `${JSON.stringify(
-                {
-                  holder: "session",
-                  pid: foreign.pid,
-                  host: "",
-                  platform: process.platform,
-                  actor: ACTOR,
-                  worktree: "",
-                  startedAt: now,
-                  lastSeen: now,
-                  command: "bump-round",
-                  generation: "g1",
-                  sessionStarted: "",
-                  pr: "777",
-                  revision: "r1",
-                },
-                null,
-                2,
-              )}\n`,
-            );
+            putTreeLease(treeLeaseRef(stateDir, ACTOR), {
+              pid: foreign.pid,
+              worktree: "",
+              command: "bump-round",
+              pr: "777",
+              revision: "r1",
+            });
           },
           // No DRIVE_PR_SESSION/CLAUDE_PID matching `foreign` — this process
           // must read as a DIFFERENT, foreign session.
@@ -1991,30 +1909,13 @@ describe("guarded-push.ts", () => {
       { threads: [] },
       {
         seedState: (stateDir) => {
-          const path = treeLeasePathFor(stateDir, ACTOR);
-          const now = new Date().toISOString();
-          writeFileSync(
-            path,
-            `${JSON.stringify(
-              {
-                holder: "session",
-                pid: dead,
-                host: "",
-                platform: process.platform,
-                actor: ACTOR,
-                worktree: "",
-                startedAt: now,
-                lastSeen: now,
-                command: "bump-round",
-                generation: "g1",
-                sessionStarted: "",
-                pr: "777",
-                revision: "r1",
-              },
-              null,
-              2,
-            )}\n`,
-          );
+          putTreeLease(treeLeaseRef(stateDir, ACTOR), {
+            pid: dead,
+            worktree: "",
+            command: "bump-round",
+            pr: "777",
+            revision: "r1",
+          });
         },
         env: { DRIVE_PR_SESSION: "", CLAUDE_PID: "" },
       },
@@ -2024,18 +1925,18 @@ describe("guarded-push.ts", () => {
   });
 
   it("assertTreeMutationAllowed HOLDS the tree lock, not just checks it", async () => {
-    // Before this fix, the fence read the lease and returned void — the
-    // underlying `treeLeaseLock` was never taken at all, so a replacement
-    // session's takeover could land in the exact window between the check
-    // and `git push` completing.
+    // A fence that only READ the lease and returned would let a replacement
+    // session's takeover land in the exact window between the check and
+    // `git push` completing.
     // Proven directly at the lock level, independent of `guarded-push.ts`'s
-    // own subprocess plumbing: a second acquirer of the SAME tree-lease path
-    // — via the identical `createLock(path, ..., 'tree')` call
-    // `treeLeaseLock` itself makes — must stay BLOCKED for as long as the
-    // returned lock is held, not free to proceed the instant the check
-    // finished.
-    const d = mkdtempSync(join(tmpdir(), "drive-pr-tree-lock-held-"));
-    const path = treeLeasePathFor(d, ACTOR);
+    // own subprocess plumbing: a second acquirer of the SAME tree-lease lock
+    // row — via the identical `createLock(..., 'tree')` call `treeLeaseLock`
+    // itself makes — must stay BLOCKED for as long as the returned lock is
+    // held, not free to proceed the instant the check finished.
+    const d = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "drive-pr-tree-lock-held-")),
+    );
+    const name = treeLeaseLockName(ACTOR);
     const session: Session = {
       pid: process.pid,
       host: hostname(),
@@ -2049,15 +1950,15 @@ describe("guarded-push.ts", () => {
         stateDir: d,
         actor: ACTOR,
         session,
-        fromOverride: false,
-        legacyStateDirForFallback: d,
+        instance: stateDirIdentityToken(d),
       },
       "999",
       "test",
     );
+    expect(lockRow(d, name)).not.toBeNull();
     let released = false;
     try {
-      const rival = createLock(path, "drive-state.ts (tree lease)", "tree");
+      const rival = createLock(d, name, "drive-state.ts (tree lease)", "tree");
       let rivalAcquired = false;
       const rivalPromise = rival
         .acquire(5)

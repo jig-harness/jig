@@ -1,12 +1,12 @@
 /**
  * `--doctor`'s classifier. Pure: no filesystem, no subprocess,
- * no clock read of its own. `drives.ts` does every read (the state file, the
+ * no clock read of its own. `drives.ts` does every read (the state, the
  * `ps` probe via `hasPassChild`, the per-worktree `git` calls) and hands the
  * results here as a plain record; this file only DECIDES.
  *
  * WHY THE SEAM MATTERS. The real argument for a separate, pure classifier is
  * not that `drives.ts` is untestable in principle — `drives.test.ts` already
- * spawns it against real lock directories, real state files and real
+ * spawns it against real lock rows, real states and real
  * worktrees — but that comparing WEDGED and HEALTHY side by side requires
  * holding two OTHERWISE-IDENTICAL inputs apart from each other and from
  * whatever `ps` happens to report on the host the suite runs on. A real
@@ -23,7 +23,7 @@
  * scattered across the branches below:
  *
  *   1. Fail closed first — an unreadable/contested lock or an unreadable
- *      state file is `UNKNOWN` before anything else is even asked.
+ *      stored state is `UNKNOWN` before anything else is even asked.
  *   2. No live driver + leftovers in the worktree → `DEAD_WITH_LEFTOVERS`.
  *      Checked BEFORE the quota-park and human-parked checks below, because a
  *      drive that parked (or had items parked) and then had its DRIVER die is
@@ -61,7 +61,7 @@
  *      pass-child evidence a later sweep reads may no longer be there) —
  *      would never surface. A human decision waiting is not going anywhere;
  *      a drive that is actually stuck right now is.
- *   5. `parkedCount > 0` → `NEEDS_HUMAN`.
+ *   5. `parkedCount > 0` → `NEEDS_HUMAN`, naming each parked question.
  *   6. A live lock with either a currently-running pass or recent progress →
  *      `HEALTHY` — the only branch that reaches it; the function's own
  *      default is `UNKNOWN`.
@@ -78,13 +78,16 @@
  * file did not anticipate must read as "cannot tell", never as "fine".
  */
 
+import { LEDGER_WINDOW_MIN } from "../../../../shared/liveness.ts";
 import { isDigits, shellQuote } from "./cli.ts";
 import type { PassChildAnswer } from "./pass-child.ts";
 import type { QuotaParkRecord } from "./state/schema.ts";
 
 /**
  * How long `lastProgressAt` may go unrefreshed on a LIVE lock before it
- * counts toward `WEDGED`, in minutes.
+ * counts toward `WEDGED`, in minutes: the ledger window, one of the clocks
+ * the shared process identity names (`LEDGER_WINDOW_MIN` in
+ * `shared/liveness.ts`), where its length is set.
  *
  * TWO HUNDRED FORTY, derived rather than guessed. `drive.ts` never invokes
  * `await-round.ts` at all (that script belongs to the SIBLING
@@ -110,7 +113,7 @@ import type { QuotaParkRecord } from "./state/schema.ts";
  * exactly the trade `passTimeoutSeconds`'s own header already refused to
  * make once.
  */
-export const STALL_THRESHOLD_MIN_DEFAULT = 240;
+export const STALL_THRESHOLD_MIN_DEFAULT = LEDGER_WINDOW_MIN;
 
 /**
  * `DRIVE_PR_STALL_MIN`, clamped — mirrors `heartbeatStaleMs()`'s own
@@ -156,11 +159,13 @@ export interface DoctorInput {
   lockState: "live" | "stale" | "empty" | "contested" | "unreadable";
   /** ms since `DriveState.lastProgressAt`, `null` when unknown/never/unreadable. */
   progressAgeMs: number | null;
-  /** Whether the state file could be read (and shape-validated) at all. */
+  /** Whether the stored state could be read (and shape-validated) at all. */
   stateReadable: boolean;
   passChild: PassChildAnswer;
   quotaPark: QuotaParkRecord | null;
   parkedCount: number;
+  /** Each parked decision's question, so the row names them; absent: the count. */
+  parkedQuestions?: string[];
   /** Worktree leftovers; `null` when the worktree could not be inspected. */
   leftovers: DoctorLeftovers | null;
   stallThresholdMs: number;
@@ -195,6 +200,7 @@ export interface DoctorInput {
 }
 
 export interface DoctorRow {
+  ciHold?: import("./ci-hold-diagnosis.ts").CiHoldDiagnosis;
   verdict: DoctorVerdict;
   reason: string;
   recovery: string | null;
@@ -268,13 +274,23 @@ function describeQuotaPark(park: QuotaParkRecord, now: Date): string {
   return `parked on a ${park.vendor} ${park.window}-window quota wall at ${park.at} (${reset})`;
 }
 
+/** The parked questions, quoted; their count when they are not known. */
+function needsHumanReason(input: DoctorInput): string {
+  const questions = (input.parkedQuestions ?? []).map((q) =>
+    JSON.stringify(q.replace(/\s+/g, " ")),
+  );
+  return questions.length > 0
+    ? `awaiting a person's decision: ${questions.join("; ")}`
+    : `${input.parkedCount} item(s) parked awaiting a human decision`;
+}
+
 export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
-  // 1. Fail closed first. `contested` (more than one claim file in the lock
-  // dir) and `unreadable` (the lock directory or its single claim could not
-  // be parsed) have established NOTHING positive about this drive — neither
-  // "a driver is working it" nor "nobody is". Same for an unreadable state
-  // file: every other field this function reads comes FROM that file, so a
-  // failure to read it poisons the rest of the record, not just one field.
+  // 1. Fail closed first. A lock row the listing could not interpret
+  // (`contested`, `unreadable`) has established NOTHING positive about this
+  // drive — neither "a driver is working it" nor "nobody is". Same for an
+  // unreadable state: every other field this function reads comes FROM it,
+  // so a failure to read it poisons the rest of the record, not just one
+  // field.
   if (input.lockState === "unreadable" || input.lockState === "contested") {
     return {
       verdict: "UNKNOWN",
@@ -285,10 +301,10 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   // Unreadable state does NOT preempt an independently-established
   // DEAD_WITH_LEFTOVERS: `gatherDoctorInput` runs the leftovers probe off the
   // WORKTREE, unconditionally on whether the state snapshot parsed (review
-  // finding) — so a stale claim with an old or malformed state file, sitting
+  // finding) — so a stale claim with an old or malformed stored state, sitting
   // over confirmed uncommitted changes, unpushed commits, or an unconcluded
   // git operation, has already answered "is something lost in this tree"
-  // before this function ever looks at the state file. Reporting UNKNOWN
+  // before this function ever looks at the stored state. Reporting UNKNOWN
   // over that would discard evidence this classifier already has, and is
   // reachable immediately after a rollout that (like this PR) intentionally
   // rejects every pre-existing state shape. Every other unreadable-state case
@@ -307,7 +323,7 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
     return {
       verdict: "UNKNOWN",
       reason:
-        "the drive state file could not be read — every other signal this classifier reads comes from it",
+        "the drive's stored state could not be read — every other signal this classifier reads comes from it",
       recovery: null,
     };
   }
@@ -321,12 +337,12 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   // An uninspectable worktree (`leftovers === null`) is NOT a positive
   // finding — it is "this branch could not answer", a WEAKER fact than a
   // quota park or a parked item this classifier already knows for certain
-  // from the state file directly. Returning it immediately would let it
+  // from the stored state directly. Returning it immediately would let it
   // preempt branches 3 and 5 below, which is exactly backwards: a
   // state-file-only row (no lock at all, hence `worktreePath === null`)
   // that recorded a real quota park would reach this early return and
   // report UNKNOWN, never QUOTA_PARKED, letting THIS branch's inconclusive
-  // answer outrank a fact the state file settles outright (see
+  // answer outrank a fact the stored state settles outright (see
   // `doctor.test.ts`'s "an uninspectable worktree does not preempt a KNOWN
   // quota park"). So it is DEFERRED to the trailing fallback (7) instead,
   // and used there ONLY if nothing more specific claimed the row first.
@@ -439,7 +455,7 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   if (input.parkedCount > 0) {
     return {
       verdict: "NEEDS_HUMAN",
-      reason: `${input.parkedCount} item(s) parked awaiting a human decision`,
+      reason: needsHumanReason(input),
       recovery: null,
     };
   }

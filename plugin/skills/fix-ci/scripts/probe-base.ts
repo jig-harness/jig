@@ -41,7 +41,8 @@
  *   runs the change's code against the base's test and gets the verdict
  *   backwards.
  *
- * The base is fetched first, into a ref of this run's own, and the probe
+ * The base is fetched first from `--remote` (default: `repository.remote`,
+ * else `origin`), into a ref of this run's own, and the probe
  * checks out the commit that ref names: never the remote-tracking ref already
  * present locally, which is only as fresh as the last fetch, so a failure
  * already fixed on the base would still fail here and be misread as
@@ -83,6 +84,7 @@ import {
   parseJunitReport,
 } from "../../../shared/junit-report.ts";
 import { fail, runMain } from "../../../shared/cli.ts";
+import { remoteName } from "../../../shared/consumer.ts";
 import { withoutLeakyGitEnv } from "../../../shared/guarded-git-spawn.ts";
 
 /** Lines of the command's output kept as evidence, per stream. */
@@ -192,7 +194,7 @@ export function parseArgs(argv: string[]): ProbeArgs {
     base,
     expect,
     junit: into.junit,
-    remote: into.remote ?? "origin",
+    remote: into.remote ?? remoteName(),
     timeoutSeconds: into.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS,
     setup: into.setup,
     command,

@@ -264,14 +264,15 @@ criteria:
     since: 0.38.0
     statement: >-
       Where a hold label suppresses CI on intermediate heads, a required
-      check fails on every held head from the instant the label is applied,
+      check does not pass on any held head from the instant the label is applied,
       every workflow that honours the label runs on its application and its
       removal, and only the pull request's own hold label, never the kind of
-      label event, skips work.
+      label event, skips work, except in a mirror run, whose required check
+      repeats the newest real run's result.
     observe:
-      - "a step in a required job, or in a job the required job needs directly while itself running on !cancelled(), fails while the hold label is present, does not continue on error, and its message names the label to remove"
+      - "a step in a required job, or in a job the required job needs directly while itself running on !cancelled(), fails while the hold label is present (cancelling its own run first counts only in the required job itself, and only when it fails where the cancellation does not happen), does not continue on error, and its message names the label to remove"
       - "every pull-request workflow with a job the hold skips, or reporting a required check, triggers on labeled and unlabeled beside opened, synchronize and reopened"
-      - "each skipped job's condition tests the pull request's label set for the exact hold label, not the event's action, so an unrelated label event still runs real CI"
+      - "each skipped job's condition tests the pull request's label set for the exact hold label, not the event's action, so an unrelated label event still runs real CI, or, where the workflow answers it with a mirror run, that run skips the heavy jobs in a concurrency group of its own and its required job repeats the newest real run's result on the head, passing only when that result passed and failing when it cannot read one"
       - "the driver that removes the label accepts only check runs that started after the removal"
       - "expected-absent when no hold label is configured (no ci.hold_label or equivalent)"
 
@@ -289,6 +290,7 @@ criteria:
       - "the lint reads the hold label from the repository's configuration and reports its hold rules as not applicable without one"
       - "it fails a pull-request trigger of a workflow in the hold that lists fewer than opened, synchronize, reopened, labeled and unlabeled"
       - "it accepts a guard only as a negated contains over the pull request's label names with the exact label, and a held-head check only as the positive test, in a job whose failure reaches the required check"
+      - "where a workflow skips work on another label's events, it fails one whose concurrency group is not that run's own, whose run-name does not name mirror and real runs apart, whose required job skips or has no step that runs only on those events, or whose heavy job still runs on them, and it fails any job condition that reads the event other than through the pull request's own state, the mirror's skip term aside"
       - "it runs in CI on changes to the workflow files, with its own self-test"
       - "expected-absent when no hold label is configured"
 

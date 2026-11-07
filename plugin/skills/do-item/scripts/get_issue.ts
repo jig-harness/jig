@@ -6,7 +6,8 @@
  * Type: Discovery
  * Input: an issue key in the configured tracker's shape (`ENG-123`, `#123`;
  *   a GitHub issue also by its number or web address)
- * Output: JSON with the issue's details, labels, children and
+ * Output: JSON with the issue's details, labels, the tracker's own issue
+ *   type (`nativeType`, `null` where there is none), children and
  *   `sub_issue_analysis`
  *
  * Usage:
@@ -154,6 +155,7 @@ export function issueResult(
           }
         : { name: "Unknown", type: "unknown" },
     labels: issue.labels,
+    nativeType: issue.nativeType,
     url: issue.url,
     parent: issue.parent,
     children,

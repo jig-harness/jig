@@ -1,44 +1,26 @@
 import { afterEach, expect, test } from "bun:test";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  CONC,
+  cleanRoots,
+  exits,
+  holdRepo,
+  holdTrigger,
+  job,
+  LABELS,
+  PR_HOLD,
+  repo,
+  rulesOf,
+  run,
+  SENTINEL_STEP,
+  tempRoot,
+} from "./test-support.ts";
 
-const gate = join(import.meta.dir, "check-workflow-conventions.ts");
 const fixture = (name: string) => join(import.meta.dir, "fixtures", name);
-
-function run(args: string[], env: Record<string, string> = {}) {
-  const { GITHUB_ACTIONS: _, ...inherited } = process.env;
-  const result = Bun.spawnSync([process.execPath, gate, ...args], {
-    env: { ...inherited, ...env },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return {
-    code: result.exitCode,
-    out: result.stdout.toString(),
-    err: result.stderr.toString(),
-  };
-}
 const lint = (name: string) => run(["--root", fixture(name)]);
 
-/** The temporary roots a test made, removed after it. */
-const roots: string[] = [];
-afterEach(() => {
-  for (const root of roots.splice(0))
-    rmSync(root, { recursive: true, force: true });
-});
-const tempRoot = () => {
-  const root = mkdtempSync(join(tmpdir(), "workflow-conventions-"));
-  roots.push(root);
-  return root;
-};
+afterEach(cleanRoots);
 
 /** Each fixture is a small repository: its exit code and the rules it
  * must report (none for a pass). */
@@ -54,6 +36,9 @@ const cases: [string, number, string[]][] = [
   ["required-checks-fail", 1, ["aggregator-unless-cancelled"]],
   ["ci-hold-pass", 0, []],
   ["ci-hold-fail", 1, ["ci-hold-events", "ci-hold-guard", "ci-hold-sentinel"]],
+  ["ci-hold-mirror-pass", 0, []],
+  ["ci-hold-mirror-no-step", 1, ["ci-hold-mirror"]],
+  ["ci-hold-mirror-no-group", 1, ["ci-hold-mirror"]],
   ["heavy-pass", 0, []],
   ["heavy-fail", 1, ["heavy-per-change"]],
   ["heavy-marker", 0, []],
@@ -190,50 +175,7 @@ test("under GitHub Actions a finding is also an annotation", () =>
     "::error file=.github/workflows/ci.yml,line=3,title=job-timeout::",
   ));
 
-/** A throwaway repository holding `files`, for cases that vary one line. */
-function repo(files: Record<string, string>): string {
-  const root = tempRoot();
-  for (const [path, text] of Object.entries(files)) {
-    mkdirSync(join(root, path, ".."), { recursive: true });
-    writeFileSync(join(root, path), text);
-  }
-  return root;
-}
 const SHA = "0123456789abcdef0123456789abcdef01234567";
-const CONC = `concurrency:\n  group: ci-\${{ github.ref }}\n  cancel-in-progress: true\n`;
-const LABELS = "github.event.pull_request.labels.*.name";
-/** The trigger of a workflow that honours the hold: both label transitions
- * beside the three types a trigger without `types:` runs on. */
-const PR_HOLD =
-  "on:\n  pull_request:\n    types: [opened, synchronize, reopened, labeled, unlabeled]\n";
-/** `expectSpawnExit` over `run`'s result, so a wrong exit code prints the
- * gate's own output. */
-const exits = (
-  result: ReturnType<typeof run>,
-  expected: number,
-  label?: string,
-) =>
-  expectSpawnExit(
-    { exitCode: result.code, stdout: result.out, stderr: result.err },
-    expected,
-    label,
-  );
-
-/** A pull-request workflow whose required `verdict` job needs a heavy `e2e`
- * job; `e2eIf` is e2e's condition and `stepIf` the condition of verdict's
- * failing step. */
-function holdRepo(label: string, e2eIf: string, stepIf: string) {
-  return repo({
-    ".config/jig.yaml": `ci:\n  required_checks: [verdict]\n  hold_label: "${label}"\n`,
-    ".config/workflow-conventions.yaml": "heavy:\n  - ci.yml#e2e\n",
-    ".config/workflow-conventions-exceptions.txt":
-      "# The merge waits for it.\nheavy-per-change .github/workflows/ci.yml e2e\n",
-    ".github/workflows/ci.yml": `${PR_HOLD}${CONC}jobs:\n  e2e:\n    if: "${e2eIf}"\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n      - run: make e2e\n  verdict:\n    needs: [e2e]\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n      - if: "${stepIf}"\n        run: exit 1\n`,
-  });
-}
-const rulesOf = (err: string) =>
-  [...new Set([...err.matchAll(/: \[([a-z-]+)\] /g)].map((m) => m[1]))].sort();
-
 test("a sentinel is only a plain positive test for the exact label", () => {
   const guard = `!contains(${LABELS}, 'ci:hold')`;
   expect(
@@ -270,7 +212,8 @@ test("the hold guard names the exact label inside a negated contains", () => {
   for (const guard of [
     `!contains(${LABELS}, 'hold')`,
     `!(contains(${LABELS}, 'hold'))`,
-    `github.event.action != 'closed' && !contains(${LABELS}, 'hold')`,
+    `github.event_name == 'pull_request' && !contains(${LABELS}, 'hold')`,
+    `!contains(${LABELS}, 'hold') && !contains(${LABELS}, 'skip-e2e')`,
   ])
     expect({
       guard,
@@ -290,6 +233,9 @@ test("the hold guard names the exact label inside a negated contains", () => {
     "!contains('unrelated', 'hold')",
     `!(!contains(${LABELS}, 'hold'))`,
     `github.event.action != '!contains(${LABELS}, ''hold'')'`,
+    // Another term may test anything but the event's action or label: a
+    // skip that answers differently on a label event is never taken.
+    `github.event.action != 'closed' && !contains(${LABELS}, 'hold')`,
   ]) {
     const { code, err } = run(["--root", holdRepo("hold", guard, sentinelIf)]);
     expect({ guard, code, rules: rulesOf(err) }).toEqual({
@@ -359,10 +305,6 @@ test("an action installed under node_modules is not the repository's own", () =>
 });
 
 const HOLD = 'ci:\n  hold_label: "hold"\n';
-const job = (id: string, extra = "") =>
-  `  ${id}:\n    runs-on: x\n    timeout-minutes: 5\n${extra}    steps:\n      - run: make ${id}\n`;
-const SENTINEL_STEP = `      - if: contains(${LABELS}, 'hold')\n        run: exit 1\n`;
-
 test("a heavy job that needs every other job is not the aggregator", () => {
   const { code, err } = run([
     "--root",
@@ -531,6 +473,17 @@ test("a sentinel the hold skips, or whose failure is tolerated, is none", () => 
   expect(run(["--root", sentinelRepo("", SENTINEL_STEP)]).code).toBe(0);
 });
 
+test("a sentinel that cancels its own run before failing is one", () => {
+  const cancelling = `      - if: contains(${LABELS}, 'hold')\n        env:\n          RUN_URL: x\n        run: |\n          curl -fsS -X POST "$RUN_URL/cancel" && sleep 120\n          exit 1\n`;
+  exits(run(["--root", sentinelRepo("", cancelling)]), 0, "cancelling");
+  const tolerated = run([
+    "--root",
+    sentinelRepo("", `${cancelling}        continue-on-error: true\n`),
+  ]);
+  exits(tolerated, 1, "cancelling, continuing on error");
+  expect(rulesOf(tolerated.err)).toEqual(["ci-hold-sentinel"]);
+});
+
 test("a sentinel counts only where its failure is proven to reach the required check", () => {
   const sentinelJob = (cond = "") =>
     `  sentinel:\n${cond}    runs-on: x\n    timeout-minutes: 5\n    steps:\n${SENTINEL_STEP}`;
@@ -677,18 +630,6 @@ test("a folder named on the command line must exist", () => {
     expect(run(["--root", root, option, join(root, "missing")]).code).toBe(2);
 });
 
-/** A pull-request workflow under the trigger `on`, with a guarded heavy
- * `e2e` and a required `verdict` carrying the sentinel: the hold's shape
- * except for the trigger under test. */
-function holdTrigger(on: string) {
-  return repo({
-    ".config/jig.yaml": `ci:\n  required_checks: [verdict]\n  hold_label: "hold"\n`,
-    ".config/workflow-conventions.yaml": "heavy:\n  - ci.yml#e2e\n",
-    ".config/workflow-conventions-exceptions.txt":
-      "# The merge waits for it.\nheavy-per-change .github/workflows/ci.yml e2e\n",
-    ".github/workflows/ci.yml": `${on}${CONC}jobs:\n  e2e:\n    if: \${{ !contains(${LABELS}, 'hold') }}\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n      - run: make e2e\n  verdict:\n    needs: [e2e]\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n${SENTINEL_STEP}      - run: make verdict\n`,
-  });
-}
 const types = (event: string, list: string) =>
   `on:\n  ${event}:\n    types: [${list}]\n`;
 

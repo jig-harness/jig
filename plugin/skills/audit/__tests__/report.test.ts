@@ -574,7 +574,7 @@ describe("the fixture records", () => {
     const m14 = modules
       .find((m) => m.module === "M14")
       ?.criteria.map((c) => c.key);
-    expect(m14?.length).toBe(17);
+    expect(m14?.length).toBe(19);
     expect(added).toEqual(addedAfter("0.26.0"));
     expect(added).toEqual(expect.arrayContaining(m14 ?? []));
   });

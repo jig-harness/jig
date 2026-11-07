@@ -101,8 +101,12 @@ the [glossary](../../GLOSSARY.md).
    [suppression token](../../GLOSSARY.md) such as `fixed-delay: <reason>`,
    registered in
    [M1's suppression-token registry](../M1-gates-enforcement-ladder/README.md).
+   A gate fails a delay without the token, a token without a reason, and a
+   token with no delay beside it, so the token leaves with the delay it
+   excused: [`reference/fixed-delay/`](reference/fixed-delay/) takes the
+   files and the delay texts as arguments.
    [`reference/poll-until/`](reference/poll-until/) is a small helper that
-   does both.
+   polls with a deadline, and pauses only with the token.
 5. **Predicates where they execute.** An
    [isolation predicate](../../GLOSSARY.md), the condition that keeps one
    tenant's rows from another, hides soft-deleted records, or checks an
@@ -137,8 +141,10 @@ the [glossary](../../GLOSSARY.md).
    bare shape, under [M1's ratchet](../M1-gates-enforcement-ladder/reference/ratchet/README.md)
    where many exist ([mappings](mappings.md#spawned-exit-codes)).
 8. **Tests come with changes.** A changed source file comes with a test, or
-   its path is listed in a registered exemption with a reason. A gate checks
-   it in a hook and in CI: [`reference/tests-with-changes/`](reference/tests-with-changes/)
+   its path is listed in a registered exemption with a reason. An exemption
+   that matches no file fails, so it leaves with the code it excused instead
+   of exempting new code written at that path later. A gate checks both in a
+   hook and in CI: [`reference/tests-with-changes/`](reference/tests-with-changes/)
    takes the base ref, the source globs, the test-path templates and the
    exemptions file as arguments.
 9. **No real developer state.** A test that redirects process-global state
@@ -266,8 +272,9 @@ the [glossary](../../GLOSSARY.md).
   per-change trigger on it; test files are type-checked in CI, and an
   assertion on a spawned process's exit status goes through a helper that
   prints the child's output; a gate fails a
-  changed source file without a test or an exemption; a gate rejects fixed
-  sleeps without the registered token; every job that exists for a suite
+  changed source file without a test or an exemption, and an exemption that
+  matches no file; a gate rejects fixed sleeps without the registered token,
+  and a token with no delay beside it; every job that exists for a suite
   fails when the suite executed zero tests, counted from the runner's report;
   and every workaround for a dependency's defect has a behaviour pin that
   names it.
@@ -308,8 +315,9 @@ authorization layer has no isolation predicate to prove. The
 4. Wire [`reference/tests-with-changes/`](reference/tests-with-changes/) into
    the pre-push hook and CI with your source globs and test layout; start an
    exemptions file with a reason on every line.
-5. Add a grep gate or lint rule that rejects fixed sleeps without the
-   `fixed-delay:` token, register the token in your suppression-token
+5. Run [`reference/fixed-delay/`](reference/fixed-delay/), or a lint rule
+   that does the same job, over test and tooling code in the pre-push hook
+   and CI; register the `fixed-delay:` token in your suppression-token
    registry, and replace the sleeps it finds with a polling helper. Give
    every workaround for a dependency's defect a behaviour pin beside it,
    named for the workaround. This is **Standard**.
@@ -339,7 +347,8 @@ authorization layer has no isolation predicate to prove. The
 |-------|------------|
 | [`templates/TESTING.md`](templates/TESTING.md) | A copyable testing strategy: the tier table, the rules, the exemption file and the fixed-delay token |
 | [`templates/runtime-canary.yml`](templates/runtime-canary.yml) | A scheduled, non-blocking workflow that runs the suites with behaviour pins and the integration tier, then a compiled-binary smoke test, on the runtime's next release, recording the build it used |
-| [`reference/tests-with-changes/`](reference/tests-with-changes/) | The gate that fails a changed source file without a test or a registered exemption |
+| [`reference/tests-with-changes/`](reference/tests-with-changes/) | The gate that fails a changed source file without a test or a registered exemption, and an exemption that matches no file |
+| [`reference/fixed-delay/`](reference/fixed-delay/) | The gate that fails a fixed delay without a `fixed-delay: <reason>` token, a token without a reason, and a token with no delay beside it |
 | [`reference/poll-until/`](reference/poll-until/) | A polling helper with a hard deadline, a named diagnostic and an injected clock |
 | [`reference/tests-executed/`](reference/tests-executed/) | The skip tripwire: fails a job whose suites executed zero tests, counted from the runner's report |
 | [`lib/test-helpers/expect-spawn-exit.ts`](../../lib/test-helpers/expect-spawn-exit.ts) | The exit-status assertions for a spawned process, which print the child's output on a mismatch; Jig's lint rule for the bare shape is [`tools/quality/grit/no-bare-exit-code-assertion.grit`](../../tools/quality/grit/no-bare-exit-code-assertion.grit) |
@@ -368,11 +377,6 @@ Each reference piece is a Bun/TypeScript script with a self-test.
 
 - **[Flaky-test quarantine](../../GLOSSARY.md)**: no mechanism for setting a flaky test aside
   without hiding its failures has been validated yet.
-- **Exceptions that prune themselves**: the tests-with-changes gate failing
-  on an exemption that matches no file, and a gate for the `fixed-delay:`
-  token that fails on a token with no delay beside it, as
-  [M1](../M1-gates-enforcement-ladder/README.md) requires of every
-  exception.
 - **A new gate's first runs repeated before it blocks**: a test suite that
   becomes a gate starts failing changes the moment it runs on every pull
   request, and a flaky test that never failed in normal use (a race that

@@ -2,55 +2,52 @@
 
 # Jig Harness
 
+Jig is the rules a repository's AI coding agents follow, the step-by-step
+procedures they run and the checks their work must pass. As a
+[harness](GLOSSARY.md), it carries each change from pickup to merge. What one session learns, the next one keeps.
+
 **A jig for AI coding agents: modular delivery practices, shared skills and gates, and an auditor that scores your repository.**
 
-Jig Harness, Jig for short, is a modular collection of software-delivery
-practices for teams that build and maintain software with AI coding agents. A jig, in a workshop, holds
-the work and guides the tool so every cut comes out the same; these skills and
-gates do that for agents. It is deliberately
-**vendor-agnostic** (the principles matter, not the specific tools) and
-**tech-stack-flexible**. Its unifying idea: a repository should carry
-scaffolding that lets AI agents operate it well over time — and everything else
-(quality gates, documentation governance, review systems, learning loops) both
-feeds that scaffolding and benefits from it.
+Jig Harness, Jig for short, takes its name from the workshop: a jig holds
+the work and guides the tool so every cut comes out the same. Jig does that
+for agents with checks every change must pass,
+called [gates](GLOSSARY.md), and instructions an agent loads for one job,
+called [skills](GLOSSARY.md). Every practice is a tool-independent rule
+first, mapped to your tools second. You adopt it one module at a time.
 
 ## Jig as a software factory
 
 A [software factory](GLOSSARY.md) takes work in a standard form, passes it
-through the same stations and checks every time, and measures what comes out.
-A factory whose stations are run by AI agents cannot work without agent
-scaffolding underneath it, and building that scaffolding is most of what Jig
-provides:
+through the same stations and checks every time, and measures what comes
+out. Jig's factory is one line, and agents run most of its stations. An
+agent takes a work item from the issue tracker, builds it and opens a pull
+request. The review rounds then run with nobody watching, and a bounded
+repair round settles a red build or a conflict with the base. A person
+merges. A follow-up then settles what the merge leaves open.
 
-- **Context**: what an agent knows when a session starts: layered
-  instruction files, rules that load only where they apply, a glossary, what
-  each kind of change implies, governed documentation.
-- **Verification**: guides that steer an agent before it acts (instructions,
-  templates, recorded decisions) and catches that stop what slips through
-  (tested gates with CI as the authority, freshness checks, layered review),
-  each rule on a named rung of the enforcement ladder.
-- **Knowledge**: decisions, facts and lessons kept explicit and versioned, so
-  the next session starts where the last one ended, and significant misses
-  become validated checks.
+With nobody at the keyboard, the [dispatcher](GLOSSARY.md) keeps the line
+moving. It restarts a review that stopped on something a machine can
+settle, and tells a person about each stop only a person can settle.
 
-Each module states one part as a tool-independent rule, with
-maturity levels for projects of any size, templates and tested reference
-gates; the audit measures how far a repository has come. It fits the way an
-organization already works: its values belong in configuration, not code, and
-tool bindings go behind interfaces where Jig has built them (the issue
-tracker has adapters for Linear and GitHub Issues; another tracker is a new
-adapter); the exceptions still open are listed in [ROADMAP.md](ROADMAP.md)
-item 10. On top of the
-scaffolding, the plugin's skills run the factory's stations at two levels:
-**design and planning** (a feature or an epic: `explain`, `decide`, `adr`,
-`design-brief-builder`, `review`) and **execution** (one work item:
-`do-item` picks it up, `drive-pr` runs its review rounds unattended, a person
-merges, follow-ups go back to the tracker). [FACTORY.md](FACTORY.md) maps
-it all, including what is on the roadmap and what stays your own platform.
+The line stands on agent [scaffolding](GLOSSARY.md), and building it is most
+of what Jig provides:
 
-New to these ideas? Every term of art used in this repo is defined in plain
-language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
-"SSoT" or "enforcement ladder" is unfamiliar.
+- **Context**: what an agent knows when a session starts: instruction files
+  in layers, rules that load only where they apply, a glossary, and what each
+  kind of change implies.
+- **Verification**: guides that steer an agent before it acts, and checks
+  that stop what slips through, with CI as the authority. Each rule names how
+  hard it is to skip.
+- **Knowledge**: decisions, facts and lessons kept in the repository, so the
+  next session starts where the last one ended. A significant miss becomes a
+  tested check.
+
+[FACTORY.md](FACTORY.md) maps every station and who runs it, what stays with
+a person, and what your own platform supplies.
+
+Every term of art in this repository has a plain definition in
+**[GLOSSARY.md](GLOSSARY.md)**. Start there when a word like "SSoT" or
+"enforcement ladder" is new to you.
 
 ## Ways to use this repo
 
@@ -123,6 +120,19 @@ licence agreement is asked for, and the licence will not change
 and the logo are trademarks held apart from the code
 ([TRADEMARK.md](TRADEMARK.md)). Report a vulnerability privately
 ([SECURITY.md](SECURITY.md)).
+
+## Thanks
+
+Jig is open source, and its own repository relies on services that other
+people built and run. Thanks to the teams behind them:
+
+- [CodeRabbit](https://www.coderabbit.ai/) reviews Jig's pull requests.
+- [SonarQube Cloud](https://www.sonarsource.com/products/sonarcloud/) scans
+  them for bugs and security problems.
+- [GitHub](https://github.com/) hosts the repository, runs its checks, and
+  scans it with CodeQL and Dependabot.
+- [Renovate](https://www.mend.io/renovate/) proposes the dependency updates.
+- [Cloudflare](https://www.cloudflare.com/) serves jig-harness.dev.
 
 ## Working on Jig
 

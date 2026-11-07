@@ -32,7 +32,8 @@
 
 import { readFileSync } from "node:fs";
 import { runMain } from "../../../shared/cli.ts";
-import { run } from "../../../shared/proc.ts";
+import { detachedTreeRecord } from "../../../shared/driven-tree.ts";
+import { gitIdentityEnv, run } from "../../../shared/proc.ts";
 
 export type Category =
   | "schema_drift"
@@ -252,9 +253,12 @@ export interface CommandResult {
 export type Runner = (argv: string[]) => Promise<CommandResult>;
 
 /** `gh` lookups get the shared default deadline; a log download gets longer. */
+// Git runs without inherited location variables: an exported `GIT_DIR`
+// would read another tree's branch and attach record.
 export const defaultRunner: Runner = (argv) =>
   run(argv, {
     timeoutSec: argv[1] === "run" && argv[2] === "view" ? 300 : 30,
+    ...(argv[0] === "git" ? { env: gitIdentityEnv() } : {}),
   });
 
 export interface Args {
@@ -359,6 +363,17 @@ const defaultIo: Io = {
   readFile: (path) => readFileSync(path, "utf8"),
 };
 
+/**
+ * The checked-out branch, or, on a detached tree a drive attached, the branch
+ * its record names; '' when neither says.
+ */
+async function currentBranch(runner: Runner): Promise<string> {
+  const r = await runner(["git", "branch", "--show-current"]);
+  const branch = r.code === 0 ? r.stdout.trim() : "";
+  if (branch !== "") return branch;
+  return (await detachedTreeRecord((a) => runner(["git", ...a])))?.branch ?? "";
+}
+
 export async function main(
   argv: string[],
   runner: Runner = defaultRunner,
@@ -410,8 +425,7 @@ export async function main(
         return 1;
       }
     } else if (branch === "") {
-      const r = await runner(["git", "branch", "--show-current"]);
-      branch = r.code === 0 ? r.stdout.trim() : "";
+      branch = await currentBranch(runner);
       if (branch === "") {
         io.err(
           "parse-ci-log: no current branch (detached HEAD?); pass a run ID, --pr or --branch",

@@ -7,6 +7,7 @@ import {
   readFileSync,
   realpathSync,
   readdirSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +15,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { cloneCheckouts, primaryCheckout } from "../checkout.ts";
 import { gitEnvironment } from "../git.ts";
 import { dump } from "../../shared/yaml.ts";
 import type { Receipt } from "../types.ts";
@@ -135,6 +137,20 @@ test("collect ignores a widened checkout, environment and overlay file", () => {
   const days = readdirSync(join(f.user, ".local", "state", "jig", "gc"));
   expect(days).toHaveLength(1);
 });
+test.each([
+  ["on the collect day collects, rerun under the heavy-run lock", 0, true],
+  ["on another day only reports", 1, false],
+])("the installed job's scheduled run %s", (_case, days, collects) => {
+  const f = setup();
+  // The run reads the weekday in its own time zone, so it is given one.
+  f.env.TZ = "UTC";
+  const collect_day = (new Date().getUTCDay() + days) % 7;
+  writeFileSync(f.homeFile, dump({ gc: { ...f.machine, collect_day } }));
+  const result = run(f, ["--scheduled", "--repo", f.repo, "--json"]);
+  expectSpawnExit(result, 0);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.collect).toBe(collects);
+});
 test("uninstalled repositories refuse collection and persist the refusal", () => {
   const f = setup();
   writeFileSync(f.homeFile, "{}\n");
@@ -195,6 +211,214 @@ test("install previews without writing a machine file or job", () => {
     expect(result.stdout.toString()).toContain("--scheduled");
   expect(readFileSync(f.homeFile, "utf8")).toBe(previous);
   expect(existsSync(join(f.user, "Library", "LaunchAgents"))).toBe(false);
+});
+test("install proposes the configured remote, not origin", () => {
+  const f = setup();
+  f.command(["git", "remote", "rename", "origin", "upstream"]);
+  writeFileSync(
+    join(f.repo, ".config/jig.yaml"),
+    dump({ gc: f.declaration, repository: { remote: "upstream" } }),
+  );
+  const result = run(f, ["install", "--repo", f.repo]);
+  expectSpawnExit(result, 0);
+  const preview = result.stdout.toString();
+  expect(preview).toContain("remote: upstream");
+  expect(preview).toContain("base_branch: main");
+  expect(preview).not.toContain("remote: origin");
+});
+test("install takes the repository's base branch without reading the remote's HEAD", () => {
+  const f = setup();
+  f.command(["git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD"]);
+  writeFileSync(
+    join(f.repo, ".config/jig.yaml"),
+    dump({ gc: f.declaration, repository: { base_branch: "main" } }),
+  );
+  // The environment layer clears the value collection reads; install still
+  // proposes the one the repository file declares.
+  const result = run(
+    { ...f, env: { ...f.env, JIG__REPOSITORY__BASE_BRANCH: "null" } },
+    ["install", "--repo", f.repo],
+  );
+  expectSpawnExit(result, 0);
+  expect(result.stdout.toString()).toContain("base_branch: main");
+});
+test("install from a linked worktree registers the primary checkout and resolves roots from it", () => {
+  const f = setup();
+  writeFileSync(
+    join(f.repo, ".config/jig.yaml"),
+    dump({ gc: { ...f.declaration, worktree_roots: ["../worktrees"] } }),
+  );
+  f.command(["git", "commit", "-am", "declare a relative root"]);
+  f.command(["git", "push", "origin", "main"]);
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const result = run(f, ["install", "--repo", linked]);
+  expectSpawnExit(result, 0);
+  const preview = result.stdout.toString();
+  const primary = realpathSync(f.repo);
+  expect(preview).toContain(`path: ${primary}`);
+  expect(preview).toContain(`- ${join(dirname(primary), "worktrees")}`);
+  expect(preview).not.toContain(`path: ${linked}`);
+});
+test("a primary checkout whose path holds a newline is read whole", async () => {
+  if (process.platform === "win32") return;
+  const f = setup();
+  const primary = join(f.root, "jig\ncheckout");
+  f.command(["git", "clone", f.repo, primary]);
+  const linked = join(f.root, "linked");
+  expectSpawnExit(
+    Bun.spawnSync(["git", "worktree", "add", "-b", "linked", linked], {
+      cwd: primary,
+      env: f.env,
+      stdout: "pipe",
+      stderr: "pipe",
+    }),
+    0,
+  );
+  const checkouts = await cloneCheckouts(linked);
+  expect(checkouts.primary).toBe(realpathSync(primary));
+  expect(primaryCheckout(linked, checkouts)).toBe(realpathSync(primary));
+});
+test("collect from a linked worktree selects the primary checkout's entry", () => {
+  const f = setup();
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const result = run(f, ["--collect", "--repo", linked, "--json"]);
+  expectSpawnExit(result, 0);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.kinds.map((kind) => kind.name)).toEqual(["scratch"]);
+  expect(JSON.stringify(receipt)).not.toContain("no confirmed machine entry");
+});
+test("collect from a checkout Git cannot read fails the inventory with exit 1", () => {
+  const f = setup();
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  writeFileSync(join(linked, ".git"), `gitdir: ${join(f.root, "missing")}\n`);
+  const result = run(f, ["--collect", "--repo", linked, "--json"]);
+  expectSpawnExit(result, 1);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.resources[0]).toMatchObject({
+    outcome: "unverified",
+    reason: expect.stringContaining("Cannot identify the clone"),
+  });
+  expect(JSON.stringify(receipt)).not.toContain("no confirmed machine entry");
+});
+test("collect from a checkout whose .git is a dangling link fails the inventory", () => {
+  if (process.platform === "win32") return;
+  const f = setup();
+  const broken = mkdtempSync(join(tmpdir(), "gc-dangling-git-"));
+  symlinkSync(join(broken, "missing"), join(broken, ".git"));
+  const result = run(f, ["--collect", "--repo", broken, "--json"]);
+  expectSpawnExit(result, 1);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.resources[0]).toMatchObject({
+    outcome: "unverified",
+    reason: expect.stringContaining("Cannot identify the clone"),
+  });
+});
+test("collect from a path that is no checkout reports a missing entry", () => {
+  const f = setup();
+  const elsewhere = mkdtempSync(join(tmpdir(), "gc-not-a-clone-"));
+  const result = run(f, ["--collect", "--repo", elsewhere, "--json"]);
+  expectSpawnExit(result, 0);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.resources[0]).toMatchObject({
+    outcome: "finding",
+    reason: expect.stringContaining("no confirmed machine entry"),
+  });
+});
+test("collect from a directory inside a linked worktree reports a missing entry", () => {
+  const f = setup();
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const nested = join(linked, "nested");
+  mkdirSync(nested);
+  const result = run(f, ["--collect", "--repo", nested, "--json"]);
+  expectSpawnExit(result, 0);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.resources[0]).toMatchObject({
+    outcome: "finding",
+    reason: expect.stringContaining("no confirmed machine entry"),
+  });
+});
+test("install and uninstall refuse a directory inside a checkout", () => {
+  const f = setup();
+  const nested = join(f.repo, "nested");
+  mkdirSync(nested);
+  for (const args of [
+    ["install", "--repo", nested],
+    ["install", "--repo", nested, "--uninstall"],
+  ]) {
+    const result = run(f, args);
+    expectSpawnExit(result, 1);
+    expect(result.stderr.toString()).toContain("none of its checkouts");
+  }
+});
+test("install replaces and uninstall removes an entry naming a linked worktree", () => {
+  const f = setup();
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const legacy = { ...f.machine.repositories[0], path: linked };
+  writeFileSync(f.homeFile, dump({ gc: { repositories: [legacy] } }));
+  const install = run(f, ["install", "--repo", linked]);
+  expectSpawnExit(install, 0);
+  const preview = install.stdout.toString();
+  expect(preview).toContain(`Replacing the entry for ${linked}`);
+  expect(preview).toContain(`path: ${realpathSync(f.repo)}`);
+  expect(preview).not.toContain(`path: ${linked}`);
+  const uninstall = run(f, ["install", "--repo", linked, "--uninstall"]);
+  expectSpawnExit(uninstall, 0);
+  expect(uninstall.stdout.toString()).toContain("repositories: []");
+});
+test("uninstall refuses a checkout Git cannot read that no entry names", () => {
+  const f = setup();
+  const elsewhere = mkdtempSync(join(tmpdir(), "gc-not-a-clone-"));
+  const result = run(f, ["install", "--repo", elsewhere, "--uninstall"]);
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toContain("Cannot identify the clone");
+});
+test("an entry spelling the clone through a symbolic link is the same clone", () => {
+  if (process.platform === "win32") return;
+  const f = setup();
+  const alias = join(f.root, "alias");
+  symlinkSync(f.repo, alias);
+  const aliased = { ...f.machine.repositories[0], path: alias };
+  writeFileSync(f.homeFile, dump({ gc: { repositories: [aliased] } }));
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const collect = run(f, ["--collect", "--repo", linked, "--json"]);
+  expectSpawnExit(collect, 0);
+  expect(collect.stdout.toString()).not.toContain("no confirmed machine entry");
+  const install = run(f, ["install", "--repo", linked]);
+  expectSpawnExit(install, 0);
+  const preview = install.stdout.toString();
+  expect(preview).toContain(`Replacing the entry for ${alias}`);
+  expect(preview.split("\n").filter((line) => /\bpath: /.test(line))).toEqual([
+    expect.stringContaining(`path: ${realpathSync(f.repo)}`),
+  ]);
+});
+test("machine-wide uninstall identifies no clone, so it runs from any directory", () => {
+  const f = setup();
+  const elsewhere = mkdtempSync(join(tmpdir(), "gc-not-a-clone-"));
+  const result = run(f, [
+    "install",
+    "--repo",
+    elsewhere,
+    "--uninstall",
+    "--machine",
+  ]);
+  expectSpawnExit(result, 0);
+  expect(result.stdout.toString()).toContain("repositories: []");
+});
+test("a report from a linked worktree reads that checkout's own declaration", () => {
+  const f = setup();
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const result = run(f, ["--repo", linked, "--json"]);
+  expectSpawnExit(result, 0);
+  const text = result.stdout.toString();
+  expect(text).toContain(`${linked}/.config/jig.yaml (checkout; report only)`);
+  expect(text).not.toContain(`${f.repo}/.config/jig.yaml`);
 });
 test("uninstall reads only machine policy, so a broken checkout cannot block it", () => {
   const f = setup();

@@ -284,6 +284,7 @@
  *       grammar.
  *   3   the thread is `commentsTruncated` — needs a human look
  *       (`/resolve-review-comments` § 2), not an automatic decision.
+ *   4   a merit reply stands, but its code scanning alert is undismissed: open.
  *   *   whatever `reply-to-thread.ts`, `resolve-thread.ts`, or `drive-state.ts
  *       hold` themselves returned, propagated verbatim — including 11
  *       (another live session holds this tree's drive lease) and 13 (another
@@ -305,13 +306,18 @@ import {
   qualifyingOutcome,
 } from "./lib/outcome.ts";
 import { ghCall, readTimeoutEnv, resolvePr, run, tsArgv } from "./lib/proc.ts";
+import { refuseProvisional } from "./lib/provisional.ts";
+import {
+  confirmedMeritSupersession,
+  mootHeld,
+  resolveDeclinedThread,
+} from "./lib/scanner-sweep-guard.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const driveState = join(here, "drive-state.ts");
 const rrcScripts = join(here, "..", "..", "resolve-review-comments", "scripts");
 const replyToThread = join(rrcScripts, "reply-to-thread.ts");
-const resolveThread = join(rrcScripts, "resolve-thread.ts");
 
 /**
  * Is this outcome fix-dependent (held, never resolved on the spot)?
@@ -661,8 +667,8 @@ async function main(): Promise<number> {
       `triage-thread.ts: thread ${threadId} has more than 100 comments (commentsTruncated).`,
       "Per /resolve-review-comments § 2 and SKILL.md § 3, a reply past the cap could",
       "supersede what is visible, so this is never handled automatically. Park it",
-      "instead:",
-      `  drive-state.ts park [PR] --key ${threadId} --kind thread --reason "..."`,
+      "under the class the cap protects, with its decision record on stdin (SKILL.md § 4):",
+      `  drive-state.ts park [PR] --key ${threadId} --kind thread --class human-thread < record.md`,
     );
   }
 
@@ -694,6 +700,7 @@ async function main(): Promise<number> {
     existingBody = c.body ?? "";
     break;
   }
+  refuseProvisional(threadId, thread.comments, existingUrl);
 
   // --cleanup-only: for the documented direct-post-supersession fallback ("stop
   // after reply-to-thread.ts and never invoke this script's resolve step" — the
@@ -717,17 +724,17 @@ async function main(): Promise<number> {
   // `releaseStaleHold` can only ever find nothing to release — never mistake an
   // active hold for a stale one.
   if (cleanupOnly) {
-    const confirmedMeritSupersession =
-      existingOutcome === "rejected" ||
-      existingOutcome === "wont-fix" ||
-      existingOutcome === "deferred" ||
-      (existingOutcome === "moot" && hasLeaveOpenMarker(existingBody ?? ""));
-    if (!confirmedMeritSupersession) {
+    const confirmedMerit = confirmedMeritSupersession(
+      thread.comments[0],
+      existingOutcome,
+      existingBody,
+    );
+    if (!confirmedMerit) {
       console.error(
         `triage-thread.ts: thread ${threadId} has no confirmed merit supersession (last qualifying reply: ${existingOutcome ?? "none"}) — nothing released; a hold on this key, if any, is still a live, unconfirmed obligation.`,
       );
     }
-    const seenUrls = confirmedMeritSupersession
+    const seenUrls = confirmedMerit
       ? new Set(
           thread.comments
             .map((c) => c.url)
@@ -773,26 +780,22 @@ async function main(): Promise<number> {
     // and `accepted` are excluded for the same reason — neither is evidence
     // of a merit supersession.
     //
-    // A MARKED moot IS included, for the same reason `treatMootAsHold`
-    // trusts the marker below: LEAVE_OPEN_MARKER is only ever appended when
-    // the post-time outcome was genuinely non-hold, so its presence on this
-    // thread's last qualifying reply is positive proof of a merit
-    // supersession even though the outcome word alone is ambiguous.
-    // Reachable sequence: an accepted
-    // reply creates a hold, a marked plain-moot supersedes it, the thread
-    // resolves (by a human, or a concurrent driver) before this script's own
-    // cleanup runs, and a retry lands here — excluding the marked moot left
-    // that stale accepted hold permanently stranded, since a resolved thread
-    // is never re-enumerated.
-    const confirmedMeritSupersession =
-      existingOutcome === "rejected" ||
-      existingOutcome === "wont-fix" ||
-      existingOutcome === "deferred" ||
-      (existingOutcome === "moot" && hasLeaveOpenMarker(existingBody ?? ""));
+    // A moot `mootHeld` never holds IS included: a MARKED one (the marker is
+    // only appended to a genuinely non-hold post) or a code-scanning one
+    // (resolved only over a settled alert). Reachable sequence: an accepted
+    // reply creates a hold, such a moot supersedes it, the thread resolves
+    // before this script's own cleanup runs, and a retry lands here —
+    // excluding the moot would strand that stale accepted hold, since a
+    // resolved thread is never re-enumerated.
+    const confirmedMerit = confirmedMeritSupersession(
+      thread.comments[0],
+      existingOutcome,
+      existingBody,
+    );
     console.error(
       `triage-thread.ts: thread ${threadId} is already resolved — nothing to do.`,
     );
-    if (confirmedMeritSupersession) {
+    if (confirmedMerit) {
       const seenUrls = new Set(
         thread.comments
           .map((c) => c.url)
@@ -829,22 +832,19 @@ async function main(): Promise<number> {
   // post — this invocation's own live, authoritative decision — is governed
   // by the flag it was actually given.
   //
-  // EXCEPT when the existing reply carries LEAVE_OPEN_MARKER: unlike the
-  // outcome token, the marker is only ever added when the post-time outcome was
-  // genuinely non-hold (`postBody`'s own comment) — its presence is therefore
-  // positive proof this was a plain, left-open moot, not a recovery guess.
-  // Without this exception, EVERY retry on a fresh `**moot** --leave-open`
-  // reply (no `--moot-pending-push`) would force an `--unconfirmed` hold at
-  // round -1 despite the marker — and since a plain moot has no unpushed fix to
-  // ever confirm, nothing would advance that round, permanently stranding the
-  // hold instead of merely recovering it. "Assume held" stays the default for
-  // every OTHER reconciled moot — an old-style plain moot posted before this
-  // marker existed, or one truly meant as fix-dependent — where it remains the
-  // safe, recoverable guess.
-  const treatMootAsHold =
-    existingOutcome === "moot"
-      ? !hasLeaveOpenMarker(existingBody ?? "")
-      : mootPendingPush;
+  // EXCEPT when the existing reply carries LEAVE_OPEN_MARKER, which is only
+  // ever added when the post-time outcome was genuinely non-hold (`postBody`'s
+  // own comment): positive proof of a plain, left-open moot. Without it, every
+  // retry on a `**moot** --leave-open` reply would force an `--unconfirmed`
+  // hold at round -1 that nothing ever advances. "Assume held" stays the
+  // default for every OTHER reconciled moot, where it is the safe guess — and
+  // a code-scanning moot is never held: its alert is its proof (`mootHeld`).
+  const treatMootAsHold = mootHeld(
+    thread.comments[0],
+    mootPendingPush,
+    existingOutcome,
+    existingBody,
+  );
 
   // What this call will end up dispatching, KNOWABLE before any posting
   // happens: reconciliation (existingOutcome found) never posts, and a fresh
@@ -1052,6 +1052,7 @@ async function main(): Promise<number> {
   }
 
   if (!isHoldOutcome(effectiveOutcome, treatMootAsHold)) {
+    let exit = 0;
     if (effectiveLeaveOpen) {
       // SKILL.md's "Leaving a human thread open": a human thread you replied to
       // but chose not to close on the author's behalf is a deliberate open
@@ -1067,12 +1068,15 @@ async function main(): Promise<number> {
           : `triage-thread.ts: --leave-open — thread ${threadId} replied but not resolved.`,
       );
     } else {
-      const resolved = await run(tsArgv(resolveThread, [threadId]), {
-        timeoutSec: helperTimeoutSec,
-        stdout: "inherit",
-        stderr: "inherit",
-      });
+      // A code-scanning thread stays open over an unsettled alert (exit 4).
+      const resolved = await resolveDeclinedThread(
+        threadId,
+        thread.comments[0],
+        helperTimeoutSec,
+        effectiveOutcome,
+      );
       if (resolved.code !== 0) return resolved.code;
+      exit = resolved.exit;
     }
     // A merit reply can be a deliberate supersession of an earlier
     // accepted/moot hold on this same key, and resolve-thread.ts has no
@@ -1081,17 +1085,12 @@ async function main(): Promise<number> {
     const seenUrls = new Set(
       thread.comments.map((c) => c.url).filter((u): u is string => u !== null),
     );
-    // The comment this pass itself just posted (if any) is not yet in
-    // `thread.comments` (fetched before posting) — include it so a hold this
-    // same call just created (impossible today, since a fresh post only
-    // reaches the hold-outcome branch below, but kept for the invariant to
-    // hold regardless of future branches) is never treated as
-    // unaccounted-for.
+    // This call's own reply postdates `thread.comments`; count it as seen.
     seenUrls.add(commentUrl);
     const cleanedUp = await attemptStaleHoldCleanup(pr, threadId, seenUrls);
     // Same reasoning as the isResolved branch above: a stranded hold on a now-
     // resolved thread has no other path back to this script.
-    return cleanedUp ? 0 : 1;
+    return cleanedUp ? exit : 1;
   }
 
   // `pr` was already resolved above (before any posting), guarded by the same

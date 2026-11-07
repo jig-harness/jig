@@ -1,21 +1,19 @@
 /** Keep cancellation and descendant cleanup attached to the driver until all retained work settles. */
-import type { DriveLock } from "./locks.ts";
+import { type DriveLock, processRegistryDir, renewLock } from "./locks.ts";
 
 import {
   registerSignalHandler,
   beginShutdown,
   requestShutdown,
-  registerCleanup,
 } from "./../../../../../shared/cleanup.ts";
 
 import { driverRuntime } from "./runtime.ts";
 
 import { cancelTrackedProcesses } from "./../../../../../shared/proc.ts";
 
-import {
-  driverStopRequested,
-  publishDriverStopCompletion,
-} from "./../stop-request.ts";
+import { ackDirective, watchImmediateStop } from "./../state/mailbox-stop.ts";
+
+import type { MailboxWatch } from "./mailbox.ts";
 
 import {
   reapRegisteredProcessTrees,
@@ -24,13 +22,9 @@ import {
 
 import { fail } from "./../cli.ts";
 
-import { join } from "node:path";
-
-import { mkdirSync, utimesSync, existsSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 
 import { PROCESS_REGISTRY_ENV } from "./../../../../../shared/process-registry.ts";
-
-import { claimName } from "./../claim.ts";
 
 /** Conventional exit status for the driver's signal and cooperative stop paths. */
 export function driverStopExitCode(sig: string): number {
@@ -43,12 +37,22 @@ export function driverStopExitCode(sig: string): number {
         : 129;
 }
 
+/**
+ * Cancel the active pass and stop on a signal, or on the mailbox `stop` that
+ * `drives.ts --stop` addresses to this driver's generation with `now`, read
+ * every quarter second from `watch`'s mailbox: the cooperative channel a
+ * platform without signals between processes needs. Once the pass tree is
+ * witnessed gone, the driver acknowledges that stop in the outbox before its
+ * locks are released; an acknowledgement it cannot append keeps the locks, so
+ * `drives.ts` does not take a stop it cannot see for a finished one.
+ */
 export function installStopControls(
   held: DriveLock[],
   registry?: string,
+  watch?: MailboxWatch,
 ): Disposable {
   let shuttingDown = false;
-  let requested = false;
+  let requested: string | null = null;
   const cancellation = registerSignalHandler(async (sig) => {
     beginShutdown();
     if (shuttingDown) held.length = 0;
@@ -58,7 +62,7 @@ export function installStopControls(
     try {
       const helpersGone = await cancelTrackedProcesses();
       const gone = await stopActivePass(
-        `received ${requested ? "stop request" : sig}`,
+        `received ${requested !== null ? "stop request" : sig}`,
         registry ?? driverRegistry,
       );
       confirmed = helpersGone && gone;
@@ -66,18 +70,19 @@ export function installStopControls(
       driverRuntime.driverStopConfirmed = confirmed;
       if (!confirmed) held.length = 0;
     }
+    if (confirmed && requested !== null && watch !== undefined)
+      await acknowledgeStop(held, watch, requested);
   });
+  const pollStop =
+    watch === undefined
+      ? null
+      : watchImmediateStop(watch.dir, watch.pr, watch.generation);
   const stopTimer = setInterval(() => {
-    if (
-      !shuttingDown &&
-      held.some(
-        (lock) =>
-          lock.nonce !== undefined && driverStopRequested(lock.dir, lock.nonce),
-      )
-    ) {
-      requested = true;
-      requestShutdown("SIGTERM", driverStopExitCode("stop request"));
-    }
+    if (shuttingDown || pollStop === null) return;
+    const stop = pollStop();
+    if (stop === null) return;
+    requested = stop;
+    requestShutdown("SIGTERM", driverStopExitCode("stop request"));
   }, 250);
   stopTimer.unref?.();
   return {
@@ -86,6 +91,22 @@ export function installStopControls(
       cancellation[Symbol.dispose]();
     },
   };
+}
+
+/** Acknowledge the stop the driver acted on; a failure keeps the locks (see `installStopControls`). */
+async function acknowledgeStop(
+  held: DriveLock[],
+  watch: MailboxWatch,
+  id: string,
+): Promise<void> {
+  try {
+    await ackDirective(watch.dir, watch.pr, id, watch.generation);
+  } catch (error) {
+    held.length = 0;
+    console.error(
+      `drive.ts: could not acknowledge stop ${id} (${error instanceof Error ? error.message : String(error)}) — NOT releasing the locks.`,
+    );
+  }
 }
 
 /** Drain acquisition-owned runner registrations before another pass or lock release. */
@@ -166,8 +187,9 @@ function driverRegistryDrain(
 export function installDriverLifecycle(
   held: DriveLock[],
   registry?: string,
+  watch?: MailboxWatch,
 ): AsyncDisposable {
-  const controls = installStopControls(held, registry);
+  const controls = installStopControls(held, registry, watch);
   const drain = driverRegistryDrain(held, registry);
   return {
     async [Symbol.asyncDispose]() {
@@ -189,36 +211,20 @@ const registrationDrains = new Map<
   Promise<{ survived: boolean; confirmed: boolean }>
 >();
 
-/** Publish success only behind the cancellation barrier, before claims are released. */
-export function driverStopCompletionCleanup(held: DriveLock[]): Disposable {
-  return registerCleanup(() => {
-    if (!driverRuntime.driverStopConfirmed) return;
-    try {
-      for (const lock of held)
-        if (
-          lock.nonce !== undefined &&
-          driverStopRequested(lock.dir, lock.nonce)
-        )
-          publishDriverStopCompletion(lock.dir, lock.nonce, process.pid);
-    } catch (error) {
-      held.length = 0;
-      throw error;
-    }
-  });
-}
-
-export function createDriverRegistry(held: DriveLock[]): void {
+export function createDriverRegistry(held: DriveLock[]): string | null {
   // The registry belongs to this acquisition. Detached foreground runners
   // inherit it, so the operator can also capture them if a driver is wedged.
   if (process.platform === "win32") {
     const prLock = held[held.length - 1];
     if (prLock?.nonce !== undefined) {
-      const registry = join(prLock.dir, `processes.${prLock.nonce}`);
+      const registry = processRegistryDir(prLock) as string;
       mkdirSync(registry);
       driverRegistry = registry;
       process.env[PROCESS_REGISTRY_ENV] = registry;
+      return registry;
     }
   }
+  return null;
 }
 
 /**
@@ -259,62 +265,30 @@ async function stopActivePass(
       "  A released lock plus a live pass is two drivers on one tree. Leaving the",
     );
     console.error(
-      "  lock costs a refusal instead: remove the lock dir once the pass is gone.",
+      "  lock costs a refusal instead: run drives.ts --stop once the pass is gone.",
     );
   }
   return gone;
 }
 
 /**
- * Refresh this process's claim on a lock it holds, and notice if it has
- * stopped holding it.
- *
- * `utimes` on the claim's own generation-keyed name is the whole operation.
- * There is no ownership check in front of it to race, because the only entry
- * it can reach is the one this process published — a successor's carries a
- * different name and is not addressable from here at all.
- *
- * So a MISSING claim is the takeover signal, and it is exact: the only thing
- * that removes `claim.<ours>` is a recovery of this generation. A refresh that
- * fails for any other reason must not be read that way — a drive must not die
- * because it could not write — so the absence is confirmed before the drive
- * gives up on a lock it may still hold.
+ * Renew this driver's heartbeat on `lock`. A renewal that finds the lock no
+ * longer carries this acquisition's token means another driver recovered it:
+ * the takeover is noted and the active pass stopped. A renewal that fails
+ * (the database was busy past its wait) is transient: the next heartbeat
+ * tries again, and the lock is still this driver's.
  */
 export function touchLock(lock: DriveLock): void {
   if (lock.nonce === undefined) return; // never taken
-  const claim = join(lock.dir, claimName(lock.nonce));
-  const now = Date.now() / 1000;
+  let renewed: boolean;
   try {
-    utimesSync(claim, now, now);
-    return;
+    renewed = renewLock(lock);
   } catch {
-    if (existsSync(claim)) return; // transient: the claim is still ours
+    return;
   }
-  // Our GENERATION is gone, so another driver recovered this path while we
-  // believed we held it. A drive that keeps going from here is the second
-  // driver the lock exists to prevent, so record it and let the loop stop;
-  // `release` will not touch the successor's lock, because the only name it
-  // removes is ours.
-  noteTakeover(lock);
+  if (!renewed) noteTakeover(lock);
 }
 
-/**
- * The one response to a detected takeover, called the moment one is detected
- * and before anything else is done or printed about it: `compromised` is what
- * stops the driver log rotating (`mayRotateDriverLog`), and a diagnostic
- * written while it is still unset could rename the log over the successor's
- * history.
- *
- * Recording it is not enough on its own: the loop only reads `compromised`
- * at a round boundary, and a pass already running does not pause at one. So
- * the pass is stopped HERE, the moment ownership is lost — the
- * fire-and-forget is deliberate, since a timer callback cannot block and
- * `stop()` is synchronous up to the SIGTERM; the loop awaits the same handle
- * before it decides anything. The quota sleep is aborted for the same
- * reason: `stopActivePass` is a no-op when nothing is running, which is
- * exactly the state the driver is in for up to six hours while sleeping out a
- * short quota window, and a controller with no listener is a harmless no-op.
- */
 export function noteTakeover(lock: DriveLock): void {
   if (driverRuntime.compromised !== "") return;
   driverRuntime.compromised = lock.what;

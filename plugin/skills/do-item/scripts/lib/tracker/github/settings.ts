@@ -3,7 +3,7 @@
  * `.config/jig.yaml`; every field is optional:
  *
  *   github:
- *     repository: owner/name   # default: the `origin` remote's repository
+ *     repository: owner/name   # default: the git remote's repository
  *     states_from: labels      # or `project`, a board's Status field
  *     project: https://github.com/orgs/owner/projects/1
  *     status_field: Status
@@ -12,6 +12,7 @@
 
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
+import { nonEmpty, settingsSection } from "../settings-fields.ts";
 
 /** Where the GitHub adapter keeps an open issue's workflow state. */
 export const GITHUB_STATE_SOURCES = ["labels", "project"] as const;
@@ -34,7 +35,7 @@ export interface GitHubProject {
 }
 
 export interface GitHubSettings {
-  /** `owner/name`; `null` = the repository the `origin` remote points to. */
+  /** `owner/name`; `null` = the repository the git remote (`repository.remote`, else `origin`) points to. */
   repository: string | null;
   statesFrom: GitHubStateSource;
   /** Required when `statesFrom` is `project`. */
@@ -63,26 +64,8 @@ export function defaultPriorityLabel(name: PriorityName): string {
   return `priority: ${name}`;
 }
 
-function nonEmpty(v: unknown, at: string): string {
-  if (typeof v !== "string" || v.trim() === "")
-    throw new TrackerConfigError(at, `${at} must be a nonempty string`);
-  return v;
-}
-
 function sectionOf(raw: unknown): Record<string, unknown> {
-  if (raw !== undefined && raw !== null && !isRecord(raw))
-    throw new TrackerConfigError(
-      "issue_tracker.github",
-      "issue_tracker.github must be a mapping",
-    );
-  const section = (raw ?? {}) as Record<string, unknown>;
-  const unknown = Object.keys(section).find((k) => !FIELDS.includes(k));
-  if (unknown !== undefined)
-    throw new TrackerConfigError(
-      field(unknown),
-      `${field(unknown)} is not a field (${FIELDS.join(", ")})`,
-    );
-  return section;
+  return settingsSection(raw, "github", FIELDS);
 }
 
 function repositoryOf(v: unknown): string | null {

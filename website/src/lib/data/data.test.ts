@@ -8,10 +8,12 @@ import { FEATURE_PLATES, parseFeatures } from "./features.ts";
 import { parseFlywheel } from "./flywheel.ts";
 import {
   DESIGN_NOT_BUILT,
+  DISPATCHER_STARTS,
   HANDOFFS,
   NOT_BUILT,
   VERIFY_PHASES,
   VERIFY_WHEN,
+  dispatcherTaps,
   jobsByModule,
   parseFactory,
 } from "./factory.ts";
@@ -27,6 +29,7 @@ import { parseReadme } from "./readme.ts";
 import { parseSkills } from "./skills.ts";
 import { parseChangelog, parseRoadmap, roadmapAnchor } from "./whats-new.ts";
 import { PLATES } from "../plates.ts";
+import { sections } from "../source.ts";
 import { headingId } from "../view.ts";
 import {
   MODULE_IDS,
@@ -228,6 +231,7 @@ test("the skills are in families, in the order they are used, each saying how it
     else groups.push([s.family?.name, [s.name]]);
   }
   expect(groups).toEqual([
+    ["Find your way", ["jig"]],
     [
       "Deliver a change",
       [
@@ -238,12 +242,13 @@ test("the skills are in families, in the order they are used, each saying how it
         "resolve-review-comments",
         "resolve-conflicts",
         "fix-ci",
+        "operator",
       ],
     ],
     ["Review a change", ["change-areas", "review", "github-actions"]],
     [
       "Understand, decide and record",
-      ["explain", "decide", "adr", "design-brief-builder"],
+      ["explain", "decide", "adr", "red-team", "design-brief-builder"],
     ],
     [
       "Learn from the work",
@@ -251,7 +256,7 @@ test("the skills are in families, in the order they are used, each saying how it
     ],
     [
       "Inspect and analyse",
-      ["audit", "code-stats", "changelog", "programmatic-execution"],
+      ["audit", "code-stats", "docs", "changelog", "programmatic-execution"],
     ],
   ]);
 });
@@ -316,6 +321,79 @@ describe.skipIf(!existsSync(join(root, "FACTORY.md")))("the factory", () => {
   const text = existsSync(join(root, "FACTORY.md")) ? read("FACTORY.md") : "";
   const f = parseFactory(text);
 
+  test("reads the sections in the document's order, the line first", () => {
+    expect(
+      sections(text)
+        .slice(1)
+        .map((s) => s.title),
+    ).toEqual([
+      "The line",
+      "With nobody at the keyboard",
+      "Deciding what to build",
+      "What it stands on",
+      "The loop that sharpens it",
+      "What stays with a person",
+      "What the platform supplies",
+    ]);
+    expect(f.intro.length).toBeGreaterThanOrEqual(2);
+    expect(f.lineLead).not.toBe("");
+    expect(f.lineAfter).toStartWith("Follow-up items");
+    expect(f.prLoopLead).toStartWith("Every change follows");
+    expect(f.prLoop.map((s) => s.lead)).toEqual([
+      "Develop",
+      "Review rounds",
+      "Resolve every comment",
+      "Merge",
+    ]);
+    expect(f.designLead).not.toBe("");
+    expect(f.scaffoldLead).not.toBe("");
+    expect(f.many.modules).toEqual(["M12", "M11"]);
+    expect(f.provideList).toStartWith("- **A practice for each part.**");
+    expect(f.learning).not.toBe("");
+    expect(f.audit).toStartWith("The [audit]");
+    expect(f.person.length).toBeGreaterThan(0);
+    expect(f.platform.map((p) => p.lead)).toContain("Parallel workspaces");
+  });
+
+  test("reads the dispatcher's section: its parts, what it starts and what it never does", () => {
+    const u = f.unattended;
+    expect(u.lead.length).toBeGreaterThan(0);
+    expect(u.parts.map((p) => p.title)).toEqual([
+      "What it starts",
+      "What reaches a person",
+      "The outcome log and its dashboard",
+      "Accounts and their usage limits",
+      "Contended areas, one at a time",
+      "What it never does",
+    ]);
+    expect(new Set(u.parts.map((p) => p.id)).size).toBe(u.parts.length);
+    // Every start the rail draws is an item of the list, and every item
+    // starts a station of the line.
+    expect(u.starts.map((s) => s.lead).sort()).toEqual(
+      Object.keys(DISPATCHER_STARTS).sort(),
+    );
+    const stations = new Set(f.line.map((s) => s.id));
+    for (const s of u.starts)
+      expect({ lead: s.lead, at: stations.has(s.station ?? "") }).toEqual({
+        lead: s.lead,
+        at: true,
+      });
+    expect([...dispatcherTaps(f).keys()]).toEqual(["b1", "b4", "b7"]);
+    // The figure's "reads" and "tells a person" lists, from the sentences
+    // that open their parts, one phrase each.
+    for (const list of [u.reads, u.tells]) {
+      expect(list.length).toBeGreaterThanOrEqual(3);
+      for (const phrase of list) expect(phrase).not.toMatch(/,| and | or /);
+    }
+    expect(u.never.map((n) => n.lead)).toContain("Merge");
+    expect(u.never.map((n) => n.lead)).toContain("Answer a parked question");
+  });
+
+  test("names no roadmap item by number in a sentence", () => {
+    const prose = text.replace(/\]\([^)]*\)/g, "]");
+    expect(prose).not.toMatch(/\bitems? \d+\b/i);
+  });
+
   test("parses the three jobs, both levels and every station", () => {
     expect(f.jobs.map((j) => j.id)).toEqual([
       "context",
@@ -325,7 +403,14 @@ describe.skipIf(!existsSync(join(root, "FACTORY.md")))("the factory", () => {
     expect(f.jobs.find((j) => j.id === "verification")?.catches).toContain(
       "M1",
     );
-    expect(f.levels).toHaveLength(2);
+    expect(f.levels.map((l) => l.name)).toEqual([
+      "Deciding what to build",
+      "The line",
+    ]);
+    expect(f.levels.map((l) => l.modules)).toEqual([
+      ["M5", "M6"],
+      ["M7", "M9"],
+    ]);
     expect(f.pipeline).toHaveLength(5);
     expect(f.line.map((s) => s.name)).toEqual([
       "Pick up",
@@ -345,16 +430,37 @@ describe.skipIf(!existsSync(join(root, "FACTORY.md")))("the factory", () => {
     expect(jobsByModule(f).get("M5")).toEqual(["guide", "catch", "knowledge"]);
   });
 
-  test("every roadmap item marked not built is one the factory names", () => {
+  test("follow-up runners reach the site", () => {
+    const actors = f.line.find((s) => s.id === "b7")?.actors ?? [];
+    expect(actors.filter((a) => a.kind === "tool").map((a) => a.name)).toEqual([
+      "repository follow-up",
+      "dispatcher",
+    ]);
+  });
+
+  test("every roadmap item marked not built is one an On the roadmap sentence links", () => {
+    const linked = new Set(f.roadmap.map((r) => r.item));
     const items = [
       ...Object.values(NOT_BUILT).flat(),
       ...DESIGN_NOT_BUILT.level,
       ...DESIGN_NOT_BUILT.everyStage,
     ].flatMap((a) => (a.kind === "todo" ? [a.item] : []));
-    for (const item of items)
-      expect(text, item).toMatch(
-        item === "Later" ? /ROADMAP\.md, Later/ : new RegExp(`item ${item}\\b`),
-      );
+    for (const item of items) expect(linked.has(item), item).toBe(true);
+    expect(NOT_BUILT.b1).toBeUndefined();
+  });
+
+  test("every roadmap link lands on a ROADMAP.md heading", () => {
+    const headings = new Set(
+      [...read("ROADMAP.md").matchAll(/^#{2,3} (.+)$/gm)].map((m) =>
+        headingId(m[1] ?? ""),
+      ),
+    );
+    expect(f.roadmap.length).toBeGreaterThan(0);
+    for (const r of f.roadmap)
+      expect({ anchor: r.anchor, found: headings.has(r.anchor) }).toEqual({
+        anchor: r.anchor,
+        found: true,
+      });
   });
 
   test("every station has a handoff, and its own text still says what it stands for", () => {
@@ -436,14 +542,59 @@ test("the configuration layers and the tracker interface's operations", () => {
   expect(t.operations[0]).toMatch(/read an issue/);
 });
 
-test("the README's factory section and its ways to use Jig", () => {
+describe("the README", () => {
   const r = parseReadme(read("README.md"));
-  expect(r.ways.map((w) => w.lead)).toEqual([
-    "Greenfield template",
-    "Brownfield upgrade",
-    "Reference",
-    "Shared tooling",
-  ]);
+  const factorySection = (body: string) =>
+    `# Jig Harness\n\nJig is this. It does that.\n\n**The tagline.**\n\n## Jig as a software factory\n\n${body}\n`;
+
+  test("opens with what Jig is in two or three sentences, then its tagline", () => {
+    expect(r.opening.statement.length).toBeGreaterThanOrEqual(2);
+    expect(r.opening.statement.length).toBeLessThanOrEqual(3);
+    expect(r.opening.statement[0]).toMatch(/^Jig is /);
+    expect(r.opening.tagline).toMatch(/^\*\*A jig for AI coding agents/);
+  });
+
+  test("refuses a README whose title is followed by its tagline instead of the statement", () => {
+    expect(() =>
+      parseReadme(
+        "# Jig Harness\n\n**The tagline.**\n\nJig is this.\n\n## Jig as a software factory\n\nThe line.\n\nIt stands on:\n\n- **Context**: c\n",
+      ),
+    ).toThrow(/what Jig is/);
+    expect(() =>
+      parseReadme(
+        factorySection("The line.\n\nIt stands on:\n\n- **Context**: c"),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      parseReadme(factorySection("The line, with no jobs.")),
+    ).toThrow(/software factory/);
+  });
+
+  test("tells the line, then the scaffolding's jobs, with no roadmap number or configuration key", () => {
+    expect(r.factory.jobs.map((j) => j.lead)).toEqual([
+      "Context",
+      "Verification",
+      "Knowledge",
+    ]);
+    expect(r.factory.line.join(" ")).toContain("A person merges.");
+    for (const text of [
+      ...r.factory.line,
+      r.factory.jobsLead,
+      ...r.factory.jobs.map((j) => j.body),
+    ]) {
+      expect(text, text).not.toMatch(/\bitem \d+\b/);
+      expect(text, text).not.toMatch(/`[a-z_]+(\.[a-z_]+)+`/);
+    }
+  });
+
+  test("lists the ways to use Jig", () => {
+    expect(r.ways.map((w) => w.lead)).toEqual([
+      "Greenfield template",
+      "Brownfield upgrade",
+      "Reference",
+      "Shared tooling",
+    ]);
+  });
 });
 
 describe("FEATURES.md", () => {
@@ -458,10 +609,17 @@ describe("FEATURES.md", () => {
 
   test("has an intro and a feature per section, each with prose and a practice", () => {
     expect(f.intro).toMatch(/modules/);
-    expect(f.features.length).toBeGreaterThanOrEqual(10);
+    expect(f.features.length).toBe(13);
     for (const x of f.features) {
       expect(x.body.length, x.title).toBeGreaterThan(120);
       expect(x.practice, x.title).not.toBe("");
+    }
+  });
+
+  test("every feature opens with its problem line, apart from its prose", () => {
+    for (const x of f.features) {
+      expect(x.problem, x.title).toMatch(/^[A-Z].*[.!?]$/);
+      expect(x.body, x.title).not.toContain(x.problem);
     }
   });
 
@@ -502,6 +660,9 @@ Intro.
 
 ## A thing
 
+"The thing went wrong, as a team
+would say it."
+
 Prose about the thing, long enough to count.
 
 - **Skills:** [\`a\`](plugin/skills/a/SKILL.md), [\`b\`](plugin/agents/b.md)
@@ -512,6 +673,7 @@ Prose about the thing, long enough to count.
     expect(one.intro).toBe("Intro.");
     expect(one.features[0]).toMatchObject({
       title: "A thing",
+      problem: "The thing went wrong, as a team would say it.",
       body: "Prose about the thing, long enough to count.",
       skills: ["a", "b"],
       modules: ["M1", "M12"],
@@ -526,32 +688,32 @@ Prose about the thing, long enough to count.
     });
     expect(
       parseFeatures(
-        "# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n- **On the roadmap:** the `x` skill (item 4), which does y (Later)\n",
+        '# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Practice:** M1\n- **On the roadmap:** the `x` skill (item 4), which does y (Later)\n',
       ).features[0]?.notBuiltEntries,
     ).toEqual([
       { text: "the `x` skill, which does y", items: ["4"], groups: ["Later"] },
     ]);
     expect(() =>
       parseFeatures(
-        "# T\n\n## A\n\nProse.\n\n- **Runs:** x\n- **Practice:** M1\n",
+        '# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Runs:** x\n- **Practice:** M1\n',
       ),
     ).toThrow(/field must be one of/);
-    expect(() => parseFeatures("# T\n\n## A\n\nProse.\n")).toThrow(
-      /no Practice/,
-    );
+    expect(() =>
+      parseFeatures('# T\n\n## A\n\n"A problem."\n\nProse.\n'),
+    ).toThrow(/no Practice/);
     expect(() =>
       parseFeatures(
-        "# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n\nMore.\n\n- **Runs:** x\n",
+        '# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Practice:** M1\n\nMore.\n\n- **Runs:** x\n',
       ),
     ).toThrow(/text after its field list/);
     expect(() =>
       parseFeatures(
-        "# T\n\n## A\n\nProse.\n\n- **Skills:** see plugin/skills/a/SKILL.md\n- **Practice:** M1\n",
+        '# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Skills:** see plugin/skills/a/SKILL.md\n- **Practice:** M1\n',
       ),
     ).toThrow(/more than links/);
     expect(() =>
       parseFeatures(
-        "# T\n\n## A\n\nProse.\n\n- **Skills:** [`b`](plugin/skills/a/SKILL.md)\n- **Practice:** M1\n",
+        '# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Skills:** [`b`](plugin/skills/a/SKILL.md)\n- **Practice:** M1\n',
       ),
     ).toThrow(/must link/);
     for (const hidden of [
@@ -566,7 +728,8 @@ Prose about the thing, long enough to count.
       "- **Practice:** M1\n  -\n",
     ])
       expect(
-        () => parseFeatures(`# T\n\n## A\n\nProse.\n\n${hidden}`),
+        () =>
+          parseFeatures(`# T\n\n## A\n\n"A problem."\n\nProse.\n\n${hidden}`),
         hidden,
       ).toThrow(/continues a field/);
     for (const before of [
@@ -580,7 +743,7 @@ Prose about the thing, long enough to count.
       expect(
         () =>
           parseFeatures(
-            `# T\n\n## A\n\nProse.\n\n${before}\n- **Practice:** M1\n`,
+            `# T\n\n## A\n\n"A problem."\n\nProse.\n\n${before}\n- **Practice:** M1\n`,
           ),
         before,
       ).toThrow(/in its prose/);
@@ -589,15 +752,41 @@ Prose about the thing, long enough to count.
       "- **Practice:** M1\n  covers M2 (see 1) above)\n",
     ])
       expect(
-        () => parseFeatures(`# T\n\n## A\n\nProse.\n\n${plain}`),
+        () =>
+          parseFeatures(`# T\n\n## A\n\n"A problem."\n\nProse.\n\n${plain}`),
         plain,
       ).not.toThrow();
+  });
+
+  test("refuses a section that does not open with one quoted problem line", () => {
+    const section = (opening: string) =>
+      `# T\n\n## A\n\n${opening}\n\n- **Practice:** M1\n`;
+    for (const bad of [
+      "Prose.",
+      '"Unclosed.\n\nProse.',
+      'Unopened."\n\nProse.',
+      '"A "quote" inside."\n\nProse.',
+      '""\n\nProse.',
+      '"A problem." And more.\n\nProse.',
+      '### Unexpected heading\n\n"A problem."\n\nProse.',
+      '```text\nExample\n```\n\n"A problem."\n\nProse.',
+      '> Context\n\n"A problem."\n\nProse.',
+      '<!-- Context -->\n\n"A problem."\n\nProse.',
+    ])
+      expect(() => parseFeatures(section(bad)), bad).toThrow(
+        /must open with its problem line/,
+      );
+    expect(() => parseFeatures(section('"A problem."'))).toThrow(/no prose/);
+    expect(
+      parseFeatures(section('"A problem,\nwrapped."\n\nProse.')).features[0]
+        ?.problem,
+    ).toBe("A problem, wrapped.");
   });
 
   test("refuses an On the roadmap parenthetical that is not a roadmap reference", () => {
     const notBuilt = (text: string) =>
       parseFeatures(
-        `# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n- **On the roadmap:** ${text}\n`,
+        `# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Practice:** M1\n- **On the roadmap:** ${text}\n`,
       ).features[0];
     expect(notBuilt("missing work ( item 999 )")?.roadmapItems).toEqual([
       "999",

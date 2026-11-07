@@ -28,6 +28,7 @@ import {
   state,
 } from "./drive-loop-harness.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { putClaim } from "./state-rows.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
@@ -47,10 +48,7 @@ describe("drive.ts loop control", () => {
       threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       isDraft: true,
     });
-    writeFileSync(
-      join(stateDir, "drive-pr-999.ready-claim"),
-      "other-driver-token",
-    );
+    putClaim(stateDir, "999", "ready", "", "other-driver-token");
     const r = await runDriveIn(dir, stateDir, [
       "--no-head-sync",
       "--max-rounds",
@@ -82,19 +80,15 @@ describe("drive.ts loop control", () => {
     // already holds the lease. Exit 0 here would claim full convergence over
     // a PR that may stay a draft forever if that other driver dies holding
     // it, with nothing left to retry: the exact false terminal the
-    // converged-draft handling exists to eliminate. Pre-seed a live lease
-    // file, exactly what a concurrent driver's `claim-ready-mark` leaves
-    // behind.
+    // converged-draft handling exists to eliminate. Pre-seed a live lease,
+    // exactly what a concurrent driver's `claim-ready-mark` leaves behind.
     const { dir, stateDir } = writeFixture({
       threads: [],
       reviewedSha: scratchClean.head,
       head: scratchClean.head,
       isDraft: true,
     });
-    writeFileSync(
-      join(stateDir, "drive-pr-999.ready-claim"),
-      "other-driver-token",
-    );
+    putClaim(stateDir, "999", "ready", "", "other-driver-token");
     const r = await runDriveIn(dir, stateDir, [
       "--no-head-sync",
       "--",
@@ -220,16 +214,13 @@ describe("drive.ts loop control", () => {
     // and may record it, or may die holding it. Treating it as sufficient
     // confirmation would run the pass unprotected against exactly the
     // mid-pass draft-flip race this whole mechanism exists to close. A
-    // pre-seeded live lease file is exactly what a concurrent driver's
+    // pre-seeded live lease is exactly what a concurrent driver's
     // claim-ready-mark leaves behind.
     const { dir, stateDir } = writeFixture({
       threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       isDraft: false,
     });
-    writeFileSync(
-      join(stateDir, "drive-pr-999.ready-claim"),
-      "other-driver-token",
-    );
+    putClaim(stateDir, "999", "ready", "", "other-driver-token");
     const r = await runDriveIn(dir, stateDir, [
       "--no-head-sync",
       "--",

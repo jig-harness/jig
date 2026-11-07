@@ -11,7 +11,7 @@ import { fstatSync, statSync } from "node:fs";
 // ones, so a failure thrown by shared code (`proc.ts`'s refusals) exits with
 // its own code here too, and `JIG_LOG=debug` reports every failure's stack
 // and causes the same way.
-import { fail } from "../../../../shared/cli.ts";
+import { fail, isDigits } from "../../../../shared/cli.ts";
 
 export {
   isDigits,
@@ -29,7 +29,7 @@ export {
  * documented caller derives via `git rev-parse HEAD` (never `--short`, never an
  * abbreviation). Rejecting anything looser than that at the argument boundary
  * is what closes a whole class of malformed-input, not just CR/LF: a value this
- * permits can never contain a newline (it fails-closed the shared state file on
+ * permits can never contain a newline (it fails-closed the shared stored state on
  * the next read) or a backtick/pipe (it corrupts the handoff's markdown table,
  * which renders both SHAs and actor ids inside backtick code spans and
  * pipe-delimited rows).
@@ -121,6 +121,24 @@ export function stderrIsDevNull(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * The whole number from 1 to `max` that `flag` was given, or exit 2 with
+ * `usage` when `raw` is missing, not digits, or out of range.
+ */
+export function positiveIntArg(
+  flag: string,
+  raw: string | undefined,
+  max: number,
+  usage: readonly string[],
+): number {
+  if (raw === undefined || !isDigits(raw))
+    fail(2, `${flag} takes a whole number`, ...usage);
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isSafeInteger(n) || n < 1 || n > max)
+    fail(2, `${flag} must be between 1 and ${max}`, ...usage);
+  return n;
 }
 
 /** First 12 characters, the SHA-abbreviation used across the skill's output. */

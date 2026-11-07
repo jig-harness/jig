@@ -9,6 +9,7 @@ import {
   MAX_LINE_COUNT_BYTES,
 } from "../scripts/lib/analyze.ts";
 import { KINDS, type FileStats } from "../scripts/lib/model.ts";
+import { EMPTY_READING } from "../scripts/lib/test-runners/index.ts";
 import {
   encodeReport,
   renderHtmlReport,
@@ -129,6 +130,7 @@ describe("aggregates", () => {
       ...input,
       vendoredExcluded: total([file({ kind: "vendored", bytes: 99 })]),
       missing: 0,
+      testRunners: { configurations: [], unreadable: [] },
     });
     expect(report.schema).toBe("code-stats/v1");
     expect(report.vendored).toEqual({
@@ -153,6 +155,7 @@ describe("analyzeFile", () => {
     attributes: new Map(),
     submodules: new Set(),
     overrides: new Map(),
+    runners: EMPTY_READING,
   };
 
   test.skipIf(process.platform === "win32")(

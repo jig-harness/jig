@@ -6,14 +6,8 @@ import { fixtureStateTree } from "./scoped-state-dir.ts";
  */
 
 import { expect } from "bun:test";
-import {
-  mkdirSync,
-  existsSync,
-  readdirSync,
-  rmSync,
-  utimesSync,
-  writeFileSync,
-} from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, delimiter } from "node:path";
 import {
@@ -28,6 +22,8 @@ import {
 } from "./drive-pr-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { shellQuote } from "../../../shared/cli.ts";
+import { driveDb } from "../scripts/lib/state/db.ts";
+import { lockRow, putLock } from "./state-rows.ts";
 
 import {
   byPlatform,
@@ -81,11 +77,16 @@ export function blockedPassScript(started: string, release: string): string {
  * how long a drive sleeps, never what it reads or decides; a poll-bounded
  * wait still runs its full number of polls. A test that asserts the
  * production pacing sets its own value (per-call env wins over this one).
+ * It also turns the drive ledger off (see the entry's comment).
  */
 export const DRIVE_PACING_ENV: Record<string, string> = {
   DRIVE_PR_FINAL_CI_POLL_MS: "50",
   DRIVE_PR_UNLABEL_SETTLE_MS: "50",
   DRIVE_PR_MAILBOX_POLL_MS: "50",
+  // The stub forge never returns a comment it was posted, so a drive writing
+  // its ledger would add a post per round to what these suites count; the
+  // ledger's own suite turns it on.
+  DRIVE_PR_LEDGER: "off",
 };
 
 /**
@@ -179,21 +180,24 @@ export async function state(stateDir: string, args: string[], cwd?: string) {
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [stdout, exitCode] = await Promise.all([
+  const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  return { stdout, exitCode };
+  return { stdout, stderr, exitCode };
 }
 
 // Every pass command must name PR 999 or drive.ts's mis-targeting guard
 // rejects it — which `refuses a pass command that names a different PR`
-// asserts directly.
+// asserts directly. A marker a test looks for is split in the shell source
+// (`RAN_TH""E_PASS`): a stop prints the re-arm command with this argv, and
+// only the shell running the pass may put the whole marker on stderr.
 export const PASS_NOOP = ["sh", "-c", ": pass for 999; exit 0"];
 export const PASS_LOUD = [
   "sh",
   "-c",
-  'echo "pass for 999: RAN_THE_PASS" >&2; exit 0',
+  'echo "pass for 999: RAN_TH""E_PASS" >&2; exit 0',
 ];
 // Echoes the repair-task channel back. Both variables are always
 // printed, including when unset, so a test can assert their ABSENCE on an
@@ -243,55 +247,65 @@ export const FAILING_RUN: CheckRunFixture = {
   started: "2026-09-10T10:01:00Z",
 };
 
-// Both locks live in the state dir: one keyed by PR, one by the working
-// tree. The worktree key is deliberately NOT derived from anything a
+/** A driver lock: the clone's state directory and the lock's name in its database. */
+export interface LockSlot {
+  stateDir: string;
+  name: string;
+}
+
+// Both locks are rows of the clone's database: one keyed by PR, one by the
+// working tree. The worktree key is deliberately NOT derived from anything a
 // second driver in the same tree can be configured to compute differently
-// — $DRIVE_PR_HANDOFF_DIR used to move it, which `keys the WORKTREE lock by
-// the tree, not by $DRIVE_PR_HANDOFF_DIR` pins.
-export function lockDirs(_dir: string, stateDir: string) {
+// — `keys the WORKTREE lock by the tree, not by $DRIVE_PR_HANDOFF_DIR` pins
+// it.
+export function lockDirs(
+  _dir: string,
+  stateDir: string,
+): { worktree: LockSlot; pr: LockSlot } {
   return {
-    worktree: join(stateDir, WORKTREE_LOCK),
-    pr: join(stateDir, "pr-drive-999.lock"),
+    worktree: { stateDir, name: WORKTREE_LOCK },
+    pr: { stateDir, name: "pr-drive-999" },
   };
 }
 
+/** Whether a driver lock is held: its row exists. */
+export function lockHeld(slot: LockSlot): boolean {
+  return lockRow(slot.stateDir, slot.name) !== null;
+}
+
 /**
- * Plant a lock INSTANCE. Its generation is the claim's NAME —
- * `claim.<nonce>` — and `<pid> <host>` is all the record holds. The name is
- * what every removal in drive.ts addresses, which is what makes a stale
- * actor's removal a no-op rather than a fence that has to be left standing
- *, so a fixture that puts the generation back inside the record
- * plants debris and tests the debris path instead of the one it means to.
- *
- * `staleMs` backdates the claim's mtime, which IS the heartbeat: a claim
- * whose pid is alive but that has stopped being refreshed is a recycled
- * pid, not a driver.
+ * Plant a lock held by `pid` on `host` under acquisition token `nonce`.
+ * `staleMs` backdates its heartbeat: a lock whose pid is alive but that has
+ * stopped being renewed is a recycled pid, not a driver.
  */
 export function plantClaim(
-  dirPath: string,
+  slot: LockSlot,
   opts: {
     pid: number | string;
     host: string;
     nonce: string;
     platform?: string | null;
     staleMs?: number;
+    diag?: unknown;
   },
-): string {
-  mkdirSync(dirPath, { recursive: true });
-  const file = join(dirPath, `claim.${opts.nonce}`);
-  const platform =
-    opts.platform === null ? "" : ` ${opts.platform ?? process.platform}`;
-  writeFileSync(file, `${opts.pid} ${opts.host}${platform}\n`);
-  if (opts.staleMs !== undefined) {
-    const at = (Date.now() - opts.staleMs) / 1000;
-    utimesSync(file, at, at);
-  }
-  return file;
+): void {
+  putLock(slot.stateDir, slot.name, {
+    pid: Number(opts.pid),
+    host: opts.host,
+    ...(opts.host === hostname() ? {} : { hostId: "" }),
+    token: opts.nonce,
+    platform: opts.platform === null ? "" : (opts.platform ?? process.platform),
+    ...(opts.diag === undefined ? {} : { diag: opts.diag }),
+    ...(opts.staleMs === undefined
+      ? {}
+      : { renewedAt: new Date(Date.now() - opts.staleMs).toISOString() }),
+  });
 }
 
-/** Every claim a lock directory currently holds. */
-export function claimsIn(dirPath: string): string[] {
-  return readdirSync(dirPath).filter((n) => n.startsWith("claim."));
+/** The acquisition token a driver lock holds, as `claim.<token>`; none when nobody holds it. */
+export function claimsIn(slot: LockSlot): string[] {
+  const row = lockRow(slot.stateDir, slot.name);
+  return row === null ? [] : [`claim.${row.token}`];
 }
 
 /**
@@ -351,11 +365,61 @@ export async function pollUntil<T>(
 }
 
 /**
- * Model a successor recovering this lock. Retiring the generation that was
- * there is the load-bearing half: a driver notices a takeover because its
- * OWN claim is gone, never because somebody else's arrived.
+ * Model a successor recovering this lock: the row is replaced under another
+ * token, which is how a driver notices a takeover — its own token is gone.
  */
-export function simulateTakeover(dirPath: string, nonce: string): void {
-  for (const name of claimsIn(dirPath)) rmSync(join(dirPath, name));
-  plantClaim(dirPath, { pid: process.pid, host: hostname(), nonce });
+export function simulateTakeover(slot: LockSlot, nonce: string): void {
+  plantClaim(slot, { pid: process.pid, host: hostname(), nonce });
+}
+
+/** An SQL string literal. */
+function sqlText(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * Make the drive database refuse writes to some of a clone's rows until the
+ * returned function lifts it: triggers that abort an insert or update of a
+ * row of `table` whose `key` columns hold the given values, for a probe that
+ * needs a store which still reads but cannot be written. With `columns`,
+ * only an update that sets one of them is refused, and inserts are not.
+ * Every process that opens the database sees the triggers, so a spawned
+ * script fails the same way, at the statement, as on a store that cannot be
+ * written.
+ */
+export function refuseWrites(
+  stateDir: string,
+  table: string,
+  key: Record<string, string>,
+  columns: string[] = [],
+): () => void {
+  const drive = driveDb(stateDir);
+  const when = Object.entries({ clone: drive.clone, ...key })
+    .map(([column, value]) => `NEW.${column} = ${sqlText(value)}`)
+    .join(" AND ");
+  const name = `test_refuse_${table}_${randomBytes(4).toString("hex")}`;
+  const abort = "BEGIN SELECT RAISE(ABORT, 'writes refused by the test'); END";
+  const of = columns.length === 0 ? "" : ` OF ${columns.join(", ")}`;
+  const triggers = [`${name}_update`];
+  drive.db.run(
+    `CREATE TRIGGER ${name}_update BEFORE UPDATE${of} ON ${table} WHEN ${when} ${abort}`,
+  );
+  if (columns.length === 0) {
+    triggers.push(`${name}_insert`);
+    drive.db.run(
+      `CREATE TRIGGER ${name}_insert BEFORE INSERT ON ${table} WHEN ${when} ${abort}`,
+    );
+  }
+  return () => {
+    for (const t of triggers) drive.db.run(`DROP TRIGGER IF EXISTS ${t}`);
+  };
+}
+
+/**
+ * Make a driver lock refuse its diagnostics rewrite (the account-identity
+ * update) while its heartbeat renewal, which sets no diagnostics, still
+ * lands: a stand-in for a write that fails on this one lock only.
+ */
+export function refuseDiagWrites(slot: LockSlot): () => void {
+  return refuseWrites(slot.stateDir, "locks", { name: slot.name }, ["detail"]);
 }

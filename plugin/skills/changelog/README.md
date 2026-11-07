@@ -13,7 +13,8 @@ file of its own that says, for a reader of the changelog, what the pull request
 changed and what release it needs. Pull requests then touch different files, so
 they never conflict. After a merge, a release step writes the waiting notes into
 the changelog, moves the version and deletes the notes. The skill's scripts
-check that a branch follows the rules, show what the next release will be, run
+check that a branch follows the rules and that the whole changelog follows its
+format's, show what the next release will be, run
 that release step and plan its tags, and a GitHub Action runs them in CI; its `SKILL.md` teaches an agent when a change needs a note
 and how to write one worth reading. The practices are
 [M12's change records](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md)
@@ -91,7 +92,101 @@ The full rules are in the [scripts reference](scripts/README.md) and
   branch check refuses it.
 
 When `changelog.format` is not set, the format is read from the file; a file that
-does not say, an empty one included, is refused with a request to set it.
+does not say, an empty one included, is refused with a request to set it. A
+Common Changelog file holds only its title and its releases, so it cannot say
+which format it is in: a repository on that format sets `changelog.format`.
+
+## Checking the whole changelog
+
+The branch check reads the notes and what a branch changes; `lint.ts`
+(`/jig:changelog lint`) reads the whole changelog against the rules of the
+repository's format, and only those: `changelog.format`, else the format the
+file names. A Common Changelog file is never held to Keep a Changelog's rules,
+nor the other way round. Run it when the skill is set up on a repository with
+an existing changelog, after a correction to an earlier release, and whenever
+a person wants to know the file is well formed:
+
+```sh
+bun "<skill-dir>/scripts/lint.ts"
+```
+
+`--json` prints the findings as JSON instead. Each finding names the file, the line, the rule and what to change, ending
+with the section of the format's specification that states the rule:
+
+```text
+CHANGELOG.md:28: [keep-a-changelog/date] the date "2023-02-29" of 1.0.1 is not a real day written year-month-day
+  fix: write the release date as YYYY-MM-DD (Keep a Changelog 1.1.0, Confusing Dates: https://keepachangelog.com/en/1.1.0/#confusing-dates)
+```
+
+It exits 0 when the file follows its format's rules (or the skill is off), 1
+with findings, and 2 on a usage error, an invalid configuration or an
+unreadable changelog, one a link leads outside the repository or one that is
+not a regular file, or when coverage could not be checked (the version files
+disagree, the checkout is a shallow clone, or git cannot list its tags) and
+nothing else was found. In a GitHub Actions job each
+finding is also an annotation on its line. The action runs it as
+`command: lint`; the workflow template leaves it out of the pull-request
+check, because some findings cannot be fixed by a pull request that the
+branch check passes (a release section missing from the history: adding one
+is the release step's). A repository that wants it in CI adds a job or a step
+with `command: lint`, after `actions/checkout` with `fetch-depth: 0` so the
+tags are there for the coverage rule.
+
+Each rule is the specification's own, cited in the code at the rule; what the
+specification leaves open, or only recommends, is not checked.
+
+**[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).** Its rules
+are its guiding principles and its answers, so a rule here is one of those.
+
+| Rule | What it requires | Specification |
+|------|------------------|---------------|
+| `keep-a-changelog/title` | The file opens with a first-level heading | [the example changelog](https://keepachangelog.com/en/1.1.0/) |
+| `keep-a-changelog/semver-statement` | The text above the first section says whether the project follows Semantic Versioning | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) |
+| `keep-a-changelog/unreleased-first` | An `## [Unreleased]` section, where the file has one, comes first, and only once | [How can I reduce the effort…?](https://keepachangelog.com/en/1.1.0/#effort) |
+| `keep-a-changelog/release-heading` | Every other `##` heading is `version - YYYY-MM-DD` (the version maybe a link), with ` [YANKED]` after the date for a pulled release | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles), [What about yanked releases?](https://keepachangelog.com/en/1.1.0/#yanked) |
+| `keep-a-changelog/date` | A release's date is written year-month-day and is a real day | [Confusing Dates](https://keepachangelog.com/en/1.1.0/#confusing-dates) |
+| `keep-a-changelog/release-order` | The latest release comes first: no release is dated later than the one above it | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) |
+| `keep-a-changelog/duplicate-release` | One section per version | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) (versions linkable) |
+| `keep-a-changelog/change-type` | Every `###` heading is `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` or `Security` | [Types of changes](https://keepachangelog.com/en/1.1.0/#types) |
+| `keep-a-changelog/grouped` | A type of change appears once per section | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) |
+| `keep-a-changelog/version-link` | Each version links, as the example's do, to the changes it released: an inline link, or a reference link with its definition | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) |
+| `keep-a-changelog/unreleased-link` | From the first release on, `[Unreleased]` links to the comparison of the newest release with `HEAD` | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) and the example changelog |
+| `keep-a-changelog/coverage` | The version the version files hold, and every version a `<tag_prefix><version>` tag in the checkout's history names, has a section | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) |
+
+Allowed, as the specification allows them: no Unreleased section, an
+Unreleased section with no date, a `[YANKED]` release, the change types in
+any order, text above a release's first group, and an `[Unreleased]` with no
+link before the first release.
+
+**[Common Changelog](https://common-changelog.org/).** Its rules are the ones
+it states with "must".
+
+| Rule | What it requires | Specification |
+|------|------------------|---------------|
+| `common-changelog/file-name` | The file is named `CHANGELOG.md` | [2.1. File format](https://common-changelog.org/#21-file-format) |
+| `common-changelog/title` | The file starts with a first-level heading | [2.1. File format](https://common-changelog.org/#21-file-format) |
+| `common-changelog/content` | After the title, nothing but releases (link reference definitions, which render as nothing, aside) | [2.1. File format](https://common-changelog.org/#21-file-format) |
+| `common-changelog/no-unreleased` | No Unreleased section | [6.2. How is this different from Keep a Changelog?](https://common-changelog.org/#62-how-is-this-different-from-keep-a-changelog) |
+| `common-changelog/release-heading` | Every `##` heading is `VERSION - DATE` (the version maybe a link), the version Semantic Versioning without a `v`, and no `[YANKED]` | [2.2. Release](https://common-changelog.org/#22-release) |
+| `common-changelog/date` | A release's date is `YYYY-MM-DD` and a real day | [2.2. Release](https://common-changelog.org/#22-release) |
+| `common-changelog/release-order` | Releases sorted latest first by Semantic Versioning precedence, one per version, whatever their dates (versions that differ only in build metadata rank equal, in either order) | [2.1. File format](https://common-changelog.org/#21-file-format) |
+| `common-changelog/version-link` | A version written as a reference link has its link reference definition | [2.2. Release](https://common-changelog.org/#22-release) |
+| `common-changelog/release-content` | A release holds change groups, or a notice and then any number of them, and nothing else | [2.2. Release](https://common-changelog.org/#22-release) |
+| `common-changelog/notice` | At most one notice, a single paragraph, per release | [2.3. Notice](https://common-changelog.org/#23-notice) |
+| `common-changelog/category` | Every `###` heading is `Changed`, `Added`, `Removed` or `Fixed`, as plain text (no link, code or emphasis) | [2.4. Change group](https://common-changelog.org/#24-change-group) |
+| `common-changelog/category-order` | The groups in that order, each once | [2.4. Change group](https://common-changelog.org/#24-change-group) |
+| `common-changelog/change-list` | A group holds an unnumbered list and nothing else | [2.4. Change group](https://common-changelog.org/#24-change-group) |
+| `common-changelog/reference` | Each change, after its text, has a reference in parentheses whose links all render as links (inline, or a reference with its definition; none inside a code span), separated by commas and maybe followed by `; ` and the authors | [2.4.2. References](https://common-changelog.org/#242-references) |
+| `common-changelog/coverage` | The version the version files hold, and every version a tag in the checkout's history names, has a section, where it is a stable version | [2.1. File format](https://common-changelog.org/#21-file-format) |
+
+Allowed, or not checked: a version without a link (it "should" link), a
+change wrapped over several lines (it "should" be one), the place of breaking
+changes in a group (they "should" come first), whether a change that breaks
+something carries `**Breaking:**` (a file cannot show it), authors (a project
+with one contributor may leave them out), a notice's count of sentences (a
+sentence's end cannot be told from its punctuation), a pre-release without a
+section, and a release heading whose tag does not exist yet (the release
+step writes the heading before the tag, as the format asks).
 
 ## Where the version lives
 
@@ -181,7 +276,7 @@ call that reads `origin`'s tags.
 
 | Input | For | What it is |
 |-------|-----|------------|
-| `command` | all | `check`, `release` or `tag` (required) |
+| `command` | all | `check`, `lint`, `release` or `tag` (required) |
 | `root` | all | the checkout, relative to the workspace (`.`) |
 | `base` | `check` | the revision the branch is compared with; by default the pull request's base |
 | `head-ref` | `check` | the branch the change comes from; by default the pull request's head |
@@ -246,7 +341,7 @@ workflow does, in jobs that run nothing from the repository. Setup changes no
 setting for you. CI providers other than GitHub can run the check and the
 release step, but have no template yet.
 
-The commands are `check.ts`, `status.ts`, `release.ts`, `convert.ts`, `tag.ts`
+The commands are `check.ts`, `lint.ts`, `status.ts`, `release.ts`, `convert.ts`, `tag.ts`
 and `release-access.ts` in [`scripts/`](scripts/README.md), run with Bun from
 the repository's root; each prints the plugin version it ran as. Their tests are in
 [`__tests__/`](https://github.com/jig-harness/jig/tree/main/plugin/skills/changelog/__tests__).
