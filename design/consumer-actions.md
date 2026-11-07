@@ -191,7 +191,10 @@ never writes it.
   with a reason of at least a sentence. The same list records an action that
   was **taken** but sits above the baseline because another action in its
   release or an earlier one is still outstanding, with a reason that begins
-  `done:`, so a partly handled release does not report it again; both kinds
+  `done:`, so a partly handled release does not report it again. Both kinds of
+  entry cover only the action's repository levels (`configuration`,
+  `instructions`); its `machine` level is never recorded, so it is evaluated
+  on every host whatever either list says. Both kinds
   of entry are listed as removable once the baseline passes them. A dismissed **required** action is
   still evaluated: when its hint still matches, the report lists it as
   `dismissed, evidence present`, so a field cannot silence it. The check lists
@@ -237,9 +240,10 @@ jig reconcile file [--repo <path>] [--record <file>] --entry <id> [--entry <id> 
   repository-level action up to the highest version as *not filed here*. It
   ends with the step that sets `jig.reconciled` and records dismissals. That
   step sets the version to the highest released version below the
-  **earliest** action not yet taken or dismissed, so an action nobody named
-  stays above the baseline and is reported again; when every action the item
-  covers is taken or dismissed, it sets the highest version covered. A value
+  **earliest** repository-level action not yet taken or dismissed, whether or
+  not the item covers it, so an action nobody named stays above the baseline
+  and is reported again; only when no such action remains in the range does it
+  set the highest version in the range. A value
   that would not move `jig.reconciled` forward is left as it is. The item
   carries the marker `jig-reconcile: <ids>` in its body. Before creating
   anything the command searches the repository's open items for the marker, in
