@@ -59,7 +59,12 @@ export async function runTurn(
     },
     timer,
   );
-  const { forge } = observation;
+  const { forge, tracked, sessions } = observation;
+  // Observations belong to the tick even when a later phase fails.
+  context.lineInputs.set(
+    path,
+    lineInputOf(forge.drives, forge, tracked, sessions),
+  );
   if (context.apply !== null)
     await timer.time("apply", () => recoverLedgers(context, observation));
   await timer.time("plan", () => planObserved(context, observation));
@@ -68,7 +73,7 @@ export async function runTurn(
   );
   const close = async () => {
     await timer.time("labels", () => projectObserved(context, observation));
-    await timer.time("shared", () => closeShared(context, observation, path));
+    await timer.time("shared", () => closeShared(context, observation));
     timed(report, timer);
   };
   if (context.apply === null) {
@@ -98,12 +103,8 @@ export async function runTurn(
 }
 
 /** The shared records' report, and what the line and the tick's close read of this repository. */
-function closeShared(
-  context: TickContext,
-  observation: RepoObservation,
-  path: string,
-): void {
-  const { forge, tracked, sessions } = observation;
+function closeShared(context: TickContext, observation: RepoObservation): void {
+  const { forge } = observation;
   const report = observation.opened.report;
   report.shared = sharedReport(
     observation.shared,
@@ -117,10 +118,6 @@ function closeShared(
       report: report.shared,
       records: observation.ctx.records,
     });
-  context.lineInputs.set(
-    path,
-    lineInputOf(forge.drives, forge, tracked, sessions),
-  );
 }
 
 function timed(report: RepoReport, timer: PhaseTimer<RepoPhase>): RepoReport {

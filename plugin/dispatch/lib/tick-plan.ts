@@ -44,6 +44,9 @@ export function planObserved(
     ...(observation.holders === undefined
       ? {}
       : { holders: observation.holders }),
+    ...(context.options.machine == null
+      ? {}
+      : { unclaimedAfterMs: context.options.machine.unclaimedAfterMs }),
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
