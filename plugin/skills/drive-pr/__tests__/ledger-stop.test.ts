@@ -739,3 +739,26 @@ catch (e) { console.log("EXIT " + e.code); }`,
     expect(stdout).toContain("EXIT 13");
   });
 });
+
+it("scoped doctor leaves an unrelated released driver record and ledger untouched", async () => {
+  const s = stage();
+  await plantRecord(s, true);
+  const before = s.forge.comments()[0]?.body;
+  expectSpawnExit(await drives(s, ["--doctor", "--json", "--pr", "998"]), 0);
+  expect(driverRecordRow(s.leaf, "999")).not.toBeNull();
+  expect(s.forge.comments()[0]?.body).toBe(before);
+});
+
+it("record cleanup retains its witness when saved state is malformed", () => {
+  const s = stage();
+  writeDriverRecord(s.leaf, "999", {
+    worktree: s.forge.repo,
+    started: s.started,
+    pid: 1,
+    host: "h",
+    released: true,
+  });
+  writeState(s.leaf, "999", "{broken");
+  expect(() => removeDriverRecord(s.leaf, "999", s.started)).not.toThrow();
+  expect(driverRecordRow(s.leaf, "999")).not.toBeNull();
+});

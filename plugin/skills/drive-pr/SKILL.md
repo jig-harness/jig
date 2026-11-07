@@ -846,6 +846,17 @@ yours.
 
 **exact** — Route by the documented environment/flag table before running a round.
 
+An explicit request to release a stranded CI hold is recovery, not an arm
+request. Before the mode table below, read the README section
+[Recovering a stranded CI hold](README.md#recovering-a-stranded-ci-hold).
+Re-read `jig ask drive <PR>` or the drive doctor and establish stopped local
+ownership, review convergence on the current head, no human decisions and a
+clean matching worktree. Run the printed CI-hold release command only
+for that explicit request, from that worktree and with its expected head;
+relay any refusal without bypassing it. Observe label removal and fresh CI
+on that head, report those separately from CI success, and stop without
+arming a driver. A status question does not authorize recovery.
+
 `/jig:drive-pr` is invoked two ways, and they must not behave alike: a **human or
 agent session** asks for the PR to be driven, while a **pass `drive.ts`
 spawned** is one round of a drive already running. Treating the first like the
