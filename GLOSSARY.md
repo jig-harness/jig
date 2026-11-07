@@ -1611,6 +1611,13 @@ make, use the entry's term instead.
   pending or its attempt bound is reached. Jig's dispatch wake asks for a
   repository's dispatcher tick; the dispatch request and the wake's pending
   files serve these different purposes.
+- **Change probe** — a small, frequent check of the forge (the service that
+  hosts the repositories and their pull requests) for what changed since it
+  last looked, so a scheduled reader runs soon after a change rather than at
+  its next full run, without the forge having to call in. Jig's dispatcher
+  probe makes one search a minute over every repository it dispatches and
+  wakes only the ticks of the repositories where a pull request was updated
+  or its checks changed; a minute with no change starts nothing.
 
 - **Plugin** — an installable bundle of skills and other agent extensions
   that an agent tool loads in every session. Jig ships its skills and

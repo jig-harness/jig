@@ -12,6 +12,7 @@
  * | running, heartbeat past the lease window | silent |
  * | stopped `CONVERGED` (`0`), the pull request conflicting or its head past the verified head | stale |
  * | stopped `PR_CONFLICTING` (`9`) | stale |
+ * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` (`21`) | stale, once per head commit |
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
  * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
  * | stopped with no exit and no person's-stop record | re-armable (stopped-unknown once its recovery budget is spent) |
@@ -21,7 +22,7 @@
  * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |
  * | stopped `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`) | refused |
- * | stopped on any other exit | needs-person |
+ * | stopped on any other exit | needs-person, saying so when the pull request conflicts with its base |
  *
  * A converged ledger is read beside what its stop does not fix: the pull
  * request's mergeability as the forge reports it, read with the pull
@@ -43,11 +44,23 @@
  * base. Conflicting, it is re-driven like a stop on a conflict, once for each
  * pair of its head and its base branch's head: the drive's first gate
  * reports the conflict before the park, its conflict-resolve round merges
- * the base, and the drive parks again on the questions still unanswered. A
+ * the base if repair succeeds, then the drive parks on unanswered questions. A
  * re-drive that leaves it parked or stopped `PR_CONFLICTING` at the same pair
  * hands it back to a person (`settleConflictStops`): a conflict the drive
  * could not resolve, such as two requirements that contradict each other, is
  * that person's decision too.
+ *
+ * A ledger that stopped `STALLED` or `CI_REPAIR_SPENT` is a stop the drive's
+ * own next step settles: a pass that finds why the stalled passes did not
+ * act, or a CI repair with a fresh budget. Its change is its head commit and
+ * its exit, so it is re-driven once for each; once this machine or another
+ * host re-drove that change and the ledger still stopped the same way, it is
+ * a person's (`settleConflictStops`). A stall whose stop recorded work left
+ * in its tree, or never measured it (the ledger's last `stop` event,
+ * `leftWork`), names that tree, where its re-drive must run
+ * (`stall-tree.ts`). One whose head is not known
+ * is `unplaced`.
+
  *
  * A ledger that cannot be read (its comments, a version this reader does
  * not know, a damaged body, an unreadable heartbeat or park answer) is
@@ -75,6 +88,8 @@ import {
   snapshotFromListing,
 } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events.ts";
+import { ledgerTree } from "../stall-tree.ts";
 import { type Adoption, adopts, type Author } from "../adopt.ts";
 import { branchHead } from "../forge.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
@@ -226,6 +241,71 @@ function conflictStopClass(forge: PrFacts): Classified {
   );
 }
 
+/** The stops a re-drive settles once per head commit, by exit: what each is, in words. */
+const MECHANICAL_STOPS: ReadonlyMap<
+  number,
+  { kind: NonNullable<StaleCause["mechanicalStop"]>; words: string }
+> = new Map([
+  [DRIVE_EXIT.STALLED, { kind: "stall", words: "stalled" }],
+  [
+    DRIVE_EXIT.CI_REPAIR_SPENT,
+    {
+      kind: "ci-repair",
+      words: "CI still failing with its repair passes spent",
+    },
+  ],
+]);
+
+/** What a needs-person reason adds when the pull request conflicts with its base. */
+export function conflictNote(mergeable: unknown): string {
+  return mergeable === "CONFLICTING"
+    ? "; its pull request also conflicts with its base"
+    : "";
+}
+
+function stallTreeWhy(leftWork: boolean | undefined): string {
+  return leftWork === true
+    ? "in the tree it stalled in, which holds work it left"
+    : "in the tree it stalled in, whose work was never measured";
+}
+
+/**
+ * A ledger that stopped `STALLED` or `CI_REPAIR_SPENT`, read beside its
+ * pull request's head: `stale`, keyed on that head and the exit, and
+ * `unplaced` while the head is not known.
+ */
+function mechanicalStopClass(
+  ledger: Ledger,
+  exit: number,
+  forge: PrFacts,
+): Classified | null {
+  const stop = MECHANICAL_STOPS.get(exit);
+  if (stop === undefined) return null;
+  const head = forge.head;
+  if (head === null || head === "")
+    return {
+      class: "unplaced",
+      why: `stopped ${exit} (${stop.words}), and the forge reports no head commit for it, so the once-per-head re-drive cannot be kept`,
+    };
+  const last = lastStopEvent(ledger.events ?? []);
+  const tree =
+    stop.kind === "stall" &&
+    last?.leftWork !== false &&
+    (last === undefined || last.cause === String(exit))
+      ? ledgerTree(ledger)
+      : null;
+  return {
+    class: "stale",
+    why: `stopped ${exit} (${stop.words}): re-drive ${tree === null ? "on any account" : stallTreeWhy(last?.leftWork)}, once for head ${short(head)}`,
+    stale: {
+      cause: `stopped ${exit}, ${stop.words}`,
+      change: `head ${head}, stopped ${exit}`,
+      mechanicalStop: stop.kind,
+      ...(tree === null ? {} : { tree }),
+    },
+  };
+}
+
 /** The class of each exit the table names but `CONVERGED`, `HITL_PARKED` and `PR_CONFLICTING`, which read the pull request and its parks. */
 const EXITS: Record<number, (ledger: Ledger) => Classified> = {
   [DRIVE_EXIT.PR_NOT_OPEN]: () => ({
@@ -306,7 +386,7 @@ function parkClass(park: ParkReading | undefined, forge: PrFacts): Classified {
 /**
  * A park whose pull request conflicts with its base: `stale`, keyed on the
  * pair of its head and its base branch's head, so the drive merges the base
- * and parks again; `unplaced` while that pair cannot be told; `null` while
+ * if repair succeeds, then parks; `unplaced` while that pair cannot be told; `null` while
  * the forge does not report it conflicting, mergeability still computing
  * included, so the park stands.
  */
@@ -324,10 +404,12 @@ function parkConflictClass(waiting: string, forge: PrFacts): Classified | null {
   );
 }
 
-/** What a stop's evidence adds: the heads and the mergeability a ledger that stopped `CONVERGED`, `PR_CONFLICTING` or `HITL_PARKED` was read beside. */
+/** What a stop's evidence adds: the heads and the mergeability a ledger that stopped `CONVERGED`, `PR_CONFLICTING`, `HITL_PARKED`, `STALLED` or `CI_REPAIR_SPENT` was read beside. */
+
 function stopEvidence(ledger: Ledger, forge: PrFacts): Evidence {
   if (ledger.driver.state !== "stopped") return {};
   const read = { headSha: forge.head, mergeable: forge.mergeable };
+  if (MECHANICAL_STOPS.has(ledger.driver.exit ?? Number.NaN)) return read;
   if (ledger.driver.exit === DRIVE_EXIT.CONVERGED)
     return {
       verifiedSha: ledger.verifiedSha === "" ? null : ledger.verifiedSha,
@@ -382,7 +464,8 @@ function ledgerEvidence(
   };
 }
 
-/** A ledger's class, first match wins; `park` is read only for `HITL_PARKED`, `forge` only for `CONVERGED`, `PR_CONFLICTING` and `HITL_PARKED`. */
+/** A ledger's class, first match wins; `park` is read only for `HITL_PARKED`; `forge` for `CONVERGED`, `PR_CONFLICTING`, `HITL_PARKED` and the stops a re-drive settles, and for a needs-person stop's mergeability. */
+
 export function classifyLedger(
   ledger: Ledger,
   nowMs: number,
@@ -410,9 +493,10 @@ export function classifyLedger(
   if (exit === DRIVE_EXIT.CONVERGED) return convergedClass(ledger, forge);
   if (exit === DRIVE_EXIT.PR_CONFLICTING) return conflictStopClass(forge);
   return (
+    mechanicalStopClass(ledger, exit, forge) ??
     EXITS[exit]?.(ledger) ?? {
       class: "needs-person",
-      why: `stopped ${exit}: only a person settles it (see the drive's handoff)`,
+      why: `stopped ${exit}: only a person settles it${conflictNote(forge.mergeable)} (see the drive's handoff)`,
     }
   );
 }

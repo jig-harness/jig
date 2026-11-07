@@ -34,6 +34,7 @@ import {
   recoveryReservationRefusal,
 } from "./no-cause-stops.ts";
 import type { Outcome } from "../../shared/outcome.ts";
+import { settlesWithPerson } from "./redrive-settle.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import {
@@ -269,10 +270,10 @@ function armedOrRedriven(
 
 /**
  * Each drive as the plan reads it once another host's claims are read
- * beside it: a ledger that stopped on a conflict, or parked on a pull
- * request that conflicts, another host having
- * re-driven the change it shows now and that launch having ended, is a
- * person's to settle, as when this host re-drove it.
+ * beside it: a ledger that stopped on a conflict, a stall or a spent
+ * CI-repair budget, or parked on a pull request that conflicts, another host
+ * having re-driven the change it shows now and that launch having ended,
+ * is a person's to settle, as when this host re-drove it.
  */
 export function settleSharedConflictStops(
   drives: readonly DrivenPr[],
@@ -280,7 +281,7 @@ export function settleSharedConflictStops(
   host: string,
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (pr.stale?.conflictStop !== true) return pr;
+    if (!settlesWithPerson(pr.stale)) return pr;
     const hold = foreignHold(pr, claims.get(pr.number), host);
     if (hold.kind !== "redriven" || open(hold.claim)) return pr;
     return settledConflict(
