@@ -27,6 +27,7 @@ import {
   REVIEWER_RUN,
   DORMANT_ARM,
   binDir,
+  gitCleanEnv,
   scratchClean,
   writeFixture,
   useDrivePrSuite,
@@ -243,7 +244,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -454,7 +455,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -551,7 +552,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -668,7 +669,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -765,7 +766,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -896,7 +897,7 @@ describe("drive.ts loop control", () => {
           // CI-repair branch below.
           cwd: scratchClean.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -1073,7 +1074,7 @@ exit 0
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -1169,7 +1170,7 @@ exit 0
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -1277,7 +1278,7 @@ exit 0
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,

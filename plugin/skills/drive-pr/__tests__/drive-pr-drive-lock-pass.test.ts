@@ -21,7 +21,12 @@ import { DRIVER_LOG_MAX_BYTES } from "../scripts/lib/driver-log.ts";
 import { claudeAdapter } from "../scripts/lib/quota/claude.ts";
 import { appendDirective } from "../scripts/lib/state/mailbox";
 
-import { SCRIPTS, binDir, useDrivePrSuite } from "./drive-pr-harness.ts";
+import {
+  SCRIPTS,
+  binDir,
+  gitCleanEnv,
+  useDrivePrSuite,
+} from "./drive-pr-harness.ts";
 import {
   type LockSlot,
   PASS_LOUD,
@@ -160,7 +165,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -225,7 +230,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -370,7 +375,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -465,7 +470,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -602,7 +607,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -761,7 +766,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -884,7 +889,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -1006,7 +1011,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -1108,7 +1113,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -1355,7 +1360,7 @@ describe("drive.ts loop control", () => {
           {
             cwd: tree.dir,
             env: {
-              ...process.env,
+              ...gitCleanEnv(),
               PATH: `${binDir}${delimiter}${process.env.PATH}`,
               DRIVE_PR_FIXTURES: dir,
               DRIVE_PR_STATE_DIR: stateDir,
@@ -1440,7 +1445,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
@@ -1505,7 +1510,7 @@ describe("drive.ts loop control", () => {
         {
           cwd: tree.dir,
           env: {
-            ...process.env,
+            ...gitCleanEnv(),
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
