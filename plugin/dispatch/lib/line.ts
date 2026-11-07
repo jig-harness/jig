@@ -24,7 +24,7 @@ import { holds, targetOf } from "./launches.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
-import { stuckWhy } from "./stuck-launches.ts";
+import { stuckWhy, type UnclaimedClock } from "./stuck-launches.ts";
 import type {
   Action,
   DrivenPr,
@@ -580,17 +580,10 @@ function ledgerOf(
   };
 }
 
-/** Why the plan found a record stuck, from its notice; `null` when it did not. */
-function plannedStuck(view: RepoView | undefined, id: string): string | null {
-  const action = view?.report.actions.find(
-    (a) => a.evidence.record === id && text(a.evidence, "stuck") !== null,
-  );
-  return action === undefined ? null : text(action.evidence, "stuck");
-}
-
 function sessionOf(
   read: ReadRecord,
   view: RepoView | undefined,
+  clock: UnclaimedClock | undefined,
 ): LineSession | null {
   const { record, state } = read;
   if (
@@ -617,8 +610,7 @@ function sessionOf(
     createdAt: record.createdAt,
     launch: state.kind,
     launchReason: state.kind === "unknown" ? state.reason : null,
-    // A launch unclaimed past unclaimed_after is stuck on the tick's clock and sessions: the plan's notice says why.
-    stuck: stuckWhy(read) ?? plannedStuck(view, record.id),
+    stuck: stuckWhy(read, clock),
     agent: agentOf(read, view),
     ...ledgerOf(evidence),
     samples: record.samples ?? [],
@@ -668,7 +660,21 @@ export function buildLine(input: LineInput): LineSnapshot {
     lastAccount: input.lastAccount,
     sessions: input.records
       .filter((r) => holds(r.state))
-      .map((r) => sessionOf(r, bySlug.get(r.record.repo)))
+      .map((r) => {
+        const view = bySlug.get(r.record.repo);
+        const sessions = view?.input?.sessions;
+        return sessionOf(
+          r,
+          view,
+          sessions === undefined
+            ? undefined
+            : {
+                nowMs: Date.parse(input.startedAt),
+                unclaimedAfterMs: input.machine.unclaimedAfterMs,
+                sessions,
+              },
+        );
+      })
       .filter((s): s is LineSession => s !== null),
     needs: views.flatMap((v) =>
       needsOf(v, input.finishedAt, input.previousNeeds ?? []),

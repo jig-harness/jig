@@ -17,7 +17,7 @@ import {
 } from "../lib/machine-config.ts";
 import type { SessionsReport, Workspace } from "../lib/runtime/port.ts";
 import { planStuck, stuckWhy } from "../lib/stuck-launches.ts";
-import { input, NOW, record, REPO, report } from "./line-fixtures.ts";
+import { input, NOW, PATH, record, REPO, report } from "./line-fixtures.ts";
 
 const NOW_MS = Date.parse(NOW);
 const ago = (minutes: number) =>
@@ -144,6 +144,9 @@ describe("a launch answered as started that no wrapper claimed", () => {
     const records = [stuck, fresh];
     const line = buildLine(
       input({
+        inputs: new Map([
+          [PATH, { drives: [], known: [], sessions: NO_SESSIONS }],
+        ]),
         reports: [report({ actions: planStuck(REPO, records, clock()) })],
         records,
       }),
@@ -163,6 +166,21 @@ describe("a launch answered as started that no wrapper claimed", () => {
         ),
       }),
     ]);
+  });
+
+  it("shows stuck sessions even when notification actions were filtered out", () => {
+    const read = record({ attempts: [sent(20)] }, pending);
+    const line = buildLine(
+      input({
+        inputs: new Map([
+          [PATH, { drives: [], known: [], sessions: NO_SESSIONS }],
+        ]),
+        records: [read],
+        reports: [report({ actions: [] })],
+      }),
+    );
+    expect(line.sessions[0]?.stuck).toContain("unclaimed_after (15m)");
+    expect(line.needs).toEqual([]);
   });
 });
 
