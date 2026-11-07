@@ -2,18 +2,29 @@
  * The forge's part of a repository's tick: the open pull requests (with
  * their labels where the repository turns dispatch labels on, in the same
  * listing) and their ledgers, and the merges with their follow-up markers,
- * read through the shared records (`shared/records/shared.ts`). Under
+ * read through the shared records (`shared/records/shared.ts`). Every
+ * pull request's comments are listed once for the tick and shared between
+ * its ledger, its park answers and its claims (`tick-comments.ts`), and a
+ * merge whose `updatedAt` has not moved since the markers were last read
+ * is not read again (`merge-reads.ts`). Under
  * `only_labeled`, a pull request that carries no label of the set is never
  * read for a ledger, and a merge that carries none wants no follow-up; the
  * scope itself is decided once, by `decideScope`.
  */
 import type { SharedRecords } from "../../shared/records/shared.ts";
-import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { adoptionNote, adoptionOf } from "./adopt.ts";
 import { readMarkers } from "./followup-marker.ts";
+import { readReleases } from "./followup-releases.ts";
 import { mergedSince, openPullRequests } from "./forge.ts";
 import { carriesSet, type LabelConfig } from "./labels.ts";
+import {
+  type FreshMergeRead,
+  keptMarkers,
+  readMergeReads,
+  writeMergeReads,
+} from "./merge-reads.ts";
 import { readDrives } from "./sources/ledgers.ts";
+import type { TickComments } from "./tick-comments.ts";
 import { failureText } from "./text.ts";
 import type {
   DispatchSection,
@@ -43,6 +54,12 @@ export interface ForgeRead {
   login: string | null;
 }
 
+/** What the forge's part of a tick reads through beside the forge itself: the tick's comment listings, and the login read once per tick. */
+export interface ForgeReads {
+  comments: TickComments;
+  login(): Promise<string | null>;
+}
+
 /** The forge's part of a repository's tick; `shared` opens the shared records as the login the forge names. */
 export async function readForge(
   repo: RepoTarget,
@@ -51,6 +68,7 @@ export async function readForge(
   labels: LabelConfig | null,
   nowMs: number,
   shared: (login: string | null) => SharedRecords,
+  reads: ForgeReads,
 ): Promise<ForgeRead> {
   const read = { labels: labels !== null };
   const managed = <T extends { labels?: string[] }>(prs: T[]): T[] =>
@@ -76,7 +94,7 @@ export async function readForge(
   try {
     out.open = await openPullRequests(repo.slug, read);
     remember(out.open);
-    out.login = await resolveLogin();
+    out.login = await reads.login();
     const toRead = managed(out.open);
     const unlabeled = out.open.length - toRead.length;
     const adoption = adoptionOf(section, out.login);
@@ -87,19 +105,28 @@ export async function readForge(
       nowMs,
       labels,
       adoption,
+      (pr) => reads.comments.read(repo.slug, pr),
     );
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));
+    const observedMs = Date.now();
     const listed =
       section.followupCommand === null
         ? []
         : await mergedSince(repo.slug, since, read);
     remember(listed);
-    out.merged = await withMarkers(
+    const marked = await withMarkers(
       shared(out.login),
       repo.slug,
       managed(listed),
+      nowMs,
+      out.login,
+      (pr) => {
+        const began = reads.comments.startedAt(repo.slug, pr);
+        return began !== null && began >= observedMs;
+      },
     );
+    out.merged = marked.merged;
     if (labels?.onlyLabeled === true)
       decideScope(out, report, labels, [out.open, listed]);
     out.ok = true;
@@ -110,7 +137,7 @@ export async function readForge(
       detail: `${out.open.length} open pull request(s), ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}${adoptionNote(adoption, out.drives)}; ${
         section.followupCommand === null
           ? "no dispatch.followup_command: no follow-ups"
-          : `${out.merged.length} merged since ${since}`
+          : `${out.merged.length} merged since ${since} (${marked.kept} unchanged since a tick read their markers, not read again)`
       }`,
     });
   } catch (error) {
@@ -170,14 +197,68 @@ function labelNote(labels: LabelConfig | null, unlabeled: number): string {
     : " (dispatch labels on)";
 }
 
-/** Each merged pull request with its follow-up markers; a pull request whose comments do not read carries why. */
+/**
+ * Each merged pull request with its follow-up markers; a pull request whose
+ * comments do not read carries why. The markers a tick kept of a pull
+ * request whose `updatedAt` has not moved since are used as they are
+ * (`merge-reads.ts`); the rest are read, and kept for the next tick.
+ * `kept` counts the pull requests whose kept markers were used. Markers are
+ * kept only when `after` says their comments were listed after the merged
+ * listing was read: a listing the tick held from an earlier observation of
+ * the pull request (the open one, another checkout's turn) may predate an
+ * edit that listing's `updatedAt` already shows.
+ */
 async function withMarkers(
   shared: SharedRecords,
   slug: string,
   merged: MergedPr[],
-): Promise<MarkedPr[]> {
+  nowMs: number,
+  login: string | null,
+  after: (pr: number) => boolean,
+): Promise<{ merged: MarkedPr[]; kept: number }> {
+  const kept = readMergeReads(slug);
+  const pending = pendingReleases(
+    readReleases(
+      slug,
+      merged.map((p) => p.number),
+    ),
+  );
+  const fresh: FreshMergeRead[] = [];
   const out: MarkedPr[] = [];
-  for (const pr of merged)
-    out.push({ ...pr, markers: await readMarkers(shared, slug, pr.number) });
-  return out;
+  let reused = 0;
+  for (const pr of merged) {
+    const reuse = pending.has(pr.number)
+      ? null
+      : keptMarkers(kept.get(pr.number), pr, nowMs, login);
+    if (reuse !== null) {
+      out.push({ ...pr, markers: reuse });
+      reused += 1;
+      continue;
+    }
+    const markers = await readMarkers(shared, slug, pr.number);
+    out.push({ ...pr, markers });
+    if (
+      pr.updatedAt !== undefined &&
+      !("unreadable" in markers) &&
+      after(pr.number)
+    )
+      fresh.push({ pr: pr.number, updatedAt: pr.updatedAt, markers });
+  }
+  writeMergeReads(
+    slug,
+    fresh,
+    merged.map((p) => p.number),
+    nowMs,
+    login,
+  );
+  return { merged: out, kept: reused };
+}
+
+/** The pull requests whose stale-claim release is still pending: their completion needs a fresh listing. */
+function pendingReleases(
+  releases: ReadonlyMap<number, { releasedAt: string | null }>,
+): Set<number> {
+  return new Set(
+    [...releases].filter(([, r]) => r.releasedAt === null).map(([pr]) => pr),
+  );
 }

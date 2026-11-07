@@ -1,6 +1,12 @@
 /** A failure as one line of a report. */
 export function failureText(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  let message: string;
+  try {
+    message = error instanceof Error ? String(error.message) : String(error);
+  } catch {
+    // A value with no text form (a null-prototype object, a throwing toString) is still a failure to report.
+    message = "";
+  }
   return message.split("\n")[0]?.trim() || "an unknown failure";
 }
 

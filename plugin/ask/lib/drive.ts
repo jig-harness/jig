@@ -44,6 +44,7 @@ import {
   type SharedClaim,
   winners,
 } from "../../shared/records/shared.ts";
+import { settleNoCauseStops } from "../../dispatch/lib/no-cause-stops.ts";
 import { settleConflictStops } from "../../dispatch/lib/actions/drive-hold.ts";
 import { isDrive } from "../../dispatch/lib/launches.ts";
 import { settleSharedConflictStops } from "../../dispatch/lib/shared-launches.ts";
@@ -169,9 +170,37 @@ function stateOf(
   const at = `round ${ledger.round}, ledger written ${d.heartbeat}`;
   if (closed !== null)
     return { ...closed, detail: `${closed.detail}; the drive's ${at}` };
-  if (d.state === "running") return { state: "running", detail: at };
+  if (d.state === "running") return runningState(d, at);
+  return stoppedState(d, at);
+}
+
+function runningState(
+  d: Ledger["driver"],
+  at: string,
+): { state: string; detail: string } {
+  return {
+    state: "running",
+    detail:
+      d.personStop === undefined
+        ? at
+        : `${at}; stop requested by a person: ${d.personStop.reason || "operator stop"}; termination is not yet recorded`,
+  };
+}
+
+function stoppedState(
+  d: Ledger["driver"],
+  at: string,
+): { state: string; detail: string } {
+  if (d.personStop !== undefined)
+    return {
+      state: "stopped by a person",
+      detail: `${d.personStop.reason || "operator stop"}; ${at}`,
+    };
   if (d.exit === undefined)
-    return { state: "stopped", detail: `stopped with no exit; ${at}` };
+    return {
+      state: "stopped with no recorded cause",
+      detail: `stopped with no recorded cause; ${at}`,
+    };
   const name = driveExitName(d.exit);
   return {
     state: name ?? `exit ${d.exit}`,
@@ -224,7 +253,7 @@ function waitsOnOf(
   held: boolean,
   base: PrFacts["base"],
 ): WaitsOn {
-  const placed = classifyLedger(
+  const classification = classifyLedger(
     ledger,
     Date.now(),
     stallThresholdMs(),
@@ -235,6 +264,31 @@ function waitsOnOf(
       ...(base === undefined ? {} : { base }),
     },
   );
+  const placed =
+    settleNoCauseStops(
+      [
+        {
+          number: r.pull.number,
+          url: r.pull.url,
+          title: r.pull.title,
+          head: r.pull.head,
+          ...classification,
+          evidence: {
+            generation: ledger.generation,
+            exit: ledger.driver.exit ?? null,
+            heartbeat: ledger.driver.heartbeat,
+            noCause:
+              ledger.driver.state === "stopped" &&
+              ledger.driver.exit === undefined &&
+              ledger.driver.personStop === undefined,
+            legacyNoCause: ledger.driver.recoveryVersion === undefined,
+          },
+        },
+      ],
+      r.records,
+      new Map([[r.pull.number, { ok: true, value: r.claims }]]),
+      Date.now(),
+    )[0] ?? classification;
   const settled = conflictSettled(placed, ledger, r, ctx.host);
   if (settled !== null) return { person: "re-arm", why: settled };
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.

@@ -437,6 +437,73 @@ describe("jig ask", () => {
     expect(text.stdout).toContain("person: re-arm");
   });
 
+  it("distinguishes an explicit operator stop from an accident and an exhausted recovery budget", async () => {
+    const w = world();
+    w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
+    const ledger = stoppedLedger(7, undefined);
+    ledger.driver.personStop = {
+      at: new Date().toISOString(),
+      reason: "maintenance",
+    };
+    w.api(`repos/${REPO}/issues/7/comments`, [
+      comment(701, ledgerBody(ledger)),
+    ]);
+    const explicit = await askJson(w, [`drive@${REPO}#7`]);
+    expect(explicit.answer.state).toBe("stopped by a person");
+    expect(explicit.answer.waitsOn).toMatchObject({
+      person: "re-arm",
+      why: expect.stringContaining("maintenance"),
+    });
+    ledger.driver.state = "running";
+    w.api(`repos/${REPO}/issues/7/comments`, [
+      comment(701, ledgerBody(ledger)),
+    ]);
+    const pending = await askJson(w, [`drive@${REPO}#7`]);
+    expect(pending.answer.state).toBe("running");
+    expect(JSON.stringify(pending.answer)).toContain(
+      "stop requested by a person",
+    );
+    ledger.driver.state = "stopped";
+    delete ledger.driver.personStop;
+    ledger.driver.recoveryVersion = 1;
+    w.api(`repos/${REPO}/issues/7/comments`, [
+      comment(701, ledgerBody(ledger)),
+    ]);
+    const accident = await askJson(w, [`drive@${REPO}#7`]);
+    expect(accident.answer.state).toBe("stopped with no recorded cause");
+    expect(accident.answer.waitsOn).toMatchObject({
+      why: expect.stringContaining("re-arming"),
+    });
+    for (let i = 0; i < 3; i++) {
+      const id = `20261106T120000Z-abcdef0${i}`;
+      record(w, 7, {
+        id,
+        facts: "no-cause: earlier run",
+        createdAt: new Date(Date.now() - 1000).toISOString(),
+      });
+      recordExit(
+        id,
+        { at: new Date().toISOString(), code: 0, signal: null },
+        w.state,
+      );
+    }
+    const exhausted = await askJson(w, [`drive@${REPO}#7`]);
+    expect(exhausted.answer.waitsOn).toMatchObject({
+      person: "re-arm",
+      why: expect.stringContaining("repeated no-cause stops"),
+    });
+    const damaged = launchClaim(draft(7), 1);
+    damaged.payload.facts = 42;
+    w.api(`repos/${REPO}/issues/7/comments`, [
+      comment(701, ledgerBody(ledger)),
+      comment(702, claimBody(LAUNCH_CLAIM, damaged)),
+    ]);
+    const unread = await askJson(w, [`drive@${REPO}#7`]);
+    expect(unread.answer.waitsOn).toMatchObject({
+      waiting: expect.stringContaining("does not read"),
+    });
+  });
+
   it("reports a forge read that fails as a source not read, never a throw", async () => {
     const w = world();
     w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
