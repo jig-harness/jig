@@ -387,6 +387,15 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.155.0] - 2026-11-07
+
+### Added
+
+- Dispatch needs in `jig dispatch line --json` and the dashboard's `GET /state`
+  name the workspace holding the work, including parked drives with no running
+  session. Unknown or ambiguous workspaces are `null`; notification destinations
+  keep their separate meaning.
+
 ## [0.154.0] - 2026-11-07
 
 ### Changed
@@ -5586,7 +5595,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.154.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.155.0...HEAD
+[0.155.0]: https://github.com/jig-harness/jig/compare/v0.154.0...v0.155.0
 [0.154.0]: https://github.com/jig-harness/jig/compare/v0.153.0...v0.154.0
 [0.153.0]: https://github.com/jig-harness/jig/compare/v0.152.0...v0.153.0
 [0.152.0]: https://github.com/jig-harness/jig/compare/v0.151.0...v0.152.0
