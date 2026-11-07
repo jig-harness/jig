@@ -217,6 +217,7 @@ export interface DoctorInput {
 }
 
 export interface DoctorRow {
+  ciHold?: import("./ci-hold-diagnosis.ts").CiHoldDiagnosis;
   verdict: DoctorVerdict;
   reason: string;
   recovery: string | null;

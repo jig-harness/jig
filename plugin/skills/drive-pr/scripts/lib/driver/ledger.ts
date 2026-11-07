@@ -550,7 +550,8 @@ export async function publishStartup(pr: string): Promise<void> {
  * shutdown begins the process starts no new command (`shared/cleanup.ts`).
  * `drives.ts` writes it from outside instead (`lib/ledger-stop.ts`), from
  * the driver record written at arm and marked released as the PR's lock is
- * released, which this removes once the stopped ledger is written. Nor is
+ * released, which this removes once the stopped ledger is written unless a
+ * retained CI hold still needs the termination witness. Nor is
  * it written while the drive retains its locks (`held` emptied: a pass
  * whose termination was not witnessed may still act): the ledger keeps
  * naming this driver running, its heartbeat ages toward the lease window,
