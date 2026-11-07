@@ -72,6 +72,7 @@ if (single !== null) {
   // A comment's update or removal, on whichever pull request's file holds it; an update is refused while comment-edit-fail exists.
   const id = Number(single[1]);
   const method = args[args.indexOf("-X") + 1];
+  if (method === "DELETE" && fs.existsSync(F + "/comment-delete-fail")) { fs.writeFileSync(F + "/comment-delete-refused", String(id)); process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
   if (method === "PATCH" && fs.existsSync(F + "/comment-edit-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
   const input = method === "PATCH" ? JSON.parse(fs.readFileSync(0, "utf8")) : null;
   for (const name of fs.readdirSync(F).filter((n) => /^comments-\\d+\\.json$/.test(n))) {
@@ -83,6 +84,7 @@ if (single !== null) {
     if (method === "DELETE" && fs.existsSync(F + "/comment-delete-lost")) { process.stderr.write("gh: response lost\\n"); process.exit(1); }
     out("{}");
   }
+  if (args.includes("--include")) process.stdout.write("HTTP/2.0 404 Not Found\\r\\n\\r\\n");
   process.stderr.write("gh: Not Found (HTTP 404)\\n");
   process.exit(1);
 }
@@ -342,12 +344,17 @@ while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(5
 if (fs.existsSync(F + "/claude-said")) {
   const said = fs.readFileSync(F + "/claude-said");
   // With \`claude-split\` present, the first multi-byte character is cut between two writes.
+  const stream = fs.existsSync(F + "/claude-stderr") ? process.stderr : process.stdout;
   const cut = fs.existsSync(F + "/claude-split") ? said.findIndex((b) => b >= 0xc0) + 1 : 0;
   if (cut > 0) {
-    process.stdout.write(said.subarray(0, cut));
+    stream.write(said.subarray(0, cut));
+    if (fs.existsSync(F + "/claude-interleave")) {
+      Bun.sleepSync(150);
+      (stream === process.stderr ? process.stdout : process.stderr).write("diagnostic\\n");
+    }
     Bun.sleepSync(300);
   }
-  process.stdout.write(said.subarray(cut));
+  stream.write(said.subarray(cut));
 }
 process.exit(Number(fs.existsSync(F + "/claude-exit") ? fs.readFileSync(F + "/claude-exit", "utf8") : 0) || 0);
 `;

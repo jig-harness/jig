@@ -48,6 +48,8 @@ import {
  * its successor's.
  */
 export interface DriveLock {
+  /** A recovery label binds a temporary holder to the acquisition it reconciles. */
+  label?: string;
   /** The clone's state directory, beside the database the lock lives in. */
   stateDir: string;
   /** The lock's name: `pr-drive-<PR>` or `pr-drive-worktree-<key>`. */
@@ -57,7 +59,7 @@ export interface DriveLock {
   /**
    * Written into the lock's diagnostics at take time: what an exit-11
    * refusal and the `drives.ts` listing can show about THIS driver.
-   * Advisory: nothing that decides liveness or recovery reads it.
+   * Liveness ignores it; guarded ledger recovery also matches its acquisition.
    */
   diag?: ClaimDiag;
   /** This process's acquisition token, set when it is taken. */
@@ -167,7 +169,7 @@ function takeLock(lock: DriveLock, seen: LockRow | null): boolean {
   try {
     taken = takeLockRow(driveDb(lock.stateDir), lock.name, seen, {
       token: nonce,
-      label: "drive.ts",
+      label: lock.label ?? "drive.ts",
       holder: lockIdentity(),
       detail: lock.diag === undefined ? null : JSON.stringify(lock.diag),
     });
@@ -219,6 +221,15 @@ export function acquire(lock: DriveLock, pr: string): void {
       `drive.ts: lost the ${lock.what} lock race for PR #${pr} — another driver recovered the same stale lock first.`,
     );
   }
+}
+
+/** Reserve exactly the acquisition whose complete termination a recovery witnessed. */
+export function acquireObservedLock(
+  lock: DriveLock,
+  expectedNonce: string | null,
+): boolean {
+  const row = readLockRow(driveDb(lock.stateDir), lock.name);
+  return (row?.token ?? null) === expectedNonce && takeLock(lock, row);
 }
 
 /** Renew this acquisition's heartbeat; `false` when the lock is no longer this acquisition's. */

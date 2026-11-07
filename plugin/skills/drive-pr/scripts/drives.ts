@@ -42,7 +42,7 @@ import {
  *                            DEAD_WITH_LEFTOVERS, DEAD, QUOTA_PARKED, NEEDS_HUMAN
  *                            or UNKNOWN, plus a recovery command where one
  *                            exists. See `lib/doctor.ts` for the classifier
- *                            and its precedence order.
+ *                            and its precedence order; first reconciles confirmed-dead local acquisitions (terminal-states.md).
  *
  *                            A WIDER POPULATION than the two modes above,
  *                            and that difference is the point: `drive.ts`
@@ -1178,7 +1178,7 @@ async function main(argv: string[]): Promise<number> {
     } else {
       fail(
         2,
-        `usage: drives.ts [--json] | [--here] | [--stop <PR> [--expect-started <ISO>]] | [--doctor [--json]] | [--report [--since <time>] [--json]]`,
+        `usage: drives.ts [--json] | [--here] | [--stop <PR> [--expect-started <ISO>]] | [--doctor [--json]] | [--report [--since <time>] [--json]]\n--doctor writes stopped ledgers for confirmed-dead local acquisitions with a released witness or complete pass observations, then releases its recovery leases.`,
       );
     }
   }

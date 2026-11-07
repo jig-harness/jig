@@ -119,7 +119,6 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
 /** The ledger classes that need nothing from the tick but a line in the report. */
 const QUIET: ReadonlySet<LedgerClass> = new Set([
   "driven",
-  "silent",
   "done",
   "stopped-by-person",
   "refused",
@@ -130,6 +129,7 @@ const NOTIFY: ReadonlyMap<LedgerClass, NotifyCause> = new Map([
   ["stopped-unknown", "stopped-unknown"],
   ["parked", "parked"],
   ["needs-person", "needs-person"],
+  ["silent", "needs-person"],
 ] as const);
 
 export function planTick(input: PlanInput): Plan {
@@ -469,15 +469,14 @@ function planDrive(
   if (placed === true) return;
   const foreign = takeover === null ? placed : null;
   // A silent driver no launch started is taken over once this clone's doctor
-  // reads its holder dead or wedged.
+  // reads its holder dead or wedged; otherwise a person is notified with the
+  // doctor's reading.
   let holder: HolderReading | null = null;
+  let unread: string | null = null;
   if (pr.class === "silent" && takeover === null && foreign === null) {
     const orphan = orphanTakeover(pr, input.holders);
-    if ("why" in orphan) {
-      plan.quiet.push({ target, class: pr.class, why: orphan.why });
-      return;
-    }
-    holder = orphan.holder;
+    if ("why" in orphan) unread = orphan.why;
+    else holder = orphan.holder;
   }
   if (
     QUIET.has(pr.class) &&
@@ -492,13 +491,16 @@ function planDrive(
     plan.unplaced.push({ target, record: "forge", reason: pr.why });
     return;
   }
-  const cause = NOTIFY.get(pr.class);
+  const cause =
+    takeover !== null || foreign !== null || holder !== null
+      ? undefined
+      : NOTIFY.get(pr.class);
   want(
     {
       stage: cause === undefined ? "rearm" : "notify",
       target,
       record: "forge",
-      reason: wantReason(pr, takeover, foreign, holder),
+      reason: unread ?? wantReason(pr, takeover, foreign, holder),
       evidence: { url: pr.url, head: pr.head, ...pr.evidence },
       ...stageFields(slug, pr, cause, launches),
       ...takeoverFields(takeover, foreign, holder),

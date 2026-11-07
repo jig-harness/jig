@@ -162,9 +162,9 @@ describe("a silent driver no launch started", () => {
     const receipt = await tick(w);
     expect(repo(receipt)?.launches).toEqual([]);
     expect(terminalCreates(w)).toHaveLength(0);
-    const quiet = repo(receipt)?.quiet.find((q) => q.target === "PR #7");
-    expect(quiet?.class).toBe("silent");
-    expect(quiet?.why).toContain(
+    const action = repo(receipt)?.actions.find((a) => a.target === "PR #7");
+    expect(action?.stage).toBe("notify");
+    expect(action?.reason).toContain(
       `this clone's drive doctor reads its holder HEALTHY (${reason}): only a dead or wedged holder is taken over, so it is reported`,
     );
   });
@@ -173,8 +173,9 @@ describe("a silent driver no launch started", () => {
     const w = fixture();
     const receipt = await tick(w);
     expect(repo(receipt)?.launches).toEqual([]);
-    const quiet = repo(receipt)?.quiet.find((q) => q.target === "PR #7");
-    expect(quiet?.why).toContain(
+    const action = repo(receipt)?.actions.find((a) => a.target === "PR #7");
+    expect(action?.stage).toBe("notify");
+    expect(action?.reason).toContain(
       "no driver of this clone holds its lock (its driver ran in another clone, which this host's doctor cannot read), so it is reported, not taken over",
     );
   });

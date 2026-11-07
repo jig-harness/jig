@@ -211,7 +211,7 @@ const registrationDrains = new Map<
   Promise<{ survived: boolean; confirmed: boolean }>
 >();
 
-export function createDriverRegistry(held: DriveLock[]): void {
+export function createDriverRegistry(held: DriveLock[]): string | null {
   // The registry belongs to this acquisition. Detached foreground runners
   // inherit it, so the operator can also capture them if a driver is wedged.
   if (process.platform === "win32") {
@@ -221,8 +221,10 @@ export function createDriverRegistry(held: DriveLock[]): void {
       mkdirSync(registry);
       driverRegistry = registry;
       process.env[PROCESS_REGISTRY_ENV] = registry;
+      return registry;
     }
   }
+  return null;
 }
 
 /**
