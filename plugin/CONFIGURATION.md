@@ -1244,6 +1244,7 @@ dashboard:
 records:
   shared: forge                     # where another host reads this host's launches
 send: true                          # false refuses every jig send from this machine
+change_probe: true                  # false turns off the minute-by-minute change probe
 ```
 
 | Setting | Default / meaning |
@@ -1265,6 +1266,7 @@ send: true                          # false refuses every jig send from this mac
 | `receipts_days` | 30; days receipts and ended launch records are kept. The outcome log is never removed |
 | `records.shared` | `forge`, the only value; where this host publishes the records another host dispatching the same repository reads: a claim per drive launch on the pull request it concerns (its launch record, its host and, once it ended, its end), and the follow-up marker with the follow-up's answer. A value this version does not know is refused. The claims coordinate launches and never authorize anything a person does; the forge cannot create a comment only if none exists, so two hosts can each read themselves the holder of one launch, and the stage's own refusal (the drive's lock and ledger claim, `do-item`'s claim) is the backstop |
 | `send` | `true`; whether [`jig send`](README.md#telling-a-station-what-to-do) may write a request from this machine. `false` refuses every send, `--dry-run` included, so a machine whose sessions should only ask the line can say so once. Read by `jig send` alone; the dispatcher ignores it |
+| `change_probe` | `true`; whether the change probe runs: every minute, `jig dispatch probe --apply` (its own timer, which `jig install dispatch` writes beside the tick's) reads the forge once for the pull requests of every repository listed here with a stage, and wakes the tick of each repository where one was updated or its checks changed since the last probe. `false` makes a probe read and wake nothing, and the next `jig install dispatch --yes` removes its timer. Read by `jig dispatch probe` and the dispatcher's install |
 | `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
@@ -1272,7 +1274,9 @@ under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
 per run), `walls/` (each account's usage-limit wall, which lifts at its
 latest recorded reset), the tick's locks (`tick.lock`, which one tick
 acts under at a time, and `observe/`, one per repository a tick is
-reading), the rotation cursor (`tick-index`)
+reading), the rotation cursor (`tick-index`),
+`wake/` (each repository's pending wakes and their log), `probe/` (the
+change probe's state, `state.json`, and its timer's launcher copy)
 and the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
 removes. Everything else is one
 SQLite database, `state.sqlite`: the launch records (one per launch,

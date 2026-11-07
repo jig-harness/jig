@@ -15,6 +15,7 @@ import {
   expectSpawnExited,
 } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { CI_REPAIR_SPENT_EXIT } from "../scripts/lib/driver/settings.ts";
 import {
   binDir,
   type CheckRunFixture,
@@ -201,7 +202,7 @@ describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
       [workflowRun(40, "cancelled")],
       { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
     );
-    exits(r, 1);
+    exits(r, CI_REPAIR_SPENT_EXIT);
     expect(r.stderr).toContain("TASK=ci-repair RUNS=[40]");
   });
 
@@ -215,7 +216,7 @@ describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
       { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
     );
     expect(r.stderr).toContain("TASK=ci-repair RUNS=[41]");
-    exits(r, 1);
+    exits(r, CI_REPAIR_SPENT_EXIT);
   });
 
   it("tells the repair pass the failed run, not the cancelled sibling", async () => {
@@ -229,7 +230,7 @@ describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
     expect(r.stderr).toContain("Running CI-repair pass 1/1");
     expect(r.stderr).toContain("TASK=ci-repair RUNS=[41]");
     expect(r.stderr).toContain("Failed run(s) behind it: 41.");
-    exits(r, 1);
+    exits(r, CI_REPAIR_SPENT_EXIT);
   });
 
   it("names both failed runs when they are not one", async () => {

@@ -452,7 +452,9 @@ One pull request each, in this order; each is usable on its own.
   leave a receipt.
 - **A tick on a merge.** Orca has no pull request, git or branch event, so
   the plugin cannot wake the dispatcher when a pull request merges; the
-  machine's timer catches the merge at its next interval.
+  dispatcher's change probe, which polls the forge every minute
+  ([dark-factory-dispatch.md](dark-factory-dispatch.md#the-installed-timer)),
+  wakes the tick for it instead.
 - **Acts through the host API.** The plugin never launches an agent, sends
   to a terminal or reads one through Orca's host API. The `orca` command
   line already does all of that and more (the host API creates no worktree
