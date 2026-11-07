@@ -3,9 +3,11 @@
  *
  * An entry is a top-level list item that opens with a bold term and an em
  * dash: `- **SSoT (single source of truth)** — the one authoritative place…`,
- * under a `## Group` heading. Its anchor comes from the term before any
- * parenthesis (`ssot`), so the anchors stay short and survive a reworded
- * expansion. The documents link to the glossary without an anchor, by the
+ * under a `## Group` heading. A parenthesis after the bold term, before the
+ * dash, qualifies it (`- **Trend** (audit) — …`): the page prints it with
+ * the term, but it names nothing a link can use. Its anchor comes from the
+ * term before any parenthesis (`ssot`), so the anchors stay short and
+ * survive a reworded expansion. The documents link to the glossary without an anchor, by the
  * term's own words in the link text; `anchorFor` finds the entry those words
  * name.
  */
@@ -58,7 +60,7 @@ export function parseGlossary(markdown: string): GlossaryEntry[] {
       current = null;
       continue;
     }
-    const m = /^- \*\*(.+?)\*\* — (.*)$/.exec(line);
+    const m = /^- \*\*(.+?)\*\*( \([^)]*\))? — (.*)$/.exec(line);
     if (m?.[1]) {
       const term = m[1].replace(/`/g, "");
       const base = /^(.*?)\s*\(/.exec(term)?.[1] ?? term;
@@ -66,10 +68,10 @@ export function parseGlossary(markdown: string): GlossaryEntry[] {
       for (let n = 2; seen.has(anchor); n++) anchor = `${slug(base)}-${n}`;
       seen.add(anchor);
       current = {
-        term,
+        term: `${term}${m[2] ?? ""}`,
         anchor,
         group,
-        definition: m[2] ?? "",
+        definition: m[3] ?? "",
         names: namesOf(term),
       };
       entries.push(current);
