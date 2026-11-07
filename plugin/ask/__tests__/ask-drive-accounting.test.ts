@@ -122,3 +122,44 @@ it.each(["pipe", "ignore", "inherit"] as const)(
     }
   },
 );
+
+for (const runner of [
+  "../../shared/proc.ts",
+  "../../skills/drive-pr/scripts/lib/proc.ts",
+]) {
+  it.each([0, 7])(
+    `preserves ignored output with accounting in ${runner} (exit %i)`,
+    async (code) => {
+      const root = mkdtempSync(join(tmpdir(), "ask-accounting-ignore-"));
+      try {
+        const script = `import { run } from ${JSON.stringify(join(import.meta.dir, runner))};
+        const result = await run([process.execPath, "-e", 'process.stderr.write("x".repeat(65 * 1024 * 1024)); process.exitCode = ${code}'], {stderr:"ignore", timeoutSec:10});
+        console.log(JSON.stringify(result));`;
+        const child = Bun.spawn([process.execPath, "-e", script], {
+          env: {
+            ...process.env,
+            JIG_FORGE_CALL_COUNT_FILE: join(root, "count"),
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+          child.exited,
+        ]);
+        expectSpawnExit({ stdout, stderr, exitCode }, 0);
+        expect(JSON.parse(stdout)).toMatchObject({
+          code,
+          stderr: "",
+          stderrTail: "",
+          timedOut: false,
+          bufferExceeded: false,
+        });
+        expect(stderr).toBe("");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+}

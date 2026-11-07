@@ -6,6 +6,7 @@ export {
   STDERR_TAIL_BYTES,
 } from "./process-output.ts";
 import {
+  accountingStderr,
   captureProcessOutput,
   lastBytes,
   type ProcessTimers,
@@ -537,7 +538,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
             ? "ignore"
             : "pipe",
         opts.stdout ?? "pipe",
-        opts.stderr ?? "pipe",
+        accountingStderr(opts.stderr),
       ],
     };
     let child: ReturnType<typeof spawnCommand>;

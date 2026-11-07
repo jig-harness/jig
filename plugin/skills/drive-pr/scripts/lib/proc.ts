@@ -3,6 +3,7 @@ import { armProcessDeadline } from "../../../../shared/process-deadline.ts";
 import { spawnCommand } from "../../../../shared/windows-command.ts";
 import { shutdownRequested } from "../../../../shared/cleanup.ts";
 import {
+  accountingStderr,
   captureProcessOutput,
   type ProcessTimers,
 } from "../../../../shared/process-output.ts";
@@ -669,7 +670,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       stdio: [
         opts.stdin === undefined ? "ignore" : "pipe",
         opts.stdout ?? "pipe",
-        opts.stderr ?? "pipe",
+        accountingStderr(opts.stderr),
       ],
     };
     let child: ReturnType<typeof spawnCommand>;

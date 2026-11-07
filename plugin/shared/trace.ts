@@ -235,18 +235,13 @@ export function traceRunner<
 ): (argv: string[], opts?: O) => Promise<T> {
   return (argv, opts = defaults) =>
     traceCommand("run", argv[0] ?? "", opts.timeoutSec, async () => {
-      // Accounting diagnostics must cross every helper boundary, even when
-      // its caller discards captured stderr. Preserve the other diagnostics'
-      // requested destination and the runner's returned stderr contract.
-      const accounting = Boolean(process.env.JIG_FORGE_CALL_COUNT_FILE);
-      const captureIgnored = accounting && opts.stderr === "ignore";
-      const result = await fn(
-        argv,
-        captureIgnored ? { ...opts, stderr: "pipe" } : opts,
-      );
-      if (accounting && result.stderr?.includes(FORGE_ACCOUNTING_UNAVAILABLE))
+      const result = await fn(argv, opts);
+      if (
+        process.env.JIG_FORGE_CALL_COUNT_FILE &&
+        result.stderr?.includes(FORGE_ACCOUNTING_UNAVAILABLE)
+      )
         console.error(FORGE_ACCOUNTING_UNAVAILABLE);
-      return captureIgnored ? { ...result, stderr: "" } : result;
+      return result;
     });
 }
 
