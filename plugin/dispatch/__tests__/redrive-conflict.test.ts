@@ -16,6 +16,7 @@ import {
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
+import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/schema.ts";
 import { readRecord } from "../lib/launches.ts";
 import { type EndedRow, readRows } from "../lib/log.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -81,7 +82,11 @@ function stop(
 /** PR #7, whose drive stopped `exit` (`9` unless a test says otherwise), as the forge now lists it; its workspace exists, and account a may bill. */
 function fixture(
   pr: { headRefOid?: string; mergeable?: string; labels?: unknown[] },
-  { yaml = CONFIG, exit = 9 }: { yaml?: string; exit?: number } = {},
+  {
+    yaml = CONFIG,
+    exit = 9,
+    ledger = {},
+  }: { yaml?: string; exit?: number; ledger?: Partial<Ledger> } = {},
 ): World {
   const w = world();
   current = w;
@@ -90,7 +95,10 @@ function fixture(
   withOrigin(w);
   w.setPrs("open", [openPr(7, HEAD, pr)]);
   w.setComments(7, [
-    ledgerComment(701, stoppedLedger(7, exit, { verifiedSha: HEAD_SHA })),
+    ledgerComment(
+      701,
+      stoppedLedger(7, exit, { verifiedSha: HEAD_SHA, ...ledger }),
+    ),
   ]);
   const ws = join(w.root, "ws-7");
   mkdirSync(ws, { recursive: true });
@@ -404,4 +412,99 @@ describe("a stop 9 under dispatch labels", () => {
     ]);
     expect(terminalCreates(w)).toEqual([]);
   });
+});
+
+describe("a parked drive whose pull request conflicts with its base", () => {
+  const PARK: ParkedItem = {
+    key: "F1",
+    kind: "finding",
+    reason: "Which retry budget should the client keep?",
+    round: 2,
+    at: "2026-10-30T21:00:00.000Z",
+    class: "design-choice",
+    record: "Question: which retry budget should the client keep?",
+  };
+  const PARKED = { exit: 8, ledger: { parked: [PARK] } };
+  const CAUSE = "parked waiting on finding F1, and conflicting with its base";
+  const stateOf = (r: TickReceipt) =>
+    r.repos[0]?.labels?.states.find((s) => s.target === "PR #7")?.state;
+
+  it("is re-driven once for the pair of heads, carrying stale rather than parked while it is owed", async () => {
+    const w = fixture(
+      { mergeable: "CONFLICTING" },
+      { ...PARKED, yaml: LABELS_ON },
+    );
+    writeFileSync(join(w.dir, "drive-exit"), "8");
+    const first = await tick(w);
+    const [launched] = launches(first);
+    expect(launched).toMatchObject({ action: "rearm", outcome: "launched" });
+    expect(stateOf(first)).toBe("stale");
+    expect(notified(first)).toEqual([]);
+    const record = launched?.record ?? "";
+    expect(readRecord(record, dispatchState(w))?.redrive).toEqual({
+      cause: CAUSE,
+      change: CHANGE,
+      conflictStop: true,
+    });
+    await waitFor("the exit", () => exitWritten(w, record));
+
+    // Its conflict-resolve round merged the base and pushed; the park stands.
+    w.setPrs("open", [
+      openPr(7, HEAD, { headRefOid: MOVED, mergeable: "MERGEABLE" }),
+    ]);
+    w.setComments(7, [ledgerComment(701, stop(8, 4, { parked: [PARK] }))]);
+    const settled = await tick(w);
+    expect(launches(settled)).toEqual([]);
+    expect(stateOf(settled)).toBe("parked");
+    expect(notified(settled)).toEqual([["PR #7", "parked", "sent"]]);
+    expect(driveRuns(w)).toHaveLength(1);
+  }, 120_000);
+
+  it("goes back to a person, its park and its conflict, when the re-drive leaves it parked at the same pair", async () => {
+    const w = fixture(
+      { mergeable: "CONFLICTING" },
+      { ...PARKED, yaml: LABELS_ON },
+    );
+    const record = await redrive(w, 8);
+    w.setComments(7, [ledgerComment(701, stop(8, 4, { parked: [PARK] }))]);
+
+    const later = await tick(w);
+    expect(launches(later)).toEqual([]);
+    expect(stateOf(later)).toBe("parked");
+    expect(notified(later)).toEqual([["PR #7", "parked", "sent"]]);
+    const [action] = later.repos[0]?.actions ?? [];
+    expect(action?.notice?.text).toContain(
+      `${CAUSE}, and launch record ${record} already re-drove it for this change and ended 8: a person answers its parks and settles the conflict until its head or its base moves`,
+    );
+    expect(action?.notice?.text).toContain(PARK.record);
+    expect(driveRuns(w)).toHaveLength(1);
+  }, 90_000);
+
+  it("needs a person once the re-drive stops 9 at the same pair, and is re-driven again when the base moves", async () => {
+    const w = fixture({ mergeable: "CONFLICTING" }, PARKED);
+    await redrive(w);
+    w.setComments(7, [ledgerComment(701, stop(9, 4))]);
+    expect(notified(await tick(w))).toEqual([
+      ["PR #7", "needs-person", "sent"],
+    ]);
+
+    w.setBaseHead(BASE_MOVED);
+    const again = await redrive(w);
+    expect(readRecord(again, dispatchState(w))?.redrive?.change).toBe(
+      `head ${HEAD_SHA}, base ${BASE_MOVED}`,
+    );
+    expect(driveRuns(w)).toHaveLength(2);
+  }, 120_000);
+
+  it("stays parked while the forge reports it mergeable or is still computing", async () => {
+    for (const mergeable of ["MERGEABLE", "UNKNOWN"]) {
+      const w = fixture({ mergeable }, PARKED);
+      const receipt = await tick(w);
+      expect(launches(receipt)).toEqual([]);
+      expect(notified(receipt)).toEqual([["PR #7", "parked", "sent"]]);
+      expect(baseReads(w)).toEqual([]);
+      w.close();
+      current = null;
+    }
+  }, 90_000);
 });

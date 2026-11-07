@@ -70,15 +70,24 @@ function generation(pr: DrivenPr): string {
   return String(pr.evidence.generation ?? "unknown");
 }
 
-/** A drive parked with decisions unanswered: the framed decisions, and how to answer them. */
+/** A drive parked with decisions unanswered: the framed decisions, and how to answer them, and the conflict with its base its re-drive left. */
 export function parkNotice(slug: string, pr: DrivenPr): Notice {
   const waiting = pr.waiting ?? [];
   const keys = waiting.map((p) => `${p.kind} ${p.key}`).join(", ");
+  // A park is read beside its base only while its pull request conflicts.
+  const conflict =
+    pr.evidence.mergeable === "CONFLICTING"
+      ? [
+          `It also conflicts with its base, which the dispatcher's re-drive did not resolve: ${pr.why}. Merge its base in, or settle the conflict on the pull request if it needs a decision (see the drive's handoff).`,
+          "",
+        ]
+      : [];
   return notice(
     `${slug} PR #${pr.number} parked, ledger generation ${generation(pr)}: ${keys}`,
     [
       `PR #${pr.number} (${pr.title}) is parked: ${waiting.length === 1 ? "one decision waits" : `${waiting.length} decisions wait`} for a person.`,
       "",
+      ...conflict,
       ...waiting.flatMap((p) => [...p.lines, ""]),
     ],
     [
