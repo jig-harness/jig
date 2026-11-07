@@ -474,8 +474,9 @@ async function retryRequests(
   repo: RepoTarget,
   report: RepoReport,
 ): Promise<void> {
-  for (const { record } of state.records) {
-    if (record.repo !== repo.slug || !pendingRearm(record)) continue;
+  for (const { record, state: launchState } of state.records) {
+    if (record.repo !== repo.slug || !pendingRearm(record, launchState))
+      continue;
     const result = waits(
       { target: `PR #${record.pr}`, stage: "rearm" } as Action,
       "waiting to acknowledge the accepted rearm request",

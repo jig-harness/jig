@@ -58,6 +58,7 @@ import {
 } from "../../shared/liveness.ts";
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
 import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
+import { pendingRearm } from "./rearm-state.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
@@ -838,7 +839,10 @@ export function pruneLaunches(
   for (const id of latestArms(records)) kept.add(id);
   const settled = settledEnds(root);
   for (const r of records)
-    if (cancelledBeforeExecution(r) && !settled.has(r.record.id))
+    if (
+      pendingRearm(r.record, r.state) ||
+      (cancelledBeforeExecution(r) && !settled.has(r.record.id))
+    )
       kept.add(r.record.id);
   const removed = records
     .filter(({ record, state }) => {

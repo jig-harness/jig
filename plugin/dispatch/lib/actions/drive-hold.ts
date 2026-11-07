@@ -30,6 +30,7 @@
  *   stacked on.
  */
 import { noCauseFacts } from "../no-cause-stops.ts";
+import { pendingRearm } from "../rearm-state.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   holds,
@@ -153,12 +154,7 @@ export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
 
 /** A delivered request stays held until its label removal is acknowledged. */
 function pendingRequest(mine: ReadRecord[]): DriveHold {
-  const consumed = mine.findLast(
-    (r) =>
-      r.record.rearmLabel != null &&
-      r.record.rearmConsumed !== true &&
-      r.record.attempts.some((a) => a.outcome === "sent"),
-  );
+  const consumed = mine.findLast((r) => pendingRearm(r.record, r.state));
   if (consumed !== undefined)
     return {
       kind: "armed",

@@ -141,6 +141,59 @@ it("keeps a refused request-label removal pending, then durably acknowledges its
   expect(readRecord(sent.id, dir)?.rearmConsumed).toBe(true);
 });
 
+it("acknowledges a lost runtime receipt from the wrapper claim and retains it until acknowledgment", async () => {
+  const dir = root();
+  const lost = record("20260101T000000Z-aaaaaaaa", {
+    rearmLabel: "jig:rearm",
+    attempts: [{ at: WHO.claimedAt, outcome: "lost", detail: "response lost" }],
+  });
+  writeRecord(lost, dir);
+  claimRecord(lost.id, WHO, dir);
+  recordExit(lost.id, { at: WHO.claimedAt, code: 1, signal: null }, dir);
+  const read = (await readLaunches(dir)).records;
+  const request = {
+    ...silent(""),
+    class: "re-armable" as const,
+    evidence: { rearm: true },
+  };
+  expect(driveHold(request, read).kind).toBe("armed");
+  expect(pruneLaunches(read, Date.parse("2027-01-01"), 7, dir)).toEqual([]);
+  let removals = 0;
+  expect(
+    (
+      await consumeRearm(lost, dir, async () => {
+        removals++;
+        return ok(undefined);
+      })
+    ).ok,
+  ).toBe(true);
+  expect(removals).toBe(1);
+  expect(readRecord(lost.id, dir)?.rearmConsumed).toBe(true);
+  expect(
+    pruneLaunches(
+      (await readLaunches(dir)).records,
+      Date.parse("2027-01-01"),
+      7,
+      dir,
+    ),
+  ).toEqual([lost.id]);
+});
+
+it("retains a delivered rearm acknowledgment past retention even after a non-refusal exit", () => {
+  const dir = root();
+  const sent = record("20260101T000000Z-aaaaaaaa", {
+    rearmLabel: "jig:rearm",
+    attempts: [{ at: WHO.claimedAt, outcome: "sent", detail: "accepted" }],
+  });
+  writeRecord(sent, dir);
+  const read = ended(sent, 1, WHO.claimedAt);
+  expect(pruneLaunches([read], Date.parse("2027-01-01"), 7, dir)).toEqual([]);
+  sent.rearmConsumed = true;
+  expect(pruneLaunches([read], Date.parse("2027-01-01"), 7, dir)).toEqual([
+    sent.id,
+  ]);
+});
+
 describe("a takeover behind a refusal", () => {
   it("is not planned again on the facts the refusal answered", () => {
     const owner = ended(

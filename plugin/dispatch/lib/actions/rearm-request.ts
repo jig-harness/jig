@@ -1,16 +1,10 @@
 /** A re-arm request is consumed only after the runtime accepts its launch. */
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { failureText } from "../text.ts";
-import { type LaunchRecord, writeRecord } from "../launches.ts";
+import { type LaunchRecord, inspectRow, writeRecord } from "../launches.ts";
 import { writeCommandLabel } from "../requests.ts";
-
-export function pendingRearm(record: LaunchRecord): boolean {
-  return (
-    record.rearmLabel != null &&
-    record.rearmConsumed !== true &&
-    record.attempts.some((a) => a.outcome === "sent")
-  );
-}
+import { pendingRearm } from "../rearm-state.ts";
+export { pendingRearm } from "../rearm-state.ts";
 
 /** Keep a failed removal pending so later ticks retry it without another launch. */
 export async function consumeRearm(
@@ -18,7 +12,10 @@ export async function consumeRearm(
   root?: string,
   remove: typeof writeCommandLabel = writeCommandLabel,
 ): Promise<Outcome<void, "refused">> {
-  if (!pendingRearm(record)) return ok(undefined);
+  if (record.rearmLabel == null || record.rearmConsumed === true)
+    return ok(undefined);
+  const row = await inspectRow(record.id, root);
+  if (!pendingRearm(record, row?.state)) return ok(undefined);
   const removed = await remove(
     record.repo,
     Number(record.pr),
@@ -34,6 +31,7 @@ export async function consumeRearm(
     return failed(
       "refused",
       `the rearm label was removed but its acknowledgment could not be kept: ${failureText(error)}`,
+      error,
     );
   }
   return ok(undefined);

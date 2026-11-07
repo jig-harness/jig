@@ -415,9 +415,12 @@ development and shipped as a version.
   implementation (`shared/records/shared-forge.ts`) posts it as a
   [forge claim](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on
   the attempt after the latest and reads it back; the follow-up marker is the
-  follow-up's. A launch's end reaches its claim when the launch ends: the
-  wrapper `dispatch/run.ts` writes it onto the claim right after it records
-  the stage's exit, each forge call under a short deadline. The host's next
+  follow-up's. A launch's end reaches its claim after the launch ends and
+  any explicit rearm request's label removal is acknowledged. Until then
+  the open claim reserves the delivered request across hosts, including
+  when only the wrapper's claim proves delivery after a lost runtime receipt.
+  The wrapper `dispatch/run.ts` writes the end after it records the stage's
+  exit, each forge call under a short deadline. The host's next
   `--apply` run is the backstop: it writes the end of every claim of its own
   whose launch record ended and still has none (a wrapper killed before its
   write, a forge that refused it; `dispatch/lib/shared-launches.ts`). Every

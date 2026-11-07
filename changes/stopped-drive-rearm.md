@@ -14,3 +14,6 @@ release: minor
   one recovery pass per head in the same tree, with instructions to settle
   its edits. A repeated exit `12` waits for a person and names the `rearm`
   command.
+- Rearm requests remain reserved across hosts until their label removal is
+  acknowledged, including after a lost runtime receipt or launch-record
+  retention. An explicit request can retry an ended admission refusal.
