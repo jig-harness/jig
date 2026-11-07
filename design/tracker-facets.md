@@ -159,7 +159,7 @@ default:
 
 | Facet | GitHub Issues | Jira | Linear |
 | --- | --- | --- | --- |
-| Type | for a repository that keeps no type labels, the issue type, matched by name, a type with no issue type of its name staying a label; type labels otherwise | type labels, and every new issue filed as the one `issue_tracker.jira.issue_type`, as today | labels from `issue_tracker.types`; Linear has no issue types |
+| Type | for a repository that keeps no type labels, the issue type, matched by name, a type with no issue type of its name refused when it is filed; type labels otherwise | type labels, and every new issue filed as the one `issue_tracker.jira.issue_type`, as today | labels from `issue_tracker.types`; Linear has no issue types |
 | Priority | for a repository that keeps no priority labels, the organization's Priority field; `priority:` labels otherwise | the priority field | the priority field |
 | Size | for a repository that keeps no size labels, the organization's Effort field, when its options carry the size names; size labels otherwise | size labels, as today, until a field is named, since each site's estimate field differs | size labels; the estimate as an option |
 
@@ -180,18 +180,17 @@ no store named, such as a new one.
 Detection reads only the tracker, so every clone reaches the same answer and
 no clone holds a memory the others lack. A facet's value written to the
 native store (an issue type, a field value) is evidence for the native store;
-a label of the facet is evidence for the labels store, whatever wrote it. A
-label counts even when it looks like the native store's fallback (`docs`
-beside Bug, Feature and Task), since an established repository's own `docs`
-label is indistinguishable from one the native store wrote. Native evidence
+a label of the facet is evidence for the labels store, whatever wrote it. Native evidence
 and label evidence together are not resolved by guessing: the facet is in
 conflict, and reads and writes of it fail closed in every clone, with an
 error naming both stores, until the configuration names one; `facetStores()`
-shows the conflict. The one pairing that is not a conflict is the native
-store's own fallback: labels that name only types the organization has no
-issue type for, beside issues that carry native types. So a repository that
-began on the native store stays there when someone adds a label, and one that
-began on labels stays there when an organization adds a field. The audit
+shows the conflict. No pairing is excused, because no label shows who wrote
+it: a repository that began on the native store and later gains a label of
+the facet is in conflict too, from either side. A facet with no evidence at
+all reads as the default its adapter gives; deleting a field whose values
+were the only evidence is therefore not detected until the configuration
+names the store, which the audit asks every repository relying on a default
+to do. The audit
 reports a repository whose facet has no named store, so a repository relying
 on a default has it committed rather than inferred.
 
@@ -217,11 +216,11 @@ labels unless the organization sets its Effort options to the size names
 or a `values` map names them. A repository a person owns has no issue
 fields, so it uses labels. A type with no issue type
 of its name, such as `docs` in an organization that has only Bug, Feature
-and Task, keeps its label; GitHub asks for no issue type on an issue, so
-nothing else is set. The type is mixed per value because an organization's
-issue types are shared by every repository in it, so one repository's
-extra types cannot be added without offering them to all; a repository
-that wants one place for its types maps every type or sets `store: label`.
+and Task, is refused when it is filed, naming the two ways out: a `values`
+map, or `store: label`. Labels never sit beside a defaulted native store, so
+a label of the facet can only mean the labels store. An organization's issue
+types are shared by every repository in it, so a repository's extra types
+are not added to them.
 A repository on a detected field is told by `facetStores()` and the audit
 to name that store in its configuration: until it does, an organization
 admin who renames the Priority field's options, deletes a field or moves
