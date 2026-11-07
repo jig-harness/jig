@@ -151,7 +151,7 @@ its `--json` report; the canonical (exit, state) pairing is code, not this
 table — [`terminal-states.ts`](scripts/lib/status/terminal-states.ts),
 checked against this and the other prose restatements by
 [`__tests__/terminal-states-consistency.ts`](https://github.com/jig-harness/jig/blob/main/plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts).
-`PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT` and `TAKEN_OVER` are the
+`PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT`, `TAKEN_OVER` and `CI_REPAIR_SPENT` are the
 exception: named exits `drive.ts` returns directly, never through this report — a
 consumer polling `--json` for one of these states will never see it there.
 
@@ -165,13 +165,15 @@ consumer polling `--json` for one of these states will never see it there.
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
+| `CI_REPAIR_SPENT` | 21 | The review converged, the fresh exact-head CI verdict still names failing checks, and the CI-repair passes (`DRIVE_PR_CI_REPAIR_ROUNDS`) are spent. A CI repair, not a person's decision: repair it with [`/jig:fix-ci`](../fix-ci/SKILL.md), or re-arm, which starts with a fresh budget. Under `jig dispatch` the dispatcher re-drives it once per head commit. With repair disabled (`0`), or a verdict that names no failing check, the stop stays `1` |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
 In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
 person must settle on the workspace card: a park, a usage-limit stop and
 every failure stop (an operational failure, a usage error, the round budget
 spent, a failed reviewer check, an unworkable conflict, an unclean converged
-worktree, a stall, a recurring pass deadline) mark the card unread with the
+worktree, a stall, a recurring pass deadline, CI still red with its repair
+passes spent) mark the card unread with the
 stop's one-line reason as its comment, the park's question first among them;
 on a card still unread, the reason is appended to the comment a person has
 not read yet. A converged drive, a closed pull request, a stop a person asked
@@ -1201,6 +1203,8 @@ state directory holding all of it: read that file before acting.
 | `UNPUSHED COMMITS` | Local HEAD carries commits the PR's head lacks: a pass ended without pushing them, or the drive was armed over them. They are listed, with the uncommitted edits, and are still in the tree | Validate what is sound and push it through `finish-round.ts` with the round's own fixes; discard what is not on purpose. Add the `--inherited-head <sha>` it names to § 1's gate: without it the gate reads the unpushed commits as `HEAD_LAG` |
 | `UNCOMMITTED EDITS` | The tree holds edits no commit carries: a pass ended without committing them. They are listed and are still in the tree | Validate what is sound and push it through `finish-round.ts` with the round's own fixes; discard what is not on purpose. Add the `--inherited-head <sha>` it names to § 1's gate: without it the gate can read the PR as converged over the edits |
 | `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14`. It lists what the tree holds now | Finish what the tree holds first (§ 5, **A tree the round inherits**), then act on the open work. If a step refuses and you stop, or you decide not to act, end the handoff narrative with one paragraph naming the step that refused (its script, exit code and state) and what would unblock it, or what you decided and why — the stop prints what this round recorded |
+| `RE-ARMED AFTER A STALL` | The drive before this one stopped with exit `14`; the notice carries what its passes recorded last, and says when it left work in this tree, which this drive then takes as its own to finish | Finish what the tree holds first (§ 5, **A tree the round inherits**), find why those passes did not act and act on it; if a step refuses and you stop, record it (§ 8) |
+| `RE-ARMED AFTER THE CI-REPAIR BUDGET WAS SPENT` | The drive before this one stopped with exit `21`: CI still failed on its converged head after its repair passes | Work the round as usual; this drive has its own CI-repair passes, which the driver dispatches once the review converges again |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
 | `RE-ARMED TO DECIDE PROVISIONALLY` | At the `wide` level, parked items of the class `escalated` that nobody answered are unparked, one `[kind] key` line each | Check each again first: the level read afresh (an off-hours window may have closed), and `decide`'s `wide` conditions (no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence; for a thread, a recorded `escalate` ruling of the class `escalated`). Where one fails, park the item again under its class (§ 4). Otherwise decide it this round, provisionally and with a reply outcome only: a thread with `provisional-reply.ts`, a finding with `decide`'s ruling recorded as `decide-provisional` (§ 8) |
@@ -1369,7 +1373,8 @@ have taken anyway, which is the honest outcome, and burns no further budget.
 The budgets are `DRIVE_PR_CI_REPAIR_ROUNDS` (default 2) and
 `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1), both in-memory per driver
 process and both disabled by `0`, which stops on the first red CI or
-conflict without a repair pass. See § Terminal states.
+conflict without a repair pass. A spent CI-repair budget stops with exit
+`21` (`CI_REPAIR_SPENT`). See § Terminal states.
 
 ### 1. Gate
 

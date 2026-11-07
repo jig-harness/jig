@@ -583,9 +583,10 @@ export async function recordDriveEvent(
   pr: string,
   kind: "restart" | "rearm" | "stop",
   cause: string,
+  leftWork = false,
 ): Promise<boolean> {
   const res = await run(tsArgv(driveState, ["record-event", pr]), {
-    stdin: JSON.stringify({ kind, cause }),
+    stdin: JSON.stringify({ kind, cause, ...(leftWork ? { leftWork } : {}) }),
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
   });

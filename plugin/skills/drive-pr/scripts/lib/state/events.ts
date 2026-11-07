@@ -15,7 +15,10 @@
  *   - `stop`: the driver exited, its cause the exit code (`0` converged,
  *     `8` HITL-parked, …) or `unknown` (a thrown refusal or a crash), so a
  *     report reads how the drive last ended from the state as well as from
- *     the ledger. A dry run records none.
+ *     the ledger. A dry run records none. `leftWork` marks a stop that left
+ *     work in its tree no push carries (uncommitted edits, an open git
+ *     operation, unpushed commits): the dispatcher re-drives such a stall
+ *     only in that tree, and a re-arm inherits the edits as its own.
  *
  * Takeovers have their own record (`takeover.ts`). Optional in a stored
  * state: a file written before the field existed reads as no events.
@@ -41,6 +44,8 @@ export interface DriveEvent {
   round: number;
   kind: EventKind;
   cause: string;
+  /** On a `stop`: it left work in its tree that no push carries. */
+  leftWork?: true;
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -59,7 +64,8 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     typeof v.at === "string" &&
     Number.isFinite(Date.parse(v.at)) &&
     Number.isSafeInteger(v.round) &&
-    (v.round as number) >= 0
+    (v.round as number) >= 0 &&
+    (v.leftWork === undefined || (v.leftWork === true && v.kind === "stop"))
   );
 }
 
@@ -84,13 +90,20 @@ export function countByCause(
  * an earlier run's exit never speaks for a later one.
  */
 export function lastStop(events: readonly DriveEvent[]): number | null {
-  const stop = events.findLast((e) => e.kind === "stop");
+  const stop = lastStopEvent(events);
   return stop === undefined || stop.cause === "unknown"
     ? null
     : Number(stop.cause);
 }
 
-/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`). */
+/** The drive's last `stop` event, if it recorded one. */
+export function lastStopEvent(
+  events: readonly DriveEvent[],
+): DriveEvent | undefined {
+  return events.findLast((e) => e.kind === "stop");
+}
+
+/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, and `"leftWork": true` on a stop that left work in its tree). */
 export async function recordEvent(
   store: StateStore,
   raw: string,
@@ -109,6 +122,7 @@ export async function recordEvent(
       round: s.rounds,
       kind: input.kind,
       cause: input.cause,
+      ...(input.leftWork === undefined ? {} : { leftWork: input.leftWork }),
     };
     if (!isDriveEvent(event))
       fail(

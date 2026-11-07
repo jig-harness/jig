@@ -39,9 +39,90 @@ describe("classifyLedger", () => {
     expect(classOf(16)).toBe("re-armable");
     expect(classOf(4)).toBe("re-armable");
     expect([11, 13].map((e) => classOf(e))).toEqual(["refused", "refused"]);
-    expect([1, 2, 6, 7, 12, 14, 15, 99].map((e) => classOf(e))).toEqual(
-      Array(8).fill("needs-person"),
+    expect([1, 2, 6, 7, 12, 15, 99].map((e) => classOf(e))).toEqual(
+      Array(7).fill("needs-person"),
     );
+  });
+
+  // A stall and a spent CI-repair budget are re-driven once per head commit;
+  // a generic exit 1, a crash, stays a person's, and says when its pull
+  // request also conflicts.
+  it("re-drives a stall or a spent CI-repair budget once per head, and keeps a crash a person's", () => {
+    const head = "c".repeat(40);
+    const forge = { head, mergeable: "CONFLICTING" };
+    for (const exit of [14, 21]) {
+      const placed = classifyLedger(
+        stoppedLedger(7, exit),
+        NOW,
+        WINDOW,
+        undefined,
+        forge,
+      );
+      expect(placed.class).toBe("stale");
+      expect(placed.stale).toMatchObject({
+        change: `head ${head}, stopped ${exit}`,
+        mechanicalStop: exit === 14 ? "stall" : "ci-repair",
+      });
+      expect(placed.stale?.tree).toBeUndefined();
+      expect(
+        classifyLedger(stoppedLedger(7, exit), NOW, WINDOW, undefined, {
+          head: null,
+          mergeable: "MERGEABLE",
+        }).class,
+      ).toBe("unplaced");
+    }
+    const crash = classifyLedger(
+      stoppedLedger(7, 1),
+      NOW,
+      WINDOW,
+      undefined,
+      forge,
+    );
+    expect(crash.class).toBe("needs-person");
+    expect(crash.why).toContain("also conflicts with its base");
+    expect(
+      classifyLedger(stoppedLedger(7, 1), NOW, WINDOW, undefined, {
+        head,
+        mergeable: "MERGEABLE",
+      }).why,
+    ).not.toContain("conflicts");
+  });
+
+  it("binds a stall that left work to the tree it stalled in", () => {
+    const ledger = stoppedLedger(7, 14);
+    ledger.events = [
+      {
+        at: new Date(NOW).toISOString(),
+        round: 3,
+        kind: "stop",
+        cause: "14",
+        leftWork: true,
+      },
+    ];
+    const placed = classifyLedger(ledger, NOW, WINDOW, undefined, {
+      head: "c".repeat(40),
+      mergeable: "MERGEABLE",
+    });
+    expect(placed.class).toBe("stale");
+    expect(placed.stale?.tree?.actor).toBe(ledger.driver.actor);
+    expect(placed.why).toContain("in the tree it stalled in");
+    // Work left by an earlier stop is not this stall's.
+    ledger.events = [
+      {
+        at: new Date(NOW).toISOString(),
+        round: 2,
+        kind: "stop",
+        cause: "14",
+        leftWork: true,
+      },
+      { at: new Date(NOW).toISOString(), round: 3, kind: "stop", cause: "1" },
+    ];
+    expect(
+      classifyLedger(ledger, NOW, WINDOW, undefined, {
+        head: "c".repeat(40),
+        mergeable: "MERGEABLE",
+      }).stale?.tree,
+    ).toBeUndefined();
   });
 
   it("holds a globally recorded operator stop while its driver is still running", () => {

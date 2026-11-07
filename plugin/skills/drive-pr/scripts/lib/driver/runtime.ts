@@ -3,6 +3,12 @@ import type { RunHandle } from "./../proc.ts";
 
 interface DriverRuntime {
   /**
+   * The stop about to be recorded left work in its tree that no push
+   * carries: set by the stall stop from what it reports, and recorded on its
+   * `stop` event (`events.ts`).
+   */
+  stopLeftWork: boolean;
+  /**
    * Set when a held lock stops being this process's — named, so the refusal can
    * say which one. Written from the heartbeat timer, read by the round loop.
    */
@@ -67,6 +73,7 @@ interface DriverRuntime {
 }
 
 export const driverRuntime: DriverRuntime = {
+  stopLeftWork: false,
   compromised: "",
   activePass: null,
   quotaSleepAbort: null,

@@ -7,8 +7,15 @@
 
 import { describe, expect, it } from "bun:test";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { scratchClean, useDrivePrSuite } from "./drive-pr-harness.ts";
-import { runDrive } from "./drive-loop-harness.ts";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  makeScratchRepo,
+  scratchClean,
+  useDrivePrSuite,
+  writeFixture,
+} from "./drive-pr-harness.ts";
+import { runDrive, runDriveIn, state } from "./drive-loop-harness.ts";
 
 useDrivePrSuite();
 
@@ -62,6 +69,39 @@ describe("drive.ts stall stop", () => {
     expect(r.stderr).toContain("Blocked: finish-round.ts exit 3");
     expect(r.stderr).not.toContain("Blocked: base-sync.ts exit 3");
   }, 120_000);
+
+  it("records on its stop that it left work in the tree, and only then", async () => {
+    const lastStop = async (stateDir: string, cwd: string) => {
+      const r = await state(stateDir, ["get", "999"], cwd);
+      const events = (JSON.parse(r.stdout) as { events?: unknown[] }).events;
+      return (events ?? []).findLast(
+        (e) => (e as { kind?: string }).kind === "stop",
+      );
+    };
+    for (const dirty of [true, false]) {
+      const repo = makeScratchRepo(`stall-left-work-${String(dirty)}`);
+      if (dirty) writeFileSync(join(repo.dir, "left.txt"), "a pass's edit\n");
+      const { dir, stateDir } = writeFixture(
+        { ...fixture(), head: repo.head, reviewedSha: repo.head },
+        repo.dir,
+      );
+      const r = await runDriveIn(
+        dir,
+        stateDir,
+        ["--max-rounds", "10", "--", ...pass(null)],
+        repo.dir,
+      );
+      expectSpawnExit({ ...r, stdout: null }, 14);
+      expect(await lastStop(stateDir, repo.dir)).toMatchObject({
+        cause: "14",
+        ...(dirty ? { leftWork: true } : {}),
+      });
+      if (!dirty)
+        expect(await lastStop(stateDir, repo.dir)).not.toHaveProperty(
+          "leftWork",
+        );
+    }
+  }, 240_000);
 
   it("says the lines it prints predate the extra round when that pass recorded nothing", async () => {
     const r = await runDrive(fixture(), [

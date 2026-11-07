@@ -2,6 +2,23 @@
 release: minor
 ---
 
+### Added
+
+- `/jig:drive-pr` stops with its own exit, `21` (`CI_REPAIR_SPENT`), when the
+  review converged but CI still fails after its CI-repair passes, so a caller
+  can tell that CI repair from a crash (`1`). A harness that reads exit `1`
+  as "CI still red" reads `21` for a spent budget now; repair disabled
+  (`DRIVE_PR_CI_REPAIR_ROUNDS=0`) still stops `1`.
+- `jig dispatch` re-drives a stall (exit `14`) and a spent CI-repair budget
+  (exit `21`) once per head commit, on any account, and tells a person when
+  the same head stops the same way again. A stall that left work in its tree
+  is re-driven only in that tree; with no open workspace holding it, a person
+  is told. The re-armed drive's first pass is told the stop and, after a
+  stall, what its passes recorded last, and it takes the edits the stall left
+  as its own to finish.
+- A stop the dispatcher hands a person says so when the pull request also
+  conflicts with its base.
+
 ### Fixed
 
 - A drive round that inherits a base merge an earlier pass left open, with its

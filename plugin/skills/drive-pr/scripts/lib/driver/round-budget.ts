@@ -34,6 +34,8 @@ import {
 
 import { recordDriveEvent } from "./rearm.ts";
 
+import { driverRuntime } from "./runtime.ts";
+
 import {
   currentAutonomy,
   describeAutonomy,
@@ -109,6 +111,9 @@ export async function checkRoundStall(
     const economyReport = await loopEconomy(context.pr);
     process.stderr.write(await leftoverReport());
     process.stderr.write(economyReport);
+    driverRuntime.stopLeftWork = leftWork(
+      await passLeftovers({ fingerprint: false }),
+    );
     return STALLED_EXIT;
   }
 
@@ -138,6 +143,19 @@ async function stallDecisions(context: DriveRoundContext): Promise<string[]> {
     "  What the passes decided: the extra round's pass recorded nothing. The narrative's last lines predate it, so what they describe may no longer hold:",
     ...earlier.map((line) => `    ${line}`),
   ];
+}
+
+/**
+ * Whether the tree holds work no push carries: uncommitted edits, an open
+ * git operation, or commits the pull request lacks. A probe that failed
+ * counts as work, so a re-drive stays in the tree rather than leave it.
+ */
+function leftWork(l: Awaited<ReturnType<typeof passLeftovers>>): boolean {
+  return (
+    l.uncommitted !== "" ||
+    l.operation !== null ||
+    (l.unpushed === null ? l.baseExists !== false : l.unpushed > 0)
+  );
 }
 
 /** What the stalled passes left unchanged, as the stop and the notice print it. */

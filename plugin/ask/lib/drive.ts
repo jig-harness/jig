@@ -46,6 +46,7 @@ import {
 } from "../../shared/records/shared.ts";
 import { settleNoCauseStops } from "../../dispatch/lib/no-cause-stops.ts";
 import { settleConflictStops } from "../../dispatch/lib/actions/drive-hold.ts";
+import { settlesWithPerson } from "../../dispatch/lib/redrive-settle.ts";
 import { isDrive } from "../../dispatch/lib/launches.ts";
 import { settleSharedConflictStops } from "../../dispatch/lib/shared-launches.ts";
 import { driveClass, lastEnded } from "../../dispatch/lib/log.ts";
@@ -208,14 +209,18 @@ function stoppedState(
   };
 }
 
-/** Why a stop on a conflict is a person's to settle, when this machine or another host already re-drove it for the change it shows now; `null` otherwise. */
+/** Why a stop on a conflict, a stall or a spent CI-repair budget is a person's to settle, when this machine or another host already re-drove it for the change it shows now; `null` otherwise. */
 function conflictSettled(
   placed: Classified,
   ledger: Ledger,
   r: DriveReads,
   host: string | null,
 ): string | null {
-  if (placed.class !== "stale" || placed.stale?.conflictStop !== true)
+  if (
+    placed.class !== "stale" ||
+    placed.stale === undefined ||
+    !settlesWithPerson(placed.stale)
+  )
     return null;
   const own = settleConflictStops(
     [
@@ -231,6 +236,7 @@ function conflictSettled(
           generation: ledger.generation,
           exit: ledger.driver.exit ?? null,
           heartbeat: ledger.driver.heartbeat,
+          mergeable: r.pull.mergeable ?? null,
         },
       },
     ],

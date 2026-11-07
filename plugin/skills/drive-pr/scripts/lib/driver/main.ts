@@ -68,6 +68,7 @@ import {
 } from "./takeover.ts";
 
 import { pickUpDrive } from "./takeover-complete.ts";
+import { stopPickup } from "./stop-pickup.ts";
 
 import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
@@ -490,12 +491,18 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   // every later exit attempts its stopped ledger under the same ownership.
   await using settlement = ledgerSettlement(pr, held, dryRun);
   await publishStartup(pr);
-  const firstPassNotice = await pickUpDrive(pr, plan, pickup, {
-    agent,
-    botsOnly,
-    dryRun,
-    windowReopened,
-  });
+  const afterStop = await stopPickup(pr, pickup);
+  const firstPassNotice = [
+    await pickUpDrive(pr, plan, pickup, {
+      agent,
+      botsOnly,
+      dryRun,
+      windowReopened,
+    }),
+    afterStop.notice,
+  ]
+    .filter((part) => part !== "")
+    .join("\n\n");
 
   // A dry run inspects; it does not work a round. Counting it would inflate
   // the round total the bound is measured against.
@@ -537,6 +544,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
     markReadyPolicy,
     deadlineRetryBudget,
     firstPassNotice,
+    inheritsEdits: afterStop.inheritsEdits,
   });
   const exit = await settlement.done(roundsExit);
   return exit;
