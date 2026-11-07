@@ -1,6 +1,6 @@
 /**
  * Dispatch labels: the dispatcher's state shown on each pull request it
- * manages, and two commands a person gives it from anywhere the forge
+ * manages, and the commands a person gives it from anywhere the forge
  * shows a pull request. Every name carries the repository's prefix
  * (`dispatch.labels.prefix`, `jig:` by default).
  *
@@ -13,10 +13,14 @@
  *   whatever its ledger says. Nothing reads a state label to decide what to
  *   start.
  * - **Commands**, read by the tick and never added by it: `drive` adopts a
- *   pull request with no drive ledger (the tick arms a drive on it), and
- *   `hold` stands the dispatcher down from a pull request while it is
+ *   pull request with no drive ledger (the tick arms a drive on it),
+ *   `rearm` asks for a stopped drive to be re-armed in its existing tree,
+ *   and `hold` stands the dispatcher down from a pull request while it is
  *   there. `drive` is carried out once a ledger exists and is then replaced
- *   by the state label; `hold` is only ever removed by a person.
+ *   by the state label. `rearm` is removed by the tick once its launch is
+ *   recorded; a removal that fails stays pending and is retried on later
+ *   ticks without another launch, and while labels are disabled it stays
+ *   pending untouched. `hold` is only ever removed by a person.
  *
  * This module is pure: which state a ledger maps to, which pull requests
  * the labels make the tick read, and what must change on a pull request

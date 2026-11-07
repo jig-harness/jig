@@ -114,3 +114,26 @@ return { waits: report.launches.map(r => r.detail.includes("receipt")), consumed
 `),
   ).toEqual({ waits: [true], consumed: false });
 });
+
+it("leaves a delivered rearm acknowledgment pending while dispatch labels are disabled", async () => {
+  expect(
+    await probe(`
+const { applyDrives } = await import(${JSON.stringify(resolve(import.meta.dir, "../lib/actions/drive.ts"))});
+const { writeRecord, readRecord } = await import(${JSON.stringify(resolve(import.meta.dir, "../lib/launches.ts"))});
+const machine = { intervalMs: 300000, runtimeTimeoutMs: 1000, workspaceTimeoutMs: 1000 };
+const run = async (fresh) => {
+  writeRecord({ ...record, rearmConsumed: false }, ctx.root);
+  const state = {
+    machine,
+    startedAt: Date.now(),
+    records: [{ record, state: { kind: "ended", exit: { at, code: 1, signal: null }, process: null }, result: null }],
+    root: ctx.root,
+  };
+  const report = { actions: [], launches: [] };
+  await applyDrives(state, { slug: ctx.slug }, report, {}, fresh);
+  return { launches: report.launches.length, consumed: readRecord(record.id, ctx.root)?.rearmConsumed === true };
+};
+return run({ labelWrites: false });
+`),
+  ).toEqual({ launches: 0, consumed: false });
+});

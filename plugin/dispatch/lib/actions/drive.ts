@@ -83,6 +83,8 @@ export type { ApplyState } from "./launch.ts";
 export interface FreshDrive {
   read: (pr: number) => Promise<DrivenPr | null>;
   held: (pr: DrivenPr) => boolean;
+  /** Whether `dispatch.labels` allows the tick to write a label; `false` leaves every rearm acknowledgment pending. */
+  labelWrites?: boolean;
   claimer?: LaunchClaimer;
 }
 
@@ -90,7 +92,13 @@ async function consumeRequest(
   state: ApplyState,
   record: LaunchRecord,
   result: LaunchOutcome,
+  fresh: FreshDrive,
 ): Promise<void> {
+  if (fresh.labelWrites === false) {
+    result.detail +=
+      "; rearm request was carried out but dispatch.labels is disabled, so its label stays until labels are enabled again; this launch record prevents another launch until its removal is acknowledged";
+    return;
+  }
   const consumed = await consumeRearm(record, state.root, undefined, () =>
     timeLeftMs(state),
   );
@@ -122,7 +130,7 @@ async function retryPending(
       record.rearmLabel &&
       (result.outcome === "retried" || result.outcome === "launched")
     )
-      await consumeRequest(state, record, result);
+      await consumeRequest(state, record, result, fresh);
     // A replay that gave the record back starts nothing: its claim goes with it, as a first launch's does.
     if (claim !== null && !state.records.some((r) => r.record.id === record.id))
       await fresh.claimer?.release(record, claim);
@@ -433,7 +441,8 @@ async function launchOne(
     const record = state.records.find(
       (r) => r.record.id === result.record,
     )?.record;
-    if (record !== undefined) await consumeRequest(state, record, result);
+    if (record !== undefined)
+      await consumeRequest(state, record, result, drive);
   }
   return result;
 }
@@ -446,7 +455,7 @@ export async function applyDrives(
   sessions: SessionsReport,
   fresh: FreshDrive,
 ): Promise<void> {
-  await retryRequests(state, repo, report);
+  await retryRequests(state, repo, report, fresh);
   await retryPending(state, repo, report, fresh);
   const rearms = report.actions.filter((a) => a.stage === "rearm");
   for (const action of rotated(state, rearms, "targets")) {
@@ -476,7 +485,9 @@ async function retryRequests(
   state: ApplyState,
   repo: RepoTarget,
   report: RepoReport,
+  fresh: FreshDrive,
 ): Promise<void> {
+  if (fresh.labelWrites === false) return;
   for (const { record, state: launchState } of state.records) {
     if (record.repo !== repo.slug || !pendingRearm(record, launchState))
       continue;
