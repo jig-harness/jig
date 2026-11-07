@@ -14,9 +14,7 @@ export function reconcileNeeds(
     ...line,
     needs: line.needs.filter((n) => {
       const state = facts.get(`${n.repo}#${n.pr}`)?.state;
-      return (
-        n.stage === "followup" || (state !== "MERGED" && state !== "CLOSED")
-      );
+      return n.stage !== "rearm" || (state !== "MERGED" && state !== "CLOSED");
     }),
   };
 }

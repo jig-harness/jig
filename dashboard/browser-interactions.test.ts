@@ -490,8 +490,80 @@ browserIt(
   TIMEOUT,
 );
 
+for (const outcome of ["success", "http-error", "null"] as const)
+  browserIt(
+    `merged drive decisions stay removed during and after a ${outcome} refresh`,
+    async () => {
+      const server = await served("loud");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        server.url,
+        LAPTOP,
+      );
+      let hold = false;
+      let refreshing = false;
+      let release: (() => void) | undefined;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      try {
+        await page.clock.install();
+        await page.route("**/pr?*", async (route) => {
+          const params = new URL(route.request().url()).searchParams;
+          if (hold) {
+            refreshing = true;
+            await pending;
+            if (outcome !== "success") {
+              await route.fulfill({
+                status: outcome === "http-error" ? 503 : 200,
+                json: null,
+              });
+              return;
+            }
+          }
+          await route.fulfill({
+            json: {
+              state: "MERGED",
+              title: "Merged change",
+              isDraft: false,
+              url: `https://github.com/${params.get("repo")}/pull/${params.get("pr")}`,
+              checkedAt: "2026-11-06T21:00:00.000Z",
+            },
+          });
+        });
+        await page.reload();
+        const decision = page
+          .locator(".need .tgt")
+          .filter({ hasText: "PR #456" });
+        await shows(page, ".pr-merged");
+        await until(
+          "the merged decision is removed",
+          async () => (await decision.count()) === 0,
+        );
+        hold = true;
+        await page.clock.fastForward(60_000);
+        await until("PR state is being refreshed", async () => refreshing);
+        await page.clock.runFor(50);
+        expect(await decision.count()).toBe(0);
+        const answered = page.waitForResponse((response) =>
+          response.url().includes("/pr?"),
+        );
+        release?.();
+        await answered;
+        await page.clock.runFor(500);
+        expect(await decision.count()).toBe(0);
+        expect(await page.locator(".pr-unknown").count()).toBe(0);
+      } finally {
+        release?.();
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
 browserIt(
-  "merged drive decisions stay removed while PR state refreshes",
+  "a stalled PR response expires and a later refresh can recover",
   async () => {
     const server = await served("loud");
     const { page, context } = await open(
@@ -500,44 +572,34 @@ browserIt(
       server.url,
       LAPTOP,
     );
-    let hold = false;
-    let refreshing = false;
     let release: (() => void) | undefined;
     const pending = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let stalled = true;
     try {
-      await page.clock.install();
       await page.route("**/pr?*", async (route) => {
-        const params = new URL(route.request().url()).searchParams;
-        if (hold) {
-          refreshing = true;
-          await pending;
-        }
+        if (stalled) await pending;
         await route.fulfill({
           json: {
             state: "MERGED",
-            title: "Merged change",
+            title: "Recovered",
             isDraft: false,
-            url: `https://github.com/${params.get("repo")}/pull/${params.get("pr")}`,
+            url: "https://github.com/example-org/web/pull/456",
             checkedAt: "2026-11-06T21:00:00.000Z",
           },
         });
       });
+      const expired = page.waitForEvent("requestfailed", {
+        predicate: (request) => request.url().includes("/pr?"),
+        timeout: 20_000,
+      });
       await page.reload();
-      const decision = page
-        .locator(".need .tgt")
-        .filter({ hasText: "PR #456" });
+      await expired;
+      stalled = false;
+      release?.();
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await shows(page, ".pr-merged");
-      await until(
-        "the merged decision is removed",
-        async () => (await decision.count()) === 0,
-      );
-      hold = true;
-      await page.clock.fastForward(60_000);
-      await until("PR state is being refreshed", async () => refreshing);
-      await page.clock.runFor(50);
-      expect(await decision.count()).toBe(0);
     } finally {
       release?.();
       await context.close();

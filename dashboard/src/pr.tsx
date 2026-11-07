@@ -24,15 +24,19 @@ function prQuery(repo: string, target: string) {
       signal,
     }: {
       signal: AbortSignal;
-    }): Promise<DashboardPr | null> => {
+    }): Promise<DashboardPr> => {
       const params = new URLSearchParams({
         repo,
         pr: pr ?? "",
         token: new URLSearchParams(location.search).get("token") ?? "",
       });
-      const response = await fetch(`/pr?${params}`, { signal });
+      const response = await fetch(`/pr?${params}`, {
+        signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+      });
       if (!response.ok) throw new PrReadError("PR state unavailable");
-      return await response.json();
+      const fact: DashboardPr | null = await response.json();
+      if (fact === null) throw new PrReadError("PR state unavailable");
+      return fact;
     },
     staleTime: 60_000,
     retry: false,
@@ -41,7 +45,7 @@ function prQuery(repo: string, target: string) {
 
 function usePrFact(repo: string, target: string) {
   const query = useQuery(prQuery(repo, target));
-  return query.isError ? null : (query.data ?? null);
+  return query.data ?? null;
 }
 
 /** Read decisions even when their panel is collapsed; counts use the same fresh facts. */
@@ -55,8 +59,7 @@ function useNeedFacts(needs: Array<{ repo: string; target: string }>) {
   const facts = new Map<string, DashboardPr>();
   reads.forEach((r, i) => {
     const n = unique[i];
-    if (n && !r.isError && r.data)
-      facts.set(`${n.repo}#${prNumber(n.target)}`, r.data);
+    if (n && r.data) facts.set(`${n.repo}#${prNumber(n.target)}`, r.data);
   });
   return facts;
 }
