@@ -100,12 +100,73 @@ it("preserves the receipt reserve when the open leaves too little time to rechec
       } as Parameters<typeof openedFor>[2],
       openWithinBudget(s, repo, launch),
     );
+    expect(result).toHaveProperty("outcome.outcome", "waits");
     expect(result).toHaveProperty(
       "outcome.detail",
       expect.stringContaining("receipt"),
     );
     expect(identity).not.toHaveBeenCalled();
     expect(s.opened).toBe(1);
+  } finally {
+    identity.mockRestore();
+    clock.mockRestore();
+  }
+});
+
+async function opened(s: ApplyState): Promise<unknown> {
+  s.table = [];
+  s.records = [];
+  return openedFor(
+    s,
+    { target: "PR #7", stage: "rearm" } as Parameters<typeof openedFor>[1],
+    {
+      account: { name: "test" },
+      wall: null,
+      wallUnrecorded: false,
+    } as Parameters<typeof openedFor>[2],
+    openWithinBudget(s, repo, launch),
+  );
+}
+
+it("counts the kill grace when admitting an identity check after an open", async () => {
+  const s = state();
+  const now = Date.now();
+  const clock = spyOn(Date, "now").mockImplementation(() => now);
+  const identity = spyOn(accounts, "checkIdentity").mockResolvedValue({
+    ok: true,
+  });
+  try {
+    // 2.5s are left: the 1s check fits, its 2s kill grace does not.
+    s.startedAt = now - 6 * 3_600_000 + 3500;
+    const result = await opened(s);
+    expect(result).toHaveProperty("outcome.outcome", "waits");
+    expect(identity).not.toHaveBeenCalled();
+  } finally {
+    identity.mockRestore();
+    clock.mockRestore();
+  }
+});
+
+it("admits the launch after a successful identity check against its own timeout", async () => {
+  const s = state();
+  let now = Date.now();
+  const clock = spyOn(Date, "now").mockImplementation(() => now);
+  const identity = spyOn(accounts, "checkIdentity").mockImplementation(
+    async () => {
+      now += 1000;
+      return { ok: true };
+    },
+  );
+  try {
+    // 3.5s are left for the check; 2.5s remain after it, short of the launch's 1s plus the 2s kill grace.
+    s.startedAt = now - 6 * 3_600_000 + 4500;
+    const result = await opened(s);
+    expect(identity).toHaveBeenCalledTimes(1);
+    expect(result).toHaveProperty("outcome.outcome", "waits");
+    expect(result).toHaveProperty(
+      "outcome.detail",
+      expect.stringContaining("launch"),
+    );
   } finally {
     identity.mockRestore();
     clock.mockRestore();

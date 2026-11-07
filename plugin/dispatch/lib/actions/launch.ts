@@ -506,17 +506,23 @@ export async function replay(
   return outcome(record, attempt, true);
 }
 
+/** The kill grace a timed-out child may take beyond its timeout before it settles. */
+const KILL_GRACE_MS = 2000;
+
+/** An identity check's answer, or that the tick has no time for one: a deferral, not a verdict on the account. */
+type IdentityAnswer = IdentityCheck | { waits: string };
+
 async function identityOf(
   state: ApplyState,
   slots: Slots,
-): Promise<IdentityCheck> {
-  // Every identity check, including the one after an open, must leave the receipt's reserve intact.
+): Promise<IdentityAnswer> {
+  // Every identity check, including the one after an open, must leave the receipt's reserve intact,
+  // and a resolver that must be killed takes its grace beyond the timeout.
   const timeoutSec = Math.ceil(state.machine.runtimeTimeoutMs / 1000);
   const left = timeLeftMs(state);
-  if (left !== null && left < timeoutSec * 1000)
+  if (left !== null && left < timeoutSec * 1000 + KILL_GRACE_MS)
     return {
-      ok: false,
-      reason:
+      waits:
         "the tick deadline has no room for the identity check and its receipt; a later tick retries this one",
     };
   // Read afresh each time: a login file can change between two launches.
@@ -544,6 +550,7 @@ export async function accountBlocked(
   if (slots.wall !== null)
     return `${slots.account.name} is walled until ${slots.wall.resetAt}`;
   const identity = await identityOf(state, slots);
+  if ("waits" in identity) return identity.waits;
   return identity.ok ? null : `identity check: ${identity.reason}`;
 }
 
@@ -595,6 +602,8 @@ export async function admitAccount(
       };
     const slots = admitted.admitted;
     const identity = await identityOf(state, slots);
+    if ("waits" in identity)
+      return { outcome: waits(action, identity.waits, slots.account.name) };
     if (identity.ok) return { slots };
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
@@ -624,6 +633,19 @@ async function changedWhileOpening(
       name,
     );
   const after = await identityOf(state, slots);
+  if ("waits" in after) return waits(action, after.waits, name);
+  // The launch that follows is a runtime call of its own, and the receipt's reserve is already out of the left time.
+  const left = timeLeftMs(state);
+  if (
+    after.ok &&
+    left !== null &&
+    left < state.machine.runtimeTimeoutMs + KILL_GRACE_MS
+  )
+    return waits(
+      action,
+      "the tick deadline has no room for the launch and its receipt after the workspace opened; a later tick retries this one",
+      name,
+    );
   return after.ok
     ? null
     : refused(
