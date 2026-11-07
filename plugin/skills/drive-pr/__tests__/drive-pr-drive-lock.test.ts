@@ -69,6 +69,21 @@ useDrivePrSuite();
 const tree = useTrackedTree("drive-lock");
 
 describe("drive.ts loop control", () => {
+  it("keeps suite transcript roots in scrubbed child environments", () => {
+    const env = gitCleanEnv();
+    for (const key of [
+      "DRIVE_PR_CLAUDE_PROJECTS_DIR",
+      "DRIVE_PR_CODEX_SESSIONS_DIR",
+    ]) {
+      const root = env[key];
+      expect(root).toBe(process.env[key]);
+      expect(typeof root).toBe("string");
+      if (root === undefined) throw new Error(`missing suite root: ${key}`);
+      expect(readdirSync(root)).toEqual([]);
+    }
+    expect(env.DRIVE_PR_TARGET).toBeUndefined();
+  });
+
   describe("single-instance lock", () => {
     // Each failure mode is modelled by planting the exact lock row the
     // racing driver would have left behind.
