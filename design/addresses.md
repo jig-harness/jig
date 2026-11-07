@@ -33,6 +33,13 @@ and step 3, the operator skill, in
 [plugin/skills/operator/](../plugin/skills/operator/SKILL.md). The other
 steps are open.
 
+The [hub](../GLOSSARY.md), one page to watch and steer the line
+([hub.md](hub.md), item 42), reads the line through these commands. It
+grows the thread
+([What the thread gains for the hub](#what-the-thread-gains-for-the-hub))
+and runs an operator of its own beside the skill
+([The operator skill](#the-operator-skill)).
+
 ## How it works
 
 ### An address names a station on a piece of work
@@ -115,6 +122,18 @@ source that does not answer in time is reported unread, and the answer
 prints without it. The outcome log gains a key column with an index, in an
 additive migration, so `last` is one lookup in a table that only grows.
 
+**It opens the machine's databases read-only.** `ask` runs far more often
+than the owners of those databases do, so it never chooses when one
+migrates: the dispatcher's state database (launch records, outcome log)
+and the drive's database are opened without creating, migrating or writing
+anything. Where a schema is older than `ask` needs, `ask` reports the source in
+`sources` as not read (the outcome log, before its key column, is one),
+saying the owner's next run brings it forward; it never fills a field from a guess.
+The drive's listing takes the same rule: `drives-read-only.ts` lists a
+database that is already current and declines one a driver must first
+bring forward. The dispatcher's and the drive's own runs keep
+their additive migrations.
+
 **Away from the machine that dispatched the work**, `ask` answers from the
 forge and the tracker: the state, what it waits on, the thread, and from
 the [shared records](../plugin/RECORDS.md) which host holds a launch and
@@ -124,7 +143,7 @@ were not read.
 
 **A drive nobody dispatched** has no launch record and may have no ledger
 yet. `drive@repository#key` then reads the drive's own listing in a
-checkout of the repository on the machine (`drives.ts --json`), which
+checkout of the repository on the machine (`drives-read-only.ts`), which
 classifies each driver lock as the doctor does without the recovery that
 `--doctor` writes, and prints the doctor's verdict and the recovery command
 as it gives them. It never runs that command. A drive that left state but
@@ -227,11 +246,56 @@ show the same one. An interface that draws threads reads `jig ask --thread
 this design's to fix, in the first build step. Until then an interface's
 prototype may show that it needs a change.
 
+### What the thread gains for the hub
+
+The [hub](hub.md#threads) shows one thread per
+[piece of work](../GLOSSARY.md), across machines, and names single entries
+in it. So the thread grows under `ask`'s version 1, each addition an added
+field, and the answer's version stays the same. The hub reads the thread
+through `jig ask` like any other interface and stores none of it. When each
+part is built is in the [build order](#build-order).
+
+- **Each entry has a stable `id`**, the same at every read, so an interface
+  can point at one entry and an answer can name the question it answers.
+- **A `question` carries its `key`, its `class` and a `status`.** The key
+  is the one an `answer <key>:` line names. The class is the
+  human-in-the-loop registry class the park names
+  ([ADR-0010](../docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)).
+  The status is `open`, `answered`, `acted` (the drive acted on the answer)
+  or `expired` (the park ended unanswered).
+- **An `answer` carries `inReplyTo`**, the id of the question it answers,
+  who answered (their forge login), and the permission the forge gives that
+  login on the repository, so a reader sees why the answer counted.
+- **An answered park stays in the thread.** The drive ledger keeps its
+  resolved parks (`resolvedParks[]`, the last 10), each with its key, its
+  question, when it was answered and when the re-arm cleared it. A question
+  and its answer are read from there once the re-arm has cleared the park.
+- **One thread per piece of work.** A piece of work has an address at each
+  station: `pickup@` for its item, `drive@` and `followup@` for its pull
+  request. `ask` folds their entries into one thread by the piece of work's
+  aliases (the item key, the branch, the pull request). The aliases are
+  joined from the tracker's issue links, the branch name and the pickup's
+  records, and each join carries its evidence. A join counts only on
+  evidence the repository's own people wrote: a pickup record, a tracker
+  link, or a branch in the repository itself, never a fork's, on a pull
+  request whose author is the repository's own. A pull request that matches
+  only by name stays a thread of its own. Every entry keeps its own
+  `from` and `to`, so the folded thread still says which station spoke. A
+  work-batch's batch key joins its member items, so a batch is one thread.
+  A fold that reads the tracker counts that read in `sources`, as every read
+  does.
+- **The threads that hold something for a person.** Beside `--waiting`'s
+  addresses, `ask` lists the threads that hold an open question, an act a
+  merge waits on or a follow-up's question, one entry per piece of work. A
+  thread leaves the list once nothing in it waits on a person. Hiding one is
+  the reader's own choice: the hub keeps it in that browser, and `ask`
+  stores nothing for it.
+
 ### `jig send`: a request is a record
 
 `jig send <address> <verb>` writes one record, of a kind the line already
-reads, and exits. `send` types nothing into a session and starts nothing
-itself.
+reads, and exits. `send` types nothing into a session, and the only thing
+it starts is a wake of the tick that reads its record (below).
 
 | Verb | To | The record it writes | Read by |
 | --- | --- | --- | --- |
@@ -281,11 +345,32 @@ checks:
 - **A verb whose record the repository has switched off is refused**, with
   the setting named: `drive`, `hold` and `release` need dispatch labels on.
   A machine can refuse every `send` (`send: false` in its dispatch file).
+- **A request the tick reads wakes the tick.** After `assign`, `drive`,
+  `hold`, `release` or `answer` (whose reader, the re-arm, the tick
+  starts), a real send wakes that repository's tick when this machine's
+  dispatch file lists the repository with the stage the tick acts under
+  (`pickup` for `assign`, `followup` for a follow-up's `hold` and
+  `release`, `rearm` for the rest). The wake follows the rule the Orca
+  plugin's wake-up follows ([Waking the
+  dispatcher](orca-integration.md)): a detached waiter runs `jig dispatch
+  --apply --repo <path>` the way the installed timer does, one tick at a
+  time for a repository, no sooner than a minute after the last one it
+  started. The request is pending on disk under the dispatcher's state
+  directory, since `send` exits at once, so several sends within that
+  minute start one tick, and a send made while a tick runs starts one
+  trailing tick after the running tick ends and the minute has passed. A tick refused because another
+  holds the machine-wide tick lock keeps the request and is tried again
+  after the minute, a bounded number of times; the waiter then exits, so
+  nothing stays resident. The record stays the request: a wake that is lost
+  leaves it to the next timer sweep. A mailbox directive wakes nothing,
+  since the driver reads it at its next round, and a dry run, a refused send
+  and a machine that refuses every send wake nothing either.
 - **`--dry-run`** prints what a real send would, without writing. A real
   send ends with the link to what it wrote and the reader that acts on it:
-  the dispatcher's next tick, or the drive's next round. The forge can take
-  a moment to list a new comment, so that link, not an `ask` right after
-  it, is the proof the request landed.
+  the dispatcher's tick for the repository, woken now or when idle and at least a minute after the last start,
+  or its next tick when the send woke none, or the drive's next round. The
+  forge can take a moment to list a new comment, so that link, not an `ask`
+  right after it, is the proof the request landed.
 - **What can be taken back.** `release` undoes a `hold`; a `drive` label
   can be removed until the tick has armed the drive; `resume` withdraws a
   directive. An `answer` the re-arm has read cannot be taken back, which
@@ -295,11 +380,17 @@ checks:
 
 `/jig:operator` is the skill a person talks to. It turns "where does 456
 stand", "what is waiting on me" or "hold 456" into `jig ask` and `jig
-send`, and answers in sentences. It holds no state: what it knows it has
+send`, and answers in sentences, except for a status, which is one fixed
+card: `ask`'s own answer, then where the work stands, what it waits on,
+what the person can do and what was not read, so the same question reads
+the same in every session. It holds no state: what it knows it has
 just read, so any session on any machine can be the operator, and a session
 that ends loses nothing. A person who wants one address's status without a
 session runs `jig ask` and reads its plain answer.
 
+- **The skill run on its own** answers "what is waiting on me", and a
+  bare number is the status of that pull request, or of the item of that
+  number where no pull request has it.
 - **"What is waiting on me"** is `jig ask --waiting --person <login>` once
   step 5 has built, one read; before it, `jig ask --waiting`. The operator opens an address only to say more about one entry.
 - **The status of a pull request** is `jig ask drive@<repository>#<PR>`,
@@ -313,8 +404,21 @@ session runs `jig ask` and reads its plain answer.
   thread carries the question's words but not its key. Until it does, the
   operator asks the person for the key, which the framed decision and the
   dispatcher's notification show as `answer <key>: …`, and relays the
-  parked keys a refused `send` names. Carrying the key on the entry is an
-  added field of `ask`'s answer, so its version stays the same.
+  parked keys a refused `send` names. Carrying the key on the entry is one
+  of the thread's additions
+  ([What the thread gains for the hub](#what-the-thread-gains-for-the-hub)),
+  so `ask`'s version stays the same.
+
+**The hub's operator is a separate runner.** The skill's `allowed-tools`
+pre-approves `jig ask` and `jig send` rather than limiting the agent to
+them: the session keeps every other tool its runtime gives it, and what
+keeps a send the person's is their instruction in the same conversation.
+That suits a person in a terminal. The hub's chat reads thread text that
+anyone can write on a pull request, so it does not run this skill. It runs
+a locked-down runner with tools of its own: reads only, and a `propose`
+that plans one of `send`'s verbs for the person to confirm, never an
+`answer`. That operator explains and drafts and never sends
+([hub.md § The operator chat](hub.md#the-operator-chat)).
 
 ### What a launch hands on, and who a park waits on
 
@@ -345,7 +449,9 @@ in `plugin/jig.ts` beside `dispatch` and `gc`. Both read and write records
 through what their owners export (`plugin/shared/records/`, the
 dispatcher's `lib/`, the drive's state modules). Where an owner has no read
 narrow enough, such as one drive's verdict or one key's outcomes, the owner
-gains it. The operator is `plugin/skills/operator/`.
+gains it. The operator is `plugin/skills/operator/`. The fold by aliases
+is the hub's fold library in `plugin/shared/`, which `ask` shares with the
+dispatcher and the hub.
 
 ## Build order
 
@@ -369,6 +475,14 @@ before it is in use and has shown the next is wanted.
 acts, in the pull request that builds item 36's predicate or in step 1,
 whichever comes later.
 
+The thread's additions are built in the hub's steps
+([hub.md § Build order](hub.md#build-order)): resolved parks in the drive
+ledger in its stage 1, and the entry ids, the question's and the answer's
+fields, the fold by aliases and the list of threads in its stage 2. Its
+stage 3 adds to the `drive-answer` record `jig send` writes, beside the
+envelope, the plan id, the dry run's digest and the kind of proof that a
+person is present, with `via: hub`.
+
 ## Left out
 
 - **A resident agent per station.** A station is held while a launch runs
@@ -378,7 +492,11 @@ whichever comes later.
 - **A queue or an inbox that a daemon holds.** `ask` and `send` run and
   exit, and what they read and write are the records of
   [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md). A request waits
-  for its reader's next run, as a label does today.
+  for its reader's next run, as a label does today. The wake a send starts
+  holds no copy of the request: it only has the tick read the record
+  sooner, and its waiter exits once that tick has run. The hub's Inbox is
+  read from the records again at each request and holds nothing
+  ([hub.md § A reader, not a daemon](hub.md#a-reader-not-a-daemon)).
 - **Free text to a running session.** The dispatcher composes no prompt
   for a session, and `send` gives nobody a way to. A person who wants to
   talk to a session opens its workspace.
@@ -391,7 +509,13 @@ whichever comes later.
   Both read what no record holds, and a transcript can hold a secret.
   Either joins when `ask` is in use and a question it cannot answer from
   records has come up often enough to name, with its own flag, and no read
-  escalates to it.
+  escalates to it. The hub's `hub-conversation` record is no transcript of
+  a station: it is the person's history of their chat with the hub's
+  operator, kept on one machine at mode `0600`. No station and not `ask`
+  ever reads it, it is replayed only as the context of that chat's next
+  turn and never as a request, and a `jig gc` kind removes it 30 days after
+  its thread settles
+  ([hub.md § The operator chat](hub.md#the-operator-chat)).
 - **Addresses for standing roles**, such as the review arbiter or the agent
   a change area names. They leave no records keyed by a piece of work, and
   `do-item`'s routing already says which agent a change gets. A role joins
@@ -407,12 +531,3 @@ whichever comes later.
   of work gets is derived by rules
   ([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)),
   and who holds a station is read from records.
-
-## Review
-
-Critiqued by four reviewers with fresh context (subagents that did not
-write it, as a critical chief technology officer, a security auditor, a
-performance engineer and a cost optimizer) on 2026-11-05, against the
-draft written before the first commit, which no commit holds. The pull
-request's reviewer then read commit 20805261 on 2026-11-05. The reports are
-in the pull request that added this design.

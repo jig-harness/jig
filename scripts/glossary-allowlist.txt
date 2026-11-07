@@ -95,6 +95,7 @@ MongoDB
 CircleCI
 SWC
 NATS
+GNOME
 # the .NET platform
 NET
 # remote procedure call, the industry's name for the interface style

@@ -12,6 +12,7 @@ import {
   orcaErrorText,
   parseOrcaEnvelope,
 } from "../../plugin/shared/orca-workspace/envelope.ts";
+import { orcaInstalledName } from "../../plugin/shared/orca.ts";
 import type { OpenPort } from "../../plugin/shared/orca-workspace/port.ts";
 import { type Context, output } from "../herdr/runner.ts";
 import type { OrcaTarget, Workspace } from "./runner.ts";
@@ -50,7 +51,7 @@ export function resolveOrcaCommand(
   platform: NodeJS.Platform = process.platform,
   exists: (path: string) => boolean = existsSync,
 ): string {
-  const name = platform === "linux" ? "orca-ide" : "orca";
+  const name = orcaInstalledName(platform);
   const binDir = env.ORCA_CLI_BIN_DIR?.trim();
   if (binDir && exists(join(binDir, name))) return join(binDir, name);
   const onPath = findOnPath(name, env.PATH, exists);

@@ -230,6 +230,12 @@ describe("jig dispatch line --json", () => {
   };
 
   it.each([
+    ["a numeric workspace", { needs: [{ ...NEED, workspace: 42 }] }],
+    [
+      "an array stage question",
+      { needs: [{ ...NEED, question: ["first", "second"] }] },
+    ],
+    ["a numeric stage question", { needs: [{ ...NEED, question: 3 }] }],
     ["a null decision", { needs: [{ ...NEED, decisions: [null] }] }],
     [
       "a decision line that is not text",
@@ -277,6 +283,21 @@ describe("jig dispatch line --json", () => {
       lineMain({ root, nowMs: NOW, print: () => undefined }),
     ).toThrow("line-unreadable");
   });
+
+  it.each([undefined, null, "/srv/work/pr-7"])(
+    "reads an additive version-1 workspace field (%s)",
+    (workspace) => {
+      const root = stateRootOf(freshHome());
+      writeLine(LINE, "{}", root);
+      stateDb(root)
+        .query("UPDATE tick_line SET line = ? WHERE id = 1")
+        .run(JSON.stringify({ ...LINE, needs: [{ ...NEED, workspace }] }));
+      closeStateDb(root);
+      expect(() =>
+        lineMain({ root, nowMs: NOW, print: () => undefined }),
+      ).not.toThrow();
+    },
+  );
 
   it("reads a database at an older schema without migrating it", () => {
     const root = stateRootOf(freshHome());

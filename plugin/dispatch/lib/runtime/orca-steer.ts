@@ -20,7 +20,7 @@
  * nor a terminal offers a send that fails when the screen changed, so a
  * window remains between the screen read and the keystrokes.
  */
-import { orcaCommand, orcaEnvelope } from "../../../shared/orca.ts";
+import { orcaCommandOrInstalled, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { type RuntimeReceipt, WAITING_STATES } from "./port.ts";
@@ -37,7 +37,7 @@ type Answer =
 
 async function call(args: string[], timeoutMs: number): Promise<Answer> {
   const done = await run(
-    [orcaCommand(process.env) ?? "orca", ...args, "--json"],
+    [orcaCommandOrInstalled(process.env), ...args, "--json"],
     { timeoutSec: seconds(timeoutMs), stderr: "pipe" },
   );
   const what = `orca ${args.slice(0, 2).join(" ")}`;

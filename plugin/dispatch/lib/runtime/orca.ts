@@ -4,10 +4,14 @@
  * its workspaces and their agents. A workspace is joined to a pull request
  * by the pull request Orca links to it or by its branch being the pull
  * request's head, and to an item by the issue Orca links to it or by its
- * branch carrying the item's key in the repository's branch form.
+ * branch carrying the item's key in the repository's branch form. Both
+ * listings are host-wide: `sessionsOnce` reads each at most once for a
+ * tick's observe phases and answers every repository from them.
  *
  * Orca's command is the shared resolver's (`ORCA_CLI_COMMAND`, else the
- * command in `ORCA_CLI_BIN_DIR`), else `orca` on `PATH`.
+ * command in `ORCA_CLI_BIN_DIR`), else the name Orca installs it under on
+ * `PATH`: `orca-ide` on Linux, where `orca` may be GNOME's screen reader,
+ * and `orca` elsewhere (`orcaCommandOrInstalled`).
  *
  * Orca cannot yet start an interactive session billed to a chosen account
  * (`ORCA_BINDING`): `orca agent launch` starts its agent on the account the
@@ -27,7 +31,11 @@
  * and removes it with `orca worktree rm --delete-branch` (`orca-retire.ts`).
  */
 import { realpathSync } from "node:fs";
-import { orcaCommand, orcaFailure, orcaResult } from "../../../shared/orca.ts";
+import {
+  orcaCommandOrInstalled,
+  orcaFailure,
+  orcaResult,
+} from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { keyFromBranch } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
@@ -81,7 +89,7 @@ async function orca(
   timeoutSec = ORCA_TIMEOUT_SEC,
 ): Promise<Record<string, unknown> | string> {
   const done = await run(
-    [orcaCommand(process.env) ?? "orca", ...args, "--json"],
+    [orcaCommandOrInstalled(process.env), ...args, "--json"],
     { timeoutSec, stderr: "pipe" },
   );
   return (
@@ -304,6 +312,63 @@ async function orcaRepo(
     : `orca repo list gives ${repo.slug} no clone path`;
 }
 
+/** Orca's host-wide listings `sessions` reads: its repositories, and every workspace with its agents. */
+interface HostLists {
+  repos(): Promise<Record<string, unknown> | string>;
+  ps(): Promise<Record<string, unknown> | string>;
+}
+
+/** A read made once, its answer shared by every later caller. */
+function memo<T>(read: () => Promise<T>): () => Promise<T> {
+  let once: Promise<T> | null = null;
+  return () => {
+    once ??= read();
+    return once;
+  };
+}
+
+/** The workspaces of `repo` out of Orca's host-wide listings; the workspace listing is read only once the repository is found. */
+async function sessionsFrom(
+  lists: HostLists,
+  repo: RepoTarget,
+  join: JoinTargets,
+): Promise<SessionsReport> {
+  const source = "orca worktree ps";
+  const listing = await lists.repos();
+  if (typeof listing === "string")
+    return { ok: false, source, reason: listing };
+  const ids = repoIds(listing, repo);
+  if (ids === null)
+    return {
+      ok: false,
+      source,
+      reason:
+        "orca repo list returned a matched repository without a string id",
+    };
+  if (ids.length === 0)
+    return {
+      ok: false,
+      source,
+      reason: `no Orca repository is ${repo.path} or ${repo.slug}`,
+    };
+  const ps = await lists.ps();
+  if (typeof ps === "string") return { ok: false, source, reason: ps };
+  const cut = partial(ps);
+  if (cut !== null) return { ok: false, source, reason: cut };
+  const all = ps.worktrees as unknown[];
+  if (!all.every((w) => isRecord(w) && typeof w.repoId === "string"))
+    return {
+      ok: false,
+      source,
+      reason: "orca worktree ps returned a row with no readable repoId",
+    };
+  const rows = all
+    .filter(isRecord)
+    .filter((w) => ids.includes(w.repoId as string) && w.isArchived !== true);
+  const workspaces = rows.map((row) => workspaceOf(row, join));
+  return { ok: true, source, workspaces };
+}
+
 export function orcaRuntime(
   deadlines: OrcaDeadlines = {
     runtimeTimeoutMs: ORCA_TIMEOUT_SEC * 1000,
@@ -314,51 +379,19 @@ export function orcaRuntime(
 ): SessionRuntime {
   const timeoutSec = Math.max(1, Math.ceil(deadlines.runtimeTimeoutMs / 1000));
   const orcaCall = (args: string[]) => orca(args, timeoutSec);
+  const lists = (): HostLists => ({
+    repos: () => orcaCall(["repo", "list"]),
+    ps: () => orcaCall(["worktree", "ps", "--limit", String(ROW_LIMIT)]),
+  });
   return {
     name: "orca",
     interactiveBinding: binding,
-    async sessions(repo, join): Promise<SessionsReport> {
-      const source = "orca worktree ps";
-      const listing = await orcaCall(["repo", "list"]);
-      if (typeof listing === "string")
-        return { ok: false, source, reason: listing };
-      const ids = repoIds(listing, repo);
-      if (ids === null)
-        return {
-          ok: false,
-          source,
-          reason:
-            "orca repo list returned a matched repository without a string id",
-        };
-      if (ids.length === 0)
-        return {
-          ok: false,
-          source,
-          reason: `no Orca repository is ${repo.path} or ${repo.slug}`,
-        };
-      const ps = await orcaCall([
-        "worktree",
-        "ps",
-        "--limit",
-        String(ROW_LIMIT),
-      ]);
-      if (typeof ps === "string") return { ok: false, source, reason: ps };
-      const cut = partial(ps);
-      if (cut !== null) return { ok: false, source, reason: cut };
-      const all = ps.worktrees as unknown[];
-      if (!all.every((w) => isRecord(w) && typeof w.repoId === "string"))
-        return {
-          ok: false,
-          source,
-          reason: "orca worktree ps returned a row with no readable repoId",
-        };
-      const rows = all
-        .filter(isRecord)
-        .filter(
-          (w) => ids.includes(w.repoId as string) && w.isArchived !== true,
-        );
-      const workspaces = rows.map((row) => workspaceOf(row, join));
-      return { ok: true, source, workspaces };
+    sessions: (repo, join) => sessionsFrom(lists(), repo, join),
+    sessionsOnce() {
+      const once = lists();
+      const repos = memo(once.repos);
+      const ps = memo(once.ps);
+      return (repo, join) => sessionsFrom({ repos, ps }, repo, join);
     },
     async openWorkspace(repo, target) {
       const found = await orcaRepo(repo, timeoutSec);

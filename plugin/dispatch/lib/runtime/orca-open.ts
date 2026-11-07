@@ -14,7 +14,7 @@
  * reattaches to keeps its name and its comment, and `launch` adds the mark
  * to that comment.
  */
-import { orcaCommand } from "../../../shared/orca.ts";
+import { orcaCommandOrInstalled } from "../../../shared/orca.ts";
 import {
   OrcaError,
   parseOrcaEnvelope,
@@ -41,7 +41,7 @@ import type {
 } from "./port.ts";
 
 function portOn(ctx: Context): OpenPort {
-  const orca = orcaCommand(process.env) ?? "orca";
+  const orca = orcaCommandOrInstalled(process.env);
   return {
     host: ctx,
     runHook: boundedHook,

@@ -83,9 +83,9 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 12;
+const DISPATCH_DB = 14;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 3;
+const DRIVE_DB = 4;
 const RRC = "skills/resolve-review-comments/scripts/";
 const REFLECT = "skills/reflect/scripts/";
 
@@ -246,6 +246,16 @@ const DISPATCHER: RecordKind[] = [
     "dispatch/lib/launches.ts",
     "settled_ends",
   ),
+  dispatchTable(
+    "dispatch-reflection-finding",
+    "dispatch/lib/reflection-findings.ts",
+    "reflection_findings",
+  ),
+  dispatchTable(
+    "dispatch-merge-read",
+    "dispatch/lib/merge-reads.ts",
+    "merge_reads",
+  ),
   plain(
     "machine",
     "dispatch-receipt",
@@ -265,6 +275,13 @@ const DISPATCHER: RecordKind[] = [
     "dispatch-wall",
     "dispatch/lib/walls.ts",
     `${DISPATCH_DIR}walls/<account>/<ms>-<8 hex>.json`,
+    0,
+  ),
+  plain(
+    "machine",
+    "dispatch-wake",
+    "shared/wake.ts",
+    `${DISPATCH_DIR}wake/<digest>/pending/<request>, waiter, started, last-run.log`,
     0,
   ),
   plain(
@@ -554,7 +571,7 @@ const FORGE: RecordKind[] = [
     owner: `${STATE}ledger-mirror.ts`,
     at: "one comment on the pull request",
     markers: ["drive-pr-ledger", "drive-pr-ledger-data"],
-    version: 1,
+    version: 2,
     key: PR_NUMBER,
   },
   {

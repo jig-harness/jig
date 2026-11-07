@@ -106,6 +106,8 @@ describe("the outcome log's key column", () => {
     old.run("ALTER TABLE notices DROP COLUMN sent_at");
     old.run("ALTER TABLE notices_content DROP COLUMN pending");
     old.run("DROP TABLE followup_releases");
+    old.run("DROP TABLE reflection_findings");
+    old.run("DROP TABLE merge_reads");
     old.run(`PRAGMA user_version = ${BEFORE_TARGET}`);
     old.run("UPDATE db_meta SET version = ?", [BEFORE_TARGET]);
     old.close();
@@ -127,5 +129,24 @@ describe("the outcome log's key column", () => {
         )
         .get(),
     ).toEqual({ name: "log_target" });
+  });
+
+  it("declines a read-only lookup on a database from before the column, rather than scan the log", () => {
+    const r = root();
+    writeRow(ended("a", "PR #7", "2026-11-01T10:00:00.000Z"), r);
+    closeStateDb(r);
+    const old = new Database(statePath(r));
+    old.run("DROP INDEX log_target");
+    old.run("ALTER TABLE log DROP COLUMN target");
+    old.close();
+
+    const readOnly = new Database(statePath(r), { readonly: true });
+    try {
+      expect(() =>
+        rowsFor("example-org/example-repo", "PR #7", r, readOnly),
+      ).toThrow(/no target column/);
+    } finally {
+      readOnly.close();
+    }
   });
 });

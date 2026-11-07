@@ -233,6 +233,27 @@ describe("the store client", () => {
     );
   });
 
+  it("runs every operation in the store's working directory", async () => {
+    const where = join(dir, "where.ts");
+    const checkout = join(dir, "checkout");
+    mkdirSync(checkout);
+    writeFileSync(
+      where,
+      "const op = process.argv[2];\n" +
+        "const cwd = process.cwd();\n" +
+        "if (op === 'check') console.log(JSON.stringify({ ok: cwd.endsWith('checkout') }));\n" +
+        "else if (op === 'list') { if (cwd.endsWith('checkout')) console.log(''); else process.exit(1); }\n" +
+        "else if (op === 'diagnose') { if (!cwd.endsWith('checkout')) process.exit(1); }\n",
+    );
+    const store = new Store(tsArgv(where), 30, checkout);
+    expect((await store.check()).ok).toBe(true);
+    expect(await store.list()).toEqual([]);
+    expect(await store.diagnose()).toEqual([]);
+    const elsewhere = new Store(tsArgv(where), 30);
+    expect((await elsewhere.check()).ok).toBe(false);
+    await expect(elsewhere.list()).rejects.toThrow();
+  });
+
   it("reads a command that cannot start as unavailable", async () => {
     const r = await runStore([join(dir, "no-such-command")], "check", "", 5);
     expect(r.code).toBe(EXIT.unavailable);

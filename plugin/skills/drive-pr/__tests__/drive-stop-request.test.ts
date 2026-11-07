@@ -125,6 +125,8 @@ describe("cooperative driver stop", () => {
       ...process.env,
       PATH: `${binDir}${delimiter}${process.env.PATH}`,
       DRIVE_PR_FIXTURES: dir,
+      // This process-lifecycle fixture has no mirrored ledger; publication is covered by ledger-stop.test.ts.
+      DRIVE_PR_LEDGER: "off",
       DRIVE_PR_STATE_DIR: stateDir,
       DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
       DRIVE_PR_MAILBOX_DIR: join(dir, "mailbox"),

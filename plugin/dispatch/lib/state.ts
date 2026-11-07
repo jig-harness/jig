@@ -18,6 +18,8 @@
  * | `holds` | repository and pull request held behind another in a serialized area | the hold's start, written with its event row |
  * | `log` | outcome row | each row once: it is written in the same transaction as what it records; its `target` column, the piece of work, is indexed with the repository |
  * | `tick_line` | the newest tick from the machine file | one row, replaced by each such tick: the line as it found it and its receipt, which `jig dispatch dashboard` reads |
+ * | `reflection_findings` | finding the reflection route made of a recurring class | its id, derived from the repository, stage, class and week: the event as every append sends it, pending until the store reports it stored |
+ * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then and as the forge login that read them; replaced by each read, removed by a write the tick makes on it |
  *
  * The receipts, the account walls (which the drive's quota adapters write
  * from a pass, outside the tick), the tick lock and the rotation cursor stay
@@ -42,10 +44,14 @@ import { join } from "node:path";
 import {
   closeDatabase,
   type Migration,
+  type OpenCode,
   openDatabase,
+  openReadOnly,
+  type ReadOnlyDatabase,
   schemaVersion,
 } from "../../shared/records/db.ts";
 import { stateRoot } from "../receipts.ts";
+import type { Outcome } from "../../shared/outcome.ts";
 
 /** The database's file name under the state directory. */
 const STATE_FILE = "state.sqlite";
@@ -240,6 +246,39 @@ const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: "ALTER TABLE notices_content ADD COLUMN pending TEXT;",
   },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE reflection_findings (
+    id TEXT PRIMARY KEY,
+    repo TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    class TEXT NOT NULL,
+    week TEXT NOT NULL,
+    event TEXT NOT NULL,
+    at TEXT NOT NULL,
+    stored_at TEXT,
+    ref TEXT
+  );
+  CREATE INDEX reflection_findings_repo ON reflection_findings (repo, stored_at);
+  `,
+  },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE merge_reads (
+    repo TEXT NOT NULL,
+    pr INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    read_at_ms INTEGER NOT NULL,
+    login TEXT,
+    markers TEXT NOT NULL,
+    claims TEXT,
+    claims_read_at_ms INTEGER,
+    PRIMARY KEY (repo, pr)
+  );
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */
@@ -287,6 +326,18 @@ export function closeStateDb(root = stateRoot()): void {
 /** The state database under `root` when it exists; `null` before the first tick created it. A reader never creates it. */
 export function existingStateDb(root = stateRoot()): Database | null {
   return existsSync(statePath(root)) ? stateDb(root) : null;
+}
+
+/**
+ * The state database under `root` opened read-only, for a reader that is not
+ * the dispatcher (`jig ask`): it creates and migrates nothing, so an older
+ * schema stays as it is until a tick brings it forward, and it takes no write
+ * lock. `null` when there is no database. The caller closes the connection.
+ */
+export function readOnlyStateDb(
+  root = stateRoot(),
+): Outcome<ReadOnlyDatabase | null, OpenCode> {
+  return openReadOnly({ path: statePath(root), migrations: MIGRATIONS });
 }
 
 /** Run `fn` in one write transaction: everything it writes lands, or none of it does. */

@@ -1,6 +1,6 @@
 ---
 name: operator
-description: "Ask and tell the line's stations for a person: where a pull request, tracker item or follow-up stands, what waits on a person, what was said to a station, and a person's command to one (hold, release, drive, answer a parked question, pause or stop a drive), through jig ask and jig send, answered in sentences. Not for doing a station's work or steering a drive in ways jig send has no verb for (use drive-pr); not for how Jig works (use jig)."
+description: "Ask and tell the line's stations for a person: where a pull request, tracker item or follow-up stands, what waits on a person, what was said to a station, and a person's command to one (hold, release, drive, answer a parked question, pause or stop a drive), through jig ask and jig send, a status answered as one fixed card. Not for doing a station's work or steering a drive in ways jig send has no verb for (use drive-pr); not for how Jig works (use jig)."
 argument-hint: "[question | command]"
 allowed-tools: "Read AskUserQuestion Bash(jig ask *) Bash(jig send *)"
 ---
@@ -10,8 +10,9 @@ allowed-tools: "Read AskUserQuestion Bash(jig ask *) Bash(jig send *)"
 A person talks to the line through this skill. It turns a sentence ("where
 does 456 stand", "what is waiting on me", "hold 456", "answer the question
 on 512: keep the old flag") into `jig ask` and `jig send`, runs them, and
-answers in sentences. It holds no state: what it knows it has just read, so
-read again for every question rather than answer from an earlier read.
+answers a status as one fixed card and anything else in sentences. It
+holds no state: what it knows it has just read, so read again for every
+question rather than answer from an earlier read.
 
 It does no station's work. To arm a drive with options, to drive a review
 round, to resolve threads or fix a branch, hand over to `/jig:drive-pr` or
@@ -55,8 +56,16 @@ read `#` as the start of a comment.
   machine's dispatch file lists one repository of that name. Inside a
   checkout of the repository leave it out (`jig ask drive <PR>`); `ask`
   then uses the repository the checkout belongs to.
-- **A bare number** is a pull request's `drive`, unless the person said
-  item, issue, ticket or pick-up.
+- **A bare number** (`/jig:operator 456`) is a status question about
+  pull request 456: ask its `drive`. When the person said item, issue,
+  ticket or pick-up, ask its `pickup` instead. When the `drive` answer
+  exits `1` with no such pull request, ask the `pickup` of the same number
+  once, since on GitHub Issues an issue and a pull request share their
+  numbers; when that is refused for the key's form (exit `2`: the tracker
+  writes its keys another way) or names nothing too, say that no pull
+  request or item has that number.
+- **A tracker key** (`ENG-123`, letters, a dash and a number) is a
+  `pickup`.
 - **Ambiguous?** Ask one question and wait: which pull request, which
   repository, which question to answer. Never guess a pull request's
   number, never search for one, and never take it from a title that only
@@ -72,6 +81,7 @@ read `#` as the start of a comment.
 
 | The person asks | Run |
 | --- | --- |
+| nothing: the skill run on its own | `jig ask --waiting`, answered as [the waiting card](#the-waiting-card) |
 | where a pull request stands | `jig ask drive@<owner>/<name> <PR>` |
 | what is waiting on them | `jig ask --waiting` |
 | what was said to and by a station | `jig ask drive@<owner>/<name> <PR> --thread` |
@@ -92,41 +102,97 @@ pick-up's or a follow-up's thread is `--thread` on its own address. Write a
   the dispatcher's newest tick, and says when that tick ran: say that time.
   It lists what waits on anyone, not only on this person: `--person` is
   refused until a park records whom it waits on, so do not pass it. Open an
-  address (`jig ask` on it) only to say more about one entry. On a machine
-  that dispatches nothing it says there is no line to read; say so, and
+  address (`jig ask` on it) only to say more about one entry. When `unread`
+  is non-null or `tick` is null, relay why the line is unavailable, and
   offer to ask about one address instead.
 - **A pick-up** is answered only on a machine with a checkout of its
   repository; elsewhere `ask` refuses and says why. Relay that.
 - **Exit `1`** means the key names nothing: no such pull request or item.
   Say so; do not try nearby numbers.
 
-### Reading the answer back
+### The status card
 
-Answer in sentences, in the person's terms, from these fields:
+A status question (where a pull request, a tracker item or a follow-up
+stands) gets the same card every time, so a person who asks twice, or in
+two sessions, reads the same form:
 
-- **`holder`**: who holds the station now. `none` means nobody does, which
-  is normal between launches. Otherwise say the stage, the host and
-  whether its process is alive, dead or unknown, and the account and
-  session where the answer names them.
-- **`state`**: the station's state in its own words, with the reason the
-  answer gives beside it (a drive's `HITL_PARKED`, `CONVERGED`, `running`,
-  `merged`; a pick-up's `claimed` or `stalled`; a follow-up's `done` or
-  `failed`). Name the state as printed, then say what it means.
-- **`waitsOn`**: `none`; `waiting`, which settles by itself (say on what,
-  such as the dispatcher's next tick); or `person`, with the act that
-  settles it (answer, re-arm, merge, re-run the follow-up, …). Say which
-  act, and whether this skill can send it. For a converged drive that
-  waits on a merge, say that `ask` has not read whether an approval or an
-  update of the branch must come first.
-- **`last`**: how the last launch ended, and when.
-- **`sources`**: what the answer read. Say every record it reports as not
-  read, with its reason, and what that leaves unknown: from another
-  machine, whether a process is alive is not known. Never fill the gap
-  with a guess or from an earlier answer.
+1. **`jig ask`'s own answer**, exactly as it printed it, in a `text`
+   block. For a merged pull request, the drive's answer, then the
+   follow-up's.
+2. **Four lines under it, always all four, in this order:**
 
-From a thread, quote what an entry says as its text, mark it as the
-record's words, and link its record. A `question` entry is a decision the
-drive parked; an `answer` entry is a trusted person's reply.
+   ```markdown
+   **Where it stands:** <its state and holder, in one sentence>
+   **Waits on:** <nothing | what it waits for, which settles by itself | you, to <the act>>
+   **What you can do:** <the act and the command that does it | nothing for now>
+   **Not read:** <each source not read and what that leaves unknown | nothing, every source was read>
+   ```
+
+The lines say where the work stands now: for a merged pull request, at its
+follow-up. Add nothing after the card until the person asks something more.
+
+### The waiting card
+
+`/jig:operator` on its own, and "what is waiting on me", get the same card
+every time, from one `jig ask --waiting`:
+
+```markdown
+**Waiting on a person**, as the dispatcher's tick at <its time> found it:
+
+**<owner>/<name>**: <how many> waiting
+- `<address>`: <the act that settles it>, since <the date>. <the title>
+  <when the entry names a question for a person: the question, quoted as the record's words>
+
+**Not listed:** drives that are running or that settle by themselves. Name a pull request or an item for its status card.
+```
+
+One repository block per repository the answer lists, in its order, and
+one line per entry, in its order. First check `unread` and `tick`: when
+`unread` is non-null or `tick` is null, relay the unavailable-line reason
+in place of the card, and ask which pull request or item to look at.
+Only with a read tick and an empty waiting list, put `Nothing
+waits on a person.` in place of the blocks. Open no address to fill the
+card.
+
+### Filling in the card
+
+Each line comes from these fields, in the person's terms, and never from an
+earlier answer:
+
+- **`holder`** (Where it stands): who holds the station now. `none` means
+  nobody does, which is normal between launches; when `last` is null, say no previous ended launch is available in this answer;
+  otherwise say how it ended, and when. With a holder, say the stage, the host and whether its
+  process is alive, dead or unknown, and the account and session where the
+  answer names them.
+- **`state`** (Where it stands): the station's state in its own words,
+  with the reason the answer gives beside it (a drive's `HITL_PARKED`,
+  `CONVERGED`, `running`, `merged`; a pick-up's `claimed` or `stalled`; a
+  follow-up's `done` or `failed`). Name the state as printed, then say what
+  it means.
+- **`waitsOn`** (Waits on, What you can do): `none`; `waiting`, which
+  settles by itself (say on what, such as the dispatcher's next tick); or
+  `person`, with the act that settles it (answer, re-arm, merge, re-run the
+  follow-up, …). For a converged drive that waits on a merge, say what
+  the answer says must come first, or, where it says it has not read
+  that, that an approval or an update of the branch may be needed.
+- **What you can do** names the act and who does it:
+  - a command this skill sends (a `jig send` verb from the table below):
+    name it and offer it; send it only as [the rules for
+    sending](#the-rules-for-sending) say;
+  - a recovery command the answer prints (the drive doctor's, in a
+    drive's state): quote it exactly and say the person runs it, since
+    this skill runs nothing but `jig ask` and `jig send`;
+  - a re-arm, or any other station's work: say which skill does it, such
+    as `/jig:drive-pr`;
+  - a merge: say it is the person's, on the forge.
+- **`sources`** (Not read): every record the answer reports as not read,
+  with its reason, and what that leaves unknown: from another machine,
+  whether a process is alive is not known. Never fill the gap with a guess.
+
+A thread question is answered in sentences, not as a card. Quote what an
+entry says as its text, mark it as the record's words, and link its
+record. A `question` entry is a decision the drive parked; an `answer`
+entry is a trusted person's reply.
 
 ## What it sends
 
@@ -191,7 +257,9 @@ elsewhere `send` refuses and names that host.
 A real send prints `sent` (the link to what it wrote, or the mailbox's
 path) and `next` (the reader that acts on it). Report both, and say that
 the effect comes at that reader's next run, not at once: the dispatcher's
-next tick for a label or an assignment, the re-arm for an answer, the
+tick for a label or an assignment (the send woke it, now or within a
+minute, when `next` says so; otherwise its next tick), the re-arm for an
+answer, the
 driver's next round boundary (before its next push, for `hold-push`) for a
 directive. That link shows the request landed; do not run `jig ask` right
 after it to check, since the forge can take a moment to list a new

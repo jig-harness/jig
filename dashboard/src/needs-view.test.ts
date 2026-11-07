@@ -251,6 +251,12 @@ describe("a need's words", () => {
 });
 
 describe("the person's list", () => {
+  it("names repeated no-cause stops as needing a person", () => {
+    const view = needView({ ...NEED, cause: "stopped-unknown" }, CLOCK);
+    expect(view.recorded).toBe("repeated no-cause stops (needs a person)");
+    expect(view.goLabel).toBe("Open the pull request");
+  });
+
   it("puts what to decide before what to check, oldest first in each", () => {
     expect(orderedNeeds(lineOf("loud").needs).map((n) => n.target)).toEqual([
       "PR #456",

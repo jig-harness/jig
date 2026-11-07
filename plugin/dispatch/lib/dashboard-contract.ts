@@ -62,6 +62,8 @@ export interface LineNeed {
   /** For a park: the decisions still unanswered, oldest first. */
   decisions: LineDecision[];
   notified: LineNotified | null;
+  /** The workspace holding this work; null when no record identifies one. Older version-1 snapshots may omit it. Independent of the notification destination. */
+  workspace?: string | null;
   /** For a double claim: the workspaces that hold the item. */
   workspaces: string[];
   /** For a stuck launch record: its id, which `jig dispatch clear` takes. */
@@ -246,13 +248,14 @@ export interface StateAnswer {
 /** The windows the page names. `range` is `from` and `to`. */
 export type WindowName = "today" | "yesterday" | "7d" | "30d" | "range";
 
-/** A class that recurs on a repository: at least three of the last seven nights. */
+/** A bad class that recurs on one stage of a repository: on at least three of the last seven host days (`recurring.ts`). */
 export interface RecurringClass {
   class: string;
   repo: string;
-  /** Whether it occurred each night, the oldest first, seven entries. */
+  stage: string;
+  /** Whether it occurred each host day, the oldest first, seven entries. */
   nights: boolean[];
-  /** How many rows over those seven nights. */
+  /** How many rows over those seven days. */
   rows: number;
 }
 
@@ -275,7 +278,7 @@ export interface RowsAnswer {
     account: string[];
     class: string[];
   };
-  /** Bad classes that recur per repository, over the seven nights before now, whatever the window. */
+  /** Bad classes that recur per repository and stage, over the seven host days to now, whatever the window. */
   recurring: RecurringClass[];
   /** Whether the log holds any row at all, in any window. */
   logHasRows: boolean;

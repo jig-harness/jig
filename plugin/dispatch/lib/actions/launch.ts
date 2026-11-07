@@ -123,6 +123,14 @@ export function enforcedDeadlineMs(
     : tickDeadlineMs(machine);
 }
 
+/** What the tick has left of its launcher's deadline, less the time its receipt needs; `null` for a tick that keeps no start. */
+export function timeLeftMs(state: ApplyState): number | null {
+  if (state.startedAt === undefined) return null;
+  const allowed =
+    enforcedDeadlineMs(state.machine) - state.machine.runtimeTimeoutMs;
+  return allowed - (Date.now() - state.startedAt);
+}
+
 /**
  * Why the tick has no time left to start another launch: the runtime calls
  * of a tick are not bounded by a count, so the deadline its launcher enforces
@@ -131,12 +139,11 @@ export function enforcedDeadlineMs(
  * its launches. `null` while time remains.
  */
 export function outOfTime(state: ApplyState): string | null {
-  if (state.startedAt === undefined) return null;
+  const left = timeLeftMs(state);
+  if (left === null || left > 0) return null;
   const allowed =
     enforcedDeadlineMs(state.machine) - state.machine.runtimeTimeoutMs;
-  return Date.now() - state.startedAt >= allowed
-    ? `this tick has used the ${Math.ceil(allowed / 1000)}s its timer allows; a later tick starts this one`
-    : null;
+  return `this tick has used the ${Math.ceil(allowed / 1000)}s its timer allows; a later tick starts this one`;
 }
 
 /** The stages a repository's tick applies (rearm, pickup, followup), for the targets' radix. */
@@ -609,7 +616,7 @@ export function dropPendingRecord(
   state: ApplyState,
   record: LaunchRecord,
 ): boolean {
-  if (!removeRecordIf(record.id, { claim: null, exit: null }, state.root))
+  if (!removeRecordIf(record.id, { claim: null, exit: null }, state.root, true))
     return false;
   state.records = state.records.filter((r) => r.record.id !== record.id);
   const slots = slotsOf(state.table, record);
@@ -657,7 +664,8 @@ export async function startRecord(
   holdRecord(state, record, slots);
   const taken = claimer === undefined ? null : await claimer.claim(record);
   if (taken !== null && "refused" in taken) {
-    dropRecord(state, record);
+    if (record.cancelledAt !== undefined) dropPendingRecord(state, record);
+    else dropRecord(state, record);
     return {
       target: targetOfRecord(record),
       action: record.action,
