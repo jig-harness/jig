@@ -387,6 +387,20 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.156.4] - 2026-11-07
+
+### Fixed
+
+- The drive state reaper reports obsolete file-lock quarantine entries with
+  their count and bytes, independently of the clone's import retention. It
+  keeps them even after 24 hours without a write: neither an unchanged
+  snapshot nor the database mutex excludes suspended legacy writers.
+- The dispatcher backs off a Claude account when a headless follow-up exits
+  before starting a session, and releases that attempt's marker so another
+  admitted account can retry automatically. Its outcome distinguishes a
+  recognized quota notice from an unknown startup failure; a session with a
+  transcript still counts as a pass that died.
+
 ## [0.156.3] - 2026-11-07
 
 ### Fixed
@@ -5636,7 +5650,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.4...HEAD
+[0.156.4]: https://github.com/jig-harness/jig/compare/v0.156.3...v0.156.4
 [0.156.3]: https://github.com/jig-harness/jig/compare/v0.156.2...v0.156.3
 [0.156.2]: https://github.com/jig-harness/jig/compare/v0.156.1...v0.156.2
 [0.156.1]: https://github.com/jig-harness/jig/compare/v0.156.0...v0.156.1

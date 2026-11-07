@@ -359,6 +359,20 @@ function sessionClass(
   if (r.result === "failed")
     return { class: "gates failed", reason: "result failed" };
   const s = r.state;
+  if (s.kind === "ended" && s.exit.startup !== undefined)
+    return {
+      class: s.exit.startup === "quota" ? "quota wall" : "refused",
+      reason: `session could not start: ${s.exit.startup === "quota" ? "vendor usage-limit notice" : "quick unsuccessful exit without a transcript"}; exit ${s.exit.code}`,
+    };
+  return sessionEndClass(r, endedAt);
+}
+
+/** Classify a session that supplied neither a result nor a startup failure. */
+function sessionEndClass(
+  r: ReadRecord,
+  endedAt: string,
+): { class: OutcomeClass; reason: string } {
+  const s = r.state;
   const how =
     s.kind === "ended"
       ? s.agent === undefined
