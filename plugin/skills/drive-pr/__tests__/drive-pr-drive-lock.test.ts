@@ -40,13 +40,14 @@ import {
   lockHeld,
   plantClaim,
   pollUntil,
+  runDriveIn,
   awaitFixtureMarker,
   blockedPassScript,
   refuseDiagWrites,
   simulateTakeover,
   worktreeLockNameFor,
 } from "./drive-loop-harness.ts";
-import { deadPid } from "./drive-pr-pickup-fixtures.ts";
+import { deadPid, useTrackedTree } from "./drive-pr-pickup-fixtures.ts";
 import { lockNames, lockRow } from "./state-rows.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
@@ -64,6 +65,7 @@ function lockAccountEmail(slot: LockSlot): string | undefined {
 }
 
 useDrivePrSuite();
+const tree = useTrackedTree("drive-lock");
 
 describe("drive.ts loop control", () => {
   describe("single-instance lock", () => {
@@ -73,8 +75,8 @@ describe("drive.ts loop control", () => {
     it("refuses when a LIVE driver holds the worktree lock — whatever PR it drives", async () => {
       // Keyed by worktree, not by PR: two drivers in one worktree cross-ship
       // each other's uncommitted edits regardless of target.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir } = tree.fixture({ threads: [] });
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       // This process is unquestionably alive, and on this host.
       plantClaim(worktree, {
         pid: process.pid,
@@ -82,30 +84,12 @@ describe("drive.ts loop control", () => {
         nonce: "live0001",
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
+      const { stderr, exitCode } = await runDriveIn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
+        tree.dir,
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).toBe(11);
       expect(stderr).toContain("worktree");
       expect(stderr).not.toContain("RAN_THE_PASS");
@@ -117,8 +101,8 @@ describe("drive.ts loop control", () => {
     it("treats a FOREIGN-HOST owner as alive — its pid says nothing here", async () => {
       // `process.kill(pid, 0)` on another machine's pid answers a question
       // about an unrelated local process. Fail closed.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir } = tree.fixture({ threads: [] });
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       // pid 999999 is almost certainly dead HERE; the hostname is what must
       // stop the takeover.
       plantClaim(worktree, {
@@ -127,30 +111,12 @@ describe("drive.ts loop control", () => {
         nonce: "foreign01",
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
+      const { stderr, exitCode } = await runDriveIn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
+        tree.dir,
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).toBe(11);
       expect(stderr).toContain("some-other-host");
       expect(claimsIn(worktree)).toEqual(["claim.foreign01"]);
@@ -163,8 +129,8 @@ describe("drive.ts loop control", () => {
       // forever with no way out but a manual `rm`. A real driver refreshes each
       // round; a recycled pid never does, so an unrefreshed claim is
       // recoverable.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir } = tree.fixture({ threads: [] });
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       // This process is unquestionably alive and on this host — exactly the
       // shape the refusal test above plants. The refresh age is what differs.
       plantClaim(worktree, {
@@ -174,34 +140,20 @@ describe("drive.ts loop control", () => {
         staleMs: 20 * 60_000,
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
+      const { stderr, exitCode } = await runDriveIn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
+        tree.dir,
         {
           env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
             // 5 minutes is the floor the clamp allows; the planted claim is
             // older than that and younger than the 6-hour default, so this
             // asserts the knob AND that the default would still have refused.
             DRIVE_PR_LOCK_HEARTBEAT_MIN: "5",
           },
-          stdout: "pipe",
-          stderr: "pipe",
         },
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).not.toBe(11);
       expect(stderr).not.toContain("refusing to start a second loop");
       expect(stderr).toContain("recovered a stale");
@@ -210,39 +162,25 @@ describe("drive.ts loop control", () => {
     it("a FRESH heartbeat on a live pid is still honoured", async () => {
       // The other half of the knob: recovery must key on "stopped refreshing",
       // never on age alone, or a long round hands a second driver the worktree.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir } = tree.fixture({ threads: [] });
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       plantClaim(worktree, {
         pid: process.pid,
         host: hostname(),
         nonce: "fresh0001",
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
+      const { stderr, exitCode } = await runDriveIn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
+        tree.dir,
         {
           env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
             DRIVE_PR_LOCK_HEARTBEAT_MIN: "5",
           },
-          stdout: "pipe",
-          stderr: "pipe",
         },
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).toBe(11);
       expect(stderr).toContain("refusing to start a second loop");
       expect(stderr).not.toContain("RAN_THE_PASS");
@@ -252,8 +190,8 @@ describe("drive.ts loop control", () => {
       // A holder whose pid is gone on this host cannot be driving, however
       // recently it renewed, so its lock is recovered on that evidence rather
       // than on its age: no staleness window has to pass first.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir } = tree.fixture({ threads: [] });
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       // A fresh heartbeat, so only the holder's death can free the lock.
       plantClaim(worktree, {
         pid: await deadPid(),
@@ -261,30 +199,12 @@ describe("drive.ts loop control", () => {
         nonce: "dead0001",
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
+      const { stderr, exitCode } = await runDriveIn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
+        tree.dir,
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).not.toBe(11);
       expect(stderr).not.toContain("refusing to start a second loop");
       expect(stderr).toContain("recovered a stale");
@@ -302,10 +222,10 @@ describe("drive.ts loop control", () => {
       // process is arbitrarily behind, its own acquisition long replaced, and
       // it still cannot reach the successor, because its release deletes the
       // row only while it carries this acquisition's token.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       const started = join(dir, "pass-started");
       const release = join(dir, "pass-release");
       const proc = Bun.spawn(
@@ -321,6 +241,7 @@ describe("drive.ts loop control", () => {
           `: pass for 999\n${blockedPassScript(started, release)}`,
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -378,35 +299,21 @@ describe("drive.ts loop control", () => {
       // release that follows deletes it: no quarantine, tombstone or sibling
       // file is left for anything to reclaim, however many recoveries a clone
       // sees.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir } = tree.fixture({ threads: [] });
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       plantStaleLock(worktree, "stale0001");
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
+      const { stderr, exitCode } = await runDriveIn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
+        tree.dir,
         {
           env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
             DRIVE_PR_LOCK_HEARTBEAT_MIN: "5",
           },
-          stdout: "pipe",
-          stderr: "pipe",
         },
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).not.toBe(11);
       expect(stderr).toContain("recovered a stale");
       // The stale holder's row is gone, and so is everything else the
@@ -421,8 +328,8 @@ describe("drive.ts loop control", () => {
       // that live successor, and both would drive. The replace names the
       // token it observed, so the second contender finds a token it did not
       // see, takes nothing, and refuses rather than drives.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir } = tree.fixture({ threads: [] });
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       plantStaleLock(worktree, "stale0001");
       const drive = driveDb(stateDir);
       const seen = readLockRow(drive, worktree.name);
@@ -440,8 +347,8 @@ describe("drive.ts loop control", () => {
     });
 
     it("does not replace a holder that renewed after the decision to replace it", () => {
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir } = tree.fixture({ threads: [] });
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       plantStaleLock(worktree, "stale0002");
       const drive = driveDb(stateDir);
       const seen = readLockRow(drive, worktree.name);
@@ -464,33 +371,15 @@ describe("drive.ts loop control", () => {
     it("leaves no lock residue however many times it runs", async () => {
       // The bound has to be structural, not a sweep. Three consecutive drives
       // are enough to show accumulation if anything accumulates at all.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree, pr } = lockDirs(dir, stateDir);
+      const { dir, stateDir } = tree.fixture({ threads: [] });
+      const { worktree, pr } = lockDirs(dir, stateDir, tree.lock);
       for (let round = 0; round < 3; round++) {
-        const proc = Bun.spawn(
-          scriptArgv(
-            join(SCRIPTS, "drive.ts"),
-            "999",
-            "--no-head-sync",
-            "--",
-            ...PASS_LOUD,
-          ),
-          {
-            env: {
-              ...process.env,
-              PATH: `${binDir}${delimiter}${process.env.PATH}`,
-              DRIVE_PR_FIXTURES: dir,
-              DRIVE_PR_STATE_DIR: stateDir,
-              DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            },
-            stdout: "pipe",
-            stderr: "pipe",
-          },
+        const { exitCode } = await runDriveIn(
+          dir,
+          stateDir,
+          ["--no-head-sync", "--", ...PASS_LOUD],
+          tree.dir,
         );
-        const [, exitCode] = await Promise.all([
-          new Response(proc.stderr).text(),
-          proc.exited,
-        ]);
         expect(exitCode).not.toBe(11);
         // BOTH locks, every round: a drive holds one per worktree and one per
         // PR.
@@ -506,41 +395,28 @@ describe("drive.ts loop control", () => {
       // worktree locks, and their per-PR locks did not collide either when
       // they drove different PRs, so both ran and cross-shipped each other's
       // uncommitted edits.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir } = tree.fixture({ threads: [] });
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       plantClaim(worktree, {
         pid: process.pid,
         host: hostname(),
         nonce: "live0001",
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
+      const { stderr, exitCode } = await runDriveIn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
+        tree.dir,
         {
           env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
             // A DIFFERENT handoff dir from the one the live holder used. Under
             // the old derivation this drive looked for its lock in here, found
             // nothing, and started a second loop in the same tree.
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff-elsewhere"),
           },
-          stdout: "pipe",
-          stderr: "pipe",
         },
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).toBe(11);
       expect(stderr).toContain("worktree lock");
       expect(stderr).not.toContain("RAN_THE_PASS");
@@ -551,10 +427,10 @@ describe("drive.ts loop control", () => {
       // short — and a round runs an agent pass, the gates and sometimes a
       // Testbox. A pass that outlasts the window would let another start
       // recover the lock of a demonstrably live driver.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       // The loop still touches every lock once at the round boundary, just
       // before the pass. Sampling across THAT would pass with no timer at all
       // — measured: removing `startHeartbeat` left this test green. So the
@@ -576,6 +452,7 @@ describe("drive.ts loop control", () => {
           `: pass for 999\n${blockedPassScript(started, release)}`,
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -628,10 +505,10 @@ describe("drive.ts loop control", () => {
       // the file says now, so such a rewrite would display the NEXT pass's
       // account while the CURRENT one is still active. The claim must hold
       // the identity the running pass actually has.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
 
       // A stub `claude` binary on PATH — argv[0] must literally be `claude`
       // for `passVendor` to resolve the Claude branch at all, and the round
@@ -672,6 +549,7 @@ describe("drive.ts loop control", () => {
           "/drive-pr 999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
@@ -749,10 +627,10 @@ describe("drive.ts loop control", () => {
       // diagnostics. The renewal finds the row no longer carries this
       // acquisition's token and stops the drive; the rewrite, addressed to the
       // same token, cannot write the successor's row either.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
 
       const claudeStubDir = mkdtempSync(
         join(tmpdir(), "drive-pr-claude-stub-"),
@@ -788,6 +666,7 @@ describe("drive.ts loop control", () => {
           "/drive-pr 999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
@@ -846,10 +725,10 @@ describe("drive.ts loop control", () => {
       // heartbeat interval below is deliberately far longer than this test's
       // own lifetime, so a refreshed claim here can only be the pass-exit
       // refresh, never the timer.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
 
       const claudeStubDir = mkdtempSync(
         join(tmpdir(), "drive-pr-claude-stub-"),
@@ -884,6 +763,7 @@ describe("drive.ts loop control", () => {
           "/drive-pr 999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
@@ -960,10 +840,9 @@ describe("drive.ts loop control", () => {
         },
         scratchClean.dir,
       );
-      // NOT `lockDirs(dir, stateDir).worktree`: the driver below runs with
-      // `cwd: scratchClean.dir`, so its own worktree-lock name is keyed off
-      // THAT tree, not the suite's own cwd `WORKTREE_LOCK` was memoised
-      // against — see `worktreeLockNameFor`'s own comment.
+      // The driver below runs with `cwd: scratchClean.dir`, so its own
+      // worktree-lock name is keyed off THAT tree — see
+      // `worktreeLockNameFor`'s own comment.
       const worktree: LockSlot = {
         stateDir,
         name: await worktreeLockNameFor(scratchClean.dir),
@@ -1029,10 +908,7 @@ describe("drive.ts loop control", () => {
             // at module load. Without this, `lockDirs()`'s `worktree` path
             // names a lock the driver never creates, and every claim read
             // against it fails closed to "absent" for the whole run — not a
-            // timing race, a permanent path mismatch. Every other test in
-            // this file that overrides `cwd` to a scratch tree pairs it with
-            // this same anchor (e.g. the `$DRIVE_PR_WORKTREE` measurement
-            // tests above).
+            // timing race, a permanent path mismatch.
             DRIVE_PR_WORKTREE: scratchClean.dir,
             CLAUDE_CONFIG_DIR: claudeConfigDir,
             CLAUDE_CODE_OAUTH_TOKEN: "",
@@ -1139,10 +1015,10 @@ describe("drive.ts loop control", () => {
       // making both locks refuse their diagnostics rewrite while round 1's
       // pass is still running — the pass waits for it, so there is no timing
       // race against the driver — then round 2 must still spawn.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree, pr } = lockDirs(dir, stateDir);
+      const { worktree, pr } = lockDirs(dir, stateDir, tree.lock);
 
       const claudeStubDir = mkdtempSync(
         join(tmpdir(), "drive-pr-claude-stub-"),
@@ -1195,6 +1071,7 @@ exit 0
           "/drive-pr 999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
@@ -1251,10 +1128,10 @@ exit 0
       // That rewrite is addressed to this acquisition's token: it must read
       // the replaced row as the takeover it is, stop the drive, and write
       // nothing into the successor's row.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
 
       const claudeStubDir = mkdtempSync(
         join(tmpdir(), "drive-pr-claude-stub-"),
@@ -1290,6 +1167,7 @@ exit 0
           "/drive-pr 999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
@@ -1359,10 +1237,10 @@ exit 0
       // while the worktree lock stays writable, trigger a real account
       // change, and confirm the PR lock still catches up once the refusal is
       // lifted.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree, pr } = lockDirs(dir, stateDir);
+      const { worktree, pr } = lockDirs(dir, stateDir, tree.lock);
 
       const claudeStubDir = mkdtempSync(
         join(tmpdir(), "drive-pr-claude-stub-"),
@@ -1397,6 +1275,7 @@ exit 0
           "/drive-pr 999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,

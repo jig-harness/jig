@@ -258,12 +258,16 @@ export interface LockSlot {
 // second driver in the same tree can be configured to compute differently
 // — `keys the WORKTREE lock by the tree, not by $DRIVE_PR_HANDOFF_DIR` pins
 // it.
+//
+// `worktreeLock` is the worktree lock of a driver spawned in another tree
+// (`worktreeLockNameFor`); the default names the suite's own checkout.
 export function lockDirs(
   _dir: string,
   stateDir: string,
+  worktreeLock: string = WORKTREE_LOCK,
 ): { worktree: LockSlot; pr: LockSlot } {
   return {
-    worktree: { stateDir, name: WORKTREE_LOCK },
+    worktree: { stateDir, name: worktreeLock },
     pr: { stateDir, name: "pr-drive-999" },
   };
 }

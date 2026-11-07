@@ -4,17 +4,20 @@
  * claims, back-dated progress, billing-account hashes and scratch trees.
  */
 
+import { beforeAll } from "bun:test";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { accountHash } from "../scripts/lib/identity.ts";
 import {
+  type Fixture,
   binDir,
   gitCleanEnv,
   makeScratchRepo,
   tmpRoot,
+  writeFixture,
 } from "./drive-pr-harness.ts";
-import { state } from "./drive-loop-harness.ts";
+import { state, worktreeLockNameFor } from "./drive-loop-harness.ts";
 import { editState, putLock } from "./state-rows.ts";
 
 /** The hashed account a Claude pass logged in as `email` bills. */
@@ -78,6 +81,36 @@ export function trackedTree(name: string): string {
   git(tmpRoot, "init", "-q", "--bare", origin);
   git(tree, "remote", "add", "origin", origin);
   git(tree, "push", "-q", "-u", "origin", "main");
+  return tree;
+}
+
+/** A tracked scratch tree and the worktree-lock name a driver standing in it takes. */
+export interface LockTree {
+  dir: string;
+  lock: string;
+  /** `writeFixture` for a driver standing in this tree. */
+  fixture(f: Fixture): { dir: string; stateDir: string };
+}
+
+/**
+ * A `trackedTree` for every test in a file, made once the suite's scratch
+ * root exists. A driver spawned with `cwd: tree.dir` measures this tree's
+ * commits and edits against its own pushed upstream, so what the test sees
+ * depends only on the fixture, never on whether the checkout running the
+ * suite has unpushed commits or uncommitted edits. Its worktree lock is
+ * `tree.lock`, not `WORKTREE_LOCK`, which names the suite's own checkout.
+ * Call after `useDrivePrSuite()`.
+ */
+export function useTrackedTree(name: string): LockTree {
+  const tree: LockTree = {
+    dir: "",
+    lock: "",
+    fixture: (f) => writeFixture(f, tree.dir),
+  };
+  beforeAll(async () => {
+    tree.dir = trackedTree(name);
+    tree.lock = await worktreeLockNameFor(tree.dir);
+  });
   return tree;
 }
 
