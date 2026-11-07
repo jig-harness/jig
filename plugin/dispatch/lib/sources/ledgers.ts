@@ -413,7 +413,7 @@ function uncleanClass(forge: PrFacts): Classified {
     class: "stale",
     why: "stopped 12 (worktree unclean): settle the existing tree once at this head",
     stale: {
-      cause: "uncommitted work in the original tree",
+      cause: "stopped 12, uncommitted work in the original tree",
       change: `unclean head ${forge.head}`,
       uncleanTree: true,
     },
