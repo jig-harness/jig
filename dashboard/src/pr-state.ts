@@ -5,7 +5,7 @@ export function prNumber(target: string): string | null {
   return /^PR #(\d+)$/.exec(target)?.[1] ?? null;
 }
 
-/** A completed PR cannot still need a drive decision; its follow-up can. Unknown state preserves the stop. */
+/** A completed PR cannot need a drive decision; follow-ups and stuck launch records can still need a person. Unknown state preserves the stop. */
 export function reconcileNeeds(
   line: LineSnapshot,
   facts: Map<string, DashboardPr>,
@@ -14,7 +14,11 @@ export function reconcileNeeds(
     ...line,
     needs: line.needs.filter((n) => {
       const state = facts.get(`${n.repo}#${n.pr}`)?.state;
-      return n.stage !== "rearm" || (state !== "MERGED" && state !== "CLOSED");
+      return (
+        n.stuckRecord != null ||
+        n.stage !== "rearm" ||
+        (state !== "MERGED" && state !== "CLOSED")
+      );
     }),
   };
 }

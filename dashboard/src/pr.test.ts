@@ -25,6 +25,12 @@ test("a merged drive stop leaves needs-you, but a merged follow-up still needs a
     { ...common, stage: "rearm", cause: "parked" },
     { ...common, stage: "followup", cause: "followup-failed" },
     { ...common, stage: "steer", cause: "nudge-unanswered" },
+    {
+      ...common,
+      stage: "rearm",
+      cause: "needs-person",
+      stuckRecord: "stuck-drive",
+    },
   ] as typeof line.needs;
   const facts = new Map([
     [
@@ -41,6 +47,7 @@ test("a merged drive stop leaves needs-you, but a merged follow-up still needs a
   expect(reconcileNeeds(line, facts).needs.map((n) => n.cause)).toEqual([
     "followup-failed",
     "nudge-unanswered",
+    "needs-person",
   ]);
-  expect(reconcileNeeds(line, new Map()).needs).toHaveLength(3);
+  expect(reconcileNeeds(line, new Map()).needs).toHaveLength(4);
 });
