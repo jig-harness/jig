@@ -24,6 +24,7 @@
  * through `drive-state.ts handoff` under a driver variable naming the
  * stopped driver, the path every ledger write takes.
  */
+import { personStopFor } from "./state/person-stop.ts";
 import { swallow } from "../../../../shared/errors.ts";
 import type { ClaimDiag } from "./claim.ts";
 import { inspectLock, prLockName } from "./driver/locks.ts";
@@ -54,9 +55,10 @@ export interface DriverRecord {
   host: string;
   /** Its pass tree was witnessed gone: by the driver, or by `--stop`. */
   released?: true;
+  personStop?: { at: string; reason: string };
 }
 
-/** Write the driver record of `pr` in a clone, replacing its last one. */
+/** Write an acquisition, keeping a same-acquisition stop recorded during startup. */
 export function writeDriverRecord(
   stateDir: string,
   pr: string,
@@ -64,8 +66,14 @@ export function writeDriverRecord(
 ): void {
   const drive = driveDb(stateDir);
   drive.db.run(
-    `INSERT OR REPLACE INTO driver_records (clone, pr, worktree, started, pid, host, released)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO driver_records (clone, pr, worktree, started, pid, host, released, person_stop)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clone, pr) DO UPDATE SET
+       worktree = excluded.worktree, started = excluded.started,
+       pid = excluded.pid, host = excluded.host, released = excluded.released,
+       person_stop = CASE WHEN driver_records.started = excluded.started
+         THEN COALESCE(excluded.person_stop, driver_records.person_stop)
+         ELSE excluded.person_stop END`,
     [
       drive.clone,
       pr,
@@ -74,20 +82,24 @@ export function writeDriverRecord(
       record.pid,
       record.host,
       record.released === true ? 1 : 0,
+      record.personStop === undefined
+        ? null
+        : JSON.stringify(record.personStop),
     ],
   );
 }
 
-/** Remove the driver record of `pr`, while it is still the one started at `started`. */
+/** Remove this acquisition; normal cleanup retains operator intent that its payload may have missed. */
 export function removeDriverRecord(
   stateDir: string,
   pr: string,
   started: string,
+  keepPendingStop = false,
 ): void {
   const drive = driveDb(stateDir);
   drive.db.run(
-    "DELETE FROM driver_records WHERE clone = ? AND pr = ? AND started = ?",
-    [drive.clone, pr, started],
+    "DELETE FROM driver_records WHERE clone = ? AND pr = ? AND started = ? AND (? = 0 OR person_stop IS NULL)",
+    [drive.clone, pr, started, keepPendingStop ? 1 : 0],
   );
 }
 
@@ -119,6 +131,7 @@ interface DriverRecordRow {
   pid: number;
   host: string;
   released: number;
+  person_stop: string | null;
 }
 
 function recordOf(row: DriverRecordRow): DriverRecord {
@@ -128,6 +141,9 @@ function recordOf(row: DriverRecordRow): DriverRecord {
     pid: row.pid,
     host: row.host,
     ...(row.released === 1 ? { released: true as const } : {}),
+    ...(row.person_stop === null
+      ? {}
+      : { personStop: JSON.parse(row.person_stop) }),
   };
 }
 
@@ -226,7 +242,11 @@ async function markGuarded(
     );
     return "retry";
   }
-  const found = ledgerOfStoppedDriver(snapshot, who);
+  const found = ledgerOfStoppedDriver(
+    snapshot,
+    who,
+    personStopFor(stateDir, pr, diag.started).personStop !== undefined,
+  );
   if ("why" in found) {
     // Silent when there is nothing to say: no ledger, or one already stopped.
     const parsed = snapshot.canonical?.parsed;

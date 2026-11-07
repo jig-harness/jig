@@ -36,6 +36,8 @@ const runtime = {
   name: orca.name,
   interactiveBinding: orca.interactiveBinding,
   sessions: async (repo, join) => (calls++ === 0 ? { ok: true, source: "stub", workspaces: null } : orca.sessions(repo, join)),
+  // Every answer comes from \`sessions\` above, not Orca's reader for a tick.
+  sessionsOnce: undefined,
 };
 const result = await runTick({ repos: process.argv.slice(2), runtime, followupSince: "2026-10-30T00:00:00Z" });
 if ("held" in result) process.exit(3);

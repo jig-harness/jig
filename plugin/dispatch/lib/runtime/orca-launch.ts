@@ -123,6 +123,12 @@ export async function orcaLaunch(
     stage.mark,
     Math.floor(timeoutMs / 3),
   );
+  // The mark can spend the launch's whole timeout: no terminal starts past it.
+  if (until - Date.now() <= 0)
+    return {
+      ok: false,
+      detail: `the launch's ${seconds(timeoutMs)}s were spent marking the workspace; no terminal was created`,
+    };
   const receipt = await startTerminal(workspace, stage, key, until);
   return unmarked === null
     ? receipt

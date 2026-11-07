@@ -64,6 +64,8 @@ export interface LineNeed {
   /** For a park: the decisions still unanswered, oldest first. */
   decisions: LineDecision[];
   notified: LineNotified | null;
+  /** The workspace holding this work; null when no record identifies one. Older version-1 snapshots may omit it. Independent of the notification destination. */
+  workspace?: string | null;
   /** For a double claim: the workspaces that hold the item. */
   workspaces: string[];
 }

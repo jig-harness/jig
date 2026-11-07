@@ -4,11 +4,13 @@
  * `--apply`, the apply state the launches change as they go.
  */
 import type { ApplyState } from "./actions/drive.ts";
+import type { PendingRepository } from "./apply-order.ts";
 import type { ReadRecord } from "./launches.ts";
 import type { RepoLineInput } from "./line.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { RepoReflection } from "./reflection-route.ts";
 import type { SessionRuntime } from "./runtime/port.ts";
+import type { TickReads } from "./tick-reads.ts";
 import type { RepoReport } from "./types.ts";
 
 export interface TickOptions {
@@ -33,6 +35,10 @@ export interface TickContext {
   lineInputs: Map<string, RepoLineInput>;
   /** Each repository's reflection settings, for the route at the tick's end. */
   reflections: RepoReflection[];
+  /** The repositories whose launches wait for every repository to be gathered, to be applied in turns. */
+  pending: PendingRepository[];
+  /** What the tick reads once and shares between its repositories' observe phases. */
+  reads: TickReads;
 }
 
 /** This machine's launch records, the ones this tick writes included. */

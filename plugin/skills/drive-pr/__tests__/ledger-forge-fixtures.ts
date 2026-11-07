@@ -86,6 +86,12 @@ if (one) {
   const all = read("");
   if (method === "DELETE") { save("", all.filter((c) => c.id !== id)); process.exit(0); }
   if (method === "PATCH") {
+    if (has("pause-patch")) {
+      fs.writeFileSync(F + "/patch-waiting", "waiting");
+      const deadline = Date.now() + 10000;
+      while (has("pause-patch") && Date.now() < deadline) Bun.sleepSync(10);
+      if (has("pause-patch")) process.exit(1);
+    }
     if (has("fail-patch")) {
       const late = text("fail-patch").trim();
       if (late !== "") { all.push(JSON.parse(late)); save("", all); }

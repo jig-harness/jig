@@ -16,7 +16,11 @@
  * Each repository's turn is its own module's (lib/tick-repo.ts), in
  * phases: observe (lib/tick-observe.ts), plan (lib/tick-plan.ts), the
  * outcome log (lib/tick-settle.ts), act (lib/tick-apply.ts) and the label
- * projection (lib/tick-labels.ts).
+ * projection (lib/tick-labels.ts). The observe phases share what the tick
+ * reads once (lib/tick-reads.ts): each pull request's comment listing, the
+ * forge's login, the runtime's host-wide listings, and the forge's budget,
+ * read as the tick closes; the reads just before a launch never come from
+ * them.
  *
  * Control runs in every tick, `--apply` or not: before the plan, each
  * running drive's unresolved threads are recorded at its ledger's round
@@ -46,7 +50,8 @@
  */
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
-import { accountsReport, rotated, timeLeftMs } from "./lib/actions/launch.ts";
+import { accountsReport, timeLeftMs } from "./lib/actions/launch.ts";
+import { applyInTurns } from "./lib/apply-order.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
@@ -60,6 +65,7 @@ import {
   type TickOptions,
 } from "./lib/tick-context.ts";
 import { copyLog, writeTickLine } from "./lib/tick-line.ts";
+import { fillBudgets, tickReads } from "./lib/tick-reads.ts";
 import { defectReport, runTurn, startTurn } from "./lib/tick-repo.ts";
 import { routeRecurrences } from "./lib/reflection-route.ts";
 import { settleOutcomes } from "./lib/tick-settle.ts";
@@ -147,6 +153,8 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
     apply,
     lineInputs: new Map(),
     reflections: [],
+    pending: [],
+    reads: tickReads(runtime),
   };
   return { receipt, context, withheld, settleFailed };
 }
@@ -167,15 +175,16 @@ async function boundedTurn(
   }
 }
 
-/** Each repository's turn, in this tick's rotated order. */
+/** Each repository's turn, then their launches in this tick's turns. */
 async function runRepos(
   receipt: TickReceipt,
   context: TickContext,
 ): Promise<void> {
   const { apply, options } = context;
-  const order = apply === null ? options.repos : rotated(apply, options.repos);
-  for (const path of order)
+  for (const path of options.repos)
     receipt.repos.push(await boundedTurn(path, context));
+  // The launches wait until every repository is gathered, so none holds the tick's time against another's.
+  await applyInTurns(context.pending, apply?.tick ?? 0);
 }
 
 /**
@@ -220,6 +229,7 @@ async function closeTick(
     unsettled,
   );
   const copied = copyLog(receipt);
+  await fillBudgets(context.reads);
   await routeReflection(receipt, context);
   receipt.exitStatus =
     failed || !copied || settleFailed || withheld !== undefined ? 1 : 0;

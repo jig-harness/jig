@@ -723,6 +723,12 @@ That answer is the contract: `line` is the tick's snapshot
 (`LineSnapshot` in `dispatch/lib/dashboard-contract.ts`), versioned by its own
 `version` field, which a reader checks before it trusts the rest. The command
 takes no lock, so it runs while a tick does, and never creates the database.
+Each entry in `line.needs` carries `workspace`, the path holding that drive,
+pickup or follow-up, from the tick's launch records or the runtime's joined
+workspaces. It is `null` when none is known or the records are ambiguous.
+It never falls back to the notices workspace: `notified.workspace` still
+names where the notification went. This is an additive version-1 field;
+readers treat its absence in an older snapshot as unknown.
 Its exit codes:
 
 - `0`: the answer is printed. Its `line` is `null` when no tick has written

@@ -387,6 +387,63 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.156.0] - 2026-11-07
+
+### Added
+
+- The dispatcher's machine file accepts `opens_per_tick` (default `4`) to
+  fill more free account slots in one tick while keeping an open for notices.
+  Its deadline covers the configured workspace opens and refuses limits
+  beyond the timer's range.
+
+### Fixed
+
+- Drive launches and pickup/follow-up launches take turns leading across
+  repositories, so a backlog of old merges cannot keep new drives waiting
+  behind follow-ups for more than one tick when capacity is available.
+  Waiting launches say whether the accounts or the per-tick open budget
+  holds them, in both the receipt and the dashboard's queue.
+- Notifications wait for a later tick when their complete workspace read
+  or delivery cannot finish while preserving time to write the tick's receipt.
+
+## [0.155.0] - 2026-11-07
+
+### Added
+
+- Dispatch needs in `jig dispatch line --json` and the dashboard's `GET /state`
+  name the workspace holding the work, including parked drives with no running
+  session. Unknown or ambiguous workspaces are `null`; notification destinations
+  keep their separate meaning.
+
+## [0.154.0] - 2026-11-07
+
+### Changed
+
+- **Breaking:** The dispatcher now treats a drive that stopped with no recorded exit as an accident and re-arms it within a budget of 3 attempts per pull request in a rolling hour. To keep a drive stopped, use `drives.ts --stop`, a mailbox stop or pause, or the hold label; a recorded no-exit stop no longer keeps it stopped. Hard termination of both the driver and its launch wrapper can leave a running ledger outside this recovery path. Legacy no-exit ledgers receive at most one automatic attempt. Repeated no-cause stops notify a person once with the drive's handoff.
+
+### Fixed
+
+- Deliberate stops publish and verify the person's intent and optional reason before signalling, so a failed final ledger write cannot let another host re-arm them. Stop-bearing ledgers use format version 2; older Jig copies refuse them and must be updated before driving those pull requests.
+- With ledger mirroring enabled, a stop refuses to signal a driver whose published ownership cannot yet be verified. Hold dispatch and retry after startup publishes its ledger; the driver now publishes that ownership immediately after initialization.
+- Cancelled launch reservations retain durable evidence when withdrawal fails, so settlement does not charge recovery allowance for a wrapper that never executed. Executed and interrupted launches still consume their allowance across hosts.
+
+## [0.153.0] - 2026-11-07
+
+### Changed
+
+- `jig dispatch` reads less per tick. Each pull request's comments are
+  listed once per tick and shared between its drive ledger, its park
+  answers, its launch claims and its follow-up markers; the forge's login
+  and rate limit and Orca's repository and workspace listings are read once
+  per tick instead of once per repository. A merge whose `updatedAt` has
+  not moved since its follow-up markers were last read is planned from the
+  markers kept in the dispatcher's state database (a new `merge_reads`
+  table) instead of being read again, as are the launch claims of a merge
+  whose drive launches on this host all ended; every merge is read again at
+  least once an hour. The reads just before a launch still go to the forge
+  and the runtime. Each repository's report now carries the forge budget
+  left after the whole tick.
+
 ## [0.152.0] - 2026-11-07
 
 ### Added
@@ -5557,7 +5614,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.152.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.0...HEAD
+[0.156.0]: https://github.com/jig-harness/jig/compare/v0.155.0...v0.156.0
+[0.155.0]: https://github.com/jig-harness/jig/compare/v0.154.0...v0.155.0
+[0.154.0]: https://github.com/jig-harness/jig/compare/v0.153.0...v0.154.0
+[0.153.0]: https://github.com/jig-harness/jig/compare/v0.152.0...v0.153.0
 [0.152.0]: https://github.com/jig-harness/jig/compare/v0.151.0...v0.152.0
 [0.151.0]: https://github.com/jig-harness/jig/compare/v0.150.1...v0.151.0
 [0.150.1]: https://github.com/jig-harness/jig/compare/v0.150.0...v0.150.1

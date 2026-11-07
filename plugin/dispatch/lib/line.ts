@@ -20,6 +20,7 @@ import type {
 } from "./dashboard-contract.ts";
 import type { ReadRecord } from "./launches.ts";
 import { holds, targetOf } from "./launches.ts";
+import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
 import type {
@@ -182,6 +183,7 @@ class RepoView {
   readonly report: RepoReport;
   readonly input: RepoLineInput | undefined;
   readonly stored: RepoStored;
+  readonly records: ReadRecord[];
   private readonly known: Map<string, { title: string; url: string | null }>;
   private readonly drives: Map<number, DrivenPr>;
 
@@ -190,11 +192,13 @@ class RepoView {
     report: RepoReport,
     input: RepoLineInput | undefined,
     stored: RepoStored,
+    records: ReadRecord[],
   ) {
     this.slug = slug;
     this.report = report;
     this.input = input;
     this.stored = stored;
+    this.records = records;
     this.known = new Map([
       ...(input?.drives ?? []).map(
         (d) => [`PR #${d.number}`, { title: d.title, url: d.url }] as const,
@@ -279,6 +283,14 @@ function needsOf(
       item: pr === null ? action.target : null,
       url: view.url(action.target, action.evidence),
       title: view.title(action.target, action.evidence),
+      workspace: needWorkspace(
+        view.report,
+        action.target,
+        needStage(action.cause),
+        view.input?.sessions,
+        view.records,
+        action,
+      ),
       since:
         text(action.evidence, "heartbeat") ??
         text(action.evidence, "idleSince") ??
@@ -313,6 +325,13 @@ function needsOf(
         item: u.target,
         url: view.url(u.target),
         title: view.title(u.target),
+        workspace: needWorkspace(
+          view.report,
+          u.target,
+          "pickup",
+          view.input?.sessions,
+          view.records,
+        ),
         since:
           firstSeen(previous, view.slug, u.target, "assigner-cannot-write") ??
           nowIso,
@@ -592,6 +611,7 @@ export function buildLine(input: LineInput): LineSnapshot {
             report,
             input.inputs.get(report.path),
             input.stored(report.slug),
+            input.records,
           ),
         ],
   );

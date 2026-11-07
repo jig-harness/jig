@@ -316,7 +316,9 @@ function failedTick(
   const why = ended
     ? `its pass under launch record ${id} ended without recording done${asked}`
     : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`;
-  return failed(input, pr, marker, why, ended, question);
+  const action = failed(input, pr, marker, why, ended, question);
+  action.evidence.record = id;
+  return action;
 }
 
 /**

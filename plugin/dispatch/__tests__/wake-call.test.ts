@@ -89,7 +89,7 @@ it("gives a timer-free tick the configured workspace and runtime budget", () => 
     "jig-dispatch.timer": null,
   });
   expect(result).toMatchObject({ ok: true });
-  if (result.ok) expect(result.value.timeoutSec).toBe(8 * 3600 + 8 * 60 + 60);
+  if (result.ok) expect(result.value.timeoutSec).toBe(16 * 3600 + 8 * 60 + 60);
 });
 
 it("runs a complete installed timer", () => {
