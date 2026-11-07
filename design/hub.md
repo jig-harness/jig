@@ -118,13 +118,18 @@ board read's eighth at the size it is built for leaves about three quarters
 of each hour to the drives and `jig send`, whose own spend the tick's floor
 guards as it does with no hub. A Work card reads, for its pull request, the
 pull request and its comments, and its timeline when a label request is on
-it: two or three forge requests, which its follow-up shares. Each item
-costs one tracker read, its issue links among them. So a pull request with
-its item and follow-up costs two or three forge requests and one tracker
-read, and a five-item batch the same forge requests and five tracker reads.
-An unchanged conditional read costs nothing, so a person who opens 30 Work
-cards in an hour spends about 90 forge requests and 30 tracker reads, the
-first time each card is read. `jig hub status` reports what the hub spent
+it: two or three forge requests for a pull request whose comments and
+timeline each fit one page of 100 entries, which its follow-up shares. Each
+further 100 comments or timeline entries is one more request, up to the 30
+pages `jig ask` reads of each, so a pull request with 201 comments costs
+three comment requests beside the pull request's own read. Each item costs
+one tracker read, its issue links among them. So a pull request of that
+size with its item and follow-up costs two or three forge requests and one
+tracker read, and a five-item batch the same forge requests and five
+tracker reads. An unchanged conditional read costs nothing, so a person who
+opens 30 Work cards of that size in an hour spends about 90 forge requests
+and 30 tracker reads, the first time each card is read, and a card with
+long threads costs more by its pages. `jig hub status` reports what the hub spent
 against each budget, and `jig doctor hub` fails when a tick skipped its
 board read in an hour the hub read.
 
@@ -296,13 +301,19 @@ person's. These rules keep every write theirs:
   the plan id, the dry run's digest and the kind of proof, with `via: hub`.
   A commit that finds a plan reserved or sent but not settled, as a crash
   leaves it, first reads the target: for an answer, a comment from the
-  plan's login carrying that plan id, read by its id once `sent` holds it
-  and otherwise no sooner than a minute after the reservation, past the
-  forge's lag in listing a new comment; for any other verb, whether the
-  target already holds the label, the assignment, the merge or the
-  directive the plan sets. Found, the plan settles with it; not found and
-  not expired, it writes once; expired, it is refused and the page plans
-  again. So a crash never doubles a write. An answer's audit lives on the
+  plan's login carrying that plan id, read by its id once `sent` holds it;
+  for any other verb, whether the target already holds the label, the
+  assignment, the merge or the directive the plan sets. Found, the plan
+  settles with it. Not found, an answer is never written again under that
+  plan: the forge gives a comment no idempotency key and no bound on how
+  late a listing shows it, so a missing comment does not prove the write
+  failed. The plan settles as `ambiguous`, the card says the answer may or
+  may not have been posted and links the thread, and a person who has read
+  it plans again. Any other verb sets state a second write leaves the same
+  (a label, an assignment, a directive) or one the forge refuses to repeat
+  (a merge), so, not found and not expired, it writes once; expired, it is
+  refused and the page plans again. So a crash never doubles a write that
+  cannot be read back. An answer's audit lives on the
   forge, in its comment; any other verb's lives in the forge's own event
   (who set the label or the assignment, who merged) and the plan's file,
   which `jig gc` removes 90 days after it settles. Until item 40 settles,
@@ -336,7 +347,14 @@ person's. These rules keep every write theirs:
   shows a thread's total, the day's total across threads and each turn's
   time, the runner's cold start included. A turn, a thread and a day's
   turns each stop at a token ceiling the user file sets, and a turn the
-  account's own limit refuses says so while the rest of the hub works.
+  account's own limit refuses says so while the rest of the hub works. The
+  day's ceiling is shared by every thread, so a turn reserves its own
+  ceiling from the day's allowance, in a file of its own that no thread's
+  deletion removes, before it starts, and settles to the tokens it used when
+  it ends, fails or is killed at its deadline; a turn whose reservation does
+  not fit is refused with the allowance left. The file is rewritten under
+  its own lock, held only for that read and write, and a new day starts a
+  new allowance.
 - **Where the context goes.** A turn sends what it read to the model
   provider of the account the runner signs in with: the person's own,
   named in the user file (`hub.operator_account`), never an account the
@@ -843,11 +861,14 @@ not in the hub's memory. One turn or commit runs at a time per thread,
 under a lock file per thread: a turn or commit from a second page waits
 for the lock within its own deadline, and is refused with "a turn is
 running" if the lock is not free by then. The thread's token count is
-updated inside that lock. A plan's states sit in its file
+updated inside that lock. The day's allowance is the one state threads
+share: it is reserved and settled under a lock of its own
+([The operator chat](#the-operator-chat)), so two turns on different threads
+cannot each admit what only one fits. A plan's states sit in its file
 ([The operator chat](#the-operator-chat)), so a commit that finds one
 reserved or sent after a crash reconciles it with the target before it
 writes. No request cancels another's work, and no two requests
-write the same state at once. A step that needs either, such as a turn
+write the same state at once, each file being written under its own lock. A step that needs either, such as a turn
 that outlives its request, crosses the line, and ADR-0012 is reopened
 before that step is built.
 
