@@ -10,6 +10,7 @@ import {
 import { ghCall } from "../proc.ts";
 import { isPerson } from "./park-frame.ts";
 import { ExitError } from "../cli.ts";
+import { optionalOverlayString } from "../overlay.ts";
 
 function login(value: unknown, field: string): string {
   if (!isPerson(value))
@@ -35,21 +36,20 @@ function recipientForPark(
   catalog: ChangeAreaCatalog | null,
   configured: unknown,
 ): string | null {
-  if (configured !== undefined) login(configured, "dispatch.person");
-  const owners =
-    path === null || catalog === null
-      ? []
-      : [
-          ...new Set(
-            areasOf(path, catalog).flatMap((area) => {
-              const owner = catalog.get(area)?.fields.owner;
-              return isPerson(owner) ? [owner] : [];
-            }),
-          ),
-        ];
+  const fallback =
+    configured == null ? null : login(configured, "dispatch.person");
+  const identities = new Map<string, string>();
+  if (path !== null && catalog !== null) {
+    for (const area of areasOf(path, catalog)) {
+      const owner = catalog.get(area)?.fields.owner;
+      if (isPerson(owner) && !identities.has(owner.toLowerCase()))
+        identities.set(owner.toLowerCase(), owner);
+    }
+  }
+  const owners = [...identities.values()];
   const [owner] = owners;
   if (owners.length === 1 && owner !== undefined) return owner;
-  return configured === undefined ? null : login(configured, "dispatch.person");
+  return fallback;
 }
 
 async function threadAnchor(key: string): Promise<string | null> {
@@ -92,18 +92,15 @@ export async function resolveParkPerson(
 ): Promise<string> {
   const values = layeredConfig().values;
   const dispatch = isRecord(values.dispatch) ? values.dispatch : {};
-  const drive = isRecord(values.drive) ? values.drive : {};
   let catalog: ChangeAreaCatalog | null = null;
-  if (typeof drive.change_areas_catalog === "string") {
-    try {
-      catalog = loadCatalogFile(
-        resolve(consumerRoot(), drive.change_areas_catalog),
-      );
-    } catch (error) {
-      console.error(
-        `park: cannot read change-area catalog; using recipient fallback: ${String(error)}`,
-      );
-    }
+  try {
+    const catalogPath = optionalOverlayString("drive", "change_areas_catalog");
+    if (catalogPath !== undefined)
+      catalog = loadCatalogFile(resolve(consumerRoot(), catalogPath));
+  } catch (error) {
+    console.error(
+      `park: cannot read change-area catalog; using recipient fallback: ${String(error)}`,
+    );
   }
   const anchor =
     path ||

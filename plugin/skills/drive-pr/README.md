@@ -524,8 +524,9 @@ mechanical state rather than on anyone's judgement:
   drive already did. The doctor names the questions in its `NEEDS_HUMAN`
   row. Each question names the area owner, else `dispatch.person`, else the
   pull request's author; this routes the question without restricting answers.
-  Non-login owners are ignored; an unreadable catalog is reported and uses
-  the fallback.
+  Non-login owners are ignored, and login identity is case insensitive.
+  Null recipient settings are unset; an invalid or unreadable catalog is
+  reported and uses the fallback.
   Answer each parked item on its thread, or in a
   pull-request comment with a line `answer <key>: …`, as an owner, member or
   collaborator; `jig send drive@<owner>/<name>#<PR> answer <key> "<text>"`

@@ -10,6 +10,23 @@ const catalog = parseCatalog({
 });
 
 describe("a parked question's person", () => {
+  it("treats null as absent at every recipient fallback", () => {
+    expect(personForPark("api/route.ts", catalog, null, "author")).toBe(
+      "api-owner",
+    );
+    expect(personForPark(null, catalog, null, "author")).toBe("author");
+  });
+  it("recognizes overlapping owners by case-insensitive forge identity", () => {
+    const shared = parseCatalog({
+      areas: {
+        first: { paths: ["**"], owner: "Maintainer" },
+        second: { paths: ["api/**"], owner: "maintainer" },
+      },
+    });
+    expect(personForPark("api/route.ts", shared, "fallback", "author")).toBe(
+      "Maintainer",
+    );
+  });
   it("routes by its own anchor, then dispatch.person, then the PR author", () => {
     expect(personForPark("api/route.ts", catalog, "maintainer", "author")).toBe(
       "api-owner",
