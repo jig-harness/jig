@@ -46,6 +46,8 @@ export interface DriveRoundContext {
   deadlineRetryBudget: number;
   /** The stall stop already granted its one extra round in this streak. */
   stallExtraRound: boolean;
+  /** The handoff narrative as it stood when that extra round was granted: what its pass adds is what the stop prints. */
+  stallNarrative: string[] | null;
   /**
    * What the next review pass is told about the stop the driver recovered
    * from (`$DRIVE_PR_PASS_NOTICE`): a killed pass, a stall. Cleared once a

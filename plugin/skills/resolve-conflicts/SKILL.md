@@ -377,7 +377,8 @@ the resolved tree:
 
 - inside a drive, the round's validation plan from drive-pr
   (`bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/round-plan.ts"`), which
-  covers the uncommitted tree;
+  covers the uncommitted tree: an open merge whose conflicts are all
+  resolved is planned against the merge base its commit will have;
 - otherwise the repository's gate command, `gates.command`
   (`bun "${CLAUDE_SKILL_DIR}/../fix-ci/scripts/consumer-config.ts"` prints
   it), or the checks its instruction file names.

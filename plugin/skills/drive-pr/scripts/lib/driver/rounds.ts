@@ -207,6 +207,7 @@ export async function runDriverRounds({
     maxRoundsN,
     deadlineRetryBudget,
     stallExtraRound: false,
+    stallNarrative: null,
     passNotice: "",
     carriedNotice: firstPassNotice,
     inheritedHead: "",

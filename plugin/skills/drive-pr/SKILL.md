@@ -1200,7 +1200,7 @@ state directory holding all of it: read that file before acting.
 | `RESTARTED AFTER A PASS DEADLINE` | The previous pass was killed at its deadline; its uncommitted edits and unpushed commits are listed and are still in the tree | Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual. When it names an inherited head, add `--inherited-head <sha>` to § 1's gate (without it the gate reads unpushed commits as `HEAD_LAG`, and a tree with only uncommitted edits as converged) and push them through `finish-round.ts` with the round's own fixes |
 | `UNPUSHED COMMITS` | Local HEAD carries commits the PR's head lacks: a pass ended without pushing them, or the drive was armed over them. They are listed, with the uncommitted edits, and are still in the tree | Validate what is sound and push it through `finish-round.ts` with the round's own fixes; discard what is not on purpose. Add the `--inherited-head <sha>` it names to § 1's gate: without it the gate reads the unpushed commits as `HEAD_LAG` |
 | `UNCOMMITTED EDITS` | The tree holds edits no commit carries: a pass ended without committing them. They are listed and are still in the tree | Validate what is sound and push it through `finish-round.ts` with the round's own fixes; discard what is not on purpose. Add the `--inherited-head <sha>` it names to § 1's gate: without it the gate can read the PR as converged over the edits |
-| `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14` | Act on the open work; if you decide not to, end the handoff narrative with one paragraph saying what you decided and why — the stop prints it |
+| `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14`. It lists what the tree holds now | Finish what the tree holds first (§ 5, **A tree the round inherits**), then act on the open work. If a step refuses and you stop, or you decide not to act, end the handoff narrative with one paragraph naming the step that refused (its script, exit code and state) and what would unblock it, or what you decided and why — the stop prints what this round recorded |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
 | `RE-ARMED TO DECIDE PROVISIONALLY` | At the `wide` level, parked items of the class `escalated` that nobody answered are unparked, one `[kind] key` line each | Check each again first: the level read afresh (an off-hours window may have closed), and `decide`'s `wide` conditions (no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence; for a thread, a recorded `escalate` ruling of the class `escalated`). Where one fails, park the item again under its class (§ 4). Otherwise decide it this round, provisionally and with a reply outcome only: a thread with `provisional-reply.ts`, a finding with `decide`'s ruling recorded as `decide-provisional` (§ 8) |
@@ -1349,7 +1349,8 @@ Then:
   `base-sync.ts` exiting `3` on `MERGE_HEAD` means the tree held that merge
   before this pass started. Run that skill's Step 2 and Step 5 over it: where
   its check passes and `MERGE_HEAD` is still the base's tip, the merge is
-  resolved, so go on from its Step 6. Otherwise abort it as its Step 8 does,
+  resolved, so go on from its Step 6 (`round-plan.ts` plans an open merge
+  whose conflicts are resolved). Otherwise abort it as its Step 8 does,
   verify the tree is clean, and start from its Step 1. A merge this round
   started and does not conclude is aborted for you when the pass ends, and the
   round has achieved nothing.
@@ -2371,6 +2372,29 @@ bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts" [PR]
 tree that gains the base branch after the plan was resolved is not the tree
 that was planned for.
 
+**A tree the round inherits is finished first.** When the tree already holds
+work no earlier pass shipped (uncommitted edits, a merge left open, local
+commits), finish that work before this command, in this order:
+
+1. A merge left open (`MERGE_HEAD`) with every conflict resolved: run
+   `round-plan.ts` below and what it prints. It plans an open merge against
+   the merge base its commit will have, so the plan is the change's files,
+   not the base's. Then conclude the merge with a commit, by
+   [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md) Steps 5 to 7
+   where the repository uses it. With a conflict still unresolved, resolve it
+   by that skill from its Step 2, or abort the merge and start from its
+   Step 1.
+2. Uncommitted edits with no merge open: run the plan over the dirty tree,
+   and commit what is sound; discard what is not on purpose.
+3. Then run this command, which now meets a clean tree, and the rest of the
+   round. `finish-round.ts` pushes the inherited commits with the round's own.
+
+Each of `base-sync.ts`, the plan and `finish-round.ts` refuses the partial
+state on its own, by design: the order above is what gets a round past all
+three. If the base merge cannot be finished this round, still push the
+round's validated commits, so the work is on the pull request, and say why the
+merge stopped.
+
 This is a **piggyback, not a cadence**, and the distinction is the whole
 design. Pulling the base in "occasionally to stay fresh" is not cheap: each
 base merge pushes a new head, which burns a review round against the reviewer's
@@ -2400,7 +2424,7 @@ loop cannot see, such as converging and wanting the local gates and the
 |---|---|---|
 | `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which — do not infer it from the code. Continue |
 | `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge <remote>/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
-| `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For an open merge in a `conflict-resolve` round, § 0 says what to do. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
+| `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For an open merge the round inherited, finish it as **A tree the round inherits** above says; in a `conflict-resolve` round, § 0 says what to do. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
 | `11` | Another live session holds this working tree's tree lease (never under `--check`) | Stop, as for `finish-round.ts`'s `11` below |
 | `2` / `1` | Usage error, including a worktree that drives a branch other than the PR's head branch (a detached tree drives the branch its attach recorded) / a step failed | Fix the invocation, or read the step's diagnostic. For the branch mismatch in a driver pass (`$DRIVE_PR_TARGET` set), attach the PR (`bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`): run by this pass, under the environment its driver handed it, the attach takes its driver's locks as its own and repairs the tree as the driver's attach does; if it refuses, stop the round and report it. With no live driver, attach the PR (`bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`), which checks out its head branch or, when another tree holds it, its head commit detached; if the attach refuses, stop and report it for a human. Never rename the workspace's branch, create a branch with another name, or move another worktree to make the check pass |
@@ -2440,7 +2464,9 @@ bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts" [PR]
 It resolves the validation plan for the PR's **whole** diff against the PR's
 own base (`<remote>/<base>`: for a stacked layer, the layer below; [README.md §
 Consumer configuration](README.md#consumer-configuration) says when it uses
-the integration branch instead, and when it refuses) and prints exactly what to run. The plan is the repository's: when it sets
+the integration branch instead, and when it refuses) and prints exactly what to run.
+An open merge whose conflicts are all resolved is planned against the merge
+base its commit will have; any other unconcluded operation is refused. The plan is the repository's: when it sets
 `drive.validation_plan_command`, `round-plan.ts` runs that command with the
 changed files on stdin and prints the plan it returns — local checks,
 verification checks, an optional remote test box, and review skills to run;
@@ -2858,6 +2884,14 @@ it in this report, as the handoff does. Then refresh the handoff:
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" handoff [PR]
 ```
+
+**A round that ends without pushing names what stopped it.** When a step
+refuses and the round cannot get past it, end the handoff narrative with one
+paragraph: the step that refused (its script, its exit code and the state it
+named, such as `finish-round.ts` exit `3`, `REFUSED_UNCLEAN`), what the tree
+holds, and what would unblock it. Write it in this round, even when an
+earlier pass wrote one: a stall stop prints what the last round recorded, so
+the paragraph a person reads is the refusal that stands now.
 
 Your per-round report is qualitative. The quantitative half — what the loop has
 cost so far — is § What the loop cost below, and `drive.ts` prints it for you
