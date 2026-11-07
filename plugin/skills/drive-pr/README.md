@@ -569,7 +569,9 @@ mechanical state rather than on anyone's judgement:
   hands your answers to the drive's passes as your verdicts, keeping them in
   the drive's state directory until a pass completes, so a drive that stops
   first still hands them on when it is re-armed. With any item unanswered
-  nothing is unparked and the drive stops `8` again; at the `wide` level,
+  nothing is unparked. If the pull request conflicts with its base, the
+  re-arm spends its conflict-repair budget first, then parks again on the
+  unanswered questions. Otherwise the drive stops `8` again; at the `wide` level,
   except where every unanswered item has the class `escalated`, which the
   re-arm hands to the first round to decide provisionally.
 

@@ -463,8 +463,9 @@ one of the registry's decision classes (`--class`) with its decision record on
 stdin, and refuses a park without them; parked items stop counting as live
 work, the drive works everything else to its end, and then reaches
 `HITL_PARKED` and prints each decision in full. `drive.ts` does not wake
-itself up. What picks it up is an answer, not a clock: a re-arm admits itself
-only once every parked item is answered.
+itself up. A re-arm unparks the items once every parked item is answered,
+subject to the `wide` autonomy exception. If the PR conflicts with its base,
+a re-arm may repair that conflict while unanswered items stay parked.
 
 ### 7. Merged mid-loop
 
@@ -840,7 +841,9 @@ durable state, admitted on mechanical states: after `QUOTA_PARKED` by a
 pass that bills a different account from the one the park recorded (or after
 the reset), and after `HITL_PARKED` once every parked item has an answer later
 than its park (a park records when it was made; an older park without that
-time is never read as answered). A comment the drive itself writes (one
+time is never read as answered). A conflicting PR may be re-armed for
+conflict repair while unanswered items stay parked; the `wide` autonomy
+exception may also unpark unanswered `escalated` items. A comment the drive itself writes (one
 opening with an outcome token, or carrying a hidden marker other than the
 record of an answer `jig send` wrote) is never an answer.
 
