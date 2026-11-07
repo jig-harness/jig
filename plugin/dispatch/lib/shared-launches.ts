@@ -35,6 +35,7 @@ import {
   recoveryReservationRefusal,
 } from "./no-cause-stops.ts";
 import type { Outcome } from "../../shared/outcome.ts";
+import { settledWhy, settlesWithPerson } from "./redrive-settle.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import {
@@ -271,9 +272,10 @@ function armedOrRedriven(
 
 /**
  * Each drive as the plan reads it once another host's claims are read
- * beside it: a ledger that stopped on a conflict, another host having
- * re-driven the change it shows now and that launch having ended, is a
- * person's to settle, as when this host re-drove it.
+ * beside it: a ledger that stopped on a conflict, a stall or a spent
+ * CI-repair budget, another host having re-driven the change it shows now
+ * and that launch having ended, is a person's to settle, as when this host
+ * re-drove it.
  */
 export function settleSharedConflictStops(
   drives: readonly DrivenPr[],
@@ -281,15 +283,17 @@ export function settleSharedConflictStops(
   host: string,
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (pr.stale?.conflictStop !== true && pr.stale?.uncleanTree !== true)
-      return pr;
+    if (!settlesWithPerson(pr.stale)) return pr;
     const hold = foreignHold(pr, claims.get(pr.number), host);
     if (hold.kind !== "redriven" || open(hold.claim)) return pr;
     const { stale: _settled, ...rest } = pr;
     return {
       ...rest,
       class: "needs-person",
-      why: `stopped ${pr.stale.uncleanTree === true ? "12 (worktree unclean)" : "on a conflict with its base"}, and ${claimWords(hold.claim)} already re-drove it for this change and has ended: only a person settles it until ${pr.stale.uncleanTree === true ? "its head moves" : "its head or its base moves"} (see the drive's handoff)`,
+      why: settledWhy(
+        pr,
+        `${claimWords(hold.claim)} already re-drove it for this change and has ended`,
+      ),
     };
   });
 }

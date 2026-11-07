@@ -135,6 +135,7 @@ describe("classifyDrive — fail-closed guards (rule 1 and friends)", () => {
       baseInput({
         stateReadable: false,
         lockState: "stale",
+        processConfirmedGone: true,
         leftovers: { uncommitted: true, unpushed: false, unconcludedOp: null },
       }),
       NOW,
@@ -150,6 +151,7 @@ describe("classifyDrive — fail-closed guards (rule 1 and friends)", () => {
       baseInput({
         stateReadable: false,
         lockState: "stale",
+        processConfirmedGone: true,
         leftovers: { uncommitted: false, unpushed: false, unconcludedOp: null },
       }),
       NOW,
@@ -158,7 +160,12 @@ describe("classifyDrive — fail-closed guards (rule 1 and friends)", () => {
     expect(clean.reason).toContain("stored state could not be read");
 
     const uninspectable = classifyDrive(
-      baseInput({ stateReadable: false, lockState: "stale", leftovers: null }),
+      baseInput({
+        stateReadable: false,
+        lockState: "stale",
+        processConfirmedGone: true,
+        leftovers: null,
+      }),
       NOW,
     );
     expect(uninspectable.verdict).toBe("UNKNOWN");
@@ -179,7 +186,11 @@ describe("classifyDrive — fail-closed guards (rule 1 and friends)", () => {
 
   it("an uninspectable worktree (leftovers null) with no live driver is UNKNOWN via that guard specifically", () => {
     const row = classifyDrive(
-      baseInput({ lockState: "stale", leftovers: null }),
+      baseInput({
+        lockState: "stale",
+        processConfirmedGone: true,
+        leftovers: null,
+      }),
       NOW,
     );
     expect(row.verdict).toBe("UNKNOWN");
@@ -213,6 +224,7 @@ describe("classifyDrive — precedence order", () => {
     const row = classifyDrive(
       baseInput({
         lockState: "stale",
+        processConfirmedGone: true,
         quotaPark: {
           vendor: "claude",
           window: "short",
@@ -230,6 +242,7 @@ describe("classifyDrive — precedence order", () => {
     const row = classifyDrive(
       baseInput({
         lockState: "stale",
+        processConfirmedGone: true,
         quotaPark: {
           vendor: "codex",
           window: "weekly",
@@ -300,6 +313,7 @@ describe("classifyDrive — precedence order", () => {
     const row = classifyDrive(
       baseInput({
         lockState: "empty",
+        processConfirmedGone: true,
         leftovers: { uncommitted: false, unpushed: true, unconcludedOp: null },
         worktreePath: "/tmp/some worktree",
       }),
@@ -314,6 +328,7 @@ describe("classifyDrive — precedence order", () => {
     const row = classifyDrive(
       baseInput({
         lockState: "stale",
+        processConfirmedGone: true,
         leftovers: {
           uncommitted: false,
           unpushed: false,
@@ -332,7 +347,12 @@ describe("classifyDrive — precedence order", () => {
     // distinguishes them, and the wording must not claim an inspection was
     // attempted when none was.
     const skipped = classifyDrive(
-      baseInput({ lockState: "empty", leftovers: null, worktreePath: null }),
+      baseInput({
+        lockState: "empty",
+        processConfirmedGone: true,
+        leftovers: null,
+        worktreePath: null,
+      }),
       NOW,
     );
     expect(skipped.verdict).toBe("UNKNOWN");
@@ -342,6 +362,7 @@ describe("classifyDrive — precedence order", () => {
     const failed = classifyDrive(
       baseInput({
         lockState: "empty",
+        processConfirmedGone: true,
         leftovers: null,
         worktreePath: "/tmp/some-worktree",
       }),
@@ -360,6 +381,7 @@ describe("classifyDrive — precedence order", () => {
     const row = classifyDrive(
       baseInput({
         lockState: "empty",
+        processConfirmedGone: true,
         leftovers: null,
         worktreePath: null,
         quotaPark: {
@@ -378,6 +400,7 @@ describe("classifyDrive — precedence order", () => {
     const row = classifyDrive(
       baseInput({
         lockState: "empty",
+        processConfirmedGone: true,
         leftovers: null,
         worktreePath: null,
         parkedCount: 1,
@@ -469,6 +492,7 @@ describe("classifyDrive — precedence order", () => {
     const row = classifyDrive(
       baseInput({
         lockState: "stale",
+        processConfirmedGone: true,
         quotaPark: {
           vendor: "claude",
           window: "short",

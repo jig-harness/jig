@@ -51,10 +51,15 @@ import {
 export function leftoverHeadOf(
   l: PassLeftovers,
   editsBefore: string | null = "",
+  ownsOperation = false,
 ): string | null {
   if (l.head === null) return null;
   if (l.unpushed !== null && l.unpushed > 0)
     return l.onRemote === false ? "" : l.head;
+  // An open operation a stalled drive left is owed a round even when its
+  // resolved tree equals HEAD and the status is clean.
+  if (ownsOperation && (l.operation !== null || !l.operationProbed))
+    return l.head;
   if (l.uncommitted === null || l.edits === null) return null;
   if (l.uncommitted !== "" && l.edits !== editsBefore) return l.head;
   // A ref git confirms absent (no upstream and no attach) is a tree with no
@@ -109,7 +114,11 @@ export async function measureUnpushed(
   }
   context.uncommittedMeasured = l.edits;
   context.uncommittedBeforePass ??= l.edits;
-  const head = leftoverHeadOf(l, context.uncommittedBeforePass);
+  const head = leftoverHeadOf(
+    l,
+    context.uncommittedBeforePass,
+    context.inheritsOperation,
+  );
   if (head === null) return null;
   context.unpushedNotice = head === "" ? "" : unpushedNotice(l, head);
   if (context.inheritedHead === head) return null;

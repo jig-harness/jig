@@ -207,7 +207,7 @@ function dispatchedPath(resolved: ResolvedAddress, plan: Plan): string | null {
 function wake(resolved: ResolvedAddress, plan: Plan): string | null {
   const path = dispatchedPath(resolved, plan);
   if (path === null) return null;
-  const woke = wakeTick(path);
+  const woke = wakeTick(path, `send: ${plan.verb} ${plan.address}`);
   if (!woke.ok) {
     console.error(
       `jig send: the tick was not woken, so ${NEXT_TICK} reads the record: ${woke.failure.reason}`,

@@ -48,6 +48,7 @@ import {
   type SessionsReport,
 } from "../runtime/port.ts";
 import { failureText } from "../text.ts";
+import { workspaceOfTree } from "../stall-tree.ts";
 import type {
   Action,
   DrivenPr,
@@ -308,9 +309,22 @@ async function workspaceFor(
   head: string,
   sessions: SessionsReport,
   named: Dispatched,
+  tree: string | undefined,
   originalActor: string | null,
   originalClone: string,
 ): Promise<Opened> {
+  // A stall that left work runs where the work is, or not at all: a fresh
+  // tree would not carry it.
+  if (tree !== undefined) {
+    const own = sessions.ok
+      ? workspaceOfTree(sessions.workspaces, tree)
+      : undefined;
+    return own === undefined
+      ? {
+          refused: `the stall left work in its tree (${tree}), which no open workspace holds now; a fresh tree would not carry it`,
+        }
+      : { workspace: { id: own.id, path: own.path } };
+  }
   const candidates = sessions.ok
     ? sessions.workspaces.filter((w) => w.prs.includes(pr) && w.branch === head)
     : [];
@@ -417,6 +431,7 @@ async function launchOne(
       pr.head,
       sessions,
       named,
+      action.redrive?.tree?.actor,
       action.redrive?.uncleanTree === true || pr.evidence.rearm === true
         ? String(pr.evidence.driverActor)
         : null,

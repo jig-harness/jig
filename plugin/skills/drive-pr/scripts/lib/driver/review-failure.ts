@@ -107,6 +107,10 @@ async function restartAfterDeadline(
     // the next gate would read as head lag and never hand out the round that
     // pushes it. That gate accepts exactly this witnessed head instead.
     context.inheritedHead = inheritedHeadOf(leftovers);
+    // An operation the killed pass left open is owed a round even when its
+    // resolved tree equals HEAD and the status is clean.
+    context.inheritsOperation =
+      leftovers.operation !== null || !leftovers.operationProbed;
     // A killed pass is not a completed one: it must not count toward the
     // stall streak, which compares the gates around COMPLETED passes.
     context.prevFingerprint = null;

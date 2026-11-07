@@ -43,9 +43,11 @@ interface DriverRoundOptions {
   markReadyPolicy: MarkReady;
   /** `drive.pass_deadline_retries`, resolved before the locks were taken. */
   deadlineRetryBudget: number;
-  /** What the first pass is told: a takeover, or the answers a re-arm read. */
+  /** What the first pass is told: a takeover, the answers a re-arm read, the stop it was armed after. */
   firstPassNotice: string;
   settleWorktree?: boolean;
+  /** The tree's edits at arm are a stalled drive's, which this drive finishes (`stop-pickup.ts`). */
+  inheritsEdits?: boolean;
 }
 
 export async function runDriverRounds({
@@ -63,6 +65,7 @@ export async function runDriverRounds({
   deadlineRetryBudget,
   firstPassNotice,
   settleWorktree = false,
+  inheritsEdits = false,
 }: DriverRoundOptions): Promise<number> {
   const passes = 0;
   // Whether THIS run fired the draft→Ready transition. Not the durable claim —
@@ -210,12 +213,16 @@ export async function runDriverRounds({
     maxRoundsN,
     deadlineRetryBudget,
     stallExtraRound: false,
+    stallNarrative: null,
     passNotice: "",
     carriedNotice: firstPassNotice,
     inheritedHead: "",
     unpushedNotice: "",
     uncommittedMeasured: null,
-    uncommittedBeforePass: null,
+    // Edits found at arm are left alone as a person's, unless the drive is
+    // armed after a stall that left them: then none were there before it.
+    uncommittedBeforePass: inheritsEdits ? "" : null,
+    inheritsOperation: inheritsEdits,
   };
   for (;;) {
     {

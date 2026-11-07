@@ -359,7 +359,11 @@ development and shipped as a version.
   `jig dispatch result <record> <token> done|failed` (`dispatch/result.ts`).
   That answer is the session's own judgement; the script refuses another
   record's token, a drive pass's record and a second answer. Nothing
-  else reasoned writes these records.
+  else reasoned writes these records. A completed pickup names its pull
+  request with `--pr <number>`, or `--none "<reason>"` when none was needed.
+  The answer and its next owner are written together. An ended launch's
+  outcome keeps that handoff, deriving it where the line fixes it; `jig ask`
+  prints it as `last.next`.
 - **Boundary.** The tick tunes none of its own settings. A class that keeps
   recurring is a finding: where reflection is on, the tick records it, once
   a week, as a finding about the dispatcher in the reflection store

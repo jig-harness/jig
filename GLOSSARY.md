@@ -795,19 +795,17 @@ make, use the entry's term instead.
   and its size, held by the *tracker interface* as a value that means the
   same in every repository: a type from the *label taxonomy*'s type list,
   a priority from 1 (urgent) to 4 (low) or none, a size from the
-  taxonomy's size group. Planned, not built: today the interface carries
-  labels and a priority, and the design says where the rest is headed. Once
-  built, where the tracker keeps the value is its *facet store*, and the
-  skills read the value, never the label or field behind it
-  ([design](design/tracker-facets.md)).
+  taxonomy's size group. The interface reads and writes all three on every
+  issue; where the tracker keeps the value is its *facet store*. The skills
+  still read type and size from labels, and are planned to read the value,
+  never the label or field behind it ([design](design/tracker-facets.md)).
 - **Facet store** (store) — where a tracker keeps one *issue facet*: the
   tracker's own field for it (`native`, such as GitHub's or Jira's issue
   type), a custom field the repository names (`field`), or a label per
-  value (`label`). Planned, not built: the design gives each facet a
-  default store per *tracker adapter*, lets a repository name its own in
-  `issue_tracker.facets`, and moves no repository's store unless its
-  configuration says so or a person runs the move
-  ([design](design/tracker-facets.md)).
+  value (`label`). Each facet has a default store per *tracker adapter*,
+  the one it has always had; a repository names its own in
+  `issue_tracker.facets`, and no repository's store moves unless its
+  configuration says so ([design](design/tracker-facets.md)).
 - **Sensitivity flag** — a *flag label* marking a change that carries extra
   obligations, such as a database migration, a published contract, personal
   data or a manual operational step. `decide` reads them under fixed names:
@@ -1609,6 +1607,13 @@ make, use the entry's term instead.
   pending or its attempt bound is reached. Jig's dispatch wake asks for a
   repository's dispatcher tick; the dispatch request and the wake's pending
   files serve these different purposes.
+- **Change probe** — a small, frequent check of the forge (the service that
+  hosts the repositories and their pull requests) for what changed since it
+  last looked, so a scheduled reader runs soon after a change rather than at
+  its next full run, without the forge having to call in. Jig's dispatcher
+  probe makes one search a minute over every repository it dispatches and
+  wakes only the ticks of the repositories where a pull request was updated
+  or its checks changed; a minute with no change starts nothing.
 
 - **Plugin** — an installable bundle of skills and other agent extensions
   that an agent tool loads in every session. Jig ships its skills and
