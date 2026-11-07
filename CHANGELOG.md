@@ -387,6 +387,14 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.156.3] - 2026-11-07
+
+### Fixed
+
+- The dispatcher now reports silent drives through notifications, `jig ask --waiting` and a parked state label. With re-arms enabled, it recovers a confirmed-dead local driver from a released witness or persisted pass observations before planning a retry within the no-cause budget, including hand-armed drives killed abruptly. Pending launches, surviving work, unreadable liveness and legacy acquisitions without termination evidence still require inspection.
+- Doctor and stop recovery use a temporary session and release their own PR and tree leases, so a diagnostic cannot leave the calling session blocking the replacement driver.
+- Persisted pass observations recognize Windows locks without creation timestamps, preserve uncertainty across timezone changes, and retire confirmed-dead process history during sampling.
+
 ## [0.156.2] - 2026-11-07
 
 ### Fixed
@@ -5628,7 +5636,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.3...HEAD
+[0.156.3]: https://github.com/jig-harness/jig/compare/v0.156.2...v0.156.3
 [0.156.2]: https://github.com/jig-harness/jig/compare/v0.156.1...v0.156.2
 [0.156.1]: https://github.com/jig-harness/jig/compare/v0.156.0...v0.156.1
 [0.156.0]: https://github.com/jig-harness/jig/compare/v0.155.0...v0.156.0
