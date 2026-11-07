@@ -116,6 +116,10 @@ export async function runObservedPass(
       } else {
         if (capturePassRoot(acquisition.value, rows, childPid, childGone))
           captured = true;
+        acquisition.value.targets = liveTargets(acquisition.value, rows);
+        acquisition.value.groups = acquisition.value.groups.filter((group) =>
+          rows.some((row) => row.pgid === group && !row.stat.startsWith("Z")),
+        );
         acquisition.value.pending = !captured;
         // An absent root cannot clear a launch we never captured.
       }
@@ -238,6 +242,23 @@ function retainPassIdentities(value: Observation, targets: ProcessRow[]): void {
   }
 }
 
+/** Only a positive death verdict retires an identity, including across time zones. */
+function liveTargets(
+  value: Observation,
+  rows: ProcessRow[],
+): Observation["targets"] {
+  const byPid = new Map(rows.map((row) => [row.pid, row]));
+  return value.targets.filter((target) => {
+    const row = byPid.get(target.pid);
+    const verdict = judge(
+      { ...value.driver, ...target },
+      row ? [row] : [],
+      thisHost(),
+    );
+    return !verdict.ok || verdict.value.state !== "dead";
+  });
+}
+
 /** Strictly read an owned acquisition; legacy, damaged and incomplete observations stay unknown. */
 function readObservation(path: string, started: string): Observation | null {
   try {
@@ -275,24 +296,15 @@ export async function observedDriverGone(
     lock.nonce !== v.nonce ||
     lock.diag?.started !== record.started ||
     lock.pid !== v.driver.pid ||
-    lock.start !== v.driver.start
+    // The nonce and acquisition time bind Windows locks, which omit start.
+    (lock.start !== "" && lock.start !== v.driver.start)
   )
     return false;
   const rows = await table();
   const verdict = judge(v.driver, rows, thisHost());
   if (!verdict.ok || verdict.value.state !== "dead" || rows === null)
     return false;
-  if (
-    v.targets.some((t) =>
-      rows.some(
-        (r) =>
-          r.pid === t.pid &&
-          !r.stat.startsWith("Z") &&
-          (r.start === "" || r.start === t.start),
-      ),
-    )
-  )
-    return false;
+  if (liveTargets(v, rows).length > 0) return false;
   if (
     v.groups.some((g) =>
       rows.some((r) => r.pgid === g && !r.stat.startsWith("Z")),

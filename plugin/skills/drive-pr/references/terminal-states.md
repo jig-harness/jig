@@ -622,7 +622,11 @@ versioned observations bound to their exact lock token and shared driver
 identity. A pending write precedes every review or repair pass spawn; observed
 creation identities and POSIX process groups survive parent loss. Recovery
 requires a readable local process table, no unfinished or uncertain launch,
-and no surviving observed or registered work. It reserves the original PR
+and no surviving observed or registered work. Sampling retires identities only
+when the shared liveness judge confirms death, and groups only when no live
+member remains. Timezone-shifted creation times stay uncertain. Windows locks
+omit creation time; their nonce, acquisition time and driver PID bind the
+separately captured driver identity. It reserves the original PR
 lock and commits the released witness in the same transaction, so a successor
 cannot be replaced. Forge retries reserve the slot again. A temporary recovery
 label binds its exact recorded acquisition; only a confirmed-dead recovery

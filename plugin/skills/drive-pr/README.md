@@ -267,7 +267,9 @@ prove the driver and its observed and registered pass work gone, including a
 hand-armed drive with no launch wrapper. It records a no-cause stop before
 applying this recovery budget. Surviving, foreign, unreadable or incomplete
 evidence keeps recovery conservative: dispatch notifies once and includes the
-silent drive in the waiting list.
+silent drive in the waiting list. Sampling discards confirmed-dead process
+identities and empty groups, while unreadable or timezone-shifted creation
+times continue to withhold recovery.
 
 When someone else removes the CI hold label, the
 drive accepts only checks that started strictly after that removal; GitHub

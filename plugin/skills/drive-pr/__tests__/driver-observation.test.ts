@@ -86,6 +86,41 @@ describe("durable driver observations", () => {
     expect(await f.gone([row({ stat: "Z" })])).toBe(true);
   });
 
+  it("accepts an acquisition-bound lock with an omitted Windows creation time", async () => {
+    const f = fixture();
+    putLock(f.state, "pr-drive-999", {
+      token: f.value.nonce,
+      pid: f.driver.pid,
+      host: f.driver.host,
+      start: "",
+      diag: { pr: "999", worktree: f.root, log: "", started: f.started },
+    });
+    expect(await f.gone()).toBe(true);
+    expect(
+      await f.gone([row({ pid: f.driver.pid, start: f.driver.start })]),
+    ).toBe(false);
+    f.value.driver.start = "another-driver-start";
+    f.publish();
+    putLock(f.state, "pr-drive-999", {
+      token: f.value.nonce,
+      pid: f.driver.pid,
+      start: "original-driver-start",
+      diag: { pr: "999", worktree: f.root, log: "", started: f.started },
+    });
+    expect(await f.gone()).toBe(false);
+  });
+
+  it("withholds recovery for a retained helper read in another timezone", async () => {
+    const f = fixture();
+    f.value.targets = [row({ start: "Sat Nov 7 12:00:00 2026" })];
+    f.publish();
+    expect(
+      await f.gone([
+        row({ ppid: 1, pgid: 900003, start: "Sat Nov 7 13:00:00 2026" }),
+      ]),
+    ).toBe(false);
+  });
+
   it("keeps separate paths for successive acquisitions", () => {
     const f = fixture();
     const next = observationPath(f.state, "999", `${f.started}-successor`);

@@ -691,6 +691,8 @@ outlives the session that spawned it, so its console is not where you look:
   acquisition-bound process observations before spawning. After an abrupt
   local stop, dispatch or doctor can reconcile the ledger when those
   observations prove the driver and its observed and registered work gone.
+  Sampling retires only confirmed-dead identities and empty process groups;
+  timezone-shifted or unreadable creation times retain their evidence.
   Recovery reserves the PR slot and leaves its temporary session leases free.
   Missing, foreign, surviving or uncertain evidence leaves the ledger running;
   dispatch notifies once and includes it in the waiting list. See
