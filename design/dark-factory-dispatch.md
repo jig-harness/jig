@@ -65,11 +65,13 @@ depend on each other are read side by side: the tracker beside the forge,
 then every host's launch claims beside the runtime. In the **act phase**,
 under the machine's one **act lock**, the tick reads this machine's launch
 records again and gives each repository a **turn** in rotated order, one
-after another: its plan, its outcome rows, its launches and its labels. A
-turn's launches change what the next turn may admit (an account's slots,
-the tick's allowance of workspace opens, the account whose turn is next),
-so acts never overlap, and the order is the one the tick would take with
-no observe phase in front of it. Last, the tick closes: it settles what the
+after another: its plan and its outcome rows. The turns queue the launches
+and the labels; once every repository has had its turn, the launches run
+across all of them, one launch group at a time, and then each repository's
+finish step writes its labels. A launch changes what the next may admit (an
+account's slots, the tick's allowance of workspace opens, the account whose
+turn is next), so acts never overlap, and the admission order is the one the
+tick would take with no observe phase in front of it. Last, the tick closes: it settles what the
 repositories it did not read still owe, copies the outcome log, writes the
 dashboard's line and writes its receipt. Each phase lives in its own module
 under `plugin/dispatch/lib/`.
@@ -100,13 +102,12 @@ flowchart TD
     direction TB
     P[plan: wanted minus running, nudges,<br/>hold-back, idle clocks]
     G[log: outcome rows for launch records that ended]
-    X[apply: end own claims, then the rearm, pickup and<br/>follow-up stages in rotated order, then steer and notify]
-    LB[labels: the state labels, owner only]
-    P --> G --> X --> LB
+    P --> G
   end
   LOOP --> act
   act --> LOOP
-  LOOP -->|all launches and closes done: give up the observe locks| CL[close: log rows for repositories not read, prune records]
+  LOOP -->|every repository planned| X[apply across all repositories, one launch group at a time:<br/>end own claims, then the rearm, pickup and follow-up stages,<br/>then each repository's finish: steer, notify, state labels]
+  X -->|all launches and closes done: give up the observe locks| CL[close: log rows for repositories not read, prune records]
   CL --> E[copy the outcome log to month files, write the line,<br/>write the receipt, prune receipts, release the act lock]
 ```
 
@@ -158,6 +159,10 @@ reading holds its slot and is seen as running by the plan. The deadline a
 launch is checked against (`outOfTime`) counts from the start of the
 invocation, not of the act phase: the launcher's own clock has been running
 since then, through the observe phase and any wait for the act lock. Every target is read once more just before its launch, as before.
+A tick that had to wait for the act lock may have read its serialized groups
+before the tick it waited for launched into them, one of an earlier version
+that takes no observe lock; it starts no re-arm in a group that tick, and the
+next tick reads the group afresh.
 
 **The budget gate.** The forge's budget is read once per tick, as the
 observe phase starts, beside its first reads. While less than a tenth of

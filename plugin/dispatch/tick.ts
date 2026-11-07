@@ -241,11 +241,16 @@ async function observeAll(
 }
 
 /** The act lock, waited for within `waitMs`; who holds it when the wait ran out. */
-async function waitForActLock(waitMs: number): Promise<Lock> {
+async function waitForActLock(
+  waitMs: number,
+  context: TickContext,
+): Promise<Lock> {
   const deadline = Date.now() + waitMs;
   for (;;) {
     const lock = takeTickLock();
     if (!("heldBy" in lock) || Date.now() >= deadline) return lock;
+    // Another tick acts meanwhile, one of an earlier version perhaps, which takes no observe lock.
+    context.actWaited = true;
     await Bun.sleep(ACT_LOCK_POLL_MS);
   }
 }
@@ -464,7 +469,10 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     )
       return { held: [...observe.busy.values()].join("; ") };
     const act = await timer.time("wait", () =>
-      waitForActLock(options.actLockWaitMs ?? ACT_LOCK_WAIT_MS),
+      waitForActLock(
+        options.actLockWaitMs ?? ACT_LOCK_WAIT_MS,
+        started.context,
+      ),
     );
     if ("heldBy" in act) return { held: act.heldBy };
     try {

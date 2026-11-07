@@ -45,6 +45,8 @@ export interface TickContext {
   reflections: RepoReflection[];
   /** The repositories whose launches wait for every repository to be gathered, to be applied in turns. */
   pending: PendingRepository[];
+  /** The act lock was held when the tick first asked: what serialization read may predate that tick's launches. */
+  actWaited?: boolean;
   /** What the tick reads once and shares between its repositories' observe phases. */
   reads: TickReads;
 }
