@@ -7,6 +7,9 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import { errnoCode, swallow } from "./errors.ts";
 
+/** Stable child-process diagnostic code for incomplete forge accounting. */
+export const FORGE_ACCOUNTING_UNAVAILABLE = "jig-forge-accounting-unavailable";
+
 type Attributes = Record<string, string | number | boolean | null | undefined>;
 interface Context {
   traceId: string;
@@ -202,6 +205,17 @@ function traceGhCall<
   envDeadline: number,
   run: (argv: string[], options: O) => Promise<T>,
 ): Promise<T> {
+  // A parent reader counts nested forge calls at dispatch, including timed-out reads.
+  if (process.env.JIG_FORGE_CALL_COUNT_FILE) {
+    try {
+      appendFileSync(process.env.JIG_FORGE_CALL_COUNT_FILE, "1");
+    } catch (err) {
+      swallow(err, "forge call accounting must not prevent dispatch");
+      console.error(
+        `${FORGE_ACCOUNTING_UNAVAILABLE}: forge call accounting unavailable`,
+      );
+    }
+  }
   const deadline =
     opts.timeoutSec === undefined
       ? envDeadline
@@ -213,14 +227,22 @@ function traceGhCall<
 
 /** Adapt a process runner once, preserving its options and complete result type. */
 export function traceRunner<
-  T extends { code: number; timedOut: boolean },
-  O extends { timeoutSec?: number },
+  T extends { code: number; timedOut: boolean; stderr?: string },
+  O extends { timeoutSec?: number; stderr?: "pipe" | "inherit" | "ignore" },
 >(
   fn: (argv: string[], opts: O) => Promise<T>,
   defaults: O,
 ): (argv: string[], opts?: O) => Promise<T> {
   return (argv, opts = defaults) =>
-    traceCommand("run", argv[0] ?? "", opts.timeoutSec, () => fn(argv, opts));
+    traceCommand("run", argv[0] ?? "", opts.timeoutSec, async () => {
+      const result = await fn(argv, opts);
+      if (
+        process.env.JIG_FORGE_CALL_COUNT_FILE &&
+        result.stderr?.includes(FORGE_ACCOUNTING_UNAVAILABLE)
+      )
+        console.error(FORGE_ACCOUNTING_UNAVAILABLE);
+      return result;
+    });
 }
 
 /** Adapt the gh boundary without copying its deadline or span bookkeeping. */
