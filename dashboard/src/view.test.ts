@@ -114,6 +114,27 @@ describe("a session's fact", () => {
     );
   });
 
+  it("says a pending launch no tick launches again needs a person, with why and how to release it", () => {
+    const change: Partial<LineSession> = {
+      launch: "pending",
+      stuck: "none of its 2 launches was answered as started (lost, lost)",
+    };
+    const view = slotView({ ...SESSION, ...change }, CLOCK, LINE);
+    expect(view.kind).toBe("stuck");
+    expect(isStuck(view.kind)).toBe(true);
+    expect(view.role).toBe(ROLES.needs);
+    expect(view.fact).toBe(
+      "launch record stuck pending, 1 h 17 min, needs a person",
+    );
+    const evidence = evidenceOf(change);
+    expect(evidence.why).toContain("(lost, lost)");
+    const release = view.evidence.find((row) => row.k === "to release");
+    expect(release?.copy).toBe(`jig dispatch clear ${SESSION.record}`);
+    expect(
+      sessionKind({ ...SESSION, launch: "pending", stuck: null }, NOW),
+    ).toBe("pending");
+  });
+
   it("states a wait past its wall's reset, with the nudge when one was sent", () => {
     const waiting = {
       agent: { state: "waiting", since: iso(15, 22) },
