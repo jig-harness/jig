@@ -387,6 +387,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.157.1] - 2026-11-07
+
+### Fixed
+
+- A dead drive whose worktree was removed can be taken over from the remote head. The doctor reports `DEAD` for a missing tree; existing trees that cannot be inspected still refuse takeover.
+
 ## [0.157.0] - 2026-11-07
 
 ### Added
@@ -5710,7 +5716,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.157.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.157.1...HEAD
+[0.157.1]: https://github.com/jig-harness/jig/compare/v0.157.0...v0.157.1
 [0.157.0]: https://github.com/jig-harness/jig/compare/v0.156.4...v0.157.0
 [0.156.4]: https://github.com/jig-harness/jig/compare/v0.156.3...v0.156.4
 [0.156.3]: https://github.com/jig-harness/jig/compare/v0.156.2...v0.156.3
