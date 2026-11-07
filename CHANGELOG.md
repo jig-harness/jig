@@ -387,6 +387,25 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.156.0] - 2026-11-07
+
+### Added
+
+- The dispatcher's machine file accepts `opens_per_tick` (default `4`) to
+  fill more free account slots in one tick while keeping an open for notices.
+  Its deadline covers the configured workspace opens and refuses limits
+  beyond the timer's range.
+
+### Fixed
+
+- Drive launches and pickup/follow-up launches take turns leading across
+  repositories, so a backlog of old merges cannot keep new drives waiting
+  behind follow-ups for more than one tick when capacity is available.
+  Waiting launches say whether the accounts or the per-tick open budget
+  holds them, in both the receipt and the dashboard's queue.
+- Notifications wait for a later tick when their complete workspace read
+  or delivery cannot finish while preserving time to write the tick's receipt.
+
 ## [0.155.0] - 2026-11-07
 
 ### Added
@@ -5595,7 +5614,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.155.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.0...HEAD
+[0.156.0]: https://github.com/jig-harness/jig/compare/v0.155.0...v0.156.0
 [0.155.0]: https://github.com/jig-harness/jig/compare/v0.154.0...v0.155.0
 [0.154.0]: https://github.com/jig-harness/jig/compare/v0.153.0...v0.154.0
 [0.153.0]: https://github.com/jig-harness/jig/compare/v0.152.0...v0.153.0
