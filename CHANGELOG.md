@@ -387,6 +387,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.158.1] - 2026-11-07
+
+### Fixed
+
+- `jig dispatch` no longer leaves a launch the session runtime answered as started, but whose wrapper never claimed its launch record, holding its stage and an account slot with no notice. Once the machine file's new `unclaimed_after` (default `15m`) has passed since that answer, the record is reported as stuck: notified to a person as needing them (cause `needs-person`, once, then on `dispatch.renotify_after`), shown on the dashboard as needing a person, and released with `jig dispatch clear <record>`. A record claimed within `unclaimed_after` is never flagged. When the runtime reports a session joined to the record's target, the notice says so, since that wrapper may have started its stage without claiming the record; the slot is never freed automatically.
+
 ## [0.158.0] - 2026-11-07
 
 ### Added
@@ -5740,7 +5746,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.158.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.158.1...HEAD
+[0.158.1]: https://github.com/jig-harness/jig/compare/v0.158.0...v0.158.1
 [0.158.0]: https://github.com/jig-harness/jig/compare/v0.157.1...v0.158.0
 [0.157.1]: https://github.com/jig-harness/jig/compare/v0.157.0...v0.157.1
 [0.157.0]: https://github.com/jig-harness/jig/compare/v0.156.4...v0.157.0
