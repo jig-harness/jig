@@ -914,10 +914,11 @@ export interface InspectedRow {
 export async function inspectRow(
   id: string,
   root = stateRoot(),
+  timeoutSec = 5,
 ): Promise<InspectedRow | null> {
   const row = launchRow(id, root);
   if (row === null) return null;
-  const rows = await processTable();
+  const rows = await processTable(timeoutSec);
   return {
     record: recordOf(row, root),
     state: stateOf(row, rows, thisHost()),

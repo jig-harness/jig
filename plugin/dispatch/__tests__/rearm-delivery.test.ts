@@ -93,3 +93,24 @@ return { waits: report.launches.map(r => r.detail.includes("timer allows")), con
 `),
   ).toEqual({ waits: [true], consumed: false });
 });
+
+it("keeps acknowledgment pending while time remains but cannot fit the forge settlement", async () => {
+  expect(
+    await probe(`
+const { applyDrives } = await import(${JSON.stringify(resolve(import.meta.dir, "../lib/actions/drive.ts"))});
+const { enforcedDeadlineMs } = await import(${JSON.stringify(resolve(import.meta.dir, "../lib/actions/launch.ts"))});
+const { writeRecord, readRecord } = await import(${JSON.stringify(resolve(import.meta.dir, "../lib/launches.ts"))});
+writeRecord(record, ctx.root);
+const machine = { intervalMs: 300000, runtimeTimeoutMs: 1000, workspaceTimeoutMs: 1000 };
+const state = {
+  machine,
+  startedAt: Date.now() - (enforcedDeadlineMs(machine) - machine.runtimeTimeoutMs - 500),
+  records: [{ record, state: { kind: "ended", exit: { at, code: 1, signal: null }, process: null }, result: null }],
+  root: ctx.root,
+};
+const report = { actions: [], launches: [] };
+await applyDrives(state, { slug: ctx.slug }, report, {}, {});
+return { waits: report.launches.map(r => r.detail.includes("receipt")), consumed: readRecord(record.id, ctx.root)?.rearmConsumed === true };
+`),
+  ).toEqual({ waits: [true], consumed: false });
+});

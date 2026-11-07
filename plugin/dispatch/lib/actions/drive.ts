@@ -69,6 +69,7 @@ import {
   openedFor,
   openWithinBudget,
   outOfTime,
+  timeLeftMs,
   replay,
   replayable,
   rotated,
@@ -90,7 +91,9 @@ async function consumeRequest(
   record: LaunchRecord,
   result: LaunchOutcome,
 ): Promise<void> {
-  const consumed = await consumeRearm(record, state.root);
+  const consumed = await consumeRearm(record, state.root, undefined, () =>
+    timeLeftMs(state),
+  );
   if (!consumed.ok)
     result.detail += `; rearm request was carried out but its label could not be removed: ${consumed.failure.reason}; this launch record prevents another launch until its removal is acknowledged`;
 }
@@ -488,7 +491,9 @@ async function retryRequests(
       report.launches.push(result);
       continue;
     }
-    const consumed = await consumeRearm(record, state.root);
+    const consumed = await consumeRearm(record, state.root, undefined, () =>
+      timeLeftMs(state),
+    );
     if (!consumed.ok) {
       result.detail += `: ${consumed.failure.reason}`;
       report.launches.push(result);
