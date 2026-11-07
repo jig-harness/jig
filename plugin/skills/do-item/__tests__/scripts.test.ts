@@ -628,6 +628,7 @@ const issueJson = (over: Record<string, string> = {}) => {
     updatedAt: '"2026-09-28T11:12:15.915Z"',
     state: '{"name":"In Progress","type":"started"}',
     labels: labels(),
+    priority: "0",
     parent: "null",
     children: '{"pageInfo":{"hasNextPage":false},"nodes":[]}',
     assignee: "null",
