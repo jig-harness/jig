@@ -34,7 +34,6 @@ import {
   lockHeld,
   plantClaim,
   pollUntil,
-  runDriveIn,
   awaitFixtureMarker,
   simulateTakeover,
 } from "./drive-loop-harness.ts";
@@ -61,19 +60,17 @@ describe("drive.ts loop control", () => {
     it("refuses when a LIVE driver holds the clone-wide PR lock from another worktree", async () => {
       // Separate worktrees never cross-ship edits, but they race pushes to one
       // head branch and share the clone-wide durable state.
-      const { dir, stateDir } = tree.fixture({ threads: [] });
-      const { pr, worktree } = lockDirs(dir, stateDir, tree.lock);
+      const { dir, stateDir, pr, worktree } = tree.fixture({ threads: [] });
       plantClaim(pr, {
         pid: process.pid,
         host: hostname(),
         nonce: "prlock001",
       });
 
-      const { stderr, exitCode } = await runDriveIn(
+      const { stderr, exitCode } = await tree.run(
         dir,
         stateDir,
         ["--no-head-sync", "--", ...PASS_LOUD],
-        tree.dir,
         {
           env: {
             // Nobody holds the worktree lock, so it is taken and only the PR
@@ -143,51 +140,44 @@ describe("drive.ts loop control", () => {
       );
     }
 
-    it("stops the RUNNING pass when the lock is recovered mid-pass", async () => {
-      // The loop reads `compromised` only at a round boundary, and a pass
-      // already running does not pause at one — so a takeover detected mid-pass
-      // let it go on editing, committing and pushing under a claim another
-      // driver held.
-      const { dir, stateDir } = tree.fixture({
-        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-      });
-      const { worktree } = lockDirs(dir, stateDir, tree.lock);
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          ...passWithLateGrandchild(dir),
-        ),
-        {
-          cwd: tree.dir,
-          env: {
-            ...gitCleanEnv(),
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
-      const startedAt = await awaitPassStart(dir);
+    async function capturePassTree(dir: string) {
       const native =
         byPlatform(
           "native Windows teardown requires creation-bound descendant witnesses",
           { windows: "true", posix: "false" },
         ) === "true";
-      const captured = native
-        ? await captureProcessTree(
-            Number(readFileSync(join(dir, "pass-started"), "utf8")),
-          )
-        : null;
-      if (native) expect(captured).not.toBeNull();
+      if (!native) return null;
+      const captured = await captureProcessTree(
+        Number(readFileSync(join(dir, "pass-started"), "utf8")),
+      );
+      expect(captured).not.toBeNull();
+      return captured;
+    }
+
+    it("stops the RUNNING pass when the lock is recovered mid-pass", async () => {
+      // The loop reads `compromised` only at a round boundary, and a pass
+      // already running does not pause at one — so a takeover detected mid-pass
+      // let it go on editing, committing and pushing under a claim another
+      // driver held.
+      const { dir, stateDir, worktree } = tree.fixture({
+        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+      });
+      const proc = tree.spawn(
+        dir,
+        stateDir,
+        [
+          "--no-head-sync",
+          "--max-rounds",
+          "1",
+          "--",
+          ...passWithLateGrandchild(dir),
+        ],
+        {
+          DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
+        },
+      );
+      const startedAt = await awaitPassStart(dir);
+      const captured = await capturePassTree(dir);
       // A successor recovering this lock is indistinguishable, from here, from
       // the generation simply no longer being ours — which is exactly what the
       // heartbeat checks.
@@ -212,47 +202,26 @@ describe("drive.ts loop control", () => {
       // Rotation is the current owner's alone: a driver whose lock was
       // recovered keeps writing its shutdown lines, and renaming the file
       // then would race the successor's own rotation and lose history.
-      const { dir, stateDir } = tree.fixture({
+      const { dir, stateDir, worktree } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       const logPath = join(stateDir, "drive-pr-999.log");
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
+      const proc = tree.spawn(
+        dir,
+        stateDir,
+        [
           "--no-head-sync",
           "--max-rounds",
           "1",
           "--",
           ...passWithLateGrandchild(dir),
-        ),
+        ],
         {
-          cwd: tree.dir,
-          env: {
-            ...gitCleanEnv(),
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
+          DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
         },
       );
       const startedAt = await awaitPassStart(dir);
-      const native =
-        byPlatform(
-          "native Windows teardown requires creation-bound descendant witnesses",
-          { windows: "true", posix: "false" },
-        ) === "true";
-      const captured = native
-        ? await captureProcessTree(
-            Number(readFileSync(join(dir, "pass-started"), "utf8")),
-          )
-        : null;
-      if (native) expect(captured).not.toBeNull();
+      const captured = await capturePassTree(dir);
       // Full, so the next line the old driver writes would rotate the file.
       // Filled BEFORE the takeover is published: once it is, the driver's
       // heartbeat may notice and write its shutdown lines at any moment, and
@@ -291,10 +260,10 @@ describe("drive.ts loop control", () => {
       const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      lockDirs(dir, stateDir, tree.lock);
       // Same reasoning as the test below: the spawned child's own
       // `process.cwd()` is what `belongsToWorktree` compares against, and it
       // does no symlink resolution of its own.
+      // Match the spawned process’s cwd, including platforms where /tmp is a symlink.
       const cwdDir = realpathSync(tree.dir);
       const claudeProjectsDir = join(dir, "claude-projects");
       const projDir = join(claudeProjectsDir, "proj");
@@ -359,10 +328,10 @@ describe("drive.ts loop control", () => {
 
       // A pass that fails without writing any transcript of its own. The only
       // wall on disk is the pre-existing one.
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
+      const proc = tree.spawn(
+        dir,
+        stateDir,
+        [
           "--no-head-sync",
           "--max-rounds",
           "2",
@@ -371,21 +340,12 @@ describe("drive.ts loop control", () => {
           "-e",
           "process.exit(1)",
           "--pr-999",
-        ),
+        ],
         {
-          cwd: tree.dir,
-          env: {
-            ...gitCleanEnv(),
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-            DRIVE_PR_CLAUDE_PROJECTS_DIR: claudeProjectsDir,
-          },
-          stdout: "ignore",
-          stderr: "pipe",
+          DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
+          DRIVE_PR_CLAUDE_PROJECTS_DIR: claudeProjectsDir,
         },
+        "ignore",
       );
       const [stderr, exitCode] = await Promise.all([
         new Response(proc.stderr).text(),
@@ -417,7 +377,6 @@ describe("drive.ts loop control", () => {
       const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      lockDirs(dir, stateDir, tree.lock);
       const claudeProjectsDir = join(dir, "claude-projects");
       mkdirSync(join(claudeProjectsDir, "proj"), { recursive: true });
 
@@ -456,32 +415,16 @@ describe("drive.ts loop control", () => {
         ].join("\n"),
       );
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "2",
-          "--",
-          stubPath,
-          "--pr-999",
-        ),
+      const proc = tree.spawn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--max-rounds", "2", "--", stubPath, "--pr-999"],
         {
-          cwd: tree.dir,
-          env: {
-            ...gitCleanEnv(),
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-            DRIVE_PR_CLAUDE_PROJECTS_DIR: claudeProjectsDir,
-            DRIVE_PR_TEST_PROJ_DIR: join(claudeProjectsDir, "proj"),
-          },
-          stdout: "ignore",
-          stderr: "pipe",
+          DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
+          DRIVE_PR_CLAUDE_PROJECTS_DIR: claudeProjectsDir,
+          DRIVE_PR_TEST_PROJ_DIR: join(claudeProjectsDir, "proj"),
         },
+        "ignore",
       );
       const [stderr, exitCode] = await Promise.all([
         new Response(proc.stderr).text(),
@@ -523,11 +466,10 @@ describe("drive.ts loop control", () => {
       // loop into its sleep-and-resume branch; a takeover fired once that
       // sleep has visibly started must end the drive almost immediately
       // instead of after the full wait.
-      const { dir, stateDir } = tree.fixture({
+      const { dir, stateDir, worktree } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
       const mailboxDir = join(dir, "mailbox");
-      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       // The spawn below stands in `tree.dir`, whose worktree lock
       // (`tree.lock`) is what `lockDirs`/`simulateTakeover` address.
       // Realpath'd so the `cwd` this test writes into the transcript
@@ -536,90 +478,10 @@ describe("drive.ts loop control", () => {
       // prefix/equality test with no symlink resolution of its own, and a
       // bare tmp dir can differ from its realpath (e.g. macOS's `/tmp` →
       // `/private/tmp`).
-      const cwdDir = realpathSync(tree.dir);
-      const claudeProjectsDir = join(dir, "claude-projects");
-      const passDonePath = join(dir, "quota-pass-done");
-      // A standalone helper FILE, not an inline `sh -c`/`bun -e` one-liner:
-      // the transcript record embeds a real apostrophe and a middle-dot
-      // separator, and nesting those inside a shell-quoted argument is
-      // exactly the multi-layer-quoting hazard — a file has no delimiter to
-      // collide with.
-      const helperPath = join(dir, "write-quota-transcript.mjs");
-      writeFileSync(
-        helperPath,
-        [
-          "import { mkdirSync, writeFileSync } from 'node:fs';",
-          "import { join } from 'node:path';",
-          "const [, , projDir, cwdArg, doneMarker] = process.argv;",
-          "mkdirSync(projDir, { recursive: true });",
-          "const now = new Date();",
-          // Comfortably beyond any realistic spawn/poll overhead, but small
-          // enough that a REGRESSION (the sleep not interrupted) fails via
-          // this test's own timeout rather than a multi-minute hang.
-          "const target = new Date(now.getTime() + 20_000);",
-          "const h = target.getUTCHours();",
-          "const m = target.getUTCMinutes();",
-          "const h12 = h % 12 === 0 ? 12 : h % 12;",
-          "const ampm = h < 12 ? 'am' : 'pm';",
-          "const resetClause = `resets ${h12}:${String(m).padStart(2, '0')}${ampm} (UTC)`;",
-          "const record = {",
-          "  type: 'assistant',",
-          "  cwd: cwdArg,",
-          "  timestamp: now.toISOString(),",
-          "  error: 'rate_limit',",
-          "  isApiErrorMessage: true,",
-          "  apiErrorStatus: 429,",
-          "  message: {",
-          "    content: [",
-          "      { type: 'text', text: `You've hit your session limit \\u00b7 ${resetClause}` },",
-          "    ],",
-          "  },",
-          "};",
-          "writeFileSync(join(projDir, 'session.jsonl'), `${JSON.stringify(record)}\\n`);",
-          "writeFileSync(doneMarker, String(Date.now()));",
-          "process.exit(1);",
-        ].join("\n"),
-      );
-
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          // >1: round 1 hitting the wall must still have a FURTHER round
-          // to sleep for — at `round >= maxRoundsN` the loop short-circuits
-          // straight to the non-convergence report instead of sleeping at
-          // all, which is a different branch than the one this test means
-          // to exercise.
-          "--max-rounds",
-          "2",
-          "--",
-          "bun",
-          helperPath,
-          join(claudeProjectsDir, "proj"),
-          cwdDir,
-          passDonePath,
-          // Satisfies the mis-targeting guard: the pass argv must itself
-          // name the PR the driver was given, or drive.ts refuses to run
-          // it at all.
-          "--pr-999",
-        ),
-        {
-          cwd: tree.dir,
-          env: {
-            ...gitCleanEnv(),
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-            DRIVE_PR_CLAUDE_PROJECTS_DIR: claudeProjectsDir,
-            DRIVE_PR_MAILBOX_DIR: mailboxDir,
-          },
-          stdout: "ignore",
-          stderr: "pipe",
-        },
-      );
+      const { proc, passDonePath } = spawnQuotaPass(dir, stateDir, 2, {
+        DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
+        DRIVE_PR_MAILBOX_DIR: mailboxDir,
+      });
 
       try {
         await awaitFixtureMarker(passDonePath);
@@ -696,88 +558,20 @@ describe("drive.ts loop control", () => {
       allStderr: string;
       stateDir: string;
     }> {
-      const { dir, stateDir } = tree.fixture({
+      const { dir, stateDir, worktree } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir, tree.lock);
-      const cwdDir = realpathSync(tree.dir);
-      const claudeProjectsDir = join(dir, "claude-projects");
-      const passDonePath = join(dir, "quota-pass-done");
-      const helperPath = join(dir, "write-quota-transcript.mjs");
-      writeFileSync(
-        helperPath,
-        [
-          "import { mkdirSync, writeFileSync } from 'node:fs';",
-          "import { join } from 'node:path';",
-          "const [, , projDir, cwdArg, doneMarker] = process.argv;",
-          "mkdirSync(projDir, { recursive: true });",
-          "const now = new Date();",
-          // 90s, not the sibling fixtures' 20s: the transcript's reset
-          // clause is minute-granular (seconds are dropped), so the
-          // reparsed `plan.ms` can be up to 59s SHORTER than the nominal
-          // offset depending on which second within the minute `now` lands
-          // on. A 20s nominal offset can therefore reparse to
-          // approximately zero, which made an earlier version of this
-          // fixture unable to distinguish the fixed and unfixed code (both
-          // exited near-instantly regardless). 90s keeps the worst-case
-          // reparsed `plan.ms` comfortably above 10s even under maximum
-          // truncation loss, which is what this test's elapsedMs bound
-          // below relies on.
-          "const target = new Date(now.getTime() + 90_000);",
-          "const h = target.getUTCHours();",
-          "const m = target.getUTCMinutes();",
-          "const h12 = h % 12 === 0 ? 12 : h % 12;",
-          "const ampm = h < 12 ? 'am' : 'pm';",
-          "const resetClause = `resets ${h12}:${String(m).padStart(2, '0')}${ampm} (UTC)`;",
-          "const record = {",
-          "  type: 'assistant',",
-          "  cwd: cwdArg,",
-          "  timestamp: now.toISOString(),",
-          "  error: 'rate_limit',",
-          "  isApiErrorMessage: true,",
-          "  apiErrorStatus: 429,",
-          "  message: {",
-          "    content: [",
-          "      { type: 'text', text: `You've hit your session limit \\u00b7 ${resetClause}` },",
-          "    ],",
-          "  },",
-          "};",
-          "writeFileSync(join(projDir, 'session.jsonl'), `${JSON.stringify(record)}\\n`);",
-          "writeFileSync(doneMarker, String(Date.now()));",
-          "process.exit(1);",
-        ].join("\n"),
-      );
-
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "2",
-          "--",
-          "bun",
-          helperPath,
-          join(claudeProjectsDir, "proj"),
-          cwdDir,
-          passDonePath,
-          "--pr-999",
-        ),
+      const { proc, passDonePath } = spawnQuotaPass(
+        dir,
+        stateDir,
+        2,
         {
-          cwd: tree.dir,
-          env: {
-            ...gitCleanEnv(),
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-            DRIVE_PR_CLAUDE_PROJECTS_DIR: claudeProjectsDir,
-            DRIVE_PR_QUOTA_PARK_TEST_DELAY: "1",
-          },
-          stdout: "ignore",
-          stderr: "pipe",
+          DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
+          DRIVE_PR_QUOTA_PARK_TEST_DELAY: "1",
         },
+        // Reset text drops seconds. Ninety seconds keeps even the truncated
+        // sleep above this scenario’s ten-second bound.
+        90_000,
       );
 
       let takeoverAt = 0;
@@ -819,21 +613,15 @@ describe("drive.ts loop control", () => {
       }
     }
 
-    /**
-     * The SAME quota-wall fixture `attemptQuotaWallSleepInterrupt` builds,
-     * without racing a concurrent takeover against it — for a caller that
-     * wants to observe the driver's OWN write (`recordQuotaPark`) landing
-     * under ordinary circumstances, not under the artificial, sub-100ms-
-     * heartbeat interrupt race that sibling function exists to exercise.
-     */
-    async function attemptQuotaWallSleepStart(): Promise<{
-      passRan: boolean;
-      sleeping: boolean;
-      stateDir: string;
-    }> {
-      const { dir, stateDir } = tree.fixture({
-        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-      });
+    /** A pass that writes a rate-limit transcript, announces it and exits with failure. */
+    function spawnQuotaPass(
+      dir: string,
+      stateDir: string,
+      rounds: number,
+      env: Record<string, string> = {},
+      resetOffsetMs = 20_000,
+    ) {
+      // Match the spawned process’s cwd, including platforms where /tmp is a symlink.
       const cwdDir = realpathSync(tree.dir);
       const claudeProjectsDir = join(dir, "claude-projects");
       const passDonePath = join(dir, "quota-pass-done");
@@ -846,7 +634,7 @@ describe("drive.ts loop control", () => {
           "const [, , projDir, cwdArg, doneMarker] = process.argv;",
           "mkdirSync(projDir, { recursive: true });",
           "const now = new Date();",
-          "const target = new Date(now.getTime() + 20_000);",
+          `const target = new Date(now.getTime() + ${resetOffsetMs});`,
           "const h = target.getUTCHours();",
           "const m = target.getUTCMinutes();",
           "const h12 = h % 12 === 0 ? 12 : h % 12;",
@@ -871,13 +659,13 @@ describe("drive.ts loop control", () => {
         ].join("\n"),
       );
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
+      const proc = tree.spawn(
+        dir,
+        stateDir,
+        [
           "--no-head-sync",
           "--max-rounds",
-          "2",
+          String(rounds),
           "--",
           "bun",
           helperPath,
@@ -885,21 +673,29 @@ describe("drive.ts loop control", () => {
           cwdDir,
           passDonePath,
           "--pr-999",
-        ),
-        {
-          cwd: tree.dir,
-          env: {
-            ...gitCleanEnv(),
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            DRIVE_PR_CLAUDE_PROJECTS_DIR: claudeProjectsDir,
-          },
-          stdout: "ignore",
-          stderr: "pipe",
-        },
+        ],
+        { DRIVE_PR_CLAUDE_PROJECTS_DIR: claudeProjectsDir, ...env },
+        "ignore",
       );
+      return { proc, passDonePath };
+    }
+
+    /**
+     * The SAME quota-wall fixture `attemptQuotaWallSleepInterrupt` builds,
+     * without racing a concurrent takeover against it — for a caller that
+     * wants to observe the driver's OWN write (`recordQuotaPark`) landing
+     * under ordinary circumstances, not under the artificial, sub-100ms-
+     * heartbeat interrupt race that sibling function exists to exercise.
+     */
+    async function attemptQuotaWallSleepStart(): Promise<{
+      passRan: boolean;
+      sleeping: boolean;
+      stateDir: string;
+    }> {
+      const { dir, stateDir } = tree.fixture({
+        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+      });
+      const { proc, passDonePath } = spawnQuotaPass(dir, stateDir, 2, {});
 
       try {
         await awaitFixtureMarker(passDonePath);
@@ -956,72 +752,7 @@ describe("drive.ts loop control", () => {
       const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const cwdDir = realpathSync(tree.dir);
-      const claudeProjectsDir = join(dir, "claude-projects");
-      const passDonePath = join(dir, "quota-pass-done");
-      const helperPath = join(dir, "write-quota-transcript.mjs");
-      writeFileSync(
-        helperPath,
-        [
-          "import { mkdirSync, writeFileSync } from 'node:fs';",
-          "import { join } from 'node:path';",
-          "const [, , projDir, cwdArg, doneMarker] = process.argv;",
-          "mkdirSync(projDir, { recursive: true });",
-          "const now = new Date();",
-          "const target = new Date(now.getTime() + 20_000);",
-          "const h = target.getUTCHours();",
-          "const m = target.getUTCMinutes();",
-          "const h12 = h % 12 === 0 ? 12 : h % 12;",
-          "const ampm = h < 12 ? 'am' : 'pm';",
-          "const resetClause = `resets ${h12}:${String(m).padStart(2, '0')}${ampm} (UTC)`;",
-          "const record = {",
-          "  type: 'assistant',",
-          "  cwd: cwdArg,",
-          "  timestamp: now.toISOString(),",
-          "  error: 'rate_limit',",
-          "  isApiErrorMessage: true,",
-          "  apiErrorStatus: 429,",
-          "  message: {",
-          "    content: [",
-          "      { type: 'text', text: `You've hit your session limit \\u00b7 ${resetClause}` },",
-          "    ],",
-          "  },",
-          "};",
-          "writeFileSync(join(projDir, 'session.jsonl'), `${JSON.stringify(record)}\\n`);",
-          "writeFileSync(doneMarker, String(Date.now()));",
-          "process.exit(1);",
-        ].join("\n"),
-      );
-
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          "bun",
-          helperPath,
-          join(claudeProjectsDir, "proj"),
-          cwdDir,
-          passDonePath,
-          "--pr-999",
-        ),
-        {
-          cwd: tree.dir,
-          env: {
-            ...gitCleanEnv(),
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            DRIVE_PR_CLAUDE_PROJECTS_DIR: claudeProjectsDir,
-          },
-          stdout: "ignore",
-          stderr: "pipe",
-        },
-      );
+      const { proc, passDonePath } = spawnQuotaPass(dir, stateDir, 1, {});
 
       try {
         await awaitFixtureMarker(passDonePath);
@@ -1058,73 +789,9 @@ describe("drive.ts loop control", () => {
       const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const cwdDir = realpathSync(tree.dir);
-      const claudeProjectsDir = join(dir, "claude-projects");
-      const passDonePath = join(dir, "quota-pass-done");
-      const helperPath = join(dir, "write-quota-transcript.mjs");
-      writeFileSync(
-        helperPath,
-        [
-          "import { mkdirSync, writeFileSync } from 'node:fs';",
-          "import { join } from 'node:path';",
-          "const [, , projDir, cwdArg, doneMarker] = process.argv;",
-          "mkdirSync(projDir, { recursive: true });",
-          "const now = new Date();",
-          "const target = new Date(now.getTime() + 20_000);",
-          "const h = target.getUTCHours();",
-          "const m = target.getUTCMinutes();",
-          "const h12 = h % 12 === 0 ? 12 : h % 12;",
-          "const ampm = h < 12 ? 'am' : 'pm';",
-          "const resetClause = `resets ${h12}:${String(m).padStart(2, '0')}${ampm} (UTC)`;",
-          "const record = {",
-          "  type: 'assistant',",
-          "  cwd: cwdArg,",
-          "  timestamp: now.toISOString(),",
-          "  error: 'rate_limit',",
-          "  isApiErrorMessage: true,",
-          "  apiErrorStatus: 429,",
-          "  message: {",
-          "    content: [",
-          "      { type: 'text', text: `You've hit your session limit \\u00b7 ${resetClause}` },",
-          "    ],",
-          "  },",
-          "};",
-          "writeFileSync(join(projDir, 'session.jsonl'), `${JSON.stringify(record)}\\n`);",
-          "writeFileSync(doneMarker, String(Date.now()));",
-          "process.exit(1);",
-        ].join("\n"),
-      );
-
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          "bun",
-          helperPath,
-          join(claudeProjectsDir, "proj"),
-          cwdDir,
-          passDonePath,
-          "--pr-999",
-        ),
-        {
-          cwd: tree.dir,
-          env: {
-            ...gitCleanEnv(),
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            DRIVE_PR_CLAUDE_PROJECTS_DIR: claudeProjectsDir,
-            DRIVE_PR_PROGRESS_TEST_DELAY: "2",
-          },
-          stdout: "ignore",
-          stderr: "pipe",
-        },
-      );
+      const { proc, passDonePath } = spawnQuotaPass(dir, stateDir, 1, {
+        DRIVE_PR_PROGRESS_TEST_DELAY: "2",
+      });
 
       try {
         await awaitFixtureMarker(passDonePath);
@@ -1347,28 +1014,18 @@ describe("drive.ts loop control", () => {
           threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
         });
         const { worktree, pr } = lockDirs(dir, stateDir, tree.lock);
-        const proc = Bun.spawn(
-          scriptArgv(
-            join(SCRIPTS, "drive.ts"),
-            "999",
+        const proc = tree.spawn(
+          dir,
+          stateDir,
+          [
             "--no-head-sync",
             "--max-rounds",
             "1",
             "--",
             ...portablePassTree(dir),
-          ),
+          ],
           {
-            cwd: tree.dir,
-            env: {
-              ...gitCleanEnv(),
-              PATH: `${binDir}${delimiter}${process.env.PATH}`,
-              DRIVE_PR_FIXTURES: dir,
-              DRIVE_PR_STATE_DIR: stateDir,
-              DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-              DRIVE_PR_MAILBOX_DIR: join(dir, "mailbox"),
-            },
-            stdout: "pipe",
-            stderr: "pipe",
+            DRIVE_PR_MAILBOX_DIR: join(dir, "mailbox"),
           },
         );
         await awaitPassStart(dir);
@@ -1416,10 +1073,9 @@ describe("drive.ts loop control", () => {
       // write its marker four seconds later if only the timer stood behind it
       // — longer than the stop's two-second escalation grace, so a group
       // SIGKILL that does fire lands while it still sleeps.
-      const { dir, stateDir } = tree.fixture({
+      const { dir, stateDir, worktree } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       const mode = byPlatform(
         "POSIX proves escalation after a leader exits on TERM; native Windows proves captured descendant termination",
         { windows: "captured", posix: "leader-first" },
@@ -1432,28 +1088,12 @@ describe("drive.ts loop control", () => {
               "-c",
               `: pass for 999; sh -c 'trap "" TERM; sleep 4; : > ${JSON.stringify(join(dir, "pass-late"))}' & : > ${JSON.stringify(join(dir, "pass-started"))}; wait`,
             ];
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          ...command,
-        ),
+      const proc = tree.spawn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--max-rounds", "1", "--", ...command],
         {
-          cwd: tree.dir,
-          env: {
-            ...gitCleanEnv(),
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
+          DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
         },
       );
       const startedAt = await awaitPassStart(dir);
@@ -1481,10 +1121,9 @@ describe("drive.ts loop control", () => {
       // A repeated signal conservatively retains claims while the coordinator
       // still waits for every cancellation. A forced native exit cannot run
       // that coordinator and must likewise leave its claims behind.
-      const { dir, stateDir } = tree.fixture({
+      const { dir, stateDir, worktree, pr } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree, pr } = lockDirs(dir, stateDir, tree.lock);
       const mode = byPlatform(
         "native Windows forced termination has no signal handler; POSIX repeats the signal during graceful teardown",
         { windows: "forced", posix: "repeated" },
