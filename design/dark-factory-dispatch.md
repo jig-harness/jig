@@ -1545,6 +1545,16 @@ line is a view: a tick that cannot write it says so on its receipt and exits
 `1`, and what it launched stands. What no record holds stays off the page rather
 than being guessed.
 
+The line also carries **how the recent ticks ran** (`ticks`, the last 48,
+built from each receipt by `tick-health.ts`): each tick's length, its own
+phases (the close counted up to the line's write), each repository's phases,
+the forge budget it read, the repositories another tick held, the optional
+reads a low budget skipped and its defects. A tick that does not replace the
+line, because it read only some repositories, adds its entry and leaves the
+rest of the line and its receipt as they were. History opens with them, one
+row per tick with its slowest single phase named. The receipt counts no forge
+calls, so the strip shows none.
+
 The second is the log, read when the page asks, every minute and on focus:
 filtered by time, repository, stage, account, class and reason in SQL over the
 log table, in one read transaction. It counts each class over the filtered

@@ -154,9 +154,24 @@ describe("the line a tick leaves", () => {
     expect(line?.queue).toEqual([]);
     expect(line?.repos).toMatchObject([{ slug: SLUG, stages: ["rearm"] }]);
     expect(line?.recentTicksMs).toHaveLength(1);
+    expect(line?.ticks).toMatchObject([
+      {
+        runId: receipt.runId,
+        sweep: true,
+        exitStatus: 0,
+        busy: [],
+        lowBudget: null,
+        defects: 0,
+        repos: [{ repo: SLUG, defect: null }],
+      },
+    ]);
+    const [entry] = line?.ticks ?? [];
+    expect(Object.keys(entry?.phasesMs ?? {})).toContain("start");
+    expect(Object.keys(entry?.phasesMs ?? {})).toContain("close");
+    expect(Object.keys(entry?.repos[0]?.phasesMs ?? {})).toContain("forge");
   });
 
-  it("is left as it was by a tick for one repository out of the machine file's", async () => {
+  it("is left as it was by a tick for one repository out of the machine file's, which only adds itself to the recent ticks", async () => {
     const w = fixture();
     machineFile(w, [account(w, "a", "a@example.com")]);
     const first = await tick(w);
@@ -164,8 +179,19 @@ describe("the line a tick leaves", () => {
     // The forge knows no such repository, so the tick refuses it and ends 1.
     const r = await w.dispatch(["--repo", join(w.root, "another"), "--json"]);
     expectSpawnExit(r, 1);
-    expect((JSON.parse(r.stdout) as TickReceipt).runId).not.toBe(first.runId);
-    expect(storedLine(w)?.line.runId).toBe(first.runId);
+    const second = JSON.parse(r.stdout) as TickReceipt;
+    expect(second.runId).not.toBe(first.runId);
+    expect(second.lineFailed).toBeUndefined();
+    const stored = storedLine(w);
+    expect(stored?.line.runId).toBe(first.runId);
+    expect(stored?.receipt.runId).toBe(first.runId);
+    expect(stored?.line.recentTicksMs).toHaveLength(1);
+    expect(
+      stored?.line.ticks?.map((t) => ({ runId: t.runId, sweep: t.sweep })),
+    ).toEqual([
+      { runId: first.runId, sweep: true },
+      { runId: second.runId, sweep: false },
+    ]);
   });
 
   it("not written, leaves the launches standing and says so on the receipt, with exit 1", async () => {

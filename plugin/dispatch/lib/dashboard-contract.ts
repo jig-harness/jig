@@ -202,6 +202,40 @@ export interface LineRepo {
   notes: string[];
 }
 
+/** One repository's turn in a recent tick. */
+export interface LineTickRepo {
+  /** Its slug; its path when the forge could not say which repository it is. */
+  repo: string;
+  /** The milliseconds its phases took, added up: phases run beside each other count each. */
+  ms: number;
+  /** Milliseconds per phase of its turn (`open`, `tracker`, `forge`, …); empty for a turn that timed none. */
+  phasesMs: Record<string, number>;
+  /** The phase a defect stopped its turn in; `null` when none did. */
+  defect: string | null;
+}
+
+/** How one recent tick ran, as its receipt recorded it (`tick-health.ts`). */
+export interface LineTick {
+  runId: string;
+  startedAt: string;
+  /** From its start to the write of the line. */
+  tookMs: number;
+  exitStatus: number;
+  /** Whether it read every repository the machine file lists, rather than a wake-up's few. */
+  sweep: boolean;
+  /** Milliseconds per phase of the tick itself (`start`, `repos` or `observe`, `wait` and `act`, then `close` up to the line's write); empty for a receipt that timed none. */
+  phasesMs: Record<string, number>;
+  repos: LineTickRepo[];
+  /** The forge's rate budget, as the tick read it; `null` when it read none. */
+  budget: { remaining: number; limit: number } | null;
+  /** The paths of the repositories another tick held, which this one neither read nor acted on. */
+  busy: string[];
+  /** The optional reads it skipped because the forge's budget was low; `null` when it skipped none. */
+  lowBudget: string[] | null;
+  /** The defects it recorded: its own and its repositories'. */
+  defects: number;
+}
+
 /** The line as one tick found it. */
 export interface LineSnapshot {
   version: 1;
@@ -219,6 +253,8 @@ export interface LineSnapshot {
   longestTickMs: number;
   /** The recent ticks' durations, which each tick carries on to the next. */
   recentTicksMs?: number[];
+  /** How the recent ticks ran, the oldest first, this one last; a tick that does not replace the line still adds its entry. Absent from a line written before ticks were kept. */
+  ticks?: LineTick[];
   /** The plugin version the tick ran. */
   plugin: string | null;
   /** The host's IANA time zone, which a server on a copy of the database may not share. */

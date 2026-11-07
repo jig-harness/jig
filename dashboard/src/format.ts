@@ -147,6 +147,17 @@ export function lengthOf(ms: number): string {
   return span(ms / MINUTE_MS);
 }
 
+/** A short length as the tick strip says it: `20 ms`, `8.3 s`, `41 s`, `2 min 1 s`. */
+export function seconds(ms: number): string {
+  const whole = Math.max(0, Math.round(ms));
+  if (whole < 1_000) return `${whole} ms`;
+  if (whole < 9_950) return `${(whole / 1_000).toFixed(1)} s`;
+  const secs = Math.round(whole / 1_000);
+  if (secs < 60) return `${secs} s`;
+  const rest = secs % 60;
+  return `${Math.floor(secs / 60)} min${rest > 0 ? ` ${rest} s` : ""}`;
+}
+
 /** `1 session`, `3 sessions`. */
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
