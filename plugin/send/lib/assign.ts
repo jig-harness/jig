@@ -28,7 +28,20 @@ import { readDefaultConfig } from "../../ask/lib/forge.ts";
 import { formatAddress } from "../../shared/address.ts";
 import { within } from "../../ask/lib/reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
-import { type Planned, refused, writerLogin } from "./plan.ts";
+import {
+  NEXT_TICK,
+  type Planned,
+  refused,
+  type TickReader,
+  writerLogin,
+} from "./plan.ts";
+
+/** The tick reading an assignment, under the pickup stage. */
+const TICK: TickReader = {
+  stage: "pickup",
+  reader: (tick) =>
+    `${tick} where its dispatch file enables the pickup stage, which starts the pick-up once it finds that the person who made the assignment can write to the repository`,
+};
 
 /** What the tick reads from the repository's default branch: its tracker, factory identity and dispatch states. */
 async function tickSettings(
@@ -130,8 +143,8 @@ export async function planAssign(
         : `, and moved from ${issue.state.name} to ${tracker.stateName(move)}, a dispatch state`
     }`,
     where: issue.url ?? key,
-    reader:
-      "the dispatcher's next tick where its dispatch file enables the pickup stage, which starts the pick-up once it finds that the person who made the assignment can write to the repository",
+    reader: TICK.reader(NEXT_TICK),
+    tick: TICK,
     undo: `assign ${key} to nobody on the tracker before the tick starts the pick-up`,
     notice: null,
     write: async () => {

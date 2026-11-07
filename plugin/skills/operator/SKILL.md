@@ -283,7 +283,9 @@ elsewhere `send` refuses and names that host.
 A real send prints `sent` (the link to what it wrote, or the mailbox's
 path) and `next` (the reader that acts on it). Report both, and say that
 the effect comes at that reader's next run, not at once: the dispatcher's
-next tick for a label or an assignment, the re-arm for an answer, the
+tick for a label or an assignment (the send woke it, now or within a
+minute, when `next` says so; otherwise its next tick), the re-arm for an
+answer, the
 driver's next round boundary (before its next push, for `hold-push`) for a
 directive. That link shows the request landed; do not run `jig ask` right
 after it to check, since the forge can take a moment to list a new

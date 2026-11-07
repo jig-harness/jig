@@ -274,6 +274,13 @@ const DISPATCHER: RecordKind[] = [
   ),
   plain(
     "machine",
+    "dispatch-wake",
+    "shared/wake.ts",
+    `${DISPATCH_DIR}wake/<digest>/pending/<request>, waiter, started, last-run.log`,
+    0,
+  ),
+  plain(
+    "machine",
     "dispatch-outcome-log",
     "dispatch/lib/log-export.ts",
     `${DISPATCH_DIR}log-<year>-<month>.jsonl`,
