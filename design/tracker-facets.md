@@ -57,7 +57,7 @@ team that keeps labels has made a legitimate choice, and on GitHub the
 organization's fields are the default for a repository that does not keep
 the facet in labels already.
 
-Its plan item is not in [plan.md](plan.md) yet. It changes `do-item`'s
+Its plan item is item 41 in [plan.md](plan.md). It changes `do-item`'s
 tracker interface ([`port.ts`](../plugin/skills/do-item/scripts/lib/tracker/port.ts))
 and its adapters, and the callers that read type, priority and size: the
 [work-type](work-types.md) derivation, `work-batch`, the
