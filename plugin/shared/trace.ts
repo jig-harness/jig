@@ -202,6 +202,9 @@ function traceGhCall<
   envDeadline: number,
   run: (argv: string[], options: O) => Promise<T>,
 ): Promise<T> {
+  // A parent reader counts nested forge calls at dispatch, including timed-out reads.
+  if (process.env.JIG_FORGE_CALL_COUNT_FILE)
+    appendFileSync(process.env.JIG_FORGE_CALL_COUNT_FILE, "1");
   const deadline =
     opts.timeoutSec === undefined
       ? envDeadline

@@ -49,6 +49,7 @@ interface Options {
   live?: boolean;
   parked?: boolean;
   operation?: boolean;
+  operationReadFailure?: boolean;
   moved?: boolean;
   failure?: boolean;
   wrongClone?: boolean;
@@ -259,6 +260,11 @@ function treeAndReviewReads(options: Options) {
     ok: true,
     marker: options.operation ? "MERGE_HEAD" : null,
   });
+  if (options.operationReadFailure)
+    watch(proc, "unconcludedGitOpMarker").mockResolvedValue({
+      ok: false,
+      reason: "git operation marker probe exited 1: access denied",
+    });
   watch(status, "evaluate").mockImplementation(async (_ctx, report) => {
     Object.assign(report, {
       state: options.reviewState ?? (options.moved ? "HEAD_LAG" : "CONVERGED"),
@@ -298,6 +304,18 @@ describe("CI hold doctor evidence gathering", () => {
       ),
     ).toBe(true);
   });
+  it("preserves positively identified live drivers behind a live lock", async () => {
+    const { state } = arrange({ live: true, orphanPass: true });
+    const result = await ciHoldDoctor(
+      stateDir,
+      "123",
+      state,
+      "live",
+      "/plugin/scripts",
+    );
+    expect(result.driver).toBe("alive");
+    expect(result.recovery).toBeNull();
+  });
   it("uses a released driver record after normal lease cleanup", async () => {
     const { state } = arrange({ releasedRecord: true });
     const result = await ciHoldDoctor(
@@ -311,6 +329,10 @@ describe("CI hold doctor evidence gathering", () => {
     expect(result.recovery).toContain("release 123");
   });
   for (const [options, reason] of [
+    [
+      { operationReadFailure: true },
+      "git operation marker probe exited 1: access denied",
+    ],
     [
       { gitFailure: "--git-common-dir" },
       "git rev-parse --git-common-dir (driver worktree) exited 128: fatal: fixture git access denied",

@@ -30,6 +30,8 @@ import { inspectLock, prLockName } from "./driver/locks.ts";
 import { driveState } from "./driver/paths.ts";
 import { helperTimeoutSeconds, pidAlive, run, tsArgv } from "./proc.ts";
 import { worktreePathKey } from "./state/actor.ts";
+import { readStateRow } from "./state/store.ts";
+import { isRecord } from "../../../../shared/guards.ts";
 import { driveDb } from "./state/db.ts";
 import { ledgerOfStoppedDriver } from "./state/ledger.ts";
 import { readLedgerSnapshot, resolveLogin } from "./state/ledger-forge.ts";
@@ -44,7 +46,8 @@ import {
  * a stop by signal releases the lock, and with it the evidence a recovery
  * reads, so this record is what `--stop` and `--doctor` recover from then.
  * Written once the driver owns the ledger, marked `released` as the driver
- * releases its locks, and removed once its stopped ledger is written or the
+ * releases its locks, and retained while its CI hold still needs that witness.
+ * Otherwise removed once its stopped ledger is written or the
  * drive is taken over.
  */
 export interface DriverRecord {
@@ -84,6 +87,17 @@ export function removeDriverRecord(
   pr: string,
   started: string,
 ): void {
+  // Keep the termination witness until a retained CI hold no longer needs it.
+  const stored = readStateRow(stateDir, pr);
+  if (stored !== null) {
+    const state: unknown = JSON.parse(stored.text);
+    if (
+      isRecord(state) &&
+      isRecord(state.ciHold) &&
+      state.ciHold.phase !== "released"
+    )
+      return;
+  }
   const drive = driveDb(stateDir);
   drive.db.run(
     "DELETE FROM driver_records WHERE clone = ? AND pr = ? AND started = ?",

@@ -31,7 +31,7 @@
  *                            prints in human form. Same POPULATION as the plain
  *                            listing: locks only, which is what a
  *                            status board polling this mode consumes.
- *   drives.ts --doctor       one classified verdict per drive in the state
+ *   drives.ts --doctor [--pr N]  one classified verdict per drive in the state
  *                            universe — HEALTHY, WEDGED,
  *                            DEAD_WITH_LEFTOVERS, QUOTA_PARKED, NEEDS_HUMAN
  *                            or UNKNOWN, plus a recovery command where one
@@ -563,32 +563,36 @@ async function attachDoctorVerdicts(
   // listing spawns no `ps` at all.
   const needsProcs = rows.some((r) => r.kind === "pr" && r.pid !== null);
   const procs = needsProcs ? await snapshotProcesses() : null;
-  return Promise.all(
-    rows.map(async (row) => {
-      if (row.kind !== "pr") return row;
-      const input = await gatherDoctorInput(stateDir, row, selfPath, procs);
-      const doctor = classifyDrive(input, new Date());
-      const snapshot = readStateSnapshot(stateDir, row.key);
-      if (
-        doctorMode &&
-        snapshot.ok &&
-        snapshot.state.ciHold !== null &&
-        snapshot.state.ciHold.phase !== "released"
-      ) {
-        doctor.ciHold = await ciHoldDoctor(
-          stateDir,
-          row.key,
-          snapshot.state,
-          row.state,
-          fileURLToPath(new URL(".", import.meta.url)),
-        );
-        doctor.reason += `; ${doctor.ciHold.reason}`;
-        if (doctor.ciHold.recovery !== null)
-          doctor.recovery = doctor.ciHold.recovery;
-      }
-      return { ...row, doctor };
-    }),
-  );
+  const diagnosed: LockRow[] = [];
+  for (const row of rows) {
+    diagnosed.push(
+      await (async () => {
+        if (row.kind !== "pr") return row;
+        const input = await gatherDoctorInput(stateDir, row, selfPath, procs);
+        const doctor = classifyDrive(input, new Date());
+        const snapshot = readStateSnapshot(stateDir, row.key);
+        if (
+          doctorMode &&
+          snapshot.ok &&
+          snapshot.state.ciHold !== null &&
+          snapshot.state.ciHold.phase !== "released"
+        ) {
+          doctor.ciHold = await ciHoldDoctor(
+            stateDir,
+            row.key,
+            snapshot.state,
+            row.state,
+            fileURLToPath(new URL(".", import.meta.url)),
+          );
+          doctor.reason += `; ${doctor.ciHold.reason}`;
+          if (doctor.ciHold.recovery !== null)
+            doctor.recovery = doctor.ciHold.recovery;
+        }
+        return { ...row, doctor };
+      })(),
+    );
+  }
+  return diagnosed;
 }
 
 function printHuman(
@@ -1226,13 +1230,17 @@ async function main(argv: string[]): Promise<number> {
   let hereMode = false;
   let stopPr = "";
   let doctorMode = false;
+  let onlyPr = "";
   const expectStarted = takeExpectStarted(argv);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] as string;
     if (a === "--json") json = true;
     else if (a === "--here") hereMode = true;
     else if (a === "--doctor") doctorMode = true;
-    else if (a === "--stop") {
+    else if (a === "--pr") {
+      onlyPr = argv[++i] ?? "";
+      if (!isDigits(onlyPr)) fail(2, "--pr takes a PR number");
+    } else if (a === "--stop") {
       stopPr = argv[i + 1] ?? "";
       i++;
       if (!isDigits(stopPr)) fail(2, "--stop takes a PR number");
@@ -1243,6 +1251,7 @@ async function main(argv: string[]): Promise<number> {
       );
     }
   }
+  if (onlyPr !== "" && !doctorMode) fail(2, "--pr requires --doctor");
   requireStopForExpectStarted(expectStarted, stopPr);
   // `--doctor` combines with `--json` but is otherwise mutually
   // exclusive with every other mode, on the same terms `--here`/`--json`/
@@ -1300,7 +1309,14 @@ async function main(argv: string[]): Promise<number> {
   // human listing's "stalled" annotation reads the same `.doctor` field.
   const repository = await driveRepository();
   const doctored = (
-    await attachDoctorVerdicts(stateDir, rows, SELF, doctorMode)
+    await attachDoctorVerdicts(
+      stateDir,
+      onlyPr === ""
+        ? rows
+        : rows.filter((row) => row.kind === "pr" && row.key === onlyPr),
+      SELF,
+      doctorMode,
+    )
   ).map((row) => ({ ...row, repository }));
   if (json) console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
   else if (doctorMode) printDoctor(stateDir, doctored, repository);

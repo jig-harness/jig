@@ -118,7 +118,10 @@ async function readDriver(
     e.driverReason =
       "the current forge ledger cannot be matched to the recorded local process";
   }
-  if (["live", "contested", "unreadable"].includes(lock)) {
+  if (
+    e.driver !== "alive" &&
+    ["live", "contested", "unreadable"].includes(lock)
+  ) {
     e.driver = "unknown";
     e.driverReason = `the driver lock is ${lock}`;
   }
@@ -278,7 +281,7 @@ async function cleanTree(
   if (!branch.ok) return `the driver worktree is unsafe: ${branch.why}`;
   if (!operation.ok)
     throw new DiagnosticReadError(
-      "the driver worktree's unfinished git operations could not be inspected",
+      `the driver worktree's unfinished git operations could not be inspected: ${operation.reason}`,
     );
   if (head.stdout.trim() !== expectedHead)
     return `the driver worktree's HEAD is ${head.stdout.trim()}, expected ${expectedHead}`;

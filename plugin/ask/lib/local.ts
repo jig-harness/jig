@@ -10,8 +10,9 @@
  * that schema allows, or named in the sources as not read until its owner's
  * next run brings it forward.
  */
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import type {
   KnownRepository,
   RepositoryChoices,
@@ -284,15 +285,29 @@ export async function driveRow(
 ): Promise<Outcome<DriveRow | null, "unreadable">> {
   const sec = reading.sourceSec();
   if (sec === 0) return failed("unreadable", PAST_DEADLINE);
-  const r = await run(tsArgv(drivesScript(), ["--json"]), {
-    cwd: path,
-    // The listing reads the tree a drive pass pins over its directory; this one reads the checkout's.
-    env: Object.fromEntries(
-      Object.entries(process.env).filter(([k]) => k !== "DRIVE_PR_WORKTREE"),
-    ),
-    timeoutSec: sec,
-    stderr: "pipe",
-  });
+  const accounting = mkdtempSync(join(tmpdir(), "jig-ask-forge-"));
+  const countFile = join(accounting, "calls");
+  let r: Awaited<ReturnType<typeof run>>;
+  try {
+    r = await run(tsArgv(drivesScript(), ["--json", "--pr", String(pr)]), {
+      cwd: path,
+      // The listing reads the tree a drive pass pins over its directory; this one reads the checkout's.
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(
+            ([k]) => k !== "DRIVE_PR_WORKTREE",
+          ),
+        ),
+        JIG_FORGE_CALL_COUNT_FILE: countFile,
+      },
+      timeoutSec: sec,
+      stderr: "pipe",
+    });
+  } finally {
+    const calls = existsSync(countFile) ? readFileSync(countFile).length : 0;
+    for (let i = 0; i < calls; i++) reading.forgeCall();
+    rmSync(accounting, { recursive: true, force: true });
+  }
   if (r.code === 4)
     // The listing declined because reading would have migrated or imported into the drive's database.
     return failed(
