@@ -105,3 +105,13 @@ export function retryableStartup(r: ReadRecord): boolean {
     (r.state.exit.startup === "quota" || r.state.exit.startup === "unstarted")
   );
 }
+
+/** The ids of retryable startups whose end no later row has settled. */
+export function unsettledStartups(
+  records: ReadRecord[],
+  settled: Set<string>,
+): string[] {
+  return records
+    .filter((r) => retryableStartup(r) && !settled.has(r.record.id))
+    .map((r) => r.record.id);
+}

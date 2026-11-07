@@ -45,7 +45,7 @@
  * `waiting_episodes` table), and, once it ended, the time its outcome row
  * carries (`endedAt`), written in the same transaction as that row.
  */
-import { retryableStartup } from "./session-startup.ts";
+import { unsettledStartups } from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
@@ -186,8 +186,7 @@ export interface LaunchClaim extends ProcessIdentity {
 }
 
 export interface LaunchExit {
-  /** A headless session stopped quickly without a result or its own transcript. */
-  startup?: "quota" | "unstarted";
+  startup?: "quota" | "unstarted"; // headless stop before any result or transcript
   at: string;
   /** The stage's exit code; `null` when it ended on a signal. */
   code: number | null;
@@ -886,11 +885,9 @@ export function pruneLaunches(
   const cutoff = nowMs - days * 86_400_000;
   const kept = latestRefusals(records);
   const settled = settledEnds(root);
-  for (const r of records)
-    if (retryableStartup(r) && !settled.has(r.record.id)) kept.add(r.record.id);
-  for (const id of latestPickups(records)) kept.add(id);
-  for (const id of latestRedrives(records)) kept.add(id);
-  for (const id of latestArms(records)) kept.add(id);
+  for (const id of unsettledStartups(records, settled)) kept.add(id);
+  for (const latest of [latestPickups, latestRedrives, latestArms])
+    for (const id of latest(records)) kept.add(id);
   for (const r of records)
     if (cancelledBeforeExecution(r) && !settled.has(r.record.id))
       kept.add(r.record.id);
