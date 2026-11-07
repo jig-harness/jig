@@ -90,6 +90,15 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
 
 /** A drive stopped on an exit only a person settles, or with no exit at all. */
 export function stopNotice(slug: string, pr: DrivenPr): Notice {
+  if (pr.class === "silent")
+    return notice(
+      `${slug} PR #${pr.number} silent, ledger generation ${generation(pr)}, started ${String(pr.evidence.started ?? "unknown")}`,
+      [
+        `PR #${pr.number} (${pr.title}): its drive heartbeat expired and its termination cannot be confirmed. ${pr.why}.`,
+        "Inspect the driver and any surviving pass before re-arming it. Read the drive handoff in its workspace.",
+        pr.url,
+      ],
+    );
   const exit = pr.evidence.exit;
   const stop =
     exit === null || exit === undefined ? "with no exit" : `${String(exit)}`;
@@ -143,6 +152,37 @@ export function staleClaimNotice(
         ? `Mark the marker done when that run succeeded (\`jig dispatch marker done ${pr.number} --comment ${claim.marker}\`), or delete it to have the follow-up start again.`
         : "Have the originating host record that run's result through jig dispatch result with its record and token, or delete the marker comment to have the follow-up start again.",
       pr.url,
+    ],
+  );
+}
+
+/** A pending launch record no tick will launch again (`stuck-launches.ts`): a person checks for a session it started, then clears it. */
+export function stuckNotice(
+  slug: string,
+  stuck: {
+    target: string;
+    action: string;
+    record: string;
+    account: string;
+    workspace: string | null;
+    marker: number | null;
+    url: string | null;
+    why: string;
+  },
+): Notice {
+  const where =
+    stuck.workspace === null ? "" : ` in its workspace (${stuck.workspace})`;
+  return notice(
+    `${slug} ${stuck.target} launch record ${stuck.record} stuck pending`,
+    [
+      `${stuck.target}: the ${stuck.action} launch record ${stuck.record} is pending and no tick launches it again: ${stuck.why}. It holds its stage and a slot of account ${stuck.account} until a person clears it.`,
+      `Look for a session it started${where}; once none runs for it, run \`jig dispatch clear ${stuck.record}\`.`,
+      ...(stuck.marker === null
+        ? []
+        : [
+            `Its follow-up marker (comment ${stuck.marker}) stays on the pull request, and once the record is cleared it reads as a failed follow-up: delete the marker to have the follow-up start again.`,
+          ]),
+      ...(stuck.url === null ? [] : [stuck.url]),
     ],
   );
 }

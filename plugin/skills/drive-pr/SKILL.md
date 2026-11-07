@@ -625,7 +625,11 @@ outlives the session that spawned it, so its console is not where you look:
   nonexistent PR number, never a repository/auth/transport error), no lease
   is live on it, and nothing in the family was touched for `--min-age-days`
   (default 7); and the files an earlier release kept there, once the
-  database's import of them is 30 days old. A closed-but-unmerged PR is
+  database's import of them is 30 days old. Displaced file-lock quarantine
+  entries form a separate family, reported with count and bytes but kept:
+  neither an idle snapshot nor the database mutex excludes legacy writers.
+  This applies whether or not the clone was imported.
+  A closed-but-unmerged PR is
   deliberately kept — GitHub permits reopening it with no time limit. A name
   it does not recognise is never removed, and every gate fails closed. It
   also expires trace days older than 14 days. The database's rows are not
@@ -687,9 +691,16 @@ outlives the session that spawned it, so its console is not where you look:
   itself; `--stop` writes it once the driver and its pass tree are witnessed
   gone, and after a signal stop `--stop` or `--doctor` against the driver
   record it marked released with its locks does the same, each only while
-  the ledger still names that driver. A driver that kept its locks, over a
-  pass it could not witness gone or killed outright, leaves its ledger
-  running.
+  the ledger still names that driver. Review and repair passes persist
+  acquisition-bound process observations before spawning. After an abrupt
+  local stop, dispatch or doctor can reconcile the ledger when those
+  observations prove the driver and its observed and registered work gone.
+  Sampling retires only confirmed-dead identities and empty process groups;
+  timezone-shifted or unreadable creation times retain their evidence.
+  Recovery reserves the PR slot and leaves its temporary session leases free.
+  Missing, foreign, surviving or uncertain evidence leaves the ledger running;
+  dispatch notifies once and includes it in the waiting list. See
+  [terminal states](references/terminal-states.md) for the recovery guards.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
   root: the database and one `<clone-key>/` directory per clone (the hash of
   its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved
@@ -849,6 +860,17 @@ yours.
 ## Entry mode: arm the driver, or work one round (decide first)
 
 **exact** — Route by the documented environment/flag table before running a round.
+
+An explicit request to release a stranded CI hold is recovery, not an arm
+request. Before the mode table below, read the README section
+[Recovering a stranded CI hold](README.md#recovering-a-stranded-ci-hold).
+Re-read `jig ask drive <PR>` or the drive doctor and establish stopped local
+ownership, review convergence on the current head, no human decisions and a
+clean matching worktree. Run the printed CI-hold release command only
+for that explicit request, from that worktree and with its expected head;
+relay any refusal without bypassing it. Observe label removal and fresh CI
+on that head, report those separately from CI success, and stop without
+arming a driver. A status question does not authorize recovery.
 
 `/jig:drive-pr` is invoked two ways, and they must not behave alike: a **human or
 agent session** asks for the PR to be driven, while a **pass `drive.ts`

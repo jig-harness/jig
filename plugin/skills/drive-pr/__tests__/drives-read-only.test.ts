@@ -15,12 +15,14 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { closeDatabase } from "../../../shared/records/db.ts";
 import { DRIVE_DB_VERSION, dbPathFor } from "../scripts/lib/state/db.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
-import { putLock } from "./state-rows.ts";
+import { putLock, writeState } from "./state-rows.ts";
+import { freshState } from "../scripts/lib/state/schema.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const DRIVES = join(import.meta.dir, "..", "scripts", "drives-read-only.ts");
 
@@ -88,6 +90,40 @@ describe("drives-read-only.ts --json", () => {
       .rows;
     expect(rows.map((row) => row.key)).toContain("4242");
     expect(readFileSync(db).equals(before)).toBe(true);
+  });
+
+  it("diagnoses only the requested PR without reading unrelated retained holds", async () => {
+    const { stateDir, db } = drivenClone();
+    putLock(stateDir, "pr-drive-4243", { label: "drive.ts" });
+    const unrelated = freshState(4243);
+    unrelated.ciHold = {
+      phase: "held",
+      eventId: "42",
+      actor: "operator",
+      addedAtHead: "a".repeat(40),
+      createdAt: new Date().toISOString(),
+      checkRunWatermark: 1,
+    };
+    writeState(stateDir, "4243", unrelated);
+    const bin = join(root, "scope-bin");
+    const called = join(root, "unrelated-forge-called");
+    mkdirSync(bin);
+    writeFakeProgram(
+      join(bin, "gh"),
+      `#!/usr/bin/env bun\nawait Bun.write(process.env.UNRELATED_FORGE_CALL, "called"); process.exit(1);\n`,
+    );
+    closeDatabase(db);
+    const before = readFileSync(db);
+    const r = await list(stateDir, ["--json", "--pr", "4242"], DRIVES, {
+      PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
+      UNRELATED_FORGE_CALL: called,
+    });
+    expectSpawnExit(r, 0);
+    expect(
+      JSON.parse(r.stdout).rows.map((row: { key: string }) => row.key),
+    ).toEqual(["4242"]);
+    expect(readFileSync(db).equals(before)).toBe(true);
+    expect(existsSync(called)).toBe(false);
   });
 
   it("lists no drives where no driver ever created the database, and creates none", async () => {

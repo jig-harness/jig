@@ -231,7 +231,7 @@ export interface SharedRecords {
   release(
     target: SharedTarget,
     own: number,
-  ): Promise<Outcome<void, "not-released">>;
+  ): Promise<Outcome<void, "not-released" | "not-found">>;
   /** What is left of the medium's budget. */
   budget(): Promise<Outcome<SharedBudget, "unreadable">>;
 }
