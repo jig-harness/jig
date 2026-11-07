@@ -532,6 +532,15 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
   };
 }
 
+/** Publish before a long first status probe, so an operator can stop this acquisition. */
+export async function publishStartup(pr: string): Promise<void> {
+  const publication = await mirrorNow(pr);
+  if (publication !== 0)
+    console.error(
+      `ledger: initial running-ledger publication failed (exit ${publication}); stop requests remain refused until this acquisition publishes, and round-boundary writes retry it.`,
+    );
+}
+
 /**
  * The driver's last ledger write, marking it stopped, however the drive's
  * code ends it: `done(code)` on a returned exit, the dispose on a thrown
@@ -560,7 +569,7 @@ export function ledgerSettlement(
   const started = ledgerDriverFromEnv()?.started ?? "";
   const dropRecord = async (): Promise<void> => {
     if (started !== "")
-      removeDriverRecord(await resolveStateDir(), pr, started);
+      removeDriverRecord(await resolveStateDir(), pr, started, true);
   };
   const settle = async (code: number | null): Promise<void> => {
     if (settled) return;

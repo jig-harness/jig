@@ -13,8 +13,8 @@
  * | stopped `CONVERGED` (`0`), the pull request conflicting or its head past the verified head | stale |
  * | stopped `PR_CONFLICTING` (`9`) | stale |
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
- * | stopped `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
- * | stopped with no exit | stopped-unknown |
+ * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
+ * | stopped with no exit and no person's-stop record | re-armable (stopped-unknown once its recovery budget is spent) |
  * | stopped `QUOTA_PARKED` (`16`) | re-armable |
  * | stopped `HITL_PARKED` (`8`), every parked item answered | re-armable |
  * | stopped `NOT_SETTLED` (`4`) | re-armable |
@@ -302,6 +302,14 @@ function ledgerEvidence(
     exit: ledger.driver.exit ?? null,
     heartbeat: ledger.driver.heartbeat,
     started: ledger.driver.started ?? null,
+    ...(ledger.driver.state === "stopped" &&
+    ledger.driver.exit === undefined &&
+    ledger.driver.personStop === undefined
+      ? {
+          noCause: true,
+          legacyNoCause: ledger.driver.recoveryVersion === undefined,
+        }
+      : {}),
     heartbeatAgeMinutes: Number.isFinite(beat)
       ? minutesBetween(beat, nowMs)
       : null,
@@ -318,13 +326,21 @@ export function classifyLedger(
   park?: ParkReading,
   forge: PrFacts = NO_FACTS,
 ): Classified {
+  const exit = ledger.driver.exit;
+  if (ledger.driver.personStop !== undefined)
+    return {
+      class: "stopped-by-person",
+      why:
+        ledger.driver.state === "running"
+          ? `stop requested by a person; driver still recorded running${ledger.driver.personStop.reason === "" ? "" : `: ${ledger.driver.personStop.reason}`}; the dispatcher will not re-arm it`
+          : `stopped by a person${ledger.driver.personStop.reason === "" ? "" : `: ${ledger.driver.personStop.reason}`}; stays stopped until a person re-arms it`,
+    };
   if (ledger.driver.state === "running")
     return runningClass(ledger, nowMs, windowMs);
-  const exit = ledger.driver.exit;
   if (exit === undefined)
     return {
-      class: "stopped-unknown",
-      why: "stopped with no exit, which may be a person's stop: never re-armed",
+      class: "re-armable",
+      why: "stopped with no recorded cause: re-arming within the per-pull-request recovery budget",
     };
   if (exit === DRIVE_EXIT.HITL_PARKED) return parkClass(park);
   if (exit === DRIVE_EXIT.CONVERGED) return convergedClass(ledger, forge);
