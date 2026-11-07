@@ -695,8 +695,8 @@ runs the move. Today's `issue_tracker.types`, `issue_tracker.github.priority_lab
 `issue_tracker.jira.field_labels` and `issue_tracker.jira.priorities` become
 the label or field form of their facet, and the native-type read the
 interface already has is kept. Every filing path through
-the interface (`file-issue`, `file-deferred.ts`, `report-bug.ts`) sets and checks all three inside the write; the issue forms
-set the type and leave priority and size to triage, and a weekly check
+the interface (`file-issue`, `file-deferred.ts`) sets and checks all three inside the write; the issue forms
+and `report-bug.ts`, which file around the interface, set the type and leave priority and size to triage, and a weekly check
 reports the issues missing one. It includes reading and writing the
 tracker's own issue type, not only a type label. A store kept by the
 repository's own command waits until a repository names a facet that needs
