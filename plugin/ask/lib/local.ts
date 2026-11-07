@@ -22,6 +22,7 @@ import { swallow } from "../../shared/errors.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { run, tsArgv } from "../../shared/proc.ts";
+import { FORGE_ACCOUNTING_UNAVAILABLE } from "../../shared/trace.ts";
 import {
   databaseInstance,
   type ReadOnlyDatabase,
@@ -288,6 +289,7 @@ export async function driveRow(
   const accounting = mkdtempSync(join(tmpdir(), "jig-ask-forge-"));
   const countFile = join(accounting, "calls");
   let r: Awaited<ReturnType<typeof run>>;
+  let accountingUnavailable = false;
   try {
     r = await run(tsArgv(drivesScript(), ["--json", "--pr", String(pr)]), {
       cwd: path,
@@ -303,10 +305,33 @@ export async function driveRow(
       timeoutSec: sec,
       stderr: "pipe",
     });
+    accountingUnavailable = r.stderr.includes(FORGE_ACCOUNTING_UNAVAILABLE);
   } finally {
-    const calls = existsSync(countFile) ? readFileSync(countFile).length : 0;
-    for (let i = 0; i < calls; i++) reading.forgeCall();
-    rmSync(accounting, { recursive: true, force: true });
+    try {
+      const calls = existsSync(countFile) ? readFileSync(countFile).length : 0;
+      for (let i = 0; i < calls; i++) reading.forgeCall();
+      if (accountingUnavailable)
+        reading.note({
+          record: "drive forge call accounting",
+          read: false,
+          detail: "forge call count is incomplete: accounting unavailable",
+        });
+    } catch (err) {
+      swallow(err, "accounting failures must not discard the drive listing");
+      reading.note({
+        record: "drive forge call accounting",
+        read: false,
+        detail: "forge call count is unavailable",
+      });
+    }
+    try {
+      rmSync(accounting, { recursive: true, force: true });
+    } catch (err) {
+      swallow(
+        err,
+        "temporary accounting cleanup must not discard the drive listing",
+      );
+    }
   }
   if (r.code === 4)
     // The listing declined because reading would have migrated or imported into the drive's database.

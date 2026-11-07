@@ -90,7 +90,16 @@ export function removeDriverRecord(
   // Keep the termination witness until a retained CI hold no longer needs it.
   const stored = readStateRow(stateDir, pr);
   if (stored !== null) {
-    const state: unknown = JSON.parse(stored.text);
+    let state: unknown;
+    try {
+      state = JSON.parse(stored.text);
+    } catch (err) {
+      swallow(err, "unreadable state retains the driver termination witness");
+      console.error(
+        `ledger: PR #${pr}'s driver record is retained: saved state is unreadable.`,
+      );
+      return;
+    }
     if (
       isRecord(state) &&
       isRecord(state.ciHold) &&

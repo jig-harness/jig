@@ -1304,7 +1304,9 @@ async function main(argv: string[]): Promise<number> {
   const lockRows = listRows(stateDir);
   // `--doctor`'s population is locks ∪ states; the plain listing and
   // plain `--json` stay lock rows only (`listStateOnlyRows` says why).
-  const rows = doctorMode ? await doctorRows(stateDir, lockRows) : lockRows;
+  const rows = doctorMode
+    ? await doctorRows(stateDir, lockRows, onlyPr)
+    : lockRows;
   // Classified in every mode: `--json` always carries the verdict, and the
   // human listing's "stalled" annotation reads the same `.doctor` field.
   const repository = await driveRepository();
@@ -1325,9 +1327,14 @@ async function main(argv: string[]): Promise<number> {
 }
 
 /** `--doctor`'s population, recovered first (a takeover reads `--json`). */
-async function doctorRows(stateDir: string, lockRows: LockRow[]) {
+async function doctorRows(
+  stateDir: string,
+  lockRows: LockRow[],
+  onlyPr: string,
+) {
   if (process.env[READ_ONLY_ENV] !== "1") {
     await ledgerStop.recoverStoppedLedgers(stateDir, (pr) => {
+      if (onlyPr !== "" && pr !== onlyPr) return true;
       const snapshot = readStateSnapshot(stateDir, pr);
       return (
         snapshot.ok &&

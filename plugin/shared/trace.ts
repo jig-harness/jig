@@ -7,6 +7,9 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import { errnoCode, swallow } from "./errors.ts";
 
+/** Stable child-process diagnostic code for incomplete forge accounting. */
+export const FORGE_ACCOUNTING_UNAVAILABLE = "jig-forge-accounting-unavailable";
+
 type Attributes = Record<string, string | number | boolean | null | undefined>;
 interface Context {
   traceId: string;
@@ -203,8 +206,16 @@ function traceGhCall<
   run: (argv: string[], options: O) => Promise<T>,
 ): Promise<T> {
   // A parent reader counts nested forge calls at dispatch, including timed-out reads.
-  if (process.env.JIG_FORGE_CALL_COUNT_FILE)
-    appendFileSync(process.env.JIG_FORGE_CALL_COUNT_FILE, "1");
+  if (process.env.JIG_FORGE_CALL_COUNT_FILE) {
+    try {
+      appendFileSync(process.env.JIG_FORGE_CALL_COUNT_FILE, "1");
+    } catch (err) {
+      swallow(err, "forge call accounting must not prevent dispatch");
+      console.error(
+        `${FORGE_ACCOUNTING_UNAVAILABLE}: forge call accounting unavailable`,
+      );
+    }
+  }
   const deadline =
     opts.timeoutSec === undefined
       ? envDeadline
