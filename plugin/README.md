@@ -309,8 +309,9 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 
 which clears only a record the tick cannot settle: an unknown one, a
 pending one whose launch cannot be retried (a stuck one: both of its
-launches went unanswered, or a follow-up's replay could not be proven
-safe, which the tick notifies as needing a person), or one that does not read
+launches went unanswered, a follow-up's replay could not be proven
+safe, or a launch answered as started went unclaimed past the machine
+file's `unclaimed_after`, which the tick notifies as needing a person), or one that does not read
 and whose claim is not alive. It refuses a running record, readable or
 not (stop its session first), and, among the records that read, an ended
 or died one and a pending one whose launch can still be retried: those

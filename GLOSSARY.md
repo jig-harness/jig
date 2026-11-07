@@ -1947,7 +1947,8 @@ make, use the entry's term instead.
 - **Stuck launch record** — a *launch record* still pending that no tick
   launches again: every launch it is allowed (two) ended as not started or
   unanswered with at least one unanswered, a follow-up's replay can never be
-  proven safe, or it names no workspace. Unlike a retryable pending record, which a tick
+  proven safe, it names no workspace, or the runtime answered its launch as
+  started longer ago than `unclaimed_after` and no wrapper claimed it. Unlike a retryable pending record, which a tick
   launches again once its guards allow (a hold, a failed read, a missing
   command or an account's *wall* can delay that), and an unknown one, whose
   session may still be running, it waits for a person to clear it. The
