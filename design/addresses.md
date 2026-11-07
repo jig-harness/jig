@@ -359,7 +359,7 @@ checks:
   directory, since `send` exits at once, so several sends within that
   minute start one tick, and a send made while a tick runs starts one
   trailing tick after the running tick ends and the minute has passed. A tick refused because another
-  holds the machine-wide tick lock keeps the request and is tried again
+  tick holds the repository, or holds the act lock past the wait, keeps the request and is tried again
   after the minute, a bounded number of times; the waiter then exits, so
   nothing stays resident. The record stays the request: a wake that is lost
   leaves it to the next timer sweep. A mailbox directive wakes nothing,

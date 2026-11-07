@@ -1268,7 +1268,9 @@ send: true                          # false refuses every jig send from this mac
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
 per run), `walls/` (each account's usage-limit wall, which lifts at its
-latest recorded reset), the tick lock, the rotation cursor (`tick-index`)
+latest recorded reset), the tick's locks (`tick.lock`, which one tick
+acts under at a time, and `observe/`, one per repository a tick is
+reading), the rotation cursor (`tick-index`)
 and the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
 removes. Everything else is one
 SQLite database, `state.sqlite`: the launch records (one per launch,

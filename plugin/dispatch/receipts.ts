@@ -10,9 +10,13 @@
  * repository, and the latest one recording a follow-up window for each, since
  * a receipt of a refused read names the repository without its window.
  *
- * One tick runs per machine, under the tick lock beside the receipts. The
- * lock holds its holder's pid, which every version of the tick reads, and
- * `tick.lock.holder` beside it the identity every lock of the plugin records
+ * One tick acts per machine, under the act lock beside the receipts
+ * (`tick.lock`), and each repository is read and acted on by one tick at a
+ * time, under its observe lock (`observe/<digest>.lock`). A tick takes the
+ * observe locks first, never waiting for one, and the act lock last, so no
+ * two ticks wait on each other. Each lock holds its holder's pid, which
+ * every version of the tick reads, and `<lock>.holder` beside it the
+ * identity every lock of the plugin records
  * (`shared/liveness.ts`): host, boot, pid and start time. A lock whose
  * holder ran before this host last restarted, or whose pid now belongs to a
  * process that started at another time, is abandoned and taken over; one
@@ -33,7 +37,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { basename, dirname, join, resolve } from "node:path";
 import { isMapping } from "../shared/config-layers.ts";
 import { swallow } from "../shared/errors.ts";
 import {
@@ -74,7 +79,11 @@ export interface TickReceipt {
   logCopyFailed?: string;
   /** Why the dashboard's line was not written: it keeps showing the tick before. */
   lineFailed?: string;
-  /** Milliseconds the tick spent before its first repository, on its repositories, and closing; absent from a receipt written before phases were timed. */
+  /** The repositories another tick held the observe lock of, so this tick neither read nor acted on them. */
+  busy?: { path: string; heldBy: string }[];
+  /** The forge's budget as the tick started, when it was low enough that the optional reads (thread samples, serialization's reads) were skipped. */
+  lowBudget?: { remaining: number; limit: number; skipped: string[] };
+  /** Milliseconds the tick spent in each of its phases; absent from a receipt written before phases were timed. */
   phasesMs?: Partial<Record<TickPhase, number>>;
   /** The defect that stopped the tick's closing steps; a receipt with one is not completed. */
   defect?: Defect;
@@ -83,8 +92,19 @@ export interface TickReceipt {
   repos: RepoReport[];
 }
 
-/** The phases of a tick around its repositories' turns. */
-export type TickPhase = "start" | "repos" | "close";
+/**
+ * The phases of a tick: its start, the observe phase (every repository read
+ * at once), the wait for the act lock, the act phase (each repository's
+ * plan, log, launches and labels, in turn) and the close. A receipt written
+ * before the phases split carries `repos` for the two together.
+ */
+export type TickPhase =
+  | "start"
+  | "observe"
+  | "wait"
+  | "act"
+  | "repos"
+  | "close";
 
 export function stateRoot(): string {
   return join(homedir(), ".local", "state", "jig", "dispatch");
@@ -460,12 +480,12 @@ export function nextTickIndex(root = stateRoot()): number | { failed: string } {
   return index;
 }
 
-/** The tick lock: one tick per machine. Returns its release, or the holder. */
-export function takeTickLock(
-  root = stateRoot(),
-): { release: () => void } | { heldBy: string } {
-  mkdirSync(root, { recursive: true, mode: 0o700 });
-  const path = join(root, "tick.lock");
+/** A lock: its release, or who holds it. */
+export type Lock = { release: () => void } | { heldBy: string };
+
+/** Take the lock at `path`, taking over one whose holder is gone; its release, or the holder. */
+function takeLockAt(path: string): Lock {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const release = () => {
     // Only the owner removes the lock: a replaced one belongs to another tick.
     // Its record goes first, so the lock is never left naming a holder it does not have.
@@ -488,4 +508,24 @@ export function takeTickLock(
     if (reclaim(path, seen)) return { release };
   }
   return { heldBy: path };
+}
+
+/**
+ * The act lock, `tick.lock`: one tick acts per machine. It is the file every
+ * earlier version took for its whole tick, so a tick of an older version and
+ * one of this version never act at once. Returns its release, or the holder.
+ */
+export function takeTickLock(root = stateRoot()): Lock {
+  return takeLockAt(join(root, "tick.lock"));
+}
+
+/**
+ * A repository's observe lock, under `observe/` and named by its path's
+ * digest: held by one tick from the start of its reads of the repository
+ * until its act phase is done with it, so no tick acts on a repository from
+ * reads another tick made before acting on it.
+ */
+export function takeObserveLock(path: string, root = stateRoot()): Lock {
+  const digest = createHash("sha256").update(resolve(path)).digest("hex");
+  return takeLockAt(join(root, "observe", `${digest.slice(0, 16)}.lock`));
 }

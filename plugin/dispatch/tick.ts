@@ -1,26 +1,42 @@
 /**
- * One tick, under the tick lock: for each repository, read the records
+ * One tick, in two phases. The observe phase reads every repository at once
  * (the dispatch section from the default branch, the tracker, the forge's
- * pull requests and their drive ledgers, the runtime's sessions), plan
- * wanted minus running, and report; then write the tick's receipt. Without
- * `--apply` a tick starts nothing: it reports what it would start, and why.
- * With it, the re-arms and takeovers a repository's machine-file entry
- * enables are launched within each account's cap (actions/drive.ts), its
- * follow-ups as headless passes the same way (actions/followup.ts), its
- * pickups where the runtime binds an interactive session to its account
- * (actions/pickup.ts), its nudges are
- * sent once per waiting episode (actions/steer.ts), and its notifications
- * are sent once per cause (actions/notify.ts); everything else is still
- * reported.
+ * pull requests and their drive ledgers, the runtime's sessions), each
+ * repository under its observe lock and every read through one bounded pool
+ * (lib/pool.ts). The act phase, under the act lock, then takes the
+ * repositories one at a time in this tick's rotated order: plan wanted minus
+ * running, report, and with `--apply` launch; then the tick writes its
+ * receipt. Without `--apply` a tick starts nothing: it reports what it
+ * would start, and why. With it, the re-arms and takeovers a repository's
+ * machine-file entry enables are launched within each account's cap
+ * (actions/drive.ts), its follow-ups as headless passes the same way
+ * (actions/followup.ts), its pickups where the runtime binds an interactive
+ * session to its account (actions/pickup.ts), its nudges are sent once per
+ * waiting episode (actions/steer.ts), and its notifications are sent once
+ * per cause (actions/notify.ts); everything else is still reported.
+ *
+ * The locks (receipts.ts) are taken in one order: each repository's observe
+ * lock first, never waited for (a repository another tick holds is left to
+ * it, and said on the receipt), then the act lock (`tick.lock`, the file
+ * every earlier version took for its whole tick), waited for within
+ * `ACT_LOCK_WAIT_MS`. A repository's observe lock is kept until its act
+ * part is done, so a tick for one repository (a wake-up) reads and acts on
+ * it while a sweep reads or acts on the others, and no two ticks act at
+ * once. Everything the act phase depends on beyond the observation is read
+ * again under the act lock: the launch records, from which the apply state
+ * (slots, the opens' allowance, the account turn, the rotation cursor and
+ * the deadline) is built, and each target just before its launch.
  *
  * Each repository's turn is its own module's (lib/tick-repo.ts), in
- * phases: observe (lib/tick-observe.ts), plan (lib/tick-plan.ts), the
- * outcome log (lib/tick-settle.ts), act (lib/tick-apply.ts) and the label
- * projection (lib/tick-labels.ts). The observe phases share what the tick
- * reads once (lib/tick-reads.ts): each pull request's comment listing, the
- * forge's login, the runtime's host-wide listings, and the forge's budget,
- * read as the tick closes; the reads just before a launch never come from
- * them.
+ * phases: observe (lib/tick-observe.ts), then, in the act phase, plan
+ * (lib/tick-plan.ts), the outcome log (lib/tick-settle.ts), act
+ * (lib/tick-apply.ts) and the label projection (lib/tick-labels.ts). The
+ * observe phases share what the tick reads once (lib/tick-reads.ts): each
+ * pull request's comment listing, the forge's login, the runtime's
+ * host-wide listings, and the forge's budget, read as the tick starts; the
+ * reads just before a launch never come from them. While that budget is
+ * low, the optional reads (thread samples, serialization's reads) are
+ * skipped, and the receipt says so.
  *
  * Control runs in every tick, `--apply` or not: before the plan, each
  * running drive's unresolved threads are recorded at its ledger's round
@@ -64,16 +80,29 @@ import {
   type TickOptions,
 } from "./lib/tick-context.ts";
 import { copyLog, writeTickLine } from "./lib/tick-line.ts";
-import { fillBudgets, tickReads } from "./lib/tick-reads.ts";
-import { defectReport, runTurn, startTurn } from "./lib/tick-repo.ts";
+import {
+  fillBudgets,
+  lowBudget,
+  OPTIONAL_READS,
+  tickReads,
+} from "./lib/tick-reads.ts";
+import {
+  actTurn,
+  defectReport,
+  type Observed,
+  observeTurn,
+  startTurn,
+} from "./lib/tick-repo.ts";
 import { routeRecurrences } from "./lib/reflection-route.ts";
 import { settleOutcomes } from "./lib/tick-settle.ts";
-import type { Defect, RepoReport } from "./lib/types.ts";
+import type { RepoReport } from "./lib/types.ts";
 import {
+  type Lock,
   newRunId,
   pruneReceipts,
   type TickPhase,
   type TickReceipt,
+  takeObserveLock,
   takeTickLock,
   writeReceipt,
 } from "./receipts.ts";
@@ -84,6 +113,14 @@ export type TickResult =
   | { held: string }
   | { receipt: TickReceipt; path: string };
 
+/** A lock this tick holds. */
+type Held = Exclude<Lock, { heldBy: string }>;
+
+/** How long the act phase waits for another tick's act lock: past it, the tick ends as one that found the lock held. */
+const ACT_LOCK_WAIT_MS = 120_000;
+/** How often the act phase looks at the act lock again while it waits. */
+const ACT_LOCK_POLL_MS = 250;
+
 function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
   return machine === null
     ? orcaRuntime()
@@ -93,7 +130,7 @@ function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
       });
 }
 
-/** A tick once its launch records are read: its receipt so far, the context its turns share, and why `--apply` was withheld. */
+/** A tick once it started: its receipt so far, the context its turns share, and, once the act phase began, why `--apply` was withheld. */
 interface StartedTick {
   receipt: TickReceipt;
   context: TickContext;
@@ -102,45 +139,20 @@ interface StartedTick {
   settleFailed: boolean;
 }
 
-/** Read this machine's launch records and build the apply state and the receipt the tick fills. */
+/** Read this machine's launch records as the observe phase sees them, and the receipt the tick fills. */
 async function startTick(options: TickOptions): Promise<StartedTick> {
   const now = options.now ?? new Date();
   const machine = options.machine ?? null;
   const runtime = options.runtime ?? defaultRuntime(machine);
   const read = await readLaunches();
-  // An ended follow-up's outcome is written before its record can expire.
-  let settleFailed = false;
-  let startDefect: Defect | undefined;
-  try {
-    settleFollowups(read.records);
-  } catch (error) {
-    // A failed write must not stop every repository's turn; the turns settle their own records again.
-    settleFailed = true;
-    startDefect = defectOf("start", error);
-    logDefect("the follow-up outcomes", startDefect, error);
-  }
-  const attempt = applyState(
-    options,
-    runtime,
-    read.records,
-    now.getTime(),
-    read.unreadable,
-  );
-  // `--apply` with a machine file that was then withheld says why.
-  const withheld =
-    attempt !== null && "withheld" in attempt ? attempt.withheld : undefined;
-  const apply = attempt !== null && "tick" in attempt ? attempt : null;
   const receipt: TickReceipt = {
     version: 1,
     runId: newRunId(now),
     startedAt: now.toISOString(),
     finishedAt: now.toISOString(),
     completed: false,
-    apply: apply !== null,
+    apply: false,
     exitStatus: 0,
-    ...(withheld === undefined ? {} : { applyWithheld: withheld }),
-    ...accountsReport(machine, apply),
-    ...(startDefect === undefined ? {} : { defect: startDefect }),
     unreadableLaunches: read.unreadable,
     repos: [],
   };
@@ -148,40 +160,143 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
     options,
     runtime,
     nowMs: now.getTime(),
-    launches: apply?.records ?? read.records,
-    apply,
+    launches: read.records,
+    apply: null,
     lineInputs: new Map(),
     reflections: [],
-    reads: tickReads(runtime),
+    reads: tickReads(runtime, options.poolSize),
   };
-  return { receipt, context, withheld, settleFailed };
+  return { receipt, context, withheld: undefined, settleFailed: false };
+}
+
+/** The observe phase's result: each repository's observation by path, and the repositories another tick holds. */
+interface ObservedAll {
+  observed: Map<string, Observed>;
+  busy: Map<string, string>;
 }
 
 /**
- * The per-repository boundary: a defect thrown in one repository's turn
- * stops that turn only, and its report says so; the next repository runs.
+ * Every repository observed at once, each under its observe lock, each
+ * inside its boundary: a defect stops that repository's turn only. A
+ * repository whose lock another tick holds is not read.
  */
-async function boundedTurn(
-  path: string,
+async function observeAll(
   context: TickContext,
-): Promise<RepoReport> {
-  const turn = startTurn(path);
-  try {
-    return await runTurn(turn, context);
-  } catch (error) {
-    return defectReport(turn, error);
+  locks: Map<string, Held>,
+): Promise<ObservedAll> {
+  const out: ObservedAll = { observed: new Map(), busy: new Map() };
+  // The budget decides the optional reads: read once, while the first reads run.
+  void context.reads.budget();
+  // A repository named twice is read once.
+  await Promise.all(
+    [...new Set(context.options.repos)].map(async (path) => {
+      const lock = takeObserveLock(path);
+      if ("heldBy" in lock) {
+        out.busy.set(path, lock.heldBy);
+        return;
+      }
+      locks.set(path, lock);
+      const turn = startTurn(path);
+      try {
+        out.observed.set(path, await observeTurn(turn, context));
+      } catch (error) {
+        out.observed.set(path, { report: defectReport(turn, error) });
+      }
+    }),
+  );
+  return out;
+}
+
+/** The act lock, waited for within `waitMs`; who holds it when the wait ran out. */
+async function waitForActLock(waitMs: number): Promise<Lock> {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const lock = takeTickLock();
+    if (!("heldBy" in lock) || Date.now() >= deadline) return lock;
+    await Bun.sleep(ACT_LOCK_POLL_MS);
   }
 }
 
-/** Each repository's turn, in this tick's rotated order. */
-async function runRepos(
-  receipt: TickReceipt,
-  context: TickContext,
+/**
+ * The act phase's start, under the act lock: this machine's launch records
+ * read again, their follow-up outcomes settled, and the apply state built
+ * from them, its deadline counted from here.
+ */
+async function startAct(started: StartedTick): Promise<void> {
+  const { receipt, context } = started;
+  const { options, runtime } = context;
+  const read = await readLaunches();
+  // An ended follow-up's outcome is written before its record can expire.
+  try {
+    settleFollowups(read.records);
+  } catch (error) {
+    // A failed write must not stop every repository's turn; the turns settle their own records again.
+    started.settleFailed = true;
+    receipt.defect = defectOf("start", error);
+    logDefect("the follow-up outcomes", receipt.defect, error);
+  }
+  const attempt = applyState(
+    options,
+    runtime,
+    read.records,
+    context.nowMs,
+    read.unreadable,
+  );
+  // `--apply` with a machine file that was then withheld says why.
+  started.withheld =
+    attempt !== null && "withheld" in attempt ? attempt.withheld : undefined;
+  const apply = attempt !== null && "tick" in attempt ? attempt : null;
+  context.launches = read.records;
+  context.apply = apply;
+  receipt.apply = apply !== null;
+  if (started.withheld !== undefined) receipt.applyWithheld = started.withheld;
+  Object.assign(receipt, accountsReport(options.machine ?? null, apply));
+  receipt.unreadableLaunches = read.unreadable;
+}
+
+/**
+ * The act phase: each observed repository's act part, in this tick's
+ * rotated order, inside its boundary; a repository's observe lock is given
+ * up once its act part is done.
+ */
+async function actAll(
+  started: StartedTick,
+  observe: ObservedAll,
+  locks: Map<string, Held>,
 ): Promise<void> {
+  await startAct(started);
+  const { receipt, context } = started;
   const { apply, options } = context;
   const order = apply === null ? options.repos : rotated(apply, options.repos);
-  for (const path of order)
-    receipt.repos.push(await boundedTurn(path, context));
+  // The reflection route takes the repositories in the order they acted.
+  context.reflections.sort(
+    (a, b) => order.indexOf(a.path) - order.indexOf(b.path),
+  );
+  for (const path of new Set(order)) {
+    const observed = observe.observed.get(path);
+    if (observed === undefined) continue;
+    receipt.repos.push(await boundedAct(observed, context));
+    locks.get(path)?.release();
+    locks.delete(path);
+  }
+  if (observe.busy.size > 0)
+    receipt.busy = [...observe.busy].map(([path, heldBy]) => ({
+      path,
+      heldBy,
+    }));
+}
+
+/** One repository's act part inside the per-repository boundary. */
+async function boundedAct(
+  observed: Observed,
+  context: TickContext,
+): Promise<RepoReport> {
+  if ("report" in observed) return observed.report;
+  try {
+    return await actTurn(observed, context);
+  } catch (error) {
+    return defectReport(observed.turn, error);
+  }
 }
 
 /**
@@ -200,6 +315,20 @@ async function routeReflection(
     timeLeftMs: apply === null ? null : timeLeftMs(apply),
   });
   if (reflection !== null) receipt.reflection = reflection;
+}
+
+/** Say on the receipt that the optional reads were skipped, when the forge's budget was low as the tick started. */
+async function noteBudget(
+  receipt: TickReceipt,
+  context: TickContext,
+): Promise<void> {
+  const budget = await context.reads.budget();
+  if (lowBudget(budget))
+    receipt.lowBudget = {
+      remaining: budget.remaining,
+      limit: budget.limit,
+      skipped: [...OPTIONAL_READS],
+    };
 }
 
 /** The closing steps: the records of repositories not read settled, the outcome log copied, the exit decided, the line written. */
@@ -227,6 +356,7 @@ async function closeTick(
   );
   const copied = copyLog(receipt);
   await fillBudgets(context.reads);
+  await noteBudget(receipt, context);
   await routeReflection(receipt, context);
   receipt.exitStatus =
     failed || !copied || settleFailed || withheld !== undefined ? 1 : 0;
@@ -237,36 +367,68 @@ async function closeTick(
   receipt.phasesMs = { ...timer.ms };
   writeTickLine(receipt, {
     machine,
-    repos: context.options.repos,
+    repos: readRepos(receipt, context),
     records: allRecords(context),
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
   });
 }
 
-export async function runTick(options: TickOptions): Promise<TickResult> {
-  const lock = takeTickLock();
-  if ("heldBy" in lock) return { held: lock.heldBy };
+/** The repositories this tick read: one another tick held was not, and the line is written only by a tick that read every one. */
+function readRepos(receipt: TickReceipt, context: TickContext): string[] {
+  const busy = new Set((receipt.busy ?? []).map((b) => b.path));
+  return context.options.repos.filter((path) => !busy.has(path));
+}
+
+/** The act phase and the close under the act lock, and the receipt written. */
+async function actAndClose(
+  started: StartedTick,
+  observe: ObservedAll,
+  locks: Map<string, Held>,
+  timer: PhaseTimer<TickPhase>,
+): Promise<{ receipt: TickReceipt; path: string }> {
+  const { receipt, context } = started;
   try {
-    const timer = new PhaseTimer<TickPhase>();
-    const started = await timer.time("start", () => startTick(options));
-    const { receipt } = started;
+    await timer.time("act", () => actAll(started, observe, locks));
+    await timer.time("close", () => closeTick(started, timer));
+  } catch (error) {
+    // A defect outside every repository's turn: the receipt is still written, and says the tick did not complete.
+    receipt.defect = defectOf(timer.current ?? "close", error);
+    receipt.completed = false;
+    receipt.exitStatus = 1;
+    receipt.finishedAt = new Date().toISOString();
+    logDefect("the tick", receipt.defect, error);
+  }
+  receipt.phasesMs = { ...timer.ms };
+  const path = writeReceipt(receipt);
+  pruneReceipts(Date.now(), undefined, context.options.machine?.receiptsDays);
+  return { receipt, path };
+}
+
+export async function runTick(options: TickOptions): Promise<TickResult> {
+  const timer = new PhaseTimer<TickPhase>();
+  const started = await timer.time("start", () => startTick(options));
+  const locks = new Map<string, Held>();
+  try {
+    const observe = await timer.time("observe", () =>
+      observeAll(started.context, locks),
+    );
+    // Another tick holds every repository: it reads and acts on them, and this one has nothing to do.
+    if (
+      options.repos.length > 0 &&
+      observe.busy.size === new Set(options.repos).size
+    )
+      return { held: [...observe.busy.values()].join("; ") };
+    const act = await timer.time("wait", () =>
+      waitForActLock(options.actLockWaitMs ?? ACT_LOCK_WAIT_MS),
+    );
+    if ("heldBy" in act) return { held: act.heldBy };
     try {
-      await timer.time("repos", () => runRepos(receipt, started.context));
-      await timer.time("close", () => closeTick(started, timer));
-    } catch (error) {
-      // A defect outside every repository's turn: the receipt is still written, and says the tick did not complete.
-      receipt.defect = defectOf(timer.current ?? "close", error);
-      receipt.completed = false;
-      receipt.exitStatus = 1;
-      receipt.finishedAt = new Date().toISOString();
-      logDefect("the tick", receipt.defect, error);
+      return await actAndClose(started, observe, locks, timer);
+    } finally {
+      act.release();
     }
-    receipt.phasesMs = { ...timer.ms };
-    const path = writeReceipt(receipt);
-    pruneReceipts(Date.now(), undefined, options.machine?.receiptsDays);
-    return { receipt, path };
   } finally {
-    lock.release();
+    for (const lock of locks.values()) lock.release();
   }
 }

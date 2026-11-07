@@ -1,24 +1,50 @@
 /**
  * A tick's clock for its phases: how many milliseconds each one took, and
  * which one is running, so a defect can say the phase it was thrown in.
+ * Phases may overlap (a repository's tracker and forge are read at once):
+ * each keeps its own time, and the first one that throws is the one a
+ * defect names.
  */
 export class PhaseTimer<P extends string> {
   /** Milliseconds per phase; a phase run more than once adds up. */
   readonly ms: Partial<Record<P, number>> = {};
-  /** The phase running now; after a throw, the phase it was thrown in. */
-  current: P | null = null;
+  private readonly running: P[] = [];
+  private thrown: P | null = null;
+
+  /** The phase running now, the latest of those that overlap; after a throw, the first phase that threw. */
+  get current(): P | null {
+    return this.thrown ?? this.running.at(-1) ?? null;
+  }
 
   /** Run `run` as `phase`, adding the time it took, whether it returns or throws. */
   async time<T>(phase: P, run: () => T | Promise<T>): Promise<T> {
     const started = performance.now();
-    this.current = phase;
+    this.running.push(phase);
     try {
-      const value = await run();
-      this.current = null;
-      return value;
+      return await run();
+    } catch (error) {
+      this.thrown ??= phase;
+      throw error;
     } finally {
+      this.running.splice(this.running.lastIndexOf(phase), 1);
       this.ms[phase] =
         (this.ms[phase] ?? 0) + Math.round(performance.now() - started);
     }
   }
+}
+
+/**
+ * Await every promise, then return their values, or throw the first
+ * rejection: a phase run beside another never outlives the step that
+ * started both.
+ */
+export async function settled<T extends readonly unknown[]>(
+  ...promises: { [K in keyof T]: Promise<T[K]> }
+): Promise<T> {
+  const results = await Promise.allSettled(promises);
+  const rejected = results.find((r) => r.status === "rejected");
+  if (rejected !== undefined) throw (rejected as PromiseRejectedResult).reason;
+  return results.map(
+    (r) => (r as PromiseFulfilledResult<unknown>).value,
+  ) as unknown as T;
 }

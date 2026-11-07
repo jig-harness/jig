@@ -1,7 +1,9 @@
 /**
  * What every phase of one tick shares: the options it was run with, the
  * session runtime, the tick's clock, this machine's launch records and, with
- * `--apply`, the apply state the launches change as they go.
+ * `--apply`, the apply state the launches change as they go. The observe
+ * phase reads the launch records as the tick started; the act phase reads
+ * them again under the act lock, and builds the apply state from that read.
  */
 import type { ApplyState } from "./actions/drive.ts";
 import type { ReadRecord } from "./launches.ts";
@@ -21,6 +23,10 @@ export interface TickOptions {
   machine?: MachineConfig | null;
   now?: Date;
   runtime?: SessionRuntime;
+  /** How many reads the observe phase keeps in flight (`pool.ts`). */
+  poolSize?: number;
+  /** How long the act phase waits for another tick's act lock before it gives up, in milliseconds. */
+  actLockWaitMs?: number;
 }
 
 /** What one repository's turn needs beyond its path. */

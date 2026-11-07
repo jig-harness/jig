@@ -2,8 +2,8 @@
  * One repository's shared records in a tick (`shared-launches.ts`): opened as
  * the login the forge names, read for every pull request the plan
  * classifies, written for this host's own launches, and reported on the
- * receipt with every read and write and the forge budget left after the
- * tick, as the board's read reports its cost, so what sharing costs is
+ * receipt with every read and write and the forge budget left as the tick
+ * started, as the board's read reports its cost, so what sharing costs is
  * measured. The observe phase reads the claims from the tick's comment
  * listings (`tick-comments.ts`); the stages' reads before a launch go to the
  * forge, and every write drops its pull request's listing.

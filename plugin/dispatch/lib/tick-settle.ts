@@ -6,6 +6,7 @@
  * repository the tick did not read, without them, and then prunes the
  * records whose rows are in the log (`settleOutcomes`).
  */
+import { resolve } from "node:path";
 import { mergedNotClosed } from "./forge.ts";
 import { logEnded } from "./log-ended.ts";
 import { hasEnded } from "./log.ts";
@@ -57,8 +58,12 @@ export async function settleOutcomes(
   const read = new Set(
     receipt.repos.filter((r) => r.refused === null).map((r) => r.slug),
   );
+  // A repository another tick holds is that tick's to log, with its ledgers beside its records.
+  const held = new Set((receipt.busy ?? []).map((b) => resolve(b.path)));
   const unlogged = await logEnded(
-    records.filter((r) => !read.has(r.record.repo)),
+    records.filter(
+      (r) => !read.has(r.record.repo) && !held.has(resolve(r.record.repoPath)),
+    ),
     {
       all: records,
       drives: null,

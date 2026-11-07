@@ -46,7 +46,8 @@ const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.strin
 if (args[0] === "repo" && args[1] === "view" && args.includes("nameWithOwner,defaultBranchRef"))
   out({ nameWithOwner: "${SLUG}", defaultBranchRef: { name: "main" } });
 if (args[0] === "api" && args[1] === "rate_limit")
-  out({ resources: { core: { limit: 5000, remaining: 4990, reset: 1793000000 } } });
+  // What is left: 4990 unless rate-remaining says otherwise.
+  out({ resources: { core: { limit: 5000, remaining: fs.existsSync(F + "/rate-remaining") ? Number(fs.readFileSync(F + "/rate-remaining", "utf8")) : 4990, reset: 1793000000 } } });
 if (args[0] === "pr" && args[1] === "list") {
   const state = args[args.indexOf("--state") + 1];
   // A listing that fails while prs-<state>-fail exists.

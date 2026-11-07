@@ -24,6 +24,7 @@ import {
   writeMergeReads,
 } from "./merge-reads.ts";
 import { readDrives } from "./sources/ledgers.ts";
+import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
 import { failureText } from "./text.ts";
 import type {
@@ -54,10 +55,24 @@ export interface ForgeRead {
   login: string | null;
 }
 
-/** What the forge's part of a tick reads through beside the forge itself: the tick's comment listings, and the login read once per tick. */
+/** What the forge's part of a tick reads through beside the forge itself: the tick's comment listings, the login read once per tick, and the pool its listings run through. */
 export interface ForgeReads {
   comments: TickComments;
   login(): Promise<string | null>;
+  pool: Pool;
+}
+
+/**
+ * Ask for the comments of every pull request in `prs` at once, so they are
+ * read side by side within the pool while the readers that follow take each
+ * in turn. A listing's failure is the answer its reader gets.
+ */
+function prefetch(
+  comments: TickComments,
+  slug: string,
+  prs: readonly { number: number }[],
+): void {
+  for (const p of prs) comments.read(slug, p.number).catch(() => undefined);
 }
 
 /** The forge's part of a repository's tick; `shared` opens the shared records as the login the forge names. */
@@ -92,10 +107,15 @@ export async function readForge(
       if (p.createdAt !== undefined) out.created.set(p.number, p.createdAt);
   };
   try {
-    out.open = await openPullRequests(repo.slug, read);
+    const [open, login] = await Promise.all([
+      reads.pool.run(() => openPullRequests(repo.slug, read)),
+      reads.login(),
+    ]);
+    out.open = open;
     remember(out.open);
-    out.login = await reads.login();
+    out.login = login;
     const toRead = managed(out.open);
+    prefetch(reads.comments, repo.slug, toRead);
     const unlabeled = out.open.length - toRead.length;
     const adoption = adoptionOf(section, out.login);
     out.drives = await readDrives(
@@ -113,7 +133,7 @@ export async function readForge(
     const listed =
       section.followupCommand === null
         ? []
-        : await mergedSince(repo.slug, since, read);
+        : await reads.pool.run(() => mergedSince(repo.slug, since, read));
     remember(listed);
     const marked = await withMarkers(
       shared(out.login),
@@ -226,16 +246,27 @@ async function withMarkers(
   const fresh: FreshMergeRead[] = [];
   const out: MarkedPr[] = [];
   let reused = 0;
-  for (const pr of merged) {
-    const reuse = pending.has(pr.number)
+  const reuses = merged.map((pr) =>
+    pending.has(pr.number)
       ? null
-      : keptMarkers(kept.get(pr.number), pr, nowMs, login);
+      : keptMarkers(kept.get(pr.number), pr, nowMs, login),
+  );
+  // The markers to read are asked for at once; the pool bounds how many are in flight.
+  const reading = merged.map((pr, i) => {
+    if (reuses[i] !== null) return null;
+    const read = readMarkers(shared, slug, pr.number);
+    // Awaited in order below: one that fails first is not left unhandled meanwhile.
+    read.catch(() => undefined);
+    return read;
+  });
+  for (const [i, pr] of merged.entries()) {
+    const reuse = reuses[i] ?? null;
     if (reuse !== null) {
       out.push({ ...pr, markers: reuse });
       reused += 1;
       continue;
     }
-    const markers = await readMarkers(shared, slug, pr.number);
+    const markers = await (reading[i] as ReturnType<typeof readMarkers>);
     out.push({ ...pr, markers });
     if (
       pr.updatedAt !== undefined &&
