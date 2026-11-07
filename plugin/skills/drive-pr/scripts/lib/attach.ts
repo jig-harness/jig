@@ -33,7 +33,7 @@
  *
  * Every git and `gh` call is bounded; the fetch by `DRIVE_PR_FETCH_TIMEOUT`.
  */
-import { mkdirSync, realpathSync } from "node:fs";
+import { mkdirSync, realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   type DrivenTree,
@@ -44,6 +44,7 @@ import {
 } from "../../../../shared/driven-tree.ts";
 import { consumerRoot, remoteName } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { errnoCode } from "../../../../shared/errors.ts";
 import { fetchTimeoutSeconds } from "./base-drift.ts";
 import { ownParentDriver } from "./claim.ts";
 import { fail } from "./cli.ts";
@@ -680,6 +681,21 @@ async function requireHolderBehind(
   holder: string,
   pr: PrHead & { number: string },
 ): Promise<void> {
+  try {
+    statSync(holder);
+  } catch (error) {
+    if (errnoCode(error) !== "ENOENT")
+      refuse(
+        1,
+        `cannot inspect the working tree holding the branch (${holder}): ${String(error)}`,
+      );
+    // Keep the registration and branch intact for recovery. `move` still sees
+    // the holder and attaches detached at the remote head instead of moving it.
+    console.error(
+      `attach: the working tree holding '${pr.branch}' (${holder}) is missing; local work may need recovery. Attaching detached at the remote head.`,
+    );
+    return;
+  }
   await requireSettled(holder, "the working tree holding the branch");
   const ahead = await g(holder, [
     "rev-list",
