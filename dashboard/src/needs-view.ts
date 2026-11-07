@@ -54,6 +54,8 @@ const TO_DECIDE: ReadonlySet<string> = new Set([
 ]);
 
 function recordedWord(n: LineNeed): string {
+  if (n.cause === "stopped-unknown")
+    return "repeated no-cause stops (needs a person)";
   if (n.cause === "parked") return "parked for a person";
   if (n.cause === "assigner-cannot-write") return "assigner cannot write";
   return n.cause;

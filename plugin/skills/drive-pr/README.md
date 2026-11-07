@@ -231,8 +231,41 @@ head only on required checks that started after the removal. The label is a
 CI cost setting, not a way to steer the drive: a label the drive has no
 record of, because an earlier run lost track of it, a drive that died left
 it, or someone else added it, is adopted and removed at convergence like its
-own. To stop a running drive, run `bun "<skill-dir>/scripts/drives.ts" --stop <PR>`.
+own. To stop a running drive, run
+`bun "<skill-dir>/scripts/drives.ts" --stop <PR> --reason "maintenance"`.
 The dispatcher's `jig:hold` label prevents new launches and re-arms.
+
+With ledger mirroring enabled, stopping requires a readable running ledger owned
+by the exact target acquisition and a writer that supports verified stop
+publication. The command publishes the person's stop and verifies it on the pull
+request before signalling. Publication failure sends no signal. An unpublished
+startup or older mirrored writer is refused. Retry once startup publishes. For
+an older writer, hold dispatch before stopping that process, then re-arm with
+the current plugin and release the hold. The driver
+attempts its initial running ledger immediately after seeding durable state.
+
+The operator marker holds dispatch even while the driver is still recorded
+running. All local ledger writers serialize payload construction and publication,
+so an older in-flight payload finishes before the marker is published; later
+writes retain it. Stop-bearing ledgers use wire version 2, which older readers
+refuse; ordinary ledgers remain version 1. The optional `--reason` records the
+person's reason. A mailbox `stop`, a mailbox `pause` that times out, or `jig send`
+with `stop` keeps its existing operator-stop exit. The dispatcher leaves these
+stopped until a person re-arms them. Its hold label prevents new launches while
+it remains on the pull request.
+
+A drive recorded as stopped with no exit and no person’s-stop marker is read
+as an accident and re-armed from its durable state, up to
+3 attempts per pull request in a rolling hour, across accounts and hosts whose
+launch claims can be read. Completing a round does not reset this count.
+After the budget is spent, the next no-cause stop needs a person and sends one
+notice with the handoff; it becomes eligible again as the attempts leave the
+window. A legacy no-exit ledger receives at most one automatic attempt while
+its stop facts remain unchanged, even beyond the hour. Hard termination of both
+the driver and its launch wrapper can leave its ledger recorded as running.
+That interrupted state is not covered by no-exit recovery and can remain
+silent until a person intervenes.
+
 When someone else removes the CI hold label, the
 drive accepts only checks that started strictly after that removal; GitHub
 records the removal to the second, so a run that started in the same second

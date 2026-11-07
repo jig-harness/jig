@@ -1,4 +1,10 @@
 #!/usr/bin/env bun
+import {
+  prepareOperatorStop,
+  takeExpectStarted,
+  takeReason,
+  requireStopOptions,
+} from "./lib/stop-options.ts";
 /**
  * drives.ts — the operator's answer to "who is driving what, from where?"
  *
@@ -892,6 +898,7 @@ async function stop(
   stateDir: string,
   pr: string,
   expectStarted: string,
+  reason: string,
 ): Promise<number> {
   const row = readLock(stateDir, "pr", pr);
   if (row.state === "empty" || row.state === "stale") {
@@ -925,7 +932,8 @@ async function stop(
     return 1;
   }
   const v = await verifyDriverClaim(row, pid);
-  const code = "code" in v ? v.code : await stopVerifiedDriver(row, v.owner);
+  const code =
+    "code" in v ? v.code : await stopVerifiedDriver(row, v.owner, reason);
   // Witnessed gone, or already gone with nothing witnessing its pass.
   if (code === 0)
     await ledgerStop.settleStop(stateDir, pr, row, !("code" in v));
@@ -1049,8 +1057,11 @@ async function requestVerifiedDriverStop(
 async function stopVerifiedDriver(
   row: LockRow,
   owner: ProcessRow,
+  reason: string,
 ): Promise<number> {
   const pid = owner.pid;
+  const refusal = await prepareOperatorStop(row, pid, reason);
+  if (refusal !== null) return refusal;
   // Capture descendants before requesting shutdown: the root may leave before
   // its descendants, and the fallback must never rediscover a recycled PID.
   const targets = await captureProcessTree(pid);
@@ -1197,26 +1208,6 @@ export async function forceStopDriver(
   return 0;
 }
 
-/**
- * Remove `--expect-started ISO` from `argv` and return ISO (`''` when
- * absent): the acquisition a `--stop` is bound to.
- */
-function takeExpectStarted(argv: string[]): string {
-  const at = argv.indexOf("--expect-started");
-  if (at < 0) return "";
-  const [, value = ""] = argv.splice(at, 2);
-  if (value === "") fail(2, "--expect-started takes a time");
-  return value;
-}
-
-function requireStopForExpectStarted(
-  expectStarted: string,
-  stopPr: string,
-): void {
-  if (expectStarted !== "" && stopPr === "")
-    fail(2, "--expect-started only qualifies --stop");
-}
-
 /** `--report` is a mode of its own; every other mode is the fleet's. */
 async function entry(): Promise<number> {
   const argv = process.argv.slice(2);
@@ -1232,6 +1223,7 @@ async function main(argv: string[]): Promise<number> {
   let doctorMode = false;
   let onlyPr = "";
   const expectStarted = takeExpectStarted(argv);
+  const reason = takeReason(argv);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] as string;
     if (a === "--json") json = true;
@@ -1252,7 +1244,7 @@ async function main(argv: string[]): Promise<number> {
     }
   }
   if (onlyPr !== "" && !doctorMode) fail(2, "--pr requires --doctor");
-  requireStopForExpectStarted(expectStarted, stopPr);
+  requireStopOptions(expectStarted, reason, stopPr);
   // `--doctor` combines with `--json` but is otherwise mutually
   // exclusive with every other mode, on the same terms `--here`/`--json`/
   // `--stop` already are with each other.
@@ -1290,7 +1282,7 @@ async function main(argv: string[]): Promise<number> {
     return stateDir === null ? 0 : here(stateDir);
   }
   if (stopPr !== "")
-    return stop(await resolveStateDir(), stopPr, expectStarted);
+    return stop(await resolveStateDir(), stopPr, expectStarted, reason);
 
   // Read-only listing, same reasoning as --here above: this must not mint a
   // clone identity merely to enumerate it.

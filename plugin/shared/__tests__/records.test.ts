@@ -240,7 +240,17 @@ describe("the registry", () => {
   });
 
   it("states the versions the code writes", () => {
-    expect(recordKind(LEDGER_KIND)?.version).toBe(LEDGER_VERSION);
+    const stopped = ledger();
+    stopped.driver.personStop = { at: AT, reason: "maintenance" };
+    const rendered = renderLedger(stopped);
+    expect("body" in rendered).toBe(true);
+    if ("body" in rendered)
+      expect(dataOf(rendered.body)).toMatchObject({
+        v: recordKind(LEDGER_KIND)?.version,
+      });
+    expect(recordKind(LEDGER_KIND)?.version ?? 0).toBeGreaterThanOrEqual(
+      LEDGER_VERSION,
+    );
     expect(recordKind(FOLLOWUP_KIND)?.version).toBe(FOLLOWUP_VERSION);
     for (const kind of [ADMISSION_KIND, LAUNCH_KIND, HEARTBEAT_KIND])
       expect(recordKind(kind)?.version).toBe(GUARD_VERSION);
@@ -327,10 +337,13 @@ describe("the drive ledger carries the envelope", () => {
   it("reads a newer envelope version as a ledger it does not read, and a foreign key as damage", () => {
     const rendered = renderLedger(ledger());
     if ("error" in rendered) throw new Error(rendered.error);
-    expect(parseLedger(rendered.body.replace('"v":1', '"v":2'))).toEqual({
+    expect(parseLedger(rendered.body.replace('"v":1', '"v":3'))).toEqual({
       kind: "unknown-version",
-      version: 2,
+      version: 3,
     });
+    expect(parseLedger(rendered.body.replace('"v":1', '"v":2'))?.kind).toBe(
+      "malformed",
+    );
     const moved = parseLedger(
       rendered.body.replace('"key":"12"', '"key":"13"'),
     );

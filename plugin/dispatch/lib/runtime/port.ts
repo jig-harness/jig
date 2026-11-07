@@ -176,6 +176,12 @@ export interface NoticesTarget {
 /** Whether a runtime can start an interactive session billed to a chosen account. */
 export type Binding = { ok: true } | { ok: false; reason: string };
 
+/** A runtime's answer to which workspaces and sessions one repository has. */
+export type SessionsReader = (
+  repo: RepoTarget,
+  join: JoinTargets,
+) => Promise<SessionsReport>;
+
 export interface SessionRuntime {
   readonly name: string;
   /**
@@ -190,6 +196,14 @@ export interface SessionRuntime {
    * not covered, a page cut short), so nothing is read as "no session".
    */
   sessions(repo: RepoTarget, join: JoinTargets): Promise<SessionsReport>;
+  /**
+   * A reader of `sessions` for one tick's observe phases: what the runtime
+   * lists host-wide is read at most once for the reader's life, and each
+   * repository is answered from it as `sessions` would answer it, a failed
+   * listing failing each repository's answer alike. Absent, each read is
+   * `sessions`'. A read just before a launch never goes through it.
+   */
+  sessionsOnce?(): SessionsReader;
   /**
    * A workspace for an item (a new branch, its issue linked), a pull request
    * (its head) or the repository's notifications, reused when one exists. A
@@ -302,6 +316,8 @@ export function tabTitle(stage: NamedStage, key: string): string {
 
 /** The name, and the comment's mark, of the repository's notices workspace, which no launch record names. */
 export const NOTICES_NAME = `${DISPATCHED}${SEPARATOR}notices`;
+/** The default branch of a repository's notices workspace. */
+export const NOTICES_BRANCH = "jig-dispatch-notices";
 
 /** What a workspace the dispatcher opens is named and marked with. */
 export interface Dispatched {

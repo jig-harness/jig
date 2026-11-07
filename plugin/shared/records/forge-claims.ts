@@ -448,13 +448,15 @@ export function listedFrom(
     .sort((a, b) => a.id - b.id);
 }
 
-/** Every comment on `target` that opens as a claim of `kind`, trusted or not, earliest first; or why they could not be read. */
-export async function list(
+/**
+ * Every comment on `target`, as the forge's issue-comment objects, or why
+ * they could not be read: the one listing `list` reads, for a reader that
+ * shares it between several kinds (`listedFrom`).
+ */
+export async function listComments(
   target: ClaimTarget,
-  kind: ClaimKind,
-  self: string | null = null,
   deadline: Deadline = {},
-): Promise<Outcome<ListedClaim[], "unreadable">> {
+): Promise<Outcome<unknown[], "unreadable">> {
   const r = await gh(
     [
       "api",
@@ -470,7 +472,17 @@ export async function list(
       "unreadable",
       `the comments could not be read (${r.failure.reason})`,
     );
-  const comments = pagesOf(r.value);
+  return pagesOf(r.value);
+}
+
+/** Every comment on `target` that opens as a claim of `kind`, trusted or not, earliest first; or why they could not be read. */
+export async function list(
+  target: ClaimTarget,
+  kind: ClaimKind,
+  self: string | null = null,
+  deadline: Deadline = {},
+): Promise<Outcome<ListedClaim[], "unreadable">> {
+  const comments = await listComments(target, deadline);
   if (!comments.ok) return comments;
   return ok(listedFrom(kind, comments.value, target, self));
 }

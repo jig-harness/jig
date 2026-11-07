@@ -15,6 +15,8 @@
 import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 import { basename } from "node:path";
+import { withLedgerWriteLock } from "./ledger-write-lock.ts";
+import { personStopFor } from "./person-stop.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { thisHost } from "../../../../../shared/liveness.ts";
@@ -102,13 +104,18 @@ function holdsPrLock(stateDir: string, pr: string, started: string): boolean {
 function writeRefused(
   snapshot: LedgerSnapshot,
   driver: LedgerDriverEnv,
+  allowStopped: boolean,
 ): string {
   if (driver.recovering === true) {
-    const found = ledgerOfStoppedDriver(snapshot, {
-      actor: driver.actor,
-      clone: driver.clone,
-      started: driver.started ?? "",
-    });
+    const found = ledgerOfStoppedDriver(
+      snapshot,
+      {
+        actor: driver.actor,
+        clone: driver.clone,
+        started: driver.started ?? "",
+      },
+      allowStopped,
+    );
     if ("why" in found)
       return `the ledger is not the stopped driver's: ${found.why}`;
   }
@@ -172,7 +179,12 @@ function buildRefused(
       `ledger: ignored ${snapshot.untrusted.length} comment(s) carrying a drive marker from an untrusted author (ids ${snapshot.untrusted.map((c) => c.id).join(", ")}).`,
     );
   return (
-    acquisitionLost(stateDir, pr, driver) || writeRefused(snapshot, driver)
+    acquisitionLost(stateDir, pr, driver) ||
+    writeRefused(
+      snapshot,
+      driver,
+      personStopFor(stateDir, pr, driver.started).personStop !== undefined,
+    )
   );
 }
 
@@ -185,6 +197,16 @@ function buildRefused(
  * every build, so a driver that lost its lock during the reads never writes.
  */
 export async function mirrorLedger(
+  pr: string,
+  store: StateStore,
+): Promise<MirrorOutcome> {
+  if (ledgerDriverFromEnv() === null) return "refused";
+  return withLedgerWriteLock(store.stateDir, pr, () =>
+    mirrorUnlocked(pr, store),
+  );
+}
+
+async function mirrorUnlocked(
   pr: string,
   store: StateStore,
 ): Promise<MirrorOutcome> {
@@ -210,6 +232,8 @@ export async function mirrorLedger(
       driver: {
         actor: driver.actor,
         clone: driver.clone,
+        recoveryVersion: 1,
+        ...personStopFor(store.stateDir, pr, driver.started),
         heartbeat: new Date().toISOString(),
         state: driver.stopped === undefined ? "running" : "stopped",
         ...(typeof driver.stopped === "number" ? { exit: driver.stopped } : {}),

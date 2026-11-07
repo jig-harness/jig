@@ -718,6 +718,15 @@ milliseconds, on every platform, and runs its own cleanup; a process-table
 failure refuses the stop. Recovery stays `acquire`'s alone. The driver's own narrative survives the arming session at
 `<state dir>/drive-pr-<PR>.log`.
 
+
+The stop publishes an acquisition-bound operator marker through the serialized
+ledger writer and verifies it before signalling. `--reason "maintenance"` records
+the reason. The marker holds dispatch even while the driver remains recorded
+running, and a failed publication sends no signal. Stop-bearing ledgers use
+version 2; ordinary ledgers remain version 1. Older readers refuse version 2. The
+dispatcher leaves an operator stop alone. Accidental stops use the bounded
+recovery described in [the drive README](../README.md#ci-hold).
+
 The stop names the driver's generation, so a stop left for an older driver
 cannot cancel its successor, which draws another. A claim written by a release
 before driver generations names none: it is sent no stop, and is forced after

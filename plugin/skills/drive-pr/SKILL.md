@@ -562,6 +562,14 @@ outlives the session that spawned it, so its console is not where you look:
   `--expect-started <ISO>` stops only the claim acquired at that time and
   exits `3` for any other holder.
   A stale lock stays the next acquire's to recover.
+
+  The stop publishes and verifies an acquisition-bound operator record on the
+  pull request before signalling; `--reason "maintenance"` records the reason. The
+  dispatcher leaves this stop alone. With ledger mirroring enabled, unpublished
+  or unreadable ownership, an older writer or a failed marker publication
+  refuses the stop without a signal; hold dispatch and retry with a current writer. For accidental stops and their bounded
+  recovery, see [the drive README](README.md#ci-hold).
+
 - **Progress liveness / `--doctor`** — a claim heartbeat proves the
   driver *process* is alive, never that the drive is making *progress*: a driver
   that hit a quota wall, exhausted its pass's context, or wedged on a
