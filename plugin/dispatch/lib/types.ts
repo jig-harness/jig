@@ -153,6 +153,8 @@ export interface MergedPr {
   head: string;
   mergedAt: string;
   createdAt?: string;
+  /** When it last changed, as the listing gives it: a new comment or an edit of one moves it. */
+  updatedAt?: string;
   /** Its labels, read only where the repository turns dispatch labels on. */
   labels?: string[];
 }

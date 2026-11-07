@@ -58,11 +58,15 @@ import type {
   Ledger,
   LedgerSnapshot,
 } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
-import { readLedgerSnapshot } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
+import {
+  readLedgerSnapshot,
+  snapshotFromListing,
+} from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { type Adoption, adopts, type Author } from "../adopt.ts";
 import { branchHead } from "../forge.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
+import type { Listing } from "../tick-comments.ts";
 import { failureText, minutesBetween } from "../text.ts";
 import { framedDecisionLines } from "../../../skills/drive-pr/scripts/lib/state/park-frame.ts";
 import type {
@@ -369,13 +373,14 @@ async function parkOf(
   pr: number,
   ledger: Ledger,
   slug: string,
+  listing: readonly unknown[] | undefined,
 ): Promise<ParkReading | undefined> {
   if (
     ledger.driver.state !== "stopped" ||
     ledger.driver.exit !== DRIVE_EXIT.HITL_PARKED
   )
     return undefined;
-  const found = await parkAnswers(pr, ledger.parked, slug);
+  const found = await parkAnswers(pr, ledger.parked, slug, listing);
   return "unreadable" in found
     ? found
     : {
@@ -460,6 +465,8 @@ interface Reading {
   adoption: Adoption | null;
   /** The head of a base branch, read at most once per reading. */
   baseHead: (branch: string | undefined) => Promise<BaseHead>;
+  /** A pull request's comments as the tick listed them, shared with the other records read from them; absent, each read goes to the forge. */
+  comments?: (pr: number) => Promise<Listing>;
 }
 
 /** A reading's reader of base branch heads: pull requests on one base share one read. */
@@ -501,7 +508,13 @@ async function factsOf(
 async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   const { slug, login, nowMs, windowMs, labels } = r;
   const base = baseOf(pr, labels);
-  const snapshot = await readLedgerSnapshot(String(pr.number), login, slug);
+  const listing = await r.comments?.(pr.number);
+  const snapshot =
+    listing === undefined
+      ? await readLedgerSnapshot(String(pr.number), login, slug)
+      : listing.ok
+        ? snapshotFromListing(listing.value, login)
+        : listing.failure.reason;
   if (typeof snapshot === "string")
     return { ...base, class: "unplaced", why: snapshot, evidence: {} };
   const why = unreadable(snapshot);
@@ -509,7 +522,12 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   if (why !== null || snapshot.canonical?.parsed.kind !== "ledger")
     return { ...base, class: "unplaced", why: why ?? "", evidence: {} };
   const ledger = snapshot.canonical.parsed.ledger;
-  const park = await parkOf(pr.number, ledger, slug);
+  const park = await parkOf(
+    pr.number,
+    ledger,
+    slug,
+    listing?.ok ? listing.value : undefined,
+  );
   const forge = await factsOf(pr, ledger, r);
   const classified = classifyLedger(ledger, nowMs, windowMs, park, forge);
   return {
@@ -538,7 +556,9 @@ function waitingOf(
  * The open pull requests that carry a ledger, each classified; a pull
  * request with no ledger the drive trusts is not a drive and is left out,
  * unless `labels` are on and it carries the `drive` label, or `adoption`
- * adopts it (`unarmed`).
+ * adopts it (`unarmed`). Each pull request's comments are read through
+ * `comments`, the tick's listings, where the observe phase passes them, and
+ * from the forge where it does not, as a launch's fresh read does.
  */
 export async function readDrives(
   slug: string,
@@ -547,6 +567,7 @@ export async function readDrives(
   nowMs: number,
   labels: LabelConfig | null = null,
   adoption: Adoption | null = null,
+  comments?: (pr: number) => Promise<Listing>,
 ): Promise<DrivenPr[]> {
   const reading: Reading = {
     slug,
@@ -556,6 +577,7 @@ export async function readDrives(
     labels,
     adoption,
     baseHead: baseHeads(slug),
+    ...(comments === undefined ? {} : { comments }),
   };
   const out: DrivenPr[] = [];
   for (const pr of prs) {

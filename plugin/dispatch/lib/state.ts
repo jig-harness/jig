@@ -19,6 +19,7 @@
  * | `log` | outcome row | each row once: it is written in the same transaction as what it records; its `target` column, the piece of work, is indexed with the repository |
  * | `tick_line` | the newest tick from the machine file | one row, replaced by each such tick: the line as it found it and its receipt, which `jig dispatch dashboard` reads |
  * | `reflection_findings` | finding the reflection route made of a recurring class | its id, derived from the repository, stage, class and week: the event as every append sends it, pending until the store reports it stored |
+ * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then; replaced by each read, removed by a write the tick makes on it |
  *
  * The receipts, the account walls (which the drive's quota adapters write
  * from a pass, outside the tick), the tick lock and the rotation cursor stay
@@ -260,6 +261,21 @@ const MIGRATIONS: readonly Migration[] = [
     ref TEXT
   );
   CREATE INDEX reflection_findings_repo ON reflection_findings (repo, stored_at);
+  `,
+  },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE merge_reads (
+    repo TEXT NOT NULL,
+    pr INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    read_at_ms INTEGER NOT NULL,
+    markers TEXT NOT NULL,
+    claims TEXT,
+    claims_read_at_ms INTEGER,
+    PRIMARY KEY (repo, pr)
+  );
   `,
   },
 ];
