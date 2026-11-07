@@ -707,8 +707,12 @@ bun "<skill-dir>/scripts/ci-hold.ts" release <PR> --expect-head <SHA>
 ```
 
 Use the authenticated forge identity for the intended repository. The
-existing release checks the expected PR head and label transition ownership
-again before removing the label. Relay a refusal; do not bypass it with a raw
+existing release checks the expected PR head before removing the label. When
+the label's newest transition is not the one the drive recorded, it adopts that
+transition and releases it, so it does not refuse a hold someone removed and
+re-applied on the same head after the diagnosis. Run the release right after
+the diagnosis, and if the label's timeline may have changed since, diagnose
+again first. Relay a refusal; do not bypass it with a raw
 label edit or restart the driver. The dispatcher’s `release` verb releases a dispatcher
 hold and has no effect on this CI hold.
 
