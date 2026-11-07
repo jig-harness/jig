@@ -30,6 +30,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "sessionId",
       "mark",
       "rearmLabel",
+      "noReplay",
     ].every((k) => optionalText(value[k])) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
