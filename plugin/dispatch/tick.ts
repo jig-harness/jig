@@ -143,6 +143,8 @@ interface StartedTick {
 
 /** Read this machine's launch records as the observe phase sees them, and the receipt the tick fills. */
 async function startTick(options: TickOptions): Promise<StartedTick> {
+  // The deadline counts from here, so the startup read below spends it too.
+  const startedMs = Date.now();
   const now = options.now ?? new Date();
   const machine = options.machine ?? null;
   const runtime = options.runtime ?? defaultRuntime(machine);
@@ -162,7 +164,7 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
     options,
     runtime,
     nowMs: now.getTime(),
-    startedMs: Date.now(),
+    startedMs,
     launches: read.records,
     apply: null,
     lineInputs: new Map(),
@@ -345,7 +347,13 @@ async function routeReflection(
   context: TickContext,
 ): Promise<void> {
   const { apply } = context;
-  const reflection = await routeRecurrences(context.reflections, {
+  // In the order the repositories were named, not the order their reads finished.
+  const named = [...new Set(context.options.repos)];
+  const rank = (path: string) => named.indexOf(path);
+  const ordered = [...context.reflections].sort(
+    (a, b) => rank(a.path) - rank(b.path),
+  );
+  const reflection = await routeRecurrences(ordered, {
     apply: apply !== null,
     nowMs: Date.now(),
     timeLeftMs: apply === null ? null : timeLeftMs(apply),

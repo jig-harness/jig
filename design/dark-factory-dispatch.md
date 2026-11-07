@@ -105,8 +105,8 @@ flowchart TD
     P --> G --> X --> LB
   end
   LOOP --> act
-  act -->|give up its observe lock| LOOP
-  LOOP --> CL[close: log rows for repositories not read, prune records]
+  act --> LOOP
+  LOOP -->|all launches and closes done: give up the observe locks| CL[close: log rows for repositories not read, prune records]
   CL --> E[copy the outcome log to month files, write the line,<br/>write the receipt, prune receipts, release the act lock]
 ```
 
@@ -131,10 +131,11 @@ second, after which the tick ends the same way. A tick holding the act lock
 waits for nothing, so no two ticks wait on each other. Its one exception to
 taking no observe lock is the close, which tries the observe locks of the
 repositories it did not read, without waiting, to log their ended records,
-and leaves any it cannot take to the tick that holds it. A repository's observe lock is kept until its turn in the act phase
-is done, so no tick acts on a repository from reads made before another
-tick acted on it; then it is given up, and a wake-up for that repository
-can start while the tick finishes the others. A single-repository tick (the
+and leaves any it cannot take to the tick that holds it. A repository's observe lock is kept until every repository's launches
+and closes are done, so no tick acts on a repository from reads made before
+another tick acted on it; then the locks are given up together, and a
+wake-up for any repository that arrives before then finds it busy and
+retries. A single-repository tick (the
 Orca plugin's wake-up, or `jig send`'s) therefore reads and acts on its
 repository while a sweep reads or acts on the others, and waits only for
 the sweep's act phase, never for its reads.
