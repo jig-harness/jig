@@ -360,10 +360,14 @@ person's. These rules keep every write theirs:
   new allowance. Each reservation records its hub process and that
   process's start time, and the hub settles an orphan, a reservation whose
   process is gone with no settlement, when it starts and again under the
-  lock before it refuses a turn for want of allowance. It settles the
-  orphan to the tokens the turn's record shows it used, and to the whole
-  reserved ceiling when the record shows none, so a crash costs at most the
-  one ceiling it held, never the rest of the day.
+  lock before it refuses a turn for want of allowance. A turn's record
+  ends with a final-usage mark, written only once every model call of the
+  turn has been counted. The hub settles an orphan to the recorded tokens
+  only when the record carries that mark, and to the whole reserved ceiling
+  otherwise, a partial count included, since a crash between two model
+  calls leaves the later consumption unrecorded. So a crash costs at most
+  the one ceiling it held, never the rest of the day, and never lets later
+  turns pass the day's ceiling.
 - **Where the context goes.** A turn sends what it read to the model
   provider of the account the runner signs in with: the person's own,
   named in the user file (`hub.operator_account`), never an account the
