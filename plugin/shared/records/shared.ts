@@ -68,7 +68,13 @@ export type LaunchEnd =
       /** A follow-up's answer: `done`, or `failed` when its pass ended without recording done. */
       outcome: "done" | "failed" | null;
     }
-  | { state: "died"; at: string; reason: string };
+  | {
+      state: "died";
+      at: string;
+      reason: string;
+      /** False only with durable evidence that the reservation never executed. Absent on older ends. */
+      executed?: false;
+    };
 
 /** What a claim says. */
 export interface ClaimSays {

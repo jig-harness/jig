@@ -5,6 +5,7 @@
 import type {
   LineDecision,
   LineNeed,
+  LineSession,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { ago, clock, plural } from "./format.ts";
@@ -54,6 +55,8 @@ const TO_DECIDE: ReadonlySet<string> = new Set([
 ]);
 
 function recordedWord(n: LineNeed): string {
+  if (n.cause === "stopped-unknown")
+    return "repeated no-cause stops (needs a person)";
   if (n.cause === "parked") return "parked for a person";
   if (n.cause === "assigner-cannot-write") return "assigner cannot write";
   return n.cause;
@@ -61,6 +64,8 @@ function recordedWord(n: LineNeed): string {
 
 function goLabelOf(n: LineNeed): string {
   if (n.pr === null) return "Open in the tracker";
+  // A stuck launch record has no drive handoff to read; its session is inspected and the record cleared.
+  if (n.stuckRecord != null) return "Open the pull request";
   if (n.cause === "needs-person") return "Read the handoff on the pull request";
   if (
     n.cause === "followup-failed" ||
@@ -101,6 +106,14 @@ function needEvidence(
           ? n.notified.outcome
           : `${clock(Date.parse(n.notified.at), timeZone)}${to}`,
     });
+  }
+  if (n.stuckRecord != null) {
+    const clear = `jig dispatch clear ${n.stuckRecord}`;
+    rows.push({
+      k: "to release",
+      v: "a person checks for a session it started, then runs jig dispatch clear",
+    });
+    rows.push({ k: "clear", v: clear, copy: clear });
   }
   n.workspaces.forEach((path, i) => {
     rows.push({ k: `workspace ${i + 1}`, v: path, copy: path });
@@ -146,6 +159,11 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
   };
 }
 
+/** Whether a need is a decision: a stuck launch record is released on the host, so it is checked, not decided. */
+function toDecide(n: LineNeed): boolean {
+  return n.stuckRecord == null && TO_DECIDE.has(n.cause);
+}
+
 function byAge(a: LineNeed, b: LineNeed): number {
   return Date.parse(a.since) - Date.parse(b.since);
 }
@@ -153,9 +171,19 @@ function byAge(a: LineNeed, b: LineNeed): number {
 /** The needs in the order the page lists them: to decide before to check, oldest first in each. */
 export function orderedNeeds(needs: LineNeed[]): LineNeed[] {
   return [
-    ...needs.filter((n) => TO_DECIDE.has(n.cause)).sort(byAge),
-    ...needs.filter((n) => !TO_DECIDE.has(n.cause)).sort(byAge),
+    ...needs.filter((n) => toDecide(n)).sort(byAge),
+    ...needs.filter((n) => !toDecide(n)).sort(byAge),
   ];
+}
+
+/** The sessions under "Not moving": a stuck launch record already listed as a need is not listed again. */
+function notMoving(line: LineSnapshot, nowMs: number): LineSession[] {
+  const listed = new Set(
+    line.needs.flatMap((n) => (n.stuckRecord == null ? [] : [n.stuckRecord])),
+  );
+  return line.sessions.filter(
+    (s) => isStuck(sessionKind(s, nowMs)) && !listed.has(s.record),
+  );
 }
 
 export type NeedRow =
@@ -174,16 +202,14 @@ export function needRows(line: LineSnapshot, clockNow: Clock): NeedRow[] {
   };
   const ordered = orderedNeeds(line.needs);
   push(
-    ordered.filter((n) => TO_DECIDE.has(n.cause)),
+    ordered.filter((n) => toDecide(n)),
     "To decide, on the pull request",
   );
   push(
-    ordered.filter((n) => !TO_DECIDE.has(n.cause)),
+    ordered.filter((n) => !toDecide(n)),
     "To check",
   );
-  const stuck = line.sessions.filter((s) =>
-    isStuck(sessionKind(s, clockNow.nowMs)),
-  );
+  const stuck = notMoving(line, clockNow.nowMs);
   if (stuck.length > 0) {
     rows.push({ type: "head", head: "Not moving" });
     for (const s of stuck)
@@ -194,18 +220,14 @@ export function needRows(line: LineSnapshot, clockNow: Clock): NeedRow[] {
 
 /** Counts records needing a person without formatting evidence that belongs inside a panel. */
 export function needCount(line: LineSnapshot | null, nowMs: number): number {
-  return line === null
-    ? 0
-    : line.needs.length +
-        line.sessions.filter((s) => isStuck(sessionKind(s, nowMs))).length;
+  return line === null ? 0 : line.needs.length + notMoving(line, nowMs).length;
 }
 
 /** Whether What needs you exists on this page, which decides the page's shape. */
 export function hasNeedRows(line: LineSnapshot | null, nowMs: number): boolean {
   return (
     line !== null &&
-    (line.needs.length > 0 ||
-      line.sessions.some((s) => isStuck(sessionKind(s, nowMs))))
+    (line.needs.length > 0 || notMoving(line, nowMs).length > 0)
   );
 }
 
@@ -237,7 +259,7 @@ export function answerBand(
   const moving = kinds.filter(
     (k) => k === "working" || k === "takeover",
   ).length;
-  const stuck = kinds.filter(isStuck).length;
+  const stuck = notMoving(line, nowMs).length;
   const needs = orderedNeeds(line.needs);
   const first = needs[0];
   const tickClock = clock(Date.parse(line.startedAt), timeZone);

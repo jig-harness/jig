@@ -532,6 +532,15 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
   };
 }
 
+/** Publish before a long first status probe, so an operator can stop this acquisition. */
+export async function publishStartup(pr: string): Promise<void> {
+  const publication = await mirrorNow(pr);
+  if (publication !== 0)
+    console.error(
+      `ledger: initial running-ledger publication failed (exit ${publication}); stop requests remain refused until this acquisition publishes, and round-boundary writes retry it.`,
+    );
+}
+
 /**
  * The driver's last ledger write, marking it stopped, however the drive's
  * code ends it: `done(code)` on a returned exit, the dispose on a thrown
@@ -541,7 +550,8 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
  * shutdown begins the process starts no new command (`shared/cleanup.ts`).
  * `drives.ts` writes it from outside instead (`lib/ledger-stop.ts`), from
  * the driver record written at arm and marked released as the PR's lock is
- * released, which this removes once the stopped ledger is written. Nor is
+ * released, which this removes once the stopped ledger is written unless a
+ * retained CI hold still needs the termination witness. Nor is
  * it written while the drive retains its locks (`held` emptied: a pass
  * whose termination was not witnessed may still act): the ledger keeps
  * naming this driver running, its heartbeat ages toward the lease window,
@@ -560,7 +570,7 @@ export function ledgerSettlement(
   const started = ledgerDriverFromEnv()?.started ?? "";
   const dropRecord = async (): Promise<void> => {
     if (started !== "")
-      removeDriverRecord(await resolveStateDir(), pr, started);
+      removeDriverRecord(await resolveStateDir(), pr, started, true);
   };
   const settle = async (code: number | null): Promise<void> => {
     if (settled) return;

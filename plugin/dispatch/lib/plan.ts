@@ -46,6 +46,7 @@ import {
   foreignHold,
 } from "./shared-launches.ts";
 import { failed } from "../../shared/outcome.ts";
+import { planStuck } from "./stuck-launches.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
   Action,
@@ -210,6 +211,8 @@ export function planTick(input: PlanInput): Plan {
   });
   plan.actions.push(...drift.actions);
   plan.running.push(...drift.running);
+  // A pending record no tick launches again waits on a person.
+  plan.actions.push(...planStuck(input.slug, input.launches));
   holdBack(plan, input.held ?? new Set(), input.inScope);
   if (input.serialized !== undefined) serialBack(plan, input.serialized);
   return plan;
@@ -365,6 +368,7 @@ const LAUNCHABLE: ReadonlySet<LedgerClass> = new Set([
   "stale",
   "re-armable",
   "unarmed",
+  "stopped-unknown",
 ]);
 
 /** The holds of another host's claims that leave a drive quiet, by the class the report gives it. */
@@ -391,7 +395,13 @@ function planForeign(
     shared.drives.get(pr.number) ??
     failed("unreadable", "they were not read this tick");
   const hold = foreignHold(pr, claims, shared.host);
-  if (hold.kind === "none") return null;
+  if (
+    hold.kind === "none" ||
+    (hold.kind === "refused" &&
+      pr.class === "stopped-unknown" &&
+      pr.evidence.noCause === true)
+  )
+    return null;
   if (hold.kind === "unread") {
     plan.unplaced.push({ target, record: "forge", reason: hold.why });
     return true;
@@ -430,7 +440,15 @@ function planDrive(
   const { slug, launches } = input;
   const target = `PR #${pr.number}`;
   const hold = driveHold(pr, launches);
-  if (placedByHold(target, hold, plan)) return;
+  if (
+    !(
+      hold.kind === "refused" &&
+      pr.class === "stopped-unknown" &&
+      pr.evidence.noCause === true
+    ) &&
+    placedByHold(target, hold, plan)
+  )
+    return;
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
   // Another host's open takeover on these ledger facts holds the drive even
   // where this host's own record would take it over.

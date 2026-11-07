@@ -184,6 +184,20 @@ describe("a need's words", () => {
     );
   });
 
+  it("sends a stuck launch record to its session and the clear command", () => {
+    const view = needView({ ...NEED, stuckRecord: "launch-9" }, CLOCK);
+    expect(view.goLabel).toBe("Open the pull request");
+    expect(view.evidence).toContainEqual({
+      k: "to release",
+      v: "a person checks for a session it started, then runs jig dispatch clear",
+    });
+    expect(view.evidence).toContainEqual({
+      k: "clear",
+      v: "jig dispatch clear launch-9",
+      copy: "jig dispatch clear launch-9",
+    });
+  });
+
   it("says there is no link, and offers the key, when no record gives one", () => {
     const view = needView(
       {
@@ -237,6 +251,12 @@ describe("a need's words", () => {
 });
 
 describe("the person's list", () => {
+  it("names repeated no-cause stops as needing a person", () => {
+    const view = needView({ ...NEED, cause: "stopped-unknown" }, CLOCK);
+    expect(view.recorded).toBe("repeated no-cause stops (needs a person)");
+    expect(view.goLabel).toBe("Open the pull request");
+  });
+
   it("puts what to decide before what to check, oldest first in each", () => {
     expect(orderedNeeds(lineOf("loud").needs).map((n) => n.target)).toEqual([
       "PR #456",
@@ -297,6 +317,40 @@ describe("whether What needs you exists", () => {
     expect(needCount(lineOf("loud"), NOW)).toBe(
       needRows(lineOf("loud"), CLOCK).filter((r) => r.type !== "head").length,
     );
+  });
+  it("counts a stuck launch record once, as its need", () => {
+    const line = lineOf("quiet");
+    const [session] = line.sessions;
+    const stuck = {
+      ...(session as LineSession),
+      launch: "pending",
+      stuck: "no workspace",
+      record: "launch-9",
+    } as LineSession;
+    const both: LineSnapshot = {
+      ...line,
+      needs: [{ ...NEED, stuckRecord: "launch-9" }],
+      sessions: [stuck],
+    };
+    expect(needCount(both, NOW)).toBe(1);
+    expect(needRows(both, CLOCK).filter((r) => r.type !== "head").length).toBe(
+      1,
+    );
+    expect(answerBand(both, CLOCK, true, false).sub).not.toContain(
+      "not moving",
+    );
+    expect(needCount({ ...both, needs: [] }, NOW)).toBe(1);
+  });
+  it("lists a stuck launch record under To check, not To decide", () => {
+    const line: LineSnapshot = {
+      ...lineOf("quiet"),
+      needs: [{ ...NEED, stuckRecord: "launch-9" }],
+    };
+    expect(
+      needRows(line, CLOCK)
+        .filter((r) => r.type === "head")
+        .map((r) => (r as { head: string }).head),
+    ).toEqual(["To check"]);
   });
   it("does with a need, or with a session not moving", () => {
     expect(hasNeedRows(lineOf("loud"), NOW)).toBe(true);

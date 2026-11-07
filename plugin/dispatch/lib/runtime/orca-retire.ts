@@ -15,7 +15,7 @@ import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
 import { call, withCardDeadline } from "./orca-comment.ts";
 import { probeFailure } from "../text.ts";
 import { retirementCheckoutVeto } from "../retire-checkout.ts";
-import type { RuntimeReceipt } from "./port.ts";
+import { NOTICES_BRANCH, type RuntimeReceipt } from "./port.ts";
 
 export async function orcaRetire(
   target: { id: string; path: string },
@@ -89,7 +89,7 @@ async function retireUnlocked(
     };
   const safe = await safety(
     target,
-    expected.branch ?? "jig-dispatch-notices",
+    expected.branch ?? NOTICES_BRANCH,
     expected,
     remaining,
   );

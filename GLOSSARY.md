@@ -106,7 +106,8 @@ make, use the entry's term instead.
   person on its behalf: a job runner or orchestrator that can park a job and
   raise a question there. A run that has one parks the job for an answer;
   a run with neither a control plane nor a person to answer stops and states
-  the question.
+  the question. The *dispatcher* is Jig's first, one on each host; a
+  *shared control plane* would be one for many hosts.
   See [M0](modules/M0-instruction-architecture/README.md#invariant).
 - **Host-injected tool** — a tool a launcher or workspace app adds to an
   agent session without any file in the repository registering it (often an
@@ -788,7 +789,25 @@ make, use the entry's term instead.
 - **Facet** — a label that refines another and means nothing without it,
   such as the stakeholder label beside a human-in-the-loop flag; the
   *label taxonomy* says which label it requires, and the label validator
-  rejects it alone.
+  rejects it alone. Not an *issue facet*.
+- **Issue facet** (facet, where only issues' facts are meant) — one of the
+  facts every work item carries beside its labels, its type, its priority
+  and its size, held by the *tracker interface* as a value that means the
+  same in every repository: a type from the *label taxonomy*'s type list,
+  a priority from 1 (urgent) to 4 (low) or none, a size from the
+  taxonomy's size group. Planned, not built: today the interface carries
+  labels and a priority, and the design says where the rest is headed. Once
+  built, where the tracker keeps the value is its *facet store*, and the
+  skills read the value, never the label or field behind it
+  ([design](design/tracker-facets.md)).
+- **Facet store** (store) — where a tracker keeps one *issue facet*: the
+  tracker's own field for it (`native`, such as GitHub's or Jira's issue
+  type), a custom field the repository names (`field`), or a label per
+  value (`label`). Planned, not built: the design gives each facet a
+  default store per *tracker adapter*, lets a repository name its own in
+  `issue_tracker.facets`, and moves no repository's store unless its
+  configuration says so or a person runs the move
+  ([design](design/tracker-facets.md)).
 - **Sensitivity flag** — a *flag label* marking a change that carries extra
   obligations, such as a database migration, a published contract, personal
   data or a manual operational step. `decide` reads them under fixed names:
@@ -1920,6 +1939,14 @@ make, use the entry's term instead.
   the session adds the *process identity* it runs as and, when it ends, the
   stage's exit. A launch whose answer is lost still has its record, so it holds its
   stage and its account's *slot*, and is never followed by a second launch.
+- **Stuck launch record** — a *launch record* still pending that no tick
+  launches again: every launch it is allowed (two) ended as not started or
+  unanswered with at least one unanswered, a follow-up's replay can never be
+  proven safe, or it names no workspace. Unlike a retryable pending record, which a tick
+  launches again once its guards allow (a hold, a failed read, a missing
+  command or an account's *wall* can delay that), and an unknown one, whose
+  session may still be running, it waits for a person to clear it. The
+  *dispatcher* notifies it as needing a person.
 - **Slot** — one session the *dispatcher* may hold on a subscription
   account at once. Each account has a cap of slots (two by default); a
   *launch record* that is pending, running or unknown holds one.
@@ -1974,6 +2001,64 @@ make, use the entry's term instead.
   instruction and after showing what it would write, and holds no state of
   its own, so any session on any machine can be the operator. *Avoid:*
   orchestrator, lead agent.
+- **Hub** — the page a person watches and steers the execution line from,
+  and the `jig hub` process that serves it: what waits on the person, a
+  board of every *piece of work*, a page per piece of work with its thread,
+  and a chat with the *operator* that explains and drafts and never sends.
+  Each machine serves its own. A host's hub answers reads only, on its
+  loopback address; a laptop's reads each host over *SSH* through the
+  *source feed* and serves the page to any browser, Orca's among them. It
+  keeps no copy of the line, only the person's conversation with the
+  operator, and nothing the line does waits on it
+  ([ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md)). It grows from
+  the *dispatcher*'s dashboard. Planned: [design/hub.md](design/hub.md).
+- **Piece of work** — what the *hub* shows as one card and one thread: a
+  tracker item, the pull request it opens and that pull request's
+  follow-up, joined by their aliases (the item key, the branch name, the
+  pull request), each join with the evidence for it. A pull request with no
+  item is one, and so is an item with no pull request yet. Each of its
+  stations has an *address*. See
+  [design/hub.md](design/hub.md#a-piece-of-work-and-its-views).
+- **Private-network front** — an optional layer that publishes a
+  machine's *hub* from its loopback address to a private network, with a
+  certificate and the viewer's identity, so a phone can open the page;
+  called a front for short. Tailscale Serve is its first implementation: it
+  names the viewer in a request header, which the hub trusts only on a
+  socket that only Tailscale's daemon reaches, and carries each person's
+  scope from the private network's access grants, which the hub applies to
+  every answer. A reverse proxy with an identity
+  provider, or an *SSH* tunnel, does the same job. A front never publishes
+  to the open internet, and it does not let the hub write. See
+  [design/hub.md](design/hub.md#a-front-on-a-private-network).
+- **Shared control plane** — one service that would serve many hosts: it
+  reads the forge and the tracker once for all of them, hands out work that
+  each host pulls when a slot frees, and serves the *source feed* over
+  connections the hosts open, so neither the *hub* nor a host's records
+  change when it joins. Each host's *dispatcher* is Jig's first
+  *control plane*; handing out work goes past
+  [ADR-0013](docs/adr/ADR-0013-records-not-a-daemon.md), so the shared one
+  waits for a decision record of its own. Only the rules it must keep are
+  written down, among them that a host keeps authority over what it did,
+  that nothing launches without the winning claim, and that a person's act
+  carries that person's credential. See
+  [design/hub.md](design/hub.md#toward-a-shared-control-plane).
+- **Source feed** — the protocol through which one *hub* reads another
+  machine's records: a snapshot, then the changes since a cursor, each
+  record in its *record envelope* and stamped with the host it came from
+  and a visibility class (safe on the forge, for one person's machines, or
+  for this machine only). Its first transport is
+  `ssh <host> jig hub rpc`, JSON lines over *SSH*; a *shared control plane*
+  would serve the same feed over a connection the host opens. Not the
+  *views API*, which a page uses to talk to its own hub. See
+  [design/hub.md](design/hub.md#the-source-feed-from-a-host-to-a-hub).
+- **Views API** — the protocol between the *hub*'s page and the hub that
+  serves it: a `hello` that names the protocol version, the viewer and each
+  source's state; the reads that draw the Inbox, the board and each
+  *piece of work*'s page; and a stream of changes the page resumes from its
+  last cursor. Every answer is a value or a coded failure
+  ([ADR-0012](docs/adr/ADR-0012-failures-as-values.md)). The page talks to
+  no other machine; its hub reads the others through the *source feed*.
+  See [design/hub.md](design/hub.md#the-views-api-from-a-page-to-its-hub).
 - **Notices workspace** — the workspace the *dispatcher* keeps per
   repository, on a branch of the default branch, where every notification
   for that repository goes, unless the repository names another workspace

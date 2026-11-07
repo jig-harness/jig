@@ -12,8 +12,8 @@
  *   the comment already carries is recorded as sent without being sent
  *   again. A cause that still stands `dispatch.renotify_after` after it was
  *   last sent is sent again, marked as a repeat, unless the destination is
- *   still unread with it (`0s` sends each cause once). A drift is an
- *   observation, sent once for the life of its key. A suppression record is
+ *   still unread with it (`0s` sends each cause once). A drift or exhausted no-cause recovery is
+ *   sent once for the life of its key. A suppression record is
  *   dropped when its cause leaves a tick that read every record whole (the
  *   park was answered, the drive moved on), so a cause that is settled is
  *   never repeated and new facts always notify.
@@ -57,6 +57,7 @@ import {
 import { carries, holdsNotice, unobservedTarget } from "../notices.ts";
 import {
   MAX_COMMENT,
+  NOTICES_BRANCH,
   NOTICES_NAME,
   type RuntimeReceipt,
   type SessionsReport,
@@ -73,7 +74,12 @@ import type {
   RepoReport,
   RepoTarget,
 } from "../types.ts";
-import { type ApplyState, openWithinBudget, outOfTime } from "./launch.ts";
+import {
+  type ApplyState,
+  openWithinBudget,
+  settleMs,
+  timeLeftMs,
+} from "./launch.ts";
 import {
   intendComment,
   ownsComment,
@@ -81,9 +87,6 @@ import {
   recordComment,
 } from "./notices-content.ts";
 import { retireNotices } from "./retire-notices.ts";
-
-/** The branch of a repository's notices workspace. */
-const NOTICES_BRANCH = "jig-dispatch-notices";
 
 /** The comments the dispatcher's opens gave a workspace before its comments carried the dispatched mark. */
 const OWN_COMMENT =
@@ -299,6 +302,33 @@ async function destination(
     : `the workspace on ${branch} (${found.path}) holds a personal comment, which a notification would overwrite`;
 }
 
+/** Admit the whole runtime operation while keeping the receipt's reserved time. */
+function noticeTime(state: ApplyState, calls: number): string | null {
+  const left = timeLeftMs(state);
+  return left !== null && left < settleMs(state.machine.runtimeTimeoutMs, calls)
+    ? "the tick deadline has no room for the notification operation and its receipt; a later tick delivers this one"
+    : null;
+}
+
+/** A post-open listing includes both repository and workspace reads, each under the runtime timeout. */
+async function rereadNotices(
+  state: ApplyState,
+  repo: RepoTarget,
+): Promise<SessionsReport> {
+  const late = noticeTime(state, 2);
+  if (late !== null)
+    return { ok: false, source: state.runtime.name, reason: late };
+  try {
+    return await state.runtime.sessions(repo, NO_JOIN);
+  } catch (error) {
+    return {
+      ok: false,
+      source: state.runtime.name,
+      reason: failureText(error),
+    };
+  }
+}
+
 /** The repository's notices workspace: the one on `NOTICES_BRANCH`, else opened now; its comment is read before it is adopted. */
 async function noticesWorkspace(
   state: ApplyState,
@@ -322,12 +352,7 @@ async function noticesWorkspace(
       reason: opened.cleanupFailure,
     });
   // Opening reattaches a workspace that already holds the branch: its comment is read again, not assumed empty.
-  let again: SessionsReport;
-  try {
-    again = await state.runtime.sessions(repo, NO_JOIN);
-  } catch (error) {
-    return `the notices workspace opened, and its comment could not be read: ${failureText(error)}`;
-  }
+  const again = await rereadNotices(state, repo);
   if (!again.ok)
     return `the notices workspace opened, and its comment could not be read: ${again.reason}`;
   const read = again.workspaces.find((w) => w.path === opened.workspace.path);
@@ -471,7 +496,7 @@ async function sendTo(
   const owned = ownsComment(workspace, root);
   const { out, fresh } = alreadyThere(workspace, causes, suppress);
   if (fresh.length === 0) return out;
-  const late = outOfTime(state);
+  const late = noticeTime(state, 1);
   if (late !== null)
     return [...out, ...fresh.map((c) => outcomeFor(c, "waits", null, late))];
   const preserveRead = dispatcherOnly && !owned;
@@ -743,7 +768,9 @@ async function sendNotices(
           key: c.notice.key,
           at,
           workspace,
-          lasting: c.cause === "drifting",
+          lasting:
+            c.cause === "drifting" ||
+            (c.cause === "stopped-unknown" && c.evidence.noCause === true),
         },
         // A cause about a stage this machine launched has its ended row instead.
         c.launched === true ? null : eventRow(repo.slug, c, at),

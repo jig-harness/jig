@@ -4,87 +4,23 @@
  */
 import { describe, expect, it } from "bun:test";
 import type { LineAccount } from "../lib/dashboard-contract.ts";
-import type { ReadRecord } from "../lib/launches.ts";
+import { buildLine, decisionOf, type RepoLineInput } from "../lib/line.ts";
 import {
-  buildLine,
-  decisionOf,
-  type LineInput,
-  type RepoLineInput,
-  type RepoStored,
-} from "../lib/line.ts";
-import type { MachineConfig } from "../lib/machine-config.ts";
-import type { Action, DrivenPr, RepoReport } from "../lib/types.ts";
-
-const REPO = "example-org/web";
-const PATH = "/srv/work/web";
-const NOW = "2026-11-03T16:45:00.000Z";
-
-function report(fields: Partial<RepoReport> = {}): RepoReport {
-  return {
-    path: PATH,
-    slug: REPO,
-    refused: null,
-    section: null,
-    followupSince: null,
-    records: [],
-    actions: [],
-    running: [],
-    unplaced: [],
-    launches: [],
-    notifications: [],
-    quiet: [],
-    ...fields,
-  };
-}
-
-const MACHINE: MachineConfig = {
-  path: "/home/person/.jig/dispatch.yaml",
-  repositories: [
-    {
-      path: PATH,
-      stages: ["rearm", "notify"],
-      followupSince: null,
-      owner: true,
-    },
-  ],
-  accounts: [],
-  intervalMs: 300_000,
-  wallBackoffMs: 3_600_000,
-  runtimeTimeoutMs: 60_000,
-  workspaceTimeoutMs: 60_000,
-  receiptsDays: 30,
-  dashboardListen: null,
-  sharedRecords: "forge",
-  send: true,
-};
-
-const NOTHING_STORED: RepoStored = {
-  nudges: [],
-  holds: [],
-  notified: new Map(),
-};
-
-function input(fields: Partial<LineInput> = {}): LineInput {
-  return {
-    runId: "run",
-    startedAt: "2026-11-03T16:44:00.000Z",
-    finishedAt: NOW,
-    exitStatus: 0,
-    apply: true,
-    applyWithheld: null,
-    plugin: "1.2.3",
-    timeZone: "UTC",
-    machine: MACHINE,
-    reports: [report()],
-    inputs: new Map(),
-    stored: () => NOTHING_STORED,
-    records: [],
-    accounts: [],
-    lastAccount: null,
-    recentTicksMs: [],
-    ...fields,
-  };
-}
+  input,
+  NOTHING_STORED,
+  NOW,
+  PATH,
+  record,
+  REPO,
+  report,
+} from "./line-fixtures.ts";
+import { planStuck } from "../lib/stuck-launches.ts";
+import type {
+  Action,
+  DispatchSection,
+  DrivenPr,
+  RepoReport,
+} from "../lib/types.ts";
 
 function reads(
   fields: Partial<RepoLineInput> = {},
@@ -140,53 +76,6 @@ const PARK: Action = {
   notice: { key: "park-key", text: "the notice" },
 };
 
-function record(
-  fields: Partial<ReadRecord["record"]> = {},
-  state: ReadRecord["state"] = {
-    kind: "alive",
-    process: {
-      hostId: "",
-      host: "h",
-      bootId: "b",
-      pid: 1,
-      start: "s",
-      claimedAt: "2026-11-03T15:30:00.000Z",
-    },
-  },
-): ReadRecord {
-  return {
-    record: {
-      version: 1,
-      id: "20261103T153000Z-aaaaaaaa",
-      token: "t",
-      action: "rearm",
-      repo: REPO,
-      repoPath: PATH,
-      pr: 456,
-      item: null,
-      account: "work-a",
-      vendor: "claude",
-      configDir: "/c",
-      wallBackoffMs: 0,
-      passTimeoutSec: 5400,
-      replaces: null,
-      facts: "f",
-      createdAt: "2026-11-03T15:30:00.000Z",
-      workspace: { id: "w", path: "/srv/work/web/pr-456" },
-      attempts: [],
-      agentId: null,
-      model: null,
-      effort: null,
-      released: false,
-      command: null,
-      marker: null,
-      ...fields,
-    },
-    state,
-    result: null,
-  };
-}
-
 describe("decisionOf", () => {
   it("takes the frame's heading into fields and the record out of its indent", () => {
     const decision = decisionOf({
@@ -222,6 +111,281 @@ describe("decisionOf", () => {
 });
 
 describe("buildLine", () => {
+  it("names an idle parked drive's joined workspace, independently of its notification destination", () => {
+    const line = buildLine(
+      input({
+        reports: [
+          report({
+            actions: [PARK],
+            notifications: [
+              {
+                target: PARK.target,
+                cause: "parked",
+                key: "park-key",
+                outcome: "sent",
+                workspace: "/srv/notices",
+                detail: "sent",
+              },
+            ],
+          }),
+        ],
+        inputs: reads({
+          drives: [parkedPr()],
+          sessions: {
+            ok: true,
+            source: "fake",
+            workspaces: [
+              {
+                id: "park",
+                path: "/srv/parked",
+                branch: "feature/456",
+                items: [],
+                prs: [456],
+                agents: [],
+                unverifiableTerminals: 0,
+                comment: "",
+                unread: false,
+                name: "park",
+              },
+            ],
+          },
+        }),
+      }),
+    );
+    expect(line.sessions).toEqual([]);
+    expect(line.needs[0]).toMatchObject({
+      workspace: "/srv/parked",
+      notified: { workspace: "/srv/notices" },
+    });
+  });
+
+  it("leaves an unknown workspace null rather than using the notices destination", () => {
+    const line = buildLine(
+      input({
+        reports: [
+          report({
+            actions: [PARK],
+            notifications: [
+              {
+                target: PARK.target,
+                cause: "parked",
+                key: "park-key",
+                outcome: "sent",
+                workspace: "/srv/notices",
+                detail: "sent",
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(line.needs[0]).toMatchObject({
+      workspace: null,
+      notified: { workspace: "/srv/notices" },
+    });
+  });
+
+  it("uses the matching running launch's workspace and excludes another repository's records", () => {
+    const line = buildLine(
+      input({
+        reports: [report({ actions: [PARK] })],
+        records: [
+          record({
+            repo: "other/repo",
+            workspace: { id: "other", path: "/srv/other" },
+          }),
+          record(),
+        ],
+      }),
+    );
+    expect(line.needs[0]).toMatchObject({ workspace: "/srv/work/web/pr-456" });
+  });
+
+  it("uses an explicit launch workspace for a failed follow-up and does not guess between double claims", () => {
+    const line = buildLine(
+      input({
+        reports: [
+          report({
+            actions: [
+              { ...PARK, cause: "followup-failed", workspace: "/srv/followup" },
+              { ...PARK, cause: "double-claim", target: "WEB-412" },
+            ],
+          }),
+        ],
+        inputs: reads({
+          sessions: {
+            ok: true,
+            source: "fake",
+            workspaces: ["one", "two"].map((id) => ({
+              id,
+              path: `/srv/${id}`,
+              branch: id,
+              items: ["WEB-412"],
+              prs: [],
+              agents: [],
+              unverifiableTerminals: 0,
+              comment: "",
+              unread: false,
+              name: id,
+            })),
+          },
+        }),
+      }),
+    );
+    expect(line.needs.map((n) => n.workspace)).toEqual(["/srv/followup", null]);
+  });
+
+  it.each([
+    ["⚙ dispatched · notices", null],
+    ["jig dispatch notices", null],
+    ["jig dispatch notices", "desk"],
+  ])(
+    "excludes a renamed notices workspace with comment %s and destination %s even if joined",
+    (comment, noticesBranch) => {
+      const section = noticesBranch
+        ? ({ noticesBranch } as DispatchSection)
+        : null;
+      const line = buildLine(
+        input({
+          reports: [report({ actions: [PARK], section })],
+          inputs: reads({
+            sessions: {
+              ok: true,
+              source: "fake",
+              workspaces: [
+                {
+                  id: "notices",
+                  path: "/srv/notices",
+                  branch: "jig-dispatch-notices",
+                  items: [],
+                  prs: [456],
+                  agents: [],
+                  unverifiableTerminals: 0,
+                  comment,
+                  name: "renamed notices",
+                  unread: false,
+                },
+              ],
+            },
+          }),
+        }),
+      );
+      expect(line.needs[0]?.workspace).toBeNull();
+    },
+  );
+
+  it.each(["working", "done"])(
+    "keeps distinct joined workspaces ambiguous when one agent is %s",
+    (state) => {
+      const line = buildLine(
+        input({
+          reports: [report({ actions: [PARK] })],
+          inputs: reads({
+            sessions: {
+              ok: true,
+              source: "fake",
+              workspaces: ["one", "two"].map((id) => ({
+                id,
+                path: `/srv/${id}`,
+                branch: id,
+                items: [],
+                prs: [456],
+                agents:
+                  id === "one"
+                    ? [{ id: "agent", state, agentType: null, since: null }]
+                    : [],
+                unverifiableTerminals: 0,
+                comment: "",
+                unread: false,
+                name: id,
+              })),
+            },
+          }),
+        }),
+      );
+      expect(line.needs[0]?.workspace).toBeNull();
+    },
+  );
+
+  it.each(["joined", "unknown-launch", "unknown-joined", "same-path"])(
+    "reconciles a holding record with %s claims",
+    (claim) => {
+      const path = "/srv/work/web/pr-456";
+      const line = buildLine(
+        input({
+          reports: [report({ actions: [PARK] })],
+          records: [
+            record(),
+            ...(claim === "unknown-launch"
+              ? [record({ id: "another", workspace: null })]
+              : []),
+          ],
+          inputs: reads({
+            sessions: {
+              ok: true,
+              source: "fake",
+              workspaces:
+                claim === "unknown-launch"
+                  ? []
+                  : [
+                      {
+                        id: "joined",
+                        path:
+                          claim === "unknown-joined"
+                            ? ""
+                            : claim === "same-path"
+                              ? path
+                              : "/srv/other",
+                        branch: "feature/456",
+                        items: [],
+                        prs: [456],
+                        agents: [
+                          {
+                            id: "agent",
+                            state: "working",
+                            agentType: null,
+                            since: null,
+                          },
+                        ],
+                        unverifiableTerminals: 0,
+                        comment: "",
+                        unread: false,
+                        name: "joined",
+                      },
+                    ],
+            },
+          }),
+        }),
+      );
+      expect(line.needs[0]?.workspace).toBe(
+        claim === "same-path" ? path : null,
+      );
+    },
+  );
+
+  it("uses the stage record for an unanswered nudge when runtime reads fail", () => {
+    const line = buildLine(
+      input({
+        reports: [
+          report({
+            actions: [
+              {
+                ...PARK,
+                cause: "nudge-unanswered",
+                evidence: { record: "20261103T153000Z-aaaaaaaa" },
+              },
+            ],
+          }),
+        ],
+        records: [record()],
+        inputs: reads({
+          sessions: { ok: false, source: "fake", reason: "offline" },
+        }),
+      }),
+    );
+    expect(line.needs[0]?.workspace).toBe("/srv/work/web/pr-456");
+  });
+
   it("makes a need of a park, dated by its last ledger write, with its decisions and notification", () => {
     const line = buildLine(
       input({
@@ -570,6 +734,65 @@ describe("buildLine", () => {
       workspace: "/srv/work/web/pr-456",
       samples: [{ round: 3, threads: 5 }],
     });
+  });
+
+  it("shows a pending record whose two launches went unanswered as needing a person, and an ordinary pending one as pending", () => {
+    const lost = { at: NOW, outcome: "lost" as const, detail: "no answer" };
+    const pending = { kind: "pending" as const };
+    const stuck = record(
+      { action: "followup", marker: 77, attempts: [lost, lost] },
+      pending,
+    );
+    const retried = record(
+      { id: "20261103T160000Z-cccccccc", pr: 457, attempts: [lost] },
+      pending,
+    );
+    const records = [stuck, retried];
+    const line = buildLine(
+      input({
+        reports: [report({ actions: planStuck(REPO, records) })],
+        records,
+      }),
+    );
+    expect(line.sessions.map((s) => [s.target, s.launch, s.stuck])).toEqual([
+      ["PR #456", "pending", expect.stringContaining("(lost, lost)")],
+      ["PR #457", "pending", null],
+    ]);
+    expect(line.needs).toEqual([
+      expect.objectContaining({
+        cause: "needs-person",
+        stage: "followup",
+        target: "PR #456",
+        stuckRecord: stuck.record.id,
+        workspaces:
+          stuck.record.workspace === null ? [] : [stuck.record.workspace.path],
+        reason: expect.stringContaining(
+          `jig dispatch clear ${stuck.record.id}`,
+        ),
+      }),
+    ]);
+  });
+
+  it("leaves a stuck record's need without the decisions another drive parked on the same target", () => {
+    const lost = { at: NOW, outcome: "lost" as const, detail: "no answer" };
+    const stuck = record(
+      { action: "followup", marker: 77, attempts: [lost, lost] },
+      { kind: "pending" as const },
+    );
+    const records = [stuck];
+    const line = buildLine(
+      input({
+        reports: [report({ actions: planStuck(REPO, records) })],
+        inputs: reads({ drives: [parkedPr()] }),
+        records,
+      }),
+    );
+    expect(line.needs).toEqual([
+      expect.objectContaining({
+        stuckRecord: stuck.record.id,
+        decisions: [],
+      }),
+    ]);
   });
 
   it("joins an interactive session to its agent, its wall and the nudge that answered it", () => {

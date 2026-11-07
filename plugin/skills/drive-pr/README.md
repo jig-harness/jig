@@ -231,8 +231,41 @@ head only on required checks that started after the removal. The label is a
 CI cost setting, not a way to steer the drive: a label the drive has no
 record of, because an earlier run lost track of it, a drive that died left
 it, or someone else added it, is adopted and removed at convergence like its
-own. To stop a running drive, run `bun "<skill-dir>/scripts/drives.ts" --stop <PR>`.
+own. To stop a running drive, run
+`bun "<skill-dir>/scripts/drives.ts" --stop <PR> --reason "maintenance"`.
 The dispatcher's `jig:hold` label prevents new launches and re-arms.
+
+With ledger mirroring enabled, stopping requires a readable running ledger owned
+by the exact target acquisition and a writer that supports verified stop
+publication. The command publishes the person's stop and verifies it on the pull
+request before signalling. Publication failure sends no signal. An unpublished
+startup or older mirrored writer is refused. Retry once startup publishes. For
+an older writer, hold dispatch before stopping that process, then re-arm with
+the current plugin and release the hold. The driver
+attempts its initial running ledger immediately after seeding durable state.
+
+The operator marker holds dispatch even while the driver is still recorded
+running. All local ledger writers serialize payload construction and publication,
+so an older in-flight payload finishes before the marker is published; later
+writes retain it. Stop-bearing ledgers use wire version 2, which older readers
+refuse; ordinary ledgers remain version 1. The optional `--reason` records the
+person's reason. A mailbox `stop`, a mailbox `pause` that times out, or `jig send`
+with `stop` keeps its existing operator-stop exit. The dispatcher leaves these
+stopped until a person re-arms them. Its hold label prevents new launches while
+it remains on the pull request.
+
+A drive recorded as stopped with no exit and no person’s-stop marker is read
+as an accident and re-armed from its durable state, up to
+3 attempts per pull request in a rolling hour, across accounts and hosts whose
+launch claims can be read. Completing a round does not reset this count.
+After the budget is spent, the next no-cause stop needs a person and sends one
+notice with the handoff; it becomes eligible again as the attempts leave the
+window. A legacy no-exit ledger receives at most one automatic attempt while
+its stop facts remain unchanged, even beyond the hour. Hard termination of both
+the driver and its launch wrapper can leave its ledger recorded as running.
+That interrupted state is not covered by no-exit recovery and can remain
+silent until a person intervenes.
+
 When someone else removes the CI hold label, the
 drive accepts only checks that started strictly after that removal; GitHub
 records the removal to the second, so a run that started in the same second
@@ -650,7 +683,45 @@ bun "<skill-dir>/scripts/drives.ts" --report --since <opened-at> --json
 | `20` | `TAKEN_OVER` | Another clone took the drive over: its takeover claim on the pull request is newer than this driver's own, so this driver stopped at a round boundary, or during a usage-limit sleep or mailbox pause, without another pass, or this `--take-over` lost to an earlier claim. That clone drives now; nothing to do here, and do not re-arm beside it ([picking up](#picking-up-a-stopped-drive)). |
 | `1` / `2` | Pass failed / usage error / **CI still red** | Operational. Read stderr; `2` usually means the command line itself is wrong, or that the [attach](#which-working-tree-drives-it) refused this tree (it names what is in the way), but can also mean `UNSUPPORTED_CLI` — a `gh` too old to report a required PR field such as draft state or mergeability. For that case, upgrade `gh`; it is not a CI-repair matter. `1` is also the CI stop: the review converged but full CI on the converged head is red and the repair budget (`DRIVE_PR_CI_REPAIR_ROUNDS`, default 2) is exhausted or disabled (`0` skips repair entirely and stops on the first red), or the verdict was unreadable rather than a named failure. A cancelled check is not red: it ends in `4`. Repair CI by hand, then re-arm. A failed pass's stop lists what it left uncommitted and unpushed: keep or discard that work, then re-arm. `1` is also the stop over local commits that do not build on the head branch's remote ref ([restarts](#a-stopped-drive-restarts-itself)): it names them; rebase them onto the PR head, or reset to it and keep what is sound, then re-arm. Armed over such a tree, the attach stops it first with `2`, naming the same commits, unless `DRIVE_PR_ATTACH=off` or `--dry-run` skips the attach. |
 
-One red-CI cause is worth ruling out before you repair anything in a repository with a [CI hold](#ci-hold): a drive that **died** mid-round leaves its hold label behind, and the repository's held-head check then fails or cancels a required check on a perfectly healthy PR. Check `bun "<skill-dir>/../../shared/command.ts" -- gh pr view <PR> --json labels` first. If it is there, push whatever the dead drive stranded, then `bun "<skill-dir>/../../shared/command.ts" -- gh pr edit <PR> --remove-label "<ci.hold_label>"` — the removal itself retriggers CI. Do **not** `gh run rerun` the old run: it replays the original event payload, which still carries the label, so it fails on the hold step again.
+### Recovering a stranded CI hold
+
+A stopped driver can leave the configured CI-hold label attached, so full CI
+cannot start even though review is complete. A ledger that still says
+`running` is not proof of a live process. Read `jig ask drive <PR>` or
+`bun "<skill-dir>/scripts/drives.ts" --doctor` for the drive diagnosis;
+plain `jig doctor` checks installation and configuration instead.
+
+Direct release is appropriate only when the diagnosis establishes that the
+local driver stopped, review converged on the current PR head, no human
+decision remains, and the matching worktree is clean and owns the recorded
+hold. The stopped-driver evidence must also establish that its round
+processes ended and no newer takeover claim owns the drive. If any evidence
+is unavailable, say what is missing and establish it before proceeding. A live or foreign driver is not a stranded local hold.
+
+On an explicit request to release that CI hold, re-read the diagnosis, then
+run its guarded recovery command from the worktree it names, with the
+expected head it verified:
+
+```sh
+bun "<skill-dir>/scripts/ci-hold.ts" release <PR> --expect-head <SHA>
+```
+
+Use the authenticated forge identity for the intended repository. The
+existing release checks the expected PR head before removing the label. When
+the label's newest transition is not the one the drive recorded, it adopts that
+transition and releases it, so it does not refuse a hold someone removed and
+re-applied on the same head after the diagnosis. Run the release right after
+the diagnosis, and if the label's timeline may have changed since, diagnose
+again first. Relay a refusal; do not bypass it with a raw
+label edit or restart the driver. The dispatcher’s `release` verb releases a dispatcher
+hold and has no effect on this CI hold.
+
+Observe label removal and a fresh required-check run on that expected head.
+`bun "<skill-dir>/scripts/ci-hold.ts" final-ready <PR> --expect-head <SHA>` checks the full-CI witness;
+add `--require-success` when reporting CI success. An in-progress run is not
+success, and review convergence alone proves neither CI started nor passed.
+Do not rerun the old held workflow: its original event payload still carries
+the label and can skip or fail on the hold again.
 
 Where the repository turned on the [`changelog`](../changelog/README.md) skill
 (`changelog.file` in the `.config/jig.yaml` its base branch holds), a round whose accepted fix

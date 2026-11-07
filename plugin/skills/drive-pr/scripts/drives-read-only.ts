@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 /**
- * drives-read-only.ts — `drives.ts --json` for a reader that is not a driver
+ * drives-read-only.ts — `drives.ts --doctor --json` for a reader that is not a driver
  * (`jig ask`), which must never choose when the drive's database migrates.
  *
  * Opening the drive's database creates it, migrates its schema and reads the
  * clone's state directory into it, and the listing opens it. So this lists
- * only a database that is already current, by running `drives.ts --json`
+ * only a database that is already current, including lock-less retained blockers, by running `drives.ts --doctor --json`
  * over a read-only connection (`READ_ONLY_ENV`), so a change after the
  * readiness check cannot make the listing write, and otherwise writes nothing:
  *
@@ -36,8 +36,16 @@ function verdict(
 }
 
 function requireJson(argv: string[]): void {
-  if (argv.length !== 1 || argv[0] !== "--json")
-    fail(2, "usage: drives-read-only.ts --json");
+  if (
+    argv[0] !== "--json" ||
+    !(
+      argv.length === 1 ||
+      (argv.length === 3 &&
+        argv[1] === "--pr" &&
+        /^[1-9][0-9]*$/.test(argv[2] ?? ""))
+    )
+  )
+    fail(2, "usage: drives-read-only.ts --json [--pr N]");
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -52,7 +60,7 @@ async function main(argv: string[]): Promise<number> {
     console.error(`drives-read-only.ts: ${v.decline}`);
     return 4;
   }
-  const child = Bun.spawn([process.execPath, DRIVES, "--json"], {
+  const child = Bun.spawn([process.execPath, DRIVES, "--doctor", ...argv], {
     stdin: "ignore",
     env: { ...process.env, [READ_ONLY_ENV]: "1" },
     stdout: "inherit",

@@ -61,6 +61,8 @@ import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/t
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
+import { cancelledBeforeExecution } from "./cancellation.ts";
+export { cancelledBeforeExecution } from "./cancellation.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction = "rearm" | "takeover" | "pickup" | "followup";
@@ -126,6 +128,8 @@ export interface LaunchRecord {
   command: string | null;
   /** The id of the follow-up marker comment the tick posted for it; `null` until posted, and for any other record. */
   marker: number | null;
+  /** Why no tick launches this pending record again: a replay the fresh read could not prove safe. A person clears it. Absent or `null` while it may be replayed. */
+  noReplay?: string | null;
   /** A drive's ledger round when it was launched, which its outcome row's rounds count from; `null` when unknown. */
   round?: number | null;
   /** For a re-drive: why it was launched, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
@@ -147,6 +151,8 @@ export interface LaunchRecord {
   episodes?: WaitingEpisode[];
   /** When the record ended, as its outcome row is timed; written in the same transaction as that row, so a record with it has its row. */
   endedAt?: string;
+  /** A reservation cancelled before runtime execution whose shared withdrawal needs retrying. */
+  cancelledAt?: string;
 }
 
 /** A drive's unresolved review threads at one ledger round. */
@@ -344,6 +350,7 @@ function optionalFields(value: Record<string, unknown>): boolean {
     ["agentId", "model", "effort", "command", "sessionId", "mark"].every((k) =>
       optionalText(value[k]),
     ) &&
+    optionalText(value.noReplay) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
@@ -351,6 +358,7 @@ function optionalFields(value: Record<string, unknown>): boolean {
     (value.codexBypass === undefined ||
       typeof value.codexBypass === "boolean") &&
     optionalTime(value.endedAt) &&
+    optionalTime(value.cancelledAt) &&
     optionalTime(value.openedAt) &&
     isRedrive(value.redrive)
   );
@@ -687,7 +695,16 @@ function stateOf(
       exit: { ...exit, signal: exit.signal ?? null },
       process: claim ?? null,
     };
-  if (claim === undefined) return { kind: "pending" };
+  if (claim === undefined) {
+    const record = parseJson(row.record, `launch record ${row.id}`);
+    if (isMapping(record) && typeof record.cancelledAt === "string")
+      return {
+        kind: "died",
+        reason: "its reservation was cancelled before execution",
+        process: NO_PROCESS,
+      };
+    return { kind: "pending" };
+  }
   if (claim === null)
     return {
       kind: "unknown",
@@ -868,6 +885,10 @@ export function pruneLaunches(
   for (const id of latestPickups(records)) kept.add(id);
   for (const id of latestRedrives(records)) kept.add(id);
   for (const id of latestArms(records)) kept.add(id);
+  const settled = settledEnds(root);
+  for (const r of records)
+    if (cancelledBeforeExecution(r) && !settled.has(r.record.id))
+      kept.add(r.record.id);
   const removed = records
     .filter(({ record, state }) => {
       const at = kept.has(record.id) ? null : finishedAt(record, state);
@@ -951,15 +972,22 @@ export async function inspectRow(
 /**
  * Remove a row only while its claim and exit are still what `seen` read:
  * a wrapper that claimed it, or an exit written, since leaves it in place.
- * Returns whether the row was removed.
+ * A cancelled pending row can be retained as settlement evidence; true still gives its slot back.
  */
 export function removeRecordIf(
   id: string,
   seen: Pick<InspectedRow, "claim" | "exit">,
   root = stateRoot(),
+  keepCancelled = false,
 ): boolean {
   const db = stateDb(root);
   return inTransaction(db, () => {
+    if (keepCancelled) {
+      const row = launchRow(id, root);
+      if (row === null || row.claim !== seen.claim || row.exit !== seen.exit)
+        return false;
+      if (recordOf(row, root)?.cancelledAt !== undefined) return true;
+    }
     const result = db
       .query("DELETE FROM launches WHERE id = ? AND claim IS ? AND exit IS ?")
       .run(id, seen.claim, seen.exit);

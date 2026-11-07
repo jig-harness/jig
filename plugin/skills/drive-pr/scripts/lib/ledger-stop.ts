@@ -24,12 +24,15 @@
  * through `drive-state.ts handoff` under a driver variable naming the
  * stopped driver, the path every ledger write takes.
  */
+import { personStopFor } from "./state/person-stop.ts";
 import { swallow } from "../../../../shared/errors.ts";
 import type { ClaimDiag } from "./claim.ts";
 import { inspectLock, prLockName } from "./driver/locks.ts";
 import { driveState } from "./driver/paths.ts";
 import { helperTimeoutSeconds, pidAlive, run, tsArgv } from "./proc.ts";
 import { worktreePathKey } from "./state/actor.ts";
+import { readStateRow } from "./state/store.ts";
+import { isUsableState } from "./state/schema.ts";
 import { driveDb } from "./state/db.ts";
 import { ledgerOfStoppedDriver } from "./state/ledger.ts";
 import { readLedgerSnapshot, resolveLogin } from "./state/ledger-forge.ts";
@@ -44,7 +47,8 @@ import {
  * a stop by signal releases the lock, and with it the evidence a recovery
  * reads, so this record is what `--stop` and `--doctor` recover from then.
  * Written once the driver owns the ledger, marked `released` as the driver
- * releases its locks, and removed once its stopped ledger is written or the
+ * releases its locks, and retained while its CI hold still needs that witness.
+ * Otherwise removed once its stopped ledger is written or the
  * drive is taken over.
  */
 export interface DriverRecord {
@@ -54,9 +58,10 @@ export interface DriverRecord {
   host: string;
   /** Its pass tree was witnessed gone: by the driver, or by `--stop`. */
   released?: true;
+  personStop?: { at: string; reason: string };
 }
 
-/** Write the driver record of `pr` in a clone, replacing its last one. */
+/** Write an acquisition, keeping a same-acquisition stop recorded during startup. */
 export function writeDriverRecord(
   stateDir: string,
   pr: string,
@@ -64,8 +69,14 @@ export function writeDriverRecord(
 ): void {
   const drive = driveDb(stateDir);
   drive.db.run(
-    `INSERT OR REPLACE INTO driver_records (clone, pr, worktree, started, pid, host, released)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO driver_records (clone, pr, worktree, started, pid, host, released, person_stop)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clone, pr) DO UPDATE SET
+       worktree = excluded.worktree, started = excluded.started,
+       pid = excluded.pid, host = excluded.host, released = excluded.released,
+       person_stop = CASE WHEN driver_records.started = excluded.started
+         THEN COALESCE(excluded.person_stop, driver_records.person_stop)
+         ELSE excluded.person_stop END`,
     [
       drive.clone,
       pr,
@@ -74,20 +85,45 @@ export function writeDriverRecord(
       record.pid,
       record.host,
       record.released === true ? 1 : 0,
+      record.personStop === undefined
+        ? null
+        : JSON.stringify(record.personStop),
     ],
   );
 }
 
-/** Remove the driver record of `pr`, while it is still the one started at `started`. */
+/** Remove this acquisition; normal cleanup retains operator intent that its payload may have missed. */
 export function removeDriverRecord(
   stateDir: string,
   pr: string,
   started: string,
+  keepPendingStop = false,
 ): void {
+  // Keep the termination witness until a retained CI hold no longer needs it.
+  const stored = readStateRow(stateDir, pr);
+  if (stored !== null) {
+    let state: unknown;
+    try {
+      state = JSON.parse(stored.text);
+    } catch (err) {
+      swallow(err, "unreadable state retains the driver termination witness");
+      console.error(
+        `ledger: PR #${pr}'s driver record is retained: saved state is unreadable.`,
+      );
+      return;
+    }
+    if (!isUsableState(state, Number(pr))) {
+      console.error(
+        `ledger: PR #${pr}'s driver record is retained: saved state is unreadable.`,
+      );
+      return;
+    }
+    if (state.ciHold !== null && state.ciHold.phase !== "released") return;
+  }
   const drive = driveDb(stateDir);
   drive.db.run(
-    "DELETE FROM driver_records WHERE clone = ? AND pr = ? AND started = ?",
-    [drive.clone, pr, started],
+    "DELETE FROM driver_records WHERE clone = ? AND pr = ? AND started = ? AND (? = 0 OR person_stop IS NULL)",
+    [drive.clone, pr, started, keepPendingStop ? 1 : 0],
   );
 }
 
@@ -119,6 +155,7 @@ interface DriverRecordRow {
   pid: number;
   host: string;
   released: number;
+  person_stop: string | null;
 }
 
 function recordOf(row: DriverRecordRow): DriverRecord {
@@ -128,10 +165,16 @@ function recordOf(row: DriverRecordRow): DriverRecord {
     pid: row.pid,
     host: row.host,
     ...(row.released === 1 ? { released: true as const } : {}),
+    ...(row.person_stop === null
+      ? {}
+      : { personStop: JSON.parse(row.person_stop) }),
   };
 }
 
-function readDriverRecord(stateDir: string, pr: string): DriverRecord | null {
+export function readDriverRecord(
+  stateDir: string,
+  pr: string,
+): DriverRecord | null {
   const drive = driveDb(stateDir);
   const row = drive.db
     .query("SELECT * FROM driver_records WHERE clone = ? AND pr = ?")
@@ -165,7 +208,10 @@ export async function recoverFromDriverRecord(
 }
 
 /** `--doctor`'s sweep of the driver records no lock row covers. */
-async function recoverDriverRecords(stateDir: string): Promise<void> {
+async function recoverDriverRecords(
+  stateDir: string,
+  skip: (pr: string) => boolean,
+): Promise<void> {
   const drive = driveDb(stateDir);
   const prs = (
     drive.db
@@ -173,6 +219,7 @@ async function recoverDriverRecords(stateDir: string): Promise<void> {
       .all(drive.clone) as { pr: string }[]
   ).map((r) => r.pr);
   for (const pr of prs) {
+    if (skip(pr)) continue;
     const claim = inspectLock(stateDir, prLockName(pr));
     await recoverFromDriverRecord(stateDir, pr, { diag: claim?.diag ?? null });
   }
@@ -226,7 +273,11 @@ async function markGuarded(
     );
     return "retry";
   }
-  const found = ledgerOfStoppedDriver(snapshot, who);
+  const found = ledgerOfStoppedDriver(
+    snapshot,
+    who,
+    personStopFor(stateDir, pr, diag.started).personStop !== undefined,
+  );
   if ("why" in found) {
     // Silent when there is nothing to say: no ledger, or one already stopped.
     const parsed = snapshot.canonical?.parsed;
@@ -328,6 +379,9 @@ export async function recoverIdleStop(
 }
 
 /** `--doctor`'s recovery: every driver record a released driver left. */
-export async function recoverStoppedLedgers(stateDir: string): Promise<void> {
-  await recoverDriverRecords(stateDir);
+export async function recoverStoppedLedgers(
+  stateDir: string,
+  skip: (pr: string) => boolean = () => false,
+): Promise<void> {
+  await recoverDriverRecords(stateDir, skip);
 }

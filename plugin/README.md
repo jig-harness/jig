@@ -191,7 +191,10 @@ jig run       [COMPONENT...]
   [configuration fit](skills/audit/README.md#what-it-does) of the
   repository, offline (the audit itself also reads the forge and the
   tracker). Outside a repository that check is skipped. It exits 1 when
-  any check fails; `--json` prints every check.
+  any check fails; `--json` prints every check. This checks installation and
+  configuration, not individual drives. For a stopped driver or stranded CI
+  hold, use `jig ask drive <PR>` in its repository, or the
+  [drive doctor](skills/drive-pr/README.md#recovering-a-stranded-ci-hold).
 - **`jig status`** says whether each component's job is installed, where,
   its schedule and next run, and its last run's receipt.
 - **`jig receipts gc`** (or `dispatch`) lists the receipts of earlier runs;
@@ -299,7 +302,9 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 ```
 
 which clears only a record the tick cannot settle: an unknown one, a
-pending one whose launch cannot be retried, or one that does not read
+pending one whose launch cannot be retried (a stuck one: both of its
+launches went unanswered, or a follow-up's replay could not be proven
+safe, which the tick notifies as needing a person), or one that does not read
 and whose claim is not alive. It refuses a running record, readable or
 not (stop its session first), and, among the records that read, an ended
 or died one and a pending one whose launch can still be retried: those
@@ -723,6 +728,12 @@ That answer is the contract: `line` is the tick's snapshot
 (`LineSnapshot` in `dispatch/lib/dashboard-contract.ts`), versioned by its own
 `version` field, which a reader checks before it trusts the rest. The command
 takes no lock, so it runs while a tick does, and never creates the database.
+Each entry in `line.needs` carries `workspace`, the path holding that drive,
+pickup or follow-up, from the tick's launch records or the runtime's joined
+workspaces. It is `null` when none is known or the records are ambiguous.
+It never falls back to the notices workspace: `notified.workspace` still
+names where the notification went. This is an additive version-1 field;
+readers treat its absence in an older snapshot as unknown.
 Its exit codes:
 
 - `0`: the answer is printed. Its `line` is `null` when no tick has written

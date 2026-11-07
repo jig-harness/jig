@@ -29,6 +29,7 @@
  *   first, so a lost launch stays visible and a takeover in flight is not
  *   stacked on.
  */
+import { noCauseFacts } from "../no-cause-stops.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   holds,
@@ -50,6 +51,7 @@ export type DriveHold =
 /** The ledger facts a launch acts on; a refusal on the same facts is final. */
 export function factsOf(pr: DrivenPr): string {
   const e = pr.evidence;
+  if (e.noCause === true) return noCauseFacts(pr);
   if (pr.class === "unarmed") return `${UNARMED_FACTS}${String(e.headSha)}`;
   return `generation ${String(e.generation)}, exit ${String(e.exit)}, heartbeat ${String(e.heartbeat)}`;
 }

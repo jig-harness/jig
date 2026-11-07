@@ -562,6 +562,14 @@ outlives the session that spawned it, so its console is not where you look:
   `--expect-started <ISO>` stops only the claim acquired at that time and
   exits `3` for any other holder.
   A stale lock stays the next acquire's to recover.
+
+  The stop publishes and verifies an acquisition-bound operator record on the
+  pull request before signalling; `--reason "maintenance"` records the reason. The
+  dispatcher leaves this stop alone. With ledger mirroring enabled, unpublished
+  or unreadable ownership, an older writer or a failed marker publication
+  refuses the stop without a signal; hold dispatch and retry with a current writer. For accidental stops and their bounded
+  recovery, see [the drive README](README.md#ci-hold).
+
 - **Progress liveness / `--doctor`** — a claim heartbeat proves the
   driver *process* is alive, never that the drive is making *progress*: a driver
   that hit a quota wall, exhausted its pass's context, or wedged on a
@@ -841,6 +849,17 @@ yours.
 ## Entry mode: arm the driver, or work one round (decide first)
 
 **exact** — Route by the documented environment/flag table before running a round.
+
+An explicit request to release a stranded CI hold is recovery, not an arm
+request. Before the mode table below, read the README section
+[Recovering a stranded CI hold](README.md#recovering-a-stranded-ci-hold).
+Re-read `jig ask drive <PR>` or the drive doctor and establish stopped local
+ownership, review convergence on the current head, no human decisions and a
+clean matching worktree. Run the printed CI-hold release command only
+for that explicit request, from that worktree and with its expected head;
+relay any refusal without bypassing it. Observe label removal and fresh CI
+on that head, report those separately from CI success, and stop without
+arming a driver. A status question does not authorize recovery.
 
 `/jig:drive-pr` is invoked two ways, and they must not behave alike: a **human or
 agent session** asks for the PR to be driven, while a **pass `drive.ts`

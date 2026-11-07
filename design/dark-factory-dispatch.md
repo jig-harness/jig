@@ -55,6 +55,165 @@ flowchart LR
   D -->|stopped on a person's call| N[notify a person]
 ```
 
+### One tick, step by step
+
+A tick takes the lock, reads this machine's launch records, and then gives
+each repository a **turn** in rotated order: the repository is read,
+planned and acted on before the next one is read. Within a turn, reading
+and acting are separate phases, each in its own module under
+`plugin/dispatch/lib/`; across repositories they interleave, so
+repository B is read only after repository A's launches have finished.
+Last, the tick closes: it settles what the repositories it did not read
+still owe, copies the outcome log, writes the dashboard's line and writes
+its receipt.
+
+```mermaid
+flowchart TD
+  L[take the tick lock<br/>held: exit at once] --> R[read this host's launch records<br/>one unreadable: no launches this tick]
+  R --> A[build the apply state<br/>slot table per account, rotation cursor, deadline]
+  A --> LOOP{{for each repository, in rotated order}}
+  subgraph repo [one repository's turn, inside its boundary: tick-repo.ts]
+    direction TB
+    O1[open: forge target and the dispatch section<br/>from the default branch]
+    O2[tracker: wanted pickups, claimed items]
+    O3[forge: open PRs, login, a ledger per PR,<br/>merges and their follow-up markers]
+    O3b[claims: every host's launch claims]
+    O4[runtime: the sessions joined to items and PRs]
+    C[observe: thread samples, session walls,<br/>contention]
+    P[plan: wanted minus running, nudges,<br/>hold-back, idle clocks]
+    G[log: outcome rows for launch records that ended]
+    X[apply: end own claims, then the rearm, pickup and<br/>follow-up stages in rotated order, then steer and notify]
+    LB[labels: the state labels, owner only]
+    O1 --> O2 --> O3 --> O3b --> O4 --> C --> P --> G --> X --> LB
+  end
+  LOOP --> repo
+  repo --> LOOP
+  LOOP --> S[close: log rows for repositories not read, prune records]
+  S --> E[copy the outcome log to month files, write the line,<br/>write the receipt, prune receipts, release the lock]
+```
+
+Each step, in order, with what it reads, what it writes, and what happens
+when it fails. The phase names are the ones a receipt times.
+
+| Step | Module | Reads | Writes | On failure |
+| --- | --- | --- | --- | --- |
+| Lock | `receipts.ts` | the lock file | the lock, naming this process | held by a live tick: the tick exits and says who holds it |
+| Launch records (`start`) | `tick.ts` | `state.sqlite` | the follow-up outcomes of ended records | one unreadable record withholds every launch, since its slot may be live |
+| Apply state (`start`) | `tick-apply.ts` | the launch records, `tick-index` | the rotation cursor | cursor unwritable: no launches |
+| `open` | `tick-observe.ts` | `gh repo view`, `.config/jig.yaml` on the default branch | none | the repository is refused and reported; the others go on |
+| `tracker` | `tick-observe.ts` | the items assigned in a dispatch state | none | a failed record; no pickups planned |
+| `forge` | `tick-forge.ts` | open pull requests, the login (once per tick), each one's ledger and park answers from its comment listing, the merges in the follow-up window and the markers of each merge whose `updatedAt` moved | the merges' kept marker reads | a failed record; drives and follow-ups not planned |
+| `claims` | `tick-shared.ts` | every host's launch claims, from the same comment listings; on a merge whose ended launches owe their ends, the claims kept at its `updatedAt` | the merges' kept claims | per pull request: a listing that does not read reaches the plan as unknown |
+| `runtime` | `tick-observe.ts` | the runtime's session list, its host-wide listings read once per tick | none | a failed record; nothing is joined |
+| `observe` | `tick-observe.ts` | each running drive's unresolved threads, each waiting session's wall, the change-area catalog | thread samples, a pickup's opened mark, waiting episodes, the owner's serialization holds, and the account's usage-limit wall under `walls/<account>/` | reported as unplaced |
+| `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles | a write the database refuses is a defect: it stops this repository in phase `plan` |
+| `log` | `tick-settle.ts` | the ended launch records, the ledgers | one outcome row per ended record, with its end | reported; the record is kept until its row lands |
+| `apply` | `tick-apply.ts` | each target read again just before its launch | the launch record, the forge claim or marker, the runtime's launch, nudges, notices | per action: refused, reported, tried again next tick |
+| `labels` | `tick-labels.ts` | the ledgers | the state labels on pull requests | per write, reported |
+| `shared` | `tick-shared.ts` | the shared records' reads and writes this turn | none | none |
+| Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit (once, put on every repository's report) | outcome rows for repositories not read, the month files, the line, the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
+
+**A defect stops only its own repository.** Every read and every action
+above turns its expected failures into a record or a refusal on the report.
+Anything that still throws is a [defect](../GLOSSARY.md): a bug, or a write
+the platform refused where nothing turns that refusal into a value (a full
+disk under the state database, say). The tick catches it once, at the
+boundary around each repository's turn
+([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)). The repository's
+report keeps what its earlier phases did, launches included, and is
+refused with the defect: the code `defect`, the phase it was thrown in, and
+a sentence saying what was thrown there. The receipt never carries the
+stack: that goes to the tick's error output, beside the same sentence,
+which the timer's journal keeps. The remaining repositories run, the tick
+still closes and writes its receipt, and it exits 1. A defect in the closing steps still
+writes the receipt, marked not completed, with the defect on it; `jig
+dispatch receipts` lists it as incomplete and counts its defects. A closing
+step that returns its own failure (the outcome log not copied, the line not
+written) is not a defect: the receipt stays complete, with exit status 1.
+
+**Each phase is timed.** A repository's report carries the milliseconds of
+each phase of its turn (`phasesMs`), and the receipt the tick's own
+(`start`, `repos`, `close`). The tick's text output prints them on one
+line per repository, and `jig dispatch receipts` prints how long each tick
+took. A receipt written before phases were timed has neither, and reads as
+before.
+
+**What a tick reads once.** The observe phases of every repository share
+one set of reads, made when the tick starts (`tick-reads.ts`). Each pull
+request's comments are listed at most once per tick (`tick-comments.ts`),
+and that one listing gives its drive ledger, the answers to its parks,
+every host's launch claims on it and, on a merge, its follow-up markers. A
+listing is filled through one promise per pull request, so two readers
+that ask at once share one read, and a listing that failed is the answer
+for the rest of the tick. What belongs to the host rather than to a
+repository is read once too, the first time a repository needs it, and
+every repository is answered from it: the forge's login, Orca's repository
+and workspace listings (the runtime's `sessionsOnce`), and, as the tick
+closes, the forge's rate limit, which every repository's report then
+carries. A runtime listing that fails fails each repository's record alike,
+as a read of its own would have. The login is the exception: when it cannot
+be established it is unknown (`null`) rather than a failure, the forge
+record still reads, and what depends on it (the trust of a comment as the
+dispatcher's own, a kept read) is treated as not known to hold.
+
+**What is never read from them.** Every read just before a launch goes to
+the forge and the runtime: the drive read again before a re-arm or a
+takeover, the markers, labels and sessions a follow-up reads again before
+it starts, a claim posted and read back, the listing before a claim's end
+is written and before a stale claim is released. The guards against a
+second launch rest on what those say now. A write the tick makes on a pull
+request (a claim or marker posted, an end written, a marker deleted) drops
+that pull request's listing, so nothing later in the tick reads its
+comments as they were before it.
+
+**A merge already read is not read again.** The follow-up markers of each
+merge are kept in the state database (`merge_reads`) beside the pull
+request's `updatedAt` as the merged listing gave it when they were read. A
+new comment moves `updatedAt`, and so does an edit of one (another host's
+answer written onto its marker, a person's run marked done); the listing
+gives it with no extra call. While it has not moved, the tick plans from
+the kept markers instead of listing the comments again, so a merge whose
+follow-up is settled, done on this host, marked done by a person or
+answered by another host, costs nothing after its first read, and a new
+marker on it is seen at the next tick. The forge does not document that
+deleting a comment moves `updatedAt`, so a kept read stands for at most an
+hour, after which the merge is read again whatever its `updatedAt` says. A
+kept read also records the forge login it was read as, since a comment's
+trust depends on it, and stands only for that login; a read is kept only from
+comments listed after the merged listing, never from a listing the tick held
+from an earlier observation of the pull request. A
+merge with a stale-claim release still pending is read every tick, since
+only a fresh listing completes the release (see Stale follow-up claims); a
+write the tick makes on a merge drops its kept read, so the next tick reads
+it; a merge that leaves the follow-up window loses its row. Planning from
+kept markers starts nothing by itself: a follow-up wanted, or a stale
+claim to release, reads the markers again first.
+
+The same holds for the launch claims of a merge on which this host's own
+drive launches ended but still owe their ends (a record is read for its
+claims until every end it owed is written). Those claims are kept in the
+merge's row and read in place of the forge's under the same rule and
+cadence, only while every launch record this host has on the pull request
+has ended and, as the claims were last read, none of them is a trusted
+claim that does not read and the current claim is not another host's with
+no end. Another host's end is an edit, which moves `updatedAt`. These claims
+admit no launch: a merged pull request is never re-armed, and writing an
+end lists the claims from the forge first, then drops the kept row.
+
+**What observing writes.** The observe phase reads the launch records as
+they stand when the turn starts, never the apply state that launches
+change. It does write Control's records to the state database: thread
+samples and a pickup's opened mark on launch records, waiting episodes,
+and the owner's serialization holds. It also publishes an account's
+usage-limit wall as files under `walls/<account>/`, which sessions of every
+repository on that account read; the wall is written before the waiting
+episode that names it, and the two are not one transaction. The plan writes
+the idle clock, released pickups, settled nudges and follow-up outcomes.
+Each database write is one transaction on rows of its own repository, but
+all of them go to the one `state.sqlite`, so observing several repositories
+at once would make them wait on that database's write lock in turn, and the
+walls would be shared across them.
+
 ### Guards against a second launch
 
 A tick acts on facts that can go stale between its read and its launch,
@@ -63,7 +222,13 @@ guards keep one stage from starting twice:
 
 - **One tick at a time per machine.** A tick takes an exclusive lock under
   `~/.local/state/jig/dispatch/`; a second tick that finds it held exits at
-  once and says so.
+  once and says which process holds it. The lock holds its holder's process
+  id, which every version of the tick reads, and beside it the
+  [process identity](../GLOSSARY.md) every lock of the plugin records
+  (host, boot, process id and start time), so a lock left by a tick that
+  died is taken over even when its process id has since been reused: by a
+  process started after a restart, or by another process altogether. A
+  lock with no identity beside it is judged by its process id alone.
 - **A fresh read before each launch.** With `--apply`, the tick reads the
   action's own facts again just before it starts it: the item still
   assigned and in a dispatch state, the ledger still re-armable, no running
@@ -115,7 +280,18 @@ guards keep one stage from starting twice:
   tick. A person settles it by deleting the marker, which makes the
   follow-up wanted again, then running the follow-up or leaving it to the
   next tick. The marker lives on the forge, so a lost launch record does not
-  start a second follow-up on this machine.
+  start a second follow-up on this machine. A launch record still pending
+  with its marker posted (the tick stopped before the runtime answered its
+  launch, or the answer was lost) is launched again under the same record,
+  token and marker, as a drive's pending launch is, once a fresh read finds
+  it safe: no hold label, the record's own marker still the earliest
+  trusted one, naming it and carrying no end, and no session joined to the
+  pull request. A hold label, a read that fails, or a repository with no
+  `dispatch.followup_command` waits for the next tick; a marker that is
+  gone, no longer the earliest or answered, or a session joined to the
+  pull request means the replay can never be proven safe, and the record
+  is stuck (see Launch records). While such a record holds the follow-up, no
+  new one starts for the pull request.
 
   The marker is also the claim a follow-up started by hand honours, since
   a person can start one after the tick reads no marker and before it posts
@@ -216,9 +392,9 @@ guards keep one stage from starting twice:
 | Record | Read through | What the tick takes from it |
 | --- | --- | --- |
 | The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
-| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed |
-| The session runtime | in Orca, `orca worktree ps --json` | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
-| The shared records | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts` | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts) |
+| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels; each pull request's comments listed once per tick and shared by every record read from them, a merge's markers read only when its `updatedAt` moved since they were kept (see One tick, step by step) | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed |
+| The session runtime | in Orca, `orca repo list --json` and `orca worktree ps --json`, each read once per tick for every repository | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
+| The shared records | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts`; the observe phase reads them from the tick's comment listings, a launch's own reads and writes go to the forge | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts) |
 
 **The tracker.** The interface gains one read, `assignedIssues(identity,
 states)`: the issues assigned to that user in those states, in the pool
@@ -321,9 +497,34 @@ to discard: the pass finishes it or starts it over (`drive-pr` `SKILL.md` § 0),
 and a tree that holds one behind a moved head refuses the attach, which leaves
 the ledger stopped `9`, so a person is told.
 
-A stopped ledger with no exit has no known origin: `drives.ts --stop`
-records one, and so does the driver's own recovery after a crash, a thrown
-refusal or a signal, so the tick cannot read a person's decision into it.
+A deliberate stop records the person's decision, with their reason when
+given. Mailbox stops and pauses keep exits `18` and `19`; `drives.ts --stop`
+records an explicit person's stop even when it must force the process to end.
+A person's stop stays stopped until a person releases it. The hold label
+also prevents launches while it stands.
+
+With ledger mirroring enabled, `drives.ts --stop` verifies the published
+ownership before signalling. An initializing driver, or an unreadable ledger,
+is refused without a signal: hold dispatch and retry once ownership reads.
+The driver publishes its ownership immediately after initialization.
+
+Stop intent is published and verified on the forge before signalling the
+driver. Ledger writes are serialized so an older in-flight write cannot erase
+it. A running driver with recorded stop intent is held against automatic
+re-arms and takeovers. Stop-bearing ledgers use format version 2 so older
+readers refuse them instead of ignoring the stop; ordinary ledgers remain
+version 1, and the new reader accepts both.
+
+A stopped ledger with no exit and no person's-stop record is an accident:
+the dispatcher re-arms it on an admitted account to resume its durable state.
+Hard termination of both driver and launch wrapper can leave a running ledger
+with a stale heartbeat instead. No-exit recovery does not cover that state;
+without a recognized launch owner it remains silent until a person intervenes.
+The default budget is 3 no-cause re-arms per pull request in a rolling hour,
+across accounts; completing a round does not reset it. Once spent, the next
+no-cause stop needs a person and is notified once with the drive's handoff.
+A legacy no-exit ledger receives at most one automatic attempt, regardless of
+the budget; a new ledger then follows the ordinary budget.
 
 | Ledger says | Class | The tick |
 | --- | --- | --- |
@@ -333,8 +534,9 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
 | stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies per stop, with the exit and the drive's handoff |
 | stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
-| stopped `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
-| stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies per stop, with the drive's handoff |
+| stopped with an explicit person's-stop record, or `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
+| stopped with no exit and no person's-stop record, budget available | re-armable | re-arms on an admitted account; a legacy ledger gets at most one attempt |
+| stopped with no exit and no person's-stop record, budget spent | stopped-unknown: repeated no-cause stops, needs a person | notifies once with the drive's handoff and says the drive stopped repeatedly with no recorded cause |
 | stopped `16` (quota-parked) | re-armable | re-arms on an admitted account other than the one its launch record names, when one does, or after the wall's reset |
 | stopped `8` (parked), every parked item answered | re-armable | re-arms on any admitted account |
 | stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive) | re-armable | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to |
@@ -534,10 +736,19 @@ the stage's exit when it ends. A record that has neither a process
 identity nor an agent id is **pending**: it holds its stage and slot, and
 its launch is retried only under its own token, which the tick hands
 `launch` as the launch's key (see The session runtime interface), never as
-a fresh launch. A record still pending at a later tick, with its launch's
-answer lost and no keyed retry that produced one, is an unknown, reported,
-holding its stage and slot until a person clears it (`jig dispatch clear
-<record>`, which refuses a record whose process is alive). The next
+a fresh launch. A record still pending at a later tick, whose launch no
+tick calls again, is **stuck**: both of its launches went unanswered (or
+one went unanswered and the runtime answered the other as not started),
+since an unanswered launch
+may have started a session and a third call is never made, or a follow-up's
+replay could not be proven safe (see Guards against a second launch). A
+stuck record is notified to a person as needing them (see Notifications),
+shown on the dashboard as needing a person rather than as an ordinary
+pending launch, and holds its stage and slot until a person checks for a
+session it started and clears it (`jig dispatch clear <record>`, which
+refuses a record whose process is alive). A record whose last launch the
+runtime answered as started is never stuck, since its wrapper may still
+claim it. The next
 tick reads the records: a record whose process is alive under that same
 identity holds its stage; one that ended carries the stage's answer; one
 whose identity cannot be checked (another boot, an unreadable process
@@ -942,7 +1153,7 @@ parked questions (item 32's framed decision, built, or the stored
 reason for a park with no decision record); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
-stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a session waiting past
+stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a session waiting past
 `blocked_after`; a running stage drifting from its expectation, and a
 session still waiting on a wall after its one nudge (see Control). Every
 message carries the cause or the question, the pull request's link and
@@ -1012,7 +1223,9 @@ notifies for it (see Several hosts), so a person is told once.
 
 Every tick writes one receipt under `~/.local/state/jig/dispatch/receipts/`, as
 `jig gc` does: the records it read and from where, each planned action with
-its reason, each launch with the runtime's answer, each notification. A
+its reason, each launch with the runtime's answer, each notification, the
+milliseconds of each phase, and any defect with its phase and what was
+thrown (its stack goes to the journal). A
 tick removes receipts and ended launch records older than the machine
 file's retention, keeping the latest completed receipt. These records are
 kept apart from them and do not expire: the outcome log (see Control) and
@@ -1059,6 +1272,13 @@ per kind of record, each row under a unique key:
   a recurring class, keyed by the finding's id, holding the event as its
   first append sent it, pending until the store reports it stored (see
   Control).
+- **Merge reads**: one row per repository and merged pull request in the
+  follow-up window, the markers a tick last read on it, and the launch
+  claims where this host's ended launches still owed their ends, at its
+  `updatedAt` then; replaced by each read and removed by a write the tick
+  makes on it
+  (see One tick, step by step). They only save reads: a row that does not
+  read is a read the next tick makes.
 
 The receipts stay files, one per tick, since a receipt is a run's
 narrative for a person and for the morning report. The account walls stay
@@ -1074,7 +1294,12 @@ orders against a tick's. The database runs in write-ahead logging mode,
 so the dashboard and `jig dispatch log` read while a tick writes. Its
 schema carries a version: a database at an older one is migrated forward
 in one transaction, and one a newer plugin wrote is refused, with its
-version named, by every command that opens it.
+version named, by every command that opens it. The dashboard's server
+opens it through the reader that migrates it until the hub's first stage
+(its step 4) makes the server, and the hub it grows into, open it
+read-only, never migrating it and showing a schema older or newer than
+their own as such
+([hub.md § Install and upgrade](hub.md#install-and-upgrade)).
 
 What another host must know of this host's launches is not kept here: it
 is published as shared records on the forge (see Several hosts). The local
@@ -1302,11 +1527,18 @@ browser's own storage.
 The first is the **line**, one row of the state database (`tick_line`): the
 needs, the accounts with their slots and walls, the sessions, the queue and the
 repositories as a tick found them, with that tick's receipt. A tick that read
-every repository the machine file lists replaces it at its end; a tick for one
-repository leaves it. Every read behind it stays in the tick: process liveness,
-walls, the machine file, titles, framed decisions. So the page says once, in
+every repository the machine file lists replaces it at its end. A tick for one
+repository leaves it, until the hub's first stage (its step 5) lets that tick
+replace only that repository's part (its needs, sessions and queue, and its
+entry among the repositories, stamped with that tick's run and read time) and
+leave the rest to the full ticks: the line's own times, the accounts and the
+receipt
+([dispatch-board.md § The line grows one list](dispatch-board.md#the-line-grows-one-list)).
+Every read behind it stays in the tick: process liveness, walls, the machine
+file, titles, framed decisions. So the page says once, in
 its strip, how old the tick it shows is, never "live"; a timer that stopped
-shows as a tick older than the interval plus the longest recent tick; and a host
+shows as a tick older than the interval plus the longest recent tick, as it
+still does once ticks for one repository refresh their part; and a host
 may serve the page from a copy of the database and nothing else, which is how an
 isolated service runs it. The
 line is a view: a tick that cannot write it says so on its receipt and exits
@@ -1327,14 +1559,30 @@ report: no report file is ever generated. The filter is the page's query
 string, so a view is a link.
 
 The server runs while the command runs, started and stopped by a person
-(from a terminal on the host, which Orca's phone app reaches); nothing
-installs or keeps it running, so the dispatcher stays without a resident
-process. It listens on the address the machine file names
-(`dashboard.listen`, no default), and refuses an address outside the
-private and loopback ranges, so no route into the host is opened beyond
-the network the host already trusts. The URL it prints carries a token
-minted at start, and a request without it is refused: these records name
-repositories, items and accounts.
+(from a terminal on the host, which Orca's phone app reaches); the
+dispatcher installs nothing that keeps it running. It listens on the
+address the machine file names (`dashboard.listen`, no default), and
+refuses an address outside the private and loopback ranges, so no route
+into the host is opened beyond the network the host already trusts. The
+URL it prints carries a token minted at start, and a request without it is
+refused: these records name repositories, items and accounts.
+
+The dashboard grows into the [hub](hub.md), which `jig install hub`
+installs as a resident reader where Orca's browser or a
+[private-network front](../GLOSSARY.md) reaches a host's page: it holds no
+request, no component reads from it and the line never waits on it, so
+stopping it changes nothing the line does, and it opens every database
+read-only and never migrates one
+([hub.md § A reader, not a daemon](hub.md#a-reader-not-a-daemon)). The
+dispatcher itself stays without a resident process. The hub's server on a
+host listens on loopback, or on a socket only a front reaches, and needs
+no token, since every way in from another machine authenticates the person
+first. From the hub's second stage
+`jig dispatch dashboard` starts that server; once the hub's front is built,
+the dashboard drops the private-address bind (`dashboard.listen`) and the
+token in its URL, a machine file that still sets `dashboard.listen` gets a
+warning naming the front, and a phone reaches the page through the front
+([hub.md § Where it runs](hub.md#where-it-runs)).
 
 Each read answers with its value or a coded failure with a reason for a person,
 and a bug is caught once around the routes and logged with its stack
@@ -1692,3 +1940,5 @@ Critiqued in two rounds by reviewers with fresh context (subagents that
 did not write it): the whole design on 2026-10-30 against commit
 `c2c8083e`, and the Control section, written after that round, on
 2026-10-31 against commit `de08d1ce`.
+What the hub adds to it was critiqued with the hub's design on 2026-11-06
+([hub.md § Review](hub.md#review)).

@@ -18,10 +18,13 @@ import type {
   NeedCause,
   QueueGroup,
 } from "./dashboard-contract.ts";
-import type { ReadRecord } from "./launches.ts";
+import type { LaunchAction, ReadRecord } from "./launches.ts";
+import { pullUrl } from "./forge.ts";
 import { holds, targetOf } from "./launches.ts";
+import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
+import { stuckWhy } from "./stuck-launches.ts";
 import type {
   Action,
   DrivenPr,
@@ -156,6 +159,21 @@ function needStage(cause: NeedCause): LineNeed["stage"] {
   return "rearm";
 }
 
+const LAUNCH_ACTIONS: ReadonlySet<string> = new Set<LaunchAction>([
+  "rearm",
+  "takeover",
+  "pickup",
+  "followup",
+]);
+
+/** The stage a need is about: the launch's own, for a cause about one launch record, else its cause's. */
+function stageOfNeed(action: Action & { cause: NeedCause }): LineNeed["stage"] {
+  const stage = action.evidence.stage;
+  return typeof stage === "string" && LAUNCH_ACTIONS.has(stage)
+    ? (stage as LaunchAction)
+    : needStage(action.cause);
+}
+
 function isNeed(action: Action): action is Action & { cause: NeedCause } {
   return (
     action.stage === "notify" &&
@@ -169,17 +187,13 @@ function isItemTarget(target: string): boolean {
   return prNumber(target) === null;
 }
 
-/** A pull request's link when no read gave one: the forge is GitHub, which `lib/forge.ts` reads through `gh`. */
-function pullUrl(slug: string, pr: number): string {
-  return `https://github.com/${slug}/pull/${pr}`;
-}
-
 /** The lookups one repository's lines share. */
 class RepoView {
   readonly slug: string;
   readonly report: RepoReport;
   readonly input: RepoLineInput | undefined;
   readonly stored: RepoStored;
+  readonly records: ReadRecord[];
   private readonly known: Map<string, { title: string; url: string | null }>;
   private readonly drives: Map<number, DrivenPr>;
 
@@ -188,11 +202,13 @@ class RepoView {
     report: RepoReport,
     input: RepoLineInput | undefined,
     stored: RepoStored,
+    records: ReadRecord[],
   ) {
     this.slug = slug;
     this.report = report;
     this.input = input;
     this.stored = stored;
+    this.records = records;
     this.known = new Map([
       ...(input?.drives ?? []).map(
         (d) => [`PR #${d.number}`, { title: d.title, url: d.url }] as const,
@@ -270,13 +286,21 @@ function needsOf(
         : view.stored.notified.get(action.notice.key);
     return {
       cause: action.cause,
-      stage: needStage(action.cause),
+      stage: stageOfNeed(action),
       repo: view.slug,
       target: action.target,
       pr,
       item: pr === null ? action.target : null,
       url: view.url(action.target, action.evidence),
       title: view.title(action.target, action.evidence),
+      workspace: needWorkspace(
+        view.report,
+        action.target,
+        needStage(action.cause),
+        view.input?.sessions,
+        view.records,
+        action,
+      ),
       since:
         text(action.evidence, "heartbeat") ??
         text(action.evidence, "idleSince") ??
@@ -284,7 +308,10 @@ function needsOf(
         sightedSince(previous, view.slug, action, nowIso),
       reason: action.reason,
       question: text(action.evidence, "question"),
-      decisions: (view.drive(pr)?.waiting ?? []).map(decisionOf),
+      decisions:
+        text(action.evidence, "stuck") !== null
+          ? []
+          : (view.drive(pr)?.waiting ?? []).map(decisionOf),
       notified:
         notification === undefined
           ? null
@@ -296,7 +323,14 @@ function needsOf(
       workspaces:
         action.cause === "double-claim"
           ? view.workspacesHolding(action.target)
-          : [],
+          : text(action.evidence, "stuck") !== null &&
+              action.workspace !== undefined
+            ? [action.workspace]
+            : [],
+      stuckRecord:
+        text(action.evidence, "stuck") === null
+          ? null
+          : text(action.evidence, "record"),
     };
   });
   const refused = view.report.unplaced
@@ -311,6 +345,13 @@ function needsOf(
         item: u.target,
         url: view.url(u.target),
         title: view.title(u.target),
+        workspace: needWorkspace(
+          view.report,
+          u.target,
+          "pickup",
+          view.input?.sessions,
+          view.records,
+        ),
         since:
           firstSeen(previous, view.slug, u.target, "assigner-cannot-write") ??
           nowIso,
@@ -568,6 +609,7 @@ function sessionOf(
     createdAt: record.createdAt,
     launch: state.kind,
     launchReason: state.kind === "unknown" ? state.reason : null,
+    stuck: stuckWhy(read),
     agent: agentOf(read, view),
     ...ledgerOf(evidence),
     samples: record.samples ?? [],
@@ -590,6 +632,7 @@ export function buildLine(input: LineInput): LineSnapshot {
             report,
             input.inputs.get(report.path),
             input.stored(report.slug),
+            input.records,
           ),
         ],
   );

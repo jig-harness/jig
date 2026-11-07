@@ -250,7 +250,7 @@ async function listPrs(
   read: LabelRead,
 ): Promise<ListedPr[]> {
   const fields = [...LISTED];
-  if (extra.includes("merged")) fields.push("mergedAt");
+  if (extra.includes("merged")) fields.push("mergedAt", "updatedAt");
   if (extra.includes("open")) fields.push(...OPEN_FIELDS);
   if (read.labels) fields.push("labels");
   const out = parsed(
@@ -380,6 +380,7 @@ export async function mergedSince(
       head: p.headRefName,
       mergedAt: p.mergedAt as string,
       ...(p.createdAt === undefined ? {} : { createdAt: p.createdAt }),
+      ...(p.updatedAt === undefined ? {} : { updatedAt: p.updatedAt }),
       ...(p.labels === undefined ? {} : { labels: p.labels }),
     }))
     .sort((a, b) => a.number - b.number);
@@ -513,4 +514,9 @@ export async function createLabel(
     "--description",
     label.description,
   ]);
+}
+
+/** A pull request's link when no read gave one: the forge is GitHub, read through `gh`. */
+export function pullUrl(slug: string, pr: number): string {
+  return `https://github.com/${slug}/pull/${pr}`;
 }

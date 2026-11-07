@@ -85,6 +85,43 @@ async function tick(w: World, exit = 0): Promise<TickReceipt> {
 }
 
 describe("the line a tick leaves", () => {
+  it("names the parked drive's workspace without a running session in the JSON line", async () => {
+    const w = fixture();
+    w.setComments(7, [
+      ledgerComment(
+        701,
+        stoppedLedger(7, 8, {
+          parked: [
+            {
+              key: "F1",
+              kind: "finding",
+              reason: "Choose a retry budget",
+              round: 2,
+              at: "2026-10-30T21:00:00.000Z",
+              class: "design-choice",
+              record: "Choose a retry budget",
+            },
+          ],
+        }),
+      ),
+    ]);
+    machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm", "notify"]);
+    await tick(w);
+    const answer = await w.dispatch(["line", "--json"]);
+    expectSpawnExit(answer, 0);
+    const parsed = JSON.parse(answer.stdout) as {
+      value: { line: LineSnapshot };
+    };
+    expect(parsed.value.line.sessions).toEqual([]);
+    expect(parsed.value.line.needs).toContainEqual(
+      expect.objectContaining({
+        target: "PR #7",
+        cause: "parked",
+        workspace: join(w.root, "ws-7"),
+      }),
+    );
+  });
+
   it("holds what the tick launched, on its account, and the receipt beside it", async () => {
     const w = fixture();
     machineFile(w, [account(w, "a", "a@example.com")], { interval: "10m" });
