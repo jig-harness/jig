@@ -4,11 +4,18 @@
  * the test's own function, keyed by the operation's name.
  */
 
-import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
+import {
+  facetInputs,
+  parseTrackerConfig,
+} from "../scripts/lib/tracker/config.ts";
+import { resolveFacets } from "../scripts/lib/tracker/facets/config.ts";
 import { gitHubClient } from "../scripts/lib/tracker/github/client.ts";
 import { gitHubModel } from "../scripts/lib/tracker/github/model.ts";
 import { gitHubTracker } from "../scripts/lib/tracker/github/tracker.ts";
-import type { GitHubTransport } from "../scripts/lib/tracker/github/transport.ts";
+import {
+  GitHubApiError,
+  type GitHubTransport,
+} from "../scripts/lib/tracker/github/transport.ts";
 import type { Tracker } from "../scripts/lib/tracker/port.ts";
 
 const HOME = { owner: "acme", name: "app" };
@@ -128,7 +135,32 @@ export const repoLabels = (...names: string[]) => ({
 
 export interface TrackerOptions {
   issue_tracker?: Record<string, unknown>;
+  /** The label taxonomy's types and sizes; absent, the repository has none. */
+  taxonomy?: { types: string[]; sizes: string[] | null };
 }
+
+/** The taxonomy of Jig's own repository: its types and its size group. */
+export const JIG_TAXONOMY = {
+  types: ["bug", "feature", "docs", "chore", "infra"],
+  sizes: ["xs", "small", "medium", "large", "xl"],
+};
+
+/** The credential the fake transport names in messages. */
+export const CREDENTIAL = "gh with GH_TOKEN";
+
+/** The ways a read can fail that a detection read must report, never read as "no field". */
+export const READ_FAILURES = {
+  timeout: new GitHubApiError("gh api graphql timed out", {
+    unavailable: true,
+  }),
+  "rate limit": new GitHubApiError(
+    'GitHub API HTTP 403: {"message":"API rate limit exceeded for user ID 1.","documentation_url":"https://docs.github.com"}',
+    { unavailable: true, retryAfterSec: 60 },
+  ),
+  refusal: new GitHubApiError(
+    'GitHub API errors: [{"type":"FORBIDDEN","path":["organization"],"message":"Resource not accessible by integration"}]',
+  ),
+} as const;
 
 /** A GitHub tracker over the fake transport, configured like an overlay. */
 export function gitHub(
@@ -146,6 +178,10 @@ export function gitHub(
     },
   });
   const f = fakeTransport(answer);
+  const taxonomy =
+    overlay.taxonomy === undefined
+      ? null
+      : { path: "label-taxonomy.yaml", ...overlay.taxonomy };
   return {
     t: gitHubTracker(
       gitHubClient({
@@ -153,6 +189,8 @@ export function gitHub(
         model: gitHubModel(config.states, config.github),
         settings: config.github,
         transport: f.transport,
+        facets: resolveFacets(facetInputs(config), taxonomy),
+        credential: CREDENTIAL,
       }),
     ),
     calls: f.calls,

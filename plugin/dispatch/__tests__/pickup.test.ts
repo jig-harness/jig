@@ -9,8 +9,9 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { readRecord, readResult } from "../lib/launches.ts";
+import { readEnded, readRecord, readResult } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
+import { readRows } from "../lib/log.ts";
 import { updateIdle } from "../lib/idle.ts";
 import { assignedIssue, openPr, SLUG, type World, world } from "./fixtures.ts";
 import {
@@ -313,6 +314,37 @@ describe("jig dispatch --apply picks up assigned items", () => {
 });
 
 describe("jig dispatch result", () => {
+  it("requires a nonempty no-PR reason and rejects contradictory or invalid handoffs", async () => {
+    const w = fixture();
+    const id = String(launches(await applyTick(w, true))[0]?.record);
+    const token = readRecord(id, dispatchState(w))?.token ?? "";
+    for (const args of [
+      ["--none", " "],
+      ["--pr", "0"],
+      ["--pr", "42", "--none", "duplicate"],
+    ]) {
+      expectSpawnExit(
+        await w.dispatch(["result", id, token, "done", ...args]),
+        2,
+      );
+      expect(readResult(id, dispatchState(w))).toBeNull();
+    }
+    const r = await w.dispatch([
+      "result",
+      id,
+      token,
+      "done",
+      "--none",
+      "duplicate",
+    ]);
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).next).toEqual({ none: "duplicate" });
+    writeFileSync(join(w.dir, "claude-exit"), "");
+    await waitFor("the exit", () => exitWritten(w, id));
+    expect(readEnded(id, dispatchState(w))?.next).toEqual({
+      none: "duplicate",
+    });
+  });
   it("records a session's answer once, under its own record's token only", async () => {
     const w = fixture();
     const id = String(launches(await applyTick(w, true))[0]?.record);
@@ -322,7 +354,12 @@ describe("jig dispatch result", () => {
     expectSpawnExit(foreign, 2);
     expect(foreign.stderr).toContain("is not a launch record with that token");
 
-    const first = await w.dispatch(["result", id, token, "done"]);
+    const missing = await w.dispatch(["result", id, token, "done"]);
+    expectSpawnExit(missing, 2);
+    expect(missing.stderr).toContain("--pr");
+    expect(readResult(id, dispatchState(w))).toBeNull();
+
+    const first = await w.dispatch(["result", id, token, "done", "--pr", "42"]);
     expectSpawnExit(first, 0);
     const second = await w.dispatch(["result", id, token, "failed"]);
     expectSpawnExit(second, 3);
@@ -331,5 +368,16 @@ describe("jig dispatch result", () => {
 
     writeFileSync(join(w.dir, "claude-exit"), "");
     await waitFor("the exit", () => exitWritten(w, id));
+    expect(readEnded(id, dispatchState(w))?.next).toEqual({
+      address: `drive@${SLUG}#42`,
+    });
+    await applyTick(w, true);
+    expect(readRows(undefined, undefined, dispatchState(w))).toContainEqual(
+      expect.objectContaining({
+        kind: "ended",
+        record: id,
+        next: { address: `drive@${SLUG}#42` },
+      }),
+    );
   });
 });

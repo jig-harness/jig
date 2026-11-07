@@ -41,6 +41,9 @@ export function planObserved(
     held: observation.held,
     serialized: observation.serialized,
     shared: { host: ctx.host, drives: claims, owner: ctx.owner },
+    ...(context.options.machine == null
+      ? {}
+      : { unclaimedAfterMs: context.options.machine.unclaimedAfterMs }),
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];

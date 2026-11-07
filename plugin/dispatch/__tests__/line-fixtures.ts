@@ -43,6 +43,7 @@ const MACHINE: MachineConfig = {
   workspaceTimeoutMs: 60_000,
   opensPerTick: 4,
   receiptsDays: 30,
+  unclaimedAfterMs: 900_000,
   dashboardListen: null,
   sharedRecords: "forge",
   changeProbe: true,

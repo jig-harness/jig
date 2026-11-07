@@ -10,8 +10,9 @@
  * a row with that key, by writing the file whole, once, with the rows added
  * and renaming it into place: a tick that stops mid-copy leaves the file as it
  * was, and the next copies the same rows again without a second line for
- * any. A line the file already holds is kept as it is, so a copy written
- * before the database existed, or before it was replaced, is never lost.
+ * any. A late result refreshes its existing line. Other lines are kept, so a
+ * copy written before the database existed, or before it was replaced, is
+ * never lost.
  */
 import {
   closeSync,
@@ -77,6 +78,46 @@ function eachLine(path: string, line: (text: string) => void): void {
   } finally {
     closeSync(fd);
   }
+}
+
+/** Refresh archived lines in bounded batches; old lines need no individual query. */
+function copyRevisions(
+  db: Database,
+  path: string,
+  out: number,
+  mark: number,
+  high: number,
+): void {
+  let lines: string[] = [];
+  const flush = () => {
+    const keys = lines.flatMap((text) => {
+      const key = parseLine(text)?.key;
+      return key === undefined ? [] : [key];
+    });
+    const revisions = new Map<string, string>();
+    if (keys.length > 0) {
+      const rows = db
+        .query(
+          `SELECT key, row FROM log WHERE seq > ? AND seq <= ? AND key IN (${keys.map(() => "?").join(",")})`,
+        )
+        .all(mark, high, ...keys) as { key: string; row: string }[];
+      for (const row of rows) revisions.set(row.key, row.row);
+    }
+    for (const text of lines) {
+      const key = parseLine(text)?.key;
+      writeAllSync(
+        out,
+        `${key === undefined ? text : (revisions.get(key) ?? text)}\n`,
+      );
+    }
+    lines = [];
+  };
+  eachLine(path, (text) => {
+    if (text === "") return;
+    lines.push(text);
+    if (lines.length === BATCH) flush();
+  });
+  if (lines.length > 0) flush();
 }
 
 interface Copied {
@@ -163,16 +204,14 @@ function copyMonth(
       mark,
       high,
       (r) => {
-        if (monthOf(r.at) !== month || held.has(r.key)) return;
+        if (monthOf(r.at) !== month) return;
         if (fd === null) {
           fd = openSync(temporary, "wx", 0o600);
           created = true;
-          // A line the file holds is kept as it is, blank lines apart.
-          const out = fd;
-          eachLine(path, (text) => {
-            if (text !== "") writeAllSync(out, `${text}\n`);
-          });
+          // Refresh a result recorded after its ended row was exported.
+          copyRevisions(db, path, fd, mark, high);
         }
+        if (held.has(r.key)) return;
         writeAllSync(fd, `${r.row}\n`);
         held.add(r.key);
         added++;
