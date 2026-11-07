@@ -45,6 +45,8 @@ async function drives(stateDir: string, args: string[]) {
       ...gitCleanEnv(),
       DRIVE_PR_STATE_DIR: stateDir,
       DRIVE_PR_STOP_GRACE_SEC: "1",
+      // This process-lifecycle fixture has no mirrored ledger; publication is covered by ledger-stop.test.ts.
+      DRIVE_PR_LEDGER: "off",
     },
     stdout: "pipe",
     stderr: "pipe",

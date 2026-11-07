@@ -3,6 +3,7 @@ import {
   type SharedClaim,
   readable,
   unreadable,
+  winners,
 } from "../../shared/records/shared.ts";
 import type { ReadRecord } from "./launches.ts";
 import { isDrive } from "./launches.ts";
@@ -48,19 +49,28 @@ function attemptsOf(
   claims: DriveClaims,
 ): Map<string, { facts: string; at: string }> {
   const attempts = new Map<string, { facts: string; at: string }>();
+  const shared = claims.get(pr.number);
+  const won = shared?.ok ? winners(shared.value) : [];
+  const losingRecords = new Set(
+    (shared?.ok ? readable(shared.value) : [])
+      .filter((c) => !won.some((w) => w.id === c.id))
+      .map((c) => c.says.value.record),
+  );
   for (const r of records)
-    if (isDrive(r.record) && r.record.pr === pr.number)
+    if (
+      isDrive(r.record) &&
+      r.record.pr === pr.number &&
+      !losingRecords.has(r.record.id)
+    )
       attempts.set(r.record.id, {
         facts: r.record.facts,
         at: r.record.createdAt,
       });
-  const shared = claims.get(pr.number);
-  if (shared?.ok)
-    for (const c of readable(shared.value)) {
-      const s = c.says.value;
-      if (s.facts !== null && !attempts.has(String(s.record)))
-        attempts.set(String(s.record), { facts: s.facts, at: s.at });
-    }
+  for (const c of won) {
+    const s = c.says.value;
+    if (s.facts !== null && !attempts.has(String(s.record)))
+      attempts.set(String(s.record), { facts: s.facts, at: s.at });
+  }
   return attempts;
 }
 
@@ -109,7 +119,7 @@ export function recoveryReservationRefusal(
   const fault = claimsFault(new Map([[0, history]]), 0);
   if (fault !== null) return fault;
   if (!history.ok) return history.failure.reason;
-  const reservation = readable(history.value).find((c) => c.id === own);
+  const reservation = winners(history.value).find((c) => c.id === own);
   if (
     reservation?.says.value.record !== record.id ||
     reservation.says.value.facts !== record.facts ||
@@ -117,7 +127,7 @@ export function recoveryReservationRefusal(
   )
     return "the recovery reservation could not be verified in its latest claim history";
   const attempts = new Map<string, { facts: string; at: string }>();
-  for (const claim of readable(history.value)) {
+  for (const claim of winners(history.value)) {
     const s = claim.says.value;
     if (claim.id >= own || s.record === record.id || s.facts === null) continue;
     attempts.set(String(s.record), { facts: s.facts, at: s.at });

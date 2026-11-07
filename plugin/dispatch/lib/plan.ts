@@ -392,7 +392,13 @@ function planForeign(
     shared.drives.get(pr.number) ??
     failed("unreadable", "they were not read this tick");
   const hold = foreignHold(pr, claims, shared.host);
-  if (hold.kind === "none") return null;
+  if (
+    hold.kind === "none" ||
+    (hold.kind === "refused" &&
+      pr.class === "stopped-unknown" &&
+      pr.evidence.noCause === true)
+  )
+    return null;
   if (hold.kind === "unread") {
     plan.unplaced.push({ target, record: "forge", reason: hold.why });
     return true;
@@ -431,7 +437,15 @@ function planDrive(
   const { slug, launches } = input;
   const target = `PR #${pr.number}`;
   const hold = driveHold(pr, launches);
-  if (placedByHold(target, hold, plan)) return;
+  if (
+    !(
+      hold.kind === "refused" &&
+      pr.class === "stopped-unknown" &&
+      pr.evidence.noCause === true
+    ) &&
+    placedByHold(target, hold, plan)
+  )
+    return;
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
   // Another host's open takeover on these ledger facts holds the drive even
   // where this host's own record would take it over.

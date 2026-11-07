@@ -341,7 +341,9 @@ version 1, and the new reader accepts both.
 
 A stopped ledger with no exit and no person's-stop record is an accident:
 the dispatcher re-arms it on an admitted account to resume its durable state.
-Killing the driver process or closing its terminal tab counts as an accident.
+Hard termination of both driver and launch wrapper can leave a running ledger
+with a stale heartbeat instead. No-exit recovery does not cover that state;
+without a recognized launch owner it remains silent until a person intervenes.
 The default budget is 3 no-cause re-arms per pull request in a rolling hour,
 across accounts; completing a round does not reset it. Once spent, the next
 no-cause stop needs a person and is notified once with the drive's handoff.

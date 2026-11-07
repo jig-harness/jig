@@ -8,7 +8,7 @@ import type {
 } from "../../shared/records/shared.ts";
 import { launchClaimer } from "../lib/shared-launches.ts";
 import { noCauseFacts, settleNoCauseStops } from "../lib/no-cause-stops.ts";
-import type { LaunchRecord } from "../lib/launches.ts";
+import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import type { DrivenPr } from "../lib/types.ts";
 
 function pr(legacy: boolean): DrivenPr {
@@ -122,6 +122,49 @@ async function reserve(
 }
 
 describe("recovery reservation", () => {
+  it("counts only the winning reservation of each earlier attempt", async () => {
+    const facts = noCauseFacts(pr(false));
+    const candidate = record(facts);
+    const earlier = [claim(1, facts), claim(2, facts), claim(3, facts)];
+    for (const c of earlier) if (c.says.ok) c.says.value.attempt = 1;
+    const local: ReadRecord[] = earlier.map((c) => ({
+      record: {
+        ...record(facts),
+        id: c.says.ok ? String(c.says.value.record) : "",
+      },
+      state: {
+        kind: "ended",
+        exit: { at: new Date().toISOString(), code: null, signal: null },
+        process: null,
+      },
+      result: null,
+    }));
+    expect(
+      settleNoCauseStops(
+        [pr(false)],
+        local,
+        new Map([[7, ok(earlier)]]),
+        Date.now(),
+      )[0]?.class,
+    ).toBe("re-armable");
+    const reserved = claim(4, facts, candidate.id, false);
+    if (reserved.says.ok) reserved.says.value.attempt = 2;
+    expect(
+      settleNoCauseStops(
+        [pr(false)],
+        [],
+        new Map([[7, ok(earlier)]]),
+        Date.now(),
+      )[0]?.class,
+    ).toBe("re-armable");
+    const { result, released } = await reserve(candidate, 4, [
+      ...earlier,
+      reserved,
+    ]);
+    expect(result).toEqual({ claim: 4 });
+    expect(released).toEqual([]);
+  });
+
   for (const legacy of [false, true]) {
     it(`refuses a stale ${legacy ? "legacy" : "modern"} plan after a competing host consumed the remaining allowance`, async () => {
       const drive = pr(legacy);

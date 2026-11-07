@@ -254,14 +254,17 @@ with `stop` keeps its existing operator-stop exit. The dispatcher leaves these
 stopped until a person re-arms them. Its hold label prevents new launches while
 it remains on the pull request.
 
-Killing the process or closing its terminal tab is read as an accident. A drive
-that stops with no recorded cause is re-armed from its durable state, up to
+A drive recorded as stopped with no exit and no person’s-stop marker is read
+as an accident and re-armed from its durable state, up to
 3 attempts per pull request in a rolling hour, across accounts and hosts whose
 launch claims can be read. Completing a round does not reset this count.
 After the budget is spent, the next no-cause stop needs a person and sends one
 notice with the handoff; it becomes eligible again as the attempts leave the
 window. A legacy no-exit ledger receives at most one automatic attempt while
-its stop facts remain unchanged, even beyond the hour.
+its stop facts remain unchanged, even beyond the hour. Hard termination of both
+the driver and its launch wrapper can leave its ledger recorded as running.
+That interrupted state is not covered by no-exit recovery and can remain
+silent until a person intervenes.
 
 When someone else removes the CI hold label, the
 drive accepts only checks that started strictly after that removal; GitHub

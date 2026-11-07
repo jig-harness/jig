@@ -7,7 +7,9 @@ import {
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 /** Accidental stop recovery is durable across ticks and bounded across accounts. */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { statePath } from "../lib/state.ts";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
@@ -23,6 +25,9 @@ import {
 import {
   account,
   exitWritten,
+  dispatchState,
+  earlierRecord,
+  claimed,
   machineFile,
   waitFor,
 } from "./launch-fixtures.ts";
@@ -67,6 +72,9 @@ async function rearm(w: World) {
 describe("no recorded cause", () => {
   it("re-arms three times, then notifies once with the handoff", async () => {
     const w = fixture(true);
+    w.setConfig(
+      `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndispatch:\n  renotify_after: 1h\n`,
+    );
     for (let i = 0; i < 3; i++) await rearm(w);
     const fourth = await tick(w);
     expect(fourth.repos[0]?.launches).toEqual([]);
@@ -79,71 +87,134 @@ describe("no recorded cause", () => {
     expect(fourth.repos[0]?.actions[0]?.notice?.text).toContain(
       ".context/pr-drive-7.md",
     );
+    const notices = fourth.repos[0]?.notifications?.[0]?.workspace;
+    const psPath = join(w.dir, "orca-ps.json");
+    const ps = JSON.parse(readFileSync(psPath, "utf8")) as {
+      worktrees: Array<{ path: string; unread: boolean }>;
+    };
+    for (const row of ps.worktrees)
+      if (row.path === notices) row.unread = false;
+    writeFileSync(psPath, JSON.stringify(ps));
+    const db = new Database(statePath(dispatchState(w)));
+    try {
+      const at = new Date(Date.now() - 2 * 3_600_000).toISOString();
+      db.query("UPDATE notices SET at = ?, sent_at = ?").run(at, at);
+    } finally {
+      db.close();
+    }
     const fifth = await tick(w);
     expect(fifth.repos[0]?.launches).toEqual([]);
     expect(fifth.repos[0]?.notifications).toMatchObject([
       { outcome: "suppressed" },
     ]);
   }, 120_000);
-  it("keeps a third foreign recovery held until it ends, then notifies", async () => {
+  it.each([null, 11])(
+    "keeps a third foreign recovery held until it ends (%s), then notifies",
+    async (exit) => {
+      const w = fixture(true);
+      const ledger = stoppedLedger(7, undefined);
+      ledger.driver.recoveryVersion = 1;
+      const at = new Date(Date.now() - 1000).toISOString();
+      const writer = { host: "sha256:cccccccccccccccc" };
+      const claims = [1, 2, 3].map((n) =>
+        launchClaim(
+          {
+            stage: "drive",
+            pr: 7,
+            run: "tick",
+            action: "rearm",
+            record: `20261105T010000Z-ccccccc${n}`,
+            host: writer.host,
+            owner: true,
+            facts: noCauseFacts({
+              ...accidental,
+              evidence: {
+                ...accidental.evidence,
+                heartbeat: ledger.driver.heartbeat,
+                generation: ledger.generation,
+              },
+            }),
+            writer,
+          },
+          n,
+          at,
+        ),
+      );
+      const comments = (endedThird: boolean) => [
+        ledgerComment(701, ledger),
+        ...claims.map((posted, i) => {
+          const body =
+            i < 2 || endedThird
+              ? endedClaim(
+                  "drive",
+                  {
+                    key: posted.key,
+                    generation: i + 1,
+                    at,
+                    writer,
+                    payload: posted.payload,
+                    legacy: false,
+                  },
+                  7,
+                  { state: "ended", at, exit, outcome: null },
+                  writer,
+                )
+              : posted;
+          return forgeComment(
+            702 + i,
+            claimBody(LAUNCH_CLAIM, body),
+            "drive-bot",
+          );
+        }),
+      ];
+      w.setComments(7, comments(false));
+      const active = await tick(w);
+      expect(active.repos[0]?.actions).toEqual([]);
+      expect(active.repos[0]?.running).toMatchObject([
+        { target: "PR #7", reason: expect.stringContaining("held by host") },
+      ]);
+      w.setComments(7, comments(true));
+      const ended = await tick(w);
+      expect(ended.repos[0]?.actions).toMatchObject([
+        { stage: "notify", cause: "stopped-unknown" },
+      ]);
+    },
+    120_000,
+  );
+  it("notifies after the third local recovery refused on unchanged ledger facts", async () => {
     const w = fixture(true);
     const ledger = stoppedLedger(7, undefined);
-    ledger.driver.recoveryVersion = 1;
-    const at = new Date(Date.now() - 1000).toISOString();
-    const writer = { host: "sha256:cccccccccccccccc" };
-    const claims = [1, 2, 3].map((n) =>
-      launchClaim(
+    const facts = noCauseFacts({
+      ...accidental,
+      evidence: {
+        ...accidental.evidence,
+        heartbeat: ledger.driver.heartbeat,
+        generation: ledger.generation,
+      },
+    });
+    for (let i = 1; i <= 3; i++) {
+      const id = `20261107T00000${i}Z-aaaaaaa${i}`;
+      earlierRecord(w, {
+        id,
+        account: "a",
+        facts,
+        createdAt: new Date(Date.now() - (4 - i) * 1000).toISOString(),
+      });
+      claimed(
+        w,
+        id,
         {
-          stage: "drive",
-          pr: 7,
-          run: "tick",
-          action: "rearm",
-          record: `20261105T010000Z-ccccccc${n}`,
-          host: writer.host,
-          owner: true,
-          facts: "no-cause: previous stop",
-          writer,
+          pid: process.pid,
+          host: "test",
+          hostId: "",
+          bootId: "",
+          start: "",
+          claimedAt: new Date().toISOString(),
         },
-        n,
-        at,
-      ),
-    );
-    const comments = (endedThird: boolean) => [
-      ledgerComment(701, ledger),
-      ...claims.map((posted, i) => {
-        const body =
-          i < 2 || endedThird
-            ? endedClaim(
-                "drive",
-                {
-                  key: posted.key,
-                  generation: i + 1,
-                  at,
-                  writer,
-                  payload: posted.payload,
-                  legacy: false,
-                },
-                7,
-                { state: "ended", at, exit: null, outcome: null },
-                writer,
-              )
-            : posted;
-        return forgeComment(
-          702 + i,
-          claimBody(LAUNCH_CLAIM, body),
-          "drive-bot",
-        );
-      }),
-    ];
-    w.setComments(7, comments(false));
-    const active = await tick(w);
-    expect(active.repos[0]?.actions).toEqual([]);
-    expect(active.repos[0]?.running).toMatchObject([
-      { target: "PR #7", reason: expect.stringContaining("held by host") },
-    ]);
-    w.setComments(7, comments(true));
-    const ended = await tick(w);
-    expect(ended.repos[0]?.actions).toMatchObject([
+        11,
+      );
+    }
+    expect((await tick(w)).repos[0]?.actions).toMatchObject([
       { stage: "notify", cause: "stopped-unknown" },
     ]);
   }, 120_000);
