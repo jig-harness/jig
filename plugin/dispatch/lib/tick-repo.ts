@@ -80,6 +80,9 @@ export async function runTurn(
       } catch (error) {
         stopped = true;
         defectReport(turn, error);
+      } finally {
+        // The timer adds a turn's time when the turn returns, so the receipt's copy is taken after it.
+        timed(report, timer);
       }
     };
     await timer.time("apply", () =>

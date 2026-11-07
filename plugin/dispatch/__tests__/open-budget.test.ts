@@ -79,11 +79,11 @@ it("preserves the receipt reserve when the open leaves too little time to rechec
     ok: true,
   });
   try {
-    s.startedAt = now - 6 * 3_600_000 + 3100;
+    s.startedAt = now - 6 * 3_600_000 + 7100;
     s.table = [];
     s.records = [];
     s.runtime.openWorkspace = async () => {
-      now += 2000;
+      now += 4000;
       return {
         ok: true,
         detail: "opened",
@@ -130,14 +130,22 @@ async function opened(s: ApplyState): Promise<unknown> {
 
 it("counts the kill grace when admitting an identity check after an open", async () => {
   const s = state();
-  const now = Date.now();
+  let now = Date.now();
   const clock = spyOn(Date, "now").mockImplementation(() => now);
   const identity = spyOn(accounts, "checkIdentity").mockResolvedValue({
     ok: true,
   });
   try {
-    // 2.5s are left: the 1s check fits, its 2s kill grace does not.
-    s.startedAt = now - 6 * 3_600_000 + 3500;
+    // The open leaves 2.6s: the 1s check fits, its 2s kill grace does not.
+    s.startedAt = now - 6 * 3_600_000 + 7100;
+    s.runtime.openWorkspace = async () => {
+      now += 4500;
+      return {
+        ok: true,
+        detail: "opened",
+        workspace: { id: "1", path: "/tmp/ws" },
+      };
+    };
     const result = await opened(s);
     expect(result).toHaveProperty("outcome.outcome", "waits");
     expect(identity).not.toHaveBeenCalled();
@@ -147,7 +155,7 @@ it("counts the kill grace when admitting an identity check after an open", async
   }
 });
 
-it("admits the launch after a successful identity check against its own timeout", async () => {
+it("admits the launch after a successful identity check against its settlement bound", async () => {
   const s = state();
   let now = Date.now();
   const clock = spyOn(Date, "now").mockImplementation(() => now);
@@ -158,8 +166,8 @@ it("admits the launch after a successful identity check against its own timeout"
     },
   );
   try {
-    // 3.5s are left for the check; 2.5s remain after it, short of the launch's 1s plus the 2s kill grace.
-    s.startedAt = now - 6 * 3_600_000 + 4500;
+    // 6.5s are left for the check; 5.5s remain after it, short of the launch's four calls of 1s plus the 2s kill grace.
+    s.startedAt = now - 6 * 3_600_000 + 7500;
     const result = await opened(s);
     expect(identity).toHaveBeenCalledTimes(1);
     expect(result).toHaveProperty("outcome.outcome", "waits");
@@ -167,6 +175,23 @@ it("admits the launch after a successful identity check against its own timeout"
       "outcome.detail",
       expect.stringContaining("launch"),
     );
+  } finally {
+    identity.mockRestore();
+    clock.mockRestore();
+  }
+});
+
+it("admits the launch when its settlement bound fits after the identity check", async () => {
+  const s = state();
+  const now = Date.now();
+  const clock = spyOn(Date, "now").mockImplementation(() => now);
+  const identity = spyOn(accounts, "checkIdentity").mockResolvedValue({
+    ok: true,
+  });
+  try {
+    s.startedAt = now - 6 * 3_600_000 + 20_000;
+    expect(await opened(s)).toHaveProperty("workspace");
+    expect(identity).toHaveBeenCalledTimes(1);
   } finally {
     identity.mockRestore();
     clock.mockRestore();

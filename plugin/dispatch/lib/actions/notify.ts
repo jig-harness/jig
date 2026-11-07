@@ -73,7 +73,12 @@ import type {
   RepoReport,
   RepoTarget,
 } from "../types.ts";
-import { type ApplyState, openWithinBudget, timeLeftMs } from "./launch.ts";
+import {
+  type ApplyState,
+  openWithinBudget,
+  settleMs,
+  timeLeftMs,
+} from "./launch.ts";
 import {
   intendComment,
   ownsComment,
@@ -302,7 +307,7 @@ async function destination(
 /** Admit the whole runtime operation while keeping the receipt's reserved time. */
 function noticeTime(state: ApplyState, calls: number): string | null {
   const left = timeLeftMs(state);
-  return left !== null && left < calls * state.machine.runtimeTimeoutMs
+  return left !== null && left < settleMs(state.machine.runtimeTimeoutMs, calls)
     ? "the tick deadline has no room for the notification operation and its receipt; a later tick delivers this one"
     : null;
 }

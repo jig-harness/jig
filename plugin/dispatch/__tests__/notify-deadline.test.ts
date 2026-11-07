@@ -10,9 +10,9 @@ import { closeStateDb } from "../lib/state.ts";
 import type { RepoReport, RepoTarget } from "../lib/types.ts";
 
 it.each([
-  { afterOpen: 1500, afterRead: 1500, reads: 0, writes: 0 },
-  { afterOpen: 2500, afterRead: 500, reads: 1, writes: 0 },
-  { afterOpen: 3500, afterRead: 1500, reads: 1, writes: 1 },
+  { afterOpen: 5500, afterRead: 5500, reads: 0, writes: 0 },
+  { afterOpen: 6500, afterRead: 2500, reads: 1, writes: 0 },
+  { afterOpen: 7500, afterRead: 3500, reads: 1, writes: 1 },
 ])("preserves the receipt through the notices path (%j)", async (scenario) => {
   const root = mkdtempSync(join(tmpdir(), "jig-notice-deadline-"));
   const repo: RepoTarget = {

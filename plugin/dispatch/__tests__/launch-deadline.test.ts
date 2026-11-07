@@ -2,8 +2,10 @@ import { describe, expect, it } from "bun:test";
 import {
   type ApplyState,
   enforcedDeadlineMs,
+  launchRoom,
   outOfTime,
   rotated,
+  settleMs,
 } from "../lib/actions/launch.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
 
@@ -74,5 +76,20 @@ describe("a tick's targets and deadline", () => {
     expect(
       enforcedDeadlineMs(machine, { JIG_LAUNCHER_DEADLINE_SEC: "x" }),
     ).toBe(calculated);
+  });
+});
+
+describe("the time a runtime call needs to settle", () => {
+  it("rounds each call up to whole seconds and adds its kill grace", () => {
+    expect(settleMs(1_000)).toBe(3_000);
+    expect(settleMs(1_500)).toBe(4_000);
+    expect(settleMs(1_000, 2)).toBe(6_000);
+  });
+
+  it("admits a launch only when its four calls settle before the receipt reserve", () => {
+    const left = (ms: number) =>
+      launchRoom(stateAt(Date.now() - 6 * 3_600_000 + 1_000 + ms));
+    expect(left(11_000)).toContain("no room for the launch");
+    expect(left(13_000)).toBeNull();
   });
 });

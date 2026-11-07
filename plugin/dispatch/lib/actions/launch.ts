@@ -124,12 +124,36 @@ export function enforcedDeadlineMs(
     : tickDeadlineMs(machine);
 }
 
+/** The kill grace a timed-out child may take beyond its timeout before it settles. */
+export const KILL_GRACE_MS = 2000;
+
+/** The longest `calls` runtime calls of `timeoutMs` each take to settle: a call rounds up to whole seconds and may spend its kill grace. */
+export function settleMs(timeoutMs: number, calls = 1): number {
+  return calls * (Math.ceil(timeoutMs / 1000) * 1000 + KILL_GRACE_MS);
+}
+
+/** The runtime calls one launch makes after its timeout: the mark, the terminal, the run tab and the agent read-back. */
+const LAUNCH_CALLS = 4;
+
 /** What the tick has left of its launcher's deadline, less the time its receipt needs; `null` for a tick that keeps no start. */
 export function timeLeftMs(state: ApplyState): number | null {
   if (state.startedAt === undefined) return null;
   const allowed =
     enforcedDeadlineMs(state.machine) - state.machine.runtimeTimeoutMs;
   return allowed - (Date.now() - state.startedAt);
+}
+
+/**
+ * Why the tick cannot settle a runtime launch now; `null` when it can. The
+ * launch is admitted on its settlement bound, not its timeout, and the
+ * receipt's reserve is already out of the time left.
+ */
+export function launchRoom(state: ApplyState): string | null {
+  const left = timeLeftMs(state);
+  return left !== null &&
+    left < settleMs(state.machine.runtimeTimeoutMs, LAUNCH_CALLS)
+    ? "the tick deadline has no room for the launch and its receipt; a later tick retries this one"
+    : null;
 }
 
 /**
@@ -226,7 +250,9 @@ export async function openWithinBudget(
   if (
     state.startedAt !== undefined &&
     enforcedDeadlineMs(state.machine) - (Date.now() - state.startedAt) <
-      state.machine.workspaceTimeoutMs + 2 * state.machine.runtimeTimeoutMs
+      state.machine.workspaceTimeoutMs +
+        2 * state.machine.runtimeTimeoutMs +
+        2 * KILL_GRACE_MS
   )
     return {
       waits:
@@ -493,7 +519,7 @@ export async function replay(
   action: Action,
   blocked: string | null,
 ): Promise<LaunchOutcome> {
-  const late = blocked ?? outOfTime(state);
+  const late = blocked ?? outOfTime(state) ?? launchRoom(state);
   if (late !== null)
     return waits(
       action,
@@ -506,9 +532,6 @@ export async function replay(
   return outcome(record, attempt, true);
 }
 
-/** The kill grace a timed-out child may take beyond its timeout before it settles. */
-const KILL_GRACE_MS = 2000;
-
 /** An identity check's answer, or that the tick has no time for one: a deferral, not a verdict on the account. */
 type IdentityAnswer = IdentityCheck | { waits: string };
 
@@ -520,7 +543,7 @@ async function identityOf(
   // and a resolver that must be killed takes its grace beyond the timeout.
   const timeoutSec = Math.ceil(state.machine.runtimeTimeoutMs / 1000);
   const left = timeLeftMs(state);
-  if (left !== null && left < timeoutSec * 1000 + KILL_GRACE_MS)
+  if (left !== null && left < settleMs(state.machine.runtimeTimeoutMs))
     return {
       waits:
         "the tick deadline has no room for the identity check and its receipt; a later tick retries this one",
@@ -634,18 +657,9 @@ async function changedWhileOpening(
     );
   const after = await identityOf(state, slots);
   if ("waits" in after) return waits(action, after.waits, name);
-  // The launch that follows is a runtime call of its own, and the receipt's reserve is already out of the left time.
-  const left = timeLeftMs(state);
-  if (
-    after.ok &&
-    left !== null &&
-    left < state.machine.runtimeTimeoutMs + KILL_GRACE_MS
-  )
-    return waits(
-      action,
-      "the tick deadline has no room for the launch and its receipt after the workspace opened; a later tick retries this one",
-      name,
-    );
+  // The launch that follows is a runtime call of its own.
+  const late = after.ok ? launchRoom(state) : null;
+  if (late !== null) return waits(action, late, name);
   return after.ok
     ? null
     : refused(
@@ -697,6 +711,19 @@ export async function launchHeld(
   state: ApplyState,
   record: LaunchRecord,
 ): Promise<LaunchOutcome> {
+  // The claim and every wait before this point may have spent the time admitted for the launch.
+  const late = launchRoom(state);
+  if (late !== null) {
+    release(state, record);
+    return {
+      target: targetOfRecord(record),
+      action: record.action,
+      outcome: "waits",
+      account: record.account,
+      record: null,
+      detail: late,
+    };
+  }
   const attempt = await callLaunch(state, record);
   if (attempt.outcome === "failed" && releasable(record))
     release(state, record);
