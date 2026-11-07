@@ -1916,6 +1916,14 @@ make, use the entry's term instead.
   the session adds the *process identity* it runs as and, when it ends, the
   stage's exit. A launch whose answer is lost still has its record, so it holds its
   stage and its account's *slot*, and is never followed by a second launch.
+- **Stuck launch record** — a *launch record* still pending that no tick
+  launches again: every launch it is allowed (two) ended as not started or
+  unanswered with at least one unanswered, a follow-up's replay can never be
+  proven safe, or it names no workspace. Unlike a retryable pending record, which a tick
+  launches again once its guards allow (a hold, a failed read, a missing
+  command or an account's *wall* can delay that), and an unknown one, whose
+  session may still be running, it waits for a person to clear it. The
+  *dispatcher* notifies it as needing a person.
 - **Slot** — one session the *dispatcher* may hold on a subscription
   account at once. Each account has a cap of slots (two by default); a
   *launch record* that is pending, running or unknown holds one.

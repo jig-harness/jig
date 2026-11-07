@@ -515,3 +515,8 @@ export async function createLabel(
     label.description,
   ]);
 }
+
+/** A pull request's link when no read gave one: the forge is GitHub, read through `gh`. */
+export function pullUrl(slug: string, pr: number): string {
+  return `https://github.com/${slug}/pull/${pr}`;
+}
