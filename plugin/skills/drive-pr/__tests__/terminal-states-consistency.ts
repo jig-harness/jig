@@ -814,6 +814,7 @@ const DRIVER_ONLY_EXIT_NAMES: ReadonlyArray<{
     stateName: "MAILBOX_PAUSE_TIMEOUT",
   },
   { constantName: "TAKEN_OVER_EXIT", stateName: "TAKEN_OVER" },
+  { constantName: "CI_REPAIR_SPENT_EXIT", stateName: "CI_REPAIR_SPENT" },
 ];
 
 /**
@@ -1396,10 +1397,8 @@ export function buildReservedExitCodes(
  * driver-only exit is always returned via its named constant") applies to
  * every one of them identically, and a future bare `return` of any of these
  * values bypasses its named constant exactly as silently as a bare `6`
- * bypasses `MAX_ROUNDS_EXIT`.
- * Verified (2026-09): zero existing bare occurrences of any of these values
- * in `drive.ts` today (see this section's header for the residual this
- * still leaves open on any of them).
+ * bypasses `MAX_ROUNDS_EXIT`. This section's header names the residual
+ * this still leaves open on any of them.
  *
  * DERIVED from `TERMINAL_STATES` via `DRIVER_ONLY_EXIT_NAMES` above and the
  * same `driverOnlyExitCode` read `drive.ts`'s own constants use — never an

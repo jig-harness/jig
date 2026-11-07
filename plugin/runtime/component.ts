@@ -105,6 +105,13 @@ export interface Component<A = unknown> extends CommandComponent<A> {
   /** The job its timer runs: `jig run` runs `job().args`, and `status` looks the job up by its names. */
   job(): JobSpec;
   /**
+   * The jobs its install writes beside `job()`, each on a timer of its own
+   * (the dispatcher's change probe): `jig upgrade` refreshes each one the
+   * scheduler holds as it does `job()`, and its own install and uninstall
+   * write and remove them.
+   */
+  companionJobs?(): JobSpec[];
+  /**
    * Null when `jig install` and `jig run` with no component named include it;
    * otherwise why they leave it out, with what to do about it.
    */
