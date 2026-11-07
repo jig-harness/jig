@@ -100,7 +100,7 @@ it.each(["none", "stdout", "stderr", "interleaved"])(
   },
 );
 
-it("leaves startup cleanup to the scoped tick even when the wrapper can delete", async () => {
+async function refusedStartupRelease() {
   const w = fixture();
   writeFileSync(join(w.dir, "comment-delete-fail"), "");
   const first = await applyTick(w, false);
@@ -108,6 +108,11 @@ it("leaves startup cleanup to the scoped tick even when the wrapper can delete",
   await waitFor("the pass", () => claudeRuns(w).length === 1);
   writeFileSync(join(w.dir, "claude-exit"), "1");
   await waitFor("the exit", () => exitWritten(w, id));
+  return { w, id };
+}
+
+it("leaves startup cleanup to the scoped tick even when the wrapper can delete", async () => {
+  const { w, id } = await refusedStartupRelease();
   const settle = join(w.root, "settle-wrapper.ts");
   writeFileSync(
     settle,
@@ -127,13 +132,7 @@ await settleAtExit(r);
 });
 
 it("settles a listed startup marker when deletion confirms it is already absent", async () => {
-  const w = fixture();
-  writeFileSync(join(w.dir, "comment-delete-fail"), "");
-  const first = await applyTick(w, false);
-  const id = String(first.repos[0]?.launches?.[0]?.record);
-  await waitFor("the pass", () => claudeRuns(w).length === 1);
-  writeFileSync(join(w.dir, "claude-exit"), "1");
-  await waitFor("the exit", () => exitWritten(w, id));
+  const { w, id } = await refusedStartupRelease();
   const settle = join(w.root, "settle-not-found.ts");
   writeFileSync(
     settle,
