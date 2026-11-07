@@ -31,7 +31,12 @@ const SEARCHES = ["changed", "open"] as const;
 const answer = (data: Record<string, unknown>, errors?: unknown[]) =>
   JSON.stringify({ data, ...(errors === undefined ? {} : { errors }) });
 
-const page = (nodes: unknown[], next: string | null = null) => ({
+const page = (
+  nodes: unknown[],
+  next: string | null = null,
+  issueCount = nodes.length,
+) => ({
+  issueCount,
   pageInfo: { hasNextPage: next !== null, endCursor: next },
   nodes,
 });
@@ -92,6 +97,18 @@ describe("the probe's GitHub call", () => {
     expect(readPage(answer({ changed: page([]) }), SEARCHES, []).ok).toBe(
       false,
     );
+  });
+
+  it("refuses a search GitHub matched more of than it returns, and one that does not say", () => {
+    const read = (changed: unknown) =>
+      readPage(answer({ changed, open: page([]) }), SEARCHES, []);
+    // At the ceiling GitHub reports no next page, so only the count tells.
+    expect(read(page([], null, 1000)).ok).toBe(true);
+    const over = read(page([], null, 1001));
+    expect(over.ok).toBe(false);
+    expect(JSON.stringify(over)).toContain("1001");
+    const { issueCount: _omitted, ...silent } = page([]);
+    expect(read(silent).ok).toBe(false);
   });
 
   it("reads pull requests, a head without checks as NONE, and drops what is not one", () => {
@@ -198,9 +215,9 @@ fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + "\\n");
 const has = (name) => args.some((a) => a.startsWith(name + "="));
 const pr = (n) => ({ number: n, updatedAt: "2026-11-07T10:00:00Z", repository: { nameWithOwner: "acme/web" }, commits: { nodes: [{ commit: { oid: "h" + n, statusCheckRollup: { state: "SUCCESS" } } }] } });
 const data = { rateLimit: { cost: 1, remaining: 4990 } };
-if (has("changed")) data.changed = { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [pr(1)] };
-if (has("openAfter")) data.open = { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [pr(3)] };
-else if (has("open")) data.open = { pageInfo: { hasNextPage: true, endCursor: "c1" }, nodes: [pr(1), pr(2)] };
+if (has("changed")) data.changed = { issueCount: 1, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [pr(1)] };
+if (has("openAfter")) data.open = { issueCount: 1, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [pr(3)] };
+else if (has("open")) data.open = { issueCount: 3, pageInfo: { hasNextPage: true, endCursor: "c1" }, nodes: [pr(1), pr(2)] };
 if (args.some((a) => a.includes("r0: repository"))) data.r0 = { nameWithOwner: "acme/web" };
 process.stdout.write(JSON.stringify({ data }));
 `,

@@ -63,7 +63,7 @@ export function probeQuery(
     .join(", ");
   const parts = searches.map(
     (s) =>
-      `${s}: search(type: ISSUE, query: $${s}, first: ${PAGE}, after: $${s}After) { pageInfo { hasNextPage endCursor } nodes { ... on PullRequest { ${FIELDS[s]} } } }`,
+      `${s}: search(type: ISSUE, query: $${s}, first: ${PAGE}, after: $${s}After) { issueCount pageInfo { hasNextPage endCursor } nodes { ... on PullRequest { ${FIELDS[s]} } } }`,
   );
   const repos = lookups.map((slug, i) => {
     const [owner, name] = slug.split("/");
@@ -131,6 +131,17 @@ function searchResult(
     isRecord(result) && isRecord(result.pageInfo) ? result.pageInfo : null;
   if (!Array.isArray(nodes) || info === null)
     return failed("unreadable", `the ${search} search did not read`);
+  const count = result.issueCount;
+  if (typeof count !== "number")
+    return failed(
+      "unreadable",
+      `the ${search} search did not say how many it matched`,
+    );
+  if (count > MAX_PAGES * PAGE)
+    return failed(
+      "unreadable",
+      `the ${search} search matched ${count} pull requests and GitHub returns at most ${MAX_PAGES * PAGE}`,
+    );
   if (info.hasNextPage !== true) return ok({ nodes });
   return typeof info.endCursor === "string"
     ? ok({ nodes, next: info.endCursor })

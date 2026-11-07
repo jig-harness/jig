@@ -49,12 +49,12 @@ if (args[0] === "api" && args[1] === "graphql") {
   const changed = value("changed");
   if (changed !== undefined) {
     const since = Date.parse(/updated:>=(\\S+)/.exec(changed)[1]);
-    data.changed = { pageInfo: { hasNextPage: false, endCursor: null },
+    data.changed = { issueCount: 1, pageInfo: { hasNextPage: false, endCursor: null },
       nodes: forge.prs.filter((pr) => repos(changed).includes(pr.slug) && Date.parse(pr.updatedAt) >= since).map(node) };
   }
   const open = value("open");
   if (open !== undefined)
-    data.open = { pageInfo: { hasNextPage: false, endCursor: null },
+    data.open = { issueCount: 1, pageInfo: { hasNextPage: false, endCursor: null },
       nodes: forge.prs.filter((pr) => repos(open).includes(pr.slug) && pr.open).map(node) };
   for (const m of query.matchAll(/(r\\d+): repository\\(owner: "([^"]+)", name: "([^"]+)"\\)/g))
     data[m[1]] = { nameWithOwner: m[2] + "/" + m[3] };
