@@ -52,9 +52,9 @@ import {
   machineConfigPath,
   readMachineConfig,
 } from "./lib/machine-config.ts";
-import { formatReceipt } from "./lib/report.ts";
+import { elapsed, formatReceipt } from "./lib/report.ts";
 import { markerMain } from "./marker.ts";
-import { readReceipt, receiptPaths } from "./receipts.ts";
+import { readReceipt, receiptPaths, type TickReceipt } from "./receipts.ts";
 import { resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
 
@@ -352,14 +352,29 @@ export function winningIntervalArguments(argv: readonly string[]): string[] {
 }
 type Tick = Extract<DispatchArguments, { action: "tick" }>;
 
-/** One line per receipt that reads: its run, outcome, size and file. */
+/** How long a tick took, where its receipt timed its phases. */
+function took(r: TickReceipt): string {
+  const phases = Object.values(r.phasesMs ?? {});
+  if (phases.length === 0) return "";
+  return ` in ${elapsed(phases.reduce((n, ms) => n + (ms ?? 0), 0))}`;
+}
+
+/** How many defects a receipt records, its own and its repositories'. */
+function defects(r: TickReceipt): string {
+  const n =
+    r.repos.filter((repo) => repo.defect !== undefined).length +
+    (r.defect === undefined ? 0 : 1);
+  return n === 0 ? "" : `, ${n} defect(s)`;
+}
+
+/** One line per receipt that reads: its run, outcome, duration, size, defects and file. */
 function listReceipts(paths: readonly string[]): void {
   for (const path of paths) {
     const r = readReceipt(path);
     if (r === null) continue;
     const actions = r.repos.reduce((n, repo) => n + repo.actions.length, 0);
     console.log(
-      `${r.runId}  ${r.startedAt}  ${r.completed ? `exit ${r.exitStatus}` : "incomplete"}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)  ${path}`,
+      `${r.runId}  ${r.startedAt}  ${r.completed ? `exit ${r.exitStatus}` : "incomplete"}${took(r)}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)${defects(r)}  ${path}`,
     );
   }
 }
