@@ -45,6 +45,7 @@
  * `waiting_episodes` table), and, once it ended, the time its outcome row
  * carries (`endedAt`), written in the same transaction as that row.
  */
+import { readNext, type NextOwner } from "./next-owner.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
@@ -217,6 +218,7 @@ export interface ReadRecord {
   state: LaunchState;
   /** A pickup's session's or a follow-up pass's recorded answer; `null` when none. */
   result: SessionResult | null;
+  next?: NextOwner | null;
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -457,6 +459,7 @@ export interface LaunchRow {
   claim: string | null;
   exit: string | null;
   result: string | null;
+  result_next?: string | null;
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
@@ -532,7 +535,7 @@ function controlRows(
 
 function launchRow(id: string, root: string): LaunchRow | null {
   return stateDb(root)
-    .query("SELECT id, record, claim, exit, result FROM launches WHERE id = ?")
+    .query("SELECT * FROM launches WHERE id = ?")
     .get(id) as LaunchRow | null;
 }
 
@@ -558,25 +561,11 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
     record,
     state: stateOf(row, null, thisHost()),
     result: asResult(row.result),
+    next: readNext(row.result_next),
   };
 }
 
-/**
- * Record a session's or a follow-up pass's answer: true when this call wrote it,
- * false when the record already had one, which stands.
- */
-export function recordResult(
-  id: string,
-  result: SessionResult,
-  root = stateRoot(),
-): boolean {
-  const done = stateDb(root)
-    .query(
-      "UPDATE launches SET result = ?, result_at = ? WHERE id = ? AND result IS NULL",
-    )
-    .run(result, new Date().toISOString(), id);
-  return done.changes === 1;
-}
+export { recordResult } from "./launch-result.ts";
 
 function asResult(value: string | null): SessionResult | null {
   return value === "done" || value === "failed" ? value : null;
@@ -725,7 +714,7 @@ export async function readLaunches(
   unreadable: string[];
 }> {
   const all = db
-    .query("SELECT id, record, claim, exit, result FROM launches ORDER BY id")
+    .query("SELECT * FROM launches ORDER BY id")
     .all() as LaunchRow[];
   const rows = all.length === 0 ? [] : await processTable();
   const control = controlRows(root, undefined, db);
@@ -741,6 +730,7 @@ export async function readLaunches(
       record,
       state: stateOf(row, rows, here),
       result: asResult(row.result),
+      next: readNext(row.result_next),
     });
   }
   return { records, unreadable };
