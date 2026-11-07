@@ -169,7 +169,7 @@ export function questionOf(state: LaunchState | undefined): string | null {
   return typeof said === "string" ? questionIn(said) : null;
 }
 
-function questionIn(said: string): string | null {
+export function questionIn(said: string): string | null {
   const lines = said.split("\n").map((l) => l.trim());
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i] as string;

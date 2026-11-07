@@ -42,7 +42,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
-import { questionOf } from "./session.ts";
+import { sessionResultClass } from "./session-result-class.ts";
 import { existingStateDb, stateDb } from "./state.ts";
 
 /**
@@ -355,15 +355,11 @@ function sessionClass(
   r: ReadRecord,
   endedAt: string,
 ): { class: OutcomeClass; reason: string } {
-  if (r.result === "done") return { class: "converged", reason: "result done" };
-  const question = questionOf(r.state);
-  if (question !== null)
-    return {
-      class: "parked for a person",
-      reason: `stopped on a question: ${question}`,
-    };
-  if (r.result === "failed")
-    return { class: "gates failed", reason: "result failed" };
+  const result = sessionResultClass(
+    r.result,
+    r.state.kind === "ended" ? r.state.exit.said : undefined,
+  );
+  if (result !== null) return result;
   const s = r.state;
   const how =
     s.kind === "ended"
@@ -448,8 +444,8 @@ export function endedRow(
     class: placed.class,
     reason,
     next:
-      record.action === "pickup" && r.result === "done" && r.next != null
-        ? r.next
+      record.action === "pickup" && r.result === "done"
+        ? (r.next ?? null)
         : derivedNext(record.action, placed.class, reason),
   };
 }

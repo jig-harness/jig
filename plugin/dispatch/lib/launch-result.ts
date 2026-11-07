@@ -1,8 +1,10 @@
 /** A session owns its result and handoff; one conditional write settles both. */
+import { Defect } from "../../shared/errors.ts";
 import { stateRoot } from "../receipts.ts";
 import type { SessionResult } from "./launches.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { derivedNext, type NextOwner } from "./next-owner.ts";
+import { sessionResultClass } from "./session-result-class.ts";
 import { inTransaction, stateDb } from "./state.ts";
 
 /**
@@ -38,10 +40,20 @@ export function recordResult(
       row.kind === "ended" &&
       (row.stage === "pickup" || row.stage === "followup")
     ) {
-      row.class = result === "done" ? "converged" : "gates failed";
-      row.reason = `result ${result}`;
+      const storedExit = db
+        .query("SELECT exit FROM launches WHERE id = ?")
+        .get(id) as { exit: string | null };
+      const exit: unknown =
+        storedExit.exit === null ? null : JSON.parse(storedExit.exit);
+      const placed = sessionResultClass(
+        result,
+        isMapping(exit) ? exit.said : undefined,
+      );
+      if (placed === null) throw new Defect("a recorded result must classify");
+      row.class = placed.class;
+      row.reason = placed.reason;
       row.next =
-        row.stage === "pickup" && result === "done" && next !== null
+        row.stage === "pickup" && result === "done"
           ? next
           : derivedNext(row.stage, String(row.class), String(row.reason));
       db.query(

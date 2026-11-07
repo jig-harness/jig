@@ -80,6 +80,46 @@ function eachLine(path: string, line: (text: string) => void): void {
   }
 }
 
+/** Refresh archived lines in bounded batches; old lines need no individual query. */
+function copyRevisions(
+  db: Database,
+  path: string,
+  out: number,
+  mark: number,
+  high: number,
+): void {
+  let lines: string[] = [];
+  const flush = () => {
+    const keys = lines.flatMap((text) => {
+      const key = parseLine(text)?.key;
+      return key === undefined ? [] : [key];
+    });
+    const revisions = new Map<string, string>();
+    if (keys.length > 0) {
+      const rows = db
+        .query(
+          `SELECT key, row FROM log WHERE seq > ? AND seq <= ? AND key IN (${keys.map(() => "?").join(",")})`,
+        )
+        .all(mark, high, ...keys) as { key: string; row: string }[];
+      for (const row of rows) revisions.set(row.key, row.row);
+    }
+    for (const text of lines) {
+      const key = parseLine(text)?.key;
+      writeAllSync(
+        out,
+        `${key === undefined ? text : (revisions.get(key) ?? text)}\n`,
+      );
+    }
+    lines = [];
+  };
+  eachLine(path, (text) => {
+    if (text === "") return;
+    lines.push(text);
+    if (lines.length === BATCH) flush();
+  });
+  if (lines.length > 0) flush();
+}
+
 interface Copied {
   seq: number;
   key: string;
@@ -169,20 +209,7 @@ function copyMonth(
           fd = openSync(temporary, "wx", 0o600);
           created = true;
           // Refresh a result recorded after its ended row was exported.
-          const out = fd;
-          eachLine(path, (text) => {
-            if (text === "") return;
-            const key = parseLine(text)?.key;
-            const revision =
-              key === undefined
-                ? null
-                : (db
-                    .query(
-                      "SELECT row FROM log WHERE key = ? AND seq > ? AND seq <= ?",
-                    )
-                    .get(key, mark, high) as { row: string } | null);
-            writeAllSync(out, `${revision?.row ?? text}\n`);
-          });
+          copyRevisions(db, path, fd, mark, high);
         }
         if (held.has(r.key)) return;
         writeAllSync(fd, `${r.row}\n`);

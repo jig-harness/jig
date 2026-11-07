@@ -9,7 +9,8 @@ release: minor
   reason. A converged drive hands to a maintainer to merge, and a completed
   follow-up has no next owner. Older records remain readable. Late pickup
   results refresh the outcome and its text archive; malformed stored
-  handoffs remain unknown.
+  handoffs remain unknown. Late failures preserve the recorded question,
+  and archive refreshes read revisions in bounded batches.
 
 ### Changed
 

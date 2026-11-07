@@ -1,4 +1,5 @@
 /** What an ended launch hands to: a station, a person's act, or nobody. */
+import { parseAddress, checkKey } from "../../shared/address.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import type { LaunchAction } from "./launches.ts";
@@ -26,16 +27,25 @@ export function readNext(value: string | null | undefined): NextOwner | null {
 /** Validate a persisted handoff before any consumer renders it. */
 export function normalizeNext(n: unknown): NextOwner | null {
   if (!isMapping(n)) return null;
-  if (typeof n.address === "string" && n.address.trim())
+  const keys = Object.keys(n);
+  if (keys.length === 1 && typeof n.address === "string") {
+    const address = parseAddress(n.address);
+    if (!address.ok) return null;
+    const a = address.value;
+    if (a.station !== "pickup" && !checkKey(a.station, a.key, null).ok)
+      return null;
     return { address: n.address };
+  }
   if (
+    keys.length === 2 &&
     typeof n.person === "string" &&
     n.person.trim() &&
     typeof n.act === "string" &&
     n.act.trim()
   )
     return { person: n.person, act: n.act };
-  if (typeof n.none === "string" && n.none.trim()) return { none: n.none };
+  if (keys.length === 1 && typeof n.none === "string" && n.none.trim())
+    return { none: n.none };
   return null;
 }
 
