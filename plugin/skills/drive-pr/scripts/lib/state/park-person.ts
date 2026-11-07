@@ -43,9 +43,7 @@ function recipientForPark(
           ...new Set(
             areasOf(path, catalog).flatMap((area) => {
               const owner = catalog.get(area)?.fields.owner;
-              return owner === undefined
-                ? []
-                : [login(owner, `catalog area ${area}.owner`)];
+              return isPerson(owner) ? [owner] : [];
             }),
           ),
         ];
@@ -95,10 +93,18 @@ export async function resolveParkPerson(
   const values = layeredConfig().values;
   const dispatch = isRecord(values.dispatch) ? values.dispatch : {};
   const drive = isRecord(values.drive) ? values.drive : {};
-  const catalog =
-    typeof drive.change_areas_catalog === "string"
-      ? loadCatalogFile(resolve(consumerRoot(), drive.change_areas_catalog))
-      : null;
+  let catalog: ChangeAreaCatalog | null = null;
+  if (typeof drive.change_areas_catalog === "string") {
+    try {
+      catalog = loadCatalogFile(
+        resolve(consumerRoot(), drive.change_areas_catalog),
+      );
+    } catch (error) {
+      console.error(
+        `park: cannot read change-area catalog; using recipient fallback: ${String(error)}`,
+      );
+    }
+  }
   const anchor =
     path ||
     (catalog !== null && kind === "thread" ? await threadAnchor(key) : null);

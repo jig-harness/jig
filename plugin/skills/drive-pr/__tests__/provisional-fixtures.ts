@@ -188,6 +188,10 @@ export function fakeForge(overlay = ""): Forge {
   });
   expectSpawnExit(init, 0);
   writeFakeProgram(join(bin, "gh"), FAKE_GH);
+  writeFileSync(
+    join(dir, "pr-12.json"),
+    JSON.stringify({ author: { login: "pr-author" } }),
+  );
   const overlayFile = join(root, "jig.yaml");
   writeFileSync(overlayFile, overlay);
   const stateDir = scopedStateDir(join(root, "state"), tree);

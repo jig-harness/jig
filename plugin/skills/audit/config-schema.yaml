@@ -130,6 +130,7 @@ fields:
     since: 0.105.0
   dispatch.person:
     type: string
+    pattern: "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$"
     read_by: [drive-pr]
     since: next
   dispatch.states:

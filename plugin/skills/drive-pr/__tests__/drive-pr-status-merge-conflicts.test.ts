@@ -3,10 +3,7 @@
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
-import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
-
-import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 import { join, delimiter } from "node:path";
 
@@ -20,7 +17,6 @@ import {
   REVIEWER_RUN,
   DORMANT_ARM,
   binDir,
-  gitCleanEnv,
   writeFixture,
   probeIn,
   probe,
@@ -561,23 +557,8 @@ describe("drive-status.ts reports counts it never measured as null", () => {
     // where the producer's `.sort()` is pinned. Deleting it from evaluate.ts
     // turns this red; an assertion in the consumer's own unit probe would not.
     const { dir, stateDir } = writeFixture({ threads: [], reviewedSha: HEAD });
-    for (const key of ["zzz-parked-last", "aaa-parked-first"]) {
-      const parked = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive-state.ts"),
-          ...parkArgs(key, "finding"),
-        ),
-        {
-          env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: stateDir },
-          stdin: new TextEncoder().encode(
-            parkRecord("Was it planted out of order"),
-          ),
-          stdout: "ignore",
-          stderr: "ignore",
-        },
-      );
-      await expectSpawnExited(parked, 0);
-    }
+    for (const key of ["zzz-parked-last", "aaa-parked-first"])
+      await park(stateDir, key, "finding");
     const r = await probeIn(dir, stateDir);
     const work = r.json.work as Record<string, unknown>;
     expect(work.parkedKeys).toEqual(["aaa-parked-first", "zzz-parked-last"]);

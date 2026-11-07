@@ -35,6 +35,24 @@ describe("a parked question's person", () => {
       personForPark("api/route.ts", overlapping, "maintainer", "author"),
     ).toBe("maintainer");
   });
+  it("uses the fallback for catalog ownership that is not a person", () => {
+    for (const owner of [
+      { team: "api" },
+      "team/api",
+      ["first", "second"],
+      null,
+    ]) {
+      const catalog = parseCatalog({
+        areas: { api: { paths: ["api/**"], owner } },
+      });
+      expect(
+        personForPark("api/route.ts", catalog, "maintainer", "author"),
+      ).toBe("maintainer");
+      expect(personForPark("api/route.ts", catalog, undefined, "author")).toBe(
+        "author",
+      );
+    }
+  });
   it("rejects malformed configured logins instead of mentioning arbitrary text", () => {
     expect(() =>
       personForPark(null, catalog, "a\n@everyone", "author"),

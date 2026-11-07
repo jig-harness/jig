@@ -195,6 +195,31 @@ if (args[0] === "api" && args[1] === "graphql") {
       expect(park?.person).toBe("pr-author");
     }
   });
+  it("persists a park when the advisory catalog is missing", async () => {
+    const d = stateDirFor("park-missing-catalog");
+    const bin = mkdtempSync(join(tmpdir(), "park-catalog-"));
+    const overlay = join(bin, "jig.yaml");
+    writeFileSync(
+      overlay,
+      `drive:\n  change_areas_catalog: ${JSON.stringify(join(bin, "missing.yaml"))}\ndispatch:\n  person: maintainer\n`,
+    );
+    const env = {
+      JIG_OVERLAY: overlay,
+      JIG_USER_LAYER: "off",
+      JIG__dispatch__person: undefined,
+    };
+    const result = await state(
+      d,
+      parkArgs("missing-catalog", "finding"),
+      env,
+      parkRecord(QUESTION),
+    );
+    expectSpawnExit(result, 0);
+    expect(result.stderr).toContain("using recipient fallback");
+    const stored = await state(d, ["get", "999"], env);
+    expectSpawnExit(stored, 0);
+    expect(JSON.parse(stored.stdout).parked[0].person).toBe("maintainer");
+  });
   it("accepts a class and a complete record, and keeps both", async () => {
     const d = stateDirFor("park-framed");
     const r = await state(

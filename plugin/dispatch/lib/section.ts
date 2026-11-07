@@ -29,6 +29,7 @@ const DEFAULT_RENOTIFY_AFTER_MS = 24 * 3_600_000;
 const DEFAULT_FOLLOWUP_STALE_AFTER_MS = 24 * 3_600_000;
 const KEYS = [
   "identity",
+  "person",
   "states",
   "followup_command",
   "stalled_after",

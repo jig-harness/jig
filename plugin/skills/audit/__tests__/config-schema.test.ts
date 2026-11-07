@@ -695,3 +695,20 @@ describe("the schema's own format", () => {
     ).toBe(1);
   });
 });
+
+test("dispatch.person accepts only usable recipient logins", () => {
+  const pattern = field("dispatch.person")?.pattern;
+  expect(pattern).toBeDefined();
+  if (pattern === undefined) throw new Error("missing dispatch.person pattern");
+  const login = new RegExp(pattern);
+  for (const value of ["maintainer", "review-bot[bot]", "A1"])
+    expect(login.test(value)).toBe(true);
+  for (const value of [
+    "not a login",
+    "@person",
+    "team/person",
+    "",
+    "a".repeat(40),
+  ])
+    expect(login.test(value)).toBe(false);
+});
