@@ -833,7 +833,10 @@ and against a stale holder whose process is confirmed gone (a stale lock
 whose process still runs, with an old heartbeat, is refused) and whose
 working tree holds no uncommitted changes,
 unpushed commits or unconcluded git operation (inspected on this machine;
-otherwise refused until they are pushed or discarded). Every other holder is
+otherwise refused until they are pushed or discarded). A missing tree or a
+path no longer registered in this clone admits a confirmed-dead holder,
+reporting `DEAD` and that its unpushed work is gone: the drive resumes from
+the remote head. An unreadable existing tree still refuses. Every other holder is
 refused with exit `11`, naming the verdict; an empty lock is exit `2`, since
 there is nothing to take over. Once the takeover holds the locks it appends a
 record to the drive state's `takeovers` (from which actor and hashed account,

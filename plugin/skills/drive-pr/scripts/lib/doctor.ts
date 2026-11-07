@@ -23,8 +23,10 @@
  * scattered across the branches below:
  *
  *   1. Fail closed first — an unreadable/contested lock or an unreadable
- *      stored state is `UNKNOWN` before anything else is even asked.
- *   2. No live driver + leftovers in the worktree → `DEAD_WITH_LEFTOVERS`.
+ *      stored state is `UNKNOWN`, except independently confirmed missing
+ *      trees or leftovers can establish `DEAD` or `DEAD_WITH_LEFTOVERS`.
+ *   2. No live driver + a confirmed missing tree → `DEAD`. Otherwise,
+ *      leftovers in the worktree → `DEAD_WITH_LEFTOVERS`.
  *      Checked BEFORE the quota-park and human-parked checks below, because a
  *      drive that parked (or had items parked) and then had its DRIVER die is
  *      still, first and foremost, a tree with stranded work — the park or the
@@ -142,6 +144,7 @@ export function stallThresholdMs(): number {
 export type DoctorVerdict =
   | "HEALTHY"
   | "WEDGED"
+  | "DEAD"
   | "DEAD_WITH_LEFTOVERS"
   | "QUOTA_PARKED"
   | "NEEDS_HUMAN"
@@ -157,6 +160,8 @@ export interface DoctorLeftovers {
 export interface DoctorInput {
   /** Lock liveness as `drives.ts` already computes it (`readLock`). */
   lockState: "live" | "stale" | "empty" | "contested" | "unreadable";
+  /** Only true certifies that the local holder process is gone. */
+  processConfirmedGone?: boolean;
   /** ms since `DriveState.lastProgressAt`, `null` when unknown/never/unreadable. */
   progressAgeMs: number | null;
   /** Whether the stored state could be read (and shape-validated) at all. */
@@ -166,8 +171,8 @@ export interface DoctorInput {
   parkedCount: number;
   /** Each parked decision's question, so the row names them; absent: the count. */
   parkedQuestions?: string[];
-  /** Worktree leftovers; `null` when the worktree could not be inspected. */
-  leftovers: DoctorLeftovers | null;
+  /** `missing` confirms absence; `null` means inspection could not answer. */
+  leftovers: DoctorLeftovers | "missing" | null;
   stallThresholdMs: number;
   /**
    * The PR number, verbatim from the lock row — plain data, not I/O; folded
@@ -298,6 +303,20 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
       recovery: null,
     };
   }
+  if (noLiveDriver(input.lockState) && input.leftovers === "missing") {
+    if (input.processConfirmedGone !== true)
+      return {
+        verdict: "UNKNOWN",
+        reason:
+          "the working tree is missing, but the holder process is not confirmed gone",
+        recovery: null,
+      };
+    return {
+      verdict: "DEAD",
+      reason: `no live driver, and the working tree (${input.worktreePath}) is missing; its unpushed work is gone; resume from the remote head`,
+      recovery: null,
+    };
+  }
   // Unreadable state does NOT preempt an independently-established
   // DEAD_WITH_LEFTOVERS: `gatherDoctorInput` runs the leftovers probe off the
   // WORKTREE, unconditionally on whether the state snapshot parsed (review
@@ -315,6 +334,7 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
     !(
       noLiveDriver(input.lockState) &&
       input.leftovers !== null &&
+      input.leftovers !== "missing" &&
       (input.leftovers.uncommitted ||
         input.leftovers.unpushed ||
         input.leftovers.unconcludedOp !== null)
@@ -361,9 +381,10 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
           ? "no live driver, and this lock records no worktree to inspect for leftovers"
           : "no live driver, and the worktree could not be inspected for leftovers";
     } else if (
-      input.leftovers.uncommitted ||
-      input.leftovers.unpushed ||
-      input.leftovers.unconcludedOp !== null
+      input.leftovers !== "missing" &&
+      (input.leftovers.uncommitted ||
+        input.leftovers.unpushed ||
+        input.leftovers.unconcludedOp !== null)
     ) {
       return {
         verdict: "DEAD_WITH_LEFTOVERS",

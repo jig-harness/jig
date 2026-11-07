@@ -30,7 +30,7 @@ import {
   stale,
   loginAccount,
   loginEnv,
-  trackedTree,
+  trackedLinkedTree,
 } from "./drive-pr-pickup-fixtures.ts";
 
 useDrivePrSuite();
@@ -216,7 +216,8 @@ describe("drive.ts --take-over admits and refuses by the holder", () => {
 
   it("admits a dead holder whose tree is clean, recording it DEAD", async () => {
     const { dir, stateDir } = await merged();
-    plantPrLock(stateDir, await deadPid(), trackedTree("takeover-dead"));
+    const tree = trackedLinkedTree("takeover-dead");
+    plantPrLock(stateDir, await deadPid(), tree);
     await progressAt(stateDir, new Date().toISOString());
     const r = await runDriveIn(dir, stateDir, [
       "--take-over",

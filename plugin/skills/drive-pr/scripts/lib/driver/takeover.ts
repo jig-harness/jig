@@ -17,7 +17,8 @@
  * refuses as exit `11` does, naming the verdict: a driver that is making
  * progress is never stopped, and a dead one's leftovers are pushed or
  * discarded by a person first, since a successor driving around them would
- * strand or overwrite them.
+ * strand or overwrite them. A missing or unregistered tree admits a dead
+ * holder and resumes from the remote head; failed inspection still refuses.
  *
  * Everything that can refuse runs before the holder is stopped: the pass
  * command's check, the quota re-arm, the held batch's read, and this tree's
@@ -206,7 +207,7 @@ export async function decideTakeover(
     requireProcessGone(pr, row);
     await requireNoLeftovers(pr, row);
     console.error(
-      `drive.ts --take-over: PR #${pr}'s previous driver (pid ${row.pid ?? "?"}) is gone and left nothing in its tree; taking the drive over.`,
+      `drive.ts --take-over: PR #${pr}'s previous driver (pid ${row.pid ?? "?"}) is gone; taking the drive over.`,
     );
     admitted = "DEAD";
   } else
@@ -244,7 +245,14 @@ async function requireNoLeftovers(
   row: DoctorRowJson,
 ): Promise<void> {
   const tree = row.diag?.worktree ?? "";
-  const leftovers = tree === "" ? null : await gatherWorktreeLeftovers(tree);
+  const leftovers =
+    tree === "" ? null : await gatherWorktreeLeftovers(tree, process.cwd());
+  if (leftovers === "missing") {
+    console.error(
+      `drive.ts --take-over: the previous working tree (${tree}) is missing; its unpushed work is gone. Resuming from the remote head.`,
+    );
+    return;
+  }
   if (leftovers === null)
     refuse(
       pr,
