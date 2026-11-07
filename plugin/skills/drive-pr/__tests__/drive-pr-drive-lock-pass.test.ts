@@ -21,12 +21,7 @@ import { DRIVER_LOG_MAX_BYTES } from "../scripts/lib/driver-log.ts";
 import { claudeAdapter } from "../scripts/lib/quota/claude.ts";
 import { appendDirective } from "../scripts/lib/state/mailbox";
 
-import {
-  SCRIPTS,
-  binDir,
-  writeFixture,
-  useDrivePrSuite,
-} from "./drive-pr-harness.ts";
+import { SCRIPTS, binDir, useDrivePrSuite } from "./drive-pr-harness.ts";
 import {
   type LockSlot,
   PASS_LOUD,
@@ -34,6 +29,7 @@ import {
   lockHeld,
   plantClaim,
   pollUntil,
+  runDriveIn,
   awaitFixtureMarker,
   simulateTakeover,
 } from "./drive-loop-harness.ts";
@@ -47,8 +43,10 @@ import {
 } from "../../../shared/process-tree.ts";
 import { parseDiagText } from "../scripts/lib/claim.ts";
 import { lockRow, readState } from "./state-rows.ts";
+import { useTrackedTree } from "./drive-pr-pickup-fixtures.ts";
 
 useDrivePrSuite();
+const tree = useTrackedTree("drive-lock-pass");
 
 describe("drive.ts loop control", () => {
   describe("single-instance lock", () => {
@@ -58,42 +56,29 @@ describe("drive.ts loop control", () => {
     it("refuses when a LIVE driver holds the clone-wide PR lock from another worktree", async () => {
       // Separate worktrees never cross-ship edits, but they race pushes to one
       // head branch and share the clone-wide durable state.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { pr, worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir } = tree.fixture({ threads: [] });
+      const { pr, worktree } = lockDirs(dir, stateDir, tree.lock);
       plantClaim(pr, {
         pid: process.pid,
         host: hostname(),
         nonce: "prlock001",
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
+      const { stderr, exitCode } = await runDriveIn(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
+        tree.dir,
         {
           env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
             // Nobody holds the worktree lock, so it is taken and only the PR
             // lock can refuse this. (The handoff dir is deliberately a
             // different one, but that is no longer what frees the worktree
             // lock: it is keyed by the TREE and lives in the state dir.)
             DRIVE_PR_HANDOFF_DIR: join(dir, "other-worktree-handoff"),
           },
-          stdout: "pipe",
-          stderr: "pipe",
         },
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).toBe(11);
       expect(stderr).toContain("PR #999");
       expect(stderr).not.toContain("RAN_THE_PASS");
@@ -158,10 +143,10 @@ describe("drive.ts loop control", () => {
       // already running does not pause at one — so a takeover detected mid-pass
       // let it go on editing, committing and pushing under a claim another
       // driver held.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       const proc = Bun.spawn(
         scriptArgv(
           join(SCRIPTS, "drive.ts"),
@@ -173,6 +158,7 @@ describe("drive.ts loop control", () => {
           ...passWithLateGrandchild(dir),
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -221,10 +207,10 @@ describe("drive.ts loop control", () => {
       // Rotation is the current owner's alone: a driver whose lock was
       // recovered keeps writing its shutdown lines, and renaming the file
       // then would race the successor's own rotation and lose history.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       const logPath = join(stateDir, "drive-pr-999.log");
       const proc = Bun.spawn(
         scriptArgv(
@@ -237,6 +223,7 @@ describe("drive.ts loop control", () => {
           ...passWithLateGrandchild(dir),
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -296,14 +283,14 @@ describe("drive.ts loop control", () => {
       // whose pass CREATES its transcript mid-pass and asserts the drive
       // sleeps on it — which only holds if the snapshot was taken before
       // that file existed.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      lockDirs(dir, stateDir);
+      lockDirs(dir, stateDir, tree.lock);
       // Same reasoning as the test below: the spawned child's own
       // `process.cwd()` is what `belongsToWorktree` compares against, and it
       // does no symlink resolution of its own.
-      const cwdDir = realpathSync(process.cwd());
+      const cwdDir = realpathSync(tree.dir);
       const claudeProjectsDir = join(dir, "claude-projects");
       const projDir = join(claudeProjectsDir, "proj");
       mkdirSync(projDir, { recursive: true });
@@ -381,6 +368,7 @@ describe("drive.ts loop control", () => {
           "--pr-999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -421,10 +409,10 @@ describe("drive.ts loop control", () => {
       // leak into other tests. It writes its wall under whichever session id
       // it was GIVEN, or mints its own when it was given none, which is what
       // the real CLI does.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      lockDirs(dir, stateDir);
+      lockDirs(dir, stateDir, tree.lock);
       const claudeProjectsDir = join(dir, "claude-projects");
       mkdirSync(join(claudeProjectsDir, "proj"), { recursive: true });
 
@@ -475,6 +463,7 @@ describe("drive.ts loop control", () => {
           "--pr-999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -529,25 +518,20 @@ describe("drive.ts loop control", () => {
       // loop into its sleep-and-resume branch; a takeover fired once that
       // sleep has visibly started must end the drive almost immediately
       // instead of after the full wait.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
       const mailboxDir = join(dir, "mailbox");
-      const { worktree } = lockDirs(dir, stateDir);
-      // Deliberately NOT overridden for the spawn below: `WORKTREE_LOCK`
-      // (what `lockDirs`/`simulateTakeover` address) was derived once, at
-      // import time, from THIS process's own ambient cwd — the real repo
-      // checkout `bun test` runs from, which is already a git worktree.
-      // Pointing the child at any other `cwd` (a plain fixture tmp dir, or
-      // even `scratchClean.dir`) makes it compute a DIFFERENT worktree
-      // lock name than the constant this test addresses.
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
+      // The spawn below stands in `tree.dir`, whose worktree lock
+      // (`tree.lock`) is what `lockDirs`/`simulateTakeover` address.
       // Realpath'd so the `cwd` this test writes into the transcript
       // record matches what the SPAWNED process reports as its own
       // `process.cwd()` bit for bit — `belongsToWorktree` is a
       // prefix/equality test with no symlink resolution of its own, and a
       // bare tmp dir can differ from its realpath (e.g. macOS's `/tmp` →
       // `/private/tmp`).
-      const cwdDir = realpathSync(process.cwd());
+      const cwdDir = realpathSync(tree.dir);
       const claudeProjectsDir = join(dir, "claude-projects");
       const passDonePath = join(dir, "quota-pass-done");
       // A standalone helper FILE, not an inline `sh -c`/`bun -e` one-liner:
@@ -616,7 +600,7 @@ describe("drive.ts loop control", () => {
           "--pr-999",
         ),
         {
-          // No `cwd` override — see the comment on `cwdDir` above.
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -707,11 +691,11 @@ describe("drive.ts loop control", () => {
       allStderr: string;
       stateDir: string;
     }> {
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
-      const cwdDir = realpathSync(process.cwd());
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
+      const cwdDir = realpathSync(tree.dir);
       const claudeProjectsDir = join(dir, "claude-projects");
       const passDonePath = join(dir, "quota-pass-done");
       const helperPath = join(dir, "write-quota-transcript.mjs");
@@ -775,6 +759,7 @@ describe("drive.ts loop control", () => {
           "--pr-999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -841,10 +826,10 @@ describe("drive.ts loop control", () => {
       sleeping: boolean;
       stateDir: string;
     }> {
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const cwdDir = realpathSync(process.cwd());
+      const cwdDir = realpathSync(tree.dir);
       const claudeProjectsDir = join(dir, "claude-projects");
       const passDonePath = join(dir, "quota-pass-done");
       const helperPath = join(dir, "write-quota-transcript.mjs");
@@ -897,6 +882,7 @@ describe("drive.ts loop control", () => {
           "--pr-999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -962,10 +948,10 @@ describe("drive.ts loop control", () => {
       allStderr: string;
       stateDir: string;
     }> {
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const cwdDir = realpathSync(process.cwd());
+      const cwdDir = realpathSync(tree.dir);
       const claudeProjectsDir = join(dir, "claude-projects");
       const passDonePath = join(dir, "quota-pass-done");
       const helperPath = join(dir, "write-quota-transcript.mjs");
@@ -1018,6 +1004,7 @@ describe("drive.ts loop control", () => {
           "--pr-999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -1063,10 +1050,10 @@ describe("drive.ts loop control", () => {
       allStderr: string;
       stateDir: string;
     }> {
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const cwdDir = realpathSync(process.cwd());
+      const cwdDir = realpathSync(tree.dir);
       const claudeProjectsDir = join(dir, "claude-projects");
       const passDonePath = join(dir, "quota-pass-done");
       const helperPath = join(dir, "write-quota-transcript.mjs");
@@ -1119,6 +1106,7 @@ describe("drive.ts loop control", () => {
           "--pr-999",
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -1350,10 +1338,10 @@ describe("drive.ts loop control", () => {
         // <pid>`, a harness shutting a worker down — does not reach the pass. The
         // old handler released both locks and exited anyway, so the next driver
         // acquired a free lock on a tree that was still being written.
-        const { dir, stateDir } = writeFixture({
+        const { dir, stateDir } = tree.fixture({
           threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
         });
-        const { worktree, pr } = lockDirs(dir, stateDir);
+        const { worktree, pr } = lockDirs(dir, stateDir, tree.lock);
         const proc = Bun.spawn(
           scriptArgv(
             join(SCRIPTS, "drive.ts"),
@@ -1365,6 +1353,7 @@ describe("drive.ts loop control", () => {
             ...portablePassTree(dir),
           ),
           {
+            cwd: tree.dir,
             env: {
               ...process.env,
               PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -1422,10 +1411,10 @@ describe("drive.ts loop control", () => {
       // write its marker four seconds later if only the timer stood behind it
       // — longer than the stop's two-second escalation grace, so a group
       // SIGKILL that does fire lands while it still sleeps.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { worktree } = lockDirs(dir, stateDir, tree.lock);
       const mode = byPlatform(
         "POSIX proves escalation after a leader exits on TERM; native Windows proves captured descendant termination",
         { windows: "captured", posix: "leader-first" },
@@ -1449,6 +1438,7 @@ describe("drive.ts loop control", () => {
           ...command,
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
@@ -1486,10 +1476,10 @@ describe("drive.ts loop control", () => {
       // A repeated signal conservatively retains claims while the coordinator
       // still waits for every cancellation. A forced native exit cannot run
       // that coordinator and must likewise leave its claims behind.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree, pr } = lockDirs(dir, stateDir);
+      const { worktree, pr } = lockDirs(dir, stateDir, tree.lock);
       const mode = byPlatform(
         "native Windows forced termination has no signal handler; POSIX repeats the signal during graceful teardown",
         { windows: "forced", posix: "repeated" },
@@ -1513,6 +1503,7 @@ describe("drive.ts loop control", () => {
           ...command,
         ),
         {
+          cwd: tree.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
