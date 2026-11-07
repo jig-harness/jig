@@ -33,6 +33,22 @@ test("a notice key longer than its bound is cut and still tells two keys apart",
   expect(a.key).not.toBe(b.key);
 });
 
+test("a conflict park has its own notice identity even when its ledger did not change", () => {
+  const pr = parked([["decision"]]);
+  const original = parkNotice("o/r", pr);
+  pr.evidence = {
+    ...pr.evidence,
+    mergeable: "CONFLICTING",
+    headSha: "h",
+    baseSha: "b",
+  };
+  const conflict = parkNotice("o/r", pr);
+  expect(conflict.key).not.toBe(original.key);
+  expect(conflict.text).toContain("also conflicts with its base");
+  pr.evidence.baseSha = "next";
+  expect(parkNotice("o/r", pr).key).not.toBe(conflict.key);
+});
+
 test("a notice that does not fit beside an unread comment waits and a later one that fits goes", () => {
   const cause = (n: number) =>
     ({ notice: { key: `k${n}`, text: "x".repeat(n) } }) as unknown as Cause;

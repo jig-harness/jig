@@ -83,7 +83,7 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
         ]
       : [];
   return notice(
-    `${slug} PR #${pr.number} parked, ledger generation ${generation(pr)}: ${keys}`,
+    `${slug} PR #${pr.number} parked, ledger generation ${generation(pr)}: ${keys}${conflict.length === 0 ? "" : `, conflicting head ${pr.evidence.headSha ?? "unknown"}, base ${pr.evidence.baseSha ?? "unknown"}`}`,
     [
       `PR #${pr.number} (${pr.title}) is parked: ${waiting.length === 1 ? "one decision waits" : `${waiting.length} decisions wait`} for a person.`,
       "",

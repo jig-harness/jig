@@ -29,6 +29,7 @@
  * `--apply`.
  */
 import { admittedVendor } from "../accounts.ts";
+import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   type LaunchRecord,
   newRecordId,
@@ -151,7 +152,15 @@ async function retryBlocked(
     record.redrive,
     record.facts,
   );
-  if (read.class !== want) return `its ledger now reads ${read.class}`;
+  // A pending conflict repair still owns its launch when the park's answers
+  // or mergeability change. Replay under the same token instead of leaving
+  // the pending record holding the park's ordinary re-arm forever.
+  const parkedReplay =
+    record.redrive?.conflictStop === true &&
+    read.evidence.exit === DRIVE_EXIT.HITL_PARKED &&
+    (read.class === "parked" || read.class === "re-armable");
+  if (read.class !== want && !parkedReplay)
+    return `its ledger now reads ${read.class}`;
   // A stop on a conflict stands whatever moved since: its base moves often, and
   // this record holds the pull request until its launch is replayed. The replay
   // then acts on the change read now, so the record names that one, and keeps

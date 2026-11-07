@@ -507,4 +507,37 @@ describe("a parked drive whose pull request conflicts with its base", () => {
       current = null;
     }
   }, 90_000);
+
+  it("replays pending park conflict launches after mergeability or the answers change", async () => {
+    for (const mergeable of ["MERGEABLE", "UNKNOWN", "answered"]) {
+      const w = fixture({ mergeable: "CONFLICTING" }, PARKED);
+      machineFile(
+        w,
+        [account(w, "a", "a@example.com")],
+        { runtime_timeout: "2s" },
+        ["rearm", "notify"],
+      );
+      writeFileSync(join(w.dir, "orca-terminal-hang"), "");
+      const [lost] = launches(await tick(w));
+      expect(lost?.outcome).toBe("lost");
+      rmSync(join(w.dir, "orca-terminal-hang"));
+      w.setPrs("open", [
+        openPr(7, HEAD, {
+          mergeable: mergeable === "answered" ? "CONFLICTING" : mergeable,
+        }),
+      ]);
+      if (mergeable === "answered")
+        w.setComments(7, [
+          ledgerComment(701, stoppedLedger(7, 8, { parked: [] })),
+        ]);
+      const [replayed] = launches(await tick(w));
+      expect(replayed).toMatchObject({
+        outcome: "retried",
+        record: lost?.record,
+      });
+      await waitFor("the exit", () => exitWritten(w, lost?.record ?? ""));
+      w.close();
+      current = null;
+    }
+  }, 120_000);
 });
