@@ -7,7 +7,18 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { hostname } from "node:os";
+import { scopedStateDir } from "../../skills/drive-pr/__tests__/scoped-state-dir.ts";
+import { writeDriverRecord } from "../../skills/drive-pr/scripts/lib/ledger-stop.ts";
+import { cloneId } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
+import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.ts";
+import {
+  leaseRef,
+  treeLeaseRef,
+  readLease,
+  readTreeLease,
+} from "../../skills/drive-pr/scripts/lib/state/lease.ts";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -85,6 +96,140 @@ async function tick(w: World, exit = 0): Promise<TickReceipt> {
 }
 
 describe("the line a tick leaves", () => {
+  it("reconciles a hand-armed released dead driver before planning and leaves no lease", async () => {
+    const w = fixture();
+    const leaf = scopedStateDir(w.env.DRIVE_PR_STATE_DIR as string, w.repo);
+    const actor = `wt-${worktreePathKey(w.repo)}`;
+    const started = "2026-10-30T20:00:00.000Z";
+    const ledger = stoppedLedger(7, undefined);
+    ledger.driver = {
+      ...ledger.driver,
+      actor,
+      clone: cloneId(leaf),
+      started,
+      recoveryVersion: 1,
+      position: 0,
+      state: "running",
+    };
+    w.setComments(7, [ledgerComment(701, ledger)]);
+    const child = Bun.spawn([process.execPath, "-e", ""], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(
+      {
+        exitCode: await child.exited,
+        stdout: await new Response(child.stdout).text(),
+        stderr: await new Response(child.stderr).text(),
+      },
+      0,
+    );
+    writeDriverRecord(leaf, "7", {
+      worktree: w.repo,
+      started,
+      pid: child.pid,
+      host: hostname(),
+      released: true,
+    });
+    machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm", "notify"]);
+    const report = await w.dispatch(["--json"]);
+    expectSpawnExit(report, 0);
+    expect(JSON.parse(report.stdout).repos[0].actions).toContainEqual(
+      expect.objectContaining({ stage: "notify" }),
+    );
+    machineFile(w, [account(w, "a", "a@example.com")], {}, ["notify"]);
+    const notifyOnly = await tick(w);
+    expect(notifyOnly.repos[0]?.actions).toContainEqual(
+      expect.objectContaining({ target: "PR #7", stage: "notify" }),
+    );
+    machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm"]);
+    const applied = await tick(w);
+    expect(applied.repos[0]?.actions).toContainEqual(
+      expect.objectContaining({
+        target: "PR #7",
+        stage: "rearm",
+        evidence: expect.objectContaining({
+          driver: "stopped",
+          noCause: true,
+          exit: null,
+        }),
+      }),
+    );
+    expect(readLease(leaseRef(leaf, "7", actor))).toBeNull();
+    expect(readTreeLease(treeLeaseRef(leaf, actor))).toBeNull();
+    await waitFor("recovered drive wrapper exits", () =>
+      recordIds(w).every((id) => exitWritten(w, id)),
+    );
+  });
+
+  it("notifies an unrecoverable silent driver once and keeps its need on the line", async () => {
+    const w = fixture();
+    const ledger = stoppedLedger(7, undefined);
+    const leaf = scopedStateDir(w.env.DRIVE_PR_STATE_DIR as string, w.repo);
+    const started = "2026-10-30T20:00:00.000Z";
+    ledger.driver = {
+      ...ledger.driver,
+      actor: `wt-${worktreePathKey(w.repo)}`,
+      clone: cloneId(leaf),
+      started,
+      state: "running",
+    };
+    const child = Bun.spawn([process.execPath, "-e", ""], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(
+      {
+        exitCode: await child.exited,
+        stdout: await new Response(child.stdout).text(),
+        stderr: await new Response(child.stderr).text(),
+      },
+      0,
+    );
+    writeDriverRecord(leaf, "7", {
+      worktree: w.repo,
+      started,
+      pid: child.pid,
+      host: hostname(),
+    });
+    w.setComments(7, [ledgerComment(701, ledger)]);
+    machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm", "notify"]);
+    w.setWorkspaces([{ branch: "desk", path: join(w.root, "desk") }]);
+    w.setConfig(`${CONFIG}dispatch:\n  notices_branch: desk\n`);
+    const first = await tick(w);
+    expect(first.repos[0]?.actions).toContainEqual(
+      expect.objectContaining({
+        target: "PR #7",
+        stage: "notify",
+        cause: "needs-person",
+      }),
+    );
+    expect(first.repos[0]?.notifications).toContainEqual(
+      expect.objectContaining({ outcome: "sent" }),
+    );
+    expect(storedLine(w)?.line.needs).toContainEqual(
+      expect.objectContaining({
+        target: "PR #7",
+        cause: "needs-person",
+      }),
+    );
+    const waiting = await w.dispatch(
+      ["ask", "--waiting", "--json"],
+      resolve(import.meta.dir, "../../jig.ts"),
+    );
+    expectSpawnExit(waiting, 0);
+    expect(JSON.parse(waiting.stdout).waiting).toContainEqual(
+      expect.objectContaining({
+        address: "drive@example-org/example-repo#7",
+        act: "re-arm",
+      }),
+    );
+    const second = await tick(w);
+    expect(second.repos[0]?.notifications).not.toContainEqual(
+      expect.objectContaining({ outcome: "sent" }),
+    );
+  });
+
   it("names the parked drive's workspace without a running session in the JSON line", async () => {
     const w = fixture();
     w.setComments(7, [

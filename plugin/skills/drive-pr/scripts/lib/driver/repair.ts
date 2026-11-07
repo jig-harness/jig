@@ -1,3 +1,4 @@
+import { runObservedPass } from "../driver-observation.ts";
 /** Dispatch bounded repair passes and record quota parking with the same ownership controls as review passes. */
 import {
   type RepairTask,
@@ -152,7 +153,7 @@ export async function runRepairPass(
   if (mailboxBeforeSpawn === "resumed")
     return { dispatched: false, resumed: true };
   const res = await span("pass", { kind: "repair" }, () =>
-    run(agent, {
+    runObservedPass(agent, {
       stdout: "inherit",
       stderr: "inherit",
       detached: true,
