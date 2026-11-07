@@ -1589,8 +1589,9 @@ than being guessed.
 The line also carries **how the recent ticks ran** (`ticks`, the last 48,
 built from each receipt by `tick-health.ts`): each tick's length, its own
 phases (the close counted up to the line's write), each repository's phases,
-the forge budget it read, the repositories another tick held, the optional
-reads a low budget skipped and its defects. A tick that does not replace the
+the forge budget it read and its defects. Reporting repositories another tick
+held and optional reads a low budget skipped requires a tick producer that
+records those signals; the current producer does not. A tick that does not replace the
 line, because it read only some repositories, adds its entry and leaves the
 rest of the line and its receipt as they were. History opens with them, one
 row per tick with its slowest single phase named. The receipt counts no forge

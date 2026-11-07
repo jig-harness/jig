@@ -710,9 +710,10 @@ writes nothing to the host:
 - **How the recent ticks ran**, at the top of the History view: one row per
   tick, the newest first, with its length, its phases as a bar, the slowest
   single phase and its repository, the forge's rate budget it read, and a
-  chip for a defect, a low budget that skipped the optional reads, a
-  repository busy under another tick, or a failed exit; each row opens to
-  every phase and repository. The line carries the last 48 ticks, a tick for
+  chip for a defect or a failed exit; each row opens to every phase and
+  repository. Low-budget and busy-repository chips require a tick producer
+  that records those signals; the current producer does not. The line carries
+  the last 48 ticks, a tick for
   one repository included.
 - **The outcome log**, on the History view, filtered by time (today, yesterday,
   seven or thirty days, or a range), repository, stage, account, class and
