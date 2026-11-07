@@ -1,3 +1,4 @@
+import { derivedNext } from "../../dispatch/lib/next-owner.ts";
 /**
  * The `drive` station of a pull request: who drives it, the state of its
  * drive, what that waits on and how its last launch ended, from the records
@@ -435,6 +436,7 @@ function lastOfClaim(r: DriveReads, ended: ReadClaim): Last | null {
       at: end.at,
       reason: end.reason,
       from: "launch claim",
+      next: derivedNext("rearm", "died", end.reason),
     };
   const placed =
     end.exit === null
@@ -452,6 +454,7 @@ function lastOfClaim(r: DriveReads, ended: ReadClaim): Last | null {
     at: end.at,
     reason: placed.reason,
     from: "launch claim",
+    next: derivedNext("rearm", placed.class, placed.reason),
   };
 }
 

@@ -9,8 +9,10 @@
  *   a transition is one hop, the one transition out of the current status
  *   whose target status has the state's name: the full workflow is readable
  *   only with administration rights, so no path is searched for;
- * - priority: the priority's name (`issue_tracker.jira.priorities`); a
- *   project: the first fix version; the native type: the issue type's name;
+ * - priority: the priority's name (`issue_tracker.jira.priorities`), or
+ *   labels where `issue_tracker.facets.priority` names that store; type and
+ *   size: labels (`../facets/`); a project: the first fix version; the
+ *   native type: the issue type's name;
  * - parent and children: the `parent` field, for sub-tasks and an Epic's
  *   issues alike;
  * - relations: issue links of the configured types
@@ -36,6 +38,7 @@ import type {
 } from "../port.ts";
 import { TrackerRequestError } from "../port.ts";
 import { TrackerConfigError } from "../config-error.ts";
+import { type CoreTracker, withFacets } from "../facets/tracker.ts";
 import {
   checkPatch,
   checkPriority,
@@ -268,7 +271,7 @@ export function jiraTracker(client: Client): Tracker {
     });
   }
 
-  const tracker: Tracker = {
+  const tracker: CoreTracker = {
     adapter: "jira",
     team: project,
     stateName: (state) => model.stateName(state),
@@ -299,6 +302,7 @@ export function jiraTracker(client: Client): Tracker {
         updatedAt: issue.updatedAt,
         state: model.read(issue).state,
         labels: issue.labels,
+        priority: model.priorityOf(issue.priority),
         nativeType: issue.issueType?.name ?? null,
         parent:
           issue.parent === null
@@ -469,5 +473,10 @@ export function jiraTracker(client: Client): Tracker {
 
     relate: link,
   };
-  return tracker;
+  const native = client.facets.priority.store === "native";
+  return withFacets(
+    tracker,
+    client.facets,
+    new Set(native ? (["priority"] as const) : []),
+  );
 }
