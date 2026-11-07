@@ -178,6 +178,10 @@ const MIGRATIONS: readonly Migration[] = [
   );
   `,
   },
+  {
+    additive: true,
+    sql: "ALTER TABLE driver_records ADD COLUMN person_stop TEXT;",
+  },
 ];
 
 /** The schema version this plugin writes. */

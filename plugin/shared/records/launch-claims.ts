@@ -94,7 +94,10 @@ function endFault(end: unknown): string | null {
   if (end === undefined) return null;
   if (!isRecord(end) || !isText(end.at)) return "its end has no time";
   if (end.state === "died")
-    return isText(end.reason) ? null : "its end says no why";
+    return isText(end.reason) &&
+      (end.executed === undefined || end.executed === false)
+      ? null
+      : "its end reason or execution evidence does not read";
   return end.state === "ended"
     ? endedFault(end)
     : "its end is neither ended nor died";
@@ -113,7 +116,12 @@ function endOf(end: unknown): LaunchEnd | null {
   if (endFault(end) !== null || end === undefined) return null;
   const e = end as Record<string, unknown>;
   if (e.state === "died")
-    return { state: "died", at: String(e.at), reason: String(e.reason) };
+    return {
+      state: "died",
+      at: String(e.at),
+      reason: String(e.reason),
+      ...(e.executed === false ? { executed: false as const } : {}),
+    };
   return {
     state: "ended",
     at: String(e.at),
@@ -125,7 +133,12 @@ function endOf(end: unknown): LaunchEnd | null {
 /** A launch's end as a claim's payload holds it. */
 function writtenEnd(end: LaunchEnd): Record<string, unknown> {
   return end.state === "died"
-    ? { state: "died", at: end.at, reason: end.reason }
+    ? {
+        state: "died",
+        at: end.at,
+        reason: end.reason,
+        ...(end.executed === false ? { executed: false } : {}),
+      }
     : { state: "ended", at: end.at, exit: end.exit, outcome: end.outcome };
 }
 

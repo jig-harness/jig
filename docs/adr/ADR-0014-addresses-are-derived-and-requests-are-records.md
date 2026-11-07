@@ -2,15 +2,15 @@
 title: "ADR-0014: An address is derived from records, and a request is a record"
 type: adr
 status: draft
-description: "Every station of the execution line on a piece of work has an address that is derived from the records the station leaves, never declared or held; asking reads those records and telling writes one record the line already acts on, so no resident agent, daemon or queue holds an address or a request"
+description: "Every station of the execution line on a piece of work has an address that is derived from the records the station leaves, never declared or held; asking reads those records and telling writes one record the line already acts on, so no resident agent, daemon or queue holds an address or a request; a person's conversation with the operator is kept apart, on one machine, and never read as a request"
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-11-05
+version: "1.1"
+last_updated: 2026-11-06
 owner: maintainers
 decision_date: 2026-11-05
 supersedes: ~
 superseded_by: ~
-tags: [adr, records, addresses, dispatcher, drive, dark-factory]
+tags: [adr, records, addresses, dispatcher, drive, dark-factory, hub]
 ---
 
 # ADR-0014: An address is derived from records, and a request is a record
@@ -49,6 +49,13 @@ and a daemon drains. These constraints weigh against it.
   pick-up from an assignment, arms a drive from a label, re-arms one from an
   answer; the driver obeys a mailbox directive. A request that is one of
   those records reaches its reader at its next run with no new path to it.
+- **A conversation is not a request.** A person who talks a piece of work
+  over with the [operator](../../GLOSSARY.md) in the
+  [hub](../../GLOSSARY.md)
+  ([design/hub.md § The operator chat](../../design/hub.md#the-operator-chat))
+  comes back to it later, and the context they left is in no record. What
+  they decide reaches the line as one of the records above, written as
+  them.
 
 ## Decision
 
@@ -65,6 +72,23 @@ writer of the component that owns that record, and its reader acts on it at
 its next run. No resident agent holds an address, and no daemon, queue or
 inbox holds a request.
 
+The one thing Jig keeps beside those records is a person's conversation
+with the operator in the hub: a `hub-conversation` record, one file per
+thread, readable by its owner alone (mode `0600`), on the one machine the
+person chats on, registered on the machine medium with the hub as its
+owner. No station and
+not `ask` reads it, and the hub shows it apart from the thread's records.
+Nothing replays it as a request: the operator's next turn reads it as
+context, and the operator only proposes. It holds what was said and the
+commits made from the thread (each one's plan, its proof that a person was
+present and the forge's answer), never the thread's facts, which are read
+again from records at each read. A thread settles when its follow-up is
+done or its work closes without a merge; `jig gc` removes the record 30
+days after that or 90 days after its last turn, whichever comes first, and
+the person deletes it whenever they choose. A request stays one of the
+records above, on the forge, on the tracker or in the working tree's
+mailbox.
+
 ## Alternatives considered
 
 - **A resident agent per station.** Rejected: it answers only while it
@@ -77,6 +101,14 @@ inbox holds a request.
 - **Addresses a repository declares.** Rejected: the list of stations is the
   line's, so an address means the same in every repository, and a declared
   one could name a station that leaves no records to answer from.
+- **A chat with the operator that keeps nothing.** Rejected: a person who
+  comes back to a thread loses the context they left, which no record
+  holds.
+- **The conversation kept as part of the thread.** Rejected: the thread is
+  derived from records each reader checks under its own rule for whose
+  record counts. An assistant's words among them would be a second store of
+  the same facts that no reader checks, and text a station could take for a
+  request.
 
 ## Consequences
 
@@ -97,6 +129,10 @@ inbox holds a request.
 - Each answer reads the records again; the forge reads are conditional, so
   an unchanged pull request costs nothing against the forge's limit, but a
   changed one does.
+- A conversation with the operator lives on the one machine that keeps it:
+  another machine's hub does not show it, and it is gone 30 days after its
+  thread settles or 90 days after its last turn, or sooner when its owner
+  deletes it.
 
 ## When to reopen
 
@@ -110,5 +146,6 @@ its owner writes, rather than adding a holder.
 The stations are a closed list in `plugin/shared/address.ts`, and `jig ask`
 reads only through the exports of the components that own each record. That
 `jig ask` writes no record is held by its tests, which run it against a
-forge that answers reads only and find every forge call a read; that no
-command keeps a store of addresses or requests is review's to hold.
+forge that answers reads only and find every forge call a read. That no
+command keeps a store of addresses or requests, and that no station and not
+`ask` reads a `hub-conversation` record, is review's to hold.

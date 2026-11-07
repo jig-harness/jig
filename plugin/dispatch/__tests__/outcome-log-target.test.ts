@@ -107,6 +107,7 @@ describe("the outcome log's key column", () => {
     old.run("ALTER TABLE notices_content DROP COLUMN pending");
     old.run("DROP TABLE followup_releases");
     old.run("DROP TABLE reflection_findings");
+    old.run("DROP TABLE merge_reads");
     old.run(`PRAGMA user_version = ${BEFORE_TARGET}`);
     old.run("UPDATE db_meta SET version = ?", [BEFORE_TARGET]);
     old.close();

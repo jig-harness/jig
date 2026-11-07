@@ -114,6 +114,21 @@ async function listComments(
   return out;
 }
 
+/**
+ * What a listing of the pull request's comments already read (the forge's
+ * issue-comment objects) says about its drive, for a reader that shares one
+ * listing between the ledger and other records.
+ */
+export function snapshotFromListing(
+  listing: readonly unknown[],
+  selfLogin: string | null,
+): LedgerSnapshot {
+  const comments = listing
+    .map(forgeComment)
+    .filter((c): c is ForgeComment => c !== null);
+  return snapshotFrom(comments, selfLogin);
+}
+
 /** What the pull request's comments say about its drive, or why they could not be read. */
 export async function readLedgerSnapshot(
   pr: string,
