@@ -73,7 +73,7 @@ with the review.
 | [Addresses: asking and telling the stations of the line](addresses.md) | 39 |
 | [The hub, one place to watch and steer the line](hub.md) | 42; Later: a control-plane service for the shared records |
 | [Consumer actions, which Jig changes a repository must act on](consumer-actions.md) | 43 |
-| [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | Not in the plan yet |
+| [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | 41; Later: the command store |
 
 ## Starting a design
 

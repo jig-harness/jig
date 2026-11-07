@@ -1009,6 +1009,11 @@ make, use the entry's term instead.
   *false green* ([M14](modules/M14-testing-strategy/README.md)).
 - **Flaky test** — a test that sometimes passes and sometimes fails on the
   same code, because of timing, shared state or an unreliable dependency.
+- **Lock quarantine** — displaced lock directories or recovery marker files
+  kept under a distinct name so a later lock holder cannot mistake them for
+  the current lock. The drive's state reaper reports these entries but keeps
+  them because it cannot exclude legacy writers. This stores old lock artifacts;
+  *flaky-test quarantine* sets aside unreliable tests.
 - **Flaky-test quarantine** — setting a *flaky test* aside so its failures
   stop blocking merges while it is fixed, without hiding them: the test keeps
   running and reporting, and the quarantine list is reviewed and short
