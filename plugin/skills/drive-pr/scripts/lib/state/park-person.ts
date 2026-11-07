@@ -7,7 +7,7 @@ import {
   loadCatalogFile,
   type ChangeAreaCatalog,
 } from "../change-areas-catalog.ts";
-import { ghCall } from "../proc.ts";
+import { ghCall, ghRepoEnv } from "../proc.ts";
 import { isPerson } from "./park-frame.ts";
 import { ExitError } from "../cli.ts";
 import { optionalOverlayString } from "../overlay.ts";
@@ -107,7 +107,10 @@ export async function resolveParkPerson(
     (catalog !== null && kind === "thread" ? await threadAnchor(key) : null);
   const recipient = recipientForPark(anchor, catalog, dispatch.person);
   if (recipient !== null) return recipient;
-  const result = await ghCall(["pr", "view", String(pr), "--json", "author"]);
+  const result = await ghCall(["pr", "view", String(pr), "--json", "author"], {
+    cwd: consumerRoot(),
+    env: ghRepoEnv(),
+  });
   if (result.code !== 0)
     throw new ExitError(
       1,
