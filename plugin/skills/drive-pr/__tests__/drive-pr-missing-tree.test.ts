@@ -136,11 +136,64 @@ describe("a dead driver's removed or unreadable worktree", () => {
     const orphan = join(tmpRoot, "unregistered-tree");
     mkdirSync(orphan);
     writeFileSync(join(orphan, "left.txt"), "unregistered");
-    expect(await gatherWorktreeLeftovers(orphan, scratchClean.dir)).toBe(
-      "missing",
-    );
+    expect(await gatherWorktreeLeftovers(orphan, scratchClean.dir)).toBeNull();
     expect(await gatherWorktreeLeftovers(orphan, orphan)).toBeNull();
   });
+
+  it("preserves known blockers when a missing tree has a living holder", () => {
+    const input: DoctorInput = {
+      lockState: "stale",
+      processConfirmedGone: false,
+      stateReadable: true,
+      progressAgeMs: null,
+      passChild: false,
+      quotaPark: null,
+      parkedCount: 1,
+      leftovers: "missing",
+      stallThresholdMs: 1,
+      pr: "999",
+      worktreePath: "/removed/tree",
+      selfPath: "/drives.ts",
+      hostIsLocal: true,
+    };
+    expect(classifyDrive(input, new Date()).verdict).toBe("NEEDS_HUMAN");
+    expect(
+      classifyDrive(
+        {
+          ...input,
+          quotaPark: {
+            vendor: "codex",
+            window: "long",
+            at: new Date().toISOString(),
+            resetAt: null,
+          },
+        },
+        new Date(),
+      ).verdict,
+    ).toBe("QUOTA_PARKED");
+  });
+
+  it.each([true, false])(
+    "does not strand a living holder's edits with stateReadable=%s",
+    (stateReadable) => {
+      const input: DoctorInput = {
+        lockState: "stale",
+        processConfirmedGone: false,
+        stateReadable,
+        progressAgeMs: null,
+        passChild: true,
+        quotaPark: null,
+        parkedCount: 0,
+        leftovers: { uncommitted: true, unpushed: false, unconcludedOp: null },
+        stallThresholdMs: 1,
+        pr: "999",
+        worktreePath: "/living/tree",
+        selfPath: "/drives.ts",
+        hostIsLocal: true,
+      };
+      expect(classifyDrive(input, new Date()).verdict).toBe("UNKNOWN");
+    },
+  );
 
   it("doctor reports missing as DEAD and failed inspection as UNKNOWN", () => {
     const input: DoctorInput = {

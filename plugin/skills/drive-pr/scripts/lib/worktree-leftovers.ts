@@ -64,7 +64,7 @@ async function worktreePresence(
   }
   return rows.some((row) => samePath(resolve(row.path), resolve(worktree)))
     ? "present"
-    : "missing";
+    : "unreadable";
 }
 
 export async function gatherWorktreeLeftovers(

@@ -797,9 +797,9 @@ It reads the holder's `drives.ts` `--doctor` verdict and is admitted only
 against a holder that is `WEDGED`, or whose process is confirmed gone with nothing left
 in its tree (no uncommitted changes, unpushed commits or unconcluded git
 operation; on this machine the takeover refuses, naming them, until they are
-pushed or discarded). A confirmed-dead holder whose tree is missing or no
-longer registered in this clone is admitted: its unpushed work is gone and
-the drive resumes from the remote head. An unreadable existing tree still refuses.
+pushed or discarded). A confirmed-dead holder whose tree is missing is admitted: the checkout
+is unavailable and local work may need recovery; the drive resumes from the
+remote head. An existing unregistered or unreadable tree still refuses.
 Against any other holder it refuses as exit `11` does,
 naming the verdict. A wedged holder is stopped through `drives.ts` `--stop`, with
 the identity check that command performs, bound by `--expect-started` to the
