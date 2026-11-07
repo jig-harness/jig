@@ -19,7 +19,7 @@ if (import.meta.main)
         resolved: new Set(resolution.areas),
       },
       (ctx) => ({
-        sourceAreas: [...ctx.seed].sort(),
+        sourceAreas: [...ctx.seed].sort((a, b) => a.localeCompare(b)),
         profiles: [],
         localChecks: ["bun run gates"],
         verificationChecks: ["bun run gates"],
