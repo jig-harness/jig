@@ -209,6 +209,11 @@ function classify(
   return { families, unrecognised };
 }
 
+/** Report order must not depend on the directory's read order. */
+function byId(a: { id: string }, b: { id: string }): number {
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
 /** A PR family's verdict, by the predicate in the header. */
 function judgePr(
   stateDir: string,
@@ -420,8 +425,11 @@ async function main(): Promise<number> {
       exists: true,
       entries: names.length,
       families: families.size,
-      retire: retired.map(reportEntry),
-      keep: verdicts.filter((v) => v.action === "keep").map(reportEntry),
+      retire: retired.map(reportEntry).sort(byId),
+      keep: verdicts
+        .filter((v) => v.action === "keep")
+        .map(reportEntry)
+        .sort(byId),
       untouched: { unrecognised: unrecognised.length },
       applied: args.del,
       entriesRetirable: retired.reduce((n, v) => n + v.family.names.length, 0),
