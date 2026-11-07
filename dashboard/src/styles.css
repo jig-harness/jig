@@ -231,7 +231,8 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .tkBudget { grid-column: 1 / 3; }
 .tkScope { grid-column: 3; }
 .tkDetail { display: block; }
-.tkKv { margin-top: 2px; }
+.tkKv { margin-top: 2px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+.tkKv dt { overflow-wrap: anywhere; }
 
 /* window and log */
 .seg { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -367,7 +368,6 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
   .tkSlow, .tkMarks, .tkBudget, .tkScope, .tkDetail { grid-column: auto; }
   .tkSlow:empty, .tkMarks:empty, .tkBudget:empty { display: block; }
   .tkSlow { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tkMarks { flex-wrap: nowrap; }
   .tkBudget, .tkScope { overflow: hidden; text-overflow: ellipsis; }
   .tkDetail { justify-self: end; }
   .tkDetail:has(.fold[data-open]) { grid-column: 1 / -1; justify-self: stretch; }

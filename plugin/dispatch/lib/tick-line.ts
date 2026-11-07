@@ -5,7 +5,7 @@
  * receipt and makes the tick's exit `1`; what the tick launched stands, and
  * the next tick writes both again.
  */
-import { attempt } from "../../shared/outcome.ts";
+import { attempt, ok, type Outcome } from "../../shared/outcome.ts";
 import { pluginVersion } from "../../shared/plugin-version.ts";
 import {
   type CodexOptIn,
@@ -131,25 +131,40 @@ function readsTheMachine(machine: MachineConfig, repos: string[]): boolean {
   return repos.length === listed.size && repos.every((r) => listed.has(r));
 }
 
-/**
- * Add a tick that does not replace the line (it read only some of the
- * repositories, or another tick held the rest) to the line's recent ticks,
- * leaving the rest of the line and its receipt as they were. With no line, or
- * one that does not read, there is nothing to add it to: the next tick that
- * reads every repository writes the line again.
- */
-function addTick(receipt: TickReceipt): void {
+/** Add health to the previous snapshot without replacing its state or receipt. */
+function addTick(receipt: TickReceipt): Outcome<void> {
   const previous = readLine();
+  if (!previous.ok) return previous;
+  if (previous.value === null) return ok(undefined);
   const stored = readLineReceipt();
-  if (!previous.ok || previous.value === null) return;
-  if (!stored.ok || stored.value?.runId !== previous.value.runId) return;
-  writeLine(
-    {
-      ...previous.value,
-      ticks: withTick(previous.value.ticks, tickHealthOf(receipt, false)),
-    },
-    stored.value.receipt,
+  if (!stored.ok) return stored;
+  if (stored.value?.runId !== previous.value.runId)
+    return {
+      ok: false,
+      failure: {
+        code: "line-unreadable",
+        reason: "the dashboard's line changed while its receipt was read",
+      },
+    };
+  const line = previous.value;
+  const receiptText = stored.value.receipt;
+  return attempt(
+    "line-unwritten",
+    "the dashboard's recent ticks were not brought up to date",
+    () =>
+      writeLine(
+        { ...line, ticks: withTick(line.ticks, tickHealthOf(receipt, false)) },
+        receiptText,
+      ),
   );
+}
+
+/** Keep a partial or failed tick in history, preserving the last complete snapshot. */
+export function recordTickHealth(receipt: TickReceipt): void {
+  const added = addTick(receipt);
+  if (added.ok) return;
+  receipt.lineFailed = added.failure.reason;
+  receipt.exitStatus = 1;
 }
 
 /**
@@ -173,14 +188,7 @@ export function writeTickLine(
   const { machine, records } = tick;
   if (machine === null) return;
   if (!readsTheMachine(machine, tick.repos)) {
-    const added = attempt(
-      "line-unwritten",
-      "the dashboard's recent ticks were not brought up to date",
-      () => addTick(receipt),
-    );
-    if (added.ok) return;
-    receipt.lineFailed = added.failure.reason;
-    receipt.exitStatus = 1;
+    recordTickHealth(receipt);
     return;
   }
   const written = attempt(

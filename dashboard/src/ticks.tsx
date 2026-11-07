@@ -1,6 +1,6 @@
 /**
  * How the ticks ran: one compact row per recent tick, the newest first, with
- * its length, its own phases as a bar scaled to the longest tick shown, the
+ * its length, its own phases as a bar scaled to the longest retained tick, the
  * slowest single phase named, the forge budget it read, and a chip for each
  * thing that went wrong. Each row opens to its phases and its repositories.
  */
@@ -161,7 +161,7 @@ export function TicksPanel({
         <PanelHelp panel="How the ticks ran">
           <p>
             Each recent tick, the newest first: how long it took, its own phases
-            as a bar beside the longest tick shown, and the slowest single
+            as a bar beside the longest retained tick, and the slowest single
             phase, one repository's or the tick's own. The budget is the forge's
             rate budget the tick read.
           </p>

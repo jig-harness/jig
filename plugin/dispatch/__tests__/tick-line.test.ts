@@ -131,16 +131,17 @@ describe("the line a tick leaves", () => {
     await waitFor("the exit", () => exitWritten(w, record));
 
     const stored = storedLine(w);
-    expect(stored?.receipt.runId).toBe(receipt.runId);
-    const line = stored?.line;
-    expect(line?.runId).toBe(receipt.runId);
-    expect(line?.intervalMs).toBe(600_000);
-    expect(line?.apply).toBe(true);
-    expect(line?.accounts).toMatchObject([
+    if (stored === null) throw new Error("the tick did not write its line");
+    expect(stored.receipt.runId).toBe(receipt.runId);
+    const line = stored.line;
+    expect(line.runId).toBe(receipt.runId);
+    expect(line.intervalMs).toBe(600_000);
+    expect(line.apply).toBe(true);
+    expect(line.accounts).toMatchObject([
       { name: "a", vendor: "claude", cap: 2, held: 1, wall: null },
     ]);
-    expect(line?.lastAccount).toBe("a");
-    expect(line?.sessions).toMatchObject([
+    expect(line.lastAccount).toBe("a");
+    expect(line.sessions).toMatchObject([
       {
         record,
         account: "a",
@@ -151,10 +152,10 @@ describe("the line a tick leaves", () => {
         launch: "pending",
       },
     ]);
-    expect(line?.queue).toEqual([]);
-    expect(line?.repos).toMatchObject([{ slug: SLUG, stages: ["rearm"] }]);
-    expect(line?.recentTicksMs).toHaveLength(1);
-    expect(line?.ticks).toMatchObject([
+    expect(line.queue).toEqual([]);
+    expect(line.repos).toMatchObject([{ slug: SLUG, stages: ["rearm"] }]);
+    expect(line.recentTicksMs).toHaveLength(1);
+    expect(line.ticks).toMatchObject([
       {
         runId: receipt.runId,
         sweep: true,
@@ -165,7 +166,7 @@ describe("the line a tick leaves", () => {
         repos: [{ repo: SLUG, defect: null }],
       },
     ]);
-    const [entry] = line?.ticks ?? [];
+    const [entry] = line.ticks ?? [];
     expect(Object.keys(entry?.phasesMs ?? {})).toContain("start");
     expect(Object.keys(entry?.phasesMs ?? {})).toContain("close");
     expect(Object.keys(entry?.repos[0]?.phasesMs ?? {})).toContain("forge");
@@ -192,6 +193,19 @@ describe("the line a tick leaves", () => {
       { runId: first.runId, sweep: true },
       { runId: second.runId, sweep: false },
     ]);
+  });
+
+  it("reports a failed history read instead of silently skipping a partial tick", async () => {
+    const w = fixture();
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    await tick(w);
+    const db = database(w);
+    db.run("UPDATE tick_line SET line = 'invalid JSON' WHERE id = 1");
+    db.close();
+    const r = await w.dispatch(["--repo", join(w.root, "another"), "--json"]);
+    expectSpawnExit(r, 1);
+    const receipt = JSON.parse(r.stdout) as TickReceipt;
+    expect(receipt.lineFailed).toContain("not JSON");
   });
 
   it("not written, leaves the launches standing and says so on the receipt, with exit 1", async () => {

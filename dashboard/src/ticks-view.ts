@@ -63,7 +63,7 @@ export interface TickRowView {
   /** When it started: a clock for today, a date and clock before. */
   at: string;
   took: string;
-  /** Its length beside the longest of the ticks shown, from 0 to 1, which the bar's width is. */
+  /** Its length beside the longest retained tick, from 0 to 1, which the bar's width is. */
   scale: number;
   phases: PhaseSpan[];
   /** The slowest single phase, in words: `forge in acme/web, 30 s`; `null` when it timed none. */

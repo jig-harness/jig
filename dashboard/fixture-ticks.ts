@@ -157,6 +157,8 @@ export function recentTicks(newest: number, tookMs: number): LineTick[] {
           sweep: true,
           repos: all.map((r) => repoOf(r, 0.7)),
           remaining: 380,
+          defects: 1,
+          busy: [PATHS[WEB] ?? WEB],
           lowBudget: ["thread samples", "serialization's reads"],
         }),
       );

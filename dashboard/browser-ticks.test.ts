@@ -48,6 +48,16 @@ describe("the tick strip", () => {
         const low = page.locator(".pTicks .tkRow", { hasText: "low budget" });
         expect(await low.count()).toBe(1);
         expect(await low.first().isVisible()).toBe(true);
+        expect(
+          await low.locator(".tkMarks").evaluate((marks) => {
+            const next = marks.nextElementSibling;
+            if (next === null) return false;
+            const budget = next.getBoundingClientRect();
+            return [...marks.children].every(
+              (chip) => chip.getBoundingClientRect().right <= budget.left,
+            );
+          }),
+        ).toBe(true);
         await low
           .first()
           .locator(".chipBtn", { hasText: "low budget" })
@@ -102,6 +112,12 @@ describe("the tick strip", () => {
         expect(
           await page.locator(".pTicks .tkKv").first().textContent(),
         ).toContain("example-org/web");
+        await page
+          .locator(".pTicks .tkKv dt.m")
+          .first()
+          .evaluate((label) => {
+            label.textContent = `${"owner".repeat(7)}/${"repository".repeat(10)}`;
+          });
         expect(
           await page.evaluate(
             () =>
