@@ -408,7 +408,11 @@ reach share), and dropped when
 a write is refused for a value the cache named. For a facet whose
 configuration names its store, only `facetStores()` and the audit read the
 organization, to report the field it could move to; its reads and writes
-never wait on detection.
+never wait on detection. Detection needs a credential that can read the
+organization's issue types and fields, which a repository-scoped token or a
+workflow's `GITHUB_TOKEN` may not; a repository that files and reads with
+such a credential names every facet's store, so its reads and writes need no
+organization access.
 
 ### Failures, and what they show
 
@@ -625,6 +629,14 @@ record, followed by reverting the configuration commit.
 - **GitHub Issues**: a repository with no labels for a facet and no store
   named, such as a new one, uses its organization's matching field from
   build step 2, the release in which the callers read the facets.
+- **Detection is the one prerequisite step 2 adds.** Build step 1 only
+  reports detection through `facetStores()` and the audit. From step 2 a
+  facet with no named store waits on it, label-backed repositories included,
+  so a repository that reads and files with a credential that cannot read
+  its organization, or whose issue forms or people set native values beside
+  its labels, names its stores first. The audit and `facetStores()` print
+  the lines to add, and step 2's change note says this in its first
+  sentence, so no repository meets it as a failed read.
 - **Jira** files every new issue as the one configured `issue_type`, as
   today, until `issue_tracker.facets.type` names the issue type as its
   store; `field_labels` keeps reading as it does.
@@ -647,8 +659,12 @@ configuration names the stores (`store: native` for type and priority,
 `store: field` with `field: Effort` for size) and needs no value map. Its
 `issue_tracker.types` keeps mapping `docs`, `chore` and `infra` to the
 `task` work type. Its open issues then carry no type, priority or size
-label, and its closed issues keep theirs. Its issue forms carry both the
-type and the type label until the move, and drop the label with it.
+label, and its closed issues keep theirs. Until the move its configuration
+names the label store for each of the three facets (`store: label`), set in
+the pull request of build step 2 that adds types to the issue forms: the
+forms then carry both the type and the type label without making type a
+conflict, and no read of Jig's repository waits on detection. The move
+replaces those three entries with the native ones and drops the form labels.
 
 ## Build order
 
@@ -697,16 +713,20 @@ measured.
    weaker than medium is raised to it, a stronger one stays.
    `jig/scripts/report-bug.ts`: the Bug type. `.github/ISSUE_TEMPLATE/bug.yml`
    and `change.yml`: their types beside their labels, priority and size left
-   to triage.
+   to triage, and `.config/jig.yaml` naming `store: label` for type, priority
+   and size in the same pull request, so the forms never put native evidence
+   beside labels the configuration has not pinned.
    `facets/detect.ts`: GitHub's field default for a repository that keeps no
    labels for the facet. `plugin/dispatch/tick.ts` and its receipt: each
    facet's store and the pool's gaps in the tracker record.
    `label-taxonomy.yaml`: size not required on an epic. M9's README and its
    taxonomy template; `CONTRIBUTING.md`: file through `/jig:file-issue` or
    `tracker.ts create`, both checked. The audit skill re-scored against the
-   change. A change note (`release: minor`) saying that the next release
-   refuses an incomplete filing, and that a GitHub repository with no labels
-   for a facet now uses its organization's matching field.
+   change. A change note (`release: minor`) saying first that a facet with no
+   named store now waits on organization detection, and which repositories
+   name their stores before upgrading (Compatibility), then that the next
+   release refuses an incomplete filing, and that a GitHub repository with
+   no labels for a facet now uses its organization's matching field.
    Done when `tracker.ts create` without a priority warns naming the
    missing facet and files; a finding filed by `file-deferred.ts` carries a
    type, a priority and a size; an issue opened from the bug form is a Bug;
