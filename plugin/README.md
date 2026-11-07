@@ -691,6 +691,13 @@ writes nothing to the host:
   tick is, a stopped timer shows as one, and a host may serve the page from a
   copy of that database, with no other read. A tick for one repository leaves
   it as it was.
+- **How the recent ticks ran**, at the top of the History view: one row per
+  tick, the newest first, with its length, its phases as a bar, the slowest
+  single phase and its repository, the forge's rate budget it read, and a
+  chip for a defect, a low budget that skipped the optional reads, a
+  repository busy under another tick, or a failed exit; each row opens to
+  every phase and repository. The line carries the last 48 ticks, a tick for
+  one repository included.
 - **The outcome log**, on the History view, filtered by time (today, yesterday,
   seven or thirty days, or a range), repository, stage, account, class and
   reason, counting each class over the window and naming each recurring

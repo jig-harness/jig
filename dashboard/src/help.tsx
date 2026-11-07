@@ -21,9 +21,11 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
           </p>
           <p>
             <b>Now</b> answers what needs you, what is running on which account,
-            and what is coming. <b>History</b> is the outcome log: one row per
-            ended launch, filtered by time, repository, stage, account, class
-            and reason. The filters are the page's address, so a view is a link.
+            and what is coming. <b>History</b> shows how the recent ticks ran,
+            one row per tick with its slowest phase, and the outcome log: one
+            row per ended launch, filtered by time, repository, stage, account,
+            class and reason. The filters are the page's address, so a view is a
+            link.
           </p>
           <p>
             Words with a dotted underline, chips and the <b>?</b> beside a
