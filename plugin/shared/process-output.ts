@@ -48,7 +48,7 @@ interface OutputCancellation {
 }
 
 /** A bounded marker scan relays accounting failure without retaining diagnostics. */
-function ignoredAccountingOutput(): (text: string) => void {
+function accountingOutput(): (text: string) => void {
   const accounting = Boolean(process.env.JIG_FORGE_CALL_COUNT_FILE);
   let window = "";
   let reported = false;
@@ -74,7 +74,7 @@ export function captureProcessOutput(
   let tail = "";
   let bytes = 0;
   let bufferExceeded = false;
-  const inspectIgnored = ignoredAccountingOutput();
+  const inspectAccounting = accountingOutput();
   const overflow = (): void => {
     if (bufferExceeded || cancellation.timedOut()) return;
     bufferExceeded = true;
@@ -89,10 +89,10 @@ export function captureProcessOutput(
     }, 2000);
   };
   const receive = (stream: "stdout" | "stderr", text: string): void => {
+    if (stream === "stderr") inspectAccounting(text);
     // Ignored output never contributes to captured diagnostics or their budget.
     // Keep only enough overlap to recognize a marker split across chunks.
     if (stream === "stderr" && options.stderr === "ignore") {
-      inspectIgnored(text);
       return;
     }
     if (stream === "stderr") tail = lastBytes(tail + text);
