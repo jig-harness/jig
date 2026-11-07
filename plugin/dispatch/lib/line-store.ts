@@ -88,6 +88,8 @@ const ENTRY_FIELDS = {
       value === undefined || value === null || isString(value),
     decisions: listOf(DECISION_FIELDS),
     workspaces: Array.isArray,
+    workspace: (value) =>
+      value === undefined || value === null || isString(value),
   },
   sessions: {
     record: isString,
