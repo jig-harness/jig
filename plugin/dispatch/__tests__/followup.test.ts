@@ -23,6 +23,7 @@ import { readOutcomes } from "../lib/followup-outcomes.ts";
 import { readRecord } from "../lib/launches.ts";
 import { existingStateDb } from "../lib/state.ts";
 import type { TickReceipt } from "../receipts.ts";
+import type { LineSnapshot } from "../lib/dashboard-contract.ts";
 import { mergedPr, SLUG, type World, world } from "./fixtures.ts";
 import {
   account,
@@ -184,7 +185,7 @@ describe("jig dispatch --apply follows up a merge", () => {
   });
 
   it("notifies a pass that stopped on a question, with the question, and never starts it again", async () => {
-    const { w } = fixture();
+    const { w, ws } = fixture();
     const [launched] = launches(await applyTick(w, false));
     const id = String(launched?.record);
     await waitFor("the pass", () => claudeRuns(w).length === 1);
@@ -194,6 +195,7 @@ describe("jig dispatch --apply follows up a merge", () => {
     );
     writeFileSync(join(w.dir, "claude-exit"), "1");
     await waitFor("the exit", () => exitWritten(w, id));
+    w.setWorkspaces([]);
 
     const after = await applyTick(w, false);
     expect(launches(after)).toEqual([]);
@@ -207,6 +209,18 @@ describe("jig dispatch --apply follows up a merge", () => {
     expect(action?.reason).toContain(question);
     expect(action?.evidence.question).toBe(question);
     expect(action?.notice?.text).toContain(question);
+    const answer = await w.dispatch(["line", "--json"]);
+    expectSpawnExit(answer, 0);
+    const parsed = JSON.parse(answer.stdout) as {
+      value: { line: LineSnapshot };
+    };
+    expect(parsed.value.line.needs).toContainEqual(
+      expect.objectContaining({
+        target: "PR #9",
+        cause: "followup-failed",
+        workspace: ws,
+      }),
+    );
     expect(claudeRuns(w)).toHaveLength(1);
   });
 
