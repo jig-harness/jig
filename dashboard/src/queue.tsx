@@ -1,10 +1,11 @@
+import { FollowupBadge } from "./followups.tsx";
+import { Pr, RepoLink } from "./pr.tsx";
 /**
  * What is coming, ordered by what will happen to each target rather than where
  * it came from. The cap at the foot says items cannot be added here; it is never
  * a control.
  */
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { CopyButton } from "./copy.tsx";
 import { PanelHelp, SourceHint } from "./fold.tsx";
 import { Mark } from "./marks.tsx";
 import { MoreToggle, SHOWN_CLOSED, useShowAll } from "./more.tsx";
@@ -16,41 +17,16 @@ function QueueItem({ item, rest }: { item: QueueItemView; rest: boolean }) {
     <div className={rest ? "qItem rest" : "qItem"}>
       <div className="rowTop">
         <Mark role={item.role} />
-        {item.url === null ? (
-          <span className="tgt">{item.target}</span>
-        ) : (
-          <a
-            className="tgt"
-            href={item.url}
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            {item.target}
-          </a>
-        )}
-        <span className="m sm mut">{item.repo}</span>
+        <Pr repo={item.repo} target={item.target} url={item.url} />
+        <RepoLink repo={item.repo} url={item.url} />
         <SourceHint source={item.source} />
+        <FollowupBadge label={item.followup} />
         {item.wait === null ? null : (
           <span className="m sm mut end nowrap">{item.wait}</span>
         )}
       </div>
       {item.title === null ? null : <div className="sm">{item.title}</div>}
       {item.why === null ? null : <div className="sm mut qWhy">{item.why}</div>}
-      <div className="qTools">
-        {item.url === null ? (
-          <CopyButton
-            text={item.target}
-            idle="Copy key"
-            aria={`Copy key ${item.target}`}
-          />
-        ) : (
-          <CopyButton
-            text={item.url}
-            idle="Copy link"
-            aria={`Copy link to ${item.target}`}
-          />
-        )}
-      </div>
     </div>
   );
 }

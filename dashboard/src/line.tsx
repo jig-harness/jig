@@ -1,3 +1,6 @@
+import { FollowupBadge } from "./followups.tsx";
+import { runningFollowup } from "./followup-view.ts";
+import { Pr } from "./pr.tsx";
 /**
  * What is running: accounts and sessions as one surface. Each account is a row
  * and each held slot a box inside it, so which session holds which slot is a
@@ -30,19 +33,11 @@ function Slot({ slot }: { slot: SlotView }) {
     <div className="slot">
       <div className="rowTop">
         <Mark role={slot.role} />
-        {slot.url === null ? (
-          <span className="tgt">{slot.target}</span>
-        ) : (
-          <a
-            className="tgt"
-            href={slot.url}
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            {slot.target}
-          </a>
-        )}
+        <Pr repo={slot.repo} target={slot.target} url={slot.url} />
         <StageHint mark={slot.mark} stage={slot.stage} />
+        <FollowupBadge
+          label={slot.stage === "followup" ? runningFollowup(slot.kind) : null}
+        />
       </div>
       <div className="slotLow">
         <div className="slotFact">{slot.fact}</div>

@@ -1,7 +1,8 @@
 /**
- * The Copy control: one word, turning to Copied for a moment and announced
+ * The Copy control: an icon with feedback for a moment, announced
  * politely. It writes only to the reader's own clipboard.
  */
+import { Check, Copy, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 const SHOWN_MS = 1800;
@@ -59,6 +60,7 @@ export function CopyButton({
       className="copy"
       type="button"
       aria-label={aria}
+      title={said ?? aria}
       onClick={(event) => {
         void writeClip(text, event.currentTarget).then((copied) => {
           const label = copied ? "Copied" : "Copy failed";
@@ -72,7 +74,13 @@ export function CopyButton({
         });
       }}
     >
-      {said ?? idle}
+      {said === "Copied" ? (
+        <Check size={14} aria-hidden="true" />
+      ) : said === "Copy failed" ? (
+        <X size={14} aria-hidden="true" />
+      ) : (
+        <Copy size={14} aria-hidden="true" />
+      )}
     </button>
   );
 }

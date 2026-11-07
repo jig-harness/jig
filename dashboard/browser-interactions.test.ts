@@ -1,3 +1,4 @@
+import { queued, drive } from "./fixture-line.ts";
 /**
  * What a person opens and copies on the page, in a real browser against the
  * real server: folds and log rows by keyboard, hints on hover, tap and focus,
@@ -64,8 +65,8 @@ describe("the disclosures", () => {
         LAPTOP,
       );
       try {
-        await shows(page, ".rowSum");
-        const row = page.locator(".rowSum").first();
+        await shows(page, ".rowExpand");
+        const row = page.locator(".rowExpand").first();
         await row.focus();
         await page.keyboard.press("Enter");
         await shows(page, ".rowBody");
@@ -232,7 +233,7 @@ describe("the disclosures", () => {
       try {
         await shows(page, ".need");
         await page
-          .locator(".need .foldBtn", { hasText: "The whole decision" })
+          .getByRole("button", { name: "The whole decision" })
           .first()
           .click();
         await shows(page, ".quote.md");
@@ -278,15 +279,17 @@ describe("the disclosures", () => {
         await copy.click();
         await until(
           "the button says it copied",
-          async () => (await copy.innerText()) === "Copied",
+          async () => (await copy.getAttribute("title")) === "Copied",
         );
         expect(await page.locator(".clip").inputValue()).toBe(
           "answer PRRT_x1: ",
         );
         expect(await page.locator(".say").innerText()).toBe("Copied");
         await until(
-          "the button is back to its word",
-          async () => (await copy.innerText()) === "Copy answer line",
+          "the copy icon is ready again",
+          async () =>
+            (await copy.getAttribute("title")) ===
+            "Copy the answer line for PR #456",
         );
 
         const need = page.locator(".need").first();
@@ -298,7 +301,7 @@ describe("the disclosures", () => {
         await answer.click();
         await until(
           "the button says it copied",
-          async () => (await answer.innerText()) === "Copied",
+          async () => (await answer.getAttribute("title")) === "Copied",
         );
         expect(await page.locator(".clip").inputValue()).toBe(
           "answer PRRT_x1: A, keep it small",
@@ -348,7 +351,7 @@ describe("a phone with everything open", () => {
         expect(await shortControls(page)).toEqual([]);
 
         await openView(page, "History");
-        await page.locator(".rowSum").first().click();
+        await page.locator(".rowExpand").first().click();
         await shows(page, ".rowBody");
         expect(await overflowOf()).toBeLessThanOrEqual(0);
         expect(await shortControls(page)).toEqual([]);
@@ -370,3 +373,175 @@ describe("a phone with everything open", () => {
     TIMEOUT,
   );
 });
+
+browserIt(
+  "PR links, live merged state, hover context and ID-only icon copy",
+  async () => {
+    const server = await served("quiet");
+    const { page, context } = await open(
+      requireBrowser(),
+      server.origin,
+      server.url,
+      LAPTOP,
+    );
+    try {
+      await page.route("**/pr?*", async (route) => {
+        const params = new URL(route.request().url()).searchParams;
+        await route.fulfill({
+          json: {
+            state: "MERGED",
+            title: "A merged change",
+            isDraft: false,
+            url: `https://github.com/${params.get("repo")}/pull/${params.get("pr")}`,
+            checkedAt: "2026-11-06T21:00:00.000Z",
+          },
+        });
+      });
+      await page.reload();
+      await shows(page, ".pr-merged");
+      const pr = page.locator(".pr-merged").first();
+      const link = pr.locator("a.tgt");
+      expect(await link.getAttribute("href")).toMatch(/\/pull\/\d+$/);
+      const copy = pr.locator(".copy");
+      expect(await copy.locator("svg").count()).toBe(1);
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await copy.click();
+      await until(
+        "the ID is copied",
+        async () => (await copy.getAttribute("title")) === "Copied",
+      );
+      const id = (await link.textContent())?.replace("PR #", "") ?? "";
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+        id,
+      );
+      await pr.locator(".prState").hover();
+      await shows(page, ".pop");
+      expect(await page.locator(".pop").textContent()).toContain(
+        "A merged change",
+      );
+      expect(await page.locator(".pop a").first().getAttribute("href")).toMatch(
+        /^https:\/\/github.com\/[^/]+\/[^/]+$/,
+      );
+    } finally {
+      await context.close();
+    }
+  },
+  TIMEOUT,
+);
+
+browserIt(
+  "merged PRs show awaiting and running follow-ups in the summary and their cards",
+  async () => {
+    const server = await served("quiet");
+    const { page, context } = await open(
+      requireBrowser(),
+      server.origin,
+      server.url,
+      LAPTOP,
+    );
+    try {
+      await page.route("**/state?*", async (route) => {
+        const response = await route.fetch();
+        const body = await response.json();
+        const line = body.value.line;
+        line.needs = [];
+        line.queue = [
+          queued({
+            source: "merged",
+            group: "starts",
+            repo: "example-org/web",
+            pr: 7,
+            title: "Queued change",
+            why: "Merge observed",
+          }),
+        ];
+        line.sessions = [
+          drive({
+            stage: "followup",
+            account: line.accounts[0].name,
+            repo: "example-org/web",
+            pr: 8,
+            title: "Running change",
+            created: 900,
+          }),
+        ];
+        await route.fulfill({ json: body });
+      });
+      await page.reload();
+      await shows(page, ".followupSummary");
+      const summary = page.getByLabel("Post-merge follow-ups");
+      await until(
+        "the follow-up counts are visible",
+        async () =>
+          (await summary.textContent())?.includes("1 awaiting follow-up") ===
+          true,
+      );
+      expect(await summary.textContent()).toContain("1 follow-up running");
+      expect(await page.locator(".qItem .followupBadge").textContent()).toBe(
+        "Merged · Awaiting follow-up",
+      );
+      expect(await page.locator(".slot .followupBadge").textContent()).toBe(
+        "Merged · Follow-up running",
+      );
+    } finally {
+      await context.close();
+    }
+  },
+  TIMEOUT,
+);
+
+browserIt(
+  "merged drive decisions stay removed while PR state refreshes",
+  async () => {
+    const server = await served("loud");
+    const { page, context } = await open(
+      requireBrowser(),
+      server.origin,
+      server.url,
+      LAPTOP,
+    );
+    let hold = false;
+    let refreshing = false;
+    let release: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      await page.clock.install();
+      await page.route("**/pr?*", async (route) => {
+        const params = new URL(route.request().url()).searchParams;
+        if (hold) {
+          refreshing = true;
+          await pending;
+        }
+        await route.fulfill({
+          json: {
+            state: "MERGED",
+            title: "Merged change",
+            isDraft: false,
+            url: `https://github.com/${params.get("repo")}/pull/${params.get("pr")}`,
+            checkedAt: "2026-11-06T21:00:00.000Z",
+          },
+        });
+      });
+      await page.reload();
+      const decision = page
+        .locator(".need .tgt")
+        .filter({ hasText: "PR #456" });
+      await shows(page, ".pr-merged");
+      await until(
+        "the merged decision is removed",
+        async () => (await decision.count()) === 0,
+      );
+      hold = true;
+      await page.clock.fastForward(60_000);
+      await until("PR state is being refreshed", async () => refreshing);
+      await page.clock.runFor(50);
+      expect(await decision.count()).toBe(0);
+    } finally {
+      release?.();
+      await context.close();
+    }
+  },
+  TIMEOUT,
+);

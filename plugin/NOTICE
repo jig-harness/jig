@@ -90,7 +90,7 @@ plugin/shared/vendor/optique.LICENSE
 plugin/dispatch/dashboard-page/bundle.LICENSE
   The libraries bundled into the dispatch dashboard's page, each with its
   version and licence in this file: React, TanStack Query, Table, Virtual,
-  Markdown and Pacer, Base UI and what they depend on, all under the MIT
+  Markdown and Pacer, Base UI, Lucide React and what they depend on, all under the MIT
   License except where the file says otherwise
 plugin/skills/decide/scripts/ste-lint/LICENSE
   ste-lint, MIT License, Copyright (c) 2026 Dustin Yuchen Teng
