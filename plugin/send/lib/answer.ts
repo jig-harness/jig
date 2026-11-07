@@ -19,7 +19,14 @@ import {
 } from "../../skills/drive-pr/scripts/lib/answer-comment.ts";
 import { parkedQuestions, readDrive } from "../../ask/lib/drive.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
-import { type Planned, refused } from "./plan.ts";
+import { NEXT_TICK, type Planned, refused, type TickReader } from "./plan.ts";
+
+/** The re-arm, which the tick starts under the rearm stage, as an answer's reader. */
+const TICK: TickReader = {
+  stage: "rearm",
+  reader: (tick) =>
+    `the re-arm, which hands your answer to the drive's passes as your verdict once every parked question is answered: ${tick} where a dispatcher reads the pull request, else the re-arm command the stop printed`,
+};
 
 /** The plan of an answer, or why the drive cannot take it. */
 export async function planAnswer(
@@ -74,8 +81,8 @@ export async function planAnswer(
     writesAs,
     record: `a comment on pull request ${pr}: "${answerLine(key, text)}", with the record envelope naming ${login} and this host (as a digest) in a hidden marker`,
     where: doc.url,
-    reader:
-      "the re-arm, which hands your answer to the drive's passes as your verdict once every parked question is answered: the dispatcher's next tick where a dispatcher reads the pull request, else the re-arm command the stop printed",
+    reader: TICK.reader(NEXT_TICK),
+    tick: TICK,
     undo: "none once the re-arm has read it; until then, delete the comment",
     notice:
       "the answer is a comment on the pull request, readable by whoever can read the pull request",
