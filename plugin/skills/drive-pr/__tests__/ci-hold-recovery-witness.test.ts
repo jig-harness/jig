@@ -69,3 +69,28 @@ it("retains Git's diagnostic when the worktree is no longer a repository", async
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+for (const state of [{}, { ...freshState(123), ciHold: "held" }, "{"]) {
+  it(`retains a termination witness for unreadable saved state ${JSON.stringify(state)}`, () => {
+    const root = mkdtempSync(join(tmpdir(), "ci-hold-invalid-witness-"));
+    try {
+      const dir = scopedStateDir(root);
+      const record = {
+        worktree: root,
+        started: "2026-11-06T12:00:00Z",
+        pid: 12345,
+        host: "test-host",
+        released: true as const,
+      };
+      writeState(dir, "123", state);
+      writeDriverRecord(dir, "123", record);
+      removeDriverRecord(dir, "123", record.started);
+      expect(readDriverRecord(dir, "123")).toEqual(record);
+      writeState(dir, "123", freshState(123));
+      removeDriverRecord(dir, "123", record.started);
+      expect(readDriverRecord(dir, "123")).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}

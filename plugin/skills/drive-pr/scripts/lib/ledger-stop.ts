@@ -31,7 +31,7 @@ import { driveState } from "./driver/paths.ts";
 import { helperTimeoutSeconds, pidAlive, run, tsArgv } from "./proc.ts";
 import { worktreePathKey } from "./state/actor.ts";
 import { readStateRow } from "./state/store.ts";
-import { isRecord } from "../../../../shared/guards.ts";
+import { isUsableState } from "./state/schema.ts";
 import { driveDb } from "./state/db.ts";
 import { ledgerOfStoppedDriver } from "./state/ledger.ts";
 import { readLedgerSnapshot, resolveLogin } from "./state/ledger-forge.ts";
@@ -100,12 +100,13 @@ export function removeDriverRecord(
       );
       return;
     }
-    if (
-      isRecord(state) &&
-      isRecord(state.ciHold) &&
-      state.ciHold.phase !== "released"
-    )
+    if (!isUsableState(state, Number(pr))) {
+      console.error(
+        `ledger: PR #${pr}'s driver record is retained: saved state is unreadable.`,
+      );
       return;
+    }
+    if (state.ciHold !== null && state.ciHold.phase !== "released") return;
   }
   const drive = driveDb(stateDir);
   drive.db.run(

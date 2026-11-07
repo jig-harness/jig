@@ -1,4 +1,5 @@
 import { resolve, join } from "node:path";
+import { existsSync } from "node:fs";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { peekCloneKey } from "../scripts/lib/state/clone-key.ts";
 import { Defect } from "../../../shared/errors.ts";
@@ -279,6 +280,37 @@ function treeAndReviewReads(options: Options) {
 }
 
 describe("CI hold doctor evidence gathering", () => {
+  it("passes installed sibling helper paths to the review evaluator", async () => {
+    const { state } = arrange();
+    const evaluate = watch(status, "evaluate").mockImplementation(
+      async (ctx, report) => {
+        for (const path of [
+          ctx.driveStateScript,
+          ctx.listThreadsScript,
+          ctx.summaryScript,
+        ])
+          expect(existsSync(path)).toBe(true);
+        expect(ctx.listThreadsScript).toBe(
+          resolve(
+            import.meta.dir,
+            "../../resolve-review-comments/scripts/list-unresolved-threads.ts",
+          ),
+        );
+        Object.assign(report, { state: "CONVERGED", apiHead: head });
+        return 3;
+      },
+    );
+    const result = await ciHoldDoctor(
+      stateDir,
+      "123",
+      state,
+      "empty",
+      resolve(import.meta.dir, "../scripts"),
+    );
+    expect(evaluate).toHaveBeenCalled();
+    expect(result.review).toBe("converged");
+  });
+
   it("reconciles a running forge ledger with a stopped local identity and offers direct release", async () => {
     const { state, calls } = arrange();
     const result = await ciHoldDoctor(

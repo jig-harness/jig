@@ -227,14 +227,27 @@ function traceGhCall<
 
 /** Adapt a process runner once, preserving its options and complete result type. */
 export function traceRunner<
-  T extends { code: number; timedOut: boolean },
-  O extends { timeoutSec?: number },
+  T extends { code: number; timedOut: boolean; stderr?: string },
+  O extends { timeoutSec?: number; stderr?: "pipe" | "inherit" | "ignore" },
 >(
   fn: (argv: string[], opts: O) => Promise<T>,
   defaults: O,
 ): (argv: string[], opts?: O) => Promise<T> {
   return (argv, opts = defaults) =>
-    traceCommand("run", argv[0] ?? "", opts.timeoutSec, () => fn(argv, opts));
+    traceCommand("run", argv[0] ?? "", opts.timeoutSec, async () => {
+      // Accounting diagnostics must cross every helper boundary, even when
+      // its caller discards captured stderr. Preserve the other diagnostics'
+      // requested destination and the runner's returned stderr contract.
+      const accounting = Boolean(process.env.JIG_FORGE_CALL_COUNT_FILE);
+      const captureIgnored = accounting && opts.stderr === "ignore";
+      const result = await fn(
+        argv,
+        captureIgnored ? { ...opts, stderr: "pipe" } : opts,
+      );
+      if (accounting && result.stderr?.includes(FORGE_ACCOUNTING_UNAVAILABLE))
+        console.error(FORGE_ACCOUNTING_UNAVAILABLE);
+      return captureIgnored ? { ...result, stderr: "" } : result;
+    });
 }
 
 /** Adapt the gh boundary without copying its deadline or span bookkeeping. */
