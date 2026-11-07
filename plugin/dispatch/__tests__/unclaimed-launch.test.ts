@@ -5,8 +5,9 @@
  * and released by `jig dispatch clear`; one whose wrapper claimed it within
  * `unclaimed_after` is never flagged, however old the answer grows.
  */
+import { followupWorkspace } from "./followup-fixtures.ts";
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { captureIdentity } from "../../shared/liveness.ts";
@@ -17,29 +18,10 @@ import {
   writeRecord,
 } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
-import { mergedPr, SLUG, type World, world } from "./fixtures.ts";
-import {
-  account,
-  dispatchState,
-  machineFile,
-  recordIds,
-} from "./launch-fixtures.ts";
-import {
-  applyTick,
-  claudeRuns,
-  notifyWrites,
-  withOrigin,
-} from "./pickup-fixtures.ts";
+import { type World, world } from "./fixtures.ts";
+import { dispatchState, recordIds } from "./launch-fixtures.ts";
+import { applyTick, claudeRuns, notifyWrites } from "./pickup-fixtures.ts";
 
-const CONFIG = `issue_tracker:
-  adapter: github
-  github:
-    repository: ${SLUG}
-dispatch:
-  followup_command: /followup
-`;
-
-const HEAD = "feature/9-done";
 const MINUTE = 60_000;
 
 let current: World | null = null;
@@ -52,20 +34,7 @@ afterEach(() => {
 function fixture(): World {
   const w = world();
   current = w;
-  w.setConfig(CONFIG);
-  withOrigin(w);
-  w.setPrs("merged", [mergedPr(9, HEAD, "2026-10-31T12:00:00Z")]);
-  w.setComments(9, []);
-  const ws = join(w.root, "ws-9");
-  mkdirSync(ws, { recursive: true });
-  w.setWorkspaces([{ branch: HEAD, linkedPR: 9, path: ws }]);
-  machineFile(
-    w,
-    [account(w, "a", "a@example.com")],
-    {},
-    ["followup", "notify"],
-    { followup_since: "2026-10-30T00:00:00Z" },
-  );
+  followupWorkspace(w);
   writeFileSync(join(w.dir, "orca-terminal-noop"), "");
   return w;
 }
