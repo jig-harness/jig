@@ -232,7 +232,7 @@ export function foreignHold(
       why: `${claimWords(latest)} holds its launch: that host has not written its end`,
     };
   return (
-    refusedOn(pr, latest, "launched") ??
+    (pr.evidence.rearm === true ? null : refusedOn(pr, latest, "launched")) ??
     armedOrRedriven(pr, theirs) ?? { kind: "none" }
   );
 }
@@ -277,14 +277,15 @@ export function settleSharedConflictStops(
   host: string,
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (pr.stale?.conflictStop !== true) return pr;
+    if (pr.stale?.conflictStop !== true && pr.stale?.uncleanTree !== true)
+      return pr;
     const hold = foreignHold(pr, claims.get(pr.number), host);
     if (hold.kind !== "redriven" || open(hold.claim)) return pr;
     const { stale: _settled, ...rest } = pr;
     return {
       ...rest,
       class: "needs-person",
-      why: `stopped on a conflict with its base, and ${claimWords(hold.claim)} already re-drove it for this change and has ended: only a person settles it until its head or its base moves (see the drive's handoff)`,
+      why: `stopped ${pr.stale.uncleanTree === true ? "12 (worktree unclean)" : "on a conflict with its base"}, and ${claimWords(hold.claim)} already re-drove it for this change and has ended: only a person settles it until ${pr.stale.uncleanTree === true ? "its head moves" : "its head or its base moves"} (see the drive's handoff)`,
     };
   });
 }

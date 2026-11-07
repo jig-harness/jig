@@ -125,6 +125,13 @@ const BUNFIG = resolve(import.meta.dir, "bunfig.toml");
 function driveCommand(record: LaunchRecord, script: string): string[] {
   const pr = String(record.pr);
   const deadline = record.passTimeoutSec;
+  const settleTree =
+    record.redrive?.uncleanTree === true ||
+    (record.rearmLabel != null && record.facts.includes(", exit 12,"));
+  const pass = passCommand(record.vendor, pr, record.codexBypass === true);
+  if (settleTree)
+    pass[pass.length - 1] +=
+      "\nThe original tree holds uncommitted work. Inspect it: commit and push edits that belong to this change, or discard edits only when they are known disposable. Stop if ownership is unclear. Settle the existing tree before reporting convergence.";
   return [
     process.execPath,
     "--no-env-file",
@@ -133,11 +140,12 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     pr,
     ...(record.action === "takeover" ? ["--take-over"] : []),
     "--bots-only",
+    ...(settleTree ? ["--settle-worktree"] : []),
     ...(typeof deadline === "number"
       ? ["--pass-timeout", String(deadline)]
       : []),
     "--",
-    ...passCommand(record.vendor, pr, record.codexBypass === true),
+    ...pass,
   ];
 }
 

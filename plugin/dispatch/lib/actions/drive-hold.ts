@@ -146,8 +146,26 @@ export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
   const holding = mine.find((r) => holds(r.state));
   if (holding !== undefined)
     return { kind: "held", record: holding, why: describe(holding) };
+  if (pr.evidence.rearm === true) return pendingRequest(mine);
   if (pr.class === "unarmed") return armed(pr, mine) ?? { kind: "none" };
   return standingRefusal(pr, mine) ?? redriven(pr, mine) ?? { kind: "none" };
+}
+
+/** A delivered request stays held until its label removal is acknowledged. */
+function pendingRequest(mine: ReadRecord[]): DriveHold {
+  const consumed = mine.findLast(
+    (r) =>
+      r.record.rearmLabel != null &&
+      r.record.rearmConsumed !== true &&
+      r.record.attempts.some((a) => a.outcome === "sent"),
+  );
+  if (consumed !== undefined)
+    return {
+      kind: "armed",
+      record: consumed,
+      why: `launch record ${consumed.record.id} already carried out this rearm request; waiting for the request label removal to be acknowledged`,
+    };
+  return { kind: "none" };
 }
 
 /** Whether the launch acts on a pull request with no ledger, which its `drive` label asked to arm. */
@@ -205,14 +223,15 @@ export function settleConflictStops(
   records: ReadRecord[],
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (pr.stale?.conflictStop !== true) return pr;
+    if (pr.stale?.conflictStop !== true && pr.stale?.uncleanTree !== true)
+      return pr;
     const hold = driveHold(pr, records);
     if (hold.kind !== "redriven") return pr;
     const { stale: _settled, ...rest } = pr;
     return {
       ...rest,
       class: "needs-person",
-      why: `stopped 9, and launch record ${hold.record.record.id} already re-drove it for this change and ${endOf(hold.record)}: only a person settles it until its head or its base moves (see the drive's handoff)`,
+      why: `stopped ${pr.stale.uncleanTree === true ? "12" : "9"}, and launch record ${hold.record.record.id} already re-drove it for this change and ${endOf(hold.record)}: only a person settles it until ${pr.stale.uncleanTree === true ? "its head moves" : "its head or its base moves"} (see the drive's handoff)`,
     };
   });
 }

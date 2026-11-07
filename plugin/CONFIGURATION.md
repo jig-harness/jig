@@ -1156,6 +1156,7 @@ take commands from a person. With the default prefix:
 | `jig:held` | the dispatcher | the pull request waits its turn in a serialized change area (below): the dispatcher drives it once it leads |
 | `jig:followed-up` | the dispatcher | merged, and its follow-up is done |
 | `jig:drive` | a person, by hand or with `jig send … drive` | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists. The adoption rule (`dispatch.adopt`, below) does the same for a repository's own recent pull requests without the label |
+| `jig:rearm` | a person, by hand or with `jig send … rearm` | request another attempt for a stopped drive in its existing worktree, through the machine file's `rearm` stage and account admission. Running drives and a person's recorded stops are refused; an accepted launch consumes the label |
 | `jig:hold` | a person, by hand or with `jig send … hold` (and `release`) | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
 
 A serialized change area (`serialize: true` on an area of the

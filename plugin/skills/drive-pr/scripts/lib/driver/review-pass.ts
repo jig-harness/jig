@@ -46,6 +46,7 @@ export async function runReviewPassPhase(
   // it inherited is not taken on its word: the next gate measures the tree
   // again (`unpushed.ts`) and hands on any commit it left unpushed.
   if (disposition.kind === "ok") {
+    context.settleWorktree = false;
     context.passNotice = "";
     context.carriedNotice = "";
     clearPendingVerdicts(await resolveStateDir(), context.pr);

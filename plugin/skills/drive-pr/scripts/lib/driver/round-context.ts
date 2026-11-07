@@ -6,6 +6,8 @@ import type { DriveLock } from "./locks.ts";
 import type { AccountIdentity } from "./../identity.ts";
 
 export interface DriveRoundContext {
+  /** A requested worktree settlement is pending until a review pass succeeds. */
+  settleWorktree?: boolean;
   passes: number;
   prevFingerprint: string | null;
   noopRounds: number;

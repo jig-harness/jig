@@ -58,7 +58,7 @@ export const PROJECTED_STATES = [
 export type StateName = (typeof PROJECTED_STATES)[number];
 
 /** The labels a person writes and the tick reads. */
-export const COMMANDS = ["drive", "hold"] as const;
+export const COMMANDS = ["drive", "rearm", "hold"] as const;
 export type CommandName = (typeof COMMANDS)[number];
 
 /** What each label says, for `jig install dispatch --repo`, which creates them. */
@@ -72,6 +72,8 @@ const MEANINGS: Record<StateName | CommandName, string> = {
   held: "Waits its turn in a serialized change area: the dispatcher drives it once it leads",
   "followed-up": "Merged, and its follow-up is done",
   drive: "A person asks the dispatcher to drive this pull request",
+  rearm:
+    "A person asks the dispatcher to re-arm a stopped drive in its existing tree",
   hold: "A person stands the dispatcher down from this pull request",
 };
 

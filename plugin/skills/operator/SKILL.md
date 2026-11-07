@@ -203,6 +203,7 @@ entry is a trusted person's reply.
 | hold a merged pull request's follow-up | `jig send followup@<owner>/<name> <PR> hold --dry-run` |
 | release a merged pull request's follow-up | `jig send followup@<owner>/<name> <PR> release --dry-run` |
 | drive a pull request that has no drive yet | `jig send drive@<owner>/<name> <PR> drive --dry-run` |
+| re-arm a stopped drive in its existing tree | `jig send drive@<owner>/<name> <PR> rearm --dry-run` |
 | answer a parked question | `jig send drive@<owner>/<name> <PR> answer <key> '<their words>' --dry-run` |
 | pause a drive | `jig send drive@<owner>/<name> <PR> pause --dry-run` |
 | hold a drive's pushes | `jig send drive@<owner>/<name> <PR> hold-push --dry-run` |
@@ -214,6 +215,12 @@ entry is a trusted person's reply.
 hold-push` or `resume stop`. The mailbox verbs (`pause`, `hold-push`,
 `resume`, `stop`) reach a driver on this machine only; for a drive held
 elsewhere `send` refuses and names that host.
+
+`rearm` requests the dispatcher's next tick to re-arm a stopped drive on an
+admitted account in its existing worktree. It refuses a running drive, a
+person's recorded stop and a missing local tree. An exit `12` recovery gets
+one automatic attempt per head; its repeated stop names `rearm` for the
+person's next attempt after inspecting the handoff.
 
 ### The rules for sending
 

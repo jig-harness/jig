@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectionDeadlineMs } from "../../runtime/launcher.ts";
 import { driveHold } from "../lib/actions/drive-hold.ts";
+import { consumeRearm, pendingRearm } from "../lib/actions/rearm-request.ts";
+import { failed, ok } from "../../shared/outcome.ts";
 import {
   type LaunchAttempt,
   type LaunchExit,
@@ -12,6 +14,7 @@ import {
   claimRecord,
   pruneLaunches,
   readLaunches,
+  readRecord,
   recordExit,
   removeRecord,
   settledEnds,
@@ -95,6 +98,47 @@ const silent = (started: string): DrivenPr => ({
   class: "silent",
   why: "",
   evidence: { generation: 1, exit: 8, heartbeat: "x", started } as never,
+});
+
+it("holds a delivered rearm only until its label removal is acknowledged, then permits another request at unchanged facts", () => {
+  const request: DrivenPr = {
+    ...silent(""),
+    class: "re-armable",
+    evidence: { generation: 1, exit: 8, heartbeat: "x", rearm: true },
+  };
+  const sent = record("20260101T000000Z-aaaaaaaa", {
+    rearmLabel: "jig:rearm",
+    attempts: [
+      { at: "2026-01-01T00:00:00.000Z", outcome: "sent", detail: "accepted" },
+    ],
+  });
+  const prior = ended(sent, 1, "2026-01-01T01:00:00.000Z");
+  expect(driveHold(request, [prior]).kind).toBe("armed");
+  request.evidence.generation = 2;
+  request.evidence.heartbeat = "later";
+  expect(driveHold(request, [prior]).kind).toBe("armed");
+  sent.rearmConsumed = true;
+  expect(driveHold(request, [prior]).kind).toBe("none");
+});
+
+it("keeps a refused request-label removal pending, then durably acknowledges its retry", async () => {
+  const dir = root();
+  const sent = record("20260101T000000Z-aaaaaaaa", {
+    rearmLabel: "jig:rearm",
+    attempts: [
+      { at: "2026-01-01T00:00:00.000Z", outcome: "sent", detail: "accepted" },
+    ],
+  });
+  writeRecord(sent, dir);
+  const refused = await consumeRearm(sent, dir, async () =>
+    failed("refused", "forge unavailable"),
+  );
+  expect(refused.ok).toBe(false);
+  expect(pendingRearm(sent)).toBe(true);
+  const removed = await consumeRearm(sent, dir, async () => ok(undefined));
+  expect(removed.ok).toBe(true);
+  expect(pendingRearm(sent)).toBe(false);
+  expect(readRecord(sent.id, dir)?.rearmConsumed).toBe(true);
 });
 
 describe("a takeover behind a refusal", () => {

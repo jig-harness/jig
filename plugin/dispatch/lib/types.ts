@@ -123,6 +123,8 @@ export interface StaleCause {
   change: string;
   /** The drive stopped `9`: a re-drive that leaves it so at this change is a person's to settle. */
   conflictStop?: true;
+  /** Exit 12 recovery must settle the original tree, once per head. */
+  uncleanTree?: true;
   /** Changes an earlier launch of the same record may have acted on before a replay moved `change` on; each counts as re-driven. */
   earlier?: string[];
 }
@@ -451,7 +453,7 @@ export interface RepoReport {
 /** A command label a pull request carries, and what the tick made of it. */
 export interface LabelCommand {
   target: string;
-  command: "drive" | "hold";
+  command: "drive" | "rearm" | "hold";
   note: string;
 }
 

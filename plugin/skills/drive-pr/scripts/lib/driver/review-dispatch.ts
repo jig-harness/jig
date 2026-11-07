@@ -154,7 +154,16 @@ export async function prepareReviewPass(context: DriveRoundContext): Promise<
     notice = boundPassNotice(
       stateDir,
       context.pr,
-      [context.passNotice, unpushedNoticeFor(context), context.carriedNotice]
+      [
+        ...(context.settleWorktree
+          ? [
+              "WORKTREE_UNCLEAN recovery: this tree holds uncommitted work from a stopped drive. Inspect it, validate and commit work that belongs to this change, and discard only work you establish does not belong. Push through the guarded push and leave a clean tree; do not stand down merely because review already converged.",
+            ]
+          : []),
+        context.passNotice,
+        unpushedNoticeFor(context),
+        context.carriedNotice,
+      ]
         .filter((part) => part !== "")
         .join("\n\n"),
     );

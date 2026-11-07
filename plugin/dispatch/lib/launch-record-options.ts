@@ -1,0 +1,61 @@
+/** Backward-compatible validation of optional launch-record fields. */
+import { isMapping } from "../../shared/config-layers.ts";
+
+function optionalText(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+/** Whether a value is absent or a time. */
+function optionalTime(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "string" && Number.isFinite(Date.parse(value)))
+  );
+}
+
+/** Whether a value is absent, `null`, or a whole number of seconds. */
+function optionalSeconds(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** The fields a later version added, each absent or of its type. */
+export function optionalLaunchFields(value: Record<string, unknown>): boolean {
+  return (
+    [
+      "agentId",
+      "model",
+      "effort",
+      "command",
+      "sessionId",
+      "mark",
+      "rearmLabel",
+    ].every((k) => optionalText(value[k])) &&
+    [value.marker, value.round].every(
+      (v) => v === undefined || v === null || typeof v === "number",
+    ) &&
+    optionalSeconds(value.passTimeoutSec) &&
+    (value.rearmConsumed === undefined ||
+      typeof value.rearmConsumed === "boolean") &&
+    (value.codexBypass === undefined ||
+      typeof value.codexBypass === "boolean") &&
+    optionalTime(value.endedAt) &&
+    optionalTime(value.cancelledAt) &&
+    optionalTime(value.openedAt) &&
+    isRedrive(value.redrive)
+  );
+}
+
+/** Whether a value is absent, `null`, or a stale cause. */
+function isRedrive(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (isMapping(value) &&
+      typeof value.cause === "string" &&
+      typeof value.change === "string" &&
+      (value.earlier === undefined ||
+        (Array.isArray(value.earlier) &&
+          value.earlier.every((c) => typeof c === "string"))))
+  );
+}

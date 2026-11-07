@@ -537,6 +537,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
     markReadyPolicy,
     deadlineRetryBudget,
     firstPassNotice,
+    settleWorktree: options.settleWorktree,
   });
   const exit = await settlement.done(roundsExit);
   return exit;
