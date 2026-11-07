@@ -349,7 +349,12 @@ file.
   (configured, kept in labels, detected), and on GitHub what detection saw
   (the field, its options, the credential that read them), so the check, the
   audit and a person can see where a value is kept without reading the
-  adapter.
+  adapter. It reports two things apart: the **store health** of each
+  configured store, which uses only the access the store's own reads and
+  writes use, and **organization discovery**, the optional read of the
+  organization's issue types and fields. A denied discovery read is reported
+  as discovery unavailable and fails nothing; a configured store that
+  cannot be read or written is a store that fails closed.
 
 An adapter filters by a facet in the tracker's own query where it can: a
 label store on every adapter, Jira's issue type, priority and custom fields
@@ -406,9 +411,10 @@ organization and a non-secret fingerprint of the credential that read it (a
 salted hash of the token, never its login, which two tokens of different
 reach share), and dropped when
 a write is refused for a value the cache named. For a facet whose
-configuration names its store, only `facetStores()` and the audit read the
-organization, to report the field it could move to; its reads and writes
-never wait on detection. Detection needs a credential that can read the
+configuration names its store, only the discovery part of `facetStores()`
+and the audit read the organization, to report the field it could move to;
+its reads, its writes and its store health never wait on detection or on
+discovery. Detection needs a credential that can read the
 organization's issue types and fields, which a repository-scoped token or a
 workflow's `GITHUB_TOKEN` may not; a repository that files and reads with
 such a credential names every facet's store, so its reads and writes need no
@@ -528,7 +534,8 @@ Its bounds:
 - **A store problem moves nothing.** When more than half of the open issues
   outside triage that must carry a facet, by the tracker's own counts, lack
   that facet, or
-  `facetStores()` reports a store that fails closed, it moves none and
+  `facetStores()` reports a configured store whose health fails closed, it
+  moves none and
   reports the store and detection result instead, since that is a store
   that stopped answering, not a pile of bad filings.
 - **It prints keys, not content.** Each line is an issue key and its missing
@@ -539,9 +546,10 @@ On Jig's repository a weekly workflow, `.github/workflows/issue-fields.yml`,
 runs the sweep, declared with its cadence in `.config/scheduled-jobs.yaml`
 like every scheduled workflow. It runs with the workflow's own token and
 `permissions: { contents: read, issues: write }`, and no other secret: after
-its move Jig's configuration names every store, so the sweep needs no
-organization read, and a sweep that would need one and cannot make it fails
-and moves nothing. The workflow runs the sweep only, never the move. A
+its move Jig's configuration names every store, so the sweep checks store
+health only and makes no organization read; a denied discovery read never
+stops it, while a facet whose store the configuration leaves unnamed needs
+detection, and a sweep that cannot run it fails and moves nothing. The workflow runs the sweep only, never the move. A
 consumer runs the same command on its own schedule, with a tracker
 credential that may read issues and move them to triage; the dispatcher's
 tick records already catch an incomplete issue in its pools, so the sweep
