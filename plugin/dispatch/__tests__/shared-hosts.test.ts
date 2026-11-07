@@ -340,7 +340,7 @@ describe("two hosts dispatching one repository", () => {
     const w = fixture();
     // The owner tells a person in the notices workspace, opened from the default branch.
     withOrigin(w);
-    w.setComments(7, [ledgerComment(701, stoppedLedger(7, 12))]);
+    w.setComments(7, [ledgerComment(701, stoppedLedger(7, 14))]);
     const a = host(w, "a", {
       stages: ["rearm", "notify"],
       owner: true,

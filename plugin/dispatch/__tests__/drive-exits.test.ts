@@ -65,7 +65,7 @@ describe("a stopped ledger's class", () => {
       ["UNSUPPORTED_CLI", "needs-person"],
       ["MAX_ROUNDS", "needs-person"],
       ["REVIEWER_FAILED", "needs-person"],
-      ["WORKTREE_UNCLEAN", "needs-person"],
+      ["WORKTREE_UNCLEAN", "unplaced"],
       ["STALLED", "needs-person"],
       ["PASS_DEADLINE", "needs-person"],
     ];

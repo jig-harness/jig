@@ -45,6 +45,7 @@
  * `waiting_episodes` table), and, once it ended, the time its outcome row
  * carries (`endedAt`), written in the same transaction as that row.
  */
+import { optionalLaunchFields } from "./launch-record-options.ts";
 import type { Database } from "bun:sqlite";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
@@ -57,6 +58,7 @@ import {
 } from "../../shared/liveness.ts";
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
 import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
+import { pendingRearm } from "./rearm-state.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
@@ -134,6 +136,10 @@ export interface LaunchRecord {
   round?: number | null;
   /** For a re-drive: why it was launched, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
   redrive?: StaleCause | null;
+  /** Explicit re-arm request consumed after a successful launch. */
+  rearmLabel?: string | null;
+  /** The request label was successfully removed after this launch was accepted. */
+  rearmConsumed?: boolean;
   /** The vendor session id the tick minted for a Claude Code session or follow-up pass and passed to its agent; `null` when none was. */
   sessionId?: string | null;
   /**
@@ -288,10 +294,6 @@ function hasStrings(value: Record<string, unknown>, keys: string[]): boolean {
   return keys.every((k) => typeof value[k] === "string");
 }
 
-function optionalText(value: unknown): boolean {
-  return value === undefined || value === null || typeof value === "string";
-}
-
 /** What a record names: a pull request for a drive or a follow-up, an item for a pickup. */
 function namesTarget(value: Record<string, unknown>): boolean {
   if (value.action === "pickup")
@@ -326,55 +328,7 @@ function isLaunchRecord(value: unknown): value is LaunchRecord {
     isWorkspace(value.workspace) &&
     Array.isArray(value.attempts) &&
     value.attempts.every(isAttempt) &&
-    optionalFields(value)
-  );
-}
-
-/** Whether a value is absent or a time. */
-function optionalTime(value: unknown): boolean {
-  return (
-    value === undefined ||
-    (typeof value === "string" && Number.isFinite(Date.parse(value)))
-  );
-}
-
-/** Whether a value is absent, `null`, or a whole number of seconds. */
-function optionalSeconds(value: unknown): boolean {
-  if (value === undefined || value === null) return true;
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-/** The fields a later version added, each absent or of its type. */
-function optionalFields(value: Record<string, unknown>): boolean {
-  return (
-    ["agentId", "model", "effort", "command", "sessionId", "mark"].every((k) =>
-      optionalText(value[k]),
-    ) &&
-    optionalText(value.noReplay) &&
-    [value.marker, value.round].every(
-      (v) => v === undefined || v === null || typeof v === "number",
-    ) &&
-    optionalSeconds(value.passTimeoutSec) &&
-    (value.codexBypass === undefined ||
-      typeof value.codexBypass === "boolean") &&
-    optionalTime(value.endedAt) &&
-    optionalTime(value.cancelledAt) &&
-    optionalTime(value.openedAt) &&
-    isRedrive(value.redrive)
-  );
-}
-
-/** Whether a value is absent, `null`, or a stale cause. */
-function isRedrive(value: unknown): boolean {
-  return (
-    value === undefined ||
-    value === null ||
-    (isMapping(value) &&
-      typeof value.cause === "string" &&
-      typeof value.change === "string" &&
-      (value.earlier === undefined ||
-        (Array.isArray(value.earlier) &&
-          value.earlier.every((c) => typeof c === "string"))))
+    optionalLaunchFields(value)
   );
 }
 
@@ -887,7 +841,10 @@ export function pruneLaunches(
   for (const id of latestArms(records)) kept.add(id);
   const settled = settledEnds(root);
   for (const r of records)
-    if (cancelledBeforeExecution(r) && !settled.has(r.record.id))
+    if (
+      pendingRearm(r.record, r.state) ||
+      (cancelledBeforeExecution(r) && !settled.has(r.record.id))
+    )
       kept.add(r.record.id);
   const removed = records
     .filter(({ record, state }) => {

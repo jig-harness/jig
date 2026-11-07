@@ -341,6 +341,14 @@ it, or read `state` from the `--json` report, which is unambiguous either way.
 
 ## Running it
 
+An exit-12 recovery may pass `--settle-worktree` to `drive.ts`, in the
+existing tree that holds the leftovers. It requests one review pass even
+when the review is already converged. The pass notice tells it to inspect
+the uncommitted work, validate and commit what belongs to the change,
+discard only work established as unrelated, and use the guarded push.
+Mailbox, ownership and round-budget checks still apply. After a successful
+pass the normal convergence checks run again; leftover state still exits 12.
+
 **exact** — Use these entry points. Substitute the actual PR for example PR numbers or `[PR]`/`<PR>`; retain the flags and ordering unless an option below explicitly changes them.
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
@@ -1215,6 +1223,7 @@ state directory holding all of it: read that file before acting.
 
 | Opens with | What happened | What this round does |
 |---|---|---|
+| `WORKTREE_UNCLEAN` | The drive stopped with exit 12 and requested settlement in the original tree | Inspect the uncommitted work. On § 1's `CONVERGED` result, continue settlement: validate and commit work belonging to the change, discard only work established as unrelated, and push through `finish-round.ts`. Stop nonzero if ownership is unclear; leave the clean-tree certification to the driver |
 | `RESTARTED AFTER A PASS DEADLINE` | The previous pass was killed at its deadline; its uncommitted edits and unpushed commits are listed and are still in the tree | Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual. When it names an inherited head, add `--inherited-head <sha>` to § 1's gate (without it the gate reads unpushed commits as `HEAD_LAG`, and a tree with only uncommitted edits as converged) and push them through `finish-round.ts` with the round's own fixes |
 | `UNPUSHED COMMITS` | Local HEAD carries commits the PR's head lacks: a pass ended without pushing them, or the drive was armed over them. They are listed, with the uncommitted edits, and are still in the tree | Validate what is sound and push it through `finish-round.ts` with the round's own fixes; discard what is not on purpose. Add the `--inherited-head <sha>` it names to § 1's gate: without it the gate reads the unpushed commits as `HEAD_LAG` |
 | `UNCOMMITTED EDITS` | The tree holds edits no commit carries: a pass ended without committing them. They are listed and are still in the tree | Validate what is sound and push it through `finish-round.ts` with the round's own fixes; discard what is not on purpose. Add the `--inherited-head <sha>` it names to § 1's gate: without it the gate can read the PR as converged over the edits |
@@ -1402,6 +1411,13 @@ Proceed only on exit `0`. Anything else is the answer for *this* gate's own
 question ("is there new reviewer work") — report it and stop *this round*.
 A `CONVERGED` draft in an interactive round may still owe the Ready
 transition first: § 7 says when.
+
+For a driver pass carrying a `WORKTREE_UNCLEAN` notice, exit `3`
+(`CONVERGED`) still leaves the requested settlement to do. Inspect and
+settle the inherited edits as that notice directs, validate, and use
+`finish-round.ts` to push the result. Do not invent reviewer findings or
+declare the tree clean on the gate's evidence. Every other nonzero exit
+still stops the pass, including a closed pull request or an unreadable gate.
 
 `--bump-attempt` is the single pass-start entry point: on exit `0`
 it records this pass on this head — the durable counter § 3's `reflectDue`

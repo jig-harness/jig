@@ -9,6 +9,7 @@
  * | --- | --- | --- |
  * | `assign` | `pickup` | the item assigned to the factory identity, in a dispatch state |
  * | `drive` | `drive` | the `drive` command label |
+ * | `rearm` | `drive` | the `rearm` command label for a stopped drive |
  * | `hold`, `release` | `drive`, `followup` | the `hold` command label, added or removed |
  * | `answer <key> <text>` | `drive` | a comment `answer <key>: <text>` |
  * | `pause`, `resume <directive>`, `stop`, `hold-push` | `drive` | a mailbox directive |
@@ -31,6 +32,7 @@ import {
 const VERBS = [
   "assign",
   "drive",
+  "rearm",
   "hold",
   "release",
   "answer",
@@ -44,7 +46,7 @@ export type Verb = (typeof VERBS)[number];
 /** The verbs that write a mailbox directive. */
 export type MailboxVerb = "pause" | "resume" | "stop" | "hold-push";
 /** The verbs that write a dispatch label. */
-export type LabelVerb = "drive" | "hold" | "release";
+export type LabelVerb = "drive" | "rearm" | "hold" | "release";
 
 interface VerbSpec {
   stations: readonly Station[];
@@ -57,6 +59,7 @@ interface VerbSpec {
 const SPECS: Record<Verb, VerbSpec> = {
   assign: { stations: ["pickup"], person: true, args: "" },
   drive: { stations: ["drive"], person: true, args: "" },
+  rearm: { stations: ["drive"], person: true, args: "" },
   hold: { stations: ["drive", "followup"], person: true, args: "" },
   release: { stations: ["drive", "followup"], person: true, args: "" },
   answer: { stations: ["drive"], person: true, args: "<key> <text>" },

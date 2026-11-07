@@ -35,6 +35,7 @@ export interface SendWorld extends AskWorld {
   config(text: string): void;
   /** Make the stand-in listing name a live driver of `pr` at `generation`. */
   liveDriver(pr: number, generation: number): void;
+  stoppedDriver(pr: number): void;
 }
 
 const base64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
@@ -61,6 +62,20 @@ export function sendWorld(): SendWorld {
         encoding: "base64",
         content: base64(text),
       }),
+    stoppedDriver: (pr) =>
+      writeFileSync(
+        rows,
+        JSON.stringify({
+          rows: [
+            {
+              kind: "pr",
+              key: String(pr),
+              state: "empty",
+              diag: { worktree: tree },
+            },
+          ],
+        }),
+      ),
     liveDriver: (pr, generation) =>
       writeFileSync(
         rows,

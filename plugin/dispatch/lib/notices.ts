@@ -106,7 +106,7 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
     `${slug} PR #${pr.number} stopped ${stop}, ledger generation ${generation(pr)}`,
     [
       `PR #${pr.number} (${pr.title}): its drive stopped ${stop}, which only a person settles. ${pr.why}.`,
-      `Read the drive's handoff, \`.context/pr-drive-${pr.number}.md\` in the workspace that drove it (named below while it is open), then re-arm it or stop it.`,
+      `Read the drive's handoff, \`.context/pr-drive-${pr.number}.md\` in the workspace that drove it (named below while it is open), then use \`jig send drive@${slug}#${pr.number} rearm\` to re-arm it, or stop it.`,
       pr.url,
     ],
   );

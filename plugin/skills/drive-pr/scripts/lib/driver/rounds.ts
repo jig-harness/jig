@@ -45,6 +45,7 @@ interface DriverRoundOptions {
   deadlineRetryBudget: number;
   /** What the first pass is told: a takeover, or the answers a re-arm read. */
   firstPassNotice: string;
+  settleWorktree?: boolean;
 }
 
 export async function runDriverRounds({
@@ -61,6 +62,7 @@ export async function runDriverRounds({
   markReadyPolicy,
   deadlineRetryBudget,
   firstPassNotice,
+  settleWorktree = false,
 }: DriverRoundOptions): Promise<number> {
   const passes = 0;
   // Whether THIS run fired the draft→Ready transition. Not the durable claim —
@@ -182,6 +184,7 @@ export async function runDriverRounds({
     return (await standDownOnNewerClaim(pr)) ?? outcome;
   };
   const context: DriveRoundContext = {
+    settleWorktree,
     prevFingerprint,
     noopRounds,
     readyMarkFailures,
