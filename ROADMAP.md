@@ -208,17 +208,16 @@ will follow the reader's light or dark setting and carry Jig's mark as its
 icon. Every text colour will meet WCAG AA, the Web Content Accessibility
 Guidelines' minimum contrast, in both modes.
 
-### 41. Configurable issue facets: type, priority and size
+### 41. Configurable issue attributes: type, priority and size
 
 Every issue records its type, priority and size, so a team can sort and
 filter its tracker by them. A team chooses where its tracker keeps each one:
-the tracker's own field, a custom field, or labels. Each tracker Jig
+the tracker's own field, a custom field or labels. Each tracker Jig
 supports has a documented default. On GitHub Issues that is the issue type
-and the organization's own issue fields. A repository that already keeps
-them in labels keeps them there until it moves.
-Every way Jig's tools file an issue sets the type. Filings through the
-tracker interface set and check all three, and a weekly check reports any
-issue that lacks one, including those filed by hand or from a form.
+and the organization's own issue fields, for a repository that does not
+already keep them in labels. No repository's store moves unless it asks. Every way Jig's tools file
+an issue through the tracker sets all three and checks them. The issue forms set the type and leave priority and size to
+triage. A weekly check reports any issue that lacks one.
 
 ### 12. More tracker adapters
 

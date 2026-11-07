@@ -11,6 +11,7 @@
 import { stateRoot } from "../receipts.ts";
 import type { ReadRecord } from "./launches.ts";
 import { stateDb } from "./state.ts";
+import { retryableStartup } from "./session-startup.ts";
 
 export interface FollowupOutcome {
   /** The repository's `owner/name`. */
@@ -39,6 +40,7 @@ export function readOutcomes(
 
 /** How an ended follow-up record ended: its session's recorded result, else failed. */
 export function outcomeOf(r: ReadRecord): "done" | "failed" | null {
+  if (retryableStartup(r)) return null;
   if (r.state.kind !== "ended" && r.state.kind !== "died") return null;
   return r.result === "done" ? "done" : "failed";
 }

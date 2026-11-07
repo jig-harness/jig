@@ -664,7 +664,7 @@ Done when every page Jig's tooling draws takes its colours from
 `theme.ts`, follows the reader's light or dark setting, carries Jig's mark,
 and each genre's contrast test holds its light and dark pairs.
 
-### 41. Configurable issue facets: type, priority and size
+### 41. Configurable issue attributes: type, priority and size
 
 An issue's type, priority and size are kept differently by each way an
 issue is filed: in the tracker's own field, in a label, or nowhere, so a
@@ -674,44 +674,38 @@ tracker cannot sort or filter on them. The
 adapter's priority storage is configurable only per adapter (the GitHub label
 map `issue_tracker.github.priority_labels`, the Jira priority names
 `issue_tracker.jira.priorities`), with no choice between the tracker's field,
-a custom field or labels, and only `file-issue` checks that an issue it
-files is complete. [design/tracker-facets.md](tracker-facets.md) has how it
-works: the tracker interface carries each of the three as an
-[issue facet](../GLOSSARY.md) with a canonical value, and where each is kept
-is its [facet store](../GLOSSARY.md), per-repository configuration
+a custom field, labels or a command, and only `file-issue` checks that an
+issue it files is complete. What it will build: the tracker
+interface carries an issue's type, priority and size as canonical values, and
+where each of the three is kept is per-repository configuration
 (`issue_tracker.facets`): the tracker's own field, a named custom field or
 labels, with a documented default per adapter:
 
-- **GitHub Issues**: for a repository that keeps no labels for the facet,
-  the issue type, the organization's Priority field, and the Effort field
-  when its options carry the size names; labels otherwise.
-- **Jira**: type labels, and every new issue filed as the one configured
-  `issue_tracker.jira.issue_type`, until a values map names the issue types;
-  the priority field; size labels until a size field is named.
+- **GitHub Issues**: the issue type; the organization's Priority field; the
+  Effort field when its options carry the size names, else size labels;
+  each only for a repository that keeps no labels for it.
+- **Jira**: type labels, with every new issue filed as the configured
+  `issue_tracker.jira.issue_type` until a type store is named; the priority
+  field; size as labels until a size field is named.
 - **Linear**: labels for type and size; its priority field; the estimate as
   an option for size.
 
-No store moves by itself: a repository that keeps a facet in labels keeps it
-there after every upgrade, until it runs the move and names the new store.
-Today's `issue_tracker.types`, `issue_tracker.github.priority_labels`,
+No repository's store moves unless its configuration says so or a person
+runs the move. Today's `issue_tracker.types`, `issue_tracker.github.priority_labels`,
 `issue_tracker.jira.field_labels` and `issue_tracker.jira.priorities` become
 the label or field form of their facet, and the native-type read the
-interface already has is kept. Every filing path (`file-issue`,
-`file-deferred.ts`, `report-bug.ts`, the issue forms) sets the type; the
-interface filings (`file-issue`, `tracker.ts create`, `file-deferred.ts`)
-set all three, with no size on an epic. One check inside the write warns
-and then refuses an incomplete interface filing. The paths that leave
-priority and size to triage (`report-bug.ts`, the issue forms, an agent by
-hand) are caught afterwards, and a weekly sweep reports the issues missing
-one. A command of the repository's
-own as a store waits until a repository needs one. Built in the design's
-order: the interface with the label store and GitHub's stores, defaults
-left as they are; the callers and the filing check; the move, the sweep and
-the refusal; the Jira and Linear stores.
+interface already has is kept. Every filing path through
+the interface (`file-issue`, `file-deferred.ts`) sets and checks all three inside the write; the issue forms
+and `report-bug.ts`, which file around the interface, set the type and leave priority and size to triage, and a weekly check
+reports the issues missing one. It includes reading and writing the
+tracker's own issue type, not only a type label. A store kept by the
+repository's own command waits until a repository names a facet that needs
+it. The design is [tracker-facets.md](tracker-facets.md), built in the
+steps of its [build order](tracker-facets.md#build-order).
 
 Done when a repository on each adapter files and reads all three in its
-configured store, and Jig's own repository, after its move, keeps them in
-GitHub's fields with no type, priority or size labels on its open issues.
+configured store, and Jig's own repository keeps them in GitHub's fields
+with no type, priority or size labels.
 
 ### 12. More tracker adapters
 

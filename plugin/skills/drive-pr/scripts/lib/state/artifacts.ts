@@ -9,7 +9,11 @@
  */
 
 /** The family a clone-directory file belongs to. */
-export type ArtifactFamily = "log" | "pass-handoff" | "arm-output";
+export type ArtifactFamily =
+  | "log"
+  | "pass-handoff"
+  | "arm-output"
+  | "driver-observation";
 
 interface ClonePattern {
   readonly re: RegExp;
@@ -18,6 +22,10 @@ interface ClonePattern {
 
 /** The files kept per PR, its number the first capture. */
 const CLONE_FILES: readonly ClonePattern[] = [
+  {
+    re: /^drive-observation-([0-9]+)-[0-9a-f]{32}\.json(?:\.[0-9a-f-]{36}\.tmp)?$/,
+    family: "driver-observation",
+  },
   { re: /^drive-pr-([0-9]+)\.log(?:\.1)?$/, family: "log" },
   {
     re: /^drive-pr-([0-9]+)\.(?:answers\.json|notice\.md)(?:\.[0-9a-f]{6})?$/,
