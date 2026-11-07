@@ -387,6 +387,72 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.157.1] - 2026-11-07
+
+### Fixed
+
+- A dead drive whose worktree was removed can be taken over from the remote head. The doctor reports `DEAD` for a missing tree; existing trees that cannot be inspected still refuse takeover.
+
+## [0.157.0] - 2026-11-07
+
+### Added
+
+- The dispatcher's change probe: `jig install dispatch` now also writes a
+  timer that runs `jig dispatch probe --apply` every minute. It makes one
+  search on the forge over every repository the machine file dispatches
+  (on GitHub one GraphQL call for a single page of results, 1 point of the 5,000 an hour; further pages add calls and points) and wakes the
+  tick of each repository where a pull request was reviewed, commented on,
+  labelled, pushed to, merged or closed, or its checks changed, since the
+  last probe, so such a change starts that repository's tick within about a
+  minute rather than at the next sweep. A minute with no change starts no
+  tick, and a probe that cannot read the forge wakes nothing and says why.
+  `jig dispatch probe` without `--apply` says what it would wake and writes
+  nothing. Turn it off with `change_probe: false` in
+  `~/.jig/dispatch.yaml`. `jig upgrade` keeps and refreshes the probe's
+  timer; on a machine whose dispatcher timer is already installed, run
+  `jig install dispatch --yes` once to add it.
+- Each wake of a repository's tick now records who asked and why
+  (`send: …` or `probe: …`), and the wake's `last-run.log` names them
+  beside the tick it ran.
+- `/jig:drive-pr` stops with its own exit, `21` (`CI_REPAIR_SPENT`), when the
+  review converged but CI still fails after its CI-repair passes, so a caller
+  can tell that CI repair from a crash (`1`). A harness that reads exit `1`
+  as "CI still red" reads `21` for a spent budget now; repair disabled
+  (`DRIVE_PR_CI_REPAIR_ROUNDS=0`) still stops `1`.
+- `jig dispatch` re-drives a stall (exit `14`) and a spent CI-repair budget
+  (exit `21`) once per head commit, on any account, and tells a person when
+  the same head stops the same way again. A stall that left work in its tree,
+  or whose stop never measured it, is re-driven only in that tree; with no open workspace holding it, a person
+  is told. The re-armed drive's first pass is told the stop and, after a
+  stall, what its passes recorded last, and it takes the edits the stall left
+  as its own to finish, only when it is armed in the tree that stalled.
+- A stop the dispatcher hands a person says so when the pull request also
+  conflicts with its base.
+
+### Changed
+
+- The `jig:converged` label is created green and `jig:parked` red, so a pull request ready for a person to merge, or stopped on something only a person settles, stands out from one the dispatcher still drives. A repository that already has these labels keeps their colors until someone changes them (`gh label edit jig:converged --color 0e8a16`, `gh label edit jig:parked --color d93f0b`).
+
+### Fixed
+
+- A drive round that inherits a base merge an earlier pass left open, with its
+  conflicts resolved but not committed, can now finish instead of stalling:
+  `round-plan.ts` plans an open merge against the merge base its commit will
+  have, so the pass can validate the merge before concluding it, and
+  `/jig:drive-pr` tells the pass to finish what the tree holds (validate,
+  commit, then sync the base and push) before the round's own work. A merge
+  with a conflict still unresolved, and any other unfinished git operation,
+  is still refused.
+- The [ratchet](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md)
+  measures a working tree in the middle of a merge against the merge base the
+  merge commit will have, so a finding the target branch gained and the change
+  merged in no longer counts as the change's.
+- A stalled drive (exit `14`) tells its extra round what the tree holds, and
+  its stop prints what that round's pass recorded: the refusal that stops the
+  round now, not an earlier pass's. When that pass recorded nothing, the stop
+  says the lines it prints predate it. A pass that ends a round without
+  pushing names the step that refused and what would unblock it.
+
 ## [0.156.4] - 2026-11-07
 
 ### Fixed
@@ -5650,7 +5716,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.157.1...HEAD
+[0.157.1]: https://github.com/jig-harness/jig/compare/v0.157.0...v0.157.1
+[0.157.0]: https://github.com/jig-harness/jig/compare/v0.156.4...v0.157.0
 [0.156.4]: https://github.com/jig-harness/jig/compare/v0.156.3...v0.156.4
 [0.156.3]: https://github.com/jig-harness/jig/compare/v0.156.2...v0.156.3
 [0.156.2]: https://github.com/jig-harness/jig/compare/v0.156.1...v0.156.2

@@ -30,6 +30,7 @@
  * records:
  *   shared: forge
  * send: true
+ * change_probe: true
  * ```
  *
  * An unknown key anywhere is refused, so a misspelt dial never reads as its
@@ -107,6 +108,8 @@ export interface MachineConfig {
   sharedRecords: SharedMedium;
   /** Whether `jig send` may write a request from this machine (`send`); `true` unless the file says `false`. */
   send: boolean;
+  /** Whether the change probe wakes the ticks of repositories that changed on the forge (`change_probe`); `true` unless the file says `false`. */
+  changeProbe: boolean;
 }
 
 const DEFAULTS = {
@@ -133,6 +136,7 @@ const TOP_KEYS = [
   "dashboard",
   "records",
   "send",
+  "change_probe",
 ];
 const DASHBOARD_KEYS = ["listen"];
 const RECORDS_KEYS = ["shared"];
@@ -421,6 +425,7 @@ function parseValues(values: unknown, where: string): MachineConfig {
     dashboardListen: dashboard(top.dashboard),
     sharedRecords: records(top.records),
     send: flag(top.send, "send", true),
+    changeProbe: flag(top.change_probe, "change_probe", true),
   };
 }
 
