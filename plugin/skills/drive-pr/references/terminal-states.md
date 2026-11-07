@@ -869,7 +869,7 @@ there is nothing to take over. Once the takeover holds the locks it appends a
 record to the drive state's `takeovers` (from which actor and hashed account,
 to which, the verdict, the round, and `vanishedTree`, the tree that no longer
 existed; the first pass's notice directs it to inspect branch refs and
-[reflogs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#git-reflog) in the clone's shared Git storage for recoverable commits before
+[reflogs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in the clone's shared Git storage for recoverable commits before
 redoing work, and the ledger leaves the path out), runs
 `reconcile-replied-threads.ts` before
 the first triage — the first gate's own sweep covers a failed run — and

@@ -151,7 +151,6 @@ export type DoctorVerdict =
   | "WEDGED"
   | "DEAD"
   | "DEAD_WITH_LEFTOVERS"
-  | "DEAD"
   | "QUOTA_PARKED"
   | "NEEDS_HUMAN"
   | "UNKNOWN";
@@ -298,12 +297,20 @@ function needsHumanReason(input: DoctorInput): string {
 /**
  * A holder confirmed gone with a clean tree → `DEAD`: nothing is left to
  * save, so a takeover is admitted. `null` otherwise: a tree that could not be
- * inspected, or a recorded quota or human park, which keeps its own verdict
- * (a missing tree is answered in `classifyDrive`).
+ * inspected, a human park, or a quota park whose wall is still up or whose
+ * reset is unknown, which keep their own verdict (a missing tree is answered
+ * in `classifyDrive`). A quota park whose `resetAt` has passed no longer
+ * protects anything: nothing re-arms a dead driver, so it reads as `DEAD`.
  */
-function deadHolder(input: DoctorInput): DoctorRow | null {
+function deadHolder(input: DoctorInput, now: Date): DoctorRow | null {
   if (input.processConfirmedGone !== true) return null;
-  if (input.quotaPark !== null || input.parkedCount > 0) return null;
+  const park = input.quotaPark;
+  if (
+    park !== null &&
+    (park.resetAt === null || Date.parse(park.resetAt) > now.getTime())
+  )
+    return null;
+  if (input.parkedCount > 0) return null;
   const l = input.leftovers;
   if (
     l !== null &&
@@ -388,7 +395,7 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   // quota park"). So it is DEFERRED to the trailing fallback (7) instead,
   // and used there ONLY if nothing more specific claimed the row first.
   if (noLiveDriver(input.lockState)) {
-    const dead = deadHolder(input);
+    const dead = deadHolder(input, now);
     if (dead !== null) return dead;
     if (input.leftovers === null) {
       // `worktreePath === null` means the probe was never even ATTEMPTED

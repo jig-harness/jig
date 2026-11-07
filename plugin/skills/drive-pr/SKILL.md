@@ -820,7 +820,7 @@ is gone) has no working files to inspect, so the doctor reads its holder
 takeover is admitted with no person needed, as the plain arm recovers that
 holder's lock. Unpushed commits may remain in the clone's shared Git storage;
 the takeover records the tree (`vanishedTree`) and the first pass's `TAKEN OVER`
-notice directs it to inspect branch refs and [reflogs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#git-reflog) before redoing work.
+notice directs it to inspect branch refs and [reflogs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) before redoing work.
 An existing tree that is unregistered or cannot be
 inspected stays `UNKNOWN` and is refused. Against any other holder it refuses as exit `11`
 does, naming the verdict. A wedged holder is stopped through `drives.ts` `--stop`, with

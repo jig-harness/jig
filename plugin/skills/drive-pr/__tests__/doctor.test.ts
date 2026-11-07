@@ -492,7 +492,6 @@ describe("classifyDrive — precedence order", () => {
     const row = classifyDrive(
       baseInput({
         lockState: "stale",
-        processConfirmedGone: true,
         quotaPark: {
           vendor: "claude",
           window: "short",
@@ -504,6 +503,27 @@ describe("classifyDrive — precedence order", () => {
     );
     expect(row.verdict).toBe("QUOTA_PARKED");
     expect(row.reason).toContain("already past, not yet re-armed");
+  });
+
+  it("a confirmed-dead clean holder is DEAD once its quota park has expired, and QUOTA_PARKED while the wall is up or unknown", () => {
+    const park = (resetAt: string | null) => ({
+      vendor: "claude" as const,
+      window: "short" as const,
+      resetAt,
+      at: "2026-09-12T05:00:00.000Z",
+    });
+    const verdict = (resetAt: string | null) =>
+      classifyDrive(
+        baseInput({
+          lockState: "stale",
+          processConfirmedGone: true,
+          quotaPark: park(resetAt),
+        }),
+        NOW,
+      ).verdict;
+    expect(verdict("2026-09-12T10:00:00.000Z")).toBe("DEAD"); // 2h before NOW
+    expect(verdict("2026-09-12T13:00:00.000Z")).toBe("QUOTA_PARKED");
+    expect(verdict(null)).toBe("QUOTA_PARKED");
   });
 
   it("WEDGED outranks an EXPIRED quota park: the window reopened and nothing resumed", () => {

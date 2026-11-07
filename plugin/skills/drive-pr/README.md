@@ -587,7 +587,7 @@ nothing unpushed (on this machine it refuses, naming the leftovers, until you
 push or discard them). A tree that no longer exists, because its directory was
 deleted, has no working files to inspect: the doctor reads that holder `DEAD`,
 and the takeover goes ahead with nobody needed, recording the tree and telling
-the first pass to inspect branch refs and [reflogs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#git-reflog) in the clone's shared Git storage for
+the first pass to inspect branch refs and [reflogs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in the clone's shared Git storage for
 recoverable commits before redoing work. An existing tree that is unregistered or cannot be
 inspected still refuses. Against any other holder it refuses as exit `11` does.
 It stops a wedged holder with the same identity check that `--stop`
