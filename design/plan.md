@@ -678,24 +678,29 @@ a custom field, labels or a command, and only `file-issue` checks that an
 issue it files is complete. What it will build: the tracker
 interface carries an issue's type, priority and size as canonical values, and
 where each of the three is kept is per-repository configuration
-(`issue_tracker.attributes`): the tracker's own field, a named custom field,
-labels, or the repository's own command, with a documented default per
-adapter:
+(`issue_tracker.facets`): the tracker's own field, a named custom field or
+labels, with a documented default per adapter:
 
 - **GitHub Issues**: the issue type; the organization's Priority field; the
-  Effort field when its options carry the size names, else size labels.
-- **Jira**: the issue type, matched by name; the priority field; size as
-  labels until a size field is named.
+  Effort field when its options carry the size names, else size labels;
+  each only for a repository that keeps no labels for it.
+- **Jira**: type labels, with every new issue filed as the configured
+  `issue_tracker.jira.issue_type` until a type store is named; the priority
+  field; size as labels until a size field is named.
 - **Linear**: labels for type and size; its priority field; the estimate as
   an option for size.
 
-Today's `issue_tracker.types`, `issue_tracker.github.priority_labels` and
+No repository's store moves unless its configuration says so or a person
+runs the move. Today's `issue_tracker.types`, `issue_tracker.github.priority_labels`,
 `issue_tracker.jira.field_labels` and `issue_tracker.jira.priorities` become
-the label or field form of their attribute, and the native-type read the
+the label or field form of their facet, and the native-type read the
 interface already has is kept. Every filing path (`file-issue`, `file-deferred.ts`,
 `report-bug.ts`, the issue forms) sets and checks all three, and a weekly
 check reports the issues missing one. It includes reading and writing the
-tracker's own issue type, not only a type label.
+tracker's own issue type, not only a type label. A store kept by the
+repository's own command waits until a repository names a facet that needs
+it. The design is [tracker-facets.md](tracker-facets.md), built in four
+steps.
 
 Done when a repository on each adapter files and reads all three in its
 configured store, and Jig's own repository keeps them in GitHub's fields
