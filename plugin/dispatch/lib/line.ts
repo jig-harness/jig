@@ -308,7 +308,10 @@ function needsOf(
         sightedSince(previous, view.slug, action, nowIso),
       reason: action.reason,
       question: text(action.evidence, "question"),
-      decisions: (view.drive(pr)?.waiting ?? []).map(decisionOf),
+      decisions:
+        text(action.evidence, "stuck") !== null
+          ? []
+          : (view.drive(pr)?.waiting ?? []).map(decisionOf),
       notified:
         notification === undefined
           ? null

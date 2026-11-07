@@ -773,6 +773,28 @@ describe("buildLine", () => {
     ]);
   });
 
+  it("leaves a stuck record's need without the decisions another drive parked on the same target", () => {
+    const lost = { at: NOW, outcome: "lost" as const, detail: "no answer" };
+    const stuck = record(
+      { action: "followup", marker: 77, attempts: [lost, lost] },
+      { kind: "pending" as const },
+    );
+    const records = [stuck];
+    const line = buildLine(
+      input({
+        reports: [report({ actions: planStuck(REPO, records) })],
+        inputs: reads({ drives: [parkedPr()] }),
+        records,
+      }),
+    );
+    expect(line.needs).toEqual([
+      expect.objectContaining({
+        stuckRecord: stuck.record.id,
+        decisions: [],
+      }),
+    ]);
+  });
+
   it("joins an interactive session to its agent, its wall and the nudge that answered it", () => {
     const line = buildLine(
       input({
