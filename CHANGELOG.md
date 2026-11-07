@@ -387,6 +387,13 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.156.2] - 2026-11-07
+
+### Fixed
+
+- `jig dispatch` no longer leaves a pending launch record that no tick will launch again looking like an ordinary pending launch. A record whose two launches both went unanswered is now notified to a person (cause `needs-person`, once, then on `dispatch.renotify_after`) and shown on the dashboard as needing a person, with why and the `jig dispatch clear <record>` that releases its slot.
+- A follow-up whose marker was posted but whose launch never ran, because the tick stopped before the runtime answered, is launched again at the next tick under the same launch record, token and marker, once a fresh read finds its marker still the earliest trusted one naming it, no hold label and no session joined to the pull request. When that read finds otherwise, the record is notified as needing a person instead, and no second follow-up starts for the pull request while it holds it. Such a record could previously only be found by reading the launch records, and `jig dispatch clear` refused it.
+
 ## [0.156.1] - 2026-11-07
 
 ### Fixed
@@ -5621,7 +5628,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.2...HEAD
+[0.156.2]: https://github.com/jig-harness/jig/compare/v0.156.1...v0.156.2
 [0.156.1]: https://github.com/jig-harness/jig/compare/v0.156.0...v0.156.1
 [0.156.0]: https://github.com/jig-harness/jig/compare/v0.155.0...v0.156.0
 [0.155.0]: https://github.com/jig-harness/jig/compare/v0.154.0...v0.155.0
