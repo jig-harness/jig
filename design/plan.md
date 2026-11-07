@@ -701,6 +701,34 @@ Done when a repository on each adapter files and reads all three in its
 configured store, and Jig's own repository keeps them in GitHub's fields
 with no type, priority or size labels.
 
+### 43. Consumer actions: which Jig changes a repository must act on
+
+A Jig release sometimes asks something of the repositories that use it: a
+runbook that describes old behaviour, a configuration key to change, a plugin
+source on a machine. Today a person reads the changelog by hand and tests each
+entry against the repository, nothing records which release a repository has
+already taken, and `/followup` stops on "which repositories are consumers?"
+because Jig names none. [design/consumer-actions.md](consumer-actions.md) has
+how it works. What it will build: a change note names the **consumer action**
+in its list item (the level it is taken at: machine, configuration or
+instructions; required or advised; hints that say how to detect it), which the
+changelog check validates and the release step derives into a record in the
+plugin; a repository records the version it last reconciled with
+(`jig.reconciled`); `jig reconcile` reads the record between that version and
+the installed one, tests each action against the repository and reports
+required, advised, needs-a-look and not-applicable with file and line
+evidence, and files the repository's own tracker items only for what a person
+approved; a `reconcile` dispatch stage runs it per dispatched repository and
+notifies once per new required entry, so a machine's dispatch file is the
+list of consumers; `/followup`'s Breaking-changes arm reads its result; and
+`/jig:jig` points at it for what changed.
+
+Done when a fixture repository and changelog produce a required, an advised
+and a not-applicable entry with evidence and file nothing unapproved, a
+dispatch tick notifies once per new required entry, `/followup` no longer asks
+which consumers are affected, and `/jig:jig` no longer sends a reader to read
+the changelog by hand.
+
 ### 12. More tracker adapters
 
 A plan file kept in the repository, beside Linear, GitHub Issues and Jira.

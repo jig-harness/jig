@@ -72,6 +72,7 @@ with the review.
 | [The dispatch board, what is driven and what is ready to merge](dispatch-board.md) | 36 |
 | [Addresses: asking and telling the stations of the line](addresses.md) | 39 |
 | [The hub, one place to watch and steer the line](hub.md) | 42; Later: a control-plane service for the shared records |
+| [Consumer actions, which Jig changes a repository must act on](consumer-actions.md) | 43 |
 
 ## Starting a design
 

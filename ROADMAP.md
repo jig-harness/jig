@@ -218,6 +218,20 @@ the issue type and the organization's own issue fields, with labels where it
 has none. Every way Jig's tools file an issue sets all three and checks them,
 and a weekly check reports any issue that lacks one.
 
+### 43. Consumer actions: which Jig changes a repository must act on
+
+A Jig release can ask something of the repositories that use it: a runbook
+that describes old behaviour, a configuration key to change, a plugin source
+on a machine. A release note will say at which of those levels a repository
+acts, and whether it must or is only advised to. A repository records the
+Jig version it last took. One command, `jig reconcile`, checks the repository
+against every change since. It reports what the repository must do, what it is
+advised to do, what needs a person's look and what does not apply. Each line
+names the file and line that show why. It files items in the repository's own
+tracker only for what a person approved. A dispatch stage runs the check for
+each repository a machine drives and tells a person once for each new required
+change.
+
 ### 12. More tracker adapters
 
 A plan file kept in the repository, beside Linear, GitHub Issues and
