@@ -156,7 +156,7 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .quote.md table { border-collapse: collapse; margin: 0 0 4px; }
 .quote.md th, .quote.md td { padding: 2px 6px; border: 1px solid var(--line); text-align: left; }
 
-/* copy control: one word, the same everywhere; it touches only the reader's clipboard */
+/* Copy icons write only to the reader's clipboard. */
 .copy { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 56px; padding: 2px 8px; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-tag); font: 400 14px/1.2 var(--sans); cursor: pointer; white-space: nowrap; }
 .copy:hover { border-color: var(--line-strong); }
 .copyRow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 6px; }
@@ -330,3 +330,29 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
   .colophon { font-size: 13px; }
   .lgRole { font-size: 13px; }
 }
+
+/* Shared PR identity and compact, accessible icon controls. */
+.prIdentity { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.prState { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; min-height: 24px; }
+.pr-open { color: light-dark(#176a35, #75d896); }
+.pr-merged { color: light-dark(#7535a8, #d1a5ff); }
+.pr-closed { color: light-dark(#b02e35, #ff9da4); }
+.pr-unknown, .pr-draft { color: var(--muted); }
+.prIdentity .copy { min-width: 24px; }
+.copy svg { flex: none; }
+.disclosure { justify-content: center; min-width: 28px; border: 1px solid var(--line); border-radius: var(--r-tag); color: var(--ink); }
+.disclosure svg { transition: transform .15s; }
+.disclosure[aria-expanded="true"] svg { transform: rotate(90deg); }
+.fold { display: contents; }
+.foldPanel { flex-basis: 100%; min-width: 0; }
+.rowSum { cursor: default; position: relative; padding-right: 32px; }
+.rowExpand { position: absolute; right: 0; top: 4px; }
+@media (max-width: 899px) {
+  .prState, a.m.sm.mut { min-height: 44px; display: inline-flex; align-items: center; }
+}
+@media (max-width: 899px) {
+  .kv a, .pop a { min-height: 44px; display: inline-flex; align-items: center; overflow-wrap: anywhere; }
+}
+.followupSummary { display: flex; align-items: baseline; gap: 6px; color: var(--muted); }
+.followupSummary svg, .followupBadge svg { flex: none; align-self: center; }
+.followupBadge { display: inline-flex; align-items: center; gap: 4px; white-space: normal; }
