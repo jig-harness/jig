@@ -52,6 +52,7 @@ import { holding } from "./holding.ts";
 import { holds, type ReadRecord, targetOf } from "./launches.ts";
 import { followupFailedNotice, staleClaimNotice } from "./notices.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
+import { retryableStartup } from "./session-startup.ts";
 import { questionOf } from "./session.ts";
 import type { Action, FollowupMarker, MarkedPr, RepoReport } from "./types.ts";
 
@@ -289,7 +290,11 @@ function planTickMarker(
     });
     return;
   }
-  if (found !== undefined && holds(found.state) && ended === null) {
+  if (
+    found !== undefined &&
+    (holds(found.state) || retryableStartup(found)) &&
+    ended === null
+  ) {
     plan.running.push({
       target,
       stage: "followup",

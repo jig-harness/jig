@@ -302,7 +302,9 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 ```
 
 which clears only a record the tick cannot settle: an unknown one, a
-pending one whose launch cannot be retried, or one that does not read
+pending one whose launch cannot be retried (a stuck one: both of its
+launches went unanswered, or a follow-up's replay could not be proven
+safe, which the tick notifies as needing a person), or one that does not read
 and whose claim is not alive. It refuses a running record, readable or
 not (stop its session first), and, among the records that read, an ended
 or died one and a pending one whose launch can still be retried: those
@@ -412,6 +414,16 @@ launch record this machine no longer has and carries no answer, is notified
 and never started again: delete its marker to have it run again. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
 that question, and the outcome log counts it as parked for a person.
+
+A Claude follow-up that exits unsuccessfully within a minute without a
+result, a question or its own transcript is treated as unable to start.
+Its account stays out of admission for `wall_backoff`, and its marker is
+released by a tick that still has the pull request in scope and undisputed,
+so a later tick can retry on another account. The
+outcome log says `quota wall` when the vendor printed a recognized usage
+notice, otherwise `refused` with the startup reason. A transcript that exists
+or cannot be checked keeps the ordinary failure classification. This retry
+does not consume the stale-claim release described below.
 
 A claim no run will finish does not hold a follow-up for good. A marker a
 person's run posted and never marked done, or another host's with no

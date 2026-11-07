@@ -46,6 +46,7 @@ import {
   foreignHold,
 } from "./shared-launches.ts";
 import { failed } from "../../shared/outcome.ts";
+import { planStuck } from "./stuck-launches.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
   Action,
@@ -108,7 +109,6 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
 /** The ledger classes that need nothing from the tick but a line in the report. */
 const QUIET: ReadonlySet<LedgerClass> = new Set([
   "driven",
-  "silent",
   "done",
   "stopped-by-person",
   "refused",
@@ -119,6 +119,7 @@ const NOTIFY: ReadonlyMap<LedgerClass, NotifyCause> = new Map([
   ["stopped-unknown", "stopped-unknown"],
   ["parked", "parked"],
   ["needs-person", "needs-person"],
+  ["silent", "needs-person"],
 ] as const);
 
 export function planTick(input: PlanInput): Plan {
@@ -210,6 +211,8 @@ export function planTick(input: PlanInput): Plan {
   });
   plan.actions.push(...drift.actions);
   plan.running.push(...drift.running);
+  // A pending record no tick launches again waits on a person.
+  plan.actions.push(...planStuck(input.slug, input.launches));
   holdBack(plan, input.held ?? new Set(), input.inScope);
   if (input.serialized !== undefined) serialBack(plan, input.serialized);
   return plan;
@@ -460,7 +463,8 @@ function planDrive(
     plan.unplaced.push({ target, record: "forge", reason: pr.why });
     return;
   }
-  const cause = NOTIFY.get(pr.class);
+  const cause =
+    takeover !== null || foreign !== null ? undefined : NOTIFY.get(pr.class);
   want(
     {
       stage: cause === undefined ? "rearm" : "notify",

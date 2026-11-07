@@ -212,11 +212,12 @@ Guidelines' minimum contrast, in both modes.
 
 Every issue records its type, priority and size, so a team can sort and
 filter its tracker by them. A team chooses where its tracker keeps each one:
-the tracker's own field, a custom field, labels, or a command of its own.
-Each tracker Jig supports has a documented default. On GitHub Issues that is
-the issue type and the organization's own issue fields, with labels where it
-has none. Every way Jig's tools file an issue sets all three and checks them,
-and a weekly check reports any issue that lacks one.
+the tracker's own field, a custom field or labels. Each tracker Jig
+supports has a documented default. On GitHub Issues that is the issue type
+and the organization's own issue fields, for a repository that does not
+already keep them in labels. No repository's store moves unless it asks. Every way Jig's tools file
+an issue through the tracker sets all three and checks them. The issue forms set the type and leave priority and size to
+triage. A weekly check reports any issue that lacks one.
 
 ### 12. More tracker adapters
 
