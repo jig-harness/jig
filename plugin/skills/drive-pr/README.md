@@ -578,7 +578,10 @@ The takeover reads the holder's verdict from `bun "<skill-dir>/scripts/drives.ts
 admitted only when the holder is `WEDGED` (alive, no progress past the stall
 threshold, no pass running), or when its process is confirmed gone and its tree holds
 nothing unpushed (on this machine it refuses, naming the leftovers, until you
-push or discard them). Against any other holder it refuses as exit `11` does.
+push or discard them). A missing tree admits a confirmed-dead holder and reports `DEAD`:
+the checkout is unavailable and local work may need recovery; the drive
+resumes from the remote head. An existing unregistered or unreadable tree
+still refuses. Against any other holder it refuses as exit `11` does.
 It stops a wedged holder with the same identity check that `--stop`
 makes, and only the driver whose verdict it read: one that took the lock
 since is left running. It records the takeover in the drive state, reconciles
