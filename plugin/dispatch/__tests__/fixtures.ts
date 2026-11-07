@@ -84,6 +84,7 @@ if (single !== null) {
     if (method === "DELETE" && fs.existsSync(F + "/comment-delete-lost")) { process.stderr.write("gh: response lost\\n"); process.exit(1); }
     out("{}");
   }
+  if (args.includes("--include")) process.stdout.write("HTTP/2.0 404 Not Found\\r\\n\\r\\n");
   process.stderr.write("gh: Not Found (HTTP 404)\\n");
   process.exit(1);
 }
@@ -340,6 +341,10 @@ if (fs.existsSync(F + "/claude-said")) {
   const cut = fs.existsSync(F + "/claude-split") ? said.findIndex((b) => b >= 0xc0) + 1 : 0;
   if (cut > 0) {
     stream.write(said.subarray(0, cut));
+    if (fs.existsSync(F + "/claude-interleave")) {
+      Bun.sleepSync(150);
+      (stream === process.stderr ? process.stdout : process.stderr).write("diagnostic\\n");
+    }
     Bun.sleepSync(300);
   }
   stream.write(said.subarray(cut));

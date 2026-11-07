@@ -7,7 +7,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
-import { pruneLaunches, readLaunches, readRecord } from "../lib/launches.ts";
+import {
+  pruneLaunches,
+  readLaunches,
+  readRecord,
+  settledEnds,
+} from "../lib/launches.ts";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { failedStartup } from "../lib/session-startup.ts";
 import { MARKER } from "../lib/followup-marker.ts";
@@ -51,7 +56,7 @@ function fixture() {
   return w;
 }
 
-it.each(["none", "stdout", "stderr"])(
+it.each(["none", "stdout", "stderr", "interleaved"])(
   "backs off an unstarted follow-up and retries on another account (quota evidence: %s)",
   async (stream) => {
     const quota = stream !== "none";
@@ -62,6 +67,8 @@ it.each(["none", "stdout", "stderr"])(
     const id = String(launch?.record);
     await waitFor("the pass", () => claudeRuns(w).length === 1);
     if (quota) writeFileSync(join(w.dir, "claude-split"), "");
+    if (stream === "interleaved")
+      writeFileSync(join(w.dir, "claude-interleave"), "");
     if (stream === "stderr") writeFileSync(join(w.dir, "claude-stderr"), "");
     if (quota)
       writeFileSync(
@@ -180,6 +187,38 @@ await settleAtExit(r);
       outcome: "launched",
     }),
   );
+});
+
+it("settles an interrupted startup release from its record when the marker is already gone", async () => {
+  const w = fixture();
+  writeFileSync(join(w.dir, "comment-delete-lost"), "");
+  const first = await applyTick(w, false);
+  const id = String(first.repos[0]?.launches?.[0]?.record);
+  await waitFor("the pass", () => claudeRuns(w).length === 1);
+  writeFileSync(join(w.dir, "claude-exit"), "1");
+  await waitFor("the exit", () => exitWritten(w, id));
+  await waitFor(
+    "the deleted marker",
+    () => readFileSync(join(w.dir, "comments-9.json"), "utf8") === "[]",
+  );
+  rmSync(join(w.dir, "claude-exit"));
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndispatch:\n  followup_command: /followup\n  labels: { enabled: true, only_labeled: true }\n`,
+  );
+  await applyTick(w, false);
+  expect(settledEnds(dispatchState(w)).has(id)).toBe(false);
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndispatch:\n  followup_command: /followup\n`,
+  );
+  await applyTick(w, false);
+  expect(
+    pruneLaunches(
+      (await readLaunches(dispatchState(w))).records,
+      Date.now() + 32 * 86_400_000,
+      30,
+      dispatchState(w),
+    ),
+  ).toContain(id);
 });
 
 it.each(["transcript", "unreadable scan", "truncated scan"])(

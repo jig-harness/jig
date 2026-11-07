@@ -125,6 +125,13 @@ export async function endOwnClaims(
     inputs.records.filter((r) => r.record.repo === ctx.slug),
     inputs.outcomes,
     new Date(inputs.nowMs).toISOString(),
+    inputs.forge.scoped
+      ? new Set(
+          [...inputs.forge.inScope].filter(
+            (pr) => !inputs.forge.disputed.has(pr),
+          ),
+        )
+      : undefined,
   );
   for (const reason of failures)
     report.unplaced.push({

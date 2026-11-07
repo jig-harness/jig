@@ -692,11 +692,25 @@ export async function withdraw(
   target: Pick<ClaimTarget, "repo">,
   ownId: number,
   deadline: Deadline = {},
-): Promise<Outcome<void, "not-withdrawn">> {
-  const r = await gh(
-    ["api", "-X", "DELETE", `repos/${target.repo}/issues/comments/${ownId}`],
-    undefined,
-    deadline,
+): Promise<Outcome<void, "not-withdrawn" | "not-found">> {
+  const r = await ghCall(
+    [
+      "api",
+      "--include",
+      "-X",
+      "DELETE",
+      `repos/${target.repo}/issues/comments/${ownId}`,
+    ],
+    {
+      stderr: "pipe",
+      ...(deadline.timeoutSec === undefined
+        ? {}
+        : { timeoutSec: deadline.timeoutSec }),
+    },
   );
-  return r.ok ? ok(undefined) : failed("not-withdrawn", r.failure.reason);
+  if (r.code === 0) return ok(undefined);
+  return failed(
+    /^HTTP\/\S+ 404(?: |\r?$)/m.test(r.stdout) ? "not-found" : "not-withdrawn",
+    `gh exited ${r.code}: ${r.stderr.trim()}`,
+  );
 }

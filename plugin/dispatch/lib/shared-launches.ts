@@ -63,6 +63,7 @@ import {
   type LaunchRecord,
   type ReadRecord,
   settleEnds,
+  settledEnds,
 } from "./launches.ts";
 import { stateDb } from "./state.ts";
 import type { DrivenPr, FollowupMarker, MarkedPr } from "./types.ts";
@@ -450,19 +451,18 @@ export async function settleOwnClaims(
   records: readonly ReadRecord[],
   outcomes: ReadonlyMap<number, FollowupOutcome>,
   nowIso: string,
+  startupScope?: ReadonlySet<number>,
 ): Promise<string[]> {
   const byId = new Map(records.map((r) => [r.record.id, r]));
   const retryFailures: string[] = [];
-  const retryIds = new Set(
-    merged.flatMap((pr) =>
-      ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).map(
-        (m) => m.run.record,
-      ),
-    ),
-  );
-  for (const id of retryIds) {
-    const r = byId.get(id);
-    if (r !== undefined && retryableStartup(r))
+  const settled = settledEnds();
+  for (const r of records) {
+    if (
+      r.record.repo === ctx.slug &&
+      retryableStartup(r) &&
+      !settled.has(r.record.id) &&
+      (startupScope === undefined || startupScope.has(Number(r.record.pr)))
+    )
       retryFailures.push(...(await settleRecordClaims(ctx, r, nowIso)));
   }
   const ends = [
@@ -563,7 +563,24 @@ async function settleRecordClaims(
   );
   if (retryableStartup(r)) {
     const released = await releaseStartupClaims(ctx, target, matches);
-    if (matches.length > 0 && failures.length === 0 && released.length === 0)
+    // The listing can lag a post or omit a marker already deleted by a wrapper.
+    // Delete the recorded id as well: only a successful deletion or an explicit
+    // not-found response confirms that this launch's marker no longer exists.
+    if (
+      !matches.some((c) => c.id === r.record.marker) &&
+      r.record.marker !== null
+    ) {
+      const removed = await ctx.records.release(target, r.record.marker);
+      if (!removed.ok && removed.failure.code !== "not-found")
+        released.push(
+          `PR #${owed.pr}: marker ${r.record.marker} could not be released: ${removed.failure.reason}`,
+        );
+    }
+    if (
+      r.record.marker !== null &&
+      failures.length === 0 &&
+      released.length === 0
+    )
       settleEnds([r.record.id], nowIso, root);
     return [...failures, ...released];
   }

@@ -517,7 +517,12 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
     async release(target, own) {
       const r = await withdraw({ repo: target.repo }, own, deadline);
       note("release", named(target), r.ok);
-      return r.ok ? ok(undefined) : failed("not-released", r.failure.reason);
+      return r.ok
+        ? ok(undefined)
+        : failed(
+            r.failure.code === "not-found" ? "not-found" : "not-released",
+            r.failure.reason,
+          );
     },
     async budget() {
       const read = await readBudget(deadline);
