@@ -323,6 +323,10 @@ describe("jig ask", () => {
         rounds: 2,
         class: "converged",
         reason: "exit 0 (converged)",
+        next: {
+          person: "repository maintainer",
+          act: "merge the pull request",
+        },
       },
       w.state,
     );
@@ -336,6 +340,7 @@ describe("jig ask", () => {
       at: "2026-11-04T11:00:00.000Z",
       reason: "exit 0 (converged)",
       from: "outcome log",
+      next: { person: "repository maintainer", act: "merge the pull request" },
     });
     expect(answer.waitsOn).toMatchObject({ person: "merge" });
   });
@@ -377,6 +382,7 @@ describe("jig ask", () => {
       class: "quota wall",
       at: "2026-11-04T11:00:00.000Z",
       from: "launch claim",
+      next: { none: "no handoff was recorded: exit 16 (quota-parked)" },
     });
     // A dispatching host's claim is on the pull request, so the wall settles by itself.
     expect(answer.waitsOn).toHaveProperty("waiting");

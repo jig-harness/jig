@@ -1,3 +1,4 @@
+import type { NextOwner } from "../../dispatch/lib/next-owner.ts";
 /**
  * What `jig ask` answers for an address, in the shape it prints as JSON
  * (`--json`, version `ANSWER_VERSION`): later versions add fields and never
@@ -61,6 +62,8 @@ export interface Last {
   reason: string;
   /** Where it was read: this machine's outcome log, or a launch claim's end on the forge. */
   from: "outcome log" | "launch claim";
+  /** Null when the older record did not keep a handoff. */
+  next: NextOwner | null;
 }
 
 /** One record kind the answer consulted. */
