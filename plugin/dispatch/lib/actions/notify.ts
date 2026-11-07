@@ -12,8 +12,8 @@
  *   the comment already carries is recorded as sent without being sent
  *   again. A cause that still stands `dispatch.renotify_after` after it was
  *   last sent is sent again, marked as a repeat, unless the destination is
- *   still unread with it (`0s` sends each cause once). A drift is an
- *   observation, sent once for the life of its key. A suppression record is
+ *   still unread with it (`0s` sends each cause once). A drift or exhausted no-cause recovery is
+ *   sent once for the life of its key. A suppression record is
  *   dropped when its cause leaves a tick that read every record whole (the
  *   park was answered, the drive moved on), so a cause that is settled is
  *   never repeated and new facts always notify.
@@ -57,6 +57,7 @@ import {
 import { carries, holdsNotice, unobservedTarget } from "../notices.ts";
 import {
   MAX_COMMENT,
+  NOTICES_BRANCH,
   NOTICES_NAME,
   type RuntimeReceipt,
   type SessionsReport,
@@ -81,9 +82,6 @@ import {
   recordComment,
 } from "./notices-content.ts";
 import { retireNotices } from "./retire-notices.ts";
-
-/** The branch of a repository's notices workspace. */
-const NOTICES_BRANCH = "jig-dispatch-notices";
 
 /** The comments the dispatcher's opens gave a workspace before its comments carried the dispatched mark. */
 const OWN_COMMENT =
@@ -743,7 +741,9 @@ async function sendNotices(
           key: c.notice.key,
           at,
           workspace,
-          lasting: c.cause === "drifting",
+          lasting:
+            c.cause === "drifting" ||
+            (c.cause === "stopped-unknown" && c.evidence.noCause === true),
         },
         // A cause about a stage this machine launched has its ended row instead.
         c.launched === true ? null : eventRow(repo.slug, c, at),

@@ -111,6 +111,33 @@ describe("render and parse", () => {
     expect(parsed.ledger.decisions).toEqual([]);
   });
 
+  it("writes authoritative operator stops as version 2 while ordinary ledgers remain version 1", () => {
+    const ordinary = renderLedger(ledger());
+    expect("error" in ordinary).toBe(false);
+    if ("error" in ordinary) return;
+    expect(ordinary.ledger.ledgerVersion).toBe(1);
+    const stopping = ledger();
+    stopping.driver.personStop = {
+      at: "2026-10-01T11:00:00.000Z",
+      reason: "maintenance",
+    };
+    const written = renderLedger(stopping);
+    expect("error" in written).toBe(false);
+    if ("error" in written) return;
+    expect(written.ledger.ledgerVersion).toBe(2);
+    expect(written.body).toContain('"v":2');
+    const parsed = parseLedger(written.body);
+    expect(parsed?.kind).toBe("ledger");
+    if (parsed?.kind !== "ledger") return;
+    expect(parsed.ledger.driver.personStop?.reason).toBe("maintenance");
+    expect(parseLedger(ordinary.body)?.kind).toBe("ledger");
+    expect(
+      parseLedger(
+        written.body.replace('"ledgerVersion":2', '"ledgerVersion":3'),
+      ),
+    ).toEqual({ kind: "unknown-version", version: 3 });
+  });
+
   it("names a version it does not read, and leaves other comments alone", () => {
     const rendered = renderLedger(ledger());
     if ("error" in rendered) throw new Error(rendered.error);

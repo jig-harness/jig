@@ -330,16 +330,18 @@ export async function prComments(
   if (res.code !== 0) return null;
   const pages = parseJson(res.stdout, "the pull request's comments");
   if (!Array.isArray(pages)) return null;
-  return pages
-    .flat()
-    .filter(isRecord)
-    .map((c) => ({
-      author: isRecord(c.user) ? text(c.user.login) : "",
-      association: text(c.author_association),
-      at: text(c.created_at),
-      url: text(c.html_url),
-      body: text(c.body),
-    }));
+  return conversationOf(pages.flat());
+}
+
+/** A listing of the pull request's comments already read (the forge's issue-comment objects), as the answers are read from. */
+export function conversationOf(listing: readonly unknown[]): CommentLike[] {
+  return listing.filter(isRecord).map((c) => ({
+    author: isRecord(c.user) ? text(c.user.login) : "",
+    association: text(c.author_association),
+    at: text(c.created_at),
+    url: text(c.html_url),
+    body: text(c.body),
+  }));
 }
 
 /**
@@ -380,17 +382,22 @@ async function answersTo(
  * waiting, and of those the ones not every place an answer could be was read
  * for (`unread`); `unreadable` names the item none of whose comments could be
  * read. `repo` (`owner/name`) names the repository; without it, the current
- * directory's.
+ * directory's. `listing` is the pull request's comments when the caller has
+ * already read them (`conversationOf`); without it, they are read here.
  */
 export async function parkAnswers(
   pr: number,
   parked: readonly ParkedItem[],
   repo?: string,
+  listing?: readonly unknown[],
 ): Promise<
   | { answered: PendingVerdict[]; waiting: ParkedItem[]; unread: ParkedItem[] }
   | { unreadable: string }
 > {
-  const conversation = await prComments(String(pr), repo);
+  const conversation =
+    listing === undefined
+      ? await prComments(String(pr), repo)
+      : conversationOf(listing);
   const answered: PendingVerdict[] = [];
   const waiting: ParkedItem[] = [];
   const unread: ParkedItem[] = [];

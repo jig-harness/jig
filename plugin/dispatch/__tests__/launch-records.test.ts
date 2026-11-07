@@ -183,6 +183,22 @@ describe("settled claim ends", () => {
 });
 
 describe("retention", () => {
+  it("keeps cancellation proof until every shared end is confirmed", async () => {
+    const dir = root();
+    const cancelled = record("20260101T000000Z-aaaaaaaa", {
+      createdAt: "2026-01-01T00:00:00.000Z",
+      cancelledAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:00.000Z",
+    });
+    writeRecord(cancelled, dir);
+    const records = (await readLaunches(dir)).records;
+    const now = Date.parse("2027-01-01");
+    expect(pruneLaunches(records, now, 7, dir)).toEqual([]);
+    expect((await readLaunches(dir)).records).toHaveLength(1);
+    settleEnds([cancelled.id], "2026-12-31T00:00:00.000Z", dir);
+    expect(pruneLaunches(records, now, 7, dir)).toEqual([cancelled.id]);
+  });
+
   it("remembers a settled claim end until its record is pruned", () => {
     const dir = root();
     const a = ended(

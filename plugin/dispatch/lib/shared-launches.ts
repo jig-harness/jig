@@ -29,6 +29,10 @@
  *   past the lease window is taken over by this host, under the ledger's own
  *   rule, never by a claim alone.
  */
+import {
+  NO_CAUSE_FACTS,
+  recoveryReservationRefusal,
+} from "./no-cause-stops.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
@@ -64,6 +68,8 @@ import {
   type ReadRecord,
   settleEnds,
   settledEnds,
+  writeRecord,
+  cancelledBeforeExecution,
 } from "./launches.ts";
 import { stateDb } from "./state.ts";
 import type { DrivenPr, FollowupMarker, MarkedPr } from "./types.ts";
@@ -86,6 +92,8 @@ export interface SharedContext {
   login: string | null;
   /** The read-back's rule; the shared records' own when absent. */
   rule?: ReadBackRule;
+  /** State root for durable cancellation evidence; defaults to this dispatcher's. */
+  root?: string;
 }
 
 /** Each drive's launch claims, by pull request, or why they did not read. */
@@ -351,12 +359,12 @@ export function launchClaimer(ctx: SharedContext): LaunchClaimer {
           uncertain: true,
         };
       const a = answer.value;
-      if (a.kind === "holds") return { claim: a.id };
+      if (a.kind === "holds") return checkedReservation(ctx, record, a.id);
       const why = lostWhy(a);
       // Only another claim's standing is a loss; a read that does not settle is not.
       const uncertain = !["held", "earlier", "done"].includes(a.kind);
       if (!("id" in a)) return { refused: why, uncertain };
-      const released = await ctx.records.release(target, a.id);
+      const released = await withdrawUnstarted(ctx, record, a.id);
       return {
         refused: released.ok
           ? why
@@ -365,9 +373,49 @@ export function launchClaimer(ctx: SharedContext): LaunchClaimer {
       };
     },
     async release(record, claim) {
-      await ctx.records.release(targetOf(record), claim);
+      await withdrawUnstarted(ctx, record, claim);
     },
   };
+}
+
+/** The claim holds other hosts off while the latest history decides the recovery allowance. */
+async function checkedReservation(
+  ctx: SharedContext,
+  record: LaunchRecord,
+  own: number,
+): Promise<{ claim: number } | { refused: string; uncertain?: boolean }> {
+  const history = record.facts.startsWith(NO_CAUSE_FACTS)
+    ? await ctx.records.list({ repo: ctx.slug, pr: Number(record.pr) }, "drive")
+    : null;
+  const why =
+    history === null
+      ? null
+      : recoveryReservationRefusal(record, own, history, Date.now());
+  if (why === null) return { claim: own };
+  const released = await withdrawUnstarted(ctx, record, own);
+  return {
+    refused: released.ok
+      ? why
+      : `${why}; its claim could not be withdrawn: ${released.failure.reason}`,
+    uncertain: !released.ok,
+  };
+}
+
+/** A failed withdrawal leaves a durable cancellation for the next tick to publish. */
+async function withdrawUnstarted(
+  ctx: SharedContext,
+  record: LaunchRecord,
+  own: number,
+) {
+  const released = await ctx.records.release(
+    { repo: ctx.slug, pr: Number(record.pr) },
+    own,
+  );
+  if (!released.ok && record.attempts.every((a) => a.outcome === "failed")) {
+    record.cancelledAt ??= new Date().toISOString();
+    writeRecord(record, ctx.root ?? stateRoot());
+  }
+  return released;
 }
 
 /** The shared claim a drive's launch record makes. */
@@ -424,6 +472,13 @@ function endOfRecord(
       state: "died",
       at: nowIso,
       reason: "its launch record is gone from the host that made it",
+    };
+  if (cancelledBeforeExecution(r))
+    return {
+      state: "died",
+      at: r.record.cancelledAt ?? nowIso,
+      reason: "its reservation was cancelled before execution",
+      executed: false,
     };
   if (holds(r.state)) return null;
   if (r.state.kind === "died")
@@ -506,6 +561,7 @@ export async function settleOwnClaims(
   settleEnds(
     settledRecords(claims, ctx.host, records, written, nowIso),
     nowIso,
+    ctx.root,
   );
   return failures;
 }

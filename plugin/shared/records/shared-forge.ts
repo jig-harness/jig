@@ -322,6 +322,17 @@ function budgetOf(stdout: string): Outcome<SharedBudget, "unreadable"> {
   });
 }
 
+/** A `listRepository` that reads each pull request's claims through `list`, one after another. */
+export function listEach(
+  list: SharedRecords["list"],
+): SharedRecords["listRepository"] {
+  return async (repo, prs, stage) => {
+    const out = new Map<number, Outcome<SharedClaim[], "unreadable">>();
+    for (const pr of prs) out.set(pr, await list({ repo, pr }, stage));
+    return out;
+  };
+}
+
 /** The shared records on the forge, read and written as `opts.login`. */
 export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
   const self = opts.login;
@@ -503,11 +514,7 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
   return {
     medium: "forge",
     list,
-    async listRepository(repo, prs, stage) {
-      const out = new Map<number, Outcome<SharedClaim[], "unreadable">>();
-      for (const pr of prs) out.set(pr, await list({ repo, pr }, stage));
-      return out;
-    },
+    listRepository: listEach(list),
     async claim(target, draft, rule = {}) {
       if (draft.stage === "drive") return claimDrive(target, draft, rule);
       return post(target, draft, 1, rule);
