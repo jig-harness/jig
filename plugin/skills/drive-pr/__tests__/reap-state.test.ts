@@ -208,6 +208,7 @@ describe("reap-state.ts — the files an earlier release kept", () => {
     expectSpawnExit(within.result, 0);
     expect(within.report().keep.map((k) => k.id)).toEqual([
       `imported:${basename(dir)}`,
+      `quarantine:${basename(dir)}`,
     ]);
     for (const name of names) expect(existsSync(join(dir, name))).toBe(true);
     importedDaysAgo(dir, IMPORTED_RETENTION_DAYS + 1);
