@@ -140,7 +140,7 @@ import {
 } from "./lib/pass-child.ts";
 import { git, gitCallTimeoutSeconds, pidAlive } from "./lib/proc.ts";
 import { liveDrives, reportMain } from "./lib/morning-report.ts";
-import { type DriveState, isUsableState } from "./lib/state/schema.ts";
+import { readStateSnapshot } from "./lib/state/snapshot.ts";
 import {
   claimAlive,
   holderGone,
@@ -152,7 +152,6 @@ import { READ_ONLY_ENV, dbPathFor, driveDb } from "./lib/state/db.ts";
 import { lockRows } from "./lib/state/lock.ts";
 import {
   peekResolvedStateDir,
-  readStateRow,
   resolveStateDir,
   stateNumbers,
   worktreeLockName,
@@ -373,29 +372,6 @@ const stopHint = (pr: string): string => formatStopCommand(SELF, pr);
 // pure and does none of it. Every read below degrades to the `null`/`false`
 // that drives `classifyDrive` toward `UNKNOWN` rather than throwing or silently
 // treating a failed read as "nothing to report".
-
-/**
- * Read a PR's state DIRECTLY — no `openStore`, no lock. This command is
- * read-only over lock state by design (see the module header); the same
- * reasoning extends to state: taking the state lock here would make a
- * diagnostic sweep a second writer contending with an actual driver.
- * `isUsableState` is the SAME shape predicate `store.read()` uses, so a
- * state this rejects is one `store.read()` would refuse too.
- */
-function readStateSnapshot(
-  stateDir: string,
-  pr: string,
-): { ok: true; state: DriveState } | { ok: false } {
-  try {
-    const raw = readStateRow(stateDir, pr)?.text;
-    if (raw === undefined) return { ok: false };
-    const parsed: unknown = JSON.parse(raw);
-    if (!isUsableState(parsed, Number.parseInt(pr, 10))) return { ok: false };
-    return { ok: true, state: parsed };
-  } catch {
-    return { ok: false };
-  }
-}
 
 export { gatherWorktreeLeftovers } from "./lib/worktree-leftovers.ts";
 import { gatherWorktreeLeftovers } from "./lib/worktree-leftovers.ts";
