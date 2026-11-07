@@ -81,6 +81,8 @@ export interface TickReceipt {
   defect?: Defect;
   /** The classes that recur, as the reflection route recorded them, left them pending or would record them; absent when it had nothing to do. */
   reflection?: ReflectionReport;
+  /** Set on the receipt of a tick that found the tick lock held, naming the holder: it holds only the upgrade its launcher ran, and did nothing else. */
+  lockHeldBy?: string;
   /** The plugin upgrade the launcher ran before this tick (`runtime/upgrade-record.ts`); absent from a tick no timer started. */
   upgrade?: ScheduledUpgrade;
   repos: RepoReport[];

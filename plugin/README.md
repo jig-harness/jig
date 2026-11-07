@@ -1676,16 +1676,22 @@ has the plugin; with neither, install with the commands above, or with
   skipped, unchanged, `0.114.0 -> 0.115.0`, or failed with the tool's
   error), the [morning report](skills/drive-pr/README.md#the-morning-report)
   lists the updates and failures since the last report, and `jig doctor`
-  fails while the latest one failed. A machine [pinned](#update-pin-or-remove)
+  fails while the latest one failed, or while an upgrade's process died
+  before it finished; a `jig upgrade` you run that succeeds clears it. A
+  failing tool's output is shortened in each line, so a flood of it never
+  stops a job. A machine [pinned](#update-pin-or-remove)
   to a tag receives nothing. A plugin Claude Code loads in place from a
   local marketplace folder is skipped, with the skip in the receipt, and
   the folder is left to whoever maintains it. `jig install --no-upgrade`,
   or `upgrade: off` in the user file, opts the machine out
   ([CONFIGURATION.md](CONFIGURATION.md#upgrade-user-file-only)). The `jig`
   command and a woken dispatcher tick never upgrade first: only a timer's
-  job does. A machine with no timer installed stays on the tools' own
-  updates below, `jig upgrade`, or `bun tools/plugin/setup.ts` from a
-  checkout.
+  job does. Only a launcher copy this release or a later one wrote runs
+  the upgrade: on a machine whose jobs an earlier release installed, run
+  `jig upgrade` (or `jig upgrade --jobs-only`) once, which refreshes each
+  job's launcher copy and turns the upgrades on. A machine with no timer
+  installed stays on the tools' own updates below, `jig upgrade`, or
+  `bun tools/plugin/setup.ts` from a checkout.
 - **Claude Code** updates a marketplace added from a Git address only when
   asked, unless auto-update is on for it: `/plugin` → **Marketplaces** →
   `jig` → **Enable auto-update**. On `stable`, turn it on: updates are few,

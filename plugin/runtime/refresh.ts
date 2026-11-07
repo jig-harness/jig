@@ -20,7 +20,7 @@
  * person rewrites the job.
  */
 import { swallow } from "../shared/errors.ts";
-import { exclusiveGcLock } from "../shared/gc-lock.ts";
+import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import type { Component } from "./component.ts";
 import {
   type InstalledJob,
@@ -138,7 +138,7 @@ function refreshJob(
     outcome: RefreshResult["outcome"],
     detail: string,
   ): RefreshResult => ({ target: spec.name, outcome, detail });
-  return exclusiveGcLock("install", async () => {
+  return exclusiveInstallLock(async () => {
     const snapshot = await snapshotScheduler(scheduler, spec);
     const installed = readableJob(component, snapshot, scheduler);
     if (Array.isArray(installed)) return result(...installed);
@@ -256,7 +256,7 @@ export async function refreshInstalled(
     // Under the lock installs and removals take, as a job's refresh is.
     results.push({
       target: "jig command",
-      ...(await exclusiveGcLock("install", async () => refreshCommand())),
+      ...(await exclusiveInstallLock(async () => refreshCommand())),
     });
   } catch (error) {
     results.push({

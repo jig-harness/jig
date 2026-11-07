@@ -43,6 +43,7 @@ import {
   refreshInstalled,
 } from "./refresh.ts";
 import { installedScript, pluginPrograms } from "./scheduler.ts";
+import { writeStamp } from "./upgrade-stamp.ts";
 
 /** What `jig upgrade` did: each harness, then each installed job and the `jig` command. */
 interface UpgradeResult {
@@ -263,6 +264,39 @@ function report(result: UpgradeResult, say: Say): void {
   for (const job of result.jobs) say(formatRefresh(job));
 }
 
+/**
+ * A `jig upgrade` that brought every harness up to date counts as the
+ * interval's upgrade: its stamp clears a failed scheduled one, as `jig
+ * doctor`'s fix says, and the timers wait `upgrade.every` from it.
+ */
+function stampManual(result: UpgradeResult): void {
+  const current = result.harnesses.filter(
+    (h) => h.outcome === "updated" || h.outcome === "unchanged",
+  );
+  if (current.length === 0) return;
+  const moved = current.find((h) => h.outcome === "updated");
+  try {
+    writeStamp({
+      outcome: moved === undefined ? "unchanged" : "updated",
+      detail: `jig upgrade, run by a person: ${current
+        .map((h) =>
+          h.outcome === "updated"
+            ? `${h.harness} ${h.before} -> ${h.version}`
+            : `${h.harness} at ${h.version}`,
+        )
+        .join("; ")}`,
+      at: new Date().toISOString(),
+      ...(moved?.before !== undefined && moved.version !== undefined
+        ? { from: moved.before, to: moved.version }
+        : {}),
+    });
+  } catch (error) {
+    console.error(
+      `jig upgrade: the upgrade stamp could not be written: ${(error as Error).message}`,
+    );
+  }
+}
+
 /** Runs `jig upgrade` and prints what became of each harness and job. */
 export async function upgradeVerb(
   args: UpgradeArguments,
@@ -279,5 +313,7 @@ export async function upgradeVerb(
   });
   if (args.json) console.log(JSON.stringify(result, null, 2));
   else report(result, say);
-  return upgradeExit(result, args.jobsOnly);
+  const code = upgradeExit(result, args.jobsOnly);
+  if (code === 0 && !args.jobsOnly) stampManual(result);
+  return code;
 }

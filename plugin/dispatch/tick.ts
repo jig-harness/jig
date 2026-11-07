@@ -259,9 +259,35 @@ async function closeTick(
   });
 }
 
+/**
+ * A tick that found the lock held writes no receipt of its own work; one its
+ * launcher ran the plugin upgrade before gets a receipt holding that upgrade
+ * and the holder, so the morning report still sees it.
+ */
+function heldReceipt(options: TickOptions, heldBy: string): void {
+  const upgrade = upgradeField();
+  if (upgrade.upgrade === undefined) return;
+  const now = options.now ?? new Date();
+  writeReceipt({
+    version: 1,
+    runId: newRunId(now),
+    startedAt: now.toISOString(),
+    finishedAt: new Date().toISOString(),
+    completed: false,
+    apply: options.apply === true,
+    exitStatus: 3,
+    lockHeldBy: heldBy,
+    repos: [],
+    ...upgrade,
+  });
+}
+
 export async function runTick(options: TickOptions): Promise<TickResult> {
   const lock = takeTickLock();
-  if ("heldBy" in lock) return { held: lock.heldBy };
+  if ("heldBy" in lock) {
+    heldReceipt(options, lock.heldBy);
+    return { held: lock.heldBy };
+  }
   try {
     const timer = new PhaseTimer<TickPhase>();
     const started = await timer.time("start", () => startTick(options));

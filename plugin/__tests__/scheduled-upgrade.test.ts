@@ -12,6 +12,7 @@ import {
   copyFileSync,
   cpSync,
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   statSync,
@@ -22,12 +23,9 @@ import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../lib/test-helpers/windows-skip.ts";
 import { readReceipt, receiptPaths } from "../gc/receipts.ts";
 import type { Receipt } from "../gc/types.ts";
-import {
-  type ScheduledUpgrade,
-  stampPath,
-  upgradeStateRoot,
-} from "../runtime/upgrade-record.ts";
-import { withCardLock } from "../shared/orca-card-lock.ts";
+import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
+import { stampPath, upgradeStateRoot } from "../runtime/upgrade-stamp.ts";
+import { withFileLock } from "../shared/file-lock.ts";
 import { upgradesSince } from "../skills/drive-pr/scripts/lib/morning-report-upgrades.ts";
 import { dump, load } from "../shared/yaml.ts";
 import { type Machine, machine, SCHEDULERS } from "./lifecycle-fixtures.ts";
@@ -105,6 +103,35 @@ function updates(m: Machine): string[] {
 const stampFile = (m: Machine) =>
   join(m.home, ".local", "state", "jig", "upgrade", "last.json");
 
+/** How many times an agent tool was asked for its plugins. */
+function lists(m: Machine): number {
+  return m.agentCalls().filter((call) => call.endsWith("plugin list --json"))
+    .length;
+}
+
+/** Writes the latest attempt's stamp as `fields` say. */
+function stamp(m: Machine, fields: Record<string, unknown>): void {
+  mkdirSync(join(stampFile(m), ".."), { recursive: true });
+  writeFileSync(
+    stampFile(m),
+    JSON.stringify({
+      version: 1,
+      outcome: "unchanged",
+      detail: "claude at 0.2.0",
+      at: new Date().toISOString(),
+      pid: process.pid,
+      ...fields,
+    }),
+  );
+}
+
+/** A process that has exited, for a stamp whose holder is gone. */
+function exitedPid(): number {
+  const child = Bun.spawnSync([process.execPath, "-e", "0"]);
+  expectSpawnExit(child, 0);
+  return child.pid;
+}
+
 /** Moves the latest attempt's stamp back by `ms`, as if that much time had passed. */
 function age(m: Machine, ms: number): void {
   const stamp = JSON.parse(readFileSync(stampFile(m), "utf8"));
@@ -139,9 +166,12 @@ test.skipIf(onWindows)(
     // The job that upgraded ran the copy the upgrade installed.
     expect(jobsRun(m)).toContain("next gc --scheduled");
 
-    // A third firing inside the interval upgrades nothing and runs that copy.
+    // A third firing inside the interval upgrades nothing and runs that copy,
+    // asking the agent tool for it once: a withheld upgrade moved nothing.
+    const listed = lists(m);
     const third = m.runJob("jig-gc");
     expectSpawnExit(third, 0);
+    expect(lists(m)).toBe(listed + 1);
     expect(
       updates(m).filter((call) => call.startsWith("claude plugin update")),
     ).toHaveLength(1);
@@ -161,10 +191,10 @@ test.skipIf(onWindows)(
     mark(m, m.plugin, "installed");
     const root = upgradeStateRoot(m.home);
     // This test holds the claim, as a job between its read and its write of the stamp does.
-    const held = await withCardLock(
+    const held = await withFileLock(
       stampPath(root),
       () => m.startJob("jig-gc"),
-      { root },
+      { root, name: "claim" },
     );
     expect(held).not.toBeNull();
     expectSpawnExit(held?.value as Awaited<ReturnType<Machine["startJob"]>>, 0);
@@ -236,6 +266,27 @@ test.skipIf(onWindows)(
     );
     expect(out).not.toContain("0.2.0 -> 0.3.0");
     expect(out).toContain("Failing: upgrade.");
+
+    // The fix doctor names: a jig upgrade a person runs stamps the interval, and the failure clears.
+    m.agentState((state) => {
+      delete state.claude.fail;
+    });
+    expectSpawnExit(m.jig(["upgrade"]), 0);
+    const cleared = m.jig(["doctor", "--json"]);
+    expect(
+      (
+        JSON.parse(cleared.stdout.toString()).checks as {
+          id: string;
+          status: string;
+          detail: string;
+        }[]
+      ).find((check) => check.id === "upgrade"),
+    ).toMatchObject({
+      status: "pass",
+      detail: expect.stringMatching(
+        /^the latest upgrade, at \S+: 0\.3\.0 -> 0\.4\.0$/,
+      ),
+    });
 
     const report = upgradesSince(started, { gc: gcState(m) });
     expect(report.unread).toEqual([]);
@@ -375,15 +426,15 @@ test.skipIf(onWindows)(
   TIMEOUT,
 );
 
-test.skipIf(onWindows)(
-  "a job an earlier release installed, with that release's launcher copy, still runs, and the jig command never upgrades",
-  () => {
+test.skipIf(onWindows).each(["0.111.0", "0.156.0"])(
+  "a job release %s installed, with that release's launcher copy, still runs, and the jig command never upgrades",
+  (release) => {
     const m = machine(SCHEDULERS[0]);
     installed(m);
     nextRelease(m, "0.3.0", "next-release");
     mark(m, m.plugin, "installed");
     copyFileSync(
-      join(import.meta.dir, "fixtures", "launcher-0.156.0.ts"),
+      join(import.meta.dir, "fixtures", `launcher-${release}.ts`),
       join(gcState(m), "launcher", "launcher.ts"),
     );
     expectSpawnExit(m.runJob("jig-gc"), 0);
@@ -452,6 +503,104 @@ test.skipIf(onWindows || SCHEDULERS[0] !== "launchd")(
 
     expectSpawnExit(m.jig(["upgrade"]), 0);
     expect(m.jobText("jig-gc")).toContain("<string>--smol</string>");
+  },
+  TIMEOUT,
+);
+
+test.skipIf(onWindows)(
+  "an agent tool that fails with a flood of output leaves a bounded line in the receipt, and every job of the interval still runs",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    installed(m);
+    nextRelease(m, "0.3.0", "next-release");
+    mark(m, m.plugin, "installed");
+    m.agentState((state) => {
+      state.claude.fail = `${"x".repeat(250_000)} network down`;
+    });
+    expectSpawnExit(m.runJob("jig-gc"), 0);
+    const failed = lastUpgrade(m);
+    expect(failed?.outcome).toBe("failed");
+    expect(failed?.detail).toContain("network down");
+    expect(failed?.detail.length).toBeLessThan(4000);
+    expectSpawnExit(m.runJob("jig-gc"), 0);
+    expect(lastUpgrade(m)?.outcome).toBe("withheld");
+    expect(lastUpgrade(m)?.detail.length).toBeLessThan(4000);
+    expect(jobsRun(m)).toEqual([
+      "installed gc --scheduled",
+      "installed gc --scheduled",
+    ]);
+  },
+  TIMEOUT,
+);
+
+test.skipIf(onWindows)(
+  "a running stamp withholds the upgrade while its holder lives, whatever its age, and stops withholding, and fails doctor, once its holder is gone",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    installed(m);
+    nextRelease(m, "0.3.0", "next-release");
+    stamp(m, {
+      outcome: "running",
+      detail: "a scheduled job started it",
+      at: new Date(Date.now() - 5 * 3_600_000).toISOString(),
+    });
+    expectSpawnExit(m.runJob("jig-gc"), 0);
+    expect(updates(m)).toEqual([]);
+    expect(lastUpgrade(m)?.detail).toContain("is still running");
+
+    stamp(m, {
+      outcome: "running",
+      detail: "a scheduled job started it",
+      at: new Date(Date.now() - 60_000).toISOString(),
+      pid: exitedPid(),
+    });
+    const doctor = m.jig(["doctor"]);
+    expectSpawnExit(doctor, 1);
+    expect(doctor.stdout.toString()).toMatch(
+      /FAIL {2}upgrade: the scheduled upgrade started at \S+ did not finish: no process has pid \d+ now/,
+    );
+    expectSpawnExit(m.runJob("jig-gc"), 0);
+    expect(lastUpgrade(m)).toMatchObject({ outcome: "updated", to: "0.3.0" });
+  },
+  TIMEOUT,
+);
+
+test.skipIf(onWindows)(
+  "a stamp a little ahead of the clock withholds the upgrade, one more than an interval ahead does not",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    installed(m);
+    nextRelease(m, "0.3.0", "next-release");
+    stamp(m, { at: new Date(Date.now() + 10 * 60_000).toISOString() });
+    expectSpawnExit(m.runJob("jig-gc"), 0);
+    expect(lastUpgrade(m)?.outcome).toBe("withheld");
+    expect(updates(m)).toEqual([]);
+    stamp(m, { at: new Date(Date.now() + 3 * 3_600_000).toISOString() });
+    expectSpawnExit(m.runJob("jig-gc"), 0);
+    expect(lastUpgrade(m)).toMatchObject({ outcome: "updated", to: "0.3.0" });
+  },
+  TIMEOUT,
+);
+
+test.skipIf(onWindows)(
+  "a stamp that does not read fails doctor, naming it, and the next job upgrades and writes it again",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    installed(m);
+    nextRelease(m, "0.3.0", "next-release");
+    mkdirSync(join(stampFile(m), ".."), { recursive: true });
+    writeFileSync(stampFile(m), "not a stamp");
+    const doctor = m.jig(["doctor"]);
+    expectSpawnExit(doctor, 1);
+    expect(doctor.stdout.toString()).toContain(
+      `FAIL  upgrade: ${stampFile(m)} is not JSON`,
+    );
+    expectSpawnExit(m.runJob("jig-gc"), 0);
+    expect(lastUpgrade(m)).toMatchObject({ outcome: "updated", to: "0.3.0" });
+    expect(JSON.parse(readFileSync(stampFile(m), "utf8"))).toMatchObject({
+      outcome: "updated",
+      holder: expect.objectContaining({ pid: expect.any(Number) }),
+    });
   },
   TIMEOUT,
 );

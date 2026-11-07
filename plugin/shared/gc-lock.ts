@@ -8,6 +8,14 @@ import { GcError } from "./gc-error.ts";
  * in its earlier empty form names its pid in its name, and a writer in its
  * earlier form holds a bare pid. A token found stale is reported with its
  * holder and why it counts as gone, and is still never removed by gc.
+ *
+ * The `install` kind, which no creator's token admits, alone takes over a
+ * writer whose recorded holder is judged dead (`exclusiveInstallLock`): an
+ * install, a refresh or a scheduled upgrade killed while it held the lock
+ * would otherwise refuse every later one until a person removed the file.
+ * The takeover runs under a file lock (`file-lock.ts`), and removes the
+ * writer only while it still holds what was judged dead. Collection's kinds
+ * never take a writer over.
  */
 import { randomUUID } from "node:crypto";
 import {
@@ -18,8 +26,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { errnoCode } from "./errors.ts";
+import { withFileLock } from "./file-lock.ts";
 import {
   decodeIdentity,
   describeIdentity,
@@ -129,26 +138,73 @@ function admissionRefusal(kind: string, dir: string, names: string[]): string {
   return `gc ${kind}: ${parts.join("; ")}`;
 }
 
-export async function exclusiveGcLock<T>(
-  kind: string,
-  body: () => Promise<T>,
-  root = gcLockRoot(),
-): Promise<T> {
-  const dir = join(root, kind);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const writer = join(dir, "writer");
+/** Creates the writer file holding this process's identity; false when one exists. */
+function publishWriter(writer: string): boolean {
   try {
     writeFileSync(writer, encodeIdentity(ownIdentity()), {
       flag: "wx",
       mode: 0o600,
     });
+    return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return false;
+  }
+}
+
+/** The writer file's text; null when it is gone. */
+function writerText(writer: string): string | null {
+  try {
+    return readFileSync(writer, "utf8");
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/**
+ * Replaces a writer whose holder is judged dead with this process's, under a
+ * file lock, only while it still holds `seen`; false when it changed or
+ * another process published first.
+ */
+async function takeOverDead(writer: string, seen: string): Promise<boolean> {
+  const taken = await withFileLock(
+    writer,
+    async () => {
+      if (writerText(writer) !== seen) return false;
+      rmSync(writer, { force: true });
+      return publishWriter(writer);
+    },
+    { root: dirname(writer), name: "writer-takeover" },
+  );
+  return taken?.value === true;
+}
+
+export async function exclusiveGcLock<T>(
+  kind: string,
+  body: () => Promise<T>,
+  root = gcLockRoot(),
+  options: { takeOverDead?: boolean } = {},
+): Promise<T> {
+  const dir = join(root, kind);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const writer = join(dir, "writer");
+  if (!publishWriter(writer)) {
+    const seen = writerText(writer);
     const held = judged(writer, null);
-    throw new GcError(
-      held?.gone === true
-        ? `gc ${kind}: ${writer} names a process that has exited (${held.text}); remove it after inspection`
-        : `gc ${kind}: another collection holds ${held?.text ?? writer}`,
+    const taken =
+      options.takeOverDead === true &&
+      held?.gone === true &&
+      seen !== null &&
+      (await takeOverDead(writer, seen));
+    if (!taken)
+      throw new GcError(
+        held?.gone === true
+          ? `gc ${kind}: ${writer} names a process that has exited (${held.text}); remove it after inspection`
+          : `gc ${kind}: another collection holds ${held?.text ?? writer}`,
+      );
+    console.error(
+      `gc ${kind}: took over ${writer} from a holder that has exited (${held?.text})`,
     );
   }
   try {
@@ -161,4 +217,16 @@ export async function exclusiveGcLock<T>(
   } finally {
     rmSync(writer);
   }
+}
+
+/**
+ * The lock installs, refreshes and the scheduled upgrade's opt-out take
+ * around the machine files and the scheduler: `exclusiveGcLock`'s `install`
+ * kind, taking over a writer whose holder has exited.
+ */
+export function exclusiveInstallLock<T>(
+  body: () => Promise<T>,
+  root = gcLockRoot(),
+): Promise<T> {
+  return exclusiveGcLock("install", body, root, { takeOverDead: true });
 }

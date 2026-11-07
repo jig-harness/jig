@@ -2,11 +2,12 @@
  * `jig upgrade --scheduled`: the upgrade the launcher runs, from the
  * installed plugin copy, before each job a timer starts. It upgrades at most
  * once per `upgrade.every` whichever timer fires first: under a lock it reads
- * the stamp of the latest attempt (`upgrade-record.ts`), withholds the
- * upgrade while that stamp is younger than the interval, and otherwise claims
- * the interval by writing a new one before anything else runs, so a second
- * timer firing meanwhile is withheld and a failure is not tried again inside
- * the interval.
+ * the stamp of the latest attempt (`upgrade-stamp.ts`), withholds the
+ * upgrade while that stamp is younger than the interval or its attempt is
+ * still running, and otherwise claims the interval by writing a new one
+ * before anything else runs, so a second timer firing meanwhile is withheld
+ * and a failure is not tried again inside the interval. An attempt whose
+ * process died before it finished claims nothing.
  *
  * Each harness is upgraded on the channel its marketplace follows, as `jig
  * upgrade` does (`harness.ts`, `upgrade.ts`): the plugin, then the installed
@@ -22,7 +23,7 @@
  * its progress on standard error; it exits 1 only when the upgrade failed.
  */
 import { mkdirSync } from "node:fs";
-import { withCardLock } from "../shared/orca-card-lock.ts";
+import { withFileLock } from "../shared/file-lock.ts";
 import type { Component } from "./component.ts";
 import {
   available,
@@ -42,15 +43,20 @@ import {
 import type { RefreshResult } from "./refresh.ts";
 import { refreshFromInstalled } from "./upgrade.ts";
 import {
-  readStamp,
+  bounded,
+  capped,
   type ScheduledUpgrade,
-  stampPath,
   type UpgradeSettings,
   upgradeLine,
   upgradeSettings,
+} from "./upgrade-record.ts";
+import {
+  holderGone,
+  readStamp,
+  stampPath,
   upgradeStateRoot,
   writeStamp,
-} from "./upgrade-record.ts";
+} from "./upgrade-stamp.ts";
 
 type Result = Omit<ScheduledUpgrade, "at">;
 
@@ -221,23 +227,32 @@ async function attempt(options: ScheduledOptions): Promise<Result> {
   return summarize(plans, results, refresh);
 }
 
-/** Why the interval's attempt is withheld, from the latest stamp; null when it is due. */
+/**
+ * Why the interval's attempt is withheld, from the latest stamp; null when it
+ * is due: no stamp, one that does not read, a `running` one whose holder
+ * died, or one older (or further ahead of this clock) than the interval.
+ */
 function withheldBy(
   settings: UpgradeSettings,
   now: Date,
 ): ((at: string) => ScheduledUpgrade) | null {
-  const last = readStamp();
-  if (last === null) return null;
+  const read = readStamp();
+  if (!("stamp" in read)) return null;
+  const last = read.stamp;
+  const withheld = (detail: string) => (at: string) =>
+    ({ outcome: "withheld", detail: capped(detail), at }) as const;
+  if (last.outcome === "running")
+    return holderGone(last) === null
+      ? withheld(`the upgrade a job started at ${last.at} is still running`)
+      : null;
   // A stamp a little ahead of this clock is fresh too: another job may have
   // written it after this one read the time.
   const elapsed = now.getTime() - Date.parse(last.at);
   if (Math.abs(elapsed) >= settings.everyMs) return null;
   const due = new Date(Date.parse(last.at) + settings.everyMs).toISOString();
-  const detail =
-    last.outcome === "running"
-      ? `the upgrade a job started at ${last.at} is still running`
-      : `upgrade.every is ${settings.every}: the latest, at ${last.at}, ${upgradeLine({ ...last, outcome: last.outcome })}; the next is due at ${due}`;
-  return (at) => ({ outcome: "withheld", detail, at });
+  return withheld(
+    `upgrade.every is ${settings.every}: the latest, at ${last.at}, ${upgradeLine({ ...last, outcome: last.outcome })}; the next is due at ${due}`,
+  );
 }
 
 /**
@@ -251,7 +266,7 @@ async function claim(
 ): Promise<ScheduledUpgrade | null> {
   const root = upgradeStateRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  const taken = await withCardLock(
+  const taken = await withFileLock(
     stampPath(root),
     async () => {
       const withheld = withheldBy(settings, new Date());
@@ -260,11 +275,10 @@ async function claim(
         outcome: "running",
         detail: "a scheduled job started it",
         at,
-        pid: process.pid,
       });
       return null;
     },
-    { root },
+    { root, name: "claim" },
   );
   return taken === null
     ? {
@@ -301,9 +315,17 @@ async function scheduledUpgrade(
   } catch (error) {
     result = { outcome: "failed", detail: message(error) };
   }
-  const upgrade = { ...result, at };
-  writeStamp({ ...upgrade, pid: process.pid });
-  return upgrade;
+  const upgrade = bounded({ ...result, at });
+  try {
+    writeStamp(upgrade);
+    return upgrade;
+  } catch (error) {
+    // The attempt's own outcome stands; the next one is due once this process is gone.
+    return bounded({
+      ...upgrade,
+      detail: `${upgrade.detail}; the stamp could not be written: ${message(error)}`,
+    });
+  }
 }
 
 /** Runs `jig upgrade --scheduled`: one line of JSON on standard output, progress on standard error. */
@@ -325,6 +347,7 @@ export async function scheduledUpgradeVerb(
       at: new Date().toISOString(),
     };
   }
+  upgrade = bounded(upgrade);
   console.error(`upgrade: ${upgradeLine(upgrade)}`);
   console.log(JSON.stringify(upgrade));
   return upgrade.outcome === "failed" ? 1 : 0;

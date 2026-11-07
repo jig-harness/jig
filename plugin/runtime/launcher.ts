@@ -417,24 +417,55 @@ function entryCommand(entry: string): string[] {
   ];
 }
 
-/** A result line for an upgrade that printed none, saying why. */
+/**
+ * The longest result line passed to a job: the system bounds one environment
+ * value (128 KiB on Linux), and a longer one would stop the job starting.
+ */
+const RESULT_LIMIT = 8 * 1024;
+/** The outcomes a result may name (`upgrade-record.ts`). */
+const OUTCOMES = ["withheld", "skipped", "unchanged", "updated", "failed"];
+
+/** `text`, cut to `limit` characters, saying how much was cut. */
+function clip(text: string, limit = 1000): string {
+  return text.length <= limit
+    ? text
+    : `${text.slice(0, limit)} … (${text.length - limit} more characters)`;
+}
+
+/** A result line for an upgrade that printed none that reads, saying why. */
 function failedUpgrade(detail: string): string {
   return JSON.stringify({
     outcome: "failed",
-    detail,
+    detail: clip(detail),
     at: new Date().toISOString(),
   });
 }
 
-/** The result line the upgrade printed last; null when its last line is not one. */
+/** Whether `value` is a result as `upgrade-record.ts`'s `isScheduledUpgrade` reads one. */
+function isResult(value: unknown): value is { detail: string } {
+  const result = value as Record<string, unknown> | null;
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    !Array.isArray(result) &&
+    OUTCOMES.includes(result.outcome as string) &&
+    typeof result.detail === "string" &&
+    typeof result.at === "string" &&
+    ["undefined", "string"].includes(typeof result.from) &&
+    ["undefined", "string"].includes(typeof result.to)
+  );
+}
+
+/**
+ * The result line the upgrade printed last, or a failed one when that line
+ * is JSON but not a result or too long to pass on; null when its last line is
+ * not JSON at all.
+ */
 function resultLine(stdout: string): string | null {
   const line = stdout.trim().split("\n").at(-1) ?? "";
+  let value: unknown;
   try {
-    const value = JSON.parse(line);
-    return typeof value?.outcome === "string" &&
-      typeof value?.detail === "string"
-      ? JSON.stringify(value)
-      : null;
+    value = JSON.parse(line);
   } catch (error) {
     // Not the result line: an installed copy too old for --scheduled, or one that crashed.
     console.error(
@@ -442,6 +473,16 @@ function resultLine(stdout: string): string | null {
     );
     return null;
   }
+  if (!isResult(value))
+    return failedUpgrade(
+      `jig upgrade --scheduled printed a result that does not read: ${line}`,
+    );
+  const text = JSON.stringify(value);
+  return text.length <= RESULT_LIMIT
+    ? text
+    : failedUpgrade(
+        `jig upgrade --scheduled printed a result of ${text.length} characters, more than the ${RESULT_LIMIT} a job is passed: ${value.detail}`,
+      );
 }
 
 /** What the supervised upgrade came to, as its result line. */
@@ -454,7 +495,7 @@ function upgradeResult(outcome: Outcome, deadlineMs: number): string {
   if (stopped === "output")
     return failedUpgrade("jig upgrade --scheduled printed more than 4 MiB");
   if (stopped) throw new LauncherStopped(`received ${stopped}`);
-  const said = stderr.trim().split("\n").at(-1) ?? "";
+  const said = clip(stderr.trim().split("\n").at(-1) ?? "", 500);
   return (
     resultLine(stdout) ??
     failedUpgrade(
@@ -528,8 +569,11 @@ async function main(argv: string[]): Promise<number> {
     delete env[UPGRADE_RESULT];
     let entry = await installedEntry(programs);
     if (role === undefined || role === "") {
-      env[UPGRADE_RESULT] = await scheduledUpgrade(entry, programs, env);
-      entry = await entryAfterUpgrade(programs, entry);
+      const result = await scheduledUpgrade(entry, programs, env);
+      env[UPGRADE_RESULT] = result;
+      // Only an update, or a failure part-way through one, can move the installed copy.
+      if (["updated", "failed"].includes(JSON.parse(result).outcome))
+        entry = await entryAfterUpgrade(programs, entry);
     }
     return await runCollector(
       [...entryCommand(entry), ...rest],

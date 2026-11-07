@@ -625,3 +625,69 @@ test.skipIf(
     ]);
   },
 );
+
+test.skipIf(
+  skipsOnWindows(
+    "powershell",
+    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+  ),
+)(
+  "a result line too long to pass on, or one that is not a result, reaches the job as a short failed line",
+  () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    const log = join(root, "runs.log");
+    const { launcher, config } = installedLauncher(root);
+    const directory = join(root, "copy");
+    mkdirSync(join(directory, "gc"), { recursive: true });
+    writeFileSync(join(directory, "gc", "bunfig.toml"), "");
+    const printed = join(root, "printed.txt");
+    writeFileSync(
+      join(directory, "jig.ts"),
+      `const fs = require("node:fs");
+if (process.argv[2] === "upgrade") console.log(fs.readFileSync(${JSON.stringify(printed)}, "utf8"));
+else fs.appendFileSync(${JSON.stringify(log)}, (process.env.JIG_SCHEDULED_UPGRADE ?? "") + "\\n");
+`,
+    );
+    const claude = join(root, "claude");
+    writeFakeProgram(
+      claude,
+      `#!/usr/bin/env bun\nconsole.log(JSON.stringify([{ id: "jig@jig", scope: "user", installPath: ${JSON.stringify(realpathSync(directory))} }]));\n`,
+    );
+    const run = (line: string) => {
+      writeFileSync(printed, line);
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          "--no-env-file",
+          `--config=${config}`,
+          launcher,
+          `--claude=${claude}`,
+          "--",
+          "gc",
+        ],
+        { stdout: "pipe", stderr: "pipe", timeout: 30000 },
+      );
+      expectSpawnExit(result, 0);
+      return JSON.parse(
+        readFileSync(log, "utf8").trim().split("\n").at(-1) as string,
+      ) as { outcome: string; detail: string };
+    };
+    const long = run(
+      JSON.stringify({
+        outcome: "updated",
+        detail: "y".repeat(300_000),
+        at: "2026-11-07T04:00:00.000Z",
+      }),
+    );
+    expect(long.outcome).toBe("failed");
+    expect(long.detail).toContain("more than the 8192 a job is passed");
+    expect(long.detail.length).toBeLessThan(1200);
+    const odd = run(
+      JSON.stringify({ outcome: "done", detail: "x", at: "2026-11-07" }),
+    );
+    expect(odd).toMatchObject({
+      outcome: "failed",
+      detail: expect.stringContaining("a result that does not read"),
+    });
+  },
+);

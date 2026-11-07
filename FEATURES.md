@@ -155,7 +155,8 @@ did. They answer each park from the phone and merge what converged.
 The dispatcher is one part of the [`jig` command](plugin/README.md#the-jig-command),
 which installs, checks, updates and removes the plugin's tools on a machine.
 Its timers also keep the plugin on its channel's newest version. A pinned
-machine stays where it is.
+machine stays where it is. A machine whose jobs an older release installed
+runs `jig upgrade` once to turn this on.
 The dispatcher starts sessions through a [session runtime](GLOSSARY.md).
 Orca is the first, and another runtime joins by implementing the same
 interface.

@@ -9,21 +9,15 @@
  * The machine's setting is the user file's `upgrade` section
  * (`upgrade: off`, or `every` and `enabled`), read here for the run, for
  * `jig doctor` and for `jig install --no-upgrade`, which writes the opt-out.
- * The upgrade's stamp, under `~/.local/state/jig/upgrade/`, holds the latest
- * attempt: when it started and what it came to. A stamp younger than
- * `upgrade.every` withholds the next attempt, so a failure is not tried
- * again inside the interval, and `jig doctor` fails while the latest attempt
- * failed.
+ * The latest attempt's stamp is `upgrade-stamp.ts`'s.
+ *
+ * A `detail` is held to `DETAIL_LIMIT` characters wherever one is made: the
+ * launcher passes the line in an environment variable, which the system
+ * bounds, and a failed tool's whole output would otherwise reach every
+ * receipt and every withheld line of the interval.
  */
-import {
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import {
   isMapping,
   readConfigFile,
@@ -31,9 +25,8 @@ import {
   userLayerEnabled,
 } from "../shared/config-layers.ts";
 import { swallow } from "../shared/errors.ts";
-import { exclusiveGcLock } from "../shared/gc-lock.ts";
+import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import { dump } from "../shared/yaml.ts";
-import type { DoctorCheck } from "./component.ts";
 
 /**
  * The variable the launcher passes a job's scheduled upgrade in: the line
@@ -68,6 +61,22 @@ export interface ScheduledUpgrade {
   to?: string;
 }
 
+/** The most characters a `detail` keeps. */
+export const DETAIL_LIMIT = 2000;
+
+/** `text` held to `limit` characters: its start and its end, with how much was left out between them. */
+export function capped(text: string, limit = DETAIL_LIMIT): string {
+  if (text.length <= limit) return text;
+  const head = Math.floor(limit * 0.6);
+  const tail = Math.floor(limit * 0.3);
+  return `${text.slice(0, head)} … (${text.length - head - tail} characters left out) … ${text.slice(-tail)}`;
+}
+
+/** The upgrade with its `detail` held to `DETAIL_LIMIT`. */
+export function bounded<T extends { detail: string }>(upgrade: T): T {
+  return { ...upgrade, detail: capped(upgrade.detail) };
+}
+
 export function isScheduledUpgrade(value: unknown): value is ScheduledUpgrade {
   return (
     isMapping(value) &&
@@ -89,20 +98,27 @@ export function upgradeLine(upgrade: ScheduledUpgrade): string {
 
 /**
  * The scheduled upgrade the launcher passed this job; undefined when there
- * is none or it does not read.
+ * is none. A line that does not read is recorded as a failed upgrade quoting
+ * it, so the receipt still says something went wrong.
  */
 export function scheduledUpgradeOf(
   env: NodeJS.ProcessEnv = process.env,
 ): ScheduledUpgrade | undefined {
   const text = env[SCHEDULED_UPGRADE_ENV];
   if (!text) return undefined;
+  let value: unknown;
   try {
-    const value: unknown = JSON.parse(text);
-    return isScheduledUpgrade(value) ? value : undefined;
+    value = JSON.parse(text);
   } catch (error) {
-    swallow(error, "an upgrade line that does not read is left out");
-    return undefined;
+    swallow(error, "the line is recorded as a failed upgrade instead");
   }
+  return isScheduledUpgrade(value)
+    ? bounded(value)
+    : {
+        outcome: "failed",
+        detail: capped(`the launcher's upgrade line does not read: ${text}`),
+        at: new Date().toISOString(),
+      };
 }
 
 /**
@@ -183,7 +199,7 @@ export function upgradeSettings(
 }
 
 /** Writes `text` at `path` whole: staged beside it, then renamed. */
-function writeWhole(path: string, text: string): void {
+export function writeWhole(path: string, text: string): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
   try {
@@ -201,7 +217,7 @@ function writeWhole(path: string, text: string): void {
  */
 export function recordOptOut(env: NodeJS.ProcessEnv = process.env) {
   const path = userConfigPath(env);
-  return exclusiveGcLock("install", async () => {
+  return exclusiveInstallLock(async () => {
     const values = readConfigFile(path) ?? {};
     const current = values.upgrade;
     const upgrade = isMapping(current)
@@ -210,102 +226,4 @@ export function recordOptOut(env: NodeJS.ProcessEnv = process.env) {
     writeWhole(path, dump({ ...values, upgrade }));
     return path;
   });
-}
-
-/** Where the scheduled upgrade keeps its stamp and the lock that claims an interval. */
-export function upgradeStateRoot(home = homedir()): string {
-  return join(home, ".local", "state", "jig", "upgrade");
-}
-
-/** The latest scheduled upgrade: `running` from its claim until it records what it came to. */
-export interface UpgradeStamp extends Omit<ScheduledUpgrade, "outcome"> {
-  outcome: UpgradeOutcome | "running";
-  /** The process that made the attempt. */
-  pid: number;
-}
-
-export function stampPath(root = upgradeStateRoot()): string {
-  return join(root, "last.json");
-}
-
-/** The latest attempt's stamp; null when none was made or it does not read. */
-export function readStamp(path = stampPath()): UpgradeStamp | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(readFileSync(path, "utf8"));
-  } catch (error) {
-    swallow(error, "a stamp that does not read claims no interval");
-    return null;
-  }
-  if (!isMapping(value) || typeof value.pid !== "number") return null;
-  const outcome = value.outcome;
-  return (outcome === "running" || isScheduledUpgrade(value)) &&
-    typeof value.detail === "string" &&
-    typeof value.at === "string" &&
-    Number.isFinite(Date.parse(value.at))
-    ? (value as unknown as UpgradeStamp)
-    : null;
-}
-
-export function writeStamp(stamp: UpgradeStamp, path = stampPath()): void {
-  writeWhole(path, `${JSON.stringify(stamp)}\n`);
-}
-
-/** How long an attempt may stay `running` before `jig doctor` says it did not finish. */
-const RUNNING_LIMIT_MS = 60 * 60_000;
-
-/**
- * `jig doctor`'s check of the scheduled upgrade: it fails while the latest
- * attempt failed, or one started and never finished, naming that attempt and
- * the harness's error; it passes once a later attempt succeeds. It is skipped
- * on a machine that opted out or where no job has upgraded yet.
- */
-export function upgradeCheck(now = new Date()): DoctorCheck {
-  const id = "upgrade";
-  let settings: UpgradeSettings;
-  try {
-    settings = upgradeSettings();
-  } catch (error) {
-    return {
-      id,
-      status: "fail",
-      detail: error instanceof Error ? error.message : String(error),
-      fix: "edit the user file: CONFIGURATION.md's upgrade section lists its settings",
-    };
-  }
-  if (!settings.enabled)
-    return {
-      id,
-      status: "skip",
-      detail: `the timers do not upgrade the plugin: upgrade is off in ${settings.path}`,
-    };
-  const stamp = readStamp();
-  if (stamp === null)
-    return { id, status: "skip", detail: "no job has upgraded the plugin yet" };
-  const fix = `jig upgrade, which prints each command and its error; the timers try again ${settings.every} after the failed attempt`;
-  if (stamp.outcome === "failed")
-    return {
-      id,
-      status: "fail",
-      detail: `the scheduled upgrade at ${stamp.at} failed: ${stamp.detail}`,
-      fix,
-    };
-  if (stamp.outcome === "running")
-    return now.getTime() - Date.parse(stamp.at) > RUNNING_LIMIT_MS
-      ? {
-          id,
-          status: "fail",
-          detail: `the scheduled upgrade started at ${stamp.at} did not finish`,
-          fix,
-        }
-      : {
-          id,
-          status: "pass",
-          detail: `a scheduled upgrade started at ${stamp.at} is running`,
-        };
-  return {
-    id,
-    status: "pass",
-    detail: `the scheduled upgrade at ${stamp.at}: ${upgradeLine(stamp as ScheduledUpgrade)}`,
-  };
 }

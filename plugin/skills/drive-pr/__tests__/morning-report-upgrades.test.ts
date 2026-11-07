@@ -97,6 +97,12 @@ describe("drives.ts --report: the plugin upgrades", () => {
     };
     tickReceipt(forge, updated);
     gcReceipt(forge, failed);
+    // The same failure, every tick for a while: one entry.
+    const repeated =
+      "/home/x/.jig/jig.yaml: upgrade.every must be a whole number";
+    const times = [5, 4.5, 4].map(hoursAgo);
+    for (const at of times)
+      tickReceipt(forge, { outcome: "failed", detail: repeated, at });
     gcReceipt(forge, {
       outcome: "withheld",
       detail: "upgrade.every is 1h",
@@ -125,12 +131,24 @@ describe("drives.ts --report: the plugin upgrades", () => {
     expect(out.upgrades).toEqual([
       {
         at: updated.at,
+        last: updated.at,
+        count: 1,
         job: "dispatch",
         outcome: "updated",
         line: "0.114.0 -> 0.115.0",
       },
       {
+        at: times[0],
+        last: times[2],
+        count: 3,
+        job: "dispatch",
+        outcome: "failed",
+        line: `failed: ${repeated}`,
+      },
+      {
         at: failed.at,
+        last: failed.at,
+        count: 1,
         job: "gc",
         outcome: "failed",
         line: `failed: ${failed.detail}`,
@@ -143,7 +161,7 @@ describe("drives.ts --report: the plugin upgrades", () => {
     ]);
     expectSpawnExit(text, 0);
     expect(text.stdout).toContain(
-      `Plugin upgrades the timers ran on this machine (from the jobs' receipts):\n  ${updated.at} dispatch: 0.114.0 -> 0.115.0\n  ${failed.at} gc: failed: ${failed.detail}\n`,
+      `Plugin upgrades the timers ran on this machine (from the jobs' receipts):\n  ${updated.at} dispatch: 0.114.0 -> 0.115.0\n  ${times[0]} to ${times[2]} dispatch: failed: ${repeated} (3 times)\n  ${failed.at} gc: failed: ${failed.detail}\n`,
     );
   });
 });

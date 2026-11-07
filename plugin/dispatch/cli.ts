@@ -380,7 +380,7 @@ function listReceipts(paths: readonly string[]): void {
     if (r === null) continue;
     const actions = r.repos.reduce((n, repo) => n + repo.actions.length, 0);
     console.log(
-      `${r.runId}  ${r.startedAt}  ${r.completed ? `exit ${r.exitStatus}` : "incomplete"}${took(r)}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)${defects(r)}${upgraded(r)}  ${path}`,
+      `${r.runId}  ${r.startedAt}  ${r.lockHeldBy !== undefined ? "lock held" : r.completed ? `exit ${r.exitStatus}` : "incomplete"}${took(r)}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)${defects(r)}${upgraded(r)}  ${path}`,
     );
   }
 }

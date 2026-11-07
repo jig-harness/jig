@@ -67,11 +67,11 @@ function missingOptIn(): string | null {
     : `no machine file ${path}. The dispatcher's timer starts drives on the accounts that file names; write it (CONFIGURATION.md, the machine's dispatch file), then run jig install dispatch`;
 }
 
-/** The newest receipt that reads; null when there is none. */
+/** The newest receipt of a tick that ran; null when there is none. A tick that found the lock held ran nothing. */
 function lastRun(): LastRun | null {
   for (const path of receiptPaths().reverse()) {
     const receipt = readReceipt(path);
-    if (receipt !== null)
+    if (receipt !== null && receipt.lockHeldBy === undefined)
       return {
         runId: receipt.runId,
         startedAt: receipt.startedAt,

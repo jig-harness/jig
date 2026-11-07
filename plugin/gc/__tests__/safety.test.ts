@@ -14,7 +14,11 @@ import { scratchProof } from "../kinds/scratch.ts";
 import { worktreeActivity } from "../kinds/worktree-git.ts";
 import { reaperEnvironment } from "../kinds/tool-state.ts";
 import { receiptsKind } from "../kinds/receipts.ts";
-import { sharedGcLock, exclusiveGcLock } from "../../shared/gc-lock.ts";
+import {
+  exclusiveGcLock,
+  exclusiveInstallLock,
+  sharedGcLock,
+} from "../../shared/gc-lock.ts";
 import { SCRATCH_OWNER_FILE } from "../../shared/scratch-owner.ts";
 import { boundDeclaration, parseDeclaration, parseMachine } from "../config.ts";
 import { jobFiles } from "../../runtime/scheduler.ts";
@@ -157,6 +161,36 @@ test("a writer whose process exited blocks collectors, not creators", async () =
   ).rejects.toThrow(`${writer} names a process that has exited`);
   writeFileSync(writer, String(process.pid));
   expect(() => sharedGcLock("scratch", dir)).toThrow(writer);
+});
+test("the install lock takes over a writer whose holder was killed while it held it, and still refuses a live one", async () => {
+  const dir = root();
+  const lock = join(import.meta.dir, "../../shared/gc-lock.ts");
+  // An install that exits inside the lock, as one killed there does: its writer stays.
+  const killed = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `const { exclusiveInstallLock } = await import(${JSON.stringify(lock)}); await exclusiveInstallLock(async () => process.exit(0), ${JSON.stringify(dir)});`,
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  expectSpawnExit(killed, 0);
+  const writer = join(dir, "install", "writer");
+  expect(readFileSync(writer, "utf8")).toContain(`"pid":${killed.pid}`);
+  const ran: string[] = [];
+  await exclusiveInstallLock(async () => {
+    ran.push(readFileSync(writer, "utf8"));
+  }, dir);
+  expect(ran).toHaveLength(1);
+  expect(ran[0]).toContain(`"pid":${process.pid}`);
+  expect(
+    readdirSync(join(dir, "install")).filter((n) => n === "writer"),
+  ).toEqual([]);
+
+  writeFileSync(writer, String(process.pid));
+  await expect(
+    exclusiveInstallLock(async () => undefined, dir),
+  ).rejects.toThrow("another collection holds");
 });
 test("an admission token whose creator exited is reported stale with its holder, and kept", async () => {
   const dir = root();

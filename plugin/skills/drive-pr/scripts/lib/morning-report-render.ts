@@ -151,7 +151,11 @@ export function renderMorningReport(r: MorningReport): string {
     lines.push(
       "",
       "Plugin upgrades the timers ran on this machine (from the jobs' receipts):",
-      ...r.upgrades.map((u) => `  ${u.at} ${u.job}: ${u.line}`),
+      ...r.upgrades.map((u) =>
+        u.count === 1
+          ? `  ${u.at} ${u.job}: ${u.line}`
+          : `  ${u.at} to ${u.last} ${u.job}: ${u.line} (${u.count} times)`,
+      ),
     );
   if (r.unread.length > 0)
     lines.push(

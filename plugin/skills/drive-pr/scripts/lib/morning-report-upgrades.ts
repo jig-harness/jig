@@ -6,7 +6,9 @@
  * (`plugin/gc/receipts.ts`) and the dispatcher's (`plugin/dispatch/receipts.ts`)
  * alike. The report lists each upgrade that moved the plugin and each that
  * failed, once, at the time it ran; one withheld, skipped or unchanged says
- * nothing a person must read.
+ * nothing a person must read. A failure that repeats with the same words (a
+ * setting that does not read fails every tick) is one entry: when it first
+ * and last came, and how many times.
  */
 import { basename, dirname } from "node:path";
 import {
@@ -24,8 +26,12 @@ import {
 } from "../../../../runtime/upgrade-record.ts";
 
 export interface UpgradeEntry {
-  /** When the upgrade ran. */
+  /** When the upgrade ran; for a failure that repeated, when it first came. */
   at: string;
+  /** When a repeated failure last came; `at` for one that came once. */
+  last: string;
+  /** How many times it came. */
+  count: number;
   /** The job whose receipt holds it: `gc` or `dispatch`. */
   job: string;
   outcome: "updated" | "failed";
@@ -102,28 +108,65 @@ function upgradesOf(
   return found;
 }
 
+/** The entries so far, and the attempts counted, so one attempt seen in two receipts counts once. */
+interface Tally {
+  entries: Map<string, UpgradeEntry>;
+  attempts: Set<string>;
+}
+
+/** Counts one upgrade into the tally: an update is one attempt, in one receipt; a failure is one entry per wording. */
+function count(
+  tally: Tally,
+  job: string,
+  upgrade: ScheduledUpgrade & { outcome: "updated" | "failed" },
+): void {
+  const line = upgradeLine(upgrade);
+  const key =
+    upgrade.outcome === "updated"
+      ? `${upgrade.at}\0${line}`
+      : `failed\0${line}`;
+  const attempt = `${key}\0${upgrade.at}`;
+  const seen = tally.entries.get(key);
+  if (seen === undefined)
+    tally.entries.set(key, {
+      at: upgrade.at,
+      last: upgrade.at,
+      count: 1,
+      job,
+      outcome: upgrade.outcome,
+      line,
+    });
+  else if (!tally.attempts.has(attempt)) {
+    seen.count += 1;
+    if (upgrade.at < seen.at) seen.at = upgrade.at;
+    if (upgrade.at > seen.last) seen.last = upgrade.at;
+  }
+  tally.attempts.add(attempt);
+}
+
+/** Whether a report lists the upgrade: one that moved the plugin or failed, since `since`. */
+function listed(
+  upgrade: ScheduledUpgrade,
+  since: number,
+): upgrade is ScheduledUpgrade & { outcome: "updated" | "failed" } {
+  return (
+    (upgrade.outcome === "updated" || upgrade.outcome === "failed") &&
+    Date.parse(upgrade.at) >= since
+  );
+}
+
 /** The upgrades that moved the plugin or failed since `since` (milliseconds), oldest first. */
 export function upgradesSince(
   since: number,
   roots: ReceiptRoots = {},
 ): UpgradesSince {
   const unread: string[] = [];
-  const entries = new Map<string, UpgradeEntry>();
+  const tally: Tally = { entries: new Map(), attempts: new Set() };
+  const entries = tally.entries;
   for (const [job, upgrade] of upgradesOf(since, roots, unread)) {
-    if (!isScheduledUpgrade(upgrade)) {
+    if (!isScheduledUpgrade(upgrade))
       unread.push(`a ${job} receipt holds an upgrade that does not read`);
-      continue;
-    }
-    const outcome = (upgrade as ScheduledUpgrade).outcome;
-    if (outcome !== "updated" && outcome !== "failed") continue;
-    if (!(Date.parse(upgrade.at) >= since)) continue;
-    // One attempt is in one receipt; a copy of it is the same upgrade.
-    entries.set(`${upgrade.at}\0${outcome}`, {
-      at: upgrade.at,
-      job,
-      outcome,
-      line: upgradeLine(upgrade),
-    });
+    else if (listed(upgrade, since)) count(tally, job, upgrade);
   }
   return {
     entries: [...entries.values()].sort((a, b) => a.at.localeCompare(b.at)),

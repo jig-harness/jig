@@ -994,7 +994,7 @@ These are set per machine or per run, not committed:
 | `JIG_TURN_BUDGET`, `JIG_TURN_BUDGET_MARGIN`, `JIG_TURN_BUDGET_REFIRE` | The turn-budget hook's cap (default 1000; `0` turns the hook off), the margin before it at which the hook warns (default 50), and how often it warns again (unset or `0`: once more when half the margin remains) |
 | `JIG_TURN_BUDGET_STATE_DIR` | Where the turn-budget hook keeps its per-session state; default `jig-turn-budget` under the temporary directory |
 | `JIG_LAUNCHER_ROLE` | Set by the line, never by a person: `command` in the `jig` command's script and `wake` for a woken dispatcher tick, so the launcher does not upgrade the plugin first; unset, the launcher runs a timer's job and upgrades first ([`upgrade`](#upgrade-user-file-only)) |
-| `JIG_SCHEDULED_UPGRADE` | Set by the line, never by a person: the launcher passes a timer's job what its scheduled upgrade came to, a line of JSON, which the job writes into its receipt as `upgrade` |
+| `JIG_SCHEDULED_UPGRADE` | Set by the line, never by a person: the launcher passes a timer's job what its scheduled upgrade came to, a line of JSON of at most 8 KiB (its `detail` shortened to 2,000 characters), which the job writes into its receipt as `upgrade`; a line that does not read is recorded as a failed upgrade quoting it |
 | `JIG_UPGRADE_SCHEDULED` | Set by the line, never by a person: `1` tells the installed copy's `jig upgrade --jobs-only` that a timer's job runs it, so it leaves a loaded launchd job's file for the next `jig upgrade` a person runs |
 | `JIG_LAUNCH` | Set by the line, never by a person: the launch record a dispatched session runs under (the dispatcher's wrapper sets it), or the driver a drive's pass belongs to. While it is set, [`jig send`](README.md#telling-a-station-what-to-do) refuses the commands that are a person's |
 | `JIG_REFOCUS` | `1` or `0` puts `do-item`'s intent-chain snapshot in the Refocus calibration's on or off arm; unset, odd issue numbers are on |
@@ -1047,8 +1047,11 @@ jobs still run.
 | `every` | `1h`; the shortest time between two scheduled upgrades, as a whole number of minutes, hours or days (`30m`, `1h`, `2d`). An attempt, whatever it came to, withholds the next one for this long: two timers firing within it upgrade once, and a failed upgrade is not tried again inside it. Read by `jig upgrade --scheduled` and `jig doctor` |
 | `enabled` | `true`; `false` opts the machine out, as `upgrade: off` does. Written by `jig install --no-upgrade`; read by `jig upgrade --scheduled` and `jig doctor` |
 
-The latest attempt is kept under `~/.local/state/jig/upgrade/`: when it ran
-and what it came to. A machine whose marketplace is pinned to a tag or
+The latest attempt is kept under `~/.local/state/jig/upgrade/`: when it ran,
+what it came to and the process that made it. An attempt still running
+withholds the next one while its process lives, and claims nothing once it
+has died; a `jig upgrade` you run that succeeds counts as the interval's
+upgrade too. A machine whose marketplace is pinned to a tag or
 another ref receives nothing, and a plugin Claude Code loads in place from a
 local marketplace folder is skipped; each says so in the job's receipt.
 

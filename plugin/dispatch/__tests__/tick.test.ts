@@ -3,7 +3,13 @@
  * installed command in a child with its own home.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -218,6 +224,49 @@ describe("jig dispatch receipts", () => {
     });
     expectSpawnExit(report, 0);
     expect(report.stdout).toContain("upgrade: failed: claude 0.2.0 -> 0.3.0");
+  });
+});
+
+describe("a tick that finds the tick lock held", () => {
+  it("keeps the upgrade its launcher ran in a receipt naming the holder", async () => {
+    const w = fixture();
+    const state = join(w.home, ".local", "state", "jig", "dispatch");
+    mkdirSync(state, { recursive: true });
+    // This test's own process holds the lock, as a running tick does.
+    writeFileSync(join(state, "tick.lock"), String(process.pid));
+    const upgrade = {
+      outcome: "failed",
+      detail: "network down",
+      at: "2026-11-07T04:00:00.000Z",
+    };
+    const r = await w.dispatch(["--repo", w.repo], undefined, {
+      JIG_SCHEDULED_UPGRADE: JSON.stringify(upgrade),
+    });
+    expectSpawnExit(r, 3);
+    const days = readdirSync(join(state, "receipts"));
+    expect(days).toHaveLength(1);
+    const files = readdirSync(join(state, "receipts", days[0] as string));
+    expect(files).toHaveLength(1);
+    const receipt = JSON.parse(
+      readFileSync(
+        join(state, "receipts", days[0] as string, files[0] as string),
+        "utf8",
+      ),
+    ) as TickReceipt;
+    expect(receipt).toMatchObject({
+      upgrade,
+      repos: [],
+      lockHeldBy: expect.stringContaining(String(process.pid)),
+    });
+    const listed = await w.dispatch(["receipts"]);
+    expect(listed.stdout).toContain("lock held");
+
+    // Without an upgrade to keep, a held tick writes nothing.
+    const plain = await w.dispatch(["--repo", w.repo]);
+    expectSpawnExit(plain, 3);
+    expect(
+      readdirSync(join(state, "receipts", days[0] as string)),
+    ).toHaveLength(1);
   });
 });
 

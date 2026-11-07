@@ -224,9 +224,10 @@ development and shipped as a version.
   a woken tick mark their launches (`JIG_LAUNCHER_ROLE`) and do not upgrade.
   `jig upgrade --scheduled` (`runtime/scheduled-upgrade.ts`) reads the user
   file's `upgrade` setting, withholds the upgrade on a machine that opted
-  out, takes the interval under a lock by writing a stamp
-  (`runtime/upgrade-record.ts`) unless the latest one is younger than
-  `upgrade.every`, withholds it for a harness pinned to a tag or ref, skips
+  out, takes the interval under a file lock (`shared/file-lock.ts`) by
+  writing a stamp naming its process (`runtime/upgrade-stamp.ts`) unless the
+  latest one is younger than `upgrade.every` or names a process still
+  running it, withholds it for a harness pinned to a tag or ref, skips
   a plugin loaded in place from a local folder, and otherwise runs the same
   update and refresh as `jig upgrade`, leaving a loaded launchd job's file
   alone. `jig doctor` (`runtime/doctor.ts`) checks Bun, the

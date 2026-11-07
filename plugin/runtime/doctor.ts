@@ -50,7 +50,7 @@ import {
   installedCommandText,
 } from "./path-command.ts";
 import { recordedPrograms } from "./refresh.ts";
-import { upgradeCheck } from "./upgrade-record.ts";
+import { upgradeCheck } from "./upgrade-stamp.ts";
 import {
   detectScheduler,
   launcherDirectory,

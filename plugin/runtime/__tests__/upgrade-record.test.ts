@@ -8,6 +8,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  capped,
+  DETAIL_LIMIT,
   everyMs,
   SCHEDULED_UPGRADE_ENV,
   takeScheduledUpgrade,
@@ -80,7 +82,7 @@ test("a receipt's line is the move for an update, else the outcome and why", () 
   ).toBe("failed: network down");
 });
 
-test("a job takes the launcher's upgrade out of its environment, and ignores one that does not read", () => {
+test("a job takes the launcher's upgrade out of its environment, and records a line that does not read as a failed upgrade", () => {
   const upgrade = {
     outcome: "skipped",
     detail: "in place",
@@ -91,10 +93,22 @@ test("a job takes the launcher's upgrade out of its environment, and ignores one
   };
   expect(takeScheduledUpgrade(env)).toEqual(upgrade as never);
   expect(env[SCHEDULED_UPGRADE_ENV]).toBeUndefined();
-  expect(
-    takeScheduledUpgrade({ [SCHEDULED_UPGRADE_ENV]: '{"outcome":"done"}' }),
-  ).toBeUndefined();
-  expect(
-    takeScheduledUpgrade({ [SCHEDULED_UPGRADE_ENV]: "not json" }),
-  ).toBeUndefined();
+  for (const text of ['{"outcome":"done"}', "not json"])
+    expect(
+      takeScheduledUpgrade({ [SCHEDULED_UPGRADE_ENV]: text }),
+    ).toMatchObject({
+      outcome: "failed",
+      detail: `the launcher's upgrade line does not read: ${text}`,
+    });
+  expect(takeScheduledUpgrade({})).toBeUndefined();
+});
+
+test("a detail is held to its limit, keeping its start and its end", () => {
+  const long = `start ${"x".repeat(300_000)} end`;
+  const held = capped(long);
+  expect(held.length).toBeLessThanOrEqual(DETAIL_LIMIT + 60);
+  expect(held.startsWith("start ")).toBe(true);
+  expect(held.endsWith(" end")).toBe(true);
+  expect(held).toContain("characters left out");
+  expect(capped("short")).toBe("short");
 });
