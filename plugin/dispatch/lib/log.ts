@@ -418,6 +418,13 @@ export function endTime(r: ReadRecord, observedAt: string): string {
   return r.state.kind === "ended" ? r.state.exit.at : observedAt;
 }
 
+/** What a re-drive of a mechanical stop was launched for, by the stop's kind. */
+const REDRIVEN: ReadonlyMap<string, string> = new Map([
+  ["stall", "a drive that stalled"],
+  ["ci-repair", "a drive whose CI-repair passes were spent"],
+  ["deadline", "a drive whose pass deadline recurred"],
+]);
+
 /** The ended row of a record that ended at `endedAt`. */
 export function endedRow(
   r: ReadRecord,
@@ -431,11 +438,8 @@ export function endedRow(
   const redriven =
     record.redrive?.conflictStop === true
       ? "a drive that stopped on a conflict"
-      : record.redrive?.mechanicalStop === "stall"
-        ? "a drive that stalled"
-        : record.redrive?.mechanicalStop === "ci-repair"
-          ? "a drive whose CI-repair passes were spent"
-          : "a stale converged pull request";
+      : (REDRIVEN.get(record.redrive?.mechanicalStop ?? "") ??
+        "a stale converged pull request");
   const reason =
     record.redrive == null
       ? placed.reason

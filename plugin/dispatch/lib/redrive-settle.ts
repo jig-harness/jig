@@ -1,16 +1,18 @@
 /**
  * The stale ledgers a re-drive settles once per change, after which a
- * person does: a stop on a conflict, a stall, a spent CI-repair budget. This
- * machine's launch records settle them in `actions/drive-hold.ts`, another
- * host's launch claims in `shared-launches.ts`, both in these words.
+ * person does: a stop on a conflict, a stall, a spent CI-repair budget, a
+ * pass deadline, a failure on a conflicting pull request. This machine's
+ * launch records settle them in `actions/drive-hold.ts`, another host's
+ * launch claims in `shared-launches.ts`, both in these words.
  */
 import { conflictNote } from "./sources/ledgers.ts";
 import type { DrivenPr, StaleCause } from "./types.ts";
 
 /**
  * Whether a stale ledger is re-driven once per change and then a person's:
- * a stop on a conflict, a stall, a spent CI-repair budget. A converged one
- * is only reported once re-driven.
+ * a stop on a conflict, a stall, a spent CI-repair budget, a pass deadline,
+ * a failure on a conflicting pull request. A converged one is only reported
+ * once re-driven.
  */
 export function settlesWithPerson(stale: StaleCause | undefined): boolean {
   return stale?.conflictStop === true || stale?.mechanicalStop !== undefined;
@@ -23,7 +25,7 @@ export function settledWhy(pr: DrivenPr, by: string): string {
       ? "its head or its base moves"
       : "its head moves";
   const stopped =
-    pr.stale?.conflictStop === true
+    pr.stale?.conflictStop === true && pr.stale.recovery !== true
       ? "stopped on a conflict with its base"
       : `${pr.stale?.cause ?? pr.why}`;
   const conflict =

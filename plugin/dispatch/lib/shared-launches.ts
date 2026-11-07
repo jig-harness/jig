@@ -29,10 +29,8 @@
  *   past the lease window is taken over by this host, under the ledger's own
  *   rule, never by a claim alone.
  */
-import {
-  NO_CAUSE_FACTS,
-  recoveryReservationRefusal,
-} from "./no-cause-stops.ts";
+import { recoveryReservationRefusal } from "./no-cause-stops.ts";
+import { budgeted, sameFacts } from "./recovery-facts.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import { settledWhy, settlesWithPerson } from "./redrive-settle.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
@@ -59,7 +57,7 @@ import { factsOf } from "./actions/drive-hold.ts";
 import type { LaunchClaimer } from "./actions/launch.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
-import { retryableStartup } from "./session-startup.ts";
+import { retriedDeath, retryableFollowup } from "./session-startup.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
@@ -174,7 +172,7 @@ function silentHold(
   if (
     latest !== null &&
     open(latest) &&
-    latest.says.value.facts === factsOf(pr)
+    sameFacts(latest.says.value.facts, factsOf(pr))
   )
     return {
       kind: "held",
@@ -199,7 +197,7 @@ function refusedOn(
   if (
     latest === null ||
     refused === null ||
-    latest.says.value.facts !== factsOf(pr)
+    !sameFacts(latest.says.value.facts, factsOf(pr))
   )
     return null;
   return {
@@ -389,7 +387,7 @@ async function checkedReservation(
   record: LaunchRecord,
   own: number,
 ): Promise<{ claim: number } | { refused: string; uncertain?: boolean }> {
-  const history = record.facts.startsWith(NO_CAUSE_FACTS)
+  const history = budgeted(record.facts)
     ? await ctx.records.list({ repo: ctx.slug, pr: Number(record.pr) }, "drive")
     : null;
   const why =
@@ -519,7 +517,7 @@ export async function settleOwnClaims(
   for (const r of records) {
     if (
       r.record.repo === ctx.slug &&
-      retryableStartup(r) &&
+      retryableFollowup(r) &&
       !settled.has(r.record.id) &&
       (startupScope === undefined || startupScope.has(Number(r.record.pr)))
     )
@@ -530,14 +528,18 @@ export async function settleOwnClaims(
   const ends = [
     ...driveEnds(claims, ctx.host, byId, nowIso),
     ...merged.flatMap((pr) =>
-      ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).flatMap((m) =>
-        owed(
-          pr.number,
-          "followup",
-          m.id,
-          markerEnd(m.run.record, outcomes.get(pr.number), byId, nowIso),
-          m.run.host === undefined ? ctx.host : undefined,
-        ),
+      ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).flatMap(
+        (m) =>
+          // A retry's marker is released, never answered.
+          retryable(byId.get(m.run.record))
+            ? []
+            : owed(
+                pr.number,
+                "followup",
+                m.id,
+                markerEnd(m.run.record, outcomes.get(pr.number), byId, nowIso),
+                m.run.host === undefined ? ctx.host : undefined,
+              ),
       ),
     ),
   ];
@@ -624,8 +626,11 @@ async function settleRecordClaims(
     ctx.host,
     owed.stage,
   );
-  if (retryableStartup(r)) {
-    const ids = matches.filter(open).map((c) => c.id);
+  if (retryableFollowup(r)) {
+    // A death's marker may already carry an answer an earlier settle wrote; it is released all the same.
+    const ids = matches
+      .filter((c) => open(c) || retriedDeath(r))
+      .map((c) => c.id);
     // The listing can lag a post or omit a marker already deleted by a tick.
     // Delete the recorded id as well: only a successful deletion or an explicit
     // not-found response confirms that this launch's marker no longer exists.
@@ -635,7 +640,12 @@ async function settleRecordClaims(
     ) {
       ids.push(r.record.marker);
     }
-    const released = await releaseStartupClaims(ctx, target, ids);
+    const released = await releaseStartupClaims(
+      ctx,
+      target,
+      ids,
+      retriedDeath(r) ? "died" : "unstarted",
+    );
     if (
       r.record.marker !== null &&
       failures.length === 0 &&
@@ -692,18 +702,24 @@ function ownRecordClaims(
   );
 }
 
-/** A startup that never began releases only its own still-open claims. */
+/** Whether a record's end is a follow-up's retry, whose marker is released rather than answered. */
+function retryable(r: ReadRecord | undefined): boolean {
+  return r !== undefined && retryableFollowup(r);
+}
+
+/** A retried follow-up releases only its own claims. */
 async function releaseStartupClaims(
   ctx: Pick<SharedContext, "records">,
   target: { repo: string; pr: number },
   ids: number[],
+  what: "unstarted" | "died",
 ): Promise<string[]> {
   const failures: string[] = [];
   for (const id of ids) {
     const released = await ctx.records.release(target, id);
     if (!released.ok && released.failure.code !== "not-found")
       failures.push(
-        `PR #${target.pr}: the unstarted follow-up's marker ${id} could not be released: ${released.failure.reason}`,
+        `PR #${target.pr}: the ${what} follow-up's marker ${id} could not be released: ${released.failure.reason}`,
       );
   }
   return failures;
@@ -721,8 +737,8 @@ export async function settleAtExit(
   r: ReadRecord,
   root = stateRoot(),
 ): Promise<string[]> {
-  // Startup marker deletion needs the tick's current scope and dispute checks.
-  if (retryableStartup(r)) return [];
+  // A retry's marker deletion needs the tick's current scope and dispute checks.
+  if (retryableFollowup(r)) return [];
   const nowIso = new Date().toISOString();
   if (owedAtExit(r, nowIso) === null) return [];
   const login = await resolveLogin(AT_EXIT_CALL_SEC);

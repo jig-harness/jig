@@ -132,16 +132,21 @@ describe("the line a tick leaves", () => {
       released: true,
     });
     machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm", "notify"]);
+    // Before the reconciliation a report reads the dead driver as one to take over.
     const report = await w.dispatch(["--json"]);
     expectSpawnExit(report, 0);
     expect(JSON.parse(report.stdout).repos[0].actions).toContainEqual(
-      expect.objectContaining({ stage: "notify" }),
+      expect.objectContaining({
+        stage: "rearm",
+        takeoverGone: expect.stringContaining("no longer runs"),
+      }),
     );
     machineFile(w, [account(w, "a", "a@example.com")], {}, ["notify"]);
     const notifyOnly = await tick(w);
     expect(notifyOnly.repos[0]?.actions).toContainEqual(
-      expect.objectContaining({ target: "PR #7", stage: "notify" }),
+      expect.objectContaining({ target: "PR #7", stage: "rearm" }),
     );
+    expect(notifyOnly.repos[0]?.launches).toEqual([]);
     machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm"]);
     const applied = await tick(w);
     expect(applied.repos[0]?.actions).toContainEqual(

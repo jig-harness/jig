@@ -55,7 +55,12 @@ import {
   classifyLedger,
   type ParkReading,
   type PrFacts,
+  readsBaseHead,
 } from "../../dispatch/lib/sources/ledgers.ts";
+import {
+  type DriverPresence,
+  driverPresence,
+} from "../../dispatch/lib/sources/silent-driver.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
 import type { Holder, Last, ThreadEntry, WaitsOn } from "./answer.ts";
 import {
@@ -722,6 +727,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
       };
   const holder = holderOf(reads, read, ctx);
   const base = await baseHeadOf(ctx, read, doc);
+  const presence = await silentPresence(read, doc, holder);
   const entries = recordEntries(reads, read, ctx);
   if (ctx.thread) entries.push(...(await threadReads(reads, ctx)));
   const answer: StationAnswer = {
@@ -738,7 +744,11 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
     stateDetail: [detail, ...diagnosticDetail(reads.row, read, holder)].join(
       "; ",
     ),
-    waitsOn: driveWait(reads, read, ctx, holder, { read: pull.read, base }),
+    waitsOn: driveWait(reads, read, ctx, holder, {
+      read: pull.read,
+      base,
+      presence,
+    }),
     last: lastOf(reads),
     entries,
   };
@@ -752,7 +762,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
   };
 }
 
-/** The head of the pull request's base branch, which the classifier reads only for a ledger that stopped on a conflict; noted in the sources. */
+/** The head of the pull request's base branch, which the classifier reads only for a ledger whose stop a conflict re-drives; noted in the sources. */
 async function baseHeadOf(
   ctx: AskContext,
   ledger: Ledger | null,
@@ -761,8 +771,7 @@ async function baseHeadOf(
   if (
     ledger === null ||
     doc.state !== "OPEN" ||
-    ledger.driver.state !== "stopped" ||
-    ledger.driver.exit !== DRIVE_EXIT.PR_CONFLICTING
+    !readsBaseHead(ledger, doc.mergeable)
   )
     return undefined;
   if (doc.baseRef === "")
@@ -807,13 +816,37 @@ async function rowOf(ctx: AskContext, pr: number): Promise<DriveRow | null> {
   return row.ok ? row.value : null;
 }
 
+/** What this host shows of a silent ledger's driver that no launch holds, as the dispatcher reads it; `null` for any other ledger. */
+async function silentPresence(
+  ledger: Ledger | null,
+  doc: PullDoc,
+  holder: Holder | "none",
+): Promise<DriverPresence | null> {
+  if (
+    ledger === null ||
+    doc.state !== "OPEN" ||
+    holder !== "none" ||
+    ledger.driver.state !== "running" ||
+    ledger.driver.personStop !== undefined
+  )
+    return null;
+  const beat = Date.parse(ledger.driver.heartbeat);
+  if (!Number.isFinite(beat) || Date.now() - beat <= stallThresholdMs())
+    return null;
+  return driverPresence(doc.number, ledger);
+}
+
 /** Select the station's wait after reconciling the current pull request and local diagnosis. */
 function driveWait(
   reads: DriveReads,
   ledger: Ledger | null,
   ctx: AskContext,
   holder: Holder | "none",
-  facts: { read: boolean; base: PrFacts["base"] },
+  facts: {
+    read: boolean;
+    base: PrFacts["base"];
+    presence: DriverPresence | null;
+  },
 ): WaitsOn {
   if (!facts.read)
     return {
@@ -821,6 +854,10 @@ function driveWait(
         "the pull request could not be read; its head and CI hold are unknown",
     };
   if (reads.pull.state !== "OPEN") return "none";
+  if (facts.presence?.gone === true)
+    return {
+      waiting: `its heartbeat is past the lease window and this host shows its driver's run ended (${facts.presence.why}): a dispatcher takes it over, within the pull request's recovery budget, and drive.ts --take-over decides`,
+    };
   const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
   if (diagnosis !== null) return diagnosis;
   return ledger === null

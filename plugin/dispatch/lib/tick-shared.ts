@@ -18,7 +18,10 @@ import {
 } from "../../shared/records/shared.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import { settleNoCauseStops } from "./no-cause-stops.ts";
-import { settleConflictStops } from "./actions/drive-hold.ts";
+import {
+  settleConflictStops,
+  settleSilentTakeovers,
+} from "./actions/drive-hold.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { type ReadRecord, settledEnds } from "./launches.ts";
 import {
@@ -42,7 +45,7 @@ import {
   type TickComments,
 } from "./tick-comments.ts";
 import type { ForgeRead } from "./tick-forge.ts";
-import type { MarkedPr, RepoReport, SharedReport } from "./types.ts";
+import type { DrivenPr, MarkedPr, RepoReport, SharedReport } from "./types.ts";
 
 /** A repository's shared records for one tick. */
 export interface TickShared {
@@ -213,21 +216,34 @@ export async function readDriveClaims(
     ? await readSharedDrives(reading, forge.drives)
     : new Map();
   if (forge.ok) await addEndedLaunches(reading, forge, records, claims, nowMs);
-  forge.drives = settleSharedConflictStops(
-    settleConflictStops(
-      forge.drives,
-      records.filter((r) => r.record.repo === ctx.slug),
+  forge.drives = settleDrives(ctx, forge.drives, records, claims);
+  return claims;
+}
+
+/**
+ * Each drive as the plan reads it once this host's records and every host's
+ * claims are read beside it: a re-drive already made for the change it shows
+ * now is a person's (by this host's records, then by another host's claims),
+ * a silent driver already taken over on its facts is notified, and what is
+ * left is bounded by the pull request's recovery budget.
+ */
+export function settleDrives(
+  ctx: Pick<SharedContext, "slug" | "host">,
+  drives: readonly DrivenPr[],
+  records: readonly ReadRecord[],
+  claims: DriveClaims,
+): DrivenPr[] {
+  const own = records.filter((r) => r.record.repo === ctx.slug);
+  return settleNoCauseStops(
+    settleSharedConflictStops(
+      settleSilentTakeovers(settleConflictStops(drives, own), own),
+      claims,
+      ctx.host,
     ),
-    claims,
-    ctx.host,
-  );
-  forge.drives = settleNoCauseStops(
-    forge.drives,
-    records.filter((r) => r.record.repo === ctx.slug),
+    own,
     claims,
     Date.now(),
   );
-  return claims;
 }
 
 /** With `--apply`: write the end of this host's own claims whose launch records ended, and report what could not be written. */

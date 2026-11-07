@@ -1,4 +1,9 @@
-/** A headless session that stopped before it could start, not a pass that died during work. */
+/**
+ * The follow-ups a tick runs again rather than handing to a person: a
+ * headless session that stopped before it could start, retried for as long as
+ * it does, and a pass that died during its work with no result and no
+ * question, run again once (`retriedDeath`).
+ */
 import { statSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
@@ -6,6 +11,8 @@ import {
   readBoundedTail,
 } from "../../skills/drive-pr/scripts/lib/quota/types.ts";
 import type { LaunchRecord, ReadRecord } from "./launches.ts";
+import { RECOVERY_FACTS } from "./recovery-facts.ts";
+import { questionOf } from "./session.ts";
 import { swallow } from "../../shared/errors.ts";
 
 /** Startup failures are limited to the first minute of the vendor process. */
@@ -112,12 +119,42 @@ export function retryableStartup(r: ReadRecord): boolean {
   );
 }
 
-/** The ids of retryable startups whose end no later row has settled. */
+/**
+ * Whether a follow-up's session died during its work: its wrapper died, or
+ * the pass ended on a signal or a failing exit, with no result recorded and
+ * no question stated. One that recorded `failed`, stopped on a question, or
+ * exited cleanly without a result is not a death.
+ */
+export function diedWithoutResult(r: ReadRecord): boolean {
+  if (r.record.action !== "followup" || r.result !== null) return false;
+  if (retryableStartup(r)) return false;
+  if (r.state.kind === "died") return true;
+  if (r.state.kind !== "ended") return false;
+  const { code, signal } = r.state.exit;
+  return (code !== 0 || signal !== null) && questionOf(r.state) === null;
+}
+
+/** Whether a follow-up is itself the run again of one that died: a second death is a person's. */
+export function isRerun(record: Pick<LaunchRecord, "facts">): boolean {
+  return record.facts.startsWith(RECOVERY_FACTS);
+}
+
+/** A follow-up that died during its work for the first time: its marker is released, and it runs again once. */
+export function retriedDeath(r: ReadRecord): boolean {
+  return diedWithoutResult(r) && !isRerun(r.record);
+}
+
+/** Whether a follow-up's end is a retry rather than an outcome: a startup that never began, or a first death. */
+export function retryableFollowup(r: ReadRecord): boolean {
+  return retryableStartup(r) || retriedDeath(r);
+}
+
+/** The ids of retryable follow-ups whose end no later row has settled. */
 export function unsettledStartups(
   records: ReadRecord[],
   settled: Set<string>,
 ): string[] {
   return records
-    .filter((r) => retryableStartup(r) && !settled.has(r.record.id))
+    .filter((r) => retryableFollowup(r) && !settled.has(r.record.id))
     .map((r) => r.record.id);
 }

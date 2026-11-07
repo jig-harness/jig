@@ -274,10 +274,15 @@ guards keep one stage from starting twice:
   a person deleted) neither settles nor fails the current one, and the
   current attempt's outcome replaces it when its launch record ends. An
   outcome of done means the follow-up is done; a launch record
-  still running holds it; a failed outcome, a launch record that died, or
-  a tick's marker whose launch record and outcome are both absent on this
-  machine is a failed follow-up, notified and never relaunched by the
-  tick. A person settles it by deleting the marker, which makes the
+  still running holds it; a pass that died during its work, its wrapper
+  gone or its pass ended on a signal or a failing exit with no result
+  recorded and no question stated, is run again once: the tick releases the
+  marker it left, whether or not an answer was written onto it, and a later
+  tick starts the follow-up again under a record whose facts carry the
+  recovery tag, within the pull request's recovery budget (see Launch
+  records). A failed outcome, a run again that died too, or a tick's marker
+  whose launch record and outcome are both absent on this machine is a
+  failed follow-up, notified and never relaunched by the tick. A person settles it by deleting the marker, which makes the
   follow-up wanted again, then running the follow-up or leaving it to the
   next tick. The marker lives on the forge, so a lost launch record does not
   start a second follow-up on this machine. A launch record still pending
@@ -512,8 +517,21 @@ not carry the work: on another host the tick leaves it to that host's
 dispatcher, and on this host, with no open workspace holding that tree, a
 person is told. A person is told too once a re-drive leaves the same stop at
 the same head, as for a conflict stop; a head that moves is a new attempt.
-Exit `1` stays a person's: it names a crash, a failed pass or an unreadable
-state, not a next step.
+
+A drive that stopped `15` (a pass reached its deadline again after the
+driver spent its restarts, `drive.pass_deadline_retries`) is re-driven the
+same way, once per head commit on any admitted account: the tree keeps what
+the killed passes did, and a fresh pass usually finishes it. A deadline whose
+kill could not be witnessed never reads `15`: that driver keeps its locks and
+leaves its ledger running, so it is a silent drive (below). Exit `1` names a
+crash, a failed pass or an unreadable state, not a next step, and stays a
+person's, with one exception: while the pull request also conflicts with its
+base, the stop is re-driven once per pair of the pull request's head and its
+base branch's head, the change a stop on a conflict is keyed on, so the
+drive's conflict-resolve round runs; either stop's re-drive at that pair
+counts, and a person is told once one leaves the drive stopped at the same
+pair. While the forge still computes whether it conflicts, the stop is
+unplaced for that tick.
 
 A needs-a-person stop whose pull request also conflicts with its base says so
 in its notice and its report line, so the person knows a base merge is owed
@@ -557,23 +575,49 @@ recovery's own leases before planning within the no-cause budget. Foreign
 holders, unreadable liveness, surviving work and legacy records without a
 witness or observations stay running. These are observations of cooperative
 passes, not containment of arbitrary descendants (ADR-0008).
-Without a recognized launch owner or local termination evidence, the silent
-drive is notified and appears in `jig ask --waiting`; its state label is parked.
-The default budget is 3 no-cause re-arms per pull request in a rolling hour,
-across accounts; completing a round does not reset it. Once spent, the next
-no-cause stop needs a person and is notified once with the drive's handoff.
-A legacy no-exit ledger receives at most one automatic attempt, regardless of
-the budget; a new ledger then follows the ordinary budget.
+A silent drive no launch record of this machine and no launch claim of
+another host's started, a drive armed by hand or by another tool and in any
+clone, is taken over when its driver ran on this host (the label after the
+`@` of the ledger's clone) and this host shows that driver's run ended: drive-pr
+reads, without writing, the run the ledger names (its clone, pull request and
+acquisition time) in this machine's drive database, and calls it ended only on
+the evidence its own recovery accepts, a released witness whose driver pid no
+longer runs, or persisted observations showing the driver and every observed
+or registered pass gone. `drive.ts --take-over` still decides whether the
+takeover is admitted. One takeover is made per ledger facts: once it ends
+leaving the ledger as it was, a person is told. Where the host cannot show
+the run ended (the driver's clone is on another host, its process table does
+not read, no record of the run, a pass that may still act), the silent drive
+is notified, once, and appears in `jig ask --waiting`; its state label is
+parked.
+
+The re-arms of stops with no recorded cause and the re-drives of the stops
+whose next step is mechanical (a recurring pass deadline, a failure on a
+conflicting pull request, a silent driver this host shows gone, a follow-up
+whose session died) draw on one recovery budget per pull request: 3
+attempts in a rolling hour, across accounts and hosts, counted from this
+host's launch records and every host's launch claims by the tag on their
+ledger facts (`no-cause: `, `recovery: `); completing a round does not reset
+it. Once spent, the next such stop needs a person and is notified once with
+the drive's handoff: a no-cause stop as repeated no-cause stops, any other as
+repeated recovery re-drives. A legacy no-exit ledger receives at most one
+automatic attempt, regardless of the budget; a new ledger then follows the
+ordinary budget.
 
 | Ledger says | Class | The tick |
 | --- | --- | --- |
 | running, heartbeat inside the lease window | driven | nothing |
-| running, heartbeat past the lease window | silent | reconciles a confirmed local stop from a released witness or durable pass observations when re-arms are enabled; otherwise takes it over when this machine's launch record or another host's launch claim started it, or notifies a person and lists it as waiting |
+| running, heartbeat past the lease window | silent | reconciles a confirmed local stop from a released witness or durable pass observations when re-arms are enabled; otherwise takes it over when this machine's launch record or another host's launch claim started it |
+| running, heartbeat past the lease window, no launch having started its driver, which ran on this host and whose run this host shows ended, no takeover of this machine's on these ledger facts having ended, budget available | silent | takes it over on an admitted account, whichever tool armed it; `drive.ts --take-over` decides |
+| running, heartbeat past the lease window, otherwise (the driver's clone on another host, its run not shown ended, a takeover already made on these facts, or the budget spent) | silent | notifies a person once and lists it as waiting |
 | stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
 | stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
 | stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies per stop, with the exit and the drive's handoff |
 | stopped `14` (stalled) or `21` (CI still failing with its repair passes spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit | stale | re-arms on any admitted account; a stall that left work in its tree, or whose stop never measured it, re-arms only in that tree: on another host it is left to that host, and with no open workspace holding it here, a person is told |
 | stopped `14` or `21`, this machine or another host already having re-driven that head with that exit, however that launch ended | needs a person | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does |
+| stopped `15` (a pass reached its deadline with its restarts spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit, budget available | stale | re-arms on any admitted account |
+| stopped `1`, the pull request conflicting with its base, neither this machine's records nor another host's launch claims holding a re-drive of its head and its base branch's head, budget available | stale | re-arms on any admitted account, so the drive's conflict-resolve round runs |
+| stopped `15`, or `1` on a conflicting pull request, already re-driven at that change however that launch ended, or the budget spent | needs a person | notifies per stop, with the exit and the drive's handoff, or that the recovery budget is spent |
 | stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
 | stopped with an explicit person's-stop record, or `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
 | stopped with no exit and no person's-stop record, budget available | re-armable | re-arms on an admitted account; a legacy ledger gets at most one attempt |
@@ -583,7 +627,7 @@ the budget; a new ledger then follows the ordinary budget.
 | stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive) | re-armable | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to |
 | stopped `8`, an item unanswered | parked | notifies per park |
 | stopped `11` or `13` | refused | nothing; another driver holds it |
-| stopped on any other exit (`1`, `2`, `6`, `7`, `12`, `15`, or one this table does not know) | needs a person | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does |
+| stopped on any other exit (`1` on a pull request that does not conflict, `2`, `6`, `7`, `12`, or one this table does not know) | needs a person | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does |
 
 The tick reads every pull request merged after the date the follow-up
 stage was switched on for the repository (`followup_since` in the machine
@@ -798,7 +842,9 @@ until a person clears it. The one exception to "alive holds its stage" is
 a takeover: a drive whose ledger is `silent` and whose driver this
 machine's launch record started is planned for takeover although that
 record is alive, since a wedged driver stays alive by definition; whether
-the takeover is admitted stays `drive.ts --take-over`'s decision. The
+the takeover is admitted stays `drive.ts --take-over`'s decision. A silent
+driver no launch started is taken over too, on a free slot, once this host
+shows its run ended (see the ledger classes). The
 takeover runs in that record's slot rather than needing a free one (see
 Admission by account). A refusal (`drive.ts`
 exiting `11`, `13`, `16` or `20`; `do-item` finding the item already

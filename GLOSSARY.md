@@ -1214,7 +1214,18 @@ make, use the entry's term instead.
   past, still mergeable at the verified head, is left alone. A drive that
   stopped on a conflict it could not repair is re-driven too, once for each
   pair of its pull request's head and its base branch's head, and a person is
-  told only if that re-drive stops the same way.
+  told only if that re-drive stops the same way. So is a stop whose next step
+  is the drive's own rather than a person's decision: a stall, a spent
+  CI-repair budget or a pass deadline that recurred, once per head; a failure
+  while the pull request conflicts with its base, once per pair of heads.
+- **Recovery budget (of a pull request)** — how many times in a rolling hour
+  the *dispatcher* starts work on one pull request again after a stop nobody
+  decided: a drive that stopped with no recorded cause, a *re-drive* of a
+  recurring pass deadline or of a failure on a conflicting pull request, the
+  takeover of a silent driver whose run its host shows ended, and the run
+  again of a follow-up whose session died. Every kind counts against the one
+  budget (3 by default), so a stop that keeps recurring ends as a notice to a
+  person rather than a loop.
 - **Permission mode (of a pass)** — the setting of an agent tool that
   decides which of its actions ask a person first. Claude Code's
   `default` mode asks before most edits and commands; a pass of a *PR
