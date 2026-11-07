@@ -118,6 +118,23 @@ describe("attach-pr.ts attaches", () => {
     });
   });
 
+  test("the remote head detached when a missing registered tree holds local work", () => {
+    const { c, holder } = held();
+    const local = c.commit(holder, "recoverable.txt");
+    const tree = c.tree("wt1");
+    rmSync(holder, { recursive: true });
+    expect(c.git(tree, "worktree", "list", "--porcelain")).toContain(holder);
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 0, "attach past a missing registered holder");
+    expect(JSON.parse(r.stdout)).toMatchObject({ detached: true });
+    expect(branchOf(c, tree)).toBe("");
+    expect(c.git(tree, "rev-parse", "HEAD")).toBe(c.head);
+    expect(c.git(tree, "rev-parse", "feature")).toBe(local);
+    expect(r.stderr).toContain("local work may need recovery");
+    expectSpawnExit(c.attach(tree, "42"), 0, "reattach past missing holder");
+    expect(c.git(tree, "rev-parse", "feature")).toBe(local);
+  });
+
   test("a tree detached past the base, whose commits a remote branch holds", () => {
     const c = fresh();
     const tree = c.tree("wt1");

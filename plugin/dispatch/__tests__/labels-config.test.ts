@@ -82,6 +82,23 @@ describe("the label set", () => {
 });
 
 describe("the label set", () => {
+  it("colors converged differently from driving", () => {
+    const color = (name: string) =>
+      labelSet(ON).find((l) => l.name === name)?.color;
+    expect(color("jig:converged")).toBe("0e8a16");
+    expect(color("jig:converged")).not.toBe(color("jig:driving"));
+  });
+
+  it("colors parked red, apart from driving and converged", () => {
+    const color = (name: string) =>
+      labelSet(ON).find((l) => l.name === name)?.color;
+    expect(color("jig:parked")).toBe("d93f0b");
+    expect(color("jig:parked")).not.toBe(color("jig:driving"));
+    expect(color("jig:parked")).not.toBe(color("jig:converged"));
+  });
+});
+
+describe("the label set", () => {
   it("describes each label within the 100 characters the forge takes", () => {
     const tooLong = labelSet(ON).filter((l) => l.description.length > 100);
     expect(tooLong.map((l) => l.name)).toEqual([]);

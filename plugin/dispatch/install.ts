@@ -2,15 +2,26 @@
  * `jig dispatch install [--interval 5m] [--yes] [--uninstall]`: the timer
  * that runs `jig dispatch --apply` every interval, on the scheduler and
  * launcher code `jig gc install` uses (a systemd user timer, a launchd job,
- * or a crontab line). It prints the job first and writes it only with
- * `--yes`; the job finds the installed copy of the plugin at each run, so a
- * plugin update reaches it without a new install. What the tick starts is
- * the machine file's to say, so the job is written only when there is one.
+ * or a crontab line), and beside it the change probe's timer, which runs
+ * `jig dispatch probe --apply` every minute (`lib/change-probe.ts`) unless
+ * the machine file sets `change_probe: false`. It prints the jobs first and
+ * writes them only with `--yes`; each job finds the installed copy of the
+ * plugin at each run, so a plugin update reaches it without a new install.
+ * What the tick starts is the machine file's to say, so the jobs are written
+ * only when there is one; a removal takes both away.
+ *
+ * The probe has a timer of its own rather than a place in the tick's: the
+ * two run at different intervals, a probe inside the tick's job would wait
+ * out every sweep (systemd and launchd never overlap two runs of one job;
+ * cron can, and there the probe's holder lock keeps two applying probes
+ * apart), and a probe that fails or hangs then never delays a sweep, nor a
+ * sweep a probe.
  */
 import { resolve } from "node:path";
 import { ExitError } from "../shared/cli.ts";
 import { GcError } from "../shared/gc-error.ts";
 import { exclusiveGcLock } from "../shared/gc-lock.ts";
+import { jobPresent } from "../runtime/installed-job.ts";
 import type { JobSpec } from "../runtime/job-spec.ts";
 import {
   checkLauncherResolves,
@@ -18,9 +29,11 @@ import {
   installedScript,
   jobPreview,
   restoreScheduler,
+  type SchedulerSnapshot,
   snapshotScheduler,
   updateJob,
 } from "../runtime/scheduler.ts";
+import { probeRoot } from "./lib/change-probe.ts";
 import {
   type MachineConfig,
   machineConfigPath,
@@ -28,6 +41,7 @@ import {
   tickBudgetMs,
 } from "./lib/machine-config.ts";
 import { stateRoot } from "./receipts.ts";
+import { WAKE_ATTEMPTS, WAKE_SPACING_MS } from "../shared/wake.ts";
 
 /** `jig dispatch install`'s options, as dispatch/cli.ts parses them. */
 interface InstallOptions {
@@ -76,6 +90,77 @@ export function dispatchJobSpec(
 }
 
 /**
+ * The change probe's job, every minute, with its own state directory under
+ * the dispatcher's, so its launcher copy and logs are its own. It waits for
+ * the ticks it wakes, together, and a waiter starts up to `WAKE_ATTEMPTS`
+ * runs a `WAKE_SPACING_MS` apart, so its deadline covers that many ticks'.
+ */
+export function probeJobSpec(
+  machine: MachineConfig | null = null,
+  env: NodeJS.ProcessEnv = process.env,
+): JobSpec {
+  const tick = dispatchJobSpec(1, machine, env);
+  return {
+    name: "jig-dispatch-probe",
+    label: "dev.jig.dispatch-probe",
+    description: "Jig dispatcher change probe",
+    timerDescription: "Jig dispatcher change probe every minute",
+    stateRoot: probeRoot(),
+    args: ["dispatch", "probe", "--apply"],
+    schedule: { everyMinutes: 1 },
+    ...(tick.deadlineSec === undefined
+      ? {}
+      : {
+          deadlineSec:
+            WAKE_ATTEMPTS * (tick.deadlineSec + WAKE_SPACING_MS / 1000),
+        }),
+  };
+}
+
+/** One job an install writes or removes. */
+interface JobChange {
+  spec: JobSpec;
+  remove: boolean;
+}
+
+/**
+ * Write or remove each job in turn; a failure puts every job back as the
+ * snapshots taken first had it, and says so.
+ */
+async function updateJobs(changes: readonly JobChange[]): Promise<string[]> {
+  const previous: SchedulerSnapshot[] = [];
+  for (const change of changes)
+    previous.push(await snapshotScheduler(detectScheduler(), change.spec));
+  const written: string[] = [];
+  try {
+    for (const [i, change] of changes.entries()) {
+      // A job that is not there needs no removal.
+      if (change.remove && !jobPresent(previous[i] as SchedulerSnapshot))
+        continue;
+      const job = await updateJob(change.spec, change.remove);
+      written.push(
+        `Scheduler ${change.remove ? "removed" : "updated"}: ${job}`,
+      );
+    }
+  } catch (error) {
+    // Every job is put back on its own: one that will not restore does not stop the rest.
+    const unrestored: string[] = [];
+    for (const snapshot of previous.reverse())
+      try {
+        await restoreScheduler(snapshot);
+      } catch (restoreError) {
+        unrestored.push((restoreError as Error).message);
+      }
+    throw new GcError(
+      unrestored.length === 0
+        ? `${(error as Error).message}; the previous scheduler jobs are restored`
+        : `${(error as Error).message}; some scheduler jobs could not be restored: ${unrestored.join("; ")}`,
+    );
+  }
+  return written;
+}
+
+/**
  * The timer's interval in minutes: `--interval` (`override`), else the machine
  * file's, else five; whole minutes, or a usage error (exit 2).
  */
@@ -108,13 +193,23 @@ export async function installDispatch(
       2,
       `the dispatch timer needs the machine file ${machineConfigPath()} first: it runs --apply, and that file says what it may start`,
     );
-  const spec = dispatchJobSpec(
-    intervalMinutes(options.intervalMs, machine),
-    machine,
-  );
-  console.log(jobPreview(spec, options.uninstall));
+  const changes: JobChange[] = [
+    {
+      spec: dispatchJobSpec(
+        intervalMinutes(options.intervalMs, machine),
+        machine,
+      ),
+      remove: options.uninstall,
+    },
+    {
+      spec: probeJobSpec(machine),
+      remove: options.uninstall || machine?.changeProbe === false,
+    },
+  ];
+  for (const change of changes)
+    console.log(jobPreview(change.spec, change.remove));
   if (!options.confirm) {
-    console.log("Preview only. Repeat with --yes to write the job.");
+    console.log("Preview only. Repeat with --yes to write the jobs.");
     return 0;
   }
   if (!installedScript(script))
@@ -123,20 +218,7 @@ export async function installDispatch(
     );
   if (!options.uninstall) await checkLauncherResolves();
   return exclusiveGcLock("install", async () => {
-    // Captured first, so a failed update puts back the job that was running.
-    const previous = await snapshotScheduler(detectScheduler(), spec);
-    let job: string;
-    try {
-      job = await updateJob(spec, options.uninstall);
-    } catch (error) {
-      await restoreScheduler(previous);
-      throw new GcError(
-        `${(error as Error).message}; the previous scheduler job is restored`,
-      );
-    }
-    console.log(
-      `Scheduler ${options.uninstall ? "removed" : "updated"}: ${job}`,
-    );
+    for (const line of await updateJobs(changes)) console.log(line);
     return 0;
   });
 }

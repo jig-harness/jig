@@ -124,6 +124,18 @@ export interface StaleCause {
   change: string;
   /** The drive stopped `9`: a re-drive that leaves it so at this change is a person's to settle. */
   conflictStop?: true;
+  /**
+   * The drive stopped on a cause its own next step settles: a stall (`14`)
+   * or a spent CI-repair budget (`21`). Re-driven once per head commit; a
+   * re-drive that leaves the same stop at the same head is a person's.
+   */
+  mechanicalStop?: "stall" | "ci-repair";
+  /**
+   * For a stall that left work in its tree: that tree, as the ledger names it
+   * (`wt-<key>`), and whether it is on this host. The re-drive runs there,
+   * never in a fresh tree, which would not carry the work.
+   */
+  tree?: { actor: string; here: boolean };
   /** Changes an earlier launch of the same record may have acted on before a replay moved `change` on; each counts as re-driven. */
   earlier?: string[];
 }
