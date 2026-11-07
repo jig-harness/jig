@@ -168,7 +168,8 @@ when a key of today names that facet's labels (`priority_labels`, or the
 labels `issue_tracker.types` lists) or when any of its issues, open or
 closed, carries one of that facet's labels; a label merely defined, such as
 the `bug` label GitHub gives every new repository, does not count. Such a
-repository files and reads exactly as it does today after every upgrade;
+repository files and reads exactly as it does today after every upgrade,
+unless the facet also has native evidence (below), which is a conflict;
 the organization field it could move to is reported by `facetStores()` and
 by the audit, and it moves by running
 [the move](#moving-a-repository-from-one-store-to-another) and then naming
@@ -217,16 +218,19 @@ or a `values` map names them. A repository a person owns has no issue
 fields, so it uses labels. A type with no issue type
 of its name, such as `docs` in an organization that has only Bug, Feature
 and Task, is refused when it is filed, naming the two ways out: a `values`
-map, or `store: label`. Labels never sit beside a defaulted native store, so
-a label of the facet can only mean the labels store. An organization's issue
+map, or `store: label`. A label of the facet beside a defaulted native
+store is the conflict above, not a label store. An organization's issue
 types are shared by every repository in it, so a repository's extra types
 are not added to them.
 A repository on a detected field is told by `facetStores()` and the audit
 to name that store in its configuration: until it does, an organization
-admin who renames the Priority field's options, deletes a field or moves
-the Effort options away from the size names makes that facet's filings and
-reads fail with an error that names the two stores, which the dispatcher's
-tick record shows; nothing moves to labels by itself.
+admin who renames the Priority field's options or moves the Effort options
+away from the size names makes that facet's filings and reads fail with an
+error that names the two stores, which the dispatcher's tick record shows;
+nothing moves to labels by itself. Deleting the field is different: it
+removes the evidence, so an unnamed facet reads as its default again (the
+limit stated above), and only a named `store` makes the deletion fail
+every read and filing.
 
 **On Jira every issue has an issue type.** Type moves to issue types only
 when `issue_tracker.facets.type` names the `native` store, with a `values`
@@ -390,17 +394,19 @@ pool, ledger and assigned-issue queries before and after, on Jig's
 repository and on a fixture of 1,000 issues, with the facets in labels and
 in fields.
 
-**Detection is cached, and runs only where it decides.** It runs for a
-facet whose store neither the configuration nor the label rules settle, and
-before the reads and writes that touch that facet's field, not before every
+**Detection is cached, and runs for every facet the configuration does not
+name.** Label rules never settle a store alone: detection reads label
+evidence and native evidence together, so a repository whose labels settle
+the store is still in conflict when native evidence for the facet exists.
+It runs before the reads and writes that touch that facet, not before every
 call. What it reads (whether the repository's issues carry the facet's
 labels, the organization's issue types and fields) is cached for one hour
 in the clone's [machine-local store](../GLOSSARY.md), keyed by repository,
 organization and a non-secret fingerprint of the credential that read it (a
 salted hash of the token, never its login, which two tokens of different
 reach share), and dropped when
-a write is refused for a value the cache named. For a repository that keeps
-labels or names its stores, only `facetStores()` and the audit read the
+a write is refused for a value the cache named. For a facet whose
+configuration names its store, only `facetStores()` and the audit read the
 organization, to report the field it could move to; its reads and writes
 never wait on detection.
 
