@@ -155,6 +155,15 @@ const DRIVE_STATE: RecordKind[] = [
     `${DRIVE}lib/ledger-stop.ts`,
     "driver_records",
   ),
+  {
+    ...driveFile(
+      "drive-observation",
+      `${DRIVE}lib/driver-observation.ts`,
+      "drive-observation-<PR>-<acquisition hash>.json",
+      "driver-observation",
+    ),
+    version: 1,
+  },
   driveTable("drive-state-import", `${STATE}import.ts`, "imports"),
   driveTable("drive-counter", `${STATE}db.ts`, "counters"),
   driveTable(
