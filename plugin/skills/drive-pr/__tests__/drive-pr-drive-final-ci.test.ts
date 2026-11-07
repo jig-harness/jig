@@ -8,6 +8,7 @@
 import { describe, expect, it } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { CI_REPAIR_SPENT_EXIT } from "../scripts/lib/driver/settings.ts";
 import type {
   CheckRun as EvidenceCheckRun,
   CommitStatus as EvidenceCommitStatus,
@@ -93,7 +94,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("Running CI-repair pass 1/1");
   });
 
-  it("falls back to the /fix-ci stop once the CI-repair budget is spent", async () => {
+  it("stops with CI_REPAIR_SPENT (21), naming it, once the CI-repair budget is spent", async () => {
     // The pass exits 0 but changes nothing, so the drive re-gates onto the
     // identical red verdict. Budget 1 means exactly one repair, then the stop.
     const r = await runDrive(
@@ -109,8 +110,9 @@ describe("drive.ts loop control", () => {
     );
     expect(r.stderr).toContain("Running CI-repair pass 1/1");
     expect(r.stderr).toContain("stopping for /fix-ci");
-    expect(r.stderr).toContain("the budget is spent");
-    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toContain("1 of 1 CI-repair pass(es) already run");
+    expect(r.stderr).toContain("the budget is spent: exit 21, CI_REPAIR_SPENT");
+    expect(r.exitCode).toBe(CI_REPAIR_SPENT_EXIT);
   });
 
   it("--dry-run against a converged PR with a red final verdict previews the CI-repair pass", async () => {

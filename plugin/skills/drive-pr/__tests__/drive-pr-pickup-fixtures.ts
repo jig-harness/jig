@@ -12,6 +12,7 @@ import {
   binDir,
   gitCleanEnv,
   makeScratchRepo,
+  scratchClean,
   tmpRoot,
 } from "./drive-pr-harness.ts";
 import { state } from "./drive-loop-harness.ts";
@@ -78,6 +79,28 @@ export function trackedTree(name: string): string {
   git(tmpRoot, "init", "-q", "--bare", origin);
   git(tree, "remote", "add", "origin", origin);
   git(tree, "push", "-q", "-u", "origin", "main");
+  return tree;
+}
+
+/** A registered sibling tree with a resolvable remote-tracking ref. */
+export function trackedLinkedTree(name: string): string {
+  const tree = join(tmpRoot, name);
+  const git = (...args: string[]) =>
+    expectSpawnExit(
+      Bun.spawnSync(["git", ...args], {
+        cwd: scratchClean.dir,
+        env: gitCleanEnv(),
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+      0,
+    );
+  git("worktree", "add", "-q", "-b", name, tree, "HEAD");
+  git("update-ref", `refs/remotes/${name}/main`, "HEAD");
+  git("config", `remote.${name}.url`, scratchClean.dir);
+  git("config", `remote.${name}.fetch`, `+refs/heads/*:refs/remotes/${name}/*`);
+  git("config", `branch.${name}.remote`, name);
+  git("config", `branch.${name}.merge`, "refs/heads/main");
   return tree;
 }
 
