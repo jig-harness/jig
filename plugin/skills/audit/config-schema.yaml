@@ -627,7 +627,7 @@ fields:
     keys: [type, priority, size]
     values_type: { type: map, values_type: any }
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
-    since: next
+    since: 0.158.0
   issue_tracker.file_command:
     type: string
     read_by: [do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections]

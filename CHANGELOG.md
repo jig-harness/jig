@@ -387,6 +387,30 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.158.0] - 2026-11-07
+
+### Added
+
+- The tracker interface carries every issue's type, priority and size, its [issue facets](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), wherever the tracker keeps them. A repository that sets nothing keeps each in the store it has always used and files, reads and pools exactly as before: type and size as labels on every adapter, priority as labels on GitHub Issues and in the priority field on Jira and Linear. The type and size values are the types and size group of the repository's label taxonomy (`issue_tracker.taxonomy`); with no taxonomy, the work types are the types and there is no size facet.
+- `issue_tracker.facets` names where a facet is kept: `label`, with its labels or a prefix, on every adapter; on GitHub Issues also the issue type (`type: { store: native }`), the organization's Priority field (`priority: { store: native }`) and any issue field of the organization (`size: { store: field, field: Effort }`), with a `values` map where names differ. A store is refused when the configuration is read if the adapter cannot hold it, and a value that names nothing in its store is refused before anything is written ([CONFIGURATION.md](https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md#issue_tracker)). The skills still read type and size from labels in this release, so name a store other than `label` for them only to try it.
+- `do-item`'s `tracker.ts create` and `update` take `type`, `priority` and `size` and write each to its store (`update` removes one with `null`), and `tracker.ts facet-stores` prints each facet's store and why it is in force, a named store's health, and, on GitHub Issues, what the default would select from the labels and field values the repository's issues carry and what its organization offers. That report chooses nothing, and a read it could not make (denied, rate limited, timed out) is shown as an error naming the read and the credential, never as "no field".
+- Launch outcomes name the next owner, and `jig ask` shows the handoff as
+  `last.next`: a station address, a person and their act, or nobody with a
+  reason. A converged drive hands to a maintainer to merge, and a completed
+  follow-up has no next owner. Older records remain readable. Late pickup
+  results refresh the outcome and its text archive; malformed stored
+  handoffs, including addresses without a full repository, remain unknown.
+  Late failures preserve the recorded question,
+  and archive refreshes read revisions in bounded batches.
+
+### Changed
+
+- **Breaking:** a completed pickup must report `jig dispatch result <record>
+  <token> done --pr <number>`, or `done --none "<reason>"` when no pull request
+  was needed. Update commands that report a pickup's result; new launch
+  prompts include these arguments. Follow-up and failed-result commands keep
+  their existing form.
+
 ## [0.157.1] - 2026-11-07
 
 ### Fixed
@@ -5716,7 +5740,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.157.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.158.0...HEAD
+[0.158.0]: https://github.com/jig-harness/jig/compare/v0.157.1...v0.158.0
 [0.157.1]: https://github.com/jig-harness/jig/compare/v0.157.0...v0.157.1
 [0.157.0]: https://github.com/jig-harness/jig/compare/v0.156.4...v0.157.0
 [0.156.4]: https://github.com/jig-harness/jig/compare/v0.156.3...v0.156.4
