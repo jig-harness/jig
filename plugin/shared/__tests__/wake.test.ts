@@ -16,6 +16,7 @@ import { failed, ok, type Outcome } from "../outcome.ts";
 import {
   lastStart,
   pendingRequests,
+  requestReasons,
   requestWake,
   WAKE_ATTEMPTS,
   WAKE_SPACING_MS,
@@ -125,6 +126,34 @@ describe("a wake's spacing", () => {
     expect(r.starts).toEqual([T0]);
     expect(pendingRequests(dir)).toEqual([]);
     expect(lastStart(dir)).toBe(T0);
+  });
+
+  it("keeps who asked and why with each request, and names them in the note of the run that takes them", async () => {
+    const dir = wake();
+    const clock = fakeClock();
+    requestWake(dir, clock, "send: hold drive@acme/web#12");
+    clock.at += 1;
+    requestWake(
+      dir,
+      clock,
+      "probe: acme/web #12 updated\n2026-11-07T10:00:00Z",
+    );
+    requestWake(dir, clock);
+    expect(requestReasons(dir, pendingRequests(dir))).toEqual([
+      "send: hold drive@acme/web#12",
+      "probe: acme/web #12 updated 2026-11-07T10:00:00Z",
+    ]);
+    const notes: string[] = [];
+    const r = runs(clock);
+    await waitAndRun(dir, {
+      clock,
+      busy: BUSY,
+      run: r.run,
+      note: (line) => notes.push(line),
+    });
+    expect(notes).toEqual([
+      "the run exited 0, taking 3 requests (send: hold drive@acme/web#12; probe: acme/web #12 updated 2026-11-07T10:00:00Z)",
+    ]);
   });
 
   it("starts one trailing run a minute after the last start for requests made while it ran", async () => {
