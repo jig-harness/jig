@@ -512,16 +512,7 @@ function planDrive(
   const placed = planForeign(input, pr, plan);
   if (placed === true) return;
   const foreign = takeover === null ? placed : null;
-  // A silent driver no launch started is taken over once this clone's doctor
-  // reads its holder dead or wedged; otherwise a person is notified with the
-  // doctor's reading.
-  let holder: HolderReading | null = null;
-  let unread: string | null = null;
-  if (pr.class === "silent" && takeover === null && foreign === null) {
-    const orphan = orphanTakeover(pr, input.holders);
-    if ("why" in orphan) unread = orphan.why;
-    else holder = orphan.holder;
-  }
+  const { holder, unread } = orphanReading(pr, input, takeover, foreign);
   if (
     QUIET.has(pr.class) &&
     takeover === null &&
@@ -539,6 +530,7 @@ function planDrive(
     takeover !== null || foreign !== null || holder !== null
       ? undefined
       : NOTIFY.get(pr.class);
+  const staged = unread === null ? pr : { ...pr, why: unread };
   want(
     {
       stage: cause === undefined ? "rearm" : "notify",
@@ -546,16 +538,30 @@ function planDrive(
       record: "forge",
       reason: unread ?? wantReason(pr, takeover, foreign, holder),
       evidence: { url: pr.url, head: pr.head, ...pr.evidence },
-      ...stageFields(
-        slug,
-        unread === null ? pr : { ...pr, why: unread },
-        cause,
-        launches,
-      ),
+      ...stageFields(slug, staged, cause, launches),
       ...takeoverFields(takeover, foreign, holder),
     },
     (w) => w.prs.includes(pr.number),
   );
+}
+
+/**
+ * A silent driver no launch started is taken over once this clone's doctor
+ * reads its holder dead or wedged; otherwise a person is notified with the
+ * doctor's reading.
+ */
+function orphanReading(
+  pr: DrivenPr,
+  input: PlanInput,
+  takeover: string | null,
+  foreign: TakeoverClaim | null,
+): { holder: HolderReading | null; unread: string | null } {
+  if (pr.class !== "silent" || takeover !== null || foreign !== null)
+    return { holder: null, unread: null };
+  const orphan = orphanTakeover(pr, input.holders);
+  return "why" in orphan
+    ? { holder: null, unread: orphan.why }
+    : { holder: orphan.holder, unread: null };
 }
 
 /** Whether this machine's launch records placed a drive: held by a record, or quiet behind one. */
