@@ -7,6 +7,14 @@ Where several words compete for one idea, the entry's term is the one to use
 and its *Avoid* line names the rivals. When you meet a rival in a change you
 make, use the entry's term instead.
 
+## Git reflog
+
+A local history of where a Git reference, such as a branch or `HEAD`, pointed.
+`git reflog` can locate commits no longer named by a branch. A missing linked
+working directory does not prove its commits disappeared from the clone's
+shared Git storage; inspect the surviving branch references and reflogs before
+reconstructing work.
+
 ## Core ideas
 
 - **AI-native delivery** — building and maintaining software with AI coding

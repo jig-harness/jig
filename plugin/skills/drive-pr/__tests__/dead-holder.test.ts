@@ -6,15 +6,28 @@
  */
 
 import { afterAll, describe, expect, it } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  byPlatform,
+  skipsOnWindows,
+} from "../../../../lib/test-helpers/windows-skip.ts";
 import {
   classifyDrive,
   type DoctorInput,
   STALL_THRESHOLD_MIN_DEFAULT,
 } from "../scripts/lib/doctor.ts";
-import { worktreeVanished } from "../scripts/lib/leftovers.ts";
+import {
+  gatherWorktreeLeftovers,
+  worktreeVanished,
+} from "../scripts/lib/leftovers.ts";
 
 const NOW = new Date("2026-09-12T12:00:00.000Z");
 const TREE = "/tmp/gone-worktree";
@@ -45,7 +58,7 @@ describe("classifyDrive — a dead holder with nothing left to save", () => {
     const row = classifyDrive(deadInput(), NOW);
     expect(row.verdict).toBe("DEAD");
     expect(row.reason).toContain(`${TREE} no longer exists`);
-    expect(row.reason).toContain("is lost");
+    expect(row.reason).toContain("shared Git storage");
   });
 
   it("is DEAD when its process is gone and its tree is clean", () => {
@@ -116,27 +129,56 @@ describe("worktreeVanished", () => {
     expect(await worktreeVanished(join(scratch, "deleted-tree"))).toBe(true);
   });
 
-  it("is true for a directory git does not list as a worktree of this clone", async () => {
+  it("is false for an existing directory git does not list as a worktree", async () => {
     const stray = join(scratch, "stray");
     mkdirSync(stray);
-    expect(await worktreeVanished(stray)).toBe(true);
+    expect(await worktreeVanished(stray)).toBe(false);
+  });
+
+  it("is false for an existing directory with unusual path characters", async () => {
+    const name = byPlatform("Windows forbids newlines in path components", {
+      windows: "tree with spaces",
+      posix: "tree\nwith-newline",
+    });
+    const tree = join(scratch, name);
+    mkdirSync(tree);
+    expect(await worktreeVanished(tree)).toBe(false);
+  });
+
+  it("keeps an uninspectable tree with working files UNKNOWN", async () => {
+    const tree = join(scratch, "missing-registration");
+    mkdirSync(tree);
+    writeFileSync(
+      join(tree, ".git"),
+      `gitdir: ${join(scratch, "missing-admin")}\n`,
+    );
+    writeFileSync(join(tree, "local.txt"), "recoverable working files\n");
+    const leftovers = await gatherWorktreeLeftovers(tree);
+    expect(leftovers).toBeNull();
+    const treeVanished = await worktreeVanished(tree);
+    expect(treeVanished).toBe(false);
+    expect(
+      classifyDrive(deadInput({ leftovers, treeVanished }), NOW).verdict,
+    ).toBe("UNKNOWN");
   });
 
   it("is false for a worktree git lists", async () => {
     expect(await worktreeVanished(process.cwd())).toBe(false);
   });
 
-  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
-    "is false for a path that cannot be read",
-    async () => {
-      const locked = join(scratch, "locked");
-      mkdirSync(join(locked, "tree"), { recursive: true });
-      chmodSync(locked, 0o000);
-      try {
-        expect(await worktreeVanished(join(locked, "tree"))).toBe(false);
-      } finally {
-        chmodSync(locked, 0o755);
-      }
-    },
-  );
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "chmod cannot deny directory access on Windows",
+    ) || process.getuid?.() === 0,
+  )("is false for a path that cannot be read", async () => {
+    const locked = join(scratch, "locked");
+    mkdirSync(join(locked, "tree"), { recursive: true });
+    chmodSync(locked, 0o000);
+    try {
+      expect(await worktreeVanished(join(locked, "tree"))).toBe(false);
+    } finally {
+      chmodSync(locked, 0o755);
+    }
+  });
 });

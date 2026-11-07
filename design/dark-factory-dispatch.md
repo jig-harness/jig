@@ -565,7 +565,7 @@ with theirs; with them off, no label is read or written.
 
 - **States**, written by the tick alone: `driving` (a driver runs, or the
   drive stopped on a state the tick re-arms), `converged`, `parked` (a
-  person settles it: a park, a stop with no exit or one only a person
+  person settles it: a park, a stop only a person
   settles, a person's own stop), `stale`, `held` (an open pull request
   waiting its turn in a serialized area, below, whatever its ledger
   says), and `followed-up` (a merged pull request whose follow-up is
@@ -1131,8 +1131,8 @@ waits on the authenticated Windows smoke.
   a wedged or dead driver alone. A driver whose holder is alive and making
   progress, or runs in a clone this machine's doctor cannot read, is
   reported, never taken over.
-- **Re-arm a drive a person may have stopped** (a mailbox stop or pause,
-  or a stop with no exit), or relaunch a stalled pickup.
+- **Re-arm a drive a person may have stopped** (an explicit mailbox stop or
+  pause), or relaunch a stalled pickup.
 - **Keep a converged pull request current with its base.** It re-drives a
   converged pull request on mechanical facts only: the forge reports
   it conflicting with its base, or its head moved past the head the drive

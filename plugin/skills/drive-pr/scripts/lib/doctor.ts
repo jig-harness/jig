@@ -39,9 +39,9 @@
  *      `uninspectableLeftoversReason` for the bug this closed.
  *      A holder whose process is confirmed gone (`holderGone`) with nothing
  *      left to save — a clean tree, or a tree that no longer exists
- *      (`treeVanished`), whose unpushed work is already lost — is `DEAD`,
- *      also returned here, since a takeover is admitted for it and nothing a
- *      person could push or discard remains.
+ *      (`treeVanished`), whose working files are gone — is `DEAD`,
+ *      also returned here, since directory absence admits a takeover. Shared
+ *      Git storage may still hold commits for the successor to recover.
  *   3. A recorded quota park → `QUOTA_PARKED`. Outranks both `WEDGED` and
  *      `NEEDS_HUMAN` below because a park is TIME-BOUNDED and self-resolving
  *      in the ordinary case (the window reopens) — including the SLEEP path
@@ -303,8 +303,8 @@ function needsHumanReason(input: DoctorInput): string {
 
 /**
  * A holder confirmed gone with nothing left to save → `DEAD`: its tree is
- * clean, or no longer exists, so nothing in it can be pushed or saved (what
- * was unpushed there is already lost). `null` otherwise, including a tree
+ * clean, or no longer exists. Commits from a missing tree can remain in the
+ * clone's shared Git storage. `null` otherwise, including a tree
  * that exists but could not be inspected.
  */
 function deadHolder(input: DoctorInput): DoctorRow | null {
@@ -320,7 +320,7 @@ function deadHolder(input: DoctorInput): DoctorRow | null {
   if (l === null && input.treeVanished === true && input.worktreePath !== null)
     return {
       verdict: "DEAD",
-      reason: `no live driver: its process is gone, and its worktree ${input.worktreePath} no longer exists, so nothing in it can be pushed or saved (anything it held unpushed is lost); a takeover is admitted`,
+      reason: `no live driver: its process is gone, and its worktree ${input.worktreePath} no longer exists, so its working files cannot be inspected; commits may remain in shared Git storage — inspect branch refs and reflogs before redoing work; a takeover is admitted`,
       recovery: null,
     };
   return null;

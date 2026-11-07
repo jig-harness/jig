@@ -90,7 +90,7 @@ export interface TakeoverPlan {
   held: HeldItem[];
   /** Admitted on another clone's stale ledger heartbeat: claimed on the PR. */
   crossClone?: true;
-  /** The dead holder's working tree, which no longer existed: what it held unpushed is lost. */
+  /** The dead holder's missing working tree; shared Git storage may retain commits. */
   vanishedTree?: string;
 }
 
@@ -245,7 +245,7 @@ async function admitDeadHolder(
   console.error(
     vanished === null
       ? `${gone} and left nothing in its tree; taking the drive over.`
-      : `${gone} and its tree (${vanished}) no longer exists, so anything it held unpushed is lost; taking the drive over from the pull request's remote head.`,
+      : `${gone} and its tree (${vanished}) no longer exists; taking the drive over. Inspect branch refs and reflogs in shared Git storage for recoverable commits before redoing work.`,
   );
   return vanished;
 }

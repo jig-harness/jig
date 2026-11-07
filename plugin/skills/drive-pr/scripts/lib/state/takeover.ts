@@ -5,7 +5,7 @@
  * the doctor verdict that admitted it, the round it resumed at, the held
  * items not verified as pushed that it reopened and those it could not,
  * whether the reconciliation ran, and the previous driver's working tree when
- * it no longer existed (anything held unpushed there was lost).
+ * it no longer existed (shared Git storage may still retain its commits).
  *
  * Optional in a stored state, like `drivenBranch`: a stored state written
  * before the field existed reads as no takeovers, since nothing about a
@@ -45,7 +45,7 @@ export interface TakeoverRecord {
   reopenFailed?: string[];
   /** `reconcile-replied-threads.ts` ran and exited 0 before the first triage. */
   reconciled?: boolean;
-  /** The previous driver's working tree, which no longer existed: what it held unpushed was lost. */
+  /** The previous driver's missing working tree; shared Git storage may retain commits. */
   vanishedTree?: string;
 }
 

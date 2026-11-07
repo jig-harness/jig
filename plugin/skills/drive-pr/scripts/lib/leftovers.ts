@@ -3,11 +3,10 @@
  * reads `drives.ts --doctor` and `drive.ts --take-over` make of a dead
  * driver's tree. A tree that holds uncommitted changes, unpushed commits or
  * an unconcluded git operation is a person's to push or discard; a tree that
- * no longer exists holds nothing anyone can push or save, so its driver is a
- * dead holder with nothing left.
+ * no longer exists has no working files to inspect. Its commits may still be
+ * recoverable from the clone's shared Git storage.
  */
-import { realpathSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { statSync } from "node:fs";
 import { errnoCode } from "../../../../shared/errors.ts";
 import type { DoctorLeftovers } from "./doctor.ts";
 import { attachedTree } from "./driven-branch.ts";
@@ -91,44 +90,11 @@ function treeAt(path: string): "directory" | "absent" | "unreadable" {
   }
 }
 
-function realOrResolved(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return resolve(path);
-  }
-}
-
 /**
- * The worktrees git lists for the clone the reader runs in (the tree its
- * driver pinned, else its working directory); `null` when git cannot say.
- */
-async function listedWorktrees(): Promise<string[] | null> {
-  const r = await git(["worktree", "list", "--porcelain"], {
-    cwd: process.env.DRIVE_PR_WORKTREE || process.cwd(),
-    stderr: "pipe",
-    timeoutSec: gitCallTimeoutSeconds(),
-    env: gitIdentityEnv(),
-  });
-  if (r.code !== 0) return null;
-  return r.stdout
-    .split("\n")
-    .filter((line) => line.startsWith("worktree "))
-    .map((line) => line.slice("worktree ".length));
-}
-
-/**
- * Whether a driven worktree no longer exists: its directory is gone, or git
- * no longer lists it as a worktree of this clone. `false` whenever that
- * cannot be told (the path or the listing does not read), so a tree that
- * exists but cannot be inspected stays a person's to check.
+ * Only positive directory absence admits a vanished tree. Missing Git
+ * registration does not prove that existing working files are safe to abandon.
+ * An unreadable path stays a person's to check.
  */
 export async function worktreeVanished(worktree: string): Promise<boolean> {
-  const at = treeAt(worktree);
-  if (at === "absent") return true;
-  if (at === "unreadable") return false;
-  const listed = await listedWorktrees();
-  if (listed === null) return false;
-  const tree = realOrResolved(worktree);
-  return !listed.some((path) => realOrResolved(path) === tree);
+  return treeAt(worktree) === "absent";
 }

@@ -579,10 +579,10 @@ admitted only when the holder is `WEDGED` (alive, no progress past the stall
 threshold, no pass running), or when its process is confirmed gone and its tree holds
 nothing unpushed (on this machine it refuses, naming the leftovers, until you
 push or discard them). A tree that no longer exists, because its directory was
-deleted or git no longer lists it as a worktree of the clone, holds nothing
-anyone could push: the doctor reads that holder `DEAD`, and the takeover goes
-ahead with nobody needed, recording the tree and telling the first pass that
-whatever existed only there is lost. A tree that exists but cannot be
+deleted, has no working files to inspect: the doctor reads that holder `DEAD`,
+and the takeover goes ahead with nobody needed, recording the tree and telling
+the first pass to inspect branch refs and [reflogs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#git-reflog) in the clone's shared Git storage for
+recoverable commits before redoing work. A tree that exists but cannot be
 inspected is refused. Against any other holder it refuses as exit `11` does.
 It stops a wedged holder with the same identity check that `--stop`
 makes, and only the driver whose verdict it read: one that took the lock

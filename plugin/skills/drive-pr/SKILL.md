@@ -797,16 +797,19 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" <PR> --take-over --bots-only -- claud
 It reads the holder's `drives.ts` `--doctor` verdict and is admitted only
 against a holder that is `WEDGED`, or whose process is confirmed gone by its
 recorded identity (its pid answers no signal, or now belongs to a process
-with another start time or boot) with nothing left in its tree: no
+with another start time on POSIX, or another boot; Windows refuses a PID
+that still answers when its identity cannot be verified) with nothing left
+in its tree: no
 uncommitted changes, unpushed commits or unconcluded git operation (on this
 machine the takeover refuses, naming them, until they are pushed or
 discarded), or no tree at all. A tree that no longer exists (its directory
-is gone, or git no longer lists it as a worktree of the clone) holds nothing
-anyone can push or save, so the doctor reads its holder `DEAD` and the
+is gone) has no working files to inspect, so the doctor reads its holder
+`DEAD` and the
 takeover is admitted with no person needed, as the plain arm recovers that
-holder's lock; what existed only in that tree is already lost, and the
-takeover records the tree (`vanishedTree`) and says so in the first pass's
-`TAKEN OVER` notice. A tree that exists but cannot be inspected stays
+holder's lock. Unpushed commits may remain in the clone's shared Git storage;
+the takeover records the tree (`vanishedTree`) and the first pass's `TAKEN OVER`
+notice directs it to inspect branch refs and [reflogs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#git-reflog) before redoing work.
+A tree that exists but cannot be inspected stays
 `UNKNOWN` and is refused. Against any other holder it refuses as exit `11`
 does, naming the verdict. A wedged holder is stopped through `drives.ts` `--stop`, with
 the identity check that command performs, bound by `--expect-started` to the

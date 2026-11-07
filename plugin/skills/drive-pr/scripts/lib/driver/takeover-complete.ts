@@ -231,7 +231,7 @@ export async function completeTakeover(
   ];
   if (plan.vanishedTree !== undefined)
     notice.push(
-      `The previous driver's working tree (${plan.vanishedTree}) no longer exists: any uncommitted changes or unpushed commits that existed only there are lost. Work from the pull request's remote head, and redo what its threads and findings still ask for.`,
+      `The previous driver's working tree (${plan.vanishedTree}) no longer exists, so its working files cannot be inspected. Unpushed commits may still be recoverable in the clone's shared Git storage: inspect branch refs and reflogs, compare recovered commits with the pull request's remote head, and recover applicable work before redoing what its threads and findings still ask for.`,
     );
   if (!reconciled)
     notice.push(

@@ -114,7 +114,7 @@ async function tick(w: World): Promise<TickReceipt> {
 const repo = (r: TickReceipt) => r.repos[0];
 
 const VANISHED =
-  "no live driver: its process is gone, and its worktree /ws/gone no longer exists, so nothing in it can be pushed or saved (anything it held unpushed is lost); a takeover is admitted";
+  "no live driver: its process is gone, and its worktree /ws/gone no longer exists, so its working files cannot be inspected; commits may remain in shared Git storage — inspect branch refs and reflogs before redoing work; a takeover is admitted";
 
 describe("a silent driver no launch started", () => {
   for (const holder of [

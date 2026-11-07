@@ -831,21 +831,25 @@ bound by `--expect-started` to the acquisition that row named: a holder that
 took the lock since is refused with `--stop`'s exit `3`, and left running),
 and against a stale holder whose process is confirmed gone by its recorded
 identity (`holderGone`: its pid answers no signal, or now belongs to a process
-with another start time or boot; a stale lock whose process still runs, with
+with another start time on POSIX, or another boot; Windows refuses a PID
+that still answers when its identity cannot be verified; a stale lock whose
+process still runs, with
 an old heartbeat, is refused) and whose working tree holds no uncommitted
 changes, unpushed commits or unconcluded git operation (inspected on this
 machine; otherwise refused until they are pushed or discarded), or no longer
-exists: its directory is gone, or git no longer lists it as a worktree of the
-clone (`worktreeVanished`). Nothing in a vanished tree can be pushed or saved,
-so the doctor reads that holder `DEAD`, as it does one with a clean tree, and
+exists: its directory is gone (`worktreeVanished`). The working files cannot
+be inspected, so the doctor reads that holder `DEAD`, as it does one with a
+clean tree, and
 the takeover is admitted as the plain arm's lock recovery is; a tree that
 exists but cannot be inspected stays `UNKNOWN` and is refused. Every other holder is
 refused with exit `11`, naming the verdict; an empty lock is exit `2`, since
 there is nothing to take over. Once the takeover holds the locks it appends a
 record to the drive state's `takeovers` (from which actor and hashed account,
 to which, the verdict, the round, and `vanishedTree`, the tree that no longer
-existed, whose unpushed work the first pass's notice says is lost; the
-ledger leaves the path out), runs `reconcile-replied-threads.ts` before
+existed; the first pass's notice directs it to inspect branch refs and
+[reflogs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#git-reflog) in the clone's shared Git storage for recoverable commits before
+redoing work, and the ledger leaves the path out), runs
+`reconcile-replied-threads.ts` before
 the first triage — the first gate's own sweep covers a failed run — and
 carries the held batch over: a hold stamped with its pushed fix is left to the
 round's ordinary resolve; a hold of the previous actor not stamped as pushed is
