@@ -413,7 +413,8 @@ that question, and the outcome log counts it as parked for a person.
 A Claude follow-up that exits unsuccessfully within a minute without a
 result, a question or its own transcript is treated as unable to start.
 Its account stays out of admission for `wall_backoff`, and its marker is
-released automatically so a later tick can retry on another account. The
+released by a tick that still has the pull request in scope and undisputed,
+so a later tick can retry on another account. The
 outcome log says `quota wall` when the vendor printed a recognized usage
 notice, otherwise `refused` with the startup reason. A transcript that exists
 or cannot be checked keeps the ordinary failure classification. This retry

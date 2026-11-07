@@ -562,20 +562,17 @@ async function settleRecordClaims(
     owed.stage,
   );
   if (retryableStartup(r)) {
-    const released = await releaseStartupClaims(ctx, target, matches);
-    // The listing can lag a post or omit a marker already deleted by a wrapper.
+    const ids = matches.filter(open).map((c) => c.id);
+    // The listing can lag a post or omit a marker already deleted by a tick.
     // Delete the recorded id as well: only a successful deletion or an explicit
     // not-found response confirms that this launch's marker no longer exists.
     if (
       !matches.some((c) => c.id === r.record.marker) &&
       r.record.marker !== null
     ) {
-      const removed = await ctx.records.release(target, r.record.marker);
-      if (!removed.ok && removed.failure.code !== "not-found")
-        released.push(
-          `PR #${owed.pr}: marker ${r.record.marker} could not be released: ${removed.failure.reason}`,
-        );
+      ids.push(r.record.marker);
     }
+    const released = await releaseStartupClaims(ctx, target, ids);
     if (
       r.record.marker !== null &&
       failures.length === 0 &&
@@ -636,15 +633,14 @@ function ownRecordClaims(
 async function releaseStartupClaims(
   ctx: Pick<SharedContext, "records">,
   target: { repo: string; pr: number },
-  matches: ReadClaim[],
+  ids: number[],
 ): Promise<string[]> {
   const failures: string[] = [];
-  for (const claim of matches) {
-    if (!open(claim)) continue;
-    const released = await ctx.records.release(target, claim.id);
-    if (!released.ok)
+  for (const id of ids) {
+    const released = await ctx.records.release(target, id);
+    if (!released.ok && released.failure.code !== "not-found")
       failures.push(
-        `PR #${target.pr}: the unstarted follow-up's marker ${claim.id} could not be released: ${released.failure.reason}`,
+        `PR #${target.pr}: the unstarted follow-up's marker ${id} could not be released: ${released.failure.reason}`,
       );
   }
   return failures;
@@ -655,12 +651,15 @@ async function releaseStartupClaims(
  * its own launch's claims, written at once so another host reads it when the
  * launch ends. Every forge call, the read of the login among them, goes
  * through `ghCall` under `AT_EXIT_CALL_SEC`. Best effort: it returns why an
- * end was not written, and the tick's settle writes it.
+ * end was not written, and the tick's settle writes it. Retryable startup
+ * markers are released only by the tick, which reads current dispatch scope.
  */
 export async function settleAtExit(
   r: ReadRecord,
   root = stateRoot(),
 ): Promise<string[]> {
+  // Startup marker deletion needs the tick's current scope and dispute checks.
+  if (retryableStartup(r)) return [];
   const nowIso = new Date().toISOString();
   if (owedAtExit(r, nowIso) === null) return [];
   const login = await resolveLogin(AT_EXIT_CALL_SEC);

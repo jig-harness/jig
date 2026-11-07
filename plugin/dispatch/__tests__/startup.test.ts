@@ -100,7 +100,58 @@ it.each(["none", "stdout", "stderr", "interleaved"])(
   },
 );
 
-it("retries the exact startup marker release after the wrapper's forge refusal", async () => {
+it("leaves startup cleanup to the scoped tick even when the wrapper can delete", async () => {
+  const w = fixture();
+  writeFileSync(join(w.dir, "comment-delete-fail"), "");
+  const first = await applyTick(w, false);
+  const id = String(first.repos[0]?.launches?.[0]?.record);
+  await waitFor("the pass", () => claudeRuns(w).length === 1);
+  writeFileSync(join(w.dir, "claude-exit"), "1");
+  await waitFor("the exit", () => exitWritten(w, id));
+  const settle = join(w.root, "settle-wrapper.ts");
+  writeFileSync(
+    settle,
+    `import { readLaunches } from ${JSON.stringify(resolve(import.meta.dir, "../lib/launches.ts"))};
+import { settleAtExit } from ${JSON.stringify(resolve(import.meta.dir, "../lib/shared-launches.ts"))};
+const r = (await readLaunches()).records.find((r) => r.record.id === ${JSON.stringify(id)});
+if (!r) throw new Error("missing launch");
+await settleAtExit(r);
+`,
+  );
+  rmSync(join(w.dir, "comment-delete-fail"));
+  expectSpawnExit(await w.dispatch([], settle), 0);
+  expect(
+    JSON.parse(readFileSync(join(w.dir, "comments-9.json"), "utf8")),
+  ).toHaveLength(1);
+  expect(settledEnds(dispatchState(w)).has(id)).toBe(false);
+});
+
+it("settles a listed startup marker when deletion confirms it is already absent", async () => {
+  const w = fixture();
+  writeFileSync(join(w.dir, "comment-delete-fail"), "");
+  const first = await applyTick(w, false);
+  const id = String(first.repos[0]?.launches?.[0]?.record);
+  await waitFor("the pass", () => claudeRuns(w).length === 1);
+  writeFileSync(join(w.dir, "claude-exit"), "1");
+  await waitFor("the exit", () => exitWritten(w, id));
+  const settle = join(w.root, "settle-not-found.ts");
+  writeFileSync(
+    settle,
+    `import { readLaunches } from ${JSON.stringify(resolve(import.meta.dir, "../lib/launches.ts"))};
+import { settleOwnClaims, hostOf } from ${JSON.stringify(resolve(import.meta.dir, "../lib/shared-launches.ts"))};
+import { forgeShared } from ${JSON.stringify(resolve(import.meta.dir, "../../shared/records/shared-forge.ts"))};
+import { resolveLogin } from ${JSON.stringify(resolve(import.meta.dir, "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts"))};
+const records = forgeShared({ login: await resolveLogin() });
+records.release = async () => ({ ok: false, failure: { code: "not-found", reason: "already absent" } });
+const launches = (await readLaunches()).records.filter((r) => r.record.id === ${JSON.stringify(id)});
+await settleOwnClaims({ records, host: hostOf(), slug: ${JSON.stringify(SLUG)}, owner: true, login: null }, new Map(), [], launches, new Map(), new Date().toISOString());
+`,
+  );
+  expectSpawnExit(await w.dispatch([], settle), 0);
+  expect(settledEnds(dispatchState(w)).has(id)).toBe(true);
+});
+
+it("retries the exact startup marker release after the tick's forge refusal", async () => {
   const w = fixture();
   writeFileSync(join(w.dir, "comment-delete-fail"), "");
   const first = await applyTick(w, false);
@@ -110,15 +161,15 @@ it("retries the exact startup marker release after the wrapper's forge refusal",
   if (record === null || record.marker === null)
     throw new Error(`no follow-up launch record ${id}`);
   writeFileSync(join(w.dir, "claude-exit"), "1");
-  await waitFor("wrapper's refused marker deletion", () =>
+  await waitFor("the exit", () => exitWritten(w, id));
+  rmSync(join(w.dir, "claude-exit"));
+  const held = await applyTick(w, false);
+  await waitFor("tick's refused marker deletion", () =>
     existsSync(join(w.dir, "comment-delete-refused")),
   );
   expect(readFileSync(join(w.dir, "comment-delete-refused"), "utf8")).toBe(
     String(record.marker),
   );
-  await waitFor("the exit", () => exitWritten(w, id));
-  rmSync(join(w.dir, "claude-exit"));
-  const held = await applyTick(w, false);
   expect(held.repos[0]?.launches ?? []).toEqual([]);
   expect(
     held.repos[0]?.actions.some((a) => a.cause === "followup-failed"),
@@ -197,11 +248,12 @@ it("settles an interrupted startup release from its record when the marker is al
   await waitFor("the pass", () => claudeRuns(w).length === 1);
   writeFileSync(join(w.dir, "claude-exit"), "1");
   await waitFor("the exit", () => exitWritten(w, id));
+  rmSync(join(w.dir, "claude-exit"));
+  await applyTick(w, false);
   await waitFor(
     "the deleted marker",
     () => readFileSync(join(w.dir, "comments-9.json"), "utf8") === "[]",
   );
-  rmSync(join(w.dir, "claude-exit"));
   w.setConfig(
     `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndispatch:\n  followup_command: /followup\n  labels: { enabled: true, only_labeled: true }\n`,
   );
@@ -219,6 +271,25 @@ it("settles an interrupted startup release from its record when the marker is al
       dispatchState(w),
     ),
   ).toContain(id);
+});
+
+it("records the cause when transcript directory enumeration fails", async () => {
+  const w = fixture();
+  const path = join(w.root, "not-a-directory");
+  writeFileSync(path, "");
+  const script = join(w.root, "scan-failure.ts");
+  writeFileSync(
+    script,
+    `process.env.JIG_LOG = "debug";
+const { forEachDirEntry } = await import(${JSON.stringify(resolve(import.meta.dir, "../../skills/drive-pr/scripts/lib/quota/types.ts"))});
+console.log(forEachDirEntry(${JSON.stringify(path)}, () => true));
+`,
+  );
+  const child = await w.dispatch([], script);
+  expectSpawnExit(child, 0);
+  expect(child.stdout.trim()).toBe("false");
+  expect(child.stderr).toContain("ENOTDIR");
+  expect(child.stderr).toContain("directory scan could not be opened");
 });
 
 it.each(["transcript", "unreadable scan", "truncated scan"])(
