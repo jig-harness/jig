@@ -124,6 +124,60 @@ describe("the probe's GitHub call", () => {
       openPr({ number: 12, repository: { nameWithOwner: "not a slug" } }),
     ).toBeNull();
   });
+
+  it("digests each check, so one that ends while the aggregate stays PENDING moves the detail", () => {
+    const repository = { nameWithOwner: "acme/web" };
+    const at = (nodes: unknown[], totalCount = nodes.length) =>
+      openPr({
+        number: 12,
+        repository,
+        commits: {
+          nodes: [
+            {
+              commit: {
+                oid: "abc",
+                statusCheckRollup: {
+                  state: "PENDING",
+                  contexts: { totalCount, nodes },
+                },
+              },
+            },
+          ],
+        },
+      });
+    const run = (name: string, status: string, conclusion: string | null) => ({
+      __typename: "CheckRun",
+      name,
+      status,
+      conclusion,
+    });
+    const before = at([
+      run("build", "IN_PROGRESS", null),
+      run("lint", "IN_PROGRESS", null),
+    ]);
+    const after = at([
+      run("build", "COMPLETED", "SUCCESS"),
+      run("lint", "IN_PROGRESS", null),
+    ]);
+    expect(before?.checks).toBe("PENDING");
+    expect(after?.checks).toBe("PENDING");
+    expect(after?.detail).not.toBe(before?.detail);
+    expect(
+      at([run("lint", "IN_PROGRESS", null), run("build", "IN_PROGRESS", null)])
+        ?.detail,
+    ).toBe(before?.detail);
+    const status = {
+      __typename: "StatusContext",
+      context: "ci",
+      state: "PENDING",
+    };
+    expect(at([status])?.detail).not.toBe(
+      at([{ ...status, state: "SUCCESS" }])?.detail,
+    );
+    expect(at([run("build", "IN_PROGRESS", null)], 101)?.detail).toMatch(
+      /\+100$/,
+    );
+  });
 });
 
 describe("the probe's GitHub search", () => {

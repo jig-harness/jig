@@ -230,7 +230,17 @@ export function openPr(node: unknown): OpenPr | null {
   };
 }
 
-/** A short digest of each check's name and result in a rollup, and of how many there are; `-` without any. */
+/** A string order that does not depend on the locale. */
+function byCode(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * A short digest of each check's name and result in a rollup, and of how many
+ * there are; `-` without any. It covers the first hundred checks the query
+ * reads: a rollup with more says so (`+n` omitted checks) and a change only
+ * among the omitted ones is left to the sweep's own timer.
+ */
 function checkDigest(roll: Record<string, unknown> | null): string {
   const contexts =
     roll !== null && isRecord(roll.contexts) ? roll.contexts : null;
@@ -248,10 +258,11 @@ function checkDigest(roll: Record<string, unknown> | null): string {
     typeof contexts?.totalCount === "number"
       ? contexts.totalCount
       : lines.length;
-  return createHash("sha256")
-    .update(`${total}\n${lines.sort().join("\n")}`)
+  const digest = createHash("sha256")
+    .update(`${total}\n${lines.sort(byCode).join("\n")}`)
     .digest("hex")
     .slice(0, 12);
+  return total > lines.length ? `${digest}+${total - lines.length}` : digest;
 }
 
 /** Runs one call; `gh` exits 1 for an answer with errors, which `readPage` still reads. */

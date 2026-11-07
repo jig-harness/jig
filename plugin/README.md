@@ -1028,7 +1028,9 @@ repository with the stage the tick acts under (`pickup` for `assign`,
 dispatch --apply --repo <path>` the way the installed timer does, when idle
 and no sooner than a minute after the last tick it started, rather than
 at the next timer run. The change probe (above) wakes ticks under the same
-rule, so a send and a probe within one minute start one tick. Several sends within that minute start one tick. A tick that
+rule: requests pending before a tick starts are taken by that one tick, and
+a request made after it started is taken by one trailing tick. Several sends
+pending together start one tick. A tick that
 finds another holding the tick lock is tried again a minute later; the
 waiter exits when nothing is pending, or after starting 10 ticks; the record stays the request, so the
 next timer run reads it whatever happens to the wake. What the waiter did

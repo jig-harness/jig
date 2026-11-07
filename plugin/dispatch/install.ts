@@ -11,9 +11,11 @@
  * only when there is one; a removal takes both away.
  *
  * The probe has a timer of its own rather than a place in the tick's: the
- * two run at different intervals, a scheduler never overlaps two runs of one
- * job (so a probe inside the tick's job would wait out every sweep), and a
- * probe that fails or hangs then never delays a sweep, nor a sweep a probe.
+ * two run at different intervals, a probe inside the tick's job would wait
+ * out every sweep (systemd and launchd never overlap two runs of one job;
+ * cron can, and there the probe's holder lock keeps two applying probes
+ * apart), and a probe that fails or hangs then never delays a sweep, nor a
+ * sweep a probe.
  */
 import { resolve } from "node:path";
 import { ExitError } from "../shared/cli.ts";

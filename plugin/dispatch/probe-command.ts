@@ -8,9 +8,10 @@
  *
  * Under that timer the probe is the woken tick's waiter itself
  * (`wakeTickHere`): the scheduler ends whatever a job leaves running, so it
- * waits for the ticks it wakes, one repository after another, before it
- * exits. A probe whose forge read fails wakes nothing, prints why on
- * standard error and exits 1; the sweep runs on its own timer either way.
+ * waits for the ticks it wakes, the repositories' waiters running
+ * together, before it exits. A probe whose forge read fails wakes nothing,
+ * prints why on standard error and exits 1; the sweep runs on its own timer
+ * either way.
  */
 import { ExitError } from "../shared/cli.ts";
 import { failed, ok, type Outcome } from "../shared/outcome.ts";

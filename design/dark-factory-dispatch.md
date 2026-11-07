@@ -1771,11 +1771,13 @@ and is logged. On GitHub the search is one GraphQL call for a single page of res
 5,000 an hour, measured with eleven repositories and sixty-odd open pull
 requests, about sixty calls an hour. The probe has a timer of its own
 rather than a place in the tick's: the two run at different intervals, a
-scheduler never overlaps two runs of one job, so a probe inside the tick's
-job would wait out every sweep, and a probe that fails or hangs then never
-delays a sweep. A scheduler ends whatever a job leaves running (systemd
-stops its whole control group), so the probe is the woken ticks' waiter
-itself and exits after them, one repository after another. The machine
+probe inside the tick's job would wait out every sweep (the systemd and
+launchd schedulers never overlap two runs of one job; cron can, and there
+the probe's holder lock keeps two applying probes apart), and a probe that
+fails or hangs then never delays a sweep. A scheduler ends whatever a job
+leaves running (systemd stops its whole control group), so the probe is the
+woken ticks' waiter itself and exits after them, the repositories' waiters
+running together. The machine
 file's `change_probe: false` turns it off. A change the line makes itself
 (a drive's comment, a label the tick writes) wakes a tick too, at most one
 a minute for the repository; that tick finds the records as the sweep
