@@ -128,6 +128,11 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.105.0
+  dispatch.person:
+    type: string
+    pattern: "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\\[bot\\])?$"
+    read_by: [drive-pr]
+    since: next
   dispatch.states:
     type: list
     items: { type: enum, values: [triage, backlog, todo, in_review, ops_pending, done, canceled, duplicate] }

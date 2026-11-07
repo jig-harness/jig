@@ -403,6 +403,7 @@ async function parkOf(
         answered: found.answered.length,
         waiting: found.waiting.map((p) => `${p.kind} ${p.key}`),
         parks: found.waiting.map((p) => ({
+          ...(p.person === undefined ? {} : { person: p.person }),
           key: p.key,
           kind: p.kind,
           lines: framedDecisionLines(p),
@@ -550,7 +551,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     ...base,
     ...classified,
     evidence: ledgerEvidence(ledger, nowMs, forge),
-    ...waitingOf(classified, park),
+    ...waitingOf(classified, park, pr.author?.login),
   };
 }
 
@@ -558,6 +559,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
 function waitingOf(
   classified: Classified,
   park: ParkReading | undefined,
+  author?: string,
 ): { waiting?: WaitingPark[] } {
   if (
     classified.class !== "parked" ||
@@ -565,7 +567,13 @@ function waitingOf(
     "unreadable" in park
   )
     return {};
-  return park.parks === undefined ? {} : { waiting: park.parks };
+  return park.parks === undefined
+    ? {}
+    : {
+        waiting: park.parks.map((p) =>
+          p.person !== undefined || !author ? p : { ...p, person: author },
+        ),
+      };
 }
 
 /**

@@ -32,6 +32,7 @@ export function personAct(cause: NeedCause): PersonAct {
 
 /** One address that waits on a person. */
 export interface WaitingEntry {
+  people: string[];
   address: string;
   act: PersonAct;
   /** When the cause began, as far as the records say. */
@@ -74,6 +75,13 @@ function entryOf(need: LineNeed): WaitingEntry | null {
   if (key === null) return null;
   return {
     address: formatAddress({ station, repo: need.repo, key }),
+    people: [
+      ...new Set(
+        need.decisions.flatMap((d) =>
+          d.person === undefined ? [] : [d.person],
+        ),
+      ),
+    ],
     act: personAct(need.cause),
     since: need.since,
     reason: need.reason,
@@ -87,7 +95,10 @@ function entryOf(need: LineNeed): WaitingEntry | null {
 }
 
 /** What waits on a person, from the newest tick's line under the dispatcher's state directory `root`. */
-export function waitingAnswer(root: string | null): WaitingAnswer {
+export function waitingAnswer(
+  root: string | null,
+  person?: string,
+): WaitingAnswer {
   const none = (unread: string): WaitingAnswer => ({
     v: ANSWER_VERSION,
     tick: null,
@@ -107,11 +118,12 @@ export function waitingAnswer(root: string | null): WaitingAnswer {
     tick: { runId: line.value.runId, finishedAt: line.value.finishedAt },
     waiting: line.value.needs
       .map(entryOf)
-      .filter((e): e is WaitingEntry => e !== null),
+      .filter((e): e is WaitingEntry => e !== null)
+      .filter(
+        (e) =>
+          person === undefined ||
+          e.people.some((p) => p.toLowerCase() === person.toLowerCase()),
+      ),
     unread: null,
   };
 }
-
-/** Why `--person` is refused: whom a park waits on is not recorded until step 5 of the design. */
-export const PERSON_REFUSED =
-  "--person needs whom a park waits on, which the line does not record yet (design/addresses.md, build step 5: a park names the person it waits on); use --waiting alone";

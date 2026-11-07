@@ -4,6 +4,27 @@ import type { Workspace } from "../lib/runtime/port.ts";
 import { parkNotice } from "../lib/notices.ts";
 import type { DrivenPr } from "../lib/types.ts";
 
+test("a parked notice names each question's person", () => {
+  const pr = parked([["First question?"], ["Second question?"]]);
+  pr.waiting = [
+    {
+      key: "first",
+      kind: "thread",
+      lines: ["First question?"],
+      person: "api-owner",
+    },
+    {
+      key: "second",
+      kind: "thread",
+      lines: ["Second question?"],
+      person: "web-owner",
+    },
+  ];
+  const { text } = parkNotice("example/project", pr);
+  expect(text).toContain("Waiting on @api-owner:");
+  expect(text).toContain("Waiting on @web-owner:");
+});
+
 function parked(lines: string[][]): DrivenPr {
   return {
     number: 9,

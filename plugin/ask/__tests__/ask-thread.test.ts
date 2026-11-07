@@ -5,7 +5,7 @@
  * for; it prints the newest entries and says how many it left out, and
  * `--since` and `--all` widen it. `--waiting` lists what the newest tick's
  * line found waiting on a person, as addresses with their acts, with no forge
- * call, says there is no line where none was written, and refuses `--person`.
+ * call, says there is no line where none was written, and filters by person.
  * A follow-up's marker places its station.
  */
 import { afterEach, describe, expect, it } from "bun:test";
@@ -56,6 +56,7 @@ const parked = (pr: number) =>
     parked: [
       {
         key: "PRRT_thread1",
+        person: "maintainer",
         kind: "thread",
         reason: "Keep the old flag for one release?",
         round: 2,
@@ -210,7 +211,10 @@ describe("jig ask on a park", () => {
     expectSpawnExit(r, 0);
     const answer = JSON.parse(r.stdout) as AskAnswer;
     expect(answer.state).toBe("HITL_PARKED");
-    expect(answer.waitsOn).toMatchObject({ person: "answer" });
+    expect(answer.waitsOn).toMatchObject({
+      person: "answer",
+      people: ["maintainer"],
+    });
     const help = await w.ask(["--help"]);
     expectSpawnExit(help, 0);
     expect(help.stdout).toContain("--waiting");
@@ -286,6 +290,7 @@ const LINE: LineSnapshot = {
         },
         {
           key: "PRRT_thread2",
+          person: "another-owner",
           kind: "thread",
           question: null,
           lines: ["Which format should remain?"],
@@ -349,13 +354,50 @@ describe("jig ask --waiting", () => {
     expect(text.stdout).not.toContain("\u001b");
   });
 
-  it("says there is no line to read on a machine that dispatches nothing, and refuses --person", async () => {
+  it("filters waiting entries by the named person's login, without forge calls", async () => {
+    const w = world();
+    writeLine(
+      {
+        ...LINE,
+        needs: LINE.needs.map((n, i) =>
+          i === 0
+            ? {
+                ...n,
+                decisions: n.decisions.map((d, j) => ({
+                  ...d,
+                  person: j === 0 ? "maintainer" : "another-owner",
+                })),
+              }
+            : n,
+        ),
+      },
+      "{}",
+      w.state,
+    );
+    const r = await w.ask(
+      ["--waiting", "--person", "MAINTAINER", "--json"],
+      w.away,
+    );
+    expectSpawnExit(r, 0);
+    expect(
+      (JSON.parse(r.stdout) as WaitingAnswer).waiting.map((e) => e.address),
+    ).toEqual([`drive@${REPO}#7`]);
+    const other = await w.ask(
+      ["--waiting", "--person", "stranger", "--json"],
+      w.away,
+    );
+    expectSpawnExit(other, 0);
+    expect((JSON.parse(other.stdout) as WaitingAnswer).waiting).toEqual([]);
+    expect(w.calls()).toEqual([]);
+  });
+
+  it("says there is no line to read on a machine that dispatches nothing", async () => {
     const w = world();
     const r = await w.ask(["--waiting"], w.away);
     expectSpawnExit(r, 0);
     expect(r.stdout).toContain("no line to read");
     const person = await w.ask(["--waiting", "--person", "maintainer"], w.away);
-    expectSpawnExit(person, 2);
-    expect(person.stderr).toContain("a park names the person it waits on");
+    expectSpawnExit(person, 0);
+    expect(person.stdout).toContain("no line to read");
   });
 });

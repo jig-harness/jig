@@ -79,7 +79,11 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
     [
       `PR #${pr.number} (${pr.title}) is parked: ${waiting.length === 1 ? "one decision waits" : `${waiting.length} decisions wait`} for a person.`,
       "",
-      ...waiting.flatMap((p) => [...p.lines, ""]),
+      ...waiting.flatMap((p) => [
+        ...(p.person === undefined ? [] : [`Waiting on @${p.person}:`]),
+        ...p.lines,
+        "",
+      ]),
     ],
     [
       "Answer each on the pull request, in a comment with a line `answer <key>: …` (or on its thread). Once every one is answered, the next tick re-arms the drive. A decision above that is cut off is framed in full in the drive's ledger comment on the pull request.",
