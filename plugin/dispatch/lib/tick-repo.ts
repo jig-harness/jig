@@ -7,7 +7,8 @@
  * project the labels (tick-labels.ts), and report the shared records' reads
  * and writes (tick-shared.ts). Each phase hands the next what it read; the
  * report is filled as they go, and each phase's milliseconds are kept on it
- * (`phasesMs`).
+ * (`phasesMs`). Applying ticks reconcile abandoned local ledgers before
+ * planning; that reconciliation time is charged to apply.
  *
  * Each part is run inside the tick's boundary: what throws out of it is a
  * defect (`defectReport`), which stops this repository's turn only. The
@@ -28,6 +29,7 @@ import {
 import { planObserved } from "./tick-plan.ts";
 import { logRepo } from "./tick-settle.ts";
 import { sharedReport } from "./tick-shared.ts";
+import { recoverLedgers } from "./recover-ledgers.ts";
 import type { RepoPhase, RepoReport } from "./types.ts";
 
 /** One repository's turn as it runs: its phases' clock, and its report once the repository opened. */
@@ -88,6 +90,8 @@ export async function actTurn(
   const { path, timer } = turn;
   const { report } = opened;
   const { forge } = observation;
+  if (context.apply !== null)
+    await timer.time("apply", () => recoverLedgers(context, observation));
   await timer.time("plan", () => planObserved(context, observation));
   await timer.time("log", () =>
     logRepo(context, opened.repo.slug, report, forge.drives),
