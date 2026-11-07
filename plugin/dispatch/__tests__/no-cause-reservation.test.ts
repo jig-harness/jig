@@ -132,11 +132,7 @@ describe("recovery reservation", () => {
         ...record(facts),
         id: c.says.ok ? String(c.says.value.record) : "",
       },
-      state: {
-        kind: "ended",
-        exit: { at: new Date().toISOString(), code: null, signal: null },
-        process: null,
-      },
+      state: { kind: "pending" },
       result: null,
     }));
     expect(
@@ -166,6 +162,95 @@ describe("recovery reservation", () => {
   });
 
   for (const legacy of [false, true]) {
+    it(`counts executed losing reservations against the ${legacy ? "legacy" : "modern"} budget`, () => {
+      const drive = pr(legacy);
+      const facts = noCauseFacts(drive);
+      const history = [
+        claim(1, "ordinary stop"),
+        claim(2, facts),
+        claim(3, facts),
+        claim(4, facts),
+      ];
+      for (const c of history) if (c.says.ok) c.says.value.attempt = 1;
+      const local: ReadRecord[] = history.slice(1).map((c) => ({
+        record: {
+          ...record(facts),
+          id: c.says.ok ? String(c.says.value.record) : "",
+        },
+        state: {
+          kind: "ended",
+          exit: { at: new Date().toISOString(), code: 11, signal: null },
+          process: null,
+        },
+        result: null,
+      }));
+      expect(
+        settleNoCauseStops(
+          [drive],
+          local,
+          new Map([[7, ok(history)]]),
+          Date.now(),
+        )[0]?.class,
+      ).toBe("stopped-unknown");
+      // A runtime receipt is execution evidence even before its wrapper claims the record.
+      const sent = local.map(
+        (r): ReadRecord => ({
+          ...r,
+          state: { kind: "pending" },
+          record: {
+            ...r.record,
+            attempts: [
+              { at: r.record.createdAt, outcome: "sent", detail: "started" },
+            ],
+          },
+        }),
+      );
+      expect(
+        settleNoCauseStops(
+          [drive],
+          sent,
+          new Map([[7, ok(history)]]),
+          Date.now(),
+        )[0]?.class,
+      ).toBe("stopped-unknown");
+      const failed = sent.map(
+        (r): ReadRecord => ({
+          ...r,
+          record: {
+            ...r.record,
+            attempts: r.record.attempts.map((a) => ({
+              ...a,
+              outcome: "failed",
+            })),
+          },
+        }),
+      );
+      expect(
+        settleNoCauseStops(
+          [drive],
+          failed,
+          new Map([[7, ok(history)]]),
+          Date.now(),
+        )[0]?.class,
+      ).toBe("re-armable");
+      const lost = sent.map(
+        (r): ReadRecord => ({
+          ...r,
+          record: {
+            ...r.record,
+            attempts: r.record.attempts.map((a) => ({ ...a, outcome: "lost" })),
+          },
+        }),
+      );
+      expect(
+        settleNoCauseStops(
+          [drive],
+          lost,
+          new Map([[7, ok(history)]]),
+          Date.now(),
+        )[0]?.class,
+      ).toBe("stopped-unknown");
+    });
     it(`refuses a stale ${legacy ? "legacy" : "modern"} plan after a competing host consumed the remaining allowance`, async () => {
       const drive = pr(legacy);
       const facts = noCauseFacts(drive);

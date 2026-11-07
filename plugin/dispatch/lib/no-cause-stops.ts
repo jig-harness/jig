@@ -51,16 +51,17 @@ function attemptsOf(
   const attempts = new Map<string, { facts: string; at: string }>();
   const shared = claims.get(pr.number);
   const won = shared?.ok ? winners(shared.value) : [];
+  const winningIds = new Set(won.map((c) => c.id));
   const losingRecords = new Set(
     (shared?.ok ? readable(shared.value) : [])
-      .filter((c) => !won.some((w) => w.id === c.id))
+      .filter((c) => !winningIds.has(c.id))
       .map((c) => c.says.value.record),
   );
   for (const r of records)
     if (
       isDrive(r.record) &&
       r.record.pr === pr.number &&
-      !losingRecords.has(r.record.id)
+      (!losingRecords.has(r.record.id) || executed(r))
     )
       attempts.set(r.record.id, {
         facts: r.record.facts,
@@ -72,6 +73,14 @@ function attemptsOf(
       attempts.set(String(s.record), { facts: s.facts, at: s.at });
   }
   return attempts;
+}
+
+/** A losing reservation is excluded only while no execution evidence exists. */
+function executed(r: ReadRecord): boolean {
+  return (
+    r.state.kind !== "pending" ||
+    r.record.attempts.some((a) => a.outcome !== "failed")
+  );
 }
 
 /** Recovery cannot be bounded from a partial history of trusted launches. */
