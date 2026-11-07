@@ -33,9 +33,7 @@
  *
  * Pending, alive and unknown records hold their stage and their account's
  * slot; an unknown or a pending record whose launch cannot be retried
- * holds them until a person clears it (`jig dispatch clear`). A pending
- * record no tick will launch again is **stuck** (`stuck-launches.ts`) and
- * is shown as needing a person. An
+ * holds them until a person clears it (`jig dispatch clear`). An
  * interactive session's record is also read beside its agent
  * (`actions/pickup-hold.ts`): while its wrapper is alive, the record ends
  * when the runtime reports the agent finished.
@@ -346,20 +344,13 @@ function optionalSeconds(value: unknown): boolean {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
-const OPTIONAL_TEXT = [
-  "agentId",
-  "model",
-  "effort",
-  "command",
-  "sessionId",
-  "mark",
-  "noReplay",
-];
-
 /** The fields a later version added, each absent or of its type. */
 function optionalFields(value: Record<string, unknown>): boolean {
   return (
-    OPTIONAL_TEXT.every((k) => optionalText(value[k])) &&
+    ["agentId", "model", "effort", "command", "sessionId", "mark"].every((k) =>
+      optionalText(value[k]),
+    ) &&
+    optionalText(value.noReplay) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
