@@ -131,7 +131,7 @@ function searchResult(
     isRecord(result) && isRecord(result.pageInfo) ? result.pageInfo : null;
   if (!Array.isArray(nodes) || info === null)
     return failed("unreadable", `the ${search} search did not read`);
-  const count = result.issueCount;
+  const count = isRecord(result) ? result.issueCount : undefined;
   if (typeof count !== "number")
     return failed(
       "unreadable",
