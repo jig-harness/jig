@@ -34,10 +34,8 @@
  * Pending, alive and unknown records hold their stage and their account's
  * slot; an unknown or a pending record whose launch cannot be retried
  * holds them until a person clears it (`jig dispatch clear`). A pending
- * record no tick will launch again is **stuck** (`stuck-launches.ts`):
- * each of its launches went unanswered, or a follow-up's replay could not
- * be proven safe (`noReplay`), and it is notified to a person and shown as
- * needing one rather than as an ordinary pending launch. An
+ * record no tick will launch again is **stuck** (`stuck-launches.ts`) and
+ * is shown as needing a person. An
  * interactive session's record is also read beside its agent
  * (`actions/pickup-hold.ts`): while its wrapper is alive, the record ends
  * when the runtime reports the agent finished.
@@ -348,18 +346,20 @@ function optionalSeconds(value: unknown): boolean {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+const OPTIONAL_TEXT = [
+  "agentId",
+  "model",
+  "effort",
+  "command",
+  "sessionId",
+  "mark",
+  "noReplay",
+];
+
 /** The fields a later version added, each absent or of its type. */
 function optionalFields(value: Record<string, unknown>): boolean {
   return (
-    [
-      "agentId",
-      "model",
-      "effort",
-      "command",
-      "sessionId",
-      "mark",
-      "noReplay",
-    ].every((k) => optionalText(value[k])) &&
+    OPTIONAL_TEXT.every((k) => optionalText(value[k])) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
@@ -431,11 +431,6 @@ function followupFields(
 /** What a record acts on, as the plan names it: the item, else `PR #<n>`. */
 export function targetOf(record: Pick<LaunchRecord, "item" | "pr">): string {
   return record.item ?? `PR #${String(record.pr)}`;
-}
-
-/** A pull request's link when no read gave one: the forge is GitHub, which `lib/forge.ts` reads through `gh`. */
-export function pullUrl(slug: string, pr: number): string {
-  return `https://github.com/${slug}/pull/${pr}`;
 }
 
 function isAttempt(value: unknown): value is LaunchAttempt {

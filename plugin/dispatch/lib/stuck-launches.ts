@@ -19,7 +19,8 @@
  * wrapper may still claim it.
  */
 import type { LaunchRecord, ReadRecord } from "./launches.ts";
-import { pullUrl, targetOf } from "./launches.ts";
+import { pullUrl } from "./forge.ts";
+import { targetOf } from "./launches.ts";
 import { stuckNotice } from "./notices.ts";
 import type { Action } from "./types.ts";
 
