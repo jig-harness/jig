@@ -387,6 +387,39 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.156.2] - 2026-11-07
+
+### Fixed
+
+- `jig dispatch` no longer leaves a pending launch record that no tick will launch again looking like an ordinary pending launch. A record whose two launches both went unanswered is now notified to a person (cause `needs-person`, once, then on `dispatch.renotify_after`) and shown on the dashboard as needing a person, with why and the `jig dispatch clear <record>` that releases its slot.
+- A follow-up whose marker was posted but whose launch never ran, because the tick stopped before the runtime answered, is launched again at the next tick under the same launch record, token and marker, once a fresh read finds its marker still the earliest trusted one naming it, no hold label and no session joined to the pull request. When that read finds otherwise, the record is notified as needing a person instead, and no second follow-up starts for the pull request while it holds it. Such a record could previously only be found by reading the launch records, and `jig dispatch clear` refused it.
+
+## [0.156.1] - 2026-11-07
+
+### Fixed
+
+- Drive status and the drive doctor expose stranded CI holds, reconcile local stopped-driver evidence with running ledgers, and name the guarded direct release when its evidence is complete. Operator guidance distinguishes CI release from dispatcher release and keeps review convergence separate from full CI success.
+- Hold diagnosis preserves live-process evidence and termination witnesses, scopes single-PR reads, bounds fleet diagnosis concurrency, reports Git probe failures, and includes nested forge reads in the answer's call count. Scoped diagnosis also limits recovery to the requested pull request; unavailable accounting leaves forge reads running and marks the count incomplete, and unreadable saved state preserves termination witnesses.
+
+## [0.156.0] - 2026-11-07
+
+### Added
+
+- The dispatcher's machine file accepts `opens_per_tick` (default `4`) to
+  fill more free account slots in one tick while keeping an open for notices.
+  Its deadline covers the configured workspace opens and refuses limits
+  beyond the timer's range.
+
+### Fixed
+
+- Drive launches and pickup/follow-up launches take turns leading across
+  repositories, so a backlog of old merges cannot keep new drives waiting
+  behind follow-ups for more than one tick when capacity is available.
+  Waiting launches say whether the accounts or the per-tick open budget
+  holds them, in both the receipt and the dashboard's queue.
+- Notifications wait for a later tick when their complete workspace read
+  or delivery cannot finish while preserving time to write the tick's receipt.
+
 ## [0.155.0] - 2026-11-07
 
 ### Added
@@ -5595,7 +5628,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.155.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.2...HEAD
+[0.156.2]: https://github.com/jig-harness/jig/compare/v0.156.1...v0.156.2
+[0.156.1]: https://github.com/jig-harness/jig/compare/v0.156.0...v0.156.1
+[0.156.0]: https://github.com/jig-harness/jig/compare/v0.155.0...v0.156.0
 [0.155.0]: https://github.com/jig-harness/jig/compare/v0.154.0...v0.155.0
 [0.154.0]: https://github.com/jig-harness/jig/compare/v0.153.0...v0.154.0
 [0.153.0]: https://github.com/jig-harness/jig/compare/v0.152.0...v0.153.0

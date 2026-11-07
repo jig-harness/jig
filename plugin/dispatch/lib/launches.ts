@@ -129,6 +129,8 @@ export interface LaunchRecord {
   command: string | null;
   /** The id of the follow-up marker comment the tick posted for it; `null` until posted, and for any other record. */
   marker: number | null;
+  /** Why no tick launches this pending record again: a replay the fresh read could not prove safe. A person clears it. Absent or `null` while it may be replayed. */
+  noReplay?: string | null;
   /** A drive's ledger round when it was launched, which its outcome row's rounds count from; `null` when unknown. */
   round?: number | null;
   /** For a re-drive: why it was launched, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
@@ -351,6 +353,7 @@ function optionalFields(value: Record<string, unknown>): boolean {
     ["agentId", "model", "effort", "command", "sessionId", "mark"].every((k) =>
       optionalText(value[k]),
     ) &&
+    optionalText(value.noReplay) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
