@@ -79,9 +79,9 @@ describe("inheritedHeadOf", () => {
     expect(
       inheritedHeadOf(leftovers("", 0, { operation: "merge in progress" })),
     ).toBe(HEAD);
-    expect(
-      inheritedHeadOf(leftovers("", 0, { operationProbed: false })),
-    ).toBe(HEAD);
+    expect(inheritedHeadOf(leftovers("", 0, { operationProbed: false }))).toBe(
+      HEAD,
+    );
   });
 });
 
