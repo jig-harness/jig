@@ -128,6 +128,8 @@ export interface PassLeftovers {
   unpushed: number | null;
   /** An unconcluded merge, rebase or similar, by its marker. */
   operation: string | null;
+  /** Whether the operation probe answered; `operation` is `null` for a probe that failed too. */
+  operationProbed: boolean;
   /** The tree's HEAD after the kill: the head the next gate may inherit. */
   head: string | null;
   /** The newest unpushed commits, `<short sha> <subject>` each. */
@@ -241,6 +243,7 @@ function leftoversOf(p: {
     baseExists: tri(p.base),
     unpushed: p.count.code === 0 && Number.isFinite(unpushed) ? unpushed : null,
     operation: p.op.ok ? p.op.marker : null,
+    operationProbed: p.op.ok,
     head:
       p.head.code === 0 && p.head.stdout.trim() !== ""
         ? p.head.stdout.trim()

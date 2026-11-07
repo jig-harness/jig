@@ -219,6 +219,7 @@ export async function runDriverRounds({
     // Edits found at arm are left alone as a person's, unless the drive is
     // armed after a stall that left them: then none were there before it.
     uncommittedBeforePass: inheritsEdits ? "" : null,
+    inheritsOperation: inheritsEdits,
   };
   for (;;) {
     {

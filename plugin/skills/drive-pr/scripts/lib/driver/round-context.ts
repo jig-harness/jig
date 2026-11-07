@@ -80,4 +80,10 @@ export interface DriveRoundContext {
    */
   uncommittedMeasured: string | null;
   uncommittedBeforePass: string | null;
+  /**
+   * A stalled drive left an open git operation in this tree that the drive
+   * finishes, until one pass completes: the tree owes a round for it even
+   * when its status is clean.
+   */
+  inheritsOperation: boolean;
 }

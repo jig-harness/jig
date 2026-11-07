@@ -159,6 +159,7 @@ function leftWork(l: Awaited<ReturnType<typeof passLeftovers>>): boolean {
   return (
     l.uncommitted !== "" ||
     l.operation !== null ||
+    !l.operationProbed ||
     (l.unpushed === null ? l.baseExists !== false : l.unpushed > 0)
   );
 }

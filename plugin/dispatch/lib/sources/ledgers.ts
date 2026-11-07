@@ -259,7 +259,7 @@ function mechanicalStopClass(
   const tree =
     stop.kind === "stall" &&
     last?.leftWork !== false &&
-    last?.cause === String(exit)
+    (last === undefined || last.cause === String(exit))
       ? ledgerTree(ledger)
       : null;
   return {

@@ -111,14 +111,41 @@ describe("jig dispatch --apply re-drives a stall and a spent CI-repair budget", 
     [21, "ci-repair", "CI still failing with its repair passes spent"],
   ] as const) {
     it(`re-arms a stop ${exit} once per head, then tells a person, saying when the pull request conflicts`, async () => {
-      const { w } = fixture({ mergeable: "CONFLICTING" }, () => stop(exit, 3));
+      const { w } = fixture({ mergeable: "CONFLICTING" }, () =>
+        stop(exit, 3, {
+          events: [
+            {
+              at: new Date().toISOString(),
+              round: 3,
+              kind: "stop",
+              cause: String(exit),
+              leftWork: false,
+            },
+          ],
+        }),
+      );
       const record = await redrive(w, exit);
       expect(readRecord(record, dispatchState(w))?.redrive).toEqual({
         cause: `stopped ${exit}, ${words}`,
         change: `head ${HEAD_SHA}, stopped ${exit}`,
         mechanicalStop: kind,
       });
-      w.setComments(7, [ledgerComment(701, stop(exit, 4))]);
+      w.setComments(7, [
+        ledgerComment(
+          701,
+          stop(exit, 4, {
+            events: [
+              {
+                at: new Date().toISOString(),
+                round: 4,
+                kind: "stop",
+                cause: String(exit),
+                leftWork: false,
+              },
+            ],
+          }),
+        ),
+      ]);
 
       const second = await tick(w);
       expect(launches(second)).toEqual([]);

@@ -63,7 +63,9 @@ describe("classifyLedger", () => {
         change: `head ${head}, stopped ${exit}`,
         mechanicalStop: exit === 14 ? "stall" : "ci-repair",
       });
-      expect(placed.stale?.tree).toBeUndefined();
+      // A stall that never measured its leftovers stays bound to its tree.
+      if (exit === 14) expect(placed.stale?.tree).toBeDefined();
+      else expect(placed.stale?.tree).toBeUndefined();
       expect(
         classifyLedger(stoppedLedger(7, exit), NOW, WINDOW, undefined, {
           head: null,

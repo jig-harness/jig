@@ -44,12 +44,24 @@ const leftovers = (
   uncommitted,
   unpushed,
   operation: null,
+  operationProbed: true,
   head: HEAD,
   commits: [],
   onRemote: true,
   baseExists: true,
   edits: uncommitted,
   ...more,
+});
+
+describe("leftoverHeadOf with an inherited operation", () => {
+  it("owes a round for an open or unprobed operation over a clean tree, only when owned", () => {
+    const open = leftovers("", 0, { operation: "merge" });
+    const unknown = leftovers("", 0, { operationProbed: false });
+    expect(leftoverHeadOf(open, "", true)).toBe(HEAD);
+    expect(leftoverHeadOf(unknown, "", true)).toBe(HEAD);
+    expect(leftoverHeadOf(open, "", false)).toBe("");
+    expect(leftoverHeadOf(leftovers("", 0), "", true)).toBe("");
+  });
 });
 
 describe("inheritedHeadOf", () => {
