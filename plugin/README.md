@@ -242,8 +242,9 @@ jig dispatch [--apply] [--repo <path>]... [--followup-since <date>] [--json]
 ```
 
 `jig dispatch --help` lists its options, and `jig dispatch dashboard --help`,
-`jig dispatch log --help`, `jig dispatch line --help` and
-`jig dispatch clear --help` list those of each subcommand. For each
+`jig dispatch log --help`, `jig dispatch line --help`,
+`jig dispatch clear --help` and `jig dispatch probe --help` list those of
+each subcommand. For each
 repository (`--repo`, else the machine file's, else the current one) it
 prints every action it would take, each with the record that wants it and
 the evidence: a pickup for an item assigned to the repository's factory
@@ -793,7 +794,32 @@ code [resource collection](gc/README.md) uses: a systemd user timer, a
 launchd job or a crontab line; `jig install` with no component named
 installs it too once the machine file exists. Install it on the host that
 runs the sessions (with Orca, the Orca server's host).
-`jig uninstall dispatch --machine --yes` removes it. `jig install dispatch
+`jig uninstall dispatch --machine --yes` removes it. Beside it, the same
+install writes the [change probe](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
+timer, which runs `jig dispatch probe --apply` every minute: one search on
+the forge over every repository the machine file dispatches (each with a
+stage enabled) for the pull requests updated since the last probe (a
+review, a comment, a label, a push, a merge or a close) and every open
+one's checks, which wakes the tick of each repository where something
+changed, under the rule `jig send`'s wakes follow (below), and of no other.
+A minute with no change starts no tick. On GitHub that search is one
+GraphQL call for a single page of results (measured at 1 point of the 5,000
+an hour; further pages add calls and points), apart from the REST limit, made
+from outside every checkout, so the account `gh` uses there must see every
+repository: one it cannot see is named in each probe's output, and its
+changes wait for the sweep. A probe that cannot read the forge wakes
+nothing, says why and exits `1`; the sweep runs on its own timer either way.
+Only one applying probe runs at a time: one that finds another running does
+nothing. A probe whose wake or state write failed prints why and exits `3`.
+The probe wakes the repositories together and waits for their ticks before it exits, since a scheduler
+ends what a job leaves running, and the wake's log
+(`~/.local/state/jig/dispatch/wake/<digest>/last-run.log`) names the probe as
+who asked. `jig dispatch probe`, without `--apply`, says what it would wake
+and writes nothing. `change_probe: false` in the machine file turns it off:
+a probe run then reads nothing, and the next install removes its timer.
+`jig upgrade` refreshes the probe's timer with the tick's; a machine whose
+dispatcher timer was installed before the probe existed gets the probe's at
+its next `jig install dispatch --yes`. `jig install dispatch
 --repo <path>` also lists the [dispatch labels](#the-dispatcher) that
 repository turns on and lacks, and creates them with `--yes`. The earlier
 `jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
@@ -1001,7 +1027,8 @@ repository with the stage the tick acts under (`pickup` for `assign`,
 `send` wakes that repository's tick: a [waiter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in the background runs `jig
 dispatch --apply --repo <path>` the way the installed timer does, when idle
 and no sooner than a minute after the last tick it started, rather than
-at the next timer run. Several sends within that minute start one tick. A tick that
+at the next timer run. The change probe (above) wakes ticks under the same
+rule, so a send and a probe within one minute start one tick. Several sends within that minute start one tick. A tick that
 finds another holding the tick lock is tried again a minute later; the
 waiter exits when nothing is pending, or after starting 10 ticks; the record stays the request, so the
 next timer run reads it whatever happens to the wake. What the waiter did

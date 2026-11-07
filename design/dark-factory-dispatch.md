@@ -1750,7 +1750,36 @@ tick, and a tick refused for the held tick lock tried again after the
 minute. `send` keeps its pending requests on disk
 (`plugin/shared/wake.ts`), since it exits at once; its waiter runs the
 tick with the installed timer's launcher and environment and exits after
-it.
+it. Each request records who asked and why, and the waiter's log names
+them beside the tick it ran.
+
+A change on the forge (a review, a comment, a label a person adds, a push,
+a check that ends, a merge) wakes a tick through the **change probe**
+(`plugin/dispatch/lib/change-probe.ts`), not through an event: the host
+still opens no inbound route. Every minute its own timer, which
+`jig install dispatch` writes beside the tick's, makes one search on the
+forge over every repository the machine file dispatches: the pull requests
+updated since the last probe, open, merged or closed, and every open one's
+head commit and check state, since a check that ends does not move a pull
+request's update time. It compares that with what the last probe saw (each
+pull request's update time inside a window that starts ten minutes before
+the last probe, so a change the search index reports late is still found,
+and each open pull request's head and checks) and wakes, under the same
+rule, only the repositories where something changed: a minute with no
+change starts no tick, and a probe that cannot read the forge wakes nothing
+and is logged. On GitHub the search is one GraphQL call for a single page of results (further pages add calls and points), 1 point of the
+5,000 an hour, measured with eleven repositories and sixty-odd open pull
+requests, about sixty calls an hour. The probe has a timer of its own
+rather than a place in the tick's: the two run at different intervals, a
+scheduler never overlaps two runs of one job, so a probe inside the tick's
+job would wait out every sweep, and a probe that fails or hangs then never
+delays a sweep. A scheduler ends whatever a job leaves running (systemd
+stops its whole control group), so the probe is the woken ticks' waiter
+itself and exits after them, one repository after another. The machine
+file's `change_probe: false` turns it off. A change the line makes itself
+(a drive's comment, a label the tick writes) wakes a tick too, at most one
+a minute for the repository; that tick finds the records as the sweep
+would.
 
 ## Build order
 
@@ -1915,7 +1944,8 @@ One pull request each, in this order; each is usable on its own.
   ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).
   A Herdr implementation of the session runtime interface comes when Herdr
   can supply one.
-- **Webhooks.** The tick polls. An outbound wake-up channel (a relay that
+- **Webhooks.** The tick polls, and the change probe polls the forge once
+  a minute for what changed. An outbound wake-up channel (a relay that
   takes the tracker's and forge's events and that the host holds a
   connection to) can start ticks early later; the sources stay behind
   interfaces such a channel can replace, and no inbound route to the host
