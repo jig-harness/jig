@@ -1085,7 +1085,16 @@ worktree ps --json` reports it under is checked when the pickup stage is
   branch first, branch correction and setup, which a bare `orca worktree
 create` does not do) live in the plugin, in
   `plugin/shared/orca-workspace/open.ts`, and the tool calls that code, so
-  the pickups in step 4 reuse it rather than a copy;
+  the pickups in step 4 reuse it rather than a copy. A checkout of the
+  branch that Orca does not list (a worktree made with plain git, such as
+  an agent's leftover isolation worktree) is detached at its commit when it
+  is idle, and the workspace is created on the branch: idle means a clean
+  tree, no unfinished git operation, no commit the remote's branch lacks, no
+  live driver or session lease (read from the drive's database), and no
+  process with its working directory in it (`plugin/shared/idle-holder.ts`,
+  the one test every caller that takes a branch from another checkout
+  uses). One that is in use refuses the open, and the launch's refusal
+  names it, for the notice below;
 - `launch` for a **headless pass** (a drive re-arm or takeover, a
   follow-up) as
   `orca terminal create --worktree <selector> --title <tab title> --command
@@ -1397,7 +1406,7 @@ parked questions (item 32's framed decision, built, or the stored
 reason for a park with no decision record); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
-stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a session waiting past
+stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a follow-up claim that went stale again after the tick released one (see Stale follow-up claims); a launch record stuck pending, carrying why no tick launches it again (cause `needs-person`, see Launch records); a launch refused because a checkout the runtime does not list holds its branch and is in use, carrying that checkout's path and what keeps it busy (cause `needs-person`, keyed by the target, the branch and the path, so it is one notice per holder rather than a refusal repeated in the journal every tick; its record stands through a tick whose launch waited before the open); a session waiting past
 `blocked_after`; a running stage drifting from its expectation, and a
 session still waiting on a wall after its one nudge (see Control). Every
 message carries the cause or the question, the pull request's link and

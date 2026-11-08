@@ -387,6 +387,51 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.169.0] - 2026-11-08
+
+### Added
+
+- A drive reads the reviewer's skip notice: a block in its sticky comment,
+  marked `review.skip_notice_marker` (default `ai-review-skip-notice`,
+  `DRIVE_PR_SKIP_NOTICE_MARKER` overrides it), saying it did not review a
+  pushed head. A skipped head whose pull-request diff equals the diff at the
+  head the reviewer last reviewed, such as a merge of the base branch, is
+  judged on that review: the report names the earlier head as the reviewed
+  one (`reviewedShaSource: "skip-notice"`) and the skip as the reason, and
+  the drive can converge
+  ([terminal states](plugin/skills/drive-pr/references/terminal-states.md)).
+- A new terminal state, `REVIEW_SKIPPED` (exit `22`): the reviewer skipped
+  the head, and its earlier review does not cover it because the pull
+  request's diff changed: the diffs are compared with their context, exactly
+  where the base did not move and, for the files it did move, without hunk
+  positions. A moved file whose hunk repeats elsewhere in it, or whose patch
+  is not valid UTF-8 or cannot be read, is reported as different. A merge that moved or edited
+  the change's lines differs. A commit the comparison needs that the clone lacks is
+  fetched once; still missing, the evaluation is `INDETERMINATE` (exit `1`)
+  and runs again. The stop quotes the
+  notice and says what a person does next; `jig dispatch` hands it to a
+  person, labelling the pull request parked where dispatch labels are enabled,
+  rather than re-arming it at the same head. A harness that reads the drive's exit codes should treat `22`
+  as a stop for a person.
+
+### Fixed
+
+- A drive no longer waits as `STALE_REVIEW` (exit `4`) for as long as a head
+  stands when the reviewer has said it will not review that head; a
+  dispatcher re-armed such a drive at the same head indefinitely.
+
+## [0.168.2] - 2026-11-08
+
+### Added
+
+- The install guide names the planned common setup path and the conditions for considering an own Homebrew tap, while keeping plugin installation and updates with the agent tool's marketplace.
+
+## [0.168.1] - 2026-11-08
+
+### Fixed
+
+- `jig dispatch` no longer refuses a pull request's re-arm on every tick while a worktree Orca does not list (an agent's leftover isolation worktree, or one another tool made) holds its head branch. When that worktree is idle (a clean tree, no unfinished git operation, no commit the remote's branch lacks, no live driver or session lease, and no process working in it), the open detaches it at its commit and creates the workspace on the branch. When it is in use, the launch is refused and a person is notified once, through the repository's notices workspace, with the worktree's path and what keeps it busy (cause `needs-person`), instead of the refusal being repeated in the log every tick. The idle test is shared code (`plugin/shared/idle-holder.ts`) for any step that takes a branch from another checkout.
+
 ## [0.168.0] - 2026-11-08
 
 ### Changed
@@ -5980,7 +6025,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.168.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.169.0...HEAD
+[0.169.0]: https://github.com/jig-harness/jig/compare/v0.168.2...v0.169.0
+[0.168.2]: https://github.com/jig-harness/jig/compare/v0.168.1...v0.168.2
+[0.168.1]: https://github.com/jig-harness/jig/compare/v0.168.0...v0.168.1
 [0.168.0]: https://github.com/jig-harness/jig/compare/v0.167.0...v0.168.0
 [0.167.0]: https://github.com/jig-harness/jig/compare/v0.166.0...v0.167.0
 [0.166.0]: https://github.com/jig-harness/jig/compare/v0.165.1...v0.166.0

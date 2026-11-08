@@ -118,7 +118,7 @@ async function gateRoundStatus(
     case 0:
       break;
     default:
-      // 1 / 4 / 5 / 7 / 13 all propagate verbatim. Note that 5 (PR merged
+      // 1 / 4 / 5 / 7 / 13 / 22 all propagate verbatim. Note that 5 (PR merged
       // or closed) lands HERE, before the pass runs — the loop never hands
       // work to an agent that would push it onto an orphaned branch. 13
       // (another working tree is driving this PR) lands here for
