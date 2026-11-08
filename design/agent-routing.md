@@ -73,9 +73,11 @@ they have today ([Left out](#left-out)).
 
 A complexity tier says how hard the item is, not which model runs it. By
 default the simple and standard tiers map to M0's Execution tier and the
-complex tier to its Strategic tier; a repository may map the simple tier to
-a cheaper family (`routing.models.claude-code.simple: haiku`), since an
-implementer of a mechanical item still writes under every gate. The
+complex tier to its Strategic tier. A repository may map the simple tier
+to a family M0 places on its Scout tier (`routing.models.claude-code.simple:
+haiku`): M0 keeps that tier for read-only work, and a repository that maps
+an implementer to it takes that call for its mechanical items, which still
+write under every gate, and the audit reports the mapping. The
 Judgment tier is admitted per decision layer with a named baseline, never
 by a rule that fires on every item of a type, so no complexity tier maps
 to it by default. The tier is never a model id: the translation table is
@@ -120,9 +122,8 @@ family aliases and the model each names today are kept in one place,
 A Codex pass with no model of its own runs the standard tier's Codex model
 rather than Codex's own default.
 
-The tier names that came before keep working: `execution` reads as
-`standard` and `strategic` as `complex`, in `routing` and in
-`drive.pass_model`.
+`execution` and `strategic` are accepted as aliases of `standard` and
+`complex`, in `routing` and in `drive.pass_model`.
 
 No model is asked for the tier, and no tier or model is written on the
 issue. Where a size or a type is missing, the
@@ -388,7 +389,8 @@ is policy, not an override, and the reasons name the rule that fired.
   `plugin/shared/` (`model-families.ts`), which M0's mappings link,
   records the tier M0's mappings give each family (for Claude Code:
   `haiku` scout, `sonnet` execution, `opus` strategic, `fable` judgment; for
-  Codex: `luna` scout, `terra` execution, `sol` strategic). The loader
+  Codex: `luna` scout, `terra` execution, `sol` strategic, rows M0's
+  mappings gain at step 4). The loader
   refuses an alias outside the list, and a `routing.models` row in which a
   stricter complexity tier maps to a family of a lower M0 tier than a
   lighter one: `complex: sonnet` with `standard: opus` would make the
@@ -435,8 +437,9 @@ complete row where the repository renamed it (the
 [work-types rule](work-types.md#configuration)); a tier or effort outside
 the closed lists (`execution` and `strategic` read as `standard` and
 `complex`); an alias outside the known families for a runtime that
-has them; a `routing.models` row mapping a tier to a family whose tier
-(from the list, or from `routing.family_tiers`) is another; a
+has them; a `routing.models` row in which a stricter complexity tier maps
+to a family of a lower M0 tier (from the list, or from
+`routing.family_tiers`) than a lighter one; a
 `family_tiers` entry with no reason; and, where the repository has a label taxonomy
 (`issue_tracker.taxonomy`), a raise list the repository declares naming a
 label the taxonomy does not declare. A default list is never refused: a

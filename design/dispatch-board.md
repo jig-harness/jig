@@ -34,7 +34,7 @@ unresolved threads, and the derived merge state with its conditions as a
 checklist), and every card says whether it settles by waiting or waits on a
 person, and which act. Then a **board**: every piece of work the
 dispatcher knows, placed in one column (coming, picking up, driven, needs
-you, ready to merge, merged), the columns shown as five views of one column
+you, ready to merge, merged), the columns shown as views of one column
 of cards each (Merge, Needs you, Running, Queue, History). A card moves in any direction, because
 each tick places it again from the records, and a card that moved back (a
 ready pull request that came to conflict, say) shows where it came from and
@@ -273,7 +273,7 @@ re-arm, re-run a check, mark ready, open the pull request. The act is in
 the table above for a converged pull request, and is the stop's own for a
 card in Needs you. A card that waits on a person is marked so wherever it
 is, its act named on its face, and those cards are what the tabs' counts
-add up. On the page that act is grouped under the six acts a need opens
+add up. On the page that act is grouped under the acts a need opens
 with ([§ Five views](#five-views-one-column-of-cards)): merge is Merge;
 approve and request a review are Authorize; answer is Decide, or Reply for
 a person's thread or a waiting session; update the branch, re-run a check,
@@ -501,8 +501,9 @@ some of it. So the board keeps its own words and the records' apart:
 
 ### Five views, one column of cards
 
-The page is five views, one per question a person brings to it, each a tab
-with its count and each one column of full-width cards:
+The page's views are one per question a person brings to it, each a tab
+with its count and each one column of full-width cards, with Help beside
+them as the page that explains them:
 
 | View | It answers | Its cards |
 | --- | --- | --- |
@@ -515,8 +516,7 @@ with its count and each one column of full-width cards:
 The columns of [§ One card per piece of work](#one-card-per-piece-of-work-in-one-column)
 stay the tick's placement of each card; the views are how the page shows
 them. No two cards ever sit side by side, at any width: a view is read top
-to bottom, and the panels that stood beside each other on a wide screen
-are gone.
+to bottom.
 
 **Merge comes first.** The page opens on Merge while merge now holds a pull
 request, and on Needs you otherwise. While merge now holds anything, every

@@ -76,6 +76,16 @@ repositories it did not read still owe, copies the outcome log, writes the
 dashboard's line and writes its receipt. Each phase lives in its own module
 under `plugin/dispatch/lib/`.
 
+Item 44 ([line-at-capacity.md](line-at-capacity.md)) adds four parts to
+this tick. The observe phase reads the served people's assigned items
+beside the factory identity's, and makes the board read, a query of its
+own once a repository's ledgers name its converged drives
+([dispatch-board.md § The board read](dispatch-board.md#the-board-read)).
+The act phase reads the host's gauges when it builds its apply state, and
+admits each launch within the load factor. And the steward is one more
+stage, launched on the owner host when its digest changed, whose records
+the next tick's plan reads.
+
 ```mermaid
 flowchart TD
   S0[read this host's launch records as they stand,<br/>start the budget read] --> OBS{{every repository at once, in a pool of six reads}}
@@ -514,7 +524,7 @@ guards keep one stage from starting twice:
 
 | Record              | Read through                                                                                                                                                                                                                                                                                                                                                                                       | What the tick takes from it                                                                                                                                                                    |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The tracker         | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today                                                                                                                                                                                                                                                                | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
+| The tracker         | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today                                                                                                                                                                                                                                                                | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch; and from item 44, the items assigned to each [served person](../GLOSSARY.md), and their epics' children |
 | The forge           | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels; each pull request's comments read once per tick, with the open pull requests in the repository's one query, and shared by every record read from them, a merge's markers read only when its `updatedAt` moved since they were kept (see One tick, step by step) | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed                                         |
 | The session runtime | in Orca, `orca repo list --json` and `orca worktree ps --json`, each read once per tick for every repository                                                                                                                                                                                                                                                                                       | which workspace holds which item or pull request, and whether an agent in it is working or waiting                                                                                             |
 | The shared records  | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts`; the observe phase reads them from the tick's comment listings, a launch's own reads and writes go to the forge                                                                                                                                                    | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts)            |
@@ -1127,7 +1137,10 @@ create` does not do) live in the plugin, in
   starting Claude Code itself) passes it as Claude Code's `--session-id`;
   that `orca agent launch` can bind its agent to
   an account so is checked when the pickup stage is built, and until it
-  does, interactive sessions are not launched. The key is kept by the
+  does, interactive sessions are not launched. A pickup launched as a
+  headless pass instead ([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless),
+  item 44) takes the headless form above, with the wrapper running
+  `do-item`. The key is kept by the
   record itself for a headless pass: the wrapper claims the record
   atomically before it starts the stage, so a second terminal for a record
   already claimed exits without starting it, and a retry relaunches the
@@ -1244,7 +1257,8 @@ A follow-up runs as a headless pass (see Binding a session to its
 account) and is admitted as a drive's pass is: under the pass deadline it
 runs under, which the wrapper enforces on it, on a Codex account only on a
 host that opted in to Codex's bypass, holding one slot until its pass
-ends. An interactive session (a pickup) is admitted the same way, on
+ends. A pickup is admitted the same way, as a headless pass from item 44
+on, or as an interactive session, on
 one account with a free slot and no wall in effect, and its launch binds
 it to that account (below), so its launch record names the account and
 holds one slot. A session whose launch cannot bind its account is never
@@ -2105,7 +2119,9 @@ One pull request each, in this order; each is usable on its own.
    none), its result recorded through `jig dispatch result` and its slot
    held until its agent ends; the fresh read at launch; stalled
    pickups, double claims and waiting sessions reported. Usable alone:
-   assigning an item is the start button.
+   assigning an item is the start button. Item 44's steps 6 and 7
+   ([line-at-capacity.md § Build order](line-at-capacity.md#build-order))
+   start the pickups as headless passes and add the served people's.
 5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
    outcome record, and a follow-up pass per merged pull request with the repository's follow-up
    command, which claims the pull request with a manual marker when a

@@ -95,15 +95,15 @@ no item is one, and so is an item with no pull request yet.
 | **History** | What ended and why, filterable, by piece of work too | the outcome log |
 | **Hosts** | Each source's last tick and how overdue, accounts and walls, failed reads, protocol version | each host's line and `hello` |
 
-Merge, Needs you, Running, Queue and History are the five views of
+Merge, Needs you, Running, Queue and History are the views of
 [item 44](line-at-capacity.md), each a tab with its count and each one
 column of full-width cards, with the merge flash above every other view
 while merge now holds a pull request, and the keys and the ⌘K palette
 [dispatch-board.md § Five views](dispatch-board.md#five-views-one-column-of-cards)
-lists. The hub's design round starts from them. They give each question a
-page of its own, which the landed dashboard prototype's decisions ruled
-out (its §3.1: the morning glance would become several taps); the counts
-on every tab and the flash answer that glance instead. The prototype's
+lists. The hub's design round starts from them. Each question gets a page
+of its own, overruling the landed dashboard prototype's §3.1 (no page per
+question, since the morning glance would become four taps): the counts on
+every tab and the flash answer that glance instead. The prototype's
 §3.3 stands: a card shows the act, the ask and the recommended option with
 its cost, never a full framed decision in place, with the other options,
 the steps and the evidence folded.
@@ -995,7 +995,7 @@ machines; no second team is named yet, which is why the gate exists, and
 whether that first team's need alone is reason enough to build a stage is
 part of the call and its reason. Item 36's measurement of the waiting loss
 is a baseline for stage 1, not a gate: the board is what a person asked
-for, so its placement, the design round and the board view are built
+for, so its placement, the design round and the Running and Queue views are built
 whatever the counts show.
 
 **Stage 1: the per-pull-request status, on the dashboard that exists.** It

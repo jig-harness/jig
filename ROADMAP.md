@@ -79,9 +79,9 @@ failing ones named, unresolved review threads, and whether it is ready, with
 the reason when not. Every card says whether it settles by waiting or waits
 on a person. A person is told once when a pull request becomes ready, and
 the history shows how long ready work waited and how much was lost to
-waiting. Then a board view shows every piece of work the dispatcher knows,
-whoever drives it, in one column: coming, picking up, driven, needs you,
-ready to merge, or merged. Work moves in any direction, and a pull request
+waiting. Then the page places every piece of work the dispatcher knows,
+whoever drives it: coming, picking up, driven, needs you, ready to merge,
+or merged. Work moves in any direction, and a pull request
 that was ready and moved back says why. Merging stays a person's.
 
 ### 44. The line at capacity: the host's load factor, served pickups and the steward
@@ -94,10 +94,11 @@ merges keep running. It first reports what it would hold back, and a person
 turns the limit on. A host can also serve named people. The work a
 maintainer assigns to them is ranked and started on the model its
 complexity calls for. A blocked item says what it waits on, and the person
-stays its assignee. Every 20 minutes an agent reads what is stopped and
-waiting, the [steward](GLOSSARY.md). It restarts a drive that stopped for a passing reason and
-fills in a missing priority or size. It frames what still needs a person.
-It never merges, answers a person's question or writes code. The dashboard
+stays its assignee. Every 20 minutes an agent, the
+[steward](GLOSSARY.md), reads what is stopped and waiting. It has the
+dispatcher restart a drive that stopped for a passing reason, and fills in
+a missing priority or size. It frames what still needs a person. It never
+merges, settles what only a person may decide, or writes code. The dashboard
 opens on what is safe to merge. Every item there starts with the one act it
 asks of a person: merge, decide, authorize, reply, do or investigate.
 
@@ -120,9 +121,9 @@ address to answer.
 One page shows a person every piece of work in flight, across the machines
 that run it. A piece of work is a tracker item, the pull request it opens
 and that pull request's follow-up, on one card. The page, the
-[hub](GLOSSARY.md), opens on what waits for that person. It places each
-piece of work on a board and opens any one of them end to end, with its
-correspondence. A card shows the drive's round and how long it has run, and
+[hub](GLOSSARY.md), opens on what is safe to merge, else on what waits for
+that person. It shows what runs and what is queued, and opens any piece of
+work end to end, with its correspondence. A card shows the drive's round and how long it has run, and
 which review threads wait on a person rather than a bot. A pull request held
 back from CI on purpose reads held, never failing. A pickup shows its
 progress before its pull request exists. The hub reads the records the line

@@ -2029,7 +2029,8 @@ make, use the entry's term instead.
   (assigns it to itself and moves it to the in-progress state, refusing an
   item someone already holds), which keeps an item from being picked up twice
   in all but a race between two claims, which the dispatcher reports.
-- **Stalled pickup** — an item the *factory identity* claimed (in its
+- **Stalled pickup** — an item the *factory identity* or a pickup for a
+  *served person* claimed (in its
   in-progress state) that has had no running session for longer than the
   repository's `dispatch.stalled_after`. The *dispatcher* reports it and
   never starts it again: a second session would be a second implementer on
@@ -2059,8 +2060,9 @@ make, use the entry's term instead.
   its own, so any session on any machine can be the operator. *Avoid:*
   orchestrator, lead agent.
 - **Hub** — the page a person watches and steers the execution line from,
-  and the `jig hub` process that serves it: what waits on the person, a
-  board of every *piece of work*, a page per piece of work with its thread,
+  and the `jig hub` process that serves it: what is safe to merge, what
+  waits on the person, what runs and what is queued, each *piece of work*
+  on a card, a page per piece of work with its thread,
   and a chat with the *operator* that explains and drafts and never sends.
   Each machine serves its own. A host's hub answers reads only, on its
   loopback address; a laptop's reads each host over *SSH* through the
@@ -2110,7 +2112,8 @@ make, use the entry's term instead.
   [design/hub.md](design/hub.md#the-source-feed-from-a-host-to-a-hub).
 - **Views API** — the protocol between the *hub*'s page and the hub that
   serves it: a `hello` that names the protocol version, the viewer and each
-  source's state; the reads that draw the Inbox, the board and each
+  source's state; the reads that draw each view, Needs you and Running
+  among them, and each
   *piece of work*'s page; and a stream of changes the page resumes from its
   last cursor. Every answer is a value or a coded failure
   ([ADR-0012](docs/adr/ADR-0012-failures-as-values.md)). The page talks to
@@ -2262,7 +2265,7 @@ make, use the entry's term instead.
   its *act*, fill in a missing priority, size or type, and order the queue.
   It writes records from a closed list, and the next *tick* carries them
   out under its own guards. It never merges, answers a parked question,
-  re-arms a drive a person stopped, writes code or sends a session free
+  re-arms a drive a person stopped or held, writes code or sends a session free
   text ([design](design/line-at-capacity.md#the-steward-every-20-minutes)).
   *Avoid:* orchestrator.
 - **Act (of a need)** — the one thing a person does to settle something

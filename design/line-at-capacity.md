@@ -38,7 +38,7 @@ this design holds the tick's parts.
 
 ### The host's load factor
 
-Each tick reads six **gauges** of its host before it plans, and starts a
+Each tick reads the **gauges** of its host before it plans, and starts a
 launch only while every gauge stays under its **line** with that launch
 counted. The **load factor** is the fullest gauge's fill against its line,
 shown with the gauge that binds: "82% · memory binds". Account slots and
@@ -234,8 +234,8 @@ framed park; the line carries them through to the card.
 
 | Act | The person | From |
 | --- | --- | --- |
-| Merge | merges what the forge and its reviewer witness as ready | Ready to merge's merge now, on a view of its own |
-| Decide | chooses among framed options | `scope`, `next-item`, `reopen-or-waive`, `escalated`, `human-decision` |
+| Merge | merges what the forge and its reviewer witness as ready | Ready to merge's merge now, on a view of its own; a `merge` park |
+| Decide | chooses among framed options | `scope`, `next-item`, `reopen-or-waive`, `escalated`, `human-decision`, `hitl` |
 | Authorize | allows what only a person may | `ready`, `release`, `destructive`, `legal`, `copy`, `dark-dial`, `rules`, `reviewer-posture`; Ready to merge's approve first |
 | Reply | answers a person's thread or a waiting session | `human-thread`; a session's question |
 | Do | performs steps outside the line | a park's steps for a person; an assignment only a writer can make |
@@ -295,10 +295,10 @@ flowchart TD
    whose review the forge witnesses and that can merge is in merge now with
    a command pinned to its head within one interval, and a failing board
    read leaves the tick's launches as they were.
-3. **Five keyboard-driven views**
+3. **Keyboard-driven views**
    ([#634](https://github.com/jig-harness/jig/issues/634)): Merge, Needs
    you, Running, Queue and History, one column of cards each, the counts on
-   every tab, the merge flash on every view, the keys and the palette. Done
+   every tab, the merge flash on every other view, the keys and the palette. Done
    when no two cards sit side by side on any view at 1440 px, and every key
    works on every view and never inside a text field.
 4. **Acts on needs** ([#635](https://github.com/jig-harness/jig/issues/635)):
@@ -351,3 +351,9 @@ flowchart TD
   rest.
 - **Interactive pickups on Orca**, until an Orca launch is shown to bind
   its agent to an account ([Pickups run headless](#pickups-run-headless)).
+
+## Review
+
+Reviewed on 2026-11-08 at commit `54663d73`, by a fresh-context agent
+session acting as an adversary, before the first pull request that builds
+it.

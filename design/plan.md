@@ -257,7 +257,7 @@ launch cannot be bound to an account. The stops that reach a person mix
 real decisions with stops an agent could recover, and nothing on the page
 says what is safe to merge.
 [design/line-at-capacity.md](line-at-capacity.md) has how it works: each
-tick reads six host gauges and computes the **load factor**, the fullest
+tick reads the host's gauges and computes the **load factor**, the fullest
 gauge's fill, starting a launch only while every gauge stays under its line
 with that launch's measured reservation counted, a new pickup never taking
 the last unit of headroom, and the existing alternation between drive
@@ -284,8 +284,8 @@ design's order, one pull request per step, under the item 44 epic.
 Done when, on a host running Orca, a converged pull request whose review
 the forge witnesses and that can merge is in merge now with a command
 pinned to its head within one interval; no two cards sit side by side on
-any view at 1440 px, and every view flashes while merge now holds a pull
-request; a park under `release` reads Authorize with its recommended
+any view at 1440 px, and every view but Merge flashes while merge now
+holds a pull request; a park under `release` reads Authorize with its recommended
 option's cost, the same act in `jig ask`; every receipt carries each gauge,
 the load factor and the gauge that binds, and with enforcement off a launch
 a gauge would refuse still starts and is reported as would-hold; an item
@@ -296,7 +296,7 @@ headroom and keeps that person as its only assignee, while a blocked one
 reads "waiting on #N" and a `hitl` one "needs a person to start"; with
 nothing changed no steward pass starts, a stop whose logs show a transient
 cause is re-armed once by the next tick on the recovery budget, and no
-steward record re-arms a drive a person stopped; and an S bug routes
+steward record re-arms a drive a person stopped or held; and an S bug routes
 standard, the same bug labelled `has-migration` complex, a Codex account
 running it on Sol with no `routing.models` set.
 
@@ -376,9 +376,9 @@ work, nothing shows a pickup's progress before its pull request exists,
 and answering a parked question takes a terminal.
 [design/hub.md](hub.md) has how it works. What it will build: the
 dispatch dashboard (item 33) grown into one page, `jig hub` in
-`plugin/hub/`, that opens on an Inbox of what waits on the person and adds
-a Board, Ready to merge, a Work page for each piece of work with its
-thread, History and Hosts, each derived from the line's records at every
+`plugin/hub/`, with item 44's views (Merge, where it opens while anything
+is safe to merge, Needs you, Running, Queue and History), a Work page for
+each piece of work with its thread, and Hosts, each derived from the line's records at every
 read and none of them stored; marks on item 36's status row (the
 drive's round and its time, the unresolved threads by bot and not a bot,
 and the CI hold, which reads held and never failing); a `pickup-progress`
@@ -417,10 +417,10 @@ is present. Nothing of it is built. Built in stages, one pull request per
 step: the per-pull-request status on the dashboard that exists (rounds and
 resolved parks in the drive ledger, item 36's board read, Ready to merge
 and placement with the marks, a line one repository's tick refreshes,
-pickup progress, then one design round for the whole hub and the Board and
-Work views); then each piece of work across machines (item 39's thread
+pickup progress, then one design round for the whole hub and the Running,
+Queue and Work views); then each piece of work across machines (item 39's thread
 additions, `jig send --json` with `--expect`, the `jig hub` server, its
-Inbox, Hosts and History views and its install, the private-network front,
+Needs you across every source, Hosts and History views and its install, the private-network front,
 the Orca plugin's "Open the hub" command and its install from a catalog);
 then the chat, and writes once item 40 settles. Stages 2 and 3 are
 planned in detail once stage 1 has been in use for four weeks, and the
@@ -807,8 +807,8 @@ report joins them to the outcome; a person's choice always winning; opt-in
 until a repository declares its rules; no model asked to route, and no
 model or tier written on an issue. The design
 is written and decided, and its first step is built: `determine_route.ts`
-derives the route from the `routing` section and its defaults, with the
-two model tiers it had before the complexity tiers, and
+derives the route from the `routing` section and its defaults, on the
+tiers `execution` and `strategic`, and
 `do-item` prints it and forwards nothing. What stays open is the rest of
 the build, its own epic, one pull request per step:
 
