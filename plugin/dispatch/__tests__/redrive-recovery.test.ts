@@ -17,7 +17,7 @@ import type { DriveEvent } from "../../skills/drive-pr/scripts/lib/state/events.
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { hostLabel } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { settleConflictStops } from "../lib/actions/drive-hold.ts";
-import { foreignHold } from "../lib/shared-launches.ts";
+import { foreignHold, settleSharedTakeovers } from "../lib/shared-launches.ts";
 import { type ReadRecord, readRecord } from "../lib/launches.ts";
 import { noCauseFacts, settleNoCauseStops } from "../lib/no-cause-stops.ts";
 import { classifyLedger, type PrFacts } from "../lib/sources/ledgers.ts";
@@ -477,6 +477,25 @@ describe("another host's takeover of a driver no launch started", () => {
 
   it("is spent once it ended on the ledger facts as they are", () => {
     expect(hold(takeover(facts, claim(5, facts).says))).toBe("refused");
+  });
+
+  it("settles as a silent drive a person hears of, and is then held by no foreign claim", () => {
+    const claims = new Map([
+      [
+        7,
+        {
+          ok: true as const,
+          value: [takeover(facts, claim(5, facts).says)],
+        },
+      ],
+    ]);
+    const [settled] = settleSharedTakeovers([silent()], claims, "this-host");
+    expect(settled?.class).toBe("silent");
+    expect(settled?.evidence.driverGone).toBe(false);
+    expect(settled?.why).toContain("only a person settles it");
+    expect(
+      foreignHold(settled as DrivenPr, claims.get(7), "this-host").kind,
+    ).toBe("none");
   });
 
   it("is not spent by one that never executed, or on other ledger facts", () => {

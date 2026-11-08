@@ -325,6 +325,38 @@ export function settleSharedConflictStops(
 }
 
 /**
+ * Each silent drive another host already took over on the ledger facts it
+ * shows now, that takeover having ended without moving the ledger on, as the
+ * plan reads it: notified as silent and not taken over again, as when this
+ * host's own record shows it. Left as the foreign hold the plan would
+ * otherwise file quietly, no person would hear of the drive.
+ */
+export function settleSharedTakeovers(
+  drives: readonly DrivenPr[],
+  claims: DriveClaims,
+  host: string,
+): DrivenPr[] {
+  return drives.map((pr) => {
+    if (pr.class !== "silent" || pr.evidence.driverGone !== true) return pr;
+    const read = claims.get(pr.number);
+    if (read === undefined || !read.ok) return pr;
+    const hold = foreignHold(pr, read, host);
+    if (hold.kind !== "refused") return pr;
+    const theirs = winners(read.value).filter(
+      (c) => c.says.value.host !== host,
+    );
+    const taken = takenOver(pr, theirs);
+    if (taken?.kind !== "refused" || taken.claim.id !== hold.claim.id)
+      return pr;
+    return {
+      ...pr,
+      why: `${pr.why}; ${taken.why}`,
+      evidence: { ...pr.evidence, driverGone: false },
+    };
+  });
+}
+
+/**
  * The pull requests a current claim with no end holds: a drive in progress.
  * This host's own open claim counts too: a launch that ended here before its
  * end was published still holds the pull request for every other host, so it
@@ -558,18 +590,17 @@ export async function settleOwnClaims(
   const ends = [
     ...driveEnds(claims, ctx.host, byId, nowIso),
     ...merged.flatMap((pr) =>
-      ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).flatMap(
-        (m) =>
-          // A retry's marker is released, never answered.
-          retryable(byId.get(m.run.record))
-            ? []
-            : owed(
-                pr.number,
-                "followup",
-                m.id,
-                markerEnd(m.run.record, outcomes.get(pr.number), byId, nowIso),
-                m.run.host === undefined ? ctx.host : undefined,
-              ),
+      ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).flatMap((m) =>
+        // A retry's marker is released, never answered.
+        retryable(byId.get(m.run.record))
+          ? []
+          : owed(
+              pr.number,
+              "followup",
+              m.id,
+              markerEnd(m.run.record, outcomes.get(pr.number), byId, nowIso),
+              m.run.host === undefined ? ctx.host : undefined,
+            ),
       ),
     ),
   ];

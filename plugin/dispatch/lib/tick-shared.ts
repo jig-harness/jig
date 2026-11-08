@@ -40,6 +40,7 @@ import {
   type SharedContext,
   settleOwnClaims,
   settleSharedConflictStops,
+  settleSharedTakeovers,
 } from "./shared-launches.ts";
 import {
   forgettingWrites,
@@ -235,13 +236,32 @@ export function settleDrives(
   records: readonly ReadRecord[],
   claims: DriveClaims,
 ): DrivenPr[] {
-  const own = records.filter((r) => r.record.repo === ctx.slug);
-  const placed = markUnlaunched(drives, own, claims, ctx.host);
+  return settleOwnDrives(
+    drives,
+    records.filter((r) => r.record.repo === ctx.slug),
+    claims,
+    ctx.host,
+  );
+}
+
+/** `settleDrives` over launch records already scoped to the drives' repository. */
+export function settleOwnDrives(
+  drives: readonly DrivenPr[],
+  own: ReadRecord[],
+  claims: DriveClaims,
+  host: string,
+): DrivenPr[] {
+  const placed = markUnlaunched(
+    settleSharedTakeovers(drives, claims, host),
+    own,
+    claims,
+    host,
+  );
   return settleNoCauseStops(
     settleSharedConflictStops(
       settleSilentTakeovers(settleConflictStops(placed, own), own),
       claims,
-      ctx.host,
+      host,
     ),
     own,
     claims,

@@ -3,10 +3,14 @@
  * shows gone, as the tick reads it beside this machine's launch records,
  * other hosts' launch claims and the pull request's recovery budget.
  */
-import { settleSilentTakeovers } from "../../dispatch/lib/actions/drive-hold.ts";
+import { driveHold } from "../../dispatch/lib/actions/drive-hold.ts";
 import type { ReadRecord } from "../../dispatch/lib/launches.ts";
-import { settleNoCauseStops } from "../../dispatch/lib/no-cause-stops.ts";
-import { foreignHold } from "../../dispatch/lib/shared-launches.ts";
+import {
+  type DriveClaims,
+  foreignHold,
+  settleSharedTakeovers,
+} from "../../dispatch/lib/shared-launches.ts";
+import { settleOwnDrives } from "../../dispatch/lib/tick-shared.ts";
 import {
   classifyLedger,
   type ParkReading,
@@ -56,19 +60,17 @@ export function takeoverSettled(
       driverGone: true,
     },
   };
-  const claims = new Map([
+  const claims: DriveClaims = new Map([
     [pull.number, { ok: true as const, value: sharedClaims }],
   ]);
-  const [own] = settleSilentTakeovers([silent], records);
-  if (own?.evidence.driverGone === false) return own.why;
-  const hold = foreignHold(silent, claims.get(pull.number), host ?? "");
-  if (hold.kind === "refused") return hold.why;
-  if (hold.kind !== "none") return null;
-  const [budget] = settleNoCauseStops(
-    [{ ...silent, evidence: { ...silent.evidence, unlaunched: true } }],
-    records,
-    claims,
-    Date.now(),
-  );
-  return budget?.evidence.driverGone === false ? budget.why : null;
+  const own = host ?? "";
+  const mine = driveHold(silent, records);
+  if (mine.kind === "refused") return mine.why;
+  const theirs = foreignHold(silent, claims.get(pull.number), own);
+  if (theirs.kind === "refused" || theirs.kind === "unread") {
+    const [taken] = settleSharedTakeovers([silent], claims, own);
+    return taken?.evidence.driverGone === false ? taken.why : theirs.why;
+  }
+  const [settled] = settleOwnDrives([silent], records, claims, own);
+  return settled?.evidence.driverGone === false ? settled.why : null;
 }
