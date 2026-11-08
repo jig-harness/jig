@@ -2023,7 +2023,8 @@ threads from the sweep's input entirely (`historyOnly`) — so no unattended
 run can see that reply, let alone resolve it. It is reversible only by a
 human deliberately running `reconcile-replied-threads.ts` unscoped, which is
 the one mode a human is present to make that call in. Do **not** use this
-path on a bot-started thread: `--leave-open` has no legitimate use there —
+path on a bot-started thread. `--leave-open` refuses a bot-started thread
+with exit `2` before posting, holding or resolving; it has no legitimate use there —
 there is no author to defer to, and a marked-left-open bot thread is counted
 as live work forever (never resolved, and nothing parks it automatically),
 permanently blocking convergence rather than merely surviving one sweep.

@@ -1,25 +1,7 @@
 import { scopedStateDir } from "./scoped-state-dir.ts";
 import { writeState } from "./state-rows.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
-/**
- * triage-thread.test.ts
- *
- * `triage-thread.ts` folds a thread's outcome reply and its durable
- * disposition (hold or resolve) into one invocation. A crash between the
- * two — previously separate commands — can be repaired by the next
- * invocation without reposting; this is self-reconciling, not
- * transactionally atomic (see the script's own header). These are subprocess
- * integration tests against a stubbed `gh`, mirroring
- * reconcile-replied-threads.test.ts's own convention (the real script,
- * spawned for real, against fixture files).
- *
- * The crash-recovery property is pinned by literally invoking the script
- * TWICE on the same thread with an identical body, updating the thread
- * fixture between calls to reflect what GitHub would actually show after the
- * first call posted its reply (self-reconciliation reads GitHub's live state,
- * never a cached snapshot) — and asserting exactly one reply lands across
- * both invocations.
- */
+/** Integration tests for reply disposition and crash recovery against a fake forge. */
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -52,30 +34,7 @@ let tmpRoot: string;
 let binDir: string;
 let scratchWorktree: string;
 
-/**
- * Same GIT_* scrub as reconcile-replied-threads.test.ts's own — see its
- * comment — plus an explicit `$DRIVE_PR_SESSION`, pinned to THIS test
- * process's own pid rather than left to whatever the ambient environment
- * happens to carry (the `current-round.test.ts` pattern, same reasoning).
- *
- * Several tests here run TWO separate subprocess calls against the SAME
- * `stateDir` in sequence — e.g. a fresh `runTriage` accepted+hold, then a later
- * `postReplyDirectly` simulating a direct supersession — and every
- * state-mutating `drive-state.ts` call (including `hold`) claims a sessionless
- * tree-wide presence record when no session identity is set. Left unpinned,
- * that reads as an IDENTIFIED session locally (a Claude Code harness always
- * sets `$CLAUDE_PID`, which the ladder falls back to) and as ladder tier 3 —
- * sessionless — on a clean CI/gates shell that does not: on tier 3, the second
- * subprocess call sees the first one's own presence record and refuses it as
- * "another live resolver," a false collision with nothing to do with what these
- * tests actually check (outcome/reconciliation logic, not multi-session lease
- * semantics).
- * Verified: this exact test file passes locally (ambient `$CLAUDE_PID` masks
- * it) but failed reproducibly on remote gates before this pin. Pinning an
- * explicit session — every subprocess this file spawns sees the SAME pid, so
- * they self-recognize — avoids the tier entirely, deterministically, regardless
- * of which shell runs the suite.
- */
+/** Strip Git overrides and pin subprocesses to the same live session. */
 function scrubbedGitEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -176,6 +135,7 @@ afterAll(() => {
 interface CommentFixture {
   author: string;
   authorAssociation: string;
+  authorType?: "User" | "Bot";
   body: string;
   url?: string;
 }
@@ -195,7 +155,7 @@ function nodePayload(opts: {
           pageInfo: { hasNextPage: opts.truncated ?? false },
           nodes: opts.comments.map((c, i) => ({
             url: c.url ?? `https://example.invalid/pull/1#discussion_seed${i}`,
-            author: { login: c.author, __typename: "User" },
+            author: { login: c.author, __typename: c.authorType ?? "User" },
             authorAssociation: c.authorAssociation,
             body: c.body,
           })),
@@ -1221,6 +1181,31 @@ describe("triage-thread.ts", () => {
     // The resolve itself still landed — only the cleanup check failed.
     expect(postedCount(dir)).toBe(1);
     expect(resolvedCount(dir)).toBe(1);
+  });
+
+  it("--leave-open refuses a bot-started thread before posting or resolving", () => {
+    const { dir, stateDir } = writeFixtureDir();
+    writeNode(dir, {
+      comments: [
+        {
+          author: "reviewer[bot]",
+          authorType: "Bot",
+          authorAssociation: "NONE",
+          body: "Please check this finding.",
+        },
+      ],
+    });
+    const r = runTriage(
+      ["PRRT_bot_leaveopen", "999", "--leave-open"],
+      "**wont-fix** — the tradeoff is accepted.",
+      dir,
+      stateDir,
+    );
+    expectSpawnExit(r, 2);
+    expect(r.stderr).toContain("--leave-open refuses a bot-started thread");
+    expect(postedCount(dir)).toBe(0);
+    expect(resolvedCount(dir)).toBe(0);
+    expect(heldKeys(stateDir)).toBe("");
   });
 
   it("--leave-open posts a merit reply but does not resolve — the human-thread exception", () => {

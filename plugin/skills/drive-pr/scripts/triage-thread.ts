@@ -66,9 +66,7 @@
  *                       Preserves the human-thread exception (SKILL.md's
  *                       "Leaving a human thread open"): a human thread you
  *                       replied to but chose not to close on the author's
- *                       behalf — the old two-command flow honored it simply by
- *                       never calling `resolve-thread.ts`, a choice point this
- *                       one-call command otherwise removes. No effect on
+ *                       behalf. No effect on
  *                       `accepted` or a HELD `moot` (`--moot-pending-push` on a
  *                       fresh post, or reconciled — always held) — neither is
  *                       ever resolved by this script regardless (released by
@@ -102,8 +100,9 @@
  *                       a human thread open" section has the full argument and
  *                       the one human-attended exception; not repeated here to
  *                       avoid a second copy that can drift). Never use this
- *                       path — or `--leave-open` itself — on a BOT-started
- *                       thread: see `LEAVE_OPEN_MARKER`'s own header in
+ *                       fallback path on a BOT-started thread; the explicit
+ *                       `--leave-open` flag refuses one with exit 2 before any
+ *                       post, hold or resolve: see `LEAVE_OPEN_MARKER`'s own header in
  *                       `lib/outcome.ts` for the accepted provenance residual
  *                       this flag lives inside of. That fallback still owes ONE
  *                       follow-up call — `--cleanup-only` below — since
@@ -371,6 +370,7 @@ interface ThreadComment {
 
 interface ThreadState {
   isResolved: boolean;
+  startedByBot: boolean;
   commentsTruncated: boolean;
   comments: ThreadComment[];
 }
@@ -425,6 +425,7 @@ query($id:ID!){
     return null;
   return {
     isResolved: n.isResolved,
+    startedByBot: c.nodes[0]?.author?.__typename === "Bot",
     // Fail CLOSED, not open, same as list-unresolved-threads.ts's own
     // `commentsTruncated` field: only an explicit `false` clears it.
     commentsTruncated: c.pageInfo?.hasNextPage !== false,
@@ -639,22 +640,16 @@ async function main(): Promise<number> {
     );
   }
 
-  // `commentsTruncated` refuses the reconciliation scan outright — SKILL.md §
-  // 3's own rule: a reply past the 100-comment cap could supersede what is
-  // visible. `isResolved` is a top-level thread field, unaffected by the
-  // comment-window cap, so it is still trustworthy under truncation — but
-  // whether a stale hold is safe to release (below) is NOT, since that depends
-  // on reading the LAST qualifying reply, which truncation makes unreliable. So
-  // a truncated-and-resolved thread SKIPS the cleanup rather than guessing at
-  // it from a partial view — but does not report success over that skip either
-  // (`return 1`, not `0`): a merit dispatch interrupted between resolving the
-  // thread and releasing its prior hold, retried once the thread has passed the
-  // truncation cap, would otherwise exit 0 having never even checked whether
-  // that hold remains — and a resolved thread is never re-enumerated, so the
-  // stale hold would be permanently stranded with no other path back to this
-  // script. `--cleanup-only` needs the identical caution regardless of
-  // `isResolved` — it has no OTHER outcome to fall back on posting/resolving,
-  // so a truncated thread always refuses (exit 1) rather than guessing.
+  if (leaveOpen && thread.startedByBot) {
+    fail(
+      2,
+      "triage-thread.ts: --leave-open refuses a bot-started thread; settle its outcome without the human-thread exception.",
+    );
+  }
+
+  // A partial comment window cannot prove that no later reply superseded the
+  // visible one. Resolved threads still need a complete view to clear a stale
+  // hold; refuse rather than leave that cleanup permanently stranded.
   if (thread.commentsTruncated) {
     if (cleanupOnly || thread.isResolved) {
       console.error(
