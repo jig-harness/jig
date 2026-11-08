@@ -237,7 +237,7 @@ export function serveDashboard(options: {
       : options.token;
   if (token === null && !isLoopback(options.listen))
     throw new ExitError(
-      2,
+      USAGE_EXIT,
       `the dashboard serves without a token only on a loopback address, not ${options.listen.host}`,
     );
   const fronts = (options.allowedHosts ?? []).map((name) => name.toLowerCase());
