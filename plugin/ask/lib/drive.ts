@@ -274,7 +274,7 @@ function waitsOnOf(
   ctx: AskContext,
   held: boolean,
   base: PrFacts["base"],
-  merge: WaitsOn | null = null,
+  merge: WaitsOn,
 ): WaitsOn {
   const classification = classifyLedger(
     ledger,
@@ -358,9 +358,7 @@ function waitsOnOf(
     case "unplaced":
       return { waiting: placed.why };
     case "done":
-      return ledger.driver.exit === DRIVE_EXIT.CONVERGED
-        ? (merge ?? { person: "merge", why: placed.why })
-        : "none";
+      return ledger.driver.exit === DRIVE_EXIT.CONVERGED ? merge : "none";
     default:
       return { person: "re-arm", why: placed.why };
   }
@@ -864,7 +862,7 @@ function driveWait(
     read: boolean;
     base: PrFacts["base"];
     presence: DriverPresence | null;
-    merge: WaitsOn | null;
+    merge: WaitsOn;
   },
 ): WaitsOn {
   if (!facts.read)

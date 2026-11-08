@@ -7,6 +7,7 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease";
 import {
@@ -130,7 +131,7 @@ describe("announce-merge-ready.ts and the Ready predicate", () => {
 
   it("would announce merge now without saying an approval is required", async () => {
     const r = await dryRun(converged, board(converged.head));
-    expect(r.exitCode, r.stderr).toBe(0);
+    expectSpawnExit(r, 0);
     expect(r.stdout).toContain(OPENER);
     expect(r.stdout).not.toContain("An approval is still required");
   });
@@ -140,7 +141,7 @@ describe("announce-merge-ready.ts and the Ready predicate", () => {
       converged,
       board(converged.head, { association: "CONTRIBUTOR" }),
     );
-    expect(r.exitCode, r.stderr).toBe(0);
+    expectSpawnExit(r, 0);
     expect(r.stdout).toContain("An approval is still required");
   });
 
@@ -149,7 +150,7 @@ describe("announce-merge-ready.ts and the Ready predicate", () => {
       converged,
       board(converged.head, { checked: false }),
     );
-    expect(r.exitCode).toBe(4);
+    expectSpawnExit(r, 4);
     expect(r.posted).toBe(false);
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain("not witnessed on this head");

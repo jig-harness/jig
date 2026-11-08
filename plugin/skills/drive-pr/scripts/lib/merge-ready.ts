@@ -81,6 +81,8 @@ export interface HeadReview {
   author: string;
   /** Whether the forge types the author as a user, not an app. */
   person: boolean;
+  /** The author's association with the repository. */
+  association: string;
   state: string;
   /** The commit the review was submitted against. */
   commit: string;
@@ -190,14 +192,21 @@ function reviewerRun(facts: ForgeFacts, rules: ReadyRules): HeadCheck | null {
   if (app === null) return null;
   const runs = facts.checks
     .filter((c) => c.app === app && rules.reviewerCheck.test(c.name))
-    .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
+    .sort((a, b) =>
+      // A run not started yet is the newest of its name.
+      (b.startedAt ?? "\uffff").localeCompare(a.startedAt ?? "\uffff"),
+    );
   return runs[0] ?? null;
 }
 
-/** Whether a person's approving review stands on the head. */
+/** Whether a person of the repository's own approved the head: an approval from any other account is no witness. */
 function approvedHere(facts: ForgeFacts): boolean {
   return facts.reviews.some(
-    (r) => r.person && r.state === "APPROVED" && r.commit === facts.head,
+    (r) =>
+      r.person &&
+      OWN.has(r.association) &&
+      r.state === "APPROVED" &&
+      r.commit === facts.head,
   );
 }
 
@@ -235,7 +244,11 @@ function failingChecks(facts: ForgeFacts, rules: ReadyRules): string[] {
     .filter(
       (c) =>
         c.state === "failure" &&
-        !(c.app === rules.reviewerApp && rules.reviewerCheck.test(c.name)),
+        !(
+          rules.reviewerApp !== null &&
+          c.app === rules.reviewerApp &&
+          rules.reviewerCheck.test(c.name)
+        ),
     )
     .map((c) => c.name);
 }
@@ -464,8 +477,10 @@ export function readiness(facts: MergeFacts, rules: ReadyRules): Readiness {
       waiting("the forge"),
       "not read: the forge is still computing whether it can merge",
     );
+  // A merge queue's base is placed by the queue, but a required review it reports is still owed.
   const approvalByForge =
-    state === "BLOCKED" && facts.reviewDecision === "REVIEW_REQUIRED";
+    facts.reviewDecision === "REVIEW_REQUIRED" &&
+    (state === "BLOCKED" || facts.mergeQueue);
   const own = OWN.has(facts.authorAssociation);
   const approvalOwed = !approvedHere(facts) && (!seen.byApp || !own);
   if (state === "BEHIND")

@@ -299,6 +299,41 @@ describe("the board read", () => {
   });
 });
 
+describe("what a tick could not tell", () => {
+  it("names the converged pull requests it could not place, so their notices are not settled by absence", async () => {
+    const computing = await readBoard(
+      input([converged(7), converged(8)]),
+      io([
+        new Map([
+          [7, forge(7)],
+          [
+            8,
+            forge(8, {
+              mergeState: "BLOCKED",
+              checks: [
+                ...forge(8).checks,
+                {
+                  name: "t",
+                  app: "ci",
+                  required: true,
+                  state: "pending",
+                  startedAt: null,
+                },
+              ],
+            }),
+          ],
+        ]),
+      ]),
+    );
+    expect(computing.pending).toEqual([8]);
+    const failed = await readBoard(
+      input([converged(7), converged(8)]),
+      io([new Error("down")]),
+    );
+    expect(failed.pending).toEqual([7, 8]);
+  });
+});
+
 describe("telling a person", () => {
   it("notifies merge now and approve first once per pull request and verified head, and update next not at all", async () => {
     const read = await readBoard(

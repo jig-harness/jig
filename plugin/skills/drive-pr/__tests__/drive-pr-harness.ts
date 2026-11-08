@@ -1157,15 +1157,9 @@ done
 has_input=0
 for a in "$@"; do [ "$a" = "--input" ] && has_input=1; done
 
-# The Ready predicate's board query (merge-facts.ts), from board.json when a
-# test writes one, else a mergeable head the fixture's reviewer app checked
-# and a person approved, built from pr-view.json, so a test about the
-# announcement's other gates passes it. It is no head read of the PR view,
-# so no counter below sees it.
+# The board query (merge-facts.ts), no head read: board.json, else fixtures/board-answer.jq.
 if [[ "$query" == *"query DispatchBoard"* ]]; then
-  if [ -f "$F/board.json" ]; then cat "$F/board.json"; exit 0; fi
-  jq -c '{data: {rateLimit: {cost: 1, remaining: 4999, limit: 5000}, repository: {squashMergeAllowed: true, mergeCommitAllowed: true, rebaseMergeAllowed: true, pr999: {number: 999, headRefOid: .headRefOid, isDraft: (.isDraft // false), mergeable: (.mergeable // "MERGEABLE"), mergeStateStatus: "CLEAN", reviewDecision: null, authorAssociation: "OWNER", isMergeQueueEnabled: false, labels: {pageInfo: {hasNextPage: false}, nodes: []}, reviewThreads: {pageInfo: {hasNextPage: false}, nodes: []}, reviewRequests: {pageInfo: {hasNextPage: false}, nodes: []}, latestReviews: {pageInfo: {hasNextPage: false}, nodes: [{state: "APPROVED", author: {__typename: "User", login: "maintainer"}, commit: {oid: .headRefOid}}]}, commits: {nodes: [{commit: {oid: .headRefOid, statusCheckRollup: {contexts: {pageInfo: {hasNextPage: false}, nodes: [{__typename: "CheckRun", name: "AI review", status: "COMPLETED", conclusion: "SUCCESS", startedAt: "2026-01-01T00:00:00Z", isRequired: false, checkSuite: {app: {slug: "example-review"}}}]}}}}]}}}}}' "$F/pr-view.json"
-  exit 0
+  if [ -f "$F/board.json" ]; then cat "$F/board.json"; else jq -c -f ${JSON.stringify(join(import.meta.dir, "fixtures", "board-answer.jq"))} "$F/pr-view.json"; fi; exit 0
 fi
 
 # Stall mode, for probing a deadline. \`$DRIVE_PR_STUB_HANG\` is the duration;
@@ -1663,15 +1657,9 @@ fi
 # which would double-count the opening snapshot and shift every existing
 # head-moved window by one.
 #
-# …and it is additionally gated on there being NO \`-q\` filter, because a second
-# caller now issues \`--json state\` too: the reconcile sweep's liveness probe,
-# which asks \`--json state -q .state\`. That one is not a head read at all — it
-# decides whether the sweep may run — so counting it advanced every
-# \`headMovesAfter\` window by one the moment the sweep became the harness
-# default, breaking every head-race probe at once. \`closedSinceOpen\` passes no
-# \`-q\`; the sweep's probe always does. Distinguishing on that keeps both
-# fixtures honest without either production read changing shape to suit the
-# stub.
+# …and only with NO \`-q\` filter: the sweep's liveness probe (\`--json state
+# -q .state\`) is no head read, and counting it would shift every
+# \`headMovesAfter\` window by one; \`closedSinceOpen\` passes no \`-q\`.
 if [ -f "$F/head-moves-after" ]; then
   wants_head=0
   for a in "$@"; do

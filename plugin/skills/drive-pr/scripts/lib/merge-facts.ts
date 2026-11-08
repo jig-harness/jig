@@ -14,6 +14,7 @@
  * unread failing check, thread, approval or reviewer cannot be ruled out, so
  * the predicate places it nowhere it would need them.
  */
+import { OVERLAY_RELPATH } from "../../../../shared/config-layers.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import type { ForgeFacts, HeadCheck, HeadReview } from "./merge-ready.ts";
 import { ghCall, ghRepoEnv } from "./proc.ts";
@@ -36,7 +37,7 @@ function pullFields(n: number): string {
       labels(first: 100) { pageInfo { hasNextPage } nodes { name } }
       reviewThreads(first: ${THREADS}) { pageInfo { hasNextPage } nodes { isResolved } }
       reviewRequests(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Team { slug } ... on Mannequin { login } } } }
-      latestReviews(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { state author { __typename login } commit { oid } } }
+      latestReviews(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { state authorAssociation author { __typename login } commit { oid } } }
       commits(last: 1) { nodes { commit { oid statusCheckRollup { contexts(first: ${CHECKS}) { pageInfo { hasNextPage } nodes {
         __typename
         ... on CheckRun { name status conclusion startedAt isRequired(pullRequestNumber: ${n}) checkSuite { app { slug } } }
@@ -51,6 +52,7 @@ export function factsQuery(numbers: readonly number[]): string {
   rateLimit { cost remaining limit }
   repository(owner: $owner, name: $name) {
     squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed
+    defaultBranchRef { target { ... on Commit { file(path: "${OVERLAY_RELPATH}") { object { ... on Blob { text isTruncated } } } } } }
     ${numbers.map(pullFields).join("\n    ")}
   }
 }`;
@@ -114,6 +116,7 @@ function reviewOf(node: unknown): HeadReview | null {
   return {
     author,
     person: at(node, "author", "__typename") === "User",
+    association: str(at(node, "authorAssociation")),
     state: str(at(node, "state")),
     commit: str(at(node, "commit", "oid")),
   };
@@ -143,6 +146,16 @@ export function parsePull(
     ["checks", contexts],
   ];
   const long = parts.filter(([, c]) => more(c)).map(([name]) => name);
+  // The checks belong to the head only when the commit they were read on is it.
+  const checked = str(at(commit, "commit", "oid"));
+  const why = [
+    ...(long.length === 0
+      ? []
+      : [`more ${long.join(", ")} than one read holds`]),
+    ...(checked !== "" && checked !== head
+      ? ["its checks were read on another commit"]
+      : []),
+  ];
   return {
     number: node.number,
     head,
@@ -168,9 +181,13 @@ export function parsePull(
       .map(requestOf)
       .filter((r) => r !== ""),
     methods,
-    partial:
-      long.length === 0 ? null : `more ${long.join(", ")} than one read holds`,
+    partial: why.length === 0 ? null : why.join("; "),
   };
+}
+
+/** Why the board query did not read: a failed call or an answer that is not JSON. */
+export class FactsUnread extends Error {
+  override name = "FactsUnread";
 }
 
 /** What one query read: each pull request's facts, and what the forge charged. */
@@ -180,6 +197,8 @@ export interface FactsRead {
   /** The forge's budget left after it, `null` when not given. */
   remaining: number | null;
   limit: number | null;
+  /** The repository's configuration on its default branch: its text, `null` when it holds none, `undefined` when it did not read whole. */
+  config?: string | null;
 }
 
 /** The facts from a whole answer. */
@@ -199,7 +218,16 @@ export function parseAnswer(
     if (facts !== null) pulls.set(n, facts);
   }
   const num = (v: unknown) => (typeof v === "number" ? v : null);
+  const blob = at(repository, "defaultBranchRef", "target", "file", "object");
+  const config =
+    at(repository, "defaultBranchRef", "target", "file") === null
+      ? null
+      : at(blob, "isTruncated") === false &&
+          typeof at(blob, "text") === "string"
+        ? (at(blob, "text") as string)
+        : undefined;
   return {
+    ...(config === undefined ? {} : { config }),
     pulls,
     cost: num(at(answer, "data", "rateLimit", "cost")) ?? 0,
     remaining: num(at(answer, "data", "rateLimit", "remaining")),
@@ -221,7 +249,7 @@ export async function readMergeFacts(
   const [owner = "", name = ""] =
     slug === null ? ["{owner}", "{repo}"] : slug.split("/");
   if (numbers.some((n) => !Number.isSafeInteger(n) || n <= 0))
-    throw new Error("a pull request number is not a whole number");
+    throw new FactsUnread("a pull request number is not a whole number");
   const read: FactsRead = {
     pulls: new Map(),
     cost: 0,
@@ -236,16 +264,17 @@ export async function readMergeFacts(
         "graphql",
         "-f",
         `query=${factsQuery(chunk)}`,
-        "-f",
+        // `-F` fills the forge client's `{owner}` and `{repo}` placeholders; `-f` passes a name as it is.
+        slug === null ? "-F" : "-f",
         `owner=${owner}`,
-        "-f",
+        slug === null ? "-F" : "-f",
         `name=${name}`,
       ],
       { stderr: "pipe", env: ghRepoEnv(), timeoutSec },
     );
     if (r.code !== 0) {
       const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-      throw new Error(
+      throw new FactsUnread(
         `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
       );
     }
@@ -253,13 +282,14 @@ export async function readMergeFacts(
     try {
       answer = JSON.parse(r.stdout);
     } catch {
-      throw new Error("the board query's answer is not JSON");
+      throw new FactsUnread("the board query's answer is not JSON");
     }
     const part = parseAnswer(answer, chunk);
     for (const [n, f] of part.pulls) read.pulls.set(n, f);
     read.cost += part.cost;
     read.remaining = part.remaining ?? read.remaining;
     read.limit = part.limit ?? read.limit;
+    if (part.config !== undefined) read.config = part.config;
   }
   return read;
 }

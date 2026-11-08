@@ -296,6 +296,8 @@ export function unobservedTarget(report: RepoReport, target: string): boolean {
   return (
     report.unplaced.some((u) => u.target === target) ||
     (report.withheld ?? []).includes(target) ||
+    // A converged pull request whose place the board read could not tell: its `ready` notice is not settled.
+    (report.board?.pending ?? []).some((n) => target === `PR #${n}`) ||
     (report.inScope !== undefined &&
       /^PR #\d+$/.test(target) &&
       !report.inScope.some((n) => target === `PR #${n}`))

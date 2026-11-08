@@ -94,6 +94,7 @@ describe("merge now", () => {
           {
             author: "maintainer",
             person: true,
+            association: "MEMBER",
             state: "APPROVED",
             commit: HEAD,
           },
@@ -108,6 +109,7 @@ describe("merge now", () => {
           {
             author: "maintainer",
             person: true,
+            association: "MEMBER",
             state: "APPROVED",
             commit: OTHER,
           },
@@ -116,6 +118,68 @@ describe("merge now", () => {
       rules,
     );
     expect(stale.lane).toBe("approve-first");
+  });
+});
+
+describe("whose approval counts", () => {
+  const rules = { ...RULES, reviewerApp: null };
+  const approval = (association: string) => ({
+    author: "someone",
+    person: true,
+    association,
+    state: "APPROVED",
+    commit: HEAD,
+  });
+
+  it("does not take an approval from an account outside the repository as the witness", () => {
+    expect(at({ reviews: [approval("NONE")] }, rules).lane).toBe(
+      "approve-first",
+    );
+  });
+
+  it("does not let an outside author's second account approve it into merge now", () => {
+    const r = at({
+      authorAssociation: "CONTRIBUTOR",
+      reviews: [approval("CONTRIBUTOR")],
+    });
+    expect(r.lane).toBe("approve-first");
+  });
+
+  it("takes a collaborator's approval for an outside author", () => {
+    const r = at({
+      authorAssociation: "CONTRIBUTOR",
+      reviews: [approval("COLLABORATOR")],
+    });
+    expect(r.lane).toBe("merge-now");
+  });
+});
+
+describe("the review witness, run by run", () => {
+  it("takes a reviewer run not started yet as the newest, over an older success", () => {
+    const r = at({
+      checks: [
+        {
+          name: "AI review",
+          app: "example-review",
+          required: false,
+          state: "success",
+          startedAt: "2026-11-08T09:00:00Z",
+        },
+        {
+          name: "AI review",
+          app: "example-review",
+          required: false,
+          state: "pending",
+          startedAt: null,
+        },
+      ],
+    });
+    expect(r.place).toBe("needs-you");
+  });
+
+  it("keeps a required review owed under a merge queue", () => {
+    const r = at({ mergeQueue: true, reviewDecision: "REVIEW_REQUIRED" });
+    expect(r.lane).toBe("approve-first");
   });
 });
 
@@ -417,6 +481,19 @@ describe("the forge's facts", () => {
     expect(pull?.partial).toContain("review threads");
     expect(pull?.unresolvedThreads).toBe(1);
     expect(at({ ...pull, partial: pull?.partial ?? null }).place).toBe("stay");
+  });
+
+  it("reads checks read on another commit than the head as partial", () => {
+    const node = {
+      number: 12,
+      headRefOid: HEAD,
+      commits: { nodes: [{ commit: { oid: OTHER, statusCheckRollup: null } }] },
+    };
+    const pull = parseAnswer(
+      { data: { repository: { pr12: node } } },
+      [12],
+    ).pulls.get(12);
+    expect(pull?.partial).toContain("another commit");
   });
 
   it("reads check runs and commit statuses with their app and state", () => {

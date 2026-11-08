@@ -87,6 +87,8 @@ export interface BoardRead {
   cards: BoardCard[];
   /** The pull requests the read could not place this tick, with why. */
   unread: Array<{ number: number; reason: string }>;
+  /** The converged pull requests whose place this tick could not tell (not read, or where they were): a notification about one is not settled by its absence. */
+  pending: number[];
   ms: number;
   /** What the forge charged for it, in its points, and what it left. */
   cost: number;
@@ -162,12 +164,13 @@ function budgetFloor(budget: TickBudget): string | null {
 }
 
 /** An empty read, with why nothing was placed. */
-function notRead(reason: string, ms = 0): BoardRead {
+function notRead(reason: string, pending: number[], ms = 0): BoardRead {
   return {
     ok: false,
     reason,
     cards: [],
     unread: [],
+    pending,
     ms,
     cost: 0,
     remaining: null,
@@ -215,24 +218,22 @@ export async function readBoard(
       reason: null,
       cards: [],
       unread: [],
+      pending: [],
       ms: 0,
       cost: 0,
       remaining: null,
     };
+  const numbers = converged.map((d) => d.number);
   const floor = budgetFloor(input.budget);
-  if (floor !== null) return notRead(floor);
+  if (floor !== null) return notRead(floor, numbers);
   const startedMs = io.now();
   let read: FactsRead;
   try {
-    read = await readFacts(
-      input,
-      converged.map((d) => d.number),
-      io,
-      startedMs,
-    );
+    read = await readFacts(input, numbers, io, startedMs);
   } catch (error) {
     return notRead(
       `the board read failed: ${failureText(error)}`,
+      numbers,
       io.now() - startedMs,
     );
   }
@@ -240,6 +241,7 @@ export async function readBoard(
   if (ms > BOARD_DEADLINE_MS)
     return notRead(
       `the board read ran past its ${BOARD_DEADLINE_MS / 1000} s deadline`,
+      numbers,
       ms,
     );
   const rules = rulesOf(input.values);
@@ -299,6 +301,10 @@ export async function readBoard(
     reason: null,
     cards: oneUpdateNext(cards),
     unread,
+    pending: [
+      ...unread.map((u) => u.number),
+      ...cards.filter((c) => c.place === "stay").map((c) => c.number),
+    ],
     ms,
     cost: read.cost,
     remaining: read.remaining,
@@ -351,7 +357,10 @@ export async function observeBoard(
       io,
     );
   } catch (error) {
-    return notRead(`the board read failed: ${failureText(error)}`);
+    return notRead(
+      `the board read failed: ${failureText(error)}`,
+      convergedDrives(input.drives).map((d) => d.number),
+    );
   }
 }
 

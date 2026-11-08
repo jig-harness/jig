@@ -42,7 +42,7 @@ import {
   unreadableNote,
   withdrawAnnouncement,
 } from "./lib/announce.ts";
-import { announceReady } from "./lib/announce-ready.ts";
+import { announceReady, readyOrWithdraw } from "./lib/announce-ready.ts";
 import { parsePrSnapshot } from "./lib/ci-hold.ts";
 import { ciHoldLabelSetting } from "./lib/overlay.ts";
 
@@ -898,11 +898,8 @@ async function main(): Promise<number> {
     return await withdrawIfConfirmedStale(liveRc);
   }
   // The Ready predicate adds the forge's protection and review requirements.
-  const forge = await announceReady(pr, head);
-  if (forge.rc !== 0) {
-    console.error(`announce-merge-ready: ${forge.says} — refusing to announce`);
-    return forge.rc;
-  }
+  const forge = await readyOrWithdraw(pr, head, dryRun ? [] : existingIds);
+  if (forge.rc !== 0) return forge.rc;
 
   if (existingIds.length > 0) {
     // Re-confirm at the LAST moment before reporting success — with
@@ -1161,6 +1158,8 @@ ${marker}`;
     if (raceCleanRc !== 0) return raceCleanRc;
     const raceFinalCiRc = await confirmFinalCi([lowest]);
     if (raceFinalCiRc !== 0) return raceFinalCiRc;
+    const raceReady = await readyOrWithdraw(pr, head, [lowest]);
+    if (raceReady.rc !== 0) return raceReady.rc;
     return 0;
   }
   if (!back.ok) {
