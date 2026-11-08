@@ -59,6 +59,18 @@ test("the batch file quotes each value, doubles its percent signs and passes the
   );
 });
 
+test("each script marks its launches as a person's, so the launcher never upgrades first, and the batch file keeps that to itself", () => {
+  const posix = commandText(["/bin/bun", "/state/launcher.ts", "--"], "linux");
+  expect(posix).toContain(
+    "\nJIG_LAUNCHER_ROLE=command\nexport JIG_LAUNCHER_ROLE\n",
+  );
+  const batch = commandText(["C:\\bun.exe", "C:\\launcher.ts", "--"], "win32");
+  expect(batch).toContain("\r\nsetlocal\r\nset JIG_LAUNCHER_ROLE=command\r\n");
+  expect(batch.indexOf("setlocal")).toBeLessThan(
+    batch.indexOf("set JIG_LAUNCHER_ROLE"),
+  );
+});
+
 test("a value the script cannot carry is refused", () => {
   expect(() => commandText(["/bin/bun\n", "x"], "linux")).toThrow("line break");
   expect(() => commandText(['C:\\a"b\\bun.exe'], "win32")).toThrow(

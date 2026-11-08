@@ -39,18 +39,20 @@ describe("classifyLedger", () => {
     expect(classOf(16)).toBe("re-armable");
     expect(classOf(4)).toBe("re-armable");
     expect([11, 13].map((e) => classOf(e))).toEqual(["refused", "refused"]);
-    expect([1, 2, 6, 7, 12, 15, 99].map((e) => classOf(e))).toEqual(
-      Array(7).fill("needs-person"),
+    expect([1, 2, 6, 7, 12, 99].map((e) => classOf(e))).toEqual(
+      Array(6).fill("needs-person"),
     );
   });
 
-  // A stall and a spent CI-repair budget are re-driven once per head commit;
-  // a generic exit 1, a crash, stays a person's, and says when its pull
-  // request also conflicts.
-  it("re-drives a stall or a spent CI-repair budget once per head, and keeps a crash a person's", () => {
+  // A stall, a spent CI-repair budget and a recurring pass deadline are
+  // re-driven once per head commit; a generic exit 1, a crash, stays a
+  // person's unless its pull request conflicts, when its conflict-resolve
+  // round is owed.
+  it("re-drives a stall, a spent CI-repair budget or a pass deadline once per head, and keeps a crash a person's", () => {
     const head = "c".repeat(40);
     const forge = { head, mergeable: "CONFLICTING" };
-    for (const exit of [14, 21]) {
+    const kinds = { 14: "stall", 21: "ci-repair", 15: "deadline" } as const;
+    for (const exit of [14, 21, 15] as const) {
       const placed = classifyLedger(
         stoppedLedger(7, exit),
         NOW,
@@ -61,9 +63,11 @@ describe("classifyLedger", () => {
       expect(placed.class).toBe("stale");
       expect(placed.stale).toMatchObject({
         change: `head ${head}, stopped ${exit}`,
-        mechanicalStop: exit === 14 ? "stall" : "ci-repair",
+        mechanicalStop: kinds[exit],
       });
-      // A stall that never measured its leftovers stays bound to its tree.
+      // Only the pass deadline draws on the recovery budget.
+      expect(placed.stale?.recovery).toBe(exit === 15 ? true : undefined);
+      // A stall that never measured its leftovers stays bound to its tree; a deadline that never measured does not.
       if (exit === 14) expect(placed.stale?.tree).toBeDefined();
       else expect(placed.stale?.tree).toBeUndefined();
       expect(
@@ -74,7 +78,7 @@ describe("classifyLedger", () => {
       ).toBe("unplaced");
     }
     const crash = classifyLedger(
-      stoppedLedger(7, 1),
+      stoppedLedger(7, 2),
       NOW,
       WINDOW,
       undefined,
@@ -107,7 +111,7 @@ describe("classifyLedger", () => {
     });
     expect(placed.class).toBe("stale");
     expect(placed.stale?.tree?.actor).toBe(ledger.driver.actor);
-    expect(placed.why).toContain("in the tree it stalled in");
+    expect(placed.why).toContain("in the tree it stopped in");
     // Work left by an earlier stop is not this stall's.
     ledger.events = [
       {

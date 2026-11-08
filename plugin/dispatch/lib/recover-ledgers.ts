@@ -7,7 +7,8 @@ import {
 } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { adoptionOf } from "./adopt.ts";
 import { readDrives } from "./sources/ledgers.ts";
-import type { TickContext } from "./tick-context.ts";
+import { allRecords, type TickContext } from "./tick-context.ts";
+import { settleDrives } from "./tick-shared.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 
 /** A report never writes a drive ledger; recovery runs only for the machine's owned, scoped, unheld PRs. */
@@ -68,6 +69,13 @@ export async function recoverLedgers(
       observation.labels,
       adoptionOf(opened.section, forge.login),
     );
-    if (fresh !== undefined) forge.drives[i] = fresh;
+    // The fresh read is settled as the observed one was, by the records and claims read this tick.
+    if (fresh !== undefined)
+      forge.drives[i] = settleDrives(
+        observation.ctx,
+        [fresh],
+        allRecords(context),
+        observation.claims,
+      )[0] as typeof fresh;
   }
 }

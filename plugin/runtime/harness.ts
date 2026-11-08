@@ -52,7 +52,12 @@ export type Say = (line: string) => void;
 export interface Installed {
   version: string;
   enabled: boolean;
+  /** The folder Claude Code loads the plugin from in place, from a local marketplace: no cache copy. */
+  inPlace?: string;
 }
+
+/** The program that runs each harness: the absolute path a job recorded, else its name on `PATH`. */
+export type Programs = Partial<Record<Harness, string>>;
 
 /** Upper bound per tool command, so a stalled fetch cannot hold an upgrade forever. */
 export function commandTimeoutMs(): number {
@@ -106,9 +111,12 @@ function code(error: unknown): string | undefined {
  * "not installed"; a version probe that times out or fails is an error, so
  * an upgrade or a check never skips a tool it could not inspect.
  */
-export function available(command: Harness): boolean {
+export function available(
+  command: Harness,
+  program: string = command,
+): boolean {
   const timeout = commandTimeoutMs();
-  const result = spawnSync(command, ["--version"], {
+  const result = spawnSync(program, ["--version"], {
     encoding: "utf8",
     timeout,
     killSignal: "SIGKILL",
@@ -136,9 +144,13 @@ export function claudeUserInstall(list: unknown): Installed | null {
   const entry = list.find(
     (plugin) => plugin?.id === PLUGIN_ID && plugin?.scope === "user",
   );
-  return entry
-    ? { version: String(entry.version), enabled: entry.enabled === true }
-    : null;
+  if (!entry) return null;
+  const folder = entry.readFromFolder;
+  return {
+    version: String(entry.version),
+    enabled: entry.enabled === true,
+    ...(typeof folder === "string" && folder ? { inPlace: folder } : {}),
+  };
 }
 
 /** The install from `codex plugin list --json` (Codex has one scope). */
@@ -238,6 +250,19 @@ export function describeSource(registered: Registered): string {
   return `the ref ${ref}`;
 }
 
+/**
+ * Whether a registered source receives new releases: a Git address at a
+ * channel or at `main`. A version tag or another ref is a pin, and a
+ * directory is a folder someone maintains by hand.
+ */
+export function followsReleases(registered: Registered): boolean {
+  const { ref } = splitSource(registered.location);
+  return (
+    registered.git &&
+    (followsMain(ref) || (CHANNELS as readonly string[]).includes(ref ?? ""))
+  );
+}
+
 /** Whether a registered ref follows `main`: none, or `main` named outright. */
 export function followsMain(ref: string | undefined): boolean {
   return ref === undefined || ref === "main" || ref === "refs/heads/main";
@@ -285,26 +310,33 @@ function adviseChannel(harness: Harness, registered: Registered): void {
   );
 }
 
-export function registeredMarketplace(harness: Harness): Registered | null {
+export function registeredMarketplace(
+  harness: Harness,
+  program: string = harness,
+): Registered | null {
   return harness === "claude"
     ? claudeMarketplace(
-        json("claude", ["plugin", "marketplace", "list", "--json"]),
+        json(program, ["plugin", "marketplace", "list", "--json"]),
       )
     : codexMarketplace(
-        json("codex", ["plugin", "marketplace", "list", "--json"]),
+        json(program, ["plugin", "marketplace", "list", "--json"]),
         codexConfig(),
       );
 }
 
-export function installed(harness: Harness): Installed | null {
+export function installed(
+  harness: Harness,
+  program: string = harness,
+): Installed | null {
   return harness === "claude"
-    ? claudeUserInstall(json("claude", ["plugin", "list", "--json"]))
-    : codexInstall(json("codex", ["plugin", "list", "--json"]));
+    ? claudeUserInstall(json(program, ["plugin", "list", "--json"]))
+    : codexInstall(json(program, ["plugin", "list", "--json"]));
 }
 
 /** Installs or updates the plugin in `harness`; what was installed before. */
 function install(
   harness: Harness,
+  program: string,
   registered: Registered | null,
   source: string,
   explicit: boolean,
@@ -312,21 +344,17 @@ function install(
 ): Installed | null {
   if (harness === "claude") {
     if (registered === null) {
-      run(
-        "claude",
-        ["plugin", "install", PLUGIN, "--marketplace", source],
-        say,
-      );
+      run(program, ["plugin", "install", PLUGIN, "--marketplace", source], say);
       return null;
     }
     refuseOtherSource(harness, registered, source, explicit);
-    run("claude", ["plugin", "marketplace", "update", MARKETPLACE], say);
-    const current = installed(harness);
+    run(program, ["plugin", "marketplace", "update", MARKETPLACE], say);
+    const current = installed(harness, program);
     if (current === null)
-      run("claude", ["plugin", "install", PLUGIN_ID, "--scope", "user"], say);
+      run(program, ["plugin", "install", PLUGIN_ID, "--scope", "user"], say);
     // An unscoped update picks the most specific installed scope; this
     // command manages the user-scope install only.
-    else run("claude", ["plugin", "update", PLUGIN_ID, "--scope", "user"], say);
+    else run(program, ["plugin", "update", PLUGIN_ID, "--scope", "user"], say);
     adviseChannel(harness, registered);
     return current;
   }
@@ -334,7 +362,7 @@ function install(
     // Codex takes the ref as an option, not in the address.
     const { base, ref } = splitSource(source);
     run(
-      "codex",
+      program,
       ["plugin", "marketplace", "add", base, ...(ref ? ["--ref", ref] : [])],
       say,
     );
@@ -342,12 +370,12 @@ function install(
     refuseOtherSource(harness, registered, source, explicit);
     // Only Git marketplaces have a snapshot to refresh; a local path is live.
     if (registered.git)
-      run("codex", ["plugin", "marketplace", "upgrade", MARKETPLACE], say);
+      run(program, ["plugin", "marketplace", "upgrade", MARKETPLACE], say);
     adviseChannel(harness, registered);
   }
-  const current = installed(harness);
+  const current = installed(harness, program);
   // Adding again reinstalls the marketplace's current version.
-  run("codex", ["plugin", "add", PLUGIN_ID], say);
+  run(program, ["plugin", "add", PLUGIN_ID], say);
   return current;
 }
 
@@ -363,6 +391,13 @@ export interface HarnessRequest {
   explicit: boolean;
   defaulted: boolean;
   only: Harness | null;
+  /** The programs to run each harness by; a harness not named runs by its name on `PATH`. */
+  programs?: Programs;
+}
+
+/** The program that runs `harness` for `request`. */
+function programOf(harness: Harness, request: HarnessRequest): string {
+  return request.programs?.[harness] ?? harness;
 }
 
 /** The request for `--source`, `--channel` and `--claude`/`--codex` as given. */
@@ -426,14 +461,15 @@ export interface HarnessResult {
 function report(
   harness: Harness,
   say: Say,
+  program: string = harness,
 ): { state: Installed | null; follows?: string; line: string } {
-  const state = installed(harness);
+  const state = installed(harness, program);
   if (state === null || !state.enabled) {
     const line = `${harness}: ${PLUGIN_ID} ${state === null ? "is not installed for this user" : "is installed but disabled"}`;
     say(line);
     return { state, line };
   }
-  const registered = registeredMarketplace(harness);
+  const registered = registeredMarketplace(harness, program);
   const follows = registered ? describeSource(registered) : undefined;
   const line = `${harness}: ${PLUGIN_ID} ${state.version} enabled${follows ? `, following ${follows}` : ""}`;
   say(line);
@@ -493,7 +529,7 @@ function absent(
   request: HarnessRequest,
   say: Say,
 ): HarnessResult | null {
-  if (available(harness)) return null;
+  if (available(harness, programOf(harness, request))) return null;
   if (request.only !== null)
     throw new HarnessError(`${harness} is not on PATH`);
   say(`${harness}: not on PATH, skipped`);
@@ -518,15 +554,17 @@ export function upgradeHarnesses(
   return eachHarness(request, (harness) => {
     const skipped = absent(harness, request, say);
     if (skipped !== null) return skipped;
-    const registered = registeredMarketplace(harness);
+    const program = programOf(harness, request);
+    const registered = registeredMarketplace(harness, program);
     const before = install(
       harness,
+      program,
       registered,
       registered === null ? freshSource() : request.source,
       request.explicit,
       say,
     );
-    const after = report(harness, say);
+    const after = report(harness, say, program);
     return outcome(harness, before, after);
   });
 }
@@ -561,7 +599,11 @@ export function checkHarnesses(
   return eachHarness(request, (harness) => {
     const skipped = absent(harness, request, say);
     if (skipped !== null) return skipped;
-    const { state, follows, line } = report(harness, say);
+    const { state, follows, line } = report(
+      harness,
+      say,
+      programOf(harness, request),
+    );
     return {
       harness,
       outcome: state?.enabled === true ? "present" : "missing",

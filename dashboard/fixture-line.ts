@@ -12,6 +12,7 @@ import type {
   LineSnapshot,
 } from "../plugin/dispatch/lib/dashboard-contract.ts";
 import { API, DOC, INF, iso, MOB, pad, prUrl, T, WEB } from "./fixture-rows.ts";
+import { recentTicks } from "./fixture-ticks.ts";
 
 const INTERVAL_MS = 5 * 60_000;
 const LONGEST_TICK_MS = 2 * 60_000;
@@ -316,6 +317,7 @@ export function line(o: {
     applyWithheld: null,
     intervalMs: INTERVAL_MS,
     longestTickMs: o.longestTickMs ?? LONGEST_TICK_MS,
+    ticks: recentTicks(tick, TICK_TOOK_MS),
     plugin: "0.127.1",
     accounts: accounts(sessions, o.walls),
     lastAccount: o.lastAccount ?? "work-a",
