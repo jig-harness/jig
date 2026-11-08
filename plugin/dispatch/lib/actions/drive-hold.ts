@@ -261,7 +261,7 @@ export function settleSilentTakeovers(
     return {
       ...pr,
       why: `${pr.why}; launch record ${earlier.record.id} already took it over on these ledger facts and ${endOf(earlier)}, leaving its ledger as it was: only a person settles it until its ledger moves`,
-      evidence: { ...pr.evidence, driverGone: false },
+      evidence: { ...pr.evidence, driverGone: false, settled: true },
     };
   });
 }

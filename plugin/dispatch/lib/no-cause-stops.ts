@@ -80,7 +80,7 @@ function spentRecovery(pr: DrivenPr, why: string): DrivenPr {
     return {
       ...pr,
       why: spent,
-      evidence: { ...pr.evidence, driverGone: false },
+      evidence: { ...pr.evidence, driverGone: false, settled: true },
     };
   const { stale: _spent, ...rest } = pr;
   return { ...rest, class: "needs-person", why: spent };

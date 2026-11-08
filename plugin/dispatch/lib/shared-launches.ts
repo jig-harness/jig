@@ -179,12 +179,11 @@ function silentHold(
       claim: latest,
       why: `${claimWords(latest)} acts on these same ledger facts and has not ended`,
     };
-  // A drive settled as silent (driverGone cleared) is a person's to hear of,
-  // whatever a refused takeover once said on these facts.
+  // A drive settlement marked for notification as silent is a person's to
+  // hear of, whatever a refused takeover once said on these facts. A driver
+  // merely not shown gone (another host's, or unproven) keeps that refusal.
   const refused =
-    pr.evidence.driverGone === true
-      ? refusedOn(pr, latest, "taken over")
-      : null;
+    pr.evidence.settled === true ? null : refusedOn(pr, latest, "taken over");
   if (refused !== null) return refused;
   const taken = takenOver(pr, theirs);
   if (taken !== null) return taken;
@@ -356,7 +355,7 @@ export function settleSharedTakeovers(
     return {
       ...pr,
       why: `${pr.why}; ${taken.why}`,
-      evidence: { ...pr.evidence, driverGone: false },
+      evidence: { ...pr.evidence, driverGone: false, settled: true },
     };
   });
 }

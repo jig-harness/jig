@@ -520,6 +520,25 @@ describe("another host's takeover of a driver no launch started", () => {
     },
   );
 
+  it("keeps a refused takeover's hold on a drive not shown gone but never settled", () => {
+    const base = claim(5, facts).says;
+    if (!base.ok) throw new Error("fixture");
+    const refused = takeover(facts, {
+      ok: true,
+      value: {
+        ...base.value,
+        end: { state: "ended", at: base.value.at, exit: 11, outcome: null },
+      },
+    });
+    const claims = new Map([[7, { ok: true as const, value: [refused] }]]);
+    const unproven = silent();
+    const pr = {
+      ...unproven,
+      evidence: { ...unproven.evidence, driverGone: false },
+    } as DrivenPr;
+    expect(foreignHold(pr, claims.get(7), "this-host").kind).toBe("refused");
+  });
+
   it("is not spent by one that never executed, or on other ledger facts", () => {
     const never = claim(5, facts).says;
     if (!never.ok) throw new Error("fixture");
