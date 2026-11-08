@@ -473,15 +473,18 @@ const baseBranchCache = new Map<string, string | null>();
  * remote is `repository.remote`, else `origin`), else
  * `gh repo view --json defaultBranchRef`. A derived answer is cached per
  * process and repository.
+ * `trustedOnly` skips `repository.base_branch`, which a pull request's own
+ * checkout can set: the answer is then the environment's, else derived.
  * `null` when none of them answers; callers fail closed on it.
  */
 export async function baseBranch(
   root: string,
   timeoutSec?: number,
+  trustedOnly = false,
 ): Promise<string | null> {
   const explicit =
     nonEmptyEnv("DRIVE_PR_BASE_BRANCH") ??
-    optionalString("repository", "base_branch");
+    (trustedOnly ? undefined : optionalString("repository", "base_branch"));
   if (explicit !== undefined) return explicit;
   const cached = baseBranchCache.get(root);
   if (cached !== undefined) return cached;

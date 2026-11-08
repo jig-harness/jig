@@ -16,7 +16,9 @@
  * A stacked layer's base is the layer below, whose policy no one has
  * reviewed yet: the integration branch's commit goes out as
  * `$DRIVE_PR_POLICY_BOUND`, and the layer below can only narrow what that
- * policy allows. It is unset when the base is the integration branch.
+ * policy allows. It is unset when the base is the integration branch. The
+ * integration branch is never read from the checkout's own
+ * `repository.base_branch`, which the pull request could set to its own base.
  */
 import {
   POLICY_BASE_VARIABLE,
@@ -129,7 +131,7 @@ async function integrationBound(
 ): Promise<{ commit: string } | { error: string } | null> {
   const remote = readRemoteName(root);
   if ("error" in remote) return remote;
-  const branch = await baseBranch(root, gitCallTimeoutSeconds());
+  const branch = await baseBranch(root, gitCallTimeoutSeconds(), true);
   if (branch === null)
     return {
       error:
