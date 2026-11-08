@@ -42,7 +42,7 @@ import {
   unreadableNote,
   withdrawAnnouncement,
 } from "./lib/announce.ts";
-import { announceReady, readyOrWithdraw } from "./lib/announce-ready.ts";
+import { laneHolds, readyOrWithdraw } from "./lib/announce-ready.ts";
 import { parsePrSnapshot } from "./lib/ci-hold.ts";
 import { ciHoldLabelSetting } from "./lib/overlay.ts";
 
@@ -1010,15 +1010,17 @@ ${marker}`;
     rc: number;
     failed: "state" | "tree" | "ci" | null;
   }> {
-    const liveRc = await checkLiveState();
-    if (liveRc !== 0) return { rc: liveRc, failed: "state" };
-    const lane = await announceReady(pr, head);
-    if (lane.rc !== 0 || lane.lane !== forge.lane)
-      return { rc: lane.rc === 0 ? 4 : lane.rc, failed: "state" };
-    const cleanRc = await checkWorktreeClean(head);
-    if (cleanRc !== 0) return { rc: cleanRc, failed: "tree" };
-    const ciRc = await confirmFinalCi();
-    return { rc: ciRc, failed: ciRc === 0 ? null : "ci" };
+    const checks = [
+      ["state", checkLiveState],
+      ["state", () => laneHolds(pr, head, forge.lane)],
+      ["tree", () => checkWorktreeClean(head)],
+      ["ci", () => confirmFinalCi()],
+    ] as const;
+    for (const [failed, check] of checks) {
+      const rc = await check();
+      if (rc !== 0) return { rc, failed };
+    }
+    return { rc: 0, failed: null };
   }
 
   if (dryRun) {

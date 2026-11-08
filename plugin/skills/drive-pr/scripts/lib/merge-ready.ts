@@ -253,76 +253,87 @@ function failingChecks(facts: ForgeFacts, rules: ReadyRules): string[] {
     .map((c) => c.name);
 }
 
-/** The Ready conditions as a checklist. */
-function checklist(
-  facts: MergeFacts,
-  seen: ReturnType<typeof witness>,
-  ciHeld: boolean,
-): ReadyCondition[] {
-  const own = OWN.has(facts.authorAssociation);
-  const state = facts.mergeQueue
-    ? "its base requires a merge queue"
-    : `merge state ${facts.mergeState}`;
-  return [
-    {
-      name: "converged",
-      met: facts.converged,
-      fact: facts.converged
-        ? "its drive stopped converged"
-        : "its drive has not converged",
-    },
-    {
-      name: "verified head",
-      met: facts.head === facts.verifiedSha,
-      fact: `head ${facts.head.slice(0, 7)}, verified ${facts.verifiedSha.slice(0, 7) || "none"}`,
-    },
-    { name: "review witnessed", met: seen.met, fact: seen.fact },
-    {
-      name: "mergeable",
-      met:
-        facts.mergeable === "UNKNOWN" ? null : facts.mergeable === "MERGEABLE",
-      fact: `mergeable ${facts.mergeable}`,
-    },
-    {
-      name: "not a draft",
-      met: !facts.draft,
-      fact: facts.draft ? "a draft" : "ready for review",
-    },
-    {
-      name: "no unresolved thread",
-      met: facts.unresolvedThreads === 0,
-      fact: `${facts.unresolvedThreads} unresolved`,
-    },
-    {
-      name: "protection lets it merge",
-      met:
-        facts.mergeQueue || MERGES_NOW.has(facts.mergeState)
-          ? true
-          : facts.mergeState === "UNKNOWN"
-            ? null
-            : false,
-      fact: state,
-    },
-    {
-      name: "own author or approved",
-      met: own || approvedHere(facts),
-      fact: own
-        ? `author is ${facts.authorAssociation}`
-        : approvedHere(facts)
-          ? "outside author, approved by a person"
-          : `outside author (${facts.authorAssociation})`,
-    },
-    {
-      name: "not held",
-      met: !facts.held && !ciHeld,
-      fact: facts.held
-        ? "a person's hold label"
-        : ciHeld
-          ? "the CI hold label"
-          : "no hold label",
-    },
-  ];
+/** What every row and condition reads of one pull request. */
+interface Read {
+  facts: MergeFacts;
+  seen: ReturnType<typeof witness>;
+  ciHeld: boolean;
+  failing: string[];
+  /** The forge's merge state, `null` where a merge queue decides instead. */
+  state: string | null;
+  own: boolean;
+  approved: boolean;
 }
+
+/** Whether branch protection lets it merge now: `null` while the forge is computing. */
+function protection(r: Read): boolean | null {
+  if (r.state === null || MERGES_NOW.has(r.state)) return true;
+  return r.state === "UNKNOWN" ? null : false;
+}
+
+/** Who wrote it, and who approved it. */
+function authorFact(r: Read): string {
+  if (r.own) return `author is ${r.facts.authorAssociation}`;
+  return r.approved
+    ? "outside author, approved by a person"
+    : `outside author (${r.facts.authorAssociation})`;
+}
+
+/** Which hold label stands, if any. */
+function holdFact(r: Read): string {
+  if (r.facts.held) return "a person's hold label";
+  return r.ciHeld ? "the CI hold label" : "no hold label";
+}
+
+/** The Ready conditions, each a function of the read, in the design's order. */
+const CONDITIONS: Array<(r: Read) => ReadyCondition> = [
+  ({ facts }) => ({
+    name: "converged",
+    met: facts.converged,
+    fact: facts.converged
+      ? "its drive stopped converged"
+      : "its drive has not converged",
+  }),
+  ({ facts }) => ({
+    name: "verified head",
+    met: facts.head === facts.verifiedSha,
+    fact: `head ${facts.head.slice(0, 7)}, verified ${facts.verifiedSha.slice(0, 7) || "none"}`,
+  }),
+  ({ seen }) => ({ name: "review witnessed", met: seen.met, fact: seen.fact }),
+  ({ facts }) => ({
+    name: "mergeable",
+    met: facts.mergeable === "UNKNOWN" ? null : facts.mergeable === "MERGEABLE",
+    fact: `mergeable ${facts.mergeable}`,
+  }),
+  ({ facts }) => ({
+    name: "not a draft",
+    met: !facts.draft,
+    fact: facts.draft ? "a draft" : "ready for review",
+  }),
+  ({ facts }) => ({
+    name: "no unresolved thread",
+    met: facts.unresolvedThreads === 0,
+    fact: `${facts.unresolvedThreads} unresolved`,
+  }),
+  (r) => ({
+    name: "protection lets it merge",
+    met: protection(r),
+    fact:
+      r.state === null
+        ? "its base requires a merge queue"
+        : `merge state ${r.state}`,
+  }),
+  (r) => ({
+    name: "own author or approved",
+    met: r.own || r.approved,
+    fact: authorFact(r),
+  }),
+  (r) => ({
+    name: "not held",
+    met: !r.facts.held && !r.ciHeld,
+    fact: holdFact(r),
+  }),
+];
 
 /** The strict forms a merge command's values must pass. */
 const FORMS = {
@@ -355,176 +366,226 @@ export function mergeCommand(facts: MergeFacts): {
     : { command: `${base} --${method}`, withheld: null };
 }
 
-/** An answer with the parts every placement shares. */
-function answer(
-  place: Placement,
-  waitsOn: WaitsOn,
-  says: string,
-  shared: Pick<Readiness, "conditions" | "failing" | "requested">,
-  lane: Lane | null = null,
-): Readiness {
+const person = (act: Act): WaitsOn => ({ kind: "person", act });
+const waiting = (what: string): WaitsOn => ({ kind: "waiting", for: what });
+
+/** A merge command, or which value withheld it. */
+type Command = { command: string | null; withheld: string | null };
+
+/** One row's placement: where, what settles it, what the card says, its lane in Ready to merge, and for merge now its command. */
+type Row = [Placement, WaitsOn, string, Lane?, Command?];
+
+/** Whether an approval is still owed: by the forge, or because the witness or the author asks for one. */
+function approvalOwed(r: Read): { byForge: boolean; byRule: boolean } {
+  const required = r.facts.reviewDecision === "REVIEW_REQUIRED";
+  return {
+    // A merge queue's base is placed by the queue, but a required review it reports is still owed.
+    byForge: required && (r.state === "BLOCKED" || r.facts.mergeQueue),
+    byRule: !r.approved && (!r.seen.byApp || !r.own),
+  };
+}
+
+const UNREAD_RULES =
+  "the board has not read the repository's other protection rules (signatures, deployments), and the forge may ask for more once an approval is given";
+
+/** The rows before any person's act: what the drive and the forge must settle first. */
+const SETTLED_FIRST: Array<(r: Read) => Row | null> = [
+  ({ facts }) =>
+    facts.converged
+      ? null
+      : ["stay", waiting("its drive"), "its drive has not converged"],
+  ({ facts }) =>
+    facts.partial === null
+      ? null
+      : [
+          "stay",
+          waiting("the next read"),
+          `not read in full: ${facts.partial}; open the pull request`,
+        ],
+  ({ facts }) =>
+    facts.head === facts.verifiedSha
+      ? null
+      : [
+          "coming",
+          waiting("a re-drive"),
+          "its head moved past the head the drive verified, so the dispatcher re-drives it",
+        ],
+  ({ facts }) =>
+    facts.mergeable !== "CONFLICTING"
+      ? null
+      : [
+          "coming",
+          waiting("a re-drive"),
+          "it conflicts with its base, so the dispatcher re-drives it",
+        ],
+];
+
+/** The rows that wait on a person's act other than an approval, then on what is still running. */
+const BLOCKERS: Array<(r: Read) => Row | null> = [
+  ({ facts }) =>
+    facts.draft
+      ? [
+          "needs-you",
+          person("mark-ready"),
+          "converged as a draft: marking it ready summons the reviewers that skip drafts",
+        ]
+      : null,
+  ({ ciHeld }) =>
+    ciHeld
+      ? [
+          "needs-you",
+          person("remove-label"),
+          "held by the CI hold label, never failing: the drive removes it as it converges, so it was added again after; removing it runs the checks again on the same head",
+        ]
+      : null,
+  ({ facts }) =>
+    facts.held
+      ? [
+          "needs-you",
+          person("remove-label"),
+          "a person's hold label stands the dispatcher down from it",
+        ]
+      : null,
+  ({ facts }) =>
+    facts.unresolvedThreads > 0
+      ? [
+          "needs-you",
+          person("answer"),
+          `${facts.unresolvedThreads} review thread(s) opened after the drive converged: answer them, or re-arm the drive`,
+        ]
+      : null,
+  ({ seen }) =>
+    seen.byApp && !seen.met
+      ? [
+          "needs-you",
+          person("re-arm"),
+          `the review the ledger reports is not witnessed on this head: ${seen.fact}`,
+        ]
+      : null,
+  ({ facts }) => {
+    if (facts.reviewDecision !== "CHANGES_REQUESTED") return null;
+    const who = facts.reviews
+      .filter((r) => r.state === "CHANGES_REQUESTED")
+      .map((r) => r.author);
+    const by = who.length === 0 ? "" : ` by ${who.join(", ")}`;
+    return [
+      "needs-you",
+      person("re-arm"),
+      `changes were requested${by}: that reviewer re-reviews, or the drive is re-armed to address them`,
+    ];
+  },
+  ({ failing, state }) =>
+    failing.length > 0 &&
+    (state === null || state === "BLOCKED" || state === "UNSTABLE")
+      ? [
+          "needs-you",
+          person("re-run-check"),
+          "a check failed after the drive converged: re-run it, or re-arm the drive",
+        ]
+      : null,
+  ({ facts, state }) =>
+    (state === "BLOCKED" || state === "UNSTABLE") &&
+    facts.checks.some((c) => c.state === "pending")
+      ? ["stay", waiting("the checks running"), "the checks are still running"]
+      : null,
+  ({ facts, state }) =>
+    state === "UNKNOWN" || facts.mergeable === "UNKNOWN"
+      ? [
+          "stay",
+          waiting("the forge"),
+          "not read: the forge is still computing whether it can merge",
+        ]
+      : null,
+];
+
+/** The lanes of Ready to merge before merge now, and the merge the forge blocks for a reason the read cannot tell. */
+const LANE_ROWS: Array<(r: Read) => Row | null> = [
+  (r) => {
+    if (r.state !== "BEHIND") return null;
+    const owed = approvalOwed(r);
+    const still =
+      owed.byForge || owed.byRule ? "; an approval is still owed" : "";
+    return [
+      "ready",
+      person("update-branch"),
+      `the repository requires an up-to-date branch: updating moves its head, which costs a re-drive (a review round and a CI run)${still}`,
+      "update-next",
+    ];
+  },
+  (r) => {
+    const owed = approvalOwed(r);
+    if (!owed.byForge && !(owed.byRule && protection(r) === true)) return null;
+    const requested = r.facts.requested;
+    return requested.length > 0
+      ? [
+          "ready",
+          person("approve"),
+          `waits on an approval; requested from ${requested.join(", ")}; ${UNREAD_RULES}`,
+          "approve-first",
+        ]
+      : [
+          "ready",
+          person("request-review"),
+          `needs a review and approval from someone other than its author, and nobody is asked; ${UNREAD_RULES}`,
+          "approve-first",
+        ];
+  },
+  (r) =>
+    protection(r) === true
+      ? null
+      : [
+          "needs-you",
+          person("open-pr"),
+          `the forge blocks the merge (${r.facts.mergeState}) on a rule the board cannot tell, such as signed commits or a deployment: open the pull request`,
+        ],
+];
+
+/** The placement table's rows, first match: every blocker before the approval rows. */
+const ROWS = [...SETTLED_FIRST, ...BLOCKERS, ...LANE_ROWS];
+
+const NO_COMMAND: Command = { command: null, withheld: null };
+
+/** Merge now: every row passed. */
+function mergeNow(
+  facts: MergeFacts,
+): Row & { 4: ReturnType<typeof mergeCommand> } {
+  const built = mergeCommand(facts);
+  const says =
+    built.command === null
+      ? `converged, witnessed and mergeable; the merge command is withheld: ${built.withheld} does not pass its form`
+      : "converged, witnessed and mergeable at the verified head";
+  return ["ready", person("merge"), says, "merge-now", built];
+}
+
+/** What every row and condition reads, worked out once. */
+function readOf(facts: MergeFacts, rules: ReadyRules): Read {
+  return {
+    facts,
+    seen: witness(facts, rules),
+    ciHeld:
+      rules.ciHoldLabel !== null && facts.labels.includes(rules.ciHoldLabel),
+    failing: failingChecks(facts, rules),
+    state: facts.mergeQueue ? null : facts.mergeState,
+    own: OWN.has(facts.authorAssociation),
+    approved: approvedHere(facts),
+  };
+}
+
+/** Place one converged pull request (design/dispatch-board.md § Ready, exactly). */
+export function readiness(facts: MergeFacts, rules: ReadyRules): Readiness {
+  const r = readOf(facts, rules);
+  const matched = ROWS.map((row) => row(r)).find((row) => row !== null);
+  const [place, waitsOn, says, lane = null, built = NO_COMMAND] =
+    matched ?? mergeNow(facts);
   return {
     place,
     lane,
     says,
     waitsOn,
-    command: null,
-    withheld: null,
-    ...shared,
-  };
-}
-
-const person = (act: Act): WaitsOn => ({ kind: "person", act });
-const waiting = (what: string): WaitsOn => ({ kind: "waiting", for: what });
-
-/** Place one converged pull request (design/dispatch-board.md § Ready, exactly). */
-export function readiness(facts: MergeFacts, rules: ReadyRules): Readiness {
-  const ciHeld =
-    rules.ciHoldLabel !== null && facts.labels.includes(rules.ciHoldLabel);
-  const seen = witness(facts, rules);
-  const failing = failingChecks(facts, rules);
-  const shared = {
-    conditions: checklist(facts, seen, ciHeld),
-    failing,
-    requested: facts.requested,
-  };
-  const at = (
-    place: Placement,
-    w: WaitsOn,
-    says: string,
-    lane: Lane | null = null,
-  ) => answer(place, w, says, shared, lane);
-  if (!facts.converged)
-    return at("stay", waiting("its drive"), "its drive has not converged");
-  if (facts.partial !== null)
-    return at(
-      "stay",
-      waiting("the next read"),
-      `not read in full: ${facts.partial}; open the pull request`,
-    );
-  if (facts.head !== facts.verifiedSha)
-    return at(
-      "coming",
-      waiting("a re-drive"),
-      "its head moved past the head the drive verified, so the dispatcher re-drives it",
-    );
-  if (facts.mergeable === "CONFLICTING")
-    return at(
-      "coming",
-      waiting("a re-drive"),
-      "it conflicts with its base, so the dispatcher re-drives it",
-    );
-  if (facts.draft)
-    return at(
-      "needs-you",
-      person("mark-ready"),
-      "converged as a draft: marking it ready summons the reviewers that skip drafts",
-    );
-  if (ciHeld)
-    return at(
-      "needs-you",
-      person("remove-label"),
-      "held by the CI hold label, never failing: the drive removes it as it converges, so it was added again after; removing it runs the checks again on the same head",
-    );
-  if (facts.held)
-    return at(
-      "needs-you",
-      person("remove-label"),
-      "a person's hold label stands the dispatcher down from it",
-    );
-  if (facts.unresolvedThreads > 0)
-    return at(
-      "needs-you",
-      person("answer"),
-      `${facts.unresolvedThreads} review thread(s) opened after the drive converged: answer them, or re-arm the drive`,
-    );
-  if (seen.byApp && !seen.met)
-    return at(
-      "needs-you",
-      person("re-arm"),
-      `the review the ledger reports is not witnessed on this head: ${seen.fact}`,
-    );
-  if (facts.reviewDecision === "CHANGES_REQUESTED") {
-    const who = facts.reviews
-      .filter((r) => r.state === "CHANGES_REQUESTED")
-      .map((r) => r.author);
-    return at(
-      "needs-you",
-      person("re-arm"),
-      `changes were requested${who.length === 0 ? "" : ` by ${who.join(", ")}`}: that reviewer re-reviews, or the drive is re-armed to address them`,
-    );
-  }
-  const state = facts.mergeQueue ? null : facts.mergeState;
-  if (
-    failing.length > 0 &&
-    (state === null || state === "BLOCKED" || state === "UNSTABLE")
-  )
-    return at(
-      "needs-you",
-      person("re-run-check"),
-      `a check failed after the drive converged: re-run it, or re-arm the drive`,
-    );
-  const pending = facts.checks.some((c) => c.state === "pending");
-  if ((state === "BLOCKED" || state === "UNSTABLE") && pending)
-    return at(
-      "stay",
-      waiting("the checks running"),
-      "the checks are still running",
-    );
-  if (state === "UNKNOWN" || facts.mergeable === "UNKNOWN")
-    return at(
-      "stay",
-      waiting("the forge"),
-      "not read: the forge is still computing whether it can merge",
-    );
-  // A merge queue's base is placed by the queue, but a required review it reports is still owed.
-  const approvalByForge =
-    facts.reviewDecision === "REVIEW_REQUIRED" &&
-    (state === "BLOCKED" || facts.mergeQueue);
-  const own = OWN.has(facts.authorAssociation);
-  const approvalOwed = !approvedHere(facts) && (!seen.byApp || !own);
-  if (state === "BEHIND")
-    return at(
-      "ready",
-      person("update-branch"),
-      `the repository requires an up-to-date branch: updating moves its head, which costs a re-drive (a review round and a CI run)${approvalByForge || approvalOwed ? "; an approval is still owed" : ""}`,
-      "update-next",
-    );
-  const protectionLets = state === null || MERGES_NOW.has(state);
-  if (approvalByForge || (approvalOwed && protectionLets)) {
-    const unread =
-      "the board has not read the repository's other protection rules (signatures, deployments), and the forge may ask for more once an approval is given";
-    return facts.requested.length > 0
-      ? at(
-          "ready",
-          person("approve"),
-          `waits on an approval; requested from ${facts.requested.join(", ")}; ${unread}`,
-          "approve-first",
-        )
-      : at(
-          "ready",
-          person("request-review"),
-          `needs a review and approval from someone other than its author, and nobody is asked; ${unread}`,
-          "approve-first",
-        );
-  }
-  if (!protectionLets)
-    return at(
-      "needs-you",
-      person("open-pr"),
-      `the forge blocks the merge (${facts.mergeState}) on a rule the board cannot tell, such as signed commits or a deployment: open the pull request`,
-    );
-  const built = mergeCommand(facts);
-  return {
-    ...at(
-      "ready",
-      person("merge"),
-      built.command === null
-        ? `converged, witnessed and mergeable; the merge command is withheld: ${built.withheld} does not pass its form`
-        : "converged, witnessed and mergeable at the verified head",
-      "merge-now",
-    ),
     ...built,
+    conditions: CONDITIONS.map((condition) => condition(r)),
+    failing: r.failing,
+    requested: facts.requested,
   };
 }
 

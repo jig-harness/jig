@@ -11,6 +11,7 @@
 import { readMergeFacts } from "../../skills/drive-pr/scripts/lib/merge-facts.ts";
 import {
   type Act,
+  type ForgeFacts,
   readiness,
   type ReadyRules,
 } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
@@ -18,7 +19,7 @@ import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { rulesOf } from "../../dispatch/lib/board.ts";
 import { parseConfigText } from "../../shared/config-layers.ts";
-import { attempt } from "../../shared/outcome.ts";
+import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type { PersonAct, WaitsOn } from "./answer.ts";
 import type { PullDoc } from "./forge.ts";
 import { within } from "./reading.ts";
@@ -54,6 +55,50 @@ function rulesFrom(
   return read.ok ? read.value : null;
 }
 
+/** The facts and rules of PR `number`, read in one query within the answer's deadline, or why they did not read; the read is noted among the answer's sources. */
+async function readFor(
+  ctx: AskContext,
+  number: number,
+): Promise<Outcome<{ facts: ForgeFacts; rules: ReadyRules }, "unreadable">> {
+  ctx.reading.forgeCall();
+  const bounded = await within(ctx.reading.sourceSec(), () =>
+    readMergeFacts(ctx.address.repo, [number], ctx.reading.sourceSec()),
+  );
+  const read =
+    bounded?.value ??
+    failed("unreadable", "the forge did not give them in time");
+  const facts = read.ok ? read.value.pulls.get(number) : undefined;
+  const rules = read.ok ? rulesFrom(read.value.config, ctx.address.repo) : null;
+  const found = facts !== undefined && rules !== null;
+  const why = whyUnread(read, facts !== undefined);
+  ctx.reading.note({
+    record: "merge facts",
+    read: found,
+    ...(found ? {} : { detail: why }),
+  });
+  return found ? ok({ facts, rules }) : failed("unreadable", why);
+}
+
+/** Why the facts or rules did not read. */
+function whyUnread(
+  read: Outcome<unknown, "unreadable">,
+  given: boolean,
+): string {
+  if (!read.ok) return read.failure.reason;
+  return given
+    ? "the repository's review rules on its default branch did not read"
+    : "the forge did not give this pull request";
+}
+
+/** Whether the ledger stopped converged on an open pull request. */
+function convergedOpen(ledger: Ledger | null, doc: PullDoc): ledger is Ledger {
+  return (
+    ledger?.driver.state === "stopped" &&
+    ledger.driver.exit === DRIVE_EXIT.CONVERGED &&
+    doc.state === "OPEN"
+  );
+}
+
 /**
  * The converged drive's wait from the predicate; for a drive that has not
  * converged, which the ledger's class answers, a merge it never reaches.
@@ -63,56 +108,25 @@ export async function convergedWait(
   ledger: Ledger | null,
   doc: PullDoc,
 ): Promise<WaitsOn> {
-  const converged =
-    ledger?.driver.state === "stopped" &&
-    ledger.driver.exit === DRIVE_EXIT.CONVERGED;
-  if (ledger === null || !converged || doc.state !== "OPEN")
+  if (!convergedOpen(ledger, doc))
     return { person: "merge", why: "its drive has not converged" };
-  ctx.reading.forgeCall();
-  const bounded = await within(ctx.reading.sourceSec(), () =>
-    readMergeFacts(ctx.address.repo, [doc.number], ctx.reading.sourceSec()),
-  );
-  const read = bounded === null ? null : bounded.value;
-  const facts = read?.ok ? read.value.pulls.get(doc.number) : undefined;
-  ctx.reading.note({
-    record: "merge facts",
-    read: facts !== undefined,
-    ...(facts === undefined
-      ? {
-          detail:
-            read === null
-              ? "the forge did not give them in time"
-              : read.ok
-                ? "the forge did not give this pull request"
-                : read.failure.reason,
-        }
-      : {}),
-  });
-  if (facts === undefined)
-    return { waiting: "the forge's merge facts did not read" };
-  const rules = rulesFrom(
-    read?.ok ? read.value.config : undefined,
-    ctx.address.repo,
-  );
-  if (rules === null)
-    return {
-      waiting:
-        "the repository's review rules on its default branch did not read, so whether its review is witnessed is not known",
-    };
+  const read = await readFor(ctx, doc.number);
+  if (!read.ok)
+    return { waiting: `the merge facts did not read: ${read.failure.reason}` };
+  const prefix = ctx.labelPrefix;
   const answer = readiness(
     {
-      ...facts,
+      ...read.value.facts,
       slug: ctx.address.repo,
       converged: true,
       verifiedSha: ledger.verifiedSha,
-      held:
-        ctx.labelPrefix !== null &&
-        doc.labels.includes(`${ctx.labelPrefix}hold`),
+      held: prefix !== null && doc.labels.includes(`${prefix}hold`),
     },
-    rules,
+    read.value.rules,
   );
   const lane = answer.lane === null ? "" : `${answer.lane}: `;
-  const why = `${lane}${answer.says}${answer.command === null ? "" : `; ${answer.command}`}`;
+  const command = answer.command === null ? "" : `; ${answer.command}`;
+  const why = `${lane}${answer.says}${command}`;
   return answer.waitsOn.kind === "waiting"
     ? { waiting: why }
     : { person: PERSON[answer.waitsOn.act], why };

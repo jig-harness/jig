@@ -144,33 +144,10 @@ export function parsePull(
   const commit = nodes(at(node, "commits"))[0];
   const contexts = at(commit, "commit", "statusCheckRollup", "contexts");
   const threads = at(node, "reviewThreads");
-  const parts: Array<[string, unknown]> = [
-    ["labels", at(node, "labels")],
-    ["review threads", threads],
-    ["review requests", at(node, "reviewRequests")],
-    ["latest reviews", at(node, "latestReviews")],
-    ["checks", contexts],
-  ];
-  const long = parts.filter(([, c]) => more(c)).map(([name]) => name);
-  // The checks belong to the head only when the commit they were read on is it.
-  const checked = str(at(commit, "commit", "oid"));
-  const why = [
-    ...(long.length === 0
-      ? []
-      : [`more ${long.join(", ")} than one read holds`]),
-    ...(checked !== "" && checked !== head
-      ? ["its checks were read on another commit"]
-      : []),
-  ];
   return {
     number: node.number,
     head,
-    draft: node.isDraft === true,
-    mergeable: str(node.mergeable) || "UNKNOWN",
-    mergeState: str(node.mergeStateStatus) || "UNKNOWN",
-    mergeQueue: node.isMergeQueueEnabled === true,
-    reviewDecision: str(node.reviewDecision) || null,
-    authorAssociation: str(node.authorAssociation),
+    ...states(node),
     labels: nodes(at(node, "labels"))
       .map((l) => str(at(l, "name")))
       .filter((l) => l !== ""),
@@ -187,8 +164,54 @@ export function parsePull(
       .map(requestOf)
       .filter((r) => r !== ""),
     methods,
-    partial: why.length === 0 ? null : why.join("; "),
+    partial: partialOf(node, head, commit, contexts),
   };
+}
+
+/** A pull request's states, an absent one read as not known. */
+function states(
+  node: Record<string, unknown>,
+): Pick<
+  ForgeFacts,
+  | "draft"
+  | "mergeable"
+  | "mergeState"
+  | "mergeQueue"
+  | "reviewDecision"
+  | "authorAssociation"
+> {
+  return {
+    draft: node.isDraft === true,
+    mergeable: str(node.mergeable) || "UNKNOWN",
+    mergeState: str(node.mergeStateStatus) || "UNKNOWN",
+    mergeQueue: node.isMergeQueueEnabled === true,
+    reviewDecision: str(node.reviewDecision) || null,
+    authorAssociation: str(node.authorAssociation),
+  };
+}
+
+/** Why a pull request did not read whole: a connection longer than one page, or checks of another commit; `null` when it did. */
+function partialOf(
+  node: Record<string, unknown>,
+  head: string,
+  commit: unknown,
+  contexts: unknown,
+): string | null {
+  const parts: Array<[string, unknown]> = [
+    ["labels", at(node, "labels")],
+    ["review threads", at(node, "reviewThreads")],
+    ["review requests", at(node, "reviewRequests")],
+    ["latest reviews", at(node, "latestReviews")],
+    ["checks", contexts],
+  ];
+  const long = parts.filter(([, c]) => more(c)).map(([name]) => name);
+  const why =
+    long.length === 0 ? [] : [`more ${long.join(", ")} than one read holds`];
+  // The checks belong to the head only when the commit they were read on is it.
+  const checked = str(at(commit, "commit", "oid"));
+  if (checked !== "" && checked !== head)
+    why.push("its checks were read on another commit");
+  return why.length === 0 ? null : why.join("; ");
 }
 
 /** What one query read: each pull request's facts, and what the forge charged. */
@@ -236,6 +259,52 @@ export function parseAnswer(
   };
 }
 
+/** One query of `chunk`, or why it did not read. */
+async function queryOnce(
+  slug: string | null,
+  chunk: readonly number[],
+  timeoutSec: number,
+): Promise<Outcome<FactsRead, "unreadable">> {
+  const [owner = "", name = ""] =
+    slug === null ? ["{owner}", "{repo}"] : slug.split("/");
+  // `-F` fills the forge client's `{owner}` and `{repo}` placeholders; `-f` passes a name as it is.
+  const flag = slug === null ? "-F" : "-f";
+  const r = await ghCall(
+    [
+      "api",
+      "graphql",
+      "-f",
+      `query=${factsQuery(chunk)}`,
+      flag,
+      `owner=${owner}`,
+      flag,
+      `name=${name}`,
+    ],
+    { stderr: "pipe", env: ghRepoEnv(), timeoutSec },
+  );
+  if (r.code !== 0) {
+    const tail = r.stderr.trim().split("\n").at(-1) ?? "";
+    return failed(
+      "unreadable",
+      `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
+    );
+  }
+  try {
+    return ok(parseAnswer(JSON.parse(r.stdout), chunk));
+  } catch (error) {
+    return failed("unreadable", "the board query's answer is not JSON", error);
+  }
+}
+
+/** `part` added into `read`. */
+function addPart(read: FactsRead, part: FactsRead): void {
+  for (const [n, f] of part.pulls) read.pulls.set(n, f);
+  read.cost += part.cost;
+  read.remaining = part.remaining ?? read.remaining;
+  read.limit = part.limit ?? read.limit;
+  if (part.config !== undefined) read.config = part.config;
+}
+
 /**
  * The facts of `numbers` in `slug`, `FACTS_PAGE` to a query, each under
  * `timeoutSec`, or why a query did not read (ADR-0012). With `slug`
@@ -247,8 +316,6 @@ export async function readMergeFacts(
   numbers: readonly number[],
   timeoutSec: number,
 ): Promise<Outcome<FactsRead, "unreadable">> {
-  const [owner = "", name = ""] =
-    slug === null ? ["{owner}", "{repo}"] : slug.split("/");
   if (numbers.some((n) => !Number.isSafeInteger(n) || n <= 0))
     throw new Defect("a pull request number is not a whole number");
   const read: FactsRead = {
@@ -258,44 +325,13 @@ export async function readMergeFacts(
     limit: null,
   };
   for (let i = 0; i < numbers.length; i += FACTS_PAGE) {
-    const chunk = numbers.slice(i, i + FACTS_PAGE);
-    const r = await ghCall(
-      [
-        "api",
-        "graphql",
-        "-f",
-        `query=${factsQuery(chunk)}`,
-        // `-F` fills the forge client's `{owner}` and `{repo}` placeholders; `-f` passes a name as it is.
-        slug === null ? "-F" : "-f",
-        `owner=${owner}`,
-        slug === null ? "-F" : "-f",
-        `name=${name}`,
-      ],
-      { stderr: "pipe", env: ghRepoEnv(), timeoutSec },
+    const part = await queryOnce(
+      slug,
+      numbers.slice(i, i + FACTS_PAGE),
+      timeoutSec,
     );
-    if (r.code !== 0) {
-      const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-      return failed(
-        "unreadable",
-        `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
-      );
-    }
-    let answer: unknown;
-    try {
-      answer = JSON.parse(r.stdout);
-    } catch (error) {
-      return failed(
-        "unreadable",
-        "the board query's answer is not JSON",
-        error,
-      );
-    }
-    const part = parseAnswer(answer, chunk);
-    for (const [n, f] of part.pulls) read.pulls.set(n, f);
-    read.cost += part.cost;
-    read.remaining = part.remaining ?? read.remaining;
-    read.limit = part.limit ?? read.limit;
-    if (part.config !== undefined) read.config = part.config;
+    if (!part.ok) return part;
+    addPart(read, part.value);
   }
   return ok(read);
 }
