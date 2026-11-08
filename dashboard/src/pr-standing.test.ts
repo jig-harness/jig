@@ -98,6 +98,10 @@ test("queued work the dispatcher reported or refused is not called queued", () =
       .label;
   expect(label("never")).toBe("Refused, will not start");
   expect(label("reported")).toBe("Reported, not started");
+  const kind = (group: "reported" | "never") =>
+    prStanding(queueOnly(entry({ group })), "acme/widget", 7, null, clock).kind;
+  expect(kind("never")).toBe("refused");
+  expect(kind("reported")).toBe("reported");
 });
 
 test("a held queue entry says how long it has waited", () => {
@@ -108,4 +112,25 @@ test("a held queue entry says how long it has waited", () => {
   });
   const s = prStanding(queueOnly(q), "acme/widget", 7, null, clock);
   expect(s.facts.some((f) => f.startsWith("Waited "))).toBe(true);
+});
+
+test("a follow-up whose launch is not yet claimed is starting, not under way", () => {
+  const l = line("loud");
+  const session = l.sessions[0];
+  if (!session) throw new FixtureError("No session in fixture");
+  l.needs = [];
+  l.queue = [];
+  l.sessions = [
+    {
+      ...session,
+      stage: "followup",
+      launch: "pending",
+      stuck: null,
+      drifting: null,
+      waiting: null,
+    },
+  ];
+  if (session.pr === null) throw new FixtureError("Session without a PR");
+  const s = prStanding(l, session.repo, session.pr, null, clock);
+  expect(s.label).toBe("Follow-up starting");
 });

@@ -1,8 +1,11 @@
 /** Shared PR identity: direct navigation, current forge state and hover/focus context. */
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
+  Ban,
   CircleAlert,
+  CircleHelp,
   Clock as ClockIcon,
+  Flag,
   GitMerge,
   GitPullRequest,
   GitPullRequestArrow,
@@ -135,12 +138,14 @@ const KIND_ICONS: Record<StandingKind, LucideIcon> = {
   waiting: ClockIcon,
   "needs-person": CircleAlert,
   queued: ListOrdered,
+  reported: Flag,
+  refused: Ban,
   held: Pause,
   merged: GitMerge,
   closed: GitPullRequestClosed,
   draft: GitPullRequestDraft,
   open: GitPullRequest,
-  unknown: GitPullRequest,
+  unknown: CircleHelp,
 };
 
 function StandingBody({

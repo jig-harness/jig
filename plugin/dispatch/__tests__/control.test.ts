@@ -15,7 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
-import { parseListen } from "../lib/listen.ts";
+import { authorityAllowed, parseListen } from "../lib/listen.ts";
 import { exportLog } from "../lib/log-export.ts";
 import {
   endedRow,
@@ -270,6 +270,12 @@ describe("the dashboard's address", () => {
     expect(() => parseListen("8.8.8.8:80")).toThrow("outside the private");
     expect(() => parseListen("0.0.0.0")).toThrow("outside the private");
     expect(() => parseListen("host.example:80")).toThrow("names no IP address");
+  });
+
+  it("accepts a Host header naming a mapped loopback, in dots or in the hex a URL writes", () => {
+    expect(authorityAllowed("[::ffff:127.0.0.1]:8765", [])).toBe(true);
+    expect(authorityAllowed("[::ffff:7f00:1]:8765", [])).toBe(true);
+    expect(authorityAllowed("[::ffff:8.8.8.8]:8765", [])).toBe(false);
   });
 
   it("refuses a machine file whose dashboard.listen is public", () => {

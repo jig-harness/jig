@@ -22,6 +22,8 @@ export type StandingKind =
   | "waiting"
   | "needs-person"
   | "queued"
+  | "reported"
+  | "refused"
   | "held"
   | "merged"
   | "closed"
@@ -59,6 +61,8 @@ const KIND_TONE: Record<StandingKind, StandingTone> = {
   waiting: "wait",
   "needs-person": "needs",
   queued: "quiet",
+  reported: "quiet",
+  refused: "bad",
   held: "quiet",
   merged: "done",
   closed: "bad",
@@ -95,7 +99,10 @@ function sessionStanding(
   if (s.stage === "followup")
     return {
       kind: "following-up",
-      label: "Following up after the merge",
+      label:
+        kind === "pending"
+          ? "Follow-up starting"
+          : "Following up after the merge",
       ...followup,
     };
   return { kind: "driving", label };
@@ -170,6 +177,10 @@ function queuedStanding(
     };
   if (q.source === "held" || q.group === "held")
     return { kind: "held", label: "Held back", facts };
+  if (q.group === "reported")
+    return { kind: "reported", label: GROUP_LABEL.reported, facts };
+  if (q.group === "never")
+    return { kind: "refused", label: GROUP_LABEL.never, facts };
   return {
     kind: "queued",
     label: q.stale ? "Converged, then went stale" : GROUP_LABEL[q.group],

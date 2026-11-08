@@ -82,6 +82,9 @@ export function authorityAllowed(
   if (host === null) return false;
   if (host === "localhost" || host === "::1") return true;
   if (isIP(host) === 4) return host.startsWith("127.");
+  // A URL writes a mapped loopback in hex (`::ffff:7f00:1`); a listen value in dots.
+  if (/^::ffff:(127(\.\d+){3}|7f[0-9a-f]{2}:[0-9a-f]{1,4})$/.test(host))
+    return true;
   return fronts.includes(host);
 }
 
