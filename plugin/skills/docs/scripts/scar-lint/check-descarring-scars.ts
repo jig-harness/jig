@@ -184,7 +184,8 @@ export function scanScars(text: string): string[] {
       continue;
     }
     if (fence) continue;
-    if (isScar(maskedLine(index), previousBlank)) hits.push(`${index + 1}: ${raw}`);
+    if (isScar(maskedLine(index), previousBlank))
+      hits.push(`${index + 1}: ${raw}`);
     // A heading, setext underline or thematic break is a block of its own: the
     // line after it opens a paragraph.
     previousBlank =
