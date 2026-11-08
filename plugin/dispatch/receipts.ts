@@ -54,6 +54,7 @@ import {
 import type { LastRun } from "../runtime/component.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
+import type { FailureEntry } from "./lib/failures.ts";
 import type { ReflectionReport } from "./lib/reflection-route.ts";
 import { failureText } from "./lib/text.ts";
 import type { Defect, RepoReport } from "./lib/types.ts";
@@ -90,6 +91,13 @@ export interface TickReceipt {
   phasesMs?: Partial<Record<TickPhase, number>>;
   /** The defect that stopped the tick's closing steps; a receipt with one is not completed. */
   defect?: Defect;
+  /** The failure ledger after the tick (`lib/failures.ts`): the actions backing off, and the rows a person is told of; absent when it holds none. */
+  failures?: {
+    backingOff: FailureEntry[];
+    escalated: FailureEntry[];
+  };
+  /** Why the failure ledger's rows for the repositories and the tick were not written. */
+  failuresUnwritten?: string;
   /** The classes that recur, as the reflection route recorded them, left them pending or would record them; absent when it had nothing to do. */
   reflection?: ReflectionReport;
   /** Set on the receipt of a tick that found the tick lock held, naming the holder: it holds only the upgrade its launcher ran, and did nothing else. */

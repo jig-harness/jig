@@ -371,6 +371,12 @@ development and shipped as a version.
   that note, read back, carries the message's key line. While its cause
   stands, it is sent again after `dispatch.renotify_after` unless it is
   still unread; `0s` sends each cause once (`dispatch/lib/notices.ts`).
+  What fails in a row (a label write, a notice's delivery, a nudge, a
+  claim end or marker answer, a repository's turn, the tick) is counted in
+  the failure ledger (`dispatch/lib/failures.ts`): an action backs off
+  from its second failure in a row, and a row at `failures.notify_after`
+  failures is notified once, then on the same cadence; a success or the
+  action leaving the plan removes it.
 - **Reasoned.** A dispatched interactive session records how it ended with
   `jig dispatch result <record> <token> done|failed` (`dispatch/result.ts`).
   That answer is the session's own judgement; the script refuses another

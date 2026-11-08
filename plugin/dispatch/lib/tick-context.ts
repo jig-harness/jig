@@ -6,6 +6,9 @@
  * them again under the act lock, and builds the apply state from that read.
  */
 import type { ApplyState } from "./actions/drive.ts";
+import { actionBook, type ActionBook } from "./failures.ts";
+import { failureSettings } from "./machine-config.ts";
+import { stateRoot } from "../receipts.ts";
 import type { PendingRepository } from "./apply-order.ts";
 import type { ReadRecord } from "./launches.ts";
 import type { RepoLineInput } from "./line.ts";
@@ -49,6 +52,40 @@ export interface TickContext {
   actWaited?: boolean;
   /** What the tick reads once and shares between its repositories' observe phases. */
   reads: TickReads;
+  /** Each repository's failure ledger book, by `owner/name`, opened by its first action. */
+  books?: Map<string, ActionBook>;
+  /** The failure ledger's rows for the repositories and the tick were written: a defect after it counts nothing twice. */
+  failuresSettled?: boolean;
+}
+
+/**
+ * The failure ledger's book of a repository's actions (`failures.ts`), with
+ * `--apply` only; a write the ledger cannot make is reported as unplaced and
+ * stops nothing.
+ */
+export function bookOf(
+  context: TickContext,
+  slug: string,
+  report: RepoReport,
+): ActionBook | null {
+  const apply = context.apply;
+  if (apply === null) return null;
+  context.books ??= new Map();
+  const known = context.books.get(slug);
+  if (known !== undefined) return known;
+  const book = actionBook(
+    slug,
+    failureSettings(apply.machine),
+    (reason) =>
+      report.unplaced.push({
+        target: "the failure ledger",
+        record: "runtime",
+        reason,
+      }),
+    apply.root ?? stateRoot(),
+  );
+  context.books.set(slug, book);
+  return book;
 }
 
 /** This machine's launch records, the ones this tick writes included. */

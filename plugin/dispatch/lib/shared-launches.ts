@@ -19,7 +19,8 @@
  *   so another host keeps the request reserved until then; and by that host's
  *   next tick with `--apply` for every claim whose launch record ended and
  *   still has none (`settleOwnClaims`), the backstop for a wrapper that died
- *   before its write and a forge that refused it. A claim whose record is
+ *   before its write and a forge that refused it, backed off while the forge
+ *   keeps refusing it (`failures.ts`). A claim whose record is
  *   gone from its host ends as died.
  * - **Another host's claims** are read for every pull request the plan
  *   classifies (`readSharedDrives`, and the follow-up markers), and placed
@@ -33,6 +34,7 @@
 import { recoveryReservationRefusal } from "./no-cause-stops.ts";
 import { budgeted, RECOVERY_FACTS, sameFacts } from "./recovery-facts.ts";
 import type { Outcome } from "../../shared/outcome.ts";
+import type { ActionBook } from "./failures.ts";
 import { settlesWithPerson } from "./redrive-settle.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
@@ -563,8 +565,10 @@ function endOfRecord(
 /**
  * Write the end of each of this host's own claims that has none, once its
  * launch record ended or is gone; with `--apply` only, since it writes to the
- * forge. Returns why an end could not be written, for the report: the next
- * tick writes it.
+ * forge. Returns why an end could not be written, for the report: a later
+ * tick writes it. With `book`, the failure ledger (`failures.ts`), each end
+ * and marker answer is counted under its claim comment, and one that keeps
+ * failing waits until its next try.
  */
 export async function settleOwnClaims(
   ctx: SharedContext,
@@ -574,6 +578,7 @@ export async function settleOwnClaims(
   outcomes: ReadonlyMap<number, FollowupOutcome>,
   nowIso: string,
   startupScope?: ReadonlySet<number>,
+  book?: ActionBook,
 ): Promise<string[]> {
   const byId = new Map(records.map((r) => [r.record.id, r]));
   const retryFailures: string[] = [];
@@ -609,13 +614,36 @@ export async function settleOwnClaims(
   ];
   const failures: string[] = [...retryFailures];
   const written = new Set<number>();
-  for (const o of ends) {
-    if (
-      o.stage === "followup" &&
-      o.end.state === "ended" &&
-      o.end.outcome === null
-    )
+  const owing = ends.filter(
+    (o) =>
+      !(
+        o.stage === "followup" &&
+        o.end.state === "ended" &&
+        o.end.outcome === null
+      ),
+  );
+  const endOf = (o: (typeof ends)[number]) => ({
+    key: `${o.stage === "drive" ? "claim-end" : "marker-answer"} PR #${o.pr} comment ${o.id}`,
+    kind:
+      o.stage === "drive" ? ("claim-end" as const) : ("marker-answer" as const),
+    target: `PR #${o.pr}`,
+  });
+  book?.wanted(
+    "claim-end",
+    owing.filter((o) => o.stage === "drive").map((o) => endOf(o).key),
+  );
+  book?.wanted(
+    "marker-answer",
+    owing.filter((o) => o.stage !== "drive").map((o) => endOf(o).key),
+  );
+  for (const o of owing) {
+    const backing = book?.waits(endOf(o).key) ?? null;
+    if (backing !== null) {
+      failures.push(
+        `PR #${o.pr}: the end of claim comment ${o.id} waits: ${backing}`,
+      );
       continue;
+    }
     const r = await ctx.records.end(
       { repo: ctx.slug, pr: o.pr },
       o.stage,
@@ -623,6 +651,7 @@ export async function settleOwnClaims(
       o.end,
       o.host,
     );
+    book?.ran(endOf(o), r.ok ? null : r.failure.reason);
     if (r.ok) {
       if (o.stage === "drive") written.add(o.id);
     } else {

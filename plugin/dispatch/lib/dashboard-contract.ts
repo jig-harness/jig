@@ -10,7 +10,12 @@
  */
 import type { LaunchAction, ThreadSample } from "./launches.ts";
 import type { LogRow } from "./log.ts";
-import type { LaunchOutcome, NotifyCause, NotifyOutcome } from "./types.ts";
+import type {
+  FailureCause,
+  LaunchOutcome,
+  NotifyCause,
+  NotifyOutcome,
+} from "./types.ts";
 
 /** One decision a parked drive waits on, as the drive framed it. */
 export interface LineDecision {
@@ -37,9 +42,14 @@ export interface LineNotified {
   workspace: string | null;
 }
 
-/** Causes that wait on a person and on nothing else: what the tick notifies, and an item assigned by someone who cannot write, which it only reports. */
+/**
+ * Causes that wait on a person and on nothing else: what the tick notifies,
+ * and an item assigned by someone who cannot write, which it only reports.
+ * The failure ledger's causes are about the dispatcher, not a piece of work,
+ * and are on the receipt instead.
+ */
 export type NeedCause =
-  | Exclude<NotifyCause, "waiting" | "drifting">
+  | Exclude<NotifyCause, "waiting" | "drifting" | FailureCause>
   | "assigner-cannot-write";
 
 /** One thing the line waits on a person for. */

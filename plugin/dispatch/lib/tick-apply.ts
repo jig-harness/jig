@@ -36,6 +36,7 @@ import { launchClaimer, type SharedContext } from "./shared-launches.ts";
 import { readDrives } from "./sources/ledgers.ts";
 import {
   allRecords,
+  bookOf,
   type TickContext,
   type TickOptions,
 } from "./tick-context.ts";
@@ -46,6 +47,7 @@ import {
 } from "./tick-observe.ts";
 import { afterWait } from "./tick-plan.ts";
 import { endOwnClaims } from "./tick-shared.ts";
+import type { ActionBook } from "./failures.ts";
 import type {
   DispatchSection,
   MarkedPr,
@@ -110,12 +112,14 @@ export async function actObserved(
   if (apply === null) return;
   const { opened, forge, ctx, claims } = observation;
   const { repo, section, report } = opened;
+  const book = bookOf(context, repo.slug, report);
   await endOwnClaims(ctx, report, {
     claims,
     forge,
     records: allRecords(context),
     outcomes: readOutcomes(repo.slug),
     nowMs: context.nowMs,
+    book,
   });
   const inputs: ApplyInputs = {
     repo,
@@ -128,6 +132,7 @@ export async function actObserved(
     sessions: observation.sessions,
     shared: ctx,
     unplaced: withheldFromReplay(afterWait(context, observation.serialized)),
+    book,
   };
   context.pending.push({
     apply: (group) =>
@@ -167,6 +172,8 @@ interface ApplyInputs {
   shared: SharedContext;
   /** Pull requests whose place in a serialized group this tick cannot tell, by number and why. */
   unplaced: ReadonlyMap<number, string>;
+  /** The failure ledger's book of the repository's actions. */
+  book: ActionBook | null;
 }
 
 /**
@@ -258,12 +265,14 @@ async function applyStages(
     await stage();
   if (group !== "finish") return;
   // The nudges first: a nudge that went unanswered is notified in the same tick.
-  if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
+  if (enabled.has("steer"))
+    await applySteers(apply, repo.slug, report, inputs.book);
   // A host that does not own the repository never notifies for it: the owner does, once.
   if (enabled.has("notify") && inputs.shared.owner)
     await applyNotices(apply, repo, report, inputs.sessions, {
       lingerMs: section.noticesLingerMs,
       renotifyAfterMs: section.renotifyAfterMs,
       branch: section.noticesBranch,
+      book: inputs.book,
     });
 }

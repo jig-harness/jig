@@ -239,7 +239,18 @@ export type NotifyCause =
   | "followup-failed"
   | "followup-stale"
   | "drifting"
-  | "nudge-unanswered";
+  | "nudge-unanswered"
+  | FailureCause;
+
+/**
+ * The causes of the failure ledger (`failures.ts`): an action that failed
+ * `failures.notify_after` times in a row, a repository whose turn did, and
+ * this host's ticks of one scope that exited 1 as often.
+ */
+export type FailureCause =
+  | "action-failing"
+  | "repository-failing"
+  | "ticks-failing";
 
 /** A follow-up claim past `followup_stale_after` with no done mark and no session joined to it: the marker the tick releases, and whose claim it was. */
 export interface StaleClaim {

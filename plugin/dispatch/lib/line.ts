@@ -21,6 +21,7 @@ import type {
 import type { LaunchAction, ReadRecord } from "./launches.ts";
 import { pullUrl } from "./forge.ts";
 import { holds, targetOf } from "./launches.ts";
+import { isFailureCause } from "./failure-notices.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
@@ -181,7 +182,8 @@ function isNeed(action: Action): action is Action & { cause: NeedCause } {
     action.stage === "notify" &&
     action.cause !== undefined &&
     action.cause !== "waiting" &&
-    action.cause !== "drifting"
+    action.cause !== "drifting" &&
+    !isFailureCause(action.cause)
   );
 }
 

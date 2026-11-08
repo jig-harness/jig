@@ -25,6 +25,10 @@
  * opens_per_tick: 4
  * receipts_days: 30
  * unclaimed_after: 15m
+ * failures:
+ *   backoff: 2m
+ *   backoff_max: 1h
+ *   notify_after: 3
  * dashboard:
  *   listen: 100.64.0.7:8765
  * records:
@@ -42,6 +46,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { isMapping, jigHome } from "../../shared/config-layers.ts";
 import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { load } from "../../shared/yaml.ts";
+import { FAILURE_DEFAULTS, type FailureSettings } from "./failures.ts";
 import { type Listen, parseListen } from "./listen.ts";
 
 /** The stages a machine file can enable. */
@@ -102,6 +107,8 @@ export interface MachineConfig {
   receiptsDays: number;
   /** How long a launch the runtime answered as started may go unclaimed by its wrapper before it is stuck (`unclaimed_after`). */
   unclaimedAfterMs: number;
+  /** How the tick backs off an action that keeps failing, and when it tells a person (`failures`); the defaults when absent. */
+  failures?: FailureSettings;
   /** The address `jig dispatch dashboard` listens on (`dashboard.listen`); `null` when the file names none. */
   dashboardListen: Listen | null;
   /** Where the records another host reads are shared (`records.shared`). */
@@ -133,12 +140,14 @@ const TOP_KEYS = [
   "opens_per_tick",
   "receipts_days",
   "unclaimed_after",
+  "failures",
   "dashboard",
   "records",
   "send",
   "change_probe",
 ];
 const DASHBOARD_KEYS = ["listen"];
+const FAILURES_KEYS = ["backoff", "backoff_max", "notify_after"];
 const RECORDS_KEYS = ["shared"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
 const ACCOUNT_KEYS = [
@@ -422,6 +431,7 @@ function parseValues(values: unknown, where: string): MachineConfig {
       "unclaimed_after",
       DEFAULTS.unclaimedAfterMs,
     ),
+    failures: failures(top.failures),
     dashboardListen: dashboard(top.dashboard),
     sharedRecords: records(top.records),
     send: flag(top.send, "send", true),
@@ -442,6 +452,43 @@ function records(value: unknown): SharedMedium {
       `records.shared must be one of ${SHARED_MEDIA.join(", ")}: ${String(shared)}`,
     );
   return shared as SharedMedium;
+}
+
+/** The `failures` settings, each defaulted; a longest wait shorter than the first is refused. */
+function failures(value: unknown): FailureSettings {
+  if (value === undefined || value === null) return { ...FAILURE_DEFAULTS };
+  if (!isMapping(value))
+    throw new MachineConfigError("failures must be a mapping");
+  only(value, FAILURES_KEYS, "failures");
+  const settings: FailureSettings = {
+    backoffMs: optionalDuration(
+      value.backoff,
+      "failures.backoff",
+      FAILURE_DEFAULTS.backoffMs,
+    ),
+    backoffMaxMs: optionalDuration(
+      value.backoff_max,
+      "failures.backoff_max",
+      FAILURE_DEFAULTS.backoffMaxMs,
+    ),
+    notifyAfter: count(
+      value.notify_after,
+      "failures.notify_after",
+      FAILURE_DEFAULTS.notifyAfter,
+    ),
+  };
+  if (settings.backoffMaxMs < settings.backoffMs)
+    throw new MachineConfigError(
+      "failures.backoff_max must be at least failures.backoff",
+    );
+  return settings;
+}
+
+/** The machine file's `failures` settings, the defaults where it has none. */
+export function failureSettings(
+  config: Pick<MachineConfig, "failures"> | null | undefined,
+): FailureSettings {
+  return config?.failures ?? { ...FAILURE_DEFAULTS };
 }
 
 /** The dashboard's address; `null` when the file names none. */
