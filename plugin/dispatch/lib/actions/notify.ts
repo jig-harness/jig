@@ -568,6 +568,10 @@ async function sendTo(
     receipt.comment !== undefined
   )
     recordComment(workspace, receipt.comment, root, repo);
+  if (receipt.ok && receipt.comment !== undefined) {
+    workspace.comment = receipt.comment;
+    workspace.unread = receipt.unread ?? null;
+  }
   for (const c of send) {
     const outcome = delivered(receipt, c, workspace.path);
     if (outcome.outcome === "sent") suppress(c, workspace.path);
