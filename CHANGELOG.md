@@ -387,6 +387,29 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.163.0] - 2026-11-08
+
+### Changed
+
+- `jig dispatch` re-drives a parked pull request that comes to conflict with
+  its base. The drive attempts to merge the base in, then parks on unanswered
+  questions if repair succeeds. While the re-drive is owed, the pull request carries
+  `jig:stale` in place of `jig:parked`. It is re-driven once for each pair of
+  its head and its base branch's head. When that re-drive leaves the conflict
+  in place (for example two requirements that contradict each other), the
+  drive stops `PR_CONFLICTING` and needs a person to resolve it; if it remains
+  parked, the park notice says it also conflicts with its base.
+
+### Fixed
+
+- Changelog checks compare an open merge against its resulting ancestry, so
+  releases imported from the base branch do not prevent validation before
+  the merge is committed. Branch edits to release versions remain errors.
+- The drive-pr driver-lock tests that ran against the caller's checkout now
+  use scratch repositories with their own remotes and isolated spawn
+  environments. They pass on a branch with commits not yet pushed or just
+  amended, and inside an active drive, where they used to fail.
+
 ## [0.162.0] - 2026-11-08
 
 ### Changed
@@ -5861,7 +5884,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.162.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.163.0...HEAD
+[0.163.0]: https://github.com/jig-harness/jig/compare/v0.162.0...v0.163.0
 [0.162.0]: https://github.com/jig-harness/jig/compare/v0.161.0...v0.162.0
 [0.161.0]: https://github.com/jig-harness/jig/compare/v0.160.0...v0.161.0
 [0.160.0]: https://github.com/jig-harness/jig/compare/v0.159.0...v0.160.0

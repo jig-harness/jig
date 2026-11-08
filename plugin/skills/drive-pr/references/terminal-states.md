@@ -39,7 +39,7 @@ path that produces the exit, not because none of them name one.
 | `5` | `PR_NOT_OPEN` | **yes** | Merged or closed. Checked first, every pass |
 | `6` | — | **yes** | `drive.ts` only: hit `--max-rounds` without converging |
 | `7` | `REVIEWER_FAILED` | **yes** | The posting reviewer's check-run did not pass |
-| `8` | `HITL_PARKED` | **yes** | Everything still open is parked awaiting a human, each under a registry class with its decision framed, and the exit prints each one in full. The drive never wakes itself up: a re-arm unparks the items, and hands their answers to its passes until one completes, only once **every** one has an answer from an owner, member or collaborator later than the park (§ Picking up a stopped drive); with any unanswered it stops `8` again |
+| `8` | `HITL_PARKED` | **yes** | Everything still open is parked awaiting a human, each under a registry class with its decision framed, and the exit prints each one in full. The drive never wakes itself up: a re-arm unparks the items, and hands their answers to its passes until one completes, only once **every** one has an answer from an owner, member or collaborator later than the park (§ Picking up a stopped drive); with any unanswered it stops `8` again, unless the PR conflicts with its base: the first gate reports `PR_CONFLICTING` before the park, so the re-arm spends its conflict-repair budget first. Under `jig dispatch` the dispatcher re-drives a parked PR that conflicts with its base, once for each pair of its head and its base branch's head, and tells a person of the conflict when that re-drive leaves it parked or stopped `9` at the same pair |
 | `9` | `PR_CONFLICTING` | **yes**, from `drive.ts` only once its conflict-repair budget is spent | The PR conflicts with its base **and** has no workable findings. A conflict alone does not stop the loop — see mode 14. `drive.ts` first spends `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1) `conflict-resolve` passes on it (§ Repair rounds), and a merge such a pass did not conclude is aborted before the stop, except one already open when the pass began (kept) or one whose abort failed; finish or abort a merge the stop reports before running its `Fix:` command. Under `jig dispatch` the dispatcher re-drives the stop, once for each pair of the pull request's head and its base branch's head, and tells a person when that re-drive leaves it stopped `9` at the same pair; without it the stop is a person's |
 | `10` | — | — | **Reserved**, never emitted. A draft PR is not a stop: drafts are driven — see § A draft PR is reviewed, and then marked Ready. The code is kept unused so it never takes on a second meaning |
 | `12` | — | **yes** | `drive.ts` only: the review converged, but the worktree is not clean — uncommitted state, an unconcluded merge/cherry-pick/revert/rebase/am (present even over an otherwise-empty `git status`), local HEAD no longer matching the reviewed head (a commit landed here that was never pushed or reviewed, also invisible to `git status`), or any of those probes being unreadable; every one of them fails closed to the same refusal. The convergence is real; the leftovers are edits no round shipped, an unfinished git operation, or an unreviewed local commit. Commit/push/discard as appropriate, or resolve/abort the operation, then re-run. The draft→Ready transition sits **behind** this gate, so a PR still owed that transition when 12 fires stays a draft, and the retry after the cleanup marks it. It never *reverts* one already made: `mark-ready.ts` runs at the end of every completed round from the round `pull_requests.mark_ready` declares (default `1`) and is durably once-only, so a drive that completed that round has already marked the PR and exit 12 leaves it Ready over an unclean tree. The PR is still a draft, then, when no completed round reached the declared one (convergence before it, including at the very first gate), when the repository marks Ready only at convergence (`converged`), or when it never does (`never`, or a drive started with `--keep-draft`, which skips `mark-ready.ts` entirely no matter how many rounds run) — in the last case the draft state is the requested outcome, not a transition still owed — see § A draft PR is reviewed, and then marked Ready |
@@ -464,8 +464,9 @@ one of the registry's decision classes (`--class`) with its decision record on
 stdin, and refuses a park without them; parked items stop counting as live
 work, the drive works everything else to its end, and then reaches
 `HITL_PARKED` and prints each decision in full. `drive.ts` does not wake
-itself up. What picks it up is an answer, not a clock: a re-arm admits itself
-only once every parked item is answered.
+itself up. A re-arm unparks the items once every parked item is answered,
+subject to the `wide` autonomy exception. If the PR conflicts with its base,
+a re-arm may repair that conflict while unanswered items stay parked.
 
 ### 7. Merged mid-loop
 
@@ -841,7 +842,9 @@ durable state, admitted on mechanical states: after `QUOTA_PARKED` by a
 pass that bills a different account from the one the park recorded (or after
 the reset), and after `HITL_PARKED` once every parked item has an answer later
 than its park (a park records when it was made; an older park without that
-time is never read as answered). A comment the drive itself writes (one
+time is never read as answered). A conflicting PR may be re-armed for
+conflict repair while unanswered items stay parked; the `wide` autonomy
+exception may also unpark unanswered `escalated` items. A comment the drive itself writes (one
 opening with an outcome token, or carrying a hidden marker other than the
 record of an answer `jig send` wrote) is never an answer.
 
