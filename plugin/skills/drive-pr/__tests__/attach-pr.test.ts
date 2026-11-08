@@ -216,6 +216,19 @@ describe("a detached tree's record", () => {
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(own);
   });
 
+  test("keeps a tree at the head with uncommitted edits detached once the branch is free", () => {
+    const { c, holder } = held();
+    const tree = c.tree("wt1");
+    expectSpawnExit(c.attach(tree, "42"), 0, "detached attach");
+    writeFileSync(join(tree, "edit.txt"), "left by a killed pass\n");
+    c.git(holder, "switch", "-q", "--detach");
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 0, "re-arm attach");
+    expect(JSON.parse(r.stdout)).toMatchObject({ detached: true });
+    expect(branchOf(c, tree)).toBe("");
+    expect(existsSync(join(tree, "edit.txt"))).toBe(true);
+  });
+
   test("leaves a tree past the head with its uncommitted edits in place", () => {
     const { c, holder } = held();
     const tree = c.tree("wt1");
@@ -236,17 +249,6 @@ describe("a detached tree's record", () => {
     expectSpawnExit(c.attach(tree, "42"), 0, "re-arm attach");
     expect(branchOf(c, tree)).toBe("");
     expect(existsSync(join(tree, "edit.txt"))).toBe(true);
-  });
-
-  test("still settles a tree at the head that would take the branch by name", () => {
-    const { c, holder } = held();
-    const tree = c.tree("wt1");
-    expectSpawnExit(c.attach(tree, "42"), 0, "detached attach");
-    writeFileSync(join(tree, "edit.txt"), "uncommitted\n");
-    c.git(holder, "switch", "-q", "--detach");
-    const r = c.attach(tree, "42");
-    expectSpawnExit(r, 2, "attach that would switch branches");
-    expect(r.stderr).toContain("uncommitted changes");
   });
 
   test("stops answering once the tree holds a stacked PR's pushed head", () => {

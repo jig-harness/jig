@@ -76,6 +76,7 @@ describe("the label set", () => {
       "bot/held",
       "bot/followed-up",
       "bot/drive",
+      "bot/rearm",
       "bot/hold",
     ]);
   });

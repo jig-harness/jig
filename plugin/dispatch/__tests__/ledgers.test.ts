@@ -38,9 +38,10 @@ describe("classifyLedger", () => {
     expect(classOf(undefined)).toBe("re-armable");
     expect(classOf(16)).toBe("re-armable");
     expect(classOf(4)).toBe("re-armable");
+    expect(classOf(12)).toBe("unplaced");
     expect([11, 13].map((e) => classOf(e))).toEqual(["refused", "refused"]);
-    expect([1, 2, 6, 7, 12, 99].map((e) => classOf(e))).toEqual(
-      Array(6).fill("needs-person"),
+    expect([1, 2, 6, 7, 99].map((e) => classOf(e))).toEqual(
+      Array(5).fill("needs-person"),
     );
   });
 

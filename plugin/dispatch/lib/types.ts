@@ -129,6 +129,8 @@ export interface StaleCause {
    * that leaves it so at this change is a person's to settle.
    */
   conflictStop?: true;
+  /** Exit 12 recovery must settle the original tree, once per head. */
+  uncleanTree?: true;
   /**
    * The drive stopped on a cause its own next step settles: a stall (`14`),
    * a spent CI-repair budget (`21`) or a pass deadline with its restarts
@@ -487,7 +489,7 @@ export interface RepoReport {
 /** A command label a pull request carries, and what the tick made of it. */
 export interface LabelCommand {
   target: string;
-  command: "drive" | "hold";
+  command: "drive" | "rearm" | "hold";
   note: string;
 }
 

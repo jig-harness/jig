@@ -38,6 +38,7 @@
  * says how a launch is counted, not what the ledger said.
  */
 import { noCauseFacts } from "../no-cause-stops.ts";
+import { pendingRearm } from "../rearm-state.ts";
 import {
   goneUnlaunched,
   isRecovery,
@@ -142,32 +143,48 @@ export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
   const mine = records
     .filter((r) => isDrive(r.record) && r.record.pr === pr.number)
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
-  if (pr.class === "silent") {
-    const inFlight = mine.find(
-      (r) =>
-        holds(r.state) &&
-        (r.state.kind !== "alive" || sameFacts(r.record.facts, factsOf(pr))),
-    );
-    if (inFlight !== undefined)
-      return { kind: "held", record: inFlight, why: describe(inFlight) };
-    // An older owner must not be taken over again behind a later refusal.
-    // A drive settled as silent is a person's to hear of, whatever a refused
-    // takeover of this host once said on these facts.
-    const standing =
-      pr.evidence.settled === true ? null : standingRefusal(pr, mine);
-    if (standing !== null) return standing;
-    const started =
-      typeof pr.evidence.started === "string" ? pr.evidence.started : null;
-    const owner = mine.findLast((r) => startedDriver(r, started));
-    return owner === undefined
-      ? { kind: "none" }
-      : { kind: "takeover", record: owner };
-  }
+  if (pr.class === "silent") return silentHold(pr, mine);
   const holding = mine.find((r) => holds(r.state));
   if (holding !== undefined)
     return { kind: "held", record: holding, why: describe(holding) };
+  if (pr.evidence.rearm === true) return pendingRequest(mine);
   if (pr.class === "unarmed") return armed(pr, mine) ?? { kind: "none" };
   return standingRefusal(pr, mine) ?? redriven(pr, mine) ?? { kind: "none" };
+}
+
+/** A silent driver keeps its in-flight hold, refusal or original owner. */
+function silentHold(pr: DrivenPr, mine: ReadRecord[]): DriveHold {
+  const inFlight = mine.find(
+    (r) =>
+      holds(r.state) &&
+      (r.state.kind !== "alive" || sameFacts(r.record.facts, factsOf(pr))),
+  );
+  if (inFlight !== undefined)
+    return { kind: "held", record: inFlight, why: describe(inFlight) };
+  // An older owner must not be taken over again behind a later refusal.
+  // A drive settled as silent is a person's to hear of, whatever a refused
+  // takeover of this host once said on these facts.
+  const standing =
+    pr.evidence.settled === true ? null : standingRefusal(pr, mine);
+  if (standing !== null) return standing;
+  const started =
+    typeof pr.evidence.started === "string" ? pr.evidence.started : null;
+  const owner = mine.findLast((r) => startedDriver(r, started));
+  return owner === undefined
+    ? { kind: "none" }
+    : { kind: "takeover", record: owner };
+}
+
+/** A delivered request stays held until its label removal is acknowledged. */
+function pendingRequest(mine: ReadRecord[]): DriveHold {
+  const consumed = mine.findLast((r) => pendingRearm(r.record, r.state));
+  if (consumed !== undefined)
+    return {
+      kind: "armed",
+      record: consumed,
+      why: `launch record ${consumed.record.id} already carried out this rearm request; waiting for the request label removal to be acknowledged`,
+    };
+  return { kind: "none" };
 }
 
 /** Whether the launch acts on a pull request with no ledger, which its `drive` label asked to arm. */

@@ -178,8 +178,11 @@ jig run       [COMPONENT...]
   differs, and a job that was enabled or running stays so. Every command
   that changes state is printed before it runs (read-only queries, such as
   a version or a plugin list, are not), and `--json` prints what became of each
-  harness and job. `--jobs-only` refreshes the jobs and the command without
-  updating the plugin, for after a tool updated it on its own. Each tool
+  harness and job. In Claude Code it also refreshes each project- and
+  local-scope install of the plugin from its directory, and removes from
+  Claude Code's install record each whose directory no longer exists; one it
+  cannot update safely it leaves as it was, saying why. `--jobs-only`
+  refreshes the jobs and the command without updating the plugin, for after a tool updated it on its own. Each tool
   command is limited to `JIG_SETUP_TIMEOUT_SECONDS` (default 300).
   `--scheduled` is what the timers run before each job
   ([automatic updates](#automatic-updates)); it prints one line of JSON.
@@ -188,7 +191,10 @@ jig run       [COMPONENT...]
   Jig tests; `claude` and `codex` resolving outside every git checkout (a
   job never records an agent tool inside one, so a development shim ahead
   of the real tool on `PATH` leaves the jobs without it); the plugin in
-  each harness and the channel it follows; the `jig` command's launcher
+  each harness and the channel it follows; every project- and local-scope
+  install of it in Claude Code, with its directory and version, failing
+  one older than the user-scope install or whose directory is gone; the
+  `jig` command's launcher
   copy; the latest scheduled upgrade, which fails while that upgrade failed,
   naming it and the agent tool's error; for each component, or those named, its machine file, its job's
   launcher copy against the installed plugin's, the programs its job names
@@ -259,7 +265,7 @@ identity, a re-arm for a drive its
 ledger shows stopped on a mechanical state (a usage limit, an answered
 park), a re-drive for a converged drive gone stale (its pull request now
 conflicts with its base, or its head moved past the head the drive
-verified) or for a drive that stopped on a conflict, a follow-up for a merge, a notification for a drive only a
+verified), for a drive that stopped on a conflict, or once per head for exit 12 (uncommitted work), a follow-up for a merge, a notification for a drive only a
 person can settle. A converged pull request its base merely moved past,
 still mergeable at the verified head, is left alone, and one whose
 mergeability the forge is still computing is reported and waits for a
@@ -586,6 +592,8 @@ comment keeps it, and the morning report (`drives.ts --report`) lists the
 workspaces the dispatcher launched into by the mark on their launch records,
 each with the name it carries now.
 
+A drive stopped with exit 12 gets one recovery pass per head commit in its existing branch tree. The pass inspects the uncommitted work and commits and pushes what belongs to the change, discards only known disposable work, or stops for unclear ownership. A missing tree is reported; no replacement tree is opened. A second exit 12 at the same head waits for a person, whose notice names `jig send drive@owner/name#N rearm`.
+
 **Dispatch labels** (`dispatch.labels` in the repository's
 [configuration](CONFIGURATION.md#dispatch), off by default) make the
 dispatcher's state visible on each pull request, from any forge client,
@@ -594,11 +602,11 @@ managed pull request's state label (`jig:driving`, `jig:converged`,
 `jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up` under the
 default prefix) from its drive ledger and the serialized areas below, writing only where the labels disagree, so a label
 changed by hand, or left behind by a drive that was killed, is corrected
-at the next run; no state label is ever read to decide what to start. Two
+at the next run; no state label is ever read to decide what to start. The command
 labels are a person's commands, which the dispatcher reads and never
 adds: `jig:drive` on a pull request with no drive ledger arms a drive on
 it (the `rearm` stage, once per head commit) and is replaced by the state
-label once the ledger exists, and `jig:hold` keeps every stage off the
+label once the ledger exists. `jig:rearm` asks to restart a stopped drive in its existing branch tree, on an admitted account, and is consumed after launch; it never restarts a running drive or one a person stopped. `jig:hold` keeps every stage off the
 pull request while it is there, reported at every run and removed only by
 a person. With `only_labeled`, the dispatcher reads only the pull requests
 that carry a label of the set. The labels must exist first: `jig install
@@ -884,7 +892,10 @@ The session runtime it reads and launches in is
 `ORCA_CLI_BIN_DIR`, else `orca-ide` on `PATH` on Linux and `orca` elsewhere,
 the names Orca installs its command under; on Linux a bare `orca` is often
 GNOME's screen reader),
-behind an interface a second runtime can be added to. The repository's
+behind an interface a second runtime can be added to. A timer's environment
+holds none of a login shell's, so the install writes the two variables, as
+the shell that runs it sets them, into both the tick's job and the probe's.
+The repository's
 values are its [`dispatch` section](CONFIGURATION.md#dispatch), read from
 its default branch on the forge.
 
@@ -1013,6 +1024,7 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | --- | --- | --- | --- |
 | `assign` | `pickup` | the item assigned to the factory identity (`dispatch.identity`), moved into the first dispatch state (`dispatch.states`) when it is in none | the dispatcher's next tick, which starts the pick-up when the person who made the assignment can write to the repository |
 | `drive` | `drive` | the `drive` [dispatch label](CONFIGURATION.md#dispatch) | the dispatcher's next tick, which arms a drive |
+| `rearm` | `drive` | the `rearm` dispatch label for a stopped drive | the dispatcher's next tick, which re-arms it on an admitted account in the existing worktree |
 | `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
 | `answer <key> <text>` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>` | the re-arm, which hands the answer to the drive's passes as your verdict |
 | `pause`, `resume <hold-push\|pause\|stop>`, `stop`, `hold-push` | `drive` | a directive in the [mailbox](skills/drive-pr/README.md) of the working tree that holds the drive on this machine | the driver: `hold-push` before each push, `pause` and `stop` at its next round boundary |
@@ -1024,6 +1036,9 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   closed, or in a repository that names no factory identity;
 - `drive` on a pull request that is not open, already has a drive ledger, or
   already carries the label; a second `hold`; a `release` with no `hold`;
+- `rearm` without a stopped ledger or an existing worktree on this machine,
+  while a driver or launch still holds it, after a person's recorded stop,
+  or while a re-arm request is already pending;
 - `answer` whose key is not a parked question in the pull request's drive
   ledger, or that a trusted comment after the park already answers (a reply
   on the parked thread itself is not read);
@@ -1052,14 +1067,14 @@ by someone who can write to the repository, an answer from an owner, member
 or collaborator.
 
 **What it refuses outright.** A verb whose record the repository has
-switched off is refused with the setting named: `drive`, `hold` and
+switched off is refused with the setting named: `drive`, `rearm`, `hold` and
 `release` need `dispatch.labels.enabled`, read as the dispatcher reads it,
 from the configuration on the repository's default branch, and the label
 carries the repository's prefix. A machine whose
 [dispatch file](CONFIGURATION.md#the-machines-dispatch-file) says
 `send: false` refuses every send. A session the line started (a dispatched
 launch, or a drive's pass) runs with `JIG_LAUNCH` set, and there `send`
-refuses `assign`, `drive`, `hold`, `release` and `answer`, which are a
+refuses `assign`, `drive`, `rearm`, `hold`, `release` and `answer`, which are a
 person's commands; the mailbox verbs are not refused by it. That stops a
 skill's mistake; a session holding its person's credentials could still
 clear the variable or call the forge itself, as it could before.
@@ -1075,7 +1090,7 @@ once). The mailbox lets only a `stop` name a generation, so a `pause` or a
 generation that holds the drive when it is sent. A `resume` needs only the
 tree, so it also clears a directive a driver left behind.
 
-**It wakes the tick that reads its record.** After `assign`, `drive`,
+**It wakes the tick that reads its record.** After `assign`, `drive`, `rearm`,
 `hold`, `release` or `answer`, when this machine's
 [dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists the
 repository with the stage the tick acts under (`pickup` for `assign`,
@@ -1103,11 +1118,19 @@ a moment to list a new comment, so that link, not a `jig ask` right after
 it, shows the request landed.
 
 **What can be taken back.** `release` undoes a `hold`, and `hold` a
-`release`; a `drive` label can be removed by hand until the tick has armed
+`release`; a `drive` or `rearm` label can be removed by hand until the tick has armed
 the drive; `resume` withdraws a directive; an assignment can be undone on
 the tracker until the tick starts the pick-up. An `answer` the re-arm has
 read cannot be taken back, which is why it is checked, shown and sent in
 your own words; until then, deleting the comment withdraws it.
+
+A drive stopped with `WORKTREE_UNCLEAN` (exit `12`) gets one automatic
+recovery pass per pull-request head, in the tree holding its branch. That
+pass is told to commit and push edits belonging to the change, or discard
+them when they do not belong. A second exit `12` at that head waits for a
+person; after inspecting the handoff, request another attempt with
+`jig send drive@<owner>/<name>#<PR> rearm`. A missing tree waits for a
+person too: recovery never opens a replacement tree without the edits.
 
 `jig send` exits `0` when it sent (or, with `--dry-run`, would send), `1`
 when it refused or the write failed, and `2` on a usage error: a malformed
@@ -1232,6 +1255,14 @@ fails. Without the `jig` command, the tools list their plugins:
 claude plugin list        # shows jig@jig, enabled
 codex plugin list         # same for Codex
 ```
+
+Claude Code can also hold the plugin per directory, at project or local
+scope (`claude plugin install --scope project`), alongside the user-scope
+install above. Where both exist, Claude Code (2.1.311) loads the user-scope
+copy, but `claude plugin update jig@jig` without `--scope` updates the most
+specific one, so a forgotten project-scope copy falls behind unseen.
+`jig doctor` lists each and fails one older than the user-scope install or
+left behind by a deleted directory; `jig upgrade` refreshes or removes them.
 
 Start a **new** session afterwards. Sessions that were already open load the
 plugin after `/reload-plugins` (Claude Code) or a restart (Codex).
