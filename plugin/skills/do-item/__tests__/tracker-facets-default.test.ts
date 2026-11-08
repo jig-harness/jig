@@ -372,6 +372,145 @@ describe("GitHub's field default: a facet the configuration does not name", () =
   });
 });
 
+describe("GitHub's field default where the tracker has no field to offer", () => {
+  /** An issue of a repository with no issue types: GitHub answers its type `null`. */
+  const plainIssue = (labels: string[]) =>
+    oneIssue(
+      issueNode({
+        number: 129,
+        labels,
+        extra: {
+          subIssues: conn([]),
+          issueType: null,
+          issueFieldValues: { pageInfo: { hasNextPage: false }, nodes: [] },
+        },
+      }),
+    );
+
+  it("keeps every facet in labels on a repository a person owns, read from GitHub's answer", async () => {
+    // As GitHub answers for a repository a person owns: no issue types and
+    // no issue fields, each list `null`, and a `User` owner.
+    const { t, calls } = gitHubDefaulted((c) => {
+      if (c.op === "TrackerFacetEvidence")
+        return {
+          repository: {
+            issueTypes: null,
+            issueFields: null,
+            l_type: { totalCount: 7 },
+            l_priority: { totalCount: 0 },
+            l_size: { totalCount: 3 },
+          },
+        };
+      if (c.op === "TrackerFacetOwner")
+        return { repository: { owner: { __typename: "User", login: "dana" } } };
+      if (c.op === "TrackerIssue")
+        return plainIssue(["bug", "small", "priority: high"]);
+      throw new Error(`unexpected ${c.op}`);
+    }, JIG);
+    const issue = await t.getIssue("#129");
+    expect(calls.map((c) => c.op)).toEqual([
+      "TrackerFacetEvidence",
+      "TrackerIssue",
+    ]);
+    expect([issue?.type, issue?.priority, issue?.size]).toEqual([
+      "bug",
+      2,
+      "small",
+    ]);
+    const stores = await t.facetStores();
+    expect(
+      stores.facets.map((f) => [
+        f.facet,
+        f.store,
+        f.why,
+        f.detection?.status,
+        f.moveTo,
+      ]),
+    ).toEqual([
+      ["type", "label", "kept in labels", "read", null],
+      ["priority", "label", "default", "read", null],
+      ["size", "label", "kept in labels", "read", null],
+    ]);
+    expect(stores.discovery.status).toBe("none");
+  });
+
+  it("reads an organization with issue types but no issue fields, or none that match, as having no field", async () => {
+    const types = conn(
+      ["Bug", "Feature", "Task"].map((name) => ({ id: `IT_${name}`, name })),
+    );
+    const evidence = (issueFields: unknown) => (c: Call) => {
+      if (c.op === "TrackerFacetEvidence")
+        return {
+          repository: {
+            issueTypes: types,
+            issueFields,
+            l_type: { totalCount: 0 },
+            l_priority: { totalCount: 0 },
+            l_size: { totalCount: 0 },
+          },
+        };
+      if (c.op === "TrackerFacetNativeEvidence") {
+        const out: Record<string, unknown> = {};
+        for (const m of c.query.matchAll(/(n_\w+):/g))
+          out[m[1] as string] = { totalCount: 0 };
+        return { repository: out };
+      }
+      if (c.op === "TrackerIssue") return plainIssue(["small"]);
+      throw new Error(`unexpected ${c.op}`);
+    };
+    for (const fields of [
+      null,
+      conn([field("IF_severity", "Severity", ["S1", "S2"])]),
+    ]) {
+      const { t } = gitHubDefaulted(evidence(fields), JIG);
+      expect((await t.getIssue("#129"))?.size).toBe("small");
+      const stores = await t.facetStores({ discovery: false });
+      expect(
+        stores.facets.map((f) => [
+          f.facet,
+          f.store,
+          f.why,
+          f.detection?.status,
+        ]),
+      ).toEqual([
+        ["type", "native", "detected", "read"],
+        ["priority", "label", "default", "read"],
+        ["size", "label", "default", "read"],
+      ]);
+    }
+  });
+
+  it("reads an issue whose field values GitHub answers as none, where the stores are named", async () => {
+    const { t } = gitHubDefaulted(
+      () =>
+        oneIssue(
+          issueNode({
+            number: 9,
+            labels: [],
+            issueType: "Bug",
+            extra: { subIssues: conn([]), issueFieldValues: null },
+          }),
+        ),
+      {
+        ...JIG,
+        issue_tracker: {
+          facets: {
+            type: { store: "native" },
+            priority: { store: "native" },
+            size: { store: "field", field: "Effort" },
+          },
+        },
+      },
+    );
+    const issue = await t.getIssue("#9");
+    expect([issue?.type, issue?.priority, issue?.size]).toEqual([
+      "bug",
+      0,
+      null,
+    ]);
+  });
+});
+
 describe("detection's rules", () => {
   const read = (
     labelEvidence: boolean,

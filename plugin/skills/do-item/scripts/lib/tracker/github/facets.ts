@@ -222,9 +222,19 @@ export function facetFailure(
   });
 }
 
+/**
+ * The nodes of a list of issue types or issue fields, read whole: more than
+ * one page throws. A repository a person owns has neither, and GitHub
+ * answers such a list with `null`: that is a list with nothing in it, not an
+ * answer that cannot be read.
+ */
+function listed(v: unknown, where: string): unknown[] {
+  return v === null ? [] : onePage(v, where);
+}
+
 /** An organization's issue fields, read whole: more than one page throws. */
 function fieldDefs(v: unknown, where: string): FieldDef[] {
-  return onePage(v, where)
+  return listed(v, where)
     .map((n, i) => record(n, `${where}[${i}]`))
     .filter((n) => typeof n.id === "string")
     .map((n, i) => ({
@@ -247,7 +257,7 @@ function typeNodes(
   v: unknown,
   where: string,
 ): Array<{ id: string; name: string }> {
-  return onePage(v, where).map((n, i) => {
+  return listed(v, where).map((n, i) => {
     const t = record(n, `${where}[${i}]`);
     return {
       id: typeof t.id === "string" ? t.id : "",
@@ -433,6 +443,8 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     raw: Record<string, unknown>,
     signal?: AbortSignal,
   ) {
+    // No field values to list (a repository with no issue fields): none.
+    if (raw.issueFieldValues === null) return [];
     const conn = record(
       raw.issueFieldValues,
       `issue ${issue.key}.issueFieldValues`,
