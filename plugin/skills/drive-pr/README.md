@@ -666,6 +666,9 @@ each it gives the terminal state and what it means for you, the provisional
 decisions first (and whether someone reversed them), the takeovers and
 re-arms, the parked decisions in full, the issues filed and the deferred
 findings not yet filed, with the `file-deferred.ts` command that files them.
+A local process identity matching the ledger's actor and start time that
+has exited overrides its fresh `running` heartbeat. Foreign or uncorrelated
+drivers still use the heartbeat window; their local liveness is not known.
 Where the [dispatcher](../../README.md#the-dispatcher) runs on the machine,
 it then lists what the dispatcher did over the same time, from its tick
 receipts: the sessions it launched, the launches it refused, and the
