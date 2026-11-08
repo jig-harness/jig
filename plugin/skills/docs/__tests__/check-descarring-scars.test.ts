@@ -381,6 +381,15 @@ test("scar lint: a tab advances to the next four-column stop", () => {
     scanScars("1. Use `the handle\n \t2. coderabbitai[bot]` here."),
   ).toEqual([]);
   expect(
+    scanScars("1.\tUse `the handle\n   2. coderabbitai[bot]` here."),
+  ).toHaveLength(1);
+  expect(
+    scanScars("1)\tUse `the handle\n   2) coderabbitai[bot]` here."),
+  ).toHaveLength(1);
+  expect(
+    scanScars("1.\tUse `the handle\n    2. coderabbitai[bot]` here."),
+  ).toEqual([]);
+  expect(
     scanScars("1. Use `the handle\n2. coderabbitai[bot]` here."),
   ).toHaveLength(1);
 });
