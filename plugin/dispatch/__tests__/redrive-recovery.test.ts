@@ -133,11 +133,15 @@ describe("a recovery stop's ledger", () => {
     expect(again?.why).toContain(
       "only a person settles it until its head moves",
     );
-    // The killed passes' work stays in their tree: a stop that left work, or never measured, is bound to it.
-    for (const events of [[measured(15, true)], []])
-      expect(
-        drive(15, { head: HEAD, mergeable: "MERGEABLE" }, events).stale?.tree,
-      ).toEqual({ actor: "wt-0123456789abcdef", here: false });
+    // The killed passes' work stays in their tree: a stop that measured work left is bound to it.
+    const at = (events: DriveEvent[]) =>
+      drive(15, { head: HEAD, mergeable: "MERGEABLE" }, events).stale?.tree;
+    expect(at([measured(15, true)])).toEqual({
+      actor: "wt-0123456789abcdef",
+      here: false,
+    });
+    // One that never measured, from a driver that did not record it, re-drives anywhere.
+    expect(at([])).toBeUndefined();
     // A new head is a new attempt.
     const moved = drive(15, { head: MOVED, mergeable: "MERGEABLE" });
     expect(settleConflictStops([moved], [redrove(placed, 15)])[0]?.class).toBe(

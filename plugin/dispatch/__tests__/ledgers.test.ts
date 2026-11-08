@@ -67,8 +67,8 @@ describe("classifyLedger", () => {
       });
       // Only the pass deadline draws on the recovery budget.
       expect(placed.stale?.recovery).toBe(exit === 15 ? true : undefined);
-      // A stall or a deadline that never measured its leftovers stays bound to its tree.
-      if (exit !== 21) expect(placed.stale?.tree).toBeDefined();
+      // A stall that never measured its leftovers stays bound to its tree; a deadline that never measured does not.
+      if (exit === 14) expect(placed.stale?.tree).toBeDefined();
       else expect(placed.stale?.tree).toBeUndefined();
       expect(
         classifyLedger(stoppedLedger(7, exit), NOW, WINDOW, undefined, {

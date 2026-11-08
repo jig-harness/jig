@@ -130,7 +130,7 @@ function ended(w: World, id: string, claimedAt: string, facts: string): void {
 }
 
 describe("jig dispatch and a silent driver a launch started, which this host shows gone", () => {
-  it("takes it over as before, outside the recovery budget, even with the budget spent", async () => {
+  it("plans its takeover from its launch record, outside the recovery budget, even with the budget spent", async () => {
     const w = fixture(`${CLONE}@${hostLabel()}`, await deadPid());
     // This machine's record started the driver: the run began after its claim, before its exit.
     const owner = "20261030T190000Z-aaaaaaaa";

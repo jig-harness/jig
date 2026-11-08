@@ -212,3 +212,38 @@ it("starts a follow-up a person asked for again as a new one, not a run again of
   const record = readRecord(String(launched?.record), dispatchState(w));
   expect(record?.facts).toBe("merged 2026-10-31T12:00:00Z");
 }, 90_000);
+
+it("keeps a run again that failed to start a run again, so its death is a person's", async () => {
+  const w = fixture();
+  // A second account: a session that could not start keeps its account out of admission for a while.
+  machineFile(
+    w,
+    [account(w, "a", "a@example.com"), account(w, "b", "b@example.com")],
+    {},
+    ["followup", "notify"],
+    { followup_since: "2026-10-30T00:00:00Z" },
+  );
+  await dies(w, 143);
+  expect(launches(await applyTick(w, false))).toEqual([]);
+
+  // The run again stops before it starts: no transcript, a quick failing exit.
+  const runs = claudeRuns(w).length;
+  const [rerun] = launches(await applyTick(w, false));
+  const id = String(rerun?.record);
+  expect(readRecord(id, dispatchState(w))?.facts).toStartWith("recovery: ");
+  await waitFor("the pass", () => claudeRuns(w).length === runs + 1);
+  writeFileSync(join(w.dir, "claude-exit"), "1");
+  await waitFor("the exit", () => exitWritten(w, id));
+  rmSync(join(w.dir, "claude-exit"));
+  // Its marker is released as an unstarted session's.
+  expect(launches(await applyTick(w, false))).toEqual([]);
+
+  // Its startup retry is still the run again.
+  const retry = await dies(w, 255);
+  expect(readRecord(retry, dispatchState(w))?.facts).toStartWith("recovery: ");
+  const after = await applyTick(w, false);
+  expect(launches(after)).toEqual([]);
+  expect(after.repos[0]?.actions).toContainEqual(
+    expect.objectContaining({ stage: "notify", cause: "followup-failed" }),
+  );
+}, 180_000);

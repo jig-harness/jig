@@ -1,8 +1,8 @@
 /**
  * A drive armed after a stop whose next step is the drive's own: a stall
  * (`STALLED`, exit `14`), CI still red with its repair passes spent
- * (`CI_REPAIR_SPENT`, exit `21`) or a pass deadline with its restarts spent
- * (`PASS_DEADLINE`, exit `15`). The dispatcher re-drives each once per head
+ * (`CI_REPAIR_SPENT`, exit `21`) or a pass deadline the driver did not
+ * restart from (`PASS_DEADLINE`, exit `15`). The dispatcher re-drives each once per head
  * commit, and a person may re-arm any. The stop is the drive state's last
  * `stop` event, which the ledger carries to another clone, so the new drive
  * reads it wherever it runs.
@@ -57,7 +57,7 @@ export async function stopPickup(
   if (code === PASS_DEADLINE_EXIT)
     return {
       notice: [
-        `RE-ARMED AFTER A PASS DEADLINE: the drive before this one stopped with exit ${PASS_DEADLINE_EXIT} (PASS_DEADLINE) at round ${stop?.round ?? "?"}: its passes reached their deadline again after the driver spent its restarts (drive.pass_deadline_retries).`,
+        `RE-ARMED AFTER A PASS DEADLINE: the drive before this one stopped with exit ${PASS_DEADLINE_EXIT} (PASS_DEADLINE) at round ${stop?.round ?? "?"}: its passes reached their deadline and the driver did not restart them again (drive.pass_deadline_retries).`,
         ...leftWorkLines(inherits, leftWork, stop?.tree),
         "Finish the round in smaller steps than the killed passes tried, so it ends inside the deadline.",
       ].join("\n"),

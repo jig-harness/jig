@@ -52,8 +52,8 @@
  *
  * A ledger that stopped `PASS_DEADLINE`, the driver having spent its
  * restarts from a pass killed at its deadline, is re-driven the same way,
- * once per head commit, by a fresh pass, and bound to its tree as a stall is,
- * since the killed passes' work stays there. One that stopped `INDETERMINATE`
+ * once per head commit, by a fresh pass, in the tree it stopped in when its
+ * stop measured work left there, since the killed passes' work stays there. One that stopped `INDETERMINATE`
  * (`1`) while its pull request conflicts with its base is re-driven once per
  * pair of its head and its base branch's head, the change a stop on a
  * conflict is keyed on, so the drive's conflict-resolve round runs once for
@@ -349,12 +349,7 @@ function mechanicalStopClass(
       why: `stopped ${exit} (${stop.words}), and the forge reports no head commit for it, so the once-per-head re-drive cannot be kept`,
     };
   const last = lastStopEvent(ledger.events ?? []);
-  const tree =
-    stop.kind !== "ci-repair" &&
-    last?.leftWork !== false &&
-    (last === undefined || last.cause === String(exit))
-      ? ledgerTree(ledger)
-      : null;
+  const tree = boundToTree(stop.kind, exit, last) ? ledgerTree(ledger) : null;
   return {
     class: "stale",
     why: `stopped ${exit} (${stop.words}): re-drive ${tree === null ? "on any account" : stopTreeWhy(last?.leftWork)}, once for head ${short(head)}`,
@@ -366,6 +361,22 @@ function mechanicalStopClass(
       ...(tree === null ? {} : { tree }),
     },
   };
+}
+
+/**
+ * Whether a mechanical stop's re-drive must run in the tree it stopped in: a
+ * stall that left work there or never measured it, and a pass deadline whose
+ * stop measured work left. A deadline stop that never measured comes from a
+ * driver that did not record it, so it re-drives on any account.
+ */
+function boundToTree(
+  kind: NonNullable<StaleCause["mechanicalStop"]>,
+  exit: number,
+  last: ReturnType<typeof lastStopEvent>,
+): boolean {
+  const own = last === undefined || last.cause === String(exit);
+  if (kind === "stall") return own && last?.leftWork !== false;
+  return kind === "deadline" && own && last?.leftWork === true;
 }
 
 /** The class of each exit the table names but `CONVERGED`, `HITL_PARKED` and `PR_CONFLICTING`, which read the pull request and its parks. */

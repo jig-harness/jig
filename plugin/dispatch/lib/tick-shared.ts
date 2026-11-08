@@ -254,7 +254,8 @@ export function settleDrives(
  * when neither this host's launch records nor another host's claims place it
  * (start its driver, hold it, or answer it with a refusal): only that
  * takeover is a re-drive the recovery budget counts. A takeover of a driver
- * a launch started is planned as it always was.
+ * a launch started is planned from that launch's record or claim, outside
+ * the budget.
  */
 function markUnlaunched(
   drives: readonly DrivenPr[],

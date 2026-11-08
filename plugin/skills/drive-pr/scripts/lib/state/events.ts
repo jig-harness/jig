@@ -16,13 +16,14 @@
  *     `8` HITL-parked, …) or `unknown` (a thrown refusal or a crash), so a
  *     report reads how the drive last ended from the state as well as from
  *     the ledger. A dry run records none. `leftWork` records, on a stall
- *     and on a pass deadline with its restarts spent, whether the stop
+ *     and on a pass deadline the driver did not restart from, whether the stop
  *     measured work in its tree that no push carries (uncommitted edits, an
  *     open git operation, unpushed commits), and `tree` names that tree
  *     (`<actor>@<host>`): the dispatcher re-drives such a stop that left
  *     work only in that tree, and a re-arm in that tree inherits the edits as
- *     its own. A stop without `leftWork` was never measured, so it is read as
- *     possibly holding work.
+ *     its own. A stall's stop without `leftWork` was never measured, so it
+ *     is read as possibly holding work; a deadline's, written by a driver
+ *     that did not record it, is read as holding none.
  *
  * Takeovers have their own record (`takeover.ts`). Optional in a stored
  * state: a file written before the field existed reads as no events.

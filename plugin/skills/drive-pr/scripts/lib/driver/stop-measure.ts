@@ -2,9 +2,10 @@
  * What a stop whose re-drive must run where its work is measures of its tree,
  * for its stop event (`events.ts`): whether the tree holds work no push
  * carries, and which tree it is (`<actor>@<host>`). A stall and a pass
- * deadline with its restarts spent record it; the dispatcher re-drives such a
- * stop that left work, or never measured, only in that tree, and a re-arm
- * there inherits the edits as its own (`stop-pickup.ts`).
+ * deadline the driver did not restart from record it; the dispatcher
+ * re-drives such a stop that left work only in that tree (a stall's also
+ * when it never measured), and a re-arm there inherits the edits as its own
+ * (`stop-pickup.ts`).
  */
 import { resolveActor } from "./../state/actor.ts";
 import { hostLabel } from "./../state/ledger-mirror.ts";

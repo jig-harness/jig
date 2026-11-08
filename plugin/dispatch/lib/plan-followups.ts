@@ -396,10 +396,11 @@ function planTick(
 
 /**
  * The follow-up of a pull request that a follow-up launched now runs again:
- * this host's latest follow-up of it, when that one died for the first time
- * and a tick released its marker as a retry (`retried`); `undefined`
- * otherwise. A follow-up a person asked for again by deleting a failed
- * marker is a new one, not a run again.
+ * this host's latest follow-up of it that started, when that one died for
+ * the first time and a tick released its marker as a retry (`retried`);
+ * `undefined` otherwise. A launch that never started is skipped, so the
+ * startup retry of a run again is one too. A follow-up a person asked for
+ * again by deleting a failed marker is a new one, not a run again.
  */
 function deathOf(input: FollowupInput, pr: number): ReadRecord | undefined {
   const latest = input.launches
@@ -407,7 +408,8 @@ function deathOf(input: FollowupInput, pr: number): ReadRecord | undefined {
       (r) =>
         r.record.repo === input.slug &&
         r.record.pr === pr &&
-        r.record.action === "followup",
+        r.record.action === "followup" &&
+        !retryableStartup(r),
     )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
