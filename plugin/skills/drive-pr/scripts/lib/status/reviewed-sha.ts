@@ -272,6 +272,8 @@ const HUNK_POSITION = /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/;
 interface Change {
   from: string;
   patch: string;
+  /** The changed paths, NUL-delimited by git, in the order the patch lists their files. */
+  paths: string[];
 }
 
 /**
@@ -283,12 +285,21 @@ async function normalizedSections(
   change: Change,
   shifted: Set<string>,
 ): Promise<string[]> {
-  const sections = change.patch.split(/^(?=diff --git )/m);
+  const sections = change.patch
+    .split(/^(?=diff --git )/m)
+    .filter((s) => s !== "");
+  // A header spells a path as git quotes it, so a section is matched to its
+  // path by position in the same diff's NUL-delimited path list; a count that
+  // disagrees leaves no section matched to a path that can be trusted.
+  const aligned = sections.length === change.paths.length;
   const out: string[] = [];
   for (const [n, section] of sections.entries()) {
-    const path = [...shifted].find((p) =>
-      section.startsWith(`diff --git a/${p} b/${p}\n`),
-    );
+    if (!aligned) {
+      out.push(`<<not comparable: ${change.from} ${n}>>`);
+      continue;
+    }
+    const named = change.paths[n];
+    const path = named !== undefined && shifted.has(named) ? named : undefined;
     if (path === undefined) out.push(section);
     else if (await losesInformation(change.from, path, section))
       out.push(`<<not comparable: ${change.from} ${n} ${path}>>`);
@@ -344,9 +355,7 @@ async function changeAt(
   const from = mergeBase.stdout.trim();
   if (mergeBase.code !== 0 || from === "")
     return gitFailure(`merge-base ${base} ${head}`, mergeBase.stderrTail);
-  const diff = await localGit([
-    "-c",
-    "core.quotePath=false",
+  const flags = [
     "diff",
     "--no-color",
     "--src-prefix=a/",
@@ -357,12 +366,18 @@ async function changeAt(
     "--no-renames",
     "--no-relative",
     "--ignore-submodules=none",
-    "--unified=3",
-    from,
-    head,
-    "--",
+  ];
+  const [diff, names] = await Promise.all([
+    localGit([...flags, "--unified=3", from, head, "--"]),
+    localGit([...flags, "--name-only", "-z", from, head, "--"]),
   ]);
   if (diff.code !== 0)
     return gitFailure(`diff ${from} ${head}`, diff.stderrTail);
-  return { from, patch: diff.stdout };
+  if (names.code !== 0)
+    return gitFailure(`diff --name-only ${from} ${head}`, names.stderrTail);
+  return {
+    from,
+    patch: diff.stdout,
+    paths: names.stdout.split("\0").filter((p) => p !== ""),
+  };
 }

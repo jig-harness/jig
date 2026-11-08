@@ -360,6 +360,29 @@ describe("drive-status.ts over a head the reviewer skipped", () => {
     expect(r.state).toBe("CONVERGED");
   });
 
+  it("converges when a base edit shifts a file's hunk when git quotes its name in the patch header", async () => {
+    const repo = makeScratchRepo("skipped-quoted-path");
+    const file = 'say "hi".txt';
+    const lines = Array.from({ length: 30 }, (_, i) => `row ${i}`);
+    const text = (top: string, edited: boolean) =>
+      `${top}${lines.map((l, i) => (edited && i === 25 ? "row 25!" : l)).join("\n")}\n`;
+    commitFile(repo.dir, file, text("", false));
+    git(repo.dir, "checkout", "-q", "-b", "feature");
+    const reviewed = commitFile(repo.dir, file, text("", true));
+    git(repo.dir, "checkout", "-q", "main");
+    const base = commitFile(repo.dir, file, text("# top\n", false));
+    git(repo.dir, "checkout", "-q", "feature");
+    git(repo.dir, "merge", "-q", "--no-ff", "--no-edit", "main");
+    const merged = git(repo.dir, "rev-parse", "HEAD");
+    const r = await gate(
+      repo.dir,
+      at({ dir: repo.dir, base, reviewed }, merged),
+      skipNotice(merged),
+    );
+    expectSpawnExit(r, 3);
+    expect(r.state).toBe("CONVERGED");
+  });
+
   it("reaches the skip notice when the reviewer's check-run itself concluded skipped", async () => {
     const repo = pullRequestRepo("skipped-check-run");
     const fixture = {
