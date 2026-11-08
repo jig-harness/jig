@@ -230,6 +230,13 @@ person asked for. The design round covers the whole hub, its views, cards and ch
 the layout holds when the hub's writes arrive, and the board view comes
 with the hub's Work page.
 
+Built: the baseline (step 1) and, of step 2, the predicate the tick, the
+announcement and `jig ask` share, the board read in the tick's observe
+phase, the merge command's strict forms, the `ready` notification and the
+line's lanes; open in step 2: the status row's marks, the merge station,
+the overflow follow-up reads, the event rows, the receipt's figures and the
+report's merge queue.
+
 The baseline, measured on the dispatch host on 2026-11-08 over the six
 days its outcome log held (from 2026-11-02): in jig-harness/jig, 50 pull
 requests had a converged drive and all 50 merged, a median 1.3 hours after

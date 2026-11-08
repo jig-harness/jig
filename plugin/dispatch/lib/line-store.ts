@@ -160,6 +160,23 @@ const LINE_FIELDS: Fields = {
   sessions: listOf(ENTRY_FIELDS.sessions),
   accounts: listOf(ENTRY_FIELDS.accounts),
   queue: listOf(ENTRY_FIELDS.queue),
+  ready: (value) =>
+    value === undefined ||
+    listOf({
+      repo: isString,
+      pr: isNumber,
+      url: isString,
+      head: isString,
+      place: isString,
+      lane: nullOr(isString),
+      says: isString,
+      act: nullOr(isString),
+      command: nullOr(isString),
+      requested: Array.isArray,
+      failing: Array.isArray,
+      conditions: Array.isArray,
+      unblocks: Array.isArray,
+    })(value),
   repos: listOf(ENTRY_FIELDS.repos),
 };
 

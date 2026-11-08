@@ -774,6 +774,7 @@ async function sendNotices(
           workspace,
           lasting:
             c.cause === "drifting" ||
+            c.cause === "ready" ||
             (c.cause === "stopped-unknown" && c.evidence.noCause === true),
         },
         // A cause about a stage this machine launched has its ended row instead.

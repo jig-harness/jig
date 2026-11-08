@@ -10,12 +10,11 @@ import { derivedNext } from "../../dispatch/lib/next-owner.ts";
  * with the exit named from the drive's terminal-state registry, so a drive's
  * state means here what it means to the tick.
  *
- * On the machine that dispatched it, this machine's launch records name the
- * account, the session and whether the process runs; elsewhere the launch
- * claims on the forge say which host holds a launch and how the last one
- * ended. A drive nobody dispatched is read from its own listing in a
- * checkout of the repository, with the doctor's verdict and the recovery
- * command it gives, which is printed and never run.
+ * Here, this machine's launch records name the account, the session and
+ * whether the process runs; elsewhere the forge's launch claims say which
+ * host holds a launch and how the last one ended. A drive nobody dispatched
+ * is read from its listing in a checkout, with the doctor's verdict and its
+ * recovery command, printed and never run.
  */
 import {
   DRIVE_EXIT,
@@ -74,6 +73,7 @@ import {
 } from "./forge.ts";
 import { driveRow, type DriveRow } from "./local.ts";
 import { takeoverSettled } from "./drive-takeover.ts";
+import { convergedWait } from "./merge.ts";
 import {
   type AskContext,
   dispatcherReads,
@@ -274,6 +274,7 @@ function waitsOnOf(
   ctx: AskContext,
   held: boolean,
   base: PrFacts["base"],
+  merge: WaitsOn | null = null,
 ): WaitsOn {
   const classification = classifyLedger(
     ledger,
@@ -358,10 +359,7 @@ function waitsOnOf(
       return { waiting: placed.why };
     case "done":
       return ledger.driver.exit === DRIVE_EXIT.CONVERGED
-        ? {
-            person: "merge",
-            why: `${placed.why}; a person merges, and whether an approval or an update of the branch must come first is not read here`,
-          }
+        ? (merge ?? { person: "merge", why: placed.why })
         : "none";
     default:
       return { person: "re-arm", why: placed.why };
@@ -767,6 +765,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
       read: pull.read,
       base,
       presence,
+      merge: await convergedWait(ctx, read, doc),
     }),
     last: lastOf(reads),
     entries,
@@ -865,6 +864,7 @@ function driveWait(
     read: boolean;
     base: PrFacts["base"];
     presence: DriverPresence | null;
+    merge: WaitsOn | null;
   },
 ): WaitsOn {
   if (!facts.read)
@@ -893,7 +893,7 @@ function driveWait(
   if (diagnosis !== null) return diagnosis;
   return ledger === null
     ? "none"
-    : waitsOnOf(ledger, reads, ctx, holder !== "none", facts.base);
+    : waitsOnOf(ledger, reads, ctx, holder !== "none", facts.base, facts.merge);
 }
 
 /** The doctor names a stranded hold's guarded recovery; an unproven running ledger names a missing probe. */

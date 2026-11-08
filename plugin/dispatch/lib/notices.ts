@@ -149,6 +149,34 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
   );
 }
 
+/**
+ * A pull request that entered Ready to merge, merge now or approve first:
+ * the repository, its number and its lane, no text a record holds. Keyed by
+ * the pull request and the head the drive verified, so it is sent once per
+ * head: a move between the lanes, or a re-entry at the same head, sends
+ * nothing more.
+ */
+export function readyNotice(
+  slug: string,
+  card: {
+    number: number;
+    url: string;
+    head: string;
+    lane: "merge-now" | "approve-first";
+    requested: string[];
+  },
+): Notice {
+  const line =
+    card.lane === "merge-now"
+      ? `Ready to merge in ${slug}: PR #${card.number}. Its merge command, pinned to the verified head, is on the dashboard and in \`jig ask drive@${slug}#${card.number}\`.`
+      : `Ready to merge in ${slug} once approved: PR #${card.number}. An approval is still required${card.requested.length === 0 ? ", and nobody is asked" : ""}; the repository's other protection rules are not read.`;
+  return notice(
+    `${slug} PR #${card.number} ready at ${card.head}`,
+    [line],
+    [card.url],
+  );
+}
+
 /** A follow-up the tick started that failed, stopped on a question for a person (`question`), or whose record and outcome are gone. */
 export function followupFailedNotice(
   slug: string,

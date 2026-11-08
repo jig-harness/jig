@@ -42,6 +42,7 @@ import {
   unreadableNote,
   withdrawAnnouncement,
 } from "./lib/announce.ts";
+import { announceReady } from "./lib/announce-ready.ts";
 import { parsePrSnapshot } from "./lib/ci-hold.ts";
 import { ciHoldLabelSetting } from "./lib/overlay.ts";
 
@@ -657,24 +658,10 @@ async function main(): Promise<number> {
     return rc === 5 ? 5 : rc === 0 ? 0 : 1;
   }
 
-  // CONVERGED is a claim about the posting reviewer, which reviews drafts — it
-  // says nothing about CodeRabbit, which refuses one outright (§ Drafts are
-  // driven, SKILL.md). A still-draft PR reaching here is exactly the false
-  // terminal `drive.ts` itself now refuses to report as exit 0 (the same gap
-  // one script over): announcing "safe to merge" about a PR CodeRabbit has
-  // never seen, and by repo policy never will until a human or a drive marks it
-  // Ready, is the claim this script exists to avoid overstating.
-  //
-  // Handled by `checkLiveState()` below, not a bespoke up-front check here —
-  // there used to be one, keyed on `status.draft` from the `drive-status.ts`
-  // read at the top of this function. Moving it after `existingIds` fixed the
-  // missing withdrawal but not the deeper problem: `status` is
-  // captured before the comment sweep and worktree checks that follow it, all
-  // real elapsed time, so a human marking the PR Ready in that exact window
-  // left `status.draft` stale — true when the announcement it was about to
-  // delete had already become valid again. `checkLiveState()` is the fresh read
-  // this needs, and it already runs next — folding this case into it rather
-  // than keeping a second, worse copy of the same question.
+  // CONVERGED is a claim about the posting reviewer, which reviews drafts; a
+  // reviewer that skips drafts has not seen one, so a draft is refused here.
+  // `checkLiveState()` re-reads `isDraft` each time it runs, since a person
+  // can mark the PR Ready or draft again while the checks below run.
   //
   // Re-read the head + mergeability now, BEFORE deciding "nothing to do" — not
   // just before posting. The CONVERGED gate above is a mergeability gate too
@@ -910,6 +897,12 @@ async function main(): Promise<number> {
   if (liveRc !== 0) {
     return await withdrawIfConfirmedStale(liveRc);
   }
+  // The Ready predicate adds the forge's protection and review requirements.
+  const forge = await announceReady(pr, head);
+  if (forge.rc !== 0) {
+    console.error(`announce-merge-ready: ${forge.says} — refusing to announce`);
+    return forge.rc;
+  }
 
   if (existingIds.length > 0) {
     // Re-confirm at the LAST moment before reporting success — with
@@ -973,7 +966,7 @@ reasons that have nothing to do with the change.
 The reasoning for every answer is in its own outcome comment on this PR; that is
 the artefact to read back if a finding matters.
 
-Merging it remains a human decision — unless the repository marks Ready
+${forge.lane === "approve-first" ? "An approval is still required before it can merge; the repository's other\nprotection rules were not read.\n\n" : ""}Merging it remains a human decision — unless the repository marks Ready
 never, the driver marks a converged PR Ready for review itself (after the
 round the repository declares, or here if it converged before reaching it),
 so this is the driver reporting that it has nothing left to do, not an
@@ -1003,6 +996,9 @@ ${marker}`;
   }> {
     const liveRc = await checkLiveState();
     if (liveRc !== 0) return { rc: liveRc, failed: "state" };
+    const lane = await announceReady(pr, head);
+    if (lane.rc !== 0 || lane.lane !== forge.lane)
+      return { rc: lane.rc === 0 ? 4 : lane.rc, failed: "state" };
     const cleanRc = await checkWorktreeClean(head);
     if (cleanRc !== 0) return { rc: cleanRc, failed: "tree" };
     const ciRc = await confirmFinalCi();

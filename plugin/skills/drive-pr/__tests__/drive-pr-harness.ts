@@ -1146,7 +1146,7 @@ for a in "$@"; do
     -f|-F)
       if [[ "$a" == query=* ]]; then
         query="\${a#query=}"
-        printf '%s' "$query" > "$F/last-graphql-query.txt"
+        [[ "$query" == *"query DispatchBoard"* ]] || printf '%s' "$query" > "$F/last-graphql-query.txt"
       fi
       ;;
   esac
@@ -1156,6 +1156,17 @@ for a in "$@"; do
 done
 has_input=0
 for a in "$@"; do [ "$a" = "--input" ] && has_input=1; done
+
+# The Ready predicate's board query (merge-facts.ts), from board.json when a
+# test writes one, else a mergeable head the fixture's reviewer app checked
+# and a person approved, built from pr-view.json, so a test about the
+# announcement's other gates passes it. It is no head read of the PR view,
+# so no counter below sees it.
+if [[ "$query" == *"query DispatchBoard"* ]]; then
+  if [ -f "$F/board.json" ]; then cat "$F/board.json"; exit 0; fi
+  jq -c '{data: {rateLimit: {cost: 1, remaining: 4999, limit: 5000}, repository: {squashMergeAllowed: true, mergeCommitAllowed: true, rebaseMergeAllowed: true, pr999: {number: 999, headRefOid: .headRefOid, isDraft: (.isDraft // false), mergeable: (.mergeable // "MERGEABLE"), mergeStateStatus: "CLEAN", reviewDecision: null, authorAssociation: "OWNER", isMergeQueueEnabled: false, labels: {pageInfo: {hasNextPage: false}, nodes: []}, reviewThreads: {pageInfo: {hasNextPage: false}, nodes: []}, reviewRequests: {pageInfo: {hasNextPage: false}, nodes: []}, latestReviews: {pageInfo: {hasNextPage: false}, nodes: [{state: "APPROVED", author: {__typename: "User", login: "maintainer"}, commit: {oid: .headRefOid}}]}, commits: {nodes: [{commit: {oid: .headRefOid, statusCheckRollup: {contexts: {pageInfo: {hasNextPage: false}, nodes: [{__typename: "CheckRun", name: "AI review", status: "COMPLETED", conclusion: "SUCCESS", startedAt: "2026-01-01T00:00:00Z", isRequired: false, checkSuite: {app: {slug: "example-review"}}}]}}}}]}}}}}' "$F/pr-view.json"
+  exit 0
+fi
 
 # Stall mode, for probing a deadline. \`$DRIVE_PR_STUB_HANG\` is the duration;
 # \`$DRIVE_PR_STUB_HANG_ON\` narrows it to calls whose argv contains that

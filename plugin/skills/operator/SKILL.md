@@ -172,10 +172,13 @@ earlier answer:
   it means.
 - **`waitsOn`** (Waits on, What you can do): `none`; `waiting`, which
   settles by itself (say on what, such as the dispatcher's next tick); or
-  `person`, with the act that settles it (answer, re-arm, merge, re-run the
-  follow-up, …). For a converged drive that waits on a merge, say what
-  the answer says must come first, or, where it says it has not read
-  that, that an approval or an update of the branch may be needed.
+  `person`, with the act that settles it (answer, re-arm, merge, approve,
+  request a review, update the branch, re-run the follow-up, …). A
+  converged drive's answer names its lane of Ready to merge (merge now,
+  approve first, update next) with the act and, in merge now, the merge
+  command pinned to the verified head; where it says the repository's
+  review rules were not read, say that an approval or an update of the
+  branch may be needed.
 - **What you can do** names the act and who does it:
   - a command this skill sends (a `jig send` verb from the table below):
     name it and offer it; send it only as [the rules for

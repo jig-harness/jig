@@ -1,0 +1,535 @@
+/**
+ * Ready to merge, exactly: one pure predicate the dispatcher's tick, the
+ * merge-ready announcement and `jig ask` all call, so the board, the drive's
+ * own comment and the answer a person gets about one pull request cannot
+ * disagree (design/dispatch-board.md § Ready, exactly).
+ *
+ * It takes the facts of one converged pull request and places it: in Ready
+ * to merge, lane **merge now**, **approve first** or **update next**; in Needs
+ * you, with the person's act that settles it; in Coming, when a re-drive or
+ * the pull request ahead of it settles it; or where it was, while the forge is
+ * still computing. Each condition comes back met or not with the fact behind
+ * it.
+ *
+ * Merge now never rests on the drive's ledger alone. The ledger is a comment
+ * any collaborator can write, so the forge must witness a review of the head:
+ * the reviewer app's own check run on it, where the repository names an app,
+ * else a person's approving review of that head. A pull request from outside
+ * the repository needs a person's approval whatever the app says.
+ *
+ * The rows of the placement table are first match, and every blocker other
+ * than an approval comes before the approval rows, so a pull request enters
+ * approve first only once the other conditions the read covers hold. Nothing
+ * here reads signature or deployment rules, so approve first never says an
+ * approval is the only act left.
+ */
+
+/** The lanes of Ready to merge, in the order of the work they ask. */
+export const LANES = ["merge-now", "approve-first", "update-next"] as const;
+export type Lane = (typeof LANES)[number];
+
+/** The acts that settle a card that waits on a person: a closed list, the board's own words. */
+export const ACTS = [
+  "merge",
+  "approve",
+  "request-review",
+  "update-branch",
+  "answer",
+  "re-arm",
+  "re-run-check",
+  "mark-ready",
+  "remove-label",
+  "open-pr",
+] as const;
+export type Act = (typeof ACTS)[number];
+
+/** How an act reads in a sentence. */
+export const ACT_WORDS: Record<Act, string> = {
+  merge: "merge",
+  approve: "approve",
+  "request-review": "request a review",
+  "update-branch": "update the branch",
+  answer: "answer",
+  "re-arm": "re-arm the drive",
+  "re-run-check": "re-run a check",
+  "mark-ready": "mark it ready",
+  "remove-label": "remove the label",
+  "open-pr": "open the pull request",
+};
+
+/** Where a converged pull request goes: Ready to merge, Needs you, Coming, or the column it was in. */
+export type Placement = "ready" | "needs-you" | "coming" | "stay";
+
+/** What a card waits on: something already under way, or a person's act. */
+export type WaitsOn =
+  | { kind: "waiting"; for: string }
+  | { kind: "person"; act: Act };
+
+/** One check context on the head, as the forge reports it. */
+export interface HeadCheck {
+  name: string;
+  /** The app that posted a check run; `null` for a commit status. */
+  app: string | null;
+  required: boolean;
+  state: "pending" | "success" | "neutral" | "skipped" | "failure";
+  /** When the run started, for picking the newest run of a name; `null` when not known. */
+  startedAt: string | null;
+}
+
+/** A reviewer's latest review. */
+export interface HeadReview {
+  author: string;
+  /** Whether the forge types the author as a user, not an app. */
+  person: boolean;
+  state: string;
+  /** The commit the review was submitted against. */
+  commit: string;
+}
+
+/** What the forge says of one pull request, at one head. */
+export interface ForgeFacts {
+  number: number;
+  head: string;
+  draft: boolean;
+  /** `MERGEABLE`, `CONFLICTING` or `UNKNOWN`. */
+  mergeable: string;
+  /** The forge's merge state (`CLEAN`, `BLOCKED`, `BEHIND`, …). */
+  mergeState: string;
+  /** Whether its base requires a merge queue, whose own rules then decide. */
+  mergeQueue: boolean;
+  /** `APPROVED`, `CHANGES_REQUESTED`, `REVIEW_REQUIRED` or `null`. */
+  reviewDecision: string | null;
+  /** Its author's association with the repository. */
+  authorAssociation: string;
+  labels: string[];
+  unresolvedThreads: number;
+  checks: HeadCheck[];
+  reviews: HeadReview[];
+  /** The reviewers and teams a review is requested from. */
+  requested: string[];
+  /** The merge methods the repository allows. */
+  methods: { squash: boolean; merge: boolean; rebase: boolean };
+  /** Why part of it did not read (a connection longer than one page); `null` when it read whole. */
+  partial: string | null;
+}
+
+/** What the dispatcher and the drive know of the pull request beside the forge. */
+export interface MergeFacts extends ForgeFacts {
+  /** The repository's slug, `owner/name`. */
+  slug: string;
+  /** Its drive ledger stopped converged. */
+  converged: boolean;
+  /** The head the drive verified. */
+  verifiedSha: string;
+  /** A person's hold label stands the dispatcher down from it. */
+  held: boolean;
+}
+
+/** The repository's rules the predicate applies. */
+export interface ReadyRules {
+  /** The reviewer app whose check run witnesses a review; `null` where the repository names none. */
+  reviewerApp: string | null;
+  /** The reviewer's posting check, by name. */
+  reviewerCheck: RegExp;
+  /** The CI hold label, under which required checks fail on purpose; `null` where none is configured. */
+  ciHoldLabel: string | null;
+}
+
+/** One Ready condition, met or not, with the fact behind it. */
+export interface ReadyCondition {
+  name: string;
+  /** `null` when it was not read. */
+  met: boolean | null;
+  fact: string;
+}
+
+/** The predicate's answer for one pull request. */
+export interface Readiness {
+  place: Placement;
+  /** Its lane, for a pull request in Ready to merge. */
+  lane: Lane | null;
+  /** What the card says, in the board's own words. */
+  says: string;
+  waitsOn: WaitsOn;
+  conditions: ReadyCondition[];
+  /** The checks failing on the head, by name: text the forge's apps wrote. */
+  failing: string[];
+  /** The reviewers or teams a review is requested from, as requested. */
+  requested: string[];
+  /** For merge now: the command pinned to the verified head; `null` when withheld. */
+  command: string | null;
+  /** Why the command is withheld; `null` when it is built or not wanted. */
+  withheld: string | null;
+}
+
+/**
+ * A reviewer check pattern as a case-insensitive `RegExp`, its POSIX
+ * character classes (`[[:space:]]`, written for the shell's dialect) read as
+ * JavaScript's.
+ */
+export function checkPattern(pattern: string): RegExp {
+  return new RegExp(
+    pattern
+      .replaceAll("[[:space:]]", "\\s")
+      .replaceAll("[[:digit:]]", "\\d")
+      .replaceAll("[[:alpha:]]", "[A-Za-z]")
+      .replaceAll("[[:alnum:]]", "[A-Za-z0-9]"),
+    "i",
+  );
+}
+
+/** The associations the forge gives the repository's own authors. */
+const OWN = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+
+/** Merge states under which branch protection lets it merge now. */
+const MERGES_NOW = new Set(["CLEAN", "HAS_HOOKS"]);
+
+/** The newest run of each reviewer check that matches, or `null` when the head has none. */
+function reviewerRun(facts: ForgeFacts, rules: ReadyRules): HeadCheck | null {
+  const app = rules.reviewerApp;
+  if (app === null) return null;
+  const runs = facts.checks
+    .filter((c) => c.app === app && rules.reviewerCheck.test(c.name))
+    .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
+  return runs[0] ?? null;
+}
+
+/** Whether a person's approving review stands on the head. */
+function approvedHere(facts: ForgeFacts): boolean {
+  return facts.reviews.some(
+    (r) => r.person && r.state === "APPROVED" && r.commit === facts.head,
+  );
+}
+
+/** The witness of a review of the head: the reviewer app's check, else a person's approval. */
+function witness(
+  facts: ForgeFacts,
+  rules: ReadyRules,
+): { met: boolean; fact: string; byApp: boolean } {
+  if (rules.reviewerApp === null)
+    return approvedHere(facts)
+      ? { met: true, fact: "a person approved this head", byApp: false }
+      : {
+          met: false,
+          fact: "no reviewer app is named and no person approved this head",
+          byApp: false,
+        };
+  const run = reviewerRun(facts, rules);
+  if (run === null)
+    return {
+      met: false,
+      fact: `${rules.reviewerApp} posted no review check on this head`,
+      byApp: true,
+    };
+  const met = run.state === "success" || run.state === "neutral";
+  return {
+    met,
+    fact: `${rules.reviewerApp}'s review check on this head is ${run.state}`,
+    byApp: true,
+  };
+}
+
+/** The checks failing on the head, the reviewer's own left to the witness. */
+function failingChecks(facts: ForgeFacts, rules: ReadyRules): string[] {
+  return facts.checks
+    .filter(
+      (c) =>
+        c.state === "failure" &&
+        !(c.app === rules.reviewerApp && rules.reviewerCheck.test(c.name)),
+    )
+    .map((c) => c.name);
+}
+
+/** The Ready conditions as a checklist. */
+function checklist(
+  facts: MergeFacts,
+  seen: ReturnType<typeof witness>,
+  ciHeld: boolean,
+): ReadyCondition[] {
+  const own = OWN.has(facts.authorAssociation);
+  const state = facts.mergeQueue
+    ? "its base requires a merge queue"
+    : `merge state ${facts.mergeState}`;
+  return [
+    {
+      name: "converged",
+      met: facts.converged,
+      fact: facts.converged
+        ? "its drive stopped converged"
+        : "its drive has not converged",
+    },
+    {
+      name: "verified head",
+      met: facts.head === facts.verifiedSha,
+      fact: `head ${facts.head.slice(0, 7)}, verified ${facts.verifiedSha.slice(0, 7) || "none"}`,
+    },
+    { name: "review witnessed", met: seen.met, fact: seen.fact },
+    {
+      name: "mergeable",
+      met:
+        facts.mergeable === "UNKNOWN" ? null : facts.mergeable === "MERGEABLE",
+      fact: `mergeable ${facts.mergeable}`,
+    },
+    {
+      name: "not a draft",
+      met: !facts.draft,
+      fact: facts.draft ? "a draft" : "ready for review",
+    },
+    {
+      name: "no unresolved thread",
+      met: facts.unresolvedThreads === 0,
+      fact: `${facts.unresolvedThreads} unresolved`,
+    },
+    {
+      name: "protection lets it merge",
+      met:
+        facts.mergeQueue || MERGES_NOW.has(facts.mergeState)
+          ? true
+          : facts.mergeState === "UNKNOWN"
+            ? null
+            : false,
+      fact: state,
+    },
+    {
+      name: "own author or approved",
+      met: own || approvedHere(facts),
+      fact: own
+        ? `author is ${facts.authorAssociation}`
+        : approvedHere(facts)
+          ? "outside author, approved by a person"
+          : `outside author (${facts.authorAssociation})`,
+    },
+    {
+      name: "not held",
+      met: !facts.held && !ciHeld,
+      fact: facts.held
+        ? "a person's hold label"
+        : ciHeld
+          ? "the CI hold label"
+          : "no hold label",
+    },
+  ];
+}
+
+/** The strict forms a merge command's values must pass. */
+const FORMS = {
+  number: (n: number) => Number.isSafeInteger(n) && n > 0,
+  slug: (s: string) => /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(s),
+  sha: (s: string) => /^[0-9a-f]{40}$/.test(s),
+};
+
+/** The merge command pinned to the verified head, or which value withheld it. */
+export function mergeCommand(facts: MergeFacts): {
+  command: string | null;
+  withheld: string | null;
+} {
+  if (!FORMS.number(facts.number))
+    return { command: null, withheld: "the pull request's number" };
+  if (!FORMS.slug(facts.slug))
+    return { command: null, withheld: "the repository's name" };
+  if (!FORMS.sha(facts.verifiedSha))
+    return { command: null, withheld: "the verified head" };
+  const base = `gh pr merge ${facts.number} --repo ${facts.slug} --match-head-commit ${facts.verifiedSha}`;
+  if (facts.mergeQueue) return { command: base, withheld: null };
+  const method = (["squash", "merge", "rebase"] as const).find(
+    (m) => facts.methods[m],
+  );
+  return method === undefined
+    ? {
+        command: null,
+        withheld: "the merge method: the repository allows none",
+      }
+    : { command: `${base} --${method}`, withheld: null };
+}
+
+/** An answer with the parts every placement shares. */
+function answer(
+  place: Placement,
+  waitsOn: WaitsOn,
+  says: string,
+  shared: Pick<Readiness, "conditions" | "failing" | "requested">,
+  lane: Lane | null = null,
+): Readiness {
+  return {
+    place,
+    lane,
+    says,
+    waitsOn,
+    command: null,
+    withheld: null,
+    ...shared,
+  };
+}
+
+const person = (act: Act): WaitsOn => ({ kind: "person", act });
+const waiting = (what: string): WaitsOn => ({ kind: "waiting", for: what });
+
+/** Place one converged pull request (design/dispatch-board.md § Ready, exactly). */
+export function readiness(facts: MergeFacts, rules: ReadyRules): Readiness {
+  const ciHeld =
+    rules.ciHoldLabel !== null && facts.labels.includes(rules.ciHoldLabel);
+  const seen = witness(facts, rules);
+  const failing = failingChecks(facts, rules);
+  const shared = {
+    conditions: checklist(facts, seen, ciHeld),
+    failing,
+    requested: facts.requested,
+  };
+  const at = (
+    place: Placement,
+    w: WaitsOn,
+    says: string,
+    lane: Lane | null = null,
+  ) => answer(place, w, says, shared, lane);
+  if (!facts.converged)
+    return at("stay", waiting("its drive"), "its drive has not converged");
+  if (facts.partial !== null)
+    return at(
+      "stay",
+      waiting("the next read"),
+      `not read in full: ${facts.partial}; open the pull request`,
+    );
+  if (facts.head !== facts.verifiedSha)
+    return at(
+      "coming",
+      waiting("a re-drive"),
+      "its head moved past the head the drive verified, so the dispatcher re-drives it",
+    );
+  if (facts.mergeable === "CONFLICTING")
+    return at(
+      "coming",
+      waiting("a re-drive"),
+      "it conflicts with its base, so the dispatcher re-drives it",
+    );
+  if (facts.draft)
+    return at(
+      "needs-you",
+      person("mark-ready"),
+      "converged as a draft: marking it ready summons the reviewers that skip drafts",
+    );
+  if (ciHeld)
+    return at(
+      "needs-you",
+      person("remove-label"),
+      "held by the CI hold label, never failing: the drive removes it as it converges, so it was added again after; removing it runs the checks again on the same head",
+    );
+  if (facts.held)
+    return at(
+      "needs-you",
+      person("remove-label"),
+      "a person's hold label stands the dispatcher down from it",
+    );
+  if (facts.unresolvedThreads > 0)
+    return at(
+      "needs-you",
+      person("answer"),
+      `${facts.unresolvedThreads} review thread(s) opened after the drive converged: answer them, or re-arm the drive`,
+    );
+  if (seen.byApp && !seen.met)
+    return at(
+      "needs-you",
+      person("re-arm"),
+      `the review the ledger reports is not witnessed on this head: ${seen.fact}`,
+    );
+  if (facts.reviewDecision === "CHANGES_REQUESTED") {
+    const who = facts.reviews
+      .filter((r) => r.state === "CHANGES_REQUESTED")
+      .map((r) => r.author);
+    return at(
+      "needs-you",
+      person("re-arm"),
+      `changes were requested${who.length === 0 ? "" : ` by ${who.join(", ")}`}: that reviewer re-reviews, or the drive is re-armed to address them`,
+    );
+  }
+  const state = facts.mergeQueue ? null : facts.mergeState;
+  if (
+    failing.length > 0 &&
+    (state === null || state === "BLOCKED" || state === "UNSTABLE")
+  )
+    return at(
+      "needs-you",
+      person("re-run-check"),
+      `a check failed after the drive converged: re-run it, or re-arm the drive`,
+    );
+  const pending = facts.checks.some((c) => c.state === "pending");
+  if ((state === "BLOCKED" || state === "UNSTABLE") && pending)
+    return at(
+      "stay",
+      waiting("the checks running"),
+      "the checks are still running",
+    );
+  if (state === "UNKNOWN" || facts.mergeable === "UNKNOWN")
+    return at(
+      "stay",
+      waiting("the forge"),
+      "not read: the forge is still computing whether it can merge",
+    );
+  const approvalByForge =
+    state === "BLOCKED" && facts.reviewDecision === "REVIEW_REQUIRED";
+  const own = OWN.has(facts.authorAssociation);
+  const approvalOwed = !approvedHere(facts) && (!seen.byApp || !own);
+  if (state === "BEHIND")
+    return at(
+      "ready",
+      person("update-branch"),
+      `the repository requires an up-to-date branch: updating moves its head, which costs a re-drive (a review round and a CI run)${approvalByForge || approvalOwed ? "; an approval is still owed" : ""}`,
+      "update-next",
+    );
+  const protectionLets = state === null || MERGES_NOW.has(state);
+  if (approvalByForge || (approvalOwed && protectionLets)) {
+    const unread =
+      "the board has not read the repository's other protection rules (signatures, deployments), and the forge may ask for more once an approval is given";
+    return facts.requested.length > 0
+      ? at(
+          "ready",
+          person("approve"),
+          `waits on an approval; requested from ${facts.requested.join(", ")}; ${unread}`,
+          "approve-first",
+        )
+      : at(
+          "ready",
+          person("request-review"),
+          `needs a review and approval from someone other than its author, and nobody is asked; ${unread}`,
+          "approve-first",
+        );
+  }
+  if (!protectionLets)
+    return at(
+      "needs-you",
+      person("open-pr"),
+      `the forge blocks the merge (${facts.mergeState}) on a rule the board cannot tell, such as signed commits or a deployment: open the pull request`,
+    );
+  const built = mergeCommand(facts);
+  return {
+    ...at(
+      "ready",
+      person("merge"),
+      built.command === null
+        ? `converged, witnessed and mergeable; the merge command is withheld: ${built.withheld} does not pass its form`
+        : "converged, witnessed and mergeable at the verified head",
+      "merge-now",
+    ),
+    ...built,
+  };
+}
+
+/** A card of Ready to merge, for ordering within a lane. */
+export interface Ordered {
+  number: number;
+  lane: Lane;
+  /** When it entered its lane, or the best the records say. */
+  since: string;
+  /** The pull requests that wait behind it in a serialized area. */
+  unblocks: number[];
+}
+
+/** The order within Ready to merge: by lane, then those that unblock others, then the longest wait first. */
+export function readyOrder<T extends Ordered>(cards: readonly T[]): T[] {
+  return [...cards].sort(
+    (a, b) =>
+      LANES.indexOf(a.lane) - LANES.indexOf(b.lane) ||
+      Number(b.unblocks.length > 0) - Number(a.unblocks.length > 0) ||
+      a.since.localeCompare(b.since) ||
+      a.number - b.number,
+  );
+}

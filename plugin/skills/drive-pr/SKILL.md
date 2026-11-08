@@ -3512,6 +3512,15 @@ trains readers to skip the block where the non-empty case needs their eyes.
 The wording is "safe to merge from the driver's perspective". Marking a PR ready
 and merging it stay human steps.
 
+On top of those gates it asks the Ready predicate (`scripts/lib/merge-ready.ts`,
+the one the dispatcher's tick and `jig ask` place the pull request with) about
+the live head: the forge must witness a review of it (the reviewer app's check
+run, or a person's approval where no app is named), an outside author's pull
+request needs a person's approval, and branch protection must let it merge. It
+posts only in merge now or approve first, the second worded "an approval is
+still required", and otherwise refuses with the predicate's reason (exit `4`,
+or `1` when the forge's facts did not read).
+
 **judgment** — After `announce-merge-ready.ts` exits `0`, whether it posted the
 announcement or found one already posted, name the workspace for the ready stage
 (it does nothing when `workspace_name.template` is `""` or outside Orca, and a failed Orca rename only warns and exits `0`, while a
