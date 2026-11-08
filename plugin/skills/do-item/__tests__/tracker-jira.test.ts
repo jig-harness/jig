@@ -365,7 +365,8 @@ describe("Jira adapter: filing and patching", () => {
       await t.createIssue({
         title: "New",
         description: "Body",
-        labels: ["bug", "area:api"],
+        labels: ["area:api"],
+        type: "bug",
         priority: 2,
         project: "Q3",
       }),
@@ -382,7 +383,7 @@ describe("Jira adapter: filing and patching", () => {
         ],
       },
       issuetype: { name: "Task" },
-      labels: ["bug", "area:api"],
+      labels: ["area:api", "bug"],
       priority: { id: "2" },
       fixVersions: [{ id: "70" }],
     });

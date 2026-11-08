@@ -85,9 +85,9 @@ applies Jig's label taxonomy.
 
 ### Report it
 
-A Jig bug is an issue on `jig-harness/jig`, labelled `bug`, in the fields
-of its bug form. The tracker is public, and filing is publishing: a person
-confirms every report before it is filed.
+A Jig bug is an issue on `jig-harness/jig`, labelled `bug` and of the
+issue type Bug, in the fields of its bug form. The tracker is public, and
+filing is publishing: a person confirms every report before it is filed.
 
 1. **Reproduce it once** and keep the command, its exit code and its
    output. Write them to a file. Run `jig doctor` first where the `jig`
@@ -142,9 +142,12 @@ confirms every report before it is filed.
    bun "${CLAUDE_SKILL_DIR}/scripts/report-bug.ts" file "<draft file>"
    ```
 
-   It prints the new issue's address; report it. When `gh` is missing or
-   its account cannot file there, the script prints the bug form's address
-   with the fields filled in: give it to the person instead.
+   It prints the new issue's address; report it. It then gives the issue
+   the issue type Bug, as the form does; where the account may not set
+   issue types it says so and the issue stays filed, its type, priority
+   and size set at triage. When `gh` is missing or its account cannot file
+   there, the script prints the bug form's address with the fields filled
+   in: give it to the person instead.
 
 Then carry on with the work. A workaround goes in the repository, with the
 issue's address beside it; never edit the plugin copy, which the next

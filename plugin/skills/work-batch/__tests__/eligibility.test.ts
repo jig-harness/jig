@@ -327,12 +327,25 @@ describe("sizes without work_batch.sizes", () => {
 });
 
 describe("work that is not a batch item", () => {
-  it("holds back an urgent issue and admits every other priority", () => {
+  it("holds back an urgent issue and one with no priority, and admits every other priority", () => {
     expect(excludeReason(issue("ENG-1", { priority: 1 }), P, none)).toEqual({
       kind: "urgent",
     });
-    for (const priority of [0, 2, 3, 4])
+    expect(excludeReason(issue("ENG-1", { priority: 0 }), P, none)).toEqual({
+      kind: "no-priority",
+    });
+    for (const priority of [2, 3, 4])
       expect(excludeReason(issue("ENG-1", { priority }), P, none)).toBeNull();
+  });
+
+  it("reports any other reason before no priority", () => {
+    expect(
+      excludeReason(
+        issue("ENG-1", { priority: 0, assignee: { id: "u", name: "Sam" } }),
+        P,
+        none,
+      ),
+    ).toEqual({ kind: "already-assigned", assignee: "Sam" });
   });
 
   it("holds back an epic by its label and by its open children", () => {

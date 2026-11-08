@@ -29,6 +29,8 @@ export interface Call {
   path: string;
   query: Record<string, string | number | boolean>;
   body: Record<string, unknown>;
+  /** The cancellation signal the request carried, if any. */
+  signal?: AbortSignal;
 }
 
 export type Answer = (call: Call, n: number) => unknown;
@@ -56,13 +58,14 @@ function fakeTransport(answer: Answer): {
   const calls: Call[] = [];
   return {
     calls,
-    transport: async (request) => {
+    transport: async (request, signal) => {
       const call: Call = {
         route: `${request.method} ${request.path}`,
         method: request.method,
         path: request.path,
         query: request.query ?? {},
         body: (request.body ?? {}) as Record<string, unknown>,
+        ...(signal === undefined ? {} : { signal }),
       };
       calls.push(call);
       const out = answer(call, calls.length - 1);

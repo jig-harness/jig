@@ -909,7 +909,8 @@ describe("Linear adapter: filing and planning", () => {
     const created = await t.createIssue({
       title: "Fix it",
       description: "Body",
-      labels: ["bug", "xs"],
+      labels: ["xs"],
+      type: "bug",
       priority: 2,
       parent: "ENG-1",
       project: "Debt",
@@ -923,7 +924,7 @@ describe("Linear adapter: filing and planning", () => {
         teamId: "team-1",
         title: "Fix it",
         description: "Body",
-        labelIds: ["l-bug", "l-xs"],
+        labelIds: ["l-xs", "l-bug"],
         priority: 2,
         parentId: "uuid-ENG-1",
         projectId: "p-1",
@@ -937,7 +938,7 @@ describe("Linear adapter: filing and planning", () => {
       t.createIssue({
         title: "x",
         description: "",
-        labels: ["bug", "nope", "twice", "size"],
+        labels: ["xs", "nope", "twice", "size"],
       }),
     ).rejects.toThrow(
       "'nope' matches no label; 'twice' matches 2 labels; 'size' matches no label",
@@ -994,7 +995,7 @@ describe("Linear adapter: filing and planning", () => {
   it("adds and removes labels by id, without reading or rewriting the issue's set", async () => {
     const { t, calls } = filing();
     await t.updateIssue("ENG-1", {
-      addLabels: ["xs", "bug"],
+      addLabels: ["xs"],
       removeLabels: ["area:docs"],
       title: "New",
       parent: null,
@@ -1004,7 +1005,7 @@ describe("Linear adapter: filing and planning", () => {
       input: {
         title: "New",
         parentId: null,
-        addedLabelIds: ["l-xs", "l-bug"],
+        addedLabelIds: ["l-xs"],
         removedLabelIds: ["l-docs"],
       },
     });
@@ -1036,8 +1037,8 @@ describe("Linear adapter: filing and planning", () => {
       t.updateIssue("ENG-1", { addLabels: [], removeLabels: [] }),
     ).rejects.toThrow("changes nothing");
     await expect(
-      t.updateIssue("ENG-1", { addLabels: ["bug"], removeLabels: ["bug"] }),
-    ).rejects.toThrow("both adds and removes 'bug'");
+      t.updateIssue("ENG-1", { addLabels: ["xs"], removeLabels: ["xs"] }),
+    ).rejects.toThrow("both adds and removes 'xs'");
     expect(calls).toHaveLength(0);
   });
 

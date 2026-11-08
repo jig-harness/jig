@@ -26,10 +26,10 @@ import {
   PROVENANCE_LABEL,
   renderEntry,
   REPO_GROUP,
-  SEVERITY_TO_PRIORITY,
   SIZE_GROUP,
   TYPE_GROUP,
 } from "../scripts/defer-batch.ts";
+import { SEVERITY_TO_PRIORITY } from "../scripts/lib/severity-priority.ts";
 import { ExitError } from "../../../shared/cli.ts";
 import { SEVERITY_UNKNOWN } from "../scripts/lib/ladder.ts";
 

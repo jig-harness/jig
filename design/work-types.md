@@ -56,9 +56,13 @@ mapping below; it does not add stations.
 `plugin/skills/do-item/scripts/determine_type.ts` reads the issue JSON
 `get_issue.ts` returns and prints `{type, evidence, depth}`, trying in order:
 
-1. A label in the taxonomy's `types` family, through
-   `issue_tracker.types` (`{bug: [bug, type:bug], feature: [feature, type:feature], …}`),
-   which generalises `issue_tracker.labels.bug` and keeps it as an alias.
+1. The issue's type, its type [facet](tracker-facets.md) (a type of the
+   taxonomy's `types` family, wherever the tracker keeps it), mapped to a
+   work type through `issue_tracker.types`
+   (`{bug: [bug, type:bug], feature: [feature, type:feature], …}`), which
+   generalises `issue_tracker.labels.bug` and keeps it as an alias. An
+   issue with no type, or whose labels name two (which the label store
+   reads as none), leaves this step unanswered, and the evidence says so.
 2. The tracker's own issue type, from the issue's `nativeType` field
    (GitHub issue types; Linear has none, and its adapter sets the field to
    `null`, which leaves this step unanswered). A value is matched to a
@@ -76,11 +80,9 @@ mapping below; it does not add stations.
    in its status line. In an interactive session `do-item` may ask one
    question; it never asks when a step above answered.
 
-The evidence names which step decided, and each earlier step that saw a
-value but did not answer. Labels of two types on one item are a choice
-someone must make, not one a weaker signal settles: the item is `unknown`.
-`file-issue` sets the type label at filing time, so for an item Jig filed
-the first step always answers.
+The evidence names which step decided, and each earlier step that did not
+answer, and why. `file-issue` sets the type at filing time, so for an item
+Jig filed the first step always answers.
 
 ### The depth table
 
