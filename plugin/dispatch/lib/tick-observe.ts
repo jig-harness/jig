@@ -314,10 +314,12 @@ export async function observeRepo(
   // A silent drive's holder, read only when one fell silent.
   const holders = forge.drives.some((d) => d.class === "silent")
     ? await timer.time("observe", () =>
-        readHolders(
-          repo.path,
-          Math.ceil(
-            (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
+        pool.run(() =>
+          readHolders(
+            repo.path,
+            Math.ceil(
+              (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
+            ),
           ),
         ),
       )

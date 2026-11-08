@@ -508,6 +508,36 @@ describe("another host's takeover of a driver no launch started", () => {
     ).toBe("none");
   });
 
+  it("settles a doctor-only takeover another host ended on these ledger facts, but not one on other facts", () => {
+    const doctor = {
+      ...silent(),
+      evidence: { ...silent().evidence, driverGone: false },
+    } as DrivenPr;
+    const ended = (f: string) =>
+      new Map([
+        [
+          7,
+          {
+            ok: true as const,
+            value: [takeover(f, claim(5, f).says)],
+          },
+        ],
+      ]);
+    const [settled] = settleSharedTakeovers(
+      [doctor],
+      ended(factsOf(doctor)),
+      "this-host",
+    );
+    expect(settled?.evidence.settled).toBe(true);
+    expect(settled?.why).toContain("only a person settles it");
+    const [other] = settleSharedTakeovers(
+      [doctor],
+      ended("generation 9"),
+      "this-host",
+    );
+    expect(other?.evidence.settled).toBeUndefined();
+  });
+
   it.each([11, 13, 20])(
     "settles a takeover that ended on drive.ts's refusal %i, held by no foreign claim",
     (exit) => {

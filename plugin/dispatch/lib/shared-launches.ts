@@ -200,13 +200,17 @@ function silentHold(
  * executed spent nothing.
  */
 function takenOver(pr: DrivenPr, theirs: ReadClaim[]): ForeignHold | null {
-  if (pr.evidence.driverGone !== true) return null;
+  // A driver shown gone is replaced on recovery facts; any other silent
+  // driver is the doctor's, and a launch that started it stays that launch's.
+  const gone = pr.evidence.driverGone === true;
+  if (pr.evidence.settled === true) return null;
+  if (!gone && theirs.some((c) => startedDriver(c, pr))) return null;
   const done = theirs.findLast((c) => {
     const s = c.says.value;
     return (
       s.action === "takeover" &&
       s.facts !== null &&
-      s.facts.startsWith(RECOVERY_FACTS) &&
+      (!gone || s.facts.startsWith(RECOVERY_FACTS)) &&
       sameFacts(s.facts, factsOf(pr)) &&
       s.end !== null &&
       !(s.end.state === "died" && s.end.executed === false)
@@ -341,7 +345,7 @@ export function settleSharedTakeovers(
   host: string,
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (pr.class !== "silent" || pr.evidence.driverGone !== true) return pr;
+    if (pr.class !== "silent") return pr;
     const read = claims.get(pr.number);
     if (read === undefined || !read.ok) return pr;
     const hold = foreignHold(pr, read, host);
