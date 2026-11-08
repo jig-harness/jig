@@ -100,6 +100,31 @@ describe("the tick's own failure row", () => {
   });
 });
 
+describe("why a tick failed", () => {
+  it("keeps a repository's stage defect and its reason as the repository's failure", () => {
+    const { root, context, receipt } = world(["/a"]);
+    const repo = receipt.repos[0] as unknown as { stageDefects: unknown[] };
+    repo.stageDefects = [
+      { code: "defect", phase: "apply", stage: "notify", reason: "notify threw" },
+    ];
+    settleFailures(receipt, context);
+    const rows = readFailures(undefined, root);
+    expect(rows.map((r) => r.kind)).toEqual(["repository"]);
+    expect(rows[0]?.reason).toContain("notify threw");
+  });
+
+  it("names the dashboard line's failure for an otherwise successful tick", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    settleFailures(receipt, context);
+    receipt.exitStatus = 1;
+    receipt.lineFailed = "disk full";
+    finalizeTickFailure(receipt, context);
+    const [row] = readFailures(undefined, root);
+    expect(row?.reason).toContain("disk full");
+    expect(row?.reason).not.toContain("no cause");
+  });
+});
+
 describe("whether a tick failed", () => {
   it("counts an individually unreadable claim, ledger or marker as a failed tick", async () => {
     const { settleOutcomes } = await import("../lib/tick-settle.ts");

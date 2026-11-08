@@ -91,7 +91,7 @@ export interface TickReceipt {
   phasesMs?: Partial<Record<TickPhase, number>>;
   /** The defect that stopped the tick's closing steps; a receipt with one is not completed. */
   defect?: Defect;
-  /** The failure ledger after the tick (`lib/failures.ts`): the actions backing off, and the rows a person is told of; absent when it holds none. */
+  /** The failure ledger after the tick (`lib/failures.ts`): the actions backing off, and the rows at or past the notify threshold; absent when it holds none. */
   failures?: {
     backingOff: FailureEntry[];
     escalated: FailureEntry[];

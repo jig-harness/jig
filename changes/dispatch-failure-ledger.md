@@ -17,6 +17,6 @@ release: minor
   `repository-failing` and `ticks-failing`). A success, or the action
   leaving the plan, clears the row and retires the notice. The machine
   file's new `failures` settings (`backoff`, `backoff_max`, `notify_after`)
-  tune it, and each receipt lists the rows backing off and the rows a
-  person was told of under `failures`. Launches are not counted: their
+  tune it, and each receipt lists the rows backing off and the rows at or past the
+  notify threshold under `failures`. Launches are not counted: their
   launch records already count attempts.

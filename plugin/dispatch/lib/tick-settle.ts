@@ -185,6 +185,8 @@ export async function settleOutcomes(
 /** Why a repository's turn failed this tick; `null` when it was read whole. */
 function repoFailure(report: RepoReport): string | null {
   if (report.refused !== null) return report.refused;
+  const defect = report.stageDefects?.[0];
+  if (defect !== undefined) return defect.reason;
   const unread = report.records.find((r) => !r.ok);
   if (unread !== undefined)
     return `the ${unread.record} record (${unread.source}) did not read: ${unread.detail}`;
@@ -215,6 +217,8 @@ function tickFailure(receipt: TickReceipt): string {
     return `the outcome log was not written: ${unlogged}`;
   if (receipt.logCopyFailed !== undefined)
     return `the outcome log's copy was not written: ${receipt.logCopyFailed}`;
+  if (receipt.lineFailed !== undefined)
+    return `the dashboard line was not written: ${receipt.lineFailed}`;
   return "the tick exited 1 with no cause on its receipt";
 }
 
