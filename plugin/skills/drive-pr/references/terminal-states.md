@@ -41,7 +41,7 @@ path that produces the exit, not because none of them name one.
 | `7` | `REVIEWER_FAILED` | **yes** | The posting reviewer's check-run did not pass |
 | `8` | `HITL_PARKED` | **yes** | Everything still open is parked awaiting a human, each under a registry class with its decision framed, and the exit prints each one in full. The drive never wakes itself up: a re-arm unparks the items, and hands their answers to its passes until one completes, only once **every** one has an answer from an owner, member or collaborator later than the park (§ Picking up a stopped drive); with any unanswered it stops `8` again, unless the PR conflicts with its base: the first gate reports `PR_CONFLICTING` before the park, so the re-arm spends its conflict-repair budget first. Under `jig dispatch` the dispatcher re-drives a parked PR that conflicts with its base, once for each pair of its head and its base branch's head, and tells a person of the conflict when that re-drive leaves it parked or stopped `9` at the same pair |
 | `9` | `PR_CONFLICTING` | **yes**, from `drive.ts` only once its conflict-repair budget is spent | The PR conflicts with its base **and** has no workable findings. A conflict alone does not stop the loop — see mode 14. `drive.ts` first spends `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1) `conflict-resolve` passes on it (§ Repair rounds), and a merge such a pass did not conclude is aborted before the stop, except one already open when the pass began (kept) or one whose abort failed; finish or abort a merge the stop reports before running its `Fix:` command. Under `jig dispatch` the dispatcher re-drives the stop, once for each pair of the pull request's head and its base branch's head, and tells a person when that re-drive leaves it stopped `9` at the same pair; without it the stop is a person's |
-| `22` | `REVIEW_SKIPPED` | **yes** | The reviewer's skip notice names the PR head as a push it did not review, and its review of an earlier head does not cover this one: the pull request's diff changed since that head, or this clone could not compare the two (§ The reviewer skips a head). No review of this head will come, so the drive stops rather than wait for one as `STALE_REVIEW`. The `reason` quotes the notice and names both heads. A person reviews the change since the reviewed head and has the reviewer review this head, or pushes a commit it reviews, then re-arms. Under `jig dispatch` the stop is a person's: the pull request is labelled parked, and the dispatcher's line names the skip as the cause |
+| `22` | `REVIEW_SKIPPED` | **yes** | The reviewer's skip notice names the PR head as a push it did not review, and its review of an earlier head does not cover this one: the pull request's diff changed since that head (§ The reviewer skips a head). No review of this head will come, so the drive stops rather than wait for one as `STALE_REVIEW`. The `reason` quotes the notice and names both heads. A person reviews the change since the reviewed head and has the reviewer review this head, or pushes a commit it reviews, then re-arms. Under `jig dispatch` the stop is a person's: the pull request is labelled parked, and the dispatcher's line names the skip as the cause |
 | `10` | — | — | **Reserved**, never emitted. A draft PR is not a stop: drafts are driven — see § A draft PR is reviewed, and then marked Ready. The code is kept unused so it never takes on a second meaning |
 | `12` | — | **yes** | `drive.ts` only: the review converged, but the worktree is not clean — uncommitted state, an unconcluded merge/cherry-pick/revert/rebase/am (present even over an otherwise-empty `git status`), local HEAD no longer matching the reviewed head (a commit landed here that was never pushed or reviewed, also invisible to `git status`), or any of those probes being unreadable; every one of them fails closed to the same refusal. The convergence is real; the leftovers are edits no round shipped, an unfinished git operation, or an unreviewed local commit. Commit/push/discard as appropriate, or resolve/abort the operation, then re-run. The draft→Ready transition sits **behind** this gate, so a PR still owed that transition when 12 fires stays a draft, and the retry after the cleanup marks it. It never *reverts* one already made: `mark-ready.ts` runs at the end of every completed round from the round `pull_requests.mark_ready` declares (default `1`) and is durably once-only, so a drive that completed that round has already marked the PR and exit 12 leaves it Ready over an unclean tree. The PR is still a draft, then, when no completed round reached the declared one (convergence before it, including at the very first gate), when the repository marks Ready only at convergence (`converged`), or when it never does (`never`, or a drive started with `--keep-draft`, which skips `mark-ready.ts` entirely no matter how many rounds run) — in the last case the draft state is the requested outcome, not a transition still owed — see § A draft PR is reviewed, and then marked Ready |
 | `11` | — | **yes** | `drive.ts` only: a single-instance lock is already held — either this PR's (`pr-drive-<PR>`) or this working tree's (`pr-drive-worktree-<key>`), both rows of the drive's database keyed by the clone, so a driver in another managed worktree of the same clone collides too. The drive is already armed. The refusal names the holder's `drives.ts` `--doctor` verdict and, when that verdict admits a takeover (`WEDGED`), prints the `--take-over` command; do not stop a driver that is making progress (§ Picking up a stopped drive). `drive.ts` with `--take-over` refused for the holder's verdict, or for a dead holder's leftovers, exits `11` too. `drive-state.ts` raises the same code for its own **session lease** over *(working tree, PR)* when a second live agent session in one checkout attempts a state mutation — a different mechanism with the same exit — and for its **tree lease** when that second session is driving a *different* PR from the same tree, which the per-PR lease alone cannot see. `reply-to-thread.ts` and `answer-summary-finding.ts` raise it too, refusing to `POST` rather than refusing to write state — both check **both** fences, the per-PR session lease and the tree lease, so either one can produce this refusal — `reply-to-thread.ts` through the spawned `assert-post-allowed.ts` (it lives in the sibling skill), `answer-summary-finding.ts` through `lib/state/lease.ts` directly (it lives in this one). All of these — a *live* conflicting holder — name that holder's pid; confirm that process is gone before clearing either. One exception, on the tree lease, names no pid because it has no live holder to name: `assertTreeLeaseUnchanged`'s "the lease is simply gone" case (an admitted lease that no longer exists by the time the fence re-checks — `clear-lease` is the common cause but not the only one an operator could have caused, so the message deliberately does not guess which) |
@@ -1677,13 +1677,12 @@ one was reviewed fourteen times.
 ### The reviewer skips a head
 
 A reviewer can decline to review a push and leave its reviewed-SHA marker on
-the head it last reviewed. The measured case is a merge of the base branch
-into the pull request's branch: the pull request's own diff is unchanged, the
-reviewer finds nothing to review in the push and skips it, and its check on
-that push still completes green. Without more, the gate cannot tell that head
-from one the reviewer has not reached yet, reports `STALE_REVIEW` (exit `4`)
-for as long as the head stands, and a re-arm meets the same state on the same
-head.
+the head it last reviewed, while its check on that push still completes
+green. A merge of the base branch into the pull request's branch does this to
+a reviewer that skips a push with nothing to review in it: the pull request's
+own diff is unchanged. Without more, the gate cannot tell that head from one
+the reviewer has not reached yet, reports `STALE_REVIEW` (exit `4`) for as
+long as the head stands, and a re-arm meets the same state on the same head.
 
 The reviewer can say so in its sticky comment: a **skip notice**, a block
 between `<!-- ai-review-skip-notice -->` and `<!-- /ai-review-skip-notice -->`
@@ -1695,16 +1694,25 @@ head other than the PR head:
 | The skip notice | The gate |
 |---|---|
 | names the PR head, and the pull request's diff there equals its diff at the reviewed head | judges the PR head on the reviewed head's review: `reviewer.reviewedSha` stays the reviewed head, `reviewedShaSource` is `skip-notice`, and the drive can converge, the `reason` naming the skip |
-| names the PR head, and the diff changed, or this clone cannot compare the two | `REVIEW_SKIPPED` (exit `22`), terminal, quoting the notice |
+| names the PR head, and the diff changed | `REVIEW_SKIPPED` (exit `22`), terminal, quoting the notice |
+| names the PR head, and a commit the comparison needs cannot be read here, even after fetching it | `INDETERMINATE` (exit `1`): re-run |
 | names another head, or is absent | `STALE_REVIEW`, as before |
 
 The pull request's diff at a head is the diff from that head's merge base with
-the base branch (`baseRefOid`) to the head, the change the forge shows. The
-two diffs are compared without context lines, hunk positions or blob ids, so a
-base that moved around the change does not make an unchanged change look
-different; a merge whose resolution edited the change does. A commit or the
-base missing from the clone stops as `REVIEW_SKIPPED` rather than converging
-on a comparison that was never made.
+the base branch (`baseRefOid`) to the head, the change the forge shows, read
+in the driven tree. The two diffs are compared with their context lines and
+with every file as text, so a binary file and a file whose `.gitattributes`
+diff setting hides its content are compared by content too; only the hunks'
+line numbers and the blob ids are left out. A base that moved the change
+further down a file therefore does not make an unchanged change look
+different, while a merge whose resolution edited the change's lines, moved
+them, or rewrote a binary file does, and so does a base edit within the
+context lines around the change: any doubt leaves the head unreviewed. A
+commit the comparison needs that is missing from the clone (the base can
+move on after the reviewer ran) is fetched once from the drive's remote,
+under the fetch deadline; still missing, the evaluation is `INDETERMINATE`
+and runs again rather than converging on a comparison that was never made
+or stopping on one that could not be made.
 
 `REVIEW_SKIPPED` is a stop for a person, not a wait: the reviewer has said
 it will not review the head, and nothing the drive's passes can push changes

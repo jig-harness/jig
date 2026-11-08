@@ -48,6 +48,7 @@ import { ciHoldLabelSetting } from "./lib/overlay.ts";
 /** How messages name the repository's CI-hold label. */
 const holdName = (): string => ciHoldLabelSetting() ?? "CI hold";
 import { fail, isDigits, readStdinAll, runMain, short } from "./lib/cli.ts";
+import { reviewedClaim } from "./lib/status/reviewed-sha.ts";
 import {
   ciHoldTimeoutSeconds,
   ghCall,
@@ -539,10 +540,10 @@ async function main(): Promise<number> {
     (status.reviewer as Record<string, unknown>)?.reviewedShaSource ?? "",
   );
   // A head the reviewer skipped is certified by its review of an earlier one.
-  const reviewedWhat =
-    source === "skip-notice"
-      ? `reviewed \`${short(String((status.reviewer as Record<string, unknown>)?.reviewedSha ?? ""))}\` and skipped this head, whose pull-request diff is the same,`
-      : "completed its review of this exact head";
+  const reviewedWhat = reviewedClaim(
+    source,
+    String((status.reviewer as Record<string, unknown>)?.reviewedSha ?? ""),
+  );
 
   // A green aggregate can still be the skipped-success residue from a held
   // synchronize run. Require both the global pointer written only by

@@ -1286,6 +1286,8 @@ async function evaluateFresh(
       if (rc !== 0) return rc;
       return terminal(report, "REVIEW_SKIPPED", stop.reason);
     }
+    if (stop?.state === "INDETERMINATE")
+      return terminal(report, "INDETERMINATE", stop.reason);
     if (stop !== null) return terminal(report, "STALE_REVIEW", stop.reason);
   } else if (marker !== "") {
     // Conflicting: publish the marker as evidence, and NEVER the check-run

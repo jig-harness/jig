@@ -14,16 +14,31 @@
  *   stamped commit (a base merge that left the change as it was), the review
  *   of the stamped commit covers the head. It stays the reviewed SHA, its
  *   source is `skip-notice`, and the drive converges on it;
- * - otherwise, or when the two diffs cannot be compared in this clone, the
- *   drive stops as `REVIEW_SKIPPED`, naming the skip, for a person.
+ * - when the diffs differ, the drive stops as `REVIEW_SKIPPED`, naming the
+ *   skip, for a person;
+ * - when a commit the comparison needs is not in this clone, it is fetched
+ *   once; still missing, the evaluation is `INDETERMINATE` and runs again.
  *
  * The pull request's diff at a head is the diff from the head's merge base
  * with the base branch to the head, as the forge shows it. The two are
- * compared without context lines, hunk positions or blob ids, so a base that
- * moved around the change does not make an unchanged change look different.
+ * compared with their context lines and every file as text (binary files and
+ * files a `.gitattributes` diff driver would hide included), leaving out only
+ * the hunks' line numbers and the blob ids, so a base that moved the change
+ * down a file does not make it look different, and a merge that moved or
+ * edited the change's lines does. Any doubt leaves the head unreviewed.
  */
+import {
+  consumerRoot,
+  readRemoteName,
+} from "../../../../../shared/consumer.ts";
+import { fetchTimeoutSeconds } from "../base-drift.ts";
 import { reviewerLabel } from "../overlay.ts";
-import { git, gitCallTimeoutSeconds } from "../proc.ts";
+import {
+  git,
+  gitCallTimeoutSeconds,
+  gitIdentityEnv,
+  type RunResult,
+} from "../proc.ts";
 import type { StatusReport } from "./evaluate.ts";
 import type { SkipNotice } from "./skip-notice.ts";
 
@@ -48,7 +63,7 @@ import type { SkipNotice } from "./skip-notice.ts";
 export async function resolveMarkerSha(marker: string): Promise<string> {
   if (marker === "") return "";
   if (marker.length === 40) return marker;
-  const rp = await git([
+  const rp = await localGit([
     "rev-parse",
     "--verify",
     "--quiet",
@@ -57,9 +72,26 @@ export async function resolveMarkerSha(marker: string): Promise<string> {
   return rp.code === 0 ? rp.stdout.trim() : "";
 }
 
+/**
+ * `git` in the driven tree (`DRIVE_PR_WORKTREE`, else the working directory),
+ * with an inherited `GIT_DIR`/`GIT_WORK_TREE` scrubbed, as `drive-status.ts`'s
+ * other local reads run, so the answer is about the tree being driven.
+ */
+function localGit(
+  args: string[],
+  timeoutSec: number = gitCallTimeoutSeconds(),
+): Promise<RunResult> {
+  const anchor = process.env.DRIVE_PR_WORKTREE;
+  return git(args, {
+    env: gitIdentityEnv(),
+    timeoutSec,
+    ...(anchor ? { cwd: anchor } : {}),
+  });
+}
+
 /** What stops the evaluation at this gate; `null` lets it go on. */
 export interface ReviewedShaStop {
-  state: "STALE_REVIEW" | "REVIEW_SKIPPED";
+  state: "STALE_REVIEW" | "REVIEW_SKIPPED" | "INDETERMINATE";
   reason: string;
 }
 
@@ -106,19 +138,56 @@ export async function reviewedShaGate(
   if (skip === null || (await resolveMarkerSha(skip.head)) !== report.apiHead)
     return stale;
   const notice = `its skip notice for this head reads "${skip.text}"`;
-  const same = await sameChange(report.baseHead, markerFull, report.apiHead);
-  if (same === true) {
+  const commits = [report.baseHead, markerFull, report.apiHead];
+  let same = await sameChange(report.baseHead, markerFull, report.apiHead);
+  if (typeof same !== "boolean") {
+    const fetched = await fetchMissing(commits);
+    if (fetched !== null) same = { failed: `${same.failed}; ${fetched}` };
+    else same = await sameChange(report.baseHead, markerFull, report.apiHead);
+  }
+  if (typeof same !== "boolean") {
+    return {
+      state: "INDETERMINATE",
+      reason: `${reviewerLabel()} skipped the PR head ${report.apiHead} and last recorded reviewing ${named}, but the pull request's diff at the two cannot be compared in this clone against the base ${report.baseHead} (git: ${same.failed}) — re-run once the commits can be read`,
+    };
+  }
+  if (same) {
     report.reviewedShaSource = "skip-notice";
     return null;
   }
-  const why =
-    same === false
-      ? `the pull request's diff at ${report.apiHead} differs from its diff at ${markerFull}`
-      : `this clone could not compare the pull request's diff at ${report.apiHead} with its diff at ${markerFull} against the base ${report.baseHead} (git: ${same.failed})`;
   return {
     state: "REVIEW_SKIPPED",
-    reason: `${reviewerLabel()} skipped the PR head ${report.apiHead} and last recorded reviewing ${named}; ${notice}, and ${why}, so no review of this head will come and the drive cannot converge on it. Fix: review the change since ${markerFull} yourself and have ${reviewerLabel()} review this head, or push a commit it reviews; then re-arm`,
+    reason: `${reviewerLabel()} skipped the PR head ${report.apiHead} and last recorded reviewing ${named}; ${notice}, and the pull request's diff at ${report.apiHead} differs from its diff at ${markerFull}, so no review of this head will come and the drive cannot converge on it. Fix: review the change since ${markerFull} yourself and have ${reviewerLabel()} review this head, or push a commit it reviews; then re-arm`,
   };
+}
+
+/**
+ * Fetch whichever of `commits` this clone does not hold from the drive's
+ * remote (`repository.remote`), under the fetch deadline. A commit id names
+ * its content, so whichever remote serves it serves the right one. `null`
+ * when it ran; else why it could not.
+ */
+async function fetchMissing(commits: string[]): Promise<string | null> {
+  const missing: string[] = [];
+  for (const commit of new Set(commits)) {
+    const held = await localGit(["cat-file", "-e", `${commit}^{commit}`]);
+    if (held.code !== 0) missing.push(commit);
+  }
+  if (missing.length === 0) return "every commit is in this clone";
+  const top = await localGit(["rev-parse", "--show-toplevel"]);
+  const remote = readRemoteName(consumerRoot(top.stdout.trim() || undefined));
+  if ("error" in remote) return `no remote to fetch from: ${remote.error}`;
+  const deadline = fetchTimeoutSeconds();
+  const fetch = await localGit(
+    ["fetch", "--quiet", "--no-tags", remote.remote, ...missing],
+    deadline.ok ? deadline.seconds : 120,
+  );
+  return fetch.code === 0
+    ? null
+    : gitFailure(
+        `fetch ${remote.remote} ${missing.join(" ")}`,
+        fetch.stderrTail,
+      ).failed;
 }
 
 /**
@@ -131,7 +200,17 @@ export function skipNote(report: StatusReport): string {
     : "";
 }
 
-/** Why git could not produce a diff here: a commit or the base not in this clone, say. */
+/**
+ * What the merge-ready announcement says the reviewer did, for the
+ * `reviewedShaSource` and `reviewedSha` of a converged report.
+ */
+export function reviewedClaim(source: string, reviewedSha: string): string {
+  return source === "skip-notice"
+    ? `reviewed \`${reviewedSha.slice(0, 12)}\` and skipped this head, whose pull-request diff is the same`
+    : "completed its review of this exact head";
+}
+
+/** Why git could not produce a diff here: a commit not in this clone, say. */
 interface GitFailure {
   failed: string;
 }
@@ -142,8 +221,8 @@ function gitFailure(what: string, tail: string): GitFailure {
 }
 
 /**
- * Whether the pull request changes the same lines at `reviewed` as at
- * `head`, measured against `base`, or why git cannot answer here.
+ * Whether the pull request's diff at `reviewed` is the same as at `head`,
+ * measured against `base`, or why git cannot answer here.
  */
 async function sameChange(
   base: string,
@@ -159,33 +238,34 @@ async function sameChange(
   return was === now;
 }
 
+/** A hunk header's line numbers, which a base that moved the change shifts. */
+const HUNK_POSITION = /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/;
+
 async function changeAt(
   base: string,
   head: string,
 ): Promise<string | GitFailure> {
-  const timeoutSec = gitCallTimeoutSeconds();
-  const mergeBase = await git(["merge-base", base, head], { timeoutSec });
+  const mergeBase = await localGit(["merge-base", base, head]);
   const from = mergeBase.stdout.trim();
   if (mergeBase.code !== 0 || from === "")
     return gitFailure(`merge-base ${base} ${head}`, mergeBase.stderrTail);
-  const diff = await git(
-    [
-      "diff",
-      "--no-color",
-      "--no-ext-diff",
-      "--no-textconv",
-      "--no-renames",
-      "--unified=0",
-      from,
-      head,
-      "--",
-    ],
-    { timeoutSec },
-  );
+  const diff = await localGit([
+    "diff",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--text",
+    "--no-renames",
+    "--unified=3",
+    from,
+    head,
+    "--",
+  ]);
   if (diff.code !== 0)
     return gitFailure(`diff ${from} ${head}`, diff.stderrTail);
   return diff.stdout
     .split("\n")
-    .filter((line) => !line.startsWith("index ") && !line.startsWith("@@"))
+    .filter((line) => !line.startsWith("index "))
+    .map((line) => line.replace(HUNK_POSITION, "@@ @@"))
     .join("\n");
 }

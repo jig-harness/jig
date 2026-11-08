@@ -171,8 +171,8 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       is terminal
  *  22  REVIEW_SKIPPED   [state] the reviewer's skip notice names this head,
  *                       and its review of an earlier head does not cover it
- *                       (the PR's diff changed, or could not be compared): no
- *                       review of this head will come
+ *                       (the PR's diff changed): no review of this head will
+ *                       come
  *  11  SESSION_LEASE_HELD  [state, set outside evaluate]
  *                       another LIVE session in this working tree holds the
  *                       drive lease for this PR. Raised by whichever
