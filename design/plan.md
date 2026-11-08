@@ -436,8 +436,7 @@ under the plugin has a tick pending from the moment the event arrives, while the
 the first event after a minute of quiet starts it at once, an event during
 a running tick or the minute after a start waits for one trailing tick
 that starts once the running tick has finished and a minute has passed
-since the last start, and either stays pending while the machine-wide
-tick lock refuses it and survives an event that arrives while that tick
+since the last start, and either stays pending while a tick's lock refuses it and survives an event that arrives while that tick
 processes the repository.
 
 ## Next

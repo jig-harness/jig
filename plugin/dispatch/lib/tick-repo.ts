@@ -1,15 +1,16 @@
 /**
- * One repository's turn in a tick, as its phases in order: open the
- * repository, observe it (tick-observe.ts), plan wanted minus running
- * (tick-plan.ts), give the records that ended their outcome rows
- * (tick-settle.ts), act with `--apply` (tick-apply.ts), project the labels
- * (tick-labels.ts), and report the shared records' reads and writes
- * (tick-shared.ts). Each phase hands the next what it read; the report is
- * filled as they go, and each phase's milliseconds are kept on it
+ * One repository's turn in a tick, in two parts. Its observe part, run
+ * beside every other repository's: open the repository and observe it
+ * (tick-observe.ts). Its act part, run in turn under the act lock: plan
+ * wanted minus running (tick-plan.ts), give the records that ended their
+ * outcome rows (tick-settle.ts), act with `--apply` (tick-apply.ts),
+ * project the labels (tick-labels.ts), and report the shared records' reads
+ * and writes (tick-shared.ts). Each phase hands the next what it read; the
+ * report is filled as they go, and each phase's milliseconds are kept on it
  * (`phasesMs`). Applying ticks reconcile abandoned local ledgers before
  * planning; that reconciliation time is charged to apply.
  *
- * A turn is run inside the tick's boundary: what throws out of it is a
+ * Each part is run inside the tick's boundary: what throws out of it is a
  * defect (`defectReport`), which stops this repository's turn only. The
  * report keeps what the phases before it did, launches included.
  */
@@ -19,7 +20,12 @@ import { actObserved } from "./tick-apply.ts";
 import { allRecords, emptyReport, type TickContext } from "./tick-context.ts";
 import { projectObserved } from "./tick-labels.ts";
 import { lineInputOf } from "./tick-line.ts";
-import { observeRepo, openRepo, type RepoObservation } from "./tick-observe.ts";
+import {
+  type OpenedRepo,
+  observeRepo,
+  openRepo,
+  type RepoObservation,
+} from "./tick-observe.ts";
 import { planObserved } from "./tick-plan.ts";
 import { logRepo } from "./tick-settle.ts";
 import { sharedReport } from "./tick-shared.ts";
@@ -37,16 +43,29 @@ export function startTurn(path: string): RepoTurn {
   return { path, timer: new PhaseTimer(), report: null };
 }
 
-/** Run one repository's turn; its report, the one that refuses it when it does not open. */
-export async function runTurn(
+/** A repository's observe part done: what it read, for its act part; or the report that ends its turn. */
+export type Observed =
+  | { turn: RepoTurn; opened: OpenedRepo; observation: RepoObservation }
+  | { report: RepoReport }
+  | { busy: string };
+
+/**
+ * Open and observe one repository; the report that refuses it when it does
+ * not open. `claim` takes the repository's own lock once its slug is known
+ * and returns who holds it when another tick does: nothing is read then.
+ */
+export async function observeTurn(
   turn: RepoTurn,
   context: TickContext,
-): Promise<RepoReport> {
+  claim: (slug: string) => string | null = () => null,
+): Promise<Observed> {
   const { path, timer } = turn;
   const opened = await timer.time("open", () => openRepo(path, context));
-  if (!("repo" in opened)) return timed(opened, timer);
-  const { report, owner, reflection } = opened;
-  turn.report = report;
+  if (!("repo" in opened)) return { report: timed(opened, timer) };
+  const heldBy = claim(opened.repo.slug);
+  if (heldBy !== null) return { busy: heldBy };
+  turn.report = opened.report;
+  const { owner, reflection } = opened;
   context.reflections.push({ slug: opened.repo.slug, path, reflection, owner });
   const observation = await observeRepo(
     opened,
@@ -65,6 +84,18 @@ export async function runTurn(
     path,
     lineInputOf(forge.drives, forge, tracked, sessions),
   );
+  return { turn, opened, observation };
+}
+
+/** Plan, log, act on and label one observed repository, under the act lock; its report. */
+export async function actTurn(
+  observed: Extract<Observed, { turn: RepoTurn }>,
+  context: TickContext,
+): Promise<RepoReport> {
+  const { turn, opened, observation } = observed;
+  const { timer } = turn;
+  const { report } = opened;
+  const { forge } = observation;
   if (context.apply !== null)
     await timer.time("apply", () => recoverLedgers(context, observation));
   await timer.time("plan", () => planObserved(context, observation));
@@ -112,16 +143,32 @@ function closeShared(context: TickContext, observation: RepoObservation): void {
     observation.claims,
     forge,
   );
-  // The budget is the host's: read once, when the tick closes.
-  if (forge.ok)
-    context.reads.budgets.push({
-      report: report.shared,
-      records: observation.ctx.records,
-    });
+  // The budget is the host's: read once, as the tick started.
+  if (forge.ok) context.reads.budgets.push(report.shared);
 }
 
+/** A turn's phases in the order they start, which the report keeps whatever order overlapping phases end in. */
+const REPO_PHASES: readonly RepoPhase[] = [
+  "open",
+  "tracker",
+  "forge",
+  "claims",
+  "runtime",
+  "observe",
+  "plan",
+  "log",
+  "apply",
+  "labels",
+  "shared",
+];
+
 function timed(report: RepoReport, timer: PhaseTimer<RepoPhase>): RepoReport {
-  report.phasesMs = { ...timer.ms };
+  report.phasesMs = Object.fromEntries(
+    REPO_PHASES.filter((p) => timer.ms[p] !== undefined).map((p) => [
+      p,
+      timer.ms[p],
+    ]),
+  );
   return report;
 }
 

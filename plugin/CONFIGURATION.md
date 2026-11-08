@@ -1315,7 +1315,9 @@ change_probe: true                  # false turns off the minute-by-minute chang
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
 per run), `walls/` (each account's usage-limit wall, which lifts at its
-latest recorded reset), the tick lock, the rotation cursor (`tick-index`),
+latest recorded reset), the tick's locks (`tick.lock`, which one tick
+acts under at a time, and `observe/`, one per repository a tick is
+reading), the rotation cursor (`tick-index`),
 `wake/` (each repository's pending wakes and their log), `probe/` (the
 change probe's state, `state.json`, and its timer's launcher copy)
 and the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
