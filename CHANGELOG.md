@@ -387,6 +387,23 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.170.0] - 2026-11-08
+
+The dispatch dashboard says where each pull request stands, can run without a token behind a front on the host, and stacks its panels in one column.
+
+### Added
+
+- Each pull request on the dashboard is an icon in the colour of its state: driving, following up after the merge, waiting, needs a person, queued, held, merged or closed. Hovering or tapping the pull request opens its state, round, unresolved thread count, how long it has waited and the dispatcher's own reason. The state comes from the newest tick's line, so a dashboard served without a GitHub login still shows it.
+- `dashboard.require_token: false` in the machine file serves the dashboard with no token. It is accepted only with a loopback `dashboard.listen`, so the only way in from another machine is a front on the host, such as Tailscale Serve, that authenticates the person first. A tokenless dashboard answers only `localhost`, `127.0.0.0/8` and `::1` as the request's `Host`, plus the names `dashboard.allowed_hosts` lists for the front, and refuses any other with 403. See [the machine's dispatch file](plugin/CONFIGURATION.md).
+
+### Changed
+
+- The dashboard's Now view, running slots and legend no longer sit side by side at any width: one column keeps vertical scrolling the same on a phone and a desktop.
+
+### Fixed
+
+- Every pull request on a dashboard whose server could not call the forge showed "Unknown" with no popover content; its icon now opens the state the line holds.
+
 ## [0.169.0] - 2026-11-08
 
 ### Added
@@ -6025,7 +6042,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.169.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.170.0...HEAD
+[0.170.0]: https://github.com/jig-harness/jig/compare/v0.169.0...v0.170.0
 [0.169.0]: https://github.com/jig-harness/jig/compare/v0.168.2...v0.169.0
 [0.168.2]: https://github.com/jig-harness/jig/compare/v0.168.1...v0.168.2
 [0.168.1]: https://github.com/jig-harness/jig/compare/v0.168.0...v0.168.1
