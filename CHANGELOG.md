@@ -387,6 +387,25 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.173.0] - 2026-11-08
+
+An issue filed through the tracker scripts without a type, a priority or a size is now refused, before anything is written. `/jig:file-issue` gains a weekly sweep for the issues filed around those scripts, and a move that carries a repository's type, priority and size from one store to another.
+
+### Added
+
+- `/jig:file-issue check`, the weekly sweep ([file-issue](plugin/skills/file-issue/README.md#the-weekly-sweep)): `check-fields.ts check` lists, by issue key, every open issue outside triage that lacks a type, a priority or a size (an epic needs no size) or carries the label of a facet the configuration keeps in the tracker's own field, and with `--yes` moves each one not yet started back to triage with a comment naming what it lacks, listing the started ones without moving them. It shares one census, bounded to a minute, across at most 20 listing pages of 100 incomplete issues, and moves at most 50 a run, paces its writes at 30 a minute, waits out a `Retry-After` up to 3 times a run, and stops at a refused write, reporting what it moved and what remains. A store that fails closed, or more than half of the issues that must carry a facet lacking it, moves nothing. Schedule it weekly with a credential that may comment on issues and move them to triage; on GitHub Issues, set `JIG_GITHUB_GRAPHQL_URL` for it to see GitHub's `Retry-After`.
+- `/jig:file-issue move` ([file-issue](plugin/skills/file-issue/README.md#moving-to-another-store)): `check-fields.ts move` carries type, priority and size from one store to another (labels to the tracker's own fields, back again, or one field to another) for every open issue, in a preview that writes a move record, a copy, the person's commit of the new `issue_tracker.facets` section, and a retire; `--restore` puts back every value the record says it changed. Nothing is written without `--yes`; each run writes at most one update per open issue, is paced as the sweep is, and is resumed by running it again; closed issues keep their labels.
+- The audit's configuration check suggests the sweep to a repository that keeps its issues' facets on a tracker and runs the sweep from no workflow, systemd unit or crontab (`suggestion:issue_tracker.sweep`).
+- The tracker interface reads every open issue with its facets (`Tracker.openPopulation`); `incompleteIssues` lists the started issues apart (`started: true`), and on GitHub Issues sees a retired `priority:` label, which an issue's labels leave out.
+
+### Changed
+
+- **Breaking**: `tracker.ts create`, and every other filing through the tracker interface, refuses an issue without a type, a priority (1 to 4) or a size (an issue carrying `issue_tracker.labels.epic` needs no size), or without a label of another required group of the label taxonomy, before anything is written, naming what it lacks (exit 2); the previous release filed it with a warning. Give `"type"`, `"priority"` and `"size"` in every issue `tracker.ts create` reads, and a label of each required group. A deferred finding `file-deferred.ts` files carries the follow-up label alone, so in a repository whose taxonomy requires another group it stays in its pull request's section for a person to file through `/jig:file-issue`.
+- Migration refuses cross-facet store collisions and ambiguous destination labels, preserves edits on resumed copies and unmapped values on restore, and keeps its record lock until an in-flight write settles after cancellation. Read-only tracker operations remain available when the taxonomy is malformed. Sweeps can use `--retired-from` with the former facets section to find custom retired labels and distinguish issues changed during pacing from pending work. The audit recognizes scheduled default-branch guards and the shipped status wrapper without treating comments as executable commands.
+- Retirement checks the destination's complete representation before copying or clearing a source, and move admission refuses destinations that share a physical field. Sweep cancellation reaches comment and transition requests across the adapters. Malformed taxonomies leave recovery reads available even with explicitly configured stores. Audit schedule evidence requires a validated daily or weekly cadence and an independent job; dependency chains, preceding step chains and other cron expressions remain advisory. Cancellation and deadlines cover the prerequisite reads as well as the writes; restore compares the original labels even when the canonical value has returned to its starting value.
+- Process inspection recognizes both missing-file and missing-process errors when a process exits while its `/proc` directory is being read, so a vanished process does not leave an otherwise idle worktree indeterminate.
+- Audit sweep evidence permits redirection only in the complete status wrapper with its fixed output and summary destinations; standalone redirected commands remain advisory.
+
 ## [0.172.0] - 2026-11-08
 
 ### Changed
@@ -6091,7 +6110,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.172.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.173.0...HEAD
+[0.173.0]: https://github.com/jig-harness/jig/compare/v0.172.0...v0.173.0
 [0.172.0]: https://github.com/jig-harness/jig/compare/v0.171.0...v0.172.0
 [0.171.0]: https://github.com/jig-harness/jig/compare/v0.170.0...v0.171.0
 [0.170.0]: https://github.com/jig-harness/jig/compare/v0.169.0...v0.170.0
