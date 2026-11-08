@@ -16,6 +16,7 @@
  * `--apply`, each stage is a boundary of its own (`stageDefect`): a defect
  * in one stops that stage only, and the turn's other stages still run.
  */
+import { enforcedDeadlineMs } from "./actions/launch.ts";
 import { defectOf, logDefect, logStageDefect } from "./defect.ts";
 import { PhaseTimer } from "./phase-timer.ts";
 import { actObserved } from "./tick-apply.ts";
@@ -77,6 +78,7 @@ export async function observeTurn(
       nowMs: context.nowMs,
       records: allRecords(context),
       reads: context.reads,
+      ...tickDeadline(context),
     },
     timer,
   );
@@ -87,6 +89,22 @@ export async function observeTurn(
     lineInputOf(forge.drives, forge, tracked, sessions),
   );
   return { turn, opened, observation };
+}
+
+/**
+ * When the tick must have ended, less the time its receipt needs, as the
+ * launches count it (`timeLeftMs`): from the invocation's start and the
+ * deadline its launcher enforces. A tick with no machine file has none.
+ */
+function tickDeadline(context: TickContext): { deadline?: number } {
+  const machine = context.options.machine;
+  if (machine === undefined || machine === null) return {};
+  return {
+    deadline:
+      context.startedMs +
+      enforcedDeadlineMs(machine) -
+      machine.runtimeTimeoutMs,
+  };
 }
 
 /** Plan, log, act on and label one observed repository, under the act lock; its report. */

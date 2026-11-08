@@ -1,12 +1,15 @@
 /**
  * The forge's part of a repository's tick: the open pull requests (with
- * their labels where the repository turns dispatch labels on, in the same
- * listing) and their ledgers, and the merges with their follow-up markers,
- * read through the shared records (`shared/records/shared.ts`). Every
- * pull request's comments are listed once for the tick and shared between
- * its ledger, its park answers and its claims (`tick-comments.ts`), and a
- * merge whose `updatedAt` has not moved since the markers were last read
- * is not read again (`merge-reads.ts`). Under
+ * their labels where the repository turns dispatch labels on), read with
+ * their comments in the repository's query (`forge-batch.ts`) or, where it
+ * did not read, listed on their own, and their ledgers; and the merges
+ * with their follow-up markers, read through the shared records
+ * (`shared/records/shared.ts`). Every pull request's comments are read
+ * once for the tick and shared between its ledger, its park answers and
+ * its claims (`tick-comments.ts`); a merge whose `updatedAt` has not moved
+ * since the markers were last read is not read again (`merge-reads.ts`),
+ * and the comments of the merges that are read are read in one query where
+ * there are several. Under
  * `only_labeled`, a pull request that carries no label of the set is never
  * read for a ledger, and a merge that carries none wants no follow-up; the
  * scope itself is decided once, by `decideScope`.
@@ -15,7 +18,12 @@ import type { SharedRecords } from "../../shared/records/shared.ts";
 import { adoptionNote, adoptionOf } from "./adopt.ts";
 import { readMarkers } from "./followup-marker.ts";
 import { readReleases } from "./followup-releases.ts";
-import { type ListedPr, mergedSince, openPullRequests } from "./forge.ts";
+import {
+  listedOpen,
+  type ListedPr,
+  mergedSince,
+  openPullRequests,
+} from "./forge.ts";
 import { carriesSet, type LabelConfig } from "./labels.ts";
 import {
   type FreshMergeRead,
@@ -26,6 +34,7 @@ import {
 import { readDrives } from "./sources/ledgers.ts";
 import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
+import type { CommentsOutcome, RepositoryOutcome } from "./tick-reads.ts";
 import { failureText } from "./text.ts";
 import type {
   DispatchSection,
@@ -55,8 +64,13 @@ export interface ForgeRead {
   login: string | null;
 }
 
-/** What the forge's part of a tick reads through beside the forge itself: the tick's comment listings, the login read once per tick, and the pool its listings run through. */
+/** What the forge's part of a tick reads through beside the forge itself: the repository's query, the tick's comment listings, the login read once per tick, and the pool its listings run through. */
 export interface ForgeReads {
+  repository(path: string): Promise<RepositoryOutcome>;
+  pullRequestComments(
+    slug: string,
+    prs: readonly number[],
+  ): Promise<CommentsOutcome>;
   comments: TickComments;
   login(): Promise<string | null>;
   pool: Pool;
@@ -119,10 +133,14 @@ export async function readForge(
     out.disputed = new Set();
   };
   try {
-    const [open, login] = await Promise.all([
-      reads.pool.run(() => openPullRequests(repo.slug, read)),
+    const [queried, login] = await Promise.all([
+      reads.repository(repo.path),
       reads.login(),
     ]);
+    // The tick's query of the repository, else the pull request listing on its own.
+    const open = queried.ok
+      ? listedOpen(queried.value.open, read)
+      : await reads.pool.run(() => openPullRequests(repo.slug, read));
     if (!open.ok) {
       unread(open.failure.reason);
       return out;
@@ -167,6 +185,7 @@ export async function readForge(
         const began = reads.comments.startedAt(repo.slug, pr);
         return began !== null && began >= observedMs;
       },
+      (prs) => reads.pullRequestComments(repo.slug, prs),
     );
     out.merged = marked.merged;
     if (labels?.onlyLabeled === true)
@@ -176,10 +195,10 @@ export async function readForge(
       record: "forge",
       source: `gh ${repo.slug}`,
       ok: true,
-      detail: `${out.open.length} open pull request(s), ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}${adoptionNote(adoption, out.drives)}; ${
+      detail: `${out.open.length} open pull request(s)${queryNote(queried)}, ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}${adoptionNote(adoption, out.drives)}; ${
         section.followupCommand === null
           ? "no dispatch.followup_command: no follow-ups"
-          : `${out.merged.length} merged since ${since} (${marked.kept} unchanged since a tick read their markers, not read again)`
+          : `${out.merged.length} merged since ${since} (${marked.kept} unchanged since a tick read their markers, not read again${commentsNote(marked.queried)})`
       }`,
     });
   } catch (error) {
@@ -223,12 +242,38 @@ function decideScope(
   }
 }
 
+/** How the open pull requests and their comments were read: in the repository's query, and what it cost, or one by one and why. */
+function queryNote(queried: RepositoryOutcome): string {
+  if (!queried.ok)
+    return ` (the repository query did not read, so each was read on its own: ${queried.failure.reason})`;
+  const { pages, cost, overflow } = queried.value;
+  const own =
+    overflow.length === 0
+      ? ""
+      : `; ${overflow.length} with more comments than one page holds, listed on their own`;
+  return ` (one repository query: ${pages} page(s), ${cost} point(s)${own})`;
+}
+
+/** How the merges' comments were read, where a query read them. */
+function commentsNote(queried: CommentsOutcome | null): string {
+  if (queried === null) return "";
+  if (!queried.ok)
+    return `; the comments query did not read, so each was listed on its own: ${queried.failure.reason}`;
+  const { pages, cost, overflow } = queried.value;
+  const own =
+    overflow.length === 0 ? "" : `, ${overflow.length} listed on their own`;
+  return `; the others' comments read in one query: ${pages} page(s), ${cost} point(s)${own}`;
+}
+
 function labelNote(labels: LabelConfig | null, unlabeled: number): string {
   if (labels === null) return "";
   return labels.onlyLabeled
     ? ` (dispatch labels on, only labelled pull requests: ${unlabeled} carry no label of the set and are not read)`
     : " (dispatch labels on)";
 }
+
+/** How many merges' markers to read make one query cheaper than a listing each. */
+const QUERY_FROM = 2;
 
 /**
  * Each merged pull request with its follow-up markers; a pull request whose
@@ -239,7 +284,9 @@ function labelNote(labels: LabelConfig | null, unlabeled: number): string {
  * kept only when `after` says their comments were listed after the merged
  * listing was read: a listing the tick held from an earlier observation of
  * the pull request (the open one, another checkout's turn) may predate an
- * edit that listing's `updatedAt` already shows.
+ * edit that listing's `updatedAt` already shows. Where `QUERY_FROM` or more
+ * are read, their comments are read in one query first (`query`), which
+ * begins after the merged listing was read; `queried` is its answer.
  */
 async function withMarkers(
   shared: SharedRecords,
@@ -248,7 +295,12 @@ async function withMarkers(
   nowMs: number,
   login: string | null,
   after: (pr: number) => boolean,
-): Promise<{ merged: MarkedPr[]; kept: number }> {
+  query: (prs: number[]) => Promise<CommentsOutcome>,
+): Promise<{
+  merged: MarkedPr[];
+  kept: number;
+  queried: CommentsOutcome | null;
+}> {
   const kept = readMergeReads(slug);
   const pending = pendingReleases(
     readReleases(
@@ -264,6 +316,11 @@ async function withMarkers(
       ? null
       : keptMarkers(kept.get(pr.number), pr, nowMs, login),
   );
+  const toRead = merged.filter((_, i) => reuses[i] === null);
+  const queried =
+    toRead.length >= QUERY_FROM
+      ? await query(toRead.map((p) => p.number))
+      : null;
   // The markers to read are asked for at once; the pool bounds how many are in flight.
   const reading = merged.map((pr, i) => {
     if (reuses[i] !== null) return null;
@@ -295,7 +352,7 @@ async function withMarkers(
     nowMs,
     login,
   );
-  return { merged: out, kept: reused };
+  return { merged: out, kept: reused, queried };
 }
 
 /** The pull requests whose stale-claim release is still pending: their completion needs a fresh listing. */

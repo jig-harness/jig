@@ -45,9 +45,10 @@ honest.
 > count of open children. A **flag that fires a gate goes on the item that
 > ships the change**, never on its container. **Labels carry durable
 > classification only**, never mutable operational state. Every issue is
-> filed **with its priority and category already set**: the priority from
-> one shared severity mapping, the category chosen and checked against one
-> category list. **Every copy of the taxonomy's key sets is checked** for
+> filed **with its type, priority, size and category already set**: the
+> priority from one shared severity mapping, the category chosen and checked
+> against one category list, and the check made inside the tracker write
+> itself. **Every copy of the taxonomy's key sets is checked** for
 > exact equality with its source. **Prioritization is computed**: the ranked
 > shortlist is reproducible from a tracker snapshot and a committed weights
 > file, and a person picks from it.
@@ -165,8 +166,13 @@ while the item lives.
 ### Priority and category at birth
 
 Every path that files an issue (a person, a review's deferral, a scheduled
-check, an agent) sets its priority and category when it files it. The
-priority is derived from one shared [severity mapping](../../GLOSSARY.md).
+check, an agent) sets its type, its priority, its size and its category when
+it files it. The type and the size are [issue facets](../../GLOSSARY.md)
+beside the priority: a value the tracker interface carries on every issue,
+whichever field or label the tracker keeps it in. The
+priority is derived from one shared [severity mapping](../../GLOSSARY.md),
+and a finding whose severity is unknown files as medium: ranked in the
+middle until someone reads it, never left unranked and never guessed low.
 The category is a separate classification, since two findings of the same
 severity can be a security issue and a performance one: the filing path takes
 it from the finding and checks it against one category list, never derives it
@@ -181,6 +187,15 @@ required groups), and appends to an existing container when one fits instead
 of filing a new one.
 An issue filed without a priority is not "low priority"; it is unranked, and
 an unranked pool cannot be worked in order.
+
+The check is made in one place, inside the tracker write, so every path that
+files through the tracker interface gets it, a new one included: an issue
+with no type, no priority, or no size (an epic needs none, since its
+children carry theirs) is filed, then named in a
+warning that carries the new issue's identifier. A filing that goes
+around the interface (an issue form, a person in the tracker's own page) is
+caught after it: every read of a pool lists an issue that lacks a facet as
+a gap, rather than ranking it as if it had none to carry.
 
 ### Taxonomy copies are checked
 
@@ -263,9 +278,16 @@ practice:
   configuration (`issue_tracker.labels`, `issue_tracker.states` in the
   [configuration reference](../../plugin/CONFIGURATION.md#issue_tracker));
   the template's statuses are the same canonical states.
+- The tracker interface (`do-item`'s
+  [`lib/tracker/`](../../plugin/skills/do-item/scripts/lib/tracker/))
+  checks every issue filed through it for a type, a priority and a size,
+  and names what is missing; in this release it warns and files, and the
+  next release refuses. `work-batch` lists a pool's issue that lacks a
+  priority or a size as a labelling gap, and the dispatcher's tick record
+  lists the assigned items that lack one.
 - [`resolve-review-comments`](../../plugin/skills/resolve-review-comments/SKILL.md)
-  files a deferred review finding with its priority set from the severity
-  mapping, refuses a type outside the declared taxonomy or a missing
+  files a deferred review finding with its type, its priority set from the
+  severity mapping (an unknown severity as medium) and its size, refuses a type outside the declared taxonomy or a missing
   mandatory label group, and appends to the open follow-up for the same pull
   request and type instead of filing another.
 - [`drive-pr`](../../plugin/skills/drive-pr/SKILL.md)'s scoreboard
@@ -321,6 +343,8 @@ build, which rejects a repeated key.
 
 ### Future
 
+- **A weekly sweep of the open issues** that returns one lacking a type, a
+  priority or a size to triage, for the issues no pool reads.
 - **The epic acceptance review, the tail sweep and the prioritization
   ranker** as runnable skills. The rules above are stated now; the tools that
   run them (a review that writes the accepting verdict, a sweep that extracts

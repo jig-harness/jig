@@ -20,6 +20,7 @@ import {
 } from "../scripts/determine_agent.ts";
 import { parseArgs } from "../scripts/lib/cli.ts";
 import { parseNewIssue, parsePatch, UsageError } from "../scripts/tracker.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
@@ -1252,7 +1253,7 @@ describe("tracker.ts", () => {
     variables:
       '{"filter":{"or":[{"team":{"key":{"eq":"ENG"}}},{"team":{"null":true}}]},"after":null}',
     payload:
-      '{"data":{"issueLabels":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"l-bug","name":"bug","isGroup":false,"parent":null},{"id":"l-size","name":"size","isGroup":true,"parent":null},{"id":"l-xs","name":"xs","isGroup":false,"parent":{"name":"size"}}]}}}',
+      '{"data":{"issueLabels":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"l-bug","name":"bug","isGroup":false,"parent":null},{"id":"l-size","name":"size","isGroup":true,"parent":null},{"id":"l-xs","name":"xs","isGroup":false,"parent":{"name":"size"}},{"id":"l-area","name":"area:tracker","isGroup":false,"parent":null}]}}}',
   };
   const issueId = (key: string) => ({
     operation: "query TrackerIssueId",
@@ -1282,8 +1283,10 @@ describe("tracker.ts", () => {
       ],
       JSON.stringify({
         title: "Fix it",
-        labels: ["bug", "xs"],
+        labels: [],
+        type: "bug",
         priority: 3,
+        size: "xs",
         parent: "ENG-1",
       }),
     );
@@ -1293,6 +1296,34 @@ describe("tracker.ts", () => {
       identifier: "ENG-10",
       url: "https://tracker.example/ENG-10",
     });
+  });
+
+  it("files an issue given no priority, and warns naming the facet it lacks", () => {
+    const r = run(
+      ["create"],
+      [
+        {
+          operation: "query TrackerTeam",
+          variables: '{"key":"ENG"}',
+          payload:
+            '{"data":{"teams":{"pageInfo":{"hasNextPage":false},"nodes":[{"id":"team-1","key":"ENG"}]}}}',
+        },
+        LABEL_LIST,
+        {
+          operation: "mutation TrackerCreate",
+          variables:
+            '{"input":{"teamId":"team-1","title":"Fix it","description":"","labelIds":["l-bug","l-xs"]}}',
+          payload:
+            '{"data":{"issueCreate":{"success":true,"issue":{"identifier":"ENG-11","url":null}}}}',
+        },
+      ],
+      JSON.stringify({ title: "Fix it", labels: [], type: "bug", size: "xs" }),
+    );
+    expectSpawnExit({ ...r, exitCode: r.status }, 0);
+    expect(JSON.parse(r.stdout)).toEqual({ identifier: "ENG-11", url: null });
+    expect(r.stderr.trim()).toBe(
+      'warning: ENG-11 was filed without priority; the next release refuses an issue filed without them, so give each when filing (tracker.ts create takes "type", "priority" 1 to 4, and "size")',
+    );
   });
 
   it("fails a filing whose label the tracker does not have", () => {
@@ -1323,11 +1354,11 @@ describe("tracker.ts", () => {
         {
           operation: "mutation TrackerUpdate",
           variables:
-            '{"id":"uuid-ENG-1","input":{"addedLabelIds":["l-xs"],"removedLabelIds":["l-bug"]}}',
+            '{"id":"uuid-ENG-1","input":{"addedLabelIds":["l-area"],"removedLabelIds":["l-bug"]}}',
           payload: '{"data":{"issueUpdate":{"success":true}}}',
         },
       ],
-      JSON.stringify({ addLabels: ["xs"], removeLabels: ["bug"] }),
+      JSON.stringify({ addLabels: ["area:tracker"], removeLabels: ["bug"] }),
     );
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
@@ -1402,6 +1433,7 @@ describe("tracker.ts", () => {
     const available = run(["available-labels"], [LABEL_LIST]);
     expect(available.stderr).toBe("");
     expect(JSON.parse(available.stdout)).toEqual([
+      { name: "area:tracker", group: null },
       { name: "bug", group: null },
       { name: "xs", group: "size" },
     ]);

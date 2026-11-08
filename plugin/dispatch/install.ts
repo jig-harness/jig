@@ -96,6 +96,8 @@ export function dispatchJobSpec(
  * the dispatcher's, so its launcher copy and logs are its own. It waits for
  * the ticks it wakes, together, and a waiter starts up to `WAKE_ATTEMPTS`
  * runs a `WAKE_SPACING_MS` apart, so its deadline covers that many ticks'.
+ * It carries the tick's Orca command configuration, so the two installed
+ * jobs resolve the same Orca.
  */
 export function probeJobSpec(
   machine: MachineConfig | null = null,
@@ -110,6 +112,7 @@ export function probeJobSpec(
     stateRoot: probeRoot(),
     args: ["dispatch", "probe", "--apply"],
     schedule: { everyMinutes: 1 },
+    env: tick.env ?? {},
     ...(tick.deadlineSec === undefined
       ? {}
       : {

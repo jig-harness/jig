@@ -2,10 +2,20 @@
  * Builders for the work-batch tests: a consumer configuration and catalog
  * held in memory, issues in the tracker interface's pool form, and an
  * in-memory tracker that answers the pool reads the way an adapter must
- * (open issues only, every label condition applied, an empty one refused).
+ * (open issues only, every label and facet condition applied, an empty
+ * label list refused).
  */
 import {
+  facetInputs,
+  parseTrackerConfig,
+} from "../../do-item/scripts/lib/tracker/config.ts";
+import {
+  type Facets,
+  resolveFacets,
+} from "../../do-item/scripts/lib/tracker/facets/config.ts";
+import {
   CLOSED_STATE_TYPES,
+  type Facet,
   type PoolIssue,
   type PoolQuery,
   type Tracker,
@@ -78,6 +88,34 @@ export function policy(
   return batchPolicy({ ...OVERLAY, ...extra }, cat);
 }
 
+/** The sizes of the label taxonomy `facetPolicy` reads. */
+const SIZES = ["xs", "small", "medium", "large", "xl"];
+
+/**
+ * The facets of `overlay`'s repository with a label taxonomy whose types are
+ * `review.taxonomy.types`' and whose size group is `SIZES` (`sizes: null`:
+ * a taxonomy with no size group).
+ */
+export function taxonomyFacets(
+  overlay: Record<string, unknown> = OVERLAY,
+  sizes: string[] | null = SIZES,
+): Facets {
+  return resolveFacets(facetInputs(parseTrackerConfig(overlay)), {
+    path: "label-taxonomy.yaml",
+    types: ["bug", "feature", "chore"],
+    sizes,
+  });
+}
+
+/** `policy`, for a repository that keeps type and size as issue facets. */
+export function facetPolicy(
+  extra: Record<string, unknown> = {},
+  cat: ChangeAreaCatalog | null = catalog(),
+): BatchPolicy {
+  const overlay = { ...OVERLAY, ...extra };
+  return batchPolicy(overlay, cat, taxonomyFacets(overlay));
+}
+
 let created = 0;
 
 /**
@@ -122,6 +160,26 @@ export interface FakeTracker extends Tracker {
   readonly childReads: string[];
 }
 
+/** Whether an issue lacks a facet, as the interface's `missing` reads it. */
+function lacks(issue: PoolIssue, f: Facet): boolean {
+  return f === "priority" ? issue.priority === 0 : issue[f] === null;
+}
+
+/** Whether an issue matches a pool query's facet conditions. */
+function facetsMatch(issue: PoolIssue, query: PoolQuery): boolean {
+  const oneOf = Object.entries(query.facets?.oneOf ?? {}) as Array<
+    [Exclude<Facet, "priority">, string[]]
+  >;
+  const missing = query.facets?.missing ?? [];
+  return (
+    oneOf.every(([f, list]) => {
+      const value = issue[f];
+      return value !== null && list.includes(value);
+    }) &&
+    (missing.length === 0 || missing.some((f) => lacks(issue, f)))
+  );
+}
+
 function unsupported(name: string): () => never {
   return () => {
     throw new Error(`the batch proposal does not call ${name}`);
@@ -130,8 +188,8 @@ function unsupported(name: string): () => never {
 
 /**
  * A tracker holding `issues` (and each epic's children in `children`).
- * `failGapRead` makes a read with `withNoneOf` throw, as a gap read the
- * tracker refuses would.
+ * `failGapRead` makes a read with `withNoneOf` or `facets.missing` throw, as
+ * a gap read the tracker refuses would.
  */
 export function fakeTracker(
   issues: readonly PoolIssue[],
@@ -184,7 +242,10 @@ export function fakeTracker(
         query.withSomeOf.some((l) => l.length === 0)
       )
         throw new Error("a pool query needs a non-empty label list");
-      if (opts.failGapRead && (query.withNoneOf?.length ?? 0) > 0)
+      const gapRead =
+        (query.withNoneOf?.length ?? 0) > 0 ||
+        (query.facets?.missing?.length ?? 0) > 0;
+      if (opts.failGapRead && gapRead)
         throw new Error("the tracker refused the gap read");
       return issues.filter(
         (i) =>
@@ -192,7 +253,8 @@ export function fakeTracker(
           query.withSomeOf.every((some) =>
             some.some((l) => i.labels.includes(l)),
           ) &&
-          !(query.withNoneOf ?? []).some((l) => i.labels.includes(l)),
+          !(query.withNoneOf ?? []).some((l) => i.labels.includes(l)) &&
+          facetsMatch(i, query),
       );
     },
     async openChildren(key) {

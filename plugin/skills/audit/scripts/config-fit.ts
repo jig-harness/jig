@@ -9,6 +9,9 @@
  *   - derivations that fail: a command whose program or script does not
  *     exist, a configured path that is missing, an integration branch that
  *     cannot be found, a required check that never runs, an unreachable tracker;
+ *   - on GitHub Issues, each issue facet whose store the configuration does
+ *     not name: the line that names the store in force, or the conflict that
+ *     fails its reads and writes;
  *   - declared values the repository contradicts, such as `stacking: none`
  *     with stacked pull requests open, or an AI reviewer named that posted on
  *     no recent pull request (or one that ran while none is named);
@@ -76,6 +79,7 @@ import {
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import { trackerProbeable } from "./lib/tracker-probe.ts";
+import { facetFindings, reachTracker } from "./lib/tracker-fit.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { ghCall } from "../../../shared/proc.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
@@ -1036,16 +1040,9 @@ async function trackerCheck(
     config = layeredConfig(root, process.env, text).values;
     const trackerConfig = parseTrackerConfig(config);
     if (!trackerProbeable(trackerConfig)) return [];
-    const deadline = new AbortController();
-    const probe = openTracker(trackerConfig, root).reach(deadline.signal);
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => {
-        reject(new Error("no answer within 30 seconds"));
-        deadline.abort();
-      }, 30_000).unref(),
-    );
-    await Promise.race([probe, timeout]);
-    return [];
+    const tracker = openTracker(trackerConfig, root);
+    await reachTracker(tracker);
+    return await facetFindings(tracker);
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     return [

@@ -2,7 +2,8 @@
  * The change probe's timer: its job runs `dispatch probe --apply` every
  * minute from a launcher copy of its own, beside the tick's; `jig upgrade`
  * refreshes it as a companion of the dispatcher's job, and leaves it out
- * where it is not installed.
+ * where it is not installed. It carries the tick's Orca command
+ * configuration, and an upgrade keeps what the installed job holds.
  */
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -43,13 +44,34 @@ describe("the change probe's job", () => {
       /^\*\/1 \* \* \* \* .* # jig-dispatch-probe\n$/,
     );
   });
+
+  it("carries the Orca command configuration the tick's job does", () => {
+    const env = {
+      ORCA_CLI_COMMAND: " /opt/orca/bin/orca ",
+      ORCA_CLI_BIN_DIR: "/opt/orca/bin",
+    };
+    const probe = probeJobSpec(null, env);
+    expect(probe.env).toEqual({
+      ORCA_CLI_COMMAND: "/opt/orca/bin/orca",
+      ORCA_CLI_BIN_DIR: "/opt/orca/bin",
+    });
+    expect(probe.env).toEqual(dispatchJobSpec(5, null, env).env ?? {});
+    expect(probeJobSpec(null, {}).env).toEqual({});
+  });
 });
 
 describe("jig upgrade's refresh", () => {
-  /** The refresh over the dispatcher, on a systemd that holds the jobs `installed` names, in a home of its own. */
-  function refresh(installed: string[]): {
+  /**
+   * The refresh over the dispatcher, on a systemd that holds the jobs
+   * `installed` names, each with `env` beyond its home, in a home of its own
+   * and an environment without Orca's command configuration.
+   */
+  function refresh(
+    installed: string[],
+    env: Record<string, string> = {},
+  ): {
     results: { target: string; outcome: string; detail: string }[];
-    rewritten: [string, string][];
+    rewritten: [string, string, string][];
     home: string;
   } {
     const home = mkdtempSync(join(tmpdir(), "probe-refresh-"));
@@ -59,6 +81,7 @@ describe("jig upgrade's refresh", () => {
         'import { mock } from "bun:test";',
         `const scheduler = await import(${JSON.stringify(scheduler)});`,
         `const installed = ${JSON.stringify(installed)};`,
+        `const env = ${JSON.stringify(env)};`,
         "const rewritten = [];",
         `mock.module(${JSON.stringify(scheduler)}, () => ({`,
         "  ...scheduler,",
@@ -66,19 +89,20 @@ describe("jig upgrade's refresh", () => {
         "  snapshotScheduler: async (_, spec) => ({ ok: true, value: {",
         '    scheduler: "systemd", spec, enabled: true, active: false, launcher: {},',
         "    files: installed.includes(spec.name)",
-        '      ? scheduler.jobFiles("systemd", { command: [...scheduler.launcherCommand(scheduler.launcherDirectory(spec), {}, "/bun"), ...spec.args], env: { HOME: process.env.HOME }, spec: { ...spec, schedule: { everyMinutes: 7 } } })',
+        '      ? scheduler.jobFiles("systemd", { command: [...scheduler.launcherCommand(scheduler.launcherDirectory(spec), {}, "/bun"), ...spec.args], env: { HOME: process.env.HOME, ...env }, spec: { ...spec, schedule: { everyMinutes: 7 } } })',
         '      : { [spec.name + ".service"]: null, [spec.name + ".timer"]: null },',
         "  } }),",
-        "  rewriteJob: async (snapshot, files) => { rewritten.push([snapshot.spec.name, files[snapshot.spec.name + '.timer']]); return { ok: true, value: undefined }; },",
+        "  rewriteJob: async (snapshot, files) => { rewritten.push([snapshot.spec.name, files[snapshot.spec.name + '.timer'], files[snapshot.spec.name + '.service']]); return { ok: true, value: undefined }; },",
         "}));",
         `const { refreshInstalled } = await import(${JSON.stringify(resolve(import.meta.dir, "../../runtime/refresh.ts"))});`,
         `const { dispatchComponent } = await import(${JSON.stringify(resolve(import.meta.dir, "../component.ts"))});`,
         "const results = await refreshInstalled([dispatchComponent]);",
         "console.log(JSON.stringify({ results, rewritten }));",
       ].join("\n");
+      const { ORCA_CLI_COMMAND, ORCA_CLI_BIN_DIR, ...outer } = process.env;
       const r = Bun.spawnSync([process.execPath, "-e", source], {
         env: {
-          ...process.env,
+          ...outer,
           HOME: home,
           USERPROFILE: home,
           JIG_HOME: join(home, ".jig"),
@@ -123,6 +147,31 @@ describe("jig upgrade's refresh", () => {
           ),
         ),
       ).toBe(true);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the Orca command configuration the installed probe's job carries", () => {
+    const { results, rewritten, home } = refresh(
+      ["jig-dispatch", "jig-dispatch-probe"],
+      {
+        ORCA_CLI_COMMAND: "/opt/orca/bin/orca",
+        ORCA_CLI_BIN_DIR: "/opt/orca/bin",
+      },
+    );
+    try {
+      expect(results.map((r) => [r.target, r.outcome])).toContainEqual([
+        "jig-dispatch-probe",
+        "refreshed",
+      ]);
+      const service = rewritten.find(([name]) => name === "jig-dispatch-probe");
+      expect(service?.[2]).toContain(
+        'Environment="ORCA_CLI_COMMAND=/opt/orca/bin/orca"',
+      );
+      expect(service?.[2]).toContain(
+        'Environment="ORCA_CLI_BIN_DIR=/opt/orca/bin"',
+      );
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

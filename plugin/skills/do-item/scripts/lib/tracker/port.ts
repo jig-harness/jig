@@ -307,16 +307,39 @@ export interface IncompletePage {
 /** Where a tracker keeps a facet. */
 export type FacetStoreKind = "native" | "field" | "label";
 
+/**
+ * How long a facet read may run, and how its caller stops it: an aborted
+ * `signal`, or a `deadline` passed, ends the request in flight, starts no
+ * further request or page, and fails the read.
+ */
+export interface FacetReadOptions {
+  signal?: AbortSignal;
+  /** Epoch milliseconds. */
+  deadline?: number;
+  /** `facetStores` only: read the organization's issue types and fields; default true. */
+  discovery?: boolean;
+}
+
 /** One facet's store as `facetStores` reports it. */
 export interface FacetStoreReport {
   facet: Facet;
   /** `null` when the repository has no such facet (no size group). */
   store: FacetStoreKind | null;
   /**
-   * Why: named by `issue_tracker.facets` (`configured`), kept in labels by
-   * one of today's keys (`kept in labels`), or the adapter's default.
+   * Why: named by `issue_tracker.facets` (`configured`); kept in labels by
+   * one of today's keys or by the labels its issues carry (`kept in
+   * labels`); selected by the GitHub default from what detection read
+   * (`detected`); the adapter's default; or in `conflict`, with labels and
+   * native values both present and no store named, so its reads and writes
+   * fail closed (`store` is then `null`, and `problem` names both stores).
    */
-  why: "configured" | "kept in labels" | "default" | "no facet";
+  why:
+    | "configured"
+    | "kept in labels"
+    | "detected"
+    | "default"
+    | "conflict"
+    | "no facet";
   /** The field a `field` store keeps the facet in; native priority on GitHub is its `Priority` field. */
   field?: string;
   /** The canonical values, and the tracker value or label each is kept as. */
@@ -330,6 +353,11 @@ export interface FacetStoreReport {
   detection?: FacetDetection;
   /** The configuration line that names the store in force, for a facet that does not name one. */
   pin?: string;
+  /**
+   * For a facet kept in labels: the tracker's own field it could move to,
+   * from detection or the organization's discovery; `null` for none.
+   */
+  moveTo?: { store: FacetStoreKind; field?: string } | null;
   /** Why the facet cannot be read or written, such as a taxonomy that fails its lint. */
   problem?: string;
 }
@@ -348,8 +376,10 @@ export type FacetDetection =
       candidate: { store: FacetStoreKind; field?: string } | null;
       /** Why the tracker's own field does not qualify, when it does not. */
       candidateProblem?: string;
-      /** What the default would select once detection decides (build step 2). */
+      /** What the GitHub default selects from this evidence. */
       wouldSelect: FacetStoreKind | "conflict";
+      /** Whether this answer came from the machine-local detection cache. */
+      cached?: boolean;
     }
   | { status: "failed"; error: string; unavailable: boolean };
 
@@ -538,11 +568,13 @@ export interface Tracker {
   /**
    * This team's issues assigned to `identity` (a GitHub login; a Linear
    * user's email or display name) in one of `states`. An empty `states`
-   * throws, since it would read no state the caller meant.
+   * throws, since it would read no state the caller meant. `options` bound
+   * the settlement of the facets the read waits on, as for `facetStores`.
    */
   assignedIssues(
     identity: string,
     states: ReadonlyArray<CanonicalState>,
+    options?: FacetReadOptions,
   ): Promise<PoolIssue[]>;
   /**
    * Who made the assignment of `assignee` (default: the issue's current
@@ -560,16 +592,19 @@ export interface Tracker {
    * listed. Throws on an unknown facet, a facet the repository has no store
    * for, or a `limit` outside 1 to 100.
    */
-  incompleteIssues(query: IncompleteQuery): Promise<IncompletePage>;
+  incompleteIssues(
+    query: IncompleteQuery,
+    options?: FacetReadOptions,
+  ): Promise<IncompletePage>;
 
   // ── Facets ──
   /**
    * Where each facet is kept and why, each configured native or field
    * store's health, and what detection and the organization's discovery
    * saw. A failed read is reported in its place; this report never moves a
-   * facet to another store.
+   * facet to another store. `discovery: false` skips the organization read.
    */
-  facetStores(): Promise<FacetStores>;
+  facetStores(options?: FacetReadOptions): Promise<FacetStores>;
 
   // ── Claiming ──
   /** The user this tracker's credential acts as: who "yourself" is. */

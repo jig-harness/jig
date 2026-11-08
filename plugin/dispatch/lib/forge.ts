@@ -10,9 +10,16 @@
  * closed one merged. Where the repository turns dispatch labels on, each listing
  * and view carries the pull requests' labels too, and a pull request's
  * labels are changed with one `gh pr edit` call; with them off, no label
- * is read or written. Each read and write returns an outcome
- * (`shared/outcome.ts`), so a population read in part is never planned
- * from. Its failure's code says which:
+ * is used or written. A tick reads most of this for each repository in one
+ * query (`forge-batch.ts`): which repository the checkout is, its
+ * configuration file and its open pull requests with their labels, which
+ * are dropped when the repository's section turns the labels off
+ * (`listedOpen`). When that query does not read in full, the tick makes the
+ * same reads one by one here.
+ *
+ * Each read and write returns an outcome (`shared/outcome.ts`), so a
+ * population read in part is never planned from. Its failure's code says
+ * which:
  *
  * - `unreadable`: a read failed, came back in a form that does not read,
  *   or holds more than one read can, so it would be a read in part.
@@ -324,9 +331,18 @@ async function listPrs(
     return unreadable(
       `${slug} lists ${PR_LIMIT} or more pull requests, more than one read holds`,
     );
+  return listedAll(out, "of the listing", read);
+}
+
+/** Each pull request of a listing, `where` naming the listing; the first that does not read. */
+function listedAll(
+  listed: readonly unknown[],
+  where: string,
+  read: LabelRead,
+): Outcome<ListedPr[], "unreadable"> {
   const prs: ListedPr[] = [];
-  for (const [i, p] of out.entries()) {
-    const pr = listedPr(p, `pull request ${i} of the listing`, read);
+  for (const [i, p] of listed.entries()) {
+    const pr = listedPr(p, `pull request ${i} ${where}`, read);
     if (!pr.ok) return pr;
     prs.push(pr.value);
   }
@@ -342,6 +358,18 @@ export async function openPullRequests(
   read = NO_LABELS,
 ): Promise<Outcome<ListedPr[], "unreadable">> {
   return listPrs(slug, ["open"], read);
+}
+
+/**
+ * The open pull requests a repository's query listed (`forge-batch.ts`),
+ * read as `openPullRequests` reads its listing: their labels only when
+ * `read` asks for them.
+ */
+export function listedOpen(
+  listed: readonly unknown[],
+  read = NO_LABELS,
+): Outcome<ListedPr[], "unreadable"> {
+  return listedAll(listed, "of the repository query", read);
 }
 
 /**

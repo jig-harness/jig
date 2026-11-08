@@ -1,8 +1,9 @@
 /**
  * Work types: the closed list of kinds of work a repository declares, the
- * labels that mark each, and the depth table that says how much each delivery
- * station does for an item of that type (design/work-types.md in the Jig
- * repository).
+ * type values and labels that mark each, and the depth table that says how
+ * much each delivery station does for an item of that type
+ * (design/work-types.md in the Jig repository). An issue's type facet maps
+ * to a work type through the same entries (`workTypeOf`).
  *
  *   issue_tracker:
  *     types:                       # type → the labels that mark it
@@ -450,6 +451,19 @@ export function unknownRow(workTypes: WorkTypes): DepthRow {
     autonomy: "hitl",
     pr_body_sections: union(rows.map((r) => r.pr_body_sections)),
   };
+}
+
+/**
+ * The work type an issue's type facet maps to, ignoring case: the type whose
+ * `issue_tracker.types` entry lists the value (Jig lists `docs`, `chore` and
+ * `infra` under `task`), else the work type of the value's own name; `null`
+ * when neither names one.
+ */
+export function workTypeOf(workTypes: WorkTypes, value: string): string | null {
+  const listed = workTypes.types.find((t) =>
+    (workTypes.labels[t] ?? []).some((l) => fold(l) === fold(value)),
+  );
+  return listed ?? workTypes.types.find((t) => t === fold(value)) ?? null;
 }
 
 /** The effective row of a type, or the computed row of `unknown`. */

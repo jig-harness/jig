@@ -23,6 +23,8 @@ export const ACCEPTANCE_TIERS = ["Minor", "Major", "Blocker"];
  */
 const MIN_PRIORITY = 0;
 const MAX_PRIORITY = 4;
+/** What a finding of `unknown` severity files at: medium. */
+const UNKNOWN_PRIORITY = 3;
 
 /** The key a row names its priority with, and the alias also accepted. */
 const PRIORITY_KEY = "priority";
@@ -89,11 +91,12 @@ function assertExactRows(got: string[], expected: string[]): void {
 
 /**
  * A row's priority, under `priority` or its alias. Token-aware, not a single
- * shared `0-4` range: `unknown` is the ABSENCE of a severity, so it must be
- * EXACTLY 0 — any other value invents an urgency for a finding nothing
- * ranked at all. Every RANKED severity is the opposite case: an
- * unprioritized ranked follow-up is the failure this mapping exists to
- * prevent, so it must map to an actual priority, 1-4, never 0.
+ * shared `0-4` range: every RANKED severity must map to an actual priority,
+ * 1-4, never 0, since an unprioritized ranked follow-up is the failure this
+ * mapping exists to prevent. `unknown` maps to 3 (medium), the priority a
+ * deferral files a finding nothing ranked at (`severity-priority.ts`); 0
+ * (none) is accepted too, and such a finding still files as medium, since
+ * this table publishes the correspondence and the deferral code files it.
  */
 function rowPriority(
   row: Record<string, unknown>,
@@ -107,21 +110,22 @@ function rowPriority(
   const named =
     row[PRIORITY_ALIAS] !== undefined ? PRIORITY_ALIAS : PRIORITY_KEY;
   const priority = row[named];
-  const unknown = token === SEVERITY_UNKNOWN;
-  const [min, max] = unknown
-    ? [MIN_PRIORITY, MIN_PRIORITY]
-    : [MIN_PRIORITY + 1, MAX_PRIORITY];
+  if (token === SEVERITY_UNKNOWN) {
+    if (priority === UNKNOWN_PRIORITY || priority === MIN_PRIORITY)
+      return priority;
+    throw new ConfigError(
+      `${what}.${named} must be ${UNKNOWN_PRIORITY} (got ${JSON.stringify(priority)}): a finding of '${SEVERITY_UNKNOWN}' severity files as medium`,
+    );
+  }
   if (
     typeof priority === "number" &&
     Number.isInteger(priority) &&
-    priority >= min &&
-    priority <= max
+    priority >= MIN_PRIORITY + 1 &&
+    priority <= MAX_PRIORITY
   )
     return priority;
   throw new ConfigError(
-    unknown
-      ? `${what}.${named} must be ${min} (got ${JSON.stringify(priority)}) — '${SEVERITY_UNKNOWN}' is the absence of a severity, never an urgency`
-      : `${what}.${named} must be an integer ${min}-${max} (got ${JSON.stringify(priority)})`,
+    `${what}.${named} must be an integer ${MIN_PRIORITY + 1}-${MAX_PRIORITY} (got ${JSON.stringify(priority)})`,
   );
 }
 
