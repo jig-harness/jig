@@ -6,6 +6,11 @@
  * waiting session's wall, the contention between drives). It hands the plan
  * one `RepoObservation`.
  *
+ * Opening a repository takes its target and its configuration from the
+ * tick's query of it (`forge-batch.ts`), which also lists its open pull
+ * requests and their comments for the forge's read; a query that does not
+ * read leaves each of these to its own read.
+ *
  * Every repository is observed at once, and within one the sources that do
  * not depend on each other are read side by side: the tracker beside the
  * forge, then the launch claims beside the runtime. Each read runs through
@@ -140,9 +145,13 @@ export async function openRepo(
   const { options, nowMs } = context;
   const { pool } = context.reads;
   const entry = machineRepository(options.machine ?? null, path);
+  // The tick's query of the repository, else its view and its file read one by one.
+  const queried = await context.reads.repository(path);
   let repo: RepoTarget;
   try {
-    repo = await pool.run(() => repoTarget(path));
+    repo = queried.ok
+      ? queried.value.target
+      : await pool.run(() => repoTarget(path));
   } catch (error) {
     return emptyReport(
       path,
@@ -153,7 +162,9 @@ export async function openRepo(
   let file: string | null;
   const where = `${repo.slug}@${repo.defaultBranch}:.config/jig.yaml`;
   try {
-    file = await pool.run(() => defaultBranchConfig(repo));
+    file = queried.ok
+      ? queried.value.config
+      : await pool.run(() => defaultBranchConfig(repo));
     read = readSection(file, where);
   } catch (error) {
     return {
