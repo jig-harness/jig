@@ -215,7 +215,6 @@ describe("what the code names", () => {
       `if (check(nested(value))) /["']/g.test(value);`,
       `while (enabled) /'/.test(value);`,
       `for (; enabled;) /'/.test(value);`,
-      `with (context) /'/.test(value);`,
       `const ratio = total / count;`,
       `const ratio = calculate(value) / count;`,
     ]) {
@@ -223,6 +222,14 @@ describe("what the code names", () => {
         tableNames(`${before}\ndb.run("CREATE TABLE new_records (id TEXT)");`),
       ).toEqual(["new_records"]);
     }
+  });
+
+  test("unsupported TypeScript with statements cannot certify later SQL", () => {
+    expect(() =>
+      tableNames(
+        `with (context) /'/.test(value);\ndb.run("CREATE TABLE new_records (id TEXT)");`,
+      ),
+    ).toThrow("'with' statements are not allowed");
   });
 
   test("statement, async and member-call syntax cannot hide later SQL", () => {

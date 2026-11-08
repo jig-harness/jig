@@ -1,22 +1,10 @@
-import { parse } from "@babel/parser";
 import {
-  getBindingIdentifiers,
-  isCatchClause,
-  isDeclaration,
-  isFunction,
-  isIdentifier,
-  isMemberExpression,
-  isStringLiteral,
-  isTaggedTemplateExpression,
-  isTemplateLiteral,
-  isTSEnumDeclaration,
-  isTSModuleDeclaration,
-  isTSParameterProperty,
+  parseSync,
+  Visitor,
   type Node,
   type Expression,
   type TemplateLiteral,
-  traverseFast,
-} from "@babel/types";
+} from "oxc-parser";
 
 /** Literal text and the original source line for each character. */
 export interface SqlSource {
@@ -26,14 +14,25 @@ export interface SqlSource {
   uncertain?: boolean;
 }
 
+/** Source syntax the registry gate cannot safely inspect. */
+class SourceParseError extends SyntaxError {
+  readonly code = "RECORDS_SOURCE_PARSE";
+}
+
 /** Static property spelling, without evaluating a computed expression. */
 function rawTag(tag: Expression): boolean {
-  if (!isMemberExpression(tag) || !isIdentifier(tag.object, { name: "String" }))
+  if (
+    tag.type !== "MemberExpression" ||
+    tag.object.type !== "Identifier" ||
+    tag.object.name !== "String"
+  )
     return false;
-  if (!tag.computed) return isIdentifier(tag.property, { name: "raw" });
-  if (isStringLiteral(tag.property)) return tag.property.value === "raw";
+  if (!tag.computed)
+    return tag.property.type === "Identifier" && tag.property.name === "raw";
+  if (tag.property.type === "Literal" && typeof tag.property.value === "string")
+    return tag.property.value === "raw";
   return (
-    isTemplateLiteral(tag.property) &&
+    tag.property.type === "TemplateLiteral" &&
     tag.property.expressions.length === 0 &&
     tag.property.quasis[0]?.value.cooked === "raw"
   );
@@ -56,7 +55,7 @@ function escapeValue(raw: string): string {
     const point = Number.parseInt(digits, 16);
     return point <= 0x10ffff ? String.fromCodePoint(point) : raw;
   }
-  if (code === "\n" || code === "\r\n" || code === "\r") return "";
+  if (/^(?:\r\n|[\n\r\u2028\u2029])$/.test(code)) return "";
   return ESCAPES[code] ?? code;
 }
 
@@ -78,7 +77,7 @@ function append(
     const value = sourceEscape && !verbatim ? escapeValue(part) : part;
     sql.text += value;
     for (let n = 0; n < value.length; n++) sql.lines.push(line);
-    line += part.split("\n").length - 1;
+    line += part.split(/[\n\u2028\u2029]/).length - 1;
     at += part.length;
   }
 }
@@ -87,18 +86,19 @@ function template(
   source: string,
   node: TemplateLiteral,
   verbatim: boolean,
+  lineAt: (offset: number) => number,
 ): SqlSource {
   const sql: SqlSource = { text: "", lines: [] };
   for (const [index, quasi] of node.quasis.entries()) {
     if (index > 0) {
       sql.text += "\0";
-      sql.lines.push(quasi.loc?.start.line ?? 1);
+      sql.lines.push(lineAt(quasi.start + 1));
     }
     const part: SqlSource = { text: "", lines: [] };
     append(
       part,
-      source.slice(quasi.start ?? 0, quasi.end ?? 0),
-      quasi.loc?.start.line ?? 1,
+      source.slice(quasi.start + 1, quasi.end - (quasi.tail ? 1 : 2)),
+      lineAt(quasi.start + 1),
       verbatim,
     );
     // The parser owns the language semantics; decoding above only maps lines.
@@ -116,68 +116,135 @@ function templateSources(
   node: TemplateLiteral,
   raw: boolean,
   uncertain: boolean,
+  lineAt: (offset: number) => number,
 ): SqlSource[] {
-  if (!uncertain) return [template(source, node, raw)];
+  if (!uncertain) return [template(source, node, raw, lineAt)];
   return [true, false].map((verbatim) => ({
-    ...template(source, node, verbatim),
+    ...template(source, node, verbatim, lineAt),
     uncertain: true,
   }));
 }
 
-/** Babel's binding retriever covers JavaScript; include TypeScript value bindings. */
-function bindsStringName(node: Node): boolean {
-  if (isTSEnumDeclaration(node) || isTSModuleDeclaration(node))
-    return isIdentifier(node.id, { name: "String" });
-  if (isTSParameterProperty(node))
-    return Object.hasOwn(getBindingIdentifiers(node.parameter), "String");
-  return (
-    (isDeclaration(node) || isFunction(node) || isCatchClause(node)) &&
-    Object.hasOwn(getBindingIdentifiers(node), "String")
-  );
+/** Only binding positions count; property keys and references do not shadow String. */
+function bindsStringName(node: Node | null): boolean {
+  if (node === null) return false;
+  switch (node.type) {
+    case "Identifier":
+      return node.name === "String";
+    case "ObjectPattern":
+      return node.properties.some((property) =>
+        bindsStringName(
+          property.type === "RestElement" ? property.argument : property.value,
+        ),
+      );
+    case "ArrayPattern":
+      return node.elements.some(bindsStringName);
+    case "AssignmentPattern":
+      return bindsStringName(node.left);
+    case "RestElement":
+      return bindsStringName(node.argument);
+    case "TSParameterProperty":
+      return bindsStringName(node.parameter);
+    default:
+      return false;
+  }
+}
+
+/** Build source-line lookups once; parser offsets are JavaScript string offsets. */
+function sourceLines(source: string): (offset: number) => number {
+  const starts = [0];
+  for (const match of source.matchAll(/\r\n|[\n\r\u2028\u2029]/g))
+    starts.push(match.index + match[0].length);
+  return (offset) => {
+    let low = 0;
+    let high = starts.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if ((starts[mid] as number) <= offset) low = mid + 1;
+      else high = mid;
+    }
+    return low;
+  };
 }
 
 /** Parse TypeScript syntax so regexes and division never change literal boundaries. */
 export function sourceLiterals(source: string): SqlSource[] {
-  const ast = parse(source, {
-    sourceType: "unambiguous",
-    plugins: ["typescript"],
-    allowAwaitOutsideFunction: true,
-    allowReturnOutsideFunction: true,
+  // Module syntax permits top-level await; CommonJS also admits return in
+  // the source snippets checked by callers. Never walk an error-recovered tree.
+  let parsed = parseSync("source.ts", source, {
+    sourceType: "module",
+    showSemanticErrors: true,
+    preserveParens: false,
   });
+  if (parsed.errors.length)
+    parsed = parseSync("source.ts", source, {
+      sourceType: "commonjs",
+      showSemanticErrors: true,
+      preserveParens: false,
+    });
+  if (parsed.errors.length)
+    throw new SourceParseError(
+      parsed.errors.map((error) => error.message).join("; "),
+    );
+  const ast = parsed.program;
+  const lineAt = sourceLines(source);
   // Conservatively withhold built-in semantics throughout a file that binds
   // String. This includes nested scopes and declarations after the tag.
   let bindsString = false;
-  traverseFast(ast, (node) => {
+  const binding = (node: Node | null) => {
     bindsString ||= bindsStringName(node);
-  });
+  };
+  const fn = (node: { id?: Node | null; params: Node[] }) => {
+    binding(node.id ?? null);
+    for (const param of node.params) binding(param);
+  };
+  new Visitor({
+    VariableDeclarator: (node) => binding(node.id),
+    FunctionDeclaration: fn,
+    FunctionExpression: fn,
+    ArrowFunctionExpression: fn,
+    TSDeclareFunction: fn,
+    TSEmptyBodyFunctionExpression: fn,
+    CatchClause: (node) => binding(node.param),
+    ClassDeclaration: (node) => binding(node.id),
+    ClassExpression: (node) => binding(node.id),
+    ImportSpecifier: (node) => binding(node.local),
+    ImportDefaultSpecifier: (node) => binding(node.local),
+    ImportNamespaceSpecifier: (node) => binding(node.local),
+    TSImportEqualsDeclaration: (node) => binding(node.id),
+    TSEnumDeclaration: (node) => binding(node.id),
+    TSModuleDeclaration: (node) => binding(node.id),
+  }).visit(ast);
   const rawTemplates = new Set<TemplateLiteral>();
   const unknownTemplates = new Set<TemplateLiteral>();
   const found: SqlSource[] = [];
-  traverseFast(ast, (node) => {
-    if (isTaggedTemplateExpression(node)) {
+  new Visitor({
+    TaggedTemplateExpression(node) {
       if (!bindsString && rawTag(node.tag)) rawTemplates.add(node.quasi);
       else unknownTemplates.add(node.quasi);
-    }
-    if (isTemplateLiteral(node)) {
+    },
+    TemplateLiteral(node) {
       found.push(
         ...templateSources(
           source,
           node,
           rawTemplates.has(node),
           unknownTemplates.has(node),
+          lineAt,
         ),
       );
-    }
-    if (isStringLiteral(node)) {
+    },
+    Literal(node) {
+      if (typeof node.value !== "string") return;
       const sql: SqlSource = { text: "", lines: [] };
       append(
         sql,
-        source.slice((node.start ?? 0) + 1, (node.end ?? 0) - 1),
-        node.loc?.start.line ?? 1,
+        source.slice(node.start + 1, node.end - 1),
+        lineAt(node.start),
         false,
       );
       found.push(sql);
-    }
-  });
+    },
+  }).visit(ast);
   return found;
 }
