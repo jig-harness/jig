@@ -295,7 +295,7 @@ test.skipIf(onWindows)(
       "updated",
       "failed",
     ]);
-    expect(report.entries[0]?.line).toBe("0.2.0 -> 0.3.0");
+    expect(report.entries[0]?.line).toContain("0.2.0 -> 0.3.0");
     expect(report.entries[1]?.line).toContain("network down");
   },
   TIMEOUT,

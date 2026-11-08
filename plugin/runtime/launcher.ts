@@ -441,16 +441,25 @@ function tail(text: string, limit: number): string {
     : `(${text.length - limit} earlier characters) … ${text.slice(-limit)}`;
 }
 
+/** `text` cut to `limit` characters from both ends, saying how much was cut between. */
+function ends(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const head = Math.ceil(limit / 2);
+  const rest = limit - head;
+  return `${text.slice(0, head)} … (${text.length - limit} characters) … ${rest > 0 ? text.slice(-rest) : ""}`;
+}
+
 /** A result line for an upgrade that printed none that reads, saying why. */
 function failedUpgrade(detail: string, limit?: number): string {
   const at = new Date().toISOString();
   let keep = limit ?? 1000;
   // The line is bounded as serialized, whatever the detail holds: JSON escapes
   // a control character into six bytes, so a character count alone is no bound.
+  // Each shrink keeps the detail's beginning and its diagnostic tail.
   for (;;) {
     const text = JSON.stringify({
       outcome: "failed",
-      detail: clip(detail, keep),
+      detail: ends(detail, keep),
       at,
     });
     if (Buffer.byteLength(text, "utf8") <= RESULT_LIMIT || keep <= 16)

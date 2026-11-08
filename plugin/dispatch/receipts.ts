@@ -30,6 +30,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -120,6 +121,11 @@ export function writeReceipt(receipt: TickReceipt, root = stateRoot()): string {
   } finally {
     closeSync(fd);
   }
+  // The file's time is when it is published, which the morning report reads:
+  // the fsync above can take arbitrarily long, so stamp it just before the
+  // rename, which keeps it.
+  const published = new Date();
+  utimesSync(temporary, published, published);
   renameSync(temporary, path);
   return path;
 }

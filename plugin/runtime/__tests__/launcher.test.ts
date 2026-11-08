@@ -692,6 +692,16 @@ else fs.appendFileSync(${JSON.stringify(log)}, (process.env.JIG_SCHEDULED_UPGRAD
     expect(long.outcome).toBe("failed");
     expect(long.detail).toContain("more than the 8192 a job is passed");
     expect(long.detail.length).toBeLessThan(1200);
+    // Escapes make a short detail long once serialized; its tail still shows.
+    const escaped = run(
+      JSON.stringify({
+        outcome: "failed",
+        detail: `${"\0".repeat(1988)}network down`,
+        at: "2026-11-07T04:00:00.000Z",
+      }),
+    );
+    expect(escaped.outcome).toBe("failed");
+    expect(escaped.detail).toContain("network down");
     const odd = run(
       JSON.stringify({ outcome: "done", detail: "x", at: "2026-11-07" }),
     );

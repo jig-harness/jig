@@ -6,7 +6,7 @@
  * time, is not.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
@@ -62,7 +62,7 @@ function tickReceipt(forge: Forge, upgrade: ScheduledUpgrade): void {
     "dispatch",
   );
   roots.push(root);
-  writeTick(
+  const path = writeTick(
     {
       version: 1,
       runId: newRunId(new Date(upgrade.at)),
@@ -76,6 +76,8 @@ function tickReceipt(forge: Forge, upgrade: ScheduledUpgrade): void {
     },
     root,
   );
+  // A dispatcher receipt is dated by its file time, its publication.
+  utimesSync(path, new Date(upgrade.at), new Date(upgrade.at));
 }
 
 describe("drives.ts --report: the plugin upgrades", () => {
