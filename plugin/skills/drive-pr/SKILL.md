@@ -735,7 +735,11 @@ outlives the session that spawned it, so its console is not where you look:
   `--since` (a time such as `2026-10-29T06:00Z`, or a span such as `12h`). For each: its
   terminal state and what it means for the person, the provisional
   decisions first, the takeovers and re-arms, the parked decisions framed in
-  full, the issues filed and the deferred entries not yet filed.
+  full, the issues filed and the deferred entries not yet filed; then the
+  dispatcher's part and the plugin upgrades the timers ran (`upgrades`).
+  Where timers keep the plugin current, a drive's rounds may span plugin
+  versions: the driver keeps the copy it started with, and each pass runs
+  the copy installed when it starts.
 
 An exit-`11` refusal names the holder's pid/host and, when its claim carries
 the diagnostics line, the PR it is driving, its worktree, its log, its
@@ -3222,10 +3226,11 @@ Reached maximum number of turns (1000)` — mid-action, with no handoff written.
 Under Claude Code, the plugin's turn-budget hook
 (`<plugin-dir>/hooks/turn-budget-guard.ts`, run before every tool call) counts
 round-trips off the transcript and injects a wrap-up instruction some turns
-short of the cap. Under Codex it counts nothing: Codex's transcript is not in
-the format it reads, so it reports could not check and no warning ever comes
-([plugin README § Codex notes](../../README.md#codex-notes)): a Codex pass
-has no turn cap, and the pass deadline is what ends one that runs on. **When such a
+short of the cap. Under Codex it counts distinct response ids from token
+usage records since the task-start event and warns near the configured budget
+([plugin README § Codex notes](../../README.md#codex-notes)). That warning
+imposes no runtime turn cap: a Codex pass has no turn cap of its own, and
+the pass deadline is what ends one that runs on. **When such a
 warning fires, finish only the step in flight, run `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" handoff
 [PR]`, report, and end the turn** — do not open another triage-fix-validate
 cycle inside that margin. Why the counting is an approximation:

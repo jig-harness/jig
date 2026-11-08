@@ -2294,10 +2294,11 @@ last call and injects a wrap-up instruction once the count is within a margin
 of the cap, 50 turns under a cap of 1000, with one later reminder when half
 the margin remains. `JIG_TURN_BUDGET`, `JIG_TURN_BUDGET_MARGIN` and
 `JIG_TURN_BUDGET_REFIRE` change those, and a budget of `0` turns the guard
-off; its tests are in `hooks/__tests__/`. That holds under Claude Code only:
-Codex's transcript is not in the format the guard reads, so under Codex it
-counts nothing and reports could not check
-([plugin README § Codex notes](../../../README.md#codex-notes)).
+off; its tests are in `hooks/__tests__/`. Under Codex, the guard counts
+distinct response ids from token usage records since the task-start event
+and gives the same budget warnings
+([plugin README § Codex notes](../../../README.md#codex-notes)). The hook
+imposes no runtime turn cap; keep the pass deadline enabled for a Codex pass.
 
 **When such a warning fires mid-drive, the round is over.** Finish only the
 step in flight — a push already underway, a reply already promised — then

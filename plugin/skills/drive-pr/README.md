@@ -402,7 +402,7 @@ That pass command is Claude Code's. Codex's is the other one the drive documents
 bun "<skill-dir>/scripts/drive.ts" <PR> --bots-only -- codex exec "Use the jig:drive-pr skill: /jig:drive-pr --bots-only <PR>"
 ```
 
-Codex runs a plugin skill the prompt names, so the prompt names it before the same invocation. The command above is what a hand-typed start looks like: `drive.ts` runs it as written, and only `arm-drive.ts`, which `/jig:do-item` and `/jig:drive-pr` call, reads `drive.codex_bypass` into the pass command. A round pushes, calls the forge and writes the working tree's git directory, which Codex's sandbox refuses, and nobody is there to approve, so a host opts in once it has checked what its account can reach: with `drive.codex_bypass: true` in its [user file](../../CONFIGURATION.md#a-hosts-opt-in-to-bypass), an arm writes `--dangerously-bypass-approvals-and-sandbox` after `exec`, and the pass runs without a sandbox and without approvals. Without it Codex's own configuration decides and the driver log says `inherited`. The `review-arbiter` agent and the turn-budget hook stay Claude Code's: a Codex pass uses the substitute in the [Codex notes](../../README.md#codex-notes) for the arbiter, and the hook counts nothing under Codex. A Codex pass therefore has no turn cap of its own, and the pass deadline (`DRIVE_PR_PASS_TIMEOUT`, `--pass-timeout`, 90 minutes by default) is what ends one that runs on; with the deadline switched off (`0`) nothing does, so keep it on for a Codex drive.
+Codex runs a plugin skill the prompt names, so the prompt names it before the same invocation. The command above is what a hand-typed start looks like: `drive.ts` runs it as written, and only `arm-drive.ts`, which `/jig:do-item` and `/jig:drive-pr` call, reads `drive.codex_bypass` into the pass command. A round pushes, calls the forge and writes the working tree's git directory, which Codex's sandbox refuses, and nobody is there to approve, so a host opts in once it has checked what its account can reach: with `drive.codex_bypass: true` in its [user file](../../CONFIGURATION.md#a-hosts-opt-in-to-bypass), an arm writes `--dangerously-bypass-approvals-and-sandbox` after `exec`, and the pass runs without a sandbox and without approvals. Without it Codex's own configuration decides and the driver log says `inherited`. The `review-arbiter` agent stays Claude Code's: a Codex pass uses the substitute in the [Codex notes](../../README.md#codex-notes). The turn-budget hook counts Codex responses and warns near its configured budget, but imposes no runtime turn cap. A Codex pass has no turn cap of its own, and the pass deadline (`DRIVE_PR_PASS_TIMEOUT`, `--pass-timeout`, 90 minutes by default) is what ends one that runs on; with the deadline switched off (`0`) nothing does, so keep it on for a Codex drive.
 
 **The pass model.** Each round's agent runs on `sonnet`, Claude Code's alias for the latest Sonnet, unless `drive.pass_model` in the [configuration](../../CONFIGURATION.md#drive) names another model, an alias, or a routing tier (`execution`, `strategic`), which resolves through the same tier-to-model table as do-item's implementer (`routing.models`). `--pass-model <model>` overrides both for one run, and replaces a `--model` the pass command carries; without it, a `--model` in the pass command is kept. The driver log's `pass model:` line and `drives.ts` name the model. A Codex pass runs on its own `-m`, else the execution tier of `routing.models.codex` (written after `exec`), else Codex's own configured model; `drive.pass_model` remains Claude Code's. `--pass-model` overrides either vendor, with Codex tiers resolved through `routing.models.codex`. Any other pass command chooses its own model.
 
@@ -654,10 +654,18 @@ dispatcher launched into, found by the dispatched mark on their launch
 records rather than by their names and listed by the night the launch was
 recorded, each with the name it carries now, whether its comment still
 carries the mark, and how its launch went when it did not start, so a
-workspace a session renamed is still there.
+workspace a session renamed is still there. Last come the plugin upgrades
+the machine's timers ran over the same time, from the jobs' receipts: each
+that moved the plugin (`0.114.0 -> 0.115.0`) and each that failed, with the
+agent tool's error ([automatic updates](../../README.md#automatic-updates)).
 `--json` prints the same as data, the dispatcher's part under `dispatch`,
-the label counts under `dispatchLabels` and the workspaces under
-`dispatchedWorkspaces`.
+the label counts under `dispatchLabels`, the workspaces under
+`dispatchedWorkspaces` and the upgrades under `upgrades`.
+
+On a machine whose timers keep the plugin current, a drive's rounds may
+span plugin versions: the driver keeps running the copy it started with,
+which stays in its own versioned directory, and each pass starts with the
+copy installed at that moment.
 
 Where your repository has a pre-merge follow-up step, have its list include
 the pull request's provisional decisions, so the person merging reads each

@@ -4,8 +4,10 @@
  * components it names or, with none named, on every registered one, in the
  * order `jig.ts` registers them, and reaches a component only through
  * `Component` (`component.ts`): a third component joins with no change here.
- * `upgrade` acts on the plugin and every installed job (`upgrade.ts`), and
- * `doctor` checks the machine before the components it names (`doctor.ts`).
+ * `upgrade` acts on the plugin and every installed job (`upgrade.ts`;
+ * `--scheduled` is the launcher's, before each job: `scheduled-upgrade.ts`),
+ * and `doctor` checks the machine before the components it names
+ * (`doctor.ts`).
  * A component's own work stays under its name (`jig gc --collect`,
  * `jig dispatch --apply`).
  *
@@ -14,7 +16,9 @@
  * run that refuses. A verb over several components stops at the first that
  * fails, with its exit code, so what follows it is left as it was.
  */
+import { ExitError } from "../shared/cli.ts";
 import { pathValue } from "../shared/command-line.ts";
+import { userConfigPath } from "../shared/config-layers.ts";
 import {
   argument,
   choice,
@@ -41,8 +45,10 @@ import {
   installCommand,
   removeCommand,
 } from "./path-command.ts";
+import { scheduledUpgradeVerb } from "./scheduled-upgrade.ts";
 import { checkLauncherResolves } from "./scheduler.ts";
 import { upgradeVerb } from "./upgrade.ts";
+import { recordOptOut } from "./upgrade-record.ts";
 
 /** `jig upgrade`'s command: which harnesses, what a fresh install follows, and the refresh alone. */
 function upgradeCommand() {
@@ -82,6 +88,19 @@ function upgradeCommand() {
       json: option("--json", {
         description: message`Print what became of each harness and job as JSON; progress goes to standard error.`,
       }),
+      scheduled: option("--scheduled", {
+        description: message`What the launcher runs before each job: at most once per upgrade.every, on the channel each harness follows, skipping a pinned harness and a plugin loaded in place; prints one line of JSON.`,
+      }),
+      claudeProgram: optional(
+        option("--claude-program", string({ metavar: "PATH" }), {
+          description: message`With --scheduled: the claude the job recorded, in place of the one on PATH.`,
+        }),
+      ),
+      codexProgram: optional(
+        option("--codex-program", string({ metavar: "PATH" }), {
+          description: message`With --scheduled: the codex the job recorded, in place of the one on PATH.`,
+        }),
+      ),
     }),
     {
       brief: message`Update the plugin in each agent harness, then refresh the installed jobs.`,
@@ -113,11 +132,14 @@ export function verbCommands(names: readonly string[]) {
         verb: constant("install"),
         components,
         repository,
+        noUpgrade: option("--no-upgrade", {
+          description: message`Opt this machine out of the timers' upgrades: writes upgrade.enabled: false to the user file (~/.jig/jig.yaml).`,
+        }),
         confirm,
       }),
       {
         brief: message`Install each component's timer, and the jig command on PATH.`,
-        description: message`Previews, and with --yes writes, each component's scheduled job and the jig command (~/.local/bin/jig), which runs the installed plugin copy, so a plugin update reaches it. Without a component named, it installs resource collection, and the dispatcher only when its machine file (~/.jig/dispatch.yaml) exists.`,
+        description: message`Previews, and with --yes writes, each component's scheduled job and the jig command (~/.local/bin/jig), which runs the installed plugin copy, so a plugin update reaches it. Before each job the timer upgrades the plugin, at most once per upgrade.every, unless --no-upgrade or upgrade: off in the user file opts the machine out. Without a component named, it installs resource collection, and the dispatcher only when its machine file (~/.jig/dispatch.yaml) exists.`,
       },
     ),
     command(
@@ -293,45 +315,99 @@ async function statusVerb(
   return statuses.some((status) => status.error !== undefined) ? 1 : 0;
 }
 
+/** `jig install --no-upgrade`: the opt-out's preview, then, with `confirm`, the opt-out written. */
+async function optOut(confirm: boolean): Promise<void> {
+  console.log("== the scheduled upgrade ==");
+  if (!confirm) {
+    console.log(
+      `The timers do not upgrade the plugin: upgrade.enabled: false is written to ${userConfigPath()}`,
+    );
+    return;
+  }
+  const path = await recordOptOut();
+  console.log(
+    `Wrote upgrade.enabled: false to ${path}: the timers do not upgrade the plugin`,
+  );
+}
+
+type Upgrade = Extract<VerbArguments, { verb: "upgrade" }>;
+
+/** `jig upgrade --scheduled`, refused with what it does not take; or `jig upgrade`. */
+function upgradeOf(args: Upgrade, context: VerbContext): Promise<number> {
+  const programs = {
+    ...(args.claudeProgram === undefined ? {} : { claude: args.claudeProgram }),
+    ...(args.codexProgram === undefined ? {} : { codex: args.codexProgram }),
+  };
+  if (!args.scheduled) {
+    if (Object.keys(programs).length > 0)
+      throw new ExitError(
+        2,
+        "--claude-program and --codex-program go with --scheduled",
+      );
+    return upgradeVerb(args, context);
+  }
+  const { harness, channel, source, jobsOnly } = args;
+  if (
+    harness !== undefined ||
+    channel !== undefined ||
+    source !== undefined ||
+    jobsOnly
+  )
+    throw new ExitError(
+      2,
+      "--scheduled upgrades on the channel each harness follows: it takes no --claude, --codex, --channel, --source or --jobs-only",
+    );
+  return scheduledUpgradeVerb(programs, context);
+}
+
+/** `jig install`: the opt-out when asked, each component's job, then the `jig` command. */
+async function installVerb(
+  args: Extract<VerbArguments, { verb: "install" }>,
+  context: VerbContext,
+): Promise<number> {
+  const { components, script } = context;
+  checkCommandPath();
+  if (args.noUpgrade) await optOut(args.confirm);
+  const jobless = withoutJobs(args, context);
+  if (jobless) {
+    console.log(
+      "Scheduled jobs need macOS or Linux: writing the jig command only.",
+    );
+    await checkLauncherResolves();
+  }
+  const code = jobless
+    ? 0
+    : await each(
+        args.components,
+        components,
+        (component) => {
+          heading(component);
+          return component.install({
+            repository: args.repository,
+            confirm: args.confirm,
+            script,
+          });
+        },
+        console.log,
+      );
+  if (code !== 0) return code;
+  console.log("== the jig command ==");
+  const deadlineSec = commandDeadlineSec(components);
+  return installCommand({
+    confirm: args.confirm,
+    script,
+    ...(deadlineSec > 0 ? { deadlineSec } : {}),
+  });
+}
+
 export async function runVerb(
   args: VerbArguments,
   context: VerbContext,
 ): Promise<number> {
   const { components, script } = context;
   switch (args.verb) {
-    case "install": {
-      checkCommandPath();
-      const jobless = withoutJobs(args, context);
-      if (jobless) {
-        console.log(
-          "Scheduled jobs need macOS or Linux: writing the jig command only.",
-        );
-        await checkLauncherResolves();
-      }
-      const code = jobless
-        ? 0
-        : await each(
-            args.components,
-            components,
-            (component) => {
-              heading(component);
-              return component.install({
-                repository: args.repository,
-                confirm: args.confirm,
-                script,
-              });
-            },
-            console.log,
-          );
-      if (code !== 0) return code;
-      console.log("== the jig command ==");
-      const deadlineSec = commandDeadlineSec(components);
-      return installCommand({
-        confirm: args.confirm,
-        script,
-        ...(deadlineSec > 0 ? { deadlineSec } : {}),
-      });
-    }
+    case "install":
+      return installVerb(args, context);
     case "uninstall": {
       const code = withoutJobs(args, context)
         ? 0
@@ -350,7 +426,7 @@ export async function runVerb(
       return removeCommand({ confirm: args.confirm });
     }
     case "upgrade":
-      return upgradeVerb(args, context);
+      return upgradeOf(args, context);
     case "doctor":
       return doctorVerb(args, context);
     case "status":

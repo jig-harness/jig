@@ -135,9 +135,10 @@ list --json` names it). Run it from the repository to register, or add
 `--repo <path>`. After that, from any repository:
 
 ```sh
-jig install   [COMPONENT...] [--repo <path>] [--yes]
+jig install   [COMPONENT...] [--repo <path>] [--no-upgrade] [--yes]
 jig uninstall [COMPONENT...] [--repo <path>] [--machine] [--yes]
 jig upgrade   [--claude | --codex] [--channel latest|stable] [--source <marketplace>] [--jobs-only] [--json]
+jig upgrade   --scheduled [--claude-program=<path>] [--codex-program=<path>]
 jig doctor    [COMPONENT...] [--json]
 jig status    [COMPONENT...] [--json]
 jig receipts  COMPONENT [<date> | <run-id>]
@@ -155,7 +156,9 @@ jig run       [COMPONENT...]
   (`jig.cmd` on Windows), and says so when that directory is not on `PATH`.
   Windows has no scheduler for the jobs, so there `jig install` with no
   component named writes only `jig.cmd`: it registers no repository and
-  schedules nothing.
+  schedules nothing. `--no-upgrade` opts the machine out of the timers'
+  [automatic updates](#automatic-updates), writing `upgrade.enabled: false`
+  to the user file (`~/.jig/jig.yaml`).
 - **`jig uninstall`** removes this repository's entry in resource
   collection; the jobs stay while they serve other repositories. Resource
   collection's job goes with its last registration, unless receipts are
@@ -178,13 +181,16 @@ jig run       [COMPONENT...]
   harness and job. `--jobs-only` refreshes the jobs and the command without
   updating the plugin, for after a tool updated it on its own. Each tool
   command is limited to `JIG_SETUP_TIMEOUT_SECONDS` (default 300).
+  `--scheduled` is what the timers run before each job
+  ([automatic updates](#automatic-updates)); it prints one line of JSON.
 - **`jig doctor`** checks the machine and the repository it runs in, and
   names the command that fixes each failure: Bun's version against the one
   Jig tests; `claude` and `codex` resolving outside every git checkout (a
   job never records an agent tool inside one, so a development shim ahead
   of the real tool on `PATH` leaves the jobs without it); the plugin in
   each harness and the channel it follows; the `jig` command's launcher
-  copy; for each component, or those named, its machine file, its job's
+  copy; the latest scheduled upgrade, which fails while that upgrade failed,
+  naming it and the agent tool's error; for each component, or those named, its machine file, its job's
   launcher copy against the installed plugin's, the programs its job names
   and its last run's receipt, and for the dispatcher that Orca resolves
   where its timer runs; and the audit's
@@ -198,7 +204,8 @@ jig run       [COMPONENT...]
 - **`jig status`** says whether each component's job is installed, where,
   its schedule and next run, and its last run's receipt.
 - **`jig receipts gc`** (or `dispatch`) lists the receipts of earlier runs;
-  a date lists that day's, a run id prints that run.
+  a date lists that day's, a run id prints that run. A run a timer started
+  carries an `upgrade` line: what the scheduled upgrade before it came to.
 - **`jig run`** runs now what each component's timer runs:
   `jig gc --scheduled` and `jig dispatch --apply`.
 
@@ -351,8 +358,9 @@ that bypass to push, and nobody is there to approve. An account of any other
 vendor, which the drive documents no pass command for, is accepted by the
 machine file and never admitted. Each run reports these at its top
 (`accepted, not admitted`, with the reason) and in its receipt
-(`accountsNotAdmitted`). The `review-arbiter` agent and the turn-budget
-hook stay Claude Code's ([Codex notes](#codex-notes)).
+(`accountsNotAdmitted`). The `review-arbiter` agent stays Claude Code's;
+the turn-budget hook counts responses in both runtimes
+([Codex notes](#codex-notes)).
 
 **Pickups** (the `pickup` stage) start one `do-item` session per item
 assigned to the factory identity in a dispatch state, once: just before
@@ -730,6 +738,14 @@ writes nothing to the host:
   tick is, a stopped timer shows as one, and a host may serve the page from a
   copy of that database, with no other read. A tick for one repository leaves
   it as it was.
+- **How the recent ticks ran**, at the top of the History view: one row per
+  tick, the newest first, with its length, its phases as a bar, the slowest
+  single phase and its repository, the forge's rate budget it read, and a
+  chip for a defect or a failed exit; each row opens to every phase and
+  repository. Low-budget and busy-repository chips require a tick producer
+  that records those signals; the current producer does not. The line carries
+  the last 48 ticks, a tick for
+  one repository included.
 - **The outcome log**, on the History view, filtered by time (today, yesterday,
   seven or thirty days, or a range), repository, stage, account, class and
   reason, counting each class over the window and naming each recurring
@@ -1557,8 +1573,9 @@ them together.
 - **The turn-budget hook runs once trusted.** Codex reads the plugin's
   `hooks/hooks.json` but skips a plugin's hooks until their current
   definition is trusted (`/hooks`), and asks again when a release changes
-  them. Codex's transcript is not in the format the guard reads, so there it
-  counts nothing and reports could not check once.
+  them. The guard counts distinct response ids from Codex token usage
+  records, resets at each task-start event, and warns near the configured
+  budget. The warning does not impose a runtime turn cap.
 - **The `review-arbiter` agent is Claude Code only.** Codex plugins carry
   skills, MCP servers, apps and hooks, but not agents; Codex reads custom
   agents only from its own agent folders (`~/.codex/agents/` or a
@@ -1580,10 +1597,10 @@ them together.
   from `routing.models.codex`. `drive.pass_model` is Claude Code's. Both
   skills arm Codex through a terminal tab or its managed background command
   tool; where the host ends children with the session, keep it alive until
-  the drive ends or use an external terminal. Since the
-  turn-budget hook counts nothing under Codex, a Codex pass has no turn cap
-  of its own: the pass deadline (`DRIVE_PR_PASS_TIMEOUT`, 90 minutes by
-  default) is what ends one that runs on, so keep it on for a Codex drive.
+  the drive ends or use an external terminal. The turn-budget hook warns
+  under Codex but imposes no runtime turn cap: the pass deadline
+  (`DRIVE_PR_PASS_TIMEOUT`, 90 minutes by default) is what ends one that runs
+  on, so keep it on for a Codex drive.
 
 ## Call a skill's scripts from repository code
 
@@ -1712,6 +1729,36 @@ has the plugin; with neither, install with the commands above, or with
 
 ### Automatic updates
 
+- **The timers keep the plugin current.** Before resource collection's
+  daily run and each dispatcher tick, the job's launcher
+  runs the installed plugin copy's `jig upgrade --scheduled`: the update
+  `jig upgrade` makes, on the channel each tool follows, then the launcher
+  copies and the `jig` command refreshed from the new release. It runs at
+  most once per `upgrade.every` (an hour) whichever timer fires first, so
+  two timers within the hour upgrade once, and the job then runs the copy
+  the upgrade installed. A run already started keeps its files: each
+  version is installed in a directory of its own. An upgrade that fails is
+  not tried again inside the interval, and the job still runs on the copy
+  that is there. Each run's receipt carries an `upgrade` line (withheld,
+  skipped, unchanged, `0.114.0 -> 0.115.0`, or failed with the tool's
+  error), the [morning report](skills/drive-pr/README.md#the-morning-report)
+  lists the updates and failures since the last report, and `jig doctor`
+  fails while the latest one failed, or while an upgrade's process died
+  before it finished; a `jig upgrade` you run that succeeds clears it. A
+  failing tool's output is shortened in each line, so a flood of it never
+  stops a job. A machine [pinned](#update-pin-or-remove)
+  to a tag receives nothing. A plugin Claude Code loads in place from a
+  local marketplace folder is skipped, with the skip in the receipt, and
+  the folder is left to whoever maintains it. `jig install --no-upgrade`,
+  or `upgrade: off` in the user file, opts the machine out
+  ([CONFIGURATION.md](CONFIGURATION.md#upgrade-user-file-only)). The `jig`
+  command, a woken dispatcher tick and the dispatcher's change probe never
+  upgrade first: only collection's run and the dispatcher's tick do. Only a launcher copy this release or a later one wrote runs
+  the upgrade: on a machine whose jobs an earlier release installed, run
+  `jig upgrade` (or `jig upgrade --jobs-only`) once, which refreshes each
+  job's launcher copy and turns the upgrades on. A machine with no timer
+  installed stays on the tools' own updates below, `jig upgrade`, or
+  `bun tools/plugin/setup.ts` from a checkout.
 - **Claude Code** updates a marketplace added from a Git address only when
   asked, unless auto-update is on for it: `/plugin` → **Marketplaces** →
   `jig` → **Enable auto-update**. On `stable`, turn it on: updates are few,
@@ -1723,9 +1770,11 @@ has the plugin; with neither, install with the commands above, or with
   schedule if you want updates without asking.
 - **The installed jobs** run a launcher copied out of the plugin, which an
   update a tool makes on its own does not refresh. `jig upgrade` refreshes
-  them after its own update, `jig upgrade --jobs-only` after one a tool
-  made, and `jig doctor` says when a copy differs from the installed
-  plugin's.
+  them after its own update, the timers after theirs, and
+  `jig upgrade --jobs-only` after one a tool made; `jig doctor` says when a
+  copy differs from the installed plugin's. A loaded launchd job is
+  rewritten only by a `jig upgrade` a person runs, since rewriting it stops
+  it.
 
 A session keeps the version it started with; a new session uses the update.
 
