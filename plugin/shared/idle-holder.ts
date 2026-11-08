@@ -19,17 +19,31 @@
  * | drives and sessions | the caller's `drivers` reader names a live driver or session lease on the tree |
  * | processes | a process of this user has its working directory in the tree |
  *
- * Every probe fails closed: one that cannot answer is a reason the holder is
- * busy, never a pass. The process probe reads `/proc` where the host has it,
- * else `lsof`, through the caller's runner, so it looks at the machine the
- * clone is on; it sees this user's processes only, as either tool can, and
- * a process whose working directory the kernel does not show even to its
- * owner (a service manager, say) is not counted. A host with neither
- * answers nothing, and so never has an idle holder.
+ * The holder must be a linked worktree: the clone's main checkout is never
+ * idle here, since detaching it would leave the clone itself without its
+ * branch.
  *
- * Whoever detaches a holder runs the check again immediately before it, and
- * detaches only at the commit the check read, so a tree that became busy in
- * between is left alone.
+ * Every probe fails closed: one that cannot answer is a reason the holder is
+ * busy, never a pass. A probe cut short by the caller's time limit is
+ * marked (`timedOut`), so the caller can tell its own clock from a busy
+ * tree. The process probe reads `/proc` where the host has it, else `lsof`,
+ * through the caller's runner, so it looks at the machine the clone is on
+ * (`process-cwd.ts` says which errors it accepts).
+ *
+ * What it cannot see:
+ *
+ * - A session whose own process works elsewhere and runs its commands in
+ *   the tree from short-lived shells, as an agent does: between commands no
+ *   process is in the tree. Its leases, and the clean and pushed checks,
+ *   still apply.
+ * - Another user's processes, and processes in another mount namespace (a
+ *   container), whose working directories it cannot read or compare.
+ * - Anything on a host whose git is older than 2.31, which cannot print
+ *   absolute paths as the check asks; there the tree reads as busy.
+ *
+ * Whoever detaches a holder does so right after the check, and only while
+ * `HEAD` is still at the commit the check read (`git update-ref` with that
+ * commit as the old value), so a tree that moved in between is left alone.
  */
 import {
   budget,
@@ -37,6 +51,7 @@ import {
   output,
   type RunResult,
 } from "./orca-workspace/runner.ts";
+import { cwdHolders, type ProbeRun } from "./process-cwd.ts";
 
 /** The files and directories in a worktree's git directory that mean an operation is unfinished. */
 export const GIT_OPERATION_MARKERS = [
@@ -71,9 +86,9 @@ export interface HeldTree {
 
 /**
  * What keeps a tree driven: one reason per live driver or session lease on
- * it, `[]` when there is none, `null` when that cannot be read.
+ * it, `[]` when there is none, or why that cannot be read.
  */
-export type TreeDrivers = (tree: HeldTree) => string[] | null;
+export type TreeDrivers = (tree: HeldTree) => string[] | { unreadable: string };
 
 export interface HolderCheck {
   /** The holding worktree. */
@@ -88,53 +103,15 @@ export interface HolderCheck {
 export type HolderVerdict =
   /** Nothing keeps the tree busy; `head` is the commit it is at. */
   | { idle: true; head: string }
-  /** What keeps it busy, one clause each. */
-  | { idle: false; reasons: string[] };
+  /**
+   * What keeps it busy, one clause each. `timedOut` when a probe was cut
+   * short by the time it was given: the reasons may then be the caller's
+   * clock rather than the tree, and the check is worth running again.
+   */
+  | { idle: false; reasons: string[]; timedOut: boolean };
 
 /** The deadline of one probe. */
 const PROBE_TIMEOUT_MS = 30_000;
-
-/**
- * Lists this user's processes and their working directories: `/proc/<pid>\t<cwd>`
- * lines from `/proc` where the host has it, else `lsof`'s `p<pid>`/`n<cwd>`
- * fields.
- */
-const CWD_PROBE = `if [ -e /proc/self/cwd ]; then exec find /proc -mindepth 2 -maxdepth 2 -name cwd -uid "$(id -u)" -printf '%h\\t%l\\n' 2>/dev/null; else exec lsof -a -d cwd -Fpn 2>/dev/null; fi`;
-
-/** The pids whose working directory is `top` or under it, from either form `CWD_PROBE` prints. */
-export function parseCwdHolders(listing: string, top: string): string[] {
-  const pids: string[] = [];
-  let pid: string | null = null;
-  const inside = (cwd: string): boolean =>
-    cwd === top || cwd.startsWith(top.endsWith("/") ? top : `${top}/`);
-  for (const line of listing.split("\n")) {
-    const proc = /^\/proc\/(\d+)\t(.*)$/.exec(line);
-    if (proc !== null) {
-      if (inside(proc[2] as string)) pids.push(proc[1] as string);
-      continue;
-    }
-    if (line.startsWith("p")) pid = line.slice(1);
-    else if (line.startsWith("n") && pid !== null && inside(line.slice(1)))
-      pids.push(pid);
-  }
-  return [...new Set(pids)];
-}
-
-/**
- * The pids of this user's processes working in `top`; `null` when the host
- * cannot say. An empty listing is no answer, since it always holds the
- * probe's own process.
- */
-function cwdHolders(ctx: Context, top: string): string[] | null {
-  const listed = ctx.run(["sh", "-c", CWD_PROBE], {
-    cwd: "/",
-    timeoutMs: budget(ctx, PROBE_TIMEOUT_MS),
-  });
-  // `find` and `lsof` exit 1 when a process ended or hid while they read it.
-  if ((listed.status !== 0 && listed.status !== 1) || listed.stdout === "")
-    return null;
-  return parseCwdHolders(listed.stdout, top);
-}
 
 /** Commits on `HEAD` the remote's copy of the branch lacks, or a reason it cannot be told. */
 function unpushed(
@@ -162,10 +139,8 @@ function unpushed(
 }
 
 /** Which operation markers the git directory `admin` holds, or a reason they cannot be read. */
-function unfinished(ctx: Context, admin: string): string | null {
-  const listed = ctx.run(["ls", "-a", admin], {
-    timeoutMs: budget(ctx, PROBE_TIMEOUT_MS),
-  });
+function unfinished(run: ProbeRun, admin: string): string | null {
+  const listed = run(["ls", "-a", admin]);
   if (listed.status !== 0)
     return `its git directory ${admin} cannot be listed: ${output(listed)}`;
   const names = new Set(listed.stdout.split("\n"));
@@ -177,10 +152,16 @@ function unfinished(ctx: Context, admin: string): string | null {
 
 type Git = (args: string[]) => RunResult;
 
-/** Where the worktree is: its top, git directory, the clone's common directory and its commit; `null` when git cannot read it. */
-function locate(
-  git: Git,
-): { top: string; admin: string; commonDir: string; head: string } | null {
+/** Where the worktree is: its top, git directory, the clone's common directory and its commit. */
+interface Located {
+  top: string;
+  admin: string;
+  commonDir: string;
+  head: string;
+}
+
+/** Where the worktree is, or why git cannot say. */
+function locate(git: Git): Located | { unreadable: string } {
   const located = git([
     "rev-parse",
     "--show-toplevel",
@@ -191,19 +172,25 @@ function locate(
   ]);
   const [top, admin, commonDir, head] = located.stdout.trim().split("\n");
   if (located.status !== 0 || !top || !admin || !commonDir || !head)
-    return null;
+    return {
+      unreadable: `git cannot read the worktree (exit ${located.status}): ${output(located) || "no output"}`,
+    };
   return /^[0-9a-f]{40,64}$/.test(head)
     ? { top, admin, commonDir, head }
-    : null;
+    : { unreadable: `git reads no commit at its HEAD: ${head}` };
 }
 
 /** Why the branch checked out there is not `branch`, or `null`. */
 function otherBranch(git: Git, branch: string): string | null {
   const current = git(["symbolic-ref", "--quiet", "--short", "HEAD"]);
   const name = current.stdout.trim();
-  return current.status === 0 && name === branch
+  if (current.status === 1)
+    return `it has no branch checked out now, not ${branch}`;
+  if (current.status !== 0)
+    return `the checked-out branch cannot be read: ${output(current) || `exit ${current.status}`}`;
+  return name === branch
     ? null
-    : `it has ${name || "no branch"} checked out now, not ${branch}`;
+    : `it has ${name} checked out now, not ${branch}`;
 }
 
 /** Why git reports changes there, or `null`. */
@@ -229,46 +216,81 @@ function hiddenChanges(git: Git): string | null {
 /** The drives and sessions on the tree, as reasons. */
 function driven(drivers: TreeDrivers, tree: HeldTree): string[] {
   const found = drivers(tree);
-  return found ?? ["whether a drive or session holds it cannot be read"];
+  return Array.isArray(found)
+    ? found
+    : [
+        `whether a drive or session holds it cannot be read: ${found.unreadable}`,
+      ];
 }
 
 /** The processes working in `top`, as reasons. */
-function working(ctx: Context, top: string): string[] {
-  const pids = cwdHolders(ctx, top);
-  if (pids === null)
-    return ["whether a process works in it cannot be told on this host"];
+function working(run: ProbeRun, top: string): string[] {
+  const answer = cwdHolders(run, top);
+  if ("unknown" in answer)
+    return [`whether a process works in it cannot be told: ${answer.unknown}`];
+  const { pids } = answer;
   if (pids.length === 0) return [];
   return pids.length === 1
     ? [`process ${pids[0]} has its working directory in it`]
     : [`processes ${pids.join(", ")} have their working directory in it`];
 }
 
+/** One probe at a time on `ctx`, each held to the time left, noting whether one was cut short by it. */
+function prober(ctx: Context): { run: ProbeRun; timedOut: () => boolean } {
+  let cut = false;
+  const run: ProbeRun = (argv, cwd) => {
+    const timeoutMs = budget(ctx, PROBE_TIMEOUT_MS);
+    const started = Date.now();
+    const done = ctx.run(argv, {
+      timeoutMs,
+      ...(cwd === undefined ? {} : { cwd }),
+    });
+    // The runner reports a killed child as -1; one that ran its whole time was cut short.
+    if (done.status === -1 && Date.now() - started >= timeoutMs) cut = true;
+    return done;
+  };
+  return { run, timedOut: () => cut };
+}
+
+/** Why the tree, read by `git`, is busy; the reasons that need no git are added by the caller. */
+function gitReasons(
+  git: Git,
+  run: ProbeRun,
+  tree: Located,
+  check: HolderCheck,
+): string[] {
+  return [
+    tree.admin === tree.commonDir
+      ? "it is the clone's main checkout, which is never detached"
+      : null,
+    otherBranch(git, check.branch),
+    changes(git),
+    hiddenChanges(git),
+    unfinished(run, tree.admin),
+    unpushed(git, check.remote, check.branch),
+  ].filter((reason): reason is string => reason !== null);
+}
+
 /**
  * Whether the worktree at `check.path` is idle and may be detached from
  * `check.branch`; what keeps it busy when it is not. Read-only: it fetches
  * nothing, so the caller refreshes `<remote>/<branch>` first when a stale
- * copy would matter (a stale one can only make the holder look busy).
+ * copy would matter (a stale one can only make the holder look busy). Once
+ * the caller's time limit has passed, the runner's error is thrown.
  */
 export function holderVerdict(ctx: Context, check: HolderCheck): HolderVerdict {
+  const { run, timedOut } = prober(ctx);
   const git: Git = (args) =>
-    ctx.run(["git", "-c", "core.fsmonitor=false", "-C", check.path, ...args], {
-      timeoutMs: budget(ctx, PROBE_TIMEOUT_MS),
-    });
+    run(["git", "-c", "core.fsmonitor=false", "-C", check.path, ...args]);
   const tree = locate(git);
-  if (tree === null)
-    return { idle: false, reasons: ["git cannot read the worktree"] };
+  if ("unreadable" in tree)
+    return { idle: false, reasons: [tree.unreadable], timedOut: timedOut() };
   const reasons = [
-    otherBranch(git, check.branch),
-    changes(git),
-    hiddenChanges(git),
-    unfinished(ctx, tree.admin),
-    unpushed(git, check.remote, check.branch),
-  ].filter((reason): reason is string => reason !== null);
-  reasons.push(
+    ...gitReasons(git, run, tree, check),
     ...driven(check.drivers, { path: tree.top, commonDir: tree.commonDir }),
-    ...working(ctx, tree.top),
-  );
+    ...working(run, tree.top),
+  ];
   return reasons.length === 0
     ? { idle: true, head: tree.head }
-    : { idle: false, reasons };
+    : { idle: false, reasons, timedOut: timedOut() };
 }

@@ -9,7 +9,10 @@
  * an idle holder (`shared/idle-holder.ts`) is detached at the commit it is
  * at, its tree and everything in it left as they were, and the open goes on
  * to create the workspace. The idle check runs after the remote's copy of
- * the branch is refreshed and immediately before the detach. A holder that
+ * the branch is refreshed and immediately before the detach, which happens
+ * only while `HEAD` is still at the commit the check read. A check cut short
+ * by the open's time limit is an ordinary refusal, retried by the next
+ * open, never a busy holder a person is told of. A holder that
  * is not idle refuses the open with a `BusyHolderError`, which names it and
  * what keeps it busy, so a caller can tell a person once rather than log the
  * refusal on every attempt. Without the reader, every such checkout is
@@ -41,6 +44,46 @@ export class BusyHolderError extends OrcaError {
 }
 
 /**
+ * Detach the checkout at `path` from `branch`, only while its `HEAD` is still
+ * at `head`, the commit the idle check read: `git update-ref` with that
+ * commit as the old value refuses a `HEAD` that moved. The working tree and
+ * index are untouched, which the same commit makes right, and no hook runs.
+ */
+function detachAt(
+  port: OpenPort,
+  branch: string,
+  path: string,
+  head: string,
+): void {
+  const detached = port.host.run([
+    "git",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-C",
+    path,
+    "update-ref",
+    "--no-deref",
+    "-m",
+    `jig: detached from ${branch} so another checkout can take it`,
+    "HEAD",
+    head,
+    head,
+  ]);
+  if (detached.status === 0) return;
+  const now = port.host.run(["git", "-C", path, "rev-parse", "HEAD"]);
+  if (now.status === 0 && now.stdout.trim() !== head)
+    throw new BusyHolderError(
+      branch,
+      path,
+      ["its head moved during the check"],
+      port.where,
+    );
+  throw new OrcaError(
+    `could not detach the idle checkout at ${path} from ${branch}: ${output(detached)}`,
+  );
+}
+
+/**
  * Free `branch` from the checkout at `path`, which Orca does not list:
  * detach it when it is idle, else throw what keeps it busy. `clone` is the
  * repository's own clone, whose worktree list must no longer name the
@@ -64,22 +107,14 @@ export function releaseHiddenHolder(
     remote: REMOTE,
     drivers: port.drivers,
   });
-  if (!verdict.idle)
+  if (!verdict.idle) {
+    if (verdict.timedOut)
+      throw new OrcaError(
+        `${branch} is checked out at ${path}, which Orca${port.where} does not list, and the check of whether it is idle ran out of time: ${verdict.reasons.join("; ")}`,
+      );
     throw new BusyHolderError(branch, path, verdict.reasons, port.where);
-  const detached = port.host.run([
-    "git",
-    "-c",
-    "core.hooksPath=/dev/null",
-    "-C",
-    path,
-    "checkout",
-    "--quiet",
-    "--detach",
-  ]);
-  if (detached.status !== 0)
-    throw new OrcaError(
-      `could not detach the idle checkout at ${path} from ${branch}: ${output(detached)}`,
-    );
+  }
+  detachAt(port, branch, path, verdict.head);
   const still = findGitWorktree(port.host, clone, branch);
   if (still !== null)
     throw new OrcaError(

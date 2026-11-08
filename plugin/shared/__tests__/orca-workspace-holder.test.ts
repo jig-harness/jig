@@ -8,10 +8,11 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
 import type { OrcaEnvelope } from "../orca-workspace/envelope.ts";
+import { OrcaError } from "../orca-workspace/envelope.ts";
 import { BusyHolderError } from "../orca-workspace/holder.ts";
 import { openBranch } from "../orca-workspace/open.ts";
 import { boundedHook, type OpenPort } from "../orca-workspace/port.ts";
-import { localContext } from "../orca-workspace/runner.ts";
+import { type Context, localContext } from "../orca-workspace/runner.ts";
 import type { TreeDrivers } from "../idle-holder.ts";
 import { BRANCH, ENV, git, heldTree } from "./holder-fixture.ts";
 
@@ -22,12 +23,13 @@ function portOf(
   root: string,
   clone: string,
   drivers: TreeDrivers | undefined,
+  host: (ctx: Context) => Context = (ctx) => ctx,
 ): { port: OpenPort; lines: string[]; orca: string[][] } {
   const lines: string[] = [];
   const orca: string[][] = [];
   const created: { id: string; path: string; branch: string }[] = [];
   const port: OpenPort = {
-    host: localContext((line) => lines.push(line)),
+    host: host(localContext((line) => lines.push(line))),
     runHook: boundedHook,
     orcaCall<T>(args: string[]): OrcaEnvelope<T> {
       orca.push(args);
@@ -115,6 +117,61 @@ describe("openBranch with a checkout Orca does not list holding the branch", () 
     });
     expect(symbolic(holder)).toBe(BRANCH);
     expect(orca.some((args) => args[1] === "create")).toBe(false);
+  });
+
+  test("leaves a holder whose head moved after the check, and refuses it as busy", () => {
+    const { root, clone, holder } = heldTree();
+    const head = git(holder, "rev-parse", "HEAD");
+    // A commit lands in the holder between the idle check and the detach.
+    const { port, orca } = portOf(
+      root,
+      clone,
+      () => [],
+      (ctx) => ({
+        ...ctx,
+        run: (argv, options) => {
+          if (argv.includes("update-ref"))
+            git(holder, "commit", "-q", "--allow-empty", "-m", "late work");
+          return ctx.run(argv, options);
+        },
+      }),
+    );
+    let thrown: unknown = null;
+    try {
+      open(port, clone);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(BusyHolderError);
+    expect(thrown).toMatchObject({
+      reasons: ["its head moved during the check"],
+    });
+    expect(symbolic(holder)).toBe(BRANCH);
+    expect(git(holder, "rev-parse", "HEAD~1")).toBe(head);
+    expect(orca.some((args) => args[1] === "create")).toBe(false);
+  });
+
+  test("refuses as an ordinary failure, not a busy holder, when the check runs out of time", () => {
+    const { root, clone, holder } = heldTree();
+    const { port } = portOf(
+      root,
+      clone,
+      () => [],
+      (ctx) => ({
+        ...ctx,
+        budget: () => 1,
+      }),
+    );
+    let thrown: unknown = null;
+    try {
+      open(port, clone);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(OrcaError);
+    expect(thrown).not.toBeInstanceOf(BusyHolderError);
+    expect(String(thrown)).toContain("ran out of time");
+    expect(symbolic(holder)).toBe(BRANCH);
   });
 
   test("refuses every such checkout, with how to show it, when the port cannot read what drives a tree", () => {

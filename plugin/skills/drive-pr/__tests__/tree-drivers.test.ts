@@ -130,7 +130,9 @@ const { rmSync } = await import("node:fs");
 const { dbPathFor } = await import(${JSON.stringify(join(lib, "state/db.ts"))});
 rmSync(dbPathFor(s.stateDir), { force: true });
 out.push(treeDrivers(tree));`,
-    ) as unknown[];
-    expect(answer).toBeNull();
+    ) as { unreadable: string }[];
+    expect(answer?.unreadable).toMatch(
+      /^the clone's drive state directory .+ has no database .+state\.sqlite beside it$/,
+    );
   });
 });

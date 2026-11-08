@@ -11,7 +11,6 @@ import { join } from "node:path";
 import {
   GIT_OPERATION_MARKERS,
   holderVerdict,
-  parseCwdHolders,
   type TreeDrivers,
 } from "../idle-holder.ts";
 import { localContext } from "../orca-workspace/runner.ts";
@@ -35,6 +34,7 @@ function verdict(holder: string, drivers: TreeDrivers = none) {
 function reasons(holder: string, drivers?: TreeDrivers): string[] {
   const v = verdict(holder, drivers);
   if (v.idle) throw new Error("the holder was judged idle");
+  expect(v.timedOut).toBe(false);
   return v.reasons;
 }
 
@@ -113,8 +113,10 @@ describe("holderVerdict", () => {
       path: holder,
       commonDir: join(holder, "..", "clone", ".git"),
     });
-    expect(reasons(holder, () => null)).toEqual([
-      "whether a drive or session holds it cannot be read",
+    expect(
+      reasons(holder, () => ({ unreadable: "the drive's database is locked" })),
+    ).toEqual([
+      "whether a drive or session holds it cannot be read: the drive's database is locked",
     ]);
   });
 
@@ -124,6 +126,62 @@ describe("holderVerdict", () => {
     expect(reasons(holder)).toContain(
       `it has other checked out now, not ${BRANCH}`,
     );
+  });
+
+  test("a detached HEAD keeps it busy, as no branch checked out", () => {
+    const { holder } = heldTree();
+    git(holder, "switch", "-q", "--detach");
+    expect(reasons(holder)).toContain(
+      `it has no branch checked out now, not ${BRANCH}`,
+    );
+  });
+
+  test("the clone's main checkout is never idle", () => {
+    const { clone } = heldTree();
+    git(clone, "switch", "-q", "-c", "main-held");
+    git(clone, "push", "-q", "origin", "main-held");
+    const v = holderVerdict(
+      localContext(() => undefined),
+      {
+        path: clone,
+        branch: "main-held",
+        remote: "origin",
+        drivers: none,
+      },
+    );
+    expect(v).toEqual({
+      idle: false,
+      reasons: ["it is the clone's main checkout, which is never detached"],
+      timedOut: false,
+    });
+  });
+
+  test("a path git cannot read says what git answered", () => {
+    const { root } = heldTree();
+    const [reason] = reasons(join(root, "missing"));
+    expect(reason).toStartWith("git cannot read the worktree (exit 128): ");
+    expect(reason).toContain("missing");
+  });
+
+  test("marks a check whose probes ran out of their time, and throws once the limit has passed", () => {
+    const { holder } = heldTree();
+    const ctx = localContext(() => undefined);
+    const v = holderVerdict(
+      { ...ctx, budget: () => 1 },
+      { path: holder, branch: BRANCH, remote: "origin", drivers: none },
+    );
+    expect(v).toMatchObject({ idle: false, timedOut: true });
+    expect(() =>
+      holderVerdict(
+        {
+          ...ctx,
+          budget: () => {
+            throw new Error("the run reached its limit");
+          },
+        },
+        { path: holder, branch: BRANCH, remote: "origin", drivers: none },
+      ),
+    ).toThrow("the run reached its limit");
   });
 
   test.skipIf(process.platform === "win32")(
@@ -142,19 +200,4 @@ describe("holderVerdict", () => {
       }
     },
   );
-});
-
-describe("parseCwdHolders", () => {
-  test("reads /proc's lines and lsof's fields, matching the tree and what is under it only", () => {
-    const top = "/w/holder";
-    expect(
-      parseCwdHolders(
-        "/proc/1\t/\n/proc/2\t/w/holder\n/proc/3\t/w/holder/sub\n/proc/4\t/w/holder-2\n",
-        top,
-      ),
-    ).toEqual(["2", "3"]);
-    expect(
-      parseCwdHolders("p10\nfcwd\nn/w/holder/x\np11\nfcwd\nn/w/other\n", top),
-    ).toEqual(["10"]);
-  });
 });
