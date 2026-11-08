@@ -173,6 +173,9 @@ describe("readInfrastructure", () => {
     for (const diagnostic of [
       "FAILED tests/test_cart.py::test_total",
       "ERROR tests/test_cart.py - ImportError: cannot import name cart",
+      "____ ERROR collecting tests/test_cart.py ____",
+      "____ ERROR at setup of test_total ____",
+      "____ ERROR at teardown of tests/test_cart.py::test_total ____",
       "npm ERR! code E403",
       "npm error code E403",
       "error: HTTP 403 Forbidden",

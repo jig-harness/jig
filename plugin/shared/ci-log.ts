@@ -69,6 +69,12 @@ const PATTERNS: [RegExp, Category][] = [
   [/FAIL\s+(\S+\.(?:spec|test)\.tsx?)/su, "test_failure"],
   // Pytest reports failing nodes and collection errors.
   [/^(?:FAILED|ERROR)\s+(\S+\.py)(?:::.*)?/su, "test_failure"],
+  // Pytest's own section headings for a failed collection, setup or teardown,
+  // which `-rN` leaves without a short-summary entry.
+  [
+    /^_+\s+ERROR\s+(?:collecting\s+(\S+\.py)|at\s+(?:setup|teardown)\s+of\s+\S+)\s+_+$/su,
+    "test_failure",
+  ],
   // Package managers report permanent failures without an Actions annotation.
   [/^npm\s+(?:ERR!|error)\s+code\s+(.+)/isu, "gate_failure"],
   // Test assertion: file > suite > ... > test, split on the `>` delimiters in
