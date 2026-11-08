@@ -241,12 +241,12 @@ says what is safe to merge.
 [design/line-at-capacity.md](line-at-capacity.md) has how it works: each
 tick reads the host's gauges and computes the **load factor**, the fullest
 gauge's fill, starting a launch only while every gauge stays under its line
-with that launch's measured reservation counted, a new pickup never taking
-the last unit of headroom, and the existing alternation between drive
+with that launch's measured reservation counted, a new pickup retaining
+room for a drive or follow-up, and the existing alternation between drive
 launches and the other stages unchanged; it ships report-only
 (`load.enforce: false`). Pickups run as headless `do-item` passes through
 the follow-up's wrapper, bound and identity-checked as a drive's pass is,
-on their route's model. A host's machine file names the people it serves
+with only their implementer delegate on the route's model. A host's machine file names the people it serves
 (`serve:`); an open, not-started item a writer assigned to one of them, and
 each unassigned item under an epic assigned to them, is ranked by rules as
 data, held out with its reason when blocked or flagged for a person, and
@@ -272,7 +272,7 @@ option's cost, the same act in `jig ask`; every receipt carries each gauge,
 the load factor and the gauge that binds, and with enforcement off a launch
 a gauge would refuse still starts and is reported as would-hold; an item
 assigned to the factory identity gets one headless `do-item` pass on an
-admitted account within one interval, on the route's model; an item a
+admitted account within one interval, with its implementer on the route's model; an item a
 writer assigns to a served person starts within one interval when there is
 headroom and keeps that person as its only assignee, while a blocked one
 reads "waiting on #N" and a `hitl` one "needs a person to start"; with
@@ -796,7 +796,7 @@ the build, its own epic, one pull request per step:
 
 - **The complexity tiers** ([#640](https://github.com/jig-harness/jig/issues/640),
   item 44's step 9): the tier table, `routing.complex_flags`,
-  `routing.models.<vendor>.<tier>` with the `claude-code` and `codex`
+  `routing.models.<runtime>.<tier>` with the `claude-code` and `codex`
   defaults, and the old tier names read as the new ones.
 - **The record**: the `## Route` section written and parsed from
   `plugin/shared/`, and the loop-cost report reading it.

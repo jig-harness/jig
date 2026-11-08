@@ -22,7 +22,7 @@ and proposes what the next tick should do about it. What still reaches a
 person opens with the one act it asks of them.
 
 This is the design of [plan.md](plan.md) item 44. Nothing of it is built.
-It changes four designs, each of which says in its own text what this one
+It changes the following designs, each of which says in its own text what this one
 changes: [the dispatcher](dark-factory-dispatch.md) (item 33), whose tick
 gains the load factor, headless pickups, served people and the steward;
 [the dispatch board](dispatch-board.md) (item 36), whose page becomes five
@@ -38,7 +38,8 @@ this design holds the tick's parts.
 
 ### The host's load factor
 
-Each tick reads the **gauges** of its host before it plans, and starts a
+Each tick reads the **gauges** of its host when the act phase builds its
+apply state under the act lock, and starts a
 launch only while every gauge stays under its **line** with that launch
 counted. The **load factor** is the fullest gauge's fill against its line,
 shown with the gauge that binds: "82% · memory binds". Account slots and
@@ -72,9 +73,13 @@ dispatcher's state database beside its launch records.
 decided as today: drive launches and the other stages take turns leading
 the tick (`plugin/dispatch/lib/apply-order.ts`), with their rotations
 across repositories and stages, so no stage starves. The load factor adds
-one rule: **a new pickup never takes the last unit of headroom.** A unit is
-one reservation of the smallest kind waiting; a pickup is admitted only
-while, after it, at least one more unit stays free. New work therefore
+one rule: **a new pickup keeps room for a drive or follow-up.** After a
+pickup, the remaining memory above the free-memory floor must fit the
+larger reservation of the drive and follow-up kinds, whether either is
+currently waiting or not. With the initial defaults, that reserve is
+1.5 GB. Other gauges must also permit one launch of either protected kind
+after the pickup; if a gauge cannot express that reservation, it must at
+least remain below its line. New work therefore
 cannot crowd out the drives and follow-ups that turn earlier work into
 merges. The gauges are read when the act phase builds its apply state,
 under the act lock, so two ticks never spend the same headroom.
@@ -94,8 +99,10 @@ its admitted account through that account's configuration directory, with
 the credential variables removed, and the tick checks the identity the
 wrapper's environment yields before it starts, as it does for a drive's
 pass ([dark-factory-dispatch.md § Admission by account](dark-factory-dispatch.md#admission-by-account)).
-The pass runs on its route's model and effort
-([Complexity tiers](#complexity-tiers)), with its own deadline,
+The wrapper session keeps the orchestrator's model and effort; only its
+implementer delegate takes the route's model and effort
+([Complexity tiers](#complexity-tiers)), as agent-routing.md specifies.
+The wrapper session has its own deadline,
 `dispatch.pickup_deadline` (3 hours by default), since an implementation
 outruns a review pass's 90 minutes.
 
@@ -170,6 +177,18 @@ change makes no `assignedBy` or relations read.
 **The claim keeps the person.** `do-item`'s claim, run as
 `claim --for <person>`, accepts an item assigned to that served person,
 keeps them as its only assignee and moves it to the in-progress state.
+For an unassigned child, the claim also accepts inherited assignment:
+the tick supplies the ancestor epic's identifier and the served person.
+Immediately before claiming, the tracker adapter re-reads the child and
+the ancestry up to that epic, verifies that the child is still unassigned,
+open and not started, and verifies that the epic is still assigned to the
+served person by a repository writer. Every intervening epic must still
+be in that ancestry and have no conflicting assignee. A missing or
+unreadable link, changed assignment or new hold refuses the claim and
+refreshes the queue. Only after these checks does it assign the child to
+the served person and move it in progress. The adapter must serialize
+competing Jig claims and recheck assignment at the write; it must never
+replace a new assignee, and must report a race it cannot safely settle.
 Without `--for`, the claim is unchanged: it assigns the item to the
 credential's own user and refuses an item someone else holds. The stalled
 pickup and double claim watches read the served people's in-progress items
@@ -266,7 +285,7 @@ tier.
 | `serve[]` | machine file | none: only the factory identity's items are picked up |
 | `steward.enabled`, `steward.every` | machine file | off; `20m` |
 | `dispatch.pickup_deadline` | repository | `3h` |
-| `routing.complex_flags`, `routing.models.<vendor>.<tier>` | repository | [agent-routing.md § Configuration](agent-routing.md#configuration) |
+| `routing.complex_flags`, `routing.models.<runtime>.<tier>` | repository | [agent-routing.md § Configuration](agent-routing.md#configuration) |
 
 ## Build order
 
@@ -314,7 +333,7 @@ flowchart TD
    and a launch a gauge would refuse still starts while `load.enforce` is
    `false`.
 6. **Headless pickups** ([#637](https://github.com/jig-harness/jig/issues/637)):
-   the pickup through the wrapper, on its route's model, with its deadline
+   the pickup through the wrapper, with the implementer on its route's model, its deadline
    and its `Question:` line. Done when an item assigned to the factory
    identity gets one headless `do-item` pass on an admitted account within
    one interval.
@@ -329,7 +348,7 @@ flowchart TD
    steward record re-arms a drive a person stopped.
 9. **Complexity tiers** ([#640](https://github.com/jig-harness/jig/issues/640)),
    under item 31's epic: the three tiers, the complex flags and the models
-   per tier per vendor. Done when an S bug routes standard, the same bug
+   per tier per runtime (`claude-code` or `codex`). Done when an S bug routes standard, the same bug
    labelled `has-migration` routes complex, and a Codex account runs a
    complex item on Sol with no `routing.models` set.
 

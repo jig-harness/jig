@@ -75,13 +75,16 @@ A complexity tier says how hard the item is, not which model runs it. By
 default the simple and standard tiers map to M0's Execution tier and the
 complex tier to its Strategic tier. A repository may map the simple tier
 to a family M0 places on its Scout tier (`routing.models.claude-code.simple:
-haiku`): M0 keeps that tier for read-only work, and a repository that maps
-an implementer to it takes that call for its mechanical items, which still
-write under every gate, and the audit reports the mapping. The
+haiku`) only with M0's measured exception for that named implementer or
+skill: comparable tasks, billed cost and quality results accompany the
+configuration change. Without that admitted exception Scout stays
+read-only and the loader refuses a write-capable route to it. Gates and
+an audit report do not replace this measurement. The
 Judgment tier is admitted per decision layer with a named baseline, never
 by a rule that fires on every item of a type, so no complexity tier maps
-to it by default. The tier is never a model id: the translation table is
-the only place a model name appears, and it is configuration a check
+to it, including through configuration overrides. The tier is never a
+model id: the translation table is the only place a model name appears,
+and it is configuration a check
 reads.
 
 ### Complexity tiers
@@ -147,6 +150,8 @@ implementer ran ([the record](#where-it-is-read)):
    nothing here; a second way to pick the agent would disagree with the
    first ([work-types.md § Left out](work-types.md#left-out)).
 2. **The base**: the tier from the [complexity table](#complexity-tiers),
+   replaced by an explicit `routing.types.<type>.tier` when present,
+   with complex flags still forcing complex,
    and the effort from the work type's row of `routing.types` (defaults
    below). `unknown` takes the strictest row: the complex tier and the
    highest effort any row names. An unattended run
@@ -401,6 +406,14 @@ is policy, not an override, and the reasons name the rule that fired.
   with a `reason`, which the loader reads in place of the list's tier for
   that family and refuses without the reason; the audit reports each one.
   A runtime with no list takes any name.
+  Independently of ordering, the loader refuses every implementation
+  mapping to Judgment, including a row whose tiers all name `fable`.
+  A Scout mapping requires the measured exception for the named skill
+  described above; a `family_tiers` override cannot waive either admission
+  rule. For an unknown runtime, the family classification and any Scout
+  admission evidence must be declared before a write-capable route can
+  be applied. The audit checks the exception's scope and evidence beside
+  the model mapping.
 
 ### The audit
 
@@ -424,12 +437,26 @@ rules, the share a person chose and the share recorded and not applied.
 | `routing` | mapping; `{}` accepts every default | absent: routes derived and recorded, none applied | `determine_route.ts`, do-item, work-batch |
 | `routing.complex_flags` | list of labels | `[has-migration, api-change, dpa-relevant]`: an item carrying one is complex at any size | `determine_route.ts` |
 | `routing.types.<type>.effort` | `low`, `medium`, `high`, `max` | the table above | `determine_route.ts` |
+| `routing.types.<type>.tier` | optional complexity tier; legacy `execution` and `strategic` mean `standard` and `complex` | absent: derive from type and size | `determine_route.ts` |
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare | `determine_route.ts` |
 | `routing.raise.sizes` | list of labels | the known sizes (`work_batch.sizes`, else the batchable sizes, always with `review.taxonomy.sizes`) outside `batch_sizes`; `[large]` where that leaves none | `determine_route.ts` |
 | `routing.raise.reviews` | `true`, `false` | `true` | `determine_route.ts` |
 | `routing.models.<runtime>.<tier>` | the runtime's family alias, per complexity tier | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | `determine_route.ts`, the configuration loader, `drive-pr`, the dispatcher |
 | `routing.efforts.<runtime>.<effort>` | the runtime's own level name | unchanged | `determine_route.ts` |
 | `routing.family_tiers.<runtime>.<family>` | `{tier, reason}` | none: the tier the known-families list gives | the configuration loader, the audit |
+
+**Existing type overrides keep their precedence.** An explicit
+`routing.types.<type>.tier` replaces the type/size table's initial tier,
+then complex flags may force complex. The existing raise rules still
+raise only effort. Its effort override is retained independently. The
+loader normalizes legacy tier
+values and legacy model keys (`execution` to `standard`, `strategic` to
+`complex`). If a runtime row declares both an old and new key, identical
+values coalesce and different values are refused with both field paths;
+neither silently wins. Simple uses its runtime default unless explicitly
+set. This preserves an existing `bug: {tier: strategic, effort: high}`
+as complex/high even for a small bug. The route records the explicit
+override as its reason.
 
 Loading the configuration refuses, with the field at fault: a type row for
 a type outside the effective type set, or a type in the set with no

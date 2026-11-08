@@ -101,10 +101,8 @@ column of full-width cards, with the merge flash above every other view
 while merge now holds a pull request, and the keys and the ⌘K palette
 [dispatch-board.md § Five views](dispatch-board.md#five-views-one-column-of-cards)
 lists. The hub's design round starts from them. Each question gets a page
-of its own, overruling the landed dashboard prototype's §3.1 (no page per
-question, since the morning glance would become four taps): the counts on
-every tab and the flash answer that glance instead. The prototype's
-§3.3 stands: a card shows the act, the ask and the recommended option with
+of its own; the counts on every tab and the flash provide the morning
+glance across views. A card shows the act, the ask and the recommended option with
 its cost, never a full framed decision in place, with the other options,
 the steps and the evidence folded.
 
