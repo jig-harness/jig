@@ -395,8 +395,9 @@ session runs `jig ask` and reads its plain answer.
 - **The skill run on its own** answers "what is waiting on me", and a
   bare number is the status of that pull request, or of the item of that
   number where no pull request has it.
-- **"What is waiting on me"** is `jig ask --waiting --person <login>`, one
-  read. The operator opens an address only to say more about one entry.
+- **"What is waiting on me"** is `jig ask --waiting`, one read; for a named
+  person's questions the operator adds `--person <login>`. The operator opens
+  an address only to say more about one entry.
 - **The status of a pull request** is `jig ask drive@<repository>#<PR>`,
   with whether it is ready to merge once item 36's predicate exists.
 - **It sends a person's command only on that person's instruction in the
