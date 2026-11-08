@@ -50,14 +50,26 @@ export const ADAPTER_STORES: Readonly<
     priority: ["native", "field", "label"],
     size: ["field", "label"],
   },
-  jira: { type: ["label"], priority: ["native", "label"], size: ["label"] },
-  linear: { type: ["label"], priority: ["native", "label"], size: ["label"] },
+  jira: {
+    type: ["native", "field", "label"],
+    priority: ["native", "label"],
+    size: ["field", "label"],
+  },
+  linear: {
+    type: ["label"],
+    priority: ["native", "label"],
+    size: ["native", "label"],
+  },
 };
 
 /** Why an adapter cannot hold a store, where the reason is the tracker's. */
 const REFUSALS: Readonly<Record<string, string>> = {
   "github native size":
     "an Effort issue field is a field store (store: field, field: Effort)",
+  "jira native size":
+    "each site's estimate is a custom field: store: field, field: <its name or id>",
+  "jira field priority":
+    "Jira keeps priority in its own priority field (store: native, with issue_tracker.jira.priorities)",
   "linear native type": "Linear has no issue types",
   "linear field": "the Linear adapter has no custom field to name",
 };
@@ -67,7 +79,7 @@ export interface FacetEntry {
   store: FacetStoreKind;
   /** `native` and `field`: canonical value → the tracker's value. */
   values?: Record<string, string>;
-  /** `field`: the field's name (a GitHub issue field). */
+  /** `field`: the field's name (a GitHub issue field), or on Jira its name or id. */
   field?: string;
   /** `label`: canonical value → its label. */
   labels?: Record<string, string>;
@@ -267,6 +279,12 @@ export interface ResolvedFacet {
   field: string | null;
   /** A native or field store's map onto the tracker's values. */
   map: ValueMap | null;
+  /**
+   * A Jira native type: the labels a value is kept in where it has no issue
+   * type of its own, or the issue is a sub-task (each value with its labels,
+   * the first one written).
+   */
+  fallback?: ReadonlyArray<readonly [string, string[]]>;
 }
 
 /** A facet the repository has no store for, and why. */
@@ -308,6 +326,8 @@ export interface FacetInputs {
   priorityLabelsDeclared: boolean;
   /** The Jira priorities in force (`issue_tracker.jira.priorities`). */
   jiraPriorities: Readonly<Record<string, string>> | null;
+  /** `issue_tracker.jira.field_labels` on Jira: a field's name or id → its label prefix. */
+  jiraFieldLabels?: Readonly<Record<string, string>> | null;
   /** Labels a facet's label may not be: the state labels, in labels mode. */
   stateLabels: string[];
 }
@@ -394,6 +414,8 @@ function resolved(
     labels: (value: string) => string[];
     nativeField: string | null;
     nativeMap: Record<string, string>;
+    /** A native store that keeps a value in its labels where the tracker cannot (Jira's issue type). */
+    fallback?: boolean;
   },
 ): ResolvedFacet {
   const store = entry?.store ?? base.defaultStore;
@@ -429,6 +451,63 @@ function resolved(
       entry?.values ?? base.nativeMap,
       at(facet, "values"),
     ),
+    ...(store === "native" && base.fallback === true
+      ? { fallback: base.values.map((v) => [v, base.labels(v)] as const) }
+      : {}),
+  };
+}
+
+/**
+ * On Jira, the `issue_tracker.jira.field_labels` entry whose labels are a
+ * facet's values (every value has a label behind its prefix) keeps that
+ * facet: a field store, each value kept as the field's value behind the
+ * prefix. `only` limits it to the entry naming that field; a facet some of
+ * whose values have no such label keeps reading as labels.
+ */
+function fieldLabelsStore(
+  inputs: FacetInputs,
+  values: ReadonlyArray<string>,
+  labels: (value: string) => string[],
+  only?: string,
+): { field: string; values: Record<string, string> } | null {
+  if (inputs.adapter !== "jira") return null;
+  for (const [field, prefix] of Object.entries(inputs.jiraFieldLabels ?? {})) {
+    if (only !== undefined && fold(only) !== fold(field)) continue;
+    const map: Record<string, string> = {};
+    for (const v of values) {
+      const label = labels(v).find(
+        (l) => fold(l).startsWith(fold(prefix)) && l.length > prefix.length,
+      );
+      if (label !== undefined) map[v] = label.slice(prefix.length);
+    }
+    if (values.length > 0 && Object.keys(map).length === values.length)
+      return { field, values: map };
+  }
+  return null;
+}
+
+/**
+ * The entry a facet is resolved from: as configured, or on Jira the field
+ * store `field_labels` gives it, where nothing names its store or a field
+ * store names that field without `values`.
+ */
+function withFieldLabels(
+  inputs: FacetInputs,
+  entry: FacetEntry | undefined,
+  values: ReadonlyArray<string>,
+  labels: (value: string) => string[],
+): FacetEntry | undefined {
+  if (
+    entry !== undefined &&
+    (entry.store !== "field" || entry.values !== undefined)
+  )
+    return entry;
+  const found = fieldLabelsStore(inputs, values, labels, entry?.field);
+  if (found === null) return entry;
+  return {
+    store: "field",
+    field: entry?.field ?? found.field,
+    values: found.values,
   };
 }
 
@@ -474,7 +553,7 @@ function refuseSharedLabels(
   };
   for (const f of facets) {
     const configured = inputs.entries[f.facet] !== undefined;
-    for (const [value, labels] of f.labels ?? [])
+    for (const [value, labels] of f.labels ?? f.fallback ?? [])
       for (const label of labels)
         claim(f.facet, label, `${f.facet} ${value}`, configured);
   }
@@ -516,7 +595,9 @@ function sizeSlot(inputs: FacetInputs, tax: TaxonomyValues | null): FacetSlot {
       );
     return { facet: "size", store: null, problem: null };
   }
-  return resolved("size", inputs.entries.size, {
+  const own = (v: string) => [v];
+  const entry = withFieldLabels(inputs, inputs.entries.size, tax.sizes, own);
+  return resolved("size", entry, {
     values: [...tax.sizes],
     defaultStore: "label",
     defaultWhy: "default",
@@ -568,13 +649,20 @@ function typeSlot(
   inputs: FacetInputs,
   defaults: ReturnType<typeof typeDefaults>,
 ): FacetSlot {
-  return resolved("type", inputs.entries.type, {
+  const entry = withFieldLabels(
+    inputs,
+    inputs.entries.type,
+    defaults.values,
+    defaults.labels,
+  );
+  return resolved("type", entry, {
     values: defaults.values,
     defaultStore: "label",
     defaultWhy: inputs.types === null ? "default" : "kept in labels",
     labels: defaults.labels,
     nativeField: null,
     nativeMap: {},
+    fallback: inputs.adapter === "jira",
   });
 }
 

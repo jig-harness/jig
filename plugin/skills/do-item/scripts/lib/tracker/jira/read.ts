@@ -6,6 +6,7 @@
  */
 
 import { isRecord } from "../../../../../../shared/guards.ts";
+import type { Facet } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
 import type { JiraStatus } from "./model.ts";
 import { JiraApiError } from "./transport.ts";
@@ -93,6 +94,8 @@ export interface JiraIssue {
   links: JiraLink[];
   createdAt: string;
   updatedAt: string;
+  /** The values of the fields a facet is kept in, by facet; empty when none is. */
+  facetValues: Partial<Record<Facet, string[]>>;
 }
 
 const STATUS_CATEGORIES = ["new", "indeterminate", "done"];
@@ -215,12 +218,12 @@ function numberText(n: number): string {
 }
 
 /**
- * The values of a field read as labels: strings, numbers and options, or a
- * list of them. Each is trimmed, since a label holds no whitespace; an
- * option whose value carries a space is still selected by its exact value
- * in JQL, so a query by the trimmed label misses it.
+ * The values of a field read as labels or as a facet: strings, numbers and
+ * options, or a list of them. Each is trimmed, since a label holds no
+ * whitespace; an option whose value carries a space is still selected by its
+ * exact value in JQL, so a query by the trimmed label misses it.
  */
-function fieldValues(v: unknown, where: string): string[] {
+export function fieldValues(v: unknown, where: string): string[] {
   if (v === null || v === undefined) return [];
   if (Array.isArray(v))
     return v.flatMap((x, i) => fieldValues(x, `${where}[${i}]`));
@@ -228,7 +231,7 @@ function fieldValues(v: unknown, where: string): string[] {
   const text = isRecord(v) ? v.value : v;
   if (typeof text === "string") return text.trim() === "" ? [] : [text.trim()];
   throw new JiraApiError(
-    `${where}: expected a string, a number or an option, as issue_tracker.jira.field_labels reads`,
+    `${where}: expected a string, a number or an option, as issue_tracker.jira.field_labels and a facet's field read`,
   );
 }
 
@@ -250,12 +253,14 @@ function nameOf(v: unknown, where: string): string | null {
 
 /**
  * A search result or an issue read as the adapter's record; the values of
- * `fieldLabels` join its labels.
+ * `fieldLabels` join its labels, and those of `facetFields` (the fields a
+ * facet is kept in) are kept by field id.
  */
 export function parseIssue(
   v: unknown,
   site: string,
   fieldLabels: ReadonlyArray<FieldLabel> = [],
+  facetFields: ReadonlyArray<{ facet: Facet; id: string }> = [],
 ): JiraIssue {
   const raw = record(v, "issue");
   const key = str(raw.key, "issue.key");
@@ -288,5 +293,8 @@ export function parseIssue(
     links: linksOf(f.issuelinks, at("issuelinks")),
     createdAt: iso(f.created, at("created")),
     updatedAt: iso(f.updated, at("updated")),
+    facetValues: Object.fromEntries(
+      facetFields.map((ff) => [ff.facet, fieldValues(f[ff.id], at(ff.id))]),
+    ),
   };
 }

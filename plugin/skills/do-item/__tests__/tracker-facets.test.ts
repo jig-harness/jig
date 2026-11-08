@@ -129,13 +129,27 @@ describe("issue_tracker.facets: what reading the configuration refuses", () => {
       "Linear has no issue types",
     ],
     [
-      "a field on Jira, before its build",
+      "a native size on Jira, whose estimate is a custom field",
+      { adapter: "jira", team: "ENG", facets: { size: { store: "native" } } },
+      "each site's estimate is a custom field",
+    ],
+    [
+      "priority in a Jira custom field",
       {
         adapter: "jira",
         team: "ENG",
+        facets: { priority: { store: "field", field: "Rank" } },
+      },
+      "Jira keeps priority in its own priority field",
+    ],
+    [
+      "a custom field on Linear",
+      {
+        adapter: "linear",
+        team: "ENG",
         facets: { size: { store: "field", field: "Size" } },
       },
-      "it keeps size in label",
+      "the Linear adapter has no custom field to name",
     ],
     [
       "a field store with no field",

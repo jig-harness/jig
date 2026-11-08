@@ -17,6 +17,12 @@ import { defaultFacets, type Facets } from "../facets/config.ts";
 import { TrackerRequestError } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
 import {
+  type FacetField,
+  facetFieldStores,
+  resolveFacetFields,
+  type SiteField,
+} from "./facets.ts";
+import {
   FIELDS,
   type FieldLabel,
   iso,
@@ -115,6 +121,20 @@ export interface Client {
    */
   fieldLabels(signal?: AbortSignal): Promise<FieldLabel[]>;
   /**
+   * The custom fields `issue_tracker.facets` keeps a facet in, each resolved
+   * to exactly one field of the site; read once, and without a request when
+   * no facet is kept in one.
+   */
+  facetFields(signal?: AbortSignal): Promise<FacetField[]>;
+  /**
+   * The fields on the create screen of an issue type of the project, each
+   * with the values it allows (`null` where it lists none); read once per
+   * issue type.
+   */
+  createMeta(issueTypeId: string, signal?: AbortSignal): Promise<FieldMeta>;
+  /** The fields an issue's edit screen has, each with the values it allows. */
+  editMeta(key: string, signal?: AbortSignal): Promise<FieldMeta>;
+  /**
    * The account id an identity (account id, email or display name) names.
    * An aborted `signal` ends the request in flight and the pages not yet read.
    */
@@ -125,6 +145,18 @@ export interface Client {
   trusted(user: Record<string, unknown> | null): Promise<boolean>;
   /** The credential's profile time zone, read once. */
   timeZone(): Promise<string>;
+}
+
+/** A screen's fields by id, each with the values it allows (`null`: no list). */
+export type FieldMeta = ReadonlyMap<string, string[] | null>;
+
+/** The allowed values of one field's metadata, by their names. */
+function allowedOf(meta: unknown): string[] | null {
+  if (!isRecord(meta) || !Array.isArray(meta.allowedValues)) return null;
+  return meta.allowedValues.flatMap((v) => {
+    const name = isRecord(v) ? (v.value ?? v.name) : v;
+    return typeof name === "string" ? [name] : [];
+  });
 }
 
 /** An Atlassian account id: the 24-hex form or the `<n>:<uuid>` form. */
@@ -295,6 +327,9 @@ export function jiraClient(opts: ClientOptions): Client {
   let links: Promise<Record<LinkedRelation, LinkType>> | undefined;
   let types: Promise<IssueTypeMeta[]> | undefined;
   let labelFields: Promise<FieldLabel[]> | undefined;
+  let allFields: Promise<SiteField[]> | undefined;
+  let storeFields: Promise<FacetField[]> | undefined;
+  const createScreens = new Map<string, Promise<FieldMeta>>();
   let zone: Promise<string> | undefined;
   let me: Promise<Record<string, unknown>> | undefined;
   const assignables = new Map<string, Promise<boolean>>();
@@ -323,9 +358,51 @@ export function jiraClient(opts: ClientOptions): Client {
     return matches[0] as T;
   }
 
-  /** The fields every issue read asks for, with those read as labels. */
+  /** The fields every issue read asks for, with those read as labels or as a facet. */
   async function fieldsToRead(signal?: AbortSignal): Promise<string[]> {
-    return [...FIELDS, ...(await client.fieldLabels(signal)).map((f) => f.id)];
+    const extra = [
+      ...(await client.fieldLabels(signal)).map((f) => f.id),
+      ...(await client.facetFields(signal)).map((f) => f.id),
+    ];
+    return [...FIELDS, ...new Set(extra)];
+  }
+
+  /** The site's fields, read once for every resolver that needs them. */
+  function siteFields(): Promise<SiteField[]> {
+    allFields ??= (async () => {
+      const raw = await get("field");
+      if (!Array.isArray(raw))
+        throw new JiraApiError("fields of the site: expected a list");
+      return raw.map((f, i) => {
+        const r = record(f, `fields[${i}]`);
+        return {
+          id: str(r.id, `fields[${i}].id`),
+          name: str(r.name, `fields[${i}].name`),
+          schema: r.schema,
+        };
+      });
+    })();
+    allFields.catch(() => {
+      allFields = undefined;
+    });
+    return allFields;
+  }
+
+  /** One screen's fields from a metadata answer: a list of fields, or a map by id. */
+  function metaOf(fields: unknown, where: string): FieldMeta {
+    const out = new Map<string, string[] | null>();
+    if (Array.isArray(fields))
+      for (const [i, f] of fields.entries()) {
+        const r = record(f, `${where}[${i}]`);
+        out.set(
+          str(r.fieldId ?? r.key, `${where}[${i}].fieldId`),
+          allowedOf(r),
+        );
+      }
+    else
+      for (const [id, f] of Object.entries(record(fields, where)))
+        out.set(id, allowedOf(f));
+    return out;
   }
 
   const client: Client = {
@@ -354,7 +431,12 @@ export function jiraClient(opts: ClientOptions): Client {
         if (err instanceof JiraApiError && err.notFound) return null;
         throw err;
       }
-      return parseIssue(raw, site, await client.fieldLabels(signal));
+      return parseIssue(
+        raw,
+        site,
+        await client.fieldLabels(signal),
+        await client.facetFields(signal),
+      );
     },
 
     async mustIssue(key, signal) {
@@ -369,9 +451,10 @@ export function jiraClient(opts: ClientOptions): Client {
 
     async search(jql, where, signal, fields) {
       const extra = await client.fieldLabels(signal);
+      const facet = await client.facetFields(signal);
       const read = fields ?? (await fieldsToRead(signal));
       return (await searchPages(transport, jql, read, where, signal)).map((i) =>
-        parseIssue(i, site, extra),
+        parseIssue(i, site, extra, facet),
       );
     },
 
@@ -534,17 +617,7 @@ export function jiraClient(opts: ClientOptions): Client {
       if (configured.length === 0) return Promise.resolve([]);
       if (signal?.aborted === true) return Promise.reject(abortedError(signal));
       labelFields ??= (async () => {
-        const raw = await get("field");
-        if (!Array.isArray(raw))
-          throw new JiraApiError("fields of the site: expected a list");
-        const all = raw.map((f, i) => {
-          const r = record(f, `fields[${i}]`);
-          return {
-            id: str(r.id, `fields[${i}].id`),
-            name: str(r.name, `fields[${i}].name`),
-            schema: r.schema,
-          };
-        });
+        const all = await siteFields();
         return configured.map(([name, prefix]) => {
           const at = `issue_tracker.jira.field_labels.${name}`;
           const byId = all.filter((f) => f.id === name);
@@ -570,6 +643,57 @@ export function jiraClient(opts: ClientOptions): Client {
         labelFields = undefined;
       });
       return signal === undefined ? labelFields : until(labelFields, signal);
+    },
+
+    facetFields(signal) {
+      const stores = facetFieldStores(client.facets);
+      if (stores.length === 0) return Promise.resolve([]);
+      if (signal?.aborted === true) return Promise.reject(abortedError(signal));
+      storeFields ??= (async () =>
+        resolveFacetFields(stores, await siteFields()))();
+      storeFields.catch(() => {
+        storeFields = undefined;
+      });
+      return signal === undefined ? storeFields : until(storeFields, signal);
+    },
+
+    createMeta(issueTypeId, signal) {
+      let screen = createScreens.get(issueTypeId);
+      if (screen === undefined) {
+        const where = `create screen of issue type ${issueTypeId} in ${project}`;
+        screen = (async () =>
+          metaOf(
+            await offsetPages(
+              transport,
+              {
+                method: "GET",
+                path: `issue/createmeta/${project}/issuetypes/${encodeURIComponent(issueTypeId)}`,
+              },
+              {
+                items: "fields",
+                idOf: (f) => f.fieldId,
+                where,
+                ...(signal === undefined ? {} : { signal }),
+              },
+            ),
+            where,
+          ))();
+        screen.catch(() => createScreens.delete(issueTypeId));
+        createScreens.set(issueTypeId, screen);
+      }
+      return screen;
+    },
+
+    async editMeta(key, signal) {
+      const raw = record(
+        await get(
+          `issue/${encodeURIComponent(key)}/editmeta`,
+          undefined,
+          signal,
+        ),
+        `edit screen of ${key}`,
+      );
+      return metaOf(raw.fields, `edit screen of ${key}.fields`);
     },
 
     accountId(identity, signal) {
