@@ -126,7 +126,7 @@ describe("stopPickup", () => {
   });
 
   it("names an infrastructure failure that persisted, and asks for no repair", async () => {
-    const r = await pickupAfter([stop("22")]);
+    const r = await pickupAfter([stop("23")]);
     expect(r.notice).toStartWith(
       "RE-ARMED AFTER AN INFRASTRUCTURE FAILURE PERSISTED",
     );
