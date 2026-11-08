@@ -179,11 +179,12 @@ async function workspaceFor(
 /** Why the follow-ups' lane holds this one back, and on what; `null` when it may go on to admission. */
 function laneHolds(
   state: ApplyState,
+  repo: RepoTarget,
   action: Action,
   read: { sessions: SessionsReport; joined: WorkspaceRef | undefined },
 ): LaunchOutcome | null {
   const { joined } = read;
-  const cap = laneCapWait(state, read.sessions);
+  const cap = laneCapWait(state, read.sessions, repo.slug);
   if (cap !== null) return { ...waits(action, cap), waitsOn: "lane-cap" };
   // A joined workspace needs no open, so the lane's budget does not hold it.
   const budget = joined === undefined ? laneBudgetWait(state) : null;
@@ -341,7 +342,7 @@ async function launchOne(
       action,
       `the runtime's sessions could not be listed again, so whether a workspace is joined to it cannot be told: ${read.failed}`,
     );
-  const held = laneHolds(state, action, read);
+  const held = laneHolds(state, repo, action, read);
   if (held !== null) return held;
   const admitted = await admitAccount(state, action);
   if ("outcome" in admitted) return admitted.outcome;

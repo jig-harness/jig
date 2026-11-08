@@ -64,13 +64,15 @@ export interface StandingAnswer {
   classes: string[];
 }
 
-/** Whether a value is a `StandingAnswer`, as a launch record reads it back. */
+/** Whether a value is a `StandingAnswer`, as a launch record reads it back: a non-empty set of registered classes. */
 export function isStandingAnswer(value: unknown): value is StandingAnswer {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return (
     (v.question === null || typeof v.question === "string") &&
     Array.isArray(v.classes) &&
-    v.classes.every((c) => typeof c === "string")
+    v.classes.length > 0 &&
+    new Set(v.classes).size === v.classes.length &&
+    v.classes.every((c) => typeof c === "string" && routineQuestion(c))
   );
 }

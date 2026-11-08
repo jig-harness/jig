@@ -14,8 +14,10 @@ release: minor
   past the longest a timer holds (about 24.86 days) is refused, naming the
   field. Follow-ups still share the accounts' slots. A waiting follow-up's
   receipt entry and dashboard queue entry say what it waits on (`waitsOn`):
-  the lane's budget, the lane's cap or the accounts. Recorded stuck launches
-  (notified to a person) do not count toward `followup_concurrency`.
+  the lane's budget, the lane's cap or the accounts. A recorded stuck launch
+  (notified to a person) stops counting toward `followup_concurrency` only
+  while the runtime shows no session running on its target; one whose
+  session runs, or cannot be read, keeps its place.
 - **The installed tick deadline grows.** The default lane adds two workspace
   opens to the tick's budget, so `jig upgrade` lengthens the installed tick's
   deadline from its six-hour minimum to about 8h50m at the default

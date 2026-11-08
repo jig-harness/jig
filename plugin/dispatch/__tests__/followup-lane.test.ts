@@ -97,6 +97,7 @@ function followupRecord(
     record: {
       id,
       action: "followup",
+      repo: SLUG,
       pr: 50,
       item: null,
       workspace: { id: "w", path: "/tmp/ws" },
@@ -112,9 +113,18 @@ it("leaves a follow-up stuck pending out of the lane's cap, and counts one that 
   const s = state();
   s.machine = { ...s.machine, followupConcurrency: 1, unclaimedAfterMs: 1 };
   s.records = [followupRecord("stuck", "pending", "its marker is gone")];
-  expect(laneCapWait(s, listed)).toBeNull();
+  expect(laneCapWait(s, listed, SLUG)).toBeNull();
   s.records.push(followupRecord("runs", "alive"));
-  expect(laneCapWait(s, listed)).toContain("followup_concurrency");
+  expect(laneCapWait(s, listed, SLUG)).toContain("followup_concurrency");
+});
+
+it("counts a stuck follow-up of another repository, whose absence from this listing proves nothing", () => {
+  const s = state();
+  s.machine = { ...s.machine, followupConcurrency: 1, unclaimedAfterMs: 1 };
+  s.records = [followupRecord("stuck", "pending", "its marker is gone")];
+  expect(laneCapWait(s, listed, "owner/other")).toContain(
+    "followup_concurrency",
+  );
 });
 
 it("counts a stuck follow-up whose target has a session running, or whose sessions cannot be read", () => {
@@ -135,10 +145,10 @@ it("counts a stuck follow-up whose target has a session running, or whose sessio
     name: "",
   } as unknown as Extract<SessionsReport, { ok: true }>["workspaces"][number];
   expect(
-    laneCapWait(s, { ok: true, source: "orca", workspaces: [running] }),
+    laneCapWait(s, { ok: true, source: "orca", workspaces: [running] }, SLUG),
   ).toContain("followup_concurrency");
   expect(
-    laneCapWait(s, { ok: false, source: "orca", reason: "timed out" }),
+    laneCapWait(s, { ok: false, source: "orca", reason: "timed out" }, SLUG),
   ).toContain("followup_concurrency");
 });
 

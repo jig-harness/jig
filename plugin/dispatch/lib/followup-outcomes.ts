@@ -24,7 +24,7 @@ import { isMapping } from "../../shared/config-layers.ts";
 import { failureFields } from "../../shared/errors.ts";
 import { log } from "../../shared/log.ts";
 import type { ReadRecord } from "./launches.ts";
-import { routineClassOf } from "./routine-questions.ts";
+import { routineClassOf, routineQuestion } from "./routine-questions.ts";
 import { questionOf } from "./session.ts";
 import { stateDb } from "./state.ts";
 import { isRerun, retryableFollowup } from "./session-startup.ts";
@@ -86,13 +86,29 @@ function parseAsked(text: string | null, record: string): Asked {
       record,
       `it names launch record ${String(value.record)}`,
     );
+  const why = invalidAsked(value);
+  if (why !== null) return unreadAsked(record, why);
   return {
-    question: typeof value.question === "string" ? value.question : null,
+    question: value.question as string | null,
     ...(value.routine === undefined
       ? {}
-      : { routine: typeof value.routine === "string" ? value.routine : null }),
-    rerun: value.rerun === true,
+      : { routine: value.routine as string | null }),
+    rerun: value.rerun as boolean,
   };
+}
+
+/** Why a mapping in the `asked` column does not hold the fields a row keeps; `null` when it does. */
+function invalidAsked(value: Record<string, unknown>): string | null {
+  const { question, routine, rerun } = value;
+  if (question !== null && typeof question !== "string")
+    return "its question is neither text nor null";
+  if (typeof rerun !== "boolean")
+    return "it does not say whether the attempt was a run again";
+  const unlisted =
+    typeof routine !== "string" || routineQuestion(routine) === undefined;
+  if (routine !== undefined && routine !== null && unlisted)
+    return "its routine class is not in the registry";
+  return null;
 }
 
 /** The outcome records of `repo`, by pull request. */

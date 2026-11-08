@@ -1315,7 +1315,7 @@ registry in the dispatcher's code (`plugin/dispatch/lib/routine-questions.ts`),
 each with what it covers and its standing answer, and hold only
 housekeeping whose safe answer is to keep and list; the pass tags its own
 question from the list its prompt gives, and the dispatcher reads the tag
-and never classifies free text. There is one class: `local-leftover`, a
+and never classifies free text. The first class is `local-leftover`, a
 local branch or worktree the follow-up may not delete without asking,
 whose standing answer is to keep it, list it in the result, finish every
 other arm and record done. A follow-up that stopped on a routine question

@@ -28,6 +28,8 @@
  * together. Unlike a death's, a routine run again has no age limit.
  */
 import type { MarkedPr } from "./types.ts";
+import { stateDb } from "./state.ts";
+import { stateRoot } from "../receipts.ts";
 import {
   askedBy,
   type FollowupOutcome,
@@ -75,8 +77,13 @@ export function routineRerun(
         ? routineClassOf(question)
         : undefined;
   if (routine === null) return null;
-  // A failure from before passes tagged their questions keeps no word of whether it was itself a run again; only its launch record says, so without one it is a person's.
-  if (routine === undefined && found === undefined) return null;
+  // A failure from before passes tagged their questions keeps no word of whether it was itself a run again unless its row was given that evidence (`keepAsked`) before the marker went; otherwise only its launch record says, so without one it is a person's.
+  if (
+    routine === undefined &&
+    found === undefined &&
+    outcome.rerun === undefined
+  )
+    return null;
   return {
     record: outcome.record,
     standing: {
@@ -108,6 +115,25 @@ export function routineEnd(r: ReadRecord): boolean {
   );
 }
 
+/**
+ * Write what the launch record `found` asked into its outcome row, so the
+ * run again it owes survives the record's expiry; `false` when no row
+ * of that record exists.
+ */
+function keepAsked(repo: string, pr: number, found: ReadRecord): boolean {
+  const result = stateDb(stateRoot())
+    .query(
+      "UPDATE followup_outcomes SET asked = ? WHERE repo = ? AND pr = ? AND record = ?",
+    )
+    .run(
+      JSON.stringify({ record: found.record.id, ...askedBy(found) }),
+      repo,
+      pr,
+      found.record.id,
+    );
+  return result.changes > 0;
+}
+
 /** The trusted markers of this host's on a merged pull request that name `record`. */
 function ownMarkers(pr: MarkedPr, host: string, record: string): number[] {
   if ("unreadable" in pr.markers) return [];
@@ -120,6 +146,25 @@ function ownMarkers(pr: MarkedPr, host: string, record: string): number[] {
         (m.run.host === undefined || m.run.host === host),
     )
     .map((m) => m.id);
+}
+
+/**
+ * A failure from before passes tagged their questions: persist what its
+ * launch record says before the marker goes, so a record pruned later does
+ * not turn it into a first follow-up. Why that could not be done, else `null`.
+ */
+function keptBeforeRelease(
+  repo: string,
+  pr: number,
+  owed: RoutineRerun,
+  outcomes: ReadonlyMap<number, FollowupOutcome>,
+  records: readonly ReadRecord[],
+): string | null {
+  if (!owed.legacy || outcomes.get(pr)?.rerun !== undefined) return null;
+  const found = records.find((r) => r.record.id === owed.record);
+  return found !== undefined && keepAsked(repo, pr, found)
+    ? null
+    : `PR #${pr}: the recovery owed to the follow-up that stopped on a routine question could not be kept before its marker is released; the next tick tries again.`;
 }
 
 /**
@@ -140,6 +185,17 @@ export async function releaseRoutineMarkers(
     if (scope !== undefined && !scope.has(pr.number)) continue;
     const owed = routineRerun(outcomes.get(pr.number), records);
     if (owed === null) continue;
+    const kept = keptBeforeRelease(
+      ctx.slug,
+      pr.number,
+      owed,
+      outcomes,
+      records,
+    );
+    if (kept !== null) {
+      failures.push(kept);
+      continue;
+    }
     for (const id of ownMarkers(pr, ctx.host, owed.record)) {
       const released = await ctx.records.release(
         { repo: ctx.slug, pr: pr.number },

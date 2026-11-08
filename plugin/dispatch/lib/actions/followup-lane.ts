@@ -28,10 +28,14 @@ import type { ApplyState } from "./launch.ts";
  * cannot hold the lane until a person clears it. A stuck record whose
  * target has a session running, or whose sessions cannot be told, keeps its
  * place: that wrapper may run its stage without having claimed the record.
+ * `sessions` is the listing of repository `repo`, so it can show a target
+ * free only for that repository's records; a stuck record of another
+ * repository keeps its place.
  */
 export function laneCapWait(
   state: ApplyState,
   sessions: SessionsReport,
+  repo: string,
 ): string | null {
   const cap = state.machine.followupConcurrency;
   const clock = {
@@ -44,6 +48,7 @@ export function laneCapWait(
       r.record.action === "followup" &&
       holds(r.state) &&
       !(
+        r.record.repo === repo &&
         stuckWhy(r, clock) !== null &&
         holding(sessions, joinedTo(r.record)).kind === "free"
       ),
