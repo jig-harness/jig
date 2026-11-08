@@ -77,7 +77,7 @@ export const sendCommand = command(
   object({
     words: multiple(
       argument(string({ metavar: "WORD" }), {
-        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456), then the verb and its arguments. The verbs: assign (pickup); drive, answer <key> <text>, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); hold, release (drive, followup).`,
+        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456), then the verb and its arguments. The verbs: assign (pickup); drive, rearm, answer <key> <text>, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); hold, release (drive, followup).`,
       }),
     ),
     dryRun: option("--dry-run", {
@@ -138,6 +138,7 @@ async function planFor(
   const writesAs = `${login.value}, the login the forge client here is signed in as`;
   switch (request.verb) {
     case "drive":
+    case "rearm":
     case "hold":
     case "release":
       return planLabel(ctx, request.verb, writesAs);

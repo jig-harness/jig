@@ -206,6 +206,7 @@ async function applyStages(
       return again ?? null;
     },
     held: (pr) => labels !== null && hasCommand(labels, pr.labels, "hold"),
+    labelWrites: labels !== null,
     claimer: launchClaimer(inputs.shared),
     unplaced: inputs.unplaced,
   };

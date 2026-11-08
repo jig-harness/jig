@@ -14,8 +14,9 @@
  *   (`launchClaimer`); a launch another host's current claim holds is not
  *   started, and a claim that loses its attempt gives the record back.
  * - **A launch's end** is written onto its claim by the host that made it:
- *   by the wrapper, as soon as it records the stage's exit (`settleAtExit`),
- *   so another host reads the end when the launch ends; and by that host's
+ *   by the wrapper, after it records the stage's exit (`settleAtExit`) and
+ *   any explicit rearm request's label removal has been acknowledged,
+ *   so another host keeps the request reserved until then; and by that host's
  *   next tick with `--apply` for every claim whose launch record ended and
  *   still has none (`settleOwnClaims`), the backstop for a wrapper that died
  *   before its write and a forge that refused it. A claim whose record is
@@ -53,6 +54,7 @@ import {
 } from "../../shared/records/shared.ts";
 import { digest, localWriter } from "../../shared/records/writer.ts";
 import { stateRoot } from "../receipts.ts";
+import { pendingRearm } from "./rearm-state.ts";
 import { factsOf, settledConflict } from "./actions/drive-hold.ts";
 import type { LaunchClaimer } from "./actions/launch.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
@@ -270,7 +272,7 @@ export function foreignHold(
       why: `${claimWords(latest)} holds its launch: that host has not written its end`,
     };
   return (
-    refusedOn(pr, latest, "launched") ??
+    (pr.evidence.rearm === true ? null : refusedOn(pr, latest, "launched")) ??
     armedOrRedriven(pr, theirs) ?? { kind: "none" }
   );
 }
@@ -504,7 +506,7 @@ function launchDraft(
     earlier: record.redrive?.earlier ?? [],
     conflictStop: record.redrive?.conflictStop === true,
     ...(replay ? { replay } : {}),
-    refusals: [...DRIVER_REFUSAL_EXITS],
+    refusals: record.rearmLabel != null ? [] : [...DRIVER_REFUSAL_EXITS],
     writer: localWriter("forge", ctx.login),
   };
 }
@@ -547,7 +549,8 @@ function endOfRecord(
       reason: "its reservation was cancelled before execution",
       executed: false,
     };
-  if (holds(r.state)) return null;
+  // Other hosts must retain the reservation until the request label is removed.
+  if (holds(r.state) || pendingRearm(r.record, r.state)) return null;
   if (r.state.kind === "died")
     return { state: "died", at: nowIso, reason: r.state.reason };
   if (r.state.kind !== "ended") return null;

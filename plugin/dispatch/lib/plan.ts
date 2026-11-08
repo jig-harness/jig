@@ -48,7 +48,7 @@ import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
 import { conflictNote } from "./sources/ledgers.ts";
-import { workspaceOfTree } from "./stall-tree.ts";
+import { requestedTree, workspaceOfTree } from "./stall-tree.ts";
 import { planFollowups } from "./plan-followups.ts";
 import { planPickups } from "./plan-pickups.ts";
 import {
@@ -476,7 +476,7 @@ function planForeign(
  * sessions leave it as it reads, for the plan's own report of them.
  */
 function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
-  const tree = pr.stale?.tree;
+  const tree = pr.stale?.tree ?? requestedTree(pr);
   if (tree === undefined) return pr;
   if (!tree.here) return null;
   if (
