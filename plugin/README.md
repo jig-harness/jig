@@ -1216,6 +1216,12 @@ partial clone on a git that cannot be kept from fetching.
 
 ## Install the plugin
 
+**Planned setup channels.** A common shell and PowerShell bootstrap is the
+first planned addition, with an own Homebrew tap considered after validation.
+The [distribution design](https://github.com/jig-harness/jig/blob/main/design/distribution.md)
+records the order and update ownership. Until that setup path is built, use
+the marketplace commands below.
+
 Run these once per machine, in a terminal (not inside an agent session).
 They follow the `stable` [release channel](#release-channels), which
 receives a version once it has proven itself; put `latest` in place of
