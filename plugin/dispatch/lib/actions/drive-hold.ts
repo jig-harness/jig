@@ -44,6 +44,7 @@ import {
 } from "../recovery-facts.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
+  cancelledBeforeExecution,
   holds,
   isDrive,
   type ReadRecord,
@@ -250,12 +251,21 @@ export function settleSilentTakeovers(
 ): DrivenPr[] {
   return drives.map((pr) => {
     if (pr.class !== "silent") return pr;
+    // A driver a launch record started stays that record's to take over; the
+    // standing refusal, not this settlement, answers a takeover refused since.
+    const attributed = driveHold(
+      { ...pr, evidence: { ...pr.evidence, settled: true } },
+      records,
+    );
+    if (attributed.kind !== "none") return pr;
     const facts = factsOf(pr);
+    // A takeover cancelled before it ran never acted on the ledger.
     const mine = records.filter(
       (r) =>
         isDrive(r.record) &&
         r.record.pr === pr.number &&
-        r.record.action === "takeover",
+        r.record.action === "takeover" &&
+        !cancelledBeforeExecution(r),
     );
     if (mine.some((r) => holds(r.state))) return pr;
     const earlier = mine.findLast((r) => sameFacts(r.record.facts, facts));
