@@ -38,6 +38,8 @@ import { driverRuntime } from "./runtime.ts";
 
 import { measureStop } from "./stop-measure.ts";
 
+import { exportPolicyBase, policyBaseNotice } from "./policy-base.ts";
+
 import {
   currentAutonomy,
   describeAutonomy,
@@ -318,7 +320,10 @@ export async function readRoundBudget(
   console.error(
     `--- round ${round}/${context.maxRoundsN} on PR #${context.pr} ---`,
   );
+  const policyBase = await exportPolicyBase(context.pr);
   console.error(autonomyLine());
+  const policyNotice = policyBaseNotice(policyBase);
+  if (policyNotice !== null) console.error(policyNotice);
   console.error(reasonLine);
   process.stderr.write(await severityWarnings(context.pr));
 

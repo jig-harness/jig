@@ -142,20 +142,34 @@ export async function recordRuling(
 
 /**
  * Why a park of `key` under `parkClass` contradicts the arbiter's recorded
- * ruling, or `null` when it does not (or no ruling is recorded).
+ * ruling, or `null` when it does not (or no ruling is recorded). `classes`
+ * are the park classes in force now. A ruling whose class is no longer among
+ * them (recorded while the policy read, before it failed closed to the kept
+ * classes) may still be parked under `human-decision`: the class it names
+ * would be refused, and a refusal of both would leave the thread with no
+ * way to reach a person.
  */
 export function parkRefusal(
   s: DriveState,
   key: string,
   kind: string,
   parkClass: string,
+  classes: readonly string[],
+  unreadablePolicy = false,
 ): string | null {
   if (kind !== "thread") return null;
   const ruling = (s.rulings ?? []).find((r) => r.key === key);
   if (ruling === undefined) return null;
+  // An unreadable policy parks every decision under `human-decision`,
+  // whatever an earlier ruling recorded.
+  if (unreadablePolicy && parkClass === "human-decision") return null;
   if (ruling.verdict !== "escalate")
     return `the arbiter ruled '${ruling.verdict}' on ${key}: act on that ruling, or record a new one with 'rule' before parking`;
-  return ruling.class === parkClass
-    ? null
-    : `the arbiter ruled the class '${ruling.class}' for ${key}: park under that class, not '${parkClass}'`;
+  if (ruling.class === parkClass) return null;
+  if (
+    parkClass === "human-decision" &&
+    (ruling.class === undefined || !classes.includes(ruling.class))
+  )
+    return null;
+  return `the arbiter ruled the class '${ruling.class}' for ${key}: park under that class, not '${parkClass}'`;
 }
