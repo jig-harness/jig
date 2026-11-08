@@ -16,7 +16,7 @@ import {
   tmpRoot,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
-import { addOrigin, prBaseGh } from "./round-plan-fixtures.ts";
+import { prBaseGh } from "./round-plan-fixtures.ts";
 
 useDrivePrSuite();
 
@@ -27,7 +27,12 @@ const STALE = "f".repeat(40);
  * `base` as its `.config/jig.yaml`, and the working tree holds `head`. With
  * `withBase` false, `origin/develop` is missing from the clone.
  */
-function clone(base: string, head: string, withBase = true): string {
+function clone(
+  base: string,
+  head: string,
+  withBase = true,
+  reachable = true,
+): string {
   const dir = mkdtempSync(join(tmpRoot, "policy-base-"));
   const env = gitCleanEnv();
   const git = (...args: string[]) => {
@@ -57,11 +62,26 @@ function clone(base: string, head: string, withBase = true): string {
   writeFileSync(join(dir, ".config", "jig.yaml"), base);
   git("add", "-A");
   git("commit", "-qm", "base", "--no-verify");
-  if (withBase)
-    git("update-ref", "refs/remotes/origin/develop", git("rev-parse", "HEAD"));
+  const baseCommit = git("rev-parse", "HEAD");
+  if (withBase) git("update-ref", "refs/remotes/origin/develop", baseCommit);
   writeFileSync(join(dir, ".config", "jig.yaml"), head);
   git("commit", "-qam", "head", "--no-verify");
-  addOrigin(dir);
+  // The remote is a local repository whose path ends in the pull request's
+  // `acme/widgets`; the export's fetch reads the base from it, or finds
+  // nothing there.
+  const remote = join(
+    dir,
+    "..",
+    `${dir.split("/").pop()}-remote`,
+    "acme",
+    "widgets.git",
+  );
+  if (reachable) {
+    mkdirSync(remote, { recursive: true });
+    git("init", "-q", "--bare", remote);
+    git("push", "-q", remote, `${baseCommit}:refs/heads/develop`);
+  }
+  git("remote", "add", "origin", remote);
   return dir;
 }
 
@@ -147,5 +167,18 @@ describe("policy-base.ts", () => {
     expect(stderr).toContain("the policy fails closed");
     expect(line).toStartWith("autonomy: attended (");
     expect(line).toContain("parked under human-decision");
+  });
+
+  it("fails closed when the base cannot be fetched, rather than reading a stale ref", async () => {
+    const dir = clone(
+      "autonomy:\n  max_level: wide\n",
+      "autonomy:\n  level: wide\n  max_level: wide\n",
+      true,
+      false,
+    );
+    const { exported, stderr } = await exportIn(dir);
+    expect(exported).toBe("");
+    expect(stderr).toContain("cannot fetch origin/develop");
+    expect(stderr).toContain("the policy fails closed");
   });
 });

@@ -599,6 +599,11 @@ export function readPolicySnapshot(
   }
   const snapshot: PolicySnapshot = { from: "base", commit, values };
   try {
+    const section = values.autonomy;
+    if (section !== undefined && section !== null && !isMapping(section))
+      throw new AutonomyConfigError(
+        `autonomy must be a mapping: ${OVERLAY_RELPATH} at ${short(commit)} on the base branch`,
+      );
     snapshotCeiling(snapshot);
     classesIn(values);
   } catch (err) {

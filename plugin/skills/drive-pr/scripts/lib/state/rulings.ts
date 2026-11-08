@@ -155,10 +155,14 @@ export function parkRefusal(
   kind: string,
   parkClass: string,
   classes: readonly string[],
+  unreadablePolicy = false,
 ): string | null {
   if (kind !== "thread") return null;
   const ruling = (s.rulings ?? []).find((r) => r.key === key);
   if (ruling === undefined) return null;
+  // An unreadable policy parks every decision under `human-decision`,
+  // whatever an earlier ruling recorded.
+  if (unreadablePolicy && parkClass === "human-decision") return null;
   if (ruling.verdict !== "escalate")
     return `the arbiter ruled '${ruling.verdict}' on ${key}: act on that ruling, or record a new one with 'rule' before parking`;
   if (ruling.class === parkClass) return null;

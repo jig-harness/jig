@@ -14,7 +14,10 @@
  * closed.
  */
 import { POLICY_BASE_VARIABLE } from "../../../../../shared/autonomy.ts";
-import { consumerRoot } from "../../../../../shared/consumer.ts";
+import {
+  consumerRoot,
+  readRemoteName,
+} from "../../../../../shared/consumer.ts";
 import { freshPrBaseRef } from "../overlay.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "../proc.ts";
 
@@ -40,6 +43,42 @@ async function commitOf(
 }
 
 /**
+ * Bring the tracking ref `ref` (`refs/remotes/<remote>/<branch>`) up to the
+ * remote's current tip, or say why it could not: a policy read off a stale
+ * snapshot could still carry permission the base has since withdrawn.
+ */
+async function refreshTrackingRef(
+  root: string,
+  ref: string,
+): Promise<{ error: string } | null> {
+  const remote = readRemoteName(root);
+  if ("error" in remote) return remote;
+  const prefix = `refs/remotes/${remote.remote}/`;
+  if (!ref.startsWith(prefix)) return { error: `${ref} is not a tracking ref` };
+  const branch = ref.slice(prefix.length);
+  const r = await git(
+    [
+      "-C",
+      root,
+      "fetch",
+      "--quiet",
+      remote.remote,
+      `+refs/heads/${branch}:${ref}`,
+    ],
+    {
+      stderr: "pipe",
+      timeoutSec: gitCallTimeoutSeconds(),
+      env: gitIdentityEnv(),
+    },
+  );
+  return r.code === 0
+    ? null
+    : {
+        error: `cannot fetch ${remote.remote}/${branch}, so its current commit is unknown${r.stderrTail ? ` (${r.stderrTail.trim()})` : ""}`,
+      };
+}
+
+/**
  * Resolve pull request `pr`'s base-branch commit and export it as
  * `$DRIVE_PR_POLICY_BASE`; empty when it cannot be resolved. Returns the
  * commit, or the reason it could not be resolved, for the caller to print
@@ -50,7 +89,14 @@ export async function exportPolicyBase(
   root: string = consumerRoot(),
 ): Promise<{ commit: string } | { error: string }> {
   const base = await freshPrBaseRef(root, pr, gitCallTimeoutSeconds());
-  const resolved = "error" in base ? base : await commitOf(root, base.ref);
+  const fetched =
+    "error" in base ? null : await refreshTrackingRef(root, base.ref);
+  const resolved =
+    "error" in base
+      ? base
+      : fetched !== null
+        ? fetched
+        : await commitOf(root, base.ref);
   process.env[POLICY_BASE_VARIABLE] =
     "error" in resolved ? "" : resolved.commit;
   return resolved;

@@ -643,6 +643,11 @@ describe("reading the base branch's snapshot", () => {
         .from,
     ).toBe("unreadable");
     expect(read({ base: "autonomy: [unclosed\n" }).from).toBe("unreadable");
+    for (const base of ["autonomy: []\n", "autonomy: broken\n"])
+      expect(read({ base })).toMatchObject({
+        from: "unreadable",
+        reason: expect.stringContaining("autonomy must be a mapping"),
+      });
     expect(
       read({ base: "autonomy:\n  level: wide\n  max_level: attended\n" }),
     ).toMatchObject({

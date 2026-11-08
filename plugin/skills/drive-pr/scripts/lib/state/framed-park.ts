@@ -25,7 +25,10 @@
  * (`decide`'s human-call elaboration), which no script can judge.
  */
 import { isRecord } from "../../../../../shared/guards.ts";
-import { parkClasses } from "../../../../../shared/autonomy.ts";
+import {
+  parkClasses,
+  readPolicySnapshot,
+} from "../../../../../shared/autonomy.ts";
 import { fail, readStdinAll } from "../cli.ts";
 import { layeredConfig } from "../../../../../shared/consumer.ts";
 import type { DriveState, ParkedItem } from "./schema.ts";
@@ -262,7 +265,9 @@ export async function framedPark(
       2,
       "park no longer takes --reason: give --class and the decision record on stdin (drive-pr SKILL.md § 4).",
     );
-  const classes = parkClasses(layeredConfig());
+  const policy = readPolicySnapshot();
+  const classes = parkClasses(layeredConfig(), process.env, policy);
+  const unreadablePolicy = policy.from === "unreadable";
   if (a.parkClass === "" || !classes.includes(a.parkClass))
     fail(
       2,
@@ -291,6 +296,7 @@ export async function framedPark(
     a.kind,
     a.parkClass,
     classes,
+    unreadablePolicy,
   );
   if (refusal !== null) fail(2, `park: ${refusal}.`);
   const person = await resolveParkPerson(
@@ -300,7 +306,14 @@ export async function framedPark(
     a.paths[0] ?? "",
   );
   await store.update((s) => {
-    const refusal = parkRefusal(s, a.key, a.kind, a.parkClass, classes);
+    const refusal = parkRefusal(
+      s,
+      a.key,
+      a.kind,
+      a.parkClass,
+      classes,
+      unreadablePolicy,
+    );
     if (refusal !== null) fail(2, `park: ${refusal}.`);
     return parkedWith(s, a, record, person);
   });
