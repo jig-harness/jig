@@ -298,6 +298,8 @@ function backingOff(row: FailureRow, nowMs: number): string | null {
 export interface ActionBook {
   /** Why the action under `key` backs off now; `null` when it is due. */
   waits(key: string): string | null;
+  /** Whether a row stands under `key`: not cleared by a success or by its action leaving the plan this tick. */
+  standing(key: string): boolean;
   /** An attempt: `failure` its reason, `null` a success. */
   ran(of: Omit<FailureOf, "repo">, failure: string | null): void;
   /**
@@ -332,6 +334,7 @@ export function actionBook(
     for (const row of readFailures(repo, root)) rows.set(row.key, row);
   });
   return {
+    standing: (key) => rows.has(key),
     waits: (key) => {
       const row = rows.get(key);
       return row === undefined ? null : backingOff(row, Date.now());

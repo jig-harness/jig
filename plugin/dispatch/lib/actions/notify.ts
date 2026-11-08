@@ -267,6 +267,9 @@ function hours(ms: number): string {
     : `${Math.round(ms / 60_000)}m`;
 }
 
+/** The repository whose suppression record a repeat moves: a host failure's record stays where it was first told. */
+const repeatedAt = new WeakMap<Cause, string>();
+
 /** A cause sent again: its message says it still waits, and since when. */
 function asRepeat(
   cause: Cause,
@@ -276,11 +279,13 @@ function asRepeat(
 ): Cause {
   const [head = "", ...rest] = cause.notice.text.split("\n");
   const again = `Sent again: this still waits on a person as of ${new Date(nowMs).toISOString()}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
-  return {
+  const repeated = {
     ...cause,
-    repeat: true,
+    repeat: true as const,
     notice: { ...cause.notice, text: [head, again, ...rest].join("\n") },
   };
+  repeatedAt.set(repeated, record.repo);
+  return repeated;
 }
 
 function outcomeFor(
@@ -755,6 +760,17 @@ function notBackingOff(
   });
 }
 
+/** Whether a cause is not about an action whose failure row this tick's act phase has cleared. */
+function failureStands(book: ActionBook | null | undefined, c: Cause): boolean {
+  const row = c.evidence.row;
+  return (
+    book == null ||
+    c.cause !== "action-failing" ||
+    typeof row !== "string" ||
+    book.standing(row)
+  );
+}
+
 /** Drop the ledger's rows of the causes this tick no longer names, when every record read whole. */
 function wantedDeliveries(
   book: ActionBook | null | undefined,
@@ -847,15 +863,17 @@ async function sendNotices(
   report: RepoReport,
   sessions: SessionsReport,
   {
-    causes,
+    causes: planned,
     root,
     settings,
   }: { causes: Cause[]; root: string; settings: NoticeSettings },
 ): Promise<Set<string>> {
   const sent = readSuppressions(repo.slug, root);
   const hostSent = readHostSuppressions(root);
+  wantedDeliveries(settings.book, report, planned);
+  // The plan named a failing action's notice before the act phase found the action no longer wanted.
+  const causes = planned.filter((c) => failureStands(settings.book, c));
   prune(report, standingKeys(causes, root), sent, root);
-  wantedDeliveries(settings.book, report, causes);
   const nowMs = Date.now();
   const all: Cause[] = [];
   for (const c of causes) {
@@ -887,7 +905,7 @@ async function sendNotices(
     try {
       suppress(
         {
-          repo: repo.slug,
+          repo: repeatedAt.get(c) ?? repo.slug,
           target: c.target,
           key: c.notice.key,
           at,

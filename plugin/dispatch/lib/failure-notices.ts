@@ -119,7 +119,7 @@ function causeOf(
       since: row.firstAt,
       last: row.reason,
       ...(isActionKind(row.kind)
-        ? { next: new Date(row.nextAtMs).toISOString() }
+        ? { row: row.key, next: new Date(row.nextAtMs).toISOString() }
         : {}),
     },
     cause,

@@ -433,7 +433,12 @@ function planForeign(
   )
     return null;
   if (hold.kind === "unread") {
-    plan.unplaced.push({ target, record: "forge", reason: hold.why });
+    plan.unplaced.push({
+      target,
+      record: "forge",
+      reason: hold.why,
+      readFailed: true,
+    });
     return true;
   }
   const says = hold.claim.says.value;
@@ -513,15 +518,7 @@ function planDrive(
     return;
   }
   const hold = driveHold(pr, launches);
-  if (
-    !(
-      hold.kind === "refused" &&
-      pr.class === "stopped-unknown" &&
-      pr.evidence.noCause === true
-    ) &&
-    placedByHold(target, hold, plan)
-  )
-    return;
+  if (heldByRecord(target, pr, hold, plan)) return;
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
   // Another host's open takeover on these ledger facts holds the drive even
   // where this host's own record would take it over.
@@ -554,6 +551,23 @@ function planDrive(
     },
     (w) => w.prs.includes(pr.number),
   );
+}
+
+/** Whether a launch record placed a drive; a ledger that did not read is still said so, as the record does not decide that. */
+function heldByRecord(
+  target: string,
+  pr: DrivenPr,
+  hold: DriveHold,
+  plan: Plan,
+): boolean {
+  const stoppedWithoutCause =
+    hold.kind === "refused" &&
+    pr.class === "stopped-unknown" &&
+    pr.evidence.noCause === true;
+  if (stoppedWithoutCause || !placedByHold(target, hold, plan)) return false;
+  if (pr.class === "unplaced" && pr.readFailed === true)
+    plan.unplaced.push(unplacedDrive(target, pr));
+  return true;
 }
 
 /** Whether this machine's launch records placed a drive: held by a record, or quiet behind one. */

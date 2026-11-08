@@ -125,6 +125,16 @@ describe("a repository's book of its actions", () => {
     expect(failed).toEqual([]);
   });
 
+  it("says whether a row still stands, which a success or the planner dropping its key ends", () => {
+    const root = stateRootForTest();
+    const book = actionBook("o/r", SETTINGS, () => undefined, root);
+    expect(book.standing(LABEL.key)).toBe(false);
+    book.ran(LABEL, "refused");
+    expect(book.standing(LABEL.key)).toBe(true);
+    book.wanted("label", []);
+    expect(book.standing(LABEL.key)).toBe(false);
+  });
+
   it("keeps the rows of targets the tick did not observe when it drops the unwanted", () => {
     const root = stateRootForTest();
     const book = actionBook("o/r", SETTINGS, () => undefined, root);
@@ -191,6 +201,8 @@ describe("the failure ledger's notifications", () => {
     expect(cause?.notice?.text).toContain(
       "the next at 2026-11-06T10:36:00.000Z",
     );
+    // The act phase finds the action unwanted by this key.
+    expect(cause?.evidence.row).toBe("label PR #7");
   });
 
   it("sends the host's own failures to its first owned repository with notify whose turn is not failing", () => {

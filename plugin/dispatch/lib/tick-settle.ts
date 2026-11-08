@@ -221,7 +221,7 @@ function tickScope(
 
 /**
  * The rows of repositories the machine file no longer lists, and of their
- * wake-ups' ticks, go; so do the action rows of a repository no listed path
+ * wake-ups' ticks, go, and the sweep's once a single repository is listed; so do the action rows of a repository no listed path
  * names, when this tick read every listed path and so knows each one's slug.
  */
 function dropUnlisted(
@@ -241,8 +241,10 @@ function dropUnlisted(
     const gone =
       (row.kind === "repository" && !listed.has(resolve(row.repo))) ||
       (row.kind === "tick" &&
-        row.key !== "ticks sweep" &&
-        !listed.has(resolve(row.key.replace(/^ticks /, "")))) ||
+        (row.key === "ticks sweep"
+          ? // With one repository listed, every tick is that repository's own scope.
+            listed.size === 1
+          : !listed.has(resolve(row.key.replace(/^ticks /, ""))))) ||
       (known && isActionKind(row.kind) && !slugs.has(row.repo));
     if (gone) clearFailure(row.repo, row.key, root);
   }
@@ -286,23 +288,33 @@ export function settleFailures(
           root,
         );
     }
-    settleTick(receipt, context, root, nowMs);
+    const pending = settleTick(receipt, context, root, nowMs, false);
     dropUnlisted(machine, receipt, root);
-    reportFailures(receipt, root, settings, nowMs);
+    reportFailures(receipt, root, settings, nowMs, pending);
   } catch (error) {
     receipt.failuresUnwritten = failureText(error);
   }
 }
 
-/** The tick's own row for the exit as it stands: cleared at 0, counted at 1. */
+/**
+ * The tick's own row for the exit as it stands: counted at 1. At 0 it is
+ * cleared only once `final`: before the dashboard's line is written the
+ * exit may still become 1, and a streak cleared and begun again would hide
+ * a failure that never stops. The key of the row left pending, or `null`.
+ */
 function settleTick(
   receipt: TickReceipt,
   context: TickContext,
   root: string,
   nowMs: number,
-): void {
+  final: boolean,
+): string | null {
   const machine = context.options.machine as MachineConfig;
   const scope = tickScope(receipt, context.options.repos);
+  if (receipt.exitStatus === 0 && !final) {
+    delete context.tickSettledExit;
+    return scope.key;
+  }
   context.tickSettledExit = receipt.exitStatus;
   if (receipt.exitStatus === 0) clearFailure("", scope.key, root);
   else if (receipt.exitStatus === 1)
@@ -313,6 +325,7 @@ function settleTick(
       failureSettings(machine),
       root,
     );
+  return null;
 }
 
 /** Put the ledger's rows that back off or are notified on the receipt. */
@@ -321,8 +334,12 @@ function reportFailures(
   root: string,
   settings: ReturnType<typeof failureSettings>,
   nowMs: number,
+  pendingTick: string | null = null,
 ): void {
-  const rows = readFailures(undefined, root);
+  // The row of a tick that exits 0 so far goes at the end of the close, if the exit holds.
+  const rows = readFailures(undefined, root).filter(
+    (r) => !(r.kind === "tick" && r.key === pendingTick),
+  );
   const backingOff = rows.filter(
     (r) => isActionKind(r.kind) && r.nextAtMs > nowMs,
   );
@@ -336,9 +353,10 @@ function reportFailures(
 }
 
 /**
- * Count the tick again when its exit changed after `settleFailures` decided
- * it (the dashboard's line or its history failing sets it to 1): the tick's
- * row follows the exit the receipt ends with. The repositories' rows are
+ * Settle the tick's row for the exit the receipt ends with: `settleFailures`
+ * counts a tick that exits 1 and leaves a tick that exits 0 to this, which
+ * clears its row only once the dashboard's line or its history has not set
+ * the exit to 1. The repositories' rows are
  * counted once, by `settleFailures`.
  */
 export function finalizeTickFailure(
@@ -352,7 +370,7 @@ export function finalizeTickFailure(
   const root = context.apply?.root ?? stateRoot();
   const nowMs = Date.now();
   try {
-    settleTick(receipt, context, root, nowMs);
+    settleTick(receipt, context, root, nowMs, true);
     reportFailures(receipt, root, failureSettings(options.machine), nowMs);
   } catch (error) {
     receipt.failuresUnwritten = failureText(error);

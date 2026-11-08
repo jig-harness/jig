@@ -479,6 +479,7 @@ function planMerged(
       target,
       record: "forge",
       reason: `its follow-up markers could not be read: ${pr.markers.unreadable}`,
+      readFailed: true,
     });
     return;
   }
@@ -502,6 +503,7 @@ function planMerged(
       target,
       record: "forge",
       reason: `its follow-up marker (comment ${marker.id} by ${marker.login}) does not read: ${marker.run.reason}`,
+      readFailed: true,
     });
     return;
   }

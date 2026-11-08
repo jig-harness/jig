@@ -50,7 +50,19 @@ export function planObserved(
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
-  report.actions.push(...planFailureNotices(context, opened));
+  // A failing action on a held pull request, or one not known to be labelled, stands down with every other.
+  const failing = {
+    actions: planFailureNotices(context, opened),
+    held: [],
+    withheld: report.withheld ?? [],
+  };
+  holdBack(
+    failing,
+    observation.held ?? new Set(),
+    onlyLabeled ? forge.inScope : undefined,
+  );
+  report.withheld = failing.withheld;
+  report.actions.push(...failing.actions);
 }
 
 /** A record's execution state: a replay moves it without making a new record. */
