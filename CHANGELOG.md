@@ -387,6 +387,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.168.2] - 2026-11-08
+
+### Added
+
+- The install guide names the planned common setup path and the conditions for considering an own Homebrew tap, while keeping plugin installation and updates with the agent tool's marketplace.
+
 ## [0.168.1] - 2026-11-08
 
 ### Fixed
@@ -5986,7 +5992,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.168.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.168.2...HEAD
+[0.168.2]: https://github.com/jig-harness/jig/compare/v0.168.1...v0.168.2
 [0.168.1]: https://github.com/jig-harness/jig/compare/v0.168.0...v0.168.1
 [0.168.0]: https://github.com/jig-harness/jig/compare/v0.167.0...v0.168.0
 [0.167.0]: https://github.com/jig-harness/jig/compare/v0.166.0...v0.167.0
