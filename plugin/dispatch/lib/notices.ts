@@ -16,6 +16,7 @@
  */
 import { uniqueLogins } from "../../shared/forge-logins.ts";
 import { createHash } from "node:crypto";
+import { shellQuote } from "../../shared/cli.ts";
 import type { DrivenPr, Notice, RepoReport } from "./types.ts";
 
 const TAG = "[jig dispatch: ";
@@ -256,7 +257,7 @@ export function holderNotice(
     `${slug} ${busy.target}${HOLDER_KEY_MARK}${busy.branch} at ${busy.path}`,
     [
       `${busy.target}: the ${busy.stage} cannot open a workspace on ${busy.branch}, because the checkout at ${busy.path}, which the workspace runtime does not list, has that branch checked out and is in use: ${busy.reasons.join("; ")}.`,
-      `Once nothing keeps it busy, the next tick detaches it at its commit and opens the workspace. To free the branch yourself, finish or save the work there (commit and push it, or discard it) and end what runs in it, then run \`git -C ${busy.path} switch --detach\`, or remove it with \`git worktree remove ${busy.path}\`.`,
+      `Once nothing keeps it busy, the next tick detaches it at its commit and opens the workspace. To free the branch yourself, finish or save the work there (commit and push it, or discard it) and end what runs in it, then run \`git -C ${shellQuote(busy.path)} switch --detach\`, or remove it with \`git worktree remove ${shellQuote(busy.path)}\`.`,
     ],
     busy.url === null ? [] : [busy.url],
   );

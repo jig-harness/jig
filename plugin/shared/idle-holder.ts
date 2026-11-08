@@ -124,6 +124,12 @@ function unpushed(
   if (exists.status !== 0 && exists.status !== 1)
     return `whether ${remote}/${branch} exists cannot be read: ${output(exists)}`;
   const onRemote = exists.status === 0;
+  if (!onRemote) {
+    // The other tracking branches vouch for the commits only as the remote has them now.
+    const refreshed = git(["fetch", "--quiet", "--prune", remote]);
+    if (refreshed.status !== 0)
+      return `${remote}'s branches cannot be refreshed to tell whether they hold its commits: ${output(refreshed)}`;
+  }
   const counted = git(
     onRemote
       ? ["rev-list", "--count", "HEAD", "--not", ref]
@@ -205,7 +211,7 @@ function changes(git: Git): string | null {
 
 /** Why index flags may hide a change, or `null`. */
 function hiddenChanges(git: Git): string | null {
-  const flags = git(["ls-files", "-v", "-z"]);
+  const flags = git(["ls-files", "-v", "-z", "--recurse-submodules"]);
   if (flags.status !== 0)
     return `its index flags cannot be read: ${output(flags)}`;
   return hidesIndexChanges(flags.stdout)
@@ -273,9 +279,10 @@ function gitReasons(
 
 /**
  * Whether the worktree at `check.path` is idle and may be detached from
- * `check.branch`; what keeps it busy when it is not. Read-only: it fetches
- * nothing, so the caller refreshes `<remote>/<branch>` first when a stale
- * copy would matter (a stale one can only make the holder look busy). Once
+ * `check.branch`; what keeps it busy when it is not. It changes the working
+ * tree and index not at all: the caller refreshes `<remote>/<branch>` first,
+ * and only when the remote lacks that branch does the check refresh the
+ * remote's other tracking branches, which then vouch for the commits. Once
  * the caller's time limit has passed, the runner's error is thrown.
  */
 export function holderVerdict(ctx: Context, check: HolderCheck): HolderVerdict {

@@ -46,6 +46,18 @@ describe("holderActions", () => {
     expect(action?.notice?.text).toContain(`https://github.com/${SLUG}/pull/7`);
   });
 
+  test("quotes the checkout's path in the commands it tells a person to run", () => {
+    const odd = "/work/my tree; $(touch x)";
+    const [action] = holderActions(SLUG, [
+      { ...refusedLaunch, holder: { ...holder, path: odd } },
+    ]);
+    const text = action?.notice?.text ?? "";
+    expect(text).toContain(
+      "git -C '/work/my tree; $(touch x)' switch --detach",
+    );
+    expect(text).toContain("git worktree remove '/work/my tree; $(touch x)'");
+  });
+
   test("ignores a launch no holder refused", () => {
     const { holder: _, ...plain } = refusedLaunch;
     expect(holderActions(SLUG, [plain])).toEqual([]);
@@ -60,6 +72,16 @@ describe("holderRecordStands", () => {
   test("stands while its target's launch waited before the open", () => {
     expect(
       holderRecordStands({ launches: [waiting] }, { key, target: "PR #7" }),
+    ).toBe(true);
+  });
+
+  test("stands while its target's launch was refused without seeing a holder", () => {
+    const refusedPlain: LaunchOutcome = { ...plain, outcome: "refused" };
+    expect(
+      holderRecordStands(
+        { launches: [refusedPlain] },
+        { key, target: "PR #7" },
+      ),
     ).toBe(true);
   });
 

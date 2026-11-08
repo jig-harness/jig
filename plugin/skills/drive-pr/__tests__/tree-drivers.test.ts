@@ -135,4 +135,20 @@ out.push(treeDrivers(tree));`,
       /^the clone's drive state directory .+ has no database .+state\.sqlite beside it$/,
     );
   });
+
+  test("cannot tell for a clone with a drive identity and no state at this root", () => {
+    const cwd = repo("elsewhere");
+    const [answer] = run(
+      cwd,
+      `const s = await openStore("7");
+const { rmSync } = await import("node:fs");
+const { dbPathFor } = await import(${JSON.stringify(join(lib, "state/db.ts"))});
+rmSync(dbPathFor(s.stateDir), { force: true });
+rmSync(s.stateDir, { recursive: true, force: true });
+out.push(treeDrivers(tree));`,
+    ) as { unreadable: string }[];
+    expect(answer?.unreadable).toMatch(
+      /^the clone has a drive identity but no drive state under /,
+    );
+  });
 });

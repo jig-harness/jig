@@ -96,7 +96,12 @@ describe("jig dispatch with a checkout Orca does not list holding the head branc
         },
       },
     ]);
-    expect(launches(first)[0]?.detail).toContain("a person is notified");
+    expect(launches(first)[0]?.detail).toContain(
+      "it has uncommitted or untracked changes",
+    );
+    expect(launches(first)[0]?.detail).toContain(
+      "a notice to a person follows",
+    );
     expect(notifications(first)).toMatchObject([
       { target: "PR #7", cause: "needs-person", key, outcome: "sent" },
     ]);

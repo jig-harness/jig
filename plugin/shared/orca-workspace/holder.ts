@@ -46,7 +46,9 @@ export class BusyHolderError extends OrcaError {
 /**
  * Detach the checkout at `path` from `branch`, only while its `HEAD` is still
  * at `head`, the commit the idle check read: `git update-ref` with that
- * commit as the old value refuses a `HEAD` that moved. The working tree and
+ * commit as the old value refuses a `HEAD` that moved, and a `HEAD` read
+ * just before it must still name `branch`, so a holder that switched to
+ * another branch at the same commit is left alone. The working tree and
  * index are untouched, which the same commit makes right, and no hook runs.
  */
 function detachAt(
@@ -55,6 +57,21 @@ function detachAt(
   path: string,
   head: string,
 ): void {
+  const current = port.host.run([
+    "git",
+    "-C",
+    path,
+    "symbolic-ref",
+    "--quiet",
+    "HEAD",
+  ]);
+  if (current.status !== 0 || current.stdout.trim() !== `refs/heads/${branch}`)
+    throw new BusyHolderError(
+      branch,
+      path,
+      ["its checked-out branch changed during the check"],
+      port.where,
+    );
   const detached = port.host.run([
     "git",
     "-c",

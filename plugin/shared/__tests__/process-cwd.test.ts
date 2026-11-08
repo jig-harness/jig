@@ -53,6 +53,17 @@ describe("parseCwdListing", () => {
   });
 });
 
+describe("parseCwdListing lsof escapes", () => {
+  test("matches a tree whose name lsof printed with byte escapes", () => {
+    expect(
+      parseCwdListing(
+        "p10\nfcwd\nn/w/caf\\xc3\\xa9/x\np11\nfcwd\nn/w/other\n",
+        "/w/café",
+      ),
+    ).toEqual({ pids: ["10"], unread: [] });
+  });
+});
+
 describe("cwdHolders", () => {
   test("answers from a clean listing", () => {
     const { run } = runner(result(0, "/proc/1\t/\n/proc/2\t/w/holder/a\n"));

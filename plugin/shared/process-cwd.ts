@@ -28,6 +28,29 @@ function inside(cwd: string, top: string): boolean {
   return cwd === top || cwd.startsWith(top.endsWith("/") ? top : `${top}/`);
 }
 
+/** lsof's name field with its `\xHH` byte escapes (and `\\`) undone, read as UTF-8. */
+function unescapeLsof(name: string): string {
+  if (!name.includes("\\")) return name;
+  const bytes: number[] = [];
+  const encoder = new TextEncoder();
+  for (let i = 0; i < name.length; ) {
+    const hex = /^\\x([0-9a-fA-F]{2})/.exec(name.slice(i, i + 4));
+    if (hex !== null) {
+      bytes.push(Number.parseInt(hex[1] as string, 16));
+      i += 4;
+    } else if (name.startsWith("\\\\", i)) {
+      bytes.push(0x5c);
+      i += 2;
+    } else {
+      const point = name.codePointAt(i) as number;
+      const char = String.fromCodePoint(point);
+      bytes.push(...encoder.encode(char));
+      i += char.length;
+    }
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
 /** The listing's pids working in `top`, and the pids whose directory it could not read. */
 export function parseCwdListing(
   listing: string,
@@ -45,7 +68,11 @@ export function parseCwdListing(
       continue;
     }
     if (line.startsWith("p")) pid = line.slice(1);
-    else if (line.startsWith("n") && pid !== null && inside(line.slice(1), top))
+    else if (
+      line.startsWith("n") &&
+      pid !== null &&
+      (inside(line.slice(1), top) || inside(unescapeLsof(line.slice(1)), top))
+    )
       pids.push(pid);
   }
   return { pids: [...new Set(pids)], unread };

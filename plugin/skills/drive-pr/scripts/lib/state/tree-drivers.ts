@@ -42,11 +42,11 @@ export function treeDrivers(tree: HeldTree): string[] | { unreadable: string } {
     const stateDir = stateDirOfClone(key);
     const path = dbPathFor(stateDir);
     if (!existsSync(path))
-      return existsSync(stateDir)
-        ? {
-            unreadable: `the clone's drive state directory ${stateDir} has no database ${path} beside it`,
-          }
-        : [];
+      return {
+        unreadable: existsSync(stateDir)
+          ? `the clone's drive state directory ${stateDir} has no database ${path} beside it`
+          : `the clone has a drive identity but no drive state under ${stateDir}, where a drive using another state root would not leave any`,
+      };
     if (peekImport(stateDir) === null)
       return {
         unreadable: `the drive's database ${path} has not read this clone's state in yet`,

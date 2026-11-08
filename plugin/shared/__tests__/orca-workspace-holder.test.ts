@@ -119,6 +119,28 @@ describe("openBranch with a checkout Orca does not list holding the branch", () 
     expect(orca.some((args) => args[1] === "create")).toBe(false);
   });
 
+  test("leaves a holder that switched to another branch at the same commit after the check", () => {
+    const { root, clone, holder } = heldTree();
+    let symbolicReads = 0;
+    const { port } = portOf(
+      root,
+      clone,
+      () => [],
+      (ctx) => ({
+        ...ctx,
+        run: (argv, options) => {
+          // The idle check reads the branch first; the detach reads it again.
+          if (argv.includes("symbolic-ref") && ++symbolicReads === 2)
+            git(holder, "switch", "-q", "-c", "other");
+          return ctx.run(argv, options);
+        },
+      }),
+    );
+    expect(() => open(port, clone)).toThrow(BusyHolderError);
+    expect(symbolic(holder)).toBe("other");
+    expect(git(holder, "branch", "--list", "other")).toContain("other");
+  });
+
   test("leaves a holder whose head moved after the check, and refuses it as busy", () => {
     const { root, clone, holder } = heldTree();
     const head = git(holder, "rev-parse", "HEAD");

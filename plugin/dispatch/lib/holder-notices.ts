@@ -9,8 +9,9 @@
  * notice.
  *
  * The cause is seen only by a tick whose launch reached the workspace open.
- * A tick whose launch of the same target waited before it (no admitting
- * account, the open budget, the deadline) has not seen the holder leave, so
+ * A tick whose launch of the same target waited or was refused before it
+ * saw the holder (no admitting account, the open budget, the deadline, an
+ * identity check, a probe timeout) has not seen the holder leave, so
  * its record stands (`holderRecordStands`); it is dropped once the launch
  * opens its workspace, or the target is no longer planned.
  */
@@ -58,8 +59,9 @@ export function holderActions(
 export function holderRefusal(holder: {
   path: string;
   branch: string;
+  reasons: string[];
 }): string {
-  return `waits on a person: the checkout at ${holder.path}, which the workspace runtime does not list, holds ${holder.branch} and is in use; a person is notified with what keeps it busy`;
+  return `waits on a person: the checkout at ${holder.path}, which the workspace runtime does not list, holds ${holder.branch} and is in use: ${holder.reasons.join("; ")}; a notice to a person follows where notifications are enabled`;
 }
 
 /** Whether a busy holder's suppression record stands although its cause is absent: its target's launch waited this tick before it could reach the open. */
@@ -70,7 +72,10 @@ export function holderRecordStands(
   return (
     record.key.includes(HOLDER_KEY_MARK) &&
     report.launches.some(
-      (l) => l.target === record.target && l.outcome === "waits",
+      (l) =>
+        l.target === record.target &&
+        (l.outcome === "waits" ||
+          (l.outcome === "refused" && l.holder === undefined)),
     )
   );
 }

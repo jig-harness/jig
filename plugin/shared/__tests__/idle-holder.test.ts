@@ -72,6 +72,33 @@ describe("holderVerdict", () => {
     ]);
   });
 
+  test("an index flag hiding a change inside a submodule keeps it busy", () => {
+    const { root, holder } = heldTree();
+    const sub = join(root, "sub-origin");
+    mkdirSync(sub);
+    git(sub, "init", "-q", "-b", "main");
+    writeFileSync(join(sub, "inner.txt"), "one\n");
+    git(sub, "add", "inner.txt");
+    git(sub, "commit", "-q", "-m", "inner");
+    git(
+      holder,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      "-q",
+      sub,
+      "mod",
+    );
+    git(holder, "commit", "-q", "-m", "add submodule");
+    git(holder, "push", "-q", "origin", `HEAD:refs/heads/${BRANCH}`);
+    git(join(holder, "mod"), "update-index", "--assume-unchanged", "inner.txt");
+    writeFileSync(join(holder, "mod", "inner.txt"), "hidden\n");
+    expect(reasons(holder)).toEqual([
+      "assume-unchanged or skip-worktree flags hide possible changes from git status",
+    ]);
+  });
+
   for (const marker of GIT_OPERATION_MARKERS)
     test(`an unfinished operation (${marker}) keeps it busy`, () => {
       const { holder, admin } = heldTree();
@@ -98,6 +125,22 @@ describe("holderVerdict", () => {
     ]);
     git(holder, "push", "-q", "origin", `HEAD:refs/heads/elsewhere`);
     expect(verdict(holder).idle).toBe(true);
+  });
+
+  test("a cached tracking branch the remote no longer has does not vouch for its commits", () => {
+    const { clone, holder } = heldTree();
+    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    git(clone, "fetch", "-q", "--prune", "origin");
+    // A branch deleted or force-pushed away on origin, still cached locally.
+    git(
+      clone,
+      "update-ref",
+      "refs/remotes/origin/elsewhere",
+      git(holder, "rev-parse", "HEAD"),
+    );
+    expect(reasons(holder)).toEqual([
+      `1 commit(s) on no origin branch, and origin has no ${BRANCH}`,
+    ]);
   });
 
   test("a live driver or lease keeps it busy, and one that cannot be read does too", () => {
