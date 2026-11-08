@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { isMapping } from "../shared/config-layers.ts";
 import { errnoCode } from "../shared/errors.ts";
+import { withFileLock } from "../shared/file-lock.ts";
 import {
   decodeIdentity,
   isAliveSync,
@@ -103,6 +104,44 @@ export function writeStamp(
     path,
     `${JSON.stringify({ ...bounded(stamp), version: STAMP_VERSION, pid: holder.pid, holder })}\n`,
   );
+}
+
+/** Whether `stamp` is a `running` claim made by this process. */
+export function ownsClaim(read: StampRead): boolean {
+  if (!("stamp" in read) || read.stamp.outcome !== "running") return false;
+  const own = ownIdentity();
+  return (
+    read.stamp.pid === own.pid &&
+    JSON.stringify(read.stamp.holder) === JSON.stringify(own)
+  );
+}
+
+/** Whether `read` is another process's `running` claim whose holder is still alive (or cannot be judged). */
+export function liveForeignClaim(read: StampRead): boolean {
+  if (!("stamp" in read) || read.stamp.outcome !== "running") return false;
+  return !ownsClaim(read) && !holderOf(read.stamp).gone;
+}
+
+/**
+ * Writes `stamp` under the lock that claims an interval, and only when `may`
+ * allows it given the stamp standing then, so a write is fenced to the claim
+ * it answers. False when the lock was not taken or `may` refused.
+ */
+export async function writeStampWhen(
+  stamp: Omit<UpgradeStamp, "pid" | "holder" | "version">,
+  may: (standing: StampRead) => boolean,
+): Promise<boolean> {
+  const root = upgradeStateRoot();
+  const taken = await withFileLock(
+    stampPath(root),
+    async () => {
+      if (!may(readStamp(stampPath(root)))) return false;
+      writeStamp(stamp, stampPath(root));
+      return true;
+    },
+    { root, name: "claim" },
+  );
+  return taken?.value ?? false;
 }
 
 /**

@@ -106,7 +106,7 @@ test("a job takes the launcher's upgrade out of its environment, and records a l
 test("a detail is held to its limit, keeping its start and its end", () => {
   const long = `start ${"x".repeat(300_000)} end`;
   const held = capped(long);
-  expect(held.length).toBeLessThanOrEqual(DETAIL_LIMIT + 60);
+  expect(held.length).toBeLessThanOrEqual(DETAIL_LIMIT);
   expect(held.startsWith("start ")).toBe(true);
   expect(held.endsWith(" end")).toBe(true);
   expect(held).toContain("characters left out");

@@ -457,11 +457,11 @@ function isResult(value: unknown): value is { detail: string } {
 }
 
 /**
- * The result line the upgrade printed last, or a failed one when that line
+ * The result line the upgrade printed last (with its detail), or a failed one when that line
  * is JSON but not a result or too long to pass on; null when its last line is
  * not JSON at all.
  */
-function resultLine(stdout: string): string | null {
+function resultLine(stdout: string): { text: string; detail: string } | null {
   const line = stdout.trim().split("\n").at(-1) ?? "";
   let value: unknown;
   try {
@@ -474,15 +474,23 @@ function resultLine(stdout: string): string | null {
     return null;
   }
   if (!isResult(value))
-    return failedUpgrade(
-      `jig upgrade --scheduled printed a result that does not read: ${line}`,
-    );
+    return {
+      text: failedUpgrade(
+        `jig upgrade --scheduled printed a result that does not read: ${line}`,
+      ),
+      detail: line,
+    };
   const text = JSON.stringify(value);
-  return text.length <= RESULT_LIMIT
-    ? text
-    : failedUpgrade(
-        `jig upgrade --scheduled printed a result of ${text.length} characters, more than the ${RESULT_LIMIT} a job is passed: ${value.detail}`,
-      );
+  const bytes = Buffer.byteLength(text, "utf8");
+  return {
+    text:
+      bytes <= RESULT_LIMIT
+        ? text
+        : failedUpgrade(
+            `jig upgrade --scheduled printed a result of ${bytes} bytes, more than the ${RESULT_LIMIT} a job is passed: ${value.detail}`,
+          ),
+    detail: value.detail,
+  };
 }
 
 /** What the supervised upgrade came to, as its result line. */
@@ -496,11 +504,14 @@ function upgradeResult(outcome: Outcome, deadlineMs: number): string {
     return failedUpgrade("jig upgrade --scheduled printed more than 4 MiB");
   if (stopped) throw new LauncherStopped(`received ${stopped}`);
   const said = clip(stderr.trim().split("\n").at(-1) ?? "", 500);
-  return (
-    resultLine(stdout) ??
-    failedUpgrade(
+  const printed = resultLine(stdout);
+  if (printed === null)
+    return failedUpgrade(
       `jig upgrade --scheduled exited ${code} without a result${said ? `: ${said}` : ""}`,
-    )
+    );
+  if (code === 0) return printed.text;
+  return failedUpgrade(
+    `jig upgrade --scheduled exited ${code} after printing a result: ${printed.detail}`,
   );
 }
 

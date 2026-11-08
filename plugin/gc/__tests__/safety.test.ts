@@ -177,7 +177,9 @@ test("the install lock takes over a writer whose holder was killed while it held
     [
       process.execPath,
       "-e",
-      `const { exclusiveInstallLock } = await import(${JSON.stringify(lock)}); await exclusiveInstallLock(async () => process.exit(0), ${JSON.stringify(dir)});`,
+      "const [lock, dir] = process.argv.slice(1); const { exclusiveInstallLock } = await import(lock); await exclusiveInstallLock(async () => process.exit(0), dir);",
+      lock,
+      dir,
     ],
     { stdout: "pipe", stderr: "pipe" },
   );

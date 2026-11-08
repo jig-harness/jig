@@ -56,7 +56,9 @@ import {
   stampPath,
   stillRunning,
   upgradeStateRoot,
+  ownsClaim,
   writeStamp,
+  writeStampWhen,
 } from "./upgrade-stamp.ts";
 
 type Result = Omit<ScheduledUpgrade, "at">;
@@ -322,8 +324,17 @@ async function scheduledUpgrade(
   }
   const upgrade = bounded({ ...result, at });
   try {
-    writeStamp(upgrade);
-    return upgrade;
+    // Fenced to this attempt's claim: a stamp another process has written since stands.
+    const written = await writeStampWhen(
+      upgrade,
+      (standing) => ownsClaim(standing) || !("stamp" in standing),
+    );
+    return written
+      ? upgrade
+      : bounded({
+          ...upgrade,
+          detail: `${upgrade.detail}; the stamp was left as another upgrade wrote it`,
+        });
   } catch (error) {
     // The attempt's own outcome stands; the next one is due once this process is gone.
     return bounded({

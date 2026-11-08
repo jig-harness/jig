@@ -69,7 +69,11 @@ export function capped(text: string, limit = DETAIL_LIMIT): string {
   if (text.length <= limit) return text;
   const head = Math.floor(limit * 0.6);
   const tail = Math.floor(limit * 0.3);
-  return `${text.slice(0, head)} … (${text.length - head - tail} characters left out) … ${text.slice(-tail)}`;
+  const marker = ` … (${text.length - head - tail} characters left out) … `;
+  const room = Math.max(0, limit - marker.length);
+  const keptHead = Math.ceil(room * 0.67);
+  const keptTail = room - keptHead;
+  return `${text.slice(0, keptHead)} … (${text.length - keptHead - keptTail} characters left out) … ${keptTail > 0 ? text.slice(-keptTail) : ""}`;
 }
 
 /** The upgrade with its `detail` held to `DETAIL_LIMIT`. */
@@ -91,7 +95,13 @@ export function isScheduledUpgrade(value: unknown): value is ScheduledUpgrade {
 
 /** The upgrade's line in a receipt: `0.114.0 -> 0.115.0`, or the outcome and why. */
 export function upgradeLine(upgrade: ScheduledUpgrade): string {
-  if (upgrade.outcome === "updated" && upgrade.from && upgrade.to)
+  // `from`/`to` name the first harness's move; more than one move is in `detail`.
+  if (
+    upgrade.outcome === "updated" &&
+    upgrade.from &&
+    upgrade.to &&
+    upgrade.detail.split(" -> ").length <= 2
+  )
     return `${upgrade.from} -> ${upgrade.to}`;
   return `${upgrade.outcome}: ${upgrade.detail}`;
 }

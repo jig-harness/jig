@@ -21,6 +21,7 @@ import { randomUUID } from "node:crypto";
 import {
   mkdirSync,
   readdirSync,
+  linkSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -138,17 +139,25 @@ function admissionRefusal(kind: string, dir: string, names: string[]): string {
   return `gc ${kind}: ${parts.join("; ")}`;
 }
 
-/** Creates the writer file holding this process's identity; false when one exists. */
+/**
+ * Creates the writer file holding this process's identity; false when one
+ * exists. The identity is written to a private file and linked into place, so
+ * a process killed mid-write leaves no empty or partial writer to refuse.
+ */
 function publishWriter(writer: string): boolean {
+  const staged = `${writer}.init-${process.pid}-${randomUUID()}`;
   try {
-    writeFileSync(writer, encodeIdentity(ownIdentity()), {
+    writeFileSync(staged, encodeIdentity(ownIdentity()), {
       flag: "wx",
       mode: 0o600,
     });
+    linkSync(staged, writer);
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     return false;
+  } finally {
+    rmSync(staged, { force: true });
   }
 }
 

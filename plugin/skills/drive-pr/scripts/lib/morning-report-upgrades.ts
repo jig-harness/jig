@@ -61,14 +61,18 @@ function upgradesOf(
   since: number,
   roots: ReceiptRoots,
   unread: string[],
-): Array<[string, unknown]> {
+): Array<[string, unknown, string | undefined]> {
   const first = Number.isFinite(since)
     ? new Date(since - 86_400_000).toISOString().slice(0, 10)
     : "";
-  const found: Array<[string, unknown]> = [];
+  const found: Array<[string, unknown, string | undefined]> = [];
   /** Each job: its receipts' paths, and a receipt read, or why it does not read. */
   const jobs: Array<
-    [string, () => string[], (path: string) => { upgrade?: unknown } | string]
+    [
+      string,
+      () => string[],
+      (path: string) => { upgrade?: unknown; finishedAt?: string } | string,
+    ]
   > = [
     [
       "gc",
@@ -103,7 +107,7 @@ function upgradesOf(
       if (typeof receipt === "string")
         unread.push(`the ${job} receipt ${path} does not read (${receipt})`);
       else if (receipt.upgrade !== undefined)
-        found.push([job, receipt.upgrade]);
+        found.push([job, receipt.upgrade, receipt.finishedAt]);
     }
   }
   return found;
@@ -149,10 +153,13 @@ function count(
 function listed(
   upgrade: ScheduledUpgrade,
   since: number,
+  published: string | undefined,
 ): upgrade is ScheduledUpgrade & { outcome: "updated" | "failed" } {
   return (
     (upgrade.outcome === "updated" || upgrade.outcome === "failed") &&
-    Date.parse(upgrade.at) >= since
+    // The receipt's publication, not the attempt's start: a receipt written
+    // after one report ran is new to the next, whenever its upgrade began.
+    Date.parse(published ?? upgrade.at) >= since
   );
 }
 
@@ -164,10 +171,10 @@ export function upgradesSince(
   const unread: string[] = [];
   const tally: Tally = { entries: new Map(), attempts: new Set() };
   const entries = tally.entries;
-  for (const [job, upgrade] of upgradesOf(since, roots, unread)) {
+  for (const [job, upgrade, published] of upgradesOf(since, roots, unread)) {
     if (!isScheduledUpgrade(upgrade))
       unread.push(`a ${job} receipt holds an upgrade that does not read`);
-    else if (listed(upgrade, since)) count(tally, job, upgrade);
+    else if (listed(upgrade, since, published)) count(tally, job, upgrade);
   }
   return {
     entries: [...entries.values()].sort((a, b) => a.at.localeCompare(b.at)),

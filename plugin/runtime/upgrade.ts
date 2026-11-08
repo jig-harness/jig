@@ -43,7 +43,7 @@ import {
   refreshInstalled,
 } from "./refresh.ts";
 import { installedScript, pluginPrograms } from "./scheduler.ts";
-import { writeStamp } from "./upgrade-stamp.ts";
+import { liveForeignClaim, writeStampWhen } from "./upgrade-stamp.ts";
 
 /** What `jig upgrade` did: each harness, then each installed job and the `jig` command. */
 interface UpgradeResult {
@@ -269,27 +269,31 @@ function report(result: UpgradeResult, say: Say): void {
  * interval's upgrade: its stamp clears a failed scheduled one, as `jig
  * doctor`'s fix says, and the timers wait `upgrade.every` from it.
  */
-function stampManual(result: UpgradeResult): void {
+async function stampManual(result: UpgradeResult): Promise<void> {
   const current = result.harnesses.filter(
     (h) => h.outcome === "updated" || h.outcome === "unchanged",
   );
   if (current.length === 0) return;
   const moved = current.find((h) => h.outcome === "updated");
   try {
-    writeStamp({
-      outcome: moved === undefined ? "unchanged" : "updated",
-      detail: `jig upgrade, run by a person: ${current
-        .map((h) =>
-          h.outcome === "updated"
-            ? `${h.harness} ${h.before} -> ${h.version}`
-            : `${h.harness} at ${h.version}`,
-        )
-        .join("; ")}`,
-      at: new Date().toISOString(),
-      ...(moved?.before !== undefined && moved.version !== undefined
-        ? { from: moved.before, to: moved.version }
-        : {}),
-    });
+    // Not over a scheduled upgrade still running: its claim and its result stand.
+    await writeStampWhen(
+      {
+        outcome: moved === undefined ? "unchanged" : "updated",
+        detail: `jig upgrade, run by a person: ${current
+          .map((h) =>
+            h.outcome === "updated"
+              ? `${h.harness} ${h.before} -> ${h.version}`
+              : `${h.harness} at ${h.version}`,
+          )
+          .join("; ")}`,
+        at: new Date().toISOString(),
+        ...(moved?.before !== undefined && moved.version !== undefined
+          ? { from: moved.before, to: moved.version }
+          : {}),
+      },
+      (standing) => !liveForeignClaim(standing),
+    );
   } catch (error) {
     console.error(
       `jig upgrade: the upgrade stamp could not be written: ${(error as Error).message}`,
@@ -314,6 +318,6 @@ export async function upgradeVerb(
   if (args.json) console.log(JSON.stringify(result, null, 2));
   else report(result, say);
   const code = upgradeExit(result, args.jobsOnly);
-  if (code === 0 && !args.jobsOnly) stampManual(result);
+  if (code === 0 && !args.jobsOnly) await stampManual(result);
   return code;
 }
