@@ -18,17 +18,21 @@
  * `$DRIVE_PR_POLICY_BOUND`, and the layer below can only narrow what that
  * policy allows. It is unset when the base is the integration branch. The
  * integration branch is never read from the checkout's own
- * `repository.base_branch`, which the pull request could set to its own base.
+ * `repository.base_branch`, which the pull request could set to its own base:
+ * it is the `repository.base_branch` the repository's default branch commits
+ * (reviewed policy), else that default branch itself.
  */
 import {
   POLICY_BASE_VARIABLE,
   POLICY_BOUND_VARIABLE,
+  readSnapshotAt,
 } from "../../../../../shared/autonomy.ts";
 import {
   consumerRoot,
   readRemoteName,
 } from "../../../../../shared/consumer.ts";
 import { baseBranch, freshPrBaseRef } from "../overlay.ts";
+import { isMapping } from "../../../../../shared/config-layers.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "../proc.ts";
 
 /** The commit `ref` names in `root`, or the reason it names none. */
@@ -131,16 +135,64 @@ async function integrationBound(
 ): Promise<{ commit: string } | { error: string } | null> {
   const remote = readRemoteName(root);
   if ("error" in remote) return remote;
-  const branch = await baseBranch(root, gitCallTimeoutSeconds(), true);
-  if (branch === null)
+  const defaultBranch = await baseBranch(root, gitCallTimeoutSeconds(), true);
+  if (defaultBranch === null)
     return {
       error:
         "the integration branch is unknown, so a stacked base's policy cannot be bounded by it",
     };
+  const declared = await declaredIntegrationBranch(
+    root,
+    remote.remote,
+    defaultBranch,
+  );
+  if (declared !== null && "error" in declared) return declared;
+  const branch = declared?.branch ?? defaultBranch;
   const ref = `refs/remotes/${remote.remote}/${branch}`;
   if (ref === baseRef) return null;
   const fetched = await refreshTrackingRef(root, ref);
   return fetched !== null ? fetched : commitOf(root, ref);
+}
+
+/**
+ * The `repository.base_branch` the default branch's own commit declares, or
+ * `null` when it declares none (or `DRIVE_PR_BASE_BRANCH`, the driver's own
+ * environment, already named the branch). The default branch is the one
+ * place a reviewed change to the setting lands, so a configuration that
+ * names an integration branch other than the remote's default is honoured
+ * without trusting the pull request's checkout.
+ */
+async function declaredIntegrationBranch(
+  root: string,
+  remote: string,
+  defaultBranch: string,
+): Promise<{ branch: string } | { error: string } | null> {
+  if ((process.env.DRIVE_PR_BASE_BRANCH ?? "").trim() !== "") return null;
+  const ref = `refs/remotes/${remote}/${defaultBranch}`;
+  const fetched = await refreshTrackingRef(root, ref);
+  if (fetched !== null) return fetched;
+  const at = await commitOf(root, ref);
+  if ("error" in at) return at;
+  const snapshot = readSnapshotAt(
+    at.commit,
+    POLICY_BASE_VARIABLE,
+    "default",
+    process.env,
+    root,
+  );
+  if (snapshot.from !== "base")
+    return {
+      error:
+        snapshot.from === "unreadable"
+          ? snapshot.reason
+          : "the default branch's configuration cannot be read",
+    };
+  const repo = snapshot.values.repository;
+  const name = isMapping(repo) ? repo.base_branch : undefined;
+  if (name === undefined || name === null) return null;
+  return typeof name === "string" && /^[^\s~^:?*[\\]+$/.test(name)
+    ? { branch: name }
+    : { error: `repository.base_branch at ${ref} is not a branch name` };
 }
 
 /** The line that says why the policy fails closed, or `null` when it reads. */

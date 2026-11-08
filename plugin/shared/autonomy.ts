@@ -621,8 +621,11 @@ export function readPolicySnapshot(
     : bound;
 }
 
-/** The policy `.config/jig.yaml` holds at `commit`, named by `variable`. */
-function readSnapshotAt(
+/**
+ * The policy `.config/jig.yaml` holds at `commit`, named by `variable`;
+ * `branch` only words the reason it cannot be read.
+ */
+export function readSnapshotAt(
   commit: string,
   variable: string,
   branch: string,

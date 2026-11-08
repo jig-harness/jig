@@ -412,7 +412,9 @@ request targets (its base branch), not from the pull request's own checkout.
 An edit to either field therefore applies to a pull request's drive once the
 edit is on that branch, never through the pull request that makes it. For a
 stacked layer the branch it targets is the layer below, whose policy no one
-has reviewed yet, so the integration branch's policy bounds it: the ceiling
+has reviewed yet, so the integration branch's policy bounds it (the
+branch the default branch's committed `repository.base_branch` names, else
+the default branch; the pull request's own checkout never names it): the ceiling
 is the lower of the two, and the park classes are the union of the two lists.
 A layer below can narrow what the integration branch allows and never widen
 it. The ceiling's fallback comes from the base too: the

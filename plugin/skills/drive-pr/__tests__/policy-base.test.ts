@@ -191,6 +191,19 @@ describe("policy-base.ts", () => {
     expect(line).toContain("bounds the stacked base");
   });
 
+  it("takes the integration branch the default branch's configuration declares, not the remote default", async () => {
+    const dir = clone(
+      "autonomy:\n  max_level: wide\n",
+      "autonomy:\n  level: wide\n  max_level: wide\n",
+      true,
+      true,
+      "repository:\n  base_branch: develop\nautonomy:\n  max_level: attended\n",
+    );
+    const { line } = await exportIn(dir);
+    expect(line).toStartWith("autonomy: wide");
+    expect(line).not.toContain("bounds the stacked base");
+  });
+
   it("leaves the variable empty when the base is not in the clone, and the drive fails closed", async () => {
     const dir = clone(
       "autonomy:\n  max_level: wide\n",
