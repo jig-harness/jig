@@ -1,0 +1,72 @@
+# Weekly, the issue-fields sweep (file-issue's check-fields.ts check,
+# design/tracker-facets.md "The weekly sweep"): every open issue outside
+# triage that lacks a type, a priority or a size, or carries the label of a
+# facet the configuration keeps elsewhere, is moved back to triage with a
+# comment naming what it lacks; one already started is listed and left where
+# it is. It catches what the tracker scripts cannot refuse: an issue opened
+# from an issue form or with `gh issue create`.
+#
+# It runs the sweep only, never the move between stores. It holds the
+# workflow's own token and no other secret: Jig's configuration names every
+# facet's store, so the sweep reads no setting of the organization, and a
+# facet left unnamed would make it fail and move nothing. Its log and its
+# summary print issue keys, never a title or a body. It runs the plugin from
+# this checkout with Bun's built-ins alone, so nothing is installed.
+#
+# Nothing waits for this run. GitHub notifies whoever last changed the
+# schedule when it fails. On demand: gh workflow run issue-fields.yml --ref main
+name: issue-fields
+on:
+  schedule:
+    - cron: "37 5 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+# Two sweeps at once could both find no comment and post two. A rejected
+# dispatch from another branch gets a group of its own, so it never displaces
+# a pending run from main.
+concurrency:
+  group: issue-fields-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  # A dispatch from another branch would run that branch's code with
+  # issue-write access to the real tracker. The guard stops a mistaken
+  # dispatch, not a branch that removes it: such a branch's author can write
+  # issues already.
+  reject-ref:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - run: |
+          echo 'Dispatch issue-fields from main.' >&2
+          exit 1
+  sweep:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # A run moves at most 50 issues, two paced writes each (a comment, then
+    # the state change) at 30 a minute: about four minutes, with room for the
+    # three Retry-After waits of at most ten minutes the sweep honours a run
+    # before it stops. It prints each issue as it moves it.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+      - name: Sweep the open issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The HTTPS transport reads GitHub's Retry-After, which `gh` does
+          # not report, so the sweep can wait out a rate limit.
+          JIG_GITHUB_GRAPHQL_URL: https://api.github.com/graphql
+        run: |
+          status=0
+          bun plugin/skills/file-issue/scripts/check-fields.ts check --yes > "$RUNNER_TEMP/sweep.txt" || status=$?
+          cat "$RUNNER_TEMP/sweep.txt"
+          { echo '```text'; cat "$RUNNER_TEMP/sweep.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

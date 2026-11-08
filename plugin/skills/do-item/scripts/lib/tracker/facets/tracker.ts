@@ -1,3 +1,9 @@
+import {
+  addRestores,
+  restoringChange,
+  forwardRestores,
+  censusReader,
+} from "./restore-labels.ts";
 /**
  * The facets every adapter shares: an adapter (its core) reads and writes
  * the facets it keeps in the tracker's own fields, and `withFacets` adds the
@@ -54,9 +60,13 @@ import { canonical, fold, PRIORITY_NAMES } from "./values.ts";
 export type CoreIssue = Omit<Issue, "type" | "size"> &
   Partial<Pick<Issue, "type" | "size">>;
 
-/** A pool issue as an adapter's core reads it. */
+/**
+ * A pool issue as an adapter's core reads it. `hiddenLabels` are labels the
+ * core keeps out of `labels` (GitHub's priority labels): only the open
+ * population carries them, so `incompleteIssues` can list a retired one.
+ */
 export type CorePoolIssue = Omit<PoolIssue, "type" | "size"> &
-  Partial<Pick<PoolIssue, "type" | "size">>;
+  Partial<Pick<PoolIssue, "type" | "size">> & { hiddenLabels?: string[] };
 
 /** The adapter's own part of `facetStores`. */
 export interface CoreFacetReport {
@@ -76,12 +86,13 @@ export interface CoreTracker
     | "poolIssue"
     | "assignedIssues"
     | "incompleteIssues"
+    | "openPopulation"
     | "facetStores"
   > {
   getIssue(key: string): Promise<CoreIssue | null>;
   openIssues(query: PoolQuery): Promise<CorePoolIssue[]>;
   openChildren(key: string): Promise<CorePoolIssue[]>;
-  poolIssue(key: string): Promise<CorePoolIssue | null>;
+  poolIssue(key: string, signal?: AbortSignal): Promise<CorePoolIssue | null>;
   assignedIssues(
     identity: string,
     states: ReadonlyArray<CanonicalState>,
@@ -236,6 +247,7 @@ export function withFacets(
   async function facetLabels(
     key: string,
     patch: IssuePatch,
+    signal?: AbortSignal,
   ): Promise<{ add: string[]; remove: string[] }> {
     const changes: Array<[LabelCodec, string | null]> = [];
     for (const f of LABEL_FACETS) {
@@ -254,8 +266,9 @@ export function withFacets(
       refuseEditContradiction(priority, value, patch);
       changes.push([priority, value]);
     }
+    addRestores(changes, patch.facetLabels, codecs, coreFacets);
     if (changes.length === 0) return { add: [], remove: [] };
-    const current = await rest.poolIssue(key);
+    const current = await rest.poolIssue(key, signal);
     if (current === null)
       throw new TrackerRequestError(
         "unresolved",
@@ -269,17 +282,28 @@ export function withFacets(
     const add: string[] = [];
     const remove: string[] = [];
     for (const [codec, value] of changes) {
-      const change = codec.change(current.labels, value);
+      const change = restoringChange(
+        codec,
+        current.labels,
+        value,
+        patch.facetLabels?.[codec.facet],
+      );
       add.push(...change.add);
       remove.push(...change.remove);
     }
     return { add, remove };
   }
 
-  async function updateIssue(key: string, patch: IssuePatch) {
+  async function updateIssue(
+    key: string,
+    patch: IssuePatch,
+    signal?: AbortSignal,
+  ) {
+    signal?.throwIfAborted();
     refuseFacetLabels(patch.addLabels ?? [], "to add");
-    const labels = await facetLabels(key, patch);
+    const labels = await facetLabels(key, patch, signal);
     const out: IssuePatch = { ...patch };
+    forwardRestores(out, codecs);
     for (const f of LABEL_FACETS) {
       if (patch[f] === undefined) continue;
       if (codecs.has(f)) delete out[f];
@@ -294,7 +318,8 @@ export function withFacets(
     // A facet already at its value is no change, and no error either; an
     // empty patch still reaches the adapter, which refuses it.
     if (!changes(out) && changes(patch)) return;
-    await rest.updateIssue(key, out);
+    signal?.throwIfAborted();
+    await rest.updateIssue(key, out, signal);
   }
 
   /** A census or a facet filter read from partial labels would miscount, so it refuses. */
@@ -348,6 +373,8 @@ export function withFacets(
     return f === "priority" ? issue.priority === 0 : issue[f] === null;
   }
 
+  const census = censusReader(openPopulation);
+
   async function incompleteIssues(
     query: IncompleteQuery,
     options?: FacetReadOptions,
@@ -360,7 +387,7 @@ export function withFacets(
     for (const f of query.missing) requireStore(f);
     const signal = readSignal(options);
     refuseStopped(signal);
-    const population = await openPopulation(signal);
+    const population = await census(options?.census, signal);
     refuseStopped(signal);
     refuseTruncatedLabels(population);
     const open = population.map(withValues);
@@ -375,10 +402,16 @@ export function withFacets(
     }
     const retired = query.retired.map(fold);
     const listed: Array<IncompleteIssue & { createdAt: string }> = [];
+    const wanted = (type: string) =>
+      query.started === true
+        ? type === "started"
+        : type === "backlog" || type === "unstarted";
     for (const i of outside) {
-      if (i.state.type !== "backlog" && i.state.type !== "unstarted") continue;
+      if (!wanted(i.state.type)) continue;
       const missing = query.missing.filter((f) => lacks(i, f, true));
-      const carried = i.labels.filter((l) => retired.includes(fold(l)));
+      const carried = [...i.labels, ...(i.hiddenLabels ?? [])].filter((l) =>
+        retired.includes(fold(l)),
+      );
       if (missing.length === 0 && carried.length === 0) continue;
       listed.push({
         identifier: i.identifier,
@@ -421,8 +454,8 @@ export function withFacets(
     async openChildren(key) {
       return (await rest.openChildren(key)).map(withValues);
     },
-    async poolIssue(key) {
-      const issue = await rest.poolIssue(key);
+    async poolIssue(key, signal) {
+      const issue = await rest.poolIssue(key, signal);
       return issue === null ? null : withValues(issue);
     },
     async assignedIssues(identity, states, options) {
@@ -445,6 +478,14 @@ export function withFacets(
     createIssue,
     updateIssue,
     incompleteIssues,
+    async openPopulation(options) {
+      const signal = readSignal(options);
+      refuseStopped(signal);
+      const population = await openPopulation(signal);
+      refuseStopped(signal);
+      refuseTruncatedLabels(population);
+      return population.map(withValues);
+    },
     async facetStores(options) {
       refuseStopped(readSignal(options));
       const extra: CoreFacetReport =

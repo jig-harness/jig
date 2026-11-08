@@ -158,9 +158,10 @@ export function jiraTracker(client: Client): Tracker {
 
   async function priorityField(
     priority: number,
+    signal?: AbortSignal,
   ): Promise<{ id: string } | null> {
     const name = model.priorityName(priority);
-    return name === null ? null : { id: await client.priority(name) };
+    return name === null ? null : { id: await client.priority(name, signal) };
   }
 
   async function relations(key: string): Promise<IssueRelation[]> {
@@ -189,30 +190,39 @@ export function jiraTracker(client: Client): Tracker {
   /** The fields a patch sets, each name resolved first. */
   async function patchFields(
     patch: IssuePatch,
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
     const fields: Record<string, unknown> = {};
     if (patch.title !== undefined) fields.summary = patch.title;
     if (patch.description !== undefined)
       fields.description = markdownToAdf(patch.description);
     if (patch.priority !== undefined)
-      fields.priority = await priorityField(patch.priority);
+      fields.priority = await priorityField(patch.priority, signal);
     if (patch.project !== undefined)
-      fields.fixVersions = [{ id: await client.version(patch.project) }];
+      fields.fixVersions = [
+        { id: await client.version(patch.project, signal) },
+      ];
     if (patch.parent !== undefined)
       fields.parent =
         patch.parent === null
           ? null
-          : { key: (await client.mustIssue(patch.parent)).key };
+          : { key: (await client.mustIssue(patch.parent, signal)).key };
     return fields;
   }
 
-  async function transitionsOf(key: string): Promise<Transition[]> {
+  async function transitionsOf(
+    key: string,
+    signal?: AbortSignal,
+  ): Promise<Transition[]> {
     const raw = record(
-      await transport({
-        method: "GET",
-        path: `${path(key)}/transitions`,
-        query: { expand: "transitions.fields" },
-      }),
+      await transport(
+        {
+          method: "GET",
+          path: `${path(key)}/transitions`,
+          query: { expand: "transitions.fields" },
+        },
+        signal,
+      ),
       `transitions of ${key}`,
     );
     if (!Array.isArray(raw.transitions))
@@ -223,8 +233,11 @@ export function jiraTracker(client: Client): Tracker {
   }
 
   /** Refuse a label that is a field's value: the adapter reads those fields, never writes them. */
-  async function refuseFieldLabels(labels: ReadonlyArray<string>) {
-    const fields = await client.fieldLabels();
+  async function refuseFieldLabels(
+    labels: ReadonlyArray<string>,
+    signal?: AbortSignal,
+  ) {
+    const fields = await client.fieldLabels(signal);
     for (const l of labels) {
       const found = fieldOfLabel(l, fields);
       if (found !== null)
@@ -317,8 +330,8 @@ export function jiraTracker(client: Client): Tracker {
       };
     },
 
-    async listComments(key) {
-      return (await client.comments(key)).map((c) => ({
+    async listComments(key, signal) {
+      return (await client.comments(key, signal)).map((c) => ({
         body: c.body,
         createdAt: c.createdAt,
       }));
@@ -328,26 +341,29 @@ export function jiraTracker(client: Client): Tracker {
       return (await client.children(key)).map((k) => summaryOf(k, client));
     },
 
-    async transition(key, state) {
-      const issue = await client.mustIssue(key);
+    async transition(key, state, signal) {
+      const issue = await client.mustIssue(key, signal);
       const target = model.stateName(state);
       const already =
         same(issue.status.name, target) &&
         (!isResolvedState(state) || model.read(issue).canonical === state);
       if (already) return;
-      const all = await transitionsOf(issue.key);
+      const all = await transitionsOf(issue.key, signal);
       const chosen = onlyTransition(all, issue, target, state);
       const resolution =
         isResolvedState(state) && chosen.resolution
           ? { fields: { resolution: { name: model.resolutionOf(state) } } }
           : {};
-      await transport({
-        method: "POST",
-        path: `${path(issue.key)}/transitions`,
-        body: { transition: { id: chosen.id }, ...resolution },
-      });
+      await transport(
+        {
+          method: "POST",
+          path: `${path(issue.key)}/transitions`,
+          body: { transition: { id: chosen.id }, ...resolution },
+        },
+        signal,
+      );
       if (isResolvedState(state) && !chosen.resolution) {
-        const after = await client.mustIssue(issue.key);
+        const after = await client.mustIssue(issue.key, signal);
         if (model.read(after).canonical !== state)
           throw new JiraApiError(
             `${issue.key} entered ${after.status.name}, which its transition cannot record as ${state}: the transition has no resolution field`,
@@ -427,7 +443,8 @@ export function jiraTracker(client: Client): Tracker {
       };
     },
 
-    async updateIssue(key, patch: IssuePatch) {
+    async updateIssue(key, patch: IssuePatch, signal) {
+      signal?.throwIfAborted();
       checkPatch(key, patch);
       const labels = [
         ...(patch.addLabels ?? []).map((l) => ({ add: l })),
@@ -435,18 +452,19 @@ export function jiraTracker(client: Client): Tracker {
       ];
       const named = labels.map((l) => ("add" in l ? l.add : l.remove));
       checkLabels(named);
-      await refuseFieldLabels(named);
+      await refuseFieldLabels(named, signal);
       if (patch.priority === 0)
         throw new TrackerRequestError(
           "invalid",
           "a Jira issue always carries a priority, so priority 0 (none) cannot be set",
         );
-      const issue = await client.mustIssue(key);
-      const fields = await patchFields(patch);
+      const issue = await client.mustIssue(key, signal);
+      const fields = await patchFields(patch, signal);
       const body: Record<string, unknown> = {};
       if (Object.keys(fields).length > 0) body.fields = fields;
       if (labels.length > 0) body.update = { labels };
-      await transport({ method: "PUT", path: path(issue.key), body });
+      signal?.throwIfAborted();
+      await transport({ method: "PUT", path: path(issue.key), body }, signal);
     },
 
     async listLabels() {

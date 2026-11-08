@@ -161,10 +161,15 @@ A maintainer files with `/jig:file-issue`, which checks the labels against
 the taxonomy before it writes, or from a script with
 `bun "$plugin_dir/skills/do-item/scripts/tracker.ts" create` (`plugin_dir`
 as below), the issue as JSON on standard input with its `type`, `priority`
-and `size`. Both write through the tracker interface, which checks that the
-issue carries a type, a priority and a size (an epic needs no size) and
-names any it lacks. An issue filed with `gh issue create` by hand skips
-that check and reaches the pools as a labelling gap. A maintainer picks
+and `size`. Both write through the tracker interface, which refuses an
+issue without a type, a priority or a size (an epic needs no size), naming
+what it lacks. An issue filed with `gh issue create` by hand skips that
+check: it reaches the pools as a labelling gap, and the weekly
+`issue-fields` workflow (`/jig:file-issue`'s sweep) moves it back to triage
+with a comment naming what it lacks. That workflow reads the stores with
+its own token, which a maintainer's local run does not stand for: after a
+change of where Jig keeps a facet, run it from main
+(`gh workflow run issue-fields.yml --ref main`) and read its log. A maintainer picks
 work up with `/jig:do-item #<n>`. A contributor opens an issue with the bug
 or "Proposed change" template, which sets its issue type beside its label,
 or a [discussion](https://github.com/jig-harness/jig/discussions) for a

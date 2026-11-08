@@ -230,6 +230,7 @@ export function fakeTracker(
     assignedIssues: unsupported("assignedIssues"),
     assignedBy: unsupported("assignedBy"),
     incompleteIssues: unsupported("incompleteIssues"),
+    openPopulation: unsupported("openPopulation"),
     facetStores: unsupported("facetStores"),
     viewer: unsupported("viewer"),
     assignees: unsupported("assignees"),

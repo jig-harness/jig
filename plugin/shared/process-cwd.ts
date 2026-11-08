@@ -130,7 +130,8 @@ function sortCwdErrors(
   for (const line of stderr.split("\n")) {
     if (line.trim() === "") continue;
     const pid = /\/proc\/(\d+)/.exec(line)?.[1];
-    if (pid !== undefined && /No such file or directory/.test(line)) continue;
+    if (pid !== undefined && /No such (?:file or directory|process)/.test(line))
+      continue;
     if (pid !== undefined && /Permission denied/.test(line)) {
       denied.push(pid);
       continue;
@@ -144,7 +145,7 @@ function sortCwdErrors(
 function deniedWhy(run: ProbeRun, pid: string): string | null {
   const status = run(["cat", `/proc/${pid}/status`]);
   if (status.status !== 0)
-    return /No such file or directory/.test(status.stderr)
+    return /No such (?:file or directory|process)/.test(status.stderr)
       ? null
       : `process ${pid}'s working directory and status cannot be read`;
   const permitted = /^CapPrm:\s*([0-9a-f]+)$/m.exec(status.stdout)?.[1];

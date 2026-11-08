@@ -564,3 +564,32 @@ describe("GitHub facets: detection and the organization's discovery", () => {
     expect(of("type")?.detection).toBeUndefined();
   });
 });
+
+it("preserves unmapped nonempty GitHub stores for migration refusal", async () => {
+  const { t } = gitHub(
+    () =>
+      oneIssue(
+        issueNode({
+          number: 9,
+          issueType: "Task",
+          extra: {
+            subIssues: conn([]),
+            issueFieldValues: conn([
+              selected("Priority", "Unranked"),
+              selected("Effort", "Unknown"),
+            ]),
+          },
+        }),
+      ),
+    NAMED,
+  );
+  const issue = await t.poolIssue("#9");
+  expect(issue?.type).toBeNull();
+  expect(issue?.priority).toBe(0);
+  expect(issue?.size).toBeNull();
+  expect(issue?.unmappedFacets?.slice().sort()).toEqual([
+    "priority",
+    "size",
+    "type",
+  ]);
+});

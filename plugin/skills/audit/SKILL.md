@@ -104,7 +104,9 @@ checks that never run, a tracker that cannot be reached, declared values the
 repository contradicts, tracker labels that the label taxonomy
 (`issue_tracker.taxonomy`, or `label-taxonomy.yaml` when that is unset) does
 not define, a `review.taxonomy.types` that differs from that taxonomy
-(`taxonomy:<field>`), and settings its shape suggests. Each finding has an id
+(`taxonomy:<field>`), a repository that keeps issue facets on its tracker and
+runs no weekly sweep for issues filed without them
+(`suggestion:issue_tracker.sweep`), and settings its shape suggests. Each finding has an id
 (`config/<id>`). Exit 1 means at least one error; it is a finding, not a reason
 to stop. Without network access or `gh`, add `--offline`; the forge and
 tracker questions are then reported as unchecked, never as passing.
