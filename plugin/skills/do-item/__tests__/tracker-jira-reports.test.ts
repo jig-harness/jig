@@ -593,6 +593,9 @@ describe("Jira adapter: assignments", () => {
     );
     expect(lookups.length).toBe(2);
     for (const c of lookups) expect(c.signal).toBe(signal);
+    const searches = calls.filter((c) => c.route === "POST search/jql");
+    expect(searches.length).toBeGreaterThan(0);
+    for (const c of searches) expect(c.signal).toBe(signal);
   });
 
   it("refuses an identity that names no user or several", async () => {
