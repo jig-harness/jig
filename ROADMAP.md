@@ -123,21 +123,6 @@ it. The first stage puts each pull request's status on the dispatch
 dashboard a team already runs. A person decides on the rest once that stage
 is in use.
 
-### 35. One jig command line
-
-The plugin's machine-level tools become one `jig` command on `PATH`, with
-resource collection (`jig gc`) and the dispatcher (`jig dispatch`) as its
-[components](GLOSSARY.md) and the same verbs for each: `install`, `uninstall`, `upgrade`,
-`doctor`, `status` and `receipts`. `jig doctor` checks the plugin's
-installation and runs the audit's check that a repository's configuration
-fits it, and `jig upgrade` replaces the setup script a machine runs from a
-Jig checkout. The installed timers run that upgrade themselves, at most
-once an hour and on by default, so a machine that runs the dispatcher stays
-on its channel's newest version with nobody at the keyboard; a pinned
-machine receives nothing. Help for every command and shell completion come
-from the same definitions that parse the command line, and the jobs a
-machine already installed keep running unchanged.
-
 ### 34. Jig in the Orca ecosystem
 
 [Orca](https://www.onorca.dev) is one of the workspace runtimes Jig's
@@ -218,6 +203,20 @@ and the organization's own issue fields, for a repository that does not
 already keep them in labels. No repository's store moves unless it asks. Every way Jig's tools file
 an issue through the tracker sets all three and checks them. The issue forms set the type and leave priority and size to
 triage. A weekly check reports any issue that lacks one.
+
+### 43. Consumer actions: which Jig changes a repository must act on
+
+A Jig release can ask something of the repositories that use it: a runbook
+that describes old behaviour, a configuration key to change, a plugin source
+on a machine. A release note will say at which of those levels a repository
+acts, and whether it must or is only advised to. A repository records the
+Jig version it last took. One command, `jig reconcile`, checks the repository
+against every change since, and each host against the changes that concern it. It reports what the repository must do, what it is
+advised to do, what needs a person's look and what does not apply. Each line
+names the file and line that show why. It files items in the repository's own
+tracker only for what a person approved. A dispatch stage runs the check for
+each repository a machine drives and tells a person once for each new required
+change.
 
 ### 12. More tracker adapters
 

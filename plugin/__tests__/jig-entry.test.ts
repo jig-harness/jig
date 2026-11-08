@@ -255,7 +255,13 @@ test("the earlier install and receipts forms stay out of help", () => {
 test.each([
   [
     ["install"],
-    { verb: "install", components: [], repository: undefined, confirm: false },
+    {
+      verb: "install",
+      components: [],
+      repository: undefined,
+      noUpgrade: false,
+      confirm: false,
+    },
   ],
   [
     ["install", "dispatch", "gc", "--yes"],
@@ -263,7 +269,18 @@ test.each([
       verb: "install",
       components: ["dispatch", "gc"],
       repository: undefined,
+      noUpgrade: false,
       confirm: true,
+    },
+  ],
+  [
+    ["install", "--no-upgrade"],
+    {
+      verb: "install",
+      components: [],
+      repository: undefined,
+      noUpgrade: true,
+      confirm: false,
     },
   ],
   [

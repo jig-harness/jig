@@ -29,6 +29,12 @@
  * same head it made counts as this host's would; and a silent driver its
  * launch started is taken over from here. Claims that cannot be read leave
  * the pull request unplaced.
+ *
+ * A silent driver no launch record or claim started is taken over when it
+ * ran on this host and this host shows its run ended (`driverGone`,
+ * `sources/silent-driver.ts`), a re-drive the pull request's recovery budget
+ * counts; `drive.ts --take-over` decides whether it is admitted. Where this
+ * host cannot show that, it is notified.
  */
 import { type DriveHold, driveHold, factsOf } from "./actions/drive-hold.ts";
 import { type Contention, heldReason } from "./contention.ts";
@@ -38,6 +44,7 @@ import type { FollowupRelease } from "./followup-releases.ts";
 import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
+import { goneUnlaunched } from "./recovery-facts.ts";
 import { conflictNote } from "./sources/ledgers.ts";
 import { workspaceOfTree } from "./stall-tree.ts";
 import { planFollowups } from "./plan-followups.ts";
@@ -78,6 +85,8 @@ export interface PlanInput {
   outcomes: ReadonlyMap<number, FollowupOutcome>;
   /** The stale follow-up claims this host released, by pull request. */
   releases?: ReadonlyMap<number, FollowupRelease>;
+  /** The launch records whose follow-up marker a tick released as a retry (`settledEnds`). */
+  retried?: ReadonlySet<string>;
   sessions: SessionsReport;
   /** Each pull request's creation time; a pickup's pull request is one created after its launch. */
   created?: ReadonlyMap<number, string>;
@@ -189,6 +198,7 @@ export function planTick(input: PlanInput): Plan {
         staleAfterMs: input.section.followupStaleAfterMs,
         releases: input.releases ?? new Map(),
         owner: input.shared?.owner ?? true,
+        retried: input.retried ?? new Set(),
         nowMs: input.nowMs,
       },
       plan,
@@ -354,12 +364,20 @@ const QUIET_HOLDS: ReadonlyMap<DriveHold["kind"], LedgerClass> = new Map([
   ["armed", "unarmed"],
 ]);
 
+/** What showed a silent driver no launch started gone, when this host may take it over; `null` otherwise. */
+function goneDriver(pr: DrivenPr): string | null {
+  return goneUnlaunched(pr) ? String(pr.evidence.driverCheck) : null;
+}
+
 /** Why the plan wants a drive's action, in one sentence. */
 function wantReason(
   pr: DrivenPr,
   takeover: string | null,
   claim: TakeoverClaim | null,
+  gone: string | null = null,
 ): string {
+  if (gone !== null)
+    return `drive ledger silent, no launch started its driver, and this host shows its run ended (${gone}): take it over (drive.ts --take-over decides)`;
   if (takeover !== null)
     return `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`;
   if (claim !== null)
@@ -499,6 +517,7 @@ function planDrive(
   const placed = planForeign(input, pr, plan);
   if (placed === true) return;
   const foreign = takeover === null ? placed : null;
+  const gone = takeover === null && foreign === null ? goneDriver(pr) : null;
   if (QUIET.has(pr.class) && takeover === null && foreign === null) {
     plan.quiet.push({ target, class: pr.class, why: pr.why });
     return;
@@ -508,16 +527,19 @@ function planDrive(
     return;
   }
   const cause =
-    takeover !== null || foreign !== null ? undefined : NOTIFY.get(pr.class);
+    takeover !== null || foreign !== null || gone !== null
+      ? undefined
+      : NOTIFY.get(pr.class);
   want(
     {
       stage: cause === undefined ? "rearm" : "notify",
       target,
       record: "forge",
-      reason: wantReason(pr, takeover, foreign),
+      reason: wantReason(pr, takeover, foreign, gone),
       evidence: { url: pr.url, head: pr.head, ...pr.evidence },
       ...stageFields(slug, pr, cause, launches),
       ...takeoverFields(takeover, foreign),
+      ...(gone === null ? {} : { takeoverGone: gone }),
     },
     (w) => w.prs.includes(pr.number),
   );

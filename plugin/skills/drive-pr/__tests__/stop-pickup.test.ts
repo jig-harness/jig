@@ -1,7 +1,7 @@
 /**
- * stop-pickup.ts: what a drive armed after a stall or a spent CI-repair
- * budget tells its first pass, and whether it takes the tree's edits as the
- * stalled drive's. Run in a subprocess, which alone gets the handoff
+ * stop-pickup.ts: what a drive armed after a stall, a spent CI-repair
+ * budget or a pass deadline tells its first pass, and whether it takes the
+ * tree's edits as the stopped drive's. Run in a subprocess, which alone gets the handoff
  * directory the narrative is read from.
  */
 
@@ -100,6 +100,21 @@ describe("stopPickup", () => {
     expect(r.notice).toContain("recorded nothing");
     expect(r.notice).not.toContain("It left work");
     expect(r.inheritsEdits).toBe(false);
+  });
+
+  it("hands a pass deadline's work in this tree to the next drive, and only that tree's", async () => {
+    const here = await pickupAfter([stop("15", true)]);
+    expect(here.notice).toStartWith("RE-ARMED AFTER A PASS DEADLINE");
+    expect(here.notice).toContain("It left work in this tree");
+    expect(here.inheritsEdits).toBe(true);
+    const elsewhere = await pickupAfter([
+      stop("15", true, "wt-0123456789abcdef@h"),
+    ]);
+    expect(elsewhere.notice).toContain("It left work in another tree");
+    expect(elsewhere.inheritsEdits).toBe(false);
+    const clean = await pickupAfter([stop("15", false)]);
+    expect(clean.notice).toStartWith("RE-ARMED AFTER A PASS DEADLINE");
+    expect(clean.inheritsEdits).toBe(false);
   });
 
   it("names a spent CI-repair budget", async () => {

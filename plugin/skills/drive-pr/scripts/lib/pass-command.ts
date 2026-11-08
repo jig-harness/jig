@@ -17,9 +17,9 @@
  * on is decided by `pass-model.ts`, and Claude Code's extra arguments by
  * `pass-args.ts`.
  *
- * Under Codex the plugin's turn-budget hook counts nothing, so a Codex pass
- * has no turn cap of its own: the pass deadline (`DRIVE_PR_PASS_TIMEOUT`,
- * `--pass-timeout`) is all that bounds one that runs on.
+ * The turn-budget hook counts Codex responses and warns, but imposes no
+ * runtime turn cap. A Codex pass has no turn cap of its own: the pass deadline
+ * (`DRIVE_PR_PASS_TIMEOUT`, `--pass-timeout`) bounds one that runs on.
  */
 import type { AccountVendor } from "./identity.ts";
 
