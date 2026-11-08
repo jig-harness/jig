@@ -32,7 +32,7 @@ runs, what it hands over to.
 
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
-| [file-issue](skills/file-issue/README.md) | Files a new tracker issue from a discussion, or plans an existing one (re-labels it, splits it into sub-issues, records its relations): writes a durable issue body, derives the labels from the change's areas or its description, checks them against the repository's label taxonomy, and searches for a duplicate before anything is written | `/jig:file-issue` | Writes through [do-item](skills/do-item/SKILL.md)'s tracker scripts, and files what do-item and [work-batch](skills/work-batch/README.md) later pick up; derives labels from [change-areas](skills/change-areas/README.md); holds the label-taxonomy lint and the label validator |
+| [file-issue](skills/file-issue/README.md) | Files a new tracker issue from a discussion, or plans an existing one (re-labels it, splits it into sub-issues, records its relations): writes a durable issue body, derives the labels from the change's areas or its description, checks them against the repository's label taxonomy, and searches for a duplicate before anything is written; sweeps the open issues for one filed without a type, a priority or a size, and moves those facets from one store to another | `/jig:file-issue` | Writes through [do-item](skills/do-item/SKILL.md)'s tracker scripts, and files what do-item and [work-batch](skills/work-batch/README.md) later pick up; derives labels from [change-areas](skills/change-areas/README.md); holds the label-taxonomy lint and the label validator |
 | [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` | Starts [drive-pr](skills/drive-pr/README.md) on the pull request it opens; runs its own pre-pull-request review in the same tiers as [review](skills/review/SKILL.md), plus each review skill its declared gates name; escalates a dilemma to [decide](skills/decide/SKILL.md) |
 | [work-batch](skills/work-batch/README.md) | Groups several small, independent issues from one area of the code into one pull request, one commit each: proposes a ranked batch within a point budget, holds back every issue a sensitivity flag makes solo-only, claims the batch, opens the pull request and drives it once; after the merge, closes out every issue in it | `/jig:work-batch` | The batched form of [do-item](skills/do-item/SKILL.md), whose batch check suggests it; opens the pull request under do-item's pull-request policy and starts [drive-pr](skills/drive-pr/README.md) on it |
 | [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/jig:drive-pr` | Started by [do-item](skills/do-item/SKILL.md); runs [resolve-review-comments](skills/resolve-review-comments/README.md) every review round; calls [resolve-conflicts](skills/resolve-conflicts/SKILL.md) when the branch conflicts; repairs red CI in its own repair round, with the repository's CI-repair skill if it has one |
@@ -422,7 +422,14 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 **Follow-ups** (the `followup` stage) start one headless pass per pull
 request merged since the stage was switched on (`followup_since`), running
 the repository's `dispatch.followup_command` on it (`/followup` in Jig) in
-the pull request's workspace. The pass runs as a drive's pass does: in a
+the pull request's workspace. Follow-ups open their workspaces in a lane of
+their own: at most `followup_opens_per_tick` a tick (2 by default), beside
+the drive launches' `opens_per_tick` and the notices workspace's reserved
+open, with at most `followup_concurrency` passes (2) running on the host at
+once, so a follow-up never waits for a drive's launch and a drive's launch
+never waits behind follow-ups. They share the accounts' slots. A follow-up
+that waits says on what: the lane's budget, the lane's cap or the accounts.
+The pass runs as a drive's pass does: in a
 terminal tab running the dispatcher's wrapper, as the account's vendor's
 non-interactive command (`claude -p`, `codex exec`), bound to the admitted
 account through its configuration directory, under the pass deadline, and
@@ -458,7 +465,19 @@ answered or not, and a later tick starts the follow-up again, within the pull
 request's recovery budget, while the death is under 6 hours old; a second
 death is notified. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
-that question, and the outcome log counts it as parked for a person.
+that question, and the outcome log counts it as parked for a person. A
+question that is only one of the dispatcher's fixed **routine question
+classes** carries the class's tag (`Question: [local-leftover] …`: a local
+branch or worktree the pass may not delete without asking), and such a
+follow-up is run again once, within the same budget, with the class's
+standing answer in its prompt (keep it, list it, finish the rest and record
+done); unlike a death's run again, it has no 6-hour age limit. A follow-up
+that failed before passes tagged their questions is run again once with
+every class's standing answer; an outcome whose retry evidence the dispatcher
+kept needs no launch record, while an older one needs its record still on the
+host, and is notified once the record is gone (past `receipts_days`). An untagged
+question, or a failure of the run again, is notified; a follow-up is never
+run again more than once by a death and a routine question together.
 
 A Claude follow-up that exits unsuccessfully within a minute without a
 result, a question or its own transcript is treated as unable to start.

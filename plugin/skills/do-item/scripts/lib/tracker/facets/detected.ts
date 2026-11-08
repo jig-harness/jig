@@ -170,15 +170,20 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
   async function on<T>(
     run: (t: Tracker) => Promise<T>,
     facets?: ReadonlyArray<Facet>,
+    signal?: AbortSignal,
   ): Promise<T> {
-    const s = await settle();
+    const s = await settle(signal);
+    signal?.throwIfAborted();
     refuseBlocked(s, facets);
     return run(s.tracker);
   }
   /** A write; one refused for a value no store resolves drops the cached answer. */
-  async function write<T>(run: (t: Tracker) => Promise<T>): Promise<T> {
+  async function write<T>(
+    run: (t: Tracker) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
     try {
-      return await on(run);
+      return await on(run, undefined, signal);
     } catch (err) {
       if (err instanceof TrackerRequestError && err.code === "unresolved")
         await inputs.forget();
@@ -191,7 +196,8 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
     getIssue: (key) => on((t) => t.getIssue(key)),
     openIssues: (query) => on((t) => t.openIssues(query)),
     openChildren: (key) => on((t) => t.openChildren(key)),
-    poolIssue: (key) => on((t) => t.poolIssue(key)),
+    poolIssue: (key, signal) =>
+      on((t) => t.poolIssue(key, signal), undefined, signal),
     async assignedIssues(identity, states, options) {
       const s = await settle(readSignal(options));
       refuseBlocked(s);
@@ -199,11 +205,20 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
     },
     ledger: (query, onPage) => on((t) => t.ledger(query, onPage), ["priority"]),
     createIssue: (issue) => write((t) => t.createIssue(issue)),
-    updateIssue: (key, patch) => write((t) => t.updateIssue(key, patch)),
+    updateIssue: (key, patch, signal) =>
+      write((t) => {
+        signal?.throwIfAborted();
+        return t.updateIssue(key, patch, signal);
+      }, signal),
     async incompleteIssues(query, options) {
       const s = await settle(readSignal(options));
       refuseBlocked(s);
       return s.tracker.incompleteIssues(query, options);
+    },
+    async openPopulation(options) {
+      const s = await settle(readSignal(options));
+      refuseBlocked(s);
+      return s.tracker.openPopulation(options);
     },
     async facetStores(options) {
       let s: Settled;

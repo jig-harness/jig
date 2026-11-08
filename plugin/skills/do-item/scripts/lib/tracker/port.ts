@@ -212,6 +212,10 @@ export const CLOSED_STATE_TYPES = [
  * states of one category), and a claim re-check compares ids.
  */
 export interface PoolIssue {
+  /** Complete labels hidden by ordinary pool display, for migration validation. */
+  hiddenLabels?: string[];
+  /** Nonempty native/field stores whose values have no canonical mapping. Never overwrite them through a canonical move. */
+  unmappedFacets?: Facet[];
   identifier: string;
   title: string;
   url: string | null;
@@ -279,6 +283,11 @@ export interface IncompleteQuery {
   after?: string | null;
   /** The most issues one page holds, 1 to 100. */
   limit: number;
+  /**
+   * List the open issues already started instead of those not yet started:
+   * the sweep reads one such page, to list them without moving them.
+   */
+  started?: boolean;
 }
 
 /** An open issue `incompleteIssues` lists, by key, never by its content. */
@@ -318,6 +327,8 @@ export interface FacetReadOptions {
   deadline?: number;
   /** `facetStores` only: read the organization's issue types and fields; default true. */
   discovery?: boolean;
+  /** Share one census across pages in a single sweep; a fresh object starts a fresh read. */
+  census?: object;
 }
 
 /** One facet's store as `facetStores` reports it. */
@@ -443,6 +454,8 @@ export interface NewIssue {
  * kept.
  */
 export interface IssuePatch {
+  /** Exact labels of a label-kept facet to restore from a migration record. Must name only that facet's labels. */
+  facetLabels?: Partial<Record<Facet, string[]>>;
   title?: string;
   description?: string;
   type?: string | null;
@@ -502,11 +515,15 @@ export interface Tracker {
   /** One issue with its labels and children; `null` when it does not exist. */
   getIssue(key: string): Promise<Issue | null>;
   /** Every comment on an issue, oldest first. */
-  listComments(key: string): Promise<IssueComment[]>;
+  listComments(key: string, signal?: AbortSignal): Promise<IssueComment[]>;
   /** Every child of an issue. */
   listChildren(key: string): Promise<IssueSummary[]>;
   /** Move an issue to a canonical state. */
-  transition(key: string, state: CanonicalState): Promise<void>;
+  transition(
+    key: string,
+    state: CanonicalState,
+    signal?: AbortSignal,
+  ): Promise<void>;
   /**
    * Post a comment. `issue` is a key or the tracker's own id. An aborted
    * `signal` ends the request in flight and starts no further one.
@@ -564,7 +581,7 @@ export interface Tracker {
   /** The open children, of this team, of one of this team's issues. */
   openChildren(key: string): Promise<PoolIssue[]>;
   /** One issue in pool form, whatever its state; `null` when it does not exist. */
-  poolIssue(key: string): Promise<PoolIssue | null>;
+  poolIssue(key: string, signal?: AbortSignal): Promise<PoolIssue | null>;
   /**
    * This team's issues assigned to `identity` (a GitHub login; a Linear
    * user's email or display name) in one of `states`. An empty `states`
@@ -589,13 +606,20 @@ export interface Tracker {
    * carry a `retired` label, oldest first, with the cursor of the next page
    * and the counts over every open issue outside triage. The one read that
    * returns part of a population on purpose: a started issue is never
-   * listed. Throws on an unknown facet, a facet the repository has no store
-   * for, or a `limit` outside 1 to 100.
+   * listed, unless `started` asks for the started ones alone. Throws on an
+   * unknown facet, a facet the repository has no store for, or a `limit`
+   * outside 1 to 100.
    */
   incompleteIssues(
     query: IncompleteQuery,
     options?: FacetReadOptions,
   ): Promise<IncompletePage>;
+  /**
+   * Every open issue of this team, in pool form, read whole, with its
+   * facets read from the stores this tracker keeps them in: the move
+   * between two stores reads each issue through a tracker of each.
+   */
+  openPopulation(options?: FacetReadOptions): Promise<PoolIssue[]>;
 
   // ── Facets ──
   /**
@@ -632,7 +656,11 @@ export interface Tracker {
     issue: NewIssue,
   ): Promise<{ identifier: string; url: string | null }>;
   /** Change an issue. Throws on an empty patch, and as `createIssue` does. */
-  updateIssue(key: string, patch: IssuePatch): Promise<void>;
+  updateIssue(
+    key: string,
+    patch: IssuePatch,
+    signal?: AbortSignal,
+  ): Promise<void>;
   /** Every label an issue of this team can carry. */
   listLabels(): Promise<TrackerLabel[]>;
   /**

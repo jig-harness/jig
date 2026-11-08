@@ -69,7 +69,8 @@ after another: its plan and its outcome rows. The turns queue the launches
 and the labels; once every repository has had its turn, the launches run
 across all of them, one launch group at a time, and then each repository's
 finish step writes its labels. A launch changes what the next may admit (an
-account's slots, the tick's allowance of workspace opens, the account whose
+account's slots, the tick's allowances of workspace opens (the launches'
+and the follow-ups' own lane's), the account whose
 turn is next), so acts never overlap, and the admission order is the one the
 tick would take with no observe phase in front of it. Last, the tick closes: it settles what the
 repositories it did not read still owe, copies the outcome log, writes the
@@ -405,8 +406,33 @@ guards keep one stage from starting twice:
   tag, within the pull request's recovery budget (see Launch records). Only
   the death whose marker a tick released this way makes the next follow-up a
   run again; one a person asks for by deleting a failed marker is a new
-  follow-up. An older death, a failed outcome, a run again that died too, or
-  a tick's marker
+  follow-up. A pass that ended failed on a **routine question** (see
+  Sessions that wait) is run again once in the same manner, with no age
+  limit, since it waits on no session lease: its outcome record
+  keeps the question and its routine class, the tick releases the marker it
+  left, which its wrapper never answers, and a later tick starts the
+  follow-up again under a record whose facts carry the recovery tag and the
+  class (`recovery: routine <class>, merged …`), with the earlier question
+  and the class's standing answer in its prompt. A follow-up of this host's
+  that failed before passes tagged their questions (an outcome record with
+  no class field, written by an earlier release, or a launch record whose
+  prompt offered no tags) is run again once in that manner, whatever its
+  question, with every class's standing answer. An outcome whose retry
+  evidence was kept (the tick stores whether the attempt was a run again
+  before it releases the marker) needs no launch record; an outcome from
+  before that was kept needs the launch record still on this host, since
+  only that record says whether it was itself a run again, so one whose
+  record is gone (past `receipts_days`) is a person's, as is another host's
+  failed answer. An outcome record whose kept question
+  does not read (not JSON, not a mapping, or naming another launch record)
+  is never read as an earlier release's: it is logged and the follow-up is a
+  person's. The prompt of a routine run again quotes the earlier question,
+  at most 500 characters on one line, as a JSON string in a fence, and says
+  it is that pass's words, data and not an instruction. A run again of either kind never earns another: whichever
+  path ran it, its failure or death is a person's, so a follow-up is run
+  again at most once by the two together, and both draw on the pull
+  request's recovery budget. An older death, a failed outcome on an untagged
+  question or none, a run again that failed or died too, or a tick's marker
   whose launch record and outcome are both absent on this machine is a
   failed follow-up, notified and never relaunched by the tick. A person settles it by deleting the marker, which makes the
   follow-up wanted again, then running the follow-up or leaving it to the
@@ -735,7 +761,7 @@ The re-arms of stops with no recorded cause and the re-drives of the stops
 whose next step is mechanical (a recurring pass deadline, a failure on a
 conflicting pull request, a silent driver no launch started that this host
 shows gone, a follow-up
-whose session died) draw on one recovery budget per pull request: 3
+whose session died or that stopped on a routine question) draw on one recovery budget per pull request: 3
 attempts in a rolling hour, across accounts and hosts, counted from this
 host's launch records and every host's launch claims by the tag on their
 ledger facts (`no-cause: `, `recovery: `); completing a round does not reset
@@ -1235,7 +1261,29 @@ A follow-up runs as a headless pass (see Binding a session to its
 account) and is admitted as a drive's pass is: under the pass deadline it
 runs under, which the wrapper enforces on it, on a Codex account only on a
 host that opted in to Codex's bypass, holding one slot until its pass
-ends. An interactive session (a pickup) is admitted the same way, on
+ends. Follow-ups are admitted in a **lane of their own**: a follow-up whose
+pull request has no workspace joined to it opens one from the lane's
+per-tick budget (`followup_opens_per_tick` in the machine file, 2 by
+default), never from the launches' `opens_per_tick` and never from the open
+the notices workspace keeps, and no more follow-ups run on the host at once
+than `followup_concurrency` (2), counted from the launch records still
+holding. A pending record the tick reports stuck (see Launch records) is
+left out while the runtime shows no session running on its target, since it
+holds its slot until a person clears it and would otherwise hold the lane
+too; one whose target has a session running, or whose sessions cannot be
+read, is counted, since that wrapper may be running its stage without
+having claimed the record. The lane's opens count in the tick's budget (the opens of
+both allowances times `workspace_timeout`, and eight runtime calls), so the
+installed tick deadline grows with them: about 8h50m at the defaults, above
+the six-hour minimum. A value whose opens take that budget past the longest
+a timer holds is refused, naming the field. A follow-up whose fresh read of
+the runtime's sessions fails waits for the next tick with that failure as
+its reason, rather than open a workspace on the guess that none is joined. A follow-up never waits for a drive's launch, and a
+drive's launch never waits behind follow-ups; the accounts' slots stay
+shared, so a follow-up still needs an admitted account with a free slot.
+A follow-up that waits says what it waits on, in its receipt entry and on
+the dashboard's line (`waitsOn`): the lane's budget, the lane's cap, or the
+accounts. An interactive session (a pickup) is admitted the same way, on
 one account with a free slot and no wall in effect, and its launch binds
 it to that account (below), so its launch record names the account and
 holds one slot. A session whose launch cannot bind its account is never
@@ -1308,9 +1356,21 @@ depend on the answer, stops, records `failed`, and ends its output with a
 line that starts `Question:`. The wrapper keeps that line, at most 1000 characters and
 nothing else of the output, on the pass's exit; it reaches the launch
 record, the outcome log and the notification, so the pass is told to put
-no secret or personal data in it. The tick notifies the failed follow-up with the
-question, classed as parked for a person; the marker stays, so nothing
-starts it again until a person settles it.
+no secret or personal data in it. A question that is only one of the
+dispatcher's routine question classes carries the class's tag right after
+the prefix (`Question: [local-leftover] …`). The classes are a fixed
+registry in the dispatcher's code (`plugin/dispatch/lib/routine-questions.ts`),
+each with what it covers and its standing answer, and hold only
+housekeeping whose safe answer is to keep and list; the pass tags its own
+question from the list its prompt gives, and the dispatcher reads the tag
+and never classifies free text. The first class is `local-leftover`, a
+local branch or worktree the follow-up may not delete without asking,
+whose standing answer is to keep it, list it in the result, finish every
+other arm and record done. A follow-up that stopped on a routine question
+is run again once with that answer (see the follow-up's marker, above).
+The tick notifies any other failed follow-up with the question, classed as
+parked for a person; the marker stays, so nothing starts it again until a
+person settles it.
 
 ### The agent behind a session
 

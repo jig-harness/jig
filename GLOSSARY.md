@@ -1252,9 +1252,23 @@ make, use the entry's term instead.
   decided: a drive that stopped with no recorded cause, a *re-drive* of a
   recurring pass deadline or of a failure on a conflicting pull request, the
   takeover of a silent driver no launch started whose run its host shows
-  ended, and the run again of a follow-up whose session died. Every kind
-  counts against the one budget of 3, so a stop that keeps recurring ends as a
-  notice to a person rather than a loop.
+  ended, and the run again of a follow-up whose session died or that stopped
+  on a *routine question*. Every kind counts against the one budget of 3, so
+  a stop that keeps recurring ends as a notice to a person rather than a
+  loop.
+- **Routine question (class)** — a question a follow-up's headless pass may
+  stop on that has one safe answer, so the *dispatcher* gives it without a
+  person: housekeeping whose safe answer is to keep and list, such as a local
+  branch or worktree the pass may not delete without asking
+  (`local-leftover`). The classes are a fixed list in the dispatcher's code,
+  each with its **standing answer**; the pass tags its own question with the
+  class, and a follow-up that stopped on one is run again once with that
+  answer in its prompt. Any other question waits for a person.
+- **Follow-up lane** — the *dispatcher's* own allowance for follow-ups: a
+  per-tick budget of workspace opens and a cap on how many follow-up passes
+  run at once, beside the drive launches' allowance, so a follow-up never
+  waits for a drive's launch and a drive's launch never waits behind
+  follow-ups. Both share the accounts' slots.
 - **Permission mode (of a pass)** — the setting of an agent tool that
   decides which of its actions ask a person first. Claude Code's
   `default` mode asks before most edits and commands; a pass of a *PR

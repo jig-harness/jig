@@ -162,6 +162,8 @@ function oldDeath(w: World): void {
     action: "followup",
     pr: 9,
     facts: "merged 2026-10-31T12:00:00Z",
+    // Its prompt offered the routine tags, so its failure is not one from before passes tagged their questions.
+    routineTags: true,
   });
   claimed(
     w,

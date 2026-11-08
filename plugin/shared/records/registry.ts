@@ -83,7 +83,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 15;
+const DISPATCH_DB = 16;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 4;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -573,6 +573,13 @@ const TREE: RecordKind[] = [
   ),
   plain(
     "tree",
+    "facet-move-record",
+    "skills/file-issue/scripts/lib/move-record.ts",
+    "the file `check-fields.ts move --record` names (`.context/facet-move/record.json` in file-issue's procedure)",
+    1,
+  ),
+  plain(
+    "tree",
     "driven-tree",
     "shared/driven-tree.ts",
     "<git dir>/jig-driven-pr.json",
@@ -780,6 +787,14 @@ const TRACKER: RecordKind[] = [
     owner: "skills/do-item/scripts/lib/tracker/github/tracker.ts",
     at: "a comment on a GitHub issue relating it to another",
     markers: ["jig:related"],
+    version: 0,
+  },
+  {
+    name: "issue-fields-sweep",
+    medium: "tracker",
+    owner: "skills/file-issue/scripts/lib/sweep.ts",
+    at: "a comment on an issue the weekly sweep moved back to triage, naming what it lacks",
+    markers: ["jig:issue-fields"],
     version: 0,
   },
   {

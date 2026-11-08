@@ -28,6 +28,7 @@ export interface Call {
   op: string;
   query: string;
   variables: Record<string, unknown>;
+  signal?: AbortSignal;
 }
 
 function fakeTransport(answer: (call: Call, n: number) => unknown): {
@@ -42,7 +43,12 @@ function fakeTransport(answer: (call: Call, n: number) => unknown): {
       if (signal?.aborted === true)
         throw new GitHubApiError("the request was cancelled");
       const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "?";
-      const call = { op, query, variables };
+      const call = {
+        op,
+        query,
+        variables,
+        ...(signal === undefined ? {} : { signal }),
+      };
       calls.push(call);
       const out = answer(call, calls.length - 1);
       if (out instanceof Error) throw out;

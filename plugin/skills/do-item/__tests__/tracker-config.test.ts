@@ -144,3 +144,47 @@ try { openTracker(); } catch (e) { console.log(e.message); process.exit(3); }`,
     });
   });
 });
+
+it("openTracker preserves recovery reads with explicit stores and a malformed taxonomy", () => {
+  const root = mkdtempSync(join(tmpdir(), "tracker-recovery-"));
+  try {
+    writeFileSync(join(root, "broken.yaml"), "version: 1\ntypes: oops\n");
+    const index = join(import.meta.dir, "../scripts/lib/tracker/index.ts");
+    const configModule = join(
+      import.meta.dir,
+      "../scripts/lib/tracker/config.ts",
+    );
+    const r = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `
+      import { openTracker } from ${JSON.stringify(index)};
+      import { parseTrackerConfig } from ${JSON.stringify(configModule)};
+      globalThis.fetch = async () => Response.json({ data: { issueLabels: {
+        nodes: [], pageInfo: { hasNextPage: false, endCursor: null }
+      } } });
+      const t = openTracker(parseTrackerConfig({ issue_tracker: {
+        adapter: "linear", team: "ENG", taxonomy: "broken.yaml",
+        facets: { type: { store: "label" }, size: { store: "label" } }
+      } }), ${JSON.stringify(root)});
+      if (JSON.stringify(await t.listLabels()) !== "[]") throw Error("recovery read failed");
+      try { await t.createIssue({ title: "x", description: "", labels: [], type: "bug", size: "small", priority: 2 }); }
+      catch (e) { if (e.message.includes("fails its lint")) process.exit(0); throw e; }
+      throw Error("invalid taxonomy allowed a filing");
+    `,
+      ],
+      {
+        env: { ...process.env, LINEAR_API_KEY: "test-key" },
+        encoding: "utf8",
+        timeout: 60_000,
+      },
+    );
+    expectSpawnExit(
+      { exitCode: r.status, stdout: r.stdout, stderr: r.stderr },
+      0,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
