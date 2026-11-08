@@ -1,5 +1,5 @@
-import { GcError } from "../shared/gc-error.ts";
 import { isMapping } from "../shared/config-layers.ts";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import {
   closeSync,
   fsyncSync,
@@ -151,6 +151,15 @@ function isResourceRecord(value: unknown): boolean {
     ].includes(value.outcome)
   );
 }
+/** A run's failure, where a receipt names one: a stable code and its reason. */
+function isFailureRecord(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (isMapping(value) &&
+      typeof value.code === "string" &&
+      typeof value.reason === "string")
+  );
+}
 function isReceipt(value: unknown): value is Receipt {
   return (
     isMapping(value) &&
@@ -158,12 +167,29 @@ function isReceipt(value: unknown): value is Receipt {
     Array.isArray(value.kinds) &&
     Array.isArray(value.resources) &&
     value.kinds.every(isKindRecord) &&
-    value.resources.every(isResourceRecord)
+    value.resources.every(isResourceRecord) &&
+    isFailureRecord(value.failure)
   );
 }
-export function readReceipt(path: string): Receipt {
-  const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+/**
+ * The receipt at `path`: `unreadable` when the file cannot be read or holds
+ * no JSON (the reason is the platform's message), `invalid` when it is not a
+ * collection receipt.
+ */
+export function readReceipt(
+  path: string,
+): Outcome<Receipt, "unreadable" | "invalid"> {
+  let value: unknown;
+  try {
+    value = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    return failed(
+      "unreadable",
+      error instanceof Error ? error.message : String(error),
+      error,
+    );
+  }
   if (!isReceipt(value))
-    throw new GcError(`Invalid collection receipt: ${path}`);
-  return value;
+    return failed("invalid", `Invalid collection receipt: ${path}`);
+  return ok(value);
 }

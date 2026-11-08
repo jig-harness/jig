@@ -20,30 +20,29 @@ import { readReceipt, receiptPaths } from "./receipts.ts";
 
 /** The daily job at the machine file's hour. */
 function job() {
-  try {
-    return gcJobSpec(gcConfiguration(process.cwd(), null).machine.hour);
-  } catch {
-    // The job's names and arguments do not depend on the hour; a machine
-    // file that does not read is for install to refuse, not status or run.
-    return gcJobSpec();
-  }
+  const configuration = gcConfiguration(process.cwd(), null);
+  // The job's names and arguments do not depend on the hour; a machine
+  // file that does not read is for install to refuse, not status or run.
+  return configuration.ok
+    ? gcJobSpec(configuration.value.machine.hour)
+    : gcJobSpec();
 }
 
 /** The newest receipt that reads; null when there is none. */
 function lastRun(): LastRun | null {
-  for (const path of receiptPaths().reverse())
-    try {
-      const receipt = readReceipt(path);
-      return {
-        runId: receipt.runId,
-        startedAt: receipt.startedAt,
-        completed: receipt.completed,
-        exitStatus: receipt.exitStatus,
-        path,
-      };
-    } catch {
-      // A receipt that does not read is no evidence of a run; the one before it may be.
-    }
+  for (const path of receiptPaths().reverse()) {
+    const read = readReceipt(path);
+    // A receipt that does not read is no evidence of a run; the one before it may be.
+    if (!read.ok) continue;
+    const receipt = read.value;
+    return {
+      runId: receipt.runId,
+      startedAt: receipt.startedAt,
+      completed: receipt.completed,
+      exitStatus: receipt.exitStatus,
+      path,
+    };
+  }
   return null;
 }
 
@@ -52,17 +51,14 @@ function machineFileCheck(): DoctorCheck {
   const id = "gc:machine-file";
   const path = userConfigPath();
   if (!existsSync(path)) return { id, status: "skip", detail: `no ${path}` };
-  try {
-    gcConfiguration(process.cwd(), null);
-    return { id, status: "pass", detail: `${path} reads` };
-  } catch (error) {
-    return {
-      id,
-      status: "fail",
-      detail: (error as Error).message,
-      fix: `edit ${path}: CONFIGURATION.md's gc section lists its settings`,
-    };
-  }
+  const configuration = gcConfiguration(process.cwd(), null);
+  if (configuration.ok) return { id, status: "pass", detail: `${path} reads` };
+  return {
+    id,
+    status: "fail",
+    detail: configuration.failure.reason,
+    fix: `edit ${path}: CONFIGURATION.md's gc section lists its settings`,
+  };
 }
 
 export const gcComponent: Component<GcArguments> = {

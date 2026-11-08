@@ -9,13 +9,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isMapping } from "../../shared/config-layers.ts";
-import { GcError } from "../../shared/gc-error.ts";
 import {
   orcaEnvelope,
   orcaFailure,
   orcaResult,
   runOrca,
 } from "../../shared/orca.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { run } from "../../shared/proc.ts";
 import { spawnSync } from "../../shared/guarded-git-spawn.ts";
 import { HOOKS_DIR, hookPath } from "../../shared/worktree-hooks.ts";
@@ -25,8 +25,8 @@ import { localSteps, removeThroughOrca } from "../worktree-removal.ts";
 import { processHolder } from "./worktree-git.ts";
 import {
   type Collected,
-  GuardKeep,
   guardedCollection,
+  LAUNCH_VETO,
 } from "./worktree-guard.ts";
 import {
   canonicalWorktree,
@@ -66,7 +66,7 @@ interface OrcaWorktree {
 async function orcaWorktrees(
   command: string,
   repository: string,
-): Promise<Map<string, OrcaWorktree>> {
+): Promise<Outcome<Map<string, OrcaWorktree>>> {
   const done = await runOrca(command, [
     "worktree",
     "list",
@@ -76,14 +76,18 @@ async function orcaWorktrees(
   ]);
   const envelope = orcaEnvelope(done.stdout);
   if (envelope?.ok === false && envelope.code === "repo_not_found")
-    return new Map();
+    return ok(new Map());
   const result = orcaResult(done);
   if (result === null)
-    throw new GcError(
+    return failed(
+      "orca-unreadable",
       `Orca's worktree list could not be read ${orcaFailure(done)}`,
     );
   if (result.truncated !== false || !Array.isArray(result.worktrees))
-    throw new GcError("Orca's worktree list was incomplete or malformed");
+    return failed(
+      "malformed",
+      "Orca's worktree list was incomplete or malformed",
+    );
   const managed = new Map<string, OrcaWorktree>();
   for (const row of result.worktrees) {
     if (
@@ -91,10 +95,10 @@ async function orcaWorktrees(
       typeof row.id !== "string" ||
       typeof row.path !== "string"
     )
-      throw new GcError("Malformed Orca worktree record");
+      return failed("malformed", "Malformed Orca worktree record");
     managed.set(canonicalWorktree(row.path), { id: row.id, path: row.path });
   }
-  return managed;
+  return ok(managed);
 }
 function orcaId(resource: Resource): string | null {
   return isMapping(resource.details) &&
@@ -124,10 +128,13 @@ async function snapshotBaseHooks(
   repository: string,
   declaration: string,
   worktree: string,
-): Promise<{ hook: string; dir: string } | null> {
+): Promise<Outcome<{ hook: string; dir: string } | null>> {
   const tip = / @ ([0-9a-f]{40,64})$/.exec(declaration)?.[1];
   if (tip === undefined)
-    throw new GcError("the base-branch commit of the declaration is unknown");
+    return failed(
+      "unknown-base",
+      "the base-branch commit of the declaration is unknown",
+    );
   const held = await git(repository, [
     "ls-tree",
     "--name-only",
@@ -135,46 +142,58 @@ async function snapshotBaseHooks(
     "--",
     `${HOOKS_DIR}/remove`,
   ]);
-  if (held === "") {
+  if (!held.ok) return held;
+  if (held.value === "") {
     // The base branch decides whether a teardown is required; a checkout that
     // brings a hook of its own the base never reviewed is still refused.
-    if (hookPath(worktree, "remove") === null) return null;
-    throw new GcError(
+    if (hookPath(worktree, "remove") === null) return ok(null);
+    return failed(
+      "unreviewed-hook",
       `kept: ${HOOKS_DIR}/remove is not in the base branch, so its code was never reviewed there`,
     );
   }
-  await requireBaseBunfig(repository, tip, worktree);
+  const startup = await requireBaseBunfig(repository, tip, worktree);
+  if (!startup.ok) return startup;
   const dir = mkdtempSync(join(tmpdir(), "jig-gc-hooks-"));
+  const hook = join(dir, HOOKS_DIR, "remove");
+  let extracted: Outcome<undefined>;
   try {
-    await extractBaseHooks(repository, tip, dir);
-    const hook = join(dir, HOOKS_DIR, "remove");
-    accessSync(hook, constants.X_OK);
-    return { hook, dir };
+    extracted = await extractBaseHooks(repository, tip, dir);
+    if (extracted.ok) accessSync(hook, constants.X_OK);
   } catch (error) {
-    rmSync(dir, { recursive: true, force: true });
-    throw error instanceof GcError
-      ? error
-      : new GcError(
-          `kept: the base branch's ${HOOKS_DIR}/remove cannot run (${error instanceof Error ? error.message : String(error)})`,
-        );
+    extracted = failed(
+      "hook-unrunnable",
+      `kept: the base branch's ${HOOKS_DIR}/remove cannot run (${error instanceof Error ? error.message : String(error)})`,
+      error,
+    );
   }
+  if (!extracted.ok) {
+    rmSync(dir, { recursive: true, force: true });
+    return extracted;
+  }
+  return ok({ hook, dir });
 }
 /** Refuse a checkout whose Bun startup file is not the base branch's. */
 async function requireBaseBunfig(
   repository: string,
   tip: string,
   worktree: string,
-): Promise<void> {
+): Promise<Outcome<undefined>> {
   const startup = join(worktree, "bunfig.toml");
-  if (!existsSync(startup)) return;
+  if (!existsSync(startup)) return ok(undefined);
   const local = await git(repository, ["hash-object", "--no-filters", startup]);
-  const base = await git(repository, ["rev-parse", `${tip}:bunfig.toml`]).catch(
+  if (!local.ok) return local;
+  // A base branch without the file, or one git cannot read, holds no match.
+  const base = await git(repository, ["rev-parse", `${tip}:bunfig.toml`]).then(
+    (read) => (read.ok ? read.value : ""),
     () => "",
   );
-  if (local !== base)
-    throw new GcError(
+  if (local.value !== base)
+    return failed(
+      "startup-differs",
       "kept: bunfig.toml differs from the base branch's; remove the worktree by hand",
     );
+  return ok(undefined);
 }
 /**
  * Extract the commit's hooks directory into `dir`, then check every committed
@@ -185,7 +204,7 @@ async function extractBaseHooks(
   repository: string,
   tip: string,
   dir: string,
-): Promise<void> {
+): Promise<Outcome<undefined>> {
   const env = gitEnvironment() as Record<string, string>;
   const archive = join(dir, "hooks.tar");
   const spawned: [string, string[]][] = [
@@ -209,7 +228,10 @@ async function extractBaseHooks(
   for (const [file, args] of spawned) {
     const done = spawnSync(file, args, { env, timeout: 60_000 });
     if (done.status !== 0)
-      throw new GcError(`could not extract ${HOOKS_DIR} from the base branch`);
+      return failed(
+        "hook-unrunnable",
+        `could not extract ${HOOKS_DIR} from the base branch`,
+      );
   }
   const listed = await git(repository, [
     "ls-tree",
@@ -219,23 +241,34 @@ async function extractBaseHooks(
     "--",
     HOOKS_DIR,
   ]);
-  for (const row of listed.split("\0").filter((entry) => entry !== "")) {
+  if (!listed.ok) return listed;
+  for (const row of listed.value.split("\0").filter((entry) => entry !== "")) {
     const match = /^(100644|100755) blob ([0-9a-f]+)\t(.+)$/s.exec(row);
     if (match === null)
-      throw new GcError(
+      return failed(
+        "hook-unrunnable",
         `kept: ${HOOKS_DIR} in the base branch holds an entry that is not a plain file`,
       );
     const [, , oid, path] = match;
     const extracted = join(dir, path ?? "");
-    if (
-      !existsSync(extracted) ||
-      (await git(repository, ["hash-object", "--no-filters", extracted])) !==
-        oid
-    )
-      throw new GcError(
+    if (!existsSync(extracted))
+      return failed(
+        "hook-unrunnable",
+        `kept: ${path} was changed or left out by git archive's export attributes`,
+      );
+    const hashed = await git(repository, [
+      "hash-object",
+      "--no-filters",
+      extracted,
+    ]);
+    if (!hashed.ok) return hashed;
+    if (hashed.value !== oid)
+      return failed(
+        "hook-unrunnable",
         `kept: ${path} was changed or left out by git archive's export attributes`,
       );
   }
+  return ok(undefined);
 }
 /**
  * Collect a worktree Orca manages through Orca: the repository's remove hook
@@ -253,11 +286,20 @@ async function collectThroughOrca(
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
+  const failure = (outcome: { failure: { code: string; reason: string } }) => ({
+    outcome:
+      outcome.failure.code === LAUNCH_VETO
+        ? ("refused" as const)
+        : ("failed" as const),
+    reason: outcome.failure.reason,
+  });
   let snapshot: { hook: string; dir: string } | null = null;
   try {
     // The retiring branch supplies the hook, and this runs unattended, so the
     // hook that runs is the declared base-branch commit's, never the branch's.
-    snapshot = await snapshotBaseHooks(repository, declaration, resource.id);
+    const taken = await snapshotBaseHooks(repository, declaration, resource.id);
+    if (!taken.ok) return failure(taken);
+    snapshot = taken.value;
     const base = snapshot;
     const removed = await removeThroughOrca({
       worktree: resource.id,
@@ -276,31 +318,35 @@ async function collectThroughOrca(
         admit: async (worktree) => {
           const live = await orcaLiveness(command, worktree);
           if (live !== null)
-            throw new GcError(`kept after the hook: ${live.reason}`);
+            return failed("live", `kept after the hook: ${live.reason}`);
           // Read after the registry and after gc's admission: a launch the
           // plugin let through meanwhile left its marker first.
           const launch = launched();
           if (launch !== null)
-            throw new GuardKeep(`kept after the hook: ${launch}`);
+            return failed(LAUNCH_VETO, `kept after the hook: ${launch}`);
           if ((await processHolder(worktree)) !== false)
-            throw new GcError(
+            return failed(
+              "held",
               "kept after the hook: a process holds the worktree, or holders could not be read",
             );
+          return ok(undefined);
         },
       },
     });
+    if (!removed.ok) return failure(removed);
     return {
       outcome: "collected",
-      reason: `removed through Orca: ${removed.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings, orca worktree rm`,
+      reason: `removed through Orca: ${removed.value.hook === null ? `no ${HOOKS_DIR}/remove` : `ran ${HOOKS_DIR}/remove`}, parked reflection findings, orca worktree rm`,
       details: {
         ...(isMapping(resource.details) ? resource.details : {}),
-        hook: removed.hook,
+        hook: removed.value.hook,
         parked: true,
       },
     };
   } catch (error) {
+    // A step that throws (a platform error, or a defect) fails the removal.
     return {
-      outcome: error instanceof GuardKeep ? "refused" : "failed",
+      outcome: "failed",
       reason: error instanceof Error ? error.message : String(error),
     };
   } finally {
@@ -327,25 +373,27 @@ export function worktreesKind(
         "--porcelain",
         "-z",
       ]);
-      const entries = output
-        .split("\0\0")
-        .filter(Boolean)
-        .map((block) => {
-          const fields = block.split("\0");
-          const path = fields.find((field) => field.startsWith("worktree "));
-          if (!path) throw new GcError("Malformed Git worktree record");
-          return {
-            // Native separators: Git for Windows prints forward slashes.
-            id: normalize(path.slice(9)),
-            details: {
-              locked: fields.some(
-                (field) => field === "locked" || field.startsWith("locked "),
-              ),
-            } as Record<string, unknown>,
-          };
+      if (!output.ok) return output;
+      const entries: { id: string; details: Record<string, unknown> }[] = [];
+      for (const block of output.value.split("\0\0").filter(Boolean)) {
+        const fields = block.split("\0");
+        const path = fields.find((field) => field.startsWith("worktree "));
+        if (!path) return failed("malformed", "Malformed Git worktree record");
+        entries.push({
+          // Native separators: Git for Windows prints forward slashes.
+          id: normalize(path.slice(9)),
+          details: {
+            locked: fields.some(
+              (field) => field === "locked" || field.startsWith("locked "),
+            ),
+          },
         });
+      }
       if (entries.length === 0)
-        throw new GcError("Git worktree inventory was empty or malformed");
+        return failed(
+          "malformed",
+          "Git worktree inventory was empty or malformed",
+        );
       const canonical = roots.map((root) => {
         try {
           // As git spells a worktree: links resolved and, on Windows, 8.3
@@ -359,25 +407,35 @@ export function worktreesKind(
       const selected = entries
         .slice(1)
         .filter((entry) => canonical.some((root) => within(entry.id, root)));
-      if (orca === undefined || selected.length === 0) return selected;
+      if (orca === undefined || selected.length === 0) return ok(selected);
       const managed = await orcaWorktrees(orca, repository);
+      if (!managed.ok) return managed;
       for (const entry of selected) {
-        const row = managed.get(canonicalWorktree(entry.id));
+        const row = managed.value.get(canonicalWorktree(entry.id));
         entry.details.runtime = row === undefined ? "none" : "orca";
         if (row !== undefined) {
           entry.details.orca = row.id;
           entry.details.orcaPath = row.path;
         }
       }
-      return selected;
+      return ok(selected);
     },
     prove: async (resource) => {
       if (isMapping(resource.details) && resource.details.locked === true)
         return { state: "live", reason: "worktree is locked" };
-      const resolved = policy ?? (await worktreePolicy(repository));
-      return orca !== undefined && orcaId(resource) !== null
-        ? runtimeWorktreeProof(resource.id, resolved, idleDays, { orca })
-        : worktreeProof(resource.id, resolved, idleDays);
+      const resolved =
+        policy === undefined ? await worktreePolicy(repository) : ok(policy);
+      if (!resolved.ok)
+        return { state: "unverified", reason: resolved.failure.reason };
+      const proved =
+        orca !== undefined && orcaId(resource) !== null
+          ? await runtimeWorktreeProof(resource.id, resolved.value, idleDays, {
+              orca,
+            })
+          : await worktreeProof(resource.id, resolved.value, idleDays);
+      return proved.ok
+        ? proved.value
+        : { state: "unverified", reason: proved.failure.reason };
     },
     collect: async (resource) => {
       const id = orcaId(resource);

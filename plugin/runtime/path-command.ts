@@ -24,7 +24,8 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
-import { GcError } from "../shared/gc-error.ts";
+import { failureExit } from "../shared/cli.ts";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { commandScriptCall, launcherCall } from "./installed-job.ts";
 import type { RefreshResult } from "./refresh.ts";
 import {
@@ -65,15 +66,17 @@ export function commandText(
   command: readonly string[],
   platform: NodeJS.Platform = process.platform,
   deadlineSec?: number,
-): string {
+): Outcome<string, "refused"> {
   if (command.some((value) => /[\r\n\0]/.test(value)))
-    throw new GcError(
+    return failed(
+      "refused",
       "The jig command cannot name a path with a line break or NUL",
     );
   const purpose = "runs the installed jig plugin through its launcher";
   if (platform === "win32") {
     if (command.some((value) => value.includes('"')))
-      throw new GcError(
+      return failed(
+        "refused",
         "The jig command cannot name a path with a double quote",
       );
     // A batch file reads a percent sign as a variable unless it is doubled.
@@ -83,13 +86,17 @@ export function commandText(
         ? ""
         : `if not defined JIG_LAUNCHER_DEADLINE_SEC set JIG_LAUNCHER_DEADLINE_SEC=${deadlineSec}\r\n`;
     // setlocal keeps the variables out of the caller's console.
-    return `@echo off\r\nrem ${MARKER}; ${purpose}.\r\nsetlocal\r\nset JIG_LAUNCHER_ROLE=command\r\n${deadline}${quoted.join(" ")} %*\r\n`;
+    return ok(
+      `@echo off\r\nrem ${MARKER}; ${purpose}.\r\nsetlocal\r\nset JIG_LAUNCHER_ROLE=command\r\n${deadline}${quoted.join(" ")} %*\r\n`,
+    );
   }
   const deadline =
     deadlineSec === undefined
       ? ""
       : `JIG_LAUNCHER_DEADLINE_SEC="\${JIG_LAUNCHER_DEADLINE_SEC:-${deadlineSec}}"\nexport JIG_LAUNCHER_DEADLINE_SEC\n`;
-  return `#!/bin/sh\n# ${MARKER}; ${purpose}.\nJIG_LAUNCHER_ROLE=command\nexport JIG_LAUNCHER_ROLE\n${deadline}exec ${command.map(shellQuote).join(" ")} "$@"\n`;
+  return ok(
+    `#!/bin/sh\n# ${MARKER}; ${purpose}.\nJIG_LAUNCHER_ROLE=command\nexport JIG_LAUNCHER_ROLE\n${deadline}exec ${command.map(shellQuote).join(" ")} "$@"\n`,
+  );
 }
 
 /**
@@ -149,13 +156,15 @@ export function commandPrograms(): { claude?: string; codex?: string } {
  * Refuses a file at the command's path that `jig install` did not write,
  * before anything is installed, so a refused install leaves nothing behind.
  */
-export function checkCommandPath(): void {
+export function checkCommandPath(): Outcome<void, "refused"> {
   const path = commandPath();
   const current = readOptional(path);
   if (current !== null && !current.includes(MARKER))
-    throw new GcError(
+    return failed(
+      "refused",
       `${path} exists and jig install did not write it; move it aside, then run jig install again`,
     );
+  return ok(undefined);
 }
 
 /**
@@ -169,23 +178,28 @@ export function installCommand(options: {
   script: string;
   deadlineSec?: number;
 }): number {
-  checkCommandPath();
+  const free = checkCommandPath();
+  if (!free.ok) return failureExit(free.failure);
   const path = commandPath();
   const directory = commandLauncherDirectory();
-  const text = commandText(
+  const written = commandText(
     launcherCommand(directory),
     process.platform,
     options.deadlineSec,
   );
+  if (!written.ok) return failureExit(written.failure);
+  const text = written.value;
   console.log(`The jig command (${path}):\n${text}`);
   if (!options.confirm) {
     console.log("Preview only. Repeat with --yes to write it.");
     return 0;
   }
   if (!installedScript(options.script))
-    throw new GcError(
-      "The jig command requires the installed plugin copy, outside every worktree",
-    );
+    return failureExit({
+      code: "refused",
+      reason:
+        "The jig command requires the installed plugin copy, outside every worktree",
+    });
   installLauncher(directory);
   writeScript(path, text);
   console.log(`Wrote ${path}`);
@@ -223,11 +237,13 @@ export function refreshCommand(
       detail: `cannot read what ${path} runs; jig install --yes writes it again`,
     };
   const directory = commandLauncherDirectory();
-  const text = commandText(
+  const written = commandText(
     launcherCommand(directory, call.programs, call.bun),
     platform,
     script.deadlineSec,
   );
+  if (!written.ok) return { outcome: "failed", detail: written.failure.reason };
+  const text = written.value;
   const stale = staleLauncherFiles(directory);
   const changed = text !== current;
   if (stale.length === 0 && !changed)
@@ -236,10 +252,15 @@ export function refreshCommand(
       detail: "its launcher copy and script are current",
     };
   // One transaction: a failure in either write puts the launcher files back.
-  guardLauncher(directory, launcherSnapshotIn(directory), () => {
-    if (stale.length > 0) installLauncher(directory);
-    if (changed) writeScript(path, text);
-  });
+  const guarded = guardLauncher(
+    directory,
+    launcherSnapshotIn(directory),
+    () => {
+      if (stale.length > 0) installLauncher(directory);
+      if (changed) writeScript(path, text);
+    },
+  );
+  if (!guarded.ok) return { outcome: "failed", detail: guarded.failure.reason };
   return {
     outcome: "refreshed",
     detail: [

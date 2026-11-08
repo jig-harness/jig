@@ -16,6 +16,17 @@ export class PhaseTimer<P extends string> {
     return this.thrown ?? this.running.at(-1) ?? null;
   }
 
+  /**
+   * The phase a throw a boundary caught came from, forgotten, so the turn
+   * goes on and the next defect names its own phase; `null` when nothing
+   * was thrown.
+   */
+  caught(): P | null {
+    const phase = this.thrown;
+    this.thrown = null;
+    return phase;
+  }
+
   /** Run `run` as `phase`, adding the time it took, whether it returns or throws. */
   async time<T>(phase: P, run: () => T | Promise<T>): Promise<T> {
     const started = performance.now();
@@ -42,19 +53,15 @@ export class PhaseTimer<P extends string> {
 export async function settled<T extends readonly unknown[]>(
   ...promises: { [K in keyof T]: Promise<T[K]> }
 ): Promise<T> {
-  const first: { reason?: unknown; failed: boolean } = { failed: false };
-  const results = await Promise.allSettled(
-    promises.map((p) =>
-      p.catch((reason: unknown) => {
-        if (!first.failed) {
-          first.failed = true;
-          first.reason = reason;
-        }
-        throw reason;
-      }),
-    ),
-  );
-  if (first.failed) throw first.reason;
+  // The first promise to reject, in time: each one's own handler runs before any reaction added later.
+  let first: Promise<unknown> | null = null;
+  for (const p of promises)
+    p.then(undefined, () => {
+      first ??= p;
+    });
+  const results = await Promise.allSettled(promises);
+  // Awaiting the first rejected promise raises its rejection again, unchanged.
+  if (first !== null) await first;
   return results.map(
     (r) => (r as PromiseFulfilledResult<unknown>).value,
   ) as unknown as T;

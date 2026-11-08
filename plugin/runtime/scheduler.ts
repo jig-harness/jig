@@ -18,6 +18,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { run } from "../shared/proc.ts";
 import { MAX_TIMEOUT_SECONDS } from "../shared/resource-lock.ts";
 import { installedEntry, outsideCheckout } from "./launcher.ts";
@@ -146,14 +147,20 @@ async function execute(
       `${command[0]} failed: ${result.stderr || result.stdout}`,
     );
 }
-export function detectScheduler(): Scheduler {
-  if (process.platform === "darwin") return "launchd";
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+/** This machine's scheduler; `unsupported` on a platform with none of them. */
+export function detectScheduler(): Outcome<Scheduler, "unsupported"> {
+  if (process.platform === "darwin") return ok("launchd");
   if (process.platform !== "linux")
-    throw new GcError("GC scheduling supports macOS and Linux");
+    return failed("unsupported", "GC scheduling supports macOS and Linux");
   // The user manager's socket, where `systemctl --user` itself looks for it.
   const runtime =
     process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid?.()}`;
-  return existsSync(join(runtime, "systemd", "private")) ? "systemd" : "cron";
+  return ok(
+    existsSync(join(runtime, "systemd", "private")) ? "systemd" : "cron",
+  );
 }
 async function crontab(): Promise<string> {
   const result = await run(["crontab", "-l"], { timeoutSec: 30 });
@@ -184,11 +191,14 @@ export function pluginPrograms(): { claude?: string; codex?: string } {
  * Fails an install whose job could not find the plugin it would run: the
  * scheduler reports a job's failures where nobody reads them.
  */
-export async function checkLauncherResolves(): Promise<void> {
+export async function checkLauncherResolves(): Promise<
+  Outcome<void, "unresolved">
+> {
   try {
     await installedEntry(pluginPrograms());
+    return ok(undefined);
   } catch (error) {
-    throw new GcError((error as Error).message);
+    return failed("unresolved", reasonOf(error), error);
   }
 }
 const LAUNCHER_FILES = ["launcher.ts", "bunfig.toml"];
@@ -379,21 +389,31 @@ async function applyJob(
     ? updateLaunchd(dir, files, remove, spec)
     : updateSystemd(dir, files, remove, spec);
 }
-/** Write, or with `remove` take away, the job `spec` names. */
+/**
+ * Write, or with `remove` take away, the job `spec` names: where it is, or
+ * why it could not be written, what the scheduler or the file system said.
+ */
 export async function updateJob(
   spec: JobSpec,
   remove = false,
-): Promise<string> {
+): Promise<Outcome<string, "scheduler-failed">> {
   const scheduler = detectScheduler();
-  // A removal names the job only: the cadence it would have is not rendered.
-  const named = remove ? { ...spec, schedule: { hour: 0 } } : spec;
-  const files = jobFiles(scheduler, installedJob(named, remove));
-  mkdirSync(spec.stateRoot, { recursive: true, mode: 0o700 });
-  // In place before the job that runs it, and gone only after that job is.
-  if (!remove) installLauncher(launcherDirectory(spec));
-  const job = await applyJob(scheduler, files, remove, spec);
-  if (remove) rmSync(launcherDirectory(spec), { recursive: true, force: true });
-  return job;
+  if (!scheduler.ok)
+    return failed("scheduler-failed", scheduler.failure.reason);
+  try {
+    // A removal names the job only: the cadence it would have is not rendered.
+    const named = remove ? { ...spec, schedule: { hour: 0 } } : spec;
+    const files = jobFiles(scheduler.value, installedJob(named, remove));
+    mkdirSync(spec.stateRoot, { recursive: true, mode: 0o700 });
+    // In place before the job that runs it, and gone only after that job is.
+    if (!remove) installLauncher(launcherDirectory(spec));
+    const job = await applyJob(scheduler.value, files, remove, spec);
+    if (remove)
+      rmSync(launcherDirectory(spec), { recursive: true, force: true });
+    return ok(job);
+  } catch (error) {
+    return failed("scheduler-failed", reasonOf(error), error);
+  }
 }
 /**
  * The job as it stood before an update: its files' text, whether it starts on
@@ -426,24 +446,28 @@ function launcherSnapshot(spec: JobSpec): Record<string, string | null> {
 }
 /**
  * Runs `write`, which replaces the launcher files in `directory`; a failure
- * puts back `previous` (what `launcherSnapshotIn` saw before) and says so.
+ * puts back `previous` (what `launcherSnapshotIn` saw before), and its
+ * reason says when that could not be done.
  */
 export function guardLauncher(
   directory: string,
   previous: Record<string, string | null>,
   write: () => void,
-): void {
+): Outcome<void, "not-written"> {
   try {
     write();
+    return ok(undefined);
   } catch (error) {
     try {
       restoreLauncher(previous, directory);
     } catch (restoring) {
-      throw new GcError(
-        `${(error as Error).message}; the previous launcher copy was not restored: ${(restoring as Error).message}`,
+      return failed(
+        "not-written",
+        `${reasonOf(error)}; the previous launcher copy was not restored: ${reasonOf(restoring)}`,
+        error,
       );
     }
-    throw error;
+    return failed("not-written", reasonOf(error), error);
   }
 }
 /** Puts back the launcher files the snapshot saw, each staged then renamed. */
@@ -594,7 +618,21 @@ async function systemdState(
     ),
   };
 }
+/**
+ * The job `spec` names as `scheduler` holds it now, or why its state cannot
+ * be established: an unreadable state is never read as an absent job.
+ */
 export async function snapshotScheduler(
+  scheduler: Scheduler,
+  spec: JobSpec,
+): Promise<Outcome<SchedulerSnapshot, "unreadable">> {
+  try {
+    return ok(await readSnapshot(scheduler, spec));
+  } catch (error) {
+    return failed("unreadable", reasonOf(error), error);
+  }
+}
+async function readSnapshot(
   scheduler: Scheduler,
   spec: JobSpec,
 ): Promise<SchedulerSnapshot> {
@@ -663,10 +701,18 @@ async function startPrevious(snapshot: SchedulerSnapshot): Promise<void> {
   if (snapshot.enabled) await execute(["systemctl", "--user", "enable", timer]);
   if (snapshot.active) await execute(["systemctl", "--user", "start", timer]);
 }
-/** Writes back the snapshot's exact files and states, not a rebuilt job. */
+/** Writes back the snapshot's exact files and states, not a rebuilt job; or why it could not. */
 export async function restoreScheduler(
   snapshot: SchedulerSnapshot,
-): Promise<void> {
+): Promise<Outcome<void, "not-restored">> {
+  try {
+    await restore(snapshot);
+    return ok(undefined);
+  } catch (error) {
+    return failed("not-restored", reasonOf(error), error);
+  }
+}
+async function restore(snapshot: SchedulerSnapshot): Promise<void> {
   // In place before the restored job can start and run it.
   restoreLauncher(snapshot.launcher, launcherDirectory(snapshot.spec));
   if (snapshot.scheduler === "cron") {
@@ -701,68 +747,73 @@ export function jobChanged(
  * whether it is enabled and running as it was: a refresh changes what the
  * job runs, never whether it runs. A launchd job that is loaded is booted out
  * and in again to read its new file. A failure puts the snapshot back, the
- * launcher files included. `announce` sees each scheduler command first.
+ * launcher files included, and its reason says whether that was done.
+ * `announce` sees each scheduler command first.
  */
 export async function rewriteJob(
   snapshot: SchedulerSnapshot,
   files: Record<string, string>,
   announce?: (command: string[]) => void,
-): Promise<void> {
-  const { scheduler, spec } = snapshot;
+): Promise<Outcome<void, "not-rewritten">> {
   try {
-    if (scheduler === "cron") {
-      await updateCron(files, false, spec, announce);
-      return;
-    }
-    const dir = jobDirectory(scheduler);
-    if (scheduler === "systemd") {
-      for (const [name, text] of Object.entries(files))
-        writeFileSync(join(dir, name), text, { mode: 0o600 });
-      await execute(
-        ["systemctl", "--user", "daemon-reload"],
-        undefined,
-        announce,
-      );
-      return;
-    }
-    const path = join(dir, `${spec.label}.plist`);
-    const domain = `gui/${process.getuid?.()}`;
-    if (snapshot.active)
-      await execute(
-        ["launchctl", "bootout", `${domain}/${spec.label}`],
-        undefined,
-        announce,
-      );
-    writeFileSync(path, files[`${spec.label}.plist`] as string, {
-      mode: 0o600,
-    });
-    if (snapshot.active)
-      await execute(
-        ["launchctl", "bootstrap", domain, path],
-        undefined,
-        announce,
-      );
+    await rewrite(snapshot, files, announce);
+    return ok(undefined);
   } catch (error) {
-    try {
-      await restoreScheduler(snapshot);
-    } catch (restoring) {
-      throw new GcError(
-        `${(error as Error).message}; previous scheduler job not restored: ${(restoring as Error).message}`,
-      );
-    }
-    throw new GcError(
-      `${(error as Error).message}; the previous scheduler job is restored`,
+    const restored = await restoreScheduler(snapshot);
+    return failed(
+      "not-rewritten",
+      restored.ok
+        ? `${reasonOf(error)}; the previous scheduler job is restored`
+        : `${reasonOf(error)}; previous scheduler job not restored: ${restored.failure.reason}`,
+      error,
     );
   }
 }
+async function rewrite(
+  snapshot: SchedulerSnapshot,
+  files: Record<string, string>,
+  announce?: (command: string[]) => void,
+): Promise<void> {
+  const { scheduler, spec } = snapshot;
+  if (scheduler === "cron") {
+    await updateCron(files, false, spec, announce);
+    return;
+  }
+  const dir = jobDirectory(scheduler);
+  if (scheduler === "systemd") {
+    for (const [name, text] of Object.entries(files))
+      writeFileSync(join(dir, name), text, { mode: 0o600 });
+    await execute(
+      ["systemctl", "--user", "daemon-reload"],
+      undefined,
+      announce,
+    );
+    return;
+  }
+  const path = join(dir, `${spec.label}.plist`);
+  const domain = `gui/${process.getuid?.()}`;
+  if (snapshot.active)
+    await execute(
+      ["launchctl", "bootout", `${domain}/${spec.label}`],
+      undefined,
+      announce,
+    );
+  writeFileSync(path, files[`${spec.label}.plist`] as string, {
+    mode: 0o600,
+  });
+  if (snapshot.active)
+    await execute(
+      ["launchctl", "bootstrap", domain, path],
+      undefined,
+      announce,
+    );
+}
 /** The concrete job `spec` names, as a confirmed install would write it. */
 export function jobPreview(spec: JobSpec, remove: boolean): string {
-  let scheduler: Scheduler;
-  try {
-    scheduler = detectScheduler();
-  } catch (error) {
-    return `Scheduler preview unavailable: ${(error as Error).message}`;
-  }
+  const detected = detectScheduler();
+  if (!detected.ok)
+    return `Scheduler preview unavailable: ${detected.failure.reason}`;
+  const scheduler = detected.value;
   if (remove)
     return `Scheduler preview (${scheduler}): the ${spec.name} job is removed`;
   const files = jobFiles(scheduler, installedJob(spec));

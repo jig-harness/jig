@@ -14,6 +14,7 @@
  * either way.
  */
 import { ExitError } from "../shared/cli.ts";
+import { USAGE_EXIT } from "../shared/command-line.ts";
 import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { probe, type ProbeDeps, type ProbeReport } from "./lib/change-probe.ts";
 import { githubProbeForge } from "./lib/change-probe-github.ts";
@@ -92,7 +93,7 @@ export async function probeMain(
 ): Promise<number> {
   if (machine === null)
     throw new ExitError(
-      2,
+      USAGE_EXIT,
       `jig dispatch probe needs the machine file ${machineConfigPath()}: the repositories it reads are the ones that file dispatches`,
     );
   const result = await probe(machine, options.apply, {

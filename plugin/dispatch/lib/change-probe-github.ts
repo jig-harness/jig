@@ -362,7 +362,8 @@ async function searchForge(
 export const githubProbeForge: ProbeForge = {
   async slug(path) {
     try {
-      return ok((await repoTarget(path)).slug);
+      const target = await repoTarget(path);
+      return target.ok ? ok(target.value.slug) : target;
     } catch (error) {
       return failed(
         "unreadable",

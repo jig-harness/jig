@@ -10,61 +10,97 @@
  * closed one merged. Where the repository turns dispatch labels on, each listing
  * and view carries the pull requests' labels too, and a pull request's
  * labels are changed with one `gh pr edit` call; with them off, no label
- * is used or written (the repository's query, `forge-batch.ts`, lists them
- * before the section that turns them on is read, and they are dropped). Each read
- * returns what it was asked for or throws with the reason, so a population
- * read in part is never planned from.
+ * is used or written. A tick reads most of this for each repository in one
+ * query (`forge-batch.ts`): which repository the checkout is, its
+ * configuration file and its open pull requests with their labels, which
+ * are dropped when the repository's section turns the labels off
+ * (`listedOpen`). When that query does not read in full, the tick makes the
+ * same reads one by one here.
+ *
+ * Each read and write returns an outcome (`shared/outcome.ts`), so a
+ * population read in part is never planned from. Its failure's code says
+ * which:
+ *
+ * - `unreadable`: a read failed, came back in a form that does not read,
+ *   or holds more than one read can, so it would be a read in part.
+ * - `not-open`: a pull request read again before a launch is no longer open.
+ * - `not-closed`: a pull request asked whether it merged has neither merged
+ *   nor closed.
+ * - `refused`: the forge refused a write (a label that does not exist, no
+ *   permission).
  */
 import { isRecord } from "../../shared/guards.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type { MergedPr, RepoTarget } from "./types.ts";
 
 /** The most pull requests one listing reads; a full page means a partial read. */
 const PR_LIMIT = 1000;
 
-class ForgeReadError extends Error {}
+/** A failed read: the forge's answer did not read. */
+function unreadable(reason: string): Outcome<never, "unreadable"> {
+  return failed("unreadable", reason);
+}
 
-async function gh(args: string[], cwd?: string): Promise<string> {
+/** What `gh` printed, or why it did not answer under `code`. */
+async function gh<Code extends string>(
+  args: string[],
+  code: Code,
+  cwd?: string,
+): Promise<Outcome<string, Code>> {
   const r = await ghCall(args, {
     stderr: "pipe",
     env: ghRepoEnv(),
     ...(cwd === undefined ? {} : { cwd }),
   });
-  if (r.code === 0) return r.stdout;
+  if (r.code === 0) return ok(r.stdout);
   const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-  throw new ForgeReadError(
+  return failed(
+    code,
     `gh ${args.slice(0, 2).join(" ")} exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
   );
 }
 
-function parsed(text: string, what: string): unknown {
+function parsed(text: string, what: string): Outcome<unknown, "unreadable"> {
   try {
-    return JSON.parse(text);
-  } catch {
-    throw new ForgeReadError(`${what} is not JSON`);
+    return ok(JSON.parse(text));
+  } catch (error) {
+    return failed("unreadable", `${what} is not JSON`, error);
   }
 }
 
+/** What a `gh` read answered, parsed as JSON; `what` names it in the failure. */
+async function ghJson(
+  args: string[],
+  what: string,
+  cwd?: string,
+): Promise<Outcome<unknown, "unreadable">> {
+  const text = await gh(args, "unreadable", cwd);
+  return text.ok ? parsed(text.value, what) : text;
+}
+
 /** The forge repository a checkout belongs to, and its default branch. */
-export async function repoTarget(path: string): Promise<RepoTarget> {
-  const out = parsed(
-    await gh(
-      ["repo", "view", "--json", "nameWithOwner,defaultBranchRef"],
-      path,
-    ),
+export async function repoTarget(
+  path: string,
+): Promise<Outcome<RepoTarget, "unreadable">> {
+  const read = await ghJson(
+    ["repo", "view", "--json", "nameWithOwner,defaultBranchRef"],
     "the repository view",
+    path,
   );
+  if (!read.ok) return read;
+  const out = read.value;
   const slug = isRecord(out) ? out.nameWithOwner : undefined;
   const branch =
     isRecord(out) && isRecord(out.defaultBranchRef)
       ? out.defaultBranchRef.name
       : undefined;
   if (typeof slug !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(slug))
-    throw new ForgeReadError("the repository view names no owner/name");
+    return unreadable("the repository view names no owner/name");
   if (typeof branch !== "string" || branch === "")
-    throw new ForgeReadError(`${slug} reports no default branch`);
-  return { path, slug, defaultBranch: branch };
+    return unreadable(`${slug} reports no default branch`);
+  return ok({ path, slug, defaultBranch: branch });
 }
 
 /**
@@ -73,7 +109,7 @@ export async function repoTarget(path: string): Promise<RepoTarget> {
  */
 export async function defaultBranchConfig(
   repo: RepoTarget,
-): Promise<string | null> {
+): Promise<Outcome<string | null, "unreadable">> {
   return defaultBranchFile(repo, OVERLAY_RELPATH);
 }
 
@@ -84,7 +120,7 @@ export async function defaultBranchConfig(
 export async function defaultBranchFile(
   repo: RepoTarget,
   path: string,
-): Promise<string | null> {
+): Promise<Outcome<string | null, "unreadable">> {
   const where = `${path} on ${repo.slug}@${repo.defaultBranch}`;
   const encoded = path.split("/").map(encodeURIComponent).join("/");
   const r = await ghCall(
@@ -95,20 +131,22 @@ export async function defaultBranchFile(
     { stderr: "pipe", env: ghRepoEnv() },
   );
   if (r.code !== 0) {
-    if (/HTTP 404/.test(r.stderr)) return null;
+    if (/HTTP 404/.test(r.stderr)) return ok(null);
     const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-    throw new ForgeReadError(
+    return unreadable(
       `${where} could not be read (gh exited ${r.code}${tail === "" ? "" : `: ${tail}`})`,
     );
   }
-  const file = parsed(r.stdout, "the contents answer");
+  const read = parsed(r.stdout, "the contents answer");
+  if (!read.ok) return read;
+  const file = read.value;
   if (
     !isRecord(file) ||
     file.encoding !== "base64" ||
     typeof file.content !== "string"
   )
-    throw new ForgeReadError(`${where} came back without base64 content`);
-  return Buffer.from(file.content, "base64").toString("utf8");
+    return unreadable(`${where} came back without base64 content`);
+  return ok(Buffer.from(file.content, "base64").toString("utf8"));
 }
 
 /** The files one page of a pull request's file listing holds. */
@@ -119,44 +157,51 @@ const FILES_LIMIT = 3000;
 
 /**
  * Every file a pull request changes, as the forge lists them, read page by
- * page; a renamed file counts under both its names. Throws when a page
- * does not read, or when the pull request changes as many files as the
+ * page; a renamed file counts under both its names. Unreadable when a
+ * page does not read, or when the pull request changes as many files as the
  * forge lists at most: a list read in part would place it in too few areas.
  */
 export async function pullRequestFiles(
   slug: string,
   pr: number,
-): Promise<string[]> {
+): Promise<Outcome<string[], "unreadable">> {
   const files: string[] = [];
   for (let page = 1; ; page++) {
-    const out = parsed(
-      await gh([
+    const read = await ghJson(
+      [
         "api",
         `repos/${slug}/pulls/${pr}/files?per_page=${FILES_PAGE}&page=${page}`,
-      ]),
+      ],
       `PR #${pr}'s file listing`,
     );
+    if (!read.ok) return read;
+    const out = read.value;
     if (!Array.isArray(out))
-      throw new ForgeReadError(`PR #${pr}'s file listing is not a list`);
-    files.push(...out.flatMap((f) => fileNames(f, pr)));
-    if (out.length < FILES_PAGE) return files;
+      return unreadable(`PR #${pr}'s file listing is not a list`);
+    for (const f of out) {
+      const names = fileNames(f);
+      if (names === null)
+        return unreadable(`PR #${pr}'s file listing is unreadable`);
+      files.push(...names);
+    }
+    if (out.length < FILES_PAGE) return ok(files);
     if (page * FILES_PAGE >= FILES_LIMIT)
-      throw new ForgeReadError(
+      return unreadable(
         `PR #${pr} changes ${FILES_LIMIT} or more files, more than the forge lists`,
       );
   }
 }
 
-/** One listed file's names: its path, and the path it was renamed from. */
-function fileNames(f: unknown, pr: number): string[] {
+/** One listed file's names: its path, and the path it was renamed from; `null` when it does not read. */
+function fileNames(f: unknown): string[] | null {
   const name = field(f, "filename");
-  if (typeof name !== "string" || name === "")
-    throw new ForgeReadError(`PR #${pr}'s file listing is unreadable`);
+  if (typeof name !== "string" || name === "") return null;
   const before = field(f, "previous_filename");
   return typeof before === "string" && before !== "" ? [name, before] : [name];
 }
 
-interface ListedPr {
+/** One pull request as a listing or a view reads it. */
+export interface ListedPr {
   number: number;
   url: string;
   title: string;
@@ -209,26 +254,35 @@ function authorOf(value: unknown): {
 }
 
 /** A pull request's label names, or why they do not read. */
-function labelNames(value: unknown, what: string): string[] {
+function labelNames(
+  value: unknown,
+  what: string,
+): Outcome<string[], "unreadable"> {
   if (
     !Array.isArray(value) ||
     value.some((l) => !isRecord(l) || typeof l.name !== "string")
   )
-    throw new ForgeReadError(`${what}'s labels are unreadable`);
-  return value.map((l) => (l as { name: string }).name);
+    return unreadable(`${what}'s labels are unreadable`);
+  return ok(value.map((l) => (l as { name: string }).name));
 }
 
 /** One pull request of a listing or a view, or why it does not read. */
-function listedPr(p: unknown, what: string, read = NO_LABELS): ListedPr {
+function listedPr(
+  p: unknown,
+  what: string,
+  read = NO_LABELS,
+): Outcome<ListedPr, "unreadable"> {
   if (
     !isRecord(p) ||
     typeof p.number !== "number" ||
     typeof p.headRefName !== "string"
   )
-    throw new ForgeReadError(`${what} is unreadable`);
+    return unreadable(`${what} is unreadable`);
+  const labels = read.labels ? labelNames(p.labels, what) : null;
+  if (labels !== null && !labels.ok) return labels;
   const text = (key: string) =>
     typeof p[key] === "string" ? { [key]: p[key] as string } : {};
-  return {
+  return ok({
     number: p.number,
     url: typeof p.url === "string" ? p.url : "",
     title: typeof p.title === "string" ? p.title : "",
@@ -241,21 +295,21 @@ function listedPr(p: unknown, what: string, read = NO_LABELS): ListedPr {
     ...text("updatedAt"),
     ...authorOf(p.author),
     ...(typeof p.isDraft === "boolean" ? { isDraft: p.isDraft } : {}),
-    ...(read.labels ? { labels: labelNames(p.labels, what) } : {}),
-  };
+    ...(labels === null ? {} : { labels: labels.value }),
+  });
 }
 
 async function listPrs(
   slug: string,
   extra: string[],
   read: LabelRead,
-): Promise<ListedPr[]> {
+): Promise<Outcome<ListedPr[], "unreadable">> {
   const fields = [...LISTED];
   if (extra.includes("merged")) fields.push("mergedAt", "updatedAt");
   if (extra.includes("open")) fields.push(...OPEN_FIELDS);
   if (read.labels) fields.push("labels");
-  const out = parsed(
-    await gh([
+  const listing = await ghJson(
+    [
       "pr",
       "list",
       "--repo",
@@ -266,18 +320,33 @@ async function listPrs(
       String(PR_LIMIT),
       "--json",
       fields.join(","),
-    ]),
+    ],
     "the pull request listing",
   );
+  if (!listing.ok) return listing;
+  const out = listing.value;
   if (!Array.isArray(out))
-    throw new ForgeReadError("the pull request listing is not a list");
+    return unreadable("the pull request listing is not a list");
   if (out.length >= PR_LIMIT)
-    throw new ForgeReadError(
+    return unreadable(
       `${slug} lists ${PR_LIMIT} or more pull requests, more than one read holds`,
     );
-  return out.map((p, i) =>
-    listedPr(p, `pull request ${i} of the listing`, read),
-  );
+  return listedAll(out, "of the listing", read);
+}
+
+/** Each pull request of a listing, `where` naming the listing; the first that does not read. */
+function listedAll(
+  listed: readonly unknown[],
+  where: string,
+  read: LabelRead,
+): Outcome<ListedPr[], "unreadable"> {
+  const prs: ListedPr[] = [];
+  for (const [i, p] of listed.entries()) {
+    const pr = listedPr(p, `pull request ${i} ${where}`, read);
+    if (!pr.ok) return pr;
+    prs.push(pr.value);
+  }
+  return ok(prs);
 }
 
 /**
@@ -287,7 +356,7 @@ async function listPrs(
 export async function openPullRequests(
   slug: string,
   read = NO_LABELS,
-): Promise<ListedPr[]> {
+): Promise<Outcome<ListedPr[], "unreadable">> {
   return listPrs(slug, ["open"], read);
 }
 
@@ -299,23 +368,21 @@ export async function openPullRequests(
 export function listedOpen(
   listed: readonly unknown[],
   read = NO_LABELS,
-): ListedPr[] {
-  return listed.map((p, i) =>
-    listedPr(p, `pull request ${i} of the repository query`, read),
-  );
+): Outcome<ListedPr[], "unreadable"> {
+  return listedAll(listed, "of the repository query", read);
 }
 
 /**
  * One open pull request read again, as the listing reads it, for the fresh
- * read before a launch; throws when it is no longer open or does not read.
+ * read before a launch; `not-open` when it is no longer open.
  */
 export async function openPullRequest(
   slug: string,
   pr: number,
   read = NO_LABELS,
-): Promise<ListedPr> {
-  const out = parsed(
-    await gh([
+): Promise<Outcome<ListedPr, "unreadable" | "not-open">> {
+  const view = await ghJson(
+    [
       "pr",
       "view",
       String(pr),
@@ -328,13 +395,14 @@ export async function openPullRequest(
         "state",
         ...(read.labels ? ["labels"] : []),
       ].join(","),
-    ]),
+    ],
     "the pull request view",
   );
-  const state = field(out, "state");
+  if (!view.ok) return view;
+  const state = field(view.value, "state");
   if (state !== "OPEN")
-    throw new ForgeReadError(`PR #${pr} reads ${String(state)}`);
-  return listedPr(out, `PR #${pr}'s view`, read);
+    return failed("not-open", `PR #${pr} reads ${String(state)}`);
+  return listedPr(view.value, `PR #${pr}'s view`, read);
 }
 
 /**
@@ -345,28 +413,30 @@ export async function openPullRequest(
 export async function branchHead(
   slug: string,
   branch: string,
-): Promise<string> {
+): Promise<Outcome<string, "unreadable">> {
   const ref = branch.split("/").map(encodeURIComponent).join("/");
-  const out = parsed(
-    await gh(["api", `repos/${slug}/git/ref/heads/${ref}`]),
+  const out = await ghJson(
+    ["api", `repos/${slug}/git/ref/heads/${ref}`],
     `branch ${branch}'s ref`,
   );
-  const sha = field(field(out, "object"), "sha");
+  if (!out.ok) return out;
+  const sha = field(field(out.value, "object"), "sha");
   if (typeof sha !== "string" || sha === "")
-    throw new ForgeReadError(`branch ${branch}'s ref names no commit`);
-  return sha;
+    return unreadable(`branch ${branch}'s ref names no commit`);
+  return ok(sha);
 }
 
-/** One pull request's label names, read now whatever state it is in; throws when they do not read. */
+/** One pull request's label names, read now whatever state it is in. */
 export async function pullRequestLabels(
   slug: string,
   pr: number,
-): Promise<string[]> {
-  const out = parsed(
-    await gh(["pr", "view", String(pr), "--repo", slug, "--json", "labels"]),
+): Promise<Outcome<string[], "unreadable">> {
+  const out = await ghJson(
+    ["pr", "view", String(pr), "--repo", slug, "--json", "labels"],
     "the pull request view",
   );
-  return labelNames(field(out, "labels"), `PR #${pr}`);
+  if (!out.ok) return out;
+  return labelNames(field(out.value, "labels"), `PR #${pr}`);
 }
 
 /** Every pull request merged at or after `since` (ISO 8601). */
@@ -374,19 +444,21 @@ export async function mergedSince(
   slug: string,
   since: string,
   read = NO_LABELS,
-): Promise<MergedPr[]> {
+): Promise<Outcome<MergedPr[], "unreadable">> {
   const day = since.slice(0, 10);
-  const listed = await listPrs(
+  const listing = await listPrs(
     slug,
     ["merged", "--search", `merged:>=${day}`],
     read,
   );
+  if (!listing.ok) return listing;
+  const listed = listing.value;
   for (const p of listed)
     if (p.mergedAt === undefined || !Number.isFinite(Date.parse(p.mergedAt)))
-      throw new ForgeReadError(
+      return unreadable(
         `merged pull request #${p.number} has no valid merge time`,
       );
-  return listed
+  const merged = listed
     .filter((p) => Date.parse(p.mergedAt as string) >= Date.parse(since))
     .map((p) => ({
       number: p.number,
@@ -399,6 +471,7 @@ export async function mergedSince(
       ...(p.labels === undefined ? {} : { labels: p.labels }),
     }))
     .sort((a, b) => a.number - b.number);
+  return ok(merged);
 }
 
 /** One page of a pull request's review threads: whether each is resolved. */
@@ -416,16 +489,16 @@ function field(value: unknown, key: string): unknown {
 
 /**
  * How many of a pull request's review threads are unresolved. A pull
- * request with more threads than one page holds throws, as any read in
- * part does: the count would be a guess.
+ * request with more threads than one page holds is unreadable, as any read
+ * in part is: the count would be a guess.
  */
 export async function unresolvedThreadCount(
   slug: string,
   pr: number,
-): Promise<number> {
+): Promise<Outcome<number, "unreadable">> {
   const [owner, name] = slug.split("/");
-  const out = parsed(
-    await gh([
+  const answer = await ghJson(
+    [
       "api",
       "graphql",
       "-f",
@@ -436,64 +509,70 @@ export async function unresolvedThreadCount(
       `name=${name}`,
       "-F",
       `pr=${pr}`,
-    ]),
+    ],
     "the review threads answer",
   );
+  if (!answer.ok) return answer;
   const threads = field(
-    field(field(field(out, "data"), "repository"), "pullRequest"),
+    field(field(field(answer.value, "data"), "repository"), "pullRequest"),
     "reviewThreads",
   );
   const nodes = field(threads, "nodes");
   if (!Array.isArray(nodes))
-    throw new ForgeReadError(`PR #${pr}'s review threads did not read`);
+    return unreadable(`PR #${pr}'s review threads did not read`);
   if (field(field(threads, "pageInfo"), "hasNextPage") === true)
-    throw new ForgeReadError(
-      `PR #${pr} has more review threads than one read holds`,
-    );
-  return nodes.filter((n) => field(n, "isResolved") === false).length;
+    return unreadable(`PR #${pr} has more review threads than one read holds`);
+  return ok(nodes.filter((n) => field(n, "isResolved") === false).length);
 }
 
-/** Whether a pull request merged (true) or was closed unmerged (false); throws while it is open or unreadable. */
+/** Whether a pull request merged (true) or was closed unmerged (false); `not-closed` while it is open. */
 export async function mergedNotClosed(
   slug: string,
   pr: number,
-): Promise<boolean> {
-  const out = parsed(
-    await gh(["pr", "view", String(pr), "--repo", slug, "--json", "state"]),
+): Promise<Outcome<boolean, "unreadable" | "not-closed">> {
+  const out = await ghJson(
+    ["pr", "view", String(pr), "--repo", slug, "--json", "state"],
     "the pull request view",
   );
-  const state = field(out, "state");
-  if (state === "MERGED") return true;
-  if (state === "CLOSED") return false;
-  throw new ForgeReadError(`PR #${pr} reads ${String(state)}`);
+  if (!out.ok) return out;
+  const state = field(out.value, "state");
+  if (state === "MERGED") return ok(true);
+  if (state === "CLOSED") return ok(false);
+  return failed("not-closed", `PR #${pr} reads ${String(state)}`);
 }
 
 /**
  * Change a pull request's labels in one call: `add` added, `remove`
- * removed, every other label left as it is. Throws with the forge's reason
- * (a label that does not exist, no permission).
+ * removed, every other label left as it is; `refused` with the forge's
+ * reason (a label that does not exist, no permission).
  */
 export async function editLabels(
   slug: string,
   pr: number,
   add: readonly string[],
   remove: readonly string[],
-): Promise<void> {
-  await gh([
-    "pr",
-    "edit",
-    String(pr),
-    "--repo",
-    slug,
-    ...add.flatMap((l) => ["--add-label", l]),
-    ...remove.flatMap((l) => ["--remove-label", l]),
-  ]);
+): Promise<Outcome<void, "refused">> {
+  const edited = await gh(
+    [
+      "pr",
+      "edit",
+      String(pr),
+      "--repo",
+      slug,
+      ...add.flatMap((l) => ["--add-label", l]),
+      ...remove.flatMap((l) => ["--remove-label", l]),
+    ],
+    "refused",
+  );
+  return edited.ok ? ok(undefined) : edited;
 }
 
 /** The names of every label the repository has. */
-export async function repositoryLabels(slug: string): Promise<string[]> {
-  const out = parsed(
-    await gh([
+export async function repositoryLabels(
+  slug: string,
+): Promise<Outcome<string[], "unreadable">> {
+  const out = await ghJson(
+    [
       "label",
       "list",
       "--repo",
@@ -502,33 +581,39 @@ export async function repositoryLabels(slug: string): Promise<string[]> {
       String(PR_LIMIT),
       "--json",
       "name",
-    ]),
+    ],
     "the label listing",
   );
-  const names = labelNames(out, slug);
-  if (names.length >= PR_LIMIT)
-    throw new ForgeReadError(
+  if (!out.ok) return out;
+  const names = labelNames(out.value, slug);
+  if (!names.ok) return names;
+  if (names.value.length >= PR_LIMIT)
+    return unreadable(
       `${slug} has ${PR_LIMIT} or more labels, more than one read holds`,
     );
   return names;
 }
 
-/** Create one label; throws with the forge's reason (no permission). */
+/** Create one label; `refused` with the forge's reason (no permission). */
 export async function createLabel(
   slug: string,
   label: { name: string; color: string; description: string },
-): Promise<void> {
-  await gh([
-    "label",
-    "create",
-    label.name,
-    "--repo",
-    slug,
-    "--color",
-    label.color,
-    "--description",
-    label.description,
-  ]);
+): Promise<Outcome<void, "refused">> {
+  const created = await gh(
+    [
+      "label",
+      "create",
+      label.name,
+      "--repo",
+      slug,
+      "--color",
+      label.color,
+      "--description",
+      label.description,
+    ],
+    "refused",
+  );
+  return created.ok ? ok(undefined) : created;
 }
 
 /** A pull request's link when no read gave one: the forge is GitHub, read through `gh`. */
