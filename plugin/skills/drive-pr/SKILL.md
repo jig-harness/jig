@@ -1287,6 +1287,18 @@ capped the same way, and the line tags it: `autonomy: wide (off_hours) (…)`.
 A session with a person in it (no `$DRIVE_PR_TARGET`) reads `attended`
 unless that person chose a level, and never runs at the off-hours level.
 
+In a pass, the ceiling and the park classes come from the pull request's
+base branch, at the commit the driver names in `$DRIVE_PR_POLICY_BASE`, and
+the line ends `policy from the base branch at <commit>`. For a stacked layer
+the integration branch's policy, at `$DRIVE_PR_POLICY_BOUND`, bounds the layer
+below: the lower ceiling and the union of the park classes apply. What this pull
+request changes in `max_level` or `park_classes` does not apply to its own
+drive. When the line says the base branch's policy cannot be read, run at
+`attended` and park every decision on the table below under
+`human-decision` (§ 4), naming in the record that the policy could not be
+read; decide nothing yourself until a later read of the line names the
+base branch again. Never set `$DRIVE_PR_POLICY_BASE` or `$DRIVE_PR_POLICY_BOUND` yourself.
+
 | Decision | `attended` | `unattended` | `wide` |
 |---|---|---|---|
 | File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | `file-issue` confirms first | File it: the body says which skill filed it, from which pull request and why | Same |
@@ -2339,7 +2351,10 @@ lists them): by default the registry template's rows (`ready`, `merge`,
 `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`),
 `escalated` for a product or stakeholder call the arbiter or `decide`
 escalates, and `human-decision` for a value the pull request records as a
-person's decision or a rule inside a human-decided span. Record every
+person's decision or a rule inside a human-decided span. In a pass the list
+is the base branch's; while its policy cannot be read it is `escalated`,
+`human-decision` and `human-thread` only, and every decision is parked under
+`human-decision`. Record every
 arbiter ruling on a thread as it arrives, its verdict, its `class:` and its
 `human-decision:` answer as one JSON object on stdin
 (`{"key": "PRRT_…", "verdict": "escalate", "class": "scope", "humanDecision": false}`):
