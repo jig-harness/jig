@@ -294,3 +294,15 @@ test("scar lint: a setext underline or thematic break opens a paragraph", () => 
   expect(scanScars("Intro\n\n***\nReviewer: please fix this.")).toHaveLength(1);
   expect(scanScars("Reviewer is asked\nReviewer: soft wrap")).toEqual([]);
 });
+
+test("scar lint: only an equal-length backtick run closes a span", () => {
+  expect(scanScars("Use `x``` coderabbitai[bot]``")).toHaveLength(1);
+  expect(scanScars("Use ``x` coderabbitai[bot]``")).toEqual([]);
+  expect(scanScars("Use ```x`` coderabbitai[bot]```")).toEqual([]);
+  expect(scanScars("Use `x` then `y` codex[bot]")).toHaveLength(1);
+});
+
+test("scar lint: an equals-only line at the start is a paragraph, not an underline", () => {
+  expect(scanScars("====\nReviewer: the approver.")).toEqual([]);
+  expect(scanScars("---\n\n====\nReviewer: the approver.")).toEqual([]);
+});

@@ -32,11 +32,56 @@ const PARAGRAPH_ATTRIBUTION = /^\s*(reviewer|shadow reviewer)\s*:/;
 /** A review bot's account name, as GitHub prints it. */
 const BOT_HANDLE =
   /(?<![\w-])(?:coderabbitai|copilot|codex|[a-z0-9-]*review[a-z0-9-]*)\[bot\]/;
-/** An ATX heading, a setext underline, or a thematic break. */
+/** An ATX heading, a dash underline, or a thematic break: a block of its own. */
 const BLOCK_BOUNDARY =
-  /^\s{0,3}(?:#{1,6}(?:\s|$)|=+\s*$|-+\s*$|([-*_])(?:\s*\1){2,}\s*$)/;
+  /^\s{0,3}(?:#{1,6}(?:\s|$)|-+\s*$|([-*_])(?:\s*\1){2,}\s*$)/;
+/** An equals-only line underlines a heading only below paragraph content. */
+const EQUALS_UNDERLINE = /^\s{0,3}=+\s*$/;
 /** Stands in for inline code: not whitespace, so masking opens no prefix. */
 const CODE_MASK = "\u0001";
+
+/** Index just past the backtick run starting at `from`. */
+function runEnd(line: string, from: number): number {
+  let end = from;
+  while (line[end] === "`") end++;
+  return end;
+}
+
+/** Start of the next backtick run of exactly `size` at or after `from`, or -1. */
+function findClose(line: string, from: number, size: number): number {
+  let at = line.indexOf("`", from);
+  while (at >= 0) {
+    const end = runEnd(line, at);
+    if (end - at === size) return at;
+    at = line.indexOf("`", end);
+  }
+  return -1;
+}
+
+/**
+ * Replace each inline code span with one mask. A span opens at a backtick run
+ * and closes at the next run of exactly the same length; a run with no such
+ * partner is literal text, so shorter or longer runs never close a span.
+ */
+function maskCode(line: string): string {
+  let out = "";
+  let i = 0;
+  while (i < line.length) {
+    const open = line.indexOf("`", i);
+    if (open < 0) return out + line.slice(i);
+    const end = runEnd(line, open);
+    const close = findClose(line, end, end - open);
+    out += line.slice(i, open);
+    if (close < 0) {
+      out += line.slice(open, end);
+      i = end;
+    } else {
+      out += CODE_MASK;
+      i = close + (end - open);
+    }
+  }
+  return out;
+}
 
 /**
  * Whether a line, its code already masked, carries a review scar. `opensParagraph`
@@ -83,11 +128,13 @@ export function scanScars(text: string): string[] {
       continue;
     }
     if (fence) continue;
-    if (isScar(raw.replace(/(`+)(?:(?!\1).)+?\1/g, CODE_MASK), previousBlank))
-      hits.push(`${index + 1}: ${raw}`);
+    if (isScar(maskCode(raw), previousBlank)) hits.push(`${index + 1}: ${raw}`);
     // A heading, setext underline or thematic break is a block of its own: the
     // line after it opens a paragraph.
-    previousBlank = raw.trim() === "" || BLOCK_BOUNDARY.test(raw);
+    previousBlank =
+      raw.trim() === "" ||
+      BLOCK_BOUNDARY.test(raw) ||
+      (!previousBlank && EQUALS_UNDERLINE.test(raw));
   }
   return hits;
 }
