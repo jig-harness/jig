@@ -37,11 +37,7 @@
  * says how a launch is counted, not what the ledger said.
  */
 import { noCauseFacts } from "../no-cause-stops.ts";
-import {
-  isRecovery,
-  RECOVERY_FACTS,
-  sameFacts,
-} from "../recovery-facts.ts";
+import { isRecovery, RECOVERY_FACTS, sameFacts } from "../recovery-facts.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   cancelledBeforeExecution,
