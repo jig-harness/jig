@@ -297,6 +297,57 @@ describe("classifyLedger", () => {
     });
   });
 
+  describe("a parked ledger whose pull request conflicts", () => {
+    const head = "a".repeat(40);
+    const oid = "c".repeat(40);
+    const waiting = { answered: 0, waiting: ["thread PRRT_a"] };
+    const parked = (forge?: Parameters<typeof classifyLedger>[4]) =>
+      classifyLedger(stoppedLedger(7, 8), NOW, WINDOW, waiting, forge);
+
+    it("is stale, a conflict to re-drive on the pair of its head and its base branch's head", () => {
+      const cause =
+        "parked waiting on thread PRRT_a, and conflicting with its base";
+      expect(parked({ head, mergeable: "CONFLICTING", base: { oid } })).toEqual(
+        {
+          class: "stale",
+          why: `${cause}: re-drive on any account, once for head aaaaaaa and base ccccccc`,
+          stale: {
+            cause,
+            change: `head ${head}, base ${oid}`,
+            conflictStop: true,
+          },
+        },
+      );
+    });
+
+    it("stays parked while the forge does not report a conflict", () => {
+      expect(parked({ head, mergeable: "MERGEABLE" }).class).toBe("parked");
+      expect(parked({ head, mergeable: "UNKNOWN" }).class).toBe("parked");
+      expect(parked().class).toBe("parked");
+    });
+
+    it("is not placed while the pair a re-drive would act on cannot be told", () => {
+      expect(parked({ head, mergeable: "CONFLICTING" }).why).toBe(
+        "stopped 8 (parked), waiting on thread PRRT_a, and conflicting with its base, but the head of its base branch does not read (it was not read), so the change a re-drive would act on cannot be told",
+      );
+      expect(
+        parked({ head: null, mergeable: "CONFLICTING", base: { oid } }).class,
+      ).toBe("unplaced");
+    });
+
+    it("re-arms an answered park whatever its mergeability", () => {
+      expect(
+        classifyLedger(
+          stoppedLedger(7, 8),
+          NOW,
+          WINDOW,
+          { answered: 1, waiting: [] },
+          { head, mergeable: "CONFLICTING", base: { oid } },
+        ).class,
+      ).toBe("re-armable");
+    });
+  });
+
   it("cannot place a running driver whose heartbeat does not read", () => {
     const ledger = running(1);
     ledger.driver.heartbeat = "yesterday";
