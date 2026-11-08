@@ -168,6 +168,119 @@ test.skipIf(onWindows)(
   },
 );
 
+/**
+ * Claude Code's install record holding `jig@jig` project-scope installs for
+ * a directory that exists and one that was deleted, both at 0.1.0 beside the
+ * user-scope 0.2.0; the record's path and the two directories.
+ */
+function scopedRecord(m: Machine): {
+  record: string;
+  kept: string;
+  deleted: string;
+} {
+  const kept = join(m.root, "consumer");
+  const deleted = join(m.root, "deleted-worktree");
+  mkdirSync(kept);
+  const plugins = join(m.home, ".claude", "plugins");
+  mkdirSync(plugins, { recursive: true });
+  const record = join(plugins, "installed_plugins.json");
+  const entry = (projectPath: string) => ({
+    scope: "project",
+    projectPath,
+    installPath: join(m.root, "cache", "0.1.0"),
+    version: "0.1.0",
+  });
+  writeFileSync(
+    record,
+    JSON.stringify({
+      version: 2,
+      plugins: {
+        "other@elsewhere": [entry(deleted)],
+        "jig@jig": [entry(kept), entry(deleted)],
+      },
+    }),
+  );
+  return { record, kept, deleted };
+}
+
+test.skipIf(onWindows)(
+  "jig doctor names each stale project-scope install with its directory and version",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    const { kept, deleted } = scopedRecord(m);
+    const result = m.jig(["doctor"]);
+    expectSpawnExit(result, 1);
+    const out = result.stdout.toString();
+    expect(out).toContain(
+      "FAIL  plugin:claude:scopes: 2 of 2 project- or local-scope jig@jig installs need attention:",
+    );
+    expect(out).toContain(
+      `${kept} (project scope) 0.1.0: older than the user-scope 0.2.0`,
+    );
+    expect(out).toContain(
+      `${deleted} (project scope) 0.1.0: its directory no longer exists`,
+    );
+    expect(out).toContain("fix: jig upgrade --claude refreshes each");
+  },
+);
+
+test.skipIf(onWindows)(
+  "jig upgrade refreshes a project-scope install from its directory and removes one whose directory is gone",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    const { record, kept, deleted } = scopedRecord(m);
+    m.release("0.3.0", m.plugin);
+    const result = m.jig(["upgrade", "--json"]);
+    expectSpawnExit(result, 0);
+    const report = JSON.parse(result.stdout.toString()) as {
+      harnesses: { harness: string; scoped?: Record<string, unknown>[] }[];
+    };
+    const claude = report.harnesses.find((h) => h.harness === "claude");
+    expect(claude?.scoped).toEqual([
+      {
+        scope: "project",
+        project: deleted,
+        before: "0.1.0",
+        outcome: "removed",
+        detail: "its directory no longer exists",
+      },
+      {
+        scope: "project",
+        project: kept,
+        before: "0.1.0",
+        version: "0.3.0",
+        outcome: "refreshed",
+        detail: "0.1.0 → 0.3.0",
+      },
+    ]);
+    const err = result.stderr.toString();
+    expect(err).toContain(
+      `$ (cd ${kept}) claude plugin update jig@jig --scope project\n`,
+    );
+    expect(err).toContain(
+      `claude: jig@jig 0.1.0 for ${deleted} (project scope): removed, its directory no longer exists`,
+    );
+    const after = JSON.parse(readFileSync(record, "utf8")) as {
+      plugins: Record<string, { projectPath: string; version: string }[]>;
+    };
+    expect(
+      after.plugins["jig@jig"]?.map((e) => [e.projectPath, e.version]),
+    ).toEqual([[kept, "0.3.0"]]);
+    // Another plugin's install for the same deleted directory is not Jig's to remove.
+    expect(after.plugins["other@elsewhere"]).toHaveLength(1);
+
+    const doctor = m.jig(["doctor", "--json"]);
+    const checks = (
+      JSON.parse(doctor.stdout.toString()) as {
+        checks: { id: string; status: string; detail: string }[];
+      }
+    ).checks;
+    expect(checks).toContainEqual(
+      expect.objectContaining({ id: "plugin:claude:scopes", status: "pass" }),
+    );
+  },
+);
+
 /** The next release, whose launcher differs from the installed one's; offered on the channel. */
 function nextRelease(m: Machine): string {
   const next = join(m.root, "next-release");

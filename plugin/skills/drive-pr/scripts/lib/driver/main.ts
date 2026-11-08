@@ -550,6 +550,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
     markReadyPolicy,
     deadlineRetryBudget,
     firstPassNotice,
+    settleWorktree: options.settleWorktree,
     inheritsEdits: afterStop.inheritsEdits,
   });
   const exit = await settlement.done(roundsExit);

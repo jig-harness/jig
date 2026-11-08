@@ -9,7 +9,11 @@
  * copy it holds, which is what the launcher runs. A test can register a
  * tool's marketplace elsewhere (`marketplace`: a pin, a local folder), have
  * Claude Code load the plugin in place (`readFromFolder`), or make the tool's
- * update commands fail with a message (`fail`).
+ * update commands fail with a message (`fail`). Claude Code's project- and
+ * local-scope installs are read from its own install record
+ * (`installed_plugins.json` in its configuration directory), as the real tool
+ * keeps them, and `plugin update jig@jig --scope project` updates the one for
+ * the directory it runs in.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -43,13 +47,25 @@ export interface AgentState {
 }
 
 const CLAUDE = `
+const record = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "plugins", "installed_plugins.json");
+const stored = existsSync(record) ? JSON.parse(readFileSync(record, "utf8")) : { version: 2, plugins: {} };
+const scoped = (stored.plugins["jig@jig"] ?? []).filter((entry) => entry.scope !== "user");
+const scopeUpdate = /^plugin update jig@jig --scope (project|local)$/.exec(line);
 if (line === "--version") console.log("2.1.300 (Claude Code)");
 else if (line === "plugin list --json")
-  console.log(JSON.stringify([{ id: "jig@jig", scope: "user", version: tool.version, enabled: tool.enabled, installPath: tool.path, ...(tool.readFromFolder ? { readFromFolder: tool.readFromFolder } : {}) }]));
+  console.log(JSON.stringify([{ id: "jig@jig", scope: "user", version: tool.version, enabled: tool.enabled, installPath: tool.path, ...(tool.readFromFolder ? { readFromFolder: tool.readFromFolder } : {}) }, ...scoped.map((entry) => ({ id: "jig@jig", scope: entry.scope, version: entry.version, enabled: true, installPath: entry.installPath, projectPath: entry.projectPath }))]));
 else if (line === "plugin marketplace list --json")
   console.log(JSON.stringify([tool.marketplace ?? { name: "jig", source: "git", url: SOURCE, ref: "stable" }]));
 else if (line === "plugin marketplace update jig") { failing(); tool.snapshot = state.newest; }
 else if (line === "plugin update jig@jig --scope user") { failing(); Object.assign(tool, tool.snapshot); }
+else if (scopeUpdate) {
+  failing();
+  const here = realpathSync(process.cwd());
+  const entry = scoped.find((e) => e.scope === scopeUpdate[1] && existsSync(e.projectPath) && realpathSync(e.projectPath) === here);
+  if (!entry) { console.error("no " + scopeUpdate[1] + "-scope install for " + here); process.exit(1); }
+  Object.assign(entry, { version: tool.snapshot.version, installPath: tool.snapshot.path });
+  writeFileSync(record, JSON.stringify(stored, null, 2));
+}
 else refuse();
 `;
 
@@ -66,7 +82,9 @@ else refuse();
 
 function fakeSource(name: "claude" | "codex", state: string, log: string) {
   return `#!/usr/bin/env bun
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 const SOURCE = ${JSON.stringify(SOURCE)};
 const line = process.argv.slice(2).join(" ");
 appendFileSync(${JSON.stringify(log)}, ${JSON.stringify(name)} + " " + line + "\\n");
