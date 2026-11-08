@@ -1,3 +1,6 @@
+import { FollowupBadge } from "./followups.tsx";
+import { runningFollowup } from "./followup-view.ts";
+import { Pr, RepoLink } from "./pr.tsx";
 /**
  * What needs you: the person's list. Two rows show on a phone, so what is
  * running stays one scroll away; the rest wait behind Show all.
@@ -69,11 +72,14 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
     <article className={rest ? "need rest" : "need"}>
       <div className="rowTop">
         <Mark role={need.role} />
-        <span className="tgt">{need.target}</span>
+        <Pr repo={need.repo} target={need.target} url={need.url} />
         <span className="m sm mut end nowrap">{need.age}</span>
         <span className="br" />
-        <span className="m sm mut">{need.repo}</span>
+        <RepoLink repo={need.repo} url={need.url} />
         <StageHint mark={need.mark} stage={need.stage} />
+        <FollowupBadge
+          label={need.stage === "followup" ? "Follow-up needs attention" : null}
+        />
       </div>
       <div className="sm">
         <span className="m">{need.recorded}</span>
@@ -126,10 +132,13 @@ function StuckItem({ slot, rest }: { slot: SlotView; rest: boolean }) {
     <article className={rest ? "need rest" : "need"}>
       <div className="rowTop">
         <Mark role={slot.role} />
-        <span className="tgt">{slot.target}</span>
+        <Pr repo={slot.repo} target={slot.target} url={slot.url} />
         <span className="br" />
-        <span className="m sm mut">{slot.repo}</span>
+        <RepoLink repo={slot.repo} url={slot.url} />
         <StageHint mark={slot.mark} stage={slot.stage} />
+        <FollowupBadge
+          label={slot.stage === "followup" ? runningFollowup(slot.kind) : null}
+        />
       </div>
       <div className="sm">
         <span className="m">{slot.fact}</span>

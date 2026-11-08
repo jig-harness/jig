@@ -7,6 +7,7 @@ import type {
   LineSnapshot,
   QueueGroup,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import { queuedFollowup } from "./followup-view.ts";
 import { ago } from "./format.ts";
 import { ROLES, type Role } from "./status.ts";
 import { type Clock, nextFreeAccount } from "./view.ts";
@@ -19,6 +20,7 @@ export interface QueueItemView {
   url: string | null;
   repo: string;
   source: string;
+  followup: string | null;
   title: string | null;
   why: string | null;
   wait: string | null;
@@ -41,6 +43,7 @@ function queueItem(q: LineQueued, nowMs: number): QueueItemView {
     url: q.url,
     repo: q.repo,
     source: q.source,
+    followup: q.source === "merged" ? queuedFollowup(q.group) : null,
     title: q.title,
     why:
       q.hold === null
