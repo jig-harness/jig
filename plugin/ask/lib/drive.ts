@@ -1,3 +1,4 @@
+import { uniqueLogins } from "../../shared/forge-logins.ts";
 import { derivedNext } from "../../dispatch/lib/next-owner.ts";
 /**
  * The `drive` station of a pull request: who drives it, the state of its
@@ -336,20 +337,17 @@ function waitsOnOf(
       return {
         person: "answer",
         why: placed.why,
-        people: [
-          ...new Set(
-            ledger.parked
-              .filter(
-                (p) =>
-                  r.comments === null || !answered(p.key, p.at, r.comments),
-              )
-              .flatMap((p) =>
-                p.person === undefined
-                  ? [r.pull.author].filter(Boolean)
-                  : [p.person],
-              ),
-          ),
-        ],
+        people: uniqueLogins(
+          ledger.parked
+            .filter(
+              (p) => r.comments === null || !answered(p.key, p.at, r.comments),
+            )
+            .flatMap((p) =>
+              p.person === undefined
+                ? [r.pull.author].filter(Boolean)
+                : [p.person],
+            ),
+        ),
       };
     case "re-armable":
       return rearm(placed.why);

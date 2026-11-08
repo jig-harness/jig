@@ -100,3 +100,25 @@ test("a preserved read comment budgets retained text and skips a notice that can
   expect(send.map((c) => c.notice.key)).toEqual(["k500"]);
   expect(later.map((c) => c.notice.key)).toEqual(["k2000"]);
 });
+
+test("long decision details keep later recipients visible", () => {
+  const pr = parked([["x".repeat(4000)], ["Second question?"]]);
+  pr.waiting = [
+    {
+      key: "first",
+      kind: "thread",
+      lines: ["x".repeat(4000)],
+      person: "api-owner",
+    },
+    {
+      key: "second",
+      kind: "thread",
+      lines: ["Second question?"],
+      person: "web-owner",
+    },
+  ];
+  const { text } = parkNotice("example/project", pr);
+  expect(text.length).toBeLessThanOrEqual(4000);
+  expect(text).toContain("@web-owner");
+  expect(text).toContain("answer <key>");
+});

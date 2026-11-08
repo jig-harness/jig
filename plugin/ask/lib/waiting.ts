@@ -1,3 +1,4 @@
+import { uniqueLogins } from "../../shared/forge-logins.ts";
 /**
  * `jig ask --waiting`: every address that waits on a person, with the act
  * each waits for, across the repositories this machine dispatches. It reads
@@ -75,13 +76,9 @@ function entryOf(need: LineNeed): WaitingEntry | null {
   if (key === null) return null;
   return {
     address: formatAddress({ station, repo: need.repo, key }),
-    people: [
-      ...new Set(
-        need.decisions.flatMap((d) =>
-          d.person === undefined ? [] : [d.person],
-        ),
-      ),
-    ],
+    people: uniqueLogins(
+      need.decisions.flatMap((d) => (d.person === undefined ? [] : [d.person])),
+    ),
     act: personAct(need.cause),
     since: need.since,
     reason: need.reason,

@@ -22,6 +22,16 @@ const catalog = parseCatalog({
 });
 
 describe("a parked question's person", () => {
+  it("normalizes explicit repository-relative anchor spellings", () => {
+    for (const path of [
+      "./api/route.ts",
+      "api/../api/route.ts",
+      "api\\route.ts",
+    ])
+      expect(personForPark(path, catalog, "fallback", "author")).toBe(
+        "api-owner",
+      );
+  });
   it("treats null as absent at every recipient fallback", () => {
     expect(personForPark("api/route.ts", catalog, null, "author")).toBe(
       "api-owner",
@@ -117,7 +127,13 @@ process.stdout.write(await resolveParkPerson("7", "PRRT_x", "finding", "docs/a.m
         stdout: "pipe",
         stderr: "pipe",
         env: {
-          ...process.env,
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(
+              ([key]) => !key.startsWith("JIG__"),
+            ),
+          ),
+          JIG_USER_LAYER: "off",
+          JIG_OVERLAY: join(consumer, ".config", "jig.yaml"),
           PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
           GH_REPO: "other-org/other-repo",
           JIG_CONSUMER_ROOT: consumer,

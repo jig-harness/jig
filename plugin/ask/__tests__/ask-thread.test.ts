@@ -194,6 +194,50 @@ describe("jig ask --thread", () => {
 });
 
 describe("jig ask on a park", () => {
+  it("deduplicates recipients by forge identity while preserving the first spelling", async () => {
+    const w = world();
+    w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
+    const ledger = parked(7);
+    const first = ledger.parked[0];
+    if (first === undefined) throw new Error("missing parked fixture");
+    ledger.parked.push({
+      ...first,
+      key: "PRRT_thread2",
+      person: "Maintainer",
+    });
+    w.api(`repos/${REPO}/issues/7/comments`, [
+      comment(701, ledgerBody(ledger)),
+    ]);
+    const r = await w.ask([`drive@${REPO}#7`, "--json"]);
+    expectSpawnExit(r, 0);
+    expect((JSON.parse(r.stdout) as AskAnswer).waitsOn).toMatchObject({
+      people: ["maintainer"],
+    });
+    writeLine(
+      {
+        ...LINE,
+        needs: LINE.needs.map((need, i) =>
+          i === 0
+            ? {
+                ...need,
+                decisions: need.decisions.map((d, j) => ({
+                  ...d,
+                  person: j === 0 ? "Maintainer" : "maintainer",
+                })),
+              }
+            : need,
+        ),
+      },
+      "{}",
+      w.state,
+    );
+    const waiting = await w.ask(["--waiting", "--json"], w.away);
+    expectSpawnExit(waiting, 0);
+    expect(
+      (JSON.parse(waiting.stdout) as WaitingAnswer).waiting[0]?.people,
+    ).toEqual(["Maintainer"]);
+  });
+
   it("waits on a person's answer while a parked question is unanswered, and lists the commands", async () => {
     const w = world();
     w.api(`repos/${REPO}/pulls/7`, pullDoc(7));

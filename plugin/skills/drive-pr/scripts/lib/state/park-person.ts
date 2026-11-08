@@ -1,5 +1,5 @@
 /** A park routes a question; its named person does not restrict who may answer. */
-import { resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { consumerRoot, layeredConfig } from "../../../../../shared/consumer.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import {
@@ -40,7 +40,10 @@ function recipientForPark(
     configured == null ? null : login(configured, "dispatch.person");
   const identities = new Map<string, string>();
   if (path !== null && catalog !== null) {
-    for (const area of areasOf(path, catalog)) {
+    for (const area of areasOf(
+      posix.normalize(path.replaceAll("\\", "/")),
+      catalog,
+    )) {
       const owner = catalog.get(area)?.fields.owner;
       if (isPerson(owner) && !identities.has(owner.toLowerCase()))
         identities.set(owner.toLowerCase(), owner);

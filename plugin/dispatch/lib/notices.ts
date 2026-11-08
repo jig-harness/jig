@@ -14,6 +14,7 @@
  * workspaces the stage ran in, since the message goes to the repository's
  * one destination rather than to them.
  */
+import { uniqueLogins } from "../../shared/forge-logins.ts";
 import { createHash } from "node:crypto";
 import type { DrivenPr, Notice, RepoReport } from "./types.ts";
 
@@ -70,6 +71,27 @@ function generation(pr: DrivenPr): string {
   return String(pr.evidence.generation ?? "unknown");
 }
 
+/** Reserve recipient names independently of decision text, with a link for overflow. */
+function recipientLines(pr: DrivenPr): string[] {
+  const people = uniqueLogins(
+    (pr.waiting ?? []).flatMap((p) =>
+      p.person === undefined ? [] : [p.person],
+    ),
+  );
+  if (people.length === 0) return [];
+  const shown: string[] = [];
+  let length = 0;
+  for (const person of people) {
+    if (length + person.length + 3 > 1000) break;
+    shown.push(`@${person}`);
+    length += person.length + 3;
+  }
+  const omitted = people.length - shown.length;
+  return [
+    `Recipients: ${shown.join(", ")}${omitted ? `; ${omitted} more in the drive's ledger` : ""}`,
+  ];
+}
+
 /** A drive parked with decisions unanswered: the framed decisions, and how to answer them. */
 export function parkNotice(slug: string, pr: DrivenPr): Notice {
   const waiting = pr.waiting ?? [];
@@ -86,6 +108,7 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
       ]),
     ],
     [
+      ...recipientLines(pr),
       "Answer each on the pull request, in a comment with a line `answer <key>: …` (or on its thread). Once every one is answered, the next tick re-arms the drive. A decision above that is cut off is framed in full in the drive's ledger comment on the pull request.",
       pr.url,
     ],
