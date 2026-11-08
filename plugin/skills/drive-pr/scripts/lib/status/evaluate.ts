@@ -1205,16 +1205,28 @@ async function evaluateFresh(
       // the check-run summary says "informational only — it never blocks
       // merge" — so it is a completion, not a failure.
       if (report.reviewerConclusion === "skipped") {
-        // A conclusion the job never reached. It attested to nothing.
-        return terminal(
-          report,
-          "AWAITING_REVIEWER",
-          `${reviewerLabel()} check-run on ${report.apiHead} was skipped — it never reviewed this head`,
-        );
+        // A conclusion the job never reached. It attested to nothing, unless
+        // the reviewer's own sticky carries a skip notice naming this head:
+        // that goes on to the reviewed-SHA gate, which decides whether the
+        // last review stands for it (`reviewed-sha.ts`). The sticky is read
+        // once and shared with that gate.
+        earlySticky = await reviewerStamp(ctx, earlySticky);
+        const noticeHead =
+          earlySticky?.skip == null || earlySticky.sha === ""
+            ? ""
+            : await resolveMarkerSha(earlySticky.skip.head);
+        if (noticeHead !== report.apiHead) {
+          return terminal(
+            report,
+            "AWAITING_REVIEWER",
+            `${reviewerLabel()} check-run on ${report.apiHead} was skipped — it never reviewed this head`,
+          );
+        }
       }
       if (
         report.reviewerConclusion !== "success" &&
-        report.reviewerConclusion !== "neutral"
+        report.reviewerConclusion !== "neutral" &&
+        report.reviewerConclusion !== "skipped"
       ) {
         const rc = await stillOnHead();
         if (rc !== 0) return rc;

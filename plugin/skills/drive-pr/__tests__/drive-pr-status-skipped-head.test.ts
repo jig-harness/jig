@@ -18,6 +18,7 @@ import {
   type Fixture,
   gitCleanEnv,
   makeScratchRepo,
+  REVIEWER_RUN,
   SCRIPTS,
   useDrivePrSuite,
   writeFixture,
@@ -282,6 +283,71 @@ describe("drive-status.ts over a head the reviewer skipped", () => {
     );
     expectSpawnExit(r, 22);
     expect(r.state).toBe("REVIEW_SKIPPED");
+  });
+
+  it("stops as REVIEW_SKIPPED when the merge rewrote a binary file with bytes that are not UTF-8", async () => {
+    const repo = mergedHistory(
+      "skipped-binary-not-utf8",
+      {},
+      { "img.bin": new Uint8Array([0, 0x80, 0]) },
+      { "img.bin": new Uint8Array([0, 0x81, 0]) },
+    );
+    const r = await gate(
+      repo.dir,
+      at(repo, repo.merged),
+      skipNotice(repo.merged),
+    );
+    expectSpawnExit(r, 22);
+    expect(r.state).toBe("REVIEW_SKIPPED");
+  });
+
+  it("stops as REVIEW_SKIPPED when the merge moved the change to an identical region", async () => {
+    const repo = makeScratchRepo("skipped-identical-regions");
+    const block = (edited: boolean) =>
+      Array.from({ length: 7 }, (_, i) =>
+        edited && i === 3 ? "# blk 3!" : `# blk ${i}`,
+      );
+    const filler = Array.from({ length: 8 }, (_, i) => `# filler ${i}`);
+    const pre = Array.from({ length: 6 }, (_, i) => `# pre ${i}`);
+    // Lines open with "#" so a hunk header names no function line.
+    const file = (first: boolean, second: boolean, top = "") =>
+      `${top}${[...pre, ...block(first), ...filler, ...block(second)].join("\n")}\n`;
+    commitFile(repo.dir, "feature.txt", file(false, false));
+    git(repo.dir, "checkout", "-q", "-b", "feature");
+    const reviewed = commitFile(repo.dir, "feature.txt", file(true, false));
+    git(repo.dir, "checkout", "-q", "main");
+    const base = commitFile(
+      repo.dir,
+      "feature.txt",
+      file(false, false, "# top\n"),
+    );
+    git(repo.dir, "checkout", "-q", "feature");
+    git(repo.dir, "merge", "-q", "--no-ff", "--no-commit", "main");
+    writeFileSync(join(repo.dir, "feature.txt"), file(false, true, "# top\n"));
+    git(repo.dir, "add", "feature.txt");
+    git(repo.dir, "commit", "-q", "--no-edit", "--no-verify");
+    const merged = git(repo.dir, "rev-parse", "HEAD");
+    const r = await gate(
+      repo.dir,
+      at({ dir: repo.dir, base, reviewed }, merged),
+      skipNotice(merged),
+    );
+    expectSpawnExit(r, 22);
+    expect(r.state).toBe("REVIEW_SKIPPED");
+  });
+
+  it("reaches the skip notice when the reviewer's check-run itself concluded skipped", async () => {
+    const repo = pullRequestRepo("skipped-check-run");
+    const fixture = {
+      ...at(repo, repo.merged),
+      checkRuns: [{ ...REVIEWER_RUN, conclusion: "skipped" }],
+    };
+    const r = await gate(repo.dir, fixture, skipNotice(repo.merged));
+    expectSpawnExit(r, 3);
+    expect(r.state).toBe("CONVERGED");
+    expect(r.reviewer.reviewedShaSource).toBe("skip-notice");
+    const without = await gate(repo.dir, fixture, null);
+    expect(without.state).toBe("AWAITING_REVIEWER");
   });
 
   it("stops as REVIEW_SKIPPED when the merge rewrote a file a diff attribute hides", async () => {

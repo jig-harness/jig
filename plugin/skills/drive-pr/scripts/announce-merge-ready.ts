@@ -949,17 +949,18 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  let text = `
-The review drive converged on \`${short(head)}\`:
-
-- \`${reviewer}\` ${reviewedWhat} (reviewed-SHA verified via ${source})
-- zero unresolved review threads
-- zero unaddressed summary-only findings
-- every non-reviewer check run completed \`success\`, \`neutral\` or \`skipped\`, and
-  every commit status is \`success\` — a \`neutral\` or \`skipped\` run is treated as
-  not-failing, which is weaker evidence than a pass
-
-One thing the third bullet does NOT mean: a SUMMARY-ONLY finding answered
+  // What the reviewer's evidence is depends on its source: a head the reviewer
+  // skipped had no pass of its own, so the paragraphs on its re-emission and on
+  // a pass over a fix do not apply to it.
+  const reviewerEvidence =
+    source === "skip-notice"
+      ? `One thing the third bullet does NOT mean: no reviewer pass ran on this head.
+It skipped this head, and its earlier review stands for it only because the
+pull request's diff is the same at both. Any finding answered \`accepted\` or
+\`moot\` at this head, inline thread or summary-only, rests on the driver's
+claim that the fix is real, and nothing the reviewer did on this head can have
+falsified it.`
+      : `One thing the third bullet does NOT mean: a SUMMARY-ONLY finding answered
 \`accepted\` or \`moot\` at this head rests on the driver's claim that the fix is
 real, and no reviewer pass can have falsified it. The reviewer re-emits a
 carried-forward finding at every head, including this one — but a fix-dependent
@@ -974,7 +975,19 @@ precedes the push, the reviewer then completes on the pushed head, and a fix
 that did not hold comes back as fresh unresolved work with no marker to suppress
 it — which the second bullet would then not be able to report. That is a
 reviewer pass over the fix, not proof of it: the reviewer may stay silent for
-reasons that have nothing to do with the change.
+reasons that have nothing to do with the change.`;
+
+  let text = `
+The review drive converged on \`${short(head)}\`:
+
+- \`${reviewer}\` ${reviewedWhat} (reviewed-SHA verified via ${source})
+- zero unresolved review threads
+- zero unaddressed summary-only findings
+- every non-reviewer check run completed \`success\`, \`neutral\` or \`skipped\`, and
+  every commit status is \`success\` — a \`neutral\` or \`skipped\` run is treated as
+  not-failing, which is weaker evidence than a pass
+
+${reviewerEvidence}
 
 The reasoning for every answer is in its own outcome comment on this PR; that is
 the artefact to read back if a finding matters.

@@ -223,6 +223,16 @@ function gitFailure(what: string, tail: string): GitFailure {
 /**
  * Whether the pull request's diff at `reviewed` is the same as at `head`,
  * measured against `base`, or why git cannot answer here.
+ *
+ * Both patches run from their own merge base. Where the two merge bases are
+ * the same commit the patches are compared exactly. Where the base moved, the
+ * files it changed between the two merge bases are compared without their
+ * index lines and hunk positions, which that move shifts; every other file is
+ * still compared exactly. A moved file whose patch cannot be compared that
+ * way without loss is reported as different: git's output is decoded as UTF-8
+ * (a byte that is not valid becomes U+FFFD, so two binary rewrites can read
+ * alike), and a hunk whose old side occurs more than once in the file names no
+ * single place once positions are dropped.
  */
 async function sameChange(
   base: string,
@@ -233,18 +243,103 @@ async function sameChange(
     changeAt(base, reviewed),
     changeAt(base, head),
   ]);
-  if (typeof was !== "string") return was;
-  if (typeof now !== "string") return now;
-  return was === now;
+  if ("failed" in was) return was;
+  if ("failed" in now) return now;
+  if (was.from === now.from) return was.patch === now.patch;
+  const moved = await localGit([
+    "diff",
+    "--name-only",
+    "-z",
+    "--no-renames",
+    "--no-relative",
+    was.from,
+    now.from,
+    "--",
+  ]);
+  if (moved.code !== 0)
+    return gitFailure(`diff ${was.from} ${now.from}`, moved.stderrTail);
+  const shifted = new Set(moved.stdout.split("\0").filter((p) => p !== ""));
+  const [a, b] = await Promise.all([
+    normalizedSections(was, shifted),
+    normalizedSections(now, shifted),
+  ]);
+  return a.join("\n") === b.join("\n");
 }
 
 /** A hunk header's line numbers, which a base that moved the change shifts. */
 const HUNK_POSITION = /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/;
 
+interface Change {
+  from: string;
+  patch: string;
+}
+
+/**
+ * The patch split per file, each file in `shifted` reduced to what a moved base
+ * leaves alone. A file that cannot be reduced without loss gets a section no
+ * other patch can equal, so the comparison fails closed.
+ */
+async function normalizedSections(
+  change: Change,
+  shifted: Set<string>,
+): Promise<string[]> {
+  const sections = change.patch.split(/^(?=diff --git )/m);
+  const out: string[] = [];
+  for (const [n, section] of sections.entries()) {
+    const path = [...shifted].find((p) =>
+      section.startsWith(`diff --git a/${p} b/${p}\n`),
+    );
+    if (path === undefined) out.push(section);
+    else if (await losesInformation(change.from, path, section))
+      out.push(`<<not comparable: ${change.from} ${n} ${path}>>`);
+    else out.push(withoutPositions(section));
+  }
+  return out;
+}
+
+/** A file's patch without the index lines and hunk positions a moved base shifts. */
+function withoutPositions(section: string): string {
+  return section
+    .split("\n")
+    .filter((line) => !line.startsWith("index "))
+    .map((line) => line.replace(HUNK_POSITION, "@@ @@"))
+    .join("\n");
+}
+
+/**
+ * Whether dropping `section`'s positions would lose which place it changed:
+ * its text is not valid UTF-8, or a hunk's old side occurs more than once in
+ * the file at `from`.
+ */
+async function losesInformation(
+  from: string,
+  path: string,
+  section: string,
+): Promise<boolean> {
+  if (section.includes("\uFFFD")) return true;
+  const old = await localGit(["show", `${from}:${path}`]);
+  if (old.code !== 0) return false;
+  return oldSides(section).some((block) => {
+    const first = old.stdout.indexOf(block);
+    return first !== -1 && old.stdout.indexOf(block, first + 1) !== -1;
+  });
+}
+
+/** Each hunk's old-side text (context and removed lines) of one file's patch. */
+function oldSides(section: string): string[] {
+  const blocks: string[][] = [];
+  for (const line of section.split("\n")) {
+    if (HUNK_POSITION.test(line)) blocks.push([]);
+    else if (line.startsWith(" ") || line.startsWith("-"))
+      blocks.at(-1)?.push(line.slice(1));
+  }
+  return blocks.filter((b) => b.length > 0).map((b) => b.join("\n"));
+}
+
 async function changeAt(
   base: string,
   head: string,
-): Promise<string | GitFailure> {
+): Promise<Change | GitFailure> {
   const mergeBase = await localGit(["merge-base", base, head]);
   const from = mergeBase.stdout.trim();
   if (mergeBase.code !== 0 || from === "")
@@ -265,9 +360,5 @@ async function changeAt(
   ]);
   if (diff.code !== 0)
     return gitFailure(`diff ${from} ${head}`, diff.stderrTail);
-  return diff.stdout
-    .split("\n")
-    .filter((line) => !line.startsWith("index "))
-    .map((line) => line.replace(HUNK_POSITION, "@@ @@"))
-    .join("\n");
+  return { from, patch: diff.stdout };
 }
