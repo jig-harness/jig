@@ -362,14 +362,14 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   }
 
   /** The create screen of an issue type, by its name; `null` where the project lists no such type. */
-  function createScreen(issueType: string) {
+  function createScreen(issueType: string, signal?: AbortSignal) {
     return async () => {
       const t = (await client.issueTypes()).find((x) =>
         same(x.name, issueType),
       );
       if (t === undefined) return null;
       return {
-        screen: await client.createMeta(t.id),
+        screen: await client.createMeta(t.id, signal),
         what: `the create screen of ${t.name} in ${project}`,
       };
     };
@@ -447,7 +447,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         for (const v of s.values) await issueTypeOf(v);
       } else
         for (const v of s.values)
-          await encode(s, v, createScreen(settings.issueType), signal);
+          await encode(s, v, createScreen(settings.issueType, signal), signal);
       return { status: "ok" as const };
     } catch (err) {
       return {

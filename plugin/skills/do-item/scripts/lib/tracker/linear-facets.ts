@@ -33,6 +33,7 @@ import {
   withFacets,
 } from "./facets/tracker.ts";
 import { TrackerConfigError } from "./config-error.ts";
+import { readSignal } from "./facets/bounds.ts";
 import { fold, PRIORITY_NAMES } from "./facets/values.ts";
 import { type Facet, type Tracker, TrackerRequestError } from "./port.ts";
 import { ShapeError } from "./linear-shapes.ts";
@@ -299,10 +300,10 @@ export function estimateStore(
           pools(await core.assignedIssues(identity, states, signal)),
         openPopulation: async (signal) =>
           pools(await core.openPopulation(signal)),
-        async facetReport(): Promise<CoreFacetReport> {
+        async facetReport(options): Promise<CoreFacetReport> {
           let health: { status: "ok" } | { status: "failed"; error: string };
           try {
-            await map();
+            await map(readSignal(options));
             health = { status: "ok" };
           } catch (err) {
             health = {
