@@ -137,7 +137,12 @@ kept wherever `issue_tracker.facets` says
 ([CONFIGURATION.md](CONFIGURATION.md#issue_tracker)); a pool can be narrowed
 by facet, one read lists the open issues not yet started that lack one
 (`incompleteIssues`), and another reports where each is kept
-(`facetStores`, `tracker.ts facet-stores`). Labels
+(`facetStores`, `tracker.ts facet-stores`); both take their caller's
+cancellation signal and deadline, and start no further request or page once
+either stops them. Every filing through `openTracker` is checked inside
+`createIssue`: one without a type, a priority or a size is filed, and what it
+lacks is printed. A label a label store owns is the facet's to write: the
+interface refuses it among the labels a filing or a change adds. Labels
 and projects are given by name and a parent by its key; the adapter resolves
 each to exactly one tracker resource or refuses before writing. A skill's
 procedure runs the issue operations as commands of
@@ -159,17 +164,18 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     label per state (`issue_tracker.github.states_from: labels`, the
     default) or the option of a Projects board's single-select field
     (`project`); `todo` is the state with no label;
-  - priority is a label per level (`issue_tracker.github.priority_labels`),
-    type and size a label per value, and a project is a milestone; a
-    repository that names the store keeps type in GitHub's issue types and
-    any facet in an issue field of its organization (priority in the
-    Priority field, size in a field such as Effort), read in the same
+  - a project is a milestone; type can be kept in GitHub's issue types and
+    any facet in an issue field of the repository's organization (priority
+    in the Priority field, size in a field such as Effort), read in the same
     request as the rest of the issue and written in the request that files
-    or changes it, every name resolved first. `facetStores` reports what
-    GitHub's default would select for a facet the repository does not name,
-    from the labels and field values its issues already carry and the
-    fields its organization offers, and chooses nothing; a read it could not
-    make is an error naming the read and the credential;
+    or changes it, every name resolved first, or each in labels (priority's
+    `issue_tracker.github.priority_labels`). A facet the repository does not
+    name gets GitHub's default before its first read or write: labels where
+    its issues carry them, the organization's field where they carry its
+    values or carry neither and the field qualifies, and a conflict that
+    fails the facet's reads and writes where they carry both. The answer is
+    cached on the machine for an hour; a read it could not make is an error
+    naming the read and the credential, never labels;
   - parent and children are sub-issues, `blocks` is GitHub's issue
     dependency, `duplicate` closes the issue as a duplicate of the other;
     GitHub has no `related` link, so each issue gets a comment naming the

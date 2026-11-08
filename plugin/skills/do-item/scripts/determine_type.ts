@@ -5,7 +5,9 @@
  * (`issue_tracker.types`, `do_item.work_types`; `lib/work-types.ts`).
  *
  * The steps, first answer wins:
- *   1. a label one type lists in `issue_tracker.types`;
+ *   1. the issue's type (its type facet, `type`: a type of the label
+ *      taxonomy, or with none a work type), mapped to a work type through
+ *      `issue_tracker.types`;
  *   2. the tracker's own issue type (`nativeType`), matched to a type name
  *      ignoring case;
  *   3. the title's Conventional Commits prefix, when the repository's title
@@ -13,10 +15,12 @@
  *      derived as `pr-plan.ts` derives it);
  *   4. otherwise `unknown`, whose depth is the strictest of every field.
  * A step whose value names no type of the repository leaves the step
- * unanswered, and the evidence says what it saw.
+ * unanswered, and the evidence says what it saw. An issue with no type
+ * (the facet unset, or its store holding two values it cannot choose
+ * between) leaves the first step unanswered too, and the evidence says so.
  *
  * Type: Discovery
- * Input: JSON with the issue's `labels`, `title` and `nativeType`
+ * Input: JSON with the issue's `type`, `title` and `nativeType`
  * Output: JSON `{ type, evidence, depth }`
  *
  * Usage:
@@ -46,6 +50,7 @@ import {
   parseWorkTypes,
   UNKNOWN_TYPE,
   type WorkTypes,
+  workTypeOf,
 } from "./lib/work-types.ts";
 
 /** The Conventional Commits types that name a work type. */
@@ -61,16 +66,16 @@ export const PREFIX_TYPES: Readonly<Record<string, string>> = {
 /** `type(scope)!: summary`, the type in any case. */
 const PREFIX = /^\s*([A-Za-z]+)(?:\([^()]*\))?!?:\s/;
 
-export type Step = "label" | "tracker_type" | "title_prefix";
+export type Step = "type" | "tracker_type" | "title_prefix";
 
 export interface Evidence {
   /** The step that decided, or `none` when the type is `unknown`. */
   step: Step | "none";
-  /** What it matched: the label, the tracker's type or the prefix. */
+  /** What it matched: the type, the tracker's type or the prefix. */
   matched: string | null;
   /** One line for the status message. */
   summary: string;
-  /** The steps before the deciding one that saw something but did not answer. */
+  /** The steps before the deciding one that did not answer, and why. */
   unanswered: Array<{ step: Step; reason: string }>;
 }
 
@@ -81,6 +86,10 @@ export interface TypeVerdict {
 }
 
 export interface IssueFacts {
+  /** The type facet: a type value, or `null` for none. */
+  type: string | null;
+  /** The size facet: a size value, `null` for none; absent from an earlier reader's JSON. */
+  size?: string | null;
   labels: string[];
   title: string;
   nativeType: string | null;
@@ -97,29 +106,26 @@ const fold = (s: string) => s.trim().toLowerCase();
 type Answer =
   | { type: string; matched: string; summary: string }
   | { unanswered: string }
-  | { conflict: string }
   | null;
 
-function byLabel(issue: IssueFacts, workTypes: WorkTypes): Answer {
-  const hits = new Map<string, string>();
-  for (const label of issue.labels)
-    for (const type of workTypes.types)
-      if (
-        !hits.has(type) &&
-        (workTypes.labels[type] ?? []).some((l) => fold(l) === fold(label))
-      )
-        hits.set(type, label);
-  if (hits.size === 0) return null;
-  const found = [...hits];
-  if (found.length > 1)
+function byTypeFacet(issue: IssueFacts, workTypes: WorkTypes): Answer {
+  if (issue.type === null || issue.type.trim() === "")
     return {
-      conflict: `its labels mark more than one type (${found.map(([t, l]) => `${l}: ${t}`).join(", ")})`,
+      unanswered:
+        "the issue has no type (none is set, or its store holds two it cannot choose between)",
     };
-  const [type, label] = found[0] as [string, string];
+  const type = workTypeOf(workTypes, issue.type);
+  if (type === null)
+    return {
+      unanswered: `the type ${issue.type} names no work type of this repository (issue_tracker.types: ${workTypes.types.join(", ")})`,
+    };
   return {
     type,
-    matched: label,
-    summary: `label ${label} (issue_tracker.types.${type})`,
+    matched: issue.type,
+    summary:
+      fold(type) === fold(issue.type)
+        ? `type ${issue.type}`
+        : `type ${issue.type} (issue_tracker.types.${type})`,
   };
 }
 
@@ -177,7 +183,7 @@ export async function deriveType(
 ): Promise<TypeVerdict> {
   const unanswered: Evidence["unanswered"] = [];
   const steps: Array<[Step, () => Answer | Promise<Answer>]> = [
-    ["label", () => byLabel(issue, workTypes)],
+    ["type", () => byTypeFacet(issue, workTypes)],
     ["tracker_type", () => byTrackerType(issue, workTypes)],
     ["title_prefix", () => byTitlePrefix(issue, workTypes, titleConvention)],
   ];
@@ -187,12 +193,6 @@ export async function deriveType(
     if ("unanswered" in answer) {
       unanswered.push({ step, reason: answer.unanswered });
       continue;
-    }
-    if ("conflict" in answer) {
-      // Conflicting type labels are a choice someone must make, not one a
-      // weaker signal settles.
-      unanswered.push({ step, reason: answer.conflict });
-      return unknown(workTypes, unanswered, answer.conflict);
     }
     return {
       type: answer.type,
@@ -205,39 +205,37 @@ export async function deriveType(
       depth: depthOf(workTypes, answer.type),
     };
   }
-  return unknown(workTypes, unanswered, null);
+  return unknown(workTypes, unanswered);
 }
 
 function unknown(
   workTypes: WorkTypes,
   unanswered: Evidence["unanswered"],
-  conflict: string | null,
 ): TypeVerdict {
-  const why =
-    conflict ??
-    (unanswered.length === 0
-      ? "no type label, tracker type or title prefix"
-      : unanswered.map((u) => u.reason).join("; "));
-  const remedy =
-    conflict === null
-      ? "a type label clears it"
-      : "removing or correcting the conflicting labels clears it";
+  const why = unanswered.map((u) => u.reason).join("; ");
   return {
     type: UNKNOWN_TYPE,
     evidence: {
       step: "none",
       matched: null,
-      summary: `nothing identifies the type: ${why}; the strictest depth applies, and ${remedy}`,
+      summary: `nothing identifies the type: ${why}; the strictest depth applies, and setting the issue's type clears it`,
       unanswered,
     },
     depth: depthOf(workTypes, UNKNOWN_TYPE),
   };
 }
 
-/** The issue facts from `get_issue.ts`'s JSON, or the reason they cannot be read. */
-export function issueFacts(data: unknown): IssueFacts | string {
-  if (!isRecord(data)) return "expected a JSON object";
-  const { labels, title, nativeType } = data;
+/** A field that is absent, `null` or a string. */
+const textOrNone = (v: unknown) =>
+  v === undefined || v === null || typeof v === "string";
+
+/** Why a field of the issue JSON is unreadable, or `null` when none is. */
+function shapeProblem(data: Record<string, unknown>): string | null {
+  const nullable = ["type", "size", "nativeType"].find(
+    (f) => !textOrNone(data[f]),
+  );
+  if (nullable !== undefined) return `\`${nullable}\` must be a string or null`;
+  const { labels, title } = data;
   if (
     labels !== undefined &&
     (!Array.isArray(labels) || labels.some((l) => typeof l !== "string"))
@@ -245,13 +243,25 @@ export function issueFacts(data: unknown): IssueFacts | string {
     return "`labels` must be an array of strings";
   if (title !== undefined && typeof title !== "string")
     return "`title` must be a string";
-  if (
-    nativeType !== undefined &&
-    nativeType !== null &&
-    typeof nativeType !== "string"
-  )
-    return "`nativeType` must be a string or null";
+  return null;
+}
+
+/** The issue facts from `get_issue.ts`'s JSON, or the reason they cannot be read. */
+export function issueFacts(data: unknown): IssueFacts | string {
+  if (!isRecord(data)) return "expected a JSON object";
+  const problem = shapeProblem(data);
+  if (problem !== null) return problem;
+  const { type, size, labels, title, nativeType } = data as {
+    type?: string | null;
+    size?: string | null;
+    labels?: string[];
+    title?: string;
+    nativeType?: string | null;
+  };
   return {
+    // A reader of an earlier release printed no facets: no type.
+    type: type ?? null,
+    ...(size === undefined ? {} : { size }),
     labels: (labels ?? []) as string[],
     title: title ?? "",
     nativeType: nativeType ?? null,

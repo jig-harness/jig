@@ -4,8 +4,11 @@
 without a person watching the agent that drives it. The review drive already
 goes most of the way. It runs from any checkout and restarts itself from the
 stops it can recover from. A drive whose driver died or stopped making
-progress is taken over. Its resumable state lives on the pull request, so a
-drive in another clone picks it up. It stops for a person only on a
+progress is taken over, by a drive armed with `--take-over` or by the
+dispatcher, with no person needed, also when the dead driver's working tree
+is gone: nothing left there can be pushed, so nothing waits on a person. Its
+resumable state lives on the pull request, so a drive in another clone picks
+it up. It stops for a person only on a
 configured human decision class, and hands over a framed decision. What is
 left concerns the hours nobody is there to ask. Without it, a drive that
 meets a decision outside the registry's classes at night still decides only

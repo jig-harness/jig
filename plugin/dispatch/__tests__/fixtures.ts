@@ -1,8 +1,9 @@
 /**
  * A world for one tick: the drive suite's fake forge (a `gh` that keeps
  * each pull request's comments in a file), wrapped by a `gh` that also
- * answers the calls the tick adds (the repository view, the configuration
- * file on the default branch, the pull request listings, and a comment's
+ * answers the calls the tick adds (the repository's query, answered by
+ * `fixtures/repository-query-fake.ts`, the repository view, the configuration file
+ * on the default branch, the pull request listings, and a comment's
  * update or removal on whichever pull request holds it, an update refused
  * while `comment-edit-fail` exists); a fake Orca command (on `PATH` under
  * the name Orca installs it under, `orca-ide` on Linux) answering `repo list` and `worktree ps` from files, listing the worktrees
@@ -36,13 +37,28 @@ import { orcaInstalledName } from "../../shared/orca.ts";
 export const SLUG = "example-org/example-repo";
 const JIG = resolve(import.meta.dir, "../../jig.ts");
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
+const QUERY_FAKE = resolve(
+  import.meta.dir,
+  "fixtures",
+  "repository-query-fake.ts",
+);
 
 const WRAPPER = (driveGh: string) => `#!/usr/bin/env bun
 const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
 const args = process.argv.slice(2);
-fs.appendFileSync(F + "/gh-calls.log", args.join(" ") + "\\n");
+fs.appendFileSync(F + "/gh-calls.log", args.join(" ").replace(/\\n/g, " ") + "\\n");
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
+if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchRepository"))) {
+  const answer = require(${JSON.stringify(QUERY_FAKE)}).repositoryQuery(F, args, process.cwd());
+  if (answer === null) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  out(answer);
+}
+if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchComments"))) {
+  const answer = require(${JSON.stringify(QUERY_FAKE)}).commentsQuery(F, args);
+  if (answer === null) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  out(answer);
+}
 if (args[0] === "repo" && args[1] === "view" && args.includes("nameWithOwner,defaultBranchRef"))
   // A checkout named "other" is another repository; every other is ${SLUG}.
   out({ nameWithOwner: process.cwd().endsWith("/other") ? "example-org/other-repo" : "${SLUG}", defaultBranchRef: { name: "main" } });
@@ -297,6 +313,13 @@ while (fs.existsSync(F + "/drive-hold") && Date.now() < until) Bun.sleepSync(50)
 process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
 `;
 
+/** The drive doctor the tick reads in tests: \`doctor.json\` as \`drives.ts --json\` prints it, or no rows. */
+const FAKE_DOCTOR = `const fs = require("node:fs");
+const F = process.env.DISPATCH_FAKE_DIR;
+fs.appendFileSync(F + "/doctor-runs.jsonl", JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }) + "\\n");
+process.stdout.write(fs.existsSync(F + "/doctor.json") ? fs.readFileSync(F + "/doctor.json", "utf8") : JSON.stringify({ rows: [] }));
+`;
+
 /** The Codex a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears. */
 const FAKE_CODEX = `#!/usr/bin/env bun
 const fs = require("node:fs");
@@ -484,6 +507,7 @@ export function world(): World {
   writeFakeProgram(join(bin, "claude"), FAKE_CLAUDE);
   writeFakeProgram(join(bin, "codex"), FAKE_CODEX);
   writeFileSync(join(root, "fake-drive.js"), FAKE_DRIVE);
+  writeFileSync(join(root, "fake-doctor.js"), FAKE_DOCTOR);
   const write = (name: string, value: unknown) =>
     writeFileSync(
       join(dir, name),
@@ -527,7 +551,9 @@ export function world(): World {
         variables: Record<string, unknown>;
       };
       const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1];
-      const data = answer(op, variables);
+      const data = op?.startsWith("TrackerFacet")
+        ? { repository: noFacetStores(query) }
+        : answer(op, variables);
       return Response.json(
         data === undefined
           ? { errors: [{ message: `unhandled ${op}` }] }
@@ -605,6 +631,7 @@ export function world(): World {
     JIG_USER_LAYER: "off",
     DISPATCH_FAKE_DIR: dir,
     JIG_DISPATCH_DRIVE_SCRIPT: join(root, "fake-drive.js"),
+    JIG_DISPATCH_DOCTOR_SCRIPT: join(root, "fake-doctor.js"),
     JIG_GITHUB_GRAPHQL_URL: `http://127.0.0.1:${server.port}/graphql`,
     GH_TOKEN: "test-token",
   };
@@ -701,6 +728,26 @@ export function world(): World {
     close: () => {
       server.stop(true);
     },
+  };
+}
+
+/**
+ * The tracker's facet reads (detection, store health) answered for a
+ * repository with no issue types, no issue fields and no issue carrying a
+ * facet's label: every count aliased in `query` is zero, so each facet the
+ * configuration leaves unnamed stays in labels.
+ */
+function noFacetStores(query: string): Record<string, unknown> {
+  const none = { pageInfo: { hasNextPage: false }, nodes: [] };
+  const counts = [...query.matchAll(/(\w+):\s*issues\(/g)].map((m) => [
+    m[1] as string,
+    { totalCount: 0 },
+  ]);
+  return {
+    issueTypes: none,
+    issueFields: none,
+    owner: { __typename: "User", login: "example-org" },
+    ...Object.fromEntries(counts),
   };
 }
 

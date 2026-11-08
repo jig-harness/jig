@@ -826,18 +826,27 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" <PR> --take-over --bots-only -- claud
 ```
 
 It reads the holder's `drives.ts` `--doctor` verdict and is admitted only
-against a holder that is `WEDGED`, or whose process is confirmed gone with nothing left
-in its tree (no uncommitted changes, unpushed commits or unconcluded git
-operation; on this machine the takeover refuses, naming them, until they are
-pushed or discarded). A confirmed-dead holder whose tree is missing is admitted: the checkout
-is unavailable and local work may need recovery; the drive resumes from the
-remote head. An existing unregistered or unreadable tree still refuses.
-Against any other holder it refuses as exit `11` does,
-naming the verdict. A wedged holder is stopped through `drives.ts` `--stop`, with
+against a holder that is `WEDGED`, or whose process is confirmed gone by its
+recorded identity (its pid answers no signal, or now belongs to a process
+with another start time on POSIX, or another boot; Windows refuses a PID
+that still answers when its identity cannot be verified) with nothing left
+in its tree: no
+uncommitted changes, unpushed commits or unconcluded git operation (on this
+machine the takeover refuses, naming them, until they are pushed or
+discarded), or no tree at all. A tree that no longer exists (its directory
+is gone) has no working files to inspect, so the doctor reads its holder
+`DEAD` and the
+takeover is admitted with no person needed, as the plain arm recovers that
+holder's lock. Unpushed commits may remain in the clone's shared Git storage;
+the takeover records the tree (`vanishedTree`) and the first pass's `TAKEN OVER`
+notice directs it to inspect branch refs and [reflogs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) before redoing work.
+An existing tree that is unregistered or cannot be
+inspected stays `UNKNOWN` and is refused. Against any other holder it refuses as exit `11`
+does, naming the verdict. A wedged holder is stopped through `drives.ts` `--stop`, with
 the identity check that command performs, bound by `--expect-started` to the
 acquisition its doctor row named. Once it holds the locks, the
 takeover records itself in the drive state (`takeovers`: from which tree and
-account to which, the verdict, the round), runs
+account to which, the verdict, the round, the vanished tree), runs
 `reconcile-replied-threads.ts` before the first triage, and resumes at the
 drive's durable round. Held items carry over by their state: a hold whose
 fix was pushed is resolved by the round as usual; a hold whose promised fix
@@ -874,7 +883,10 @@ older driver writes no heartbeat and reads no claim.
 
 Do not stop a driver that is making progress; take over one that is `WEDGED`
 or dead, or another clone's whose ledger heartbeat is past the lease window,
-with `--take-over`. Never drive beside a driver whose claim is newer than
+with `--take-over`. Where the dispatcher's `rearm` stage runs, it launches
+that takeover itself for a drive whose ledger heartbeat is past the lease
+window and whose holder this clone's doctor reads `WEDGED` or `DEAD`,
+whoever armed it. Never drive beside a driver whose claim is newer than
 yours.
 
 ## Entry mode: arm the driver, or work one round (decide first)

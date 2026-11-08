@@ -416,6 +416,17 @@ describe("GitHub facets: the issue type and issue fields as named stores", () =>
   });
 });
 
+/** Every `l_<facet>_<n>` count the query asks for, answered as the facet's first. */
+function labelCounts(
+  query: string,
+  first: Record<string, { totalCount: number }>,
+): Record<string, { totalCount: number }> {
+  const out: Record<string, { totalCount: number }> = {};
+  for (const m of query.matchAll(/(l_(\w+?)_\d+):/g))
+    out[m[1] as string] = first[`l_${m[2]}_0`] ?? { totalCount: 0 };
+  return out;
+}
+
 describe("GitHub facets: detection and the organization's discovery", () => {
   /** Answers every read for detection, with `fail` answering the reads it names. */
   function answers(fail: (c: Call) => Error | null = () => null) {
@@ -426,9 +437,11 @@ describe("GitHub facets: detection and the organization's discovery", () => {
         return {
           repository: {
             ...STORES.repository,
-            l_type: { totalCount: 12 },
-            l_priority: { totalCount: 30 },
-            l_size: { totalCount: 0 },
+            ...labelCounts(c.query, {
+              l_type_0: { totalCount: 12 },
+              l_priority_0: { totalCount: 30 },
+              l_size_0: { totalCount: 0 },
+            }),
           },
         };
       if (c.op === "TrackerFacetNativeEvidence") {

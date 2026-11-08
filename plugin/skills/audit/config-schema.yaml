@@ -557,7 +557,7 @@ fields:
   issue_tracker.github.priority_labels:
     type: map
     keys: [urgent, high, medium, low]
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch, resolve-review-comments]
     since: 0.82.0
   issue_tracker.jira.site:
     type: string
@@ -596,7 +596,7 @@ fields:
     since: 0.145.0
   issue_tracker.labels.epic:
     type: string
-    read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
+    read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]
   issue_tracker.labels.hitl:
     type: string
     read_by: [do-item, decide, work-batch]
@@ -611,7 +611,7 @@ fields:
     items: string
     distinct: true
     nonempty: true
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch, resolve-review-comments]
   issue_tracker.labels.pattern_prefix:
     type: string
     read_by: [do-item, reflect, review-reflections]
@@ -628,13 +628,13 @@ fields:
   issue_tracker.types:
     type: map
     values_type: { type: list, items: string }
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch, resolve-review-comments]
     since: 0.89.0
   issue_tracker.facets:
     type: map
     keys: [type, priority, size]
     values_type: { type: map, values_type: any }
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch, resolve-review-comments]
     since: 0.158.0
   issue_tracker.file_command:
     type: string
@@ -643,7 +643,7 @@ fields:
     type: path
     exists: required
     default: label-taxonomy.yaml
-    read_by: [file-issue, do-item, drive-pr, reflect, work-batch, dispatch]
+    read_by: [file-issue, do-item, drive-pr, reflect, work-batch, dispatch, resolve-review-comments]
     since: 0.67.0
 
   do_item.agents.default:
