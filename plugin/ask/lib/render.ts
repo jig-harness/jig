@@ -55,7 +55,7 @@ function holderLines(holder: Holder | "none"): string[] {
 function waitsLine(w: WaitsOn): string {
   if (w === "none") return "none";
   if ("waiting" in w) return `waiting: ${w.waiting}`;
-  return `person: ${w.person} (${w.why})`;
+  return `person: ${w.person}${w.people?.length ? ` [${w.people.join(", ")}]` : ""} (${w.why})`;
 }
 
 function lastLine(last: Last | null): string {
@@ -132,7 +132,7 @@ export function renderWaiting(w: WaitingAnswer): string {
     head,
     ...w.waiting.flatMap((e) => [
       printable(
-        `  ${e.address}  ${e.act}  since ${e.since}${e.title === null ? "" : `  ${e.title}`}`,
+        `  ${e.address}  ${e.act}${e.people.length ? ` [${e.people.join(", ")}]` : ""}  since ${e.since}${e.title === null ? "" : `  ${e.title}`}`,
       ),
       printable(`    ${e.reason}`),
       ...e.questions.map((q) => printable(`    question: ${q}`)),

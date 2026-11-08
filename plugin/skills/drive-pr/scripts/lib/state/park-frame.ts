@@ -6,6 +6,35 @@
  */
 import type { ParkedItem } from "./schema.ts";
 
+/** A forge login, excluding whitespace and mention syntax. */
+export function isPerson(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})(?:\[bot\])?$/.test(value)
+  );
+}
+
+/** A parked item every reader can match and render (`ParkedItem`). */
+export function isParkedItem(p: unknown): boolean {
+  if (typeof p !== "object" || p === null) return false;
+  const e = p as Record<string, unknown>;
+  return (
+    typeof e.key === "string" &&
+    e.key.length > 0 &&
+    !/[\n\r]/.test(e.key) &&
+    (e.kind === "thread" || e.kind === "finding") &&
+    typeof e.reason === "string" &&
+    e.reason.length > 0 &&
+    (e.person === undefined || isPerson(e.person)) &&
+    isOptionalFrame(e) &&
+    typeof e.round === "number" &&
+    Number.isInteger(e.round) &&
+    e.round >= 0 &&
+    (e.at === undefined ||
+      (typeof e.at === "string" && Number.isFinite(Date.parse(e.at))))
+  );
+}
+
 /** The framing fields: absent on a park from before framing, else well-formed. */
 export function isOptionalFrame(e: Record<string, unknown>): boolean {
   return (
