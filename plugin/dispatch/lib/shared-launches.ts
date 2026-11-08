@@ -179,7 +179,12 @@ function silentHold(
       claim: latest,
       why: `${claimWords(latest)} acts on these same ledger facts and has not ended`,
     };
-  const refused = refusedOn(pr, latest, "taken over");
+  // A drive settled as silent (driverGone cleared) is a person's to hear of,
+  // whatever a refused takeover once said on these facts.
+  const refused =
+    pr.evidence.driverGone === true
+      ? refusedOn(pr, latest, "taken over")
+      : null;
   if (refused !== null) return refused;
   const taken = takenOver(pr, theirs);
   if (taken !== null) return taken;

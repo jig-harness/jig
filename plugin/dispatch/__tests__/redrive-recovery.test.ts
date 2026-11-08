@@ -498,6 +498,28 @@ describe("another host's takeover of a driver no launch started", () => {
     ).toBe("none");
   });
 
+  it.each([11, 13, 20])(
+    "settles a takeover that ended on drive.ts's refusal %i, held by no foreign claim",
+    (exit) => {
+      const base = claim(5, facts).says;
+      if (!base.ok) throw new Error("fixture");
+      const refused = takeover(facts, {
+        ok: true,
+        value: {
+          ...base.value,
+          end: { state: "ended", at: base.value.at, exit, outcome: null },
+        },
+      });
+      const claims = new Map([[7, { ok: true as const, value: [refused] }]]);
+      expect(hold(refused)).toBe("refused");
+      const [settled] = settleSharedTakeovers([silent()], claims, "this-host");
+      expect(settled?.evidence.driverGone).toBe(false);
+      expect(
+        foreignHold(settled as DrivenPr, claims.get(7), "this-host").kind,
+      ).toBe("none");
+    },
+  );
+
   it("is not spent by one that never executed, or on other ledger facts", () => {
     const never = claim(5, facts).says;
     if (!never.ok) throw new Error("fixture");
