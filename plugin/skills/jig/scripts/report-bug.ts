@@ -30,6 +30,11 @@
  *                    urlOmitted, replaced }
  *   bun report-bug.ts file <draft file>
  *     File the draft on Jig's tracker and print the new issue's address.
+ *     The issue is then given the issue type Bug, as the bug form gives
+ *     it; an account GitHub does not let set issue types (or a `gh` too
+ *     old to set one) leaves it without, which is said on stderr and is
+ *     no failure: the type, the priority and the size are set when the
+ *     issue is triaged.
  *
  * The plugin version is read from this copy's manifest, the operating system
  * from the machine. Before anything is printed, every text the agent gave has
@@ -68,6 +73,9 @@ export const JIG_REPOSITORY = "jig-harness/jig";
 
 /** The label the bug form applies. */
 export const BUG_LABEL = "bug";
+
+/** The issue type the bug form applies. */
+export const BUG_TYPE = "Bug";
 
 /** The answers of the bug form's channel field, by the short name `--channel` takes. */
 export const CHANNELS: Record<string, string> = {
@@ -454,6 +462,11 @@ export function fileArgs(d: Pick<Draft, "title" | "labels">): string[] {
   ];
 }
 
+/** The `gh` arguments that give the issue at `url` the issue type Bug. */
+export function typeArgs(url: string): string[] {
+  return ["issue", "edit", url, "--type", BUG_TYPE];
+}
+
 /** Jig's issues page searched for `words`, for a machine without a working `gh`. */
 export function searchUrl(words: string): string {
   const query = new URLSearchParams({ q: `is:issue ${words}` });
@@ -790,7 +803,32 @@ function runFile(argv: string[]): number {
   const run = gh(fileArgs(d), d.body);
   if (run.status !== 0) reportFilingFailure(d, run);
   process.stdout.write(run.stdout);
+  setBugType(String(run.stdout));
   return 0;
+}
+
+/**
+ * Give the issue `gh issue create` printed the address of the issue type
+ * Bug. Filed apart from the issue, so an account that may not set types
+ * still files; a refusal is one line on stderr, never a failure.
+ */
+function setBugType(created: string): void {
+  const url = created
+    .split("\n")
+    .map((l) => l.trim())
+    .findLast((l) => l.startsWith("https://"));
+  if (url === undefined) {
+    process.stderr.write(
+      `filed without the issue type ${BUG_TYPE}: gh printed no issue address; it is set when the issue is triaged\n`,
+    );
+    return;
+  }
+  const run = gh(typeArgs(url));
+  if (run.status === 0) return;
+  const reason = (why(run).split("\n")[0] ?? "").trim().slice(0, 200);
+  process.stderr.write(
+    `filed without the issue type ${BUG_TYPE} (${reason}); it is set when the issue is triaged\n`,
+  );
 }
 
 async function main(): Promise<number> {

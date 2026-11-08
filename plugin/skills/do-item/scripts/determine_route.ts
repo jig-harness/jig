@@ -24,7 +24,10 @@
  * report.
  *
  * Type: Discovery
- * Input: JSON with the issue's `labels`, `title` and `nativeType`
+ * Input: JSON with the issue's `type`, `size`, `labels`, `title` and
+ * `nativeType`. Where the repository has a size facet, the size raise reads
+ * the item's `size`, and each size the configuration lists is read as a
+ * size value or as the label of one; without one, it reads the labels.
  * Output: JSON `{ agent, type, tier, effort, model, runtime_effort, runtime,
  *   declared, fields, reasons }`
  *
@@ -67,6 +70,12 @@ import {
   typeSettings,
 } from "./determine_type.ts";
 import { runEntry } from "./lib/cli.ts";
+import { facetsOf, parseTrackerConfig } from "./lib/tracker/config.ts";
+import {
+  facetValueOf,
+  type ResolvedFacet,
+  usable,
+} from "./lib/tracker/facets/config.ts";
 import {
   EFFORTS,
   type Effort,
@@ -106,6 +115,11 @@ export interface RouteFacts {
   knownSizes: string[];
   /** `issue_tracker.labels.batch_sizes`. */
   batchSizes: string[];
+  /**
+   * The item's size where the repository has a size facet: its value, or
+   * none; absent, the size raise reads the item's labels.
+   */
+  sizes?: string[];
   /** The runtime's name (`claude-code`, `codex`), or `null` when none is identified. */
   runtime: string | null;
 }
@@ -190,7 +204,7 @@ function reviewRaise(facts: RouteFacts, rules: RoutingRules): string | null {
 function sizeRaise(facts: RouteFacts, rules: RoutingRules): string | null {
   const sizes =
     rules.raise.sizes ?? defaultRaiseSizes(facts.knownSizes, facts.batchSizes);
-  const size = firstIn(facts.labels, sizes);
+  const size = firstIn(facts.sizes ?? facts.labels, sizes);
   return size === undefined ? null : `size ${size}`;
 }
 
@@ -456,12 +470,14 @@ function readSettings(config: Record<string, unknown>, workTypes: WorkTypes) {
     const rules = parseRouting(config, workTypes);
     refuseUndeclaredLabels(config, rules);
     const labels = parseTrackerLabels(config);
+    const facets = facetsOf(parseTrackerConfig(config), consumerRoot());
     return {
       rules,
       agentRouting: parseAgentRouting(config),
       catalogPath: catalogPathFromOverlay(config),
       labels,
       sizes: knownSizes(config, labels.batchSizes),
+      sizeFacet: usable(facets.size) ? facets.size : null,
     };
   } catch (e) {
     throw withSource(
@@ -524,18 +540,58 @@ async function readInputs(
     catalog,
     settings.agentRouting,
   );
+  const base = {
+    agent: String(agents.primary_agent),
+    type: verdict.type,
+    labels: issue.labels,
+    catalog: facts,
+    hitl: settings.labels.hitl,
+    knownSizes: settings.sizes,
+    batchSizes: settings.labels.batchSizes,
+    runtime: detectHarness()?.name ?? null,
+  };
+  return settings.sizeFacet === null
+    ? { facts: base, rules: settings.rules }
+    : bySizeFacet(base, settings.rules, settings.sizeFacet, issue);
+}
+
+/**
+ * The facts and rules of a repository with a size facet: the item's size is
+ * its facet's value, and every size the configuration lists, a raise list
+ * included, is read as a size value or as the label of one. The facet's
+ * values are sizes the repository knows, so a size its taxonomy declares
+ * beyond the batchable ones raises by default.
+ */
+function bySizeFacet(
+  facts: RouteFacts,
+  rules: RoutingRules,
+  slot: ResolvedFacet,
+  issue: IssueFacts,
+): { facts: RouteFacts; rules: RoutingRules } {
+  // A size value as written, or the value whose label it is; else as written.
+  const sizeValue = facetValueOf(slot);
+  const item =
+    issue.size === undefined
+      ? issue.labels.map(sizeValue).filter((l) => slot.values.includes(l))
+      : issue.size === null
+        ? []
+        : [issue.size];
   return {
     facts: {
-      agent: String(agents.primary_agent),
-      type: verdict.type,
-      labels: issue.labels,
-      catalog: facts,
-      hitl: settings.labels.hitl,
-      knownSizes: settings.sizes,
-      batchSizes: settings.labels.batchSizes,
-      runtime: detectHarness()?.name ?? null,
+      ...facts,
+      knownSizes: [
+        ...new Set([...facts.knownSizes.map(sizeValue), ...slot.values]),
+      ],
+      batchSizes: facts.batchSizes.map(sizeValue),
+      sizes: item,
     },
-    rules: settings.rules,
+    rules: {
+      ...rules,
+      raise: {
+        ...rules.raise,
+        sizes: rules.raise.sizes?.map(sizeValue) ?? null,
+      },
+    },
   };
 }
 

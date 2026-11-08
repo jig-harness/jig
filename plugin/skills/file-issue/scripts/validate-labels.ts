@@ -5,7 +5,17 @@
  *
  * Usage (from the repository root):
  *     bun validate-labels.ts [--taxonomy <path>] [--json] [--check-tracker] <label>...
+ *     bun validate-labels.ts --type bug --priority 2 --size small [<label>...]
  *     echo '["bug", "small"]' | bun validate-labels.ts [--json]
+ *     bun validate-labels.ts [--json] --input issue.json
+ *
+ * Given the issue's facets (`--type`, `--priority`, `--size`, or the issue
+ * `tracker.ts create` takes, `{ labels, type, priority, size }`, on stdin or
+ * in the file `--input` names),
+ * the type, the size and the priority are checked as the facets they are:
+ * each required (no size on an epic where the taxonomy says so), the
+ * priority 1 (urgent) to 4 (low), and a type or size label among the labels
+ * refused, since the tracker writes those facets itself.
  *
  * The taxonomy is `--taxonomy`, else the repository's `issue_tracker.taxonomy`
  * (relative to the repository root), else `label-taxonomy.yaml` at the root.
@@ -17,19 +27,24 @@
  * not, 1 the taxonomy is missing, unreadable or fails its lint, or the tracker
  * could not be read, 2 usage.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
   openTracker,
   type Tracker,
 } from "../../do-item/scripts/lib/tracker/index.ts";
 import { taxonomyPath } from "./lib/config.ts";
 import { lintTaxonomyFile } from "./lib/taxonomy.ts";
-import { type Validation, validateLabels } from "./lib/validate.ts";
+import {
+  type IssueFacetInput,
+  type Validation,
+  validateLabels,
+} from "./lib/validate.ts";
 import type { Taxonomy } from "./lib/taxonomy.ts";
 
 const USAGE =
-  "usage: validate-labels.ts [--taxonomy <path>] [--json] [--check-tracker] <label>...\n" +
-  "       (or the labels as a JSON array on stdin)";
+  "usage: validate-labels.ts [--taxonomy <path>] [--json] [--check-tracker]\n" +
+  "                          [--type <type>] [--priority <1-4>] [--size <size>] <label>...\n" +
+  "       (or the labels as a JSON array, or the issue as a JSON object, on stdin or in --input <file>)";
 
 export interface Deps {
   /** The consumer's tracker, opened only for `--check-tracker`. */
@@ -56,6 +71,30 @@ interface Options {
   json: boolean;
   checkTracker: boolean;
   labels: string[];
+  /** Set when a facet is given: the type, size and priority are checked as facets. */
+  facets?: IssueFacetInput;
+  /** A file holding what standard input would: the labels, or the issue. */
+  input?: string;
+}
+
+/** The options that take a value, as `--name value` or `--name=value`. */
+const VALUED = /^--(taxonomy|input|type|priority|size)(?:=(.*))?$/;
+
+/** Set the option `name` to `value`, or say why it cannot be. */
+function setOption(
+  options: Options,
+  name: string,
+  value: string | undefined,
+): string | null {
+  if (value === undefined || value.trim() === "")
+    return `--${name} needs a ${name === "taxonomy" || name === "input" ? "path" : "value"}`;
+  if (name === "taxonomy" || name === "input") options[name] = value;
+  else if (name !== "priority")
+    options.facets = { ...options.facets, [name]: value };
+  else if (/^[1-4]$/.test(value))
+    options.facets = { ...options.facets, priority: Number(value) };
+  else return "--priority must be 1 (urgent), 2 (high), 3 (medium) or 4 (low)";
+  return null;
 }
 
 /** The parsed command line, or a usage message. */
@@ -63,14 +102,16 @@ function parseArgs(argv: string[]): Options | string {
   const options: Options = { json: false, checkTracker: false, labels: [] };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] as string;
-    if (arg === "--json") options.json = true;
+    const valued = VALUED.exec(arg);
+    if (valued !== null) {
+      const problem = setOption(
+        options,
+        valued[1] as string,
+        valued[2] ?? argv[++i],
+      );
+      if (problem !== null) return problem;
+    } else if (arg === "--json") options.json = true;
     else if (arg === "--check-tracker") options.checkTracker = true;
-    else if (arg === "--taxonomy") {
-      const value = argv[++i];
-      if (value === undefined || value === "") return "--taxonomy needs a path";
-      options.taxonomy = value;
-    } else if (arg.startsWith("--taxonomy="))
-      options.taxonomy = arg.slice("--taxonomy=".length);
     else if (arg === "--") {
       options.labels.push(...argv.slice(i + 1));
       break;
@@ -80,18 +121,43 @@ function parseArgs(argv: string[]): Options | string {
   return options;
 }
 
-/** The labels a JSON array on stdin names, or a usage message. */
-function stdinLabels(text: string): string[] | string {
+const STDIN_SHAPE =
+  "standard input is not a JSON array of label names, or an issue ({ labels, type, priority, size })";
+
+/** The labels, and with an issue its facets, that stdin names; or a usage message. */
+function stdinIssue(
+  text: string,
+): { labels: string[]; facets?: IssueFacetInput } | string {
   if (text.trim() === "") return "no labels given";
   let value: unknown;
   try {
     value = JSON.parse(text);
   } catch {
-    return "standard input is not a JSON array of label names";
+    return STDIN_SHAPE;
   }
-  if (!Array.isArray(value) || !value.every((l) => typeof l === "string"))
-    return "standard input is not a JSON array of label names";
-  return value.length ? value : "no labels given";
+  const names = (v: unknown): v is string[] =>
+    Array.isArray(v) && v.every((l) => typeof l === "string");
+  if (names(value)) return value.length ? { labels: value } : "no labels given";
+  if (value === null || typeof value !== "object") return STDIN_SHAPE;
+  const issue = value as Record<string, unknown>;
+  const labels = issue.labels ?? [];
+  const optionalText = (v: unknown) =>
+    v === undefined || v === null || typeof v === "string";
+  if (
+    !names(labels) ||
+    !optionalText(issue.type) ||
+    !optionalText(issue.size) ||
+    !(issue.priority === undefined || Number.isInteger(issue.priority))
+  )
+    return STDIN_SHAPE;
+  return {
+    labels,
+    facets: {
+      type: (issue.type as string | null | undefined) ?? null,
+      size: (issue.size as string | null | undefined) ?? null,
+      priority: (issue.priority as number | undefined) ?? 0,
+    },
+  };
 }
 
 function print(result: Validation, json: boolean): void {
@@ -119,10 +185,21 @@ class Stop extends Error {
 
 const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** The labels to check: the arguments, else a JSON array on stdin. */
-async function readLabels(options: Options, deps: Deps): Promise<string[]> {
-  if (options.labels.length) return options.labels;
-  const read = stdinLabels(await deps.readStdin());
+/** The labels to check, and the facets: the arguments, else stdin. */
+async function readIssue(
+  options: Options,
+  deps: Deps,
+): Promise<{ labels: string[]; facets?: IssueFacetInput }> {
+  if (options.labels.length || options.facets !== undefined)
+    return {
+      labels: options.labels,
+      ...(options.facets === undefined ? {} : { facets: options.facets }),
+    };
+  const read = stdinIssue(
+    options.input === undefined
+      ? await deps.readStdin()
+      : readFileSync(options.input, "utf8"),
+  );
   if (typeof read === "string") throw new Stop(2, `${read}\n${USAGE}`);
   return read;
 }
@@ -186,8 +263,8 @@ async function unresolvedInTracker(
 async function run(argv: string[], deps: Deps): Promise<number> {
   const options = parseArgs(argv);
   if (typeof options === "string") throw new Stop(2, `${options}\n${USAGE}`);
-  const labels = await readLabels(options, deps);
-  const result = validateLabels(labels, loadTaxonomy(options.taxonomy));
+  const { labels, facets } = await readIssue(options, deps);
+  const result = validateLabels(labels, loadTaxonomy(options.taxonomy), facets);
   if (options.checkTracker) {
     const { missing, ambiguous } = await unresolvedInTracker(
       result.labels,

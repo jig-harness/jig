@@ -68,6 +68,7 @@ import {
 import { observeContention } from "./sources/contention.ts";
 import type { readDrives } from "./sources/ledgers.ts";
 import { readPickups } from "./sources/tracker.ts";
+import { facetBound } from "./sources/tracker-facets.ts";
 import { emptyReport, type TickOptions } from "./tick-context.ts";
 import { type ForgeRead, readForge } from "./tick-forge.ts";
 import { lowBudget, type TickReads } from "./tick-reads.ts";
@@ -91,6 +92,8 @@ export interface ObserveContext {
   records: ReadRecord[];
   /** What the tick reads once and shares between its repositories' observe phases. */
   reads: TickReads;
+  /** When the tick must have ended, less its receipt's time (epoch milliseconds); absent for a tick no launcher bounds. */
+  deadline?: number;
 }
 
 /** A repository opened for its tick: its target, its dispatch section, its machine-file entry and the report the tick fills. */
@@ -245,7 +248,14 @@ export async function observeRepo(
     [tracked, forge] = await settled(
       timer.time("tracker", () =>
         pool.run(() =>
-          readTracker(values, repo, section, trackerReport, where),
+          readTracker(
+            values,
+            repo,
+            section,
+            trackerReport,
+            where,
+            context.deadline,
+          ),
         ),
       ),
       timer.time("forge", () =>
@@ -430,6 +440,7 @@ async function readTracker(
   section: DispatchSection,
   report: RepoReport,
   where: string,
+  deadline: number | undefined,
 ): Promise<Tracked> {
   const tracked: Tracked = {
     keys: null,
@@ -440,10 +451,14 @@ async function readTracker(
   try {
     const config = trackerConfigOf(values, repo.slug);
     tracked.keys = issueKeysOf(config);
-    const reading = await readPickups(() => {
-      tracked.tracker = openTracker(config, repo.path);
-      return tracked.tracker;
-    }, section);
+    const reading = await readPickups(
+      () => {
+        tracked.tracker = openTracker(config, repo.path);
+        return tracked.tracker;
+      },
+      section,
+      { bound: () => facetBound(deadline), epic: config.labels.epic },
+    );
     report.records.push(reading.read);
     report.unplaced.push(...reading.unplaced);
     tracked.pickups = reading.wanted;
