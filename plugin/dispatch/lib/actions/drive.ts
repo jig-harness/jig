@@ -356,7 +356,10 @@ async function workspaceFor(
       : { workspace: { id: own.id, path: own.path } };
   }
   const candidates = sessions.ok
-    ? sessions.workspaces.filter((w) => w.prs.includes(pr) && w.branch === head)
+    ? sessions.workspaces.filter(
+        (w) =>
+          w.prs.includes(pr) && (originalActor !== null || w.branch === head),
+      )
     : [];
   const verified = await Promise.all(
     candidates.map((w) =>
@@ -371,7 +374,7 @@ async function workspaceFor(
     return { workspace: { id: held.id, path: held.path } };
   if (originalActor !== null)
     return {
-      waits: `recovery requires exactly one existing branch tree matching the stopped driver's actor and clone; no replacement workspace is opened${verified.length === 0 ? "" : `: ${verified.filter((why) => why !== null).join("; ")}`}`,
+      waits: `recovery requires exactly one existing tree linked to the pull request and matching the stopped driver's actor and clone; no replacement workspace is opened${verified.length === 0 ? "" : `: ${verified.filter((why) => why !== null).join("; ")}`}`,
     };
   return openWithinBudget(state, repo, { pr, head, dispatched: named });
 }

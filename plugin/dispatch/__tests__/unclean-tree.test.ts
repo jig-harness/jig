@@ -226,3 +226,35 @@ it("admits an explicit request after the legacy automatic no-cause attempt is sp
     readRecord(launched?.record ?? "", dispatchState(w))?.facts,
   ).not.toStartWith("no-cause:");
 }, 90000);
+
+it("recovers an original tree that is detached, found by its pull request link", async () => {
+  const { w, ws } = fixture();
+  w.setWorkspaces([{ branch: "", linkedPR: 7, path: ws }]);
+  const launch = (await tick(w)).repos[0]?.launches[0];
+  expect(launch).toMatchObject({ action: "rearm", outcome: "launched" });
+  await waitFor("the detached-tree recovery exit", () =>
+    exitWritten(w, launch?.record ?? ""),
+  );
+  expect(driveRuns(w)[0]?.cwd).toBe(ws);
+}, 90000);
+
+it("tells a person when an explicit rearm of an exit 12 stop finds its tree gone", async () => {
+  const { w } = fixture(false);
+  w.setConfig(
+    `dispatch:\n  labels: {enabled: true}\nissue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\n`,
+  );
+  w.setPrs("open", [
+    { ...openPr(7, "feature/unclean"), labels: [{ name: "jig:rearm" }] },
+  ]);
+  const r = await tick(w);
+  expect(r.repos[0]?.launches).toEqual([]);
+  expect(r.repos[0]?.actions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        stage: "notify",
+        reason: expect.stringContaining("no open workspace"),
+      }),
+    ]),
+  );
+  expect(driveRuns(w)).toEqual([]);
+});
