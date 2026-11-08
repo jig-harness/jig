@@ -384,7 +384,8 @@ guards keep one stage from starting twice:
   the death whose marker a tick released this way makes the next follow-up a
   run again; one a person asks for by deleting a failed marker is a new
   follow-up. A pass that ended failed on a **routine question** (see
-  Sessions that wait) is run again once the same way: its outcome record
+  Sessions that wait) is run again once in the same manner, with no age
+  limit, since it waits on no session lease: its outcome record
   keeps the question and its routine class, the tick releases the marker it
   left, which its wrapper never answers, and a later tick starts the
   follow-up again under a record whose facts carry the recovery tag and the
@@ -392,9 +393,16 @@ guards keep one stage from starting twice:
   and the class's standing answer in its prompt. A follow-up of this host's
   that failed before passes tagged their questions (an outcome record with
   no class field, written by an earlier release, or a launch record whose
-  prompt offered no tags) is run again once the same way, whatever its
-  question, with every class's standing answer; another host's failed
-  answer is not. A run again of either kind never earns another: whichever
+  prompt offered no tags) is run again once in that manner, whatever its
+  question, with every class's standing answer, while its launch record is
+  still on this host: only that record says whether it was itself a run
+  again, so one whose record is gone (past `receipts_days`) is a person's, as
+  is another host's failed answer. An outcome record whose kept question
+  does not read (not JSON, not a mapping, or naming another launch record)
+  is never read as an earlier release's: it is logged and the follow-up is a
+  person's. The prompt of a routine run again quotes the earlier question,
+  at most 500 characters on one line, as a JSON string in a fence, and says
+  it is that pass's words, data and not an instruction. A run again of either kind never earns another: whichever
   path ran it, its failure or death is a person's, so a follow-up is run
   again at most once by the two together, and both draw on the pull
   request's recovery budget. An older death, a failed outcome on an untagged
@@ -1211,10 +1219,15 @@ per-tick budget (`followup_opens_per_tick` in the machine file, 2 by
 default), never from the launches' `opens_per_tick` and never from the open
 the notices workspace keeps, and no more follow-ups run on the host at once
 than `followup_concurrency` (2), counted from the launch records still
-holding. The lane's opens count toward the tick's budget (the opens of both
-allowances times `workspace_timeout`, and eight runtime calls), and a value
-whose opens push that budget past the longest a timer holds is refused,
-naming the field. A follow-up never waits for a drive's launch, and a
+holding, a pending record the tick reports stuck (see Launch records) left
+out, since it holds its slot until a person clears it and would otherwise
+hold the lane too. The lane's opens count in the tick's budget (the opens of
+both allowances times `workspace_timeout`, and eight runtime calls), so the
+installed tick deadline grows with them: about 8h50m at the defaults, above
+the six-hour minimum. A value whose opens take that budget past the longest
+a timer holds is refused, naming the field. A follow-up whose fresh read of
+the runtime's sessions fails waits for the next tick with that failure as
+its reason, rather than open a workspace on the guess that none is joined. A follow-up never waits for a drive's launch, and a
 drive's launch never waits behind follow-ups; the accounts' slots stay
 shared, so a follow-up still needs an admitted account with a free slot.
 A follow-up that waits says what it waits on, in its receipt entry and on

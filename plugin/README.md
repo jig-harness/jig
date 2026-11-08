@@ -467,10 +467,12 @@ that question, and the outcome log counts it as parked for a person. A
 question that is only one of the dispatcher's fixed **routine question
 classes** carries the class's tag (`Question: [local-leftover] …`: a local
 branch or worktree the pass may not delete without asking), and such a
-follow-up is run again once, the same way and within the same budget, with
-the class's standing answer in its prompt (keep it, list it, finish the rest
-and record done). A follow-up that failed before passes tagged their
-questions is run again once with every class's standing answer. An untagged
+follow-up is run again once, within the same budget, with the class's
+standing answer in its prompt (keep it, list it, finish the rest and record
+done); unlike a death's run again, it has no 6-hour age limit. A follow-up
+that failed before passes tagged their questions is run again once with
+every class's standing answer while its launch record is still on the host;
+one whose record is gone (past `receipts_days`) is notified. An untagged
 question, or a failure of the run again, is notified; a follow-up is never
 run again more than once by a death and a routine question together.
 

@@ -387,17 +387,18 @@ function questionFor(
   return questionOf(found?.state) ?? kept?.question ?? null;
 }
 
-/** How a failed follow-up that was itself a run again says so; empty for one that was not. */
+/** What else a failed follow-up's notice says: that it was itself a run again, or that its outcome record's question does not read; empty for neither. */
 function againWords(
   found: ReadRecord | undefined,
   kept: FollowupOutcome | undefined,
 ): string {
+  const unread = kept?.unreadable === undefined ? "" : `; ${kept.unreadable}`;
   const rerun =
     (found !== undefined && isRerun(found.record)) || kept?.rerun === true;
-  if (!rerun) return "";
+  if (!rerun) return unread;
   return found !== undefined && diedWithoutResult(found)
-    ? ", dying again after the tick ran it again once"
-    : ", failing again after the tick ran it again once";
+    ? `, dying again after the tick ran it again once${unread}`
+    : `, failing again after the tick ran it again once${unread}`;
 }
 
 /**

@@ -14,11 +14,15 @@
  * a run again. A row an earlier release wrote, or one whose record's prompt
  * offered no routine tags, has no class field (`routine` absent), which
  * `routine-reruns.ts` reads as a follow-up that failed before passes tagged
- * their questions.
+ * their questions. An `asked` column that does not read (not JSON, not a
+ * mapping, or naming another launch record) is never read as an earlier
+ * release's row: the row says why (`unreadable`), the failure is logged, and
+ * the follow-up waits for a person.
  */
 import { stateRoot } from "../receipts.ts";
 import { isMapping } from "../../shared/config-layers.ts";
-import { swallow } from "../../shared/errors.ts";
+import { failureFields } from "../../shared/errors.ts";
+import { log } from "../../shared/log.ts";
 import type { ReadRecord } from "./launches.ts";
 import { routineClassOf } from "./routine-questions.ts";
 import { questionOf } from "./session.ts";
@@ -41,30 +45,49 @@ export interface FollowupOutcome {
   routine?: string | null;
   /** Whether the attempt was itself a run again (its facts carry the recovery tag); absent on a row that kept none. */
   rerun?: boolean;
+  /** Why the row's `asked` column does not read: it does not parse, is not a mapping, or names another record. Such a row is a person's, never read as an earlier release's. */
+  unreadable?: string;
 }
 
 /** What a row keeps of the pass's question, as its `asked` column holds it. */
-export type Asked = Pick<FollowupOutcome, "question" | "routine" | "rerun">;
+export type Asked = Pick<
+  FollowupOutcome,
+  "question" | "routine" | "rerun" | "unreadable"
+>;
 
-/** The `asked` column of a row of `record`: its fields, or none when it is empty, does not read, or names another record. */
+/** A row whose `asked` column does not read, logged with its cause. */
+function unreadAsked(record: string, cause: string, error?: unknown): Asked {
+  const unreadable = `its outcome record's question does not read (${cause})`;
+  log.warn(`follow-up outcome of launch record ${record}: ${unreadable}`, {
+    record,
+    cause,
+    ...(error === undefined ? {} : failureFields(error)),
+  });
+  return { unreadable };
+}
+
+/** The `asked` column of a row of `record`: its fields, none when it is empty (an earlier release's row), or why it does not read. */
 function parseAsked(text: string | null, record: string): Asked {
   if (text === null) return {};
+  let value: unknown;
   try {
-    const value: unknown = JSON.parse(text);
-    if (!isMapping(value) || value.record !== record) return {};
-    return {
-      question: typeof value.question === "string" ? value.question : null,
-      ...(value.routine === undefined
-        ? {}
-        : {
-            routine: typeof value.routine === "string" ? value.routine : null,
-          }),
-      rerun: value.rerun === true,
-    };
+    value = JSON.parse(text);
   } catch (error) {
-    swallow(error, "a follow-up outcome's question does not read");
-    return {};
+    return unreadAsked(record, "it is not JSON", error);
   }
+  if (!isMapping(value)) return unreadAsked(record, "it is not a mapping");
+  if (value.record !== record)
+    return unreadAsked(
+      record,
+      `it names launch record ${String(value.record)}`,
+    );
+  return {
+    question: typeof value.question === "string" ? value.question : null,
+    ...(value.routine === undefined
+      ? {}
+      : { routine: typeof value.routine === "string" ? value.routine : null }),
+    rerun: value.rerun === true,
+  };
 }
 
 /** The outcome records of `repo`, by pull request. */

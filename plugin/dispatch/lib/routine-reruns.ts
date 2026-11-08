@@ -7,9 +7,10 @@
  *    its question and, where its prompt offered the tags, the question's
  *    routine class;
  * 2. a failed outcome whose question is tagged with a routine class, or one
- *    that failed before passes tagged their questions (no class field), and
- *    whose attempt was not itself a run again, owes a run again
- *    (`routineRerun`);
+ *    that failed before passes tagged their questions (no class field) whose
+ *    launch record is still on this host, and whose attempt was not itself a
+ *    run again, owes a run again (`routineRerun`); an outcome whose question
+ *    does not read owes none;
  * 3. the tick with `--apply` deletes the marker that attempt left, answered
  *    or not (`releaseRoutineMarkers`), as it does for a pass that died; its
  *    wrapper never answers it (`routineEnd`), so another host does not
@@ -20,7 +21,11 @@
  *
  * The run again counts against the pull request's recovery budget as a
  * death's does, and an attempt that is itself a run again of either kind
- * never owes another: its failure is a person's.
+ * never owes another: its failure is a person's. A failure from before
+ * passes tagged their questions keeps that only on its launch record, so
+ * one whose record is gone (past `receipts_days`) is a person's too, and no
+ * follow-up is run again more than once by a death and a routine question
+ * together. Unlike a death's, a routine run again has no age limit.
  */
 import type { MarkedPr } from "./types.ts";
 import {
@@ -56,7 +61,8 @@ export function routineRerun(
   outcome: FollowupOutcome | undefined,
   launches: readonly ReadRecord[],
 ): RoutineRerun | null {
-  if (outcome?.outcome !== "failed") return null;
+  if (outcome?.outcome !== "failed" || outcome.unreadable !== undefined)
+    return null;
   const found = launches.find((r) => r.record.id === outcome.record);
   if (outcome.rerun === true || (found !== undefined && isRerun(found.record)))
     return null;
@@ -69,6 +75,8 @@ export function routineRerun(
         ? routineClassOf(question)
         : undefined;
   if (routine === null) return null;
+  // A failure from before passes tagged their questions keeps no word of whether it was itself a run again; only its launch record says, so without one it is a person's.
+  if (routine === undefined && found === undefined) return null;
   return {
     record: outcome.record,
     standing: {

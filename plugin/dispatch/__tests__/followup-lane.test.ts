@@ -9,7 +9,10 @@ import { afterEach, expect, it } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { joinedWorkspace, laneCapWait } from "../lib/actions/followup-lane.ts";
 import { type ApplyState, openWithinBudget } from "../lib/actions/launch.ts";
+import type { ReadRecord } from "../lib/launches.ts";
+import type { SessionsReport } from "../lib/runtime/port.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
 import { existingStateDb } from "../lib/state.ts";
@@ -80,6 +83,67 @@ it("opens the notices workspace and every launch open after the follow-ups' lane
   expect(await openWithinBudget(s, repo, notice)).toHaveProperty("workspace");
   expect(s.opened).toBe(4);
   expect(s.followupOpened).toBe(2);
+});
+
+const listed: SessionsReport = { ok: true, source: "orca", workspaces: [] };
+
+/** A follow-up's launch record in `state`, as the lane counts it. */
+function followupRecord(
+  id: string,
+  kind: "pending" | "alive",
+  noReplay: string | null = null,
+): ReadRecord {
+  return {
+    record: {
+      id,
+      action: "followup",
+      pr: 50,
+      item: null,
+      workspace: { id: "w", path: "/tmp/ws" },
+      attempts: [],
+      noReplay,
+    },
+    state: kind === "pending" ? { kind } : { kind, process: {} as never },
+    result: null,
+  } as unknown as ReadRecord;
+}
+
+it("leaves a follow-up stuck pending out of the lane's cap, and counts one that runs", () => {
+  const s = state();
+  s.machine = { ...s.machine, followupConcurrency: 1, unclaimedAfterMs: 1 };
+  s.records = [followupRecord("stuck", "pending", "its marker is gone")];
+  expect(laneCapWait(s, listed)).toBeNull();
+  s.records.push(followupRecord("runs", "alive"));
+  expect(laneCapWait(s, listed)).toContain("followup_concurrency");
+});
+
+it("waits, with the cause, rather than read a failed session listing as no workspace joined", async () => {
+  expect(
+    await joinedWorkspace(async () => {
+      throw new Error("orca is not running");
+    }, 7),
+  ).toEqual({ failed: expect.stringContaining("orca is not running") });
+  expect(
+    await joinedWorkspace(
+      async () => ({
+        ok: false,
+        source: "orca",
+        reason: "the listing timed out",
+      }),
+      7,
+    ),
+  ).toEqual({ failed: "the listing timed out" });
+  const workspace = {
+    id: "w7",
+    path: "/tmp/ws7",
+    prs: [7],
+  } as unknown as Extract<SessionsReport, { ok: true }>["workspaces"][number];
+  expect(
+    await joinedWorkspace(
+      async () => ({ ok: true, source: "orca", workspaces: [workspace] }),
+      7,
+    ),
+  ).toMatchObject({ joined: { id: "w7", path: "/tmp/ws7" } });
 });
 
 function fixture(): World {

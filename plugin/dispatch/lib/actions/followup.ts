@@ -86,7 +86,12 @@ import {
   waits,
 } from "./launch.ts";
 import { applyReleases, isRelease } from "./release-claims.ts";
-import { laneBudgetWait, laneCapWait } from "./followup-lane.ts";
+import {
+  joinedWorkspace,
+  laneBudgetWait,
+  laneCapWait,
+  type WorkspaceRef,
+} from "./followup-lane.ts";
 
 /** What a repository's follow-ups need beyond the apply state. */
 export interface FollowupContext {
@@ -154,22 +159,6 @@ async function changed(
     : null;
 }
 
-type WorkspaceRef = { id: string; path: string };
-
-/** The workspace joined to the pull request, read afresh; `undefined` when none is, or the runtime cannot say. */
-async function joinedWorkspace(
-  ctx: FollowupContext,
-  pr: number,
-): Promise<WorkspaceRef | undefined> {
-  const sessions = await ctx.sessions().catch(() => null);
-  const joined = sessions?.ok
-    ? sessions.workspaces.find((w) => w.prs.includes(pr))
-    : undefined;
-  return joined === undefined
-    ? undefined
-    : { id: joined.id, path: joined.path };
-}
-
 /** The pull request's workspace: the one joined to it, else its head branch opened within the follow-ups' lane. */
 async function workspaceFor(
   state: ApplyState,
@@ -191,9 +180,10 @@ async function workspaceFor(
 function laneHolds(
   state: ApplyState,
   action: Action,
-  joined: WorkspaceRef | undefined,
+  read: { sessions: SessionsReport; joined: WorkspaceRef | undefined },
 ): LaunchOutcome | null {
-  const cap = laneCapWait(state);
+  const { joined } = read;
+  const cap = laneCapWait(state, read.sessions);
   if (cap !== null) return { ...waits(action, cap), waitsOn: "lane-cap" };
   // A joined workspace needs no open, so the lane's budget does not hold it.
   const budget = joined === undefined ? laneBudgetWait(state) : null;
@@ -345,8 +335,13 @@ async function launchOne(
     return waits(action, "the merged pull request is not in this tick's read");
   const before = await changed(repo, ctx, pr.number);
   if (before !== null) return waits(action, before);
-  const joined = await joinedWorkspace(ctx, pr.number);
-  const held = laneHolds(state, action, joined);
+  const read = await joinedWorkspace(ctx.sessions, pr.number);
+  if ("failed" in read)
+    return waits(
+      action,
+      `the runtime's sessions could not be listed again, so whether a workspace is joined to it cannot be told: ${read.failed}`,
+    );
+  const held = laneHolds(state, action, read);
   if (held !== null) return held;
   const admitted = await admitAccount(state, action);
   if ("outcome" in admitted) return admitted.outcome;
@@ -357,7 +352,7 @@ async function launchOne(
     state,
     action,
     slots,
-    workspaceFor(state, repo, pr, named, joined),
+    workspaceFor(state, repo, pr, named, read.joined),
   );
   if ("outcome" in opened) return opened.outcome;
   const after = await changed(repo, ctx, pr.number);

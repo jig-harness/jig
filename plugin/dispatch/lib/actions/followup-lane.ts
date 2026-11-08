@@ -13,13 +13,33 @@
  * the accounts.
  */
 import { holds } from "../launches.ts";
+import type { SessionsReport } from "../runtime/port.ts";
+import { stuckWhy } from "../stuck-launches.ts";
+import { failureText } from "../text.ts";
 import type { ApplyState } from "./launch.ts";
 
-/** Why the host runs as many follow-ups as `followup_concurrency` allows; `null` while it runs fewer. */
-export function laneCapWait(state: ApplyState): string | null {
+/**
+ * Why the host runs as many follow-ups as `followup_concurrency` allows;
+ * `null` while it runs fewer. A record stuck pending, which the tick
+ * notifies to a person and no tick launches again (`stuck-launches.ts`),
+ * holds its account's slot but not a place in the lane, so one launch that
+ * never started cannot hold the lane until a person clears it.
+ */
+export function laneCapWait(
+  state: ApplyState,
+  sessions: SessionsReport,
+): string | null {
   const cap = state.machine.followupConcurrency;
+  const clock = {
+    nowMs: Date.now(),
+    unclaimedAfterMs: state.machine.unclaimedAfterMs,
+    sessions,
+  };
   const running = state.records.filter(
-    (r) => r.record.action === "followup" && holds(r.state),
+    (r) =>
+      r.record.action === "followup" &&
+      holds(r.state) &&
+      stuckWhy(r, clock) === null,
   ).length;
   return running < cap
     ? null
@@ -32,4 +52,35 @@ export function laneBudgetWait(state: ApplyState): string | null {
   return (state.followupOpened ?? 0) < budget
     ? null
     : `this tick has opened the ${budget} follow-up workspaces its followup_opens_per_tick covers; a later tick opens this one`;
+}
+
+/** A workspace, as a launch record names it. */
+export type WorkspaceRef = { id: string; path: string };
+
+/**
+ * The runtime's sessions read afresh by `read`, and the workspace joined to
+ * pull request `pr` (`undefined` when none is); or why they could not be
+ * read. A listing that fails cannot say no workspace is joined, so the
+ * follow-up waits rather than spend the lane's budget opening one on a guess.
+ */
+export async function joinedWorkspace(
+  read: () => Promise<SessionsReport>,
+  pr: number,
+): Promise<
+  | { sessions: SessionsReport; joined: WorkspaceRef | undefined }
+  | { failed: string }
+> {
+  let sessions: SessionsReport;
+  try {
+    sessions = await read();
+  } catch (error) {
+    return { failed: failureText(error) };
+  }
+  if (!sessions.ok) return { failed: sessions.reason };
+  const joined = sessions.workspaces.find((w) => w.prs.includes(pr));
+  return {
+    sessions,
+    joined:
+      joined === undefined ? undefined : { id: joined.id, path: joined.path },
+  };
 }
