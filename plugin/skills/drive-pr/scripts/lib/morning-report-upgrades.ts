@@ -10,6 +10,7 @@
  * setting that does not read fails every tick) is one entry: when it first
  * and last came, and how many times.
  */
+import { statSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import {
   readReceipt as readTickReceipt,
@@ -89,7 +90,20 @@ function upgradesOf(
       "dispatch",
       () => tickReceiptPaths(roots.dispatch),
       // One that does not read is the dispatcher's part's to report, once.
-      (path) => readTickReceipt(path) ?? {},
+      // A tick writes its receipt once, after its repositories and closing
+      // steps, so the file's time is when it was published; its start is not.
+      (path) => {
+        const receipt = readTickReceipt(path);
+        if (receipt === null) return {};
+        try {
+          return {
+            upgrade: receipt.upgrade,
+            startedAt: statSync(path).mtime.toISOString(),
+          };
+        } catch (error) {
+          return String(error);
+        }
+      },
     ],
   ];
   for (const [job, paths, read] of jobs) {
