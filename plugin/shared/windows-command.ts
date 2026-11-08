@@ -2,6 +2,7 @@
 import { type SpawnOptions, spawn } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { win32 } from "node:path";
+import { JigError } from "./errors.ts";
 
 interface WindowsCommandOptions {
   cwd: string;
@@ -38,12 +39,10 @@ type WindowsCommandErrorCode =
   | "command-too-long";
 
 /** A launcher shape cmd cannot preserve safely; the caller reports a spawn failure. */
-class WindowsCommandError extends Error {
+class WindowsCommandError extends JigError<WindowsCommandErrorCode> {
   override name = "WindowsCommandError";
-  readonly code: WindowsCommandErrorCode;
   constructor(code: WindowsCommandErrorCode, message: string) {
-    super(message);
-    this.code = code;
+    super(code, message);
   }
 }
 

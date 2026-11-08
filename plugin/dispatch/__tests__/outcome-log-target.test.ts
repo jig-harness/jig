@@ -58,6 +58,13 @@ function ended(
   };
 }
 
+/** The rows `rowsFor` reads, where the lookup is expected to read. */
+function rowsOf(repo: string, target: string, r: string) {
+  const read = rowsFor(repo, target, r);
+  expect(read).toMatchObject({ ok: true });
+  return read.ok ? read.value : [];
+}
+
 describe("the outcome log's key column", () => {
   it("reads one key's rows, and its last ended launch among the stages asked for", () => {
     const r = root();
@@ -69,14 +76,14 @@ describe("the outcome log's key column", () => {
     );
     writeRow(ended("d", "PR #7", "2026-11-01T13:00:00.000Z", "followup"), r);
     expect(
-      rowsFor("example-org/example-repo", "PR #7", r).map((x) => x.key),
+      rowsOf("example-org/example-repo", "PR #7", r).map((x) => x.key),
     ).toEqual(["ended a", "ended c", "ended d"]);
-    expect(rowsFor("other/repo", "PR #7", r)).toEqual([]);
-    const seven = rowsFor("example-org/example-repo", "PR #7", r);
+    expect(rowsOf("other/repo", "PR #7", r)).toEqual([]);
+    const seven = rowsOf("example-org/example-repo", "PR #7", r);
     expect(lastEnded(seven, ["rearm", "takeover"])?.key).toBe("ended c");
     expect(lastEnded(seven, ["followup"])?.key).toBe("ended d");
     expect(
-      lastEnded(rowsFor("example-org/example-repo", "PR #9", r), ["rearm"]),
+      lastEnded(rowsOf("example-org/example-repo", "PR #9", r), ["rearm"]),
     ).toBeNull();
     const db = stateDb(r);
     expect(
@@ -91,7 +98,7 @@ describe("the outcome log's key column", () => {
     writeRow(ended("a", "PR #7", "2026-11-01T10:00:00.000Z"), r);
     stateDb(r).run("UPDATE log SET target = NULL");
     expect(
-      rowsFor("example-org/example-repo", "PR #7", r).map((x) => x.key),
+      rowsOf("example-org/example-repo", "PR #7", r).map((x) => x.key),
     ).toEqual(["ended a"]);
   });
 
@@ -114,7 +121,7 @@ describe("the outcome log's key column", () => {
     old.close();
 
     expect(
-      rowsFor("example-org/example-repo", "PR #7", r).map((x) => x.key),
+      rowsOf("example-org/example-repo", "PR #7", r).map((x) => x.key),
     ).toEqual(["ended a"]);
     const db = stateDb(r);
     expect(db.query("PRAGMA user_version").get()).toEqual({
@@ -143,9 +150,12 @@ describe("the outcome log's key column", () => {
 
     const readOnly = new Database(statePath(r), { readonly: true });
     try {
-      expect(() =>
-        rowsFor("example-org/example-repo", "PR #7", r, readOnly),
-      ).toThrow(/no target column/);
+      const rows = rowsFor("example-org/example-repo", "PR #7", r, readOnly);
+      expect(rows.ok).toBe(false);
+      if (!rows.ok) {
+        expect(rows.failure.code).toBe("unindexed");
+        expect(rows.failure.reason).toMatch(/no target column/);
+      }
     } finally {
       readOnly.close();
     }

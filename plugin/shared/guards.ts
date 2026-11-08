@@ -11,6 +11,7 @@
  * an array. (`config-layers.ts`'s `isMapping` is stricter, a plain object
  * only, for what a YAML document can hold.)
  */
+import { JigError } from "./outcome.ts";
 
 /** A function that narrows `unknown` to `T`. */
 export type Guard<T> = (value: unknown) => value is T;
@@ -42,12 +43,13 @@ export function isDistinctNameList(value: unknown): value is string[] {
  * file, a command's output), `path` the place inside it (`$` for the whole
  * value, `$.state` for a field).
  */
-export class DecodeError extends Error {
+export class DecodeError extends JigError<"undecodable"> {
   readonly what: string;
   readonly path: string;
   readonly detail: string;
   constructor(what: string, path: string, detail: string, cause?: unknown) {
     super(
+      "undecodable",
       `${what === "" ? "" : `${what}: `}${path} ${detail}`,
       cause === undefined ? undefined : { cause },
     );

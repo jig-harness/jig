@@ -21,7 +21,9 @@ const DISPATCH = resolve(import.meta.dir, "..");
 const BOUND_TICK = `import { readMachineConfig } from ${JSON.stringify(`${DISPATCH}/lib/machine-config.ts`)};
 import { orcaRuntime } from ${JSON.stringify(`${DISPATCH}/lib/runtime/orca.ts`)};
 import { runTick } from ${JSON.stringify(`${DISPATCH}/tick.ts`)};
-const machine = readMachineConfig();
+const read = readMachineConfig();
+if (!read.ok) throw new Error(read.failure.reason);
+const machine = read.value;
 if (machine === null) throw new Error("the bound tick needs a machine file");
 const result = await runTick({
   repos: machine.repositories.map((r) => r.path),

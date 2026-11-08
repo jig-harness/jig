@@ -117,9 +117,12 @@ function waitingMain(args: AskArguments): number {
 /** The dispatch labels' prefix the repository's configuration in its checkout here names; `null` where there is no checkout or its configuration does not read. */
 function labelPrefixAt(checkout: string | null): string | null {
   if (checkout === null) return null;
-  const section = attempt("unreadable", "", () =>
-    dispatchSection(layeredConfig(checkout).values),
+  const values = attempt(
+    "unreadable",
+    "",
+    () => layeredConfig(checkout).values,
   );
+  const section = values.ok ? dispatchSection(values.value) : values;
   return section.ok ? section.value.labels.prefix : null;
 }
 

@@ -110,15 +110,17 @@ export function skillValidation(
   root: string,
 ): Finding[] {
   const findings: Finding[] = [];
+  const refuse = (skill: string, reason: string) =>
+    findings.push({
+      id: `rejected:${skill}`,
+      severity: "error",
+      message: `${skill} refuses the file: ${reason}`,
+    });
   const attempt = (skill: string, check: () => unknown) => {
     try {
       check();
     } catch (e) {
-      findings.push({
-        id: `rejected:${skill}`,
-        severity: "error",
-        message: `${skill} refuses the file: ${e instanceof Error ? e.message : String(e)}`,
-      });
+      refuse(skill, e instanceof Error ? e.message : String(e));
     }
   };
   attempt("do-item (pull-request policy)", () => parsePrPolicy(config));
@@ -153,7 +155,7 @@ export function skillValidation(
       hasRepository: true,
     };
     resolveAutonomy(layered, {});
-    parkClasses(layered);
+    parkClasses(layered, {});
   });
   attempt("adr", () => adrConfig(path));
   attempt("decide, explain (sheets)", () => sheetRepositories(config, root));
@@ -162,8 +164,10 @@ export function skillValidation(
     parseObligations(config.resolve_conflicts),
   );
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
-  attempt("gc", () => parseDeclaration(config.gc, root));
-  attempt("dispatch", () => dispatchSection(config));
+  const gc = parseDeclaration(config.gc, root);
+  if (!gc.ok) refuse("gc", gc.failure.reason);
+  const dispatch = dispatchSection(config);
+  if (!dispatch.ok) refuse("dispatch", dispatch.failure.reason);
   attempt("docs", () => parseDocsSettings(config.docs, root));
   attempt("design-brief-builder (handback)", () => {
     const handback = at(config, "design_brief.handback");

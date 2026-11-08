@@ -175,34 +175,50 @@ describe("the repository query's pull requests", () => {
     },
   };
 
+  /** The pull request the query gave, in the listing's shape; the test fails when it does not read. */
+  const listed = (value: unknown): Record<string, unknown> => {
+    const read = listedPullRequest(value);
+    expect(read).toMatchObject({ ok: true });
+    return read.ok ? read.value : {};
+  };
+  /** Why the query's pull request does not read, which must be `unreadable`. */
+  const refused = (value: unknown): string => {
+    const read = listedPullRequest(value);
+    expect(read.ok).toBe(false);
+    if (read.ok) return "";
+    expect(read.failure.code).toBe("unreadable");
+    return read.failure.reason;
+  };
+
   it("read as the pull request listing gives them, a bot author's login as app/<name>", () => {
     const read = { labels: true };
-    expect(listedOpen([listedPullRequest(node)], read)).toEqual(
-      listedOpen([listing], read),
-    );
-    expect(listedOpen([listedPullRequest(node)])[0]?.labels).toBeUndefined();
+    const batched = listedOpen([listed(node)], read);
+    expect(batched).toMatchObject({ ok: true });
+    expect(batched).toEqual(listedOpen([listing], read));
+    const unlabelled = listedOpen([listed(node)]);
+    expect(unlabelled.ok && unlabelled.value[0]?.labels).toBeUndefined();
   });
 
   it("do not read when one has more labels than one page holds", () => {
-    expect(() =>
-      listedPullRequest({
+    expect(
+      refused({
         ...node,
         labels: { ...node.labels, pageInfo: { hasNextPage: true } },
       }),
-    ).toThrow("more labels than one read holds");
+    ).toContain("more labels than one read holds");
   });
 
   it("do not read when one lacks its number or head branch, or has unreadable labels", () => {
     const { number: _n, ...noNumber } = node;
     const { headRefName: _h, ...noHead } = node;
-    expect(() => listedPullRequest(noNumber)).toThrow("number or head branch");
-    expect(() => listedPullRequest(noHead)).toThrow("number or head branch");
-    expect(() =>
-      listedPullRequest({
+    expect(refused(noNumber)).toContain("number or head branch");
+    expect(refused(noHead)).toContain("number or head branch");
+    expect(
+      refused({
         ...node,
         labels: { ...node.labels, nodes: [{ name: "a" }, null] },
       }),
-    ).toThrow("unreadable labels");
+    ).toContain("unreadable labels");
     const { labels: _l, ...noLabels } = node;
     for (const labels of [
       null,
@@ -210,10 +226,8 @@ describe("the repository query's pull requests", () => {
       { nodes: [{ name: "a" }] },
       { pageInfo: {}, nodes: [{ name: "a" }] },
     ])
-      expect(() => listedPullRequest({ ...noLabels, labels })).toThrow(
-        "unreadable labels",
-      );
-    expect(() => listedPullRequest(noLabels)).toThrow("unreadable labels");
+      expect(refused({ ...noLabels, labels })).toContain("unreadable labels");
+    expect(refused(noLabels)).toContain("unreadable labels");
   });
 });
 

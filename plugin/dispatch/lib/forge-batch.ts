@@ -95,8 +95,12 @@ export interface RepositoryRead extends CommentsRead {
   open: unknown[];
 }
 
-/** Why a query's answer does not read as one: thrown inside `readRepository`, returned as its failure. */
-class PartialRead extends Error {}
+/** A query's answer, or the part of it, that does not read as one. */
+type Read<T> = Outcome<T, "unreadable">;
+
+function partial(reason: string): Read<never> {
+  return failed("unreadable", reason);
+}
 
 function field(value: unknown, ...path: string[]): unknown {
   let at = value;
@@ -159,25 +163,27 @@ function listedAuthor(
   return { login: bot ? `app/${author.login}` : author.login, is_bot: bot };
 }
 
-/** One open pull request of the query in the pull request listing's shape; throws when its labels read in part. */
-export function listedPullRequest(node: unknown): Record<string, unknown> {
-  if (!isRecord(node)) throw new PartialRead("a pull request is unreadable");
+/** One open pull request of the query in the pull request listing's shape; `unreadable` when it or its labels read in part. */
+export function listedPullRequest(
+  node: unknown,
+): Read<Record<string, unknown>> {
+  if (!isRecord(node)) return partial("a pull request is unreadable");
   const more = field(node, "labels", "pageInfo", "hasNextPage");
   if (more === true)
-    throw new PartialRead(
+    return partial(
       `PR #${String(node.number)} has more labels than one read holds`,
     );
   const labels = field(node, "labels", "nodes");
   if (typeof node.number !== "number" || !text(node.headRefName))
-    throw new PartialRead("a pull request lacks its number or head branch");
+    return partial("a pull request lacks its number or head branch");
   if (
     more !== false ||
     !Array.isArray(labels) ||
     !labels.every((l) => isRecord(l) && text(l.name))
   )
-    throw new PartialRead(`PR #${node.number} has unreadable labels`);
+    return partial(`PR #${node.number} has unreadable labels`);
   const author = listedAuthor(node.author);
-  return {
+  return ok({
     number: node.number,
     ...strings(
       node,
@@ -195,11 +201,11 @@ export function listedPullRequest(node: unknown): Record<string, unknown> {
     ...(typeof node.isDraft === "boolean" ? { isDraft: node.isDraft } : {}),
     ...(author === null ? {} : { author }),
     labels,
-  };
+  });
 }
 
-/** The configuration file the default branch holds, `null` when none; throws when the forge cut it short. */
-function configOf(repository: unknown): string | null {
+/** The configuration file the default branch holds, `null` when none; `unreadable` when the forge cut it short. */
+function configOf(repository: unknown): Read<string | null> {
   const file = field(
     repository,
     "defaultBranchRef",
@@ -207,14 +213,14 @@ function configOf(repository: unknown): string | null {
     "file",
     "object",
   );
-  if (file === undefined || file === null) return null;
+  if (file === undefined || file === null) return ok(null);
   if (field(file, "isTruncated") === true || !text(field(file, "text")))
-    throw new PartialRead(`${OVERLAY_RELPATH} came back cut short or not text`);
-  return field(file, "text") as string;
+    return partial(`${OVERLAY_RELPATH} came back cut short or not text`);
+  return ok(field(file, "text") as string);
 }
 
 /** One query's answer, run in `cwd` where it names the repository by the checkout. */
-async function graphql(args: string[], cwd?: string): Promise<unknown> {
+async function graphql(args: string[], cwd?: string): Promise<Read<unknown>> {
   const r = await ghCall(["api", "graphql", ...args], {
     stderr: "pipe",
     env: ghRepoEnv(),
@@ -222,19 +228,19 @@ async function graphql(args: string[], cwd?: string): Promise<unknown> {
   });
   if (r.code !== 0) {
     const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-    throw new PartialRead(
+    return partial(
       `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
     );
   }
   try {
-    return JSON.parse(r.stdout);
-  } catch {
-    throw new PartialRead("the query's answer is not JSON");
+    return ok(JSON.parse(r.stdout));
+  } catch (error) {
+    return failed("unreadable", "the query's answer is not JSON", error);
   }
 }
 
 /** One page of the repository's query, as the forge answered it in the checkout at `path`. */
-function page(path: string, after: string | null): Promise<unknown> {
+function page(path: string, after: string | null): Promise<Read<unknown>> {
   return graphql(
     [
       "-f",
@@ -275,42 +281,43 @@ function addCost(read: CommentsRead, answer: unknown): void {
 }
 
 /** The repository the first page names, or why it does not read. */
-function targetOf(path: string, repository: unknown): RepoTarget {
+function targetOf(path: string, repository: unknown): Read<RepoTarget> {
   const slug = field(repository, "nameWithOwner");
   const branch = field(repository, "defaultBranchRef", "name");
   if (!text(slug) || !/^[\w.-]+\/[\w.-]+$/.test(slug))
-    throw new PartialRead("the repository query names no owner/name");
+    return partial("the repository query names no owner/name");
   if (!text(branch) || branch === "")
-    throw new PartialRead(`${slug} reports no default branch`);
-  return { path, slug, defaultBranch: branch };
+    return partial(`${slug} reports no default branch`);
+  return ok({ path, slug, defaultBranch: branch });
 }
 
 /** Add one page's pull requests and their comments to `read`; the cursor of the next page, or `null` at the last. */
-function addPage(read: RepositoryRead, answer: unknown): string | null {
+function addPage(read: RepositoryRead, answer: unknown): Read<string | null> {
   const prs = field(answer, "data", "repository", "pullRequests");
   const nodes = field(prs, "nodes");
   if (!Array.isArray(nodes))
-    throw new PartialRead("the repository query lists no pull requests");
+    return partial("the repository query lists no pull requests");
   for (const node of nodes) {
     const listed = listedPullRequest(node);
-    read.open.push(listed);
-    const number = listed.number;
+    if (!listed.ok) return listed;
+    read.open.push(listed.value);
+    const number = listed.value.number;
     if (typeof number === "number")
       addComments(read, number, field(node, "comments"));
   }
   if (read.open.length >= PR_LIMIT)
-    throw new PartialRead(
+    return partial(
       `${read.target.slug} lists ${PR_LIMIT} or more pull requests, more than one read holds`,
     );
   addCost(read, answer);
   const more = field(prs, "pageInfo", "hasNextPage");
-  if (more === false) return null;
+  if (more === false) return ok(null);
   const next = field(prs, "pageInfo", "endCursor");
   if (more !== true || !text(next) || next === "")
-    throw new PartialRead(
+    return partial(
       "the repository query's page info names neither the last page nor the next",
     );
-  return next;
+  return ok(next);
 }
 
 /** The repository of the checkout at `path`, read in one query of as many pages as its open pull requests need; or why it did not read in full. */
@@ -318,26 +325,30 @@ export async function readRepository(
   path: string,
 ): Promise<Outcome<RepositoryRead, "unreadable">> {
   const startedAtMs = Date.now();
-  try {
-    const first = await page(path, null);
-    const repository = field(first, "data", "repository");
-    const read: RepositoryRead = {
-      target: targetOf(path, repository),
-      config: configOf(repository),
-      open: [],
-      comments: new Map(),
-      overflow: [],
-      startedAtMs,
-      pages: 0,
-      cost: 0,
-    };
-    let cursor = addPage(read, first);
-    while (cursor !== null) cursor = addPage(read, await page(path, cursor));
-    return ok(read);
-  } catch (error) {
-    if (!(error instanceof PartialRead)) throw error;
-    return failed("unreadable", error.message);
+  const first = await page(path, null);
+  if (!first.ok) return first;
+  const repository = field(first.value, "data", "repository");
+  const target = targetOf(path, repository);
+  if (!target.ok) return target;
+  const config = configOf(repository);
+  if (!config.ok) return config;
+  const read: RepositoryRead = {
+    target: target.value,
+    config: config.value,
+    open: [],
+    comments: new Map(),
+    overflow: [],
+    startedAtMs,
+    pages: 0,
+    cost: 0,
+  };
+  let cursor = addPage(read, first.value);
+  while (cursor.ok && cursor.value !== null) {
+    const next = await page(path, cursor.value);
+    if (!next.ok) return next;
+    cursor = addPage(read, next.value);
   }
+  return cursor.ok ? ok(read) : cursor;
 }
 
 /** The comments query over `prs`, each aliased by its number. */
@@ -368,27 +379,23 @@ export async function readComments(
     pages: 0,
     cost: 0,
   };
-  try {
-    if (prs.some((n) => !Number.isSafeInteger(n) || n <= 0))
-      throw new PartialRead("a pull request number is not a whole number");
-    for (let at = 0; at < prs.length; at += PAGE) {
-      const chunk = prs.slice(at, at + PAGE);
-      const answer = await graphql([
-        "-f",
-        `query=${commentsQuery(chunk)}`,
-        "-f",
-        `owner=${owner}`,
-        "-f",
-        `name=${name}`,
-      ]);
-      const repository = field(answer, "data", "repository");
-      for (const n of chunk)
-        addComments(read, n, field(repository, `pr${n}`, "comments"));
-      addCost(read, answer);
-    }
-    return ok(read);
-  } catch (error) {
-    if (!(error instanceof PartialRead)) throw error;
-    return failed("unreadable", error.message);
+  if (prs.some((n) => !Number.isSafeInteger(n) || n <= 0))
+    return partial("a pull request number is not a whole number");
+  for (let at = 0; at < prs.length; at += PAGE) {
+    const chunk = prs.slice(at, at + PAGE);
+    const answer = await graphql([
+      "-f",
+      `query=${commentsQuery(chunk)}`,
+      "-f",
+      `owner=${owner}`,
+      "-f",
+      `name=${name}`,
+    ]);
+    if (!answer.ok) return answer;
+    const repository = field(answer.value, "data", "repository");
+    for (const n of chunk)
+      addComments(read, n, field(repository, `pr${n}`, "comments"));
+    addCost(read, answer.value);
   }
+  return ok(read);
 }

@@ -7,6 +7,7 @@
 import { setTimeout as sleepMs } from "node:timers/promises";
 import { failureFields } from "./errors.ts";
 import { guardStderr, log, logEnabled, setLogScript } from "./log.ts";
+import type { Failure } from "./outcome.ts";
 
 /**
  * Exit codes travel as exceptions so `main()` can return them in one place.
@@ -85,6 +86,18 @@ export function runMain(name: string, main: () => Promise<number>): void {
       }
     },
   );
+}
+
+/**
+ * The exit of a command stopped by `failure`: exit 1, its reason logged as
+ * an error, as `runMain` reports an error that reaches it; under
+ * `JIG_LOG=debug` its cause follows with its stack.
+ */
+export function failureExit(failure: Failure): number {
+  log.error(failure.reason);
+  if (failure.cause !== undefined && logEnabled("debug"))
+    log.debug("stack", failureFields(failure.cause));
+  return 1;
 }
 
 /** Digits-only, per the bash `case` guards on PR numbers and counters. */

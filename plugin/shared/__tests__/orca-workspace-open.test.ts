@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { OrcaError, parseOrcaEnvelope } from "../orca-workspace/envelope.ts";
+import { parseOrcaEnvelope } from "../orca-workspace/envelope.ts";
 import {
   CREATE_HOOK_CLAIM,
   CREATE_HOOK_MARK,
@@ -7,6 +7,7 @@ import {
 import { openBranch } from "../orca-workspace/open.ts";
 import { boundedHook, type OpenPort } from "../orca-workspace/port.ts";
 import type { RunResult } from "../orca-workspace/runner.ts";
+import { failed, ok as answered } from "../outcome.ts";
 import { type Answer, fail, fakeContext, ok } from "./fake-context.ts";
 
 const R = "/repo";
@@ -45,8 +46,9 @@ function portOf(table: Record<string, Answer>, where = "") {
     runHook: boundedHook,
     orcaCall: <T>(args: string[], what: string) => {
       const envelope = parseOrcaEnvelope<T>(ctx.run(["orca", ...args]).stdout);
-      if (envelope === null) throw new OrcaError(`${what}: unreadable`);
-      return envelope;
+      return envelope === null
+        ? failed("no-envelope", `${what}: unreadable`)
+        : answered(envelope);
     },
     where,
   };

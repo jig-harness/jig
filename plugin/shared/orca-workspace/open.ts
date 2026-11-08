@@ -58,10 +58,12 @@ export function repoOf(
   onMissing?: (name: string) => unknown,
 ): OrcaRepo {
   const what = `orca repo show ${name}`;
-  const envelope = port.orcaCall<{ repo?: unknown }>(
+  const answer = port.orcaCall<{ repo?: unknown }>(
     ["repo", "show", "--repo", `name:${name}`],
     what,
   );
+  if (!answer.ok) throw new OrcaError(answer.failure.reason);
+  const envelope = answer.value;
   let found: unknown;
   if (envelope.ok) found = envelope.result?.repo;
   else if (envelope.error.code !== "repo_not_found")
@@ -352,11 +354,12 @@ export function setWorktree(
 ): string | null {
   const what = "orca worktree set";
   try {
-    const envelope = port.orcaCall(
+    const answer = port.orcaCall(
       ["worktree", "set", "--worktree", `id:${worktree.id}`, flag, value],
       what,
     );
-    return envelope.ok ? null : orcaErrorText(envelope.error);
+    if (!answer.ok) return answer.failure.reason;
+    return answer.value.ok ? null : orcaErrorText(answer.value.error);
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }

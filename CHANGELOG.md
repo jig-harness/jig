@@ -387,6 +387,72 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.172.0] - 2026-11-08
+
+### Changed
+
+- A defect in one stage of the dispatcher's `--apply` for a repository (its
+  re-arm, pickup or follow-up launches, its nudges, its notifications, or the
+  close that projects its labels) now stops that stage only: the
+  repository's other stages still launch in the same tick. The receipt lists
+  it under the repository's `stageDefects` with its code `defect`, its phase,
+  its stage and a sentence; the outcome log gets an event row `defect` under
+  that stage; its stack goes to the tick's error output; and the tick exits 1,
+  as a defect that stops a whole turn makes it. `jig dispatch receipts` and
+  the dashboard's tick strip count these defects too.
+- A resource collection run whose configuration cannot be read still
+  collects nothing and exits as before, and now writes a receipt that names
+  the failure: a `failure` field with its `code` and `reason`, which
+  `jig receipts gc` shows. Receipts written before it read as they did.
+- The plugin's code now follows
+  [ADR-0012](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0012-failures-as-values.md):
+  a failure a caller handles is returned as a value with a stable code and a
+  reason, and anything still thrown is a defect or one error class built on
+  one base. Messages, exit codes and receipts are otherwise as they were.
+
+## [0.171.0] - 2026-11-08
+
+### Changed
+
+- A drive reads `autonomy.max_level` and `autonomy.park_classes` from the
+  branch the pull request targets, not from the pull request's own checkout,
+  so an edit to either applies to a pull request's drive once it is on that
+  branch, never through the pull request that makes it; for a stacked layer
+  that branch is the layer below, bounded by the integration branch's
+  policy (the lower ceiling, the union of the park classes). The ceiling's fallback comes from the base too: the
+  base's `max_level`, else the base's `level`, else `attended`; a
+  `JIG_OVERLAY` redirect no longer moves either field in a drive. The driver
+  resolves the base's commit at its start and before every round and hands
+  it to its passes in `DRIVE_PR_POLICY_BASE`; the line it prints each round
+  names that commit. A session with a person in it reads both fields from
+  the working tree, as before
+  ([configuration](plugin/CONFIGURATION.md#autonomy)).
+
+### Security
+
+- When the base branch's policy cannot be read (its commit is not in the
+  clone, git fails, or the file does not parse or names an invalid ceiling
+  or class list), a drive fails closed: it runs at `attended`, the only park
+  classes are `escalated`, `human-decision` and `human-thread`, and the pass
+  parks every decision under `human-decision` until the policy reads.
+
+## [0.170.0] - 2026-11-08
+
+The dispatch dashboard says where each pull request stands, can run without a token behind a front on the host, and stacks its panels in one column.
+
+### Added
+
+- Each pull request on the dashboard is an icon in the colour of its state: driving, following up after the merge, waiting, needs a person, queued, held, merged or closed. Hovering or tapping the pull request opens its state, round, unresolved thread count, how long it has waited and the dispatcher's own reason. The state comes from the newest tick's line, so a dashboard served without a GitHub login still shows it.
+- `dashboard.require_token: false` in the machine file serves the dashboard with no token. It is accepted only with a loopback `dashboard.listen`, so the only way in from another machine is a front on the host, such as Tailscale Serve, that authenticates the person first. A tokenless dashboard answers only `localhost`, `127.0.0.0/8` and `::1` as the request's `Host`, plus the names `dashboard.allowed_hosts` lists for the front, and refuses any other with 403. See [the machine's dispatch file](plugin/CONFIGURATION.md).
+
+### Changed
+
+- The dashboard's Now view, running slots and legend no longer sit side by side at any width: one column keeps vertical scrolling the same on a phone and a desktop.
+
+### Fixed
+
+- Every pull request on a dashboard whose server could not call the forge showed "Unknown" with no popover content; its icon now opens the state the line holds.
+
 ## [0.169.0] - 2026-11-08
 
 ### Added
@@ -6025,7 +6091,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.169.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.172.0...HEAD
+[0.172.0]: https://github.com/jig-harness/jig/compare/v0.171.0...v0.172.0
+[0.171.0]: https://github.com/jig-harness/jig/compare/v0.170.0...v0.171.0
+[0.170.0]: https://github.com/jig-harness/jig/compare/v0.169.0...v0.170.0
 [0.169.0]: https://github.com/jig-harness/jig/compare/v0.168.2...v0.169.0
 [0.168.2]: https://github.com/jig-harness/jig/compare/v0.168.1...v0.168.2
 [0.168.1]: https://github.com/jig-harness/jig/compare/v0.168.0...v0.168.1

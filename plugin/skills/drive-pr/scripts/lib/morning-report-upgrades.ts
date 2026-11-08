@@ -79,11 +79,12 @@ function upgradesOf(
       "gc",
       () => gcReceiptPaths(roots.gc),
       (path) => {
-        try {
-          return readGcReceipt(path);
-        } catch (error) {
-          return String(error);
-        }
+        const read = readGcReceipt(path);
+        if (read.ok) return read.value;
+        // What the platform threw where it threw, else why the file is no receipt.
+        return read.failure.cause === undefined
+          ? read.failure.reason
+          : String(read.failure.cause);
       },
     ],
     [

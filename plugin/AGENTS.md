@@ -80,6 +80,18 @@ here reaches every repository at once.
   `jig upgrade --jobs-only` reads `JIG_UPGRADE_SCHEDULED=1` as a timer's
   refresh. Those command lines, that line and those variables keep their
   meaning across releases as well.
+- **Failures are values; a throw is a defect**
+  ([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)). Domain code
+  returns an `Outcome` (`shared/outcome.ts`) for a failure its caller
+  handles, with a stable `code` and a `reason` for a person, and never
+  throws. An I/O edge catches what the platform throws into one
+  (`attempt`). A bug is a `Defect` (`shared/outcome.ts`), caught once at
+  the boundary around the work it stops; a refused command line is
+  `ExitError(USAGE_EXIT, …)`; a failure that still has to travel as a
+  throw, to a catch in a skill script, is a class built on `JigError`. In
+  `dispatch/` and `gc/`,
+  `bun run gates` fails any other throw (`scripts/check-throws.ts`); the
+  skill scripts keep their own error handling.
 - **Skills call each other by sibling path** (`../<skill>/scripts/…`), never
   through a path in the consumer repository.
 - **A runtime-specific capability names its fallback**

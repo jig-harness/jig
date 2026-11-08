@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { LEAKY_GIT_ENV, spawnSync } from "../guarded-git-spawn.ts";
-import { errnoCode } from "../errors.ts";
+import { errnoCode, JigError } from "../errors.ts";
 
 const shared = join(import.meta.dir, "..");
 
@@ -172,6 +172,10 @@ swallow(new Error("cache read failed", { cause: child }), "reading fresh");
     expect(errnoCode(new Error("x"))).toBeUndefined();
     expect(errnoCode({ code: 2 })).toBeUndefined();
     expect(errnoCode(null)).toBeUndefined();
+  });
+
+  test("errnoCode reads no system code from a plugin failure's own code", () => {
+    expect(errnoCode(new JigError("invalid-field", "x"))).toBeUndefined();
   });
 });
 

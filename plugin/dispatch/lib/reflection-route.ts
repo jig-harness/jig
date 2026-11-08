@@ -130,18 +130,25 @@ export function repositoryReflection(
   where: string,
   env: Record<string, string | undefined> = process.env,
 ): Outcome<Reflection, "reflection-unreadable"> {
-  return attempt(
+  const what = `the reflection settings do not read (the repository's layer is ${where})`;
+  const layered = attempt(
     "reflection-unreadable",
-    `the reflection settings do not read (the repository's layer is ${where})`,
-    () => {
-      const values = layeredConfig(path, env, file).values;
-      try {
-        return parseReflection(values.reflection, path);
-      } catch (error) {
-        throw withSource(values, "reflection", error);
-      }
-    },
+    what,
+    () => layeredConfig(path, env, file).values,
   );
+  if (!layered.ok) return layered;
+  const values = layered.value;
+  try {
+    return ok(parseReflection(values.reflection, path));
+  } catch (error) {
+    // The reason names the layer that set the field the parser refused.
+    const sourced = withSource(values, "reflection", error);
+    return failed(
+      "reflection-unreadable",
+      `${what}: ${sourced.message}`,
+      sourced,
+    );
+  }
 }
 
 /** An outcome class as a reflection class name: `gates failed` is `dispatch-recurring-gates-failed`. */

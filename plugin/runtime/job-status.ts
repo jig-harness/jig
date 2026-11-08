@@ -132,20 +132,16 @@ export async function scheduledStatus(
     nextRun: null,
     lastRun,
   });
-  let scheduler: Scheduler;
-  try {
-    scheduler = detectScheduler();
-  } catch (error) {
-    return missing((error as Error).message);
-  }
-  let job: ReturnType<typeof installedJob>;
-  try {
-    job = installedJob(await snapshotScheduler(scheduler, spec));
-  } catch (error) {
+  const detected = detectScheduler();
+  if (!detected.ok) return missing(detected.failure.reason);
+  const scheduler = detected.value;
+  const snapshot = await snapshotScheduler(scheduler, spec);
+  if (!snapshot.ok) {
     // One component's unreadable scheduler must not hide the others' status.
-    const message = `scheduler state unreadable: ${(error as Error).message}`;
+    const message = `scheduler state unreadable: ${snapshot.failure.reason}`;
     return { ...missing(message), error: message };
   }
+  const job = installedJob(snapshot.value);
   if (job === null) return missing(absent ?? "no job installed");
   const schedule = installedSchedule(scheduler, job.text);
   return {

@@ -500,8 +500,14 @@ describe("the timer's job", () => {
   });
 
   it("holds every duration inside a timer's range", () => {
-    expect(() => duration("720h", "x")).toThrow("at most 24d");
-    expect(duration("576h", "x")).toBe(576 * 3_600_000);
+    expect(duration("720h", "x")).toEqual({
+      ok: false,
+      failure: {
+        code: "invalid",
+        reason: expect.stringContaining("at most 24d"),
+      },
+    });
+    expect(duration("576h", "x")).toEqual({ ok: true, value: 576 * 3_600_000 });
   });
 });
 
