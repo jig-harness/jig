@@ -32,6 +32,25 @@ import { join } from "node:path";
 import { JigError } from "../shared/errors.ts";
 import { failed, ok, type Outcome } from "../shared/outcome.ts";
 
+import {
+  type Channel,
+  type Registered,
+  splitSource,
+  isGitAddress,
+  describeSource,
+  followsMain,
+  sameSource,
+} from "./harness-source.ts";
+export {
+  CHANNELS,
+  type Channel,
+  type Registered,
+  describeSource,
+  followsReleases,
+  followsMain,
+  sameSource,
+} from "./harness-source.ts";
+
 const PLUGIN = "jig";
 const MARKETPLACE = "jig";
 export const PLUGIN_ID = `${PLUGIN}@${MARKETPLACE}`;
@@ -57,9 +76,6 @@ class HarnessError extends JigError<"harness-unusable"> {
   }
 }
 
-/** The release channels, each a branch of the repository (plugin/README.md). */
-export const CHANNELS = ["latest", "stable"] as const;
-export type Channel = (typeof CHANNELS)[number];
 /** The channel a fresh install follows. */
 const DEFAULT_CHANNEL: Channel = "stable";
 
@@ -220,11 +236,6 @@ export function codexInstall(list: unknown): Installed | null {
 }
 
 /** Where a registered marketplace comes from, from either tool's list. */
-export interface Registered {
-  location: string;
-  git: boolean;
-}
-
 export function claudeMarketplace(list: unknown): Registered | null {
   if (!Array.isArray(list)) return null;
   const entry = list.find((m) => m?.name === MARKETPLACE);
@@ -275,68 +286,6 @@ function codexConfig(): unknown {
       `${join(home, "config.toml")} is not TOML: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-}
-
-/** Split `<base>#<ref>` into the address and the ref, if it names one. */
-function splitSource(source: string): { base: string; ref?: string } {
-  const at = source.indexOf("#");
-  return at < 0
-    ? { base: source }
-    : { base: source.slice(0, at), ref: source.slice(at + 1) };
-}
-
-/** Whether a source is a Git address rather than a directory. */
-function isGitAddress(source: string): boolean {
-  return /^(https?:\/\/|ssh:\/\/|git@|git:\/\/)/.test(source);
-}
-
-/**
- * What a registered source follows, in words: a channel, `main` (the source
- * address, which receives each version before its gates pass, with or
- * without `#main`), a version tag it is pinned to, another ref, or a
- * directory.
- */
-export function describeSource(registered: Registered): string {
-  const { ref } = splitSource(registered.location);
-  if (!registered.git) return `the directory ${registered.location}`;
-  if (followsMain(ref)) return "main, the source address";
-  if ((CHANNELS as readonly string[]).includes(ref as string))
-    return `the ${ref} channel`;
-  if (/^v\d+\.\d+\.\d+$/.test(ref as string)) return `${ref}, pinned`;
-  return `the ref ${ref}`;
-}
-
-/**
- * Whether a registered source receives new releases: a Git address at a
- * channel or at `main`. A version tag or another ref is a pin, and a
- * directory is a folder someone maintains by hand.
- */
-export function followsReleases(registered: Registered): boolean {
-  const { ref } = splitSource(registered.location);
-  return (
-    registered.git &&
-    (followsMain(ref) || (CHANNELS as readonly string[]).includes(ref ?? ""))
-  );
-}
-
-/** Whether a registered ref follows `main`: none, or `main` named outright. */
-export function followsMain(ref: string | undefined): boolean {
-  return ref === undefined || ref === "main" || ref === "refs/heads/main";
-}
-
-/**
- * Compare sources ignoring a trailing `.git` or slash. A requested `#ref` must
- * match the registered one; a request without a ref accepts any registered
- * ref, so an existing pin is kept unless the caller asks for another.
- */
-export function sameSource(registered: string, requested: string): boolean {
-  const norm = (value: string) => {
-    const [base = "", ref] = value.split("#");
-    return { base: base.replace(/\/+$/, "").replace(/\.git$/, ""), ref };
-  };
-  const a = norm(registered);
-  const b = norm(requested);
-  return a.base === b.base && (b.ref === undefined || a.ref === b.ref);
 }
 
 function refuseOtherSource(
