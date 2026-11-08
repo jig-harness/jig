@@ -24,7 +24,7 @@ measured first, as a baseline ([Build order](#build-order)): the outcome log
 already holds the re-drives of converged pull requests that went stale, with
 their cause.
 
-With this built, a **Ready to merge** list leads the page: the converged
+With this built, a **Ready to merge** list, the Merge view, leads the page: the converged
 pull requests grouped by the next known act
 (merge now, with a merge command pinned to the head the drive verified;
 approve first, naming requested reviewers and unread protection rules;
@@ -32,9 +32,10 @@ update next). Only merge now confirms merge readiness. Every pull request
 carries the same status row (conflicts, checks with the failing ones named,
 unresolved threads, and the derived merge state with its conditions as a
 checklist), and every card says whether it settles by waiting or waits on a
-person, and which act. Then, as a view of its own, a **board**: every piece
-of work the dispatcher knows, in one column (coming, picking up, driven,
-needs you, ready to merge, merged). A card moves in any direction, because
+person, and which act. Then a **board**: every piece of work the
+dispatcher knows, placed in one column (coming, picking up, driven, needs
+you, ready to merge, merged), the columns shown as five views of one column
+of cards each (Merge, Needs you, Running, Queue, History). A card moves in any direction, because
 each tick places it again from the records, and a card that moved back (a
 ready pull request that came to conflict, say) shows where it came from and
 why. A person is told once when a pull request becomes ready, and the
@@ -47,6 +48,9 @@ board reads. The [hub](../GLOSSARY.md), the page the dashboard grows into
 ([hub.md](hub.md), item 42), builds the board as its first stage, adds the
 round, the threads by bot and not a bot and the CI hold to the status row,
 and lets a tick for one repository refresh its part of the line.
+[Item 44](line-at-capacity.md) sets how the page shows it: the five views,
+Merge first with its flash on every other view, the act every need opens
+with, and the keys ([§ Five views](#five-views-one-column-of-cards)).
 
 ## How it works
 
@@ -69,7 +73,7 @@ passes through them:
 
 | Column | What is in it | Read from |
 | --- | --- | --- |
-| Coming | an item assigned to the factory identity and not started; a drive the tick re-arms or re-drives when a slot frees; a pull request held behind another in a serialized area; a pull request labelled `drive`; a converged pull request behind its base, updated after the one in update next | the queue the line holds today, and the board read |
+| Coming | an item assigned to the factory identity or to a [served person](../GLOSSARY.md) and not started, in rank order with each held item's reason; a drive the tick re-arms or re-drives when a slot frees; a pull request held behind another in a serialized area; a pull request labelled `drive`; a converged pull request behind its base, updated after the one in update next | the queue the line holds today, and the board read |
 | Picking up | an item a pickup session is working on, with no pull request yet | the pickup's launch record and the assigned items the tick already reads; no tracker read of its own |
 | Driven | a pull request whose drive runs: its ledger says running, on any machine | the ledger (`driven`, and `silent` marked as such) |
 | Needs you | a pull request or item stopped on something only a person settles: a park, a drive stopped on a failure, a stalled pickup, a double claim, a converged pull request the forge refuses to merge for a reason no drive fixes | the needs the line holds today, and the board read |
@@ -100,8 +104,9 @@ it is an open pull request, and what the column needs said:
 - **Merged:** when it merged, and its follow-up: coming, running, done, or
   in Needs you when it failed.
 
-The accounts and their slots stay above the board as one row, so a person
-still sees why a card in Coming has not started.
+The accounts and their slots, with the host's load factor, stand at the
+top of the Running view as one row, so a person still sees why a card in
+Coming has not started.
 
 ### Ready, exactly
 
@@ -267,8 +272,13 @@ closed list: merge, approve, request a review, update the branch, answer,
 re-arm, re-run a check, mark ready, open the pull request. The act is in
 the table above for a converged pull request, and is the stop's own for a
 card in Needs you. A card that waits on a person is marked so wherever it
-is, its act named on its face, and those cards are what the strip's counts
-add up. A card that waits for something already running says what, and
+is, its act named on its face, and those cards are what the tabs' counts
+add up. On the page that act is grouped under the six acts a need opens
+with ([§ Five views](#five-views-one-column-of-cards)): merge is Merge;
+approve and request a review are Authorize; answer is Decide, or Reply for
+a person's thread or a waiting session; update the branch, re-run a check,
+mark ready and open the pull request are Do; and re-arm, once the steward
+and the recovery budget have left it to a person, is Investigate. A card that waits for something already running says what, and
 says nothing is asked of anyone.
 
 ### The status row on every pull request card
@@ -321,10 +331,16 @@ are the hub's ([hub.md](hub.md#a-piece-of-work-and-its-views)):
 ### The board read
 
 The facts the predicate and the status row need beyond the tick's own
-reads come from one read per repository, the **board read**, which the
-tick makes after it has planned and launched. Nothing the tick plans or
-launches reads it: the listing, the ledgers and the mergeability the
-planning uses stay as they are. A board read that fails or runs past its
+reads come from one read per repository, the **board read**, a GraphQL
+query of its own that the tick makes in its observe phase
+([dark-factory-dispatch.md § One tick, step by step](dark-factory-dispatch.md#one-tick-step-by-step)),
+once the repository's ledgers name its converged drives. Planning runs
+under the act lock, so a read made after planning would hold that lock
+across forge calls and lengthen every other tick's wait. The board read is
+kept apart from the per-repository query the planning reads
+(`plugin/dispatch/lib/forge-batch.ts`): nothing the tick plans or launches
+reads it, and the listing, the ledgers and the mergeability the planning
+uses stay as they are. A board read that fails or runs past its
 deadline (30 seconds per repository) marks that repository's cards "not
 read at this tick" with the reason and writes it on the receipt; launches,
 re-drives and notifications of stops are untouched.
@@ -483,23 +499,58 @@ some of it. So the board keeps its own words and the records' apart:
   link elsewhere is shown as text. A check that is not required says so,
   beside the app that posted it.
 
-### What the page says first
+### Five views, one column of cards
 
-The strip's Now tab carries the counts of cards that wait on a person, by
-act: "3 to merge · 1 to approve · 2 to answer". The answer at the top of
-the view leads with the merge queue when it holds anything: "3 pull
-requests are ready to merge, the oldest for 5 h; 1 waits on an approval
-nobody was asked for." The Ready to merge list stands at the top of the Now
-view, above the panels it has today, which stay.
+The page is five views, one per question a person brings to it, each a tab
+with its count and each one column of full-width cards:
 
-The board is a view of its own beside Now, History and Help. On a phone its
-columns stack, Ready to merge first, then Needs you, Driven, Picking up,
-Coming and Merged, each folded to its count beyond its first cards. On a
-wide screen the columns stand side by side in the order work passes
-through them, Ready to merge marked apart, and an empty column narrows to
-its heading. Whether the board later replaces Now as the first view is
-decided once it has been used on a working line. The rest of the visual
-design comes from a design round ([Build order](#build-order)).
+| View | It answers | Its cards |
+| --- | --- | --- |
+| **Merge** | What can I merge now? | Ready to merge's lanes: merge now, approve first, update next |
+| **Needs you** | What waits on me? | the Needs you column, grouped by act, each card naming the person it waits on |
+| **Running** | What is being worked on? | Driven and Picking up, under the host's load gauge ([line-at-capacity.md](line-at-capacity.md#the-hosts-load-factor)) |
+| **Queue** | What starts next, and why not yet? | Coming, with the served people's ranked queue and each held item's reason ([line-at-capacity.md](line-at-capacity.md#serving-named-people)) |
+| **History** | What ended, and why? | Merged, the outcome log and the tick strip |
+
+The columns of [§ One card per piece of work](#one-card-per-piece-of-work-in-one-column)
+stay the tick's placement of each card; the views are how the page shows
+them. No two cards ever sit side by side, at any width: a view is read top
+to bottom, and the panels that stood beside each other on a wide screen
+are gone.
+
+**Merge comes first.** The page opens on Merge while merge now holds a pull
+request, and on Needs you otherwise. While merge now holds anything, every
+other view shows one line above its cards, the **merge flash**: "2 pull
+requests are safe to merge: #451, #452". Dismissed, the flash stays hidden
+until a pull request reaches merge now at a head it has not shown. The
+counts on the tabs and the flash answer the morning glance, so no view has
+to carry another's cards.
+
+**A card shows the act first.** A Needs-you card opens with its act from
+the closed list in
+[line-at-capacity.md § What each need asks of a person](line-at-capacity.md#what-each-need-asks-of-a-person)
+(Merge, Decide, Authorize, Reply, Do, Investigate), then the ask in one
+sentence, then the recommended option with what it changes and what it
+costs. The other options, a park's steps for a person (as a checklist) and
+the evidence are folded under it. A full framed decision is never shown in
+place, since one park would fill a phone.
+
+**The keys.** Every view is driven from the keyboard, and the keys never
+fire inside a text field:
+
+| Key | Does |
+| --- | --- |
+| ⌘K or Ctrl-K | the palette: go to a view, jump to `#N` or an item, run a card's command |
+| j / k | the next or previous card (roving focus, so Tab still works) |
+| Enter or o | expand or collapse the card |
+| p / i | open its pull request or its issue |
+| c | copy its primary command: the pinned merge command, or the `answer <key>:` line |
+| g, then m, n, r, q or h | go to Merge, Needs you, Running, Queue or History |
+| / and ? | filter the view; list the keys |
+
+The palette is a dialog with `aria-activedescendant`, so a screen reader
+follows its choice. The rest of the visual design comes from the hub's
+design round ([Build order](#build-order)), which starts from these views.
 
 The page stays as it is in what it never does: it holds no merge button
 and opens no write route to the host. Merging is a person's act on the
@@ -682,8 +733,8 @@ step 4.
    converged drive's `waitsOn` names the lane's act in place of saying the
    approval and the branch were not read, and the `merge` station joins
    the addresses; the board read with its deadline,
-   budget floor, overflow follow-up and `UNKNOWN` re-read, isolated from
-   planning; the status row with the round, the CI hold and the threads by
+   budget floor, overflow follow-up and `UNKNOWN` re-read, in the observe
+   phase and apart from the planning's query; the status row with the round, the CI hold and the threads by
    bot and not a bot; the merge command's strict forms; `jig dispatch`'s
    report listing the merge queue; the `ready` notification; the event
    rows; the receipt's figures. Done when, on a repository with a required merge
@@ -699,11 +750,14 @@ step 4.
    "1 bot · 1 not a bot"; each reaches a person's phone once; `jig ask`
    on each names the same lane and act as its card; and a board read made
    to fail leaves that tick's launches as they were.
-3. **Ready to merge on the page.** A Ready to merge list at the top of the
-   Now view, with its lanes, the status rows, `waitsOn` and the pinned
-   command; the strip's counts; the history view's counts. Done when the
+3. **Ready to merge on the page**, built with item 44's five views
+   ([line-at-capacity.md § Build order](line-at-capacity.md#build-order),
+   its step 3): the Merge view with its lanes, the status rows, `waitsOn`
+   and the pinned command; the counts on every tab; the merge flash; the
+   keys and the palette; the history view's counts. Done when the
    browser suites open it for a quiet line, a full queue and a morning of
-   lost ready work, at phone and desktop width.
+   lost ready work, at phone and desktop width, and no two cards sit side
+   by side at 1440 px.
 4. **Every card placed.** `lib/board.ts` places every card in its column,
    with a test for each row of the column and move tables; `board_seen`
    keeps each card's column history and its threads' authors; the line
@@ -716,17 +770,18 @@ step 4.
 5. **The design round** is the hub's
    ([hub.md § Build order](hub.md#build-order)): one brief from
    [`design-brief-builder`](../plugin/skills/design-brief-builder/SKILL.md)
-   for the whole hub, the board view among its views, from the fixtures of
+   for the whole hub, starting from the five views, from the fixtures of
    steps 2 to 4. It keeps this design's scenarios (a quiet line, a full
    merge queue, a morning of backward moves and a long Needs you) at
    desktop and phone widths, light and dark, and adds the hub's. The round
    lands under [`prototypes/`](prototypes/rubric.md) with its scorecard,
    which covers every scenario, width and theme.
-6. **The board view.** The board as the round designed it, a view beside
-   Now; the Help view explains each column, the Ready conditions, the
-   status row's marks and what `only_labeled` leaves out. Done when the
-   browser suites open the board for each scenario at phone and desktop
-   width in one theme, the scorecard covering the rest.
+6. **The Running and Queue views as the round designed them**, every
+   column's cards placed in its view; the Help view explains each column,
+   the Ready conditions, the status row's marks and what `only_labeled`
+   leaves out. Done when the browser suites open each view for each
+   scenario at phone and desktop width in one theme, the scorecard
+   covering the rest.
 
 ## Left out
 

@@ -1,0 +1,353 @@
+# The line at capacity: design
+
+**What problem this solves.** The [dispatcher](../GLOSSARY.md) keeps the
+execution line moving, but it runs well below what its host can carry and
+asks a person for more than only a person can settle. It admits work by
+account [slots](../GLOSSARY.md) alone, two per account by default, and
+nothing measures the host: memory, the processors, the disk, and the
+machine-wide test lock every `bun run gates` queues on. A host with room to
+spare idles, and a host near its limit takes one more session and slows
+every drive on it. Pickups start only for a repository's
+[factory identity](../GLOSSARY.md), so the items a team assigns to its own
+people wait for someone to open a session. Pickups do not start at all on
+Orca, which cannot bind an interactive session to an account. And the
+stops that reach a person mix real decisions with stops an agent could
+have recovered: a second stop at the same change, a spent
+[recovery budget](../GLOSSARY.md), an exit no rule re-drives. With this
+built, each tick measures the host and starts work while every gauge stays
+under its line, picks up the work assigned to the people the host serves
+as headless passes on the model its complexity calls for, and every 20
+minutes a [steward](../GLOSSARY.md) pass reads what is stopped and waiting
+and proposes what the next tick should do about it. What still reaches a
+person opens with the one act it asks of them.
+
+This is the design of [plan.md](plan.md) item 44. Nothing of it is built.
+It changes four designs, each of which says in its own text what this one
+changes: [the dispatcher](dark-factory-dispatch.md) (item 33), whose tick
+gains the load factor, headless pickups, served people and the steward;
+[the dispatch board](dispatch-board.md) (item 36), whose page becomes five
+views of one column each, every need opening with its act;
+[the hub](hub.md) (item 42), whose design round starts from those views;
+and [routing](agent-routing.md) (item 31), whose route gains three
+[complexity tiers](../GLOSSARY.md) with a model per tier per vendor
+([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)).
+The page is designed in [dispatch-board.md](dispatch-board.md#five-views-one-column-of-cards);
+this design holds the tick's parts.
+
+## How it works
+
+### The host's load factor
+
+Each tick reads six **gauges** of its host before it plans, and starts a
+launch only while every gauge stays under its **line** with that launch
+counted. The **load factor** is the fullest gauge's fill against its line,
+shown with the gauge that binds: "82% · memory binds". Account slots and
+walls still apply as they do today; the load factor is one more limit
+beside them, never a replacement.
+
+| Gauge | Read once per tick from | Line (default) |
+| --- | --- | --- |
+| Memory | `MemAvailable` in `/proc/meminfo` on Linux; `vm_stat` on macOS | 15% of the total kept free after the launch's reservation |
+| Processors | the 1-minute load average divided by the cores (`os.loadavg`, `os.availableParallelism`) | 0.9; not read on Windows, which has no load average |
+| Test lock | the holder of the machine-wide resource lock (`plugin/shared/resource-lock.ts`) and the processes waiting on it | 2 waiters: no new pickup or drive pass |
+| Disk | free space on the filesystem that holds the workspaces (`statfs`) | 10 GB |
+| Forge budget | the rate limit the tick already reads at its start | the tenth of the core limit below which the tick already skips its optional reads |
+| Accounts | free slots and walls, as today | no free slot |
+
+A gauge the host cannot read is left out of the load factor and named on
+the receipt ("processors not read on Windows"); it never reads as empty.
+
+**Reservations are measured.** A launch is counted against the memory gauge
+by its kind's **reservation**, the memory a session of that kind is
+expected to take. Each tick sums the memory of the processes running in
+each of its sessions' workspaces (Linux shows a process's working directory
+under `/proc`; elsewhere the defaults stand), and records one sample per
+running session and kind. A kind's reservation becomes the 90th percentile
+of its last 20 samples once it has 5. Until then the defaults hold: a
+pickup 2 GB, a drive pass 1.5 GB, a follow-up or a steward pass 1 GB. The
+samples are the one thing the load factor keeps between ticks, in the
+dispatcher's state database beside its launch records.
+
+**The order stays; pickups keep a reserve.** Which launch goes next is
+decided as today: drive launches and the other stages take turns leading
+the tick (`plugin/dispatch/lib/apply-order.ts`), with their rotations
+across repositories and stages, so no stage starves. The load factor adds
+one rule: **a new pickup never takes the last unit of headroom.** A unit is
+one reservation of the smallest kind waiting; a pickup is admitted only
+while, after it, at least one more unit stays free. New work therefore
+cannot crowd out the drives and follow-ups that turn earlier work into
+merges. The gauges are read when the act phase builds its apply state,
+under the act lock, so two ticks never spend the same headroom.
+
+**It reports before it holds.** The load factor ships with
+`load.enforce: false`. Every tick then reports, on its receipt and the
+line, what it *would* have held and which gauge would have held it, and
+starts what it starts today. Turning enforcement on is a person's call,
+made after a week of receipts, like every setting that ships off and
+changes what the line starts.
+
+### Pickups run headless
+
+A pickup runs as a [headless pass](../GLOSSARY.md) of `do-item`, through
+the wrapper a follow-up already runs through. The wrapper binds the pass to
+its admitted account through that account's configuration directory, with
+the credential variables removed, and the tick checks the identity the
+wrapper's environment yields before it starts, as it does for a drive's
+pass ([dark-factory-dispatch.md § Admission by account](dark-factory-dispatch.md#admission-by-account)).
+The pass runs on its route's model and effort
+([Complexity tiers](#complexity-tiers)), with its own deadline,
+`dispatch.pickup_deadline` (3 hours by default), since an implementation
+outruns a review pass's 90 minutes.
+
+A pickup pass has nobody to answer it. One that cannot go on without a
+person does what does not depend on the answer, stops, and ends its output
+with a `Question:` line, as a follow-up's pass does; the wrapper keeps that
+line on the launch record, and it reaches the steward's digest and, if the
+steward leaves it a person's, the person.
+
+Orca's interactive launch cannot be bound to an account, so until it can,
+no pickup starts as an interactive session; the headless pass is what
+starts. An interactive pickup in an Orca tab, started by the wrapper, can
+come later, once it is shown to bind and Codex's folder-trust prompt no
+longer stops it.
+
+### Serving named people
+
+A host's machine file, `~/.jig/dispatch.yaml`, may name the people it
+**serves**: each a name, the forge logins they use and their identity on
+each tracker. A repository's own file cannot add to the list, so a pull
+request cannot widen whom a host works for.
+
+```yaml
+serve:
+  - name: maintainer
+    forge: [maintainer-login, maintainer-work-login]
+    tracker: { github: maintainer-login, linear: maintainer@example.com }
+```
+
+Wherever the `pickup` stage is on, a [served person](../GLOSSARY.md)'s
+assigned work is wanted beside the factory identity's:
+
+- an open item that is not started and is assigned to a served person, when
+  a person with write access to the repository made the assignment (the
+  `assignedBy` check the factory identity's pickups already make);
+- each unassigned open item under an epic assigned to a served person,
+  nested epics walked level by level, the epic's assignment checked the
+  same way;
+- their open pull requests, adopted the way `dispatch.adopt.authors` adopts
+  a repository's own today, with the served person's forge logins added to
+  the authors.
+
+**Assignment alone starts the work.** An item needs no dispatch state: a
+served person's open, not-started item is wanted whatever its state, and
+`jig:hold` or the `hitl` label keeps one waiting. `dispatch.states` keeps
+gating the factory identity's pickups only.
+
+**The ranking.** Wanted items are ranked by rules kept as data in
+`plugin/dispatch/lib/queue-rank.ts`, and each item the ranking holds out of
+the queue is shown with its reason:
+
+| Held out | Shown as |
+| --- | --- |
+| an open `blocked_by` relation | "waiting on #N" |
+| `hitl`, a `hitl:*` facet, `manual-ops` or `jig:hold` | "needs a person to start" (`do-item` would only scout and wait on these) |
+
+The rest are ordered by priority (urgent first, then high, medium, low, and
+an unset priority after low), then items that unblock others, then an
+epic's own order (the eligibility of its execution plan,
+`plugin/skills/do-item/scripts/lib/execution-plan.ts`), then the smaller
+size, then the oldest. Small unblocked items of one change area are started
+as one `work-batch` launch.
+
+**Cheap reads.** The served people's assignment lists are read on a tick
+with headroom, and every 15 minutes regardless so the Queue view stays
+current. An item's `assignedBy`, its relations and an epic's children are
+kept per item until the item's `updatedAt` moves, as the tick keeps its
+merge reads. The change probe adds one `issues?since=` read per repository
+a minute, and a new assignment wakes the tick. A tick with no assignment
+change makes no `assignedBy` or relations read.
+
+**The claim keeps the person.** `do-item`'s claim, run as
+`claim --for <person>`, accepts an item assigned to that served person,
+keeps them as its only assignee and moves it to the in-progress state.
+Without `--for`, the claim is unchanged: it assigns the item to the
+credential's own user and refuses an item someone else holds. The stalled
+pickup and double claim watches read the served people's in-progress items
+beside the factory identity's.
+
+### The steward, every 20 minutes
+
+The **steward** is a headless pass of a `steward` skill that the owner host
+starts every 20 minutes, and only when its input changed. It reads a digest
+the tick writes: every need on the line, every stopped drive with its
+handoff and logs, every pass that ended on a `Question:` line, and the
+served people's queue. It writes **records** the next tick reads and
+carries out, under the guards and the recovery budget the tick already
+keeps. The steward itself launches nothing.
+
+Its records come from a closed list:
+
+- **Re-arm once.** A stop the rules now leave to a person (a second stop at
+  the same change, an exit no row re-drives) is re-armed when the drive's
+  handoff and logs show a transient cause, counted on the pull request's
+  recovery budget. A spent budget stays a person's, with the steward's
+  Investigate summary. A class of stop the steward re-arms three times in a
+  week becomes a [reflection](../GLOSSARY.md) finding proposing the rule,
+  so that work moves into the tick over time.
+- **An act and an ask for each need that stays a person's.** A
+  registry-class park stays a person's, with its act
+  ([What each need asks of a person](#what-each-need-asks-of-a-person)).
+  A pickup or follow-up pass that ended on a question outside the registry
+  and offered a recommended option is resumed once with one fixed line:
+  "Take the option you recommended and record it as a decision taken
+  unattended", the rule
+  [ADR-0010](../docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)
+  gives for decisions outside the classes. One with no options stays a
+  need, with the steward's one-sentence summary. A session a person started
+  is only reported.
+- **A missing facet.** An empty priority, size or type on an assigned item
+  is set, with a comment naming the steward and the reason. A value a
+  person set is never changed.
+- **The queue's order** where the ranking leaves items tied.
+
+**What it never does.** It never merges, answers a registry-class park,
+re-arms a drive a person stopped or held, changes configuration, writes
+code, sends a session free text, names a model or writes a tier on an item.
+
+**What it costs.** At most three runs an hour, and none while the digest's
+hash matches the last run's. Each pass has a 15-minute deadline, runs on
+the complex tier's model of the admitted account's vendor, and is counted
+under the load factor as one more launch. Its records stay on the owner
+host, in the state database, as the outcome log does; other hosts see its
+re-arms through the launch claims.
+
+### What each need asks of a person
+
+Every need on the line opens with one **act** from a closed list, then the
+ask in one sentence, then the recommended option with what it changes and
+what it costs. The act comes from the park's registry class through a table
+in `plugin/shared/acts.ts`, and the HITL registry template
+(`modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md`) gains an Act
+column so a repository's own classes name theirs. A class with no act reads
+Decide, never hidden. The options, costs and steps are already in the
+framed park; the line carries them through to the card.
+
+| Act | The person | From |
+| --- | --- | --- |
+| Merge | merges what the forge and its reviewer witness as ready | Ready to merge's merge now, on a view of its own |
+| Decide | chooses among framed options | `scope`, `next-item`, `reopen-or-waive`, `escalated`, `human-decision` |
+| Authorize | allows what only a person may | `ready`, `release`, `destructive`, `legal`, `copy`, `dark-dial`, `rules`, `reviewer-posture`; Ready to merge's approve first |
+| Reply | answers a person's thread or a waiting session | `human-thread`; a session's question |
+| Do | performs steps outside the line | a park's steps for a person; an assignment only a writer can make |
+| Investigate | looks at what the line and the steward could not recover | a stalled pickup, a double claim, a spent recovery budget, a stuck launch |
+
+`jig ask` and the card name the same act for the same need, and the card
+names the person the need waits on.
+
+### Complexity tiers
+
+A pickup's route takes one of three complexity tiers, **simple**,
+**standard** or **complex**, from the item's type, its size and the flags a
+repository marks complex at any size (`routing.complex_flags`). Each tier
+maps to a model per vendor, with Claude's and OpenAI's defaults built in:
+simple and standard run on `sonnet` or `terra`, complex on `opus` or `sol`.
+The tiers, the table and the defaults are in
+[agent-routing.md § Complexity tiers](agent-routing.md#complexity-tiers).
+No model is asked to route and no tier or model is written on an issue; the
+steward only fills a missing size or type, from which the rules derive the
+tier.
+
+### Configuration
+
+| Field | Where | Default |
+| --- | --- | --- |
+| `load.enforce` | machine file | `false`: the tick reports what it would hold and holds nothing |
+| `load.memory_free`, `load.cpu`, `load.test_waiters`, `load.disk_free` | machine file | 15%, 0.9, 2, 10 GB |
+| `serve[]` | machine file | none: only the factory identity's items are picked up |
+| `steward.enabled`, `steward.every` | machine file | off; `20m` |
+| `dispatch.pickup_deadline` | repository | `3h` |
+| `routing.complex_flags`, `routing.models.<vendor>.<tier>` | repository | [agent-routing.md § Configuration](agent-routing.md#configuration) |
+
+## Build order
+
+One pull request per step, each shippable alone, filed under the item 44
+epic with its order recorded as blocking relations. Step 1 is this design.
+Ready to merge (step 2) is already designed and starts beside it; every
+other step waits on this design where it builds a new part, and on the
+steps whose files it shares.
+
+```mermaid
+flowchart TD
+  T9[9 Complexity tiers] --> T5[5 Load factor]
+  T9 --> T6[6 Headless pickups]
+  T2[2 Ready to merge] --> T3[3 Five views and keys]
+  T3 --> T4[4 Acts on needs]
+  T4 --> T5
+  T5 --> T7[7 Served pickups]
+  T6 --> T7
+  T7 --> T8[8 Steward]
+```
+
+2. **Ready to merge in the tick and on the line**
+   ([#633](https://github.com/jig-harness/jig/issues/633)), item 36's step
+   2 as [dispatch-board.md](dispatch-board.md#build-order) designs it, with
+   the board read in the observe phase. Done when a converged pull request
+   whose review the forge witnesses and that can merge is in merge now with
+   a command pinned to its head within one interval, and a failing board
+   read leaves the tick's launches as they were.
+3. **Five keyboard-driven views**
+   ([#634](https://github.com/jig-harness/jig/issues/634)): Merge, Needs
+   you, Running, Queue and History, one column of cards each, the counts on
+   every tab, the merge flash on every view, the keys and the palette. Done
+   when no two cards sit side by side on any view at 1440 px, and every key
+   works on every view and never inside a text field.
+4. **Acts on needs** ([#635](https://github.com/jig-harness/jig/issues/635)):
+   `plugin/shared/acts.ts`, the registry's Act column, the framed park's
+   options, costs and steps on the line, and Needs you grouped by act with
+   the person each need waits on. Done when a `release` park reads
+   Authorize with its recommended option's cost, and `jig ask` and the card
+   name the same act.
+5. **The load factor** ([#636](https://github.com/jig-harness/jig/issues/636)):
+   the gauges, the measured reservations, the admission rule and the
+   would-hold report, with the gauge at the top of Running. Done when every
+   receipt carries each gauge, the load factor and the gauge that binds,
+   and a launch a gauge would refuse still starts while `load.enforce` is
+   `false`.
+6. **Headless pickups** ([#637](https://github.com/jig-harness/jig/issues/637)):
+   the pickup through the wrapper, on its route's model, with its deadline
+   and its `Question:` line. Done when an item assigned to the factory
+   identity gets one headless `do-item` pass on an admitted account within
+   one interval.
+7. **Served pickups** ([#638](https://github.com/jig-harness/jig/issues/638)):
+   `serve:`, the served reads, the ranking, `claim --for` and the Queue
+   view. Done when an item a writer assigns to a served person starts
+   within one interval when there is headroom, and the served person is
+   still its only assignee after the claim.
+8. **The steward** ([#639](https://github.com/jig-harness/jig/issues/639)):
+   the skill, its digest and records, the tick's stage and the once-only
+   resume. Done when no steward pass starts while nothing changed, and no
+   steward record re-arms a drive a person stopped.
+9. **Complexity tiers** ([#640](https://github.com/jig-harness/jig/issues/640)),
+   under item 31's epic: the three tiers, the complex flags and the models
+   per tier per vendor. Done when an S bug routes standard, the same bug
+   labelled `has-migration` routes complex, and a Codex account runs a
+   complex item on Sol with no `routing.models` set.
+
+## Left out
+
+- **Pacing an account by its remaining usage window.** No vendor exposes
+  what is left of an account's window: the quota adapters see a wall only
+  once a session hits it. A load factor that guessed at it would be a dial
+  no measurement set.
+- **A state gate for served people.** Jig's own tracker has no `todo`
+  state, so `dispatch.states` as a second gate would start nothing there;
+  `jig:hold` and `hitl` keep an assigned item waiting instead.
+- **A steward that launches.** The steward could run `drive.ts` and the
+  repair scripts itself, one tick sooner, but it would then be a second
+  actor with launch powers beside the tick. It writes records; the tick,
+  with its guards and budget, acts on them.
+- **A steward that names models.** The tier comes from the rules over the
+  item's facets; the steward fills a missing facet and the rules do the
+  rest.
+- **Interactive pickups on Orca**, until an Orca launch is shown to bind
+  its agent to an account ([Pickups run headless](#pickups-run-headless)).

@@ -554,7 +554,25 @@ with no running session and no launch record still running for longer than
 notified, never relaunched, since a relaunch would start a second
 implementer on a claimed item. One with more than one running session is
 a double claim (see Guards against a second launch). A repository with no factory identity
-configured has no pickups; its other stages still run.
+configured has no pickups of its own; its other stages still run.
+
+**Served people.** Beside the factory identity, a host's machine file may
+name the people it serves (`serve:`, with each person's forge logins and
+tracker identities; a repository's file cannot add to it), and wherever the
+`pickup` stage is on, the items assigned to them are wanted too: an open,
+not-started item a person with write access assigned to a
+[served person](../GLOSSARY.md), whatever its state, and each unassigned
+open item under an epic assigned to one, nested epics walked level by
+level, with `jig:hold` and `hitl` keeping an item waiting. Their pull
+requests are adopted as `dispatch.adopt.authors` adopts a repository's own.
+The tick ranks those items by rules as data, shows each item it holds out
+with its reason, and starts the next within the host's load factor; the
+session claims it with `claim --for <person>`, which keeps the served person
+as its assignee, so the stalled and double-claim watches read the served
+people's in-progress items as they read the factory identity's. How the
+ranking, the cheap reads and the claim work is in
+[line-at-capacity.md § Serving named people](line-at-capacity.md#serving-named-people)
+(item 44).
 
 **The forge.** The tick lists the repository's open pull requests and reads
 each one's comments for the ledger's marker, as the drive itself does; it
@@ -1271,8 +1289,11 @@ person switching the host's active account does not move it.
 Switching Orca's active account before a launch is not used: it is
 host-wide and would move every other session's next pass too. Whether an
 Orca agent launch can bind its agent to an account is not verified (Orca's
-command line selects accounts only for some agents), so until it is shown
-to work pickups are reported, not started.
+command line selects accounts only for some agents), so a pickup does not
+start as an interactive session: it runs as a headless pass, as a
+follow-up does, once item 44's headless pickups are built
+([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless));
+until then pickups are reported, not started.
 
 A follow-up does not wait for that: it runs as a headless pass, the
 account's vendor's non-interactive command (`claude -p`, `codex exec`) on
@@ -1288,9 +1309,11 @@ needs no one. The pass runs with the host's own permission settings
 a drive's pass reads them; the launcher adds none, and a repository's file
 cannot set them.
 
-**Sessions that wait.** A pickup is an interactive skill, and with nobody
+**Sessions that wait.** A pickup is a skill that asks, and with nobody
 to answer a question it stops and states it, as every Jig skill does
-without a person. An agent the runtime reports waiting for longer than
+without a person; as a headless pass it ends on a `Question:` line, as a
+follow-up's pass does below, and the [steward](../GLOSSARY.md) reads it
+before a person does. An agent the runtime reports waiting for longer than
 `dispatch.blocked_after` is reported and notified; it keeps its slot
 until it ends or a person ends it, so a cap full of waiting sessions is
 visible in every report rather than silent. A follow-up's pass cannot

@@ -1520,13 +1520,21 @@ make, use the entry's term instead.
   family it declares, not from how important its job sounds. See the
   [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md).
   *Avoid*: model level (a *maturity level* is something else).
-- **Route** — the agent, *model tier* and reasoning effort chosen for the
+- **Route** — the agent, *complexity tier* and reasoning effort chosen for the
   implementer of one piece of work at its pickup; derived from the item's
   *work type*, size, *flag labels* and the *change-area catalog*'s flags and
   mandatory reviews, by rules a repository keeps as data, with the rule behind
   each part, the source (the rules, or the person who chose instead, whose
   choice always wins) and whether it was applied recorded on the pull request
   ([design](design/agent-routing.md)).
+- **Complexity tier** — how hard one piece of work is, for its *route*:
+  simple, standard or complex, derived from its *work type*, its size and
+  the flags a repository marks complex at any size (a migration, an API
+  change). Each tier maps to a model per agent tool, by default Sonnet or
+  OpenAI's Terra for simple and standard work and Opus or Sol for complex
+  work. Never asked of a model and never written on the item. Not a *model
+  tier*, which is a model's cost class
+  ([design](design/agent-routing.md#complexity-tiers)).
 - **Judgment tier** — the narrowest *model tier*: the top reasoning model,
   admitted only for a *decision layer* that is judgment-only, low-volume and
   high-leverage, and that a mechanical rule already tried and failed to
@@ -2233,6 +2241,36 @@ make, use the entry's term instead.
   record: the wall's observation time and reset, and whether the session's
   last record is still the wall. A new observation time starts a new
   episode; the *nudge* is sent at most once per episode.
+- **Load factor** — how full the *dispatcher*'s host is, as the fill of
+  its fullest gauge against that gauge's limit: memory, the processors, the
+  disk, the queue for the machine-wide test lock, the forge's rate limit
+  and the accounts' free *slots*. A *tick* starts a session only while every
+  gauge stays under its limit with that session counted, and a new pickup
+  never takes the last unit of room, so the drives that turn earlier work
+  into merges keep running. It reports what it would hold before a person
+  turns the limit on ([design](design/line-at-capacity.md#the-hosts-load-factor)).
+- **Served person** — a person a *dispatcher*'s host works for, named with
+  their forge logins and tracker identities in the host's own dispatch
+  file. An open item a person with write access assigned to them, and each
+  unassigned item under an epic assigned to them, is ranked and picked up
+  beside the *factory identity*'s, and the pickup keeps them as the
+  item's assignee ([design](design/line-at-capacity.md#serving-named-people)).
+- **Steward** — the agent pass a *dispatcher*'s host starts every 20
+  minutes, when its input changed, to read what is stopped and waiting on
+  the line and propose what to do about it: re-arm a drive once when its
+  logs show a passing cause, frame each need that stays a person's with
+  its *act*, fill in a missing priority, size or type, and order the queue.
+  It writes records from a closed list, and the next *tick* carries them
+  out under its own guards. It never merges, answers a parked question,
+  re-arms a drive a person stopped, writes code or sends a session free
+  text ([design](design/line-at-capacity.md#the-steward-every-20-minutes)).
+  *Avoid:* orchestrator.
+- **Act (of a need)** — the one thing a person does to settle something
+  that waits on them, from a closed list: Merge, Decide, Authorize, Reply,
+  Do or Investigate. Each need on the *dispatch board* opens with its act,
+  derived from its park's class, then the ask and the recommended option
+  with what it changes and costs
+  ([design](design/line-at-capacity.md#what-each-need-asks-of-a-person)).
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of
