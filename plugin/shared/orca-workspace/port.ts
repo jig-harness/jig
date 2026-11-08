@@ -5,9 +5,15 @@
  * a paired server's host over SSH; a caller with the clone on this machine
  * builds it from one local context.
  */
-import { type OrcaEnvelope, OrcaError, orcaErrorText } from "./envelope.ts";
+import { failed, ok, type Outcome } from "../outcome.ts";
+import {
+  type OrcaEnvelope,
+  OrcaError,
+  orcaErrorText,
+  parseOrcaEnvelope,
+} from "./envelope.ts";
 import { HOOK_TIMEOUT_MS } from "./limits.ts";
-import { budget, type Context } from "./runner.ts";
+import { budget, type Context, output, type RunResult } from "./runner.ts";
 
 /**
  * Runs a worktree hook (`hook`, a path in `worktree`) through `ctx`, with the
@@ -29,17 +35,43 @@ export interface OpenPort {
   runHook: HookRunner;
   /**
    * One Orca call with `args`, run with `--json`: the envelope it answered
-   * with, error included; throws only when there is none. `what` names the
-   * call in messages.
+   * with, error included, or a `no-envelope` failure when it answered none.
+   * `what` names the call in messages.
    */
-  orcaCall<T>(args: string[], what: string): OrcaEnvelope<T>;
+  orcaCall<T>(args: string[], what: string): OrcaAnswer<T>;
   /** Where Orca runs, for messages: "" for this machine, " on <server>" for a paired one. */
   where: string;
 }
 
+/**
+ * What one Orca call answered: the envelope, error included, or why there
+ * was none: the command failed without one, or printed something else.
+ */
+export type OrcaAnswer<T> = Outcome<OrcaEnvelope<T>, "no-envelope">;
+
+/**
+ * The answer in one finished Orca call's output. An error envelope is the
+ * answer whatever the exit; otherwise a failed exit, or output that holds
+ * no envelope, is a `no-envelope` failure naming `what` and the output.
+ */
+export function orcaAnswer<T>(done: RunResult, what: string): OrcaAnswer<T> {
+  const envelope = parseOrcaEnvelope<T>(done.stdout);
+  if (envelope !== null && !envelope.ok) return ok(envelope);
+  if (done.status !== 0)
+    return failed(
+      "no-envelope",
+      `${what} failed (exit ${done.status}): ${output(done)}`,
+    );
+  if (envelope === null)
+    return failed("no-envelope", `${what}: unreadable output: ${output(done)}`);
+  return ok(envelope);
+}
+
 /** The result of an Orca call that must succeed. */
 export function orcaResult<T>(port: OpenPort, args: string[], what: string): T {
-  const envelope = port.orcaCall<T>(args, what);
+  const answer = port.orcaCall<T>(args, what);
+  if (!answer.ok) throw new OrcaError(answer.failure.reason);
+  const envelope = answer.value;
   if (!envelope.ok)
     throw new OrcaError(`${what}: ${orcaErrorText(envelope.error)}`);
   if (envelope.result === undefined)

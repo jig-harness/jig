@@ -27,9 +27,8 @@ function withUserFile(text: string): NodeJS.ProcessEnv {
 
 test("with no setting the timers upgrade every hour", () => {
   expect(upgradeSettings(withUserFile(""))).toMatchObject({
-    enabled: true,
-    every: "1h",
-    everyMs: 3_600_000,
+    ok: true,
+    value: { enabled: true, every: "1h", everyMs: 3_600_000 },
   });
 });
 
@@ -38,13 +37,16 @@ test.each([
   ["upgrade: false\n"],
   ["upgrade:\n  enabled: false\n"],
 ])("%s opts the machine out", (text) => {
-  expect(upgradeSettings(withUserFile(text)).enabled).toBe(false);
+  expect(upgradeSettings(withUserFile(text))).toMatchObject({
+    ok: true,
+    value: { enabled: false },
+  });
 });
 
 test("every takes minutes, hours or days", () => {
   expect(
     upgradeSettings(withUserFile("upgrade:\n  every: 30m\n")),
-  ).toMatchObject({ enabled: true, everyMs: 1_800_000 });
+  ).toMatchObject({ ok: true, value: { enabled: true, everyMs: 1_800_000 } });
   expect(everyMs("2d")).toBe(172_800_000);
   for (const wrong of ["0h", "1w", "1.5h", "h", "90"])
     expect(everyMs(wrong)).toBeNull();
@@ -57,8 +59,12 @@ test.each([
   ["upgrade: [1h]\n", "upgrade must be off, or a mapping"],
 ])("%s is refused, naming the file", (text, message) => {
   const env = withUserFile(text);
-  expect(() => upgradeSettings(env)).toThrow(message);
-  expect(() => upgradeSettings(env)).toThrow(
+  const settings = upgradeSettings(env);
+  expect(settings.ok).toBe(false);
+  if (settings.ok) return;
+  expect(settings.failure.code).toBe("invalid-upgrade-settings");
+  expect(settings.failure.reason).toContain(message);
+  expect(settings.failure.reason).toContain(
     join(env.JIG_HOME as string, "jig.yaml"),
   );
 });

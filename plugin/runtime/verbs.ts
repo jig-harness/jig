@@ -16,8 +16,8 @@
  * run that refuses. A verb over several components stops at the first that
  * fails, with its exit code, so what follows it is left as it was.
  */
-import { ExitError } from "../shared/cli.ts";
-import { pathValue } from "../shared/command-line.ts";
+import { ExitError, failureExit } from "../shared/cli.ts";
+import { pathValue, USAGE_EXIT } from "../shared/command-line.ts";
 import { userConfigPath } from "../shared/config-layers.ts";
 import {
   argument,
@@ -341,7 +341,7 @@ function upgradeOf(args: Upgrade, context: VerbContext): Promise<number> {
   if (!args.scheduled) {
     if (Object.keys(programs).length > 0)
       throw new ExitError(
-        2,
+        USAGE_EXIT,
         "--claude-program and --codex-program go with --scheduled",
       );
     return upgradeVerb(args, context);
@@ -354,7 +354,7 @@ function upgradeOf(args: Upgrade, context: VerbContext): Promise<number> {
     jobsOnly
   )
     throw new ExitError(
-      2,
+      USAGE_EXIT,
       "--scheduled upgrades on the channel each harness follows: it takes no --claude, --codex, --channel, --source or --jobs-only",
     );
   return scheduledUpgradeVerb(programs, context);
@@ -366,14 +366,16 @@ async function installVerb(
   context: VerbContext,
 ): Promise<number> {
   const { components, script } = context;
-  checkCommandPath();
+  const free = checkCommandPath();
+  if (!free.ok) return failureExit(free.failure);
   if (args.noUpgrade) await optOut(args.confirm);
   const jobless = withoutJobs(args, context);
   if (jobless) {
     console.log(
       "Scheduled jobs need macOS or Linux: writing the jig command only.",
     );
-    await checkLauncherResolves();
+    const resolves = await checkLauncherResolves();
+    if (!resolves.ok) return failureExit(resolves.failure);
   }
   const code = jobless
     ? 0

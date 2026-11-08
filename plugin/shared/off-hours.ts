@@ -23,6 +23,7 @@
  * runs under, so a window follows daylight-saving changes and a person's own
  * evening wherever the machine is.
  */
+import { JigError } from "./errors.ts";
 
 /**
  * The schedule in force once `autonomy.off_hours.level` is set and the
@@ -50,8 +51,11 @@ export interface OffHoursWindow {
 }
 
 /** A schedule entry that cannot be read as a window. */
-export class OffHoursScheduleError extends Error {
+export class OffHoursScheduleError extends JigError<"invalid-schedule"> {
   override name = "OffHoursScheduleError";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("invalid-schedule", reason, options);
+  }
 }
 
 const MINUTES_PER_DAY = 24 * 60;

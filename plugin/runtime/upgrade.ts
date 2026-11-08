@@ -16,10 +16,11 @@
  */
 import { realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ExitError } from "../shared/cli.ts";
+import { ExitError, failureExit } from "../shared/cli.ts";
+import { USAGE_EXIT } from "../shared/command-line.ts";
 import { swallow } from "../shared/errors.ts";
-import { GcError } from "../shared/gc-error.ts";
 import { decodeJson, isRecord } from "../shared/guards.ts";
+import { failed as failure, ok, type Outcome } from "../shared/outcome.ts";
 import { run } from "../shared/proc.ts";
 import type { Component } from "./component.ts";
 import {
@@ -31,7 +32,6 @@ import {
   harnessesExit,
   harnessRequest,
   type Say,
-  UpgradeRequestError,
   upgradeHarnesses,
 } from "./harness.ts";
 import { installedEntry } from "./launcher.ts";
@@ -227,33 +227,37 @@ export interface UpgradeArguments {
   json: boolean;
 }
 
-/** The refresh alone: refused with any option that chooses what to install, or from a checkout. */
-function checkJobsOnly(args: UpgradeArguments, script: string): void {
+/**
+ * The refresh alone: a usage error (exit 2) with any option that chooses
+ * what to install; refused from a checkout.
+ */
+function checkJobsOnly(
+  args: UpgradeArguments,
+  script: string,
+): Outcome<void, "refused"> {
   const { harness, channel, source } = args;
   if (harness !== undefined || channel !== undefined || source !== undefined)
     throw new ExitError(
-      2,
+      USAGE_EXIT,
       "--jobs-only refreshes the installed jobs alone: it takes no --claude, --codex, --channel or --source",
     );
   if (!installedScript(script))
-    throw new GcError(
+    return failure(
+      "refused",
       "jig upgrade --jobs-only requires the installed plugin copy, outside every worktree",
     );
+  return ok(undefined);
 }
 
 /** What to install or update, or a usage error (exit 2) for options that contradict each other. */
 function requestOf(args: UpgradeArguments): HarnessRequest {
-  try {
-    return harnessRequest({
-      ...(args.source === undefined ? {} : { source: args.source }),
-      ...(args.channel === undefined ? {} : { channel: args.channel }),
-      only: args.harness ?? null,
-    });
-  } catch (error) {
-    if (error instanceof UpgradeRequestError)
-      throw new ExitError(2, error.message);
-    throw error;
-  }
+  const request = harnessRequest({
+    ...(args.source === undefined ? {} : { source: args.source }),
+    ...(args.channel === undefined ? {} : { channel: args.channel }),
+    only: args.harness ?? null,
+  });
+  if (!request.ok) throw new ExitError(USAGE_EXIT, request.failure.reason);
+  return request.value;
 }
 
 /** For people: each harness that moved, then each job. */
@@ -307,7 +311,10 @@ export async function upgradeVerb(
   context: { components: readonly Component[]; script: string },
 ): Promise<number> {
   const say: Say = args.json ? console.error : console.log;
-  if (args.jobsOnly) checkJobsOnly(args, context.script);
+  if (args.jobsOnly) {
+    const checked = checkJobsOnly(args, context.script);
+    if (!checked.ok) return failureExit(checked.failure);
+  }
   const request = args.jobsOnly ? null : requestOf(args);
   const result = await upgrade({
     request,

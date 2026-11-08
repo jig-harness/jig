@@ -7,6 +7,8 @@
  * default really is the right answer (a cache entry that cannot be read is
  * read fresh), `swallow(err, reason)` says so in the code and writes the
  * error at debug level, so `JIG_LOG=debug` shows what was dropped and why.
+ * `Defect` and `JigError` live in `outcome.ts`, which imports nothing, so a
+ * browser bundle can hold them; they are exported here too.
  */
 import { type Fields, log, MAX_CAUSE_DEPTH } from "./log.ts";
 
@@ -53,11 +55,4 @@ export function swallow(err: unknown, reason: string): void {
   log.debug(reason, failureFields(err));
 }
 
-/**
- * A bug or a broken invariant, such as a caller passing an argument no correct
- * caller passes. Never caught to drive control flow; its type says "defect"
- * so no caller has to read the message to tell.
- */
-export class Defect extends Error {
-  override name = "Defect";
-}
+export { Defect, JigError } from "./outcome.ts";

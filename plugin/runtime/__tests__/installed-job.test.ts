@@ -16,6 +16,13 @@ import type { JobSpec } from "../job-spec.ts";
 import { commandText } from "../path-command.ts";
 import { type Job, jobFiles, type Scheduler } from "../scheduler.ts";
 
+/** The `jig` command's script as `commandText` writes it. */
+function written(...args: Parameters<typeof commandText>): string {
+  const text = commandText(...args);
+  if (!text.ok) throw new Error(text.failure.reason);
+  return text.value;
+}
+
 /** Quotes, a dollar, a percent sign, a backslash, and XML's specials and an entity's text. */
 const AWKWARD = `/odd path/it's $HOME 100% \\back "quoted" <&> &lt;`;
 
@@ -128,11 +135,11 @@ test.each(["linux", "win32"] as NodeJS.Platform[])(
       "--claude=/usr/local/bin/claude",
       "--",
     ];
-    expect(commandScriptCall(commandText(command, platform, 32400))).toEqual({
+    expect(commandScriptCall(written(command, platform, 32400))).toEqual({
       command,
       deadlineSec: 32400,
     });
-    expect(commandScriptCall(commandText(command, platform))).toEqual({
+    expect(commandScriptCall(written(command, platform))).toEqual({
       command,
     });
   },

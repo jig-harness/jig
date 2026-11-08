@@ -15,19 +15,15 @@
  * to that comment.
  */
 import { orcaCommandOrInstalled } from "../../../shared/orca.ts";
-import {
-  OrcaError,
-  parseOrcaEnvelope,
-} from "../../../shared/orca-workspace/envelope.ts";
 import { openBranch } from "../../../shared/orca-workspace/open.ts";
 import {
   boundedHook,
   type OpenPort,
+  orcaAnswer,
 } from "../../../shared/orca-workspace/port.ts";
 import {
   type Context,
   localContext,
-  output,
   withLimit,
 } from "../../../shared/orca-workspace/runner.ts";
 import { failureText } from "../text.ts";
@@ -45,18 +41,8 @@ function portOn(ctx: Context): OpenPort {
   return {
     host: ctx,
     runHook: boundedHook,
-    orcaCall<T>(args: string[], what: string) {
-      const done = ctx.run([orca, ...args, "--json"]);
-      const envelope = parseOrcaEnvelope<T>(done.stdout);
-      if (envelope !== null && !envelope.ok) return envelope;
-      if (done.status !== 0)
-        throw new OrcaError(
-          `${what} failed (exit ${done.status}): ${output(done)}`,
-        );
-      if (envelope === null)
-        throw new OrcaError(`${what}: unreadable output: ${output(done)}`);
-      return envelope;
-    },
+    orcaCall: <T>(args: string[], what: string) =>
+      orcaAnswer<T>(ctx.run([orca, ...args, "--json"]), what),
     where: "",
   };
 }

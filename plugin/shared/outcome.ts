@@ -51,3 +51,35 @@ export function attempt<T, Code extends string>(
     return failed(code, `${what}: ${thrown}`, error);
   }
 }
+
+/**
+ * A bug or a broken invariant, such as a caller passing an argument no correct
+ * caller passes. Never caught to drive control flow; its type says "defect"
+ * so no caller has to read the message to tell.
+ */
+export class Defect extends Error {
+  override name = "Defect";
+}
+
+/**
+ * The one base of the plugin's error classes: a failure that still travels
+ * as a throw, with the stable `code` an outcome's failure carries
+ * (`outcome.ts`), its message as the `reason` and what led to it as its
+ * `cause`. Code branches on `code` or on the class, never on the message.
+ * A defect is not one: it is a `Defect`, which nothing handles.
+ */
+export class JigError<Code extends string = string> extends Error {
+  override name = "JigError";
+  readonly code: Code;
+  constructor(code: Code, reason: string, options?: { cause?: unknown }) {
+    super(reason, options);
+    this.code = code;
+  }
+
+  /** This error as an outcome's failure. */
+  failure(): Failure<Code> {
+    return this.cause === undefined
+      ? { code: this.code, reason: this.message }
+      : { code: this.code, reason: this.message, cause: this.cause };
+  }
+}

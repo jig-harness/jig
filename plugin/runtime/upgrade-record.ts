@@ -26,6 +26,7 @@ import {
 } from "../shared/config-layers.ts";
 import { swallow } from "../shared/errors.ts";
 import { exclusiveInstallLock } from "../shared/gc-lock.ts";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { dump } from "../shared/yaml.ts";
 
 /**
@@ -153,11 +154,6 @@ export interface UpgradeSettings {
   path: string;
 }
 
-/** A user file's `upgrade` section that cannot be read. */
-class UpgradeSettingsError extends Error {
-  override name = "UpgradeSettingsError";
-}
-
 const DEFAULT_EVERY = "1h";
 const UNIT_MS = { m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
 
@@ -171,37 +167,48 @@ export function everyMs(text: string): number | null {
 /**
  * The user file's `upgrade` section: absent means on, every hour; `off` (or
  * `false`) opts the machine out; a mapping sets `every` and `enabled`. Only
- * the user file sets it: it describes one machine.
+ * the user file sets it: it describes one machine. A section, or a user
+ * file, that does not read is `invalid-upgrade-settings`.
  */
 export function upgradeSettings(
   env: NodeJS.ProcessEnv = process.env,
-): UpgradeSettings {
+): Outcome<UpgradeSettings, "invalid-upgrade-settings"> {
   const path = userConfigPath(env);
   const fail = (field: string, why: string) =>
-    new UpgradeSettingsError(`${path}: ${field} ${why}`);
-  const value = userLayerEnabled(env)
-    ? readConfigFile(path)?.upgrade
-    : undefined;
-  const settings = (enabled: boolean, every = DEFAULT_EVERY) => ({
-    enabled,
-    every,
-    everyMs: everyMs(every) as number,
-    path,
-  });
+    failed("invalid-upgrade-settings", `${path}: ${field} ${why}`);
+  let file: Record<string, unknown> | null = null;
+  try {
+    if (userLayerEnabled(env)) file = readConfigFile(path);
+  } catch (error) {
+    // The reader's message names the file and what does not read in it.
+    return failed(
+      "invalid-upgrade-settings",
+      error instanceof Error ? error.message : String(error),
+      error,
+    );
+  }
+  const value = file?.upgrade;
+  const settings = (enabled: boolean, every = DEFAULT_EVERY) =>
+    ok({
+      enabled,
+      every,
+      everyMs: everyMs(every) as number,
+      path,
+    });
   if (value === undefined || value === null || value === true || value === "on")
     return settings(true);
   if (value === false || value === "off") return settings(false);
   if (!isMapping(value))
-    throw fail("upgrade", "must be off, or a mapping of every and enabled");
+    return fail("upgrade", "must be off, or a mapping of every and enabled");
   for (const key of Object.keys(value))
     if (key !== "every" && key !== "enabled")
-      throw fail("upgrade", `has no field ${key}: it takes every and enabled`);
+      return fail("upgrade", `has no field ${key}: it takes every and enabled`);
   const enabled = value.enabled ?? true;
   if (typeof enabled !== "boolean")
-    throw fail("upgrade.enabled", "must be true or false");
+    return fail("upgrade.enabled", "must be true or false");
   const every = value.every ?? DEFAULT_EVERY;
   if (typeof every !== "string" || everyMs(every) === null)
-    throw fail(
+    return fail(
       "upgrade.every",
       "must be a whole number of minutes, hours or days: 30m, 1h, 2d",
     );

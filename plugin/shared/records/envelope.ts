@@ -45,6 +45,7 @@
  * run, fetch or follow what it names. A writer that breaks the strict form
  * is a defect, and `encode` throws.
  */
+import { Defect } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 import { attempt, type Failure, failed, ok, type Outcome } from "../outcome.ts";
 import { type RecordKind, recordKind } from "./registry.ts";
@@ -90,9 +91,6 @@ export type ReadCode =
   | "bad-time"
   | "bad-generation"
   | "no-marker";
-
-/** A writer that breaks the envelope's strict form: a defect, not a value. */
-class RecordDefect extends Error {}
 
 const ISO_TIME =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -223,7 +221,7 @@ export function commentSafe(json: string): string {
 
 /**
  * The JSON text of a record: the envelope's fields first, then the
- * payload's. Throws a `RecordDefect` when the envelope breaks the strict
+ * payload's. Throws a `Defect` when the envelope breaks the strict
  * form or the payload carries one of the envelope's field names, so a
  * writer never writes what a reader refuses.
  */
@@ -233,7 +231,7 @@ export function encode(
 ): string {
   const clash = ENVELOPE_FIELDS.find((field) => field in payload);
   if (clash !== undefined)
-    throw new RecordDefect(
+    throw new Defect(
       `the payload of a ${envelope.kind} record carries the envelope's field ${clash}`,
     );
   const { kind, v, key, writer, at, generation } = envelope;
@@ -248,7 +246,7 @@ export function encode(
   });
   const checked = readEnvelope(JSON.parse(json), kind);
   if (!checked.ok)
-    throw new RecordDefect(
+    throw new Defect(
       `a ${kind} record breaks the envelope's strict form: ${checked.failure.reason}`,
     );
   return commentSafe(json);
@@ -274,7 +272,7 @@ export function encodeMarker(
   payload: Record<string, unknown>,
 ): string {
   if (!MARKER_NAME.test(marker))
-    throw new RecordDefect(`${JSON.stringify(marker)} is not a marker name`);
+    throw new Defect(`${JSON.stringify(marker)} is not a marker name`);
   return `<!-- ${marker}\n${encode(envelope, payload)}\n-->`;
 }
 
