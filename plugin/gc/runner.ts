@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { openReceipt } from "./receipts.ts";
 import { isMapping } from "../shared/config-layers.ts";
+import { scheduledUpgradeOf, upgradeLine } from "../runtime/upgrade-record.ts";
 import type {
   CollectionKind,
   Proof,
@@ -144,6 +145,8 @@ export async function runCollection(
     resources: [],
     exitStatus: 0,
   };
+  const upgrade = scheduledUpgradeOf();
+  if (upgrade !== undefined) receipt.upgrade = upgrade;
   const journal = openReceipt(receipt, options.receiptRoot);
   for (const kind of kinds) {
     await evaluateKind(kind, receipt, journal.update);
@@ -195,6 +198,9 @@ export function formatReceipt(receipt: Receipt): string {
     ...familyLines(line),
   ]);
   return [
+    ...(receipt.upgrade === undefined
+      ? []
+      : [`upgrade: ${upgradeLine(receipt.upgrade)}`]),
     ...declarations,
     ...lines,
     `gc ${receipt.runId}: exit ${receipt.exitStatus}`,

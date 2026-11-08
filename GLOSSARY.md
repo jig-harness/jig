@@ -1799,6 +1799,14 @@ make, use the entry's term instead.
   its updates, where a pinned version receives none. npm's dist-tags
   (`latest`, `next`) are channels; Jig's plugin has `latest` and `stable`
   ([plugin/README.md](plugin/README.md#release-channels)).
+- **Scheduled upgrade** — the plugin update a machine's timers make on
+  their own: before collection's run and each dispatcher tick, the job's launcher has the
+  installed plugin copy update the plugin on the *release channel* the
+  machine follows, at most once per interval whichever timer fires first,
+  then runs the job on the copy now installed. A pinned machine, one whose
+  plugin is loaded in place from a local folder, and one that opted out
+  receive nothing; each job's receipt says what the upgrade came to
+  ([plugin/README.md](plugin/README.md#automatic-updates)).
 - **Trusted publishing** — publishing to a package registry without a
   stored token: the registry is told once which repository and workflow may
   publish a package, the publishing job proves it is that workflow with a

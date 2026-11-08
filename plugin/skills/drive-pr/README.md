@@ -654,10 +654,18 @@ dispatcher launched into, found by the dispatched mark on their launch
 records rather than by their names and listed by the night the launch was
 recorded, each with the name it carries now, whether its comment still
 carries the mark, and how its launch went when it did not start, so a
-workspace a session renamed is still there.
+workspace a session renamed is still there. Last come the plugin upgrades
+the machine's timers ran over the same time, from the jobs' receipts: each
+that moved the plugin (`0.114.0 -> 0.115.0`) and each that failed, with the
+agent tool's error ([automatic updates](../../README.md#automatic-updates)).
 `--json` prints the same as data, the dispatcher's part under `dispatch`,
-the label counts under `dispatchLabels` and the workspaces under
-`dispatchedWorkspaces`.
+the label counts under `dispatchLabels`, the workspaces under
+`dispatchedWorkspaces` and the upgrades under `upgrades`.
+
+On a machine whose timers keep the plugin current, a drive's rounds may
+span plugin versions: the driver keeps running the copy it started with,
+which stays in its own versioned directory, and each pass starts with the
+copy installed at that moment.
 
 Where your repository has a pre-merge follow-up step, have its list include
 the pull request's provisional decisions, so the person merging reads each
