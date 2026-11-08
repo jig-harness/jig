@@ -117,6 +117,31 @@ it("leaves a follow-up stuck pending out of the lane's cap, and counts one that 
   expect(laneCapWait(s, listed)).toContain("followup_concurrency");
 });
 
+it("counts a stuck follow-up whose target has a session running, or whose sessions cannot be read", () => {
+  const s = state();
+  s.machine = { ...s.machine, followupConcurrency: 1, unclaimedAfterMs: 1 };
+  s.records = [followupRecord("stuck", "pending", "its marker is gone")];
+  // A wrapper may run its stage on the target without having claimed the record.
+  const running = {
+    id: "w50",
+    path: "/tmp/ws50",
+    branch: "merged/50",
+    items: [],
+    prs: [50],
+    agents: [{ state: "working" }],
+    unverifiableTerminals: 0,
+    comment: "",
+    unread: null,
+    name: "",
+  } as unknown as Extract<SessionsReport, { ok: true }>["workspaces"][number];
+  expect(
+    laneCapWait(s, { ok: true, source: "orca", workspaces: [running] }),
+  ).toContain("followup_concurrency");
+  expect(
+    laneCapWait(s, { ok: false, source: "orca", reason: "timed out" }),
+  ).toContain("followup_concurrency");
+});
+
 it("waits, with the cause, rather than read a failed session listing as no workspace joined", async () => {
   expect(
     await joinedWorkspace(async () => {

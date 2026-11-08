@@ -218,9 +218,8 @@ function failedMarker(w: World, record: string): void {
   ]);
 }
 
-it("runs a follow-up whose launch record failed before passes tagged their questions again once, with every class's standing answer", async () => {
-  const w = fixture();
-  // Its prompt offered no tags: it stopped on a question, recorded failed and exited.
+/** A follow-up launch record of `OLD` whose prompt offered no tags: it stopped on a question and exited without recording done. */
+function oldRecord(w: World): void {
   earlierRecord(w, {
     id: OLD,
     account: "a",
@@ -252,6 +251,11 @@ it("runs a follow-up whose launch record failed before passes tagged their quest
     },
     dispatchState(w),
   );
+}
+
+it("runs a follow-up whose launch record failed before passes tagged their questions again once, with every class's standing answer", async () => {
+  const w = fixture();
+  oldRecord(w);
   failedMarker(w, OLD);
   await released(w, OLD, "failed before passes tagged their questions");
   const { prompt } = await rerun(w);
@@ -319,6 +323,15 @@ it.each([
   },
   90_000,
 );
+
+it("hands a follow-up whose outcome record's question does not read to a person even while its launch record from before the tags is on the host", async () => {
+  const w = fixture();
+  // With the record here, only the unreadable question keeps it from a run again with every class's answer.
+  oldRecord(w);
+  failedRow(w, "{not json");
+  failedMarker(w, OLD);
+  await forAPerson(w, "its outcome record's question does not read");
+}, 90_000);
 
 it("quotes the earlier question in the run again's prompt as bounded data, not an instruction", async () => {
   const w = fixture();

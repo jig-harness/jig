@@ -14,7 +14,8 @@
  */
 import { holds } from "../launches.ts";
 import type { SessionsReport } from "../runtime/port.ts";
-import { stuckWhy } from "../stuck-launches.ts";
+import { holding } from "../holding.ts";
+import { joinedTo, stuckWhy } from "../stuck-launches.ts";
 import { failureText } from "../text.ts";
 import type { ApplyState } from "./launch.ts";
 
@@ -22,8 +23,11 @@ import type { ApplyState } from "./launch.ts";
  * Why the host runs as many follow-ups as `followup_concurrency` allows;
  * `null` while it runs fewer. A record stuck pending, which the tick
  * notifies to a person and no tick launches again (`stuck-launches.ts`),
- * holds its account's slot but not a place in the lane, so one launch that
- * never started cannot hold the lane until a person clears it.
+ * holds its account's slot but not a place in the lane while the runtime
+ * shows no session running on its target, so one launch that never started
+ * cannot hold the lane until a person clears it. A stuck record whose
+ * target has a session running, or whose sessions cannot be told, keeps its
+ * place: that wrapper may run its stage without having claimed the record.
  */
 export function laneCapWait(
   state: ApplyState,
@@ -39,7 +43,10 @@ export function laneCapWait(
     (r) =>
       r.record.action === "followup" &&
       holds(r.state) &&
-      stuckWhy(r, clock) === null,
+      !(
+        stuckWhy(r, clock) !== null &&
+        holding(sessions, joinedTo(r.record)).kind === "free"
+      ),
   ).length;
   return running < cap
     ? null

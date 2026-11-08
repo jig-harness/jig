@@ -55,10 +55,15 @@ export type Asked = Pick<
   "question" | "routine" | "rerun" | "unreadable"
 >;
 
+/** The rows this process has warned of, so a row read every tick warns once and is written at debug level after. */
+const warnedRows = new Set<string>();
+
 /** A row whose `asked` column does not read, logged with its cause. */
 function unreadAsked(record: string, cause: string, error?: unknown): Asked {
   const unreadable = `its outcome record's question does not read (${cause})`;
-  log.warn(`follow-up outcome of launch record ${record}: ${unreadable}`, {
+  const write = warnedRows.has(record) ? log.debug : log.warn;
+  warnedRows.add(record);
+  write(`follow-up outcome of launch record ${record}: ${unreadable}`, {
     record,
     cause,
     ...(error === undefined ? {} : failureFields(error)),

@@ -1219,9 +1219,12 @@ per-tick budget (`followup_opens_per_tick` in the machine file, 2 by
 default), never from the launches' `opens_per_tick` and never from the open
 the notices workspace keeps, and no more follow-ups run on the host at once
 than `followup_concurrency` (2), counted from the launch records still
-holding, a pending record the tick reports stuck (see Launch records) left
-out, since it holds its slot until a person clears it and would otherwise
-hold the lane too. The lane's opens count in the tick's budget (the opens of
+holding. A pending record the tick reports stuck (see Launch records) is
+left out while the runtime shows no session running on its target, since it
+holds its slot until a person clears it and would otherwise hold the lane
+too; one whose target has a session running, or whose sessions cannot be
+read, is counted, since that wrapper may be running its stage without
+having claimed the record. The lane's opens count in the tick's budget (the opens of
 both allowances times `workspace_timeout`, and eight runtime calls), so the
 installed tick deadline grows with them: about 8h50m at the defaults, above
 the six-hour minimum. A value whose opens take that budget past the longest
