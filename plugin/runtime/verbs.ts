@@ -170,7 +170,7 @@ export function verbCommands(names: readonly string[]) {
       }),
       {
         brief: message`Check the machine, the plugin, each component and the repository's configuration.`,
-        description: message`Checks Bun's version, that claude and codex resolve outside every git checkout, the plugin in each harness and the channel it follows, the jig command's launcher copy, each component's machine file, launcher copy, programs and last run, and the repository's configuration fit (offline). Each failure names the command that fixes it; exits 1 when any check fails.`,
+        description: message`Checks Bun's version, that claude and codex resolve outside every git checkout, the plugin in each harness and the channel it follows, Claude Code's project- and local-scope installs of it (Claude Code loads the user-scope copy where both exist; one older than that copy, or whose directory is gone, fails), the jig command's launcher copy, each component's machine file, launcher copy, programs and last run, and the repository's configuration fit (offline). Each failure names the command that fixes it; exits 1 when any check fails.`,
       },
     ),
     command(

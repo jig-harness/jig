@@ -10,6 +10,8 @@ interface DriverOptions {
   dryRun: boolean;
   botsOnly: boolean;
   keepDraft: boolean;
+  /** Run a settlement pass even when review has already converged. */
+  settleWorktree: boolean;
   handoffAt: string;
   passTimeout: string;
   forward: string[];
@@ -35,6 +37,7 @@ const DRIVER_FLAGS = new Set([
   "--pass-timeout",
   "--dry-run",
   "--keep-draft",
+  "--settle-worktree",
   "--take-over",
   "--window-reopened",
   "--bots-only",
@@ -81,6 +84,9 @@ function parseFlag(
     case "--keep-draft":
       options.keepDraft = true;
       return index;
+    case "--settle-worktree":
+      options.settleWorktree = true;
+      return index;
     case "--take-over":
       options.takeOver = true;
       return index;
@@ -114,6 +120,7 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
     dryRun: false,
     botsOnly: false,
     keepDraft: false,
+    settleWorktree: false,
     handoffAt: "50",
     passTimeout: "",
     forward: [],

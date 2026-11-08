@@ -60,6 +60,9 @@ async function gateRoundStatus(
 
   switch (code) {
     case 3: {
+      // A settlement still runs behind the ordinary mailbox, claim, budget
+      // and pass gates. Its next iteration must certify the resulting tree.
+      if (context.settleWorktree) return null;
       const phase = await runConvergencePhase(context, status);
       if (phase === "continue") return "continue";
       return phase;

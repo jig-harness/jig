@@ -20,6 +20,7 @@
  * | stopped `QUOTA_PARKED` (`16`) | re-armable |
  * | stopped `HITL_PARKED` (`8`), every parked item answered | re-armable |
  * | stopped `NOT_SETTLED` (`4`) | re-armable |
+ * | stopped `WORKTREE_UNCLEAN` (`12`), head known and not yet recovered | stale: settle original tree once per head |
  * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |
  * | stopped `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`) | refused |
@@ -515,6 +516,7 @@ function stopEvidence(ledger: Ledger, forge: PrFacts): Evidence {
       verifiedSha: ledger.verifiedSha === "" ? null : ledger.verifiedSha,
       ...read,
     };
+  if (ledger.driver.exit === DRIVE_EXIT.WORKTREE_UNCLEAN) return read;
   if (!readsBaseHead(ledger, forge.mergeable)) return {};
   const { base } = forge;
   return {
@@ -532,6 +534,8 @@ function ledgerEvidence(
   const beat = Date.parse(ledger.driver.heartbeat);
   return {
     ...stopEvidence(ledger, forge),
+    driverActor: ledger.driver.actor,
+    driverClone: ledger.driver.clone,
     generation: ledger.generation,
     round: ledger.round,
     phase: ledger.phase,
@@ -555,7 +559,39 @@ function ledgerEvidence(
   };
 }
 
-/** A ledger's class, first match wins; `park` is read only for `HITL_PARKED`; `forge` for `CONVERGED`, the conflicts, the parks on a conflict and the stops a re-drive settles, and for a needs-person stop's mergeability. */
+/** An unclean stop gets one recovery for its known head. */
+function uncleanClass(ledger: Ledger, forge: PrFacts): Classified {
+  if (forge.head === null || forge.head === "")
+    return {
+      class: "unplaced",
+      why: "stopped 12, but its head is unknown: the once-per-head recovery cannot be kept",
+    };
+  return {
+    class: "stale",
+    why: "stopped 12 (worktree unclean): settle the existing tree once at this head",
+    stale: {
+      cause: "stopped 12, uncommitted work in the original tree",
+      change: `unclean head ${forge.head}`,
+      uncleanTree: true,
+      tree: ledgerTree(ledger),
+    },
+  };
+}
+
+/** A recorded operator stop takes precedence over every automatic recovery. */
+function personStopClass(ledger: Ledger): Classified {
+  const reason = ledger.driver.personStop?.reason ?? "";
+  const detail = reason === "" ? "" : `: ${reason}`;
+  return {
+    class: "stopped-by-person",
+    why:
+      ledger.driver.state === "running"
+        ? `stop requested by a person; driver still recorded running${detail}; the dispatcher will not re-arm it`
+        : `stopped by a person${detail}; stays stopped until a person re-arms it`,
+  };
+}
+
+/** A ledger's class, first match wins; `park` is read only for `HITL_PARKED`; `forge` for `CONVERGED`, the conflicts, the parks on a conflict, unclean trees and the stops a re-drive settles, and for a needs-person stop's mergeability. */
 export function classifyLedger(
   ledger: Ledger,
   nowMs: number,
@@ -564,14 +600,7 @@ export function classifyLedger(
   forge: PrFacts = NO_FACTS,
 ): Classified {
   const exit = ledger.driver.exit;
-  if (ledger.driver.personStop !== undefined)
-    return {
-      class: "stopped-by-person",
-      why:
-        ledger.driver.state === "running"
-          ? `stop requested by a person; driver still recorded running${ledger.driver.personStop.reason === "" ? "" : `: ${ledger.driver.personStop.reason}`}; the dispatcher will not re-arm it`
-          : `stopped by a person${ledger.driver.personStop.reason === "" ? "" : `: ${ledger.driver.personStop.reason}`}; stays stopped until a person re-arms it`,
-    };
+  if (ledger.driver.personStop !== undefined) return personStopClass(ledger);
   if (ledger.driver.state === "running")
     return runningClass(ledger, nowMs, windowMs);
   if (exit === undefined)
@@ -589,6 +618,7 @@ function exitClass(
   park: ParkReading | undefined,
   forge: PrFacts,
 ): Classified {
+  if (exit === DRIVE_EXIT.WORKTREE_UNCLEAN) return uncleanClass(ledger, forge);
   if (exit === DRIVE_EXIT.HITL_PARKED) return parkClass(park, forge);
   if (exit === DRIVE_EXIT.CONVERGED) return convergedClass(ledger, forge);
   if (exit === DRIVE_EXIT.PR_CONFLICTING) return conflictStopClass(forge);
@@ -775,6 +805,38 @@ async function factsOf(
     : facts;
 }
 
+/** A stopped ledger's explicit request, preserving person stops and unanswered parks. */
+function rearmRequest(
+  ledger: Ledger,
+  labels: LabelConfig | null,
+  carried: string[] | undefined,
+  classified: Classified,
+): { classified: Classified; evidence: Evidence } {
+  const eligible =
+    ledger.driver.state === "stopped" &&
+    ledger.driver.personStop === undefined &&
+    ledger.driver.exit !== DRIVE_EXIT.MAILBOX_STOPPED &&
+    ledger.driver.exit !== DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT;
+  if (!eligible || labels === null || !hasCommand(labels, carried, "rearm"))
+    return { classified, evidence: {} };
+  const next =
+    classified.class === "parked" || classified.class === "unplaced"
+      ? classified
+      : {
+          class: "re-armable" as const,
+          why: "a person's rearm request asks to restart this stopped drive in its existing tree",
+        };
+  return {
+    classified: next,
+    evidence: {
+      rearm: true,
+      rearmLabel: `${labels.prefix}rearm`,
+      noCause: false,
+      legacyNoCause: false,
+    },
+  };
+}
+
 /** What a silent ledger's evidence adds: whether this host shows its driver gone, and what it showed. */
 async function presenceEvidence(
   pr: number,
@@ -812,12 +874,15 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     listing?.ok ? listing.value : undefined,
   );
   const forge = await factsOf(pr, ledger, r);
-  const classified = classifyLedger(ledger, nowMs, windowMs, park, forge);
+  let classified = classifyLedger(ledger, nowMs, windowMs, park, forge);
+  const request = rearmRequest(ledger, labels, pr.labels, classified);
+  classified = request.classified;
   return {
     ...base,
     ...classified,
     evidence: {
       ...ledgerEvidence(ledger, nowMs, forge),
+      ...request.evidence,
       ...(await presenceEvidence(pr.number, ledger, classified, r)),
     },
     ...waitingOf(classified, park, pr.author?.login),

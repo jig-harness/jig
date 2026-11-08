@@ -7,14 +7,26 @@
  * `tools/plugin/setup.ts` calls both from a checkout for the first install,
  * before `jig` is on `PATH`.
  *
+ * Claude Code also keeps an install per directory it was installed for
+ * (project and local scope). An upgrade refreshes each from its directory,
+ * and drops from Claude Code's install record each whose directory no longer
+ * exists, since no `claude` command can reach it there.
+ *
  * Every command that changes something is printed before it runs. It writes
- * only the harnesses' own user-level plugin settings and caches; it never
- * touches a repository. Each tool command is limited to
+ * only the harnesses' own plugin settings and caches; it never touches a
+ * repository's files. Each tool command is limited to
  * `JIG_SETUP_TIMEOUT_SECONDS` (default 300), so a stalled fetch fails rather
  * than hangs.
  */
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import {
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -70,14 +82,17 @@ export function commandTimeoutMs(): number {
   return seconds * 1000;
 }
 
-/** Runs one tool command; given `say`, prints it first. */
-function run(command: string, args: string[], say?: Say): string {
-  say?.(`$ ${[command, ...args].join(" ")}`);
+/** Runs one tool command, in `cwd` when given; given `say`, prints it first. */
+function run(command: string, args: string[], say?: Say, cwd?: string): string {
+  say?.(
+    `$ ${cwd === undefined ? "" : `(cd ${cwd}) `}${[command, ...args].join(" ")}`,
+  );
   const timeout = commandTimeoutMs();
   const result = spawnSync(command, args, {
     encoding: "utf8",
     timeout,
     killSignal: "SIGKILL",
+    ...(cwd === undefined ? {} : { cwd }),
   });
   if (result.error && code(result.error) === "ETIMEDOUT")
     throw new HarnessError(
@@ -151,6 +166,39 @@ export function claudeUserInstall(list: unknown): Installed | null {
     enabled: entry.enabled === true,
     ...(typeof folder === "string" && folder ? { inPlace: folder } : {}),
   };
+}
+
+/** A Claude Code install of the plugin made for one directory. */
+export interface ScopedInstall {
+  scope: "project" | "local";
+  /** The directory it was installed for; it may since have been deleted. */
+  project: string;
+  version: string;
+  enabled: boolean;
+}
+
+/** The project- and local-scope installs from `claude plugin list --json`. */
+export function claudeScopedInstalls(list: unknown): ScopedInstall[] {
+  if (!Array.isArray(list))
+    throw new HarnessError(
+      "claude plugin list --json did not print a list of plugins",
+    );
+  return list.flatMap((entry): ScopedInstall[] =>
+    entry?.id === PLUGIN_ID &&
+    (entry.scope === "project" || entry.scope === "local") &&
+    typeof entry.projectPath === "string" &&
+    entry.projectPath !== "" &&
+    typeof entry.version === "string"
+      ? [
+          {
+            scope: entry.scope,
+            project: entry.projectPath,
+            version: entry.version,
+            enabled: entry.enabled === true,
+          },
+        ]
+      : [],
+  );
 }
 
 /** The install from `codex plugin list --json` (Codex has one scope). */
@@ -333,6 +381,268 @@ export function installed(
     : codexInstall(json(program, ["plugin", "list", "--json"]));
 }
 
+/** Claude Code's project- and local-scope installs of the plugin. */
+export function scopedInstalls(program = "claude"): ScopedInstall[] {
+  return claudeScopedInstalls(json(program, ["plugin", "list", "--json"]));
+}
+
+/**
+ * Whether a scoped install's directory is there: `present`, `gone`, or why
+ * neither can be said (a file in its place, a directory that cannot be read).
+ */
+export function directoryState(path: string): "present" | "gone" | string {
+  try {
+    return statSync(path).isDirectory()
+      ? "present"
+      : `${path} is not a directory`;
+  } catch (error) {
+    // ENOTDIR means a parent is a file, which says nothing of this directory.
+    if (code(error) === "ENOENT") return "gone";
+    return `${path} cannot be read: ${reason(error)}`;
+  }
+}
+
+/**
+ * Claude Code's record of what it installed, in its plugins directory:
+ * `CLAUDE_CODE_PLUGIN_CACHE_DIR` where set, else under its configuration directory.
+ */
+function claudeInstallRecord(env: NodeJS.ProcessEnv = process.env): string {
+  return join(
+    env.CLAUDE_CODE_PLUGIN_CACHE_DIR ||
+      join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "plugins"),
+    "installed_plugins.json",
+  );
+}
+
+/** The form of Claude Code's install record this release can edit. */
+const RECORD_VERSION = 2;
+
+function reason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** The record's entries for the plugin, or why this release must not edit it. */
+function recordEntries(
+  record: string,
+): { data: { plugins: Record<string, unknown> }; entries: unknown[] } | string {
+  let data: { version?: unknown; plugins?: Record<string, unknown> };
+  try {
+    data = JSON.parse(readFileSync(record, "utf8"));
+  } catch (error) {
+    return `${record} cannot be read: ${reason(error)}`;
+  }
+  const entries = data?.plugins?.[PLUGIN_ID];
+  if (data?.version !== RECORD_VERSION || !Array.isArray(entries))
+    return `${record} is not in the form this release edits (version ${RECORD_VERSION}, with a ${PLUGIN_ID} list)`;
+  return { data: data as { plugins: Record<string, unknown> }, entries };
+}
+
+/** The key that names one scoped install in the record and in the list. */
+const scopedKey = (scope: unknown, project: unknown) =>
+  JSON.stringify([scope, project]);
+
+/**
+ * Drops `gone` from Claude Code's install record, each only while its
+ * directory is still missing, replacing the record whole through a file
+ * beside it: the keys it dropped, or why it left the record as it was.
+ */
+function pruneRecord(
+  link: string,
+  gone: readonly ScopedInstall[],
+): Set<string> | string {
+  let record: string;
+  let before: ReturnType<typeof statSync>;
+  try {
+    // A record kept as a link is written where the link points.
+    record = realpathSync(link);
+    before = statSync(record);
+  } catch (error) {
+    return `${link} cannot be read: ${reason(error)}`;
+  }
+  const read = recordEntries(record);
+  if (typeof read === "string") return read;
+  const wanted = new Set(gone.map((i) => scopedKey(i.scope, i.project)));
+  const dropped = new Set<string>();
+  const kept = read.entries.filter((entry) => {
+    const { scope, projectPath } = (entry ?? {}) as Record<string, unknown>;
+    const key = scopedKey(scope, projectPath);
+    const drop =
+      wanted.has(key) && directoryState(String(projectPath)) === "gone";
+    if (drop) dropped.add(key);
+    return !drop;
+  });
+  if (dropped.size === 0) return dropped;
+  const { plugins } = read.data;
+  if (kept.length === 0) delete plugins[PLUGIN_ID];
+  else plugins[PLUGIN_ID] = kept;
+  const next = `${record}.jig-${process.pid}`;
+  try {
+    writeFileSync(next, `${JSON.stringify(read.data, null, 2)}\n`, {
+      mode: Number(before.mode) & 0o777,
+    });
+    // Claude Code writes this record too; one it rewrote meanwhile is left
+    // for the next upgrade rather than overwritten. The window that remains,
+    // between this check and the rename, can still lose its write.
+    const now = statSync(record);
+    if (now.mtimeMs !== before.mtimeMs || now.size !== before.size) {
+      rmSync(next, { force: true });
+      return `${record} changed while it was being edited; the next upgrade tries again`;
+    }
+    renameSync(next, record);
+  } catch (error) {
+    rmSync(next, { force: true });
+    return `${record} cannot be written: ${reason(error)}`;
+  }
+  return dropped;
+}
+
+/**
+ * What became of one scoped install in an upgrade: `refreshed` or
+ * `unchanged` by `claude plugin update` from its directory, `removed` from
+ * the install record when its directory is gone, `left` as it was when
+ * neither could be done safely (`detail` says why).
+ */
+export interface ScopedResult {
+  scope: ScopedInstall["scope"];
+  project: string;
+  before: string;
+  version?: string;
+  outcome: "refreshed" | "unchanged" | "removed" | "left";
+  detail: string;
+}
+
+function scopedResult(
+  install: ScopedInstall,
+  outcome: ScopedResult["outcome"],
+  detail: string,
+  /** Null for an install that is gone. */
+  version: string | null = install.version,
+): ScopedResult {
+  return {
+    scope: install.scope,
+    project: install.project,
+    before: install.version,
+    ...(version === null ? {} : { version }),
+    outcome,
+    detail,
+  };
+}
+
+/** Removes each install whose directory is gone from the record; what became of each. */
+function removeGone(
+  gone: readonly ScopedInstall[],
+  record: string,
+  say: Say,
+): ScopedResult[] {
+  if (gone.length === 0) return [];
+  say(
+    `$ remove ${gone.length} ${PLUGIN_ID} install${gone.length === 1 ? "" : "s"} whose directory no longer exists from ${record}`,
+  );
+  const dropped = pruneRecord(record, gone);
+  return gone.map((install) =>
+    typeof dropped === "string"
+      ? scopedResult(install, "left", dropped)
+      : dropped.has(scopedKey(install.scope, install.project))
+        ? scopedResult(
+            install,
+            "removed",
+            "its directory no longer exists",
+            null,
+          )
+        : scopedResult(install, "left", `${record} no longer lists it as gone`),
+  );
+}
+
+/** What each install `claude plugin update` ran for is at now. */
+function settled(
+  program: string,
+  updated: readonly ScopedInstall[],
+): ScopedResult[] {
+  if (updated.length === 0) return [];
+  let listed: ScopedInstall[];
+  try {
+    listed = scopedInstalls(program);
+  } catch (error) {
+    return updated.map((install) =>
+      scopedResult(
+        install,
+        "left",
+        `updated, but its version cannot be read back: ${reason(error)}`,
+      ),
+    );
+  }
+  const now = new Map(
+    listed.map((entry) => [
+      scopedKey(entry.scope, entry.project),
+      entry.version,
+    ]),
+  );
+  return updated.map((install) => {
+    const version = now.get(scopedKey(install.scope, install.project));
+    if (version === undefined)
+      return scopedResult(
+        install,
+        "left",
+        "claude plugin update finished, but claude plugin list no longer lists it",
+      );
+    return version === install.version
+      ? scopedResult(install, "unchanged", `already at ${version}`)
+      : scopedResult(
+          install,
+          "refreshed",
+          `${install.version} → ${version}`,
+          version,
+        );
+  });
+}
+
+/**
+ * Refreshes each of Claude Code's project- and local-scope installs from its
+ * directory, unless it is already at `current` (the user-scope version), and
+ * removes each whose directory is gone; says what became of each that
+ * changed or was left.
+ */
+export function refreshScoped(
+  program: string,
+  say: Say,
+  current: string | null = null,
+  record: string = claudeInstallRecord(),
+): ScopedResult[] {
+  const left: ScopedResult[] = [];
+  const gone: ScopedInstall[] = [];
+  const updated: ScopedInstall[] = [];
+  for (const install of scopedInstalls(program)) {
+    const where = directoryState(install.project);
+    if (where === "gone") gone.push(install);
+    else if (where !== "present")
+      left.push(scopedResult(install, "left", where));
+    else if (install.version === current) updated.push(install);
+    else
+      try {
+        run(
+          program,
+          ["plugin", "update", PLUGIN_ID, "--scope", install.scope],
+          say,
+          install.project,
+        );
+        updated.push(install);
+      } catch (error) {
+        left.push(scopedResult(install, "left", reason(error)));
+      }
+  }
+  const results = [
+    ...left,
+    ...removeGone(gone, record, say),
+    ...settled(program, updated),
+  ];
+  for (const result of results)
+    if (result.outcome !== "unchanged")
+      say(
+        `claude: ${PLUGIN_ID} ${result.before} for ${result.project} (${result.scope} scope): ${result.outcome}, ${result.detail}`,
+      );
+  return results;
+}
+
 /** Installs or updates the plugin in `harness`; what was installed before. */
 function install(
   harness: Harness,
@@ -455,6 +765,10 @@ export interface HarnessResult {
   /** What the registered source follows, in words. */
   follows?: string;
   detail: string;
+  /** Claude Code after an upgrade: what became of each project- and local-scope install. */
+  scoped?: ScopedResult[];
+  /** Claude Code after an upgrade: why the scoped installs could not be inspected or refreshed. */
+  scopedError?: string;
 }
 
 /** Prints what `harness` has installed and follows. */
@@ -565,8 +879,29 @@ export function upgradeHarnesses(
       say,
     );
     const after = report(harness, say, program);
-    return outcome(harness, before, after);
+    const result = outcome(harness, before, after);
+    return harness === "claude"
+      ? { ...result, ...scopedStep(program, say, result.version) }
+      : result;
   });
+}
+
+/**
+ * The scoped installs' refresh after the user-scope one: a failure here is
+ * reported, never the user-scope upgrade's outcome.
+ */
+function scopedStep(
+  program: string,
+  say: Say,
+  current: string | undefined,
+): { scoped: ScopedResult[] } | { scopedError: string } {
+  try {
+    return { scoped: refreshScoped(program, say, current ?? null) };
+  } catch (error) {
+    const scopedError = `the project- and local-scope installs of ${PLUGIN_ID} were not refreshed: ${reason(error)}`;
+    console.error(`claude: ${scopedError}`);
+    return { scopedError };
+  }
 }
 
 function outcome(

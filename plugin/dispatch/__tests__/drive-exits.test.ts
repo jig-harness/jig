@@ -66,7 +66,7 @@ describe("a stopped ledger's class", () => {
       ["MAX_ROUNDS", "needs-person"],
       ["REVIEWER_FAILED", "needs-person"],
       ["REVIEW_SKIPPED", "needs-person"],
-      ["WORKTREE_UNCLEAN", "needs-person"],
+      ["WORKTREE_UNCLEAN", "unplaced"],
     ];
     for (const [name, cls] of cases)
       expect<[string, string]>([name, ledgerClass(name)]).toEqual([name, cls]);
