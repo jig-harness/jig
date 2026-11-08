@@ -9,7 +9,8 @@ import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.t
 import { hostLabel } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { swallow } from "../../shared/errors.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
-import type { StaleCause } from "./types.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import type { DrivenPr, StaleCause } from "./types.ts";
 
 /** The tree a ledger's driver ran in, and whether it is on this host. */
 export function ledgerTree(ledger: Ledger): NonNullable<StaleCause["tree"]> {
@@ -17,6 +18,21 @@ export function ledgerTree(ledger: Ledger): NonNullable<StaleCause["tree"]> {
     actor: ledger.driver.actor,
     here: ledger.driver.clone.endsWith(`@${hostLabel()}`),
   };
+}
+
+/** The original tree of an explicitly requested rearm of an unclean stop; `undefined` for any other request. */
+export function requestedTree(
+  pr: DrivenPr,
+): NonNullable<StaleCause["tree"]> | undefined {
+  const { rearm, exit, driverActor, driverClone } = pr.evidence;
+  if (
+    rearm !== true ||
+    exit !== DRIVE_EXIT.WORKTREE_UNCLEAN ||
+    typeof driverActor !== "string" ||
+    typeof driverClone !== "string"
+  )
+    return undefined;
+  return { actor: driverActor, here: driverClone.endsWith(`@${hostLabel()}`) };
 }
 
 /** The open workspace whose tree is `actor`; `undefined` when none is. */

@@ -380,3 +380,15 @@ it("withholds a startup verdict when a project directory is a symbolic link", ()
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+it("polls only complete agent log records", () => {
+  const w = fixture();
+  const path = join(w.dir, "claude-runs.jsonl");
+  const run = { argv: [], cwd: w.repo, configDir: null, token: null };
+  writeFileSync(path, "");
+  expect(claudeRuns(w)).toEqual([]);
+  writeFileSync(path, JSON.stringify(run).slice(0, 12));
+  expect(claudeRuns(w)).toEqual([]);
+  writeFileSync(path, `${JSON.stringify(run)}\n{"argv":`);
+  expect(claudeRuns(w)).toEqual([run]);
+});
