@@ -1190,6 +1190,16 @@ The prompt carries everything the agent needs, so it fetches nothing. In
 the new session, run the audit: `/jig:audit` in Claude Code, or ask for the
 `jig:audit` skill in Codex ([use a skill](#use-a-skill)).
 
+## Bootstrap setup
+
+The [bootstrap guide](https://github.com/jig-harness/jig/blob/main/tools/plugin/bootstrap.md) provides shell and
+PowerShell entry points from a reviewed source checkout. They preview the
+machine and marketplace state, prepare missing prerequisites only with
+explicit opt-in, and install through the agent marketplace only with an
+explicit apply flag. Authentication stays explicit, and scheduled jobs
+remain a separate action. Cross-platform authenticated validation is still
+open; the guide lists the evidence it needs.
+
 ## Requirements
 
 | Tool | Version | Needed for |
@@ -1218,11 +1228,13 @@ partial clone on a git that cannot be kept from fetching.
 
 ## Install the plugin
 
-**Planned setup channels.** A common shell and PowerShell bootstrap is the
-first planned addition, with an own Homebrew tap considered after validation.
-The [distribution design](https://github.com/jig-harness/jig/blob/main/design/distribution.md)
-records the order and update ownership. Until that setup path is built, use
-the marketplace commands below.
+**Setup entry points.** The shell and PowerShell [bootstrap](#bootstrap-setup)
+is available from a reviewed source checkout; authenticated cross-platform
+validation remains open. An own Homebrew tap requires a later maintainer
+decision after validation. The
+[distribution design](https://github.com/jig-harness/jig/blob/main/design/distribution.md)
+records the order and update ownership. The marketplace commands below
+remain the direct installation path.
 
 Run these once per machine, in a terminal (not inside an agent session).
 They follow the `stable` [release channel](#release-channels), which

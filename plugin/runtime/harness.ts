@@ -886,6 +886,41 @@ export function upgradeHarnesses(
   });
 }
 
+/** Resolve every selected registration before bootstrap permits any writes. */
+export function prepareHarnesses(
+  request: HarnessRequest,
+  say: Say = console.log,
+) {
+  const selected = request.only ? [request.only] : HARNESSES;
+  const plans = selected.flatMap((harness) => {
+    const skipped = absent(harness, request, say);
+    if (skipped) return [];
+    const program = programOf(harness, request);
+    const registered = registeredMarketplace(harness, program);
+    if (registered)
+      refuseOtherSource(harness, registered, request.source, request.explicit);
+    const state = installed(harness, program);
+    const source =
+      registered?.location ??
+      (request.defaulted ? defaultChannelSource(say) : request.source);
+    say(
+      `${harness}: ${state ? `installed ${state.version}` : "fresh install"}; source ${source}`,
+    );
+    if (harness === "claude") {
+      for (const scoped of scopedInstalls(program)) {
+        const where = directoryState(scoped.project);
+        say(
+          `claude: ${scoped.scope} install ${scoped.project}: ${where === "gone" ? "remove stale install record" : where === "present" ? "refresh from its directory" : `leave unchanged (${where})`}`,
+        );
+      }
+    }
+    return [{ harness, source, registered, state }];
+  });
+  if (plans.length === 0)
+    throw new UpgradeRequestError("Install a supported agent CLI first");
+  return plans;
+}
+
 /**
  * The scoped installs' refresh after the user-scope one: a failure here is
  * reported, never the user-scope upgrade's outcome.
