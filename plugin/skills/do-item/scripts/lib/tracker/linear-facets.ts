@@ -19,7 +19,12 @@
  * the first such read.
  */
 
-import { defaultFacets, type Facets, usable } from "./facets/config.ts";
+import {
+  defaultFacets,
+  type Facets,
+  type ResolvedFacet,
+  usable,
+} from "./facets/config.ts";
 import {
   type CoreFacetReport,
   type CoreIssue,
@@ -115,9 +120,7 @@ export function checkLinearFacets(facets: Facets): void {
         );
   const size = facets.size;
   if (!usable(size) || size.store !== "native") return;
-  const named = (size.map?.entries ?? []).filter(
-    ([v, t]) => fold(v) !== fold(t),
-  );
+  const named = namedPoints(size);
   if (named.length > 0 && named.length < size.values.length)
     throw new TrackerConfigError(
       `${at}.values`,
@@ -172,6 +175,13 @@ async function readScale(
   };
 }
 
+/** The sizes `values` names, each with the point it names. */
+function namedPoints(size: ResolvedFacet): Array<readonly [string, string]> {
+  return (size.map?.entries ?? []).filter(([v]) =>
+    (size.named ?? []).includes(v),
+  );
+}
+
 /** Each size's point on `scale`: named in `values`, else the sizes in order from 1. */
 function sizePoints(
   facets: Facets,
@@ -179,8 +189,7 @@ function sizePoints(
   team: string,
 ): ReadonlyArray<readonly [string, number]> {
   const size = facets.size as Exclude<Facets["size"], { store: null }>;
-  const entries = size.map?.entries ?? [];
-  const named = entries.filter(([v, t]) => fold(v) !== fold(t));
+  const named = namedPoints(size);
   const shown = `team ${team}'s ${scale.type} scale (${scale.points.join(", ")})`;
   if (named.length === 0) {
     const upper = scale.points.filter((p) => p > 0);

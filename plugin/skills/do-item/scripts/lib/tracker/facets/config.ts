@@ -279,6 +279,8 @@ export interface ResolvedFacet {
   field: string | null;
   /** A native or field store's map onto the tracker's values. */
   map: ValueMap | null;
+  /** The values a native or field store's `values` names (the rest keep their own names). */
+  named?: ReadonlyArray<string>;
   /**
    * A Jira native type: the labels a value is kept in where it has no issue
    * type of its own, or the issue is a sub-task (each value with its labels,
@@ -450,6 +452,9 @@ function resolved(
       base.values,
       entry?.values ?? base.nativeMap,
       at(facet, "values"),
+    ),
+    named: Object.keys(entry?.values ?? {}).flatMap(
+      (k) => canonical(base.values, k) ?? [],
     ),
     ...(store === "native" && base.fallback === true
       ? { fallback: base.values.map((v) => [v, base.labels(v)] as const) }

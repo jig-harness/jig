@@ -273,7 +273,8 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     const name = type?.map?.toTracker(value) ?? value;
     const types = standard(await client.issueTypes());
     const found = types.find((t) => same(t.name, name));
-    if (found !== undefined || same(name, value)) return found ?? null;
+    const named = type?.named?.some((v) => same(v, value)) === true;
+    if (found !== undefined || !named) return found ?? null;
     throw new TrackerRequestError(
       "unresolved",
       `type ${value} is kept in Jira's issue types as '${name}', which is no standard issue type of ${project} (it has: ${types.map((t) => t.name).join(", ") || "none"}); name its issue type in ${at("type", "values")}, or keep type in labels (store: label)`,
