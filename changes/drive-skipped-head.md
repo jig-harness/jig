@@ -23,8 +23,8 @@ release: minor
   fetched once; still missing, the evaluation is `INDETERMINATE` (exit `1`)
   and runs again. The stop quotes the
   notice and says what a person does next; `jig dispatch` hands it to a
-  person and labels the pull request parked, rather than re-arming it at the
-  same head. A harness that reads the drive's exit codes should treat `22`
+  person, labelling the pull request parked where dispatch labels are enabled,
+  rather than re-arming it at the same head. A harness that reads the drive's exit codes should treat `22`
   as a stop for a person.
 
 ### Fixed

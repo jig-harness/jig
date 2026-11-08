@@ -440,7 +440,7 @@ const EXITS: Record<number, (ledger: Ledger) => Classified> = {
   }),
   [DRIVE_EXIT.REVIEW_SKIPPED]: () => ({
     class: "needs-person",
-    why: `stopped ${DRIVE_EXIT.REVIEW_SKIPPED} (the reviewer skipped its head, and its review of an earlier head does not cover it): a re-arm waits for a review that will not come, so a person reviews the change or has the reviewer review the head (see the drive's handoff)`,
+    why: `stopped ${DRIVE_EXIT.REVIEW_SKIPPED} (the reviewer skipped its head, and its review of an earlier head does not cover it): a re-arm waits for a review that will not come, so a person has the reviewer review the head or pushes a commit it reviews (see the drive's handoff)`,
   }),
 };
 
