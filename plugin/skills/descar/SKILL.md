@@ -51,7 +51,8 @@ Find these once, at the start:
   file names another. The commands below write `docs`; substitute.
 - **Promoted status**: `approved` in M4's schema. The repository's
   frontmatter schema may name more (a corpus where `active` is the promoted
-  status, say); use all of them.
+  status, say); use all of them, and list them in `docs.promoted_statuses` so
+  the docs skill's scar lint scans them too.
 - **Scar lint**: read `descar.lint_command` from the repository's Jig
   configuration with
   `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" descar.lint_command`

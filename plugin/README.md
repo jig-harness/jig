@@ -1558,6 +1558,7 @@ docs:
   root: docs                          # the governed docs tree; default: detected (docs/, doc/, documentation/)
   schema: docs/.frontmatter-schema.yaml   # default: detected under the docs tree, else no frontmatter check
   stale_after_days: 180               # a draft older than this is reported stale; default: 180
+  promoted_statuses: [approved, active]   # statuses the scar lint holds to no review scars; default: [approved]
 promote_memory:
   lint_command: "<your memory lint> --dir {dir} --file {file}"   # exit 0 = clean; default: none
   target_dir: docs/retrospection      # where promoted pages go (YYYY/MM/ below it); default: docs/retrospection

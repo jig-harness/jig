@@ -933,6 +933,7 @@ line.
 | `docs.root` | folder, relative to the root | Detected: the first existing of `docs`, `doc`, `documentation`; none means the repository has no docs tree, and the checks that need one are skipped | docs | The governed docs tree. A configured path must name an existing folder, not a file. Configured or detected, it must lie inside the repository once symbolic links are followed. Repository-only |
 | `docs.schema` | path, relative to the repository root | Detected: the shallowest `frontmatter-schema.yaml` or `.frontmatter-schema.yaml` (or `.yml`) under the docs tree; none skips the frontmatter check | docs | The frontmatter schema the documents are checked against. A configured path must name an existing file, not a folder. Configured or detected, it must lie inside the repository once symbolic links are followed. Repository-only |
 | `docs.stale_after_days` | whole number, 1 or more | `180` | docs | A `status: draft` document whose `last_updated` is more than this many days old is reported as a stale draft (a warning) |
+| `docs.promoted_statuses` | nonempty list of distinct one-word `status` values | `[approved]` | docs | The statuses whose documents the scar lint holds to no review scars. A repository whose lifecycle ends in another status (a legal corpus that ends in `active`, say) lists it, with `approved` when both are in use; a document with any other status is reported as not scanned. The lint also reads the `PROMOTED_STATUSES` environment variable (space-separated), which wins over this field |
 | `promote_memory.lint_command` | shell command; `{dir}` and `{file}` stand for the memory folder and file | none: the check is done by hand | promote-memory | Checks one agent memory against the repository; exit 0 means clean |
 | `promote_memory.target_dir` | folder, relative to the root | `docs/retrospection` | promote-memory | Where promoted pages go, in `YYYY/MM/` below it |
 | `fix_ci.regenerate_commands` | list of shell commands | none: the agent finds the command | fix-ci | Commands that regenerate committed generated files a CI check compares |
@@ -1558,6 +1559,7 @@ docs:
   root: docs
   schema: docs/.frontmatter-schema.yaml
   stale_after_days: 180
+  promoted_statuses: [approved, active]
 promote_memory:
   lint_command: "<your memory lint> --dir {dir} --file {file}"
   target_dir: docs/retrospection

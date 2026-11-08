@@ -1,9 +1,25 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scanScars } from "../scripts/scar-lint/check-descarring-scars";
 
 const fix = (name: string) =>
   join(import.meta.dir, "fixtures", "scar-lint", name);
+/** A repository whose configuration is `yaml`, for a run that reads it. */
+function configured(yaml: string): string {
+  const root = mkdtempSync(join(tmpdir(), "scar-lint-"));
+  mkdirSync(join(root, ".config"));
+  writeFileSync(join(root, ".config", "jig.yaml"), yaml);
+  return root;
+}
+/**
+ * No test reads the configuration of the checkout it runs in: the lint reads
+ * `docs.promoted_statuses` from the repository at JIG_CONSUMER_ROOT, and the
+ * suite's preload points JIG_OVERLAY at a fixture overlay.
+ */
+const bare = configured("");
 function run(args: string[], env: Record<string, string> = {}) {
   const result = Bun.spawnSync(
     [
@@ -12,12 +28,26 @@ function run(args: string[], env: Record<string, string> = {}) {
       ...args,
     ],
     {
-      env: { ...process.env, ALLOWLIST: "", ...env },
+      env: {
+        ...process.env,
+        ALLOWLIST: "",
+        JIG_OVERLAY: "",
+        JIG_CONSUMER_ROOT: bare,
+        ...env,
+      },
       stdout: "pipe",
       stderr: "pipe",
     },
   );
-  return { code: result.exitCode, out: result.stdout.toString() };
+  const [out, err] = [result.stdout.toString(), result.stderr.toString()];
+  return {
+    code: result.exitCode,
+    out,
+    err,
+    exitCode: result.exitCode,
+    stdout: out,
+    stderr: err,
+  };
 }
 
 const cases: [number, string, string][] = [
@@ -84,7 +114,7 @@ test("a full-tree run with drafts in it stays plain OK", () => {
   expect(out).not.toContain("NOTE —");
   const clean = run([], {
     DOCS_DIR: join(import.meta.dir, "fixtures", "scar-lint"),
-    ALLOWLIST: "scarred.md",
+    ALLOWLIST: "scarred.md table-reviewer.md bare-reviewer.md",
   });
   expect(clean.code).toBe(0);
   expect(clean.out.trim()).toBe("OK — no scars in approved docs");
@@ -104,4 +134,99 @@ test("scanScars masks fenced and inline code, and anchors phrases to list items"
     "1: The value ~~was~~ is.",
     "2: - Addressed the comment.",
   ]);
+});
+
+test("a table's first-cell reviewer attribution is a scar", () => {
+  const result = run([fix("table-reviewer.md")]);
+  expectSpawnExit(result, 1);
+  expect(result.out).toContain(
+    "| Reviewer: please clarify the cache TTL | open |",
+  );
+});
+
+test("a reviewer attribution opening a paragraph, and a review bot's handle, are scars", () => {
+  const result = run([fix("bare-reviewer.md")]);
+  expectSpawnExit(result, 1);
+  expect(result.out).toContain("Reviewer: the cache TTL needs a unit.");
+  expect(result.out).toContain(
+    "Raised by coderabbitai[bot] on the first round.",
+  );
+});
+
+test("a bot's handle in a list item is a scar", () => {
+  expect(scanScars("- Raised by coderabbitai[bot] once.")).toEqual([
+    "1: - Raised by coderabbitai[bot] once.",
+  ]);
+});
+
+test("a reviewer named as a role, a label or a field is not a scar", () => {
+  const result = run([fix("mentions-reviewer.md")]);
+  expectSpawnExit(result, 0);
+  expect(result.out.trim()).toBe("OK — no scars in approved docs");
+});
+
+test("a status the lint is not told is promoted is not scanned", () => {
+  const result = run([fix("active-scarred.md")]);
+  expectSpawnExit(result, 0);
+  expect(result.out).toContain(
+    "NOT SCANNED — 1 named file(s) were not scanned",
+  );
+  expect(result.out).toContain("(their status is not approved)");
+});
+
+test("PROMOTED_STATUSES names the statuses that are scanned", () => {
+  const env = { PROMOTED_STATUSES: "approved active" };
+  const scarred = run([fix("active-scarred.md")], env);
+  expectSpawnExit(scarred, 1);
+  expect(scarred.out).toContain("SCAR ");
+  expect(scarred.out).toContain("- Addressed the reviewer's concern");
+  expect(scarred.out).toContain("1 approved or active doc(s) carry");
+  const clean = run([fix("active-clean.md"), fix("draft.md")], env);
+  expectSpawnExit(clean, 0);
+  expect(clean.out).toContain("OK — no scars in approved or active docs");
+  expect(clean.out).toContain("(their status is not approved or active)");
+  expect(clean.out).toContain(`    ${fix("draft.md")}`);
+  expectSpawnExit(run([fix("scarred.md")], env), 1);
+});
+
+test("docs.promoted_statuses in the repository's configuration is read", () => {
+  const root = configured("docs:\n  promoted_statuses: [approved, active]\n");
+  const result = run([fix("active-scarred.md")], {
+    JIG_CONSUMER_ROOT: root,
+    HOME: root,
+  });
+  expectSpawnExit(result, 1);
+  expect(result.out).toContain("SCAR ");
+});
+
+test("PROMOTED_STATUSES takes precedence over the configuration", () => {
+  const root = configured("docs:\n  promoted_statuses: [approved, active]\n");
+  const result = run([fix("active-scarred.md")], {
+    JIG_CONSUMER_ROOT: root,
+    HOME: root,
+    PROMOTED_STATUSES: "approved",
+  });
+  expectSpawnExit(result, 0);
+  expect(result.out).toContain("NOT SCANNED");
+});
+
+test("a repository that sets nothing keeps approved as the only promoted status", () => {
+  const root = configured("docs:\n  stale_after_days: 30\n");
+  const result = run([fix("active-scarred.md"), fix("scarred.md")], {
+    JIG_CONSUMER_ROOT: root,
+    HOME: root,
+  });
+  expectSpawnExit(result, 1);
+  expect(result.out).toContain(`SCAR ${fix("scarred.md")}`);
+  expect(result.out).not.toContain(`SCAR ${fix("active-scarred.md")}`);
+});
+
+test("a malformed docs.promoted_statuses is refused with exit 2", () => {
+  const root = configured("docs:\n  promoted_statuses: approved\n");
+  const result = run([fix("clean.md")], {
+    JIG_CONSUMER_ROOT: root,
+    HOME: root,
+  });
+  expectSpawnExit(result, 2);
+  expect(result.err).toContain("docs.promoted_statuses must be a list");
 });
