@@ -633,7 +633,9 @@ export async function settleOwnClaims(
   });
   // A pull request whose claims, or any trusted marker, did not read owes what it owed: its rows stay.
   const unread = new Set<string>([
-    ...[...claims].filter(([, read]) => !read.ok).map(([pr]) => `PR #${pr}`),
+    ...[...claims]
+      .filter(([, read]) => unreadClaims(read) !== null)
+      .map(([pr]) => `PR #${pr}`),
     ...merged
       .filter(
         (pr) =>

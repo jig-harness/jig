@@ -888,8 +888,9 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     ...base,
     ...classified,
     ...(classified.class === "unplaced" &&
-    ledger.driver.exit === DRIVE_EXIT.HITL_PARKED &&
-    (park === undefined || "unreadable" in park)
+    ((ledger.driver.exit === DRIVE_EXIT.HITL_PARKED &&
+      (park === undefined || "unreadable" in park)) ||
+      (forge.base !== undefined && "unreadable" in forge.base))
       ? { readFailed: true as const }
       : {}),
     evidence: {

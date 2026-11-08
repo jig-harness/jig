@@ -274,3 +274,42 @@ describe("the failure ledger's notifications", () => {
     expect(failureCauses("o/a", "/a", [failingB], machine)).toEqual([]);
   });
 });
+
+describe("a successful claim listing holding a trusted claim that does not read", () => {
+  it("keeps the failure rows of its pull request, as a listing that failed does", async () => {
+    const { settleOwnClaims } = await import("../lib/shared-launches.ts");
+    const root = stateRootForTest();
+    const book = actionBook("o/r", SETTINGS, () => undefined, root);
+    const end = {
+      key: "claim-end PR #9 comment 5",
+      kind: "claim-end" as const,
+      target: "PR #9",
+    };
+    book.ran(end, "the forge refused it");
+    const bad = {
+      id: 6,
+      login: "drive-bot",
+      trusted: true,
+      says: { ok: false, failure: { reason: "damaged body" } },
+    };
+    const claims = new Map([[9, { ok: true, value: [bad] }]]);
+    const ctx = {
+      slug: "o/r",
+      host: "h",
+      owner: true,
+      login: "drive-bot",
+      root,
+    };
+    await settleOwnClaims(
+      ctx as never,
+      claims as never,
+      [],
+      [],
+      new Map(),
+      new Date().toISOString(),
+      undefined,
+      book,
+    );
+    expect(readFailures("o/r", root).map((r) => r.key)).toEqual([end.key]);
+  });
+});
