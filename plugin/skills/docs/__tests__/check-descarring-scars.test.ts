@@ -333,3 +333,30 @@ test("scar lint: only a list numbered 1 interrupts a paragraph", () => {
     scanScars("Use `the handle\n1. coderabbitai[bot]` here."),
   ).toHaveLength(1);
 });
+
+test("scar lint: a later item of an ordered list ends the previous item", () => {
+  expect(
+    scanScars("1. Use `the handle\n2. coderabbitai[bot]` here."),
+  ).toHaveLength(1);
+  expect(
+    scanScars("1) Use `the handle\n2) coderabbitai[bot]` here."),
+  ).toHaveLength(1);
+});
+
+test("scar lint: a block boundary inside a quote ends the paragraph", () => {
+  expect(
+    scanScars("> Use `the handle\n>\n> coderabbitai[bot]` here."),
+  ).toHaveLength(1);
+  expect(
+    scanScars("> Use `the handle\n> # Heading\n> coderabbitai[bot]` here."),
+  ).toHaveLength(1);
+});
+
+test("scar lint: text after a multiline span opens no prefix", () => {
+  expect(
+    scanScars("Use `the value\nsuffix` | Reviewer: the approver. | yes |"),
+  ).toEqual([]);
+  expect(
+    scanScars("Use `the value\nsuffix` - Addressed: normal prose."),
+  ).toEqual([]);
+});

@@ -93,33 +93,55 @@ function maskCode(text: string): string {
       i = end;
     } else {
       const stop = close + (end - open);
-      out += CODE_MASK + text.slice(open, stop).replace(/[^\n]/g, "");
+      // Every physical line the span occupies keeps a mask, so text after the
+      // span's close never reads as the opening of a table row or list item.
+      out +=
+        CODE_MASK +
+        text
+          .slice(open, stop)
+          .replace(/[^\n]+/g, "")
+          .replace(/\n/g, `\n${CODE_MASK}`);
       i = stop;
     }
   }
   return out;
 }
 
-/**
- * A list item marker that interrupts a paragraph: a bullet, or an ordered
- * marker numbered 1. Any other number soft-wraps the paragraph it follows.
- */
-const LIST_ITEM = /^\s*(?:[-*+]|1[.)])\s/;
-/** A blockquote opening a line: a container block of its own. */
-const QUOTE = /^\s{0,3}>/;
+/** A bullet item, or an ordered item numbered 1: opens a list inside a paragraph. */
+const LIST_OPENER = /^\s*(?:[-*+]|1[.)])\s/;
+/** Any ordered item: follows a sibling item of an ordered list. */
+const ORDERED_ITEM = /^\s*\d+[.)]\s/;
+/** Leading blockquote markers, with the content that follows them. */
+const QUOTE_PREFIX = /^(?:\s{0,3}>\s?)+/;
+
+/** A line's content with its blockquote markers removed, and their count. */
+function unquote(raw: string): { content: string; depth: number } {
+  const prefix = QUOTE_PREFIX.exec(raw)?.[0] ?? "";
+  return {
+    content: raw.slice(prefix.length),
+    depth: prefix.split(">").length - 1,
+  };
+}
 
 /**
- * Whether `raw` ends the paragraph above it. A code span runs across the lines
- * of one paragraph, never past a blank line, fence, heading, underline or item.
+ * Whether `raw` ends the paragraph that `first` opened. A code span runs across
+ * the lines of one paragraph, never past a block boundary: judged on each
+ * line's content inside its quote, so a quoted blank line or heading counts, a
+ * deeper quote starts a block of its own, and an ordered item ends a paragraph
+ * that is itself an ordered item whatever its number.
  */
-function endsParagraph(raw: string, inQuote: boolean): boolean {
+function endsParagraph(raw: string, first: string): boolean {
+  const here = unquote(raw);
+  const opened = unquote(first);
+  const content = here.content;
   return (
-    raw.trim() === "" ||
-    (!inQuote && QUOTE.test(raw)) ||
-    /^\s*(```|~~~)/.test(raw) ||
-    BLOCK_BOUNDARY.test(raw) ||
-    EQUALS_UNDERLINE.test(raw) ||
-    LIST_ITEM.test(raw)
+    content.trim() === "" ||
+    here.depth > opened.depth ||
+    /^\s*(```|~~~)/.test(content) ||
+    BLOCK_BOUNDARY.test(content) ||
+    EQUALS_UNDERLINE.test(content) ||
+    LIST_OPENER.test(content) ||
+    (ORDERED_ITEM.test(opened.content) && ORDERED_ITEM.test(content))
   );
 }
 
@@ -128,9 +150,8 @@ function maskParagraph(lines: string[], start: number): string[] {
   const first = lines[start] ?? "";
   // A heading or thematic break is one line: no span opened on it runs on.
   let stop = start + 1;
-  if (!BLOCK_BOUNDARY.test(first)) {
-    const inQuote = QUOTE.test(first);
-    while (stop < lines.length && !endsParagraph(lines[stop] ?? "", inQuote))
+  if (!BLOCK_BOUNDARY.test(unquote(first).content)) {
+    while (stop < lines.length && !endsParagraph(lines[stop] ?? "", first))
       stop++;
   }
   return maskCode(lines.slice(start, stop).join("\n")).split("\n");
