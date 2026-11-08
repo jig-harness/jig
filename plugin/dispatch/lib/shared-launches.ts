@@ -30,7 +30,7 @@
  *   rule, never by a claim alone.
  */
 import { recoveryReservationRefusal } from "./no-cause-stops.ts";
-import { budgeted, sameFacts } from "./recovery-facts.ts";
+import { budgeted, RECOVERY_FACTS, sameFacts } from "./recovery-facts.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import { settledWhy, settlesWithPerson } from "./redrive-settle.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
@@ -181,10 +181,40 @@ function silentHold(
     };
   const refused = refusedOn(pr, latest, "taken over");
   if (refused !== null) return refused;
+  const taken = takenOver(pr, theirs);
+  if (taken !== null) return taken;
   const owner = theirs.findLast((c) => startedDriver(c, pr));
   return owner === undefined
     ? { kind: "none" }
     : { kind: "takeover", claim: owner };
+}
+
+/**
+ * Another host's takeover of a driver no launch started, made on the ledger
+ * facts as they are now and ended: the once-per-ledger takeover is spent, and
+ * only a person settles the ledger until it moves. A takeover that never
+ * executed spent nothing.
+ */
+function takenOver(pr: DrivenPr, theirs: ReadClaim[]): ForeignHold | null {
+  if (pr.evidence.driverGone !== true) return null;
+  const done = theirs.findLast((c) => {
+    const s = c.says.value;
+    return (
+      s.action === "takeover" &&
+      s.facts !== null &&
+      s.facts.startsWith(RECOVERY_FACTS) &&
+      sameFacts(s.facts, factsOf(pr)) &&
+      s.end !== null &&
+      !(s.end.state === "died" && s.end.executed === false)
+    );
+  });
+  return done === undefined
+    ? null
+    : {
+        kind: "refused",
+        claim: done,
+        why: `${claimWords(done)} already took it over on these ledger facts and has ended, leaving its ledger as it was: only a person settles it until its ledger moves`,
+      };
 }
 
 /** Another host's latest launch, when it ended on `drive.ts`'s refusal on the ledger facts as they are now: the stage's answer, never fought. */

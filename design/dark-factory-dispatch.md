@@ -36,7 +36,7 @@ execution line only. Its first [session runtime](../GLOSSARY.md) is Orca
 `jig dispatch` runs one **tick**: it reads records it does not own,
 computes the stages that are wanted and not running, and, when told to,
 starts each one as an agent session. A timer runs the tick every few
-minutes. What is *wanted* is always derived from those records, never from
+minutes. What is _wanted_ is always derived from those records, never from
 the dispatcher's memory. What the dispatcher keeps is what it did and what
 it saw its sessions do (see What the tick keeps, and where): stopping it
 loses nothing, and there is no resident process to supervise: the
@@ -95,23 +95,23 @@ flowchart TD
 Each step, in order, with what it reads, what it writes, and what happens
 when it fails. The phase names are the ones a receipt times.
 
-| Step | Module | Reads | Writes | On failure |
-| --- | --- | --- | --- | --- |
-| Lock | `receipts.ts` | the lock file | the lock, naming this process | held by a live tick: the tick exits and says who holds it |
-| Launch records (`start`) | `tick.ts` | `state.sqlite` | the follow-up outcomes of ended records | one unreadable record withholds every launch, since its slot may be live |
-| Apply state (`start`) | `tick-apply.ts` | the launch records, `tick-index` | the rotation cursor | cursor unwritable: no launches |
-| `open` | `tick-observe.ts` | `gh repo view`, `.config/jig.yaml` on the default branch | none | the repository is refused and reported; the others go on |
-| `tracker` | `tick-observe.ts` | the items assigned in a dispatch state | none | a failed record; no pickups planned |
-| `forge` | `tick-forge.ts` | open pull requests, the login (once per tick), each one's ledger and park answers from its comment listing, the merges in the follow-up window and the markers of each merge whose `updatedAt` moved | the merges' kept marker reads | a failed record; drives and follow-ups not planned |
-| `claims` | `tick-shared.ts` | every host's launch claims, from the same comment listings; on a merge whose ended launches owe their ends, the claims kept at its `updatedAt` | the merges' kept claims | per pull request: a listing that does not read reaches the plan as unknown |
-| `runtime` | `tick-observe.ts` | the runtime's session list, its host-wide listings read once per tick | none | a failed record; nothing is joined |
-| `observe` | `tick-observe.ts` | each running drive's unresolved threads, each waiting session's wall, the change-area catalog | thread samples, a pickup's opened mark, waiting episodes, the owner's serialization holds, and the account's usage-limit wall under `walls/<account>/` | reported as unplaced |
-| `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles | a write the database refuses is a defect: it stops this repository in phase `plan` |
-| `log` | `tick-settle.ts` | the ended launch records, the ledgers | one outcome row per ended record, with its end | reported; the record is kept until its row lands |
-| `apply` | `tick-apply.ts` | each target read again just before its launch | the launch record, the forge claim or marker, the runtime's launch, nudges, notices | per action: refused, reported, tried again next tick |
-| `labels` | `tick-labels.ts` | the ledgers | the state labels on pull requests | per write, reported |
-| `shared` | `tick-shared.ts` | the shared records' reads and writes this turn | none | none |
-| Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit (once, put on every repository's report) | outcome rows for repositories not read, the month files, the line, the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
+| Step                     | Module                                                       | Reads                                                                                                                                                                                                | Writes                                                                                                                                                 | On failure                                                                                                                                                                                                     |
+| ------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lock                     | `receipts.ts`                                                | the lock file                                                                                                                                                                                        | the lock, naming this process                                                                                                                          | held by a live tick: the tick exits and says who holds it                                                                                                                                                      |
+| Launch records (`start`) | `tick.ts`                                                    | `state.sqlite`                                                                                                                                                                                       | the follow-up outcomes of ended records                                                                                                                | one unreadable record withholds every launch, since its slot may be live                                                                                                                                       |
+| Apply state (`start`)    | `tick-apply.ts`                                              | the launch records, `tick-index`                                                                                                                                                                     | the rotation cursor                                                                                                                                    | cursor unwritable: no launches                                                                                                                                                                                 |
+| `open`                   | `tick-observe.ts`                                            | `gh repo view`, `.config/jig.yaml` on the default branch                                                                                                                                             | none                                                                                                                                                   | the repository is refused and reported; the others go on                                                                                                                                                       |
+| `tracker`                | `tick-observe.ts`                                            | the items assigned in a dispatch state                                                                                                                                                               | none                                                                                                                                                   | a failed record; no pickups planned                                                                                                                                                                            |
+| `forge`                  | `tick-forge.ts`                                              | open pull requests, the login (once per tick), each one's ledger and park answers from its comment listing, the merges in the follow-up window and the markers of each merge whose `updatedAt` moved | the merges' kept marker reads                                                                                                                          | a failed record; drives and follow-ups not planned                                                                                                                                                             |
+| `claims`                 | `tick-shared.ts`                                             | every host's launch claims, from the same comment listings; on a merge whose ended launches owe their ends, the claims kept at its `updatedAt`                                                       | the merges' kept claims                                                                                                                                | per pull request: a listing that does not read reaches the plan as unknown                                                                                                                                     |
+| `runtime`                | `tick-observe.ts`                                            | the runtime's session list, its host-wide listings read once per tick                                                                                                                                | none                                                                                                                                                   | a failed record; nothing is joined                                                                                                                                                                             |
+| `observe`                | `tick-observe.ts`                                            | each running drive's unresolved threads, each waiting session's wall, the change-area catalog                                                                                                        | thread samples, a pickup's opened mark, waiting episodes, the owner's serialization holds, and the account's usage-limit wall under `walls/<account>/` | reported as unplaced                                                                                                                                                                                           |
+| `plan`                   | `tick-plan.ts`                                               | everything above, the follow-up outcomes, the idle clock, the nudges                                                                                                                                 | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles                                                                    | a write the database refuses is a defect: it stops this repository in phase `plan`                                                                                                                             |
+| `log`                    | `tick-settle.ts`                                             | the ended launch records, the ledgers                                                                                                                                                                | one outcome row per ended record, with its end                                                                                                         | reported; the record is kept until its row lands                                                                                                                                                               |
+| `apply`                  | `tick-apply.ts`                                              | each target read again just before its launch                                                                                                                                                        | the launch record, the forge claim or marker, the runtime's launch, nudges, notices                                                                    | per action: refused, reported, tried again next tick                                                                                                                                                           |
+| `labels`                 | `tick-labels.ts`                                             | the ledgers                                                                                                                                                                                          | the state labels on pull requests                                                                                                                      | per write, reported                                                                                                                                                                                            |
+| `shared`                 | `tick-shared.ts`                                             | the shared records' reads and writes this turn                                                                                                                                                       | none                                                                                                                                                   | none                                                                                                                                                                                                           |
+| Close (`close`)          | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit (once, put on every repository's report)                                                                                                     | outcome rows for repositories not read, the month files, the line, the receipt                                                                         | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
 
 **A defect stops only its own repository.** Every read and every action
 above turns its expected failures into a record or a refusal on the report.
@@ -387,6 +387,7 @@ guards keep one stage from starting twice:
   leaves, and the report and the notice say whose claim it was. Only the
   owner releases, as it alone notifies, so the release record on its host
   is the only one, and two hosts never release one claim twice.
+
 - **A claim on the forge for every drive launch.** Beside each drive's
   launch record, after the record holds its slot and before the runtime's
   `launch`, the tick posts a launch claim on the pull request, one of the
@@ -398,12 +399,12 @@ guards keep one stage from starting twice:
 
 ### The records it reads
 
-| Record | Read through | What the tick takes from it |
-| --- | --- | --- |
-| The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
-| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels; each pull request's comments listed once per tick and shared by every record read from them, a merge's markers read only when its `updatedAt` moved since they were kept (see One tick, step by step) | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed |
-| The session runtime | in Orca, `orca repo list --json` and `orca worktree ps --json`, each read once per tick for every repository | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
-| The shared records | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts`; the observe phase reads them from the tick's comment listings, a launch's own reads and writes go to the forge | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts) |
+| Record              | Read through                                                                                                                                                                                                                                                                                                                                                                                       | What the tick takes from it                                                                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The tracker         | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today                                                                                                                                                                                                                                                                | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
+| The forge           | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels; each pull request's comments listed once per tick and shared by every record read from them, a merge's markers read only when its `updatedAt` moved since they were kept (see One tick, step by step) | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed                                         |
+| The session runtime | in Orca, `orca repo list --json` and `orca worktree ps --json`, each read once per tick for every repository                                                                                                                                                                                                                                                                                       | which workspace holds which item or pull request, and whether an agent in it is working or waiting                                                                                             |
+| The shared records  | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts`; the observe phase reads them from the tick's comment listings, a launch's own reads and writes go to the forge                                                                                                                                                    | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts)            |
 
 **The tracker.** The interface gains one read, `assignedIssues(identity,
 states)`: the issues assigned to that user in those states, in the pool
@@ -611,36 +612,40 @@ whose session died) draw on one recovery budget per pull request: 3
 attempts in a rolling hour, across accounts and hosts, counted from this
 host's launch records and every host's launch claims by the tag on their
 ledger facts (`no-cause: `, `recovery: `); completing a round does not reset
-it. Once spent, the next such stop needs a person and is notified once with
+it. A follow-up's run again is counted from this host's launch records of the
+pull request, of any stage, but not from another host's claims: a follow-up's
+marker is deleted when its run is released for another, so no shared record of
+that attempt remains, and a drive's recovery attempts on another host do not
+count against it. Once spent, the next such stop needs a person and is notified once with
 the drive's handoff: a no-cause stop as repeated no-cause stops, any other as
 repeated recovery re-drives. A legacy no-exit ledger receives at most one
 automatic attempt, regardless of the budget; a new ledger then follows the
 ordinary budget.
 
-| Ledger says | Class | The tick |
-| --- | --- | --- |
-| running, heartbeat inside the lease window | driven | nothing |
-| running, heartbeat past the lease window | silent | reconciles a confirmed local stop from a released witness or durable pass observations when re-arms are enabled; otherwise takes it over when this machine's launch record or another host's launch claim started it |
-| running, heartbeat past the lease window, no launch having started its driver, which ran on this host and whose run this host shows ended, no takeover of this machine's on these ledger facts having ended, budget available | silent | takes it over on an admitted account, whichever tool armed it; `drive.ts --take-over` decides |
-| running, heartbeat past the lease window, otherwise (the driver's clone on another host, its run not shown ended, a takeover already made on these facts, or the budget spent) | silent | notifies a person once and lists it as waiting |
-| stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
-| stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
-| stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies per stop, with the exit and the drive's handoff |
-| stopped `14` (stalled) or `21` (CI still failing with its repair passes spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit | stale | re-arms on any admitted account; a stall that left work in its tree, or whose stop never measured it, re-arms only in that tree: on another host it is left to that host, and with no open workspace holding it here, a person is told |
-| stopped `14` or `21`, this machine or another host already having re-driven that head with that exit, however that launch ended | needs a person | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does |
-| stopped `15` (a pass reached its deadline with its restarts spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit, budget available | stale | re-arms on any admitted account; a stop that measured work left in its tree re-arms only in that tree, and with no open workspace holding it here, a person is told. A tree on another host is left to that host: with no dispatcher there, nothing re-drives it and no host notifies; this host reports it quiet, and `jig ask` names the re-drive it waits on, or, where no dispatcher is known, a person's re-arm |
-| stopped `1`, the pull request conflicting with its base, neither this machine's records nor another host's launch claims holding a re-drive of its head and its base branch's head, budget available | stale | re-arms on any admitted account, so the drive's conflict-resolve round runs |
-| stopped `15`, or `1` on a conflicting pull request, already re-driven at that change however that launch ended, or the budget spent | needs a person | notifies per stop, with the exit and the drive's handoff, or that the recovery budget is spent |
-| stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
-| stopped with an explicit person's-stop record, or `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
-| stopped with no exit and no person's-stop record, budget available | re-armable | re-arms on an admitted account; a legacy ledger gets at most one attempt |
-| stopped with no exit and no person's-stop record, budget spent | stopped-unknown: repeated no-cause stops, needs a person | notifies once with the drive's handoff and says the drive stopped repeatedly with no recorded cause |
-| stopped `16` (quota-parked) | re-armable | re-arms on an admitted account other than the one its launch record names, when one does, or after the wall's reset |
-| stopped `8` (parked), every parked item answered | re-armable | re-arms on any admitted account |
-| stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive) | re-armable | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to |
-| stopped `8`, an item unanswered | parked | notifies per park |
-| stopped `11` or `13` | refused | nothing; another driver holds it |
-| stopped on any other exit (`1` on a pull request that does not conflict, `2`, `6`, `7`, `12`, or one this table does not know) | needs a person | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does |
+| Ledger says                                                                                                                                                                                                                   | Class                                                    | The tick                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| running, heartbeat inside the lease window                                                                                                                                                                                    | driven                                                   | nothing                                                                                                                                                                                                                                                                                                                                                                                                              |
+| running, heartbeat past the lease window                                                                                                                                                                                      | silent                                                   | reconciles a confirmed local stop from a released witness or durable pass observations when re-arms are enabled; otherwise takes it over when this machine's launch record or another host's launch claim started it                                                                                                                                                                                                 |
+| running, heartbeat past the lease window, no launch having started its driver, which ran on this host and whose run this host shows ended, no takeover of this machine's on these ledger facts having ended, budget available | silent                                                   | takes it over on an admitted account, whichever tool armed it; `drive.ts --take-over` decides                                                                                                                                                                                                                                                                                                                        |
+| running, heartbeat past the lease window, otherwise (the driver's clone on another host, its run not shown ended, a takeover already made on these facts, or the budget spent)                                                | silent                                                   | notifies a person once and lists it as waiting                                                                                                                                                                                                                                                                                                                                                                       |
+| stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified                                                                                                | stale                                                    | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head                                                                                                                                                                                                                                                                                            |
+| stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head           | stale                                                    | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there                                                                                                                                                                                                                                                         |
+| stopped `9`, this machine or another host already having re-driven that change, however that launch ended                                                                                                                     | needs a person                                           | notifies per stop, with the exit and the drive's handoff                                                                                                                                                                                                                                                                                                                                                             |
+| stopped `14` (stalled) or `21` (CI still failing with its repair passes spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit                  | stale                                                    | re-arms on any admitted account; a stall that left work in its tree, or whose stop never measured it, re-arms only in that tree: on another host it is left to that host, and with no open workspace holding it here, a person is told                                                                                                                                                                               |
+| stopped `14` or `21`, this machine or another host already having re-driven that head with that exit, however that launch ended                                                                                               | needs a person                                           | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does                                                                                                                                                                                                                                                                                               |
+| stopped `15` (a pass reached its deadline with its restarts spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit, budget available            | stale                                                    | re-arms on any admitted account; a stop that measured work left in its tree re-arms only in that tree, and with no open workspace holding it here, a person is told. A tree on another host is left to that host: with no dispatcher there, nothing re-drives it and no host notifies; this host reports it quiet, and `jig ask` names the re-drive it waits on, or, where no dispatcher is known, a person's re-arm |
+| stopped `1`, the pull request conflicting with its base, neither this machine's records nor another host's launch claims holding a re-drive of its head and its base branch's head, budget available                          | stale                                                    | re-arms on any admitted account, so the drive's conflict-resolve round runs                                                                                                                                                                                                                                                                                                                                          |
+| stopped `15`, or `1` on a conflicting pull request, already re-driven at that change however that launch ended, or the budget spent                                                                                           | needs a person                                           | notifies per stop, with the exit and the drive's handoff, or that the recovery budget is spent                                                                                                                                                                                                                                                                                                                       |
+| stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over)                                                                                           | done                                                     | nothing; a merge is the follow-up's                                                                                                                                                                                                                                                                                                                                                                                  |
+| stopped with an explicit person's-stop record, or `18` or `19` (a mailbox stop or pause)                                                                                                                                      | stopped by a person                                      | nothing: a person's stop is never re-armed                                                                                                                                                                                                                                                                                                                                                                           |
+| stopped with no exit and no person's-stop record, budget available                                                                                                                                                            | re-armable                                               | re-arms on an admitted account; a legacy ledger gets at most one attempt                                                                                                                                                                                                                                                                                                                                             |
+| stopped with no exit and no person's-stop record, budget spent                                                                                                                                                                | stopped-unknown: repeated no-cause stops, needs a person | notifies once with the drive's handoff and says the drive stopped repeatedly with no recorded cause                                                                                                                                                                                                                                                                                                                  |
+| stopped `16` (quota-parked)                                                                                                                                                                                                   | re-armable                                               | re-arms on an admitted account other than the one its launch record names, when one does, or after the wall's reset                                                                                                                                                                                                                                                                                                  |
+| stopped `8` (parked), every parked item answered                                                                                                                                                                              | re-armable                                               | re-arms on any admitted account                                                                                                                                                                                                                                                                                                                                                                                      |
+| stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive)                                                                                       | re-armable                                               | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to                                                                                                                                                                                                                                                                                                                                         |
+| stopped `8`, an item unanswered                                                                                                                                                                                               | parked                                                   | notifies per park                                                                                                                                                                                                                                                                                                                                                                                                    |
+| stopped `11` or `13`                                                                                                                                                                                                          | refused                                                  | nothing; another driver holds it                                                                                                                                                                                                                                                                                                                                                                                     |
+| stopped on any other exit (`1` on a pull request that does not conflict, `2`, `6`, `7`, `12`, or one this table does not know)                                                                                                | needs a person                                           | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does                                                                                                                                                                                                                                                                                               |
 
 The tick reads every pull request merged after the date the follow-up
 stage was switched on for the repository (`followup_since` in the machine
@@ -908,14 +913,14 @@ item's state.
 
 The tick reaches the runtime only through these methods:
 
-| Method | What it does |
-| --- | --- |
-| `sessions(repo)` | the workspaces and their agents, joined to items and pull requests, with each agent's id and state and each workspace's comment and unread mark |
-| `openWorkspace(...)` | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists |
+| Method                                               | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sessions(repo)`                                     | the workspaces and their agents, joined to items and pull requests, with each agent's id and state and each workspace's comment and unread mark                                                                                                                                                                                                                                                                                                                                              |
+| `openWorkspace(...)`                                 | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists                                                                                                                                                                                                                                                                                                                                                                                           |
 | `launch(workspace, stage, account, key, sessionId?)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id. `key` is the launch record's token: a second call with a key already launched starts no second session. `sessionId`, given for an interactive session, is the vendor session id the tick minted and keeps on the launch record (see Control), distinct from the agent's id and the key; a launch that cannot carry it records no wall and gets no nudge |
-| `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
-| `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting, its screen and attachment re-read in the same call just before the send |
-| `retire(workspace, expected)` | the repository's notices workspace removed with its terminals and branch, once a re-read just before, under the comment lock, finds the comment and unread mark the tick decided on |
+| `notify(target, message)`                            | a message that reaches a person; its receipt carries the target's comment as written                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `steer(session, nudge)`                              | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting, its screen and attachment re-read in the same call just before the send                                                                                                                                                                                                                                                                                                                         |
+| `retire(workspace, expected)`                        | the repository's notices workspace removed with its terminals and branch, once a re-read just before, under the comment lock, finds the comment and unread mark the tick decided on                                                                                                                                                                                                                                                                                                          |
 
 Each returns the runtime's receipt, and each, a terminal-screen read for
 `steer` included, runs under a deadline and is cancelled past it: its
@@ -942,7 +947,7 @@ implementation:
 - `sessions` from `orca worktree ps --json`, which carries each
   workspace's comment and unread mark (`comment`, `unread`);
   that `orca agent launch`'s answer names the agent by the id `orca
-  worktree ps --json` reports it under is checked when the pickup stage is
+worktree ps --json` reports it under is checked when the pickup stage is
   built, and until it does, interactive sessions are not launched, since
   their launch records could not be joined to their agents;
 - `openWorkspace` as `orca worktree create` with the pull request or issue
@@ -951,16 +956,16 @@ implementation:
   Jig, not from the plugin, so the installed dispatcher cannot call it.
   Its workspace rules (branch selection, an existing checkout of the
   branch first, branch correction and setup, which a bare `orca worktree
-  create` does not do) live in the plugin, in
+create` does not do) live in the plugin, in
   `plugin/shared/orca-workspace/open.ts`, and the tool calls that code, so
   the pickups in step 4 reuse it rather than a copy;
 - `launch` for a **headless pass** (a drive re-arm or takeover, a
   follow-up) as
   `orca terminal create --worktree <selector> --title <tab title> --command
-  <wrapper>` (the title as Naming what it starts gives it), the account's configuration directory set in the command's
+<wrapper>` (the title as Naming what it starts gives it), the account's configuration directory set in the command's
   environment (below); for an **interactive session** (a pickup) as
   `orca agent launch --agent <id> --worktree <selector>
-  --prompt "<skill> <key>"`, with the model and effort from the item's
+--prompt "<skill> <key>"`, with the model and effort from the item's
   route where the repository declares `routing`, bound to the account as a
   headless pass is (below), and with `sessionId` passed to the agent where
   the launch can carry it: `orca agent launch` takes no session id, so the
@@ -973,13 +978,13 @@ implementation:
   atomically before it starts the stage, so a second terminal for a record
   already claimed exits without starting it, and a retry relaunches the
   wrapper under the same record. For an interactive session, that `orca
-  agent launch --retry-launch` retries by a key the adapter passes it,
+agent launch --retry-launch` retries by a key the adapter passes it,
   rather than starting a second agent, is checked when the pickup stage is
   built, and until it does, a lost interactive launch is not retried.
-  The launched terminal is recorded as a *run tab*
+  The launched terminal is recorded as a _run tab_
   (`plugin/shared/orca-tabs.ts`): its handle and the PID and start of the
   login shell Orca reports for it. The wrapper closes it through `orca
-  terminal close --terminal` (never the whole tab, so a pane a person added
+terminal close --terminal` (never the whole tab, so a pane a person added
   beside it stays) once the stage ends with nothing for a person,
   while the shell is still alive (Orca no longer closes a tab whose shell
   has exited by its handle), and a launch closes the earlier idle run tabs
@@ -997,9 +1002,9 @@ implementation:
   never launches an agent, its comment naming the item or pull request each
   message is about and the workspace its stage ran in. A new one runs no
   create hook and has its first terminal closed (`orca terminal close
-  --all`). Once a tick's
+--all`). Once a tick's
   messages are sent, the tick removes it (`orca worktree rm
-  --delete-branch`) when it has stayed read for `dispatch.notices_linger`
+--delete-branch`) when it has stayed read for `dispatch.notices_linger`
   (one hour by default; the first tick that finds it read records when),
   or is still unread with every cause it carries gone, on a tick that read
   every record whole; never one written that tick, nor one holding a
@@ -1011,8 +1016,8 @@ implementation:
   terminal's screen is read for the checks in Control. Orca reaches a
   running agent's terminal by the id `orca worktree ps --json` reports:
   that id is the terminal's tab and pane (`<tabId>:<leafId>`), which `orca
-  terminal list --json` names beside each terminal's handle; `orca terminal
-  read --screen --json` returns the rendered screen (its `source` says
+terminal list --json` names beside each terminal's handle; `orca terminal
+read --screen --json` returns the rendered screen (its `source` says
   whether it is the screen, and `draft` holds text in Orca's composer), and
   `orca terminal send --text <nudge> --enter` types it. Orca reports no
   person attached to a terminal; the nearest it reports is the workspace a
@@ -1032,10 +1037,10 @@ same strings, so a later runtime names things as Orca does:
 
 - **The name** of a workspace the dispatcher creates: a short mark, the
   stage, the key (`⚙ dispatched · pickup #123`, `⚙ dispatched · rearm
-  #456`, `⚙ dispatched · followup #789`; the notices workspace is
+#456`, `⚙ dispatched · followup #789`; the notices workspace is
   `⚙ dispatched · notices`). It reads at a glance and a search for the
   mark finds every one. On Orca it is the `--name` of `orca worktree
-  create`, which Orca shows as the workspace's name and makes its folder's
+create`, which Orca shows as the workspace's name and makes its folder's
   name from; the branch is still the one the branch rule names.
 - **The mark** in the workspace's comment: the name and the launch
   record's id (`⚙ dispatched · rearm #456 · launch <id>`), on a line of its
@@ -1558,18 +1563,18 @@ records `done` after its pull request merged is converged, a session that
 met a wall and then finished is classed by how it finished, and a driver
 replaced by a takeover is stalled, not refused.
 
-| Class | Stage answers placed in it |
-| --- | --- |
-| converged | a drive's convergence (`drive.ts` exit `0`); a pickup's or follow-up's recorded result `done` |
-| merged | a drive or pickup whose pull request merged while it ran (exit `5`, merged); never a follow-up, which starts after the merge |
-| quota wall | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood |
-| parked for a person | a park (exit `8`); a follow-up pass that stopped on a question for a person |
-| stalled | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over` |
-| died | a process gone without an exit; an interactive session that ended with no result |
-| refused | a stage's own refusal or a stop it was given: exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; exit `5` on a closed pull request; an item already claimed; a person's `drives.ts --stop` |
-| gates failed | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`, `21`; a recorded result `failed` |
-| double claim | used by event rows only |
-| unknown | anything not placed above, with its last state |
+| Class               | Stage answers placed in it                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| converged           | a drive's convergence (`drive.ts` exit `0`); a pickup's or follow-up's recorded result `done`                                                                                         |
+| merged              | a drive or pickup whose pull request merged while it ran (exit `5`, merged); never a follow-up, which starts after the merge                                                          |
+| quota wall          | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood                                                  |
+| parked for a person | a park (exit `8`); a follow-up pass that stopped on a question for a person                                                                                                           |
+| stalled             | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over`                                                         |
+| died                | a process gone without an exit; an interactive session that ended with no result                                                                                                      |
+| refused             | a stage's own refusal or a stop it was given: exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; exit `5` on a closed pull request; an item already claimed; a person's `drives.ts --stop` |
+| gates failed        | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`, `21`; a recorded result `failed`                                                                   |
+| double claim        | used by event rows only                                                                                                                                                               |
+| unknown             | anything not placed above, with its last state                                                                                                                                        |
 
 The reason column is what tells a conflict from a pass deadline within
 "gates failed", or a person's stop from a refusal within "refused", and
@@ -1729,7 +1734,7 @@ where a person approves the change: a cap, an expectation, a skill's step.
 - **The finding.** `kind: error`, `severity: medium`, its class
   `dispatch-recurring-<class>` (the outcome class in kebab case), its target
   the dispatcher as a Jig tool (`{"scope": "tool", "tool": "jig", "name":
-  "dispatch"}`). So it is escalated only by `review-reflections` run in Jig,
+"dispatch"}`). So it is escalated only by `review-reflections` run in Jig,
   by a person, and no unattended session escalates a recurrence into a
   repository's tracker; moving it to a repository's scaffolding is a
   person's call in the review. Its description gives the repository, the
@@ -1993,56 +1998,56 @@ One pull request each, in this order; each is usable on its own.
    database. Usable alone: a stop between two writes no longer needs a
    repair at the next tick.
 10. **Labels as the visible protocol.** The label set under the
-   repository's prefix (see Labels), off by default; the open and merged
-   listings carry the labels where they are on; the projection after the
-   plan, one write per pull request whose labels disagree, counted in the
-   receipt; `drive` arming a pull request with no ledger once per head
-   commit, and `hold` keeping every stage off its pull request;
-   `only_labeled`; `jig install dispatch --repo` creating the missing
-   labels; the morning report's counts by label. Tests: a state label
-   changed by hand carries the ledger's label again after one tick; a
-   `drive` label on a pull request with no ledger gets one drive across
-   three ticks and becomes the state label once the ledger exists; a
-   `hold` keeps a re-armable drive from being re-armed and the receipt
-   says so; with `only_labeled`, an unlabelled pull request with a ledger
-   is never read or launched; with the labels off, no label is read or
-   written. Waits on step 3. Usable alone: a person sees from a phone what
-   the dispatcher holds each pull request as, adopts one with a label and
-   stands the dispatcher down from another.
+    repository's prefix (see Labels), off by default; the open and merged
+    listings carry the labels where they are on; the projection after the
+    plan, one write per pull request whose labels disagree, counted in the
+    receipt; `drive` arming a pull request with no ledger once per head
+    commit, and `hold` keeping every stage off its pull request;
+    `only_labeled`; `jig install dispatch --repo` creating the missing
+    labels; the morning report's counts by label. Tests: a state label
+    changed by hand carries the ledger's label again after one tick; a
+    `drive` label on a pull request with no ledger gets one drive across
+    three ticks and becomes the state label once the ledger exists; a
+    `hold` keeps a re-armable drive from being re-armed and the receipt
+    says so; with `only_labeled`, an unlabelled pull request with a ledger
+    is never read or launched; with the labels off, no label is read or
+    written. Waits on step 3. Usable alone: a person sees from a phone what
+    the dispatcher holds each pull request as, adopts one with a label and
+    stands the dispatcher down from another.
 11. **Name what the dispatcher starts.** The naming convention in the
-   runtime interface (see Naming what it starts): a workspace the
-   dispatcher creates named for its stage and key, with the mark and the
-   launch record's id as its comment; a reused one keeping its name, the
-   mark added to its comment once at launch; the terminal tab and the
-   notices workspace named as the dispatcher's; the mark kept on the
-   launch record and through a notification's rewrite of the comment; the
-   morning report's dispatched workspaces, by the mark on their launch
-   records, with the name each carries now. Tests: a pickup, a re-arm and
-   a follow-up each open a workspace named with the mark, the stage and
-   the key, or mark the one they reuse, under a tab that names the
-   dispatcher; a workspace renamed after its launch is still listed by the
-   morning report; a notification keeps the mark; a mark Orca refuses to
-   write leaves the launch as it was. Waits on step 3. Usable alone: a
-   person tells a dispatched workspace from their own at a glance on the
-   board.
+    runtime interface (see Naming what it starts): a workspace the
+    dispatcher creates named for its stage and key, with the mark and the
+    launch record's id as its comment; a reused one keeping its name, the
+    mark added to its comment once at launch; the terminal tab and the
+    notices workspace named as the dispatcher's; the mark kept on the
+    launch record and through a notification's rewrite of the comment; the
+    morning report's dispatched workspaces, by the mark on their launch
+    records, with the name each carries now. Tests: a pickup, a re-arm and
+    a follow-up each open a workspace named with the mark, the stage and
+    the key, or mark the one they reuse, under a tab that names the
+    dispatcher; a workspace renamed after its launch is still listed by the
+    morning report; a notification keeps the mark; a mark Orca refuses to
+    write leaves the launch as it was. Waits on step 3. Usable alone: a
+    person tells a dispatched workspace from their own at a glance on the
+    board.
 12. **Serialize contended pull requests.** `serialize: true` on an area of
-   the change-area catalog, validated like the other fields; each open
-   pull request's changed files read once per tick; the groups by
-   serialized area, their order and their leaders (see Serialized areas);
-   a held pull request's re-arm, takeover and re-drive reported as held,
-   its state label `held`, and an event row when its hold begins and
-   ends; `history.ts --propose-serialize` printing the catalog lines for
-   the hotspots one area holds. Tests: three converged pull requests on one
-   serialized area, all conflicting after a merge to main, get one
-   re-drive per tick in the fixed order, the other two reported held with
-   no launch; when the leader merges, the next tick promotes the next and
-   re-drives it once; a pull request outside every serialized area is
-   driven beside a held group, and a person's drive on a held pull request
-   is reported, not stopped; the history report with
-   `--propose-serialize` prints a catalog line for a hotspot and writes
-   nothing. Waits on steps 7 and 10. Usable alone: a night of pull
-   requests that all touch the migrations no longer re-drives each of them
-   after every merge.
+    the change-area catalog, validated like the other fields; each open
+    pull request's changed files read once per tick; the groups by
+    serialized area, their order and their leaders (see Serialized areas);
+    a held pull request's re-arm, takeover and re-drive reported as held,
+    its state label `held`, and an event row when its hold begins and
+    ends; `history.ts --propose-serialize` printing the catalog lines for
+    the hotspots one area holds. Tests: three converged pull requests on one
+    serialized area, all conflicting after a merge to main, get one
+    re-drive per tick in the fixed order, the other two reported held with
+    no launch; when the leader merges, the next tick promotes the next and
+    re-drives it once; a pull request outside every serialized area is
+    driven beside a held group, and a person's drive on a held pull request
+    is reported, not stopped; the history report with
+    `--propose-serialize` prints a catalog line for a hotspot and writes
+    nothing. Waits on steps 7 and 10. Usable alone: a night of pull
+    requests that all touch the migrations no longer re-drives each of them
+    after every merge.
 
 ## Left out
 

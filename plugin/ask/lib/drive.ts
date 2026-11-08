@@ -72,6 +72,7 @@ import {
   readComments,
 } from "./forge.ts";
 import { driveRow, type DriveRow } from "./local.ts";
+import { takeoverSettled } from "./drive-takeover.ts";
 import {
   type AskContext,
   dispatcherReads,
@@ -857,10 +858,22 @@ function driveWait(
         "the pull request could not be read; its head and CI hold are unknown",
     };
   if (reads.pull.state !== "OPEN") return "none";
-  if (facts.presence?.gone === true)
-    return {
-      waiting: `its heartbeat is past the lease window and this host shows its driver's run ended (${facts.presence.why}): a dispatcher may take it over, once per ledger state and within the pull request's recovery budget, and drive.ts --take-over decides`,
-    };
+  if (facts.presence?.gone === true && ledger !== null) {
+    const spent = takeoverSettled(
+      reads.pull,
+      reads.records,
+      reads.claims,
+      ctx.host,
+      ledger,
+      parkReading(ledger, reads.comments),
+      facts.base,
+    );
+    return spent === null
+      ? {
+          waiting: `its heartbeat is past the lease window and this host shows its driver's run ended (${facts.presence.why}): a dispatcher may take it over, once per ledger state and within the pull request's recovery budget, and drive.ts --take-over decides`,
+        }
+      : { person: "re-arm", why: spent };
+  }
   const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
   if (diagnosis !== null) return diagnosis;
   return ledger === null

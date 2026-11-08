@@ -111,7 +111,7 @@ function attemptsOf(
   for (const r of records)
     if (
       !cancelled.has(r.record.id) &&
-      isDrive(r.record) &&
+      (isDrive(r.record) || r.record.action === "followup") &&
       r.record.pr === pr.number &&
       (!losingRecords.has(r.record.id) || executed(r))
     )

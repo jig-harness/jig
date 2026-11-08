@@ -17,6 +17,7 @@ import type { DriveEvent } from "../../skills/drive-pr/scripts/lib/state/events.
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { hostLabel } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { settleConflictStops } from "../lib/actions/drive-hold.ts";
+import { foreignHold } from "../lib/shared-launches.ts";
 import { type ReadRecord, readRecord } from "../lib/launches.ts";
 import { noCauseFacts, settleNoCauseStops } from "../lib/no-cause-stops.ts";
 import { classifyLedger, type PrFacts } from "../lib/sources/ledgers.ts";
@@ -440,4 +441,67 @@ describe("jig dispatch --apply re-drives a recovery stop", () => {
       "repeated recovery re-drives: needs a person; 3 recovery attempts within one hour (budget 3)",
     );
   }, 240_000);
+});
+
+describe("another host's takeover of a driver no launch started", () => {
+  const silent = (): DrivenPr => ({
+    ...drive(15, { head: HEAD, mergeable: "MERGEABLE" }),
+    class: "silent",
+    evidence: {
+      generation: 3,
+      exit: null,
+      heartbeat: "2026-11-07T08:00:00.000Z",
+      started: "2026-11-07T07:00:00.000Z",
+      driverGone: true,
+    },
+  });
+  const takeover = (facts: string, end: SharedClaim["says"]) => {
+    const c = claim(5, facts);
+    if (!c.says.ok || !end.ok) throw new Error("fixture");
+    return {
+      ...c,
+      says: {
+        ok: true as const,
+        value: {
+          ...c.says.value,
+          action: "takeover" as const,
+          end: end.value.end,
+        },
+      },
+    };
+  };
+  const facts =
+    "recovery: generation 3, exit null, heartbeat 2026-11-07T08:00:00.000Z";
+  const hold = (c: SharedClaim) =>
+    foreignHold(silent(), { ok: true, value: [c] }, "this-host").kind;
+
+  it("is spent once it ended on the ledger facts as they are", () => {
+    expect(hold(takeover(facts, claim(5, facts).says))).toBe("refused");
+  });
+
+  it("is not spent by one that never executed, or on other ledger facts", () => {
+    const never = claim(5, facts).says;
+    if (!never.ok) throw new Error("fixture");
+    const died = {
+      ok: true as const,
+      value: {
+        ...never.value,
+        end: {
+          state: "died" as const,
+          at: never.value.at,
+          reason: "x",
+          executed: false as const,
+        },
+      },
+    };
+    expect(hold(takeover(facts, died))).toBe("none");
+    expect(
+      hold(
+        takeover(
+          "recovery: generation 2, exit null, heartbeat y",
+          claim(5, facts).says,
+        ),
+      ),
+    ).toBe("none");
+  });
 });
