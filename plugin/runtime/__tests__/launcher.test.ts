@@ -678,9 +678,11 @@ else fs.appendFileSync(${JSON.stringify(log)}, (process.env.JIG_SCHEDULED_UPGRAD
         { stdout: "pipe", stderr: "pipe", timeout: 30000 },
       );
       expectSpawnExit(result, 0);
-      return JSON.parse(
-        readFileSync(log, "utf8").trim().split("\n").at(-1) as string,
-      ) as { outcome: string; detail: string };
+      const raw = readFileSync(log, "utf8").trim().split("\n").at(-1) as string;
+      return {
+        raw,
+        ...(JSON.parse(raw) as { outcome: string; detail: string }),
+      };
     };
     const long = run(
       JSON.stringify({
@@ -692,6 +694,7 @@ else fs.appendFileSync(${JSON.stringify(log)}, (process.env.JIG_SCHEDULED_UPGRAD
     expect(long.outcome).toBe("failed");
     expect(long.detail).toContain("more than the 8192 a job is passed");
     expect(long.detail.length).toBeLessThan(1200);
+    expect(Buffer.byteLength(long.raw, "utf8")).toBeLessThanOrEqual(8192);
     // Escapes make a short detail long once serialized; its tail still shows.
     const escaped = run(
       JSON.stringify({
@@ -702,6 +705,7 @@ else fs.appendFileSync(${JSON.stringify(log)}, (process.env.JIG_SCHEDULED_UPGRAD
     );
     expect(escaped.outcome).toBe("failed");
     expect(escaped.detail).toContain("network down");
+    expect(Buffer.byteLength(escaped.raw, "utf8")).toBeLessThanOrEqual(8192);
     const odd = run(
       JSON.stringify({ outcome: "done", detail: "x", at: "2026-11-07" }),
     );
