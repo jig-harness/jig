@@ -456,3 +456,96 @@ it("refuses contradictory exact labels rather than overriding a facet assignment
   ).rejects.toThrow("disagree");
   expect(state(repo)).toEqual(before);
 });
+
+it("preserves destination edits when a stopped copy resumes", async () => {
+  const { repo, sides, rec } = setup();
+  const writer = pacedWriter(fakeClock());
+  await copy(sides, rec, { apply: true, writer });
+  repo.get("#1").native.type = "feature";
+  const before = state(repo);
+  const report = await copy(sides, rec, { apply: true, writer });
+  expect(state(repo)).toEqual(before);
+  expect(report.conflicts.some((c) => c.issue === "#1")).toBe(true);
+});
+
+it("refuses cross-facet physical overlap", async () => {
+  const { repo, sides, rec } = setup();
+  const a = repo.view({
+    ...LABEL_SECTION,
+    type: { store: "field", field: "A" },
+    size: { store: "field", field: "B" },
+  });
+  const b = repo.view({
+    ...LABEL_SECTION,
+    type: { store: "field", field: "B" },
+    size: { store: "field", field: "A" },
+  });
+  Object.assign(sides, {
+    source: a.tracker,
+    target: b.tracker,
+    sourceFacets: a.facets,
+    targetFacets: b.facets,
+  });
+  rec.record.moved = movedFacets(a.facets, b.facets);
+  const report = await copy(sides, rec, {
+    apply: true,
+    writer: pacedWriter(fakeClock()),
+  });
+  expect(report.problem).toContain("physical store");
+  expect(repo.writes).toEqual([]);
+});
+
+it("refuses ambiguous destination labels before replacing them", async () => {
+  const { repo, sides, rec } = setup();
+  Object.assign(sides, {
+    source: sides.target,
+    target: sides.source,
+    sourceFacets: sides.targetFacets,
+    targetFacets: sides.sourceFacets,
+  });
+  repo.get("#1").native = { type: "bug", priority: 2, size: "small" };
+  repo.get("#1").labels.push("feature");
+  const report = await copy(sides, rec, {
+    apply: true,
+    writer: pacedWriter(fakeClock()),
+  });
+  expect(report.unresolved.some((i) => i.why.includes("destination"))).toBe(
+    true,
+  );
+  expect(repo.writes).toEqual([]);
+});
+
+it("leaves an unmapped source untouched during restore", async () => {
+  const { sides, rec } = setup();
+  const writer = pacedWriter(fakeClock());
+  await copy(sides, rec, { apply: true, writer });
+  await retire(sides, rec, { apply: true, writer });
+  const population = sides.source.openPopulation;
+  sides.source.openPopulation = async () =>
+    (await population()).map((i) => ({ ...i, unmappedFacets: ["type"] }));
+  const report = await restore(sides, rec, { apply: false, writer });
+  expect(
+    report.conflicts.some((c) => c.issue === "#1" && c.why.startsWith("type")),
+  ).toBe(true);
+  expect(
+    report.writes.some(
+      (w) => w.issue === "#1" && w.tracker === "source" && "type" in w.set,
+    ),
+  ).toBe(false);
+});
+
+it("reads a record with equivalent priority label spellings", () => {
+  const { rec } = setup();
+  rec.record.target = {
+    ...rec.record.target,
+    priority: { store: "label", prefix: "priority: " },
+  };
+  rec.record.moved = ["type", "size"];
+  const path = join(tmpdir(), `equivalent-move-${process.pid}.json`);
+  try {
+    writeMoveRecord(path, rec.record);
+    expect(readMoveRecord(path)).toEqual(rec.record);
+  } finally {
+    rmSync(path, { force: true });
+  }
+});

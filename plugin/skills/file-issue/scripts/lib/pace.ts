@@ -112,9 +112,9 @@ export function pacedWriter(
     retries: number;
     maxWaitSec: number;
   } = WRITE_LIMITS,
-  bounds: FacetReadOptions = { deadline: Date.now() + 3_600_000 },
+  bounds?: FacetReadOptions,
 ): Writer {
-  const signal = readSignal(bounds);
+  const signal = readSignal(bounds ?? { deadline: Date.now() + 3_600_000 });
   const recent: number[] = [];
   let attempts = 0;
   /** The `Retry-After` waits this run has honoured. */
@@ -123,23 +123,11 @@ export function pacedWriter(
   async function bounded<T>(task: () => Promise<T>): Promise<T> {
     signal?.throwIfAborted();
     if (signal === undefined) return task();
-    let abort: () => void = () => {
-      /* assigned synchronously by the promise executor */
-    };
-    const stopped = new Promise<never>((_, reject) => {
-      abort = () =>
-        reject(
-          new WriteRefused(
-            "the write run was cancelled or its deadline expired",
-          ),
-        );
-      signal.addEventListener("abort", abort, { once: true });
-    });
-    try {
-      return await Promise.race([task(), stopped]);
-    } finally {
-      signal.removeEventListener("abort", abort);
-    }
+    // Keep ownership until a started effect settles. Cancellation is forwarded
+    // to the effect; racing it would let a write outlive its record lock.
+    const result = await task();
+    signal.throwIfAborted();
+    return result;
   }
 
   /** Wait until fewer than `perMinute` writes fall in the last minute. */
@@ -168,7 +156,8 @@ export function pacedWriter(
         await pace();
         attempts++;
         try {
-          return await bounded(() => run(signal));
+          signal?.throwIfAborted();
+          return await run(signal);
         } catch (err) {
           const wait = retryAfterOf(err);
           if (wait === null || wait > limits.maxWaitSec)

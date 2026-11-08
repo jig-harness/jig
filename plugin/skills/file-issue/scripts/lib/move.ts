@@ -1,3 +1,4 @@
+import { copyPlan } from "./move-copy-plan.ts";
 /**
  * The move between facet stores (design/tracker-facets.md, "Moving a
  * repository from one store to another"): labels to fields, fields to
@@ -277,45 +278,6 @@ function destinationChanges(
   );
 }
 
-/** What the copy does to one issue. */
-function copyPlan(pair: Pair, moved: Facet[], sides: MoveSides) {
-  const gets: Partial<Record<Facet, FacetValue>> = {};
-  /** The source's value of each facet that has one: the copy snapshot. */
-  const copied: Partial<Record<Facet, FacetValue>> = {};
-  const set: Partial<Record<Facet, FacetValue>> = {};
-  const replaces: Partial<Record<Facet, FacetValue>> = {};
-  const unresolved: string[] = [];
-  for (const f of moved) {
-    const values = sourceValues(slotOf(sides.sourceFacets, f), pair.src, f);
-    const d = facetValue(pair.dst, f);
-    if (pair.dst.unmappedFacets?.includes(f)) {
-      unresolved.push(
-        `${f} has an unmapped destination value; map it before moving`,
-      );
-      continue;
-    }
-    if (values.length > 1) {
-      unresolved.push(
-        `${f} has two values in its source (${values.join(", ")})`,
-      );
-      continue;
-    }
-    const v = values[0];
-    if (v === undefined) {
-      gets[f] = d;
-      if (d === null && !(f === "size" && isEpic(pair.src, sides.sourceFacets)))
-        unresolved.push(`${f} has no value in its source`);
-      continue;
-    }
-    gets[f] = v;
-    copied[f] = v;
-    if (d === v) continue;
-    set[f] = v;
-    if (d !== null) replaces[f] = d;
-  }
-  return { gets, copied, set, replaces, unresolved };
-}
-
 /** Keeps the record as each write lands. */
 interface Recording {
   record: MoveRecord;
@@ -333,16 +295,16 @@ async function recordedWrite(
   rec: Recording,
   writer: Writer,
   change: Omit<MoveChange, "at" | "done">,
-  send: () => Promise<void>,
+  send: (signal?: AbortSignal) => Promise<void>,
   verify: () => Promise<void>,
 ): Promise<void> {
-  await writer.write(`update ${change.issue}`, async () => {
+  await writer.write(`update ${change.issue}`, async (signal) => {
     await verify();
     writer.signal?.throwIfAborted();
     const entry: MoveChange = { ...change, at: rec.now(), done: false };
     rec.record.changes.push(entry);
     rec.save(rec.record);
-    await send();
+    await send(signal);
     entry.done = true;
     rec.save(rec.record);
   });
@@ -417,7 +379,7 @@ async function applyWrites(
         rec,
         writer,
         { issue: w.issue, phase, stores: w.stores },
-        () => tracker.updateIssue(w.issue, w.patch),
+        (signal) => tracker.updateIssue(w.issue, w.patch, signal),
         async () => {
           if (w.expected !== undefined)
             await assertUnchanged(
@@ -472,6 +434,16 @@ function copyWrite(
   ];
 }
 
+/** Attach issue keys to the reasons produced by each plan. */
+function planReasons(
+  plans: Array<{ pair: Pair; unresolved: string[]; conflicts: string[] }>,
+  kind: "unresolved" | "conflicts",
+) {
+  return plans.flatMap((p) =>
+    p[kind].map((why) => ({ issue: p.pair.key, why })),
+  );
+}
+
 /** The preview, or a copy run: `apply` writes the destination of every issue that needs it. */
 export async function copy(
   sides: MoveSides,
@@ -486,12 +458,16 @@ export async function copy(
     moved,
     opts.writer.signal,
   );
-  const plans = pairs.map((p) => ({ pair: p, ...copyPlan(p, moved, sides) }));
-  const writes = plans.flatMap((p) => copyWrite(p, sides, rec));
+  const plans = pairs.map((p) => ({
+    pair: p,
+    ...copyPlan(p, moved, sides, rec.record.snapshots[p.key]),
+  }));
+  const writes = plans
+    .filter((p) => p.conflicts.length === 0)
+    .flatMap((p) => copyWrite(p, sides, rec));
+  report.conflicts = planReasons(plans, "conflicts");
   report.gets = plans.map((p) => ({ issue: p.pair.key, values: p.gets }));
-  report.unresolved = plans.flatMap((p) =>
-    p.unresolved.map((why) => ({ issue: p.pair.key, why })),
-  );
+  report.unresolved = planReasons(plans, "unresolved");
   report.writes = shown(writes);
   if (report.unresolved.length > 0 && report.problem === null)
     report.problem = `${new Set(report.unresolved.map((i) => i.issue)).size} open issue(s) are unresolved: give each one value in its source first`;
@@ -690,12 +666,8 @@ export async function retire(
       ? { pair: p, ...plan }
       : { pair: p, ...plan, copyNow: {}, replaces: {}, retire: [] };
   });
-  report.unresolved = plans.flatMap((p) =>
-    p.unresolved.map((why) => ({ issue: p.pair.key, why })),
-  );
-  report.conflicts = plans.flatMap((p) =>
-    p.conflicts.map((why) => ({ issue: p.pair.key, why })),
-  );
+  report.unresolved = planReasons(plans, "unresolved");
+  report.conflicts = planReasons(plans, "conflicts");
   report.again = plans
     .filter((p) => Object.keys(p.copyNow).length > 0)
     .map((p) => p.pair.key);
@@ -759,8 +731,10 @@ function storeNow(
   side: "source" | "target",
   sides: MoveSides,
 ): FacetValue | undefined {
-  if (side === "target") return facetValue(pair.dst, f);
-  const values = sourceValues(slotOf(sides.sourceFacets, f), pair.src, f);
+  const issue = side === "target" ? pair.dst : pair.src;
+  if (issue.unmappedFacets?.includes(f)) return undefined;
+  const slots = side === "target" ? sides.targetFacets : sides.sourceFacets;
+  const values = sourceValues(slotOf(slots, f), issue, f);
   return values.length > 1 ? undefined : (values[0] ?? null);
 }
 

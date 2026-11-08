@@ -599,3 +599,9 @@ one the next run finishes, or a phase that refused to start (nothing was
 written). Exit `1`: a read failed, or a refused write stopped the run,
 which the record shows; run it again once the cause is fixed. Exit `2`: a
 usage error, or a record or target it cannot read.
+
+After switching from custom facet labels, keep the former full facets section
+in a YAML file and pass `check --yes --retired-from former-facets.yaml` to the
+weekly sweep. It resolves retired labels from that section, preserving custom
+prefixes and mappings. Without this option it uses the default label stores.
+Keep the file while clients may still write the former representation.

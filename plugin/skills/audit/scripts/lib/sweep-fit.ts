@@ -12,6 +12,7 @@
  * is a suggestion the repository can decline.
  */
 
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "../../../../shared/config-layers.ts";
@@ -31,28 +32,62 @@ const SCHEDULERS = [
   /(?:^|\/)(?:crontab|[^/]+\.cron)$/,
 ];
 
-/** A direct applying sweep command, excluding comments, report mode and migrations. */
+/** Read only direct Bun invocations and the known status/summary wrapper. */
 function applying(command: unknown): boolean {
   if (typeof command !== "string") return false;
   const lines = command
     .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("#"));
-  if (lines.length !== 1) return false;
-  return lines.some((line) => {
-    const code = line.trim();
-    return (
-      /^(?:exec\s+)?bun\s+/.test(code) &&
-      /(?:^|[/\s])check-fields\.ts["']?(?:\s+check)?\s+--yes(?:\s|$)/.test(
-        code,
-      ) &&
-      !/\bmove\b/.test(code)
-    );
-  });
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("#"));
+  if (lines.length === 1) return sweepCommand(lines[0] ?? "");
+  return statusWrapper(lines) && sweepCommand(lines[1] ?? "");
+}
+
+/** The supported shell wrapper preserves the sweep's exit status. */
+function statusWrapper(lines: string[]): boolean {
+  // A wrapper is evidence only in this order: capture the command's status,
+  // print its output, publish that output, then return the captured status.
+  // Arbitrary shell control flow needs a person's inspection.
+  return (
+    lines.length === 5 &&
+    lines[0] === "status=0" &&
+    /^cat "[^"`]+"$/u.test(lines[2] ?? "") &&
+    /^\{ echo '[^']+'; cat "[^"`]+"; echo '[^']+'; \} >> "[^"`]+"$/u.test(
+      lines[3] ?? "",
+    ) &&
+    lines[4] === 'exit "$status"'
+  );
+}
+
+/** Match an executable's script and allowed arguments without shell evaluation. */
+function sweepCommand(line: string): boolean {
+  // Read the executable's script argument, never a comment or later argument.
+  const m = /^(?:exec\s+)?bun\s+("[^"`]+"|'[^']+'|[^\s'"`]+)\s+(.*)$/u.exec(
+    line,
+  );
+  if (m === null) return false;
+  const script = (m[1] ?? "").replace(/^["']|["']$/g, "");
+  if (script.includes("$(") || script.split("/").at(-1) !== "check-fields.ts")
+    return false;
+  const args = m[2] ?? "";
+  return /^(?:check\s+)?--yes(?: --retired-from [a-zA-Z0-9_./-]+)?(?:\s+>[^|]*\|\| status=\$\?)?$/u.test(
+    args,
+  );
+}
+
+/** Only guards known to permit a scheduled default-branch run count. */
+function scheduleSafe(value: unknown, branch: string | null): boolean {
+  if (value === undefined || value === true) return true;
+  if (typeof value !== "string") return false;
+  const condition = value.trim().replace(/^\$\{\{\s*|\s*\}\}$/g, "");
+  return (
+    condition === "github.event_name == 'schedule'" ||
+    (branch !== null && condition === `github.ref == 'refs/heads/${branch}'`)
+  );
 }
 
 /** A workflow counts only when its parsed schedule runs an unconditional applying job. */
-function scheduledWorkflow(text: string): boolean {
+function scheduledWorkflow(text: string, branch: string | null): boolean {
   const doc = load(text);
   if (
     !isMapping(doc) ||
@@ -74,12 +109,12 @@ function scheduledWorkflow(text: string): boolean {
   return Object.values(doc.jobs).some(
     (job) =>
       isMapping(job) &&
-      job.if === undefined &&
+      scheduleSafe(job.if, branch) &&
       Array.isArray(job.steps) &&
       job.steps.some(
         (step) =>
           isMapping(step) &&
-          step.if === undefined &&
+          scheduleSafe(step.if, branch) &&
           step["continue-on-error"] !== true &&
           applying(step.run),
       ),
@@ -91,16 +126,27 @@ export function sweepRunners(
   root: string,
   tracked: readonly string[],
 ): string[] {
+  const defaultRef = spawnSync(
+    "git",
+    ["symbolic-ref", "refs/remotes/origin/HEAD"],
+    { cwd: root, encoding: "utf8", timeout: 5000 },
+  );
+  const branch =
+    defaultRef.status === 0
+      ? defaultRef.stdout.trim().replace(/^refs\/remotes\/origin\//, "")
+      : null;
   return probedFiles(tracked)
     .filter((f) => SCHEDULERS.some((p) => p.test(f)))
     .filter((f) => {
       try {
         const text = readFileSync(join(root, f), "utf8");
-        if (/\.ya?ml$/.test(f)) return scheduledWorkflow(text);
+        if (/\.ya?ml$/.test(f)) return scheduledWorkflow(text, branch);
         if (/(?:crontab|\.cron)$/.test(f))
           return text.split("\n").some((line) => {
-            const match = /^(?:\S+\s+){5}(.+)$/.exec(line.trim());
-            return !line.trim().startsWith("#") && applying(match?.[1]);
+            const words = line.trim().split(/\s+/);
+            const command =
+              words.length > 5 ? words.slice(5).join(" ") : undefined;
+            return !line.trim().startsWith("#") && applying(command);
           });
         // A service alone has no activation evidence; a tracked enabled timer must name it.
         if (!f.endsWith(".service")) return false;

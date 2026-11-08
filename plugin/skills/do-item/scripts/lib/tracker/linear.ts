@@ -1460,7 +1460,8 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       };
     },
 
-    async updateIssue(key, patch) {
+    async updateIssue(key, patch, signal) {
+      signal?.throwIfAborted();
       checkPatch(key, patch);
       const add = patch.addLabels ?? [];
       const remove = patch.removeLabels ?? [];
@@ -1484,7 +1485,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       }
       const { id } = await issueIdAndTeam(key);
       const result = record(
-        await transport(UPDATE_MUTATION, { id, input }),
+        await transport(UPDATE_MUTATION, { id, input }, signal),
         "data",
       );
       assertMutationOk(result.issueUpdate, `the update of ${key}`);

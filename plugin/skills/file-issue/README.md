@@ -216,7 +216,7 @@ from moving anything, a failed read, or a refused write; `2` a usage error.
 ## Moving to another store
 
 A repository keeps each facet in a store: labels, the tracker's own field
-(GitHub's issue type and Priority field, Jira's issue type), or a custom
+(GitHub's issue type and Priority field), or a custom
 field such as an Effort field. The move, `check-fields.ts` in its `move`
 mode, carries facets from one store to another, labels to fields, fields
 to labels, or field to field, for every open issue. It writes nothing
@@ -292,3 +292,9 @@ The body is written for a reader who arrives after the code has moved
 | `scripts/lib/validate.ts` | The validator's rules |
 | `templates/issue-body.md` | The issue body skeleton |
 | `__tests__/` | The self-tests, with good and bad taxonomy fixtures |
+
+For a move from custom facet labels, keep the former full facets section in a
+YAML file and pass `check --yes --retired-from former-facets.yaml` to the weekly
+sweep after switching. This preserves the old prefixes and label mappings in
+its retired-label search. Without this option the sweep searches the default
+label representation. Keep the file while clients may still use that store.

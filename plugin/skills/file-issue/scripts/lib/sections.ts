@@ -117,6 +117,7 @@ export function retiredLabels(
   config: TrackerConfig,
   root: string,
   stores: FacetStores,
+  former?: FacetEntries,
 ): string[] {
   const out: string[] = [];
   for (const report of stores.facets) {
@@ -126,7 +127,10 @@ export function retiredLabels(
       slot = facetsOf(
         withSection(overlay, {
           ...config.facets,
-          [report.facet]: { store: "label" },
+          [report.facet]:
+            former?.[report.facet]?.store === "label"
+              ? former[report.facet]
+              : { store: "label" },
         }),
         root,
       )[report.facet];

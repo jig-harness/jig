@@ -652,7 +652,11 @@ export interface Tracker {
     issue: NewIssue,
   ): Promise<{ identifier: string; url: string | null }>;
   /** Change an issue. Throws on an empty patch, and as `createIssue` does. */
-  updateIssue(key: string, patch: IssuePatch): Promise<void>;
+  updateIssue(
+    key: string,
+    patch: IssuePatch,
+    signal?: AbortSignal,
+  ): Promise<void>;
   /** Every label an issue of this team can carry. */
   listLabels(): Promise<TrackerLabel[]>;
   /**

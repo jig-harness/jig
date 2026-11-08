@@ -70,6 +70,8 @@ export interface SweepReport {
   readCapped: boolean;
   /** Moved back to triage by this run. */
   moved: string[];
+  /** Changed during pacing and left for a fresh read. */
+  skipped: string[];
   /** Commented on by this run (an issue a stopped run commented on is moved without one). */
   commented: string[];
   /** Why a write stopped the run, or `null`. */
@@ -256,6 +258,7 @@ export async function sweep(
     startedMore: false,
     readCapped: false,
     moved: [],
+    skipped: [],
     commented: [],
     stopped: null,
     apply: opts.apply,
@@ -278,7 +281,10 @@ export async function sweep(
     try {
       await moveOne(tracker, issue, opts, report);
     } catch (err) {
-      if (changed(err)) continue;
+      if (changed(err)) {
+        report.skipped.push(issue.identifier);
+        continue;
+      }
       report.stopped =
         err instanceof WriteRefused
           ? err.message
@@ -332,11 +338,14 @@ function outcomeLines(report: SweepReport): string[] {
     return [`store problem, nothing moved: ${report.storeProblem}`];
   if (!report.apply)
     return ["report only: nothing moved (--yes moves them to triage)"];
-  const remaining = report.listed.length - report.moved.length;
+  const remaining =
+    report.listed.length - report.moved.length - report.skipped.length;
   const capped = report.readCapped ? ", and more past the read's page cap" : "";
   const lines = [
     `moved ${report.moved.length} to triage (${report.commented.length} commented on); ${remaining} remain${capped}`,
   ];
+  if (report.skipped.length > 0)
+    lines.push(`changed during pacing, skipped: ${report.skipped.join(", ")}`);
   if (report.stopped !== null) lines.push(`stopped: ${report.stopped}`);
   else if (remaining > 0)
     lines.push("the next run moves what remains past this run's cap");

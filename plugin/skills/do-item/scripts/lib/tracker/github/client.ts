@@ -95,6 +95,7 @@ export interface Client {
   mutate(
     query: string,
     variables: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown>>;
   /** The board, its status field and that field's options (project mode). */
   board(): Promise<BoardIds>;
@@ -345,8 +346,9 @@ export function gitHubClient(opts: ClientOptions): Client {
       return { id: str(m.id, "milestone.id"), number };
     },
 
-    async mutate(query, variables) {
-      return record(await transport(query, variables), "data");
+    async mutate(query, variables, signal) {
+      signal?.throwIfAborted();
+      return record(await transport(query, variables, signal), "data");
     },
 
     board() {

@@ -47,7 +47,7 @@ export function incompleteness(
   return missing;
 }
 
-/** The repository's label taxonomy, or `null` when it has none or it fails its lint. */
+/** The repository's label taxonomy, `null` when absent, or a refusal when invalid. */
 export function readTaxonomy(root: string, setting: string): Taxonomy | null {
   const path = taxonomyAt(root, setting);
   if (!existsSync(path)) return null;
@@ -92,7 +92,7 @@ export function incompleteRefusal(missing: string[]): string {
 export function checkedTracker(
   tracker: Tracker,
   facets: Facets,
-  taxonomy: Taxonomy | null,
+  taxonomy: Taxonomy | null | (() => Taxonomy | null),
 ): Tracker {
   return {
     ...tracker,
@@ -102,7 +102,11 @@ export function checkedTracker(
       );
       if (problems.length > 0)
         throw new TrackerRequestError("invalid", problems.join("; "));
-      const missing = incompleteness(issue, facets, taxonomy);
+      const missing = incompleteness(
+        issue,
+        facets,
+        typeof taxonomy === "function" ? taxonomy() : taxonomy,
+      );
       if (missing.length > 0)
         throw new TrackerRequestError("invalid", incompleteRefusal(missing));
       return tracker.createIssue(issue);

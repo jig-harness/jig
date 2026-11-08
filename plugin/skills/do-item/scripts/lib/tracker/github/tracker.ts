@@ -500,36 +500,54 @@ export function gitHubTracker(client: Client): Tracker {
     issue: GhIssue,
     labels: { add: string[]; remove: string[] },
     ids: Map<string, string>,
+    signal?: AbortSignal,
   ): Promise<void> {
     const idsOf = (names: string[]) => [
       ...new Set(names.map((l) => ids.get(l))),
     ];
     if (labels.add.length > 0)
-      await client.mutate(M.addLabels, {
-        id: issue.id,
-        labelIds: idsOf(labels.add),
-      });
+      await client.mutate(
+        M.addLabels,
+        {
+          id: issue.id,
+          labelIds: idsOf(labels.add),
+        },
+        signal,
+      );
     if (labels.remove.length > 0)
-      await client.mutate(M.removeLabels, {
-        id: issue.id,
-        labelIds: idsOf(labels.remove),
-      });
+      await client.mutate(
+        M.removeLabels,
+        {
+          id: issue.id,
+          labelIds: idsOf(labels.remove),
+        },
+        signal,
+      );
   }
 
   async function reparent(
     issue: GhIssue,
     parents: { to: GhIssue | null; from: GhIssue | null },
+    signal?: AbortSignal,
   ): Promise<void> {
     if (parents.to !== null)
-      await client.mutate(M.addSubIssue, {
-        issueId: parents.to.id,
-        subIssueId: issue.id,
-      });
+      await client.mutate(
+        M.addSubIssue,
+        {
+          issueId: parents.to.id,
+          subIssueId: issue.id,
+        },
+        signal,
+      );
     if (parents.from !== null)
-      await client.mutate(M.removeSubIssue, {
-        issueId: parents.from.id,
-        subIssueId: issue.id,
-      });
+      await client.mutate(
+        M.removeSubIssue,
+        {
+          issueId: parents.from.id,
+          subIssueId: issue.id,
+        },
+        signal,
+      );
   }
 
   const tracker: CoreTracker = {
@@ -651,14 +669,15 @@ export function gitHubTracker(client: Client): Tracker {
       };
     },
 
-    async updateIssue(key, patch) {
+    async updateIssue(key, patch, signal) {
+      signal?.throwIfAborted();
       checkPatch(key, patch);
       const add = patch.addLabels ?? [];
       const remove = patch.removeLabels ?? [];
       refuseReserved([...add, ...remove]);
       if (touchesRepositoryNames(patch))
         refuseForeign(key, "labels, priority, type, size or project");
-      const issue = await client.mustIssue(key);
+      const issue = await client.mustIssue(key, signal);
       const exact = patch.facetLabels?.priority;
       if (
         Object.keys(patch.facetLabels ?? {}).some((f) => f !== "priority") ||
@@ -705,9 +724,13 @@ export function gitHubTracker(client: Client): Tracker {
         );
       const fields = await fieldsInput(issue, patch);
       const parents = await parentChange(issue, patch.parent);
-      if (fields !== null) await client.mutate(M.update, { input: fields });
-      await relabel(issue, labels, ids);
-      await reparent(issue, parents);
+      signal?.throwIfAborted();
+      if (fields !== null)
+        await client.mutate(M.update, { input: fields }, signal);
+      signal?.throwIfAborted();
+      await relabel(issue, labels, ids, signal);
+      signal?.throwIfAborted();
+      await reparent(issue, parents, signal);
     },
 
     async listLabels() {

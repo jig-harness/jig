@@ -141,3 +141,19 @@ it("refuses a broken taxonomy slot instead of disabling its required facet", asy
   ).rejects.toThrow("taxonomy failed lint");
   expect(filed).toBe(false);
 });
+
+it("defers taxonomy refusal until filing and preserves reads", async () => {
+  let read = 0;
+  const inner = {
+    listLabels: async () => {
+      read++;
+      return [];
+    },
+  } as unknown as Tracker;
+  const t = checkedTracker(inner, facets, () => {
+    throw new Error("bad taxonomy");
+  });
+  expect(await t.listLabels()).toEqual([]);
+  expect(read).toBe(1);
+  await expect(t.createIssue(issue({}))).rejects.toThrow("bad taxonomy");
+});

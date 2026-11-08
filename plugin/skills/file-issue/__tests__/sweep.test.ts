@@ -341,6 +341,7 @@ it("does not move an issue started while its write was paced", async () => {
   });
   expect(repo.get("#10").state).toBe("started");
   expect(report.moved).not.toContain("#10");
+  expect(report.skipped).toContain("#10");
 });
 
 it("shares one census across the pages and started list", async () => {
@@ -394,4 +395,39 @@ it("stops retry sleeps when cancelled and starts no further effect", async () =>
     }),
   ).rejects.toBeDefined();
   expect(attempts).toBe(1);
+});
+
+it("retains ownership of a cancelled effect until it settles", async () => {
+  const cancel = new AbortController();
+  const writer = pacedWriter(fakeClock(), undefined, { signal: cancel.signal });
+  let finish: (() => void) | undefined;
+  let started: (() => void) | undefined;
+  const entered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const effect = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let settled = false;
+  const result = writer
+    .write("update #1", async (signal) => {
+      expect(signal).toBe(cancel.signal);
+      started?.();
+      await effect;
+    })
+    .then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+  await entered;
+  cancel.abort();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(settled).toBe(false);
+  finish?.();
+  await result;
+  expect(settled).toBe(true);
 });

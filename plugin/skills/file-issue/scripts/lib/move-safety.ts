@@ -1,5 +1,8 @@
 /** Preconditions of a facet move: distinct stores and unchanged live issues. */
-import { usable } from "../../../do-item/scripts/lib/tracker/facets/config.ts";
+import {
+  type ResolvedFacet,
+  usable,
+} from "../../../do-item/scripts/lib/tracker/facets/config.ts";
 import { fold } from "../../../do-item/scripts/lib/tracker/facets/values.ts";
 import type { MoveSides, Pair } from "./move.ts";
 import { sourceValues, facetValue, carriedLabels } from "./move-values.ts";
@@ -15,22 +18,38 @@ export function moveProblem(sides: MoveSides, moved: Facet[]): string | null {
     if (!usable(a) || !usable(b)) return `${f}: both stores must be usable`;
     if (sides.source.adapter === "jira" && a.store === "native")
       return `${f}: Jira requires its native priority; moving it cannot retire the source`;
-    const identity = (s: typeof a) =>
-      s.store === "label"
-        ? null
-        : s.store === "field"
-          ? `field:${fold(s.field ?? "")}`
-          : sides.source.adapter === "github" && s.facet === "priority"
-            ? "field:priority"
-            : `native:${s.facet}`;
-    const ai = identity(a),
-      bi = identity(b);
-    if (ai !== null && ai === bi)
+  }
+  // Every destination must preserve every source, including unmoved facets.
+  const sources = [
+    sides.sourceFacets.type,
+    sides.sourceFacets.priority,
+    sides.sourceFacets.size,
+  ].filter(usable);
+  for (const f of moved) {
+    const b = sides.targetFacets[f] as ResolvedFacet;
+    if (sources.some((a) => physicalOverlap(a, b, sides.source.adapter)))
       return `${f}: source and destination overlap in the same physical store; an in-place mapping change is not a move`;
-    if (labelsOverlap(a, b))
+    if (sources.some((a) => labelsOverlap(a, b)))
       return `${f}: source and destination label stores overlap`;
   }
   return null;
+}
+
+/** Normalize native aliases before comparing physical storage across facets. */
+function physicalOverlap(
+  a: ResolvedFacet,
+  b: ResolvedFacet,
+  adapter: string,
+): boolean {
+  const identity = (s: ResolvedFacet) => {
+    if (s.store === "label") return null;
+    if (s.store === "field") return `field:${fold(s.field ?? "")}`;
+    return adapter === "github" && s.facet === "priority"
+      ? "field:priority"
+      : `native:${s.facet}`;
+  };
+  const ai = identity(a);
+  return ai !== null && ai === identity(b);
 }
 
 /** Re-read after pacing and before every effect, including retries. Trackers without compare-and-set still have a last-read/write race. */
@@ -51,8 +70,10 @@ export async function assertUnchanged(
           slot = facets[facet];
         return usable(slot)
           ? [
-              sourceValues(slot, i, facet).sort(),
-              carriedLabels(slot, i, facetValue(i, facet)).sort(),
+              sourceValues(slot, i, facet).sort((a, b) => a.localeCompare(b)),
+              carriedLabels(slot, i, facetValue(i, facet)).sort((a, b) =>
+                a.localeCompare(b),
+              ),
             ]
           : facetValue(i, facet);
       }),

@@ -293,7 +293,12 @@ export function withFacets(
     return { add, remove };
   }
 
-  async function updateIssue(key: string, patch: IssuePatch) {
+  async function updateIssue(
+    key: string,
+    patch: IssuePatch,
+    signal?: AbortSignal,
+  ) {
+    signal?.throwIfAborted();
     refuseFacetLabels(patch.addLabels ?? [], "to add");
     const labels = await facetLabels(key, patch);
     const out: IssuePatch = { ...patch };
@@ -312,7 +317,8 @@ export function withFacets(
     // A facet already at its value is no change, and no error either; an
     // empty patch still reaches the adapter, which refuses it.
     if (!changes(out) && changes(patch)) return;
-    await rest.updateIssue(key, out);
+    signal?.throwIfAborted();
+    await rest.updateIssue(key, out, signal);
   }
 
   /** A census or a facet filter read from partial labels would miscount, so it refuses. */

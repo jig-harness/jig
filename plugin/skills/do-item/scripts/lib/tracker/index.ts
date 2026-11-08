@@ -135,9 +135,7 @@ export function openTracker(
     return facets;
   };
   const tracker = factory(config, root, resolve);
-  return checkedTracker(
-    tracker,
-    resolve(),
+  return checkedTracker(tracker, resolve(), () =>
     readTaxonomy(root, config.taxonomy),
   );
 }

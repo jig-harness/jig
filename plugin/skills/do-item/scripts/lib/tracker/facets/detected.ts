@@ -199,7 +199,11 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
     },
     ledger: (query, onPage) => on((t) => t.ledger(query, onPage), ["priority"]),
     createIssue: (issue) => write((t) => t.createIssue(issue)),
-    updateIssue: (key, patch) => write((t) => t.updateIssue(key, patch)),
+    updateIssue: (key, patch, signal) =>
+      write((t) => {
+        signal?.throwIfAborted();
+        return t.updateIssue(key, patch, signal);
+      }),
     async incompleteIssues(query, options) {
       const s = await settle(readSignal(options));
       refuseBlocked(s);

@@ -427,7 +427,8 @@ export function jiraTracker(client: Client): Tracker {
       };
     },
 
-    async updateIssue(key, patch: IssuePatch) {
+    async updateIssue(key, patch: IssuePatch, signal) {
+      signal?.throwIfAborted();
       checkPatch(key, patch);
       const labels = [
         ...(patch.addLabels ?? []).map((l) => ({ add: l })),
@@ -446,7 +447,8 @@ export function jiraTracker(client: Client): Tracker {
       const body: Record<string, unknown> = {};
       if (Object.keys(fields).length > 0) body.fields = fields;
       if (labels.length > 0) body.update = { labels };
-      await transport({ method: "PUT", path: path(issue.key), body });
+      signal?.throwIfAborted();
+      await transport({ method: "PUT", path: path(issue.key), body }, signal);
     },
 
     async listLabels() {

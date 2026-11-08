@@ -80,7 +80,7 @@ import {
 import { sweep, sweepLines } from "./lib/sweep.ts";
 
 const USAGE = `usage:
-  check-fields.ts [check] [--yes] [--json]
+  check-fields.ts [check] [--yes] [--json] [--retired-from <file>]
   check-fields.ts move --target <file> --record <file> [--json]
   check-fields.ts move --record <file> [--copy | --retire] [--yes] [--json]
   check-fields.ts move --restore <file> [--yes] [--json]`;
@@ -97,17 +97,29 @@ function print(json: boolean, report: unknown, lines: string[]): void {
 async function check(argv: string[]): Promise<number> {
   const { values } = parseArgs({
     args: argv,
-    options: { yes: { type: "boolean" }, json: { type: "boolean" } },
+    options: {
+      yes: { type: "boolean" },
+      json: { type: "boolean" },
+      "retired-from": { type: "string" },
+    },
     strict: true,
   });
   const overlay = readOverlay();
   const config = trackerConfigFrom(overlay);
   const root = consumerRoot();
   const tracker = openTracker(config, root);
+  const former =
+    values["retired-from"] === undefined
+      ? undefined
+      : readTarget(
+          values["retired-from"],
+          config.adapter,
+          facetsOf(config, root),
+        );
   const report = await sweep(tracker, {
     apply: values.yes === true,
     epic: config.labels.epic,
-    retired: (stores) => retiredLabels(overlay, config, root, stores),
+    retired: (stores) => retiredLabels(overlay, config, root, stores, former),
     writer: pacedWriter(),
     progress: (line) => console.error(line),
   });

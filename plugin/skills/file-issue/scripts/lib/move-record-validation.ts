@@ -33,15 +33,9 @@ function sections(
     new Set(moved).size ===
       moved.length, path, "empty or duplicate moved facets");
   try {
-    const a = parseFacetEntries(r.source, String(r.adapter));
-    const b = parseFacetEntries(r.target, String(r.adapter));
-    const changed = FACETS.filter(
-      (f) => JSON.stringify(a[f]) !== JSON.stringify(b[f]),
-    );
-    require(changed.length === moved.length &&
-      changed.every((f) =>
-        moved.includes(f),
-      ), path, "moved disagrees with source and target");
+    parseFacetEntries(r.source, String(r.adapter));
+    parseFacetEntries(r.target, String(r.adapter));
+    // sidesOf compares moved with the resolved stores using the repository's taxonomy.
   } catch (err) {
     throw new MoveRecordError(
       `${path}: invalid source/target or moved facets (${err instanceof Error ? err.message : "invalid"})`,

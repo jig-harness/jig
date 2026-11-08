@@ -69,3 +69,22 @@ it("does not count comments, report mode, disabled jobs or unscheduled workflows
     expect(sweepFindings(tracker, root, tracked)).toHaveLength(1);
   }
 });
+
+it("recognizes the shipped guarded sweep with its status wrapper", () => {
+  const root = process.cwd();
+  expect(
+    sweepFindings(tracker, root, [".github/workflows/issue-fields.yml"]),
+  ).toEqual([]);
+});
+
+it("does not mistake a comment or quoted argument for a sweep", () => {
+  for (const run of [
+    "bun unrelated.ts # check-fields.ts check --yes",
+    "bun unrelated.ts 'check-fields.ts check --yes'",
+  ]) {
+    const { root, tracked } = repo({
+      ".github/workflows/sweep.yml": `on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    steps:\n      - run: ${JSON.stringify(run)}\n`,
+    });
+    expect(sweepFindings(tracker, root, tracked)).toHaveLength(1);
+  }
+});
