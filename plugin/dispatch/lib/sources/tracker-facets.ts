@@ -57,6 +57,22 @@ export function facetBound(
   };
 }
 
+/**
+ * The part of `bound` the diagnostic store report may use: the first half
+ * of what is left, ended by `bound`'s own signal too, so the assigned-item
+ * read that follows keeps the other half.
+ */
+export function reportBound(bound: FacetBound, now = Date.now()): FacetBound {
+  const deadline = now + Math.max(0, bound.deadline - now) / 2;
+  return {
+    deadline,
+    signal: AbortSignal.any([
+      bound.signal,
+      AbortSignal.timeout(Math.max(0, deadline - now)),
+    ]),
+  };
+}
+
 /** Each facet's line from the tracker's report. */
 function storeLines(report: FacetStores): FacetStoreLine[] {
   return report.facets.map((f) => {

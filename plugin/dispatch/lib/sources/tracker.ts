@@ -23,6 +23,7 @@ import {
   facetGaps,
   facetSummary,
   readFacetStores,
+  reportBound,
 } from "./tracker-facets.ts";
 import type {
   ClaimedItem,
@@ -121,14 +122,19 @@ async function byTrustedAssigner(
 }
 
 /** `read`, or a rejection once `bound` has ended it. */
-function within<T>(read: Promise<T>, bound: FacetBound): Promise<T> {
+async function within<T>(read: Promise<T>, bound: FacetBound): Promise<T> {
+  let stop: (() => void) | undefined;
   const stopped = new Promise<never>((_, reject) => {
-    const stop = () => reject(new Error("stopped at the tick's deadline"));
+    stop = () => reject(new Error("stopped at the tick's deadline"));
     if (bound.signal.aborted) stop();
     else bound.signal.addEventListener("abort", stop, { once: true });
   });
   read.catch(() => undefined);
-  return Promise.race([read, stopped]);
+  try {
+    return await Promise.race([read, stopped]);
+  } finally {
+    if (stop !== undefined) bound.signal.removeEventListener("abort", stop);
+  }
 }
 
 /**
@@ -187,8 +193,12 @@ export async function readPickups(
   // One bound for the whole facet read: the stores and the assigned items
   // share its allowance and its cancellation.
   const bound = facets?.bound();
+  // The diagnostic report gets its own share of the allowance, so a slow
+  // report leaves the assigned-item read its time.
   const stores =
-    bound === undefined ? undefined : await readFacetStores(tracker, bound);
+    bound === undefined
+      ? undefined
+      : await readFacetStores(tracker, reportBound(bound));
   let issues: Awaited<ReturnType<Tracker["assignedIssues"]>>;
   try {
     issues = await readAssigned(tracker, identity, section, bound);

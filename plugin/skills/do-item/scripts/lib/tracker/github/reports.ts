@@ -449,7 +449,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
 
     facetReport: (options) => client.facets.report(options),
 
-    async assignedIssues(identity, states) {
+    async assignedIssues(identity, states, signal) {
       if (states.length === 0)
         throw new TrackerRequestError(
           "invalid",
@@ -468,6 +468,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
           assignee: identity,
         },
         OPEN_CHILDREN,
+        signal,
       );
       return pools(
         read.filter(({ issue }) =>
@@ -475,6 +476,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
             model.stateOf({ ...issue, labels: wholeLabels(issue) }),
           ),
         ),
+        signal,
       );
     },
   };

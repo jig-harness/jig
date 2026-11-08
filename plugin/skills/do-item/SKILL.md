@@ -275,13 +275,15 @@ native integration, or the reverse.
 **exact** — **Type the item.** Write the issue JSON to `issue.json` with the
 file-writing tool (from the native transport: its `title`, its label names
 as `labels`, its own issue type's name as `nativeType`, or `null` when it
-reports none; from the script transport, add `type` as the `type` that
+reports none; and `type` as the `type` that
 `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<KEY>"` prints, since
 `determine_type.ts` reads no store and the tracker reader alone supplies
-the repository's type facet, a label-store type included. The native
-transport runs no script, so it leaves `type` out and the type facet goes
-unread: a type kept in labels is not seen, and the work type comes from
-`nativeType` or the title prefix), then derive its
+the repository's type facet, a label-store type included. On the native
+transport run that script for `type` alone; when it cannot run here, leave
+`type` out and say in the run's notes that the type facet was not read: a
+type kept in labels is then unseen, the work type comes from `nativeType`
+or the title prefix, and a bug pre-scout keyed on the label does not run),
+then derive its
 [work type](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
 
 ```bash

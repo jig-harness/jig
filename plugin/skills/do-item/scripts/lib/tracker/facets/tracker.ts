@@ -85,6 +85,7 @@ export interface CoreTracker
   assignedIssues(
     identity: string,
     states: ReadonlyArray<CanonicalState>,
+    signal?: AbortSignal,
   ): Promise<CorePoolIssue[]>;
   /**
    * Every open issue of this team, in pool form, read whole; `signal` ends
@@ -424,8 +425,12 @@ export function withFacets(
       const issue = await rest.poolIssue(key);
       return issue === null ? null : withValues(issue);
     },
-    async assignedIssues(identity, states) {
-      return (await rest.assignedIssues(identity, states)).map(withValues);
+    async assignedIssues(identity, states, options) {
+      const signal = readSignal(options);
+      refuseStopped(signal);
+      return (await rest.assignedIssues(identity, states, signal)).map(
+        withValues,
+      );
     },
     async ledger(query, onPage) {
       const issues = await rest.ledger(query, onPage);

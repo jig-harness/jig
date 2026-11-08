@@ -173,7 +173,7 @@ describe("the tick's tracker record and the issue facets", () => {
     expect(reading.read.facets?.gaps).toEqual([]);
   });
 
-  it("is stopped at the tick's deadline, and the pickups read is not started past it", async () => {
+  it("stops a stalled store report at its share, and still reads the pickups", async () => {
     const fake = fakeTracker(
       [item("#5", { type: "bug", priority: 2, size: "small" })],
       (o) =>
@@ -184,31 +184,28 @@ describe("the tick's tracker record and the issue facets", () => {
         }),
     );
     const reading = await readPickups(() => fake.tracker, section, {
-      bound: () => facetBound(Date.now() + 50),
+      bound: () => facetBound(Date.now() + 400),
       epic: "epic",
     });
     expect(reading.read.facets?.failed).toBe(
       "stopped at the tick's deadline: the request was cancelled",
     );
     expect(reading.read.facets?.stores).toBeUndefined();
-    expect(reading.read.ok).toBe(false);
-    expect(reading.wanted).toEqual([]);
-    expect(fake.calls.some((c) => c.startsWith("assignedIssues"))).toBe(false);
+    expect(reading.read.ok).toBe(true);
+    expect(reading.wanted.map((w) => w.key)).toEqual(["#5"]);
+    expect(fake.assigned[0]?.signal?.aborted).toBe(false);
   });
 
-  it("holds the assigned-item read to the one bound the stores were read under", async () => {
+  it("gives the store report part of the tick's bound and the assigned items all of it", async () => {
     const fake = fakeTracker([], async () => LABEL_STORES);
-    let made = 0;
+    const bound = facetBound(undefined);
     await readPickups(() => fake.tracker, section, {
-      bound: () => {
-        made += 1;
-        return facetBound(undefined);
-      },
+      bound: () => bound,
       epic: "epic",
     });
-    expect(made).toBe(1);
-    expect(fake.assigned[0]?.signal).toBe(fake.options[0]?.signal);
-    expect(fake.assigned[0]?.deadline).toBe(fake.options[0]?.deadline);
+    expect(fake.options[0]?.deadline).toBeLessThan(bound.deadline);
+    expect(fake.assigned[0]?.signal).toBe(bound.signal);
+    expect(fake.assigned[0]?.deadline).toBe(bound.deadline);
   });
 
   it("starts no facet read once the tick's deadline has passed", async () => {

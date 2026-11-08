@@ -37,7 +37,12 @@ import {
   stringList,
   widened,
 } from "./jql.ts";
-import { JiraApiError, offsetPages, searchPages } from "./transport.ts";
+import {
+  abortedError,
+  JiraApiError,
+  offsetPages,
+  searchPages,
+} from "./transport.ts";
 
 type ReportOps = Pick<
   CoreTracker,
@@ -455,12 +460,13 @@ export function reportOperations(client: Client): ReportOps {
       return issue === null ? null : ((await pools([issue]))[0] ?? null);
     },
 
-    async assignedIssues(identity, states) {
+    async assignedIssues(identity, states, signal) {
       if (states.length === 0)
         throw new TrackerRequestError(
           "invalid",
           "an assigned-issues query needs at least one state",
         );
+      if (signal?.aborted === true) throw abortedError(signal);
       const accountId = await client.accountId(identity);
       const names = [...new Set(states.map((s) => model.stateName(s)))];
       const read = await client.search(
@@ -470,6 +476,7 @@ export function reportOperations(client: Client): ReportOps {
           `status in ${stringList(names)}`,
         ),
         `issues assigned to ${identity}`,
+        signal,
       );
       const wanted = new Set<CanonicalState>(states);
       return pools(
@@ -477,6 +484,7 @@ export function reportOperations(client: Client): ReportOps {
           const s = model.read(i).canonical;
           return s !== null && wanted.has(s);
         }),
+        signal,
       );
     },
   };

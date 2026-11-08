@@ -185,7 +185,7 @@ export function assignedOperations(
       );
       return nodes.map(opts.parsePool);
     },
-    async assignedIssues(identity, wanted) {
+    async assignedIssues(identity, wanted, signal) {
       if (wanted.length === 0)
         throw new TrackerRequestError(
           "invalid",
@@ -211,6 +211,7 @@ export function assignedOperations(
         { filter },
         (d) => d.issues,
         `issues assigned to ${identity}`,
+        signal,
       );
       return nodes.map(opts.parsePool);
     },
