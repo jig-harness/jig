@@ -498,6 +498,37 @@ describe("another host's takeover of a driver no launch started", () => {
     expect(settled?.evidence.settled).toBe(true);
   });
 
+  it("keeps an older foreign launch's driver out of a spent takeover, shown gone or not", () => {
+    const owner = claim(9, "launch facts");
+    if (!owner.says.ok) throw new Error("fixture");
+    const older = {
+      ...owner,
+      says: {
+        ok: true as const,
+        value: {
+          ...owner.says.value,
+          at: "2026-11-07T06:30:00.000Z",
+          end: {
+            state: "ended" as const,
+            at: "2026-11-07T11:30:00.000Z",
+            exit: 0,
+            outcome: null,
+          },
+        },
+      },
+    };
+    const ended = takeover(facts, claim(5, facts).says);
+    const claims = new Map([[7, { ok: true as const, value: [older, ended] }]]);
+    const [settled] = settleSharedTakeovers([silent()], claims, "this-host");
+    expect(settled?.evidence.settled).not.toBe(true);
+    const kind = foreignHold(
+      silent(),
+      { ok: true, value: [older, ended] },
+      "this-host",
+    ).kind;
+    expect(kind).toBe("takeover");
+  });
+
   it("settles as a silent drive a person hears of, and is then held by no foreign claim", () => {
     const claims = new Map([
       [

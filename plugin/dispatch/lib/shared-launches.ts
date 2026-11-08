@@ -200,13 +200,11 @@ function silentHold(
  * executed spent nothing.
  */
 function takenOver(pr: DrivenPr, theirs: ReadClaim[]): ForeignHold | null {
-  // A driver shown gone may be replaced on recovery facts, any other silent
-  // driver is the doctor's, and a launch that started it stays that launch's.
-  // A completed takeover is spent whichever of the two it was made as: this
-  // reader's presence probe may differ from the one that planned it.
-  const gone = pr.evidence.driverGone === true;
+  // A launch that started the driver keeps it, whether or not the driver is
+  // shown gone, and a completed takeover is spent whichever presence this
+  // reader shows now: its probe may differ from the one that planned it.
   if (pr.evidence.settled === true) return null;
-  if (!gone && theirs.some((c) => startedDriver(c, pr))) return null;
+  if (theirs.some((c) => startedDriver(c, pr))) return null;
   const done = theirs.findLast((c) => {
     const s = c.says.value;
     return (
