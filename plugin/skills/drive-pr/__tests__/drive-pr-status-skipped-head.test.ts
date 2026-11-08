@@ -337,7 +337,11 @@ describe("drive-status.ts over a head the reviewer skipped", () => {
   });
 
   /** A base edit above the reviewed hunk shifts it; the merged head must still read as the reviewed diff. */
-  async function convergesWhenBaseShiftsHunk(scratch: string, file: string, noprefix = false) {
+  async function convergesWhenBaseShiftsHunk(
+    scratch: string,
+    file: string,
+    noprefix = false,
+  ) {
     const repo = makeScratchRepo(scratch);
     if (noprefix) git(repo.dir, "config", "diff.noprefix", "true");
     const lines = Array.from({ length: 30 }, (_, i) => `row ${i}`);
