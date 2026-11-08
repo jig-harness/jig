@@ -351,6 +351,15 @@ reflections passes its tests against a stand-in for Notion's API. This item
 runs it against Notion itself and fixes what differs. That run waits on a
 person with an access token for a Notion workspace.
 
+### 44. Distribution: a common setup entry point
+
+A common setup path checks the machine and explains missing prerequisites
+before installing Jig through the agent tool's marketplace. It preserves the
+source and version pin a team selected. The first build covers macOS, Linux and
+Windows; an own Homebrew tap is considered after that path is validated.
+Other catalogs wait for evidence that Jig's components and updates work there.
+See the [distribution design](design/distribution.md).
+
 ## Later
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for
