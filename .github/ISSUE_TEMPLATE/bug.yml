@@ -1,6 +1,11 @@
 name: Bug
 description: Something Jig does today is wrong.
 labels: [bug]
+# The issue type, set beside the label: Jig still keeps type, priority and
+# size in labels, and .config/jig.yaml names the label store for each, so
+# the two do not conflict. An issue form cannot fill in an issue field, so
+# priority and size are set when the issue is triaged.
+type: Bug
 body:
   - type: input
     id: version

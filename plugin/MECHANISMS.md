@@ -358,7 +358,12 @@ development and shipped as a version.
 - **Deterministic.** A receipt per tick under
   `~/.local/state/jig/dispatch/receipts/` with what it read and planned,
   kept 30 days unless the machine file says otherwise
-  (`dispatch/receipts.ts`). The
+  (`dispatch/receipts.ts`). Its tracker record says where the tracker
+  keeps each item's type, priority and size and why, whether detection
+  answered from its cache, and which assigned items lack one, by key; that
+  read is bounded by the tick's deadline, and one that fails or is stopped
+  is a line of the record, never a reason to skip the pickups
+  (`dispatch/lib/sources/tracker-facets.ts`). The
   [outcome log](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), one
   row per ended launch and one event row per observed cause, in
   `log-<year>-<month>.jsonl`, which nothing removes (`dispatch/lib/log.ts`);

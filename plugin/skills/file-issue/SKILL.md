@@ -87,13 +87,20 @@ of the configured repository; this document writes it as `<KEY>` (or
 `<TARGET>` for the other issue of a relation). Quote a key on a command line:
 an unquoted `#` starts a shell comment.
 
-`issue.json` is `{ "title", "description", "labels": [...], "priority"?,
-"parent"?, "project"? }`; `patch.json` sets any of `title`, `description`,
-`priority`, `parent` (`null` removes it), `project`, `addLabels`,
-`removeLabels`. Labels are passed by name. Priority is `0` (none), `1`
-(urgent), `2` (high), `3` (medium) or `4` (low). Write each file with the
-Write tool under `.context/`, never by interpolating text into a shell
-command.
+`issue.json` is `{ "title", "description", "labels": [...], "type",
+"priority", "size", "parent"?, "project"? }`; `patch.json` sets any of
+`title`, `description`, `type`, `priority`, `size` (`type` and `size` take
+`null` to remove), `parent` (`null` removes it), `project`, `addLabels`,
+`removeLabels`. Labels are passed by name. The type, the priority and the
+size are the issue's **facets**: give them in their own fields, never as
+labels, since the tracker keeps each where the repository's configuration
+says (labels, its own issue type, or a field) and refuses a facet's label
+among `labels` or `addLabels`. Priority is `1` (urgent), `2` (high), `3`
+(medium) or `4` (low); `0` (none) is for a correction only. Every filing is
+checked inside the tracker: one without a type, a priority or a size (an
+epic needs no size) is filed with a warning in this release and refused in
+the next. Write each file with the Write tool under `.context/`, never by
+interpolating text into a shell command.
 
 ### Asking the user
 
@@ -116,15 +123,20 @@ level, which the level itself answers.
 
 **exact** — These hold in both modes.
 
-1. **Validate before every write.** Every label set that will be written
-   (a new issue's, a child's, an existing issue's labels after the change)
-   passes `validate-labels.ts` with `--check-tracker` first:
+1. **Validate before every write.** Every issue that will be written (a new
+   issue, a child, an existing issue after the change) passes
+   `validate-labels.ts` with `--check-tracker` first, its facets beside its
+   labels: a new issue's JSON file (the one step 10 files), or an existing
+   issue's labels after the change with its type, priority (1 to 4) and
+   size:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker <label>...
+   bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --input .context/file-issue/<n>.json
+   bun "${CLAUDE_SKILL_DIR}/scripts/validate-labels.ts" --check-tracker --type <type> --priority <priority> --size <size> <label>...
    ```
 
-   Exit `0`: valid (read any `WARNING` and act on it or say why not). Exit
+   It asks for a priority as it asks for a type and a size. Exit `0`:
+   valid (read any `WARNING` and act on it or say why not). Exit
    `3`: invalid; fix the labels it names and run it again. Exit `1`: the
    taxonomy is missing or fails its lint, or the tracker could not be read;
    stop and report it, and write nothing. Exit `2`: a usage error in your
@@ -175,8 +187,10 @@ a recurring pattern's label.
 **judgment** — From the conversation (and `$ARGUMENTS`, when given), extract:
 the problem and for whom; why it matters now; what done looks like; the
 approach discussed, if any; open questions. Draft a title (imperative, one
-line), the type, a size (when the taxonomy has a size group), a
-priority, and a category.
+line), the type, a size (when the taxonomy has a size group; an epic needs
+none), a priority, and a category. Every issue gets a priority: an issue
+filed without one is not low, it is unranked, and no pool can work it in
+order.
 
 The **category** is a classification of its own (a security issue and a
 performance one can share a severity), never derived from the priority. Take
@@ -195,8 +209,9 @@ not as a label: it is not part of the label taxonomy.
 ### 3. Ask only what is missing
 
 **judgment** — When a fact the issue needs is genuinely absent or
-ambiguous (scope, the acceptance criteria, a dependency, the priority),
-ask the user up to four questions at once, each with concrete options.
+ambiguous (scope, the acceptance criteria, a dependency, the priority;
+always ask for a priority the discussion does not give), ask the user up
+to four questions at once, each with concrete options.
 Otherwise skip this step. Offering "file a draft with my best guesses" as
 one option is fine; say which fields are guesses.
 
@@ -296,11 +311,12 @@ description, against the
 taxonomy's `apply_when` and `do_not_apply_when` for every flag and the
 `notes` of every label.
 
-Then complete the set, in both cases:
+Then complete the issue, in both cases:
 
-- exactly one **type**;
-- one label of every **required group** (a size, a repository), and at
-  most one of any group;
+- exactly one **type**, its size (unless it is an epic) and its
+  **priority**, given as the issue's facets rather than labels;
+- one label of every other **required group** (a repository), and at most
+  one of any group;
 - a label of every **recommended category** that fits, within its `max`;
 - the **flags** whose condition holds, scoped as rule 3 says, with what
   each `requires` beside it;
@@ -333,7 +349,8 @@ each delivers, its labels and the order between them.
 ### 8. Validate every label set
 
 **exact** — Run the `--check-tracker` mode of `validate-labels.ts` (rule 1) on the
-parent's set and on each child's. Every set passes before step 9.
+parent's issue and on each child's, each with its facets. Every one passes
+before step 9.
 
 ### 9. Confirm
 
@@ -370,7 +387,9 @@ with `"parent": "<PARENT-KEY>"`, each from its own JSON file:
 bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create --input .context/file-issue/<n>.json
 ```
 
-Each prints the new issue's key and URL. On a failure, stop: report which
+Each prints the new issue's key and URL. A `warning:` on standard error
+names a facet or group the issue was filed without; set it with an update
+before reporting. On a failure, stop: report which
 issues were created (with their keys) and which were not, and do not retry
 blindly, which could file a copy.
 
@@ -422,9 +441,12 @@ Then load the taxonomy and the label roles as in
 
 ### 2. Assess the labels and the body
 
-**judgment** — Check the issue's labels against the taxonomy (run
-`validate-labels.ts` on them as they are) and against what the issue
-describes, deriving as in [File, step 6](#6-derive-the-labels). Keep each
+**judgment** — Check the issue's labels and its facets (the `type`,
+`priority` and `size` `get_issue.ts` prints) against the taxonomy (run
+`validate-labels.ts` on them as they are, with `--type`, `--priority` and
+`--size`) and against what the issue describes, deriving as in
+[File, step 6](#6-derive-the-labels). A missing priority is asked for, as
+when filing. Keep each
 existing label unless the assessment replaces it; replacing a group's
 label means removing the old one, since a group holds one. Where the body
 is not durable ([File, step 5](#5-write-the-body)), propose a rewritten
@@ -454,7 +476,9 @@ change the issue:
 bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input .context/file-issue/patch.json
 ```
 
-with `addLabels` and `removeLabels` rather than a whole label list. When a
+with `addLabels` and `removeLabels` rather than a whole label list, and a
+changed type, priority or size in its own field (`"type"`, `"priority"`,
+`"size"`), which takes the old value off wherever it is kept. When a
 child cannot be created, stop before the update: the issue keeps its flags,
 so no flag is lost, and report which children exist (with their keys) and
 which do not. Do not retry blindly; ask the user whether to create the rest

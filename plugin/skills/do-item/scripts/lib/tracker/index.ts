@@ -3,6 +3,12 @@
  * hand it to the adapter it names (`linear`, `github`, `jira`). Callers import from here and use the
  * `Tracker` port; they never import an adapter.
  *
+ * Every tracker opened here checks each new issue inside `createIssue`
+ * (`facets/complete.ts`): one filed without a type, a priority or a size is
+ * filed, and what it lacks is printed. On GitHub, a facet the configuration
+ * leaves to the default gets its store from detection before its first read
+ * or write (`facets/detected.ts`).
+ *
  * To add a tracker: implement `Tracker` in a sibling module and register a
  * factory in `ADAPTERS`. No caller changes.
  */
@@ -14,11 +20,16 @@ import {
   requireTeamKey,
   type TrackerConfig,
 } from "./config.ts";
-import { gitHubClient } from "./github/client.ts";
+import { checkedTracker, readTaxonomy } from "./facets/complete.ts";
+import type { Facets } from "./facets/config.ts";
+import { detectionCacheDir, fileDetectionCache } from "./facets/detect.ts";
+import { defaultedGitHub } from "./github/defaults.ts";
 import { gitHubModel } from "./github/model.ts";
 import { homeRepo, remoteUrl } from "./github/refs.ts";
-import { gitHubTracker } from "./github/tracker.ts";
-import { defaultTransport as gitHubTransport } from "./github/transport.ts";
+import {
+  credentialToken,
+  defaultTransport as gitHubTransport,
+} from "./github/transport.ts";
 import { jiraClient } from "./jira/client.ts";
 import { jiraModel } from "./jira/model.ts";
 import { requireSite } from "./jira/settings.ts";
@@ -31,30 +42,51 @@ export type { CanonicalState, Tracker } from "./port.ts";
 export { CANONICAL_STATES } from "./port.ts";
 
 /**
- * Builds an adapter for the repository at `root`; throws naming the field
- * when a setting it needs is missing.
+ * Builds an adapter for the repository at `root`, its facets resolved;
+ * throws naming the field when a setting it needs is missing.
  */
-type AdapterFactory = (config: TrackerConfig, root: string) => Tracker;
+type AdapterFactory = (
+  config: TrackerConfig,
+  root: string,
+  facets: () => Facets,
+) => Tracker;
+
+/**
+ * The GitHub adapter, with the GitHub default for every facet the
+ * configuration does not name: the stores detection selects, its answer
+ * cached on this machine for an hour.
+ */
+function gitHub(
+  config: TrackerConfig,
+  root: string,
+  resolve: () => Facets,
+): Tracker {
+  const home = homeRepo(config.github.repository, () => remoteUrl(root));
+  const model = gitHubModel(config.states, config.github);
+  const transport = gitHubTransport();
+  return defaultedGitHub({
+    home,
+    model,
+    settings: config.github,
+    transport,
+    facets: resolve(),
+    entries: config.facets,
+    resolveWith: (entries) => facetsOf({ ...config, facets: entries }, root),
+    cache: fileDetectionCache(detectionCacheDir()),
+    token: credentialToken(),
+  });
+}
 
 const ADAPTERS: Record<string, AdapterFactory> = {
-  linear: (config, root) =>
+  linear: (config, _root, facets) =>
     linearTracker({
       team: requireTeamKey(config),
       states: config.states,
       transport: defaultTransport(),
-      facets: facetsOf(config, root),
+      facets: facets(),
     }),
-  github: (config, root) =>
-    gitHubTracker(
-      gitHubClient({
-        home: homeRepo(config.github.repository, () => remoteUrl(root)),
-        model: gitHubModel(config.states, config.github),
-        settings: config.github,
-        transport: gitHubTransport(),
-        facets: facetsOf(config, root),
-      }),
-    ),
-  jira: (config, root) => {
+  github: gitHub,
+  jira: (config, _root, facets) => {
     const project = requireTeamKey(config);
     const site = requireSite(config.jira);
     return jiraTracker(
@@ -64,7 +96,7 @@ const ADAPTERS: Record<string, AdapterFactory> = {
         model: jiraModel(config.states, config.jira),
         settings: config.jira,
         transport: jiraTransport(site),
-        facets: facetsOf(config, root),
+        facets: facets(),
       }),
     );
   },
@@ -84,11 +116,13 @@ export function knownAdapters(): string[] {
  * defaults to the consumer root, the repository `ownTrackerConfig()` reads
  * its configuration from, so the configuration, the repository it derives
  * and the label taxonomy the type and size values come from always come
- * from the same place.
+ * from the same place. `warn` receives what an incomplete filing lacks
+ * (standard error by default).
  */
 export function openTracker(
   config: TrackerConfig = ownTrackerConfig(),
   root: string = consumerRoot(),
+  warn: (message: string) => void = (message) => console.error(message),
 ): Tracker {
   const factory = Object.hasOwn(ADAPTERS, config.adapter)
     ? ADAPTERS[config.adapter]
@@ -97,5 +131,16 @@ export function openTracker(
     throw new Error(
       `issue_tracker.adapter '${config.adapter}' is not supported (known: ${knownAdapters().join(", ")})`,
     );
-  return factory(config, root);
+  let facets: Facets | undefined;
+  const resolve = () => {
+    facets ??= facetsOf(config, root);
+    return facets;
+  };
+  const tracker = factory(config, root, resolve);
+  return checkedTracker(
+    tracker,
+    resolve(),
+    readTaxonomy(root, config.taxonomy),
+    warn,
+  );
 }

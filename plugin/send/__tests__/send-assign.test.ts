@@ -35,11 +35,15 @@ function world(identity: string | null = "factory-bot") {
   const ops: Array<{ op: string; variables: Record<string, unknown> }> = [];
   let assigned = false;
   // The tick reads the identity from the default branch, so the checkout's own file does not set it.
-  if (identity !== null) w.config(`dispatch:\n  identity: ${identity}\n`);
+  // The facets' stores are named, so no detection read comes before the item's.
+  const facets =
+    "  facets:\n    type: { store: label }\n    priority: { store: label }\n";
+  if (identity !== null)
+    w.config(`dispatch:\n  identity: ${identity}\nissue_tracker:\n${facets}`);
   mkdirSync(join(w.repo, ".config"), { recursive: true });
   writeFileSync(
     join(w.repo, ".config", "jig.yaml"),
-    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${REPO}\n`,
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${REPO}\n${facets}`,
   );
   const issue = (n: number) =>
     issueNode({

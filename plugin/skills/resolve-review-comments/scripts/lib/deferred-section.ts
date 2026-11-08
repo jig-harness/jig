@@ -7,9 +7,12 @@
  * person's edits anywhere else in the body are never touched, and each entry
  * between its own pair, keyed on the finding's source url (the review thread,
  * or the summary comment and the finding's fingerprint). An entry quotes the
- * finding, says why it was deferred and links its source; `file-deferred.ts`
- * replaces it with the issue it filed. This module is pure: it parses and
- * rewrites body text, and `pr-body.ts` reads and writes the body.
+ * finding, says why it was deferred and links its source, and its opening
+ * marker records what the issue is filed as: the finding's type, its
+ * severity and its category, and a size where one was named.
+ * `file-deferred.ts` replaces it with the issue it filed. This module is
+ * pure: it parses and rewrites body text, and `pr-body.ts` reads and writes
+ * the body.
  */
 
 /** The body cannot take or give up an entry as asked. */
@@ -25,8 +28,29 @@ const SECTION_HEADING = "## Deferred";
 /** The anchor a reply links the section by: GitHub's id for the heading. */
 export const SECTION_ANCHOR = "deferred";
 
+/**
+ * What an entry records to be filed as: the finding's type (a type of the
+ * repository's taxonomy, chosen from the finding), its severity token and
+ * its category token, and a size where one was named. An entry written
+ * before entries recorded them has none.
+ */
+export interface Recorded {
+  type?: string;
+  severity?: string;
+  category?: string;
+  size?: string;
+}
+
+/** The order the recorded fields are written in the entry's marker. */
+const RECORDED: ReadonlyArray<keyof Recorded> = [
+  "type",
+  "severity",
+  "category",
+  "size",
+];
+
 /** One deferred finding, as the section records it. */
-export interface DeferredEntry {
+export interface DeferredEntry extends Recorded {
   /** The review thread's url, or the summary comment's for a summary finding. */
   source: string;
   /** A summary finding's fingerprint: with `source`, its identity. */
@@ -55,9 +79,16 @@ function sameEntry(a: EntryId, b: EntryId): boolean {
   return a.source === b.source && a.fingerprint === b.fingerprint;
 }
 
-function entryStart(id: EntryId, filed?: DeferredEntry["filed"]): string {
+function entryStart(
+  id: EntryId & Recorded,
+  filed?: DeferredEntry["filed"],
+): string {
   const fields = [
     ...(id.fingerprint === undefined ? [] : [`fp=${inert(id.fingerprint)}`]),
+    ...RECORDED.flatMap((k) => {
+      const v = id[k];
+      return v === undefined ? [] : [`${k}=${inert(v)}`];
+    }),
     ...(filed === undefined ? [] : [`filed=${inert(filed.key)}`]),
     ...(filed?.url == null ? [] : [`url=${inert(filed.url)}`]),
   ];
@@ -133,9 +164,15 @@ function entryFrom(m: RegExpExecArray, text: string[]): DeferredEntry {
   );
   const key = fields.get("filed");
   const fingerprint = fields.get("fp");
+  const recorded: Recorded = {};
+  for (const k of RECORDED) {
+    const v = fields.get(k);
+    if (v !== undefined) recorded[k] = v;
+  }
   return {
     source: m[1] ?? "",
     ...(fingerprint === undefined ? {} : { fingerprint }),
+    ...recorded,
     ...(key === undefined
       ? {}
       : { filed: { key, url: fields.get("url") ?? null } }),
@@ -160,7 +197,11 @@ function quoted(finding: string): string {
     .join("\n");
 }
 
-function entryBlock(id: EntryId, finding: string, reason: string): string {
+function entryBlock(
+  id: EntryId & Recorded,
+  finding: string,
+  reason: string,
+): string {
   if (/[\n\r]/.test(reason))
     throw new DeferredSectionError("the reason must be one line");
   return [
@@ -196,12 +237,13 @@ function sectionWith(inner: string): string {
  */
 export function withDeferredEntry(
   body: string,
-  entry: EntryId & { finding: string; reason: string },
+  entry: EntryId & Recorded & { finding: string; reason: string },
 ): { body: string; added: boolean } {
   const text = body.replaceAll("\r", "");
   if (deferredEntries(text).some((e) => sameEntry(e, entry)))
     return { body: text, added: false };
-  const block = entryBlock(entry, entry.finding, entry.reason);
+  const { finding, reason, ...id } = entry;
+  const block = entryBlock(id, finding, reason);
   const at = locate(text);
   if (at === null) {
     const intro =

@@ -296,6 +296,32 @@ export function defaultTransport(env = process.env): GitHubTransport {
   return httpTransport(url, token);
 }
 
+/**
+ * The token the transport the environment asks for signs in with, for a
+ * fingerprint only: `GH_TOKEN` or `GITHUB_TOKEN`, else what `gh auth token`
+ * prints; `null` when there is none to read.
+ */
+export function credentialToken(
+  env = process.env,
+): () => Promise<string | null> {
+  return async () => {
+    const own = resolveGitHubToken(env);
+    if (own !== null) return own;
+    if (env.JIG_GITHUB_GRAPHQL_URL?.trim()) return null;
+    try {
+      const r = await runClient(ghCall, ["auth", "token"], {
+        timeoutMs: 10_000,
+        signal: undefined,
+      });
+      const token = r.stdout.trim();
+      return r.code === 0 && token !== "" ? token : null;
+    } catch (err) {
+      swallow(err, "with no token to fingerprint, detection is not cached");
+      return null;
+    }
+  };
+}
+
 /** Read every page of one connection (`pager`); nodes are told apart by id. */
 export const pageAll = pager({
   idOf: (node) => node.id,

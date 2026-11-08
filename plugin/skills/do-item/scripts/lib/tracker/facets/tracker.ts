@@ -7,7 +7,10 @@
  * A facet the core keeps is read from what the core returns; one kept in
  * labels is read from the issue's labels, and written by adding its value's
  * label and taking the facet's other labels off. A change of such a facet
- * reads the issue's labels first, so a write never leaves two values.
+ * reads the issue's labels first, so a write never leaves two values. A
+ * label a label store owns is the facet's to write: naming one among a new
+ * issue's labels, or among the labels a change adds, is refused, pointing at
+ * the facet.
  */
 
 import { checkPriority } from "../requests.ts";
@@ -15,6 +18,7 @@ import {
   type CanonicalState,
   FACETS,
   type Facet,
+  type FacetReadOptions,
   type FacetStores,
   type FacetValues,
   type FacetStoreReport,
@@ -30,6 +34,7 @@ import {
   TrackerRequestError,
 } from "../port.ts";
 import { TrackerConfigError } from "../config-error.ts";
+import { readSignal, refuseStopped } from "./bounds.ts";
 import {
   baseReport,
   type FacetSlot,
@@ -43,7 +48,7 @@ import {
   priorityFromLabels,
   priorityLabel,
 } from "./label.ts";
-import { canonical, fold } from "./values.ts";
+import { canonical, fold, PRIORITY_NAMES } from "./values.ts";
 
 /** An issue as an adapter's core reads it: the facets it keeps, at most. */
 export type CoreIssue = Omit<Issue, "type" | "size"> &
@@ -56,7 +61,7 @@ export type CorePoolIssue = Omit<PoolIssue, "type" | "size"> &
 /** The adapter's own part of `facetStores`. */
 export interface CoreFacetReport {
   facets: Partial<
-    Record<Facet, Pick<FacetStoreReport, "health" | "detection">>
+    Record<Facet, Pick<FacetStoreReport, "health" | "detection" | "moveTo">>
   >;
   discovery: FacetStores["discovery"];
 }
@@ -81,10 +86,13 @@ export interface CoreTracker
     identity: string,
     states: ReadonlyArray<CanonicalState>,
   ): Promise<CorePoolIssue[]>;
-  /** Every open issue of this team, in pool form, read whole. */
-  openPopulation(): Promise<CorePoolIssue[]>;
-  /** Store health, detection and discovery, where the adapter has them. */
-  facetReport?(): Promise<CoreFacetReport>;
+  /**
+   * Every open issue of this team, in pool form, read whole; `signal` ends
+   * the read in flight and starts no further page.
+   */
+  openPopulation(signal?: AbortSignal): Promise<CorePoolIssue[]>;
+  /** Store health, detection and discovery, where the adapter has them, within `options`' bounds. */
+  facetReport?(options?: FacetReadOptions): Promise<CoreFacetReport>;
 }
 
 /** The value `value` names among a facet's values, refusing one it does not. */
@@ -153,35 +161,35 @@ export function withFacets(
     };
   }
 
-  /** Refuse labels that name another value of a facet the write sets. */
-  function refuseContradiction(
-    codec: LabelCodec,
+  /**
+   * Refuse a label a label store owns among labels a write names: it is the
+   * facet's to write, so the caller gives the facet instead.
+   */
+  function refuseFacetLabels(
     labels: ReadonlyArray<string>,
-    value: string,
+    where: string,
   ): void {
-    const other = labels.find(
-      (l) => codec.owns(l) && codec.read([l]) !== value,
-    );
-    if (other !== undefined)
+    for (const codec of codecs.values()) {
+      const owned = labels.find((l) => codec.owns(l));
+      if (owned === undefined) continue;
+      const value = codec.read([owned]) as string;
+      const given =
+        codec.facet === "priority"
+          ? `priority: ${PRIORITY_NAMES.indexOf(value as (typeof PRIORITY_NAMES)[number]) + 1} (${value})`
+          : `${codec.facet}: ${value}`;
       throw new TrackerRequestError(
         "invalid",
-        `the label '${other}' is the ${codec.facet} '${codec.read([other])}', but the ${codec.facet} given is '${value}'`,
+        `the label '${owned}' ${where} is the ${codec.facet} ${value}; give it as the issue's ${codec.facet} (${given}), not as a label`,
       );
+    }
   }
 
-  /** Refuse explicit label edits that contradict the facet value a patch sets. */
+  /** Refuse removing the label of the value a patch sets its facet to. */
   function refuseEditContradiction(
     codec: LabelCodec,
     value: string | null,
     patch: IssuePatch,
   ): void {
-    const adds = (patch.addLabels ?? []).filter((l) => codec.owns(l));
-    const clash = adds.find((l) => value === null || codec.read([l]) !== value);
-    if (clash !== undefined)
-      throw new TrackerRequestError(
-        "invalid",
-        `the label '${clash}' to add is a ${codec.facet} label, but the ${codec.facet} given is ${value === null ? "none" : `'${value}'`}`,
-      );
     const dropped =
       value === null
         ? undefined
@@ -196,6 +204,7 @@ export function withFacets(
   }
 
   async function createIssue(issue: NewIssue) {
+    refuseFacetLabels(issue.labels, "to file");
     const out: NewIssue = { ...issue, labels: [...issue.labels] };
     const add = (label: string) => {
       if (!out.labels.some((l) => fold(l) === fold(label)))
@@ -209,7 +218,6 @@ export function withFacets(
       if (codec === undefined) out[f] = value;
       else {
         delete out[f];
-        refuseContradiction(codec, issue.labels, value);
         add(codec.labelOf(value));
       }
     }
@@ -218,21 +226,7 @@ export function withFacets(
       checkPriority(issue.priority);
       delete out.priority;
       const label = priorityLabel(priority, issue.priority);
-      if (label !== null) {
-        refuseContradiction(
-          priority,
-          issue.labels,
-          priority.read([label]) as string,
-        );
-        add(label);
-      } else {
-        const other = issue.labels.find((l) => priority.owns(l));
-        if (other !== undefined)
-          throw new TrackerRequestError(
-            "invalid",
-            `the label '${other}' is a priority label, but the priority given is none`,
-          );
-      }
+      if (label !== null) add(label);
     }
     return rest.createIssue(out);
   }
@@ -281,18 +275,8 @@ export function withFacets(
     return { add, remove };
   }
 
-  /** A patch's added labels less the aliases of a value its facet change sets, or undefined when none is redundant. */
-  function withoutRedundantAdds(patch: IssuePatch): string[] | undefined {
-    const redundant = (l: string) =>
-      [...LABEL_FACETS, "priority" as const].some((f) => {
-        const value = patch[f];
-        return value !== undefined && value !== null && codecs.get(f)?.owns(l);
-      });
-    const adds = patch.addLabels ?? [];
-    return adds.some(redundant) ? adds.filter((l) => !redundant(l)) : undefined;
-  }
-
   async function updateIssue(key: string, patch: IssuePatch) {
+    refuseFacetLabels(patch.addLabels ?? [], "to add");
     const labels = await facetLabels(key, patch);
     const out: IssuePatch = { ...patch };
     for (const f of LABEL_FACETS) {
@@ -302,8 +286,6 @@ export function withFacets(
         out[f] = checkFacetValue(facets[f], patch[f] as string);
     }
     if (codecs.has("priority")) delete out.priority;
-    const kept = withoutRedundantAdds(patch);
-    if (kept !== undefined) out.addLabels = kept;
     if (labels.add.length > 0)
       out.addLabels = [...(out.addLabels ?? []), ...labels.add];
     if (labels.remove.length > 0)
@@ -367,6 +349,7 @@ export function withFacets(
 
   async function incompleteIssues(
     query: IncompleteQuery,
+    options?: FacetReadOptions,
   ): Promise<IncompletePage> {
     if (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100)
       throw new TrackerRequestError(
@@ -374,7 +357,10 @@ export function withFacets(
         `an incomplete-issues page holds 1 to 100 issues, not ${JSON.stringify(query.limit)}`,
       );
     for (const f of query.missing) requireStore(f);
-    const population = await openPopulation();
+    const signal = readSignal(options);
+    refuseStopped(signal);
+    const population = await openPopulation(signal);
+    refuseStopped(signal);
     refuseTruncatedLabels(population);
     const open = population.map(withValues);
     const outside = open.filter((i) => i.state.type !== "triage");
@@ -454,7 +440,8 @@ export function withFacets(
     createIssue,
     updateIssue,
     incompleteIssues,
-    async facetStores() {
+    async facetStores(options) {
+      refuseStopped(readSignal(options));
       const extra: CoreFacetReport =
         facetReport === undefined
           ? {
@@ -464,7 +451,7 @@ export function withFacets(
                 reason: `the ${core.adapter} adapter discovers no organization's fields`,
               },
             }
-          : await facetReport();
+          : await facetReport(options);
       return {
         facets: FACETS.map((f) => ({
           ...baseReport(facets[f]),

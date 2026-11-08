@@ -54,7 +54,6 @@ import {
   matchesGlob,
 } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import {
-  areaShapedLabels,
   batchableSizeOf,
   describeReason,
   type Excluded,
@@ -66,6 +65,13 @@ import {
   soloFlagOf,
   stateStanding,
 } from "./lib/eligibility.ts";
+import {
+  gapLines,
+  type LabellingGap,
+  readPool,
+  toLabellingGaps,
+  unrankedOf,
+} from "./lib/gaps.ts";
 import { anchorIssueKey } from "./lib/anchor-key.ts";
 import { Refusal } from "./lib/errors.ts";
 import {
@@ -95,6 +101,8 @@ export interface Candidate {
   points: number;
   /** 0 = none, then 1 (urgent) to 4 (low). */
   priority: number;
+  /** The type facet; `null` = none. */
+  type: string | null;
   createdAt: string;
   /** At proposal time, the baseline the claim re-check compares ids against. */
   assignee: { id: string; name: string } | null;
@@ -119,19 +127,7 @@ export interface Anchor {
   sharedLabels: string[];
 }
 
-/**
- * An issue matching the anchor that carries no size label at all, so the
- * pool read (which requires a batchable size) never returned it. Kept apart
- * from `excluded`: it was never in the pool to be held back out of, and an
- * identifier that moved between the two lists as its size label is added
- * would read as a change in the batch.
- */
-export interface LabellingGap {
-  identifier: string;
-  title: string;
-  url: string | null;
-  labels: string[];
-}
+export type { LabellingGap } from "./lib/gaps.ts";
 
 export interface Proposal {
   version: number;
@@ -179,7 +175,7 @@ export function score(
 ): { score: number; reasons: string[] } {
   const reasons: string[] = [];
   let total = 0;
-  const size = batchableSizeOf(issue.labels, policy);
+  const size = batchableSizeOf(issue, policy);
   if (size === null)
     throw new Defect(
       `${issue.identifier} has no batchable size; only issues excludeReason admitted may be ranked`,
@@ -228,7 +224,7 @@ export function rank(
   return issues
     .map((issue) => {
       const { score: s, reasons } = score(issue, policy, sharedLabels);
-      const size = batchableSizeOf(issue.labels, policy) as string;
+      const size = batchableSizeOf(issue, policy) as string;
       return {
         identifier: issue.identifier,
         title: issue.title,
@@ -236,6 +232,7 @@ export function rank(
         size,
         points: policy.sizePoints[size] ?? 0,
         priority: issue.priority,
+        type: issue.type,
         createdAt: issue.createdAt,
         assignee: issue.assignee,
         state: issue.state,
@@ -479,75 +476,6 @@ function seedRefusal(
 // Pool reads and assembly
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Turn the gap read into reportable rows. "Carries no size label" is
- * re-checked here rather than trusted to the tracker's filter, and an issue
- * whose labels came back truncated cannot be said to carry none: it is
- * counted, for a warning, since no other list can report it. An issue
- * labelled for another repository is that repository's gap, not this one's.
- */
-export function toLabellingGaps(
-  issues: readonly PoolIssue[],
-  policy: BatchPolicy,
-): { gaps: LabellingGap[]; unreadable: number } {
-  const readable = issues.filter((i) => i.truncated.length === 0);
-  const sizes = policy.knownSizes;
-  const gaps = readable
-    .filter((i) => !i.labels.some((l) => sizes.includes(l)))
-    .filter((i) => {
-      if (policy.repoLabel === null) return true;
-      const repos = i.labels.filter((l) => policy.repoLabels.includes(l));
-      return (
-        repos.length === 0 ||
-        (repos.length === 1 && repos[0] === policy.repoLabel)
-      );
-    })
-    .map((i) => ({
-      identifier: i.identifier,
-      title: i.title,
-      url: i.url,
-      labels: [...i.labels],
-    }))
-    .sort((a, b) =>
-      a.identifier < b.identifier ? -1 : a.identifier > b.identifier ? 1 : 0,
-    );
-  return { gaps, unreadable: issues.length - readable.length };
-}
-
-/**
- * Read the pool and the issues it cannot hold. The gap read is diagnostic:
- * its failure degrades the run with a warning, never discards a pool that
- * was already read.
- */
-export async function readPool(
-  tracker: Tracker,
-  poolLabels: string[],
-  policy: BatchPolicy,
-  warnings: string[],
-): Promise<{ issues: PoolIssue[]; sizeGaps: PoolIssue[] }> {
-  const issues = await tracker.openIssues({
-    withSomeOf: [poolLabels, policy.batchSizes],
-  });
-  if (policy.sizes === null) {
-    warnings.push(
-      "labelling gaps are not reported: without work_batch.sizes an issue with no size label cannot be told from one too large to batch",
-    );
-    return { issues, sizeGaps: [] };
-  }
-  try {
-    const sizeGaps = await tracker.openIssues({
-      withSomeOf: [poolLabels],
-      withNoneOf: policy.sizes,
-    });
-    return { issues, sizeGaps };
-  } catch (err) {
-    warnings.push(
-      `the labelling-gap read failed (${err instanceof Error ? err.message : String(err)}); gaps are not reported, so an area that looks drained may still hold issues with no size`,
-    );
-    return { issues, sizeGaps: [] };
-  }
-}
-
 export function buildProposal(
   anchor: Anchor,
   issues: readonly PoolIssue[],
@@ -556,12 +484,17 @@ export function buildProposal(
   warnings: string[],
   sizeGaps: readonly PoolIssue[],
 ): Proposal {
-  const { eligible, excluded } = partition(issues, policy, opts);
-  const ranked = rank(eligible, policy, anchor.sharedLabels);
-  const { gaps, unreadable } = toLabellingGaps(sizeGaps, policy);
+  const parts = partition(issues, policy, opts);
+  const ranked = rank(parts.eligible, policy, anchor.sharedLabels);
+  // An issue held back for no priority is a labelling gap, not a refusal.
+  const unranked = unrankedOf(issues, parts.excluded);
+  const excluded = parts.excluded.filter(
+    (e) => e.reason.kind !== "no-priority",
+  );
+  const { gaps, unreadable } = toLabellingGaps(sizeGaps, unranked, policy);
   if (unreadable > 0)
     warnings.push(
-      `${unreadable} issue(s) matching the anchor came back with truncated labels: whether they carry a size label is unknown, and they appear in no list below`,
+      `${unreadable} issue(s) matching the anchor came back with truncated labels: whether they carry a priority and a size is unknown, and they appear in no list below`,
     );
   const seed = anchor.kind === "issue" ? anchor.input : null;
   const candidates = capCandidates(ranked, opts, seed);
@@ -674,7 +607,7 @@ async function runIssueAnchor(
         .sort(),
     };
     // No gap read: the children are read whatever their size, so one with
-    // no size label is held back in `excluded`, naming the label to add.
+    // no size is held back in `excluded`, naming the size to set.
     const children = await tracker.openChildren(key);
     return buildProposal(anchor, children, policy, opts, warnings, []);
   }
@@ -755,6 +688,7 @@ export interface Verdict {
 export interface EligibilityReport {
   version: number;
   policy: {
+    facets: boolean;
     batchSizes: string[];
     sizes: string[] | null;
     sizePoints: Record<string, number>;
@@ -792,6 +726,7 @@ export function eligibilityReport(
   return {
     version: OUTPUT_VERSION,
     policy: {
+      facets: policy.facets,
       batchSizes: policy.batchSizes,
       sizes: policy.sizes,
       sizePoints: { ...policy.sizePoints },
@@ -817,8 +752,7 @@ export function eligibilityReport(
     },
     verdicts: issues.map((issue) => {
       const reason = excludeReason(issue, policy, { claimed });
-      const size =
-        reason === null ? batchableSizeOf(issue.labels, policy) : null;
+      const size = reason === null ? batchableSizeOf(issue, policy) : null;
       return {
         identifier: issue.identifier,
         eligible: reason === null,
@@ -937,7 +871,7 @@ const REVALIDATION_FIELDS: ReadonlyArray<{
   {
     key: "type",
     render: (c, p) =>
-      `type: ${listed(c.labels.filter((l) => p.typeLabels?.includes(l)))}`,
+      `type: ${listed(p.facets ? (c.type === null ? [] : [c.type]) : c.labels.filter((l) => p.typeLabels?.includes(l)))}`,
   },
   {
     key: "repo",
@@ -1043,42 +977,12 @@ function heldBackLines(p: Proposal, policy: BatchPolicy): string[] {
   ];
 }
 
-/**
- * What a gap's labels already say will hold it back once it has a size.
- * Only label-visible blockers: an unlabelled epic shows as a bare row, so a
- * bare row means "no known blocker", not "batchable".
- */
-function gapBlockers(labels: readonly string[], policy: BatchPolicy): string[] {
-  return [
-    ...new Set([
-      ...labels.filter((l) => soloFlagOf([l], policy) !== null),
-      ...labels.filter((l) => l === policy.epicLabel),
-      ...areaShapedLabels(labels, policy).filter(
-        (l) => !isKnownAreaLabel(l, policy),
-      ),
-    ]),
-  ];
-}
-
-function gapLines(p: Proposal, policy: BatchPolicy): string[] {
-  if (p.labellingGaps.length === 0) return [];
-  return [
-    "",
-    "Labelling gaps (no size label, so never in the pool; size them and re-run, which decides whether they are batchable):",
-    ...p.labellingGaps.map((g) => {
-      const blockers = gapBlockers(g.labels, policy);
-      const suffix = blockers.length > 0 ? `  [also: ${show(blockers)}]` : "";
-      return `  ${sanitizeForDisplay(g.identifier)}  ${sanitizeForDisplay(g.title)}${suffix}`;
-    }),
-  ];
-}
-
 export function renderTable(p: Proposal, policy: BatchPolicy): string {
   return [
     ...anchorLines(p),
     ...batchLines(p, policy),
     ...heldBackLines(p, policy),
-    ...gapLines(p, policy),
+    ...gapLines(p.labellingGaps, policy),
     ...p.warnings.flatMap((w) => ["", `WARNING: ${sanitizeForDisplay(w)}`]),
   ].join("\n");
 }

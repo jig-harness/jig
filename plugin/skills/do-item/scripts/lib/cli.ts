@@ -21,6 +21,23 @@ export function runEntry(main: () => Promise<number>): void {
   );
 }
 
+/**
+ * Run a script's work and return its exit code; an error it throws is one
+ * `ERROR:` line on stderr, with its stack when `verbose`, and exits 1.
+ */
+export async function failingAsError(
+  verbose: boolean,
+  work: () => Promise<number>,
+): Promise<number> {
+  try {
+    return await work();
+  } catch (e) {
+    console.error(`ERROR: ${e instanceof Error ? e.message : String(e)}`);
+    if (verbose && e instanceof Error) console.error(e.stack);
+    return 1;
+  }
+}
+
 export interface ParsedArgs {
   /** Boolean flags seen, by name (`--verbose` → `verbose`). */
   flags: Set<string>;

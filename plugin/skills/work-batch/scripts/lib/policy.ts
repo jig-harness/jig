@@ -22,6 +22,14 @@
  * (`do_item.agents.codearea_areas`) and the catalog
  * (`drive.change_areas_catalog`).
  *
+ * Where the repository's label taxonomy has a size group, size is an issue
+ * facet (the tracker interface reads it wherever the tracker keeps it), and
+ * so is type: every size the settings above name, and every type
+ * `review.taxonomy.types` names, is read as a value of its facet, or as the
+ * label of one, so a list keeps working whatever store the facet is in.
+ * Without a size group there is no size facet, and sizes and types are read
+ * from labels.
+ *
  * The solo-only flags are derived, and configuration can only add to them:
  * the human-in-the-loop label and its facets, the manual-operations label,
  * every flag any catalog area carries, then `work_batch.solo_flags`. No
@@ -44,7 +52,15 @@ import {
   parseAgentRouting,
 } from "../../../do-item/scripts/determine_agent.ts";
 import { doItemSection } from "../../../do-item/scripts/lib/overlay.ts";
-import { parseTrackerConfig } from "../../../do-item/scripts/lib/tracker/config.ts";
+import {
+  facetsOf,
+  parseTrackerConfig,
+} from "../../../do-item/scripts/lib/tracker/config.ts";
+import {
+  facetValueOf,
+  type Facets,
+  usable,
+} from "../../../do-item/scripts/lib/tracker/facets/config.ts";
 import type { CanonicalState } from "../../../do-item/scripts/lib/tracker/port.ts";
 import {
   type ChangeAreaCatalog,
@@ -100,6 +116,11 @@ export interface WorkBatchSettings {
 }
 
 export interface BatchPolicy extends WorkBatchSettings {
+  /**
+   * Whether size and type are read from the issue's facets (the repository's
+   * label taxonomy has a size group); otherwise from its labels.
+   */
+  facets: boolean;
   /** Sizes an issue may carry and join a batch (`issue_tracker.labels.batch_sizes`). */
   batchSizes: string[];
   /**
@@ -119,7 +140,7 @@ export interface BatchPolicy extends WorkBatchSettings {
   repoLabel: string | null;
   /** Every repository label; an issue may carry only one. */
   repoLabels: string[];
-  /** The type labels, one of which an issue must carry; `null` = not checked. */
+  /** The types an issue may have, one of which it must have (as labels, or type values where `facets`); `null` = not checked. */
   typeLabels: string[] | null;
   /** The prefixes of context labels, one of which an issue must carry; `null` = not checked. */
   contextPrefixes: string[] | null;
@@ -204,7 +225,11 @@ function sameKeys(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((k) => b.includes(k));
 }
 
-function parseRanking(raw: unknown, batchSizes: string[]): Ranking {
+function parseRanking(
+  raw: unknown,
+  batchSizes: string[],
+  sizeOf: (entry: string) => string,
+): Ranking {
   // Size names are the repository's own, so a default weight is looked up
   // as an own property only: `constructor` is a size like any other.
   const defaultSizes: Record<string, number> = Object.create(null);
@@ -219,7 +244,7 @@ function parseRanking(raw: unknown, batchSizes: string[]): Ranking {
   refuseUnknownKeys(raw, RANKING_FIELDS, "work_batch.ranking");
   let sizes = defaultSizes;
   if (raw.sizes !== undefined) {
-    sizes = sizeMap(raw.sizes, "work_batch.ranking.sizes", 0);
+    sizes = keysOf(sizeMap(raw.sizes, "work_batch.ranking.sizes", 0), sizeOf);
     for (const size of Object.keys(sizes))
       if (!batchSizes.includes(size))
         throw new WorkBatchConfigError(
@@ -272,6 +297,7 @@ export function sizePointsMismatch(
 export function parseWorkBatchSection(
   overlay: Record<string, unknown>,
   batchSizes: string[],
+  sizeOf: (entry: string) => string = (entry) => entry,
 ): WorkBatchSettings {
   const raw = overlay.work_batch;
   if (raw !== undefined && raw !== null && !isRecord(raw))
@@ -282,7 +308,10 @@ export function parseWorkBatchSection(
   const sizePoints =
     section.size_points === undefined
       ? { ...DEFAULT_SIZE_POINTS }
-      : sizeMap(section.size_points, "work_batch.size_points", 1);
+      : keysOf(
+          sizeMap(section.size_points, "work_batch.size_points", 1),
+          sizeOf,
+        );
   const mismatch = sizePointsMismatch(
     section.size_points === undefined ? null : Object.keys(sizePoints),
     batchSizes,
@@ -291,7 +320,7 @@ export function parseWorkBatchSection(
 
   let sizes: string[] | null = null;
   if (section.sizes !== undefined && section.sizes !== null) {
-    sizes = labelList(section.sizes, "work_batch.sizes");
+    sizes = labelList(section.sizes, "work_batch.sizes").map(sizeOf);
     const missing = batchSizes.filter((s) => !sizes?.includes(s));
     if (missing.length > 0)
       throw new WorkBatchConfigError(
@@ -314,8 +343,18 @@ export function parseWorkBatchSection(
         ? []
         : labelList(section.solo_flags, "work_batch.solo_flags"),
     sizes,
-    ranking: parseRanking(section.ranking, batchSizes),
+    ranking: parseRanking(section.ranking, batchSizes, sizeOf),
   };
+}
+
+/** `map` with each key read through `sizeOf`. */
+function keysOf(
+  map: Record<string, number>,
+  sizeOf: (entry: string) => string,
+): Record<string, number> {
+  const out: Record<string, number> = Object.create(null);
+  for (const [key, n] of Object.entries(map)) out[sizeOf(key)] = n;
+  return out;
 }
 
 /** The `<prefix>:` a label starts with, lower case; `null` when it has none. */
@@ -370,23 +409,18 @@ function configuredLabelKeys(overlay: Record<string, unknown>): string[] {
 }
 
 /**
- * The policy from a parsed overlay and the catalog (`null` when the
- * repository declares none). Throws, naming the field, when the overlay is
- * not valid for any skill that reads it.
+ * The policy's lookups by a name a repository chooses (a label, an area key,
+ * a state name), none inheriting `Object.prototype`: `constructor` and
+ * `__proto__` are names like any other.
  */
-export function batchPolicy(
+function lookups(
   overlay: Record<string, unknown>,
+  routing: ReturnType<typeof parseAgentRouting>,
   catalog: ChangeAreaCatalog | null,
-): BatchPolicy {
-  const labels = parseTrackerLabels(overlay);
-  const review = parseReviewConfig(overlay.review);
-  const routing = parseAgentRouting(overlay);
-  const settings = parseWorkBatchSection(overlay, labels.batchSizes);
-
-  const catalogFlags = [...(catalog?.values() ?? [])].flatMap((a) => a.flags);
-  // The lookups below are keyed by names a repository chooses (labels, area
-  // keys, state names), so none inherits `Object.prototype`: `constructor`
-  // and `__proto__` are names like any other.
+): Pick<
+  BatchPolicy,
+  "areaNaming" | "areaNamingSpelling" | "areaFlags" | "stateNames"
+> {
   const areaNaming: Record<string, string> = Object.assign(
     Object.create(null),
     routing.codeareaAreas,
@@ -403,6 +437,30 @@ export function batchPolicy(
     parseTrackerConfig(overlay).states,
   ))
     stateNames[name.trim().toLowerCase()] ??= state as CanonicalState;
+  return { areaNaming, areaNamingSpelling, areaFlags, stateNames };
+}
+
+/**
+ * The policy from a parsed overlay, the catalog (`null` when the repository
+ * declares none) and the repository's resolved facets (`null`: none known,
+ * so sizes and types are read from labels). Throws, naming the field, when
+ * the overlay is not valid for any skill that reads it.
+ */
+export function batchPolicy(
+  overlay: Record<string, unknown>,
+  catalog: ChangeAreaCatalog | null,
+  facets: Facets | null = null,
+): BatchPolicy {
+  const labels = parseTrackerLabels(overlay);
+  const review = parseReviewConfig(overlay.review);
+  const routing = parseAgentRouting(overlay);
+  const faceted = facets !== null && usable(facets.size);
+  const sizeOf = facetValueOf(faceted ? facets.size : undefined);
+  const typeOf = facetValueOf(faceted ? facets.type : undefined);
+  const batchSizes = labels.batchSizes.map(sizeOf);
+  const settings = parseWorkBatchSection(overlay, batchSizes, sizeOf);
+
+  const catalogFlags = [...(catalog?.values() ?? [])].flatMap((a) => a.flags);
   const soloFlags = [
     ...new Set([
       labels.hitl,
@@ -421,11 +479,12 @@ export function batchPolicy(
 
   return {
     ...settings,
-    batchSizes: labels.batchSizes,
+    facets: faceted,
+    batchSizes,
     knownSizes: [
       ...new Set([
-        ...(settings.sizes ?? labels.batchSizes),
-        ...(review.taxonomy?.sizes ?? []),
+        ...(settings.sizes ?? batchSizes),
+        ...(review.taxonomy?.sizes ?? []).map(sizeOf),
       ]),
     ],
     soloFlags,
@@ -434,12 +493,9 @@ export function batchPolicy(
     followupLabel: labels.followup,
     repoLabel,
     repoLabels: [...new Set([...repos, ...(repoLabel ? [repoLabel] : [])])],
-    typeLabels: review.taxonomy?.types ?? null,
+    typeLabels: review.taxonomy?.types?.map(typeOf) ?? null,
     contextPrefixes: review.taxonomy?.context_prefixes ?? null,
-    areaNaming,
-    areaNamingSpelling,
-    areaFlags,
-    stateNames,
+    ...lookups(overlay, routing, catalog),
     knownAreaLabels: known.area,
     knownContextLabels: known.context,
     areaLabelPrefixes: [...new Set(prefixes)].sort(),
@@ -465,13 +521,21 @@ export function readCatalog(path: string | null): ChangeAreaCatalog | null {
   return path === null ? null : loadCatalogFile(path);
 }
 
-/** `batchPolicy` with its errors naming the file or variable at fault. */
+/**
+ * `batchPolicy`, with the facets of the repository at `root`, its errors
+ * naming the file or variable at fault.
+ */
 export function policyFrom(
   overlay: Record<string, unknown>,
   catalog: ChangeAreaCatalog | null,
+  root: string = consumerRoot(),
 ): BatchPolicy {
   try {
-    return batchPolicy(overlay, catalog);
+    return batchPolicy(
+      overlay,
+      catalog,
+      facetsOf(parseTrackerConfig(overlay), root),
+    );
   } catch (err) {
     throw withSource(
       overlay,

@@ -527,7 +527,9 @@ export function world(): World {
         variables: Record<string, unknown>;
       };
       const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1];
-      const data = answer(op, variables);
+      const data = op?.startsWith("TrackerFacet")
+        ? { repository: noFacetStores(query) }
+        : answer(op, variables);
       return Response.json(
         data === undefined
           ? { errors: [{ message: `unhandled ${op}` }] }
@@ -701,6 +703,26 @@ export function world(): World {
     close: () => {
       server.stop(true);
     },
+  };
+}
+
+/**
+ * The tracker's facet reads (detection, store health) answered for a
+ * repository with no issue types, no issue fields and no issue carrying a
+ * facet's label: every count aliased in `query` is zero, so each facet the
+ * configuration leaves unnamed stays in labels.
+ */
+function noFacetStores(query: string): Record<string, unknown> {
+  const none = { pageInfo: { hasNextPage: false }, nodes: [] };
+  const counts = [...query.matchAll(/(\w+):\s*issues\(/g)].map((m) => [
+    m[1] as string,
+    { totalCount: 0 },
+  ]);
+  return {
+    issueTypes: none,
+    issueFields: none,
+    owner: { __typename: "User", login: "example-org" },
+    ...Object.fromEntries(counts),
   };
 }
 

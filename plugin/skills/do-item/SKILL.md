@@ -69,7 +69,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
 | `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
-| `issue_tracker.types` | The repository's work types and the labels that mark each (see [Step 1](#step-1-fetch-the-issue)) | `bug`, `feature`, `improvement`, `task`, `spike`; `bug` marked by `issue_tracker.labels.bug`, the others by `<type>` and `type:<type>` |
+| `issue_tracker.types` | The repository's work types and the types and labels that mark each (see [Step 1](#step-1-fetch-the-issue)) | `bug`, `feature`, `improvement`, `task`, `spike`; `bug` marked by `issue_tracker.labels.bug`, the others by `<type>` and `type:<type>` |
 | `do_item.work_types` | Fields of the depth table a type overrides | The table's defaults ([configuration reference](../../CONFIGURATION.md#the-depth-table)) |
 | `do_item.agents` | Routing from issue to implementing agent (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Every issue goes to `general-purpose` |
 | `routing` | The model tier and effort the implementer runs on, as rules (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Routes are derived and printed, none applied |
@@ -274,22 +274,27 @@ native integration, or the reverse.
 
 **exact** — **Type the item.** Write the issue JSON to `issue.json` with the
 file-writing tool (from the native transport: its `title`, its label names
-as `labels`, and its own issue type's name as `nativeType`, or `null` when
-it reports none), then derive its
+as `labels`, its own issue type's name as `nativeType`, or `null` when it
+reports none, and `type` as `null`, since only the script reads the
+repository's type facet), then derive its
 [work type](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/determine_type.ts" issue.json
 ```
 
-It prints `{ type, evidence, depth }`: the type, from the first of a type
-label (`issue_tracker.types`), the tracker's own issue type and the title's
-Conventional Commits prefix that names one, else `unknown`; which step
-decided (`evidence.step`: `label`, `tracker_type`, `title_prefix`, or `none`)
-with `evidence.summary`; and the type's row of the
-[depth table](../../CONFIGURATION.md#the-depth-table). Put the type and
-`evidence.summary` in the status message, e.g.
-`Type: bug (label type:bug)`; an `unknown` type is reported the same way.
+It prints `{ type, evidence, depth }`: the work type, from the first of the
+issue's type (its type facet, mapped through `issue_tracker.types`), the
+tracker's own issue type and the title's Conventional Commits prefix that
+names one, else `unknown`; which step decided (`evidence.step`: `type`,
+`tracker_type`, `title_prefix`, or `none`) with `evidence.summary`; and the
+type's row of the [depth table](../../CONFIGURATION.md#the-depth-table). Put
+the type and `evidence.summary` in the status message, e.g.
+`Type: task (type docs (issue_tracker.types.task))`; an `unknown` type is
+reported the same way. The issue JSON also carries its other facets: when
+`priority` is `0` or `size` is `null`, add `missing: priority` or
+`missing: size` to the status line (an epic needs no size), so the gap is
+visible to whoever reads it; the pickup goes on.
 Exit `1` is a configuration the loading rules refuse: stop the pickup and
 report its message. The route (Step 4a item 1) reads the same settings, so
 going on would start and assign the item only for the route to refuse it.
@@ -493,7 +498,7 @@ routing below remain **exact**.
 > `2`) means no batch: continue alone.
 
 > **Bug pattern pre-scout (bug issues without pattern evidence).** Run only
-> if all hold: (a) the issue carries the bug type label; (b) its body has no
+> if all hold: (a) the issue's work type is `bug`; (b) its body has no
 > `## Pattern` section, no `pattern:<slug>` label and no "Pattern scout ran"
 > line; (c) the bug is generalizable — a class of mistake likely repeated
 > elsewhere (a missing authorization or ownership filter, an off-by-one, a

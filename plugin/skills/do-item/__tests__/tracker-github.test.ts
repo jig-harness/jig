@@ -367,7 +367,7 @@ describe("GitHub adapter: filing and planning", () => {
   it("files an issue with its labels, priority label, parent and milestone", async () => {
     const { t, calls } = gitHub((c) => {
       if (c.op === "TrackerRepository") return { repository: { id: "R_1" } };
-      if (c.op === "TrackerLabels") return repoLabels("bug", "priority: high");
+      if (c.op === "TrackerLabels") return repoLabels("ui", "priority: high");
       if (c.op === "TrackerIssue") return oneIssue(issueNode({ number: 3 }));
       if (c.op === "TrackerMilestones")
         return {
@@ -386,7 +386,7 @@ describe("GitHub adapter: filing and planning", () => {
     const out = await t.createIssue({
       title: "New",
       description: "Body",
-      labels: ["Bug"],
+      labels: ["UI"],
       priority: 2,
       parent: "#3",
       project: "Q3",
@@ -401,7 +401,7 @@ describe("GitHub adapter: filing and planning", () => {
       repositoryId: "R_1",
       title: "New",
       body: "Body",
-      labelIds: ["LA_0_bug", "LA_1_priority: high"],
+      labelIds: ["LA_0_ui", "LA_1_priority: high"],
       parentIssueId: "I_3",
       milestoneId: "MI_1",
     });
@@ -461,13 +461,13 @@ describe("GitHub adapter: filing and planning", () => {
   it("refuses a patch that adds and removes one label under two spellings", async () => {
     const { t, calls } = gitHub((c) => {
       if (c.op === "TrackerIssue")
-        return oneIssue(issueNode({ number: 5, labels: ["bug"] }));
-      if (c.op === "TrackerLabels") return repoLabels("bug");
+        return oneIssue(issueNode({ number: 5, labels: ["ui"] }));
+      if (c.op === "TrackerLabels") return repoLabels("ui");
       return {};
     });
     await expect(
-      t.updateIssue("#5", { addLabels: ["Bug"], removeLabels: ["bug"] }),
-    ).rejects.toThrow("both adds and removes 'Bug'");
+      t.updateIssue("#5", { addLabels: ["UI"], removeLabels: ["ui"] }),
+    ).rejects.toThrow("both adds and removes 'UI'");
     expect(writes(calls)).toEqual([]);
   });
 
@@ -717,7 +717,7 @@ describe("GitHub adapter: reading in pages and refusing what it cannot do", () =
       "issue of other/lib",
     );
     await expect(
-      t.updateIssue("other/lib#3", { addLabels: ["bug"] }),
+      t.updateIssue("other/lib#3", { addLabels: ["ui"] }),
     ).rejects.toThrow("issue of other/lib");
     expect(calls).toEqual([]);
   });

@@ -12,20 +12,28 @@
  * resolved before anything is written: a value that names no issue type or no
  * option is refused, naming what the repository has.
  *
- * Detection reads what the GitHub default would select for a facet the
- * configuration does not name, and the organization's discovery what it
- * offers; both only report (`facetStores()`). A failed read is an error
- * naming the read and the credential, carried as the transport reports it,
- * never "the organization has no field".
+ * Detection reads what the GitHub default selects for a facet the
+ * configuration does not name (facets/detect.ts), cached for an hour on this
+ * machine; the organization's discovery reads what it offers, for
+ * `facetStores()` only. A failed read is an error naming the read and the
+ * credential, carried as the transport reports it, never "the organization
+ * has no field". Every read of a report takes its caller's signal.
  */
 
 import { TrackerConfigError } from "../config-error.ts";
 import type { CoreFacetReport } from "../facets/tracker.ts";
 import { type Facets, type ResolvedFacet, usable } from "../facets/config.ts";
-import { detection, type Evidence } from "../facets/detect.ts";
+import { readSignal } from "../facets/bounds.ts";
+import {
+  candidateFor,
+  type Detected,
+  type DetectionCache,
+  detection,
+  detectionKey,
+  type Evidence,
+} from "../facets/detect.ts";
 import {
   fold,
-  PRIORITY_NAMES,
   priorityName,
   priorityNumber,
   type PriorityName,
@@ -33,6 +41,8 @@ import {
 import {
   type Facet,
   type FacetDetection,
+  type FacetReadOptions,
+  type FacetStoreReport,
   type IssuePatch,
   type NewIssue,
   TrackerRequestError,
@@ -115,6 +125,15 @@ export interface GitHubFacetOptions {
   transport: GitHubTransport;
   /** Names the credential the transport uses, never its secret. */
   credential: string;
+  /** Where detection answers are kept; none by default. */
+  cache?: DetectionCache;
+  /** The credential's token, read only to fingerprint a cache entry. */
+  token?: () => Promise<string | null>;
+  /**
+   * What detection found when the stores of `facets` were selected: the
+   * report shows it rather than reading again.
+   */
+  detected?: Detected;
 }
 
 /** What the adapter reads and writes of the facets it keeps itself. */
@@ -128,6 +147,7 @@ export interface GitHubFacets {
     issue: GhIssue,
     raw: Record<string, unknown>,
     labels: ReadonlyArray<string>,
+    signal?: AbortSignal,
   ): Promise<{ priority: number; type?: string | null; size?: string | null }>;
   /** What `createIssue`'s input adds for the facets kept in GitHub's own fields. */
   createInput(issue: NewIssue): Promise<Record<string, unknown>>;
@@ -136,13 +156,15 @@ export interface GitHubFacets {
   /** Whether a patch changes a facet kept in GitHub's own fields. */
   touches(patch: IssuePatch): boolean;
   /** Store health, detection and discovery, for `facetStores()`. */
-  report(): Promise<CoreFacetReport>;
+  report(options?: FacetReadOptions): Promise<CoreFacetReport>;
   /**
-   * What the GitHub default would select for each facet in `unnamed`.
-   * Throws on a failed read: denied, rate limited or timed out, it is never
-   * read as "no field".
+   * What the GitHub default selects for each facet in `unnamed`, from the
+   * cache when it holds a fresh answer. Throws on a failed read: denied,
+   * rate limited or timed out, it is never read as "no field".
    */
-  detect(unnamed: Facet[]): Promise<Partial<Record<Facet, FacetDetection>>>;
+  detect(unnamed: Facet[], signal?: AbortSignal): Promise<Detected>;
+  /** Drop the cached answer: a write was refused for a value it named. */
+  forget(): Promise<void>;
 }
 
 const same = (a: string, b: string) => fold(a) === fold(b);
@@ -301,11 +323,11 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     .join("\n");
 
   let ids: Promise<StoreIds> | undefined;
-  function storeIds(): Promise<StoreIds> {
+  function storeIds(signal?: AbortSignal): Promise<StoreIds> {
     ids ??= (async () => {
       let data: unknown;
       try {
-        data = await transport(STORE_QUERY, repo);
+        data = await transport(STORE_QUERY, repo, signal);
       } catch (err) {
         ids = undefined;
         throw facetFailure(
@@ -326,8 +348,11 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
   /** The field a field store (or a native priority) is kept in. */
   const fieldName = (s: ResolvedFacet) => s.field ?? "Priority";
 
-  async function fieldOf(s: ResolvedFacet): Promise<FieldDef> {
-    const all = (await storeIds()).fields;
+  async function fieldOf(
+    s: ResolvedFacet,
+    signal?: AbortSignal,
+  ): Promise<FieldDef> {
+    const all = (await storeIds(signal)).fields;
     const found = all.find((f) => same(f.name, fieldName(s)));
     if (found === undefined)
       throw new TrackerRequestError(
@@ -346,12 +371,13 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
   async function fieldValue(
     s: ResolvedFacet,
     value: string,
+    signal?: AbortSignal,
   ): Promise<{
     field: FieldDef;
     name: string;
     input: Record<string, unknown>;
   }> {
-    const field = await fieldOf(s);
+    const field = await fieldOf(s, signal);
     const name = s.map?.toTracker(value) ?? value;
     if (field.dataType === "SINGLE_SELECT") {
       const option = field.options.find((o) => same(o.name, name));
@@ -386,9 +412,12 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     return { field, name, input: { fieldId: field.id, textValue: name } };
   }
 
-  async function issueTypeId(value: string): Promise<string> {
+  async function issueTypeId(
+    value: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const name = typeKept?.map?.toTracker(value) ?? value;
-    const types = (await storeIds()).types;
+    const types = (await storeIds(signal)).types;
     const found = types.find((t) => same(t.name, name));
     if (found === undefined || found.id === "")
       throw new TrackerRequestError(
@@ -399,7 +428,11 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
   }
 
   /** Every field value of an issue: from the node, or read alone when it has more pages. */
-  async function fieldValues(issue: GhIssue, raw: Record<string, unknown>) {
+  async function fieldValues(
+    issue: GhIssue,
+    raw: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) {
     const conn = record(
       raw.issueFieldValues,
       `issue ${issue.key}.issueFieldValues`,
@@ -428,6 +461,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
           record(record(d.repository, "repository").issue, `issue ${issue.key}`)
             .issueFieldValues,
         `field values of ${issue.key}`,
+        signal,
       );
     } catch (err) {
       throw facetFailure(
@@ -464,10 +498,11 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     issue: GhIssue,
     raw: Record<string, unknown>,
     labels: ReadonlyArray<string>,
+    signal?: AbortSignal,
   ) {
     const values =
       fieldStores.length > 0 || nativePriority !== null
-        ? (await fieldValues(issue, raw))
+        ? (await fieldValues(issue, raw, signal))
             .map((n, i) =>
               fieldValueOf(
                 record(n, `issue ${issue.key}.issueFieldValues[${i}]`),
@@ -575,11 +610,13 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
   /** A configured native or field store's health: every value it names resolves. */
   async function health(
     s: ResolvedFacet,
+    signal?: AbortSignal,
   ): Promise<{ status: "ok" } | { status: "failed"; error: string }> {
     try {
       for (const v of s.values)
-        if (s.facet === "type" && s.store === "native") await issueTypeId(v);
-        else await fieldValue(s, v);
+        if (s.facet === "type" && s.store === "native")
+          await issueTypeId(v, signal);
+        else await fieldValue(s, v, signal);
       return { status: "ok" };
     } catch (err) {
       return {
@@ -589,9 +626,11 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     }
   }
 
-  async function discover(): Promise<CoreFacetReport["discovery"]> {
+  async function discover(
+    signal?: AbortSignal,
+  ): Promise<CoreFacetReport["discovery"]> {
     try {
-      const data = record(await transport(OWNER_QUERY, repo), "data");
+      const data = record(await transport(OWNER_QUERY, repo, signal), "data");
       const owner = record(
         record(data.repository, "repository").owner,
         "repository.owner",
@@ -603,9 +642,11 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
         };
       const org = record(
         record(
-          await transport(DISCOVERY_QUERY, {
-            login: str(owner.login, "owner.login"),
-          }),
+          await transport(
+            DISCOVERY_QUERY,
+            { login: str(owner.login, "owner.login") },
+            signal,
+          ),
           "data",
         ).organization,
         "organization",
@@ -637,6 +678,58 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     }
   }
 
+  /** The facets the configuration leaves to the default. */
+  const unnamed = (["type", "priority", "size"] as const).filter((f) => {
+    const s = facets[f];
+    return usable(s) && s.why !== "configured";
+  });
+
+  /** The cache key of this repository's detection, or `null` when no cache keeps it. */
+  async function cacheKey(asked: Facet[]): Promise<string | null> {
+    const { cache, token } = opts;
+    if (cache === undefined || token === undefined) return null;
+    const secret = await token();
+    const print = secret === null ? null : cache.fingerprint(secret);
+    if (print === null) return null;
+    return detectionKey([
+      slug(home),
+      home.owner,
+      print,
+      ...asked.map(
+        (f) =>
+          `${f}|${declared(f)}|${labelsOf(f).join(",")}|${valuesOf(f).join(",")}`,
+      ),
+    ]);
+  }
+
+  /** What detection found for `asked`, from the cache when it answers. */
+  async function detectCached(
+    asked: Facet[],
+    signal?: AbortSignal,
+  ): Promise<Detected> {
+    const key = await cacheKey(asked);
+    const hit = key === null ? null : (opts.cache?.get(key) ?? null);
+    if (hit !== null && asked.every((f) => hit[f]?.status === "read"))
+      return { found: hit, cached: true };
+    const found = await detect(asked, signal);
+    if (key !== null) opts.cache?.set(key, found);
+    return { found, cached: false };
+  }
+
+  /** The store a facet kept in labels could move to, from what was read. */
+  function moveTo(
+    f: Facet,
+    found: FacetDetection | undefined,
+    discovery: CoreFacetReport["discovery"],
+  ): FacetStoreReport["moveTo"] | undefined {
+    if (found?.status === "read") return found.candidate;
+    if (discovery.status !== "read") return undefined;
+    return candidateFor(f, valuesOf(f), {
+      types: discovery.issueTypes,
+      fields: discovery.fields,
+    }).candidate;
+  }
+
   return {
     fields,
     own,
@@ -644,33 +737,70 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     createInput,
     updateInput,
     touches,
-    detect,
-    async report() {
-      const out: CoreFacetReport["facets"] = {};
+    detect: detectCached,
+    async forget() {
+      const key = await cacheKey(unnamed);
+      if (key !== null) opts.cache?.drop(key);
+    },
+    async report(options) {
+      const signal = readSignal(options);
+      const out = await healthReport(signal);
+      const detected =
+        unnamed.length === 0
+          ? null
+          : (opts.detected ?? (await detectAll(unnamed, signal)));
+      for (const f of unnamed) {
+        const found = detected?.found[f];
+        if (found !== undefined)
+          out[f] = { ...out[f], detection: shown(found, detected) };
+      }
+      const discovery: CoreFacetReport["discovery"] =
+        options?.discovery === false
+          ? { status: "none", reason: "the organization was not read" }
+          : await discover(signal);
       for (const f of ["type", "priority", "size"] as const) {
-        const s = facets[f];
-        if (usable(s) && s.why === "configured" && s.store !== "label")
-          out[f] = { health: await health(s) };
+        const to = labelKept(f)
+          ? moveTo(f, detected?.found[f], discovery)
+          : undefined;
+        if (to !== undefined) out[f] = { ...out[f], moveTo: to };
       }
-      const unnamed = (["type", "priority", "size"] as const).filter((f) => {
-        const s = facets[f];
-        return usable(s) && s.why !== "configured";
-      });
-      if (unnamed.length > 0) {
-        const found = await detectAll(unnamed);
-        for (const f of unnamed)
-          out[f] = { ...out[f], detection: found[f] as FacetDetection };
-      }
-      return { facets: out, discovery: await discover() };
+      return { facets: out, discovery };
     },
   };
 
+  /** Each configured native or field store's health. */
+  async function healthReport(
+    signal?: AbortSignal,
+  ): Promise<CoreFacetReport["facets"]> {
+    const out: CoreFacetReport["facets"] = {};
+    for (const f of ["type", "priority", "size"] as const) {
+      const s = facets[f];
+      if (usable(s) && s.why === "configured" && s.store !== "label")
+        out[f] = { health: await health(s, signal) };
+    }
+    return out;
+  }
+
+  /** A detection result as reported, marked when the cache answered it. */
+  function shown(found: FacetDetection, detected: Detected | null) {
+    return detected?.cached === true && found.status === "read"
+      ? { ...found, cached: true }
+      : found;
+  }
+
+  /** Whether a facet is kept in labels here. */
+  function labelKept(f: Facet): boolean {
+    const s = facets[f];
+    return usable(s) && s.store === "label";
+  }
+
   /** Detection for every facet not named; a failed read fails each with its error. */
   async function detectAll(
-    unnamed: Facet[],
-  ): Promise<Partial<Record<Facet, FacetDetection>>> {
+    asked: Facet[],
+    signal?: AbortSignal,
+  ): Promise<Detected> {
     try {
-      return await detect(unnamed);
+      return await detectCached(asked, signal);
     } catch (err) {
       // A transport failure arrives as one line already; a shape error
       // names the field it could not read, never a body.
@@ -678,17 +808,26 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
         err instanceof GitHubApiError
           ? err
           : facetFailure(`detection read of ${slug(home)}`, credential, err);
-      return Object.fromEntries(
-        unnamed.map((f) => [
-          f,
-          {
-            status: "failed",
-            error: failure.message,
-            unavailable: failure.unavailable,
-          },
-        ]),
-      );
+      return {
+        cached: false,
+        found: Object.fromEntries(
+          asked.map((f) => [
+            f,
+            {
+              status: "failed",
+              error: failure.message,
+              unavailable: failure.unavailable,
+            },
+          ]),
+        ),
+      };
     }
+  }
+
+  /** Whether one of today's keys names the facet's labels: label evidence on its own. */
+  function declared(f: Facet): boolean {
+    const s = facets[f];
+    return usable(s) && s.why === "kept in labels";
   }
 
   /** The labels of a facet the configuration does not name. */
@@ -698,30 +837,40 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     return usable(s) ? (s.labels ?? []).flatMap(([, ls]) => ls) : [];
   }
 
+  /** The canonical values of a facet: the taxonomy's types or sizes. */
+  function valuesOf(f: Facet): string[] {
+    const s = facets[f];
+    return usable(s) ? [...s.values] : [];
+  }
+
   /**
-   * What the GitHub default would select for each facet in `unnamed`. Throws
-   * on a failed read: a denied, rate-limited or timed-out read never reads as
+   * What the GitHub default selects for each facet in `asked`. Throws on a
+   * failed read: a denied, rate-limited or timed-out read never reads as
    * "no field".
    */
   async function detect(
-    unnamed: Facet[],
+    asked: Facet[],
+    signal?: AbortSignal,
   ): Promise<Partial<Record<Facet, FacetDetection>>> {
     const counted = (q: string) => `${q} { totalCount }`;
-    const labelCounts = unnamed
+    const labelCounts = asked
       .filter((f) => labelsOf(f).length > 0)
       .map((f) =>
         counted(
           `l_${f}: issues(filterBy: { labels: ${JSON.stringify(labelsOf(f))} })`,
         ),
       );
-    const first = await ask(`
+    const first = await ask(
+      `
       query TrackerFacetEvidence($owner: String!, $name: String!) {
         repository(owner: $owner, name: $name) {
           issueTypes(first: 100) { pageInfo { hasNextPage } nodes { id name } }
           issueFields(first: 100) { pageInfo { hasNextPage } ${FIELD_DEFS} }
           ${labelCounts.join("\n")}
         }
-      }`);
+      }`,
+      signal,
+    );
     const types = typeNodes(first.issueTypes, "repository.issueTypes").map(
       (t) => t.name,
     );
@@ -730,7 +879,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
       Facet,
       { evidence: string[]; candidate: Evidence["candidate"]; problem?: string }
     >();
-    for (const f of unnamed) candidates.set(f, candidateOf(f, types, defs));
+    for (const f of asked) candidates.set(f, candidateOf(f, types, defs));
     const nativeCounts = [...candidates.entries()].flatMap(([f, c]) =>
       c.evidence.map((filter, i) =>
         counted(`n_${f}_${i}: issues(filterBy: ${filter})`),
@@ -739,10 +888,13 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     const second =
       nativeCounts.length === 0
         ? {}
-        : await ask(`
+        : await ask(
+            `
       query TrackerFacetNativeEvidence($owner: String!, $name: String!) {
         repository(owner: $owner, name: $name) { ${nativeCounts.join("\n")} }
-      }`);
+      }`,
+            signal,
+          );
     const count = (r: Record<string, unknown>, key: string) => {
       const total = record(r[key], key).totalCount;
       if (!Number.isInteger(total) || (total as number) < 0)
@@ -750,14 +902,15 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
       return total as number;
     };
     const out: Partial<Record<Facet, FacetDetection>> = {};
-    for (const f of unnamed) {
+    for (const f of asked) {
       const c = candidates.get(f) as {
         evidence: string[];
         candidate: Evidence["candidate"];
         problem?: string;
       };
       out[f] = detection({
-        labelEvidence: labelsOf(f).length > 0 && count(first, `l_${f}`) > 0,
+        labelEvidence:
+          declared(f) || (labelsOf(f).length > 0 && count(first, `l_${f}`) > 0),
         nativeEvidence: c.evidence.some(
           (_, i) => count(second, `n_${f}_${i}`) > 0,
         ),
@@ -768,10 +921,13 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     return out;
   }
 
-  async function ask(query: string): Promise<Record<string, unknown>> {
+  async function ask(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> {
     try {
       return record(
-        record(await transport(query, repo), "data").repository,
+        record(await transport(query, repo, signal), "data").repository,
         "repository",
       );
     } catch (err) {
@@ -781,7 +937,8 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
 
   /**
    * The store a facet could move to, and the filters that find a value
-   * already written there (native evidence).
+   * already written there (native evidence): every populated issue type, or
+   * every option of the facet's field, canonical or not.
    */
   function candidateOf(
     f: Facet,
@@ -792,47 +949,34 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     candidate: Evidence["candidate"];
     problem?: string;
   } {
-    const s = facets[f];
-    const values = usable(s) ? s.values : [];
-    if (f === "type") {
-      const named = values.filter((v) => types.some((t) => same(t, v)));
-      // Evidence counts every populated issue type, not only the canonical ones.
-      const missing = values.filter((v) => !named.includes(v));
+    const offered = {
+      types,
+      fields: defs.map((d) => ({
+        name: d.name,
+        dataType: d.dataType,
+        options: d.options.map((o) => o.name),
+      })),
+    };
+    const { candidate, problem } = candidateFor(f, valuesOf(f), offered);
+    const extra = problem === undefined ? {} : { problem };
+    if (f === "type")
       return {
         evidence: types.map((t) => `{ type: ${JSON.stringify(t)} }`),
-        candidate: types.length === 0 ? null : { store: "native" },
-        ...(missing.length === 0 || types.length === 0
-          ? {}
-          : {
-              problem: `no issue type is named ${missing.join(", ")}; such a type is refused when filed unless issue_tracker.facets.type.values names its issue type`,
-            }),
+        candidate,
+        ...extra,
       };
-    }
     const name = f === "priority" ? "Priority" : "Effort";
     const field = defs.find(
       (d) => same(d.name, name) && d.dataType === "SINGLE_SELECT",
     );
-    if (field === undefined) return { evidence: [], candidate: null };
-    const evidence = field.options.map(
-      (o) =>
-        `{ issueFieldValues: [{ fieldName: ${JSON.stringify(field.name)}, singleSelectOptionValue: ${JSON.stringify(o.name)} }] }`,
-    );
-    const wanted = f === "priority" ? [...PRIORITY_NAMES] : values;
-    const matches =
-      wanted.length === field.options.length &&
-      wanted.every((v) => field.options.some((o) => same(o.name, v)));
-    if (matches)
-      return {
-        evidence,
-        candidate:
-          f === "priority"
-            ? { store: "native", field: field.name }
-            : { store: "field", field: field.name },
-      };
+    if (field === undefined) return { evidence: [], candidate, ...extra };
     return {
-      evidence,
-      candidate: null,
-      problem: `the ${field.name} field's options (${field.options.map((o) => o.name).join(", ")}) are not the ${f === "priority" ? "priorities" : "sizes"} (${wanted.join(", ")}); name them in issue_tracker.facets.${f}.values, or keep ${f} in labels (store: label)`,
+      evidence: field.options.map(
+        (o) =>
+          `{ issueFieldValues: [{ fieldName: ${JSON.stringify(field.name)}, singleSelectOptionValue: ${JSON.stringify(o.name)} }] }`,
+      ),
+      candidate,
+      ...extra,
     };
   }
 }

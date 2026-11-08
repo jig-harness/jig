@@ -284,10 +284,132 @@ describe("warnings", () => {
   });
 });
 
+describe("the type, size and priority as facets", () => {
+  const facets = { type: "feature", size: "small", priority: 2 };
+  const labels = ["app", "area:api"];
+
+  test("a complete issue is valid, its facets beside its labels", () => {
+    const result = validateLabels(labels, taxonomy, facets);
+    expect(result.errors).toEqual([]);
+    expect(result.missing).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  test("asks for a priority, and names every facet and group an issue lacks", () => {
+    expect(
+      validateLabels(labels, taxonomy, { ...facets, priority: 0 }).errors,
+    ).toEqual([
+      "no priority (1 urgent, 2 high, 3 medium or 4 low): an issue without one is unranked, not low",
+    ]);
+    expect(validateLabels(["area:api"], taxonomy, {}).missing).toEqual([
+      "type",
+      "size",
+      "priority",
+      "repo",
+    ]);
+  });
+
+  test("refuses a type or size label, and a value its facet does not have", () => {
+    const result = validateLabels([...labels, "bug", "large"], taxonomy, {
+      ...facets,
+      type: "spike",
+    });
+    expect(result.errors).toEqual([
+      "'bug' is a type: give it as the issue's type (type: bug), not as a label",
+      "'spike' is not a type of the taxonomy (feature, bug, chore, docs)",
+      "'large' is a size: give it as the issue's size (size: large), not as a label",
+    ]);
+  });
+});
+
+describe("a group not required on an epic", () => {
+  const yaml = (group: string) =>
+    [
+      "version: 1",
+      "types: [{ id: feature }]",
+      "statuses: [{ id: todo }]",
+      "flags:",
+      "  - { id: epic, scope: container, fires: roll-up, apply_when: a container }",
+      "groups:",
+      group,
+    ].join("\n");
+  const sized = lintTaxonomyText(
+    yaml(
+      "  - { id: size, required: true, not_required_on: [epic], labels: [{ id: small }] }",
+    ),
+  ).taxonomy as Taxonomy;
+
+  test("needs no label of the group on an issue carrying the flag", () => {
+    expect(validateLabels(["feature", "epic"], sized).valid).toBe(true);
+    expect(validateLabels(["feature"], sized).errors).toEqual([
+      "no label of required group 'size' (one of: small)",
+    ]);
+    expect(
+      validateLabels(["epic"], sized, { type: "feature", priority: 3 }).missing,
+    ).toEqual([]);
+  });
+
+  test("names a flag the file lacks, or a group with no requirement to lift", () => {
+    expect(
+      lintTaxonomyText(
+        yaml(
+          "  - { id: size, required: true, not_required_on: [nope], labels: [{ id: small }] }",
+        ),
+      ).problems,
+    ).toEqual([
+      "group 'size' is not required on 'nope', which is not a flag of this taxonomy",
+    ]);
+    expect(
+      lintTaxonomyText(
+        yaml(
+          "  - { id: size, not_required_on: [epic], labels: [{ id: small }] }",
+        ),
+      ).problems,
+    ).toEqual([
+      "group 'size' has 'not_required_on:' but is not 'required: true', so there is no requirement to lift",
+    ]);
+  });
+});
+
 const run = (args: string[], options: { stdin?: string } = {}) =>
   Bun.spawnSync([process.execPath, script, ...args], {
     stdin: options.stdin === undefined ? "ignore" : Buffer.from(options.stdin),
   });
+
+describe("the command line, given the facets", () => {
+  test("takes them as options, or the issue tracker.ts create takes on stdin", () => {
+    const flags = run([
+      "--taxonomy",
+      fixture,
+      "--type",
+      "feature",
+      "--size=small",
+      "--priority",
+      "2",
+      "app",
+      "area:api",
+    ]);
+    expectSpawnExit(flags, 0);
+    const issue = run(["--taxonomy", fixture], {
+      stdin: JSON.stringify({
+        title: "x",
+        labels: ["app", "area:api"],
+        type: "feature",
+        size: "small",
+      }),
+    });
+    expectSpawnExit(issue, 3);
+    expect(issue.stdout.toString()).toContain("ERROR: no priority");
+    const file = join(mkdtempSync(join(tmpdir(), "validate-input-")), "i.json");
+    writeFileSync(
+      file,
+      JSON.stringify({ labels: ["app"], type: "bug", size: "xs", priority: 1 }),
+    );
+    expectSpawnExit(run(["--taxonomy", fixture, "--input", file]), 0);
+    const bad = run(["--taxonomy", fixture, "--priority", "5", "app"]);
+    expectSpawnExit(bad, 2);
+  });
+});
 
 describe("the command line", () => {
   test("exit 0 on a valid set, 3 on an invalid one", () => {
@@ -317,6 +439,7 @@ describe("the command line", () => {
       "errors",
       "warnings",
       "parsed",
+      "missing",
     ]);
     expect(result.valid).toBe(false);
     expect(result.labels).toEqual([...base, "pattern:x"]);
@@ -328,7 +451,7 @@ describe("the command line", () => {
       stdin: JSON.stringify(base),
     });
     expectSpawnExit(out, 0);
-    for (const stdin of ["", "not json", '{"labels": ["bug"]}', "[]"])
+    for (const stdin of ["", "not json", '{"labels": "bug"}', "[]", "7"])
       expectSpawnExit(run(["--taxonomy", fixture], { stdin }), 2);
   });
 

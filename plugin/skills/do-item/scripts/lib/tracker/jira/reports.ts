@@ -176,7 +176,10 @@ export function reportOperations(client: Client): ReportOps {
   }
 
   /** The keys among `keys` with at least one open child. */
-  async function withOpenChildren(keys: string[]): Promise<Set<string>> {
+  async function withOpenChildren(
+    keys: string[],
+    signal?: AbortSignal,
+  ): Promise<Set<string>> {
     const out = new Set<string>();
     for (let i = 0; i < keys.length; i += BATCH) {
       const batch = keys.slice(i, i + BATCH);
@@ -185,6 +188,7 @@ export function reportOperations(client: Client): ReportOps {
         `parent in ${keyList(batch)} AND ${OPEN}${ORDER}`,
         ["parent"],
         `open children of ${batch.join(", ")}`,
+        signal,
       );
       for (const child of found) {
         const fields = record(
@@ -198,8 +202,14 @@ export function reportOperations(client: Client): ReportOps {
     return out;
   }
 
-  async function pools(issues: JiraIssue[]): Promise<CorePoolIssue[]> {
-    const parents = await withOpenChildren(issues.map((i) => i.key));
+  async function pools(
+    issues: JiraIssue[],
+    signal?: AbortSignal,
+  ): Promise<CorePoolIssue[]> {
+    const parents = await withOpenChildren(
+      issues.map((i) => i.key),
+      signal,
+    );
     return issues.map((issue) => {
       const { state } = model.read(issue);
       return {
@@ -428,12 +438,14 @@ export function reportOperations(client: Client): ReportOps {
       return pools(await client.children(key, true));
     },
 
-    async openPopulation() {
+    async openPopulation(signal) {
       return pools(
         await client.search(
           inProject(project, OPEN),
           `open issues of ${project}`,
+          signal,
         ),
+        signal,
       );
     },
 
