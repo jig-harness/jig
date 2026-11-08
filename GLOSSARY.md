@@ -1439,6 +1439,12 @@ make, use the entry's term instead.
   string (`review.sticky_marker`). It carries the reviewer's overall verdict
   and any findings it could not attach to a line
   ([configuration](plugin/CONFIGURATION.md)).
+- **Skip notice (reviewer)** — a block in the reviewer's *sticky comment*,
+  found by a marker string (`review.skip_notice_marker`), saying it did not
+  review a pushed commit, for example because the push left nothing to
+  review. The drive reads it to tell a head the reviewer has not reached yet
+  from one it will never review
+  ([terminal states](plugin/skills/drive-pr/references/terminal-states.md)).
 - **Summary-only finding** — a review finding that appears only in the
   reviewer's *sticky comment* because it could not be anchored to a diff line,
   so it creates no thread. A loop that counted only threads would report

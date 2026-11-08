@@ -62,13 +62,12 @@ import {
   unlistedReversals,
 } from "../provisional.ts";
 import { reviewerExpected, reviewerLabel, reviewsDrafts } from "../overlay.ts";
-import { ghCall, git, run, tsArgv } from "../proc.ts";
+import { ghCall, run, tsArgv } from "../proc.ts";
 import {
   type CiReport,
   checkRunsFor,
   ciReportFor,
   type ReviewerSticky,
-  reviewedShaFromComments,
   reviewerRun,
   reviewerStickyMarkers,
   SHA_MARKER,
@@ -81,6 +80,7 @@ import {
   inheritedReason,
   mayEndWithoutWork,
 } from "./inherited-head.ts";
+import { resolveMarkerSha, reviewedShaGate, skipNote } from "./reviewed-sha.ts";
 import { terminal } from "./terminal-states.ts";
 import type { WaitingEvaluationCache } from "./waiting-cache.ts";
 
@@ -511,37 +511,6 @@ export const STALLED_MIN_AGE_SEC =
   RECONCILIATION_INTERVAL_SEC +
   REVIEW_PUBLICATION_MARGIN_SEC;
 
-/**
- * Resolve a `SHA_MARKER` value to a full 40-character object id, or `''` if it
- * is not a witness to anything.
- *
- * The marker grammar admits 7–40 hex (`evidence.ts`), so a bare equality test
- * against a full head SHA answers only for the 40-character case and silently
- * refuses every abbreviated one. Two places need that answer — the
- * stranded-check-run bypass and the reviewed-SHA gate — and they had two
- * different copies of it: the gate resolved abbreviations through git, the
- * bypass compared the raw marker. A uniquely-resolvable abbreviated marker
- * therefore satisfied the gate while never activating the bypass, leaving a
- * stranded run blocked forever — the one case that bypass exists to unblock.
- * One helper, both call sites.
- *
- * `--verify` refuses an ambiguous prefix and `^{commit}` refuses a non-commit,
- * so a non-empty return is always a unique commit in this clone. `''` covers
- * both "no marker" and "an abbreviation this clone cannot resolve" (a shallow
- * clone, an object never fetched, no git at all) — the two are the same thing
- * to every caller, which must treat `''` as fail-closed rather than as a
- * licence to fall back to a prefix comparison.
- */
-async function resolveMarkerSha(marker: string): Promise<string> {
-  if (marker === "") return "";
-  if (marker.length === 40) return marker;
-  const rp = await git(
-    ["rev-parse", "--verify", "--quiet", `${marker}^{commit}`],
-    { stderr: "ignore" },
-  );
-  return rp.code === 0 ? rp.stdout.trim() : "";
-}
-
 export async function evaluate(
   ctx: EvaluateContext,
   report: StatusReport,
@@ -563,28 +532,37 @@ function reviewerGatesApply(conflicting: boolean): boolean {
 }
 
 /**
- * The reviewed-SHA stamp the gates judge: `""` where no reviewer is expected,
- * `null` when the reviewer's comments cannot be read, else the stamp. Reuses
- * the stranded-check-run bypass's read (`earlySticky`) when it made one.
+ * The reviewer's sticky the reviewed-SHA gate judges: an empty one where no
+ * reviewer is expected, `null` when the reviewer's comments cannot be read.
+ * Reuses the stranded-check-run bypass's read (`earlySticky`) when it made one.
  */
 async function reviewerStamp(
   ctx: EvaluateContext,
   earlySticky: ReviewerSticky | null | undefined,
-): Promise<string | null> {
-  if (!reviewerExpected()) return "";
+): Promise<ReviewerSticky | null> {
+  if (!reviewerExpected())
+    return { sha: "", round: null, updatedAt: "", skip: null };
   if (earlySticky === undefined)
-    return reviewedShaFromComments(ctx.owner, ctx.repo, ctx.pr);
-  return earlySticky === null ? null : earlySticky.sha;
+    return reviewerStickyMarkers(ctx.owner, ctx.repo, ctx.pr);
+  return earlySticky;
 }
 
-/** Convergence needs the reviewer's own stamp, where a reviewer is expected. */
+/**
+ * Convergence needs the reviewer's own stamp, where a reviewer is expected:
+ * for this head, or for the head it reviewed before skipping this one
+ * (`reviewed-sha.ts`).
+ */
 function lacksReviewerStamp(report: StatusReport): boolean {
-  return reviewerExpected() && report.reviewedShaSource !== "comment-marker";
+  return (
+    reviewerExpected() &&
+    report.reviewedShaSource !== "comment-marker" &&
+    report.reviewedShaSource !== "skip-notice"
+  );
 }
 
 function convergedReasonOf(report: StatusReport): string {
   return reviewerExpected()
-    ? `${reviewerLabel()} completed on ${report.apiHead} (reviewed-SHA verified via ${report.reviewedShaSource}), 0 unresolved threads, 0 unaddressed summary findings`
+    ? `${reviewerLabel()} completed on ${report.apiHead} (reviewed-SHA verified via ${report.reviewedShaSource}), 0 unresolved threads, 0 unaddressed summary findings${skipNote(report)}`
     : `no AI reviewer is configured for this repository (review.reviewer_app, review.reviewer_check_pattern), so no reviewer evidence was required: ${report.apiHead} has 0 unresolved threads, 0 unaddressed summary findings`;
 }
 
@@ -1269,9 +1247,9 @@ async function evaluateFresh(
   // fetched it, rather than issuing a second `issues/{pr}/comments` call —
   // see that variable's own doc comment for why this is about correctness
   // (one snapshot, not two that could disagree), not merely avoiding a call.
-  const markerRead = await reviewerStamp(ctx, earlySticky);
+  const sticky = await reviewerStamp(ctx, earlySticky);
   let marker: string;
-  if (markerRead === null) {
+  if (sticky === null) {
     // Where the marker is DECISION evidence, an unreadable one is
     // INDETERMINATE: falling back to the weaker witness would hide a stale
     // reviewed-SHA. Where it is only reported, it degrades to "unknown" rather
@@ -1286,7 +1264,7 @@ async function evaluateFresh(
     }
     marker = "";
   } else {
-    marker = markerRead;
+    marker = sticky.sha;
   }
 
   // What the marker resolves to, independent of whether anything gates on it.
@@ -1295,65 +1273,20 @@ async function evaluateFresh(
   const markerFull = await resolveMarkerSha(marker);
 
   if (awaitReviewer) {
-    // Second witness. When the reviewer has stamped a reviewed-SHA anywhere on
-    // this PR, that stamp must name THIS head; a stamp naming an older commit
-    // is the stale-review signature (checks read settled, review was of the
-    // previous push).
-    if (marker !== "") {
-      report.reviewedSha = marker;
-      report.reviewedShaSource = "comment-marker";
-      // This is the SECOND WITNESS, and the contract it witnesses is "the
-      // reviewer reviewed THIS EXACT head". A prefix comparison does not
-      // establish that: the marker grammar admits 7–40 hex, and any commit
-      // sharing the head's first N characters satisfies it — so a stale review
-      // of a DIFFERENT commit is accepted as fresh, which is precisely the
-      // stale-review signature this witness exists to catch. 7 hex is 28 bits;
-      // on a repository this size that is a birthday-bound coincidence, not an
-      // impossibility.
-      //
-      // So: a full 40-char marker is compared for equality (what the reviewer
-      // actually emits today), and an abbreviated one is RESOLVED to its full
-      // object id before comparing. `--verify` refuses an ambiguous prefix,
-      // and `^{commit}` refuses a non-commit. If it cannot be resolved — a
-      // shallow clone, a fetch that never brought the object, no git at all —
-      // the marker is not a witness to anything, and the honest report is
-      // that we cannot confirm this head was reviewed. Fail closed: an
-      // unverifiable stamp costs a round, an accepted wrong one costs the
-      // whole guard.
-      if (marker.length === 40) {
-        if (marker !== report.apiHead) {
-          return terminal(
-            report,
-            "STALE_REVIEW",
-            `${reviewerLabel()} last recorded reviewing ${marker}, but the PR head is ${report.apiHead}`,
-          );
-        }
-      } else {
-        if (markerFull === "") {
-          return terminal(
-            report,
-            "STALE_REVIEW",
-            `${reviewerLabel()} recorded reviewing the abbreviated ${marker}, which cannot be resolved to a full commit id here — refusing to accept a prefix of the PR head (${report.apiHead}) as proof it reviewed this commit`,
-          );
-        }
-        report.reviewedSha = markerFull;
-        if (markerFull !== report.apiHead) {
-          return terminal(
-            report,
-            "STALE_REVIEW",
-            `${reviewerLabel()} last recorded reviewing ${marker} (${markerFull}), but the PR head is ${report.apiHead}`,
-          );
-        }
-      }
-    } else {
-      // No stamp anywhere — fall back to the check-run, which was queried BY
-      // SHA and therefore always matches. Weaker evidence, so it is labelled
-      // as such in the report rather than passed off as a second witness, and
-      // it is NOT enough to converge on: see the guard just before CONVERGED
-      // below.
-      report.reviewedSha = report.apiHead;
-      report.reviewedShaSource = "check-run";
+    // Second witness: the reviewer's stamp must name THIS head, or the head
+    // it reviewed before skipping this one unchanged (`reviewed-sha.ts`).
+    const stop = await reviewedShaGate(
+      report,
+      marker,
+      markerFull,
+      sticky?.skip ?? null,
+    );
+    if (stop?.state === "REVIEW_SKIPPED") {
+      const rc = await stillOnHead();
+      if (rc !== 0) return rc;
+      return terminal(report, "REVIEW_SKIPPED", stop.reason);
     }
+    if (stop !== null) return terminal(report, "STALE_REVIEW", stop.reason);
   } else if (marker !== "") {
     // Conflicting: publish the marker as evidence, and NEVER the check-run
     // fallback. That fallback is "queried by SHA, so it always matches" — on

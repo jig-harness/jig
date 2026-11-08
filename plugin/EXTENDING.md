@@ -324,9 +324,10 @@ machine, or a whole team, writes to
 
 Which reviewers the review loop works with is configuration: `review.bots`
 lists the logins whose threads it resolves, and `review.reviewer_app`,
-`review.reviewer_check_pattern`, `review.sticky_marker` and
-`review.reviewed_sha_marker` tell the drive which check run and summary
-comment are the reviewer's evidence ([fields](CONFIGURATION.md#review)). The
+`review.reviewer_check_pattern`, `review.sticky_marker`,
+`review.reviewed_sha_marker` and `review.skip_notice_marker` tell the drive
+which check run and summary comment are the reviewer's evidence
+([fields](CONFIGURATION.md#review)). The
 drive expects a reviewer only where `review.reviewer_app` or
 `review.reviewer_check_pattern` is set; a repository with neither converges on
 threads and CI alone.

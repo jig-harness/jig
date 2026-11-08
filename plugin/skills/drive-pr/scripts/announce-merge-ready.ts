@@ -538,6 +538,11 @@ async function main(): Promise<number> {
   const source = String(
     (status.reviewer as Record<string, unknown>)?.reviewedShaSource ?? "",
   );
+  // A head the reviewer skipped is certified by its review of an earlier one.
+  const reviewedWhat =
+    source === "skip-notice"
+      ? `reviewed \`${short(String((status.reviewer as Record<string, unknown>)?.reviewedSha ?? ""))}\` and skipped this head, whose pull-request diff is the same,`
+      : "completed its review of this exact head";
 
   // A green aggregate can still be the skipped-success residue from a held
   // synchronize run. Require both the global pointer written only by
@@ -946,7 +951,7 @@ async function main(): Promise<number> {
   let text = `
 The review drive converged on \`${short(head)}\`:
 
-- \`${reviewer}\` completed its review of this exact head (reviewed-SHA verified via ${source})
+- \`${reviewer}\` ${reviewedWhat} (reviewed-SHA verified via ${source})
 - zero unresolved review threads
 - zero unaddressed summary-only findings
 - every non-reviewer check run completed \`success\`, \`neutral\` or \`skipped\`, and
