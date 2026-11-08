@@ -113,8 +113,11 @@ export interface Client {
    * read other callers may be waiting on.
    */
   fieldLabels(signal?: AbortSignal): Promise<FieldLabel[]>;
-  /** The account id an identity (account id, email or display name) names. */
-  accountId(identity: string): Promise<string>;
+  /**
+   * The account id an identity (account id, email or display name) names.
+   * An aborted `signal` ends the request in flight and the pages not yet read.
+   */
+  accountId(identity: string, signal?: AbortSignal): Promise<string>;
   /** Whether the account can be assigned issues in the project; cached. */
   assignable(accountId: string): Promise<boolean>;
   /** Whether a user (a comment author, an assigner) is trusted. */
@@ -129,12 +132,20 @@ const ACCOUNT_ID = /^(?:[0-9a-f]{24}|\d+:[0-9a-f-]{36})$/;
 type Get = (
   path: string,
   query?: Record<string, string | number>,
+  signal?: AbortSignal,
 ) => Promise<unknown>;
 
 /** An account id, confirmed to name a user. */
-async function confirmAccount(get: Get, who: string): Promise<string> {
+async function confirmAccount(
+  get: Get,
+  who: string,
+  signal?: AbortSignal,
+): Promise<string> {
   try {
-    const u = record(await get("user", { accountId: who }), `user ${who}`);
+    const u = record(
+      await get("user", { accountId: who }, signal),
+      `user ${who}`,
+    );
     return str(u.accountId, `user ${who}.accountId`);
   } catch (err) {
     if (err instanceof JiraApiError && err.notFound)
@@ -150,14 +161,15 @@ async function confirmAccount(get: Get, who: string): Promise<string> {
 async function searchUsers(
   get: Get,
   who: string,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown>[]> {
   const users: Record<string, unknown>[] = [];
   for (let startAt = 0; ; startAt += USERS_PAGE) {
-    const page = await get("user/search", {
-      query: who,
-      startAt,
-      maxResults: USERS_PAGE,
-    });
+    const page = await get(
+      "user/search",
+      { query: who, startAt, maxResults: USERS_PAGE },
+      signal,
+    );
     if (!Array.isArray(page))
       throw new JiraApiError(`user search for '${who}': expected a list`);
     users.push(
@@ -173,10 +185,14 @@ async function searchUsers(
 }
 
 /** The one account whose email or display name is `who`, ignoring case. */
-async function searchAccount(get: Get, who: string): Promise<string> {
+async function searchAccount(
+  get: Get,
+  who: string,
+  signal?: AbortSignal,
+): Promise<string> {
   const named = (v: unknown) => typeof v === "string" && same(v, who);
   const ids = new Set(
-    (await searchUsers(get, who))
+    (await searchUsers(get, who, signal))
       .filter((u) => named(u.emailAddress) || named(u.displayName))
       .map((u) => str(u.accountId, "user.accountId")),
   );
@@ -263,12 +279,15 @@ function until<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 
 export function jiraClient(opts: ClientOptions): Client {
   const { project, site, model, settings, transport } = opts;
-  const get = (path: string, query?: Record<string, string | number>) =>
-    transport({
-      method: "GET",
-      path,
-      ...(query === undefined ? {} : { query }),
-    });
+  const get: Get = (path, query, signal) =>
+    transport(
+      {
+        method: "GET",
+        path,
+        ...(query === undefined ? {} : { query }),
+      },
+      signal,
+    );
 
   let links: Promise<Record<LinkedRelation, LinkType>> | undefined;
   let types: Promise<IssueTypeMeta[]> | undefined;
@@ -545,11 +564,11 @@ export function jiraClient(opts: ClientOptions): Client {
       return signal === undefined ? labelFields : until(labelFields, signal);
     },
 
-    accountId(identity) {
+    accountId(identity, signal) {
       const who = identity.trim();
       return ACCOUNT_ID.test(who)
-        ? confirmAccount(get, who)
-        : searchAccount(get, who);
+        ? confirmAccount(get, who, signal)
+        : searchAccount(get, who, signal);
     },
 
     assignable(accountId) {

@@ -295,7 +295,8 @@ describe("tracker.ts claim", () => {
     const overlay = join(dir, "overlay.yaml");
     writeFileSync(
       overlay,
-      "issue_tracker:\n  adapter: github\n  github:\n    repository: acme/app\n",
+      // Both facets named, so no detection read precedes the claim's.
+      "issue_tracker:\n  adapter: github\n  github:\n    repository: acme/app\n  facets:\n    type: { store: label }\n    priority: { store: label }\n",
     );
     try {
       const child = Bun.spawn(

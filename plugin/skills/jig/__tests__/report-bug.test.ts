@@ -511,3 +511,64 @@ test("with gh not logged in, file prints the form address and does not search", 
   expect(err).toContain("Open the form instead: https://github.com/");
   expect(err).not.toContain("unknown");
 });
+
+/**
+ * A `gh` that files the issue as #900, logs every call's arguments to
+ * `calls.log`, and answers the type's edit with `edit` (a shell fragment).
+ */
+function filingGh(dir: string, edit: string): void {
+  writeFakeProgram(
+    join(dir, "gh"),
+    [
+      "#!/bin/sh",
+      `echo "$*" >> "${join(dir, "calls.log").replaceAll("\\", "/")}"`,
+      'if [ "$1 $2" = "issue create" ]; then cat >/dev/null; echo "https://github.com/jig-harness/jig/issues/900"; exit 0; fi',
+      `if [ "$1 $2" = "issue edit" ]; then ${edit}; fi`,
+      "exit 7",
+    ].join("\n"),
+  );
+}
+
+function fileDraft(dir: string) {
+  const draft = join(dir, "draft.json");
+  writeFileSync(
+    draft,
+    JSON.stringify({ title: "t", body: "b", labels: ["bug"], url: "u" }),
+  );
+  return Bun.spawnSync([process.execPath, script, "file", draft], {
+    env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+}
+
+test("file gives the new issue the issue type Bug", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  filingGh(dir, "exit 0");
+  const run = fileDraft(dir);
+  expectSpawnExit(run, 0);
+  expect(run.stdout.toString()).toContain(
+    "https://github.com/jig-harness/jig/issues/900",
+  );
+  const calls = readFileSync(join(dir, "calls.log"), "utf8");
+  expect(calls).toContain(
+    "issue edit https://github.com/jig-harness/jig/issues/900 --type Bug",
+  );
+  expect(run.stderr.toString()).not.toContain("without the issue type");
+});
+
+test("an account that may not set issue types still files, and is told so", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  filingGh(
+    dir,
+    "echo 'GraphQL: the viewer may not set the issue type' >&2; exit 1",
+  );
+  const run = fileDraft(dir);
+  expectSpawnExit(run, 0);
+  expect(run.stdout.toString()).toContain(
+    "https://github.com/jig-harness/jig/issues/900",
+  );
+  expect(run.stderr.toString()).toContain(
+    "filed without the issue type Bug (GraphQL: the viewer may not set the issue type)",
+  );
+});

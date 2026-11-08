@@ -80,15 +80,18 @@ function runCli(cwd: string, args: string[], stdin = "") {
 }
 
 const base = issue("ENG-0").labels;
+/** An issue as the tracker reads it where the taxonomy's types are the type facet. */
+const typed = (id: string, over: Parameters<typeof issue>[1] = {}) =>
+  issue(id, { type: "bug", ...over });
 
 describe("--eligibility", () => {
   it("prints the versioned verdicts and policy from the repository's configuration", () => {
     const dir = consumer();
     const issues = [
-      issue("ENG-1"),
-      issue("ENG-2", { labels: [...base, "privacy-review"] }),
-      issue("ENG-3", { labels: [...base, "db-migration"] }),
-      issue("ENG-4", { labels: relabel(base, ["small"], ["large"]) }),
+      typed("ENG-1"),
+      typed("ENG-2", { labels: [...base, "privacy-review"] }),
+      typed("ENG-3", { labels: [...base, "db-migration"] }),
+      typed("ENG-4", { labels: relabel(base, ["small"], ["large"]) }),
     ];
     const run = runCli(dir, ["--eligibility"], JSON.stringify(issues));
     expectSpawnExit(run, 0, "eligibility");
@@ -120,7 +123,7 @@ describe("--eligibility", () => {
 
   it("honours --claimed", () => {
     const dir = consumer();
-    const mine = issue("ENG-1", { assignee: { id: "u", name: "Me" } });
+    const mine = typed("ENG-1", { assignee: { id: "u", name: "Me" } });
     const run = runCli(
       dir,
       ["--eligibility", "--claimed", "ENG-1"],

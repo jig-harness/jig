@@ -8,14 +8,33 @@
  *     closed category label, or slug of an open category);
  *   - an open category's label whose slug does not match its pattern;
  *   - no type, or more than one;
- *   - more than one label of a group, or none of a required group;
+ *   - more than one label of a group, or none of a required group (unless
+ *     the issue carries a flag the group's `not_required_on` lists);
  *   - a category's or flag's `requires` unmet (a facet without its umbrella);
  *   - a flag's `requires_category` unmet (a flag without any of its facets).
  * Warnings (the label set may be written):
  *   - more labels of a category than its `max`;
  *   - no label of a `recommended` category.
+ *
+ * Given the issue's facets, the type, the size and the priority are checked
+ * as the facets they are (design/tracker-facets.md in the Jig repository):
+ * the type a taxonomy type, the size a label of the `size` group, the
+ * priority 1 (urgent) to 4 (low), each required (no size on an issue the
+ * size group's `not_required_on` exempts); a type or size label among the
+ * labels is an error, since the tracker writes those facets itself.
  */
-import type { LabelCategory, Taxonomy } from "./taxonomy.ts";
+import type { LabelCategory, LabelGroup, Taxonomy } from "./taxonomy.ts";
+
+/** The group the size facet's values come from. */
+export const SIZE_GROUP = "size";
+
+/** An issue's facets, where the label set is checked beside them. */
+export interface IssueFacetInput {
+  type?: string | null;
+  /** 0 (none), then 1 (urgent) to 4 (low). */
+  priority?: number;
+  size?: string | null;
+}
 
 /**
  * The family maps have no prototype, so a family whose id is an
@@ -38,6 +57,8 @@ export interface Validation {
   errors: string[];
   warnings: string[];
   parsed: ParsedLabels;
+  /** What the issue lacks: `type`, `priority`, `size`, or a required group's id. */
+  missing: string[];
 }
 
 /** The category whose prefix `label` begins with; prefixes never nest. */
@@ -119,20 +140,110 @@ function typeErrors(parsed: ParsedLabels, taxonomy: Taxonomy): string[] {
   return errors;
 }
 
+/** Whether an issue carrying `present` must carry a label (or value) of `group`. */
+export function groupRequired(
+  group: LabelGroup,
+  present: ReadonlySet<string>,
+): boolean {
+  return group.required && !group.notRequiredOn.some((f) => present.has(f));
+}
+
+/** The required groups, other than `skip`, an issue carrying `labels` has no label of. */
+export function missingGroups(
+  labels: ReadonlyArray<string>,
+  taxonomy: Taxonomy,
+  skip: ReadonlyArray<string> = [],
+): string[] {
+  const present = new Set(labels);
+  return taxonomy.groups
+    .filter(
+      (g) =>
+        !skip.includes(g.id) &&
+        groupRequired(g, present) &&
+        !g.labels.some((l) => present.has(l)),
+    )
+    .map((g) => g.id);
+}
+
 /** At most one label of each group, and one of each required group. */
-function groupErrors(parsed: ParsedLabels, taxonomy: Taxonomy): string[] {
+function groupErrors(
+  parsed: ParsedLabels,
+  taxonomy: Taxonomy,
+  present: ReadonlySet<string>,
+  skip: ReadonlyArray<string>,
+): string[] {
   return taxonomy.groups.flatMap((group) => {
+    if (skip.includes(group.id)) return [];
     const found = of(parsed.groups, group.id);
     if (found.length > 1)
       return [
         `more than one label of group '${group.id}': ${found.join(", ")} (pick one)`,
       ];
-    if (found.length === 0 && group.required)
+    if (found.length === 0 && groupRequired(group, present))
       return [
         `no label of required group '${group.id}' (one of: ${group.labels.join(", ")})`,
       ];
     return [];
   });
+}
+
+/**
+ * A type or size checked as a facet: none of its labels among the labels,
+ * its value one of `values`, and present where `required`.
+ */
+function listFacet(
+  found: { errors: string[]; missing: string[] },
+  facet: "type" | "size",
+  value: string | null,
+  rule: { labels: string[]; values: string[]; required: boolean },
+): void {
+  for (const l of rule.labels)
+    found.errors.push(
+      `'${l}' is a ${facet}: give it as the issue's ${facet} (${facet}: ${l}), not as a label`,
+    );
+  if (value === null) {
+    if (!rule.required) return;
+    found.missing.push(facet);
+    found.errors.push(`no ${facet} (one of: ${rule.values.join(", ")})`);
+  } else if (!rule.values.includes(value))
+    found.errors.push(
+      `'${value}' is not a ${facet} of the taxonomy (${rule.values.join(", ")})`,
+    );
+}
+
+/**
+ * The type, size and priority checked as facets: each a value of its
+ * facet, given as the facet and never as a label, and present.
+ */
+function facetErrors(
+  facets: IssueFacetInput,
+  parsed: ParsedLabels,
+  taxonomy: Taxonomy,
+  present: ReadonlySet<string>,
+): { errors: string[]; missing: string[] } {
+  const found = { errors: [] as string[], missing: [] as string[] };
+  const group = taxonomy.groups.find((g) => g.id === SIZE_GROUP);
+  listFacet(found, "type", facets.type ?? null, {
+    labels: parsed.types,
+    values: taxonomy.types,
+    required: true,
+  });
+  if (group !== undefined)
+    listFacet(found, "size", facets.size ?? null, {
+      labels: of(parsed.groups, SIZE_GROUP),
+      values: group.labels,
+      required: groupRequired(group, present),
+    });
+  const priority = facets.priority ?? 0;
+  if (priority === 0) {
+    found.missing.push("priority");
+    found.errors.push(
+      "no priority (1 urgent, 2 high, 3 medium or 4 low): an issue without one is unranked, not low",
+    );
+  } else if (!Number.isInteger(priority) || priority < 1 || priority > 4)
+    found.errors.push(`priority ${priority} is not 1 (urgent) to 4 (low)`);
+  const { errors, missing } = found;
+  return { errors, missing };
 }
 
 /** A category's `requires` beside its labels (errors), `max` and `recommended` (warnings). */
@@ -185,10 +296,14 @@ function flagErrors(
     });
 }
 
-/** Whether `labels` is a label set the taxonomy allows on one issue. */
+/**
+ * Whether `labels` is a label set the taxonomy allows on one issue; given
+ * `facets`, with the type, size and priority checked as facets.
+ */
 export function validateLabels(
   input: string[],
   taxonomy: Taxonomy,
+  facets?: IssueFacetInput,
 ): Validation {
   const errors: string[] = [];
   if (input.some((l) => !l.trim()))
@@ -202,10 +317,22 @@ export function validateLabels(
   const warnings: string[] = [];
   const parsed = parse(labels, taxonomy, errors);
   const present = new Set(labels);
-  errors.push(
-    ...typeErrors(parsed, taxonomy),
-    ...groupErrors(parsed, taxonomy),
-  );
+  const missing: string[] = [];
+  if (facets === undefined) {
+    errors.push(...typeErrors(parsed, taxonomy));
+    if (parsed.types.length === 0) missing.push("type");
+  } else {
+    if (parsed.unknown.length)
+      errors.push(
+        `unknown label${parsed.unknown.length > 1 ? "s" : ""}: ${parsed.unknown.join(", ")} (not in the taxonomy)`,
+      );
+    const checked = facetErrors(facets, parsed, taxonomy, present);
+    errors.push(...checked.errors);
+    missing.push(...checked.missing);
+  }
+  const skip = facets === undefined ? [] : [SIZE_GROUP];
+  errors.push(...groupErrors(parsed, taxonomy, present, skip));
+  missing.push(...missingGroups(labels, taxonomy, skip));
   for (const category of taxonomy.categories) {
     const checks = categoryChecks(
       category,
@@ -216,5 +343,12 @@ export function validateLabels(
     warnings.push(...checks.warnings);
   }
   errors.push(...flagErrors(parsed, taxonomy, present));
-  return { valid: errors.length === 0, labels, errors, warnings, parsed };
+  return {
+    valid: errors.length === 0,
+    labels,
+    errors,
+    warnings,
+    parsed,
+    missing,
+  };
 }

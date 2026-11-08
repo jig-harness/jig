@@ -175,6 +175,20 @@ describe("jig dispatch reports what it would start", () => {
     ]);
     // The checkout's own file is never read.
     expect(existsSync(join(w.repo, ".config", "jig.yaml"))).toBe(false);
+    // The repository's query reads it from the default branch's head commit.
+    const query = readFileSync(join(w.dir, "gh-calls.log"), "utf8")
+      .split("\n")
+      .find((c) => c.includes("query DispatchRepository"));
+    expect(query).toContain(
+      'defaultBranchRef { name target { ... on Commit { file(path: ".config/jig.yaml")',
+    );
+  });
+
+  it("reads the dispatch section from the default branch on its own when the repository's query does not read", async () => {
+    const w = fixture();
+    writeFileSync(join(w.dir, "repository-query-fail"), "");
+    const r = await w.dispatch(["--repo", w.repo, "--json"]);
+    expectSpawnExit(r, 0);
     expect(readFileSync(join(w.dir, "gh-calls.log"), "utf8")).toContain(
       `repos/${SLUG}/contents/.config/jig.yaml?ref=main`,
     );

@@ -9,7 +9,9 @@ import {
   parseTrackerConfig,
 } from "../scripts/lib/tracker/config.ts";
 import { resolveFacets } from "../scripts/lib/tracker/facets/config.ts";
+import type { DetectionCache } from "../scripts/lib/tracker/facets/detect.ts";
 import { gitHubClient } from "../scripts/lib/tracker/github/client.ts";
+import { defaultedGitHub } from "../scripts/lib/tracker/github/defaults.ts";
 import { gitHubModel } from "../scripts/lib/tracker/github/model.ts";
 import { gitHubTracker } from "../scripts/lib/tracker/github/tracker.ts";
 import {
@@ -35,7 +37,10 @@ function fakeTransport(answer: (call: Call, n: number) => unknown): {
   const calls: Call[] = [];
   return {
     calls,
-    transport: async (query, variables) => {
+    // As the real transports do, an aborted signal starts no request.
+    transport: async (query, variables, signal) => {
+      if (signal?.aborted === true)
+        throw new GitHubApiError("the request was cancelled");
       const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "?";
       const call = { op, query, variables };
       calls.push(call);
@@ -193,6 +198,48 @@ export function gitHub(
         credential: CREDENTIAL,
       }),
     ),
+    calls: f.calls,
+  };
+}
+
+/**
+ * A GitHub tracker as `openTracker` builds one: every facet the overlay
+ * does not name gets the store detection selects, its answers kept in
+ * `cache` when one is given and fingerprinted with a fixed token.
+ */
+export function gitHubDefaulted(
+  answer: (call: Call, n: number) => unknown,
+  overlay: TrackerOptions = {},
+  cache?: DetectionCache,
+): { t: Tracker; calls: Call[] } {
+  const config = parseTrackerConfig({
+    issue_tracker: {
+      adapter: "github",
+      ...overlay.issue_tracker,
+      github: { repository: `${HOME.owner}/${HOME.name}` },
+    },
+  });
+  const f = fakeTransport(answer);
+  const taxonomy =
+    overlay.taxonomy === undefined
+      ? null
+      : { path: "label-taxonomy.yaml", ...overlay.taxonomy };
+  const resolveWith = (entries: typeof config.facets) =>
+    resolveFacets(facetInputs({ ...config, facets: entries }), taxonomy);
+  return {
+    t: defaultedGitHub({
+      home: HOME,
+      model: gitHubModel(config.states, config.github),
+      settings: config.github,
+      transport: f.transport,
+      facets: resolveWith(config.facets),
+      entries: config.facets,
+      resolveWith,
+      credential: CREDENTIAL,
+      ...(cache === undefined
+        ? {}
+        : { cache, token: async () => "test-token" }),
+    }),
     calls: f.calls,
   };
 }

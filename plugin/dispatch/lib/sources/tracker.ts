@@ -16,10 +16,19 @@ import type {
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import { FacetReadStopped } from "../../../skills/do-item/scripts/lib/tracker/facets/bounds.ts";
 import { failureText } from "../text.ts";
+import {
+  type FacetBound,
+  facetGaps,
+  facetSummary,
+  readFacetStores,
+  reportBound,
+} from "./tracker-facets.ts";
 import type {
   ClaimedItem,
   DispatchSection,
+  FacetRecord,
   RecordRead,
   Unplaced,
   WantedItem,
@@ -57,45 +66,26 @@ async function readClaimed(
   }
 }
 
-/** The pickups; `open` opens the tracker, and is not called when there are none to read. */
-export async function readPickups(
-  open: () => Tracker,
-  section: DispatchSection,
-): Promise<TrackerReading> {
-  if (section.identity === null)
-    return {
-      read: {
-        record: "tracker",
-        source: "dispatch.identity",
-        ok: true,
-        detail: "no dispatch.identity: this repository has no pickups",
-      },
-      wanted: [],
-      unplaced: [],
-      claimed: [],
-    };
-  const identity = section.identity;
-  const tracker = open();
-  const source = `${tracker.adapter} ${tracker.team}`;
-  let issues: Awaited<ReturnType<Tracker["assignedIssues"]>>;
-  try {
-    issues = await tracker.assignedIssues(
-      identity,
-      section.states as CanonicalState[],
-    );
-  } catch (error) {
-    return {
-      read: {
-        record: "tracker",
-        source,
-        ok: false,
-        detail: `the items assigned to ${identity} could not be read: ${failureText(error)}`,
-      },
-      wanted: [],
-      unplaced: [],
-      claimed: null,
-    };
-  }
+/** The facet record with the assigned items that lack a facet, where the stores were read. */
+function withGaps(
+  stores: FacetRecord,
+  issues: ReadonlyArray<PoolIssue>,
+  epic: string,
+): FacetRecord {
+  return stores.stores === undefined
+    ? stores
+    : { ...stores, gaps: facetGaps(issues, stores.stores, epic) };
+}
+
+/**
+ * The assigned items a person with write access assigned, wanted; the
+ * others, and those whose assigner cannot be read, unplaced with why.
+ */
+async function byTrustedAssigner(
+  tracker: Tracker,
+  issues: ReadonlyArray<PoolIssue>,
+  identity: string,
+): Promise<{ wanted: WantedItem[]; unplaced: Unplaced[] }> {
   const wanted: WantedItem[] = [];
   const unplaced: Unplaced[] = [];
   for (const issue of issues) {
@@ -128,14 +118,122 @@ export async function readPickups(
       assignedBy: by.name,
     });
   }
+  return { wanted, unplaced };
+}
+
+/** `read`, or a rejection once `bound` has ended it. */
+async function within<T>(read: Promise<T>, bound: FacetBound): Promise<T> {
+  let stop: (() => void) | undefined;
+  const stopped = new Promise<never>((_, reject) => {
+    stop = () => reject(new Error("stopped at the tick's deadline"));
+    if (bound.signal.aborted) stop();
+    else bound.signal.addEventListener("abort", stop, { once: true });
+  });
+  read.catch(() => undefined);
+  try {
+    return await Promise.race([read, stopped]);
+  } finally {
+    if (stop !== undefined) bound.signal.removeEventListener("abort", stop);
+  }
+}
+
+/**
+ * The items assigned to `identity`, held to `bound` when there is one: not
+ * started once it has ended, and given its signal so the detection the read
+ * waits on ends with it.
+ */
+async function readAssigned(
+  tracker: Tracker,
+  identity: string,
+  section: DispatchSection,
+  bound: FacetBound | undefined,
+): Promise<PoolIssue[]> {
+  if (bound === undefined)
+    return tracker.assignedIssues(identity, section.states as CanonicalState[]);
+  if (bound.signal.aborted || Date.now() >= bound.deadline)
+    throw new FacetReadStopped(
+      "the tick's deadline passed before the read could start",
+    );
+  return within(
+    tracker.assignedIssues(identity, section.states as CanonicalState[], {
+      signal: bound.signal,
+      deadline: bound.deadline,
+    }),
+    bound,
+  );
+}
+
+/**
+ * The pickups; `open` opens the tracker, and is not called when there are
+ * none to read. With `facets`, the record also says where the tracker
+ * keeps each issue facet, read first and within `facets.bound` so a
+ * detection the reads depend on is bounded too, and which assigned items
+ * lack one (an item carrying `facets.epic` needs no size).
+ */
+export async function readPickups(
+  open: () => Tracker,
+  section: DispatchSection,
+  facets?: { bound: () => FacetBound; epic: string },
+): Promise<TrackerReading> {
+  if (section.identity === null)
+    return {
+      read: {
+        record: "tracker",
+        source: "dispatch.identity",
+        ok: true,
+        detail: "no dispatch.identity: this repository has no pickups",
+      },
+      wanted: [],
+      unplaced: [],
+      claimed: [],
+    };
+  const identity = section.identity;
+  const tracker = open();
+  const source = `${tracker.adapter} ${tracker.team}`;
+  // One bound for the whole facet read: the stores and the assigned items
+  // share its allowance and its cancellation.
+  const bound = facets?.bound();
+  // The diagnostic report gets its own share of the allowance, so a slow
+  // report leaves the assigned-item read its time.
+  const stores =
+    bound === undefined
+      ? undefined
+      : await readFacetStores(tracker, reportBound(bound));
+  let issues: Awaited<ReturnType<Tracker["assignedIssues"]>>;
+  try {
+    issues = await readAssigned(tracker, identity, section, bound);
+  } catch (error) {
+    return {
+      read: {
+        record: "tracker",
+        source,
+        ok: false,
+        detail: `the items assigned to ${identity} could not be read: ${failureText(error)}`,
+        ...(stores === undefined ? {} : { facets: stores }),
+      },
+      wanted: [],
+      unplaced: [],
+      claimed: null,
+    };
+  }
+  const { wanted, unplaced } = await byTrustedAssigner(
+    tracker,
+    issues,
+    identity,
+  );
   const claimed = await readClaimed(tracker, identity);
   if (!Array.isArray(claimed)) unplaced.push(claimed);
+  const record =
+    stores === undefined || facets === undefined
+      ? undefined
+      : withGaps(stores, issues, facets.epic);
   return {
     read: {
       record: "tracker",
       source,
       ok: true,
-      detail: `${issues.length} item(s) assigned to ${identity} in ${section.states.join(", ")}${Array.isArray(claimed) ? `; ${claimed.length} in ${tracker.stateName("in_progress")}` : ""}`,
+      detail: `${issues.length} item(s) assigned to ${identity} in ${section.states.join(", ")}${Array.isArray(claimed) ? `; ${claimed.length} in ${tracker.stateName("in_progress")}` : ""}${record === undefined ? "" : `; ${facetSummary(record)}`}`,
+      ...(record === undefined ? {} : { facets: record }),
     },
     wanted,
     unplaced,

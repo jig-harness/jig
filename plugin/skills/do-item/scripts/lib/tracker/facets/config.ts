@@ -257,7 +257,8 @@ export function entryLabels(
 export interface ResolvedFacet {
   facet: Facet;
   store: FacetStoreKind;
-  why: "configured" | "kept in labels" | "default";
+  /** Named in the configuration, kept in labels, selected by the GitHub default, or the adapter's default. */
+  why: "configured" | "kept in labels" | "detected" | "default";
   /** The canonical values; for priority, its names (`urgent` … `low`). */
   values: string[];
   /** A label store: each value with its labels, the first one written. */
@@ -615,6 +616,23 @@ export function defaultFacets(
     },
     null,
   );
+}
+
+/**
+ * How a configured entry names a facet's value: the value itself, or the
+ * label of one, ignoring case; an entry that names neither is kept as
+ * written. With no such facet, every entry is kept as written, a label.
+ */
+export function facetValueOf(
+  slot: FacetSlot | undefined,
+): (entry: string) => string {
+  if (slot === undefined || !usable(slot)) return (entry) => entry;
+  return (entry) =>
+    canonical(slot.values, entry) ??
+    slot.labels?.find(([, ls]) =>
+      ls.some((l) => fold(l) === fold(entry)),
+    )?.[0] ??
+    entry;
 }
 
 /** The configuration line that names the store a facet is in now. */

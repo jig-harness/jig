@@ -13,7 +13,7 @@
  *      absent `severity_mapping` as `null` rather than a config error (see
  *      `LadderConfig.severityMapping`), so nothing else in the repo notices
  *      if it is deleted. This does.
- *   2. `defer-batch.ts`'s executable `SEVERITY_TO_PRIORITY` agrees with it,
+ *   2. the executable `SEVERITY_TO_PRIORITY` agrees with it,
  *      token for token. That map stays hand-written — its VALUES have no
  *      derivable relationship to severity tokens — so agreement is a thing to
  *      check, not a thing to assume.
@@ -22,7 +22,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { SEVERITY_TO_PRIORITY } from "../scripts/defer-batch.ts";
+import { SEVERITY_TO_PRIORITY } from "../scripts/lib/severity-priority.ts";
 import {
   ACCEPTANCE_TIERS,
   acceptancePriority,
@@ -69,7 +69,7 @@ describe("the shipped severity_mapping", () => {
     );
   });
 
-  it("agrees with defer-batch.ts's SEVERITY_TO_PRIORITY on every token", async () => {
+  it("agrees with SEVERITY_TO_PRIORITY on every token", async () => {
     const mapping = await shippedMapping();
     const published = Object.fromEntries(
       Object.entries(mapping).map(([token, e]) => [token, e.priority]),
@@ -154,18 +154,25 @@ describe("severity_mapping validation", () => {
     expect(run).toThrow(/priority must be an integer 1-4/);
   });
 
-  it("refuses `unknown` mapped to a nonzero priority — the absence of a severity is never an urgency", async () => {
-    // The opposite direction of the probe above: `unknown` must be
-    // EXACTLY 0, not merely "0 or more" — letting it take priority 1
-    // would invent an urgency for a finding nothing ranked at all.
+  it("refuses `unknown` mapped to anything but medium: such a finding files as medium", async () => {
     const run = await mutated((doc) => {
       (
         doc.severity_mapping as Record<string, Record<string, unknown>>
       ).unknown = { priority: 1 };
     });
     expect(run).toThrow(
-      /priority must be 0 .* 'unknown' is the absence of a severity, never an urgency/,
+      /unknown\.priority must be 3 \(got 1\): a finding of 'unknown' severity files as medium/,
     );
+  });
+
+  it("accepts `unknown` mapped to 0 (none), and still files it as medium", async () => {
+    const run = await mutated((doc) => {
+      (
+        doc.severity_mapping as Record<string, Record<string, unknown>>
+      ).unknown = { priority: 0 };
+    });
+    expect(run().severityMapping?.unknown?.priority).toBe(0);
+    expect(SEVERITY_TO_PRIORITY.unknown).toBe(3);
   });
 
   it("refuses an acceptance tier outside the skill's vocabulary", async () => {
@@ -182,7 +189,7 @@ describe("severity_mapping validation", () => {
     const run = await mutated((doc) => {
       (
         doc.severity_mapping as Record<string, Record<string, unknown>>
-      ).unknown = { priority: 0, acceptance: "Minor" };
+      ).unknown = { priority: 3, acceptance: "Minor" };
     });
     expect(run).toThrow(/must not carry an acceptance tier/);
   });
@@ -310,7 +317,7 @@ describe("acceptancePriority", () => {
     // validation.
     const mapping: SeverityMapping = {
       low: { priority: 4, acceptance: "Minor" },
-      unknown: { priority: 0, acceptance: null },
+      unknown: { priority: 3, acceptance: null },
     };
     expect(acceptancePriority(mapping, "Blocker")).toBeNull();
   });
