@@ -4,8 +4,9 @@
  * recorded cause (`no-cause: `), and a re-drive of a stop whose next step is
  * mechanical (`recovery: `): a pass deadline, a failure on a conflicting pull
  * request, a silent driver this host shows gone, a follow-up whose session
- * died. Launch records and every host's launch claims carry the facts, so the
- * budget counts the attempts of either kind from both.
+ * died or that stopped on a routine question. Launch records and every
+ * host's launch claims carry the facts, so the budget counts the attempts of
+ * either kind from both.
  *
  * A `recovery: ` tag says how a launch is counted, not what the ledger said:
  * two facts that differ only by it act on the same ledger (`sameFacts`).

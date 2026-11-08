@@ -20,7 +20,8 @@
  * | this host's, its outcome done | quiet: done |
  * | this host's, its launch record still holding | running |
  * | this host's, its pass died with no result and no question, not itself a run again | running: the tick releases the marker, and a later tick runs the follow-up again once, within the pull request's recovery budget |
- * | this host's, its outcome failed, its run again died, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one, never started again |
+ * | this host's, its outcome failed on a question tagged with a routine class, or failed before passes tagged their questions, not itself a run again | running: the tick releases the marker, and a later tick runs the follow-up again once with the class's standing answer (every class's, for one that failed before), within the same recovery budget (`routine-reruns.ts`) |
+ * | this host's, its outcome failed on an untagged question or none, its run again failed or died, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one, never started again |
  * | this host's, naming a record for anything else | reports it, starts nothing |
  *
  * A tick's marker names the host that posted it; one that names none was
@@ -62,6 +63,7 @@ import {
   retryableStartup,
 } from "./session-startup.ts";
 import { questionOf } from "./session.ts";
+import { type RoutineRerun, routineRerun } from "./routine-reruns.ts";
 import type { Action, FollowupMarker, MarkedPr, RepoReport } from "./types.ts";
 
 export interface FollowupInput {
@@ -300,11 +302,12 @@ function planTickMarker(
     });
     return;
   }
-  if (found !== undefined && retriedDeath(found, input.nowMs)) {
+  const released = releaseWhy(input, pr.number, marker, found, ended);
+  if (released !== null) {
     plan.running.push({
       target,
       stage: "followup",
-      reason: `launch record ${id}'s pass died with no result and no question: the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`,
+      reason: `launch record ${id}'s pass ${released}: the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`,
       evidence: { record: id, marker: marker.id },
     });
     return;
@@ -325,6 +328,34 @@ function planTickMarker(
   plan.actions.push(failedTick(input, pr, marker, found, ended === "failed"));
 }
 
+/**
+ * What the pass of a follow-up the tick releases the marker of did, in
+ * words: it died for the first time, or it ended failed on a question that
+ * owes a routine run again; `null` when its marker is not released.
+ */
+function releaseWhy(
+  input: FollowupInput,
+  pr: number,
+  marker: FollowupMarker & { run: { kind: "tick" } },
+  found: ReadRecord | undefined,
+  ended: "done" | "failed" | null,
+): string | null {
+  if (found !== undefined && retriedDeath(found, input.nowMs))
+    return "died with no result and no question";
+  if (ended !== "failed") return null;
+  const owed = routineRerun(input.outcomes.get(pr), input.launches);
+  return owed?.record === marker.run.record
+    ? `${stoppedOn(owed)}, so it runs again with the standing answer`
+    : null;
+}
+
+/** What a follow-up that owes a routine run again stopped on, in words. */
+function stoppedOn(owed: RoutineRerun): string {
+  return owed.legacy
+    ? "failed before passes tagged their questions"
+    : `stopped on a routine question (${owed.standing.classes.join(", ")})`;
+}
+
 /** A failed follow-up this host's marker claims: its pass ended short of done, or its record and outcome are both gone. */
 function failedTick(
   input: FollowupInput,
@@ -334,19 +365,40 @@ function failedTick(
   ended: boolean,
 ): Action {
   const id = marker.run.record;
-  const question = ended ? questionOf(found?.state) : null;
+  const outcome = input.outcomes.get(pr.number);
+  const kept = outcome?.record === id ? outcome : undefined;
+  const question = ended ? questionFor(found, kept) : null;
   const asked =
     question === null ? "" : `, on a question for a person: ${question}`;
-  const again =
-    found !== undefined && diedWithoutResult(found) && isRerun(found.record)
-      ? ", dying again after the tick ran it again once"
-      : "";
+  const again = againWords(found, kept);
   const why = ended
     ? `its pass under launch record ${id} ended without recording done${asked}${again}`
     : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`;
   const action = failed(input, pr, marker, why, ended, question);
   action.evidence.record = id;
   return action;
+}
+
+/** The question a failed follow-up's pass stopped on: its launch record's, else its outcome record's; `null` when neither keeps one. */
+function questionFor(
+  found: ReadRecord | undefined,
+  kept: FollowupOutcome | undefined,
+): string | null {
+  return questionOf(found?.state) ?? kept?.question ?? null;
+}
+
+/** What else a failed follow-up's notice says: that it was itself a run again, or that its outcome record's question does not read; empty for neither. */
+function againWords(
+  found: ReadRecord | undefined,
+  kept: FollowupOutcome | undefined,
+): string {
+  const unread = kept?.unreadable === undefined ? "" : `; ${kept.unreadable}`;
+  const rerun =
+    (found !== undefined && isRerun(found.record)) || kept?.rerun === true;
+  if (!rerun) return unread;
+  return found !== undefined && diedWithoutResult(found)
+    ? `, dying again after the tick ran it again once${unread}`
+    : `, failing again after the tick ran it again once${unread}`;
 }
 
 /**
@@ -428,13 +480,14 @@ function wantFollowup(
   ignored: readonly { id: number; login: string }[],
   want: Want,
 ): void {
-  const died = deathOf(input, pr.number);
+  const joined = (w: Workspace) => w.prs.includes(pr.number);
+  const again = againOf(input, pr);
   const spent =
-    died === undefined
+    again === null
       ? null
       : localRecoverySpent(input.slug, pr.number, input.launches, input.nowMs);
-  if (died !== undefined && spent !== null) {
-    want(failedRerun(input, pr, died, spent), (w) => w.prs.includes(pr.number));
+  if (again !== null && spent !== null) {
+    want(failedRerun(input, pr, again, spent), joined);
     return;
   }
   want(
@@ -442,13 +495,8 @@ function wantFollowup(
       stage: "followup",
       target: `PR #${pr.number}`,
       record: "forge",
-      reason:
-        died === undefined
-          ? `merged ${pr.mergedAt} with no follow-up marker; run ${input.command} ${pr.number}`
-          : `merged ${pr.mergedAt}, and launch record ${died.record.id}'s follow-up died with no result: run ${input.command} ${pr.number} again, once`,
-      ...(died === undefined
-        ? {}
-        : { facts: `${RECOVERY_FACTS}merged ${pr.mergedAt}` }),
+      reason: wantReason(input, pr, again),
+      ...againFields(again),
       evidence: {
         url: pr.url,
         head: pr.head,
@@ -462,8 +510,67 @@ function wantFollowup(
             }),
       },
     },
-    (w) => w.prs.includes(pr.number),
+    joined,
   );
+}
+
+/** Why the tick wants the follow-up of a merged pull request with no marker: a first run, or a run again. */
+function wantReason(
+  input: FollowupInput,
+  pr: MarkedPr,
+  again: Again | null,
+): string {
+  const run = `run ${input.command} ${pr.number}`;
+  if (again === null)
+    return `merged ${pr.mergedAt} with no follow-up marker; ${run}`;
+  const answer =
+    again.routine === null
+      ? ""
+      : `, with ${again.routine.legacy ? "every routine class's standing answer" : "its standing answer"}`;
+  return `merged ${pr.mergedAt}, and launch record ${again.record}'s follow-up ${again.what}: ${run} again, once${answer}`;
+}
+
+/** What a run again's action carries: its recovery-tagged facts and, after a routine question, the standing answer. */
+function againFields(again: Again | null): Pick<Action, "facts" | "standing"> {
+  if (again === null) return {};
+  return {
+    facts: again.facts,
+    ...(again.routine === null ? {} : { standing: again.routine.standing }),
+  };
+}
+
+/** A run again a merged pull request with no marker owes: after a death, or after a routine question. */
+interface Again {
+  record: string;
+  /** The marker the failed attempt posted; `null` when no record of it says. */
+  marker: number | null;
+  /** What the attempt did, in words. */
+  what: string;
+  facts: string;
+  routine: RoutineRerun | null;
+}
+
+/** The run again the follow-up of `pr` owes; `null` when it owes none. */
+function againOf(input: FollowupInput, pr: MarkedPr): Again | null {
+  const died = deathOf(input, pr.number);
+  if (died !== undefined)
+    return {
+      record: died.record.id,
+      marker: died.record.marker,
+      what: "died with no result",
+      facts: `${RECOVERY_FACTS}merged ${pr.mergedAt}`,
+      routine: null,
+    };
+  const routine = routineRerun(input.outcomes.get(pr.number), input.launches);
+  if (routine === null) return null;
+  const found = input.launches.find((r) => r.record.id === routine.record);
+  return {
+    record: routine.record,
+    marker: found?.record.marker ?? null,
+    what: stoppedOn(routine),
+    facts: `${RECOVERY_FACTS}routine ${routine.standing.classes.join(", ")}, merged ${pr.mergedAt}`,
+    routine,
+  };
 }
 
 /** One merged pull request: wanted, running, quiet, failed or unplaced. */
@@ -537,22 +644,33 @@ function planMerged(
   );
 }
 
-/** A follow-up that died, whose run again the pull request's spent recovery budget withholds: a person's. */
+/** A follow-up whose run again the pull request's spent recovery budget withholds: a person's. */
 function failedRerun(
   input: FollowupInput,
   pr: MarkedPr,
-  died: ReadRecord,
+  again: Again,
   spent: string,
 ): Action {
-  const why = `its pass under launch record ${died.record.id} died with no result, and ${spent}`;
+  const why = `its pass under launch record ${again.record} ${again.what}, and ${spent}`;
+  const question = again.routine?.standing.question ?? null;
   return {
     stage: "notify",
     target: `PR #${pr.number}`,
     record: "forge",
     reason: `failed follow-up: ${why}`,
-    evidence: { url: pr.url, record: died.record.id },
+    evidence: {
+      url: pr.url,
+      record: again.record,
+      ...(question === null ? {} : { question }),
+    },
     cause: "followup-failed",
-    notice: followupFailedNotice(input.slug, pr, died.record.marker ?? 0, why),
+    notice: followupFailedNotice(
+      input.slug,
+      pr,
+      again.marker ?? 0,
+      why,
+      question,
+    ),
     launched: true,
   };
 }
