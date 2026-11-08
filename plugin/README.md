@@ -316,10 +316,11 @@ is re-driven once per head commit too, one that left work in its tree only in
 that tree, and a failure (exit `1`) while the
 pull request conflicts with its base once per pair of its head and its base
 branch's head, so its conflict-resolve round runs. These re-drives, the
-takeover of a silent driver no launch started and the run again of a
-follow-up that died draw on the pull request's recovery budget, with the
+takeover of a silent driver no launch started that this host shows gone
+and the run again of a follow-up that died draw on the pull request's recovery budget, with the
 re-arms of stops with no recorded cause: 3 in a rolling hour, after which a
-person is told. A record
+person is told. The takeover of a
+holder the drive doctor reads `DEAD` or `WEDGED` is outside the budget. A record
 claimed on this host before it last restarted has died, since a restart ends
 every process, and its outcome row says so; hosts are told apart by the
 [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
