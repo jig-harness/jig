@@ -221,6 +221,28 @@ describe("jig dispatch dashboard", () => {
     expect(readdirSync(root).sort()).toEqual(before);
   });
 
+  it("serves without a token on a loopback address that asks for none, and refuses to elsewhere", async () => {
+    const root = fixtureLog();
+    const served = serveDashboard({
+      listen: { host: "127.0.0.1", port: null },
+      port: 0,
+      root,
+      token: null,
+    });
+    stop = served.stop;
+    const base = new URL(served.url);
+    expect(base.search).toBe("");
+    expect((await fetch(new URL("/state", base))).status).toBe(200);
+    expect(() =>
+      serveDashboard({
+        listen: { host: "100.64.0.7", port: null },
+        port: 0,
+        root,
+        token: null,
+      }),
+    ).toThrow("only on a loopback address");
+  });
+
   it("counts a class on three of the last seven nights as recurring, and fewer as not", () => {
     const root = mkdtempSync(join(tmpdir(), "dispatch-log-"));
     bulkRoots.push(root);

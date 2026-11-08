@@ -282,6 +282,24 @@ describe("the dashboard's address", () => {
       port: 8765,
     });
   });
+
+  it("serves without a token only on a loopback address", () => {
+    const file = join(root(), "dispatch.yaml");
+    writeFileSync(file, "dashboard:\n  listen: 127.0.0.1:8765\n");
+    expect(readMachineConfig(file)?.dashboardRequireToken).toBe(true);
+    writeFileSync(
+      file,
+      "dashboard:\n  listen: 127.0.0.1:8765\n  require_token: false\n",
+    );
+    expect(readMachineConfig(file)?.dashboardRequireToken).toBe(false);
+    writeFileSync(
+      file,
+      "dashboard:\n  listen: 100.64.0.7:8765\n  require_token: false\n",
+    );
+    expect(() => readMachineConfig(file)).toThrow("needs a loopback");
+    writeFileSync(file, "dashboard:\n  require_token: false\n");
+    expect(() => readMachineConfig(file)).toThrow(MachineConfigError);
+  });
 });
 
 describe("the screen check before a nudge", () => {

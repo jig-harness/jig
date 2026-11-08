@@ -16,6 +16,9 @@
  * phone on the host's private network reaches it and nothing else does.
  * The URL it prints carries a token minted at start; a request without it
  * is refused, since these records name repositories, items and accounts.
+ * A machine file that sets `dashboard.require_token: false` on a loopback
+ * address serves without one, for a front on the host (Tailscale Serve, a
+ * reverse proxy) that authenticates each person before the request arrives.
  * Nothing installs it or keeps it running: a person starts it from a
  * terminal on the host and stops it with Ctrl-C.
  */
@@ -29,7 +32,7 @@ import { prReader } from "./lib/dashboard-pr.ts";
 import { queryLog } from "./lib/dashboard-log.ts";
 import { hostTimeZone } from "./lib/host-time.ts";
 import { readLine, readLineReceipt, stateAnswer } from "./lib/line-store.ts";
-import type { Listen } from "./lib/listen.ts";
+import { isLoopback, type Listen } from "./lib/listen.ts";
 import { existingStateDb } from "./lib/state.ts";
 import { stateRoot } from "./receipts.ts";
 
@@ -218,13 +221,22 @@ export function serveDashboard(options: {
   listen: Listen;
   port?: number;
   root?: string;
-  token?: string;
+  /** The token a request needs; `null` serves without one, which only a loopback address may. */
+  token?: string | null;
   /** The clock the answers read; the real one unless a check holds it still. */
   now?: () => number;
   /** A forge reader; fixtures provide their own instead of reaching a live account. */
   readPr?: ReturnType<typeof prReader>;
 }): Dashboard {
-  const token = options.token ?? crypto.randomUUID().replace(/-/g, "");
+  const token =
+    options.token === undefined
+      ? crypto.randomUUID().replace(/-/g, "")
+      : options.token;
+  if (token === null && !isLoopback(options.listen))
+    throw new ExitError(
+      2,
+      `the dashboard serves without a token only on a loopback address, not ${options.listen.host}`,
+    );
   const root = options.root ?? stateRoot();
   const now = options.now ?? Date.now;
   const page = readPage("index.html");
@@ -268,7 +280,7 @@ export function serveDashboard(options: {
           request,
           405,
         );
-      if (!sameToken(url.searchParams.get("token"), token))
+      if (token !== null && !sameToken(url.searchParams.get("token"), token))
         return url.pathname === "/"
           ? pageResponse(refused, request, 403)
           : answered(
@@ -302,7 +314,7 @@ export function serveDashboard(options: {
     ? `[${options.listen.host}]`
     : options.listen.host;
   return {
-    url: `http://${host}:${server.port}/?token=${token}`,
+    url: `http://${host}:${server.port}/${token === null ? "" : `?token=${token}`}`,
     stop: () => server.stop(true),
   };
 }
@@ -312,6 +324,7 @@ export async function dashboardMain(
   listen: Listen | null,
   port: number | undefined,
   machinePath: string,
+  requireToken = true,
 ): Promise<number> {
   if (listen === null)
     throw new ExitError(
@@ -323,6 +336,7 @@ export async function dashboardMain(
   const dashboard = serveDashboard({
     listen,
     ...(port === undefined ? {} : { port }),
+    ...(requireToken ? {} : { token: null }),
   });
   console.log(`jig dispatch dashboard: ${dashboard.url}`);
   console.log(

@@ -129,6 +129,7 @@ function machine(changeProbe = true): MachineConfig {
     opensPerTick: 4,
     receiptsDays: 30,
     dashboardListen: null,
+    dashboardRequireToken: true,
     sharedRecords: "forge",
     send: true,
     changeProbe,

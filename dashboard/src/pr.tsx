@@ -1,11 +1,21 @@
 /** Shared PR identity: direct navigation, current forge state and hover/focus context. */
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
-  GitPullRequest,
+  CircleAlert,
+  Clock as ClockIcon,
   GitMerge,
+  GitPullRequest,
+  GitPullRequestArrow,
   GitPullRequestClosed,
-  CircleHelp,
+  GitPullRequestDraft,
+  ListChecks,
+  ListOrdered,
+  type LucideIcon,
+  Pause,
 } from "lucide-react";
+import { createContext, type PointerEvent, useContext, useState } from "react";
+import { prStanding, type Standing, type StandingKind } from "./pr-standing.ts";
+import type { Clock } from "./view.ts";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { reconcileNeeds } from "./pr-state.ts";
 import type { DashboardPr } from "../../plugin/dispatch/lib/dashboard-pr.ts";
@@ -101,20 +111,56 @@ function TargetLink({ url, target }: Pick<PrProps, "url" | "target">) {
   );
 }
 
-function stateOf(fact: DashboardPr | null) {
-  if (fact === null) return "Unknown";
-  if (fact.state === "MERGED") return "Merged";
-  if (fact.state === "CLOSED") return "Closed";
-  return fact.isDraft ? "Draft" : "Open";
+const NO_CLOCK: Clock = { nowMs: 0, timeZone: "UTC" };
+
+/** The line the page shows and its clock, which every PR's standing reads; before a line is read it holds neither. */
+export const StandingSource = createContext<{
+  line: LineSnapshot | null;
+  clock: Clock;
+}>({ line: null, clock: NO_CLOCK });
+
+const KIND_ICONS: Record<StandingKind, LucideIcon> = {
+  driving: GitPullRequestArrow,
+  "following-up": ListChecks,
+  waiting: ClockIcon,
+  "needs-person": CircleAlert,
+  queued: ListOrdered,
+  held: Pause,
+  merged: GitMerge,
+  closed: GitPullRequestClosed,
+  draft: GitPullRequestDraft,
+  open: GitPullRequest,
+  unknown: GitPullRequest,
+};
+
+function StandingBody({
+  standing,
+  Icon,
+}: {
+  standing: Standing;
+  Icon: LucideIcon;
+}) {
+  return (
+    <>
+      <p className={`prLabel tone-${standing.tone}`}>
+        <Icon size={14} aria-hidden="true" /> {standing.label}
+      </p>
+      <ul className="prFacts">
+        {standing.facts.map((f) => (
+          <li key={f}>{f}</li>
+        ))}
+      </ul>
+    </>
+  );
 }
 
-const STATE_ICONS = {
-  Merged: GitMerge,
-  Closed: GitPullRequestClosed,
-  Unknown: CircleHelp,
-  Draft: GitPullRequest,
-  Open: GitPullRequest,
-};
+function OpenLink({ url }: { url: string | null }) {
+  return url === null ? null : (
+    <a href={url} target="_blank" rel="noreferrer noopener">
+      Open pull request
+    </a>
+  );
+}
 
 function PrContext({
   repo,
@@ -123,56 +169,84 @@ function PrContext({
   title,
   fact,
   pr,
-}: PrProps & { fact: DashboardPr | null; pr: string }) {
-  const state = stateOf(fact);
-  const Icon = STATE_ICONS[state];
-  const freshness =
-    fact === null
-      ? "Current forge state unavailable. The tick and history may be stale."
-      : `${state} · checked ${fact.checkedAt}`;
+  standing,
+  open,
+  setOpen,
+}: PrProps & {
+  fact: DashboardPr | null;
+  pr: string;
+  standing: Standing;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}) {
+  const Icon = KIND_ICONS[standing.kind];
   return (
     <Hint
-      className="prState"
-      label={`PR #${pr}: ${state}`}
-      trigger={
-        <>
-          <Icon size={14} aria-hidden="true" />
-          {state}
-        </>
-      }
+      className={`prState tone-${standing.tone}`}
+      label={`PR #${pr}: ${standing.label}`}
+      open={open}
+      onOpenChange={setOpen}
+      trigger={<Icon size={16} aria-hidden="true" />}
     >
       <strong>{fact?.title ?? title ?? target}</strong>
-      <p>{freshness}</p>
+      <StandingBody standing={standing} Icon={Icon} />
       <p>
         <RepoLink repo={repo} url={url} /> #{pr}{" "}
         <CopyButton text={pr} aria={`Copy PR ID ${pr}`} />
       </p>
-      {url === null ? null : (
-        <a href={url} target="_blank" rel="noreferrer noopener">
-          Open pull request
-        </a>
-      )}
+      <OpenLink url={url} />
     </Hint>
   );
 }
 
-export function Pr(props: PrProps) {
-  const { repo, target, url } = props;
-  const pr = prNumber(target);
+function useStanding(repo: string, pr: string, fact: DashboardPr | null) {
+  const { line, clock } = useContext(StandingSource);
+  return prStanding(line, repo, Number(pr), fact, clock);
+}
+
+/** Opens a hint while a mouse rests anywhere on the element it spreads onto; touch and keyboard use the hint's trigger. */
+function useMouseHover() {
+  const [open, setOpen] = useState(false);
+  const hover = {
+    onPointerEnter: (event: PointerEvent<HTMLElement>) => {
+      if (event.pointerType === "mouse") setOpen(true);
+    },
+    onPointerLeave: (event: PointerEvent<HTMLElement>) => {
+      if (event.pointerType === "mouse") setOpen(false);
+    },
+  };
+  return { open, setOpen, hover };
+}
+
+function NumberedPr(props: PrProps & { pr: string }) {
+  const { repo, target, url, pr } = props;
   const fact = usePrFact(repo, target);
+  const { open, setOpen, hover } = useMouseHover();
+  const standing = useStanding(repo, pr, fact);
   const href = fact?.url ?? url;
-  if (pr === null)
-    return (
-      <span className="tgt">
-        <TargetLink url={url} target={target} />
-        <CopyButton text={target} aria={`Copy ID ${target}`} />
-      </span>
-    );
   return (
-    <span className={`prIdentity pr-${stateOf(fact).toLowerCase()}`}>
+    <span className={`prIdentity pr-${standing.kind}`} {...hover}>
+      <PrContext
+        {...props}
+        url={href}
+        fact={fact}
+        standing={standing}
+        open={open}
+        setOpen={setOpen}
+      />
       <TargetLink url={href} target={target} />
-      <PrContext {...props} url={href} fact={fact} pr={pr} />
       <CopyButton text={pr} aria={`Copy PR ID ${pr}`} />
+    </span>
+  );
+}
+
+export function Pr(props: PrProps) {
+  const pr = prNumber(props.target);
+  if (pr !== null) return <NumberedPr {...props} pr={pr} />;
+  return (
+    <span className="tgt">
+      <TargetLink url={props.url} target={props.target} />
+      <CopyButton text={props.target} aria={`Copy ID ${props.target}`} />
     </span>
   );
 }

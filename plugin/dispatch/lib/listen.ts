@@ -57,6 +57,14 @@ function isPrivateAddress(host: string): boolean {
   return false;
 }
 
+/** Whether a parsed address is on this machine alone: a request from elsewhere can only arrive through a front the host runs. */
+export function isLoopback(listen: Listen): boolean {
+  const kind = isIP(listen.host);
+  if (kind === 4) return listen.host.startsWith("127.");
+  const lower = listen.host.toLowerCase();
+  return lower === "::1" || lower === "::ffff:127.0.0.1";
+}
+
 /** `host`, `host:port` or `[v6]:port`, held to the private and loopback ranges; throws with the reason. */
 export function parseListen(value: string): Listen {
   const raw = value.trim();

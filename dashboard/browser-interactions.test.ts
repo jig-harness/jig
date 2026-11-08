@@ -430,6 +430,39 @@ browserIt(
 );
 
 browserIt(
+  "a PR is an icon with no state word, and hovering its number opens what the line holds even when the forge cannot be read",
+  async () => {
+    const server = await served("loud");
+    const { page, context } = await open(
+      requireBrowser(),
+      server.origin,
+      server.url,
+      LAPTOP,
+    );
+    try {
+      await page.route("**/pr?*", (route) => route.fulfill({ status: 503 }));
+      await page.reload();
+      await shows(page, ".pNeeds .prIdentity");
+      const pr = page.locator(".pNeeds .prIdentity").first();
+      expect(await pr.locator(".prState").textContent()).toBe("");
+      expect(await pr.locator(".prState svg").count()).toBe(1);
+      expect(
+        await pr.locator(".prState").getAttribute("aria-label"),
+      ).not.toContain("Unknown");
+      await pr.locator("a.tgt").hover();
+      await shows(page, ".pop");
+      expect(await page.locator(".pop .prLabel").textContent()).not.toBe("");
+      expect(await page.locator(".pop").textContent()).not.toContain(
+        "Current forge state unavailable",
+      );
+    } finally {
+      await context.close();
+    }
+  },
+  TIMEOUT,
+);
+
+browserIt(
   "merged PRs show awaiting and running follow-ups in the summary and their cards",
   async () => {
     const server = await served("quiet");
