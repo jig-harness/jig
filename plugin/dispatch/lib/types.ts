@@ -526,6 +526,6 @@ export interface SharedReport {
   ops: SharedOp[];
   reads: number;
   writes: number;
-  /** What was left of the forge's budget after them, or why it did not read. */
+  /** What was left of the forge's budget as the tick started, or why it did not read. */
   budget: SharedBudget | { unreadable: string } | null;
 }

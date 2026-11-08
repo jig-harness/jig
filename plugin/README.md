@@ -1087,7 +1087,8 @@ at the next timer run. The change probe (above) wakes ticks under the same
 rule: requests pending before a tick starts are taken by that one tick, and
 a request made after it started is taken by one trailing tick. Several sends
 pending together start one tick. A tick that
-finds another holding the tick lock is tried again a minute later; the
+finds another tick reading that repository, or acting for longer than it
+waits, is tried again a minute later; the
 waiter exits when nothing is pending, or after starting 10 ticks; the record stays the request, so the
 next timer run reads it whatever happens to the wake. What the waiter did
 is in `~/.local/state/jig/dispatch/wake/<digest>/last-run.log`. A mailbox
