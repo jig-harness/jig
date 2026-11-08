@@ -32,6 +32,14 @@ import { prNumber } from "./pr-state.ts";
 
 class PrReadError extends Error {}
 
+function prParams(repo: string, pr: string | null) {
+  return new URLSearchParams({
+    repo,
+    pr: pr ?? "",
+    token: new URLSearchParams(location.search).get("token") ?? "",
+  });
+}
+
 function prQuery(repo: string, target: string) {
   const pr = prNumber(target);
   return {
@@ -42,12 +50,7 @@ function prQuery(repo: string, target: string) {
     }: {
       signal: AbortSignal;
     }): Promise<DashboardPr> => {
-      const params = new URLSearchParams({
-        repo,
-        pr: pr ?? "",
-        token: new URLSearchParams(location.search).get("token") ?? "",
-      });
-      const response = await fetch(`/pr?${params}`, {
+      const response = await fetch(`/pr?${prParams(repo, pr)}`, {
         signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
       });
       if (!response.ok) throw new PrReadError("PR state unavailable");
@@ -222,7 +225,12 @@ function useMouseHover() {
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = null;
   };
-  useEffect(() => cancel, []);
+  useEffect(
+    () => () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+    },
+    [],
+  );
   const hover = {
     onPointerEnter: (event: PointerEvent<HTMLElement>) => {
       if (event.pointerType !== "mouse") return;

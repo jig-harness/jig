@@ -66,7 +66,7 @@ export function isLoopback(listen: Listen): boolean {
 }
 
 /** The host name of a `Host` header (`name`, `name:port`, `[v6]:port`), lower-cased; `null` when it is empty. */
-export function authorityHost(authority: string | null): string | null {
+function authorityHost(authority: string | null): string | null {
   const raw = (authority ?? "").trim().toLowerCase();
   const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(raw);
   const host = bracketed?.[1] ?? raw.replace(/:\d+$/, "");
