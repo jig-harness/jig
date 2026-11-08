@@ -9,10 +9,10 @@ import type { LineReady } from "./dashboard-contract.ts";
 import type { RepoReport } from "./types.ts";
 
 /** The most cards one repository's board read puts on the line. */
-export const MAX_READY = 100;
+const MAX_READY = 100;
 
 /** The most failing checks one card names. */
-export const MAX_FAILING = 10;
+const MAX_FAILING = 10;
 
 /** Every repository's placed pull requests, as the line carries them. */
 export function readyOf(reports: readonly RepoReport[]): LineReady[] {

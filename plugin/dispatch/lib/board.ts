@@ -28,7 +28,6 @@ import {
   readMergeFacts,
 } from "../../skills/drive-pr/scripts/lib/merge-facts.ts";
 import {
-  type Act,
   checkPattern,
   type ForgeFacts,
   type Lane,
@@ -331,11 +330,6 @@ function oneUpdateNext(cards: BoardCard[]): BoardCard[] {
           },
   );
   return [...placed, ...cards.filter((c) => c.lane === null)];
-}
-
-/** The act a card waits on a person for; `null` when it settles by waiting. */
-export function actOf(card: Pick<BoardCard, "waitsOn">): Act | null {
-  return card.waitsOn.kind === "person" ? card.waitsOn.act : null;
 }
 
 /** The board read in the observe phase: never throws, so a defect in it leaves the rest of the tick as it was. */
