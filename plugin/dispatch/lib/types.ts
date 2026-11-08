@@ -105,6 +105,7 @@ export type FollowupClass = "followup-done" | "followup-held";
 
 /** A parked decision still waiting on its answer, as the drive framed it. */
 export interface WaitingPark {
+  person?: string;
   key: string;
   kind: "thread" | "finding";
   /** The framed decision, as the drive prints it (`framedDecisionLines`). */
@@ -536,6 +537,6 @@ export interface SharedReport {
   ops: SharedOp[];
   reads: number;
   writes: number;
-  /** What was left of the forge's budget after them, or why it did not read. */
+  /** What was left of the forge's budget as the tick started, or why it did not read. */
   budget: SharedBudget | { unreadable: string } | null;
 }

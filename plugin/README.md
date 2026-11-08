@@ -899,7 +899,7 @@ changes nothing on the forge or the tracker
 
 ```sh
 jig ask <station>@<owner>/<name>#<key> [--json] [--thread [--since <date> | --all]]
-jig ask --waiting [--json]
+jig ask --waiting [--person <login>] [--json]
 ```
 
 In a session, [`/jig:operator`](skills/operator/SKILL.md) runs `jig ask`
@@ -979,8 +979,10 @@ thread is an instruction to whoever reads it.
 each waits for, across the repositories the machine dispatches, from the
 newest tick's line, which the dispatcher keeps for its dashboard: it makes
 no forge or tracker call, and it says when that tick ran. On a machine that
-dispatches nothing it says there is no line to read. `--person <login>` is
-refused until a park records whom it waits on. Each entry carries its recorded
+dispatches nothing it says there is no line to read. `--person <login>` lists
+only entries naming that login (case insensitive) in their `people` field;
+older parks use the PR author when the tick knows them; older snapshots without
+a named recipient remain in the unfiltered list. Each entry carries its recorded
 stage and parked questions in `questions` in JSON and as `question:` lines
 in text; parks without a separate question use their recorded decision lines.
 
@@ -1086,7 +1088,8 @@ at the next timer run. The change probe (above) wakes ticks under the same
 rule: requests pending before a tick starts are taken by that one tick, and
 a request made after it started is taken by one trailing tick. Several sends
 pending together start one tick. A tick that
-finds another holding the tick lock is tried again a minute later; the
+finds another tick reading that repository, or acting for longer than it
+waits, is tried again a minute later; the
 waiter exits when nothing is pending, or after starting 10 ticks; the record stays the request, so the
 next timer run reads it whatever happens to the wake. What the waiter did
 is in `~/.local/state/jig/dispatch/wake/<digest>/last-run.log`. A mailbox

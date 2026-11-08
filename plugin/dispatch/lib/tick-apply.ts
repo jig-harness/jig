@@ -8,6 +8,7 @@
  * starts. The apply state these change as they go, the slot table, the
  * records and the deadline, is built here once per tick.
  */
+import type { Contention } from "./contention.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { hostCodexOptIn, lastAccount, slotTable } from "./accounts.ts";
 import {
@@ -43,6 +44,7 @@ import {
   type RepoObservation,
   type Tracked,
 } from "./tick-observe.ts";
+import { afterWait } from "./tick-plan.ts";
 import { endOwnClaims } from "./tick-shared.ts";
 import type {
   DispatchSection,
@@ -62,6 +64,7 @@ export function applyState(
   records: ReadRecord[],
   nowMs: number,
   unreadable: string[],
+  startedAt: number,
 ): ApplyState | { withheld: string } | null {
   const machine = options.machine ?? null;
   if (!options.apply || machine === null) return null;
@@ -83,7 +86,7 @@ export function applyState(
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),
     codexOptIn: hostCodexOptIn(),
-    startedAt: Date.now(),
+    startedAt,
     tick,
     repos: options.repos.length,
   };
@@ -124,6 +127,7 @@ export async function actObserved(
     join: observation.join,
     sessions: observation.sessions,
     shared: ctx,
+    unplaced: withheldFromReplay(afterWait(context, observation.serialized)),
   };
   context.pending.push({
     apply: (group) =>
@@ -140,6 +144,16 @@ export async function actObserved(
   });
 }
 
+/** The pull requests no pending launch of theirs is replayed for: those whose place cannot be told, and those held behind another member of their group. */
+export function withheldFromReplay(
+  serialized: Pick<Contention, "held" | "unplaced">,
+): ReadonlyMap<number, string> {
+  const out = new Map(serialized.unplaced);
+  for (const [pr, { area, leader }] of serialized.held)
+    if (!out.has(pr)) out.set(pr, `held in ${area} behind PR #${leader}`);
+  return out;
+}
+
 /** What `--apply` acts on for one repository, as its tick read it. */
 interface ApplyInputs {
   repo: RepoTarget;
@@ -151,6 +165,8 @@ interface ApplyInputs {
   join: JoinTargets;
   sessions: SessionsReport;
   shared: SharedContext;
+  /** Pull requests whose place in a serialized group this tick cannot tell, by number and why. */
+  unplaced: ReadonlyMap<number, string>;
 }
 
 /**
@@ -191,6 +207,7 @@ async function applyStages(
     },
     held: (pr) => labels !== null && hasCommand(labels, pr.labels, "hold"),
     claimer: launchClaimer(inputs.shared),
+    unplaced: inputs.unplaced,
   };
   const stages = [
     async () => {

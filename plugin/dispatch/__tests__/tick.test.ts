@@ -229,12 +229,22 @@ describe("a tick that finds the tick lock held", () => {
     const ran = await tick(w);
     // This test's own process holds the lock, as a running tick does.
     writeFileSync(join(state, "tick.lock"), String(process.pid));
+    // The act lock is waited for; the entry gives up after a second.
+    const entry = join(w.root, "held.ts");
+    writeFileSync(
+      entry,
+      `import { runTick } from ${JSON.stringify(join(import.meta.dir, "..", "tick.ts"))};
+const result = await runTick({ repos: process.argv.slice(2), actLockWaitMs: 1000 });
+if ("held" in result) { console.error(result.held); process.exit(3); }
+process.exit(result.receipt.exitStatus);
+`,
+    );
     const upgrade = {
       outcome: "failed",
       detail: "network down",
       at: "2026-11-07T04:00:00.000Z",
     };
-    const r = await w.dispatch(["--repo", w.repo], undefined, {
+    const r = await w.dispatch([w.repo], entry, {
       JIG_SCHEDULED_UPGRADE: JSON.stringify(upgrade),
     });
     expectSpawnExit(r, 3);
@@ -260,7 +270,7 @@ describe("a tick that finds the tick lock held", () => {
     expect(lastTick(state)?.runId).toBe(ran.runId);
 
     // Without an upgrade to keep, a held tick writes nothing.
-    const plain = await w.dispatch(["--repo", w.repo]);
+    const plain = await w.dispatch([w.repo], entry);
     expectSpawnExit(plain, 3);
     expect(receipts()).toHaveLength(2);
   });

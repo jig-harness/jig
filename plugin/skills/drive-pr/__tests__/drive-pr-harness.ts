@@ -2659,6 +2659,7 @@ export async function park(
         ...gitCleanEnv(),
         DRIVE_PR_STATE_DIR: stateDir,
         DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
+        JIG__dispatch__person: "maintainer",
       },
       stdin: new TextEncoder().encode(
         parkRecord("Did the arbiter escalate it"),

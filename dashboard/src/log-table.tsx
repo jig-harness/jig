@@ -1,3 +1,5 @@
+import { ChevronRight } from "lucide-react";
+import { Pr, RepoLink } from "./pr.tsx";
 /**
  * The log's rows. TanStack Table holds the columns and which rows are open;
  * TanStack Virtual keeps only what is near the window in the document, measuring
@@ -51,8 +53,12 @@ const columns = helper.columns([
     id: "target",
     cell: ({ row }) => (
       <span className="cell-tgt">
-        <span className="m">{row.original.target}</span>
-        <span className="m mut">{row.original.repo}</span>
+        <Pr
+          repo={row.original.repo}
+          target={row.original.target}
+          url={row.original.url}
+        />
+        <RepoLink repo={row.original.repo} url={row.original.url} />
         <StageChip
           mark={row.original.mark}
           stage={row.original.stage}
@@ -173,16 +179,20 @@ export function LogTable({
       ref={virtual.measureElement}
       style={{ transform: `translateY(${Math.round(start - top)}px)` }}
     >
-      <button
-        className="rowSum"
-        type="button"
-        aria-expanded={row.getIsExpanded()}
-        onClick={row.getToggleExpandedHandler()}
-      >
+      <div className="rowSum">
         {row.getAllCells().map((cell) => (
           <table.FlexRender cell={cell} key={cell.id} />
         ))}
-      </button>
+        <button
+          type="button"
+          className="foldBtn disclosure rowExpand"
+          aria-label={`Details for ${row.original.target}`}
+          aria-expanded={row.getIsExpanded()}
+          onClick={row.getToggleExpandedHandler()}
+        >
+          <ChevronRight size={16} aria-hidden="true" />
+        </button>
+      </div>
       {row.getIsExpanded() ? <RowBody view={row.original} /> : null}
     </div>
   );

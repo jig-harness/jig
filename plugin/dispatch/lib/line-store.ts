@@ -61,6 +61,7 @@ function listOf(fields: Fields): (value: unknown) => boolean {
 
 /** What the needs view reads of each decision. */
 const DECISION_FIELDS: Fields = {
+  person: (value) => value === undefined || isString(value),
   key: isString,
   kind: (value) => value === "thread" || value === "finding",
   lines: (value) => Array.isArray(value) && value.every(isString),

@@ -1,3 +1,5 @@
+import { FollowupSummary } from "./followups.tsx";
+import { useCurrentLine } from "./pr.tsx";
 /**
  * The page's views. Now keeps the question order, its top half reshaped
  * by state: with nothing to do the answer is a plain line and what is running
@@ -270,7 +272,11 @@ function Page({
 }) {
   const [popupRoot, setPopupRoot] = useState<HTMLElement | null>(null);
   const [tab, setTab] = useView();
-  const view = pageView(state, rows, useMonoNow());
+  const snapshot = pageView(state, rows, useMonoNow());
+  const view = {
+    ...snapshot,
+    line: useCurrentLine(snapshot.line),
+  };
   const { line, clock } = view;
   const needs = needCount(line, clock.nowMs);
   const today = hostDay(clock.nowMs, clock.timeZone);
@@ -484,6 +490,7 @@ function AnswerBand({
     >
       <h1>{view.title}</h1>
       <p className="sm">{view.sub}</p>
+      <FollowupSummary line={line} nowMs={clock.nowMs} />
     </section>
   );
 }

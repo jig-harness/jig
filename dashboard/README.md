@@ -13,6 +13,11 @@ bun test dashboard                # the page's tests, in Chromium where one is f
 
 What the server and the page say to each other is
 [`plugin/dispatch/lib/dashboard-contract.ts`](../plugin/dispatch/lib/dashboard-contract.ts).
+Current PR state is read separately through `GET /pr`, with a minute cache and
+bounded, deadline-protected forge calls. The historical outcome stays unchanged;
+a merged or closed PR no longer presents its drive decision as actionable after
+a successful refresh. Follow-up failures still need a person after merge.
+
 Why the page looks and reads as it does is the
 [design round](../design/prototypes/dispatch-dashboard/README.md), whose
 scenarios are `fixtures.ts` here.

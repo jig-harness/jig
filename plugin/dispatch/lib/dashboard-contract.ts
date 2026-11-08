@@ -14,6 +14,8 @@ import type { LaunchOutcome, NotifyCause, NotifyOutcome } from "./types.ts";
 
 /** One decision a parked drive waits on, as the drive framed it. */
 export interface LineDecision {
+  /** The named person; absent on older parks. Routing does not restrict answers. */
+  person?: string;
   /** The thread or finding the answer goes to: `answer <key>: …`. */
   key: string;
   kind: "thread" | "finding";

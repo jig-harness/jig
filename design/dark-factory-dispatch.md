@@ -57,61 +57,149 @@ flowchart LR
 
 ### One tick, step by step
 
-A tick takes the lock, reads this machine's launch records, and then gives
-each repository a **turn** in rotated order: the repository is read,
-planned and acted on before the next one is read. Within a turn, reading
-and acting are separate phases, each in its own module under
-`plugin/dispatch/lib/`; across repositories they interleave, so
-repository B is read only after repository A's launches have finished.
-Last, the tick closes: it settles what the repositories it did not read
-still owe, copies the outcome log, writes the dashboard's line and writes
-its receipt.
+A tick runs in two **phases**. In the **observe phase** every repository
+is read at once: each under its own **observe lock**, and every read
+through one pool that keeps at most six in flight (the forge's login and rate limit, each read once per tick, and the base heads of conflicting drives among them), well inside the forge's
+secondary rate limits. Within one repository, the sources that do not
+depend on each other are read side by side: the tracker beside the forge,
+then every host's launch claims beside the runtime. In the **act phase**,
+under the machine's one **act lock**, the tick reads this machine's launch
+records again and gives each repository a **turn** in rotated order, one
+after another: its plan and its outcome rows. The turns queue the launches
+and the labels; once every repository has had its turn, the launches run
+across all of them, one launch group at a time, and then each repository's
+finish step writes its labels. A launch changes what the next may admit (an
+account's slots, the tick's allowance of workspace opens, the account whose
+turn is next), so acts never overlap, and the admission order is the one the
+tick would take with no observe phase in front of it. Last, the tick closes: it settles what the
+repositories it did not read still owe, copies the outcome log, writes the
+dashboard's line and writes its receipt. Each phase lives in its own module
+under `plugin/dispatch/lib/`.
 
 ```mermaid
 flowchart TD
-  L[take the tick lock<br/>held: exit at once] --> R[read this host's launch records<br/>one unreadable: no launches this tick]
-  R --> A[build the apply state<br/>slot table per account, rotation cursor, deadline]
-  A --> LOOP{{for each repository, in rotated order}}
-  subgraph repo [one repository's turn, inside its boundary: tick-repo.ts]
+  S0[read this host's launch records as they stand,<br/>start the budget read] --> OBS{{every repository at once, in a pool of six reads}}
+  subgraph repo [one repository's observe part, inside its boundary: tick-repo.ts]
     direction TB
+    OL[take its observe lock<br/>held by another tick: leave the repository to it]
     O1[open: forge target and the dispatch section<br/>from the default branch]
     O2[tracker: wanted pickups, claimed items]
     O3[forge: open PRs, login, a ledger per PR,<br/>merges and their follow-up markers]
     O3b[claims: every host's launch claims]
     O4[runtime: the sessions joined to items and PRs]
-    C[observe: thread samples, session walls,<br/>contention]
+    C[observe: thread samples, session walls,<br/>contention; the samples and contention<br/>skipped while the budget is low]
+    OL --> O1 --> O2 & O3
+    O3 --> O3b
+    O2 & O3 --> O4
+    O3b & O4 --> C
+  end
+  OBS --> repo
+  repo --> AL[take the act lock, tick.lock<br/>held: wait up to two minutes, then exit]
+  AL --> R[read this host's launch records again<br/>one unreadable: no launches this tick]
+  R --> A[build the apply state<br/>slot table per account, rotation cursor, deadline]
+  A --> LOOP{{for each repository read, in rotated order}}
+  subgraph act [one repository's act part, inside its boundary]
+    direction TB
     P[plan: wanted minus running, nudges,<br/>hold-back, idle clocks]
     G[log: outcome rows for launch records that ended]
-    X[apply: end own claims, then the rearm, pickup and<br/>follow-up stages in rotated order, then steer and notify]
-    LB[labels: the state labels, owner only]
-    O1 --> O2 --> O3 --> O3b --> O4 --> C --> P --> G --> X --> LB
+    P --> G
   end
-  LOOP --> repo
-  repo --> LOOP
-  LOOP --> S[close: log rows for repositories not read, prune records]
-  S --> E[copy the outcome log to month files, write the line,<br/>write the receipt, prune receipts, release the lock]
+  LOOP --> act
+  act --> LOOP
+  LOOP -->|every repository planned| X[apply across all repositories, one launch group at a time:<br/>end own claims, then the rearm, pickup and follow-up stages,<br/>then each repository's finish: steer, notify, state labels]
+  X -->|all launches and closes done: give up the observe locks| CL[close: log rows for repositories not read, prune records]
+  CL --> E[copy the outcome log to month files, write the line,<br/>write the receipt, prune receipts, release the act lock]
 ```
+
+**The locks, and their order.** A tick takes each repository's observe
+lock (`observe/<digest>.lock` under the state directory) as it starts
+reading that repository, and never waits for one. The lock is taken twice
+over: for the checkout's path, before anything is read, and for the forge
+repository, once the observation knows which repository the checkout is,
+because the records an observation reads and writes belong to the
+repository, so two checkouts of one repository exclude each other. The
+close of a tick takes the same locks before it logs the ended records of
+a repository it did not read, and leaves those of one another tick
+observes to that tick. A lock acquisition that fails is a defect of that
+repository's turn, and the tick awaits every started observation before it
+gives any lock up. A repository another tick holds is left to that tick, named on the
+receipt (`busy`), and neither read nor acted on. A tick that finds every
+repository it names held ends as one that found the lock held (exit 3),
+which is what a wake-up's waiter retries after its minute. The act lock is
+taken only after every observe lock the tick holds for its reads, and is the only
+lock a tick waits for: up to two minutes, looking again every quarter of a
+second, after which the tick ends the same way. A tick holding the act lock
+waits for nothing, so no two ticks wait on each other. Its one exception to
+taking no observe lock is the close, which tries the observe locks of the
+repositories it did not read, without waiting, to log their ended records,
+and leaves any it cannot take to the tick that holds it. A repository's observe lock is kept until every repository's launches
+and closes are done, so no tick acts on a repository from reads made before
+another tick acted on it; then the locks are given up together, and a
+wake-up for any repository that arrives before then finds it busy and
+retries. A single-repository tick (the
+Orca plugin's wake-up, or `jig send`'s) therefore reads and acts on its
+repository while a sweep reads or acts on the others, and waits only for
+the sweep's act phase, never for its reads.
+
+The act lock is the file `tick.lock`, which every earlier version of the
+tick took for its whole run. A host whose timer and wake-ups run different
+versions keeps one tick acting at a time: the earlier version finds the
+lock held while this one acts and exits, and this one waits while the
+earlier one runs. An earlier version takes no observe lock, so while it
+runs, a tick of this version may read the same repository; what this one
+then acts on is read again under the act lock (the launch records) or just
+before each launch (the target itself).
+
+**What the act phase reads again.** The observe phase reads this machine's
+launch records as they stood when the tick started. Under the act lock the
+tick reads them again, settles their follow-up outcomes, and builds the
+apply state from that read: the slot table, the account whose turn is next
+and the rotation cursor, so a launch another tick made while this one was
+reading holds its slot and is seen as running by the plan. The deadline a
+launch is checked against (`outOfTime`) counts from the start of the
+invocation, not of the act phase: the launcher's own clock has been running
+since then, through the observe phase and any wait for the act lock. Every target is read once more just before its launch, as before.
+A tick that had to wait for the act lock, or that finds under it a launch
+record its startup read did not hold, may have read its serialized groups
+before another tick launched into them, one of an earlier version that takes
+no observe lock; it starts no re-arm in a group that tick, and replays no
+pending launch of a pull request in one, keeping the record; the next tick
+reads the group afresh.
+
+**The budget gate.** The forge's budget is read once per tick, as the
+observe phase starts, beside its first reads. While less than a tenth of
+its limit is left, the tick skips the reads it can do without: each running
+drive's thread sample, and serialization's reads (the change-area catalog,
+each pull request's changed files and unresolved threads). With
+serialization's reads skipped, every drive of a repository whose
+configuration names a catalog is unplaced for the tick with the budget as
+its reason, so no re-arm starts on a pull request whose area cannot be
+told, and no hold begins or ends. The receipt says what was left and what
+was skipped (`lowBudget`), and every repository's report carries the
+budget as the tick started.
 
 Each step, in order, with what it reads, what it writes, and what happens
 when it fails. The phase names are the ones a receipt times.
 
-| Step                     | Module                                                       | Reads                                                                                                                                                                                                | Writes                                                                                                                                                 | On failure                                                                                                                                                                                                     |
-| ------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lock                     | `receipts.ts`                                                | the lock file                                                                                                                                                                                        | the lock, naming this process                                                                                                                          | held by a live tick: the tick exits and says who holds it                                                                                                                                                      |
-| Launch records (`start`) | `tick.ts`                                                    | `state.sqlite`                                                                                                                                                                                       | the follow-up outcomes of ended records                                                                                                                | one unreadable record withholds every launch, since its slot may be live                                                                                                                                       |
-| Apply state (`start`)    | `tick-apply.ts`                                              | the launch records, `tick-index`                                                                                                                                                                     | the rotation cursor                                                                                                                                    | cursor unwritable: no launches                                                                                                                                                                                 |
-| `open`                   | `tick-observe.ts`                                            | `gh repo view`, `.config/jig.yaml` on the default branch                                                                                                                                             | none                                                                                                                                                   | the repository is refused and reported; the others go on                                                                                                                                                       |
-| `tracker`                | `tick-observe.ts`                                            | the items assigned in a dispatch state                                                                                                                                                               | none                                                                                                                                                   | a failed record; no pickups planned                                                                                                                                                                            |
-| `forge`                  | `tick-forge.ts`                                              | open pull requests, the login (once per tick), each one's ledger and park answers from its comment listing, the merges in the follow-up window and the markers of each merge whose `updatedAt` moved | the merges' kept marker reads                                                                                                                          | a failed record; drives and follow-ups not planned                                                                                                                                                             |
-| `claims`                 | `tick-shared.ts`                                             | every host's launch claims, from the same comment listings; on a merge whose ended launches owe their ends, the claims kept at its `updatedAt`                                                       | the merges' kept claims                                                                                                                                | per pull request: a listing that does not read reaches the plan as unknown                                                                                                                                     |
-| `runtime`                | `tick-observe.ts`                                            | the runtime's session list, its host-wide listings read once per tick                                                                                                                                | none                                                                                                                                                   | a failed record; nothing is joined                                                                                                                                                                             |
-| `observe`                | `tick-observe.ts`                                            | each running drive's unresolved threads, each waiting session's wall, the change-area catalog                                                                                                        | thread samples, a pickup's opened mark, waiting episodes, the owner's serialization holds, and the account's usage-limit wall under `walls/<account>/` | reported as unplaced                                                                                                                                                                                           |
-| `plan`                   | `tick-plan.ts`                                               | everything above, the follow-up outcomes, the idle clock, the nudges                                                                                                                                 | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles                                                                    | a write the database refuses is a defect: it stops this repository in phase `plan`                                                                                                                             |
-| `log`                    | `tick-settle.ts`                                             | the ended launch records, the ledgers                                                                                                                                                                | one outcome row per ended record, with its end                                                                                                         | reported; the record is kept until its row lands                                                                                                                                                               |
-| `apply`                  | `tick-apply.ts`                                              | each target read again just before its launch                                                                                                                                                        | the launch record, the forge claim or marker, the runtime's launch, nudges, notices                                                                    | per action: refused, reported, tried again next tick                                                                                                                                                           |
-| `labels`                 | `tick-labels.ts`                                             | the ledgers                                                                                                                                                                                          | the state labels on pull requests                                                                                                                      | per write, reported                                                                                                                                                                                            |
-| `shared`                 | `tick-shared.ts`                                             | the shared records' reads and writes this turn                                                                                                                                                       | none                                                                                                                                                   | none                                                                                                                                                                                                           |
-| Close (`close`)          | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit (once, put on every repository's report)                                                                                                     | outcome rows for repositories not read, the month files, the line, the receipt                                                                         | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
+| Step | Module | Reads | Writes | On failure |
+| --- | --- | --- | --- | --- |
+| Launch records (`start`) | `tick.ts` | `state.sqlite` | none | read again by the act phase |
+| Observe lock | `receipts.ts` | the repository's lock file | the lock, naming this process | held by a live tick: the repository is left to it and named on the receipt; every one held: the tick exits 3 |
+| `open` | `tick-observe.ts` | `gh repo view`, `.config/jig.yaml` on the default branch | none | the repository is refused and reported; the others go on |
+| `tracker` | `tick-observe.ts` | the items assigned in a dispatch state | none | a failed record; no pickups planned |
+| `forge` | `tick-forge.ts` | open pull requests, the login (once per tick), each one's ledger and park answers from its comment listing, the merges in the follow-up window and the markers of each merge whose `updatedAt` moved | the merges' kept marker reads | a failed record; drives and follow-ups not planned |
+| `claims` | `tick-shared.ts` | every host's launch claims, from the same comment listings; on a merge whose ended launches owe their ends, the claims kept at its `updatedAt` | the merges' kept claims | per pull request: a listing that does not read reaches the plan as unknown |
+| `runtime` | `tick-observe.ts` | the runtime's session list, its host-wide listings read once per tick | none | a failed record; nothing is joined |
+| `observe` | `tick-observe.ts` | each running drive's unresolved threads, each waiting session's wall, the change-area catalog; the threads and the catalog's reads not while the budget is low | thread samples, a pickup's opened mark, waiting episodes, the owner's serialization holds, and the account's usage-limit wall under `walls/<account>/` | reported as unplaced |
+| Act lock (`wait`) | `receipts.ts` | `tick.lock` | the lock, naming this process | held: looked at again until two minutes have passed, then the tick exits 3 and writes no receipt, unless its launcher ran the plugin upgrade first: then a receipt holding that upgrade and the holder |
+| Launch records again (`act`) | `tick.ts` | `state.sqlite` | the follow-up outcomes of ended records | one unreadable record withholds every launch, since its slot may be live |
+| Apply state (`act`) | `tick-apply.ts` | the launch records, `tick-index` | the rotation cursor | cursor unwritable: no launches |
+| `plan` | `tick-plan.ts` | everything above, the follow-up outcomes, the idle clock, the nudges | the idle clock, released pickups, settled nudges, the follow-up outcomes it settles | a write the database refuses is a defect: it stops this repository in phase `plan` |
+| `log` | `tick-settle.ts` | the ended launch records, the ledgers | one outcome row per ended record, with its end | reported; the record is kept until its row lands |
+| `apply` | `tick-apply.ts` | each target read again just before its launch | the launch record, the forge claim or marker, the runtime's launch, nudges, notices | per action: refused, reported, tried again next tick |
+| `labels` | `tick-labels.ts` | the ledgers | the state labels on pull requests | per write, reported |
+| `shared` | `tick-shared.ts` | the shared records' reads and writes this turn | none | none |
+| Close (`close`) | `tick.ts`, `tick-settle.ts`, `tick-reads.ts`, `tick-line.ts` | the receipt, the launch records, the forge's rate limit as the tick started (put on every repository's report) | outcome rows for repositories not read and not held by another tick, the month files, the line (only by a tick that read every repository of the machine file), the receipt | a part that reports its failure is said on the receipt, which stays complete; exit status 1; a budget that does not read is reported as unreadable. A defect in a closing step marks the receipt not completed |
 
 **A defect stops only its own repository.** Every read and every action
 above turns its expected failures into a record or a refusal on the report.
@@ -133,13 +221,17 @@ written) is not a defect: the receipt stays complete, with exit status 1.
 
 **Each phase is timed.** A repository's report carries the milliseconds of
 each phase of its turn (`phasesMs`), and the receipt the tick's own
-(`start`, `repos`, `close`). The tick's text output prints them on one
-line per repository, and `jig dispatch receipts` prints how long each tick
-took. A receipt written before phases were timed has neither, and reads as
-before.
+(`start`, `observe`, `wait`, `act`, `close`). Phases of one repository
+that run side by side (its tracker and forge, its claims and runtime) each
+keep their own time, so they add up to more than the turn took. The tick's
+text output prints them on one line per repository, and `jig dispatch
+receipts` prints how long each tick took. A receipt written before phases
+were timed has neither, and reads as before; one written before the
+observe phase was split from the act phase carries `repos` for both.
 
 **What a tick reads once.** The observe phases of every repository share
-one set of reads, made when the tick starts (`tick-reads.ts`). Each pull
+one set of reads, made when the tick starts (`tick-reads.ts`), and one pool
+of reads in flight. Each pull
 request's comments are listed at most once per tick (`tick-comments.ts`),
 and that one listing gives its drive ledger, the answers to its parks,
 every host's launch claims on it and, on a merge, its follow-up markers. A
@@ -149,8 +241,11 @@ for the rest of the tick. What belongs to the host rather than to a
 repository is read once too, the first time a repository needs it, and
 every repository is answered from it: the forge's login, Orca's repository
 and workspace listings (the runtime's `sessionsOnce`), and, as the tick
-closes, the forge's rate limit, which every repository's report then
-carries. A runtime listing that fails fails each repository's record alike,
+starts, the forge's rate limit, which decides the budget gate and every
+repository's report then carries. The comment listings of a repository's
+open pull requests are all asked for as soon as the open listing returns,
+and the markers of its merges as soon as the merged listing does, so they
+are read side by side within the pool while the readers take each in turn. A runtime listing that fails fails each repository's record alike,
 as a read of its own would have. The login is the exception: when it cannot
 be established it is unknown (`null`) rather than a failure, the forge
 record still reads, and what depends on it (the trust of a comment as the
@@ -201,7 +296,7 @@ admit no launch: a merged pull request is never re-armed, and writing an
 end lists the claims from the forge first, then drops the kept row.
 
 **What observing writes.** The observe phase reads the launch records as
-they stand when the turn starts, never the apply state that launches
+they stood when the tick started, never the apply state that launches
 change. It does write Control's records to the state database: thread
 samples and a pickup's opened mark on launch records, waiting episodes,
 and the owner's serialization holds. It also publishes an account's
@@ -209,10 +304,12 @@ usage-limit wall as files under `walls/<account>/`, which sessions of every
 repository on that account read; the wall is written before the waiting
 episode that names it, and the two are not one transaction. The plan writes
 the idle clock, released pickups, settled nudges and follow-up outcomes.
-Each database write is one transaction on rows of its own repository, but
-all of them go to the one `state.sqlite`, so observing several repositories
-at once would make them wait on that database's write lock in turn, and the
-walls would be shared across them.
+Each database write is one transaction on rows of its own repository, and
+all of them go to the one `state.sqlite`, whose write lock orders the
+repositories' writes, and another tick's, one after another; the
+transactions are single statements or a few, so the wait is short. The
+walls are shared across repositories by design: an account's wall holds
+for every session on it.
 
 ### Guards against a second launch
 
@@ -220,9 +317,11 @@ A tick acts on facts that can go stale between its read and its launch,
 and two ticks can overlap (the timer and a person's manual run). These
 guards keep one stage from starting twice:
 
-- **One tick at a time per machine.** A tick takes an exclusive lock under
-  `~/.local/state/jig/dispatch/`; a second tick that finds it held exits at
-  once and says which process holds it. The lock holds its holder's process
+- **One tick acts at a time per machine, and one tick per repository.** A
+  tick reads each repository under that repository's observe lock and acts
+  under the act lock, both under `~/.local/state/jig/dispatch/`, in the
+  order One tick, step by step gives; a tick that cannot have a lock says
+  which process holds it. Each lock holds its holder's process
   id, which every version of the tick reads, and beside it the
   [process identity](../GLOSSARY.md) every lock of the plugin records
   (host, boot, process id and start time), so a lock left by a tick that
@@ -947,8 +1046,9 @@ workspace tool puts on its own open (`OPEN_LIMIT_MS` in
 open's start of its agent, and the calls around them), read from that
 constant rather than restated, so the two cannot drift apart; a shorter
 setting can cut off an open the tool itself would let finish. A tick
-opening a workspace holds the tick lock for as long as the open runs, and
-the ticks that find it held meanwhile exit at once. A launch whose answer is lost
+opening a workspace holds the act lock for as long as the open runs; a tick
+that finds it held meanwhile reads its repositories and waits for it, up to
+two minutes. A launch whose answer is lost
 is retried only by calling `launch` again with the same key, never as a
 fresh one, and its launch record, written before the call, holds its
 stage and slot meanwhile (see Launch records). An adapter that cannot keep
@@ -1412,14 +1512,16 @@ per kind of record, each row under a unique key:
 The receipts stay files, one per tick, since a receipt is a run's
 narrative for a person and for the morning report. The account walls stay
 files, under `walls/`, since the drive's quota adapters write them from a
-pass, outside the tick. The tick lock and the rotation cursor
-(`tick-index`) stay files beside them. The outcome log also keeps a text
+pass, outside the tick. The act lock (`tick.lock`), the observe locks
+(`observe/`) and the rotation cursor (`tick-index`) stay files beside
+them. The outcome log also keeps a text
 copy, one file per month (`log-<year>-<month>.jsonl`), the archive that
 outlives any change to the database's schema.
 
-One tick writes at a time, under the tick lock. The wrapper's claim and
-exit and a session's result are single writes that SQLite's own write lock
-orders against a tick's. The database runs in write-ahead logging mode,
+One tick acts at a time, under the act lock; what a tick's observe phase
+writes is keyed by its own repository, which no other tick reads or acts on
+meanwhile. The wrapper's claim and exit and a session's result are single
+writes that SQLite's own write lock orders against a tick's. The database runs in write-ahead logging mode,
 so the dashboard and `jig dispatch log` read while a tick writes. Its
 schema carries a version: a database at an older one is migrated forward
 in one transaction, and one a newer plugin wrote is refused, with its
@@ -1886,8 +1988,7 @@ has written a record the tick reads (`assign`, `drive`, `hold`, `release`,
 tick acts under ([`jig send`](addresses.md)). Both follow one rule: one
 tick at a time for a repository, no sooner than a minute after the last
 one started, a request made inside that minute taken by one trailing
-tick, and a tick refused for the held tick lock tried again after the
-minute. `send` keeps its pending requests on disk
+tick, and a tick refused for a held lock tried again after the minute. `send` keeps its pending requests on disk
 (`plugin/shared/wake.ts`), since it exits at once; its waiter runs the
 tick with the installed timer's launcher and environment and exits after
 it. Each request records who asked and why, and the waiter's log names

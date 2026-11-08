@@ -4,6 +4,27 @@ import type { Workspace } from "../lib/runtime/port.ts";
 import { parkNotice } from "../lib/notices.ts";
 import type { DrivenPr } from "../lib/types.ts";
 
+test("a parked notice names each question's person", () => {
+  const pr = parked([["First question?"], ["Second question?"]]);
+  pr.waiting = [
+    {
+      key: "first",
+      kind: "thread",
+      lines: ["First question?"],
+      person: "api-owner",
+    },
+    {
+      key: "second",
+      kind: "thread",
+      lines: ["Second question?"],
+      person: "web-owner",
+    },
+  ];
+  const { text } = parkNotice("example/project", pr);
+  expect(text).toContain("Waiting on @api-owner:");
+  expect(text).toContain("Waiting on @web-owner:");
+});
+
 function parked(lines: string[][]): DrivenPr {
   return {
     number: 9,
@@ -78,4 +99,26 @@ test("a preserved read comment budgets retained text and skips a notice that can
   const { send, later } = fitting(workspace, [cause(2000), cause(500)], true);
   expect(send.map((c) => c.notice.key)).toEqual(["k500"]);
   expect(later.map((c) => c.notice.key)).toEqual(["k2000"]);
+});
+
+test("long decision details keep later recipients visible", () => {
+  const pr = parked([["x".repeat(4000)], ["Second question?"]]);
+  pr.waiting = [
+    {
+      key: "first",
+      kind: "thread",
+      lines: ["x".repeat(4000)],
+      person: "api-owner",
+    },
+    {
+      key: "second",
+      kind: "thread",
+      lines: ["Second question?"],
+      person: "web-owner",
+    },
+  ];
+  const { text } = parkNotice("example/project", pr);
+  expect(text.length).toBeLessThanOrEqual(4000);
+  expect(text).toContain("@web-owner");
+  expect(text).toContain("answer <key>");
 });

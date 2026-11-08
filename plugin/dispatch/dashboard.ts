@@ -1,9 +1,11 @@
 /**
  * `jig dispatch dashboard [--port <n>]`: the page over what the dispatcher
  * recorded, served while the command runs. The page (`dashboard-page/`, built
- * from `dashboard/`) reads two things and nothing else: the line
+ * from `dashboard/`) reads the line
  * the newest tick wrote (`GET /state`, `lib/line-store.ts`) and the outcome log
- * (`GET /rows`, `lib/dashboard-log.ts`). Each read answers with its value or a
+ * (`GET /rows`, `lib/dashboard-log.ts`). Current PR state is read separately
+ * through `GET /pr`, cached for a minute with bounded forge concurrency.
+ * Each snapshot or log read answers with its value or a
  * coded failure; the one catch around them is the defect boundary, so a bug
  * reaches the log with its stack and the page with its code alone. The
  * database's WAL mode lets it read while a tick writes, and nothing is written
@@ -23,6 +25,7 @@ import { join } from "node:path";
 import { ExitError } from "../shared/cli.ts";
 import { attempt, failed, type Outcome } from "../shared/outcome.ts";
 import type { Answer, RowsAnswer } from "./lib/dashboard-contract.ts";
+import { prReader } from "./lib/dashboard-pr.ts";
 import { queryLog } from "./lib/dashboard-log.ts";
 import { hostTimeZone } from "./lib/host-time.ts";
 import { readLine, readLineReceipt, stateAnswer } from "./lib/line-store.ts";
@@ -218,6 +221,8 @@ export function serveDashboard(options: {
   token?: string;
   /** The clock the answers read; the real one unless a check holds it still. */
   now?: () => number;
+  /** A forge reader; fixtures provide their own instead of reaching a live account. */
+  readPr?: ReturnType<typeof prReader>;
 }): Dashboard {
   const token = options.token ?? crypto.randomUUID().replace(/-/g, "");
   const root = options.root ?? stateRoot();
@@ -225,7 +230,20 @@ export function serveDashboard(options: {
   const page = readPage("index.html");
   const refused = readPage("refused.html");
 
-  function route(request: Request, url: URL): Response {
+  const readPr = options.readPr ?? prReader(root);
+
+  async function route(request: Request, url: URL): Promise<Response> {
+    if (url.pathname === "/pr")
+      return jsonResponse(
+        JSON.stringify(
+          await readPr(
+            url.searchParams.get("repo") ?? "",
+            url.searchParams.get("pr") ?? "",
+          ),
+        ),
+        request,
+        200,
+      );
     if (url.pathname === "/") return pageResponse(page, request);
     if (url.pathname === "/state")
       return readAnswer(stateAnswer(now(), root), request);
@@ -242,7 +260,7 @@ export function serveDashboard(options: {
   const server = Bun.serve({
     hostname: options.listen.host,
     port: options.port ?? options.listen.port ?? DEFAULT_PORT,
-    fetch(request) {
+    async fetch(request) {
       const url = new URL(request.url);
       if (request.method !== "GET")
         return answered(
@@ -262,7 +280,7 @@ export function serveDashboard(options: {
               403,
             );
       try {
-        return route(request, url);
+        return await route(request, url);
       } catch (defect) {
         console.error(
           "jig dispatch dashboard: a defect while answering",
@@ -312,7 +330,7 @@ export async function dashboardMain(
   );
   await new Promise<void>((settle) => {
     for (const signal of ["SIGINT", "SIGTERM"] as const)
-      process.once(signal, () => settle());
+      process.on(signal, () => settle());
   });
   dashboard.stop();
   return 0;

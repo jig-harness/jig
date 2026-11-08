@@ -62,6 +62,7 @@ async function main(): Promise<number> {
     root,
     token: FIXTURE_TOKEN,
     now: () => fixed,
+    readPr: async () => null,
   });
   console.log(dashboard.url);
   await new Promise<void>((settle) => {

@@ -81,7 +81,7 @@ export interface ApplyState {
   opened?: number;
   /** Opens spent on notices, which do not consume the launches' allowance. */
   noticesOpened?: number;
-  /** When the tick began, for its overall deadline. */
+  /** When the tick began (its invocation, not its act phase), for its overall deadline. */
   startedAt?: number;
   /** The index of this tick among the applying ticks, which rotates the order of everything that shares the allowance. */
   tick?: number;

@@ -276,7 +276,7 @@ const DISPATCHER: RecordKind[] = [
     "machine",
     "dispatch-tick-lock",
     "dispatch/receipts.ts",
-    `${DISPATCH_DIR}tick.lock, tick-index`,
+    `${DISPATCH_DIR}tick.lock, observe/<16 hex>.lock, tick-index`,
     0,
   ),
   plain(

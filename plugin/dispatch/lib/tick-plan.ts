@@ -39,7 +39,7 @@ export function planObserved(
     sessions,
     created: forge.created,
     held: observation.held,
-    serialized: observation.serialized,
+    serialized: afterWait(context, observation.serialized),
     shared: { host: ctx.host, drives: claims, owner: ctx.owner },
     ...(observation.holders === undefined
       ? {}
@@ -50,6 +50,40 @@ export function planObserved(
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
+}
+
+/** A record's execution state: a replay moves it without making a new record. */
+const executionOf = ({ record, state }: Pick<ReadRecord, "record" | "state">) =>
+  `${record.attempts.length}:${state.kind === "pending"}`;
+
+/** Whether `now` holds a launch record `before` did not, or one `before` read at another point of its execution: some tick launched in between. */
+export function launchedMeanwhile(
+  before: ReadonlyArray<Pick<ReadRecord, "record" | "state">>,
+  now: ReadonlyArray<Pick<ReadRecord, "record" | "state">>,
+): boolean {
+  const known = new Map(before.map((r) => [r.record.id, executionOf(r)]));
+  return now.some((r) => known.get(r.record.id) !== executionOf(r));
+}
+
+/**
+ * After a wait for the act lock, the groups serialization read may predate
+ * the launches of the tick that held it, which an earlier version makes
+ * without an observe lock: no re-arm starts in a group this tick, and the
+ * next tick reads it afresh.
+ */
+export function afterWait(
+  context: TickContext,
+  serialized: RepoObservation["serialized"],
+): RepoObservation["serialized"] {
+  if (context.actWaited !== true) return serialized;
+  const unplaced = new Map(serialized.unplaced);
+  for (const n of serialized.grouped)
+    if (!unplaced.has(n))
+      unplaced.set(
+        n,
+        "another tick acted while this one read, so its place in the group may have changed",
+      );
+  return { ...serialized, unplaced };
 }
 
 /**
