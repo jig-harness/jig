@@ -37,7 +37,11 @@ import { orcaInstalledName } from "../../shared/orca.ts";
 export const SLUG = "example-org/example-repo";
 const JIG = resolve(import.meta.dir, "../../jig.ts");
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
-const QUERY_FAKE = resolve(import.meta.dir, "fixtures", "repository-query-fake.ts");
+const QUERY_FAKE = resolve(
+  import.meta.dir,
+  "fixtures",
+  "repository-query-fake.ts",
+);
 
 const WRAPPER = (driveGh: string) => `#!/usr/bin/env bun
 const fs = require("node:fs");
