@@ -101,31 +101,35 @@ function sessionStanding(
   return { kind: "driving", label };
 }
 
-function sessionFacts(s: LineSession, clock: Clock): string[] {
+function threadFact(s: LineSession): string[] {
   const latest = s.samples.at(-1);
+  if (latest === undefined) return [];
+  if (latest.threads === 0) return ["No unresolved threads at the last count"];
+  return [
+    `${latest.threads} unresolved ${latest.threads === 1 ? "thread" : "threads"} at the last count`,
+  ];
+}
+
+/** How long the runtime has had the session waiting or blocked. */
+function agentWaitFact(s: LineSession, clock: Clock): string[] {
+  const agent = s.agent;
+  if (agent?.since == null) return [];
+  if (agent.state !== "waiting" && agent.state !== "blocked") return [];
+  const word = agent.state === "blocked" ? "Blocked" : "Waiting";
+  return [`${word} ${ago(Date.parse(agent.since), clock.nowMs)}`];
+}
+
+function sessionFacts(s: LineSession, clock: Clock): string[] {
+  const recorded = [s.stuck, s.launchReason, s.drifting, s.waiting];
   return [
     `Stage ${s.stage} on ${s.account}`,
     ...(s.round === null ? [] : [`Round ${s.round}`]),
-    ...(latest === undefined
-      ? []
-      : [
-          latest.threads === 0
-            ? "No unresolved threads at the last count"
-            : `${latest.threads} unresolved ${latest.threads === 1 ? "thread" : "threads"} at the last count`,
-        ]),
+    ...threadFact(s),
     ...(s.heartbeat === null
       ? []
       : [`Last ledger write ${ago(Date.parse(s.heartbeat), clock.nowMs)} ago`]),
-    ...(s.stuck == null ? [] : [s.stuck]),
-    ...(s.launchReason === null ? [] : [s.launchReason]),
-    ...(s.drifting === null ? [] : [s.drifting]),
-    ...(s.waiting === null ? [] : [s.waiting]),
-    ...(s.agent?.since == null ||
-    (s.agent.state !== "waiting" && s.agent.state !== "blocked")
-      ? []
-      : [
-          `${s.agent.state === "blocked" ? "Blocked" : "Waiting"} ${ago(Date.parse(s.agent.since), clock.nowMs)}`,
-        ]),
+    ...recorded.filter((reason) => reason != null),
+    ...agentWaitFact(s, clock),
   ];
 }
 
