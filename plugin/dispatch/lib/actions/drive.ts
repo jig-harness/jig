@@ -29,6 +29,7 @@
  * `--apply`.
  */
 import { admittedVendor } from "../accounts.ts";
+import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   type LaunchRecord,
   newRecordId,
@@ -78,6 +79,8 @@ export interface FreshDrive {
   read: (pr: number) => Promise<DrivenPr | null>;
   held: (pr: DrivenPr) => boolean;
   claimer?: LaunchClaimer;
+  /** Pull requests whose place in a serialized group this tick cannot tell, by number and why: no pending launch of theirs is replayed. */
+  unplaced?: ReadonlyMap<number, string>;
 }
 
 const HELD = "a person's hold label is on it now";
@@ -91,7 +94,9 @@ async function retryPending(
 ): Promise<void> {
   for (const record of replayable(state, repo.slug, ["rearm", "takeover"])) {
     const action = { target: `PR #${record.pr}`, stage: "rearm" } as Action;
-    let blocked = await retryBlocked(state, record, fresh);
+    let blocked =
+      record.pr === null ? null : (fresh.unplaced?.get(record.pr) ?? null);
+    blocked ??= await retryBlocked(state, record, fresh);
     let claim: number | null = null;
     if (blocked === null) {
       const taken = await unclaimed(state, record, fresh.claimer);
@@ -170,7 +175,15 @@ async function retryBlocked(
 function classBlocked(record: LaunchRecord, read: DrivenPr): string | null {
   const takeover = record.action === "takeover";
   const want = wantedClass(takeover, record.redrive, record.facts);
-  if (read.class !== want) return `its ledger now reads ${read.class}`;
+  // A pending conflict repair still owns its launch when the park's answers
+  // or mergeability change. Replay under the same token instead of leaving
+  // the pending record holding the park's ordinary re-arm forever.
+  const parkedReplay =
+    record.redrive?.conflictStop === true &&
+    read.evidence.exit === DRIVE_EXIT.HITL_PARKED &&
+    (read.class === "parked" || read.class === "re-armable");
+  if (read.class !== want && !parkedReplay)
+    return `its ledger now reads ${read.class}`;
   const gone =
     takeover &&
     record.replaces === null &&

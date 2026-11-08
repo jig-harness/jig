@@ -194,7 +194,10 @@ function placeOf(m: Member): string {
 }
 
 /** Every drive unplaced for one reason: the catalog cannot be read. */
-function catalogFailed(input: ContentionInput, failure: string): Contention {
+export function catalogFailed(
+  input: Pick<ContentionInput, "drives">,
+  failure: string,
+): Contention {
   const why = `whether it touches a serialized area cannot be told this tick: ${failure}`;
   return {
     ...empty(

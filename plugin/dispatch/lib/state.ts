@@ -22,15 +22,17 @@
  * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then and as the forge login that read them; replaced by each read, removed by a write the tick makes on it |
  *
  * The receipts, the account walls (which the drive's quota adapters write
- * from a pass, outside the tick), the tick lock and the rotation cursor stay
+ * from a pass, outside the tick), the tick's locks and the rotation cursor stay
  * files, and the outcome log keeps a text copy, one JSONL file per month
  * (`log-export.ts`).
  *
  * The database is opened through the shared `shared/records/db.ts`, in WAL
  * mode, so `jig dispatch dashboard` and `jig dispatch log` read while a tick
- * writes. Ticks write one at a time, under the tick lock; the wrapper's claim
- * and exit and a session's result are single statements SQLite's own write
- * lock orders, each waiting for a transaction in progress.
+ * writes. Ticks act one at a time, under the act lock; a tick's observe
+ * phase writes only rows of the repositories it holds the observe lock of,
+ * and the wrapper's claim and exit and a session's result are single
+ * statements, all of which SQLite's own write lock orders, each waiting for
+ * a transaction in progress.
  *
  * Its schema has a version (`PRAGMA user_version`): a database at an older
  * one is migrated forward, one entry of `MIGRATIONS` per version, in one

@@ -6,12 +6,23 @@
  * waiting session's wall, the contention between drives). It hands the plan
  * one `RepoObservation`.
  *
- * Observing reads this machine's launch records as they stand when the turn
- * starts and never the apply state, so it does not depend on what another
- * repository's launches change. It writes only Control's own records: thread
- * samples and a pickup's opened mark on launch records (expectations.ts),
- * waiting episodes (session-walls.ts), and the owner's serialization holds
- * (sources/contention.ts), each in the state database.
+ * Every repository is observed at once, and within one the sources that do
+ * not depend on each other are read side by side: the tracker beside the
+ * forge, then the launch claims beside the runtime. Each read runs through
+ * the tick's bounded pool (`tick-reads.ts`).
+ *
+ * Observing reads this machine's launch records as they stood when the tick
+ * started and never the apply state, so it does not depend on what any
+ * launch changes. It writes only records keyed by its own repository:
+ * thread samples and a pickup's opened mark on launch records
+ * (expectations.ts), waiting episodes (session-walls.ts), the owner's
+ * serialization holds (sources/contention.ts) and the merges' kept reads
+ * (merge-reads.ts), each in the state database, whose write lock orders
+ * them against another tick's.
+ *
+ * While the forge's budget is low as the tick starts, the optional reads
+ * are skipped: the running drives' thread samples, and serialization's
+ * reads, which leaves every drive of a repository with a catalog unplaced.
  */
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import {
@@ -38,7 +49,7 @@ import type {
   SessionsReport,
 } from "./runtime/port.ts";
 import { branchPattern, readSection, trackerConfigOf } from "./section.ts";
-import type { PhaseTimer } from "./phase-timer.ts";
+import { type PhaseTimer, settled } from "./phase-timer.ts";
 import {
   type RepoReflection,
   repositoryReflection,
@@ -54,7 +65,7 @@ import type { readDrives } from "./sources/ledgers.ts";
 import { readPickups } from "./sources/tracker.ts";
 import { emptyReport, type TickOptions } from "./tick-context.ts";
 import { type ForgeRead, readForge } from "./tick-forge.ts";
-import type { TickReads } from "./tick-reads.ts";
+import { lowBudget, type TickReads } from "./tick-reads.ts";
 import { openShared, readDriveClaims, type TickShared } from "./tick-shared.ts";
 import { failureText } from "./text.ts";
 import type {
@@ -124,13 +135,14 @@ export interface RepoObservation {
 /** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
 export async function openRepo(
   path: string,
-  context: Pick<ObserveContext, "options" | "nowMs">,
+  context: Pick<ObserveContext, "options" | "nowMs" | "reads">,
 ): Promise<OpenedRepo | RepoReport> {
   const { options, nowMs } = context;
+  const { pool } = context.reads;
   const entry = machineRepository(options.machine ?? null, path);
   let repo: RepoTarget;
   try {
-    repo = await repoTarget(path);
+    repo = await pool.run(() => repoTarget(path));
   } catch (error) {
     return emptyReport(
       path,
@@ -141,7 +153,7 @@ export async function openRepo(
   let file: string | null;
   const where = `${repo.slug}@${repo.defaultBranch}:.config/jig.yaml`;
   try {
-    file = await defaultBranchConfig(repo);
+    file = await pool.run(() => defaultBranchConfig(repo));
     read = readSection(file, where);
   } catch (error) {
     return {
@@ -207,73 +219,94 @@ export async function observeRepo(
 ): Promise<RepoObservation> {
   const { repo, values, section, where, report } = opened;
   const { runtime, nowMs, records, reads } = context;
-  const tracked = await timer.time("tracker", () =>
-    readTracker(values, repo, section, report, where),
-  );
+  const { pool } = reads;
+  // The tracker and the forge read side by side, each into a report of its own, kept in this order.
+  const side = (): RepoReport => ({ ...report, records: [], unplaced: [] });
+  const trackerReport = side();
+  const forgeReport = side();
 
   // The forge: the open pull requests and their ledgers, the merges, and the launch claims of every host.
   const labels = section.labels.enabled ? section.labels : null;
-  let shared!: ReturnType<typeof openShared>;
-  const forge = await timer.time("forge", () => {
-    shared = openShared(repo.slug, opened.owner, reads.comments);
-    return readForge(
-      repo,
-      report,
-      section,
-      labels,
-      nowMs,
-      shared.records,
-      reads,
+  const shared = openShared(repo.slug, opened.owner, reads.comments);
+  let tracked: Tracked;
+  let forge: ForgeRead;
+  try {
+    [tracked, forge] = await settled(
+      timer.time("tracker", () =>
+        pool.run(() =>
+          readTracker(values, repo, section, trackerReport, where),
+        ),
+      ),
+      timer.time("forge", () =>
+        readForge(
+          repo,
+          forgeReport,
+          section,
+          labels,
+          nowMs,
+          shared.records,
+          reads,
+        ),
+      ),
     );
-  });
-  let ctx!: ReturnType<typeof shared.context>;
-  const claims = await timer.time("claims", () => {
-    ctx = shared.context(forge.login);
-    return readDriveClaims(
-      ctx,
-      forge,
-      records,
-      shared.records(forge.login),
-      nowMs,
-    );
-  });
+  } finally {
+    // What either read before a defect stays on the report.
+    for (const read of [trackerReport, forgeReport]) {
+      report.records.push(...read.records);
+      report.unplaced.push(...read.unplaced);
+    }
+  }
 
-  // The runtime: which of them a session holds.
-  let join!: ReturnType<typeof joinTargets>;
-  const sessions = await timer.time("runtime", async () => {
-    join = joinTargets(tracked.keys, values, forge);
-    const read = await readSessions(runtime, repo, join, reads.sessions);
-    report.records.push(runtimeRead(runtime, repo, read, section));
-    return read;
-  });
+  // The launch claims of every host, beside the runtime: which of them a session holds.
+  const ctx = shared.context(forge.login);
+  const join = joinTargets(tracked.keys, values, forge);
+  const [claims, sessions] = await settled(
+    timer.time("claims", () =>
+      readDriveClaims(ctx, forge, records, shared.records(forge.login), nowMs),
+    ),
+    timer.time("runtime", async () => {
+      const read = await pool.run(() =>
+        readSessions(runtime, repo, join, reads.sessions),
+      );
+      report.records.push(runtimeRead(runtime, repo, read, section));
+      return read;
+    }),
+  );
 
-  let held!: ReturnType<typeof heldPullRequests>;
-  const serialized = await timer.time("observe", async () => {
-    held = heldPullRequests(labels, [...forge.open, ...forge.merged]);
-    const threads = tickThreadReader(repo.slug);
-    await observeRunning(
-      { records, timeoutMs: context.options.machine?.runtimeTimeoutMs },
-      repo,
-      report,
-      forge.drives,
-      sessions,
-      forge.created,
-      threads,
-    );
-    return observeContention(
-      repo,
-      values,
-      report,
-      {
-        ...forge,
-        heldElsewhere: heldElsewhere(claims),
-        owner: ctx.owner,
-      },
-      records,
-      nowMs,
-      threads,
-    );
-  });
+  const held = heldPullRequests(labels, [...forge.open, ...forge.merged]);
+  const serialized = await timer.time("observe", () =>
+    pool.run(async () => {
+      const skipped = await optionalSkipped(reads);
+      const threads = tickThreadReader(repo.slug);
+      await observeRunning(
+        {
+          records,
+          timeoutMs: context.options.machine?.runtimeTimeoutMs,
+          sample: skipped === null,
+        },
+        repo,
+        report,
+        forge.drives,
+        sessions,
+        forge.created,
+        threads,
+      );
+      return observeContention(
+        repo,
+        values,
+        report,
+        {
+          ...forge,
+          heldElsewhere: heldElsewhere(claims),
+          owner: ctx.owner,
+        },
+        records,
+        nowMs,
+        threads,
+        skipped,
+      );
+    }),
+  );
   return {
     opened,
     tracked,
@@ -287,6 +320,14 @@ export async function observeRepo(
     serialized,
     held,
   };
+}
+
+/** Why the optional reads are skipped this tick, from the forge's budget as it started; `null` while they run. */
+async function optionalSkipped(reads: TickReads): Promise<string | null> {
+  const budget = await reads.budget();
+  return lowBudget(budget)
+    ? `the forge's budget is low (${budget.remaining} of ${budget.limit} left until ${budget.resetAt}), so this tick skips serialization's reads`
+    : null;
 }
 
 /** What the runtime's answer reads as on the report. */
@@ -341,7 +382,12 @@ function joinTargets(
  * each waiting interactive session met.
  */
 async function observeRunning(
-  launches: { records: ReadRecord[]; timeoutMs: number | undefined },
+  launches: {
+    records: ReadRecord[];
+    timeoutMs: number | undefined;
+    /** Whether the threads are sampled: not while the forge's budget is low. */
+    sample: boolean;
+  },
   repo: RepoTarget,
   report: RepoReport,
   drives: Awaited<ReturnType<typeof readDrives>>,
@@ -350,7 +396,7 @@ async function observeRunning(
   threads: (pr: number) => Promise<number>,
 ): Promise<void> {
   const { records } = launches;
-  await sampleThreads(records, repo.slug, drives, threads);
+  if (launches.sample) await sampleThreads(records, repo.slug, drives, threads);
   observeOpened(records, repo.slug, sessions, created);
   const timeoutSec = Math.ceil((launches.timeoutMs ?? 60_000) / 1000);
   for (const reason of await observeWalls(

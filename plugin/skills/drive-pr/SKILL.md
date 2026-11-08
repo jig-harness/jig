@@ -159,7 +159,7 @@ consumer polling `--json` for one of these states will never see it there.
 |---|---|---|
 | `CONVERGED` | 3 (`drive.ts`: 0) | Where the repository names an AI reviewer (`review.reviewer_app` or `review.reviewer_check_pattern`): the posting reviewer completed on **this exact head** and its recorded reviewed-SHA equals that head. Where it names none, no reviewer evidence is required. Either way: zero unresolved threads, zero unaddressed summary-only findings. `drive.ts` additionally removes only the CI-hold transition it owns (when the repository has a hold label), waits for exact-head full CI, records the global verified SHA, and exits 0 only over a **clean worktree**; uncommitted leftovers exit 12 instead. |
 | `PR_NOT_OPEN` | 5 | Merged or closed — detected **before** any push, so nothing lands on an orphaned branch |
-| `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed and never wakes itself up. A re-arm picks it up once **every** parked item has an answer from an owner, member or collaborator, later than the park (§ Picking up a stopped drive) |
+| `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed. A re-arm unparks items once **every** parked item has an answer from an owner, member or collaborator, later than the park (§ Picking up a stopped drive). A conflicting PR reports `PR_CONFLICTING` before the park, allowing conflict repair while the questions remain parked; `jig dispatch` re-drives it once per pair of its head and its base branch's head |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are. The driver **restarts** from a witnessed kill, leaving what the pass left in the tree for the next pass, up to `drive.pass_deadline_retries` (default 2) per drive (§ Running it); this exit is the deadline recurring past that budget, and says so, or a kill that could not be witnessed, which exits here at once with the locks held and spends no budget. Under `jig dispatch` the dispatcher re-drives this stop once per head commit, in the tree it stopped in when it left work there, and a drive re-armed in that tree inherits those edits as its own to finish |
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
@@ -795,12 +795,17 @@ stops admit it on a mechanical state:
   A comment the drive itself writes (one opening
   with an outcome token, or carrying a hidden marker other than the record
   of an answer `jig send` wrote) is never an answer.
-  With any item unanswered nothing is unparked, and the drive stops `8` at
-  its first gate again, naming what it still waits on; at the `wide`
+  With any item unanswered nothing is unparked. If the PR conflicts with
+  its base, the first gate reports `PR_CONFLICTING` before the park: the
+  re-arm attempts conflict repair within its budget. Successful repair lets
+  the next gate park on unanswered questions; a remaining conflict stops
+  `9` (`PR_CONFLICTING`), including when repair fails, is disabled or has
+  spent its budget, or the base cannot be read. Otherwise the drive stops `8` at its first gate
+  again, naming what it still waits on; at the `wide`
   autonomy level, except where every unanswered item has the class
   `escalated`: the re-arm then unparks them with the answered ones and
   hands them to the first round to decide provisionally (§ Autonomy). One
-  unanswered item of any other class refuses it, at every level.
+  unanswered item of any other class stays parked, at every level.
 
 Replacing a driver that still holds its locks is a **takeover**:
 
@@ -1268,7 +1273,7 @@ unless that person chose a level, and never runs at the off-hours level.
 | A technical choice `decide`'s last row would escalate: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional: record it as `decide-provisional` (§ 8) |
 | A bot-review thread the arbiter rules `escalate` with `class: escalated` and no recorded human decision behind it | Park under `escalated` (§ 4) | Same | Reply provisionally with a reply outcome, resolve and record it (below) |
 | A bot-review thread the arbiter rules `escalate` with any other class | Park under its `class:` (§ 4) | Same | Same |
-| Re-arm after `HITL_PARKED` with parked items unanswered | Never | Never | The re-arm hands the unanswered `escalated` items to the first round to decide provisionally; one item of any other class refuses it |
+| Unpark unanswered items after `HITL_PARKED` (conflict repair leaves them parked) | Never | Never | The re-arm hands the unanswered `escalated` items to the first round to decide provisionally; one item of any other class stays parked |
 
 The registry's classes are on no row: no level decides them, and a park
 outside them is refused (§ 4). Every decision taken is recorded where a
@@ -3697,9 +3702,9 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   each step of that ordering is one an agent gets wrong by hand.
   The guardrails below describe the mechanics it drives; they bind you directly
   only when you are settling one of its refusals by hand.
-- **Never re-arm on `HITL_PARKED` before every parked item is answered.**
-  Hand back with the decisions framed; the re-arm admits itself only once a
-  person has answered every one.
+- **Never unpark unanswered items outside the `wide` exception (§ Autonomy).**
+  A re-arm may repair a conflict while the questions stay parked; hand back
+  with the decisions framed once that repair is done or its budget is spent.
 - **Never park outside the registry's classes.** A question no class covers
   is yours to decide and record (§ 4, § 8); the park refuses it anyway.
 - **Never resolve an `accepted` thread before its push lands, and never call
