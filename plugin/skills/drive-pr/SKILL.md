@@ -899,7 +899,8 @@ request. Before the mode table below, read the README section
 Re-read `jig ask drive <PR>` or the drive doctor and establish stopped local
 ownership, review convergence on the current head, no human decisions and a
 clean matching worktree. Run the printed CI-hold release command only
-for that explicit request, from that worktree and with its expected head;
+for that explicit request, from that worktree with its expected head and
+diagnosed label transition (`--expect-transition`);
 relay any refusal without bypassing it. Observe label removal and fresh CI
 on that head, report those separately from CI success, and stop without
 arming a driver. A status question does not authorize recovery.

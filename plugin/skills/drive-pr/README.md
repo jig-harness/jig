@@ -746,21 +746,20 @@ is unavailable, say what is missing and establish it before proceeding. A live o
 
 On an explicit request to release that CI hold, re-read the diagnosis, then
 run its guarded recovery command from the worktree it names, with the
-expected head it verified:
+expected head and label transition it verified:
 
 ```sh
-bun "<skill-dir>/scripts/ci-hold.ts" release <PR> --expect-head <SHA>
+bun "<skill-dir>/scripts/ci-hold.ts" release <PR> --expect-head <SHA> --expect-transition <ID>
 ```
 
 Use the authenticated forge identity for the intended repository. The
-existing release checks the expected PR head before removing the label. When
-the label's newest transition is not the one the drive recorded, it adopts that
-transition and releases it, so it does not refuse a hold someone removed and
-re-applied on the same head after the diagnosis. Run the release right after
-the diagnosis, and if the label's timeline may have changed since, diagnose
-again first. Relay a refusal; do not bypass it with a raw
-label edit or restart the driver. The dispatcher’s `release` verb releases a dispatcher
-hold and has no effect on this CI hold.
+recovery command checks the expected PR head and newest label transition
+before removing the label. If someone removes and re-applies the hold, the
+transition id changes and recovery refuses with exit 4. Diagnose again to
+review the new hold. Ordinary drive release, without `--expect-transition`,
+continues to adopt a label it does not own. Relay a refusal; do not bypass
+it with a raw label edit or restart the driver. The dispatcher's `release`
+verb releases a dispatcher hold and has no effect on this CI hold.
 
 Observe label removal and a fresh required-check run on that expected head.
 `bun "<skill-dir>/scripts/ci-hold.ts" final-ready <PR> --expect-head <SHA>` checks the full-CI witness;

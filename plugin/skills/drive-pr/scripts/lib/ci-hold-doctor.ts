@@ -224,6 +224,7 @@ async function readHold(
     throw new DiagnosticReadError(
       "the CI hold timeline contains an unreadable label transition",
     );
+  e.transitionId = transitions.at(-1)?.id ?? null;
   e.ownership =
     transitions !== null &&
     ownsHeldTransition(state.ciHold, transitions.at(-1) ?? null);
