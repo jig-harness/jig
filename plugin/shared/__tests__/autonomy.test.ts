@@ -676,6 +676,35 @@ describe("reading the base branch's snapshot", () => {
       expect(s.values).toEqual({ autonomy: { max_level: "attended" } });
   });
 
+  test("a stacked base's policy only narrows the integration branch's", () => {
+    const { root, env } = setupInClone({
+      driver: true,
+      base: "autonomy:\n  max_level: wide\n  park_classes: [ready]\n",
+    });
+    writeFileSync(
+      join(root, ".config", "jig.yaml"),
+      "autonomy:\n  max_level: unattended\n  park_classes: [merge]\n",
+    );
+    git(root, "commit", "-q", "-am", "integration");
+    const bound = git(root, "rev-parse", "HEAD");
+    const withBound = { ...env, DRIVE_PR_POLICY_BOUND: bound };
+    const snapshot = readPolicySnapshot(withBound, root);
+    const a = resolveAutonomy(
+      loadLayeredConfig(root, withBound),
+      withBound,
+      new Date(),
+      snapshot,
+    );
+    expect(a.ceiling).toBe("unattended");
+    expect(
+      parkClasses(loadLayeredConfig(root, withBound), withBound, snapshot),
+    ).toEqual(expect.arrayContaining(["ready", "merge"]));
+    expect(
+      readPolicySnapshot({ ...env, DRIVE_PR_POLICY_BOUND: ABSENT_COMMIT }, root)
+        .from,
+    ).toBe("unreadable");
+  });
+
   test("a person's session reads the working tree without git", () => {
     expect(readPolicySnapshot({}, join(scratch, "nowhere"))).toEqual({
       from: "working-tree",

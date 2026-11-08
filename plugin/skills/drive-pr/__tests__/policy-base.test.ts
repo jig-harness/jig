@@ -32,6 +32,7 @@ function clone(
   head: string,
   withBase = true,
   reachable = true,
+  integration?: string,
 ): string {
   const dir = mkdtempSync(join(tmpRoot, "policy-base-"));
   const env = gitCleanEnv();
@@ -64,6 +65,13 @@ function clone(
   git("commit", "-qm", "base", "--no-verify");
   const baseCommit = git("rev-parse", "HEAD");
   if (withBase) git("update-ref", "refs/remotes/origin/develop", baseCommit);
+  if (integration !== undefined) {
+    writeFileSync(join(dir, ".config", "jig.yaml"), integration);
+    git("commit", "-qam", "integration", "--no-verify");
+  }
+  const integrationCommit = git("rev-parse", "HEAD");
+  git("update-ref", "refs/remotes/origin/main", integrationCommit);
+  git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
   writeFileSync(join(dir, ".config", "jig.yaml"), head);
   git("commit", "-qam", "head", "--no-verify");
   // The remote is a local repository whose path ends in the pull request's
@@ -80,6 +88,7 @@ function clone(
     mkdirSync(remote, { recursive: true });
     git("init", "-q", "--bare", remote);
     git("push", "-q", remote, `${baseCommit}:refs/heads/develop`);
+    git("push", "-q", remote, `${integrationCommit}:refs/heads/main`);
   }
   git("remote", "add", "origin", remote);
   return dir;
@@ -154,6 +163,19 @@ describe("policy-base.ts", () => {
     expect(line).toContain(
       `policy from the base branch at ${exported.slice(0, 12)}`,
     );
+  });
+
+  it("bounds a stacked base by the integration branch's policy", async () => {
+    const dir = clone(
+      "autonomy:\n  max_level: wide\n",
+      "autonomy:\n  level: wide\n  max_level: wide\n",
+      true,
+      true,
+      "autonomy:\n  max_level: unattended\n",
+    );
+    const { line } = await exportIn(dir);
+    expect(line).toContain("capped at unattended");
+    expect(line).toContain("bounds the stacked base");
   });
 
   it("leaves the variable empty when the base is not in the clone, and the drive fails closed", async () => {

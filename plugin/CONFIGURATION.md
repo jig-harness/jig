@@ -410,8 +410,11 @@ drive's pass reads them from `.config/jig.yaml` on the branch the pull
 request targets (its base branch), not from the pull request's own checkout.
 An edit to either field therefore applies to a pull request's drive once the
 edit is on that branch, never through the pull request that makes it. For a
-stacked layer the branch it targets is the layer below, so its drive reads
-the policy that layer holds. The ceiling's fallback comes from the base too: the
+stacked layer the branch it targets is the layer below, whose policy no one
+has reviewed yet, so the integration branch's policy bounds it: the ceiling
+is the lower of the two, and the park classes are the union of the two lists.
+A layer below can narrow what the integration branch allows and never widen
+it. The ceiling's fallback comes from the base too: the
 base's `max_level`, else the base's own `level`, else `attended`; the pull
 request's `level` is still the level chosen, capped by that ceiling.
 `JIG_OVERLAY` does not redirect these fields in a drive. The driver resolves
@@ -1001,6 +1004,7 @@ These are set per machine or per run, not committed:
 | `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
 | `DRIVE_PR_LEDGER` | `off` makes `drive.ts` drive without the drive ledger on the pull request: no seeding from it, no check for another clone's driver, no writes; `on` or unset uses it ([where its state lives](skills/drive-pr/README.md#where-its-state-lives)) |
 | `DRIVE_PR_POLICY_BASE` | Set by the driver, never by a person: the commit of the pull request's base branch whose `.config/jig.yaml` the driver and its passes read `autonomy.max_level` and `autonomy.park_classes` from ([`autonomy`](#autonomy)); empty when the base cannot be resolved, which fails closed. The driver overwrites any inherited value |
+| `DRIVE_PR_POLICY_BOUND` | Set by the driver, never by a person, only when the pull request's base is not the integration branch (a stacked layer): the integration branch's commit whose policy bounds the base's. Unset otherwise; the driver removes any inherited value |
 | `DRIVE_PR_STATE_DIR` | State root: rounds, locks and leases live in its database, `state.sqlite`, keyed by clone, and each clone's log and kept files in its `<clone-key>/` subdirectory. An inherited resolved clone directory is also accepted. A root holding a drive's files directly refuses until they are relocated. |
 | `JIG_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |

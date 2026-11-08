@@ -12,13 +12,21 @@
  * launched the driver never stands. When the base cannot be resolved it is
  * left empty, which the reader treats as an unreadable policy and fails
  * closed.
+ *
+ * A stacked layer's base is the layer below, whose policy no one has
+ * reviewed yet: the integration branch's commit goes out as
+ * `$DRIVE_PR_POLICY_BOUND`, and the layer below can only narrow what that
+ * policy allows. It is unset when the base is the integration branch.
  */
-import { POLICY_BASE_VARIABLE } from "../../../../../shared/autonomy.ts";
+import {
+  POLICY_BASE_VARIABLE,
+  POLICY_BOUND_VARIABLE,
+} from "../../../../../shared/autonomy.ts";
 import {
   consumerRoot,
   readRemoteName,
 } from "../../../../../shared/consumer.ts";
-import { freshPrBaseRef } from "../overlay.ts";
+import { baseBranch, freshPrBaseRef } from "../overlay.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "../proc.ts";
 
 /** The commit `ref` names in `root`, or the reason it names none. */
@@ -97,9 +105,40 @@ export async function exportPolicyBase(
       : fetched !== null
         ? fetched
         : await commitOf(root, base.ref);
-  process.env[POLICY_BASE_VARIABLE] =
-    "error" in resolved ? "" : resolved.commit;
-  return resolved;
+  const bound =
+    "error" in base || "error" in resolved
+      ? null
+      : await integrationBound(root, base.ref);
+  const result = bound !== null && "error" in bound ? bound : resolved;
+  const failed = "error" in result;
+  process.env[POLICY_BASE_VARIABLE] = failed ? "" : result.commit;
+  if (!failed && bound !== null && "commit" in bound)
+    process.env[POLICY_BOUND_VARIABLE] = bound.commit;
+  else delete process.env[POLICY_BOUND_VARIABLE];
+  return result;
+}
+
+/**
+ * The integration branch's current commit when `baseRef` is another branch
+ * (a stacked layer's base), `null` when the base is the integration branch,
+ * or the reason it cannot be resolved.
+ */
+async function integrationBound(
+  root: string,
+  baseRef: string,
+): Promise<{ commit: string } | { error: string } | null> {
+  const remote = readRemoteName(root);
+  if ("error" in remote) return remote;
+  const branch = await baseBranch(root, gitCallTimeoutSeconds());
+  if (branch === null)
+    return {
+      error:
+        "the integration branch is unknown, so a stacked base's policy cannot be bounded by it",
+    };
+  const ref = `refs/remotes/${remote.remote}/${branch}`;
+  if (ref === baseRef) return null;
+  const fetched = await refreshTrackingRef(root, ref);
+  return fetched !== null ? fetched : commitOf(root, ref);
 }
 
 /** The line that says why the policy fails closed, or `null` when it reads. */

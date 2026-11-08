@@ -112,6 +112,15 @@ const DRIVER_PASS_VARIABLE = "DRIVE_PR_TARGET";
  */
 export const POLICY_BASE_VARIABLE = "DRIVE_PR_POLICY_BASE";
 
+/**
+ * The variable a driver sets, when the pull request's base is not the
+ * integration branch (a stacked layer), to the integration branch's commit:
+ * the policy of a layer below is unreviewed, so it only ever narrows what
+ * the integration branch allows. Unset when the base is the integration
+ * branch.
+ */
+export const POLICY_BOUND_VARIABLE = "DRIVE_PR_POLICY_BOUND";
+
 type Env = Record<string, string | undefined>;
 
 /**
@@ -123,7 +132,13 @@ type Env = Record<string, string | undefined>;
  */
 export type PolicySnapshot =
   | { from: "working-tree" }
-  | { from: "base"; commit: string; values: Record<string, unknown> }
+  | {
+      from: "base";
+      commit: string;
+      values: Record<string, unknown>;
+      /** The integration branch's policy, which a stacked base cannot widen. */
+      bound?: { commit: string; values: Record<string, unknown> };
+    }
   | { from: "unreadable"; reason: string };
 
 export interface Autonomy {
@@ -288,10 +303,22 @@ function snapshotCeiling(
     throw new AutonomyConfigError(
       `autonomy.level ${baseLevel} is above autonomy.max_level ${ceiling}: ${where}`,
     );
-  return {
+  const own = {
     ceiling,
     ceilingSource: describeCeiling(where, declared, baseLevel),
   };
+  if (policy.bound === undefined) return own;
+  const bound = snapshotCeiling({
+    from: "base",
+    commit: policy.bound.commit,
+    values: policy.bound.values,
+  });
+  return rank(bound.ceiling) < rank(own.ceiling)
+    ? {
+        ceiling: bound.ceiling,
+        ceilingSource: `${bound.ceilingSource}, which bounds the stacked base`,
+      }
+    : own;
 }
 
 function describeCeiling(
@@ -501,7 +528,11 @@ export function parkClasses(
   // default list could be weaker than the repository's own, which may name
   // a class the defaults leave to the agent, so no list stands in for it.
   if (snapshot.from === "unreadable") return [...KEPT_CLASSES];
-  return classesIn(snapshot.from === "base" ? snapshot.values : own);
+  if (snapshot.from !== "base") return classesIn(own);
+  const classes = classesIn(snapshot.values);
+  return snapshot.bound === undefined
+    ? classes
+    : [...new Set([...classes, ...classesIn(snapshot.bound.values)])];
 }
 
 /** The park classes `values` (one repository file's) name, checked. */
@@ -566,14 +597,45 @@ export function readPolicySnapshot(
   root: string = consumerRoot(process.cwd(), env),
 ): PolicySnapshot {
   if (isInteractive(env)) return { from: "working-tree" };
-  const commit = (env[POLICY_BASE_VARIABLE] ?? "").trim();
+  const snapshot = readSnapshotAt(
+    (env[POLICY_BASE_VARIABLE] ?? "").trim(),
+    POLICY_BASE_VARIABLE,
+    "base",
+    env,
+    root,
+  );
+  const boundCommit = (env[POLICY_BOUND_VARIABLE] ?? "").trim();
+  if (snapshot.from !== "base" || boundCommit === "") return snapshot;
+  const bound = readSnapshotAt(
+    boundCommit,
+    POLICY_BOUND_VARIABLE,
+    "integration",
+    env,
+    root,
+  );
+  return bound.from === "base"
+    ? {
+        ...snapshot,
+        bound: { commit: bound.commit, values: bound.values },
+      }
+    : bound;
+}
+
+/** The policy `.config/jig.yaml` holds at `commit`, named by `variable`. */
+function readSnapshotAt(
+  commit: string,
+  variable: string,
+  branch: string,
+  env: Env,
+  root: string,
+): PolicySnapshot {
   if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(commit))
     return {
       from: "unreadable",
       reason:
         commit === ""
-          ? `the driver named no base-branch commit in $${POLICY_BASE_VARIABLE}`
-          : `$${POLICY_BASE_VARIABLE} is not a commit id`,
+          ? `the driver named no ${branch}-branch commit in $${variable}`
+          : `$${variable} is not a commit id`,
     };
   const listed = gitIn(
     root,
@@ -602,7 +664,7 @@ export function readPolicySnapshot(
     const section = values.autonomy;
     if (section !== undefined && section !== null && !isMapping(section))
       throw new AutonomyConfigError(
-        `autonomy must be a mapping: ${OVERLAY_RELPATH} at ${short(commit)} on the base branch`,
+        `autonomy must be a mapping: ${OVERLAY_RELPATH} at ${short(commit)} on the ${branch} branch`,
       );
     snapshotCeiling(snapshot);
     classesIn(values);

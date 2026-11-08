@@ -1275,13 +1275,15 @@ unless that person chose a level, and never runs at the off-hours level.
 
 In a pass, the ceiling and the park classes come from the pull request's
 base branch, at the commit the driver names in `$DRIVE_PR_POLICY_BASE`, and
-the line ends `policy from the base branch at <commit>`. What this pull
+the line ends `policy from the base branch at <commit>`. For a stacked layer
+the integration branch's policy, at `$DRIVE_PR_POLICY_BOUND`, bounds the layer
+below: the lower ceiling and the union of the park classes apply. What this pull
 request changes in `max_level` or `park_classes` does not apply to its own
 drive. When the line says the base branch's policy cannot be read, run at
 `attended` and park every decision on the table below under
 `human-decision` (§ 4), naming in the record that the policy could not be
 read; decide nothing yourself until a later read of the line names the
-base branch again. Never set `$DRIVE_PR_POLICY_BASE` yourself.
+base branch again. Never set `$DRIVE_PR_POLICY_BASE` or `$DRIVE_PR_POLICY_BOUND` yourself.
 
 | Decision | `attended` | `unattended` | `wide` |
 |---|---|---|---|
