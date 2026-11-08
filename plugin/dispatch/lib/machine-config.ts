@@ -622,8 +622,7 @@ function records(value: unknown): Checked<SharedMedium> {
 
 /** The `failures` settings, each defaulted; a longest wait shorter than the first is refused. */
 function failures(value: unknown): Checked<FailureSettings> {
-  if (value === undefined || value === null)
-    return ok({ ...FAILURE_DEFAULTS });
+  if (value === undefined || value === null) return ok({ ...FAILURE_DEFAULTS });
   if (!isMapping(value)) return invalid("failures must be a mapping");
   const known = only(value, FAILURES_KEYS, "failures");
   if (!known.ok) return known;
