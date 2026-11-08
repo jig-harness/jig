@@ -113,9 +113,20 @@ Output:
   "errors_found": 5,
   "summary": {"typescript": 3, "biome_lint": 2},
   "files_affected": ["src/cart/total.ts"],
-  "errors": [{"category": "typescript", "job": "build", "step": "Run tsc", "file": "src/cart/total.ts", "line": 12, "column": 7, "code": "TS2322", "message": "...", "raw": "..."}]
+  "errors": [{"category": "typescript", "job": "build", "step": "Run tsc", "file": "src/cart/total.ts", "line": 12, "column": 7, "code": "TS2322", "message": "...", "raw": "..."}],
+  "infrastructure": {"infrastructure": false, "why": "job 'build': a typescript diagnostic: ...", "jobs": [{"job": "build", "infrastructure": false, "why": "..."}]}
 }
 ```
+
+`infrastructure` is the reading of the rule this skill shares with
+`drive-pr`, which re-runs such a run instead of spending a CI-repair pass on
+it ([`shared/ci-infra.ts`](https://github.com/jig-harness/jig/blob/main/plugin/shared/ci-infra.ts)):
+a failed job failed on the infrastructure when its runner was lost, or every
+failed step is a setup step (the job's set-up, a checkout, a tool download or
+install, a cache restore, a tool's initialisation) that failed on the network
+(an HTTP 5xx, a timeout, a reset or refused connection), and its log prints no
+code diagnostic. Anything ambiguous is not. The run reads `true` only when
+every failed job does; `why` names the deciding line or step.
 
 `job` and `step` name the job and step that printed the line; the parser
 keeps one entry per step for a line repeated across steps. When there is
@@ -497,8 +508,12 @@ Add the co-author trailer your repository uses for agent commits, if any.
   → `CI_FIXED: All <N> errors resolved and pushed`
 - **Partial**: errors remain after 10 iterations.
   → `CI_PARTIAL: Fixed <N>/<M> errors. Remaining: <list>`
-- **Infrastructure**: no code errors found (at most a `process_exit` whose
-  step failed for an infrastructure reason).
+- **Infrastructure**: `infrastructure.infrastructure` is `true`, or, reading
+  the log yourself, no code errors found (at most a `process_exit` whose step
+  failed for an infrastructure reason). Re-run the failed jobs rather than
+  pushing a fix (in a drive's repair pass, only a run
+  `$DRIVE_PR_ROUND_FAILED_RUNS` names):
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run rerun <RUN_ID> --failed`.
   → `CI_INFRA: No code errors - likely infrastructure/flaky issue`
 
 Whichever applies, report the errors you fixed, those you could not reproduce,

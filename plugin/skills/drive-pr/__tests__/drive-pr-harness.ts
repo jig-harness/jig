@@ -819,92 +819,6 @@ export function makeRebasePausedRepo(name: string): {
 }
 
 /**
- * A repo shaped like a real driven PR that has been through a base-sync
- * merge: C0 (seed.txt) → C1 (fix seed.txt, doubling as this round's own last
- * VERIFIED sha) → D (a commit on a stand-in "develop" tip, sibling to C1, off
- * a file `origin/develop` alone ever touches) → M (`git merge D`, a
- * base-sync-style merge with parents [C1, D]) → R (the round's OWN
- * single-parent commit on top of M, touching a THIRD file). `origin/develop`
- * is pointed at D.
- *
- * Exercises the base-sync exclusion:
- * `changedFilesSinceExcludingMerges(root, pr, verifiedSha)` must report ONLY
- * `round-only.txt` (R's own file) as touched by this round — never
- * `develop-only.txt` (D's file, imported solely by the base-sync merge M) —
- * even though a plain `git diff verifiedSha` (what `changedFilesSince` used
- * to compute, and what `round-plan.ts` still deliberately computes for its
- * own cumulative purpose) contains both.
- */
-export function makeBaseSyncMergeRepo(name: string): {
-  dir: string;
-  verifiedSha: string;
-  head: string;
-} {
-  const dir = join(tmpRoot, name);
-  mkdirSync(dir, { recursive: true });
-  const env = gitCleanEnv();
-  const git = (...args: string[]) => {
-    const r = Bun.spawnSync(["git", ...args], {
-      cwd: dir,
-      env,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    // Every call here used to run unchecked, so a failed setup step would
-    // silently hand the probes below a repo shape they then assert against for
-    // the wrong reason. Matches the `gitOut` pattern at `makeOrphanCommit`
-    // (line 2591's own comment).
-    expect(`git ${args[0]}: ${r.stderr.toString().trim()}`).toBe(
-      `git ${args[0]}: `,
-    );
-    return r;
-  };
-  const gitOut = (...args: string[]) =>
-    git(...args)
-      .stdout.toString()
-      .trim();
-  git("init", "-q", "-b", "main");
-  git("config", "user.email", "probe@example.invalid");
-  git("config", "user.name", "drive-pr probe");
-  git("config", "commit.gpgsign", "false");
-  git("config", "core.autocrlf", "false");
-  git("config", "core.hooksPath", "/dev/null");
-
-  writeFileSync(join(dir, "seed.txt"), `${name}\n`);
-  git("add", "-A");
-  git("commit", "-qm", `seed ${name}`, "--no-verify");
-  writeFileSync(join(dir, "seed.txt"), `${name} fixed\n`);
-  git("add", "-A");
-  git("commit", "-qm", `fix ${name}`, "--no-verify");
-  const verifiedSha = gitOut("rev-parse", "HEAD");
-
-  // D — a sibling commit off the SAME parent (verifiedSha), never checked
-  // out as `main`: a stand-in for `origin/develop` advancing independently
-  // while this round's branch sat at `verifiedSha`.
-  git("branch", "-q", "devtip", "HEAD");
-  git("checkout", "-q", "devtip");
-  writeFileSync(join(dir, "develop-only.txt"), "from develop\n");
-  git("add", "-A");
-  git("commit", "-qm", "develop advances", "--no-verify");
-  const devTip = gitOut("rev-parse", "HEAD");
-  git("checkout", "-q", "main");
-
-  // M — a base-sync-style merge, parents [verifiedSha, devTip].
-  git("merge", "-q", "--no-ff", "devtip", "--no-edit");
-
-  // R — the round's OWN commit, on top of the merge, touching a THIRD file.
-  writeFileSync(join(dir, "round-only.txt"), "from the round\n");
-  git("add", "-A");
-  git("commit", "-qm", "round work", "--no-verify");
-  const head = gitOut("rev-parse", "HEAD");
-
-  git("remote", "add", "origin", "git@github.com:example-org/example-repo.git");
-  git("update-ref", "refs/remotes/origin/develop", devTip);
-
-  return { dir, verifiedSha, head };
-}
-
-/**
  * A repo whose round commit RENAMES its only file (`git mv`). Exercises the
  * rename case: without `--no-renames` on `changedFilesSinceExcludingMerges`'s
  * `git log`, a rename reports only the destination path, so a thread still
@@ -1051,6 +965,8 @@ export DRIVE_PR_STUB_GH_NESTED=1
     'pr ready') allowed=' --repo --undo ' ; shift 2 ;;
     'pr edit') allowed=' --repo --add-label --remove-label --body-file --title ' ; shift 2 ;;
     'repo view') allowed=' --json -q --jq ' ; shift 2 ; requires_json=1 ;;
+    'run view') allowed=' --log-failed --repo ' ; shift 2 ;;
+    'run rerun') allowed=' --failed --repo ' ; shift 2 ;;
     *)
       if [[ "$1" == api ]]; then
         allowed=' -X --method -f -F --input -q --jq --paginate --slurp -H --header --hostname --cache -i --include '
@@ -1076,7 +992,7 @@ export DRIVE_PR_STUB_GH_NESTED=1
           *" $argument "*) ;;
           *) echo "gh: unknown flag: $argument" >&2; exit 2 ;;
         esac
-        case "$argument" in --paginate|--slurp|--undo|-i|--include) ;; *) needs_value=1; value_flag="$argument" ;; esac ;;
+        case "$argument" in --paginate|--slurp|--undo|-i|--include|--log-failed|--failed) ;; *) needs_value=1; value_flag="$argument" ;; esac ;;
       *)
         [[ -n "$argument" ]] || { echo 'gh: empty positional argument' >&2; exit 2; }
         selector="$argument"
@@ -1120,6 +1036,8 @@ export DRIVE_PR_STUB_GH_NESTED=1
     case "$command:$json_fields" in
       'pr view:number'|'repo view:owner,name')
         [[ "$has_positional" -eq 0 ]] || { echo "gh: unexpected selector: $selector" >&2; exit 2; } ;;
+      'run view:'|'run rerun:')
+        [[ "$has_positional" -eq 1 && "$selector" =~ ^[0-9]+$ ]] || { echo "gh: expected a run id, got: $selector" >&2; exit 2; } ;;
       *)
         [[ "$has_positional" -eq 1 && "$selector" == 999 ]] || { echo "gh: expected PR selector 999, got: $selector" >&2; exit 2; } ;;
     esac
@@ -1918,6 +1836,27 @@ fi
 
 if [ "\${1:-}" = "api" ] && [ "\${2:-}" = "user" ]; then
   printf '%s\n' 'drive-user'
+  exit 0
+fi
+
+# \`gh run view <id> --log-failed\` answers from \`run-<id>.log\`, failing
+# without one, as for a run whose log cannot be read. \`gh run rerun <id>\`
+# records the id in \`reruns.log\`; with \`rerun-refused\` it is refused the
+# way the forge refuses a run it does not re-run, and otherwise the re-run
+# passes: every failed check on the head reads successful.
+if [ "\${1:-}" = "run" ] && [ "\${2:-}" = "view" ]; then
+  log="$F/run-\${3:-}.log"
+  [ -f "$log" ] || { echo "gh-stub: no log for run \${3:-}" >&2; exit 1; }
+  cat "$log"; exit 0
+fi
+if [ "\${1:-}" = "run" ] && [ "\${2:-}" = "rerun" ]; then
+  printf '%s\\n' "\${3:-}" >> "$F/reruns.log"
+  if [ -f "$F/rerun-refused" ]; then
+    echo "run \${3:-} cannot be rerun; This workflow run cannot be retried" >&2
+    exit 1
+  fi
+  jq '(.check_runs[] | select(.conclusion == "failure")) |= (.conclusion = "success")' "$F/check-runs.json" > "$F/check-runs.json.tmp"
+  mv "$F/check-runs.json.tmp" "$F/check-runs.json"
   exit 0
 fi
 

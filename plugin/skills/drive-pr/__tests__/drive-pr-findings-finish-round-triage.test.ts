@@ -15,10 +15,10 @@ import { LEAVE_OPEN_MARKER } from "../scripts/lib/outcome.ts";
 import {
   writeVerifiedSha,
   gitCleanEnv,
-  makeBaseSyncMergeRepo,
   makeRenameRepo,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
+import { makeBaseSyncMergeRepo } from "./drive-pr-base-sync-repo.ts";
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
 import { writeState } from "./state-rows.ts";
 

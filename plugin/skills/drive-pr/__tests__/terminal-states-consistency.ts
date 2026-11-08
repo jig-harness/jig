@@ -788,12 +788,9 @@ export interface DriverOnlyExitBinding {
 }
 
 /**
- * `drive.ts`'s driver-only exports, paired with the `TERMINAL_STATES` key
- * each is supposed to equal. `constantValue` is read from a REAL module at
- * call time (`driverOnlyExitBindings` below) — this array shape alone is
- * just the pairing, kept separate so `findExitConstantMismatches` stays
- * unit-testable against a synthetic binding list, independent of loading any
- * real or fixture module.
+ * `drive.ts`'s driver-only exports and the `TERMINAL_STATES` key each should
+ * equal: the pairing alone, so `findExitConstantMismatches` is testable on a
+ * synthetic list; `driverOnlyExitBindings` reads the values from a module.
  */
 const DRIVER_ONLY_EXIT_NAMES: ReadonlyArray<{
   readonly constantName: string;
@@ -815,6 +812,10 @@ const DRIVER_ONLY_EXIT_NAMES: ReadonlyArray<{
   },
   { constantName: "TAKEN_OVER_EXIT", stateName: "TAKEN_OVER" },
   { constantName: "CI_REPAIR_SPENT_EXIT", stateName: "CI_REPAIR_SPENT" },
+  {
+    constantName: "CI_INFRA_PERSISTED_EXIT",
+    stateName: "CI_INFRA_PERSISTED",
+  },
 ];
 
 /**

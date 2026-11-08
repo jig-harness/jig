@@ -352,7 +352,7 @@ describe("driverOnlyExitBindings — requires a real module for live export valu
   test("reads all real driver-only values from the actual drive.ts", () => {
     const path = fileURLToPath(new URL("../scripts/drive.ts", import.meta.url));
     const bindings = driverOnlyExitBindings(path);
-    expect(bindings).toHaveLength(10);
+    expect(bindings).toHaveLength(11);
     const byName = Object.fromEntries(
       bindings.map((b) => [b.constantName, b.constantValue]),
     );
@@ -366,6 +366,7 @@ describe("driverOnlyExitBindings — requires a real module for live export valu
     expect(byName.MAILBOX_PAUSE_TIMEOUT_EXIT).toBe(19);
     expect(byName.TAKEN_OVER_EXIT).toBe(20);
     expect(byName.CI_REPAIR_SPENT_EXIT).toBe(21);
+    expect(byName.CI_INFRA_PERSISTED_EXIT).toBe(22);
   });
 
   test("a module missing an export reports NaN for it, rather than throwing past the caller", () => {

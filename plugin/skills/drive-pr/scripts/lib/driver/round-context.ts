@@ -5,6 +5,8 @@ import type { DriveLock } from "./locks.ts";
 
 import type { AccountIdentity } from "./../identity.ts";
 
+import type { InfraRecovery } from "./infra-recovery.ts";
+
 export interface DriveRoundContext {
   /** A requested worktree settlement is pending until a review pass succeeds. */
   settleWorktree?: boolean;
@@ -23,6 +25,8 @@ export interface DriveRoundContext {
   witnessWaits: number;
   ciRepairs: number;
   ciRepairBudget: number;
+  /** Re-runs and head moves spent on infrastructure failures (`infra-recovery.ts`). */
+  ciInfra: InfraRecovery;
   dryRun: boolean;
   agent: string[];
   /**

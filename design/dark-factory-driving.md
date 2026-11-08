@@ -3,7 +3,10 @@
 **What problem this solves.** A pull request should reach its merge decision
 without a person watching the agent that drives it. The review drive already
 goes most of the way. It runs from any checkout and restarts itself from the
-stops it can recover from. A drive whose driver died or stopped making
+stops it can recover from. A check that failed on the CI service's
+infrastructure (a lost runner, a tool download that answered 504) is re-run,
+or the head moved to run it again, not repaired, and a drive stopped on one
+that persisted is re-driven after a backoff. A drive whose driver died or stopped making
 progress is taken over. Its resumable state lives on the pull request, so a
 drive in another clone picks it up. It stops for a person only on a
 configured human decision class, and hands over a framed decision. What is
