@@ -185,8 +185,12 @@ export interface LineQueued {
   assignedBy: string | null;
   /** For a pull request held behind a serialized leader. */
   hold: { leader: number; area: string; since: string } | null;
-  /** What the newest tick's launch of it did; `null` when it did not try. */
-  launch: { outcome: LaunchOutcome["outcome"]; detail: string } | null;
+  /** What the newest tick's launch of it did, and, for a follow-up that waits for its lane, what it waits on; `null` when it did not try. */
+  launch: {
+    outcome: LaunchOutcome["outcome"];
+    detail: string;
+    waitsOn?: LaunchOutcome["waitsOn"];
+  } | null;
 }
 
 /** One repository the machine file lists. */
