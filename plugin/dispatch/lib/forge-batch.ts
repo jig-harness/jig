@@ -38,7 +38,7 @@ import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import type { RepoTarget } from "./types.ts";
 
 /** Pull requests per page: the forge charges one point for a page this size. */
-export const PAGE = 50;
+const PAGE = 50;
 
 /** Comments, and labels, read with each pull request: a pull request with more comments is listed on its own. */
 const ITEMS = 100;
@@ -47,8 +47,8 @@ const ITEMS = 100;
 const PR_LIMIT = 1000;
 
 /** The queries' names, which a fake forge recognises. */
-export const QUERY_NAME = "DispatchRepository";
-export const COMMENTS_QUERY_NAME = "DispatchComments";
+const QUERY_NAME = "DispatchRepository";
+const COMMENTS_QUERY_NAME = "DispatchComments";
 
 /** What the queries read of a pull request's comments: one page, and whether there are more. */
 const COMMENTS = `comments(first: ${ITEMS}) {
@@ -167,9 +167,18 @@ export function listedPullRequest(node: unknown): Record<string, unknown> {
       `PR #${String(node.number)} has more labels than one read holds`,
     );
   const labels = field(node, "labels", "nodes");
+  if (typeof node.number !== "number" || !text(node.headRefName))
+    throw new PartialRead("a pull request lacks its number or head branch");
+  if (
+    labels !== undefined &&
+    labels !== null &&
+    (!Array.isArray(labels) ||
+      !labels.every((l) => isRecord(l) && text(l.name)))
+  )
+    throw new PartialRead(`PR #${node.number} has unreadable labels`);
   const author = listedAuthor(node.author);
   return {
-    ...(typeof node.number === "number" ? { number: node.number } : {}),
+    number: node.number,
     ...strings(
       node,
       [
@@ -249,16 +258,13 @@ function addComments(
   connection: unknown,
 ): void {
   const all = field(connection, "nodes");
-  if (
-    field(connection, "pageInfo", "hasNextPage") !== false ||
-    !Array.isArray(all)
-  )
-    read.overflow.push(number);
-  else
-    read.comments.set(
-      number,
-      all.map(restComment).filter((c) => c !== null),
-    );
+  const mapped = Array.isArray(all) ? all.map(restComment) : [];
+  const whole =
+    field(connection, "pageInfo", "hasNextPage") === false &&
+    Array.isArray(all) &&
+    mapped.every((c) => c !== null);
+  if (whole) read.comments.set(number, mapped as Record<string, unknown>[]);
+  else read.overflow.push(number);
 }
 
 /** Count one page's points and the page itself in `read`. */
@@ -297,10 +303,14 @@ function addPage(read: RepositoryRead, answer: unknown): string | null {
       `${read.target.slug} lists ${PR_LIMIT} or more pull requests, more than one read holds`,
     );
   addCost(read, answer);
+  const more = field(prs, "pageInfo", "hasNextPage");
+  if (more === false) return null;
   const next = field(prs, "pageInfo", "endCursor");
-  return field(prs, "pageInfo", "hasNextPage") === true && text(next)
-    ? next
-    : null;
+  if (more !== true || !text(next) || next === "")
+    throw new PartialRead(
+      "the repository query's page info names neither the last page nor the next",
+    );
+  return next;
 }
 
 /** The repository of the checkout at `path`, read in one query of as many pages as its open pull requests need; or why it did not read in full. */

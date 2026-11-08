@@ -12,7 +12,12 @@ import { describe, expect, it } from "bun:test";
 import { conversationOf } from "../../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import { snapshotFromListing } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { listedFrom } from "../../shared/records/forge-claims.ts";
-import { LAUNCH_CLAIM } from "../../shared/records/launch-claims.ts";
+import { claimBody } from "../../shared/records/forge-claims.ts";
+import {
+  LAUNCH_CLAIM,
+  launchClaim,
+} from "../../shared/records/launch-claims.ts";
+import type { LaunchDraft } from "../../shared/records/shared.ts";
 import { listedPullRequest, restComment } from "../lib/forge-batch.ts";
 import { listedOpen } from "../lib/forge.ts";
 import { type Listing, tickComments } from "../lib/tick-comments.ts";
@@ -24,7 +29,21 @@ const URL = "https://github.com/jig-harness/jig/pull/572#issuecomment-";
 /** The member's comment: a drive ledger, so the ledger's reader finds one. */
 const LEDGER = ledgerBody(stoppedLedger(572, 16));
 
-/** Two comments of one pull request as the comment listing gave them: a member's and a bot's. */
+/** A launch claim, so the claim readers have one to find. */
+const DRAFT: LaunchDraft = {
+  stage: "drive",
+  pr: 572,
+  run: "tick",
+  action: "rearm",
+  record: "20261108T101407Z-0a1b2c3d",
+  host: "host-a",
+  owner: true,
+  facts: "",
+  writer: { login: "maintainer", host: "host-a" },
+};
+const CLAIM = claimBody(LAUNCH_CLAIM, launchClaim(DRAFT, 1));
+
+/** Three comments of one pull request as the comment listing gave them: a member's ledger and launch claim, and a bot's. */
 const LISTED = [
   {
     id: 6706843443,
@@ -34,6 +53,15 @@ const LISTED = [
     updated_at: "2026-11-08T10:14:07Z",
     html_url: `${URL}6706843443`,
     body: LEDGER,
+  },
+  {
+    id: 6706843444,
+    user: { login: "maintainer", type: "User" },
+    author_association: "MEMBER",
+    created_at: "2026-11-07T12:18:44Z",
+    updated_at: "2026-11-07T12:18:44Z",
+    html_url: `${URL}6706843444`,
+    body: CLAIM,
   },
   {
     id: 6720231176,
@@ -56,6 +84,16 @@ const QUERIED = [
     updatedAt: "2026-11-08T10:14:07Z",
     authorAssociation: "MEMBER",
     body: LEDGER,
+    author: { __typename: "User", login: "maintainer" },
+  },
+  {
+    databaseId: 6706843444,
+    fullDatabaseId: "6706843444",
+    url: `${URL}6706843444`,
+    createdAt: "2026-11-07T12:18:44Z",
+    updatedAt: "2026-11-07T12:18:44Z",
+    authorAssociation: "MEMBER",
+    body: CLAIM,
     author: { __typename: "User", login: "maintainer" },
   },
   {
@@ -97,9 +135,9 @@ describe("the repository query's comments", () => {
     expect(snapshot.canonical?.comment.id).toBe(6706843443);
     expect(snapshot).toEqual(snapshotFromListing(LISTED, "maintainer"));
     const target = { repo: "jig-harness/jig", number: 572 };
-    expect(listedFrom(LAUNCH_CLAIM, mapped, target, null)).toEqual(
-      listedFrom(LAUNCH_CLAIM, LISTED, target, null),
-    );
+    const claims = listedFrom(LAUNCH_CLAIM, mapped, target, null);
+    expect(claims.length).toBeGreaterThan(0);
+    expect(claims).toEqual(listedFrom(LAUNCH_CLAIM, LISTED, target, null));
   });
 
   it("take the short id where the forge gives no full one, and a deleted author as the listing names it", () => {
@@ -152,6 +190,19 @@ describe("the repository query's pull requests", () => {
         labels: { ...node.labels, pageInfo: { hasNextPage: true } },
       }),
     ).toThrow("more labels than one read holds");
+  });
+
+  it("do not read when one lacks its number or head branch, or has unreadable labels", () => {
+    const { number: _n, ...noNumber } = node;
+    const { headRefName: _h, ...noHead } = node;
+    expect(() => listedPullRequest(noNumber)).toThrow("number or head branch");
+    expect(() => listedPullRequest(noHead)).toThrow("number or head branch");
+    expect(() =>
+      listedPullRequest({
+        ...node,
+        labels: { ...node.labels, nodes: [{ name: "a" }, null] },
+      }),
+    ).toThrow("unreadable labels");
   });
 });
 
