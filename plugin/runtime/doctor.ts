@@ -7,7 +7,9 @@
  * The machine's checks: Bun's version; `claude` and `codex` resolving
  * outside every git checkout (a job never records an agent tool inside one,
  * which a worktree cleanup or a branch could change or remove); the plugin
- * in each harness and what it follows; the `jig` command's launcher copy;
+ * in each harness and what it follows; Claude Code's project- and
+ * local-scope installs of it, each older than the user-scope install or
+ * left behind by a deleted directory failing; the `jig` command's launcher copy;
  * and the latest scheduled upgrade, which fails while that attempt failed
  * (`upgrade-record.ts`). Each component's: its own checks (`Component.doctor`: its machine
  * file, the programs its work needs), then its job's launcher copy against
@@ -31,11 +33,13 @@ import type {
 import {
   available,
   describeSource,
+  directoryState,
   type Harness,
   HARNESSES,
   installed,
   PLUGIN_ID,
   registeredMarketplace,
+  scopedInstalls,
 } from "./harness.ts";
 import {
   commandScriptCall,
@@ -185,6 +189,59 @@ function pluginChecks(): DoctorCheck[] {
       ),
     );
   return checks;
+}
+
+/**
+ * Claude Code's project- and local-scope installs, each named with its
+ * directory and version. Claude Code loads the user-scope copy where both
+ * exist, but `claude plugin update` without `--scope` picks the most
+ * specific one, so a stale copy fails, as does one whose directory is gone.
+ */
+function scopedCheck(): DoctorCheck {
+  const id = "plugin:claude:scopes";
+  try {
+    if (!available("claude")) return skip(id, "not on PATH");
+    const scoped = scopedInstalls();
+    if (scoped.length === 0)
+      return pass(id, "no project- or local-scope install");
+    const user = installed("claude");
+    const registered = registeredMarketplace("claude");
+    const follows =
+      registered === null ? "" : `, following ${describeSource(registered)}`;
+    const named = scoped.map((install) => {
+      const where = directoryState(install.project);
+      const problem =
+        where === "gone"
+          ? "its directory no longer exists"
+          : where !== "present"
+            ? where
+            : user !== null &&
+                compareVersions(install.version, user.version) < 0
+              ? `older than the user-scope ${user.version}`
+              : null;
+      return {
+        line: `${install.project} (${install.scope} scope) ${install.version}${problem === null ? "" : `: ${problem}`}`,
+        problem,
+      };
+    });
+    const stale = named.filter((entry) => entry.problem !== null);
+    if (stale.length === 0)
+      return pass(
+        id,
+        `${scoped.length} ${PLUGIN_ID} install${scoped.length === 1 ? "" : "s"} beside the user scope${follows}: ${named.map((entry) => entry.line).join("; ")}`,
+      );
+    return fail(
+      id,
+      `${stale.length} of ${scoped.length} project- or local-scope ${PLUGIN_ID} installs need attention: ${stale.map((entry) => entry.line).join("; ")}`,
+      `jig upgrade --claude refreshes each from its directory and removes each whose directory is gone; one it cannot update it leaves, naming why, and claude plugin uninstall ${PLUGIN_ID} --scope <scope>, run in that directory, removes it`,
+    );
+  } catch (error) {
+    return fail(
+      id,
+      message(error),
+      "run claude plugin list --json to see why it fails, then jig upgrade --claude",
+    );
+  }
 }
 
 type Programs = { claude?: string; codex?: string };
@@ -611,6 +668,7 @@ async function doctorChecks(options: {
     bunCheck(),
     ...HARNESSES.map(pathCheck),
     ...pluginChecks(),
+    scopedCheck(),
     await commandCheck(runtime, options.script),
     upgradeCheck(),
   ];

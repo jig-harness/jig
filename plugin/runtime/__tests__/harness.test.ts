@@ -1,13 +1,20 @@
 /**
  * What the plugin reads from each agent harness's own lists: the user-scope
- * install, where the marketplace is registered from and what it follows.
+ * install, Claude Code's project- and local-scope installs, where the
+ * marketplace is registered from and what it follows.
  * Installing and updating through stand-in harnesses runs from a checkout in
  * `tools/plugin/setup.test.ts`, and through `jig upgrade` in
  * `plugin/__tests__/upgrade-doctor.test.ts`.
  */
 import { expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
+import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import {
   claudeMarketplace,
+  claudeScopedInstalls,
   claudeUserInstall,
   codexInstall,
   codexMarketplace,
@@ -15,6 +22,7 @@ import {
   describeSource,
   followsMain,
   PLUGIN_ID,
+  refreshScoped,
   sameSource,
 } from "../harness.ts";
 
@@ -47,6 +55,63 @@ test("only the user-scope Claude Code install counts", () => {
   ).toEqual({ version: "0.2.0", enabled: false });
   expect(codexInstall({ installed: [] })).toBeNull();
 });
+
+test("the project- and local-scope Claude Code installs, each with its directory", () => {
+  expect(
+    claudeScopedInstalls([
+      { id: PLUGIN_ID, scope: "user", version: "0.2.0", enabled: true },
+      {
+        id: PLUGIN_ID,
+        scope: "project",
+        projectPath: "/repo",
+        version: "0.1.0",
+        enabled: true,
+      },
+      {
+        id: PLUGIN_ID,
+        scope: "local",
+        projectPath: "/other",
+        version: "0.1.5",
+        enabled: false,
+      },
+      { id: "other@elsewhere", scope: "project", projectPath: "/repo" },
+      { id: PLUGIN_ID, scope: "project", version: "0.1.0" },
+    ]),
+  ).toEqual([
+    { scope: "project", project: "/repo", version: "0.1.0", enabled: true },
+    { scope: "local", project: "/other", version: "0.1.5", enabled: false },
+  ]);
+  expect(claudeScopedInstalls({ unexpected: true })).toEqual([]);
+});
+
+test.skipIf(
+  skipsOnWindows("powershell", "the stand-in claude is a POSIX script"),
+)(
+  "an install record in a form this release does not know is left as it was, naming the install",
+  () => {
+    const root = mkdtempSync(join(tmpdir(), "jig-scoped-"));
+    const gone = join(root, "deleted");
+    const claude = join(root, "claude");
+    writeFakeProgram(
+      claude,
+      `#!/bin/sh\necho '${JSON.stringify([{ id: PLUGIN_ID, scope: "project", projectPath: gone, version: "0.1.0", enabled: true }])}'\n`,
+    );
+    const record = join(root, "installed_plugins.json");
+    const text = JSON.stringify({ version: 3, plugins: {} });
+    writeFileSync(record, text);
+    const lines: string[] = [];
+    const results = refreshScoped(claude, (line) => lines.push(line), record);
+    expect(results).toEqual([
+      expect.objectContaining({
+        project: gone,
+        outcome: "left",
+        detail: expect.stringContaining("not in the form this release edits"),
+      }),
+    ]);
+    expect(readFileSync(record, "utf8")).toBe(text);
+    expect(lines.at(-1)).toContain(`for ${gone} (project scope): left`);
+  },
+);
 
 test("where a marketplace is registered from, and what it follows", () => {
   expect(
