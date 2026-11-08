@@ -159,6 +159,8 @@ const DRIVER_MEANINGS: Record<string, string> = {
   PR_NOT_OPEN: "merged or closed; nothing left to drive",
   PR_CONFLICTING:
     "conflicts with its base: merge the base in, push, and re-arm",
+  REVIEW_SKIPPED:
+    "the reviewer skipped its head and will not review it, so a re-arm alone waits for nothing: review the change since the reviewed head and have the reviewer review this head, or push a commit it reviews, then re-arm",
   TAKEN_OVER: "another clone took the drive over; its own report says the rest",
   MAILBOX_STOPPED: "stopped on request",
   INDETERMINATE:

@@ -65,6 +65,7 @@ describe("a stopped ledger's class", () => {
       ["UNSUPPORTED_CLI", "needs-person"],
       ["MAX_ROUNDS", "needs-person"],
       ["REVIEWER_FAILED", "needs-person"],
+      ["REVIEW_SKIPPED", "needs-person"],
       ["WORKTREE_UNCLEAN", "unplaced"],
     ];
     for (const [name, cls] of cases)
@@ -105,6 +106,7 @@ describe("an ended drive's outcome class", () => {
       ["TAKEN_OVER", "refused"],
       ["INDETERMINATE", "gates failed"],
       ["REVIEWER_FAILED", "gates failed"],
+      ["REVIEW_SKIPPED", "gates failed"],
       ["PR_CONFLICTING", "gates failed"],
       ["WORKTREE_UNCLEAN", "gates failed"],
       ["PASS_DEADLINE", "gates failed"],
@@ -147,6 +149,7 @@ describe("which drive exits close the run tab", () => {
       "UNSUPPORTED_CLI",
       "MAX_ROUNDS",
       "REVIEWER_FAILED",
+      "REVIEW_SKIPPED",
       "HITL_PARKED",
       "PR_CONFLICTING",
       "WORKTREE_UNCLEAN",

@@ -117,6 +117,7 @@ describe("the stop's comment", () => {
         "stopped: the posting reviewer's check did not pass",
       ],
       [9, "stopped: it conflicts with its base and has nothing left to work"],
+      [22, "stopped: the reviewer skipped its head and will not review it"],
       [
         WORKTREE_UNCLEAN_EXIT,
         "converged, but its worktree holds changes no round shipped",
