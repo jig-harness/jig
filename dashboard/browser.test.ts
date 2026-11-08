@@ -214,9 +214,28 @@ describe("every scenario, at each width and in each theme", () => {
         );
 });
 
+function rectOf(page: Page, selector: string) {
+  return page
+    .locator(selector)
+    .first()
+    .evaluate((e) => e.getBoundingClientRect());
+}
+
+async function leftOf(page: Page, selector: string): Promise<number> {
+  return (await rectOf(page, selector)).left;
+}
+
+async function lefts(page: Page, selectors: string[]): Promise<number[]> {
+  return Promise.all(selectors.map((s) => leftOf(page, s)));
+}
+
+async function topsOf(page: Page, selectors: string[]): Promise<number[]> {
+  return Promise.all(selectors.map(async (s) => (await rectOf(page, s)).top));
+}
+
 describe("the desktop fold", () => {
   browserIt(
-    "loud at 1440: every panel of Now ends its first screen within 900 px",
+    "loud at 1440: What needs you opens the first screen, and the panels stack below it",
     async () => {
       const server = await served("loud");
       const { page, context } = await open(
@@ -231,8 +250,13 @@ describe("the desktop fold", () => {
         // What needs you runs past the fold by design: its heading and first rows must stand above it.
         expect(await bottomOf(page, ".pNeeds .need")).toBeLessThanOrEqual(900);
         expect(await page.locator(".pNeeds .need").count()).toBeGreaterThan(5);
-        expect(await bottomOf(page, ".pLine")).toBeLessThanOrEqual(900);
-        expect(await bottomOf(page, ".pQueue")).toBeLessThanOrEqual(900);
+        const [needs, line, queue] = await topsOf(page, [
+          ".pNeeds",
+          ".pLine",
+          ".pQueue",
+        ]);
+        expect(needs).toBeLessThan(line ?? 0);
+        expect(line).toBeLessThan(queue ?? 0);
       } finally {
         await context.close();
       }
@@ -243,7 +267,7 @@ describe("the desktop fold", () => {
 
 describe("the reshaped page", () => {
   browserIt(
-    "with no needs the answer is a plain line and what is running takes the wide column",
+    "with no needs the answer is a plain line and the panels stack in one column",
     async () => {
       const server = await served("quiet");
       const { page, context } = await open(
@@ -256,13 +280,10 @@ describe("the reshaped page", () => {
         await shows(page, ".pLine");
         expect(await page.locator(".answer.loud").count()).toBe(0);
         expect(await page.locator(".pNeeds").count()).toBe(0);
-        const wide = await page
-          .locator(".pLine")
-          .evaluate((e) => e.getBoundingClientRect().left);
-        const narrow = await page
-          .locator(".pQueue")
-          .evaluate((e) => e.getBoundingClientRect().left);
-        expect(wide).toBeLessThan(narrow);
+        const left = await leftOf(page, ".pLine");
+        expect(await lefts(page, [".pLine", ".pQueue"])).toEqual([left, left]);
+        const [line, queue] = await topsOf(page, [".pLine", ".pQueue"]);
+        expect(line).toBeLessThan(queue ?? 0);
       } finally {
         await context.close();
       }
@@ -271,7 +292,7 @@ describe("the reshaped page", () => {
   );
 
   browserIt(
-    "with needs a filled band appears and What needs you takes the wide column",
+    "with needs a filled band appears and every panel stacks below What needs you, never beside it",
     async () => {
       const server = await served("loud");
       const { page, context } = await open(
@@ -283,13 +304,15 @@ describe("the reshaped page", () => {
       try {
         await shows(page, ".pNeeds");
         expect(await page.locator(".answer.loud").count()).toBe(1);
-        const needs = await page
-          .locator(".pNeeds")
-          .evaluate((e) => e.getBoundingClientRect().left);
-        const line = await page
-          .locator(".pLine")
-          .evaluate((e) => e.getBoundingClientRect().left);
-        expect(needs).toBeLessThan(line);
+        const left = await leftOf(page, ".pNeeds");
+        expect(await lefts(page, [".pLine", ".pQueue"])).toEqual([left, left]);
+        const [needs, line, queue] = await topsOf(page, [
+          ".pNeeds",
+          ".pLine",
+          ".pQueue",
+        ]);
+        expect(needs).toBeLessThan(line ?? 0);
+        expect(line).toBeLessThan(queue ?? 0);
       } finally {
         await context.close();
       }

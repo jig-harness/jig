@@ -169,6 +169,10 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       not a `pull_request` workflow, so it CAN publish
  *                       findings on a conflicting head. Only the no-work case
  *                       is terminal
+ *  22  REVIEW_SKIPPED   [state] the reviewer's skip notice names this head,
+ *                       and its review of an earlier head does not cover it
+ *                       (the PR's diff changed): no review of this head will
+ *                       come
  *  11  SESSION_LEASE_HELD  [state, set outside evaluate]
  *                       another LIVE session in this working tree holds the
  *                       drive lease for this PR. Raised by whichever
@@ -333,7 +337,7 @@ async function boundedRealpath(
  * loop for the criterion that produces this set, and for why each code NOT in
  * it is absent.
  */
-const UNRECONCILED_STOPPERS = new Set([2, 7, 8, 9, 10]);
+const UNRECONCILED_STOPPERS = new Set([2, 7, 8, 9, 10, 22]);
 
 async function main(): Promise<number> {
   let pr = "";

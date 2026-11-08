@@ -66,6 +66,7 @@ import {
   hostNoticeKeys,
   isFailureCause,
 } from "../failure-notices.ts";
+import { holderRecordStands } from "../holder-notices.ts";
 import { carries, holdsNotice, unobservedTarget } from "../notices.ts";
 import {
   MAX_COMMENT,
@@ -608,7 +609,10 @@ function prune(
   if (!report.records.every((r) => r.ok)) return;
   const gone = [...sent.values()].filter(
     (s) =>
-      !keys.has(s.key) && !unobservedTarget(report, s.target) && !s.lasting,
+      !keys.has(s.key) &&
+      !unobservedTarget(report, s.target) &&
+      !holderRecordStands(report, s) &&
+      !s.lasting,
   );
   if (gone.length === 0) return;
   const db = stateDb(root);

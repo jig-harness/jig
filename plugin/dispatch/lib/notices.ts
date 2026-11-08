@@ -16,6 +16,7 @@
  */
 import { uniqueLogins } from "../../shared/forge-logins.ts";
 import { createHash } from "node:crypto";
+import { shellQuote } from "../../shared/cli.ts";
 import type { DrivenPr, Notice, RepoReport } from "./types.ts";
 
 const TAG = "[jig dispatch: ";
@@ -230,6 +231,36 @@ export function pickupNotice(
   reason: string,
 ): Notice {
   return notice(`${slug} ${key}`, [`${slug}: ${reason}.`]);
+}
+
+/** The words every busy-holder key carries after its repository and target, so a suppression record can be told for one. */
+export const HOLDER_KEY_MARK = " branch held by busy checkout ";
+
+/**
+ * A launch refused because a checkout the runtime does not list holds its
+ * branch and is in use: where that checkout is, what keeps it busy, and how
+ * a person frees the branch. Keyed by the target, the branch and the
+ * checkout's path, so it is sent once per holder whatever its reasons.
+ */
+export function holderNotice(
+  slug: string,
+  busy: {
+    target: string;
+    stage: string;
+    path: string;
+    branch: string;
+    reasons: string[];
+    url: string | null;
+  },
+): Notice {
+  return notice(
+    `${slug} ${busy.target}${HOLDER_KEY_MARK}${busy.branch} at ${busy.path}`,
+    [
+      `${busy.target}: the ${busy.stage} cannot open a workspace on ${busy.branch}, because the checkout at ${busy.path}, which the workspace runtime does not list, has that branch checked out and is in use: ${busy.reasons.join("; ")}.`,
+      `Once nothing keeps it busy, the next tick detaches it at its commit and opens the workspace. To free the branch yourself, finish or save the work there (commit and push it, or discard it) and end what runs in it, then run \`git -C ${shellQuote(busy.path)} switch --detach\`, or remove it with \`git worktree remove ${shellQuote(busy.path)}\`.`,
+    ],
+    busy.url === null ? [] : [busy.url],
+  );
 }
 
 /** Absence of a cause proves nothing when its target was not observed in scope. */

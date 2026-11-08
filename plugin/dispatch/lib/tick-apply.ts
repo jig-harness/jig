@@ -23,6 +23,7 @@ import { applySteers } from "./actions/steer.ts";
 import { adoptionOf } from "./adopt.ts";
 import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
 import { readOutcomes } from "./followup-outcomes.ts";
+import { holderActions } from "./holder-notices.ts";
 import { openPullRequest, pullRequestLabels } from "./forge.ts";
 import { carriesSet, hasCommand } from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
@@ -274,6 +275,8 @@ async function applyStages(
       // Which nudges are wanted is known only from a session listing that read.
       inputs.sessions.ok && report.records.every((r) => r.ok),
     );
+  // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
+  report.actions.push(...holderActions(repo.slug, report.launches));
   // A host that does not own the repository never notifies for it: the owner does, once.
   if (enabled.has("notify") && inputs.shared.owner)
     await applyNotices(apply, repo, report, inputs.sessions, {

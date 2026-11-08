@@ -1,11 +1,11 @@
 import { FollowupSummary } from "./followups.tsx";
-import { useCurrentLine } from "./pr.tsx";
+import { StandingSource, useCurrentLine } from "./pr.tsx";
 /**
  * The page's views. Now keeps the question order, its top half reshaped
- * by state: with nothing to do the answer is a plain line and what is running
- * takes the wide column; with something to do a filled band appears and the wide
- * column belongs to the person. History is the outcome log; Help says how to
- * read the rest.
+ * by state: with nothing to do the answer is a plain line; with something to
+ * do a filled band appears and the panel that needs the person comes first.
+ * The panels stack in one column at every width, so the page scrolls one way.
+ * History is the outcome log; Help says how to read the rest.
  */
 import { useEffect, useMemo, useState } from "react";
 import type {
@@ -292,42 +292,44 @@ function Page({
       ref={setPopupRoot}
     >
       <PopupRoot.Provider value={popupRoot}>
-        <Strip
-          fresh={<Freshness view={view} />}
-          alarm={pageFresh(view).alarm}
-          nav={
-            <ViewNav
-              view={tab}
-              setView={setTab}
-              needs={needs}
-              filter={filter}
-              theme={theme}
-            />
-          }
-          tools={<ThemeSwitch theme={theme} setTheme={setTheme} />}
-        />
-        <main className="main">
-          <Banners view={view} />
-          {tab === "help" ? (
-            <HelpView Fold={Fold} />
-          ) : view.answer === null ? null : tab === "history" ? (
-            <HistoryPanels
-              theme={theme}
-              view={view}
-              log={rows.data}
-              filter={filter}
-              setFilter={setFilter}
-              rowClock={rowClock}
-              forges={forges}
-            />
-          ) : (
-            <NowPanels view={view} log={rows.data} />
-          )}
-        </main>
-        <footer className="foot">
-          <Colophon view={view} token={token} />
-        </footer>
-        <ClipParts />
+        <StandingSource.Provider value={{ line, clock }}>
+          <Strip
+            fresh={<Freshness view={view} />}
+            alarm={pageFresh(view).alarm}
+            nav={
+              <ViewNav
+                view={tab}
+                setView={setTab}
+                needs={needs}
+                filter={filter}
+                theme={theme}
+              />
+            }
+            tools={<ThemeSwitch theme={theme} setTheme={setTheme} />}
+          />
+          <main className="main">
+            <Banners view={view} />
+            {tab === "help" ? (
+              <HelpView Fold={Fold} />
+            ) : view.answer === null ? null : tab === "history" ? (
+              <HistoryPanels
+                theme={theme}
+                view={view}
+                log={rows.data}
+                filter={filter}
+                setFilter={setFilter}
+                rowClock={rowClock}
+                forges={forges}
+              />
+            ) : (
+              <NowPanels view={view} log={rows.data} />
+            )}
+          </main>
+          <footer className="foot">
+            <Colophon view={view} token={token} />
+          </footer>
+          <ClipParts />
+        </StandingSource.Provider>
       </PopupRoot.Provider>
     </div>
   );

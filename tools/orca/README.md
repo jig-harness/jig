@@ -48,7 +48,9 @@ When Orca has no repository by that name and `--clone-url` and
    list`. One that Orca lists is reattached. One Orca does not list (a
    worktree made with plain git, which Orca hides until asked to show
    non-Orca worktrees) is refused rather than duplicated; the message says
-   how to show it.
+   how to show it. The dispatcher's open, which can read what drives a
+   tree, detaches such a checkout instead when it is idle
+   (`plugin/shared/orca-workspace/holder.ts`).
 2. With none, it decides where the branch comes from, as the
    [Herdr workspace tool](../herdr/README.md) does: origin's copy, a local
    branch origin does not have, or a new branch cut from `--base` (the

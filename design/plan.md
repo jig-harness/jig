@@ -1041,6 +1041,23 @@ where the fake and Notion disagree, in both.
 Done when that test passes, and a repository reflects into a database `init`
 created using only `NOTION_TOKEN` and `reflection.notion.database`.
 
+### 44. Distribution: a common setup entry point
+
+A person installing Jig must find the marketplace address and prepare its
+prerequisites. The [distribution design](distribution.md) starts with one
+shell and PowerShell setup path for macOS, Linux and Windows. It will inspect
+the machine without writes and obtain explicit consent before provisioning
+missing prerequisites. Once those tools exist, it will check registrations
+and authentication before plugin or profile writes, then install through the
+agent tool's own marketplace, preserving existing sources and pins. Scheduler activation stays
+separate. An own Homebrew tap is a candidate only after this path is validated;
+other catalogs wait for component, identity and update compatibility evidence.
+
+Done when fresh and repeated installs work on the supported platforms,
+existing pins and custom sources survive, failures leave a usable installation,
+and the install guide names the validated setup path. The design records the
+conditions for considering a tap without adopting one ahead of that evidence.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the
