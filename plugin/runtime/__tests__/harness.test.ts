@@ -81,7 +81,10 @@ test("the project- and local-scope Claude Code installs, each with its directory
     { scope: "project", project: "/repo", version: "0.1.0", enabled: true },
     { scope: "local", project: "/other", version: "0.1.5", enabled: false },
   ]);
-  expect(claudeScopedInstalls({ unexpected: true })).toEqual([]);
+  // An answer that is not a list is a failed inspection, not an empty one.
+  expect(() => claudeScopedInstalls({ installed: [] })).toThrow(
+    "did not print a list",
+  );
 });
 
 test.skipIf(
@@ -115,6 +118,39 @@ test.skipIf(
     ]);
     expect(readFileSync(record, "utf8")).toBe(text);
     expect(lines.at(-1)).toContain(`for ${gone} (project scope): left`);
+  },
+);
+
+test.skipIf(
+  skipsOnWindows("powershell", "the stand-in claude is a POSIX script"),
+)(
+  "an install whose path is a file, or sits under one, is left and named even at the current version",
+  () => {
+    const root = mkdtempSync(join(tmpdir(), "jig-scoped-"));
+    const file = join(root, "a-file");
+    writeFileSync(file, "");
+    const under = join(file, "repo");
+    const claude = join(root, "claude");
+    writeFakeProgram(
+      claude,
+      `#!/bin/sh
+echo '${JSON.stringify(
+        [file, under].map((projectPath) => ({
+          id: PLUGIN_ID,
+          scope: "project",
+          projectPath,
+          version: "0.2.0",
+          enabled: true,
+        })),
+      )}'\n`,
+    );
+    const record = join(root, "installed_plugins.json");
+    writeFileSync(record, JSON.stringify({ version: 2, plugins: {} }));
+    const results = refreshScoped(claude, () => undefined, "0.2.0", record);
+    expect(results.map((r) => [r.project, r.outcome])).toEqual([
+      [file, "left"],
+      [under, "left"],
+    ]);
   },
 );
 

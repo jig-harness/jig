@@ -179,7 +179,10 @@ export interface ScopedInstall {
 
 /** The project- and local-scope installs from `claude plugin list --json`. */
 export function claudeScopedInstalls(list: unknown): ScopedInstall[] {
-  if (!Array.isArray(list)) return [];
+  if (!Array.isArray(list))
+    throw new HarnessError(
+      "claude plugin list --json did not print a list of plugins",
+    );
   return list.flatMap((entry): ScopedInstall[] =>
     entry?.id === PLUGIN_ID &&
     (entry.scope === "project" || entry.scope === "local") &&
@@ -393,16 +396,20 @@ export function directoryState(path: string): "present" | "gone" | string {
       ? "present"
       : `${path} is not a directory`;
   } catch (error) {
-    if (code(error) === "ENOENT" || code(error) === "ENOTDIR") return "gone";
+    // ENOTDIR means a parent is a file, which says nothing of this directory.
+    if (code(error) === "ENOENT") return "gone";
     return `${path} cannot be read: ${reason(error)}`;
   }
 }
 
-/** Claude Code's record of what it installed, in its configuration directory. */
+/**
+ * Claude Code's record of what it installed, in its plugins directory:
+ * `CLAUDE_CODE_PLUGIN_CACHE_DIR` where set, else under its configuration directory.
+ */
 function claudeInstallRecord(env: NodeJS.ProcessEnv = process.env): string {
   return join(
-    env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"),
-    "plugins",
+    env.CLAUDE_CODE_PLUGIN_CACHE_DIR ||
+      join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "plugins"),
     "installed_plugins.json",
   );
 }
@@ -607,9 +614,9 @@ export function refreshScoped(
   for (const install of scopedInstalls(program)) {
     const where = directoryState(install.project);
     if (where === "gone") gone.push(install);
-    else if (install.version === current) updated.push(install);
     else if (where !== "present")
       left.push(scopedResult(install, "left", where));
+    else if (install.version === current) updated.push(install);
     else
       try {
         run(
@@ -760,6 +767,8 @@ export interface HarnessResult {
   detail: string;
   /** Claude Code after an upgrade: what became of each project- and local-scope install. */
   scoped?: ScopedResult[];
+  /** Claude Code after an upgrade: why the scoped installs could not be inspected or refreshed. */
+  scopedError?: string;
 }
 
 /** Prints what `harness` has installed and follows. */
@@ -872,7 +881,7 @@ export function upgradeHarnesses(
     const after = report(harness, say, program);
     const result = outcome(harness, before, after);
     return harness === "claude"
-      ? { ...result, scoped: scopedStep(program, say, result.version) }
+      ? { ...result, ...scopedStep(program, say, result.version) }
       : result;
   });
 }
@@ -885,14 +894,13 @@ function scopedStep(
   program: string,
   say: Say,
   current: string | undefined,
-): ScopedResult[] {
+): { scoped: ScopedResult[] } | { scopedError: string } {
   try {
-    return refreshScoped(program, say, current ?? null);
+    return { scoped: refreshScoped(program, say, current ?? null) };
   } catch (error) {
-    console.error(
-      `claude: the project- and local-scope installs of ${PLUGIN_ID} were not refreshed: ${reason(error)}`,
-    );
-    return [];
+    const scopedError = `the project- and local-scope installs of ${PLUGIN_ID} were not refreshed: ${reason(error)}`;
+    console.error(`claude: ${scopedError}`);
+    return { scopedError };
   }
 }
 
