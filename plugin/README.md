@@ -286,7 +286,8 @@ enables for each repository: the `rearm` stage, and the `pickup`,
 of a stopped drive, and each takeover of a wedged driver this machine
 started (or another host did: see several hosts, below), or of a silent
 driver no launch started that ran on this host and whose run this host
-shows ended,
+shows ended, or whose holder the clone's drive doctor (`drives.ts --json`)
+reads `DEAD` or `WEDGED`,
 runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
 of the pull request's workspace, opened from the pull request when none
 holds it, through a small wrapper (`dispatch/run.ts`). The wrapper bills
@@ -315,10 +316,11 @@ is re-driven once per head commit too, one that left work in its tree only in
 that tree, and a failure (exit `1`) while the
 pull request conflicts with its base once per pair of its head and its base
 branch's head, so its conflict-resolve round runs. These re-drives, the
-takeover of a silent driver no launch started and the run again of a
-follow-up that died draw on the pull request's recovery budget, with the
+takeover of a silent driver no launch started that this host shows gone
+and the run again of a follow-up that died draw on the pull request's recovery budget, with the
 re-arms of stops with no recorded cause: 3 in a rolling hour, after which a
-person is told. A record
+person is told. The takeover of a
+holder selected through the doctor-only fallback (`DEAD` or `WEDGED`), rather than host-confirmed recovery, is outside the budget. A record
 claimed on this host before it last restarted has died, since a restart ends
 every process, and its outcome row says so; hosts are told apart by the
 [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
@@ -892,7 +894,10 @@ The session runtime it reads and launches in is
 `ORCA_CLI_BIN_DIR`, else `orca-ide` on `PATH` on Linux and `orca` elsewhere,
 the names Orca installs its command under; on Linux a bare `orca` is often
 GNOME's screen reader),
-behind an interface a second runtime can be added to. The repository's
+behind an interface a second runtime can be added to. A timer's environment
+holds none of a login shell's, so the install writes the two variables, as
+the shell that runs it sets them, into both the tick's job and the probe's.
+The repository's
 values are its [`dispatch` section](CONFIGURATION.md#dispatch), read from
 its default branch on the forge.
 

@@ -6,8 +6,9 @@
  * Type: Discovery
  * Input: an issue key in the configured tracker's shape (`ENG-123`, `#123`;
  *   a GitHub issue also by its number or web address)
- * Output: JSON with the issue's details, labels, the tracker's own issue
- *   type (`nativeType`, `null` where there is none), children and
+ * Output: JSON with the issue's details, labels, its facets (`type` and
+ *   `size`, `null` for none, and `priority`, 0 for none), the tracker's own
+ *   issue type (`nativeType`, `null` where there is none), children and
  *   `sub_issue_analysis`
  *
  * Usage:
@@ -20,7 +21,7 @@
  * (`lib/tracker/`).
  */
 
-import { parseArgs, runEntry } from "./lib/cli.ts";
+import { failingAsError, parseArgs, runEntry } from "./lib/cli.ts";
 import { openTracker } from "./lib/tracker/index.ts";
 import { type IssueKeys, issueKeysOrNull } from "./lib/tracker/keys.ts";
 import {
@@ -155,6 +156,9 @@ export function issueResult(
           }
         : { name: "Unknown", type: "unknown" },
     labels: issue.labels,
+    type: issue.type,
+    priority: issue.priority,
+    size: issue.size,
     nativeType: issue.nativeType,
     url: issue.url,
     parent: issue.parent,
@@ -258,32 +262,29 @@ async function main(): Promise<number> {
   const verbose = parsed.args.flags.has("verbose");
   const issueId = parsed.args.positional;
 
-  try {
+  return failingAsError(verbose, async () => {
     if (verbose) console.error(`Fetching issue: ${issueId}`);
     const result = await getIssue(issueId);
-    if (verbose) {
-      if (result.found === true) {
-        console.error(`Found: ${String(result.title)}`);
-        const analysis = result.sub_issue_analysis as
-          | { total?: number; completed?: number; abandoned?: number }
-          | undefined;
-        if ((analysis?.total ?? 0) > 0) {
-          // Same denominator as progress_percent: abandoned children excluded.
-          const eligible = (analysis?.total ?? 0) - (analysis?.abandoned ?? 0);
-          console.error(
-            `Sub-issues: ${analysis?.completed}/${eligible} complete`,
-          );
-        }
-      } else {
-        console.error(`Not found: ${String(result.error)}`);
-      }
-    }
+    if (verbose) describe(result);
     console.log(JSON.stringify(result, null, 2));
     return result.found === true ? 0 : 2;
-  } catch (e) {
-    console.error(`ERROR: ${e instanceof Error ? e.message : String(e)}`);
-    if (verbose && e instanceof Error) console.error(e.stack);
-    return 1;
+  });
+}
+
+/** What `--verbose` says on stderr about the issue read. */
+function describe(result: Record<string, unknown>): void {
+  if (result.found !== true) {
+    console.error(`Not found: ${String(result.error)}`);
+    return;
+  }
+  console.error(`Found: ${String(result.title)}`);
+  const analysis = result.sub_issue_analysis as
+    | { total?: number; completed?: number; abandoned?: number }
+    | undefined;
+  if ((analysis?.total ?? 0) > 0) {
+    // Same denominator as progress_percent: abandoned children excluded.
+    const eligible = (analysis?.total ?? 0) - (analysis?.abandoned ?? 0);
+    console.error(`Sub-issues: ${analysis?.completed}/${eligible} complete`);
   }
 }
 

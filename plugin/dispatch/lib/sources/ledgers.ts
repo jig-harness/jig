@@ -456,7 +456,7 @@ function runningClass(
       }
     : {
         class: "silent",
-        why: `heartbeat ${age} min old, past the ${window}-min lease window; unless a launch record of this machine or another host's launch claim started its driver, it is taken over only where this host shows that driver's run ended, and otherwise needs a person to inspect and re-arm it`,
+        why: `heartbeat ${age} min old, past the ${window}-min lease window`,
       };
 }
 

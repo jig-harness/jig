@@ -2,6 +2,11 @@
  * What one tick reads, plans and reports. Every record is read fresh each
  * tick; nothing here is kept between ticks except what the receipt says.
  */
+import type {
+  Facet,
+  FacetStoreKind,
+  FacetStoreReport,
+} from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
 import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
@@ -154,6 +159,15 @@ export interface StaleCause {
   earlier?: string[];
 }
 
+/** What the repository clone's drive doctor (`drives.ts --doctor`) reads of a pull request's lock holder. */
+export interface HolderReading {
+  /** The doctor's verdict: `WEDGED`, `DEAD`, `HEALTHY`, `UNKNOWN`, … */
+  verdict: string;
+  reason: string;
+  /** The lock's state: `live`, `stale`, `empty`, … */
+  lock: string;
+}
+
 /** One open pull request whose comments hold a drive ledger. */
 export interface DrivenPr {
   number: number;
@@ -293,6 +307,8 @@ export interface Action {
   takeover?: string;
   /** For a takeover of a driver another host started: that host's launch claim, which names the launch. */
   takeoverClaim?: { id: number; host: string; record: string };
+  /** For a takeover of a driver no launch started: what this clone's drive doctor read of its holder. */
+  takeoverHolder?: HolderReading;
   /** For a takeover of a driver no launch started, whose run this host shows ended: what showed it. */
   takeoverGone?: string;
   /** For a re-drive: why the drive's stop no longer settles its pull request. */
@@ -411,6 +427,31 @@ export interface RecordRead {
   source: string;
   ok: boolean;
   detail: string;
+  /** The tracker's record only: where each issue facet is kept, and the assigned items lacking one. */
+  facets?: FacetRecord;
+}
+
+/** One issue facet's store as the tick's tracker record shows it. */
+export interface FacetStoreLine {
+  facet: Facet;
+  /** `null`: the repository has no such facet, or it is in conflict. */
+  store: FacetStoreKind | null;
+  why: FacetStoreReport["why"];
+  /** Detection answered from the machine-local cache. */
+  cached?: true;
+  /** One line: why the store, its detection or its taxonomy fails. */
+  error?: string;
+}
+
+/**
+ * The issue facets in the tick's tracker record: each facet's store and why,
+ * or why the tracker did not say (`failed`, one line), and the assigned
+ * items that lack a facet the repository keeps, by key and facet only.
+ */
+export interface FacetRecord {
+  stores?: FacetStoreLine[];
+  failed?: string;
+  gaps?: Array<{ key: string; missing: Facet[] }>;
 }
 
 /** One repository's part of a tick's report. */

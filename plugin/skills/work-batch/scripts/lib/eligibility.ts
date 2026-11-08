@@ -9,6 +9,10 @@
  * flag, and an issue missing a mandatory label carries no reliable
  * classification. Each such reason names the label to add, so the issue is
  * never dropped without a word.
+ *
+ * Where the policy reads facets (`policy.facets`), the size and the type
+ * are the issue's `size` and `type`, wherever the tracker keeps them;
+ * otherwise they are read from its labels.
  */
 
 import {
@@ -37,7 +41,8 @@ export type ExclusionReason =
   | { kind: "unknown-state"; state: string }
   | { kind: "already-closed"; state: string }
   | { kind: "already-assigned"; assignee: string }
-  | { kind: "already-started"; state: string };
+  | { kind: "already-started"; state: string }
+  | { kind: "no-priority" };
 
 export interface EligibilityOptions {
   /**
@@ -113,10 +118,14 @@ export function stateStanding(
 
 /** The issue's single batchable size; `null` when it has none. */
 export function batchableSizeOf(
-  labels: readonly string[],
+  issue: Pick<PoolIssue, "labels" | "size">,
   policy: BatchPolicy,
 ): string | null {
-  return policy.batchSizes.find((s) => labels.includes(s)) ?? null;
+  if (policy.facets)
+    return issue.size !== null && policy.batchSizes.includes(issue.size)
+      ? issue.size
+      : null;
+  return policy.batchSizes.find((s) => issue.labels.includes(s)) ?? null;
 }
 
 /** Whether a label is one of the context labels the policy names. */
@@ -168,12 +177,16 @@ const urgentReason: Check = (issue) =>
 
 // Size is a pick-one group: two size labels are a labelling error, not a
 // size to pick by order, which could batch an issue its own labels also call
-// too large.
+// too large. A size facet holds one value, or none when its store holds two.
 const sizeReason: Check = (issue, policy) => {
+  if (policy.facets)
+    return batchableSizeOf(issue, policy) === null
+      ? { kind: "not-batchable-size", size: issue.size }
+      : null;
   const sizeLabels = issue.labels.filter((l) => policy.knownSizes.includes(l));
   if (sizeLabels.length > 1)
     return { kind: "conflicting-size-labels", sizes: [...sizeLabels].sort() };
-  if (batchableSizeOf(issue.labels, policy) === null)
+  if (batchableSizeOf(issue, policy) === null)
     return { kind: "not-batchable-size", size: sizeLabels[0] ?? null };
   return null;
 };
@@ -194,6 +207,10 @@ const repoReason: Check = (issue, policy) => {
 const typeReason: Check = (issue, policy) => {
   const typeLabels = policy.typeLabels;
   if (typeLabels === null) return null;
+  if (policy.typeFacet)
+    return issue.type !== null && typeLabels.includes(issue.type)
+      ? null
+      : { kind: "no-type-label" };
   const types = issue.labels.filter((l) => typeLabels.includes(l));
   if (types.length > 1)
     return { kind: "conflicting-type-labels", types: [...types].sort() };
@@ -254,6 +271,12 @@ const ownershipReason: Check = (issue, policy, opts) => {
   return null;
 };
 
+// An issue with no priority is unranked, not the least urgent: it is held
+// back until it has one. Checked last, so an issue it holds back is
+// otherwise batchable, and the proposal lists it as a labelling gap.
+const priorityReason: Check = (issue) =>
+  issue.priority === 0 ? { kind: "no-priority" } : null;
+
 /**
  * The checks, in the order their reasons are reported. They are
  * independent; the order decides only which reason an issue shows, so the
@@ -273,6 +296,7 @@ const CHECKS: readonly Check[] = [
   containerReason,
   stateReason,
   ownershipReason,
+  priorityReason,
 ];
 
 /** Whether one issue may ride in a batch: `null`, or the one reason it may not. */
@@ -340,8 +364,11 @@ type Describers = {
 };
 
 // Without work_batch.sizes only the batchable sizes and the taxonomy's are
-// known, so "no size label" may hide a larger size nobody listed.
+// known, so "no size label" may hide a larger size nobody listed. A size
+// facet knows when there is none.
 function noSizeLabel(policy: BatchPolicy): string {
+  if (policy.facets)
+    return `no size; set one of ${codes(policy.batchSizes)} if it fits, and re-run`;
   const unlisted = policy.sizes === null;
   return `no ${unlisted ? "batchable " : ""}size label; add one of ${codes(policy.batchSizes)} if it fits, and re-run${unlisted ? " (without work_batch.sizes a larger size label is not recognised)" : ""}`;
 }
@@ -369,7 +396,7 @@ const DESCRIBE: Describers = {
   "conflicting-type-labels": (r) =>
     `conflicting type labels (${codes(r.types)}); keep one and re-run`,
   "no-type-label": (_r, policy) =>
-    `no type label; add one of ${codes(policy.typeLabels ?? [])} and re-run`,
+    `no type${policy.typeFacet ? "" : " label"}; ${policy.typeFacet ? "set" : "add"} one of ${codes(policy.typeLabels ?? [])} and re-run`,
   "no-context-label": (_r, policy) =>
     `no context label; add one starting with ${codes(policy.contextPrefixes ?? [])} and re-run`,
   "unknown-context-label": (r) =>
@@ -382,6 +409,8 @@ const DESCRIBE: Describers = {
   "already-closed": (r) => `already ${code(r.state)}`,
   "already-assigned": (r) => `already assigned to ${code(r.assignee)}`,
   "already-started": (r) => `already ${code(r.state)}`,
+  "no-priority": () =>
+    "no priority: an issue with none is unranked; set one and re-run",
 };
 
 /** A reason as a person reads it, naming what to fix where there is a fix. */

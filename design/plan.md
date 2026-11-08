@@ -278,8 +278,11 @@ and the rule it rests on,
 `jig send`, its verbs, their checks and the refusal of a person's
 commands in a session the line started
 ([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do));
-and the operator skill, `/jig:operator`
-([plugin/skills/operator/](../plugin/skills/operator/SKILL.md)). Also
+the operator skill, `/jig:operator`
+([plugin/skills/operator/](../plugin/skills/operator/SKILL.md)); a
+launch's result naming its next owner, in the outcome row and `last.next`;
+and a park naming the person it waits on, in `waitsOn` and
+`jig ask --waiting --person`. Still
 open, for the hub (item 42), which builds them as its stage 2's first
 step: the thread grows under `ask`'s version 1, each entry with a stable
 id, a question with its key, its class and a status (open, answered, acted
@@ -581,19 +584,11 @@ and each genre's contrast test holds its light and dark pairs.
 
 ### 41. Configurable issue attributes: type, priority and size
 
-An issue's type, priority and size are kept differently by each way an
-issue is filed: in the tracker's own field, in a label, or nowhere, so a
-tracker cannot sort or filter on them. The
-[tracker interface](../GLOSSARY.md) reads an issue's native type
-(`Issue.nativeType`) but cannot write a type, carries no size, and an
-adapter's priority storage is configurable only per adapter (the GitHub label
-map `issue_tracker.github.priority_labels`, the Jira priority names
-`issue_tracker.jira.priorities`), with no choice between the tracker's field,
-a custom field, labels or a command, and only `file-issue` checks that an
-issue it files is complete. What it will build: the tracker
-interface carries an issue's type, priority and size as canonical values, and
-where each of the three is kept is per-repository configuration
-(`issue_tracker.facets`): the tracker's own field, a named custom field or
+The [tracker interface](../GLOSSARY.md) carries an issue's type, priority
+and size as canonical values. Its callers read those values, and every
+filing through the interface checks them inside the write, warning when
+one is missing. A repository chooses where each is kept through
+`issue_tracker.facets`: the tracker's own field, a named custom field or
 labels, with a documented default per adapter:
 
 - **GitHub Issues**: the issue type; the organization's Priority field; the
@@ -605,18 +600,20 @@ labels, with a documented default per adapter:
 - **Linear**: labels for type and size; its priority field; the estimate as
   an option for size.
 
-No repository's store moves unless its configuration says so or a person
-runs the move. Today's `issue_tracker.types`, `issue_tracker.github.priority_labels`,
-`issue_tracker.jira.field_labels` and `issue_tracker.jira.priorities` become
-the label or field form of their facet, and the native-type read the
-interface already has is kept. Every filing path through
-the interface (`file-issue`, `file-deferred.ts`) sets and checks all three inside the write; the issue forms
-and `report-bug.ts`, which file around the interface, set the type and leave priority and size to triage, and a weekly check
-reports the issues missing one. It includes reading and writing the
-tracker's own issue type, not only a type label. A store kept by the
-repository's own command waits until a repository names a facet that needs
-it. The design is [tracker-facets.md](tracker-facets.md), built in the
-steps of its [build order](tracker-facets.md#build-order).
+GitHub detects an unnamed store, keeps a facet's existing labels and refuses
+conflicting label and field evidence. A named store never waits on detection.
+Jig names label stores for its facets. The issue forms and `report-bug.ts`,
+which file around the interface, set the type and leave priority and size
+to triage.
+
+What remains is the checked move between stores, the weekly sweep of issues
+missing a facet and the refusal of an incomplete filing, followed by Jira's
+issue-type and custom-field stores and Linear's estimate. The audit must
+name a repository that keeps facets and runs no sweep. Jig's own move to
+GitHub's fields belongs with the checked move. These are the remaining
+steps of [the design's build order](tracker-facets.md#build-order).
+A store kept by the repository's own command waits until a repository names
+a facet that needs it.
 
 Done when a repository on each adapter files and reads all three in its
 configured store, and Jig's own repository keeps them in GitHub's fields

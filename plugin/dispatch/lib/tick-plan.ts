@@ -44,6 +44,9 @@ export function planObserved(
     held: observation.held,
     serialized: afterWait(context, observation.serialized),
     shared: { host: ctx.host, drives: claims, owner: ctx.owner },
+    ...(observation.holders === undefined
+      ? {}
+      : { holders: observation.holders }),
     ...(context.options.machine == null
       ? {}
       : { unclaimedAfterMs: context.options.machine.unclaimedAfterMs }),
