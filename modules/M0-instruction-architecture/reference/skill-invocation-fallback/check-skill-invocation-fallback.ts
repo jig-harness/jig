@@ -665,8 +665,10 @@ function namesFallback(
 /** The banner: an HTML comment in the first lines after leading frontmatter. */
 function banner(lines: string[]): string | undefined {
   let first = 0;
-  if (lines[0] === "---") {
-    const end = lines.findIndex((line, index) => index > 0 && line === "---");
+  if (/^---\s*$/.test(lines[0] ?? "")) {
+    const end = lines.findIndex(
+      (line, index) => index > 0 && /^---\s*$/.test(line),
+    );
     if (end < 0) return undefined;
     first = end + 1;
   }

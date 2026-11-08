@@ -429,6 +429,28 @@ test("a banner beyond the window after frontmatter is not exempt", () => {
   expect(result.output).toContain("/release-notes names no fallback");
 });
 
+test("frontmatter delimiters accept trailing whitespace at both boundaries", () => {
+  for (const opening of ["---", "--- ", "---\t"]) {
+    for (const closing of ["---", "--- ", "---\t"]) {
+      const file = doc(
+        `${opening}\nnotes: metadata\n${closing}\n<!-- GENERATED skill-invocation-fallback: exempt-file -->\n- /release-notes\n`,
+      );
+      expectSpawnExit(check(file, "--exempt", file), 0);
+    }
+  }
+});
+
+test("a metadata banner after a whitespace-bearing opening cannot exempt", () => {
+  for (const opening of ["--- ", "---\t"]) {
+    const file = doc(
+      `${opening}\nnotes: |\n  <!-- GENERATED skill-invocation-fallback: exempt-file -->\n---\n- /release-notes\n`,
+    );
+    const result = check(file, "--exempt", file);
+    expectSpawnExit(result, 1);
+    expect(result.output).toContain("on the exemption list, but");
+  }
+});
+
 test("a banner inside frontmatter cannot exempt the file", () => {
   for (const ending of ["", "---\n"]) {
     const file = doc(
