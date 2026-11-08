@@ -17,7 +17,9 @@ export function moveProblem(sides: MoveSides, moved: Facet[]): string | null {
       b = sides.targetFacets[f];
     if (!usable(a) || !usable(b)) return `${f}: both stores must be usable`;
     if (sides.source.adapter === "jira" && a.store === "native")
-      return `${f}: Jira requires its native priority; moving it cannot retire the source`;
+      return `${f}: every Jira issue keeps its native ${f === "type" ? "issue type" : f}; moving it cannot retire the source`;
+    if (fallbackOverlap(a, b))
+      return `${f}: Jira's issue type keeps a sub-task's type, and a type with no issue type of its own, in the type labels, so they cannot be retired; name the store without a move, since a type label wins over the fallback issue type`;
   }
   // Every destination must preserve every source, including unmoved facets.
   const sources = [
@@ -116,6 +118,13 @@ export async function assertUnchanged(
     error.name = "MoveConflict";
     throw error;
   }
+}
+
+/** Whether a destination keeps values in the source's labels where it cannot keep them itself (Jira's issue type). */
+function fallbackOverlap(a: ResolvedFacet, b: ResolvedFacet): boolean {
+  if (a.store !== "label" || b.fallback === undefined) return false;
+  const labels = new Set((a.labels ?? []).flatMap(([, ls]) => ls.map(fold)));
+  return b.fallback.some(([, ls]) => ls.some((l) => labels.has(fold(l))));
 }
 
 function labelsOverlap(
