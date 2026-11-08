@@ -46,10 +46,11 @@
 //
 // A file is exempted as a whole only when all three hold: it is named with
 // --exempt, it opens with a generated-file banner (an HTML comment starting
-// in its first 5 lines and matching --banner), and that banner carries the
-// --file-marker text. A marker alone would be an exemption a file grants
-// itself; the allowlist alone would hide a hand-written file. An --exempt
-// file that does not carry both is a finding, and its lines are checked. An
+// in its first 5 lines after any leading frontmatter and matching --banner),
+// and that banner carries the --file-marker text. A marker alone would be
+// an exemption a file grants itself; the allowlist alone would hide a
+// hand-written file. An --exempt file that does not carry both is a finding,
+// and its lines are checked. An
 // --exempt entry that does not exist, or is not among the files checked, is
 // a usage error: a stale list would otherwise pass unnoticed.
 //
@@ -661,13 +662,19 @@ function namesFallback(
     );
 }
 
-/** The banner: an HTML comment that opens in the file's first lines. */
+/** The banner: an HTML comment in the first lines after leading frontmatter. */
 function banner(lines: string[]): string | undefined {
+  let first = 0;
+  if (lines[0] === "---") {
+    const end = lines.findIndex((line, index) => index > 0 && line === "---");
+    if (end < 0) return undefined;
+    first = end + 1;
+  }
   const start = lines
-    .slice(0, BANNER_LINES)
+    .slice(first, first + BANNER_LINES)
     .findIndex((line) => line.includes("<!--"));
   if (start < 0) return undefined;
-  const text = lines.slice(start).join("\n");
+  const text = lines.slice(first + start).join("\n");
   const from = text.indexOf("<!--");
   const to = text.indexOf("-->", from);
   return to < 0 ? undefined : text.slice(from, to + 3);
