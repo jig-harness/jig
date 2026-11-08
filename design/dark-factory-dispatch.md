@@ -1185,8 +1185,9 @@ documents, and reports an account of any other vendor as accepted and not
 admitted. An interactive session is launched as that vendor's Orca agent.
 These differences travel with the session, not the dispatcher: the
 review-arbiter agent exists only in Claude Code, and a Codex session uses
-the substitute the plugin documents; the turn-budget hook counts nothing
-under Codex, so a Codex pass has no turn cap of its own; a pass that
+the substitute the plugin documents; the turn-budget hook counts Codex
+responses and warns near the configured budget, but imposes no runtime turn
+cap, so a Codex pass has no turn cap of its own; a pass that
 runs on without finishing is bounded by the drive's pass deadline
 (`DRIVE_PR_PASS_TIMEOUT`), which kills it whatever its vendor, and
 Control's drive expectation, which compares rounds, sees the passes that

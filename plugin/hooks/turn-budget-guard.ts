@@ -15,7 +15,9 @@
  * same `requestId`, so the count is the distinct request ids since the last
  * prompt: a `user` record that carries `promptSource`, which a tool result
  * (`toolUseResult`) and a compaction summary (`isCompactSummary`) do not. The
- * count is an approximation, biased early on purpose: a compaction or a resume
+ * Codex transcripts instead identify responses in token usage records and
+ * start each task with a task_started event. The count is an approximation:
+ * a compaction or a resume
  * replays earlier records, which the id set absorbs, but a resume that also
  * resets the runtime's own counter is not visible here. Leave headroom: the
  * count is an estimate, not the runtime's own counter.
@@ -87,6 +89,8 @@ import { join } from "node:path";
 import { isMapping as isRecord } from "../shared/config-layers.ts";
 
 export interface State {
+  /** Parser semantics that produced this checkpoint; older caches are rescanned. */
+  parserVersion: number;
   /** Bytes of the transcript consumed so far. */
   offset: number;
   /** Distinct request ids since the last prompt. */
@@ -129,6 +133,7 @@ export interface Thresholds {
 
 const DEFAULT_BUDGET = 1000;
 const DEFAULT_MARGIN = 50;
+const PARSER_VERSION = 1;
 /**
  * Complete records since the last prompt (or the start) after which a
  * transcript that yielded no round-trip in them is reported as a format this
@@ -161,6 +166,7 @@ function couldNotCheck(reason: string): never {
 
 export function freshState(): State {
   return {
+    parserVersion: PARSER_VERSION,
     offset: 0,
     count: 0,
     fired: 0,
@@ -188,6 +194,7 @@ const isString = (value: unknown): boolean => typeof value === "string";
 
 /** Each field of a stored state and the check its value must pass. */
 const SHAPE: [keyof State, (value: unknown) => boolean][] = [
+  ["parserVersion", (value) => value === PARSER_VERSION],
   ["offset", whole],
   ["count", whole],
   ["fired", whole],
@@ -214,18 +221,32 @@ export type Kind =
   | { unreadable: string }
   | undefined;
 
+function classifyCodex(type: unknown, payload: unknown): Kind {
+  if (type === "token_usage_record" && !isRecord(payload))
+    return "unrecognised";
+  if (!isRecord(payload)) return undefined;
+  if (type === "event_msg" && payload.type === "task_started") return "prompt";
+  if (type === "token_usage_record") {
+    const id = payload.response_id;
+    return typeof id === "string" && id !== "" ? { id } : "unrecognised";
+  }
+  return undefined;
+}
+
 /**
  * What one complete line is: a round-trip (its request id), a prompt, an
  * assistant record without a request id this guard reads, a line that is not
  * JSON (with the parser's reason), or none of these. A record of any of these
- * kinds carries one of the three strings, so a line without all of them is
+ * kinds carries a recognised marker, so a line without any of them is
  * skipped unparsed; the parser, not the substring, decides.
  */
 export function classify(line: string): Kind {
   if (
     !line.includes('"requestId"') &&
     !line.includes('"promptSource"') &&
-    !line.includes('"assistant"')
+    !line.includes('"assistant"') &&
+    !line.includes('"token_usage_record"') &&
+    !line.includes('"task_started"')
   )
     return undefined;
   let record: unknown;
@@ -236,6 +257,8 @@ export function classify(line: string): Kind {
   }
   if (!isRecord(record)) return undefined;
   const { type, requestId } = record;
+  const codex = classifyCodex(type, record.payload);
+  if (codex !== undefined) return codex;
   if (type === "assistant" && typeof requestId === "string" && requestId !== "")
     return { id: requestId };
   if (type === "assistant") return "unrecognised";
@@ -335,8 +358,8 @@ function warning(count: number, budget: number, unreadable?: string): string {
   const remaining = budget - count;
   const urgency =
     remaining <= 0
-      ? "The cap is reached or passed: the next round-trip may be the one that aborts the session."
-      : `About ${remaining} agentic turns remain before the runtime aborts this session mid-action.`;
+      ? "The configured budget is reached or passed: where the runtime enforces a turn cap, the next round-trip may be the one that aborts the session."
+      : `About ${remaining} agentic turns remain in the configured budget; where the runtime enforces a turn cap, it aborts the session mid-action at that point.`;
   const driveState = join(
     import.meta.dir,
     "..",
@@ -350,7 +373,7 @@ function warning(count: number, budget: number, unreadable?: string): string {
     : "A short note where the successor session reads first.";
   return [
     `TURN BUDGET: about ${count} of ${budget} agentic turns used. ${urgency}`,
-    "The abort is hard: no handoff is written, no summary is produced, and what this session holds in memory is lost.",
+    "Where a cap is enforced the abort is hard: no handoff is written, no summary is produced, and what this session holds in memory is lost. A runtime with no turn cap (Codex) never aborts on this count; the budget is then advisory, and the wrap-up below is still the safe course.",
     "Wrap up now rather than starting new work:",
     "  1. Finish only the step already in flight (a push mid-sequence, a reply already promised).",
     `  2. Write the handoff. ${handoff}`,

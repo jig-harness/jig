@@ -2,8 +2,8 @@
  * drive-pr suite: the documented Codex pass command. `drive.ts` runs it on
  * the execution tier of `routing.models.codex` (else Codex's own
  * configuration), accepts `--pass-model` overrides, and kills a
- * Codex pass that outruns the pass deadline, since the turn-budget hook
- * counts nothing under Codex and nothing else bounds it.
+ * Codex pass that outruns the pass deadline. The turn-budget hook counts
+ * Codex responses and warns, but imposes no runtime turn cap.
  */
 
 import { describe, expect, it } from "bun:test";
