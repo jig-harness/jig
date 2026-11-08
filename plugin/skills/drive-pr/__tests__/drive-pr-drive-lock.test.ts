@@ -73,9 +73,11 @@ const tree = useTrackedTree("drive-lock");
 /** A file-backed login and a Claude executable the test controls. */
 function accountDriverFixture() {
   const bin = mkdtempSync(join(tmpdir(), "drive-pr-claude-stub-"));
-  const { CLAUDE_CONFIG_DIR: config } = loginEnv("before@example.com");
+  const login = loginEnv("before@example.com");
+  const config = login.CLAUDE_CONFIG_DIR;
   return {
     bin,
+    login,
     config,
     path: join(config, ".claude.json"),
     writePass: (script: string) =>
@@ -109,8 +111,7 @@ function accountDriverFixture() {
         ],
         {
           PATH: `${bin}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
-          CLAUDE_CONFIG_DIR: config,
-          CLAUDE_CODE_OAUTH_TOKEN: "",
+          ...login,
           ...env,
         },
       ),
@@ -789,8 +790,7 @@ describe("drive.ts loop control", () => {
             // against it fails closed to "absent" for the whole run — not a
             // timing race, a permanent path mismatch.
             DRIVE_PR_WORKTREE: scratchClean.dir,
-            CLAUDE_CONFIG_DIR: account.config,
-            CLAUDE_CODE_OAUTH_TOKEN: "",
+            ...account.login,
             DRIVE_PR_CI_REPAIR_ROUNDS: "2",
             // Far longer than this test ever runs — isolates the post-repair
             // refresh from the heartbeat's own, same as the sibling test above.
