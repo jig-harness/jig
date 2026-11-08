@@ -81,14 +81,21 @@ export function Hint({
   className,
   trigger,
   children,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   /** The popup's accessible name, and the trigger's when `trigger` is not text. */
   label: string;
   className: string;
   trigger: ReactNode;
   children: ReactNode;
+  /** Set both to let the caller open the hint from somewhere beyond the trigger, such as a hovered row. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlledOpen ?? ownOpen;
+  const setOpen = onOpenChange ?? setOwnOpen;
   const root = useContext(PopupRoot);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
