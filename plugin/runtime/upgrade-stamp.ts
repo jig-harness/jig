@@ -24,6 +24,7 @@ import {
   legacyIdentity,
   ownIdentity,
   type ProcessIdentity,
+  relate,
 } from "../shared/liveness.ts";
 import type { DoctorCheck } from "./component.ts";
 import {
@@ -110,9 +111,13 @@ export function writeStamp(
 export function ownsClaim(read: StampRead): boolean {
   if (!("stamp" in read) || read.stamp.outcome !== "running") return false;
   const own = ownIdentity();
+  const holder =
+    read.stamp.holder === undefined ? null : decodeIdentity(read.stamp.holder);
+  // The process, not the host's current name: a rename between claim and finish is the same holder.
   return (
     read.stamp.pid === own.pid &&
-    JSON.stringify(read.stamp.holder) === JSON.stringify(own)
+    holder !== null &&
+    relate(holder, own) === "same"
   );
 }
 

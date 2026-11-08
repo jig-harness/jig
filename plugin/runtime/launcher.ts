@@ -422,6 +422,8 @@ function entryCommand(entry: string): string[] {
  * value (128 KiB on Linux), and a longer one would stop the job starting.
  */
 const RESULT_LIMIT = 8 * 1024;
+/** The longest detail a scheduled upgrade's own result carries, kept whole when wrapped. */
+const DETAIL_LIMIT = 2000;
 /** The outcomes a result may name (`upgrade-record.ts`). */
 const OUTCOMES = ["withheld", "skipped", "unchanged", "updated", "failed"];
 
@@ -432,11 +434,18 @@ function clip(text: string, limit = 1000): string {
     : `${text.slice(0, limit)} … (${text.length - limit} more characters)`;
 }
 
+/** The last `limit` characters of `text`, saying how much was cut from its start. */
+function tail(text: string, limit: number): string {
+  return text.length <= limit
+    ? text
+    : `(${text.length - limit} earlier characters) … ${text.slice(-limit)}`;
+}
+
 /** A result line for an upgrade that printed none that reads, saying why. */
-function failedUpgrade(detail: string): string {
+function failedUpgrade(detail: string, limit?: number): string {
   return JSON.stringify({
     outcome: "failed",
-    detail: clip(detail),
+    detail: clip(detail, limit),
     at: new Date().toISOString(),
   });
 }
@@ -510,8 +519,11 @@ function upgradeResult(outcome: Outcome, deadlineMs: number): string {
       `jig upgrade --scheduled exited ${code} without a result${said ? `: ${said}` : ""}`,
     );
   if (code === 0) return printed.text;
+  // The result's detail keeps its diagnostic tail, as the upgrade bounded it.
+  const context = `jig upgrade --scheduled exited ${code} after printing a result: `;
   return failedUpgrade(
-    `jig upgrade --scheduled exited ${code} after printing a result: ${printed.detail}`,
+    context + tail(printed.detail, DETAIL_LIMIT),
+    context.length + DETAIL_LIMIT + 64,
   );
 }
 

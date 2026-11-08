@@ -71,7 +71,7 @@ function upgradesOf(
     [
       string,
       () => string[],
-      (path: string) => { upgrade?: unknown; finishedAt?: string } | string,
+      (path: string) => { upgrade?: unknown; startedAt?: string } | string,
     ]
   > = [
     [
@@ -107,7 +107,7 @@ function upgradesOf(
       if (typeof receipt === "string")
         unread.push(`the ${job} receipt ${path} does not read (${receipt})`);
       else if (receipt.upgrade !== undefined)
-        found.push([job, receipt.upgrade, receipt.finishedAt]);
+        found.push([job, receipt.upgrade, receipt.startedAt]);
     }
   }
   return found;
@@ -157,8 +157,10 @@ function listed(
 ): upgrade is ScheduledUpgrade & { outcome: "updated" | "failed" } {
   return (
     (upgrade.outcome === "updated" || upgrade.outcome === "failed") &&
-    // The receipt's publication, not the attempt's start: a receipt written
-    // after one report ran is new to the next, whenever its upgrade began.
+    // The receipt's publication (its run's start, fixed when the receipt is
+    // first written), not the attempt's start and not the run's finish: a
+    // receipt written after one report ran is new to the next, whenever its
+    // upgrade began, and its completion later does not make it new again.
     Date.parse(published ?? upgrade.at) >= since
   );
 }
