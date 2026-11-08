@@ -252,21 +252,43 @@ export function settleOwnDrives(
   host: string,
 ): DrivenPr[] {
   const placed = markUnlaunched(
-    settleSharedTakeovers(drives, claims, host),
+    settleUnownedTakeovers(drives, own, claims, host),
     own,
     claims,
     host,
   );
   return settleNoCauseStops(
-    settleSharedConflictStops(
-      settleSilentTakeovers(settleConflictStops(placed, own), own),
-      claims,
-      host,
-    ),
+    settleSharedConflictStops(settleConflictStops(placed, own), claims, host),
     own,
     claims,
     Date.now(),
   );
+}
+
+/** Settle only after both sources agree no launch owns or holds the driver. */
+function settleUnownedTakeovers(
+  drives: readonly DrivenPr[],
+  own: ReadRecord[],
+  claims: DriveClaims,
+  host: string,
+): DrivenPr[] {
+  const candidates = drives.filter((pr) => {
+    if (pr.class !== "silent") return false;
+    // Ignore refusals while looking for the owner behind them. A refusal
+    // remains final when either source still attributes the running driver.
+    const probe = { ...pr, evidence: { ...pr.evidence, settled: true } };
+    return (
+      driveHold(probe, own).kind === "none" &&
+      foreignHold(probe, claims.get(pr.number), host).kind === "none"
+    );
+  });
+  const settled = new Map(
+    settleSilentTakeovers(
+      settleSharedTakeovers(candidates, claims, host),
+      own,
+    ).map((pr) => [pr.number, pr]),
+  );
+  return drives.map((pr) => settled.get(pr.number) ?? pr);
 }
 
 /**

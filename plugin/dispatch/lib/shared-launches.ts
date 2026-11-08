@@ -31,7 +31,7 @@
  *   rule, never by a claim alone.
  */
 import { recoveryReservationRefusal } from "./no-cause-stops.ts";
-import { budgeted, RECOVERY_FACTS, sameFacts } from "./recovery-facts.ts";
+import { budgeted, sameFacts } from "./recovery-facts.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import { settlesWithPerson } from "./redrive-settle.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
@@ -202,13 +202,16 @@ function silentHold(
  * executed spent nothing.
  */
 function takenOver(pr: DrivenPr, theirs: ReadClaim[]): ForeignHold | null {
-  if (pr.evidence.driverGone !== true) return null;
+  // A launch that started the driver keeps it, whether or not the driver is
+  // shown gone, and a completed takeover is spent whichever presence this
+  // reader shows now: its probe may differ from the one that planned it.
+  if (pr.evidence.settled === true) return null;
+  if (theirs.some((c) => startedDriver(c, pr))) return null;
   const done = theirs.findLast((c) => {
     const s = c.says.value;
     return (
       s.action === "takeover" &&
       s.facts !== null &&
-      s.facts.startsWith(RECOVERY_FACTS) &&
       sameFacts(s.facts, factsOf(pr)) &&
       s.end !== null &&
       !(s.end.state === "died" && s.end.executed === false)
@@ -338,7 +341,7 @@ export function settleSharedTakeovers(
   host: string,
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (pr.class !== "silent" || pr.evidence.driverGone !== true) return pr;
+    if (pr.class !== "silent") return pr;
     const read = claims.get(pr.number);
     if (read === undefined || !read.ok) return pr;
     const hold = foreignHold(pr, read, host);
