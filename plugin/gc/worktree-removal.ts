@@ -13,6 +13,7 @@ import { main as journalMain } from "../skills/reflect/scripts/journal.ts";
 import { withGitDeadline } from "../skills/reflect/scripts/lib/context.ts";
 import { withoutLeakyGitEnv } from "../shared/guarded-git-spawn.ts";
 import { orcaEnvelope, orcaErrorText, orcaFailure } from "../shared/orca.ts";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import {
   HOOK_TIMEOUT_MS,
   HOOKS_DIR,
@@ -24,10 +25,8 @@ import {
 /** The longest parking a worktree's reflection findings may take: a few git calls. */
 export const PARK_TIMEOUT_MS = 3 * 60_000;
 
-/** A removal step that failed; the worktree stays. */
-export class WorktreeRemovalError extends Error {
-  override name = "WorktreeRemovalError";
-}
+/** A removal step's answer: done, or why it failed and the worktree stays. */
+export type StepOutcome = Outcome<undefined>;
 
 /**
  * Park the worktree's unsent reflection findings where the next reflection
@@ -47,7 +46,18 @@ export async function parkFindings(
   worktree: string,
   deadline: number,
   log?: (line: string) => void,
-): Promise<void> {
+): Promise<Outcome<undefined, "park-refused" | "park-failed">> {
+  // A session's configuration overrides may have moved the journal its
+  // findings were written to, and parking without them could succeed on an
+  // empty one, so the worktree stays while any is set.
+  const overridden = Object.keys(process.env).filter(
+    (key) => key.startsWith("JIG__") || key === "JIG_OVERLAY",
+  );
+  if (overridden.length > 0)
+    return failed(
+      "park-refused",
+      `the reflection journal of ${worktree} cannot be established while ${overridden.join(", ")} is set; remove it from a session without the override`,
+    );
   const previousCwd = process.cwd();
   const previousEnv = { ...process.env };
   const previousLog = console.log;
@@ -55,16 +65,6 @@ export async function parkFindings(
     console.log = (...values: unknown[]) => log(values.map(String).join(" "));
   let status: number;
   try {
-    // A session's configuration overrides may have moved the journal its
-    // findings were written to, and parking without them could succeed on an
-    // empty one, so the worktree stays while any is set.
-    const overridden = Object.keys(process.env).filter(
-      (key) => key.startsWith("JIG__") || key === "JIG_OVERLAY",
-    );
-    if (overridden.length > 0)
-      throw new WorktreeRemovalError(
-        `the reflection journal of ${worktree} cannot be established while ${overridden.join(", ")} is set; remove it from a session without the override`,
-      );
     const clean = withoutLeakyGitEnv();
     for (const key of Object.keys(process.env))
       if (!(key in clean)) delete process.env[key];
@@ -79,25 +79,27 @@ export async function parkFindings(
     Object.assign(process.env, previousEnv);
   }
   if (status !== 0)
-    throw new WorktreeRemovalError(
+    return failed(
+      "park-failed",
       `parking the reflection findings of ${worktree} failed (exit ${status})`,
     );
+  return ok(undefined);
 }
 
 /** Where the remove hook and the park run: the seams a caller may replace. */
 export interface RemovalSteps {
   /** The worktree's remove hook, or null when the repository has none. */
   hook(worktree: string): string | null;
-  /** Run the hook in the worktree; throws when it fails. */
-  runHook(worktree: string, hook: string): void | Promise<void>;
+  /** Run the hook in the worktree; fails when it fails. */
+  runHook(worktree: string, hook: string): StepOutcome | Promise<StepOutcome>;
   /** Park the worktree's findings, or refuse while removing it would lose them. */
-  park(worktree: string): Promise<void>;
+  park(worktree: string): Promise<StepOutcome>;
   /**
    * Run last, right before the runtime removes the worktree, for a caller that
    * must refuse a removal the hook's long run made unsafe (an agent started
-   * meanwhile); throws to keep the worktree.
+   * meanwhile); fails to keep the worktree.
    */
-  admit?(worktree: string): Promise<void>;
+  admit?(worktree: string): Promise<StepOutcome>;
 }
 
 /**
@@ -116,7 +118,7 @@ export function localSteps(
       const run = superviseHook(worktree, hook, left(HOOK_TIMEOUT_MS));
       for (const line of run.lines) log(line);
       const failure = hookFailure(hook, run);
-      if (failure !== null) throw new WorktreeRemovalError(failure);
+      return failure === null ? ok(undefined) : failed("hook-failed", failure);
     },
     park: (worktree) =>
       parkFindings(worktree, Date.now() + left(PARK_TIMEOUT_MS), log),
@@ -148,18 +150,25 @@ export interface Removed {
   hook: string | null;
 }
 
-/** Remove an Orca-managed worktree: the remove hook, the park, then `orca worktree rm`. */
+/**
+ * Remove an Orca-managed worktree: the remove hook, the park, then `orca
+ * worktree rm`. The first step that fails is the answer, its code unchanged,
+ * and the worktree stays.
+ */
 export async function removeThroughOrca(
   removal: OrcaRemoval,
-): Promise<Removed> {
+): Promise<Outcome<Removed>> {
   const { worktree, steps } = removal;
   const hook = steps.hook(worktree);
   if (hook !== null) {
     removal.log(`… running ${HOOKS_DIR}/remove`);
-    await steps.runHook(worktree, hook);
+    const ran = await steps.runHook(worktree, hook);
+    if (!ran.ok) return ran;
   }
-  await steps.park(worktree);
-  await steps.admit?.(worktree);
+  const parked = await steps.park(worktree);
+  if (!parked.ok) return parked;
+  const admitted = (await steps.admit?.(worktree)) ?? ok(undefined);
+  if (!admitted.ok) return admitted;
   const what = "orca worktree rm";
   const done = await removal.orca([
     "worktree",
@@ -175,15 +184,17 @@ export async function removeThroughOrca(
       ? null
       : parsed;
   if (envelope?.ok === false)
-    throw new WorktreeRemovalError(
+    return failed(
+      "orca-refused",
       `${what}: ${orcaErrorText(envelope)}${removal.force ? "" : " (uncommitted changes: commit them, or pass --force to discard them)"}`,
     );
   if (done.code !== 0)
-    throw new WorktreeRemovalError(`${what} failed ${orcaFailure(done)}`);
+    return failed("orca-failed", `${what} failed ${orcaFailure(done)}`);
   if (envelope === null)
-    throw new WorktreeRemovalError(
+    return failed(
+      "orca-unreadable",
       `${what}: unreadable output ${orcaFailure(done)}`,
     );
   removal.log(`✓ removed ${worktree}`);
-  return { hook };
+  return ok({ hook });
 }

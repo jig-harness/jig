@@ -40,6 +40,7 @@ import { checkPlugin } from "./check-plugin.ts";
 import { checkSkillShellNeutrality } from "./check-skill-shell-neutrality.ts";
 import { checkSkillFallbacks } from "./check-skill-fallbacks.ts";
 import { checkVoice } from "./check-voice.ts";
+import { checkThrows } from "./check-throws.ts";
 const root = join(import.meta.dir, "..");
 
 /**
@@ -186,6 +187,7 @@ export const CHECKS: Stage[] = [
   check("check-no-tracker-refs.ts", checkTracker),
   check("check-tracker-boundary.ts", checkTrackerBoundary),
   check("check-records-registry.ts", checkRecordsRegistry),
+  check("check-throws.ts", checkThrows),
   check("check-licences.ts", checkLicences),
   check("check-workflow-safety.ts", checkWorkflowSafety),
   check("check-workflow-conventions.ts", checkWorkflowConventions),

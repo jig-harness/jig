@@ -24,6 +24,7 @@
  * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |
  * | stopped `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`) | refused |
+ * | stopped `REVIEW_SKIPPED` (`22`) | needs-person, naming the skip |
  * | stopped on any other exit | needs-person, saying so when the pull request conflicts with its base |
  *
  * A converged ledger is read beside what its stop does not fix: the pull
@@ -437,6 +438,10 @@ const EXITS: Record<number, (ledger: Ledger) => Classified> = {
     class: "refused",
     why: `stopped ${DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE}: another driver holds it`,
   }),
+  [DRIVE_EXIT.REVIEW_SKIPPED]: () => ({
+    class: "needs-person",
+    why: `stopped ${DRIVE_EXIT.REVIEW_SKIPPED} (the reviewer skipped its head, and its review of an earlier head does not cover it): a re-arm waits for a review that will not come, so a person has the reviewer review the head or pushes a commit it reviews (see the drive's handoff)`,
+  }),
 };
 
 function runningClass(
@@ -777,7 +782,8 @@ function baseHeads(slug: string, admit: Admit): Reading["baseHead"] {
     const known = read.get(branch);
     if (known !== undefined) return known;
     const head = admit(() => branchHead(slug, branch)).then(
-      (oid): BaseHead => ({ oid }),
+      (oid): BaseHead =>
+        oid.ok ? { oid: oid.value } : { unreadable: oid.failure.reason },
       (error: unknown): BaseHead => ({ unreadable: failureText(error) }),
     );
     read.set(branch, head);

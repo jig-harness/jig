@@ -346,9 +346,11 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).not.toContain("changed NOTHING");
     expect(r.stderr).toContain("--- round 3/3");
     // Every round header is followed by the autonomy level and its source.
+    // This scratch clone holds no base branch, so the policy fails closed and
+    // the line says so.
     const headers = r.stderr.match(/^--- round \d+\/3 on PR #999 ---$/gm);
     const levels = r.stderr.match(
-      /^--- round \d+\/3 on PR #999 ---\nautonomy: attended \(attended from the default\)$/gm,
+      /^--- round \d+\/3 on PR #999 ---\nautonomy: attended \(attended from the default\)\. The base branch's policy cannot be read .*$/gm,
     );
     expect(headers?.length).toBe(3);
     expect(levels?.length).toBe(3);

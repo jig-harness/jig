@@ -9,6 +9,7 @@ import { isRecord } from "../../../../../../shared/guards.ts";
 import type { GitHubModel, StateInput } from "./model.ts";
 import { type IssueRef, keyOf, type Repo, repoOf } from "./refs.ts";
 import { GitHubApiError } from "./transport.ts";
+import { shapeReaders } from "../shape-readers.ts";
 import type { IssueSummary } from "../port.ts";
 
 // ── Shape helpers ──────────────────────────────────────────────────────────
@@ -17,30 +18,9 @@ export function shapeError(message: string): GitHubApiError {
   return new GitHubApiError(message);
 }
 
-export function record(v: unknown, where: string): Record<string, unknown> {
-  if (!isRecord(v)) throw shapeError(`${where}: expected an object`);
-  return v;
-}
-
-export function str(v: unknown, where: string): string {
-  if (typeof v !== "string") throw shapeError(`${where}: expected a string`);
-  return v;
-}
-
-export function optStr(v: unknown, where: string): string | null {
-  return v === null || v === undefined ? null : str(v, where);
-}
-
-export function timestamp(v: unknown, where: string): string {
-  const s = str(v, where);
-  if (!Number.isFinite(Date.parse(s)))
-    throw shapeError(`${where}: not a timestamp`);
-  return s;
-}
-
-function optTimestamp(v: unknown, where: string): string | null {
-  return v === null ? null : timestamp(v, where);
-}
+const readers = shapeReaders(shapeError);
+export const { record, str, optStr, timestamp } = readers;
+const { optTimestamp } = readers;
 
 /** The nodes of a nested connection read in one page; more pages throw. */
 export function onePage(v: unknown, where: string): unknown[] {

@@ -16,7 +16,7 @@ import type {
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { FacetReadStopped } from "../../../skills/do-item/scripts/lib/tracker/facets/bounds.ts";
+import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { failureText } from "../text.ts";
 import {
   type FacetBound,
@@ -139,28 +139,40 @@ async function within<T>(read: Promise<T>, bound: FacetBound): Promise<T> {
 
 /**
  * The items assigned to `identity`, held to `bound` when there is one: not
- * started once it has ended, and given its signal so the detection the read
- * waits on ends with it.
+ * started once it has ended (`stopped`), and given its signal so the
+ * detection the read waits on ends with it; `unreadable` with what the
+ * tracker's read threw.
  */
 async function readAssigned(
   tracker: Tracker,
   identity: string,
   section: DispatchSection,
   bound: FacetBound | undefined,
-): Promise<PoolIssue[]> {
-  if (bound === undefined)
-    return tracker.assignedIssues(identity, section.states as CanonicalState[]);
-  if (bound.signal.aborted || Date.now() >= bound.deadline)
-    throw new FacetReadStopped(
+): Promise<Outcome<PoolIssue[], "stopped" | "unreadable">> {
+  const states = section.states as CanonicalState[];
+  if (
+    bound !== undefined &&
+    (bound.signal.aborted || Date.now() >= bound.deadline)
+  )
+    return failed(
+      "stopped",
       "the tick's deadline passed before the read could start",
     );
-  return within(
-    tracker.assignedIssues(identity, section.states as CanonicalState[], {
-      signal: bound.signal,
-      deadline: bound.deadline,
-    }),
-    bound,
-  );
+  try {
+    return ok(
+      bound === undefined
+        ? await tracker.assignedIssues(identity, states)
+        : await within(
+            tracker.assignedIssues(identity, states, {
+              signal: bound.signal,
+              deadline: bound.deadline,
+            }),
+            bound,
+          ),
+    );
+  } catch (error) {
+    return failed("unreadable", failureText(error), error);
+  }
 }
 
 /**
@@ -199,23 +211,21 @@ export async function readPickups(
     bound === undefined
       ? undefined
       : await readFacetStores(tracker, reportBound(bound));
-  let issues: Awaited<ReturnType<Tracker["assignedIssues"]>>;
-  try {
-    issues = await readAssigned(tracker, identity, section, bound);
-  } catch (error) {
+  const assigned = await readAssigned(tracker, identity, section, bound);
+  if (!assigned.ok)
     return {
       read: {
         record: "tracker",
         source,
         ok: false,
-        detail: `the items assigned to ${identity} could not be read: ${failureText(error)}`,
+        detail: `the items assigned to ${identity} could not be read: ${assigned.failure.reason}`,
         ...(stores === undefined ? {} : { facets: stores }),
       },
       wanted: [],
       unplaced: [],
       claimed: null,
     };
-  }
+  const issues = assigned.value;
   const { wanted, unplaced } = await byTrustedAssigner(
     tracker,
     issues,

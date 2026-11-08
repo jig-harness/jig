@@ -32,7 +32,6 @@ import {
   isScheduledUpgrade,
   type ScheduledUpgrade,
   type UpgradeOutcome,
-  type UpgradeSettings,
   upgradeLine,
   upgradeSettings,
   writeWhole,
@@ -186,17 +185,15 @@ export function stillRunning(
  */
 export function upgradeCheck(): DoctorCheck {
   const id = "upgrade";
-  let settings: UpgradeSettings;
-  try {
-    settings = upgradeSettings();
-  } catch (error) {
+  const configured = upgradeSettings();
+  if (!configured.ok)
     return {
       id,
       status: "fail",
-      detail: error instanceof Error ? error.message : String(error),
+      detail: configured.failure.reason,
       fix: "edit the user file: CONFIGURATION.md's upgrade section lists its settings",
     };
-  }
+  const settings = configured.value;
   if (!settings.enabled)
     return {
       id,

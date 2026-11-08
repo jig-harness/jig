@@ -223,7 +223,16 @@ refused with the defect: the code `defect`, the phase it was thrown in, and
 a sentence saying what was thrown there. The receipt never carries the
 stack: that goes to the tick's error output, beside the same sentence,
 which the timer's journal keeps. The remaining repositories run, the tick
-still closes and writes its receipt, and it exits 1. A defect in the closing steps still
+still closes and writes its receipt, and it exits 1.
+
+Inside `apply`, each stage is a boundary of its own: the re-arm, pickup
+and follow-up launches, the nudges, the notifications, and the close that
+projects the labels and reports the shared records. A defect in one stops
+that stage only, so the repository's other stages launch in the same tick
+as if it had not been thrown. The report lists it under `stageDefects`, with
+its code, its phase, its stage and its sentence, and is not refused; the
+outcome log gets an event row `defect` under that stage with the same
+sentence; the stack goes to the error output; and the tick exits 1. A defect in the closing steps still
 writes the receipt, marked not completed, with the defect on it; `jig
 dispatch receipts` lists it as incomplete and counts its defects. A closing
 step that returns its own failure (the outcome log not copied, the line not

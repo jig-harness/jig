@@ -245,6 +245,15 @@ retention period. A missing process identity or forge answer keeps the resource.
 run retains `completed: false`; a resource whose removal started retains its
 proof with an unverified completion until the result is recorded.
 
+A run whose configuration fails before it plans any kind (a report,
+`--collect` or `--scheduled`) collects nothing, prints the reason on standard
+error and still writes a receipt, with no kinds or resources and a `failure`
+naming why: `code` is `configuration` for a gc setting the run refuses (exit
+2) and `unreadable` for a configuration file it cannot read (exit 1), and
+`reason` is the message printed. Nothing was left in flight, so the receipt
+records `completed: true` and expires with the rest. A receipt without
+`failure` planned its kinds.
+
 The installed job runs daily, reports by default, and collects on the
 configured weekday or under configured disk pressure. It uses launchd on
 macOS, a systemd user timer on Linux where available, and cron otherwise.

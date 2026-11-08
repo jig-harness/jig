@@ -1,15 +1,21 @@
 import { basename, dirname, join } from "node:path";
 import { statfsSync } from "node:fs";
 import { consumerRoot } from "../shared/consumer.ts";
-import { GcError } from "../shared/gc-error.ts";
-import { ExitError } from "../shared/cli.ts";
+import { ExitError, failureExit } from "../shared/cli.ts";
 import { pathValue, USAGE_EXIT } from "../shared/command-line.ts";
+import { log } from "../shared/log.ts";
+import { type Failure, failed } from "../shared/outcome.ts";
 import { main as withResourceLock } from "../shared/resource-lock.ts";
 import { gcConfiguration } from "./config.ts";
 import { install } from "./install.ts";
 import { collectionPlan } from "./plan.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
-import { formatReceipt, runCollection } from "./runner.ts";
+import {
+  formatReceipt,
+  recordFailedRun,
+  runCollection,
+  stopped,
+} from "./runner.ts";
 import type { KindName } from "./types.ts";
 import {
   argument,
@@ -192,9 +198,27 @@ export function scheduledCollection(
       freeBytes < machine.min_free_bytes)
   );
 }
+/**
+ * A run that planned nothing because of `failure`: it collects nothing,
+ * writes a receipt naming the failure, and exits as `stopped` says.
+ */
+function failedRun(options: Options, failure: Failure): number {
+  const exit = stopped(failure);
+  try {
+    recordFailedRun(failure, exit, options);
+  } catch (error) {
+    // The run's exit is its failure's; a receipt that cannot be written is
+    // said beside it.
+    log.error(
+      `receipt not written: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return exit;
+}
 async function executeRun(options: Options): Promise<number> {
   const kinds = await collectionPlan(options);
-  const { receipt, path } = await runCollection(kinds, options);
+  if (!kinds.ok) return failedRun(options, kinds.failure);
+  const { receipt, path } = await runCollection(kinds.value, options);
   console.log(
     options.json
       ? JSON.stringify(receipt, null, 2)
@@ -219,19 +243,24 @@ export function showReceipts(query: string | undefined): number {
     return 0;
   }
   const path = paths.find((path) => basename(path, ".json") === query);
-  if (!path) throw new ExitError(2, `No receipt ${query}`);
-  console.log(JSON.stringify(readReceipt(path), null, 2));
+  if (!path) throw new ExitError(USAGE_EXIT, `No receipt ${query}`);
+  const receipt = readReceipt(path);
+  if (!receipt.ok) return failureExit(receipt.failure);
+  console.log(JSON.stringify(receipt.value, null, 2));
   return 0;
 }
-function applySchedule(options: Options): void {
-  if (!options.scheduled) return;
-  const { machine } = gcConfiguration(process.cwd(), null);
+/** Whether a scheduled run collects today, or why its configuration cannot say. */
+function applySchedule(options: Options): Failure | null {
+  if (!options.scheduled) return null;
+  const configuration = gcConfiguration(process.cwd(), null);
+  if (!configuration.ok) return configuration.failure;
   const stat = statfsSync(process.env.HOME ?? process.cwd());
   options.collect = scheduledCollection(
-    machine,
+    configuration.value.machine,
     new Date(),
     stat.bavail * stat.bsize,
   );
+  return null;
 }
 /** The collecting run the heavy-run lock wraps: this one's selection, collecting. */
 function collectingArguments(options: Options): string[] {
@@ -267,11 +296,11 @@ async function runUnderHeavyLock(
       {
         name: options.kind ?? "receipts",
         declaration: "machine heavy-run lock",
-        inventory: async () => {
-          throw new GcError(
+        inventory: async () =>
+          failed(
+            "lock-not-held",
             "collection did not acquire the machine heavy-run lock",
-          );
-        },
+          ),
         prove: async () => ({ state: "unverified", reason: "lock not held" }),
         collect: async () => ({ outcome: "refused", reason: "lock not held" }),
         describe: (resource) => resource.id,
@@ -301,7 +330,8 @@ export async function gcMain(
       machine: args.uninstall?.machine ?? false,
     });
   const options = runOptions(args);
-  applySchedule(options);
+  const unscheduled = applySchedule(options);
+  if (unscheduled !== null) return failedRun(options, unscheduled);
   if (options.collect && process.env.JIG_GC_HEAVY_LOCK !== "held")
     return runUnderHeavyLock(options, script);
   return executeRun(options);

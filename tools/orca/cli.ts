@@ -10,11 +10,14 @@ import {
   type OrcaEnvelope,
   OrcaError,
   orcaErrorText,
-  parseOrcaEnvelope,
 } from "../../plugin/shared/orca-workspace/envelope.ts";
 import { orcaInstalledName } from "../../plugin/shared/orca.ts";
-import type { OpenPort } from "../../plugin/shared/orca-workspace/port.ts";
-import { type Context, output } from "../herdr/runner.ts";
+import {
+  type OpenPort,
+  type OrcaAnswer,
+  orcaAnswer,
+} from "../../plugin/shared/orca-workspace/port.ts";
+import type { Context } from "../herdr/runner.ts";
 import type { OrcaTarget, Workspace } from "./runner.ts";
 
 export {
@@ -76,6 +79,25 @@ export function orcaArgv(target: OrcaTarget, args: string[]): string[] {
 }
 
 /**
+ * The envelope a command answered with, error included, or why there was
+ * none. `what` names the call in messages.
+ */
+export function orcaAnswerOf<T>(
+  ws: Workspace,
+  args: string[],
+  what: string,
+  timeoutMs?: number,
+): OrcaAnswer<T> {
+  return orcaAnswer<T>(
+    ws.orca.run(
+      orcaArgv(ws.target, args),
+      timeoutMs === undefined ? undefined : { timeoutMs },
+    ),
+    what,
+  );
+}
+
+/**
  * The envelope a command answered with, error included; throws only when
  * there is none. `what` names the call in messages.
  */
@@ -85,19 +107,9 @@ export function orcaCall<T>(
   what: string,
   timeoutMs?: number,
 ): OrcaEnvelope<T> {
-  const result = ws.orca.run(
-    orcaArgv(ws.target, args),
-    timeoutMs === undefined ? undefined : { timeoutMs },
-  );
-  const envelope = parseOrcaEnvelope<T>(result.stdout);
-  if (envelope !== null && !envelope.ok) return envelope;
-  if (result.status !== 0)
-    throw new OrcaError(
-      `${what} failed (exit ${result.status}): ${output(result)}`,
-    );
-  if (envelope === null)
-    throw new OrcaError(`${what}: unreadable output: ${output(result)}`);
-  return envelope;
+  const answer = orcaAnswerOf<T>(ws, args, what, timeoutMs);
+  if (!answer.ok) throw new OrcaError(answer.failure.reason);
+  return answer.value;
 }
 
 /** The result of a command that must succeed. */
@@ -129,7 +141,8 @@ export function portOf(ws: Workspace): OpenPort {
   return {
     host: ws.host,
     runHook: ws.runHook,
-    orcaCall: <T>(args: string[], what: string) => orcaCall<T>(ws, args, what),
+    orcaCall: <T>(args: string[], what: string) =>
+      orcaAnswerOf<T>(ws, args, what),
     where: onServer(ws.target),
   };
 }

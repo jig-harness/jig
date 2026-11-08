@@ -161,6 +161,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `PR_NOT_OPEN` | 5 | Merged or closed — detected **before** any push, so nothing lands on an orphaned branch |
 | `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed. A re-arm unparks items once **every** parked item has an answer from an owner, member or collaborator, later than the park (§ Picking up a stopped drive). A conflicting PR reports `PR_CONFLICTING` before the park, allowing conflict repair while the questions remain parked; `jig dispatch` re-drives it once per pair of its head and its base branch's head |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
+| `REVIEW_SKIPPED` | 22 | The reviewer's skip notice names this head, and its review of an earlier head does not cover it: the pull request's diff changed. No review of this head will come; a person reviews the change and has the reviewer review the head, or pushes a commit it reviews, then re-arms. A skipped head whose diff is unchanged converges on the earlier review instead ([terminal-states.md § The reviewer skips a head](references/terminal-states.md)) |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are. The driver **restarts** from a witnessed kill, leaving what the pass left in the tree for the next pass, up to `drive.pass_deadline_retries` (default 2) per drive (§ Running it); this exit is the deadline recurring past that budget, and says so, or a kill that could not be witnessed, which exits here at once with the locks held and spends no budget. Under `jig dispatch` the dispatcher re-drives this stop once per head commit, in the tree it stopped in when it left work there, and a drive re-armed in that tree inherits those edits as its own to finish |
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
@@ -171,7 +172,8 @@ consumer polling `--json` for one of these states will never see it there.
 In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
 person must settle on the workspace card: a park, a usage-limit stop and
 every failure stop (an operational failure, a usage error, the round budget
-spent, a failed reviewer check, an unworkable conflict, an unclean converged
+spent, a failed reviewer check, a head the reviewer skipped, an unworkable
+conflict, an unclean converged
 worktree, a stall, a recurring pass deadline, CI still red with its repair
 passes spent) mark the card unread with the
 stop's one-line reason as its comment, the park's question first among them;
@@ -1285,6 +1287,18 @@ capped the same way, and the line tags it: `autonomy: wide (off_hours) (…)`.
 A session with a person in it (no `$DRIVE_PR_TARGET`) reads `attended`
 unless that person chose a level, and never runs at the off-hours level.
 
+In a pass, the ceiling and the park classes come from the pull request's
+base branch, at the commit the driver names in `$DRIVE_PR_POLICY_BASE`, and
+the line ends `policy from the base branch at <commit>`. For a stacked layer
+the integration branch's policy, at `$DRIVE_PR_POLICY_BOUND`, bounds the layer
+below: the lower ceiling and the union of the park classes apply. What this pull
+request changes in `max_level` or `park_classes` does not apply to its own
+drive. When the line says the base branch's policy cannot be read, run at
+`attended` and park every decision on the table below under
+`human-decision` (§ 4), naming in the record that the policy could not be
+read; decide nothing yourself until a later read of the line names the
+base branch again. Never set `$DRIVE_PR_POLICY_BASE` or `$DRIVE_PR_POLICY_BOUND` yourself.
+
 | Decision | `attended` | `unattended` | `wide` |
 |---|---|---|---|
 | File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | `file-issue` confirms first | File it: the body says which skill filed it, from which pull request and why | Same |
@@ -2337,7 +2351,10 @@ lists them): by default the registry template's rows (`ready`, `merge`,
 `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`),
 `escalated` for a product or stakeholder call the arbiter or `decide`
 escalates, and `human-decision` for a value the pull request records as a
-person's decision or a rule inside a human-decided span. Record every
+person's decision or a rule inside a human-decided span. In a pass the list
+is the base branch's; while its policy cannot be read it is `escalated`,
+`human-decision` and `human-thread` only, and every decision is parked under
+`human-decision`. Record every
 arbiter ruling on a thread as it arrives, its verdict, its `class:` and its
 `human-decision:` answer as one JSON object on stdin
 (`{"key": "PRRT_…", "verdict": "escalate", "class": "scope", "humanDecision": false}`):

@@ -45,6 +45,8 @@ const MACHINE: MachineConfig = {
   receiptsDays: 30,
   unclaimedAfterMs: 900_000,
   dashboardListen: null,
+  dashboardRequireToken: true,
+  dashboardAllowedHosts: [],
   sharedRecords: "forge",
   changeProbe: true,
   send: true,

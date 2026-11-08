@@ -18,7 +18,12 @@ import type { SharedRecords } from "../../shared/records/shared.ts";
 import { adoptionNote, adoptionOf } from "./adopt.ts";
 import { readMarkers } from "./followup-marker.ts";
 import { readReleases } from "./followup-releases.ts";
-import { listedOpen, mergedSince, openPullRequests } from "./forge.ts";
+import {
+  listedOpen,
+  type ListedPr,
+  mergedSince,
+  openPullRequests,
+} from "./forge.ts";
 import { carriesSet, type LabelConfig } from "./labels.ts";
 import {
   type FreshMergeRead,
@@ -43,7 +48,7 @@ import type {
 export interface ForgeRead {
   /** Whether the pull requests read in full. */
   ok: boolean;
-  open: Awaited<ReturnType<typeof openPullRequests>>;
+  open: ListedPr[];
   /** The open pull requests read for a ledger: under `only_labeled`, the labelled ones. */
   read: Set<number>;
   /** Whether `only_labeled` limits what is done: a pull request outside `inScope`, or in `disputed`, then receives no write. */
@@ -115,15 +120,32 @@ export async function readForge(
     for (const p of prs)
       if (p.createdAt !== undefined) out.created.set(p.number, p.createdAt);
   };
+  const unread = (reason: string) => {
+    report.records.push({
+      record: "forge",
+      source: `gh ${repo.slug}`,
+      ok: false,
+      detail: `the pull requests cannot be read: ${reason}`,
+    });
+    out.drives = [];
+    out.merged = [];
+    out.inScope = new Set();
+    out.disputed = new Set();
+  };
   try {
     const [queried, login] = await Promise.all([
       reads.repository(repo.path),
       reads.login(),
     ]);
+    // The tick's query of the repository, else the pull request listing on its own.
     const open = queried.ok
       ? listedOpen(queried.value.open, read)
       : await reads.pool.run(() => openPullRequests(repo.slug, read));
-    out.open = open;
+    if (!open.ok) {
+      unread(open.failure.reason);
+      return out;
+    }
+    out.open = open.value;
     remember(out.open);
     out.login = login;
     const toRead = managed(out.open);
@@ -143,10 +165,15 @@ export async function readForge(
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));
     const observedMs = Date.now();
-    const listed =
+    const merges =
       section.followupCommand === null
-        ? []
+        ? null
         : await reads.pool.run(() => mergedSince(repo.slug, since, read));
+    if (merges !== null && !merges.ok) {
+      unread(merges.failure.reason);
+      return out;
+    }
+    const listed = merges === null ? [] : merges.value;
     remember(listed);
     const marked = await withMarkers(
       shared(out.login),
@@ -175,16 +202,7 @@ export async function readForge(
       }`,
     });
   } catch (error) {
-    report.records.push({
-      record: "forge",
-      source: `gh ${repo.slug}`,
-      ok: false,
-      detail: `the pull requests cannot be read: ${failureText(error)}`,
-    });
-    out.drives = [];
-    out.merged = [];
-    out.inScope = new Set();
-    out.disputed = new Set();
+    unread(failureText(error));
   }
   return out;
 }

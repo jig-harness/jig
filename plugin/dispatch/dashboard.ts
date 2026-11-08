@@ -16,6 +16,9 @@
  * phone on the host's private network reaches it and nothing else does.
  * The URL it prints carries a token minted at start; a request without it
  * is refused, since these records name repositories, items and accounts.
+ * A machine file that sets `dashboard.require_token: false` on a loopback
+ * address serves without one, for a front on the host (Tailscale Serve, a
+ * reverse proxy) that authenticates each person before the request arrives.
  * Nothing installs it or keeps it running: a person starts it from a
  * terminal on the host and stops it with Ctrl-C.
  */
@@ -23,13 +26,14 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ExitError } from "../shared/cli.ts";
+import { USAGE_EXIT } from "../shared/command-line.ts";
 import { attempt, failed, type Outcome } from "../shared/outcome.ts";
 import type { Answer, RowsAnswer } from "./lib/dashboard-contract.ts";
 import { prReader } from "./lib/dashboard-pr.ts";
 import { queryLog } from "./lib/dashboard-log.ts";
 import { hostTimeZone } from "./lib/host-time.ts";
 import { readLine, readLineReceipt, stateAnswer } from "./lib/line-store.ts";
-import type { Listen } from "./lib/listen.ts";
+import { authorityAllowed, isLoopback, type Listen } from "./lib/listen.ts";
 import { existingStateDb } from "./lib/state.ts";
 import { stateRoot } from "./receipts.ts";
 
@@ -218,13 +222,25 @@ export function serveDashboard(options: {
   listen: Listen;
   port?: number;
   root?: string;
-  token?: string;
+  /** The token a request needs; `null` serves without one, which only a loopback address may. */
+  token?: string | null;
+  /** Host names a front forwards under, besides the loopback names; only read when no token is asked for. */
+  allowedHosts?: readonly string[];
   /** The clock the answers read; the real one unless a check holds it still. */
   now?: () => number;
   /** A forge reader; fixtures provide their own instead of reaching a live account. */
   readPr?: ReturnType<typeof prReader>;
 }): Dashboard {
-  const token = options.token ?? crypto.randomUUID().replace(/-/g, "");
+  const token =
+    options.token === undefined
+      ? crypto.randomUUID().replace(/-/g, "")
+      : options.token;
+  if (token === null && !isLoopback(options.listen))
+    throw new ExitError(
+      USAGE_EXIT,
+      `the dashboard serves without a token only on a loopback address, not ${options.listen.host}`,
+    );
+  const fronts = (options.allowedHosts ?? []).map((name) => name.toLowerCase());
   const root = options.root ?? stateRoot();
   const now = options.now ?? Date.now;
   const page = readPage("index.html");
@@ -268,7 +284,21 @@ export function serveDashboard(options: {
           request,
           405,
         );
-      if (!sameToken(url.searchParams.get("token"), token))
+      // Without a token the request's own authority is the only check: a page
+      // an attacker's name rebinds to this address must not read it.
+      if (
+        token === null &&
+        !authorityAllowed(request.headers.get("host"), fronts)
+      )
+        return answered(
+          failed(
+            "host-refused",
+            "this dashboard answers only to its loopback names and the front hosts the machine file lists",
+          ),
+          request,
+          403,
+        );
+      if (token !== null && !sameToken(url.searchParams.get("token"), token))
         return url.pathname === "/"
           ? pageResponse(refused, request, 403)
           : answered(
@@ -302,7 +332,7 @@ export function serveDashboard(options: {
     ? `[${options.listen.host}]`
     : options.listen.host;
   return {
-    url: `http://${host}:${server.port}/?token=${token}`,
+    url: `http://${host}:${server.port}/${token === null ? "" : `?token=${token}`}`,
     stop: () => server.stop(true),
   };
 }
@@ -312,10 +342,12 @@ export async function dashboardMain(
   listen: Listen | null,
   port: number | undefined,
   machinePath: string,
+  requireToken = true,
+  allowedHosts: readonly string[] = [],
 ): Promise<number> {
   if (listen === null)
     throw new ExitError(
-      2,
+      USAGE_EXIT,
       `jig dispatch dashboard needs dashboard.listen in ${machinePath}: an address in the private or loopback ranges the host already trusts (see CONFIGURATION.md § The machine's dispatch file)`,
     );
   // A database a newer plugin wrote is refused before the page is served.
@@ -323,6 +355,7 @@ export async function dashboardMain(
   const dashboard = serveDashboard({
     listen,
     ...(port === undefined ? {} : { port }),
+    ...(requireToken ? {} : { token: null, allowedHosts }),
   });
   console.log(`jig dispatch dashboard: ${dashboard.url}`);
   console.log(

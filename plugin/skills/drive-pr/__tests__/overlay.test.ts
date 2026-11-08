@@ -19,6 +19,7 @@ import {
   reviewerExpected,
   reviewerLabel,
   reviewsDrafts,
+  skipNoticeMarker,
   stickyMarker,
   validationPlanCommand,
 } from "../scripts/lib/overlay.ts";
@@ -31,6 +32,7 @@ const KEYS = [
   "DRIVE_PR_REVIEWER_CHECK",
   "DRIVE_PR_STICKY_MARKER",
   "DRIVE_PR_SHA_MARKER",
+  "DRIVE_PR_SKIP_NOTICE_MARKER",
 ] as const;
 let saved: Record<string, string | undefined>;
 let dir: string;
@@ -160,21 +162,25 @@ describe("reviewer protocol", () => {
     expect(reviewerCheckPattern()).toBe("^ai[ _-]?review(\\s*\\(.+\\))?$");
     expect(stickyMarker()).toBe("<!-- ai-code-review -->");
     expect(reviewedShaMarker()).toBe("ai-reviewed-sha");
+    expect(skipNoticeMarker()).toBe("ai-review-skip-notice");
   });
 
   it("reads the configuration file, and the environment overrides it", () => {
     overlay(
-      'review:\n  reviewer_check_pattern: "^Bot review$"\n  sticky_marker: "<!-- bot -->"\n  reviewed_sha_marker: bot-sha\n',
+      'review:\n  reviewer_check_pattern: "^Bot review$"\n  sticky_marker: "<!-- bot -->"\n  reviewed_sha_marker: bot-sha\n  skip_notice_marker: bot-skip\n',
     );
     expect(reviewerCheckPattern()).toBe("^Bot review$");
     expect(stickyMarker()).toBe("<!-- bot -->");
     expect(reviewedShaMarker()).toBe("bot-sha");
+    expect(skipNoticeMarker()).toBe("bot-skip");
     process.env.DRIVE_PR_REVIEWER_CHECK = "^env$";
     process.env.DRIVE_PR_STICKY_MARKER = "<!-- env -->";
     process.env.DRIVE_PR_SHA_MARKER = "env-sha";
+    process.env.DRIVE_PR_SKIP_NOTICE_MARKER = "env-skip";
     expect(reviewerCheckPattern()).toBe("^env$");
     expect(stickyMarker()).toBe("<!-- env -->");
     expect(reviewedShaMarker()).toBe("env-sha");
+    expect(skipNoticeMarker()).toBe("env-skip");
   });
 });
 

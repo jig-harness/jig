@@ -217,13 +217,17 @@ describe("the reachability probe", () => {
       },
     });
     const deadline = new AbortController();
+    await github.reach(deadline.signal);
+    await expect(linear.reach(deadline.signal)).rejects.toThrow("aborted");
+    expect(seen).toEqual([deadline.signal, deadline.signal]);
+    seen.length = 0;
     deadline.abort();
     await expect(github.reach(deadline.signal)).rejects.toThrow("aborted");
     await expect(linear.reach(deadline.signal)).rejects.toThrow("aborted");
-    expect(seen).toEqual([deadline.signal, deadline.signal]);
+    expect(seen).toEqual([]);
     // An aborted probe leaves nothing behind for the next caller.
     await github.reach();
-    expect(seen).toHaveLength(3);
+    expect(seen).toHaveLength(1);
   });
 });
 

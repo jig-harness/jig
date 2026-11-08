@@ -319,6 +319,13 @@ make, use the entry's term instead.
   is a mechanical property of how it was raised, not an author's judgment. It
   maps to a generic server-side failure and is never caught to drive control
   flow.
+- **Defect boundary** — the one place a *defect* is caught, around the work
+  it stops: one stage of a dispatcher tick, one repository's turn, the tick
+  itself. It records the defect where a person reads it, with its stack on
+  the error output only, and lets the work beside it go on. In Jig's plugin
+  an expected failure travels as an `Outcome`, the plugin's *result type*,
+  so a throw that reaches a defect boundary is a bug
+  ([ADR-0012](docs/adr/ADR-0012-failures-as-values.md)).
 - **Error boundary** — the one place errors reach a caller: the handler that
   maps each error to a fixed response shape (code, message key, severity,
   recovery hint, *correlation id*: the complete public field set), turns an
@@ -1447,6 +1454,12 @@ make, use the entry's term instead.
   string (`review.sticky_marker`). It carries the reviewer's overall verdict
   and any findings it could not attach to a line
   ([configuration](plugin/CONFIGURATION.md)).
+- **Skip notice (reviewer)** — a block in the reviewer's *sticky comment*,
+  found by a marker string (`review.skip_notice_marker`), saying it did not
+  review a pushed commit, for example because the push left nothing to
+  review. The drive reads it to tell a head the reviewer has not reached yet
+  from one it will never review
+  ([terminal states](plugin/skills/drive-pr/references/terminal-states.md)).
 - **Summary-only finding** — a review finding that appears only in the
   reviewer's *sticky comment* because it could not be anchored to a diff line,
   so it creates no thread. A loop that counted only threads would report
@@ -1756,8 +1769,7 @@ make, use the entry's term instead.
   is taken and listed first in the morning report, so a person can reverse
   it before the merge. Under `wide`, a drive that parked re-arms once every
   unanswered item is provisionally decided, where the item's class allows
-  it. Planned, with `wide`'s column and the morning report
-  ([design](design/dark-factory-driving.md#provisional-decisions)).
+  it ([configuration](plugin/CONFIGURATION.md#autonomy)).
 - **Consumer overlay** — a repository's own values for a shared procedure,
   such as its gate command and reviewer names, kept in
   `.config/jig.yaml` and read by the procedure when it runs.

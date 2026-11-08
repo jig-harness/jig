@@ -65,7 +65,6 @@ with the review.
 | [Evidence before claims, and a debugging protocol](verify-and-debug.md) | 28 |
 | [The spec a work item links](spec-link.md), with its [research note](spec-ecosystems-research.md) | 29 |
 | [Routing work to an agent, a model and an effort](agent-routing.md) | 31 |
-| [Driving any pull request from anywhere, with autonomy that fits the hour](dark-factory-driving.md) | 32 |
 | [The dispatcher, a tick that starts the execution line's stages](dark-factory-dispatch.md) | 33 |
 | [Jig in the Orca ecosystem](orca-integration.md) | 34 |
 | [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 38; Later: a repository's theme |
@@ -73,6 +72,7 @@ with the review.
 | [Addresses: asking and telling the stations of the line](addresses.md) | 39 |
 | [The hub, one place to watch and steer the line](hub.md) | 42; Later: a control-plane service for the shared records |
 | [Consumer actions, which Jig changes a repository must act on](consumer-actions.md) | 43 |
+| [Distribution channels](distribution.md) | 44 |
 | [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | 41; Later: the command store |
 | [The line at capacity: the host's load factor, served pickups and the steward](line-at-capacity.md) | 44 |
 

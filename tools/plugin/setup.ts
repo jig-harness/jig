@@ -71,17 +71,16 @@ export function parse(argv: string[], env: NodeJS.ProcessEnv = process.env) {
   const flags: Flags = { check: false, only: null };
   for (let at = 0; at < argv.length; at++) at = take(argv, at, flags);
   const { check, only, source, channel } = flags;
-  return {
-    check,
-    ...harnessRequest(
-      {
-        ...(source === undefined ? {} : { source }),
-        ...(channel === undefined ? {} : { channel }),
-        only,
-      },
-      env,
-    ),
-  };
+  const request = harnessRequest(
+    {
+      ...(source === undefined ? {} : { source }),
+      ...(channel === undefined ? {} : { channel }),
+      only,
+    },
+    env,
+  );
+  if (!request.ok) throw new UpgradeRequestError(request.failure.reason);
+  return { check, ...request.value };
 }
 
 if (import.meta.main)

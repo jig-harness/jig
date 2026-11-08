@@ -387,6 +387,130 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.173.0] - 2026-11-08
+
+An issue filed through the tracker scripts without a type, a priority or a size is now refused, before anything is written. `/jig:file-issue` gains a weekly sweep for the issues filed around those scripts, and a move that carries a repository's type, priority and size from one store to another.
+
+### Added
+
+- `/jig:file-issue check`, the weekly sweep ([file-issue](plugin/skills/file-issue/README.md#the-weekly-sweep)): `check-fields.ts check` lists, by issue key, every open issue outside triage that lacks a type, a priority or a size (an epic needs no size) or carries the label of a facet the configuration keeps in the tracker's own field, and with `--yes` moves each one not yet started back to triage with a comment naming what it lacks, listing the started ones without moving them. It shares one census, bounded to a minute, across at most 20 listing pages of 100 incomplete issues, and moves at most 50 a run, paces its writes at 30 a minute, waits out a `Retry-After` up to 3 times a run, and stops at a refused write, reporting what it moved and what remains. A store that fails closed, or more than half of the issues that must carry a facet lacking it, moves nothing. Schedule it weekly with a credential that may comment on issues and move them to triage; on GitHub Issues, set `JIG_GITHUB_GRAPHQL_URL` for it to see GitHub's `Retry-After`.
+- `/jig:file-issue move` ([file-issue](plugin/skills/file-issue/README.md#moving-to-another-store)): `check-fields.ts move` carries type, priority and size from one store to another (labels to the tracker's own fields, back again, or one field to another) for every open issue, in a preview that writes a move record, a copy, the person's commit of the new `issue_tracker.facets` section, and a retire; `--restore` puts back every value the record says it changed. Nothing is written without `--yes`; each run writes at most one update per open issue, is paced as the sweep is, and is resumed by running it again; closed issues keep their labels.
+- The audit's configuration check suggests the sweep to a repository that keeps its issues' facets on a tracker and runs the sweep from no workflow, systemd unit or crontab (`suggestion:issue_tracker.sweep`).
+- The tracker interface reads every open issue with its facets (`Tracker.openPopulation`); `incompleteIssues` lists the started issues apart (`started: true`), and on GitHub Issues sees a retired `priority:` label, which an issue's labels leave out.
+
+### Changed
+
+- **Breaking**: `tracker.ts create`, and every other filing through the tracker interface, refuses an issue without a type, a priority (1 to 4) or a size (an issue carrying `issue_tracker.labels.epic` needs no size), or without a label of another required group of the label taxonomy, before anything is written, naming what it lacks (exit 2); the previous release filed it with a warning. Give `"type"`, `"priority"` and `"size"` in every issue `tracker.ts create` reads, and a label of each required group. A deferred finding `file-deferred.ts` files carries the follow-up label alone, so in a repository whose taxonomy requires another group it stays in its pull request's section for a person to file through `/jig:file-issue`.
+- Migration refuses cross-facet store collisions and ambiguous destination labels, preserves edits on resumed copies and unmapped values on restore, and keeps its record lock until an in-flight write settles after cancellation. Read-only tracker operations remain available when the taxonomy is malformed. Sweeps can use `--retired-from` with the former facets section to find custom retired labels and distinguish issues changed during pacing from pending work. The audit recognizes scheduled default-branch guards and the shipped status wrapper without treating comments as executable commands.
+- Retirement checks the destination's complete representation before copying or clearing a source, and move admission refuses destinations that share a physical field. Sweep cancellation reaches comment and transition requests across the adapters. Malformed taxonomies leave recovery reads available even with explicitly configured stores. Audit schedule evidence requires a validated daily or weekly cadence and an independent job; dependency chains, preceding step chains and other cron expressions remain advisory. Cancellation and deadlines cover the prerequisite reads as well as the writes; restore compares the original labels even when the canonical value has returned to its starting value.
+- Process inspection recognizes both missing-file and missing-process errors when a process exits while its `/proc` directory is being read, so a vanished process does not leave an otherwise idle worktree indeterminate.
+- Audit sweep evidence permits redirection only in the complete status wrapper with its fixed output and summary destinations; standalone redirected commands remain advisory.
+
+## [0.172.0] - 2026-11-08
+
+### Changed
+
+- A defect in one stage of the dispatcher's `--apply` for a repository (its
+  re-arm, pickup or follow-up launches, its nudges, its notifications, or the
+  close that projects its labels) now stops that stage only: the
+  repository's other stages still launch in the same tick. The receipt lists
+  it under the repository's `stageDefects` with its code `defect`, its phase,
+  its stage and a sentence; the outcome log gets an event row `defect` under
+  that stage; its stack goes to the tick's error output; and the tick exits 1,
+  as a defect that stops a whole turn makes it. `jig dispatch receipts` and
+  the dashboard's tick strip count these defects too.
+- A resource collection run whose configuration cannot be read still
+  collects nothing and exits as before, and now writes a receipt that names
+  the failure: a `failure` field with its `code` and `reason`, which
+  `jig receipts gc` shows. Receipts written before it read as they did.
+- The plugin's code now follows
+  [ADR-0012](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0012-failures-as-values.md):
+  a failure a caller handles is returned as a value with a stable code and a
+  reason, and anything still thrown is a defect or one error class built on
+  one base. Messages, exit codes and receipts are otherwise as they were.
+
+## [0.171.0] - 2026-11-08
+
+### Changed
+
+- A drive reads `autonomy.max_level` and `autonomy.park_classes` from the
+  branch the pull request targets, not from the pull request's own checkout,
+  so an edit to either applies to a pull request's drive once it is on that
+  branch, never through the pull request that makes it; for a stacked layer
+  that branch is the layer below, bounded by the integration branch's
+  policy (the lower ceiling, the union of the park classes). The ceiling's fallback comes from the base too: the
+  base's `max_level`, else the base's `level`, else `attended`; a
+  `JIG_OVERLAY` redirect no longer moves either field in a drive. The driver
+  resolves the base's commit at its start and before every round and hands
+  it to its passes in `DRIVE_PR_POLICY_BASE`; the line it prints each round
+  names that commit. A session with a person in it reads both fields from
+  the working tree, as before
+  ([configuration](plugin/CONFIGURATION.md#autonomy)).
+
+### Security
+
+- When the base branch's policy cannot be read (its commit is not in the
+  clone, git fails, or the file does not parse or names an invalid ceiling
+  or class list), a drive fails closed: it runs at `attended`, the only park
+  classes are `escalated`, `human-decision` and `human-thread`, and the pass
+  parks every decision under `human-decision` until the policy reads.
+
+## [0.170.0] - 2026-11-08
+
+The dispatch dashboard says where each pull request stands, can run without a token behind a front on the host, and stacks its panels in one column.
+
+### Added
+
+- Each pull request on the dashboard is an icon in the colour of its state: driving, following up after the merge, waiting, needs a person, queued, held, merged or closed. Hovering or tapping the pull request opens its state, round, unresolved thread count, how long it has waited and the dispatcher's own reason. The state comes from the newest tick's line, so a dashboard served without a GitHub login still shows it.
+- `dashboard.require_token: false` in the machine file serves the dashboard with no token. It is accepted only with a loopback `dashboard.listen`, so the only way in from another machine is a front on the host, such as Tailscale Serve, that authenticates the person first. A tokenless dashboard answers only `localhost`, `127.0.0.0/8` and `::1` as the request's `Host`, plus the names `dashboard.allowed_hosts` lists for the front, and refuses any other with 403. See [the machine's dispatch file](plugin/CONFIGURATION.md).
+
+### Changed
+
+- The dashboard's Now view, running slots and legend no longer sit side by side at any width: one column keeps vertical scrolling the same on a phone and a desktop.
+
+### Fixed
+
+- Every pull request on a dashboard whose server could not call the forge showed "Unknown" with no popover content; its icon now opens the state the line holds.
+
+## [0.169.0] - 2026-11-08
+
+### Added
+
+- A drive reads the reviewer's skip notice: a block in its sticky comment,
+  marked `review.skip_notice_marker` (default `ai-review-skip-notice`,
+  `DRIVE_PR_SKIP_NOTICE_MARKER` overrides it), saying it did not review a
+  pushed head. A skipped head whose pull-request diff equals the diff at the
+  head the reviewer last reviewed, such as a merge of the base branch, is
+  judged on that review: the report names the earlier head as the reviewed
+  one (`reviewedShaSource: "skip-notice"`) and the skip as the reason, and
+  the drive can converge
+  ([terminal states](plugin/skills/drive-pr/references/terminal-states.md)).
+- A new terminal state, `REVIEW_SKIPPED` (exit `22`): the reviewer skipped
+  the head, and its earlier review does not cover it because the pull
+  request's diff changed: the diffs are compared with their context, exactly
+  where the base did not move and, for the files it did move, without hunk
+  positions. A moved file whose hunk repeats elsewhere in it, or whose patch
+  is not valid UTF-8 or cannot be read, is reported as different. A merge that moved or edited
+  the change's lines differs. A commit the comparison needs that the clone lacks is
+  fetched once; still missing, the evaluation is `INDETERMINATE` (exit `1`)
+  and runs again. The stop quotes the
+  notice and says what a person does next; `jig dispatch` hands it to a
+  person, labelling the pull request parked where dispatch labels are enabled,
+  rather than re-arming it at the same head. A harness that reads the drive's exit codes should treat `22`
+  as a stop for a person.
+
+### Fixed
+
+- A drive no longer waits as `STALE_REVIEW` (exit `4`) for as long as a head
+  stands when the reviewer has said it will not review that head; a
+  dispatcher re-armed such a drive at the same head indefinitely.
+
+## [0.168.2] - 2026-11-08
+
+### Added
+
+- The install guide names the planned common setup path and the conditions for considering an own Homebrew tap, while keeping plugin installation and updates with the agent tool's marketplace.
+
 ## [0.168.1] - 2026-11-08
 
 ### Fixed
@@ -5986,7 +6110,13 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.168.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.173.0...HEAD
+[0.173.0]: https://github.com/jig-harness/jig/compare/v0.172.0...v0.173.0
+[0.172.0]: https://github.com/jig-harness/jig/compare/v0.171.0...v0.172.0
+[0.171.0]: https://github.com/jig-harness/jig/compare/v0.170.0...v0.171.0
+[0.170.0]: https://github.com/jig-harness/jig/compare/v0.169.0...v0.170.0
+[0.169.0]: https://github.com/jig-harness/jig/compare/v0.168.2...v0.169.0
+[0.168.2]: https://github.com/jig-harness/jig/compare/v0.168.1...v0.168.2
 [0.168.1]: https://github.com/jig-harness/jig/compare/v0.168.0...v0.168.1
 [0.168.0]: https://github.com/jig-harness/jig/compare/v0.167.0...v0.168.0
 [0.167.0]: https://github.com/jig-harness/jig/compare/v0.166.0...v0.167.0

@@ -16,7 +16,7 @@
  * state of work in progress.
  */
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
-import { attempt, ok, type Outcome } from "../../shared/outcome.ts";
+import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { assignPickup } from "../../dispatch/lib/requests.ts";
 import { readSection, trackerConfigOf } from "../../dispatch/lib/section.ts";
 import { failureText } from "../../dispatch/lib/text.ts";
@@ -57,12 +57,19 @@ async function tickSettings(
     return refused(
       `the factory identity of ${repo} cannot be told: ${where} did not read (${text.failure.reason})`,
     );
-  const read = attempt("refused", `${where} does not read`, () => {
-    const { values, section } = readSection(text.value, where);
-    return { section, config: trackerConfigOf(values, repo) };
-  });
+  const sectionRead = readSection(text.value, where);
+  if (!sectionRead.ok)
+    return failed(
+      "refused",
+      `${where} does not read: ${sectionRead.failure.reason}`,
+      sectionRead.failure.cause,
+    );
+  const { values, section } = sectionRead.value;
+  const read = attempt("refused", `${where} does not read`, () =>
+    trackerConfigOf(values, repo),
+  );
   if (!read.ok) return read;
-  const { section, config } = read.value;
+  const config = read.value;
   const { identity } = section;
   if (identity === null)
     return refused(

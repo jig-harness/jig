@@ -6,11 +6,7 @@
  * since what it resolves to cannot be held to a range.
  */
 import { isIP } from "node:net";
-
-/** An address the dashboard may not listen on, with the reason. */
-class ListenError extends Error {
-  override name = "ListenError";
-}
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 
 export interface Listen {
   host: string;
@@ -57,28 +53,68 @@ function isPrivateAddress(host: string): boolean {
   return false;
 }
 
-/** `host`, `host:port` or `[v6]:port`, held to the private and loopback ranges; throws with the reason. */
-export function parseListen(value: string): Listen {
+/** Whether a parsed address is on this machine alone: a request from elsewhere can only arrive through a front the host runs. */
+export function isLoopback(listen: Listen): boolean {
+  const kind = isIP(listen.host);
+  if (kind === 4) return listen.host.startsWith("127.");
+  const lower = listen.host.toLowerCase();
+  return lower === "::1" || /^::ffff:127(\.\d+){3}$/.test(lower);
+}
+
+/** The host name of a `Host` header (`name`, `name:port`, `[v6]:port`), lower-cased; `null` when it is empty. */
+function authorityHost(authority: string | null): string | null {
+  const raw = (authority ?? "").trim().toLowerCase();
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(raw);
+  const host = bracketed?.[1] ?? raw.replace(/:\d+$/, "");
+  return host === "" ? null : host;
+}
+
+/** Whether a `Host` header names this machine's loopback, or one of the front host names the machine file lists. */
+export function authorityAllowed(
+  authority: string | null,
+  fronts: readonly string[],
+): boolean {
+  const host = authorityHost(authority);
+  if (host === null) return false;
+  if (host === "localhost" || host === "::1") return true;
+  if (isIP(host) === 4) return host.startsWith("127.");
+  // A URL writes a mapped loopback in hex (`::ffff:7f00:1`); a listen value in dots.
+  if (/^::ffff:(127(\.\d+){3}|7f[0-9a-f]{2}:[0-9a-f]{1,4})$/.test(host))
+    return true;
+  return fronts.includes(host);
+}
+
+/**
+ * `host`, `host:port` or `[v6]:port`, held to the private and loopback
+ * ranges; `invalid`, with the reason, for an address the dashboard may not
+ * listen on.
+ */
+export function parseListen(value: string): Outcome<Listen, "invalid"> {
   const raw = value.trim();
   const bracketed = /^\[([^\]]+)\](?::(\d+))?$/.exec(raw);
   const plain = /^([^:]+)(?::(\d+))?$/.exec(raw);
   const match = bracketed ?? (isIP(raw) === 6 ? [raw, raw, undefined] : plain);
   if (match === null)
-    throw new ListenError(`${value} is not an address with an optional port`);
+    return failed(
+      "invalid",
+      `${value} is not an address with an optional port`,
+    );
   const host = match[1] as string;
   const port = match[2] === undefined ? null : Number(match[2]);
   if (isIP(host) === 0)
-    throw new ListenError(
+    return failed(
+      "invalid",
       `${value} names no IP address: the dashboard listens on an address it can hold to the private ranges`,
     );
   if (!isPrivateAddress(host))
-    throw new ListenError(
+    return failed(
+      "invalid",
       `${host} is outside the private and loopback ranges, and the dashboard opens no route into the host beyond them`,
     );
   if (
     port !== null &&
     (!Number.isSafeInteger(port) || port < 1 || port > 65_535)
   )
-    throw new ListenError(`${value} names no port between 1 and 65535`);
-  return { host, port };
+    return failed("invalid", `${value} names no port between 1 and 65535`);
+  return ok({ host, port });
 }
