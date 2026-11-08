@@ -10,3 +10,4 @@ release: minor
 ### Changed
 
 - The lint's reports name the promoted statuses (`OK — no scars in approved or active docs`); with only `approved` they are unchanged. The scar lint's README now says why an allowlist entry matches a fragment of a path: `docs/review/` exempts the whole folder.
+- Resolution phrasing is matched at the opening of a list or quote item (`- Addressed: …`), with word boundaries, so prose such as `- Requests to unaddressed hosts fail.` is no longer a scar. A promoted status carries no surrounding space, and a `docs` section that is not a mapping is refused by the standalone lint too.

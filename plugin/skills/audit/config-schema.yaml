@@ -872,7 +872,9 @@ fields:
     since: 0.95.0
   docs.promoted_statuses:
     type: list
-    items: string
+    items:
+      type: string
+      pattern: '^\S+$'
     distinct: true
     nonempty: true
     read_by: [docs]

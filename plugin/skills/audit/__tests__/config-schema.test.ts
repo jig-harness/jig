@@ -424,6 +424,16 @@ describe("the reading skills", () => {
     });
   });
 
+  test("docs.promoted_statuses accepts what the docs skill accepts", () => {
+    const problems = (statuses: unknown[]) =>
+      checkConfig({ docs: { promoted_statuses: statuses } }, schema).map(
+        (f) => f.message,
+      );
+    expect(problems(["approved", "active"])).toEqual([]);
+    for (const bad of [["two words"], [" active"], ["active", "active"]])
+      expect(problems(bad).length).toBeGreaterThan(0);
+  });
+
   test("accept a review bot as a login or a mapping with its markers", () => {
     const problems = (bots: unknown[]) =>
       checkConfig({ review: { bots } }, schema).map((f) => f.message);

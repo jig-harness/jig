@@ -10,9 +10,14 @@ import {
 } from "../lib/docs.ts";
 import { loadPromotedStatuses } from "../lib/settings.ts";
 
-/** Resolution phrasing that opens a list or quote item. */
-const RESOLUTION =
-  /(addressed|fixed as suggested|good catch|as per review|as requested|resolved per review|done as suggested)/;
+/**
+ * Resolution phrasing opening a list or quote item's content, after any
+ * checkbox or emphasis marker: `- Addressed: …`, never `- Hosts are addressed`.
+ */
+const RESOLUTION = new RegExp(
+  "^\\s*(?:(?:[-*>]|\\d+\\.)\\s+)+(?:\\[[ x]\\]\\s+)?(?:(?:\\*\\*|__|\\*|_)\\s*)?" +
+    "(?:addressed|fixed as suggested|good catch|as per review|as requested|resolved per review|done as suggested)\\b",
+);
 const REVIEWER = "reviewer|coderabbit(?:ai)?|codex|copilot|shadow reviewer";
 /** A reviewer named and followed by a colon, anywhere in a list or quote item. */
 const ATTRIBUTION = new RegExp(`(${REVIEWER})\\s*:`);
@@ -27,18 +32,23 @@ const PARAGRAPH_ATTRIBUTION = /^\s*(reviewer|shadow reviewer)\s*:/;
 /** A review bot's account name, as GitHub prints it. */
 const BOT_HANDLE =
   /\b(?:coderabbitai|copilot|codex|[a-z0-9-]*review[a-z0-9-]*)\[bot\]/;
+/** Stands in for inline code: not whitespace, so masking opens no prefix. */
+const CODE_MASK = "\u0001";
 
-/** Whether a line, its code already masked, carries a review scar. */
-function isScar(line: string, inFrontmatter: boolean): boolean {
+/**
+ * Whether a line, its code already masked, carries a review scar. `opensParagraph`
+ * is whether the line starts a paragraph rather than continuing one.
+ */
+function isScar(line: string, opensParagraph: boolean): boolean {
   const low = line.toLowerCase();
   if (/~~[^~]+~~/.test(line)) return true;
   const item = /^\s*([-*>]|\d+\.)\s+/.test(line);
-  if (item && (RESOLUTION.test(low) || ATTRIBUTION.test(low))) return true;
   return (
-    !inFrontmatter &&
-    (BOT_HANDLE.test(low) ||
-      TABLE_ATTRIBUTION.test(low) ||
-      PARAGRAPH_ATTRIBUTION.test(low))
+    RESOLUTION.test(low) ||
+    (item && ATTRIBUTION.test(low)) ||
+    BOT_HANDLE.test(low) ||
+    TABLE_ATTRIBUTION.test(low) ||
+    (opensParagraph && PARAGRAPH_ATTRIBUTION.test(low))
   );
 }
 
@@ -50,18 +60,23 @@ function frontmatterState(was: boolean, index: number, raw: string): boolean {
 
 export function scanScars(text: string): string[] {
   let fence = false;
-  // A frontmatter key such as `reviewer: alice` names a field, not a trace.
+  // Frontmatter keys such as `reviewer: alice` name fields, not traces; the
+  // block is skipped whole.
   let frontmatter = false;
+  let previousBlank = true;
   const hits: string[] = [];
   for (const [index, raw] of splitLines(text).entries()) {
     frontmatter = frontmatterState(frontmatter, index, raw);
+    if (frontmatter || (index === 0 && raw.trim() === "---")) continue;
     if (/^\s*(```|~~~)/.test(raw)) {
       fence = !fence;
+      previousBlank = true;
       continue;
     }
     if (fence) continue;
-    if (isScar(raw.replace(/`[^`]*`/g, "  "), frontmatter))
+    if (isScar(raw.replace(/`[^`]*`/g, CODE_MASK), previousBlank))
       hits.push(`${index + 1}: ${raw}`);
+    previousBlank = raw.trim() === "";
   }
   return hits;
 }

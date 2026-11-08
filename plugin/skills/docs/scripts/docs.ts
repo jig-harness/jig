@@ -268,7 +268,9 @@ function gates(
           args: [],
           env: {
             DOCS_DIR: root,
-            PROMOTED_STATUSES: settings.promotedStatuses.join(" "),
+            PROMOTED_STATUSES:
+              process.env.PROMOTED_STATUSES ||
+              settings.promotedStatuses.join(" "),
           },
           read: readScarOutput,
         },

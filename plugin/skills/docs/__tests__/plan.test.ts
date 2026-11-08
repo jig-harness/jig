@@ -264,17 +264,11 @@ describe("the detected settings", () => {
     ).toEqual(["approved", "active"]);
   });
 
-  test("a promoted status is trimmed, and a repeat after trimming is refused", () => {
-    expect(
-      parseDocsSettings({ promoted_statuses: [" active "] }, temporary())
-        .promotedStatuses,
-    ).toEqual(["active"]);
-    expect(() =>
-      parseDocsSettings(
-        { promoted_statuses: ["active", "active "] },
-        temporary(),
-      ),
-    ).toThrow("docs.promoted_statuses must be a list of distinct statuses");
+  test("a promoted status with surrounding space, or a repeat after trimming, is refused", () => {
+    for (const bad of [[" active "], ["active", "active "]])
+      expect(() =>
+        parseDocsSettings({ promoted_statuses: bad }, temporary()),
+      ).toThrow("docs.promoted_statuses must be a list of distinct statuses");
   });
 
   test("a promoted-statuses list that is empty, repeats or holds anything but one-word text is refused", () => {

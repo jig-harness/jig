@@ -129,25 +129,20 @@ function staleAfter(section: Record<string, unknown>): number {
  * the section.
  */
 export function promotedStatuses(section: unknown): string[] {
+  if (section !== undefined && section !== null && !isRecord(section))
+    throw new SettingsError("docs must be a mapping");
   const value = isRecord(section) ? section.promoted_statuses : undefined;
   if (value === undefined || value === null) return DEFAULT_PROMOTED_STATUSES;
-  const statuses = Array.isArray(value)
-    ? value.map((status) =>
-        typeof status === "string" ? status.trim() : status,
-      )
-    : value;
   if (
-    !Array.isArray(statuses) ||
-    statuses.length === 0 ||
-    statuses.some(
-      (status) => typeof status !== "string" || !/^\S+$/.test(status),
-    ) ||
-    new Set(statuses).size !== statuses.length
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some((status) => typeof status !== "string" || !/^\S+$/.test(status)) ||
+    new Set(value).size !== value.length
   )
     throw new SettingsError(
       "docs.promoted_statuses must be a list of distinct statuses, each one word",
     );
-  return statuses;
+  return value;
 }
 
 /** Byte order of two strings, the same on every machine and locale. */
