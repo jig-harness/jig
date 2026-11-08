@@ -91,6 +91,23 @@ issue_tracker:
     type: { store: label }
     priority: { store: label }
     size: { store: label }
+do_item:
+  agents:
+    # The tracker's `area:` labels that name one catalog area, so
+    # `/jig:work-batch` can draw a batch from an area. A label whose subject
+    # has no area of its own in the catalog (the other skills, `area:tracker`,
+    # `area:dispatch`) is left out: mapping it to the broad `plugin` area
+    # would pool unrelated skills' issues.
+    codearea_areas:
+      "area:drive-pr": drive-pr
+      "area:do-item": do-item
+      "area:resolve-review-comments": resolve-review-comments
+      "area:plugin": plugin
+      "area:shared": plugin-shared
+      "area:modules": module-reference
+      "area:gates": gates
+      "area:tools": tools
+      "area:website": website
 pull_requests:
   # One pull request per change against main; a person merges.
   stacking: none
