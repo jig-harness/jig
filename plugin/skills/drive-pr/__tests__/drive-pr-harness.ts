@@ -566,12 +566,12 @@ const SUITE_ENV_OVERRIDES = [
 ] as const;
 let priorSuiteEnv: Map<string, string | undefined>;
 /**
- * The suite's own test pacing seams while it runs, empty outside it. Set on
+ * The suite's own child-process overrides while it runs, empty outside it. Set on
  * `process.env` like every override above, and also carried through
  * `gitCleanEnv()`, whose `DRIVE_PR_*` scrub would otherwise drop them from
  * every spawn built on it.
  */
-let suitePacing: Record<string, string> = {};
+let suiteChildEnv: Record<string, string> = {};
 /** Scratch repos for the probes that read local HEAD and the working tree. */
 export let scratchClean: { dir: string; head: string };
 export let scratchSibling: { dir: string; head: string };
@@ -621,9 +621,9 @@ export function gitCleanEnv(): Record<string, string> {
     }
     env[k] = v;
   }
-  // The suite's own pacing seams are set by `useDrivePrSuite()`, not inherited
-  // from a drive, so the scrub above must not drop them.
-  Object.assign(env, suitePacing);
+  // Restore only overrides owned by `useDrivePrSuite()`, including its empty
+  // transcript roots; inherited drive state stays scrubbed.
+  Object.assign(env, suiteChildEnv);
   // Set AFTER the copy, unconditionally, so it wins over whatever the real
   // process.env carries — see `suiteHome`'s own doc comment for why.
   env.HOME = suiteHome;
@@ -989,8 +989,8 @@ export function useDrivePrSuite(): void {
     // probe's contention real while removing only the sleeping; a test that
     // needs the production pacing sets its own value in its spawn env.
     // No attach: fixture PRs have no head to fetch (attach-pr.test.ts).
-    suitePacing = { DRIVE_PR_LOCK_RETRY_MS: "25", DRIVE_PR_ATTACH: "off" };
-    Object.assign(process.env, suitePacing);
+    suiteChildEnv = { DRIVE_PR_LOCK_RETRY_MS: "25", DRIVE_PR_ATTACH: "off" };
+    Object.assign(process.env, suiteChildEnv);
     // The consumer configuration every probe reads: the reviewer app the
     // fixtures post as, the base branch the scratch repositories carry, and
     // the plan command the round-plan probes stub.
@@ -1008,10 +1008,8 @@ export function useDrivePrSuite(): void {
     // a dependency on machine state, which quota.test.ts's own header rejects
     // ("FIXTURES, NOT THE MACHINE'S REAL STATE").
     //
-    // Set on `process.env` rather than at each spawn site: every spawn here
-    // builds its env as `{ ...process.env, … }`, so this is the default and
-    // the two tests that need a populated tree still override it by naming
-    // the key explicitly after the spread.
+    // Preserve these suite-owned defaults in both process.env and gitCleanEnv().
+    // Tests that need populated trees override the keys after the spread.
     for (const [key, name] of [
       ["DRIVE_PR_CLAUDE_PROJECTS_DIR", "empty-claude-projects"],
       ["DRIVE_PR_CODEX_SESSIONS_DIR", "empty-codex-sessions"],
@@ -1019,6 +1017,7 @@ export function useDrivePrSuite(): void {
       const emptyDir = join(tmpRoot, name);
       mkdirSync(emptyDir, { recursive: true });
       process.env[key] = emptyDir;
+      suiteChildEnv[key] = emptyDir;
     }
     suiteHome = mkdtempSync(join(tmpdir(), "drive-pr-test-home-"));
     scratchClean = makeScratchRepo("scratch-clean");
@@ -2120,7 +2119,7 @@ exit 1
     // Guarded because bun runs afterAll even when beforeAll THREW, in which
     // case the map was never built — an unguarded iteration would replace the
     // real beforeAll failure with a TypeError from teardown.
-    suitePacing = {};
+    suiteChildEnv = {};
     if (priorSuiteEnv) {
       for (const [key, value] of priorSuiteEnv) {
         if (value === undefined) delete process.env[key];

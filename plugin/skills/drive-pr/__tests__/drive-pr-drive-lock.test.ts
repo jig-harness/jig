@@ -27,6 +27,7 @@ import {
   REVIEWER_RUN,
   DORMANT_ARM,
   binDir,
+  gitCleanEnv,
   scratchClean,
   writeFixture,
   useDrivePrSuite,
@@ -36,7 +37,6 @@ import {
   type LockSlot,
   PASS_LOUD,
   claimsIn,
-  lockDirs,
   lockHeld,
   plantClaim,
   pollUntil,
@@ -46,7 +46,11 @@ import {
   simulateTakeover,
   worktreeLockNameFor,
 } from "./drive-loop-harness.ts";
-import { deadPid } from "./drive-pr-pickup-fixtures.ts";
+import {
+  deadPid,
+  loginEnv,
+  useTrackedTree,
+} from "./drive-pr-pickup-fixtures.ts";
 import { lockNames, lockRow } from "./state-rows.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
@@ -64,8 +68,113 @@ function lockAccountEmail(slot: LockSlot): string | undefined {
 }
 
 useDrivePrSuite();
+const tree = useTrackedTree("drive-lock");
+
+/** A file-backed login and a Claude executable the test controls. */
+function accountDriverFixture() {
+  const bin = mkdtempSync(join(tmpdir(), "drive-pr-claude-stub-"));
+  const login = loginEnv("before@example.com");
+  const config = login.CLAUDE_CONFIG_DIR;
+  return {
+    bin,
+    login,
+    config,
+    path: join(config, ".claude.json"),
+    writePass: (script: string) =>
+      writeFakeProgram(join(bin, "claude"), script),
+    blockUntilReleased: (dir: string) => {
+      const startedMarker = join(dir, "claude-pass-started");
+      const releaseMarker = join(dir, "claude-pass-release");
+      writeFakeProgram(
+        join(bin, "claude"),
+        `#!/bin/sh\n${blockedPassScript(startedMarker, releaseMarker)}\n`,
+      );
+      return { startedMarker, releaseMarker };
+    },
+    spawn: (
+      dir: string,
+      stateDir: string,
+      rounds: number,
+      env: Record<string, string>,
+    ) =>
+      tree.spawn(
+        dir,
+        stateDir,
+        [
+          "--no-head-sync",
+          "--max-rounds",
+          String(rounds),
+          "--",
+          "claude",
+          "-p",
+          "/drive-pr 999",
+        ],
+        {
+          PATH: `${bin}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+          ...login,
+          ...env,
+        },
+      ),
+    cleanup: () => {
+      rmSync(bin, { recursive: true, force: true });
+      rmSync(config, { recursive: true, force: true });
+    },
+  };
+}
+
+/** Run the pass until its release marker is written. */
+function spawnBlockedPass(
+  dir: string,
+  stateDir: string,
+  started: string,
+  release: string,
+  env: Record<string, string> = {},
+) {
+  return tree.spawn(
+    dir,
+    stateDir,
+    [
+      "--no-head-sync",
+      "--max-rounds",
+      "1",
+      "--",
+      "sh",
+      "-c",
+      `: pass for 999\n${blockedPassScript(started, release)}`,
+    ],
+    env,
+  );
+}
+
+/** Start a file-backed login's Claude pass and hold it at a release marker. */
+function blockedAccountDriver(heartbeat: string) {
+  const fixture = tree.fixture({
+    threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+  });
+  const account = accountDriverFixture();
+  const markers = account.blockUntilReleased(fixture.dir);
+  const proc = account.spawn(fixture.dir, fixture.stateDir, 1, {
+    DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: heartbeat,
+  });
+  return { ...fixture, account, proc, ...markers };
+}
 
 describe("drive.ts loop control", () => {
+  it("keeps suite transcript roots in scrubbed child environments", () => {
+    const env = gitCleanEnv();
+    for (const key of [
+      "DRIVE_PR_CLAUDE_PROJECTS_DIR",
+      "DRIVE_PR_CODEX_SESSIONS_DIR",
+    ]) {
+      const root = env[key];
+      expect(root).toBe(process.env[key]);
+      expect(typeof root).toBe("string");
+      if (root === undefined) throw new Error(`missing suite root: ${key}`);
+      expect(readdirSync(root)).toEqual([]);
+    }
+    expect(env.DRIVE_PR_TARGET).toBeUndefined();
+  });
+
   describe("single-instance lock", () => {
     // Each failure mode is modelled by planting the exact lock row the
     // racing driver would have left behind.
@@ -73,8 +182,7 @@ describe("drive.ts loop control", () => {
     it("refuses when a LIVE driver holds the worktree lock — whatever PR it drives", async () => {
       // Keyed by worktree, not by PR: two drivers in one worktree cross-ship
       // each other's uncommitted edits regardless of target.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir, worktree } = tree.fixture({ threads: [] });
       // This process is unquestionably alive, and on this host.
       plantClaim(worktree, {
         pid: process.pid,
@@ -82,29 +190,10 @@ describe("drive.ts loop control", () => {
         nonce: "live0001",
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
+      const { stderr, exitCode } = await tree.run(dir, stateDir, [
+        "--no-head-sync",
+        "--",
+        ...PASS_LOUD,
       ]);
       expect(exitCode).toBe(11);
       expect(stderr).toContain("worktree");
@@ -117,8 +206,7 @@ describe("drive.ts loop control", () => {
     it("treats a FOREIGN-HOST owner as alive — its pid says nothing here", async () => {
       // `process.kill(pid, 0)` on another machine's pid answers a question
       // about an unrelated local process. Fail closed.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir, worktree } = tree.fixture({ threads: [] });
       // pid 999999 is almost certainly dead HERE; the hostname is what must
       // stop the takeover.
       plantClaim(worktree, {
@@ -127,29 +215,10 @@ describe("drive.ts loop control", () => {
         nonce: "foreign01",
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
+      const { stderr, exitCode } = await tree.run(dir, stateDir, [
+        "--no-head-sync",
+        "--",
+        ...PASS_LOUD,
       ]);
       expect(exitCode).toBe(11);
       expect(stderr).toContain("some-other-host");
@@ -163,8 +232,7 @@ describe("drive.ts loop control", () => {
       // forever with no way out but a manual `rm`. A real driver refreshes each
       // round; a recycled pid never does, so an unrefreshed claim is
       // recoverable.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir, worktree } = tree.fixture({ threads: [] });
       // This process is unquestionably alive and on this host — exactly the
       // shape the refusal test above plants. The refresh age is what differs.
       plantClaim(worktree, {
@@ -174,34 +242,19 @@ describe("drive.ts loop control", () => {
         staleMs: 20 * 60_000,
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
+      const { stderr, exitCode } = await tree.run(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
         {
           env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
             // 5 minutes is the floor the clamp allows; the planted claim is
             // older than that and younger than the 6-hour default, so this
             // asserts the knob AND that the default would still have refused.
             DRIVE_PR_LOCK_HEARTBEAT_MIN: "5",
           },
-          stdout: "pipe",
-          stderr: "pipe",
         },
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).not.toBe(11);
       expect(stderr).not.toContain("refusing to start a second loop");
       expect(stderr).toContain("recovered a stale");
@@ -210,39 +263,23 @@ describe("drive.ts loop control", () => {
     it("a FRESH heartbeat on a live pid is still honoured", async () => {
       // The other half of the knob: recovery must key on "stopped refreshing",
       // never on age alone, or a long round hands a second driver the worktree.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir, worktree } = tree.fixture({ threads: [] });
       plantClaim(worktree, {
         pid: process.pid,
         host: hostname(),
         nonce: "fresh0001",
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
+      const { stderr, exitCode } = await tree.run(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
         {
           env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
             DRIVE_PR_LOCK_HEARTBEAT_MIN: "5",
           },
-          stdout: "pipe",
-          stderr: "pipe",
         },
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).toBe(11);
       expect(stderr).toContain("refusing to start a second loop");
       expect(stderr).not.toContain("RAN_THE_PASS");
@@ -252,8 +289,7 @@ describe("drive.ts loop control", () => {
       // A holder whose pid is gone on this host cannot be driving, however
       // recently it renewed, so its lock is recovered on that evidence rather
       // than on its age: no staleness window has to pass first.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir, worktree } = tree.fixture({ threads: [] });
       // A fresh heartbeat, so only the holder's death can free the lock.
       plantClaim(worktree, {
         pid: await deadPid(),
@@ -261,29 +297,10 @@ describe("drive.ts loop control", () => {
         nonce: "dead0001",
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
+      const { stderr, exitCode } = await tree.run(dir, stateDir, [
+        "--no-head-sync",
+        "--",
+        ...PASS_LOUD,
       ]);
       expect(exitCode).not.toBe(11);
       expect(stderr).not.toContain("refusing to start a second loop");
@@ -302,36 +319,12 @@ describe("drive.ts loop control", () => {
       // process is arbitrarily behind, its own acquisition long replaced, and
       // it still cannot reach the successor, because its release deletes the
       // row only while it carries this acquisition's token.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir, worktree } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
       const started = join(dir, "pass-started");
       const release = join(dir, "pass-release");
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          "sh",
-          "-c",
-          `: pass for 999\n${blockedPassScript(started, release)}`,
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
+      const proc = spawnBlockedPass(dir, stateDir, started, release, {});
       try {
         expect(await awaitFixtureMarker(started)).toBe(true);
         // pid 1 is alive and is definitively not this drive.
@@ -378,35 +371,19 @@ describe("drive.ts loop control", () => {
       // release that follows deletes it: no quarantine, tombstone or sibling
       // file is left for anything to reclaim, however many recoveries a clone
       // sees.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir, worktree } = tree.fixture({ threads: [] });
       plantStaleLock(worktree, "stale0001");
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
+      const { stderr, exitCode } = await tree.run(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
         {
           env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
             DRIVE_PR_LOCK_HEARTBEAT_MIN: "5",
           },
-          stdout: "pipe",
-          stderr: "pipe",
         },
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).not.toBe(11);
       expect(stderr).toContain("recovered a stale");
       // The stale holder's row is gone, and so is everything else the
@@ -421,8 +398,7 @@ describe("drive.ts loop control", () => {
       // that live successor, and both would drive. The replace names the
       // token it observed, so the second contender finds a token it did not
       // see, takes nothing, and refuses rather than drives.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { stateDir, worktree } = tree.fixture({ threads: [] });
       plantStaleLock(worktree, "stale0001");
       const drive = driveDb(stateDir);
       const seen = readLockRow(drive, worktree.name);
@@ -440,8 +416,7 @@ describe("drive.ts loop control", () => {
     });
 
     it("does not replace a holder that renewed after the decision to replace it", () => {
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { stateDir, worktree } = tree.fixture({ threads: [] });
       plantStaleLock(worktree, "stale0002");
       const drive = driveDb(stateDir);
       const seen = readLockRow(drive, worktree.name);
@@ -464,32 +439,12 @@ describe("drive.ts loop control", () => {
     it("leaves no lock residue however many times it runs", async () => {
       // The bound has to be structural, not a sweep. Three consecutive drives
       // are enough to show accumulation if anything accumulates at all.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree, pr } = lockDirs(dir, stateDir);
+      const { dir, stateDir, worktree, pr } = tree.fixture({ threads: [] });
       for (let round = 0; round < 3; round++) {
-        const proc = Bun.spawn(
-          scriptArgv(
-            join(SCRIPTS, "drive.ts"),
-            "999",
-            "--no-head-sync",
-            "--",
-            ...PASS_LOUD,
-          ),
-          {
-            env: {
-              ...process.env,
-              PATH: `${binDir}${delimiter}${process.env.PATH}`,
-              DRIVE_PR_FIXTURES: dir,
-              DRIVE_PR_STATE_DIR: stateDir,
-              DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            },
-            stdout: "pipe",
-            stderr: "pipe",
-          },
-        );
-        const [, exitCode] = await Promise.all([
-          new Response(proc.stderr).text(),
-          proc.exited,
+        const { exitCode } = await tree.run(dir, stateDir, [
+          "--no-head-sync",
+          "--",
+          ...PASS_LOUD,
         ]);
         expect(exitCode).not.toBe(11);
         // BOTH locks, every round: a drive holds one per worktree and one per
@@ -506,41 +461,26 @@ describe("drive.ts loop control", () => {
       // worktree locks, and their per-PR locks did not collide either when
       // they drove different PRs, so both ran and cross-shipped each other's
       // uncommitted edits.
-      const { dir, stateDir } = writeFixture({ threads: [] });
-      const { worktree } = lockDirs(dir, stateDir);
+      const { dir, stateDir, worktree } = tree.fixture({ threads: [] });
       plantClaim(worktree, {
         pid: process.pid,
         host: hostname(),
         nonce: "live0001",
       });
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--",
-          ...PASS_LOUD,
-        ),
+      const { stderr, exitCode } = await tree.run(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--", ...PASS_LOUD],
         {
           env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
             // A DIFFERENT handoff dir from the one the live holder used. Under
             // the old derivation this drive looked for its lock in here, found
             // nothing, and started a second loop in the same tree.
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff-elsewhere"),
           },
-          stdout: "pipe",
-          stderr: "pipe",
         },
       );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
       expect(exitCode).toBe(11);
       expect(stderr).toContain("worktree lock");
       expect(stderr).not.toContain("RAN_THE_PASS");
@@ -551,10 +491,9 @@ describe("drive.ts loop control", () => {
       // short — and a round runs an agent pass, the gates and sometimes a
       // Testbox. A pass that outlasts the window would let another start
       // recover the lock of a demonstrably live driver.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir, worktree } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
       // The loop still touches every lock once at the round boundary, just
       // before the pass. Sampling across THAT would pass with no timer at all
       // — measured: removing `startHeartbeat` left this test green. So the
@@ -563,34 +502,12 @@ describe("drive.ts loop control", () => {
       // the heartbeat inside the window.
       const started = join(dir, "pass-started");
       const release = join(dir, "pass-release");
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          "sh",
-          "-c",
-          `: pass for 999\n${blockedPassScript(started, release)}`,
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            // The renewal period is derived from the staleness window, whose
-            // floor is five minutes; this seam is what makes the mechanism
-            // observable in a test rather than in five minutes' time.
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
+      const proc = spawnBlockedPass(dir, stateDir, started, release, {
+        // The renewal period is derived from the staleness window, whose
+        // floor is five minutes; this seam is what makes the mechanism
+        // observable in a test rather than in five minutes' time.
+        DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
+      });
       try {
         expect(await awaitFixtureMarker(started)).toBe(true);
         // The lock row's heartbeat is what the renewal moves, and its token
@@ -628,64 +545,8 @@ describe("drive.ts loop control", () => {
       // the file says now, so such a rewrite would display the NEXT pass's
       // account while the CURRENT one is still active. The claim must hold
       // the identity the running pass actually has.
-      const { dir, stateDir } = writeFixture({
-        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-      });
-      const { worktree } = lockDirs(dir, stateDir);
-
-      // A stub `claude` binary on PATH — argv[0] must literally be `claude`
-      // for `passVendor` to resolve the Claude branch at all, and the round
-      // loop really does execve this (drive.ts spawns argv directly, never
-      // through a shell), so a real binary — not a `sh -c` wrapper — has to
-      // exist to be found.
-      const claudeStubDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-stub-"),
-      );
-      const startedMarker = join(dir, "claude-pass-started");
-      const releaseMarker = join(dir, "claude-pass-release");
-      writeFakeProgram(
-        join(claudeStubDir, "claude"),
-        `#!/bin/sh\n${blockedPassScript(startedMarker, releaseMarker)}\n`,
-      );
-
-      const claudeConfigDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-config-"),
-      );
-      const claudeJsonPath = join(claudeConfigDir, ".claude.json");
-      writeFileSync(
-        claudeJsonPath,
-        JSON.stringify({
-          oauthAccount: { emailAddress: "before@example.com" },
-        }),
-      );
-
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          "claude",
-          "-p",
-          "/drive-pr 999",
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            CLAUDE_CONFIG_DIR: claudeConfigDir,
-            CLAUDE_CODE_OAUTH_TOKEN: "",
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
+      const { account, proc, startedMarker, releaseMarker, worktree } =
+        blockedAccountDriver("100");
 
       try {
         expect(await awaitFixtureMarker(startedMarker)).toBe(true);
@@ -710,7 +571,7 @@ describe("drive.ts loop control", () => {
         // actively running (blocked until the test releases it) and already
         // holds the OLD identity.
         writeFileSync(
-          claudeJsonPath,
+          account.path,
           JSON.stringify({
             oauthAccount: { emailAddress: "after@example.com" },
           }),
@@ -738,8 +599,7 @@ describe("drive.ts loop control", () => {
         writeFileSync(releaseMarker, "");
         proc.kill();
         await proc.exited;
-        rmSync(claudeStubDir, { recursive: true, force: true });
-        rmSync(claudeConfigDir, { recursive: true, force: true });
+        account.cleanup();
       }
     }, 120000);
 
@@ -749,59 +609,14 @@ describe("drive.ts loop control", () => {
       // diagnostics. The renewal finds the row no longer carries this
       // acquisition's token and stops the drive; the rewrite, addressed to the
       // same token, cannot write the successor's row either.
-      const { dir, stateDir } = writeFixture({
-        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-      });
-      const { worktree } = lockDirs(dir, stateDir);
-
-      const claudeStubDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-stub-"),
-      );
-      const startedMarker = join(dir, "claude-pass-started");
-      const releaseMarker = join(dir, "claude-pass-release");
-      writeFakeProgram(
-        join(claudeStubDir, "claude"),
-        `#!/bin/sh\n${blockedPassScript(startedMarker, releaseMarker)}\n`,
-      );
-
-      const claudeConfigDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-config-"),
-      );
-      const claudeJsonPath = join(claudeConfigDir, ".claude.json");
-      writeFileSync(
-        claudeJsonPath,
-        JSON.stringify({
-          oauthAccount: { emailAddress: "before@example.com" },
-        }),
-      );
-
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          "claude",
-          "-p",
-          "/drive-pr 999",
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            CLAUDE_CONFIG_DIR: claudeConfigDir,
-            CLAUDE_CODE_OAUTH_TOKEN: "",
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
+      const {
+        account,
+        proc,
+        startedMarker,
+        releaseMarker,
+        stateDir,
+        worktree,
+      } = blockedAccountDriver("100");
 
       try {
         expect(await awaitFixtureMarker(startedMarker)).toBe(true);
@@ -809,7 +624,7 @@ describe("drive.ts loop control", () => {
         // Both land together, with no await between them, so the very next
         // heartbeat tick sees an account change AND a replaced lock.
         writeFileSync(
-          claudeJsonPath,
+          account.path,
           JSON.stringify({
             oauthAccount: { emailAddress: "after@example.com" },
           }),
@@ -832,8 +647,7 @@ describe("drive.ts loop control", () => {
         writeFileSync(releaseMarker, "");
         proc.kill();
         await proc.exited;
-        rmSync(claudeStubDir, { recursive: true, force: true });
-        rmSync(claudeConfigDir, { recursive: true, force: true });
+        account.cleanup();
       }
     }, 120000);
 
@@ -846,60 +660,21 @@ describe("drive.ts loop control", () => {
       // heartbeat interval below is deliberately far longer than this test's
       // own lifetime, so a refreshed claim here can only be the pass-exit
       // refresh, never the timer.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir, worktree } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree } = lockDirs(dir, stateDir);
 
-      const claudeStubDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-stub-"),
-      );
+      const account = accountDriverFixture();
       const startedMarker = join(dir, "claude-pass-started");
-      writeFakeProgram(
-        join(claudeStubDir, "claude"),
+      account.writePass(
         `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 1\nexit 0\n`,
       );
 
-      const claudeConfigDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-config-"),
-      );
-      const claudeJsonPath = join(claudeConfigDir, ".claude.json");
-      writeFileSync(
-        claudeJsonPath,
-        JSON.stringify({
-          oauthAccount: { emailAddress: "before@example.com" },
-        }),
-      );
-
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          "claude",
-          "-p",
-          "/drive-pr 999",
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            CLAUDE_CONFIG_DIR: claudeConfigDir,
-            CLAUDE_CODE_OAUTH_TOKEN: "",
-            // Far longer than this test ever runs — isolates the pass-exit
-            // refresh from the heartbeat's own.
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "600000",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
+      const proc = account.spawn(dir, stateDir, 1, {
+        // Far longer than this test ever runs — isolates the pass-exit
+        // refresh from the heartbeat's own.
+        DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "600000",
+      });
 
       try {
         expect(await awaitFixtureMarker(startedMarker)).toBe(true);
@@ -907,7 +682,7 @@ describe("drive.ts loop control", () => {
         // Change the file-backed identity while the pass is still asleep —
         // the running pass keeps billing to the OLD one regardless.
         writeFileSync(
-          claudeJsonPath,
+          account.path,
           JSON.stringify({
             oauthAccount: { emailAddress: "after@example.com" },
           }),
@@ -926,8 +701,7 @@ describe("drive.ts loop control", () => {
       } finally {
         proc.kill();
         await proc.exited;
-        rmSync(claudeStubDir, { recursive: true, force: true });
-        rmSync(claudeConfigDir, { recursive: true, force: true });
+        account.cleanup();
       }
     }, 120000);
 
@@ -960,38 +734,23 @@ describe("drive.ts loop control", () => {
         },
         scratchClean.dir,
       );
-      // NOT `lockDirs(dir, stateDir).worktree`: the driver below runs with
-      // `cwd: scratchClean.dir`, so its own worktree-lock name is keyed off
-      // THAT tree, not the suite's own cwd `WORKTREE_LOCK` was memoised
-      // against — see `worktreeLockNameFor`'s own comment.
+      // The driver below runs with `cwd: scratchClean.dir`, so its own
+      // worktree-lock name is keyed off THAT tree — see
+      // `worktreeLockNameFor`'s own comment.
       const worktree: LockSlot = {
         stateDir,
         name: await worktreeLockNameFor(scratchClean.dir),
       };
 
-      const claudeStubDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-stub-"),
-      );
+      const account = accountDriverFixture();
       const firstMarker = join(dir, "claude-pass-started-1");
       const secondMarker = join(dir, "claude-pass-started-2");
       // First invocation touches `firstMarker`; every invocation after that
       // touches `secondMarker` — so the SECOND marker's existence is proof a
       // second pass was actually dispatched, not merely that the script ran
       // twice for some other reason.
-      writeFakeProgram(
-        join(claudeStubDir, "claude"),
+      account.writePass(
         `#!/bin/sh\nif [ -e ${JSON.stringify(firstMarker)} ]; then : > ${JSON.stringify(secondMarker)}; else : > ${JSON.stringify(firstMarker)}; fi\nsleep 1\nexit 0\n`,
-      );
-
-      const claudeConfigDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-config-"),
-      );
-      const claudeJsonPath = join(claudeConfigDir, ".claude.json");
-      writeFileSync(
-        claudeJsonPath,
-        JSON.stringify({
-          oauthAccount: { emailAddress: "before@example.com" },
-        }),
       );
 
       const proc = Bun.spawn(
@@ -1017,8 +776,8 @@ describe("drive.ts loop control", () => {
           // CI-repair branch below.
           cwd: scratchClean.dir,
           env: {
-            ...process.env,
-            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+            ...gitCleanEnv(),
+            PATH: `${account.bin}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1029,13 +788,9 @@ describe("drive.ts loop control", () => {
             // at module load. Without this, `lockDirs()`'s `worktree` path
             // names a lock the driver never creates, and every claim read
             // against it fails closed to "absent" for the whole run — not a
-            // timing race, a permanent path mismatch. Every other test in
-            // this file that overrides `cwd` to a scratch tree pairs it with
-            // this same anchor (e.g. the `$DRIVE_PR_WORKTREE` measurement
-            // tests above).
+            // timing race, a permanent path mismatch.
             DRIVE_PR_WORKTREE: scratchClean.dir,
-            CLAUDE_CONFIG_DIR: claudeConfigDir,
-            CLAUDE_CODE_OAUTH_TOKEN: "",
+            ...account.login,
             DRIVE_PR_CI_REPAIR_ROUNDS: "2",
             // Far longer than this test ever runs — isolates the post-repair
             // refresh from the heartbeat's own, same as the sibling test above.
@@ -1059,7 +814,7 @@ describe("drive.ts loop control", () => {
         // still asleep — the running pass keeps billing to the OLD one
         // regardless.
         writeFileSync(
-          claudeJsonPath,
+          account.path,
           JSON.stringify({
             oauthAccount: { emailAddress: "after@example.com" },
           }),
@@ -1119,8 +874,7 @@ describe("drive.ts loop control", () => {
       } finally {
         proc.kill();
         await proc.exited;
-        rmSync(claudeStubDir, { recursive: true, force: true });
-        rmSync(claudeConfigDir, { recursive: true, force: true });
+        account.cleanup();
       }
       // Explicit, matching the CI-repair block's own convention (e.g. line
       // ~20765): two repair-pass round-trips, each with its own generous
@@ -1139,39 +893,25 @@ describe("drive.ts loop control", () => {
       // making both locks refuse their diagnostics rewrite while round 1's
       // pass is still running — the pass waits for it, so there is no timing
       // race against the driver — then round 2 must still spawn.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir, worktree, pr } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree, pr } = lockDirs(dir, stateDir);
 
-      const claudeStubDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-stub-"),
-      );
+      const account = accountDriverFixture();
       const passCountFile = join(dir, "pass-count");
       const round1Marker = join(dir, "round1-started");
       const blockedMarker = join(dir, "rewrites-refused");
       const round2Marker = join(dir, "round2-started");
 
-      const claudeConfigDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-config-"),
-      );
-      const claudeJsonPath = join(claudeConfigDir, ".claude.json");
-      writeFileSync(
-        claudeJsonPath,
-        JSON.stringify({
-          oauthAccount: { emailAddress: "before@example.com" },
-        }),
-      );
       // Round 1 changes the login, announces itself and waits (bounded) for
       // the test to refuse the rewrites before it exits; round 2 announces
       // itself.
-      writeFakeProgram(
-        join(claudeStubDir, "claude"),
+      account.writePass(
         `#!/bin/sh
 n=$(( $(cat ${JSON.stringify(passCountFile)} 2>/dev/null || echo 0) + 1 ))
 echo "$n" > ${JSON.stringify(passCountFile)}
 if [ "$n" = "1" ]; then
-  printf '%s' '{"oauthAccount":{"emailAddress":"after@example.com"}}' > ${JSON.stringify(claudeJsonPath)}
+  printf '%s' '{"oauthAccount":{"emailAddress":"after@example.com"}}' > ${JSON.stringify(account.path)}
   : > ${JSON.stringify(round1Marker)}
   i=0
   while [ ! -e ${JSON.stringify(blockedMarker)} ] && [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done
@@ -1182,41 +922,17 @@ exit 0
 `,
       );
 
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "2",
-          "--",
-          "claude",
-          "-p",
-          "/drive-pr 999",
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            CLAUDE_CONFIG_DIR: claudeConfigDir,
-            CLAUDE_CODE_OAUTH_TOKEN: "",
-            // Far longer than this test ever runs — only the pre-spawn retry
-            // loop and the pass-exit refresh should ever try the refused
-            // rewrite, never the heartbeat timer.
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "60000",
-            // The single fixture thread is never resolved by either stub
-            // invocation, so both rounds report an identical fingerprint —
-            // disabled here because this probe's subject is the identity
-            // fallback, not the (separately covered) stall-stop behavior.
-            DRIVE_PR_STALL_ROUNDS: "0",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
+      const proc = account.spawn(dir, stateDir, 2, {
+        // Far longer than this test ever runs — only the pre-spawn retry
+        // loop and the pass-exit refresh should ever try the refused
+        // rewrite, never the heartbeat timer.
+        DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "60000",
+        // The single fixture thread is never resolved by either stub
+        // invocation, so both rounds report an identical fingerprint —
+        // disabled here because this probe's subject is the identity
+        // fallback, not the (separately covered) stall-stop behavior.
+        DRIVE_PR_STALL_ROUNDS: "0",
+      });
 
       const allow: (() => void)[] = [];
       try {
@@ -1239,8 +955,7 @@ exit 0
         writeFileSync(blockedMarker, "");
         proc.kill();
         await proc.exited;
-        rmSync(claudeStubDir, { recursive: true, force: true });
-        rmSync(claudeConfigDir, { recursive: true, force: true });
+        account.cleanup();
       }
     }, 60000);
 
@@ -1251,61 +966,14 @@ exit 0
       // That rewrite is addressed to this acquisition's token: it must read
       // the replaced row as the takeover it is, stop the drive, and write
       // nothing into the successor's row.
-      const { dir, stateDir } = writeFixture({
-        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-      });
-      const { worktree } = lockDirs(dir, stateDir);
-
-      const claudeStubDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-stub-"),
-      );
-      const startedMarker = join(dir, "claude-pass-started");
-      const releaseMarker = join(dir, "claude-pass-release");
-      writeFakeProgram(
-        join(claudeStubDir, "claude"),
-        `#!/bin/sh\n${blockedPassScript(startedMarker, releaseMarker)}\n`,
-      );
-
-      const claudeConfigDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-config-"),
-      );
-      const claudeJsonPath = join(claudeConfigDir, ".claude.json");
-      writeFileSync(
-        claudeJsonPath,
-        JSON.stringify({
-          oauthAccount: { emailAddress: "before@example.com" },
-        }),
-      );
-
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          "claude",
-          "-p",
-          "/drive-pr 999",
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            CLAUDE_CONFIG_DIR: claudeConfigDir,
-            CLAUDE_CODE_OAUTH_TOKEN: "",
-            // Far longer than this test ever runs — the pass-exit rewrite is
-            // what has to find the takeover, not a timer tick.
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "60000",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
+      const {
+        account,
+        proc,
+        startedMarker,
+        releaseMarker,
+        stateDir,
+        worktree,
+      } = blockedAccountDriver("60000");
 
       try {
         expect(await awaitFixtureMarker(startedMarker)).toBe(true);
@@ -1319,7 +987,7 @@ exit 0
 
         // Give the pass-exit rewrite something to write.
         writeFileSync(
-          claudeJsonPath,
+          account.path,
           JSON.stringify({
             oauthAccount: { emailAddress: "after@example.com" },
           }),
@@ -1344,8 +1012,7 @@ exit 0
         writeFileSync(releaseMarker, "");
         proc.kill();
         await proc.exited;
-        rmSync(claudeStubDir, { recursive: true, force: true });
-        rmSync(claudeConfigDir, { recursive: true, force: true });
+        account.cleanup();
       }
     }, 120000);
 
@@ -1359,61 +1026,22 @@ exit 0
       // while the worktree lock stays writable, trigger a real account
       // change, and confirm the PR lock still catches up once the refusal is
       // lifted.
-      const { dir, stateDir } = writeFixture({
+      const { dir, stateDir, worktree, pr } = tree.fixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
-      const { worktree, pr } = lockDirs(dir, stateDir);
 
-      const claudeStubDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-stub-"),
-      );
+      const account = accountDriverFixture();
       const startedMarker = join(dir, "claude-pass-started");
-      writeFakeProgram(
-        join(claudeStubDir, "claude"),
+      account.writePass(
         `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 1\nexit 0\n`,
       );
 
-      const claudeConfigDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-config-"),
-      );
-      const claudeJsonPath = join(claudeConfigDir, ".claude.json");
-      writeFileSync(
-        claudeJsonPath,
-        JSON.stringify({
-          oauthAccount: { emailAddress: "before@example.com" },
-        }),
-      );
-
-      const proc = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          "claude",
-          "-p",
-          "/drive-pr 999",
-        ),
-        {
-          env: {
-            ...process.env,
-            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            CLAUDE_CONFIG_DIR: claudeConfigDir,
-            CLAUDE_CODE_OAUTH_TOKEN: "",
-            // Short enough that several ticks land in the window between
-            // the pass exiting and this process deciding it has hit
-            // --max-rounds — the retry has to survive more than one tick.
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "10",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
+      const proc = account.spawn(dir, stateDir, 1, {
+        // Short enough that several ticks land in the window between
+        // the pass exiting and this process deciding it has hit
+        // --max-rounds — the retry has to survive more than one tick.
+        DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "10",
+      });
 
       let allowPr: (() => void) | null = null;
       try {
@@ -1439,7 +1067,7 @@ exit 0
         ).toThrow();
 
         writeFileSync(
-          claudeJsonPath,
+          account.path,
           JSON.stringify({
             oauthAccount: { emailAddress: "after@example.com" },
           }),
@@ -1472,8 +1100,7 @@ exit 0
         allowPr?.();
         proc.kill();
         await proc.exited;
-        rmSync(claudeStubDir, { recursive: true, force: true });
-        rmSync(claudeConfigDir, { recursive: true, force: true });
+        account.cleanup();
       }
     });
   });

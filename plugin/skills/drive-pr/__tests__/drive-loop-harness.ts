@@ -89,6 +89,41 @@ export const DRIVE_PACING_ENV: Record<string, string> = {
   DRIVE_PR_LEDGER: "off",
 };
 
+/** Spawn a fixture driver and leave its lifetime under the test’s control. */
+export function spawnDriveIn(
+  dir: string,
+  stateDir: string,
+  args: string[],
+  cwd?: string,
+  opts: {
+    env?: Record<string, string>;
+    /** Prepended ahead of `binDir` in PATH — for a probe's own `git` stub. */
+    extraBinDir?: string;
+    pacing?: boolean;
+    stdout?: "pipe" | "ignore";
+  } = {},
+) {
+  return Bun.spawn(scriptArgv(join(SCRIPTS, "drive.ts"), "999", ...args), {
+    cwd: cwd ?? scratchClean.dir,
+    // gitCleanEnv, not process.env: a git hook exports GIT_DIR and
+    // GIT_INDEX_FILE, and inheriting them makes every git call inside the
+    // spawned script — including the converged clean-tree check — operate
+    // on the REAL repository instead of the scratch cwd.
+    env: {
+      ...gitCleanEnv(),
+      PATH: `${opts.extraBinDir ? `${opts.extraBinDir}${delimiter}` : ""}${binDir}${delimiter}${process.env.PATH}`,
+      DRIVE_PR_FIXTURES: dir,
+      DRIVE_PR_STATE_DIR: stateDir,
+      DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+      ...(opts.pacing === false ? {} : DRIVE_PACING_ENV),
+      ...(opts.env ?? {}),
+    },
+    stdin: "ignore",
+    stdout: opts.stdout ?? "pipe",
+    stderr: "pipe",
+  });
+}
+
 /**
  * Drive an ALREADY-WRITTEN fixture, so a probe can inspect the fixture
  * directory afterwards — `ready-calls`, which the stub appends to on every
@@ -111,27 +146,7 @@ export async function runDriveIn(
     extraBinDir?: string;
   } = {},
 ) {
-  const proc = Bun.spawn(
-    scriptArgv(join(SCRIPTS, "drive.ts"), "999", ...args),
-    {
-      cwd: cwd ?? scratchClean.dir,
-      // gitCleanEnv, not process.env: a git hook exports GIT_DIR and
-      // GIT_INDEX_FILE, and inheriting them makes every git call inside the
-      // spawned script — including the converged clean-tree check — operate
-      // on the REAL repository instead of the scratch cwd.
-      env: {
-        ...gitCleanEnv(),
-        PATH: `${opts.extraBinDir ? `${opts.extraBinDir}${delimiter}` : ""}${binDir}${delimiter}${process.env.PATH}`,
-        DRIVE_PR_FIXTURES: dir,
-        DRIVE_PR_STATE_DIR: stateDir,
-        DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-        ...DRIVE_PACING_ENV,
-        ...(opts.env ?? {}),
-      },
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
+  const proc = spawnDriveIn(dir, stateDir, args, cwd, opts);
   const [stderr, exitCode] = await Promise.all([
     new Response(proc.stderr).text(),
     proc.exited,
@@ -258,12 +273,16 @@ export interface LockSlot {
 // second driver in the same tree can be configured to compute differently
 // — `keys the WORKTREE lock by the tree, not by $DRIVE_PR_HANDOFF_DIR` pins
 // it.
+//
+// `worktreeLock` is the worktree lock of a driver spawned in another tree
+// (`worktreeLockNameFor`); the default names the suite's own checkout.
 export function lockDirs(
   _dir: string,
   stateDir: string,
+  worktreeLock: string = WORKTREE_LOCK,
 ): { worktree: LockSlot; pr: LockSlot } {
   return {
-    worktree: { stateDir, name: WORKTREE_LOCK },
+    worktree: { stateDir, name: worktreeLock },
     pr: { stateDir, name: "pr-drive-999" },
   };
 }
