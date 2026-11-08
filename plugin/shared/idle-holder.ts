@@ -126,7 +126,15 @@ function unpushed(
   const onRemote = exists.status === 0;
   if (!onRemote) {
     // The other tracking branches vouch for the commits only as the remote has them now.
-    const refreshed = git(["fetch", "--quiet", "--prune", remote]);
+    // The refspec names the whole namespace the count trusts: a clone that
+    // fetches only some branches would otherwise keep a deleted branch's ref.
+    const refreshed = git([
+      "fetch",
+      "--quiet",
+      "--prune",
+      remote,
+      `+refs/heads/*:refs/remotes/${remote}/*`,
+    ]);
     if (refreshed.status !== 0)
       return `${remote}'s branches cannot be refreshed to tell whether they hold its commits: ${output(refreshed)}`;
   }

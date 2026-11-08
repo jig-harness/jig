@@ -48,8 +48,12 @@ export class BusyHolderError extends OrcaError {
  * at `head`, the commit the idle check read: `git update-ref` with that
  * commit as the old value refuses a `HEAD` that moved, and a `HEAD` read
  * just before it must still name `branch`, so a holder that switched to
- * another branch at the same commit is left alone. The working tree and
- * index are untouched, which the same commit makes right, and no hook runs.
+ * another branch at the same commit is left alone. Git cannot compare the
+ * branch a symbolic `HEAD` names in the same transaction as a detach, so a
+ * switch between those two calls is not caught; it needs a process in a tree
+ * the idle check found empty, the same race the check itself has. The
+ * working tree and index are untouched, which the same commit makes right,
+ * and no hook runs.
  */
 function detachAt(
   port: OpenPort,

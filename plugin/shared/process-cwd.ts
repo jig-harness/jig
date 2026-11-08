@@ -28,18 +28,41 @@ function inside(cwd: string, top: string): boolean {
   return cwd === top || cwd.startsWith(top.endsWith("/") ? top : `${top}/`);
 }
 
-/** lsof's name field with its `\xHH` byte escapes (and `\\`) undone, read as UTF-8. */
-function unescapeLsof(name: string): string {
-  if (!name.includes("\\")) return name;
+const LSOF_C_ESCAPES: Record<string, number> = {
+  a: 0x07,
+  b: 0x08,
+  f: 0x0c,
+  n: 0x0a,
+  r: 0x0d,
+  t: 0x09,
+  v: 0x0b,
+  "\\": 0x5c,
+};
+
+/**
+ * lsof's name field with its escapes undone, read as UTF-8: `\xHH` bytes,
+ * the C forms (`\t`, `\n`, `\\` and the like) and, when `caret`, `^X`
+ * control notation. A `^` may also be a literal character of the name, so
+ * the caller tries both readings.
+ */
+function unescapeLsof(name: string, caret: boolean): string {
   const bytes: number[] = [];
   const encoder = new TextEncoder();
   for (let i = 0; i < name.length; ) {
     const hex = /^\\x([0-9a-fA-F]{2})/.exec(name.slice(i, i + 4));
+    const c = name[i + 1];
+    const control = caret && name[i] === "^" ? name.charCodeAt(i + 1) : NaN;
     if (hex !== null) {
       bytes.push(Number.parseInt(hex[1] as string, 16));
       i += 4;
-    } else if (name.startsWith("\\\\", i)) {
-      bytes.push(0x5c);
+    } else if (name[i] === "\\" && c !== undefined && c in LSOF_C_ESCAPES) {
+      bytes.push(LSOF_C_ESCAPES[c] as number);
+      i += 2;
+    } else if (control >= 0x40 && control <= 0x5f) {
+      bytes.push(control - 0x40);
+      i += 2;
+    } else if (control === 0x3f) {
+      bytes.push(0x7f);
       i += 2;
     } else {
       const point = name.codePointAt(i) as number;
@@ -49,6 +72,15 @@ function unescapeLsof(name: string): string {
     }
   }
   return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+/** Whether any reading of lsof's name field is `top` or under it. */
+function insideLsof(name: string, top: string): boolean {
+  return (
+    inside(name, top) ||
+    inside(unescapeLsof(name, false), top) ||
+    inside(unescapeLsof(name, true), top)
+  );
 }
 
 /** The listing's pids working in `top`, and the pids whose directory it could not read. */
@@ -71,7 +103,7 @@ export function parseCwdListing(
     else if (
       line.startsWith("n") &&
       pid !== null &&
-      (inside(line.slice(1), top) || inside(unescapeLsof(line.slice(1)), top))
+      insideLsof(line.slice(1), top)
     )
       pids.push(pid);
   }

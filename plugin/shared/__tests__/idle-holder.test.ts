@@ -127,6 +127,26 @@ describe("holderVerdict", () => {
     expect(verdict(holder).idle).toBe(true);
   });
 
+  test("a stale ref outside the remote's configured refspec does not vouch either", () => {
+    const { clone, holder } = heldTree();
+    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    git(
+      clone,
+      "config",
+      "remote.origin.fetch",
+      "+refs/heads/main:refs/remotes/origin/main",
+    );
+    git(
+      clone,
+      "update-ref",
+      "refs/remotes/origin/elsewhere",
+      git(holder, "rev-parse", "HEAD"),
+    );
+    expect(reasons(holder)).toEqual([
+      `1 commit(s) on no origin branch, and origin has no ${BRANCH}`,
+    ]);
+  });
+
   test("a cached tracking branch the remote no longer has does not vouch for its commits", () => {
     const { clone, holder } = heldTree();
     git(clone, "push", "-q", "origin", "--delete", BRANCH);

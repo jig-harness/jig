@@ -64,6 +64,27 @@ describe("parseCwdListing lsof escapes", () => {
   });
 });
 
+describe("parseCwdListing lsof control characters", () => {
+  test.each([
+    ["C escape", "/w/my\\ttree/x", "/w/my\ttree"],
+    ["caret notation", "/w/my^Itree/x", "/w/my\ttree"],
+    ["literal caret", "/w/my^Itree/x", "/w/my^Itree"],
+    ["doubled backslash", "/w/a\\\\b/x", "/w/a\\b"],
+  ])("matches a name printed with a %s", (_label, printed, top) => {
+    expect(parseCwdListing(`p10\nfcwd\nn${printed}\n`, top)).toEqual({
+      pids: ["10"],
+      unread: [],
+    });
+  });
+
+  test("leaves a different tree alone", () => {
+    expect(parseCwdListing("p10\nfcwd\nn/w/my^Itree/x\n", "/w/other")).toEqual({
+      pids: [],
+      unread: [],
+    });
+  });
+});
+
 describe("cwdHolders", () => {
   test("answers from a clean listing", () => {
     const { run } = runner(result(0, "/proc/1\t/\n/proc/2\t/w/holder/a\n"));
