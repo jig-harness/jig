@@ -144,3 +144,23 @@ exit "$status"`;
   });
   expect(sweepFindings(tracker, root, tracked)).toEqual([]);
 });
+
+it("keeps redirections and shell expansions outside the validated wrapper advisory", () => {
+  const wrapper = `status=0
+bun check-fields.ts check --yes > "$RUNNER_TEMP/sweep.txt" || status=$?
+cat "$RUNNER_TEMP/sweep.txt"
+{ echo 'text'; cat "$RUNNER_TEMP/sweep.txt"; echo 'end'; } >> "$GITHUB_STEP_SUMMARY"
+exit "$status"`;
+  for (const run of [
+    'bun check-fields.ts check --yes > "$(exit 1)" || status=$?',
+    'bun check-fields.ts check --yes > "$RUNNER_TEMP/sweep.txt" || status=$?',
+    wrapper.replace("$RUNNER_TEMP/sweep.txt", "$(exit 1)"),
+    wrapper.replace('cat "$RUNNER_TEMP/sweep.txt"', 'cat "$(exit 1)"'),
+    wrapper.replace("$GITHUB_STEP_SUMMARY", "$(exit 1)"),
+  ]) {
+    const { root, tracked } = repo({
+      ".github/workflows/sweep.yml": `on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    steps:\n      - run: ${JSON.stringify(run)}\n`,
+    });
+    expect(sweepFindings(tracker, root, tracked)).toHaveLength(1);
+  }
+});

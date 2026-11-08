@@ -40,7 +40,7 @@ function applying(command: unknown): boolean {
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("#"));
   if (lines.length === 1) return sweepCommand(lines[0] ?? "");
-  return statusWrapper(lines) && sweepCommand(lines[1] ?? "");
+  return statusWrapper(lines);
 }
 
 /** The supported shell wrapper preserves the sweep's exit status. */
@@ -48,11 +48,15 @@ function statusWrapper(lines: string[]): boolean {
   // A wrapper is evidence only in this order: capture the command's status,
   // print its output, publish that output, then return the captured status.
   // Arbitrary shell control flow needs a person's inspection.
+  const suffix = ' > "$RUNNER_TEMP/sweep.txt" || status=$?';
+  const command = lines[1] ?? "";
   return (
     lines.length === 5 &&
     lines[0] === "status=0" &&
-    /^cat "[^"`]+"$/u.test(lines[2] ?? "") &&
-    /^\{ echo '[^']+'; cat "[^"`]+"; echo '[^']+'; \} >> "[^"`]+"$/u.test(
+    command.endsWith(suffix) &&
+    sweepCommand(command.slice(0, -suffix.length)) &&
+    lines[2] === 'cat "$RUNNER_TEMP/sweep.txt"' &&
+    /^\{ echo '[^']+'; cat "\$RUNNER_TEMP\/sweep.txt"; echo '[^']+'; \} >> "\$GITHUB_STEP_SUMMARY"$/u.test(
       lines[3] ?? "",
     ) &&
     lines[4] === 'exit "$status"'
@@ -78,7 +82,7 @@ function sweepCommand(line: string): boolean {
   if (script.includes("$(") || script.split("/").at(-1) !== "check-fields.ts")
     return false;
   const args = m[2] ?? "";
-  return /^(?:check\s+)?--yes(?: --retired-from [a-zA-Z0-9_./-]+)?(?:\s+>[^|]*\|\| status=\$\?)?$/u.test(
+  return /^(?:check\s+)?--yes(?: --retired-from [a-zA-Z0-9_./-]+)?$/u.test(
     args,
   );
 }
