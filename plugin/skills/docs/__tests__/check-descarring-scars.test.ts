@@ -304,5 +304,17 @@ test("scar lint: only an equal-length backtick run closes a span", () => {
 
 test("scar lint: an equals-only line at the start is a paragraph, not an underline", () => {
   expect(scanScars("====\nReviewer: the approver.")).toEqual([]);
-  expect(scanScars("---\n\n====\nReviewer: the approver.")).toEqual([]);
+  expect(scanScars("***\n\n====\nReviewer: the approver.")).toEqual([]);
+});
+
+test("scar lint: an escaped backtick opens no span", () => {
+  expect(scanScars("Raised by \\`coderabbitai[bot]\\`")).toHaveLength(1);
+  expect(scanScars("Raised by \\\\`coderabbitai[bot]`")).toEqual([]);
+});
+
+test("scar lint: a code span may run across the lines of a paragraph", () => {
+  expect(scanScars("Use `the handle\ncoderabbitai[bot]` here.")).toEqual([]);
+  expect(scanScars("Use `the handle\n\ncoderabbitai[bot]` here.")).toHaveLength(
+    1,
+  );
 });

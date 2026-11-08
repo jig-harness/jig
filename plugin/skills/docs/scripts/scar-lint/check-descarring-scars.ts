@@ -58,29 +58,70 @@ function findClose(line: string, from: number, size: number): number {
   return -1;
 }
 
+/** Whether the backtick at `at` is escaped by an odd run of backslashes. */
+function escaped(text: string, at: number, floor: number): boolean {
+  let slashes = 0;
+  while (at - 1 - slashes >= floor && text[at - 1 - slashes] === "\\") {
+    slashes++;
+  }
+  return slashes % 2 === 1;
+}
+
 /**
- * Replace each inline code span with one mask. A span opens at a backtick run
- * and closes at the next run of exactly the same length; a run with no such
- * partner is literal text, so shorter or longer runs never close a span.
+ * Replace each inline code span with one mask. A span opens at an unescaped
+ * backtick run and closes at the next run of exactly the same length; a run
+ * with no such partner is literal text, so shorter or longer runs never close
+ * a span. Line endings inside a span are kept so the text splits back into the
+ * lines it came from.
  */
-function maskCode(line: string): string {
+function maskCode(text: string): string {
   let out = "";
   let i = 0;
-  while (i < line.length) {
-    const open = line.indexOf("`", i);
-    if (open < 0) return out + line.slice(i);
-    const end = runEnd(line, open);
-    const close = findClose(line, end, end - open);
-    out += line.slice(i, open);
+  while (i < text.length) {
+    const open = text.indexOf("`", i);
+    if (open < 0) return out + text.slice(i);
+    if (escaped(text, open, i)) {
+      out += text.slice(i, open + 1);
+      i = open + 1;
+      continue;
+    }
+    const end = runEnd(text, open);
+    const close = findClose(text, end, end - open);
+    out += text.slice(i, open);
     if (close < 0) {
-      out += line.slice(open, end);
+      out += text.slice(open, end);
       i = end;
     } else {
-      out += CODE_MASK;
-      i = close + (end - open);
+      const stop = close + (end - open);
+      out += CODE_MASK + text.slice(open, stop).replace(/[^\n]/g, "");
+      i = stop;
     }
   }
   return out;
+}
+
+/** A list item marker opening a line: a new block, so no span runs into it. */
+const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s/;
+
+/**
+ * Whether `raw` ends the paragraph above it. A code span runs across the lines
+ * of one paragraph, never past a blank line, fence, heading, underline or item.
+ */
+function endsParagraph(raw: string): boolean {
+  return (
+    raw.trim() === "" ||
+    /^\s*(```|~~~)/.test(raw) ||
+    BLOCK_BOUNDARY.test(raw) ||
+    EQUALS_UNDERLINE.test(raw) ||
+    LIST_ITEM.test(raw)
+  );
+}
+
+/** The lines of the paragraph starting at `start`, code masked across them. */
+function maskParagraph(lines: string[], start: number): string[] {
+  let stop = start + 1;
+  while (stop < lines.length && !endsParagraph(lines[stop] ?? "")) stop++;
+  return maskCode(lines.slice(start, stop).join("\n")).split("\n");
 }
 
 /**
@@ -100,6 +141,19 @@ function isScar(line: string, opensParagraph: boolean): boolean {
   );
 }
 
+/** Each line of a document with its inline code masked, a paragraph at a time. */
+function paragraphMasker(lines: string[]): (index: number) => string {
+  let masked: string[] = [];
+  let from = 0;
+  return (index) => {
+    if (index >= from + masked.length) {
+      masked = maskParagraph(lines, index);
+      from = index;
+    }
+    return masked[index - from] ?? lines[index] ?? "";
+  };
+}
+
 /** Whether line `index` of a document is inside its frontmatter block. */
 function frontmatterState(was: boolean, index: number, raw: string): boolean {
   if (index === 0) return raw.trim() === "---";
@@ -113,7 +167,9 @@ export function scanScars(text: string): string[] {
   let frontmatter = false;
   let previousBlank = true;
   const hits: string[] = [];
-  for (const [index, raw] of splitLines(text).entries()) {
+  const lines = splitLines(text);
+  const maskedLine = paragraphMasker(lines);
+  for (const [index, raw] of lines.entries()) {
     const wasFrontmatter = frontmatter;
     frontmatter = frontmatterState(frontmatter, index, raw);
     if (frontmatter || (index === 0 && raw.trim() === "---")) continue;
@@ -128,7 +184,7 @@ export function scanScars(text: string): string[] {
       continue;
     }
     if (fence) continue;
-    if (isScar(maskCode(raw), previousBlank)) hits.push(`${index + 1}: ${raw}`);
+    if (isScar(maskedLine(index), previousBlank)) hits.push(`${index + 1}: ${raw}`);
     // A heading, setext underline or thematic break is a block of its own: the
     // line after it opens a paragraph.
     previousBlank =
