@@ -23,7 +23,11 @@ import {
   settleSilentTakeovers,
 } from "../lib/actions/drive-hold.ts";
 import { foreignHold, settleSharedTakeovers } from "../lib/shared-launches.ts";
-import { type ReadRecord, readRecord } from "../lib/launches.ts";
+import {
+  cancelledBeforeExecution,
+  type ReadRecord,
+  readRecord,
+} from "../lib/launches.ts";
 import { settleOwnDrives } from "../lib/tick-shared.ts";
 import { noCauseFacts, settleNoCauseStops } from "../lib/no-cause-stops.ts";
 import { classifyLedger, type PrFacts } from "../lib/sources/ledgers.ts";
@@ -485,6 +489,46 @@ describe("another host's takeover of a driver no launch started", () => {
     expect(hold(takeover(facts, claim(5, facts).says))).toBe("refused");
   });
 
+  it("is spent for a reader that now shows the driver gone, when it was made as a doctor-only takeover", () => {
+    const plain = "generation 3, exit null, heartbeat 2026-11-07T08:00:00.000Z";
+    const ended = takeover(plain, claim(5, plain).says);
+    expect(hold(ended)).toBe("refused");
+    const claims = new Map([[7, { ok: true as const, value: [ended] }]]);
+    const [settled] = settleSharedTakeovers([silent()], claims, "this-host");
+    expect(settled?.evidence.settled).toBe(true);
+  });
+
+  it("keeps an older foreign launch's driver out of a spent takeover, shown gone or not", () => {
+    const owner = claim(9, "launch facts");
+    if (!owner.says.ok) throw new Error("fixture");
+    const older = {
+      ...owner,
+      says: {
+        ok: true as const,
+        value: {
+          ...owner.says.value,
+          at: "2026-11-07T06:30:00.000Z",
+          end: {
+            state: "ended" as const,
+            at: "2026-11-07T11:30:00.000Z",
+            exit: 0,
+            outcome: null,
+          },
+        },
+      },
+    };
+    const ended = takeover(facts, claim(5, facts).says);
+    const claims = new Map([[7, { ok: true as const, value: [older, ended] }]]);
+    const [settled] = settleSharedTakeovers([silent()], claims, "this-host");
+    expect(settled?.evidence.settled).not.toBe(true);
+    const kind = foreignHold(
+      silent(),
+      { ok: true, value: [older, ended] },
+      "this-host",
+    ).kind;
+    expect(kind).toBe("takeover");
+  });
+
   it("settles as a silent drive a person hears of, and is then held by no foreign claim", () => {
     const claims = new Map([
       [
@@ -502,6 +546,36 @@ describe("another host's takeover of a driver no launch started", () => {
     expect(
       foreignHold(settled as DrivenPr, claims.get(7), "this-host").kind,
     ).toBe("none");
+  });
+
+  it("settles a doctor-only takeover another host ended on these ledger facts, but not one on other facts", () => {
+    const doctor = {
+      ...silent(),
+      evidence: { ...silent().evidence, driverGone: false },
+    } as DrivenPr;
+    const ended = (f: string) =>
+      new Map([
+        [
+          7,
+          {
+            ok: true as const,
+            value: [takeover(f, claim(5, f).says)],
+          },
+        ],
+      ]);
+    const [settled] = settleSharedTakeovers(
+      [doctor],
+      ended(factsOf(doctor)),
+      "this-host",
+    );
+    expect(settled?.evidence.settled).toBe(true);
+    expect(settled?.why).toContain("only a person settles it");
+    const [other] = settleSharedTakeovers(
+      [doctor],
+      ended("generation 9"),
+      "this-host",
+    );
+    expect(other?.evidence.settled).toBeUndefined();
   });
 
   it.each([11, 13, 20])(
@@ -632,6 +706,162 @@ describe("another host's takeover of a driver no launch started", () => {
       "this-host",
     );
     expect(placed?.evidence.unlaunched).not.toBe(true);
+  });
+
+  it("keeps a refused takeover refused when an older launch started the driver", () => {
+    const gone = {
+      ...silent(),
+      evidence: {
+        ...silent().evidence,
+        driverGone: true,
+        started: "2026-11-07T07:00:00.000Z",
+      },
+    } as DrivenPr;
+    const base = redrove(gone, 11);
+    const refused: ReadRecord = {
+      ...base,
+      record: {
+        ...base.record,
+        id: "20261107T120000Z-bbbbbbbb",
+        action: "takeover",
+        facts: factsOf(gone),
+        redrive: null,
+        createdAt: "2026-11-07T12:00:00.000Z",
+      },
+    };
+    const owner: ReadRecord = {
+      ...base,
+      record: { ...base.record, createdAt: "2026-11-07T06:00:00.000Z" },
+      state: {
+        kind: "ended",
+        exit: { at: "2026-11-07T11:30:00.000Z", code: 0, signal: null },
+        process: {
+          hostId: "",
+          host: "h",
+          bootId: "b",
+          pid: 1,
+          start: "s",
+          claimedAt: "2026-11-07T06:30:00.000Z",
+        },
+      },
+    };
+    const [kept] = settleSilentTakeovers([gone], [owner, refused]);
+    expect(kept?.evidence.settled).not.toBe(true);
+    expect(driveHold(kept as DrivenPr, [owner, refused]).kind).toBe("refused");
+  });
+
+  it.each(["local", "foreign"])(
+    "keeps a refused takeover final when its driver owner is %s and the refusal is on the other host",
+    (ownerHost) => {
+      const pr = silent();
+      const base = redrove(pr, 11);
+      const localRefusal: ReadRecord = {
+        ...base,
+        record: {
+          ...base.record,
+          action: "takeover",
+          facts: factsOf(pr),
+          redrive: null,
+        },
+      };
+      const localOwner: ReadRecord = {
+        ...base,
+        record: { ...base.record, createdAt: "2026-11-07T06:00:00.000Z" },
+        state: {
+          kind: "ended",
+          exit: { at: "2026-11-07T11:30:00.000Z", code: 0, signal: null },
+          process: {
+            hostId: "",
+            host: "h",
+            bootId: "b",
+            pid: 1,
+            start: "s",
+            claimedAt: "2026-11-07T06:30:00.000Z",
+          },
+        },
+      };
+      const shared = claim(9, "owner facts");
+      if (!shared.says.ok) throw new Error("fixture");
+      const foreignOwner: SharedClaim = {
+        ...shared,
+        says: {
+          ok: true,
+          value: {
+            ...shared.says.value,
+            at: "2026-11-07T06:30:00.000Z",
+            end: {
+              state: "ended",
+              at: "2026-11-07T11:30:00.000Z",
+              exit: 0,
+              outcome: null,
+            },
+          },
+        },
+      };
+      const foreignRefusal = takeover(factsOf(pr), {
+        ok: true,
+        value: {
+          ...shared.says.value,
+          end: {
+            state: "ended",
+            at: "2026-11-07T11:30:00.000Z",
+            exit: 11,
+            outcome: null,
+          },
+        },
+      });
+      const records = [ownerHost === "local" ? localOwner : localRefusal];
+      const claims = new Map([
+        [
+          pr.number,
+          {
+            ok: true as const,
+            value: [ownerHost === "local" ? foreignRefusal : foreignOwner],
+          },
+        ],
+      ]);
+      const [kept] = settleOwnDrives([pr], records, claims, "this-host");
+      expect(kept?.evidence.settled).not.toBe(true);
+      expect(
+        ownerHost === "local"
+          ? foreignHold(kept as DrivenPr, claims.get(pr.number), "this-host")
+              .kind
+          : driveHold(kept as DrivenPr, records).kind,
+      ).toBe("refused");
+    },
+  );
+
+  it("does not settle a drive on a takeover cancelled before it ran", () => {
+    const gone = {
+      ...silent(),
+      evidence: { ...silent().evidence, driverGone: true },
+    } as DrivenPr;
+    const base = redrove(gone, 11);
+    const cancelled: ReadRecord = {
+      ...base,
+      record: {
+        ...base.record,
+        action: "takeover",
+        facts: factsOf(gone),
+        redrive: null,
+        cancelledAt: "2026-11-07T11:00:01.000Z",
+      },
+      state: {
+        kind: "died",
+        reason: "its reservation was cancelled before execution",
+        process: {
+          hostId: "",
+          host: "h",
+          bootId: "b",
+          pid: 0,
+          start: "s",
+          claimedAt: "2026-11-07T11:00:01.000Z",
+        },
+      },
+    };
+    expect(cancelledBeforeExecution(cancelled)).toBe(true);
+    const [kept] = settleSilentTakeovers([gone], [cancelled]);
+    expect(kept?.evidence.settled).not.toBe(true);
   });
 
   it("is not spent by one that never executed, or on other ledger facts", () => {

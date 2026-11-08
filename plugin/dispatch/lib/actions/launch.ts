@@ -44,11 +44,13 @@ import {
   tabTitle,
 } from "../runtime/port.ts";
 import { passTimeoutSeconds } from "../../../skills/drive-pr/scripts/lib/driver/settings.ts";
+import { holderRefusal } from "../holder-notices.ts";
 import { PICKUP_SKILL } from "../session.ts";
 import { retryable } from "../stuck-launches.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
+  BusyHolder,
   LaunchOutcome,
   RepoReport,
   RepoTarget,
@@ -206,7 +208,7 @@ export function rotated<T>(
 export type Opened =
   | { workspace: { id: string; path: string }; cleanupFailure?: string }
   | { waits: string }
-  | { refused: string };
+  | { refused: string; holder?: BusyHolder };
 
 /** Total and launch-specific allowances count notices once. */
 function openAllowance(state: ApplyState) {
@@ -278,6 +280,7 @@ export async function openWithinBudget(
     };
   return {
     refused: `the workspace could not be opened${opened.lost ? " in time" : ""}: ${opened.detail}`,
+    ...(opened.busyHolder === undefined ? {} : { holder: opened.busyHolder }),
   };
 }
 
@@ -404,11 +407,12 @@ function kindOf(action: Action): LaunchOutcome["action"] {
   return isTakeover(action) ? "takeover" : "rearm";
 }
 
-/** Whether a drive's action takes over a wedged driver: one this host's record started, one another host's claim did, or one no launch started whose run this host shows ended. */
+/** Whether a drive's action takes over a driver: one this host's record started, one another host's claim did, or one no launch started whose run this host shows ended or whose holder this clone's doctor reads dead or wedged. */
 export function isTakeover(action: Action): boolean {
   return (
     action.takeover !== undefined ||
     action.takeoverClaim !== undefined ||
+    action.takeoverHolder !== undefined ||
     action.takeoverGone !== undefined
   );
 }
@@ -465,7 +469,15 @@ function workspaceOr(
   if ("waits" in opened)
     return { outcome: waits(action, opened.waits, account) };
   if ("refused" in opened)
-    return { outcome: refused(action, opened.refused, account) };
+    return {
+      outcome:
+        opened.holder === undefined
+          ? refused(action, opened.refused, account)
+          : {
+              ...refused(action, holderRefusal(opened.holder), account),
+              holder: opened.holder,
+            },
+    };
   return opened;
 }
 

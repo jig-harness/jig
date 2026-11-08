@@ -154,7 +154,12 @@ export async function resolveCommonDir(): Promise<string> {
  * drivers in one checkout compute two different locks.
  */
 export async function worktreeLockName(): Promise<string> {
-  return `pr-drive-worktree-${await worktreeKey()}`;
+  return lockNameOfTreeKey(await worktreeKey());
+}
+
+/** The worktree lock's name for the tree whose `worktreeKey` is `key`. */
+export function lockNameOfTreeKey(key: string): string {
+  return `pr-drive-worktree-${key}`;
 }
 
 /** A pull request's number as the database keys it: canonical decimal digits. */
