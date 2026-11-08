@@ -303,18 +303,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   ): Promise<unknown> {
     const field = await fieldOf(s, signal);
     const name = s.map?.toTracker(value) ?? value;
-    if (field.kind === "number") {
-      const numbers = (s.map?.entries ?? []).map(([, t]) => Number(t));
-      if (
-        !Number.isFinite(Number(name)) ||
-        new Set(numbers).size !== numbers.length
-      )
-        throw new TrackerRequestError(
-          "invalid",
-          `${s.facet} ${value} is kept as '${name}' in the number field '${field.name}'; give each ${s.facet} its own number in ${at(s.facet, "values")}`,
-        );
-      return Number(name);
-    }
+    if (field.kind === "number") return numberOf(s, value, name, field);
     if (field.kind === "string") return name;
     if (field.kind === "strings") {
       if (!/^\S{1,255}$/.test(name))
@@ -324,24 +313,52 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         );
       return [name];
     }
-    const found = await meta();
-    let option = name;
-    if (found !== null) {
-      if (!found.screen.has(field.id))
-        throw new TrackerRequestError(
-          "unresolved",
-          `${s.facet} is kept in the field '${field.name}' (${field.id}), which is not on ${found.what}; add it to the screen, or keep ${s.facet} in labels (store: label)`,
-        );
-      const allowed = found.screen.get(field.id) ?? null;
-      const match = allowed?.find((o) => same(o, name));
-      if (allowed !== null && match === undefined)
-        throw new TrackerRequestError(
-          "unresolved",
-          `${s.facet} ${value} is kept as the option '${name}' of the field '${field.name}', which has ${allowed.join(", ") || "no options"}; name the option in ${at(s.facet, "values")}, or keep ${s.facet} in labels (store: label)`,
-        );
-      option = match ?? name;
-    }
+    const option = optionOf(s, value, name, field, await meta());
     return field.kind === "option" ? { value: option } : [{ value: option }];
+  }
+
+  /** A number field's value: each value its own number. */
+  function numberOf(
+    s: ResolvedFacet,
+    value: string,
+    name: string,
+    field: FacetField,
+  ): number {
+    const numbers = (s.map?.entries ?? []).map(([, t]) => Number(t));
+    if (
+      !Number.isFinite(Number(name)) ||
+      new Set(numbers).size !== numbers.length
+    )
+      throw new TrackerRequestError(
+        "invalid",
+        `${s.facet} ${value} is kept as '${name}' in the number field '${field.name}'; give each ${s.facet} its own number in ${at(s.facet, "values")}`,
+      );
+    return Number(name);
+  }
+
+  /** An option of the field's screen, as the screen spells it; unchecked where no screen was read. */
+  function optionOf(
+    s: ResolvedFacet,
+    value: string,
+    name: string,
+    field: FacetField,
+    found: { screen: FieldMeta; what: string } | null,
+  ): string {
+    if (found === null) return name;
+    if (!found.screen.has(field.id))
+      throw new TrackerRequestError(
+        "unresolved",
+        `${s.facet} is kept in the field '${field.name}' (${field.id}), which is not on ${found.what}; add it to the screen, or keep ${s.facet} in labels (store: label)`,
+      );
+    const allowed = found.screen.get(field.id) ?? null;
+    if (allowed === null) return name;
+    const match = allowed.find((o) => same(o, name));
+    if (match === undefined)
+      throw new TrackerRequestError(
+        "unresolved",
+        `${s.facet} ${value} is kept as the option '${name}' of the field '${field.name}', which has ${allowed.join(", ") || "no options"}; name the option in ${at(s.facet, "values")}, or keep ${s.facet} in labels (store: label)`,
+      );
+    return match;
   }
 
   /** The create screen of an issue type, by its name; `null` where the project lists no such type. */

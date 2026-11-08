@@ -11,15 +11,22 @@ import type {
   PoolIssue,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
 
+/** Why one facet's source cannot be retired into its destination, or `null`. */
+function retireProblem(sides: MoveSides, f: Facet): string | null {
+  const a = sides.sourceFacets[f],
+    b = sides.targetFacets[f];
+  if (!usable(a) || !usable(b)) return `${f}: both stores must be usable`;
+  if (sides.source.adapter === "jira" && a.store === "native")
+    return `${f}: every Jira issue keeps its native ${f === "type" ? "issue type" : f}; moving it cannot retire the source`;
+  if (fallbackOverlap(a, b))
+    return `${f}: Jira's issue type keeps a sub-task's type, and a type with no issue type of its own, in the type labels, so they cannot be retired; name the store without a move, since a type label wins over the fallback issue type`;
+  return null;
+}
+
 export function moveProblem(sides: MoveSides, moved: Facet[]): string | null {
   for (const f of moved) {
-    const a = sides.sourceFacets[f],
-      b = sides.targetFacets[f];
-    if (!usable(a) || !usable(b)) return `${f}: both stores must be usable`;
-    if (sides.source.adapter === "jira" && a.store === "native")
-      return `${f}: every Jira issue keeps its native ${f === "type" ? "issue type" : f}; moving it cannot retire the source`;
-    if (fallbackOverlap(a, b))
-      return `${f}: Jira's issue type keeps a sub-task's type, and a type with no issue type of its own, in the type labels, so they cannot be retired; name the store without a move, since a type label wins over the fallback issue type`;
+    const problem = retireProblem(sides, f);
+    if (problem !== null) return problem;
   }
   // Every destination must preserve every source, including unmoved facets.
   const sources = [
