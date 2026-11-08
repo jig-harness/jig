@@ -654,6 +654,23 @@ describe("reading the base branch's snapshot", () => {
     );
   });
 
+  test("a replace ref in the clone does not substitute another file for the base's", () => {
+    const { root, env } = setupInClone({
+      driver: true,
+      base: "autonomy:\n  max_level: attended\n",
+      repository: "autonomy:\n  max_level: wide\n",
+    });
+    const commit = env.DRIVE_PR_POLICY_BASE ?? "";
+    const baseBlob = git(root, "rev-parse", `${commit}:.config/jig.yaml`);
+    const wider = git(root, "hash-object", "-w", ".config/jig.yaml");
+    git(root, "replace", baseBlob, wider);
+    expect(git(root, "cat-file", "blob", baseBlob)).toContain("wide");
+    const s = readPolicySnapshot(env, root);
+    expect(s.from).toBe("base");
+    if (s.from === "base")
+      expect(s.values).toEqual({ autonomy: { max_level: "attended" } });
+  });
+
   test("a person's session reads the working tree without git", () => {
     expect(readPolicySnapshot({}, join(scratch, "nowhere"))).toEqual({
       from: "working-tree",

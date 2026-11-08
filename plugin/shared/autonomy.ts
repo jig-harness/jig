@@ -18,9 +18,10 @@
  * A person's session never runs at the off-hours level: a person is there.
  *
  * The ceiling `max_level` and `park_classes` bound what every agent may
- * decide, so a driver pass reads them from the pull request's base branch,
- * never from the pull request's own checkout: a pull request that edits them
- * takes effect after it merges. The driver resolves the base branch's commit
+ * decide, so a driver pass reads them from the branch the pull request
+ * targets, never from the pull request's own checkout: an edit to them
+ * applies to a drive once it is on that branch (for a stacked layer, the
+ * layer below), never through the pull request that makes it. The driver resolves the base branch's commit
  * and hands it to itself and its passes in `$DRIVE_PR_POLICY_BASE`; this
  * reader takes `.config/jig.yaml` at that commit, ignoring `JIG_OVERLAY` and
  * the working tree's copy for these fields. When the base cannot be read,
@@ -533,7 +534,9 @@ function gitIn(
   args: string[],
   env: Env,
 ): { out: string } | { error: string } {
-  const r = spawnSync("git", ["-C", root, ...args], {
+  // `--no-replace-objects`: a `refs/replace/*` ref in the clone would
+  // otherwise substitute another object for the base commit's tree or file.
+  const r = spawnSync("git", ["--no-replace-objects", "-C", root, ...args], {
     env: withoutLeakyGitEnv(process.env),
     timeout: gitTimeoutMs(env),
     stdio: ["ignore", "pipe", "pipe"],
@@ -585,21 +588,45 @@ export function readPolicySnapshot(
     env,
   );
   if ("error" in text) return { from: "unreadable", reason: text.error };
+  let values: Record<string, unknown>;
   try {
-    const values = parseConfigText(
+    values = parseConfigText(
       text.out,
       `${OVERLAY_RELPATH} at ${short(commit)}`,
     );
-    const snapshot: PolicySnapshot = { from: "base", commit, values };
+  } catch (err) {
+    return { from: "unreadable", reason: failureReason(err, PARSE_ERRORS) };
+  }
+  const snapshot: PolicySnapshot = { from: "base", commit, values };
+  try {
     snapshotCeiling(snapshot);
     classesIn(values);
-    return snapshot;
   } catch (err) {
-    return {
-      from: "unreadable",
-      reason: err instanceof Error ? err.message : String(err),
-    };
+    return { from: "unreadable", reason: failureReason(err, []) };
   }
+  return snapshot;
+}
+
+/**
+ * The names of the errors the configuration parser throws for a file it
+ * refuses: a plain `Error` for text that does not parse or is not a mapping,
+ * `ConfigFieldError` for a field it cannot use.
+ */
+const PARSE_ERRORS = ["Error", "ConfigFieldError"];
+
+/**
+ * Why the snapshot did not read, from what was thrown reading it. A refusal
+ * of the base's file (an `AutonomyConfigError`, or one of `expected`) is its
+ * message; anything else carries its name too, so a defect in the reader
+ * never reads as a bad file on the base branch. Either way the policy fails
+ * closed: rethrowing would let a caller that reports and carries on decide
+ * without it.
+ */
+function failureReason(err: unknown, expected: readonly string[]): string {
+  if (!(err instanceof Error)) return `a non-error was thrown: ${String(err)}`;
+  return err instanceof AutonomyConfigError || expected.includes(err.name)
+    ? err.message
+    : `${err.name}: ${err.message}`;
 }
 
 /** The effective level for the repository the working directory is in. */

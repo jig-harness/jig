@@ -5,9 +5,10 @@ release: minor
 ### Changed
 
 - A drive reads `autonomy.max_level` and `autonomy.park_classes` from the
-  pull request's base branch, not from the pull request's own checkout, so a
-  pull request that raises the ceiling or drops a park class takes effect
-  only after it merges. The ceiling's fallback comes from the base too: the
+  branch the pull request targets, not from the pull request's own checkout,
+  so an edit to either applies to a pull request's drive once it is on that
+  branch, never through the pull request that makes it; for a stacked layer
+  that branch is the layer below. The ceiling's fallback comes from the base too: the
   base's `max_level`, else the base's `level`, else `attended`; a
   `JIG_OVERLAY` redirect no longer moves either field in a drive. The driver
   resolves the base's commit at its start and before every round and hands

@@ -406,10 +406,12 @@ in their own file or the environment.
 
 **In a drive, the policy comes from the base branch.** `max_level` and
 `park_classes` bound what every agent in the repository may decide, so a
-drive's pass reads them from `.config/jig.yaml` on the pull request's base
-branch, not from the pull request's own checkout. A pull request that raises
-the ceiling or drops a park class therefore takes effect after it merges,
-never on its own drive. The ceiling's fallback comes from the base too: the
+drive's pass reads them from `.config/jig.yaml` on the branch the pull
+request targets (its base branch), not from the pull request's own checkout.
+An edit to either field therefore applies to a pull request's drive once the
+edit is on that branch, never through the pull request that makes it. For a
+stacked layer the branch it targets is the layer below, so its drive reads
+the policy that layer holds. The ceiling's fallback comes from the base too: the
 base's `max_level`, else the base's own `level`, else `attended`; the pull
 request's `level` is still the level chosen, capped by that ceiling.
 `JIG_OVERLAY` does not redirect these fields in a drive. The driver resolves

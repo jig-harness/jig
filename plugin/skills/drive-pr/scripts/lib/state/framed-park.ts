@@ -285,7 +285,13 @@ export async function framedPark(
       ...parsed.problems.map((p) => `  - ${p}`),
     );
   const record = parsed.record;
-  const refusal = parkRefusal(store.read().state, a.key, a.kind, a.parkClass);
+  const refusal = parkRefusal(
+    store.read().state,
+    a.key,
+    a.kind,
+    a.parkClass,
+    classes,
+  );
   if (refusal !== null) fail(2, `park: ${refusal}.`);
   const person = await resolveParkPerson(
     String(store.read().state.pr),
@@ -294,7 +300,7 @@ export async function framedPark(
     a.paths[0] ?? "",
   );
   await store.update((s) => {
-    const refusal = parkRefusal(s, a.key, a.kind, a.parkClass);
+    const refusal = parkRefusal(s, a.key, a.kind, a.parkClass, classes);
     if (refusal !== null) fail(2, `park: ${refusal}.`);
     return parkedWith(s, a, record, person);
   });
