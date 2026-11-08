@@ -14,6 +14,48 @@ param(
     [switch]$Codex
 )
 $ErrorActionPreference = 'Stop'
+# Keep verification and the installer bound to this checkout, even inside hooks.
+foreach ($name in @('GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR','GIT_OBJECT_DIRECTORY','GIT_ALTERNATE_OBJECT_DIRECTORIES','GIT_CONFIG')) {
+    [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+}
+function Invoke-Provision([string]$Program, [string[]]$Arguments) {
+    $seconds = 300.0
+    if ($env:JIG_SETUP_TIMEOUT_SECONDS) {
+        if (-not [double]::TryParse($env:JIG_SETUP_TIMEOUT_SECONDS, [ref]$seconds) -or
+            -not [double]::IsFinite($seconds) -or $seconds -le 0 -or $seconds * 1000 -gt [int]::MaxValue) {
+            throw 'JIG_SETUP_TIMEOUT_SECONDS must be positive seconds within the process wait limit'
+        }
+    }
+    $info = [Diagnostics.ProcessStartInfo]::new((Get-Command $Program -CommandType Application -ErrorAction Stop).Source)
+    $info.UseShellExecute = $false
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    foreach ($argument in $Arguments) { $info.ArgumentList.Add($argument) }
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $info
+    $started = $false
+    try {
+        if (-not $process.Start()) { throw "Cannot start $Program" }
+        $started = $true
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit([int][Math]::Ceiling($seconds * 1000))) {
+            throw "Provisioning timed out after $($seconds)s (JIG_SETUP_TIMEOUT_SECONDS): $Program"
+        }
+        $text = $stdout.WaitAsync([TimeSpan]::FromMilliseconds([Math]::Max(1, $seconds * 1000 - $clock.ElapsedMilliseconds))).GetAwaiter().GetResult()
+        $errorText = $stderr.WaitAsync([TimeSpan]::FromMilliseconds([Math]::Max(1, $seconds * 1000 - $clock.ElapsedMilliseconds))).GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) { throw "$Program failed (exit $($process.ExitCode)): $errorText $text" }
+        if ($errorText) { [Console]::Error.WriteLine($errorText) }
+        return $text
+    } finally {
+        if ($started -and -not $process.HasExited) {
+            $process.Kill($true)
+            if (-not $process.WaitForExit(5000)) { throw "Cannot confirm $Program stopped after termination" }
+        }
+        $process.Dispose()
+    }
+}
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $platform = [Runtime.InteropServices.RuntimeInformation]::OSDescription
 $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
@@ -47,14 +89,12 @@ if ($missing.Count -gt 0) {
         if ($tool -eq 'bun') { continue }
         if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw 'Install git and gh explicitly, or provide an existing trusted WinGet installation' }
         # The name alone is not a trust boundary: check the configured source URL.
-        $sourcesText = & winget source export --name winget
-        if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect WinGet source' }
+        $sourcesText = Invoke-Provision winget @('source','export','--name','winget')
         $sources = ($sourcesText -join "`n") | ConvertFrom-Json
         $entries = @($sources)
         if ($entries.Count -ne 1 -or $entries[0].Arg -ne 'https://cdn.winget.microsoft.com/cache' -or $entries[0].Name -ne 'winget' -or $entries[0].Type -ne 'Microsoft.PreIndexed.Package') { throw 'The winget source is not the expected Microsoft source' }
         Write-Output "Provision: $($packages[$tool]) through the existing Microsoft WinGet source; installer hashes remain enforced."
-        & winget install --id $packages[$tool] --exact --source winget --disable-interactivity
-        if ($LASTEXITCODE -ne 0) { throw "WinGet failed for $tool; inspect agreements/permissions explicitly and rerun" }
+        Invoke-Provision winget @('install','--id',$packages[$tool],'--exact','--source','winget','--disable-interactivity')
     }
     if ('bun' -in $missing) {
         $target = Join-Path $env:USERPROFILE '.bun/bin/bun.exe'

@@ -81,7 +81,7 @@ ${body}
   );
   fake(
     "gh",
-    "if(key==='--version')console.log('gh version 2.80.0');else if(args[0]==='auth'){if(process.env.NO_AUTH==='1')process.exit(1);}else if(args[0]==='api')console.log(args.includes('user')?'test-user':'example-org/example-repo');else process.exit(1);",
+    "if(key==='--version')console.log('gh version 2.80.0');else if(args[0]==='auth'){if(process.env.NO_AUTH==='1'){console.log('credential helper unavailable');process.exit(7);}}else if(args[0]==='api')console.log(args.includes('user')?'test-user':'example-org/example-repo');else process.exit(1);",
   );
   fake(
     "codex",
@@ -212,6 +212,8 @@ test("authentication and source conflicts stop before agent writes", () => {
     let result = f.run(["--apply"], { NO_AUTH: "1" });
     expectSpawnExit(result, 2);
     expect(result.stderr).toContain("Authenticate explicitly");
+    expect(result.stderr).toContain("credential helper unavailable");
+    expect(result.stderr).toContain("exit 7");
     expect(result.calls.some((c) => c[0] === "codex")).toBe(false);
     f.setState("https://github.com/jig-harness/jig.git", "latest");
     result = f.run(["--apply", "--channel", "stable"]);
@@ -222,6 +224,32 @@ test("authentication and source conflicts stop before agent writes", () => {
         .filter((c) => c[0] === "codex")
         .every((c) => c.includes("--version") || c.includes("--json")),
     ).toBe(true);
+  } finally {
+    f.close();
+  }
+});
+
+test("explicit shorthand reruns preserve the existing registration and pin", () => {
+  const f = fixture();
+  try {
+    f.setState("example-org/example-repo", "v1.2.3");
+    const result = f.run(["--apply", "--source", "example-org/example-repo"]);
+    expectSpawnExit(result, 0);
+    expect(result.calls).toContainEqual([
+      "codex",
+      "plugin",
+      "marketplace",
+      "upgrade",
+      "jig",
+    ]);
+    expect(
+      result.calls.some(
+        (call) =>
+          call[1] === "plugin" &&
+          call[2] === "marketplace" &&
+          call[3] === "add",
+      ),
+    ).toBe(false);
   } finally {
     f.close();
   }

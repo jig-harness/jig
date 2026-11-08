@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Run only from a reviewed checkout. Bun's archive is pinned by version and digest.
 set -euo pipefail
+# Verification and the installer must refer to this checkout, including in hooks.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG
 provision=0
 trust_local=0
 source_arg=''
@@ -111,12 +113,29 @@ if ((${#missing[@]})); then
     [[ "$tool" == bun ]] || packages+=("$tool")
   done
   if ((${#packages[@]})); then
+    timer=$(command -v timeout || command -v gtimeout || true)
+    [[ -n "$timer" ]] || { echo 'Install GNU timeout (coreutils on macOS) explicitly, or install git and gh yourself; provisioning requires bounded execution.' >&2; exit 1; }
+    provision_timeout=${JIG_SETUP_TIMEOUT_SECONDS:-300}
+    [[ "$provision_timeout" =~ ^[0-9]+([.][0-9]+)?$ && "$provision_timeout" =~ [1-9] ]] || { echo 'JIG_SETUP_TIMEOUT_SECONDS must be positive seconds' >&2; exit 2; }
+    provision_run() {
+      local code=0
+      # sudo relays termination to its command and needs the caller's terminal.
+      if [[ "$1" == sudo ]]; then
+        "$timer" --foreground --kill-after=5s "${provision_timeout}s" "$@" || code=$?
+      else
+        "$timer" --kill-after=5s "${provision_timeout}s" "$@" || code=$?
+      fi
+      if ((code == 124 || code == 137)); then
+        echo "Provisioning timed out after ${provision_timeout}s (JIG_SETUP_TIMEOUT_SECONDS)" >&2
+      fi
+      return "$code"
+    }
     if command -v brew >/dev/null 2>&1; then
       echo "Provision: Homebrew/core ${packages[*]}, trusting this existing Homebrew installation and its verified bottle metadata."
-      brew install "${packages[@]/#/homebrew/core/}"
+      provision_run brew install "${packages[@]/#/homebrew/core/}"
     elif [[ "$os" == Linux ]] && command -v apt-get >/dev/null 2>&1; then
       echo "Provision: APT ${packages[*]}, trusting this machine's configured signed repositories; may request sudo."
-      sudo apt-get -o APT::Get::AllowUnauthenticated=false -o Acquire::AllowInsecureRepositories=false install -- "${packages[@]}"
+      provision_run sudo apt-get -o APT::Get::AllowUnauthenticated=false -o Acquire::AllowInsecureRepositories=false install -- "${packages[@]}"
     else
       echo 'No supported existing package manager. Install git and gh explicitly, then rerun.' >&2
       exit 1
@@ -135,7 +154,7 @@ if ((${#missing[@]})); then
         https://github.com/oven-sh/bun/releases/download/*|https://release-assets.githubusercontent.com/*) ;;
         *) echo 'Refusing unexpected download destination' >&2; exit 1 ;;
       esac
-      response=$(curl --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 --max-filesize 104857600 --silent --show-error --output "$archive" --write-out '%{http_code} %{redirect_url}' "$url")
+      response=$(curl -q --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 --max-filesize 104857600 --silent --show-error --output "$archive" --write-out '%{http_code} %{redirect_url}' "$url")
       status=${response%% *}
       if [[ "$status" == 200 ]]; then break; fi
       [[ "$status" == 301 || "$status" == 302 || "$status" == 303 || "$status" == 307 || "$status" == 308 ]] || { echo "Download failed: HTTP $status" >&2; exit 1; }
@@ -149,6 +168,8 @@ if ((${#missing[@]})); then
     [[ ! -e "$HOME/.bun/bin/bun" ]] || { echo 'Bun already exists outside PATH; inspect it instead of overwriting' >&2; exit 1; }
     mkdir -p -- "$HOME/.bun/bin"
     install -m 755 "$scratch/bun" "$HOME/.bun/bin/bun"
+    rm -rf -- "$scratch"
+    trap - EXIT
     export PATH="$HOME/.bun/bin:$PATH"
   fi
 fi

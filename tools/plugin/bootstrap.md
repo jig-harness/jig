@@ -85,6 +85,15 @@ its configured trust are prerequisites too:
   explicitly before rerunning.
   [WinGet documents installation options](https://learn.microsoft.com/en-us/windows/package-manager/winget/install).
 
+Each package-manager command is bounded by `JIG_SETUP_TIMEOUT_SECONDS`
+(default 300 seconds). Unix package provisioning requires an existing
+`timeout` or `gtimeout` command from coreutils; install it
+explicitly or install git and gh yourself if it is absent. A timed-out Unix
+command receives a termination signal, followed by forced termination after
+5 seconds. PowerShell requests WinGet process-tree termination on timeout or
+cancellation. A timeout can leave a prerequisite partly installed; inspect
+the package manager's state before rerunning.
+
 Bun provisioning additionally requires an exact version and a SHA-256
 archive digest reviewed from that version's official GitHub release asset.
 Select the version in [mise.toml](../../mise.toml) or a compatible newer one,

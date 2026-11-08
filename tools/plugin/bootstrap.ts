@@ -80,7 +80,7 @@ function run(program: string, args: string[]) {
   });
   if (result.error || result.status !== 0)
     throw new BootstrapError(
-      `${program} ${args.join(" ")} failed: ${result.error?.message ?? result.stderr.trim()}. Authenticate explicitly with gh auth login --hostname github.com if needed; bootstrap never signs in.`,
+      `${program} ${args.join(" ")} failed (${result.signal ? `signal ${result.signal}` : `exit ${result.status}`}): ${result.error?.message ?? (result.stderr.trim() || result.stdout.trim())}. Authenticate explicitly with gh auth login --hostname github.com if needed; bootstrap never signs in.`,
       { cause: result.error },
     );
   return result.stdout.trim();
@@ -149,12 +149,6 @@ export function bootstrap(argv: string[]) {
     `GitHub identity: ${run("gh", ["api", "--hostname", "github.com", "user", "--jq", ".login"])}`,
   );
   const request = parse(setup);
-  if (
-    !existsSync(request.source) &&
-    /^[\w.-]+\/[\w.-]+(?:#[^\s]+)?$/.test(request.source)
-  ) {
-    request.source = `https://github.com/${request.source}`;
-  }
   const plans = prepareHarnesses(request);
   for (const plan of plans) {
     const repository = githubRepository(plan.source);
@@ -182,7 +176,17 @@ export function bootstrap(argv: string[]) {
     );
     return 0;
   }
-  const status = harnessesExit(upgradeHarnesses(request));
+  const status = harnessesExit(
+    plans.flatMap((plan) => {
+      const source =
+        !plan.registered &&
+        !existsSync(request.source) &&
+        /^[\w.-]+\/[\w.-]+(?:#[^\s]+)?$/.test(request.source)
+          ? `https://github.com/${request.source}`
+          : request.source;
+      return upgradeHarnesses({ ...request, source, only: plan.harness });
+    }),
+  );
   console.log(
     "Schedulers remain explicit: inspect jig doctor, then use jig install only for jobs you want.",
   );

@@ -11,6 +11,43 @@ const pwsh = Bun.which("pwsh");
 const script = join(import.meta.dirname, "bootstrap.ps1");
 
 test.skipIf(!pwsh)(
+  "PowerShell provisioning captures output and terminates a stalled command",
+  () => {
+    const result = Bun.spawnSync(
+      [
+        pwsh as string,
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `$tokens=$null; $errors=$null
+$ast=[System.Management.Automation.Language.Parser]::ParseFile($env:BOOTSTRAP_SCRIPT,[ref]$tokens,[ref]$errors)
+$function=$ast.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-Provision'},$true)
+if(-not $function) { throw 'Missing provisioning runner' }
+Invoke-Expression $function.Extent.Text
+$env:JIG_SETUP_TIMEOUT_SECONDS='10'
+if((Invoke-Provision $env:TEST_PWSH @('-NoProfile','-NonInteractive','-Command',"Write-Output 'provision-ok'")).Trim() -ne 'provision-ok') { throw 'Output lost' }
+$env:JIG_SETUP_TIMEOUT_SECONDS='0.1'
+try { Invoke-Provision $env:TEST_PWSH @('-NoProfile','-NonInteractive','-Command','[Threading.Thread]::Sleep(30000)'); exit 1 }
+catch { if($_.Exception.Message -notmatch 'Provisioning timed out') { throw }; Write-Output 'timeout confirmed' }`,
+      ],
+      {
+        env: {
+          ...process.env,
+          BOOTSTRAP_SCRIPT: script,
+          TEST_PWSH: pwsh as string,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 20_000,
+      },
+    );
+    expectSpawnExit(result, 0);
+    expect(result.stdout.toString()).toContain("timeout confirmed");
+  },
+  25_000,
+);
+
+test.skipIf(!pwsh)(
   "PowerShell entry point parses without syntax errors",
   () => {
     const result = Bun.spawnSync(
@@ -71,7 +108,8 @@ ${body}`,
       );
     fake(
       "git",
-      `if(args.includes('rev-parse'))console.log('${revision}');else if(key==='--version')console.log('git version 2.50.0');`,
+      `if(['GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR','GIT_OBJECT_DIRECTORY','GIT_ALTERNATE_OBJECT_DIRECTORIES','GIT_CONFIG'].some(key=>process.env[key]))process.exit(44);
+if(args.includes('rev-parse'))console.log('${revision}');else if(key==='--version')console.log('git version 2.50.0');`,
     );
     fake(
       "gh",
@@ -100,6 +138,13 @@ ${body}`,
             USERPROFILE: scratch,
             CODEX_HOME: scratch,
             JIG_MARKETPLACE: "",
+            GIT_DIR: "C:/other/git",
+            GIT_WORK_TREE: "C:/other",
+            GIT_INDEX_FILE: "C:/other/index",
+            GIT_COMMON_DIR: "C:/other/common",
+            GIT_OBJECT_DIRECTORY: "C:/other/objects",
+            GIT_ALTERNATE_OBJECT_DIRECTORIES: "C:/other/alternate",
+            GIT_CONFIG: "C:/other/config",
             PATH: [scratch, dirname(process.execPath)].join(delimiter),
           },
           stdout: "pipe",
