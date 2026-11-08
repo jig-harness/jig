@@ -591,6 +591,49 @@ describe("another host's takeover of a driver no launch started", () => {
     expect(driveHold(settled as DrivenPr, [record]).kind).toBe("none");
   });
 
+  it("does not mark unlaunched a drive past a refused takeover while an older launch started its driver", () => {
+    const gone = {
+      ...silent(),
+      evidence: { ...silent().evidence, driverGone: true },
+    } as DrivenPr;
+    const base = redrove(gone, 11);
+    const refused: ReadRecord = {
+      ...base,
+      record: {
+        ...base.record,
+        id: "20261107T120000Z-bbbbbbbb",
+        action: "takeover",
+        facts: factsOf(gone),
+        redrive: null,
+        createdAt: "2026-11-07T12:00:00.000Z",
+      },
+    };
+    const owner: ReadRecord = {
+      ...base,
+      record: { ...base.record, createdAt: "2026-11-07T06:00:00.000Z" },
+      state: {
+        kind: "ended",
+        exit: { at: "2026-11-07T11:30:00.000Z", code: 0, signal: null },
+        process: {
+          hostId: "",
+          host: "h",
+          bootId: "b",
+          pid: 1,
+          start: "s",
+          claimedAt: "2026-11-07T06:30:00.000Z",
+        },
+      },
+    };
+    const claims = new Map([[gone.number, { ok: true as const, value: [] }]]);
+    const [placed] = settleOwnDrives(
+      [gone],
+      [owner, refused],
+      claims,
+      "this-host",
+    );
+    expect(placed?.evidence.unlaunched).not.toBe(true);
+  });
+
   it("is not spent by one that never executed, or on other ledger facts", () => {
     const never = claim(5, facts).says;
     if (!never.ok) throw new Error("fixture");

@@ -285,12 +285,17 @@ function markUnlaunched(
 ): DrivenPr[] {
   return drives.map((pr) => {
     if (pr.class !== "silent" || pr.evidence.driverGone !== true) return pr;
-    // This host's own refused takeover places no driver: it is the takeover
-    // `settleSilentTakeovers` settles, so it must not hide the drive from it.
+    // This host's own refused takeover places no driver by itself: it is the
+    // takeover `settleSilentTakeovers` settles. It hides the drive from that
+    // only when no older record started the driver, which settlement (reading
+    // the drive as settled) would take over again.
     const hold = driveHold(pr, own);
     const unplaced =
       hold.kind === "none" ||
-      (hold.kind === "refused" && hold.record.record.action === "takeover");
+      (hold.kind === "refused" &&
+        hold.record.record.action === "takeover" &&
+        driveHold({ ...pr, evidence: { ...pr.evidence, settled: true } }, own)
+          .kind === "none");
     return unplaced &&
       foreignHold(pr, claims.get(pr.number), host).kind === "none"
       ? { ...pr, evidence: { ...pr.evidence, unlaunched: true } }
