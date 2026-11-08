@@ -1228,8 +1228,10 @@ make, use the entry's term instead.
   CI-repair budget or a pass deadline that recurred, once per head; a failure
   while the pull request conflicts with its base, once per pair of heads.
   So is a drive parked on a question for a person whose pull request comes
-  to conflict with its base: the re-drive merges the base and parks again on
-  the questions still open.
+  to conflict with its base: the re-drive attempts to merge the base, and
+  parks again on the questions still open only when that repair succeeds;
+  with repair disabled or spent, an unreadable base or a failed repair it
+  stops as a conflicting pull request instead.
 - **Recovery budget (of a pull request)** — how many times in a rolling hour
   the *dispatcher* starts work on one pull request again after a stop nobody
   decided: a drive that stopped with no recorded cause, a *re-drive* of a
