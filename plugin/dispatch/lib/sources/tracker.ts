@@ -16,6 +16,7 @@ import type {
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import { FacetReadStopped } from "../../../skills/do-item/scripts/lib/tracker/facets/bounds.ts";
 import { failureText } from "../text.ts";
 import {
   type FacetBound,
@@ -131,6 +132,32 @@ function within<T>(read: Promise<T>, bound: FacetBound): Promise<T> {
 }
 
 /**
+ * The items assigned to `identity`, held to `bound` when there is one: not
+ * started once it has ended, and given its signal so the detection the read
+ * waits on ends with it.
+ */
+async function readAssigned(
+  tracker: Tracker,
+  identity: string,
+  section: DispatchSection,
+  bound: FacetBound | undefined,
+): Promise<PoolIssue[]> {
+  if (bound === undefined)
+    return tracker.assignedIssues(identity, section.states as CanonicalState[]);
+  if (bound.signal.aborted || Date.now() >= bound.deadline)
+    throw new FacetReadStopped(
+      "the tick's deadline passed before the read could start",
+    );
+  return within(
+    tracker.assignedIssues(identity, section.states as CanonicalState[], {
+      signal: bound.signal,
+      deadline: bound.deadline,
+    }),
+    bound,
+  );
+}
+
+/**
  * The pickups; `open` opens the tracker, and is not called when there are
  * none to read. With `facets`, the record also says where the tracker
  * keeps each issue facet, read first and within `facets.bound` so a
@@ -157,20 +184,14 @@ export async function readPickups(
   const identity = section.identity;
   const tracker = open();
   const source = `${tracker.adapter} ${tracker.team}`;
+  // One bound for the whole facet read: the stores and the assigned items
+  // share its allowance and its cancellation.
+  const bound = facets?.bound();
   const stores =
-    facets === undefined
-      ? undefined
-      : await readFacetStores(tracker, facets.bound());
+    bound === undefined ? undefined : await readFacetStores(tracker, bound);
   let issues: Awaited<ReturnType<Tracker["assignedIssues"]>>;
   try {
-    // The read may run detection again after a failed facet read, so it is
-    // held to the same bound: the tick's deadline outlasts a stalled service.
-    const read = tracker.assignedIssues(
-      identity,
-      section.states as CanonicalState[],
-    );
-    issues =
-      facets === undefined ? await read : await within(read, facets.bound());
+    issues = await readAssigned(tracker, identity, section, bound);
   } catch (error) {
     return {
       read: {

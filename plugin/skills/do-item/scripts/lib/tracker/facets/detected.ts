@@ -192,8 +192,11 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
     openIssues: (query) => on((t) => t.openIssues(query)),
     openChildren: (key) => on((t) => t.openChildren(key)),
     poolIssue: (key) => on((t) => t.poolIssue(key)),
-    assignedIssues: (identity, states) =>
-      on((t) => t.assignedIssues(identity, states)),
+    async assignedIssues(identity, states, options) {
+      const s = await settle(readSignal(options));
+      refuseBlocked(s);
+      return s.tracker.assignedIssues(identity, states, options);
+    },
     ledger: (query, onPage) => on((t) => t.ledger(query, onPage), ["priority"]),
     createIssue: (issue) => write((t) => t.createIssue(issue)),
     updateIssue: (key, patch) => write((t) => t.updateIssue(key, patch)),

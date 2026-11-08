@@ -69,6 +69,7 @@ interface Fake {
   tracker: Tracker;
   calls: string[];
   options: FacetReadOptions[];
+  assigned: FacetReadOptions[];
 }
 
 /** A tracker whose facet report is `stores` (or what it does), and whose assigned items are `issues`. */
@@ -78,6 +79,7 @@ function fakeTracker(
 ): Fake {
   const calls: string[] = [];
   const options: FacetReadOptions[] = [];
+  const assigned: FacetReadOptions[] = [];
   const tracker = {
     adapter: "github",
     team: "example-org/example-repo",
@@ -87,15 +89,20 @@ function fakeTracker(
       options.push(o);
       return await stores(o);
     },
-    async assignedIssues(_: string, states: readonly string[]) {
+    async assignedIssues(
+      _: string,
+      states: readonly string[],
+      o?: FacetReadOptions,
+    ) {
       calls.push(`assignedIssues ${states.join(",")}`);
+      if (o !== undefined) assigned.push(o);
       return states.includes("in_progress") ? [] : issues;
     },
     async assignedBy() {
       return { id: "p", name: "maintainer", trusted: true };
     },
   } as unknown as Tracker;
-  return { tracker, calls, options };
+  return { tracker, calls, options, assigned };
 }
 
 const later = () => facetBound(undefined);
@@ -166,7 +173,7 @@ describe("the tick's tracker record and the issue facets", () => {
     expect(reading.read.facets?.gaps).toEqual([]);
   });
 
-  it("is stopped at the tick's deadline, and the pickups are read anyway", async () => {
+  it("is stopped at the tick's deadline, and the pickups read is not started past it", async () => {
     const fake = fakeTracker(
       [item("#5", { type: "bug", priority: 2, size: "small" })],
       (o) =>
@@ -184,8 +191,24 @@ describe("the tick's tracker record and the issue facets", () => {
       "stopped at the tick's deadline: the request was cancelled",
     );
     expect(reading.read.facets?.stores).toBeUndefined();
-    expect(reading.read.ok).toBe(true);
-    expect(reading.wanted.map((w) => w.key)).toEqual(["#5"]);
+    expect(reading.read.ok).toBe(false);
+    expect(reading.wanted).toEqual([]);
+    expect(fake.calls.some((c) => c.startsWith("assignedIssues"))).toBe(false);
+  });
+
+  it("holds the assigned-item read to the one bound the stores were read under", async () => {
+    const fake = fakeTracker([], async () => LABEL_STORES);
+    let made = 0;
+    await readPickups(() => fake.tracker, section, {
+      bound: () => {
+        made += 1;
+        return facetBound(undefined);
+      },
+      epic: "epic",
+    });
+    expect(made).toBe(1);
+    expect(fake.assigned[0]?.signal).toBe(fake.options[0]?.signal);
+    expect(fake.assigned[0]?.deadline).toBe(fake.options[0]?.deadline);
   });
 
   it("starts no facet read once the tick's deadline has passed", async () => {

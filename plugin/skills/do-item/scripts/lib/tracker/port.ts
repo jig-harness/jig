@@ -568,11 +568,13 @@ export interface Tracker {
   /**
    * This team's issues assigned to `identity` (a GitHub login; a Linear
    * user's email or display name) in one of `states`. An empty `states`
-   * throws, since it would read no state the caller meant.
+   * throws, since it would read no state the caller meant. `options` bound
+   * the settlement of the facets the read waits on, as for `facetStores`.
    */
   assignedIssues(
     identity: string,
     states: ReadonlyArray<CanonicalState>,
+    options?: FacetReadOptions,
   ): Promise<PoolIssue[]>;
   /**
    * Who made the assignment of `assignee` (default: the issue's current
