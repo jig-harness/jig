@@ -57,6 +57,10 @@ if (args[0] === "repo" && args[1] === "view") {
   process.stdout.write("example-org/example-repo\\n");
   process.exit(0);
 }
+if (args[0] === "pr" && args[1] === "view" && args.includes("author")) {
+  console.log(JSON.stringify({ author: { login: "pr-author" } }));
+  process.exit(0);
+}
 if (args[0] !== "api") { process.stderr.write("fake gh: unhandled " + args.join(" ") + "\\n"); process.exit(1); }
 let method = "GET";
 let endpoint = "";

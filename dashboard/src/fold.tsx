@@ -2,6 +2,7 @@
  * The page's disclosures and its hints: popovers that say what a word, a chip
  * or a panel means.
  */
+import { ChevronRight } from "lucide-react";
 import { Collapsible } from "@base-ui/react/collapsible";
 import { Popover } from "@base-ui/react/popover";
 import { createContext, type ReactNode, useContext, useState } from "react";
@@ -21,8 +22,14 @@ export function Fold({
 }) {
   return (
     <Collapsible.Root className="fold">
-      <Collapsible.Trigger className="foldBtn">{label}</Collapsible.Trigger>
-      <Collapsible.Panel>{children}</Collapsible.Panel>
+      <Collapsible.Trigger
+        className="foldBtn disclosure"
+        aria-label={label}
+        title={label}
+      >
+        <ChevronRight size={16} aria-hidden="true" />
+      </Collapsible.Trigger>
+      <Collapsible.Panel className="foldPanel">{children}</Collapsible.Panel>
     </Collapsible.Root>
   );
 }
@@ -35,8 +42,14 @@ export function Evidence({ rows }: { rows: EvidenceRow[] }) {
         <div key={`${row.k} ${row.v}`} style={{ display: "contents" }}>
           <dt>{row.k}</dt>
           <dd className="m">
-            <span>{row.v}</span>
-            {row.copy === undefined ? null : (
+            {/^https?:\/\//.test(row.v) ? (
+              <a href={row.v} target="_blank" rel="noreferrer noopener">
+                {row.v}
+              </a>
+            ) : (
+              <span>{row.v}</span>
+            )}
+            {row.copy === undefined || /^https?:\/\//.test(row.v) ? null : (
               <CopyButton text={row.copy} aria={`Copy ${row.k}`} />
             )}
           </dd>

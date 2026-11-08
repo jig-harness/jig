@@ -19,6 +19,7 @@ import {
 } from "./drive-pr-harness.ts";
 
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
 import { stateText, writeState } from "./state-rows.ts";
@@ -312,13 +313,17 @@ describe("drive-state.ts durability", () => {
     // the script puts state when nobody tells it.
     const { dir } = makeScratchRepo("worktree-state");
     const linked = join(tmpRoot, "worktree-state-linked");
-    const env = gitCleanEnv();
-    Bun.spawnSync(["git", "worktree", "add", "-q", "-b", "probe", linked], {
-      cwd: dir,
-      env,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const env = { ...gitCleanEnv(), JIG__dispatch__person: "maintainer" };
+    const added = Bun.spawnSync(
+      ["git", "worktree", "add", "-q", "-b", "probe", linked],
+      {
+        cwd: dir,
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expectSpawnExit(added, 0);
     const run = (cwd: string, args: string[], stdin?: string) => {
       const p = Bun.spawnSync(
         scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
@@ -332,6 +337,7 @@ describe("drive-state.ts durability", () => {
           stderr: "pipe",
         },
       );
+      expectSpawnExit(p, 0);
       return p.stdout.toString().trim();
     };
     // Park in the MAIN worktree…

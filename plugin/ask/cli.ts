@@ -51,7 +51,7 @@ import { type Reading, reading } from "./lib/reading.ts";
 import { renderAnswer, renderWaiting } from "./lib/render.ts";
 import type { AskContext, StationAnswer } from "./lib/station.ts";
 import { windowed } from "./lib/thread.ts";
-import { PERSON_REFUSED, waitingAnswer } from "./lib/waiting.ts";
+import { waitingAnswer } from "./lib/waiting.ts";
 
 export const askCommand = command(
   "ask",
@@ -85,7 +85,7 @@ export const askCommand = command(
     }),
     person: optional(
       option("--person", string({ metavar: "LOGIN" }), {
-        description: message`With --waiting, the entries that name this person; refused until parks record whom they wait on.`,
+        description: message`With --waiting, only entries that name this person's login.`,
       }),
     ),
   }),
@@ -109,8 +109,7 @@ function print(text: string): void {
 function waitingMain(args: AskArguments): number {
   if (args.address !== undefined)
     usage("--waiting lists every address; it takes none");
-  if (args.person !== undefined) usage(PERSON_REFUSED);
-  const answer = waitingAnswer(dispatcherRoot());
+  const answer = waitingAnswer(dispatcherRoot(), args.person);
   print(args.json ? JSON.stringify(answer, null, 2) : renderWaiting(answer));
   return ASK_EXIT.ANSWERED;
 }

@@ -2372,6 +2372,14 @@ bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/park-rec
 `<key>` is the thread id (`PRRT_kwDO...`) for `--kind thread` and the
 summary finding's fingerprint for `--kind finding`.
 
+Pass `--path <repository-relative-path>` for a finding anchored to a file;
+the script reads a thread's anchor from the forge when no path is given.
+Each park records `person`: the anchor area's `owner` from the change-area
+catalog, else `dispatch.person`, else the pull request's author. Different
+person owners on overlapping areas use the fallback. Non-login owner values
+and invalid or unreadable catalogs also use the fallback, with catalog errors reported. Login identity is case insensitive; null recipient settings are unset. The notification and `ask` name
+that person; an answer from any trusted author still counts.
+
 The script checks the sections mechanically and refuses, naming each missing
 or malformed part. Parked items stop counting as live work, and the drive
 keeps working around them: everything a parked item does not block is driven

@@ -197,6 +197,37 @@ describe("checkNotes", () => {
     expect(findings).toContain("adds or removes a release section");
   });
 
+  test("an open base merge keeps imported releases while judging branch edits", () => {
+    const root = branch();
+    commit(root, { "src/x.ts": "feature\n" }, "feature");
+    git(root, "checkout", "main");
+    const released = KEEP_CHANGELOG.replace(
+      "## [1.2.0]",
+      "## [1.3.0] - 2026-02-03\n\n### Fixed\n\n- released\n\n## [1.2.0]",
+    );
+    commit(
+      root,
+      {
+        "CHANGELOG.md": released,
+        "a/plugin.json": MANIFEST("1.3.0"),
+        "b/plugin.json": MANIFEST("1.3.0"),
+      },
+      "release",
+    );
+    git(root, "checkout", "work");
+    git(root, "merge", "--no-commit", "main");
+    write(
+      root,
+      "changes/work.md",
+      "---\nrelease: patch\n---\n\n### Fixed\n\n- feature\n",
+    );
+    expect(check(root).findings).toEqual([]);
+    write(root, "a/plugin.json", MANIFEST("1.4.0"));
+    expect(check(root).findings.join("\n")).toContain(
+      "the branch moves the version from 1.3.0 to 1.4.0",
+    );
+  });
+
   test("an entry already under Unreleased may be corrected or removed, never added to", () => {
     const root = branch();
     const corrected = KEEP_CHANGELOG.replace(
