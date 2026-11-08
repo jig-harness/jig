@@ -241,23 +241,29 @@ export function gitHubTracker(client: Client): Tracker {
   async function setOpenness(
     issue: GhIssue,
     state: CanonicalState,
+    signal?: AbortSignal,
   ): Promise<void> {
     if (isClosedState(state)) {
       const reason = CLOSE_REASONS[state];
       if (!issue.open && (issue.stateReason ?? "COMPLETED") === reason) return;
-      await client.mutate(M.close, {
-        issueId: issue.id,
-        stateReason: reason,
-        duplicateIssueId: null,
-      });
+      await client.mutate(
+        M.close,
+        {
+          issueId: issue.id,
+          stateReason: reason,
+          duplicateIssueId: null,
+        },
+        signal,
+      );
     } else if (!issue.open) {
-      await client.mutate(M.reopen, { issueId: issue.id });
+      await client.mutate(M.reopen, { issueId: issue.id }, signal);
     }
   }
 
   async function transitionByLabels(
     issue: GhIssue,
     state: CanonicalState,
+    signal?: AbortSignal,
   ): Promise<void> {
     const carried = wholeLabels(issue).filter((l) =>
       model.stateLabels.some((s) => same(s, l)),
@@ -270,25 +276,35 @@ export function gitHubTracker(client: Client): Tracker {
       [...add, ...remove],
       (name) =>
         `issue_tracker.states.${state} names '${name}', which is not a label of ${slug(home)}; create it (gh label create "${name}" --repo ${slug(home)}) or name another`,
+      signal,
     );
-    await setOpenness(issue, state);
+    await setOpenness(issue, state, signal);
     if (add.length > 0)
-      await client.mutate(M.addLabels, {
-        id: issue.id,
-        labelIds: add.map((l) => ids.get(l)),
-      });
+      await client.mutate(
+        M.addLabels,
+        {
+          id: issue.id,
+          labelIds: add.map((l) => ids.get(l)),
+        },
+        signal,
+      );
     if (remove.length > 0)
-      await client.mutate(M.removeLabels, {
-        id: issue.id,
-        labelIds: remove.map((l) => ids.get(l)),
-      });
+      await client.mutate(
+        M.removeLabels,
+        {
+          id: issue.id,
+          labelIds: remove.map((l) => ids.get(l)),
+        },
+        signal,
+      );
   }
 
   async function transitionOnBoard(
     issue: GhIssue,
     state: CanonicalState,
+    signal?: AbortSignal,
   ): Promise<void> {
-    const board = await client.board();
+    const board = await client.board(signal);
     const name = model.stateName(state);
     const options = board.options.filter((o) => same(o.name, name));
     // A closed state needs no option: closing the issue is the state, and
@@ -302,10 +318,14 @@ export function gitHubTracker(client: Client): Tracker {
     if (option !== undefined) {
       let itemId = issue.boardItem?.id;
       if (itemId === undefined) {
-        const added = await client.mutate(M.addItem, {
-          projectId: board.projectId,
-          contentId: issue.id,
-        });
+        const added = await client.mutate(
+          M.addItem,
+          {
+            projectId: board.projectId,
+            contentId: issue.id,
+          },
+          signal,
+        );
         itemId = str(
           record(
             record(added.addProjectV2ItemById, "addProjectV2ItemById").item,
@@ -314,14 +334,18 @@ export function gitHubTracker(client: Client): Tracker {
           "item.id",
         );
       }
-      await client.mutate(M.setStatus, {
-        projectId: board.projectId,
-        itemId,
-        fieldId: board.fieldId,
-        optionId: option.id,
-      });
+      await client.mutate(
+        M.setStatus,
+        {
+          projectId: board.projectId,
+          itemId,
+          fieldId: board.fieldId,
+          optionId: option.id,
+        },
+        signal,
+      );
     }
-    await setOpenness(issue, state);
+    await setOpenness(issue, state, signal);
   }
 
   /**
@@ -605,13 +629,13 @@ export function gitHubTracker(client: Client): Tracker {
       return (await children(key)).map(({ issue }) => summaryOf(issue, model));
     },
 
-    async transition(key, state) {
+    async transition(key, state, signal) {
       // On a board the state is the board's, whatever the repository; a
       // state label belongs to the home repository's labels.
       if (ctx.board === null) refuseForeign(key, "workflow state");
-      const issue = await client.mustIssue(key);
-      if (ctx.board === null) await transitionByLabels(issue, state);
-      else await transitionOnBoard(issue, state);
+      const issue = await client.mustIssue(key, signal);
+      if (ctx.board === null) await transitionByLabels(issue, state, signal);
+      else await transitionOnBoard(issue, state, signal);
     },
 
     async postComment(issue, body, signal) {

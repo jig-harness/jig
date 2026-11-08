@@ -83,11 +83,14 @@ export interface Client {
    */
   repositoryId(signal?: AbortSignal): Promise<string>;
   /** Every label of the home repository, with its id. */
-  repoLabels(): Promise<Array<{ id: string; name: string }>>;
+  repoLabels(
+    signal?: AbortSignal,
+  ): Promise<Array<{ id: string; name: string }>>;
   /** Label names to ids; each must name a label of the home repository. */
   labelIds(
     names: string[],
     why?: (name: string) => string,
+    signal?: AbortSignal,
   ): Promise<Map<string, string>>;
   /** A milestone of the home repository by its title. */
   milestone(title: string): Promise<{ id: string; number: number }>;
@@ -98,7 +101,7 @@ export interface Client {
     signal?: AbortSignal,
   ): Promise<Record<string, unknown>>;
   /** The board, its status field and that field's options (project mode). */
-  board(): Promise<BoardIds>;
+  board(signal?: AbortSignal): Promise<BoardIds>;
 }
 
 export interface BoardIds {
@@ -281,14 +284,15 @@ export function gitHubClient(opts: ClientOptions): Client {
       return repoId;
     },
 
-    repoLabels() {
-      labels ??= (async () => {
+    repoLabels(signal) {
+      const ask = async () => {
         const nodes = await pageAll(
           transport,
           LABELS_QUERY,
           repoVars,
           (d) => record(d.repository, "repository").labels,
           `labels of ${slug(home)}`,
+          signal,
         );
         return nodes.map((n, i) => {
           const l = record(n, `labels[${i}]`);
@@ -297,14 +301,16 @@ export function gitHubClient(opts: ClientOptions): Client {
             name: str(l.name, `labels[${i}].name`),
           };
         });
-      })();
+      };
+      if (signal !== undefined) return ask();
+      labels ??= ask();
       return labels;
     },
 
-    async labelIds(names, why) {
+    async labelIds(names, why, signal) {
       const ids = new Map<string, string>();
       if (names.length === 0) return ids;
-      const all = await client.repoLabels();
+      const all = await client.repoLabels(signal);
       const problems: string[] = [];
       for (const name of new Set(names)) {
         // GitHub label names are unique regardless of case.
@@ -351,8 +357,8 @@ export function gitHubClient(opts: ClientOptions): Client {
       return record(await transport(query, variables, signal), "data");
     },
 
-    board() {
-      boardIds ??= (async () => {
+    board(signal) {
+      const ask = async () => {
         const project = settings.project;
         if (project === null)
           throw new TrackerConfigError(
@@ -361,11 +367,15 @@ export function gitHubClient(opts: ClientOptions): Client {
           );
         let answer: unknown;
         try {
-          answer = await transport(BOARD_QUERY(project.ownerType), {
-            owner: project.owner,
-            number: project.number,
-            field: settings.statusField,
-          });
+          answer = await transport(
+            BOARD_QUERY(project.ownerType),
+            {
+              owner: project.owner,
+              number: project.number,
+              field: settings.statusField,
+            },
+            signal,
+          );
         } catch (err) {
           if (!(err instanceof GitHubApiError && err.notFound)) throw err;
           answer = { [project.ownerType]: { projectV2: null } };
@@ -399,7 +409,9 @@ export function gitHubClient(opts: ClientOptions): Client {
           fieldId: str(f.id, "field.id"),
           options,
         };
-      })();
+      };
+      if (signal !== undefined) return ask();
+      boardIds ??= ask();
       return boardIds;
     },
   };

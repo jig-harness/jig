@@ -1111,10 +1111,13 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       return nodes.map((c, i) => summaryOf(c, `children of ${key}[${i}]`));
     },
 
-    async transition(key, state) {
+    async transition(key, state, signal) {
       const name = states[state];
-      const { id, teamId } = await issueIdAndTeam(key);
-      const data = record(await transport(STATES_QUERY, { teamId }), "data");
+      const { id, teamId } = await issueIdAndTeam(key, signal);
+      const data = record(
+        await transport(STATES_QUERY, { teamId }, signal),
+        "data",
+      );
       const conn = record(record(data.team, "team").states, "team.states");
       if (!complete(conn) || !Array.isArray(conn.nodes))
         throw new ShapeError("team.states: not readable in one page");
@@ -1125,7 +1128,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
         );
       const stateId = str(record(matches[0], "state").id, "state.id");
       const result = record(
-        await transport(UPDATE_MUTATION, { id, input: { stateId } }),
+        await transport(UPDATE_MUTATION, { id, input: { stateId } }, signal),
         "data",
       );
       assertMutationOk(result.issueUpdate, `moving ${key} to ${name}`);

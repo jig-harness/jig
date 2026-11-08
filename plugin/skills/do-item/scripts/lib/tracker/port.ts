@@ -519,7 +519,11 @@ export interface Tracker {
   /** Every child of an issue. */
   listChildren(key: string): Promise<IssueSummary[]>;
   /** Move an issue to a canonical state. */
-  transition(key: string, state: CanonicalState): Promise<void>;
+  transition(
+    key: string,
+    state: CanonicalState,
+    signal?: AbortSignal,
+  ): Promise<void>;
   /**
    * Post a comment. `issue` is a key or the tracker's own id. An aborted
    * `signal` ends the request in flight and starts no further one.

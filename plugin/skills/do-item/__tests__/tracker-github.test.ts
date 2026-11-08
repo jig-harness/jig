@@ -752,3 +752,21 @@ describe("GitHub adapter: reading in pages and refusing what it cannot do", () =
     expect(writes(calls)).toEqual([]);
   });
 });
+
+it("cancelling a transition read starts no subsequent requests", async () => {
+  for (const stopAt of ["TrackerIssue", "TrackerLabels", "TrackerAddLabels"]) {
+    const controller = new AbortController();
+    const { t, calls } = gitHub((c) => {
+      if (c.op === stopAt) controller.abort();
+      if (c.op === "TrackerIssue")
+        return oneIssue(issueNode({ number: 5, labels: ["In Progress"] }));
+      if (c.op === "TrackerLabels")
+        return repoLabels("In Progress", "In Review");
+      return {};
+    });
+    await expect(
+      t.transition("#5", "in_review", controller.signal),
+    ).rejects.toThrow();
+    expect(calls.at(-1)?.op).toBe(stopAt);
+  }
+});

@@ -549,3 +549,59 @@ it("reads a record with equivalent priority label spellings", () => {
     rmSync(path, { force: true });
   }
 });
+
+it("retirement preserves conflicting destination labels with or without a snapshot", async () => {
+  for (const snapshot of [false, true]) {
+    for (const extra of ["feature", "priority: low"]) {
+      const { repo, sides, rec } = setup();
+      Object.assign(sides, {
+        source: sides.target,
+        target: sides.source,
+        sourceFacets: sides.targetFacets,
+        targetFacets: sides.sourceFacets,
+      });
+      repo.get("#1").native = { type: "bug", priority: 2, size: "small" };
+      repo.get("#1").labels.push(extra);
+      if (snapshot)
+        rec.record.snapshots["#1"] = {
+          type: "bug",
+          priority: "high",
+          size: "small",
+        };
+      const before = state(repo);
+      const report = await retire(sides, rec, {
+        apply: true,
+        writer: pacedWriter(fakeClock()),
+      });
+      expect(
+        report.unresolved.some(
+          (i) => i.issue === "#1" && i.why.includes("destination"),
+        ),
+      ).toBe(true);
+      expect(state(repo)[0]).toEqual(before[0]);
+      expect(report.writes.some((w) => w.issue === "#1")).toBe(false);
+    }
+  }
+});
+
+it("refuses colliding destination fields including native Priority aliases", async () => {
+  for (const field of ["Classification", "Priority"]) {
+    const { repo, sides, rec } = setup();
+    const target = repo.view({
+      ...NATIVE_SECTION,
+      type: { store: "field", field },
+      ...(field === "Classification"
+        ? { size: { store: "field", field } }
+        : {}),
+    });
+    sides.target = target.tracker;
+    sides.targetFacets = target.facets;
+    rec.record.moved = movedFacets(sides.sourceFacets, target.facets);
+    const report = await copy(sides, rec, {
+      apply: true,
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(report.problem).toContain("destination stores overlap");
+    expect(repo.writes).toEqual([]);
+  }
+});

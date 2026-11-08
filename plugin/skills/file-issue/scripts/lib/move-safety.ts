@@ -32,6 +32,23 @@ export function moveProblem(sides: MoveSides, moved: Facet[]): string | null {
     if (sources.some((a) => labelsOverlap(a, b)))
       return `${f}: source and destination label stores overlap`;
   }
+  const targets = [
+    sides.targetFacets.type,
+    sides.targetFacets.priority,
+    sides.targetFacets.size,
+  ].filter(usable);
+  for (const f of moved) {
+    const target = sides.targetFacets[f] as ResolvedFacet;
+    if (
+      targets.some(
+        (other) =>
+          other.facet !== f &&
+          (physicalOverlap(target, other, sides.target.adapter) ||
+            labelsOverlap(target, other)),
+      )
+    )
+      return `${f}: destination stores overlap; one physical store cannot hold two facets`;
+  }
   return null;
 }
 

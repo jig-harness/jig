@@ -88,3 +88,30 @@ it("does not mistake a comment or quoted argument for a sweep", () => {
     expect(sweepFindings(tracker, root, tracked)).toHaveLength(1);
   }
 });
+
+it("keeps workflows with uncertain dependency reachability advisory", () => {
+  for (const needs of ["prerequisite", "[prerequisite]", "[missing]"]) {
+    const { root, tracked } = repo({
+      ".github/workflows/sweep.yml": `on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  prerequisite:\n    if: false\n    steps: []\n  sweep:\n    needs: ${needs}\n    steps:\n      - run: bun check-fields.ts check --yes\n`,
+    });
+    expect(sweepFindings(tracker, root, tracked)).toHaveLength(1);
+  }
+});
+
+it("requires a validated weekly cron cadence in workflows and crontabs", () => {
+  for (const cron of ["0 0 1 1 *", "99 99 * * 1", "x y * * 1", "0 0 * 1 1"]) {
+    for (const files of [
+      { "jobs.cron": `${cron} bun check-fields.ts check --yes\n` },
+      {
+        ".github/workflows/sweep.yml": `on:\n  schedule:\n    - cron: '${cron}'\njobs:\n  s:\n    steps:\n      - run: bun check-fields.ts check --yes\n`,
+      },
+    ]) {
+      const { root, tracked } = repo(files);
+      expect(sweepFindings(tracker, root, tracked)).toHaveLength(1);
+    }
+  }
+  const { root, tracked } = repo({
+    "jobs.cron": "37 5 * * 1 bun check-fields.ts check --yes\n",
+  });
+  expect(sweepFindings(tracker, root, tracked)).toEqual([]);
+});

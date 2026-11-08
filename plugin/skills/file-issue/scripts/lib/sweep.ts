@@ -211,16 +211,26 @@ async function moveOne(
   const comments = await tracker.listComments(issue.identifier);
   const posted = comments.some((c) => c.body.includes(marker));
   if (!posted) {
-    await opts.writer.write(`comment on ${issue.identifier}`, async () => {
-      await stillEligible(tracker, issue, opts);
-      return tracker.postComment(issue.identifier, sweepComment(issue));
-    });
+    await opts.writer.write(
+      `comment on ${issue.identifier}`,
+      async (signal) => {
+        await stillEligible(tracker, issue, opts);
+        return tracker.postComment(
+          issue.identifier,
+          sweepComment(issue),
+          signal,
+        );
+      },
+    );
     report.commented.push(issue.identifier);
   }
-  await opts.writer.write(`move ${issue.identifier} to triage`, async () => {
-    await stillEligible(tracker, issue, opts);
-    return tracker.transition(issue.identifier, "triage");
-  });
+  await opts.writer.write(
+    `move ${issue.identifier} to triage`,
+    async (signal) => {
+      await stillEligible(tracker, issue, opts);
+      return tracker.transition(issue.identifier, "triage", signal);
+    },
+  );
   report.moved.push(issue.identifier);
   opts.progress?.(
     `moved ${issue.identifier} to triage${posted ? " (its comment was already there)" : ""}`,

@@ -431,3 +431,32 @@ it("retains ownership of a cancelled effect until it settles", async () => {
   await result;
   expect(settled).toBe(true);
 });
+
+it("forwards the writer cancellation to comment and transition effects", async () => {
+  const repo = new FakeRepo();
+  repo.add("#2", { labels: labelled("bug", "high", "small") });
+  repo.add("#1", { labels: ["bug", "small"] });
+  const { tracker } = repo.view(LABEL_SECTION);
+  const controller = new AbortController();
+  const calls: string[] = [];
+  const comment = tracker.postComment;
+  tracker.postComment = async (key, body, signal) => {
+    expect(signal).toBe(controller.signal);
+    calls.push("comment");
+    return comment(key, body, signal);
+  };
+  tracker.transition = async (_key, _state, signal) => {
+    expect(signal).toBe(controller.signal);
+    calls.push("transition");
+    controller.abort();
+    signal?.throwIfAborted();
+  };
+  const report = await sweep(tracker, {
+    apply: true,
+    retired: none,
+    writer: pacedWriter(fakeClock(), undefined, { signal: controller.signal }),
+  });
+  expect(calls).toEqual(["comment", "transition"]);
+  expect(report.moved).toEqual([]);
+  expect(report.stopped).not.toBeNull();
+});

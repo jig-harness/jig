@@ -66,7 +66,9 @@ function sweepCommand(line: string): boolean {
     line,
   );
   if (m === null) return false;
-  const script = (m[1] ?? "").replace(/^["']|["']$/g, "");
+  const token = m[1] ?? "";
+  const script =
+    token.startsWith('"') || token.startsWith("'") ? token.slice(1, -1) : token;
   if (script.includes("$(") || script.split("/").at(-1) !== "check-fields.ts")
     return false;
   const args = m[2] ?? "";
@@ -79,10 +81,31 @@ function sweepCommand(line: string): boolean {
 function scheduleSafe(value: unknown, branch: string | null): boolean {
   if (value === undefined || value === true) return true;
   if (typeof value !== "string") return false;
-  const condition = value.trim().replace(/^\$\{\{\s*|\s*\}\}$/g, "");
+  const trimmed = value.trim();
+  const condition =
+    trimmed.startsWith("${{") && trimmed.endsWith("}}")
+      ? trimmed.slice(3, -2).trim()
+      : trimmed;
   return (
     condition === "github.event_name == 'schedule'" ||
     (branch !== null && condition === `github.ref == 'refs/heads/${branch}'`)
+  );
+}
+
+/** Certify only a simple daily or weekly schedule; other cron dialects remain advisory. */
+function weeklyCron(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const fields = value.trim().split(/\s+/u);
+  if (fields.length !== 5) return false;
+  const [minute, hour, day, month, weekday] = fields;
+  const bounded = (s: string | undefined, max: number) =>
+    s !== undefined && /^\d{1,2}$/u.test(s) && Number(s) <= max;
+  return (
+    bounded(minute, 59) &&
+    bounded(hour, 23) &&
+    day === "*" &&
+    month === "*" &&
+    (weekday === "*" || bounded(weekday, 7))
   );
 }
 
@@ -97,19 +120,13 @@ function scheduledWorkflow(text: string, branch: string | null): boolean {
     !isMapping(doc.jobs)
   )
     return false;
-  if (
-    !doc.on.schedule.every(
-      (s) =>
-        isMapping(s) &&
-        typeof s.cron === "string" &&
-        /^\d+ \d+ \* \* [0-7]$/.test(s.cron.trim()),
-    )
-  )
+  if (!doc.on.schedule.every((s) => isMapping(s) && weeklyCron(s.cron)))
     return false;
   return Object.values(doc.jobs).some(
     (job) =>
       isMapping(job) &&
       scheduleSafe(job.if, branch) &&
+      job.needs === undefined &&
       Array.isArray(job.steps) &&
       job.steps.some(
         (step) =>
@@ -146,7 +163,7 @@ export function sweepRunners(
             const words = line.trim().split(/\s+/);
             const command =
               words.length > 5 ? words.slice(5).join(" ") : undefined;
-            return !line.trim().startsWith("#") && applying(command);
+            return weeklyCron(words.slice(0, 5).join(" ")) && applying(command);
           });
         // A service alone has no activation evidence; a tracked enabled timer must name it.
         if (!f.endsWith(".service")) return false;

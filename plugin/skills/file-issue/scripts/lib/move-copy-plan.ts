@@ -82,7 +82,7 @@ export function copyPlan(
 }
 
 /** A destination must have a losslessly restorable representation. */
-function destinationProblem(
+export function destinationProblem(
   pair: Pair,
   f: Facet,
   slot: ResolvedFacet,

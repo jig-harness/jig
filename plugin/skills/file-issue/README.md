@@ -3,7 +3,7 @@
 Files tracker issues that a person or an agent can pick up weeks later, and
 brings existing issues into the same shape. Its sweep finds the open issues
 filed without a type, a priority or a size, and its move carries those
-three from one place in the tracker to another.
+facets from one place in the tracker to another.
 
 An issue filed by hand drifts in two ways. Its labels are picked from
 memory: a facet goes on without the label it refines, two size labels end

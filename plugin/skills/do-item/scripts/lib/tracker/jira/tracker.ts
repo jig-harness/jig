@@ -206,13 +206,19 @@ export function jiraTracker(client: Client): Tracker {
     return fields;
   }
 
-  async function transitionsOf(key: string): Promise<Transition[]> {
+  async function transitionsOf(
+    key: string,
+    signal?: AbortSignal,
+  ): Promise<Transition[]> {
     const raw = record(
-      await transport({
-        method: "GET",
-        path: `${path(key)}/transitions`,
-        query: { expand: "transitions.fields" },
-      }),
+      await transport(
+        {
+          method: "GET",
+          path: `${path(key)}/transitions`,
+          query: { expand: "transitions.fields" },
+        },
+        signal,
+      ),
       `transitions of ${key}`,
     );
     if (!Array.isArray(raw.transitions))
@@ -328,26 +334,29 @@ export function jiraTracker(client: Client): Tracker {
       return (await client.children(key)).map((k) => summaryOf(k, client));
     },
 
-    async transition(key, state) {
-      const issue = await client.mustIssue(key);
+    async transition(key, state, signal) {
+      const issue = await client.mustIssue(key, signal);
       const target = model.stateName(state);
       const already =
         same(issue.status.name, target) &&
         (!isResolvedState(state) || model.read(issue).canonical === state);
       if (already) return;
-      const all = await transitionsOf(issue.key);
+      const all = await transitionsOf(issue.key, signal);
       const chosen = onlyTransition(all, issue, target, state);
       const resolution =
         isResolvedState(state) && chosen.resolution
           ? { fields: { resolution: { name: model.resolutionOf(state) } } }
           : {};
-      await transport({
-        method: "POST",
-        path: `${path(issue.key)}/transitions`,
-        body: { transition: { id: chosen.id }, ...resolution },
-      });
+      await transport(
+        {
+          method: "POST",
+          path: `${path(issue.key)}/transitions`,
+          body: { transition: { id: chosen.id }, ...resolution },
+        },
+        signal,
+      );
       if (isResolvedState(state) && !chosen.resolution) {
-        const after = await client.mustIssue(issue.key);
+        const after = await client.mustIssue(issue.key, signal);
         if (model.read(after).canonical !== state)
           throw new JiraApiError(
             `${issue.key} entered ${after.status.name}, which its transition cannot record as ${state}: the transition has no resolution field`,

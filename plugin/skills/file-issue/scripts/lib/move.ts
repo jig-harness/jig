@@ -1,4 +1,7 @@
-import { copyPlan } from "./move-copy-plan.ts";
+import {
+  copyPlan,
+  destinationProblem as representationProblem,
+} from "./move-copy-plan.ts";
 /**
  * The move between facet stores (design/tracker-facets.md, "Moving a
  * repository from one store to another"): labels to fields, fields to
@@ -547,10 +550,13 @@ function retirePlan(
   const unresolved: string[] = [];
   const conflicts: string[] = [];
   for (const f of moved) {
-    if (pair.dst.unmappedFacets?.includes(f)) {
-      unresolved.push(
-        `${f} has an unmapped destination value; map it before moving`,
-      );
+    const problem = representationProblem(
+      pair,
+      f,
+      slotOf(sides.targetFacets, f),
+    );
+    if (problem !== null) {
+      unresolved.push(problem);
       continue;
     }
     if (
