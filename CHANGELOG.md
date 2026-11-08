@@ -387,6 +387,20 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.165.0] - 2026-11-08
+
+### Fixed
+
+- `jig doctor` and `jig upgrade` now see Claude Code's project- and
+  local-scope installs of `jig@jig`, not only the user-scope one. The doctor
+  lists each with its directory and version in a new `plugin:claude:scopes`
+  check, which fails one older than the user-scope install or whose
+  directory no longer exists. `jig upgrade` refreshes each from its
+  directory, removes from Claude Code's install record each whose directory
+  is gone, and names any it leaves as it was; `bun tools/plugin/setup.ts`
+  does the same. The plugin README says which copy Claude Code loads where
+  both exist.
+
 ## [0.164.0] - 2026-11-08
 
 ### Added
@@ -5906,7 +5920,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.164.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.165.0...HEAD
+[0.165.0]: https://github.com/jig-harness/jig/compare/v0.164.0...v0.165.0
 [0.164.0]: https://github.com/jig-harness/jig/compare/v0.163.0...v0.164.0
 [0.163.0]: https://github.com/jig-harness/jig/compare/v0.162.0...v0.163.0
 [0.162.0]: https://github.com/jig-harness/jig/compare/v0.161.0...v0.162.0
