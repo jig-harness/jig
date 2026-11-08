@@ -750,6 +750,87 @@ describe("another host's takeover of a driver no launch started", () => {
     expect(driveHold(kept as DrivenPr, [owner, refused]).kind).toBe("refused");
   });
 
+  it.each(["local", "foreign"])(
+    "keeps a refused takeover final when its driver owner is %s and the refusal is on the other host",
+    (ownerHost) => {
+      const pr = silent();
+      const base = redrove(pr, 11);
+      const localRefusal: ReadRecord = {
+        ...base,
+        record: {
+          ...base.record,
+          action: "takeover",
+          facts: factsOf(pr),
+          redrive: null,
+        },
+      };
+      const localOwner: ReadRecord = {
+        ...base,
+        record: { ...base.record, createdAt: "2026-11-07T06:00:00.000Z" },
+        state: {
+          kind: "ended",
+          exit: { at: "2026-11-07T11:30:00.000Z", code: 0, signal: null },
+          process: {
+            hostId: "",
+            host: "h",
+            bootId: "b",
+            pid: 1,
+            start: "s",
+            claimedAt: "2026-11-07T06:30:00.000Z",
+          },
+        },
+      };
+      const shared = claim(9, "owner facts");
+      if (!shared.says.ok) throw new Error("fixture");
+      const foreignOwner: SharedClaim = {
+        ...shared,
+        says: {
+          ok: true,
+          value: {
+            ...shared.says.value,
+            at: "2026-11-07T06:30:00.000Z",
+            end: {
+              state: "ended",
+              at: "2026-11-07T11:30:00.000Z",
+              exit: 0,
+              outcome: null,
+            },
+          },
+        },
+      };
+      const foreignRefusal = takeover(factsOf(pr), {
+        ok: true,
+        value: {
+          ...shared.says.value,
+          end: {
+            state: "ended",
+            at: "2026-11-07T11:30:00.000Z",
+            exit: 11,
+            outcome: null,
+          },
+        },
+      });
+      const records = [ownerHost === "local" ? localOwner : localRefusal];
+      const claims = new Map([
+        [
+          pr.number,
+          {
+            ok: true as const,
+            value: [ownerHost === "local" ? foreignRefusal : foreignOwner],
+          },
+        ],
+      ]);
+      const [kept] = settleOwnDrives([pr], records, claims, "this-host");
+      expect(kept?.evidence.settled).not.toBe(true);
+      expect(
+        ownerHost === "local"
+          ? foreignHold(kept as DrivenPr, claims.get(pr.number), "this-host")
+              .kind
+          : driveHold(kept as DrivenPr, records).kind,
+      ).toBe("refused");
+    },
+  );
+
   it("does not settle a drive on a takeover cancelled before it ran", () => {
     const gone = {
       ...silent(),
