@@ -14,19 +14,6 @@ watching. An agent working alone cannot get past a person, the dispatcher
 leaves no work stranded, and a person sees and steers the work from one
 place.
 
-### 32. Driving any pull request from anywhere, with autonomy that fits the hour
-
-The review drive already runs from any checkout, restarts itself, is taken
-over through a ledger on the pull request when its driver dies or stops
-making progress, and stops for a person only on a configured human decision
-class, with the decision framed
-([drive-pr](plugin/skills/drive-pr/README.md)). What is left: the policy that
-bounds what an agent may decide is read from the pull request's base branch,
-so a pull request cannot widen what its own drive may decide. A repository
-may already raise how far an agent decides during the hours nobody is there
-to ask (opt-in, not yet validated); every such decision is recorded on the
-pull request where a person can reverse it, and a morning report lists them.
-
 ### 40. The pass trust boundary as mechanisms
 
 An agent that works one round of a pull request's review with nobody

@@ -131,6 +131,8 @@ function machine(changeProbe = true): MachineConfig {
     followupConcurrency: 2,
     receiptsDays: 30,
     dashboardListen: null,
+    dashboardRequireToken: true,
+    dashboardAllowedHosts: [],
     sharedRecords: "forge",
     send: true,
     changeProbe,
