@@ -1,3 +1,6 @@
+import { validateRestore } from "../facets/restore-labels.ts";
+import { priorityName } from "../facets/values.ts";
+import { labelCodec } from "../facets/label.ts";
 /**
  * The GitHub Issues adapter of the tracker port (`port.ts`).
  *
@@ -440,6 +443,7 @@ export function gitHubTracker(client: Client): Tracker {
     return (
       (patch.addLabels ?? []).length > 0 ||
       (patch.removeLabels ?? []).length > 0 ||
+      patch.facetLabels !== undefined ||
       patch.priority !== undefined ||
       patch.project !== undefined ||
       client.facets.touches(patch)
@@ -655,7 +659,35 @@ export function gitHubTracker(client: Client): Tracker {
       if (touchesRepositoryNames(patch))
         refuseForeign(key, "labels, priority, type, size or project");
       const issue = await client.mustIssue(key);
-      const priority = priorityChange(wholeLabels(issue), patch.priority);
+      const exact = patch.facetLabels?.priority;
+      if (
+        Object.keys(patch.facetLabels ?? {}).some((f) => f !== "priority") ||
+        (exact !== undefined && !priorityInLabels)
+      )
+        throw new TrackerRequestError(
+          "invalid",
+          "exact facet labels require a label store",
+        );
+      const slot = client.facetSlots.priority;
+      const codec = slot.store === "label" ? labelCodec(slot) : null;
+      if (exact !== undefined && codec !== null)
+        validateRestore(
+          codec,
+          exact,
+          patch.priority === undefined
+            ? undefined
+            : priorityName(patch.priority),
+        );
+      const carried = wholeLabels(issue);
+      const priority =
+        exact === undefined
+          ? priorityChange(carried, patch.priority)
+          : {
+              add: exact.filter((l) => !carried.some((c) => same(c, l))),
+              remove: carried.filter(
+                (l) => codec?.owns(l) && !exact.some((c) => same(c, l)),
+              ),
+            };
       const labels = {
         add: [...add, ...priority.add],
         remove: [...remove, ...priority.remove],

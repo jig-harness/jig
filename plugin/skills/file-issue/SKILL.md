@@ -513,8 +513,10 @@ repository keeps that facet in the tracker's own field), and the started
 ones apart. With the user's go-ahead, or when they asked for it, run it
 again with `--yes`: it moves each listed issue that is not yet started back
 to triage, a comment naming what it lacks posted first, and lists the
-started ones without moving them. It moves at most 50 a run and reads at
-most 20 pages of 100; the next run takes what remains. Offer to settle a
+started ones without moving them. It moves at most 50 a run and lists at
+most 20 pages of 100. Listing pages share one tracker census, bounded to
+a minute; the page limit bounds the report, not tracker issue reads. The
+next run takes what remains. Offer to settle a
 listed issue with [Plan](#plan-an-existing-issue).
 
 Exit `0`: it ran (read every line: what it lists is the result, and a
@@ -583,7 +585,13 @@ Closed issues keep their labels, and no label is deleted. Without `--yes`,
 `move --restore .context/facet-move/record.json --yes`, which puts back
 every value the record says the move changed, where the store still holds
 what the move left, and then revert the configuration commit. Keep the
-record until the user no longer wants that way back.
+record until the user no longer wants that way back. The record is locked
+for each command. Every attempt rechecks the live stores after pacing;
+changed issues are conflicts. Remote updates are not atomic with those
+reads, so run moves while other writers are idle. Overlapping physical
+stores and in-place map changes refuse, as does a move from Jira's required
+native priority. Map an unmapped nonempty destination before copying;
+restore retains the original label aliases.
 
 Exit `0`: the phase is done for every open issue. Exit `3`: it finished
 with something left, each listed by key: an issue for the user to settle,

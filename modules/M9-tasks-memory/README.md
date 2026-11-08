@@ -191,8 +191,8 @@ an unranked pool cannot be worked in order.
 The check is made in one place, inside the tracker write, so every path that
 files through the tracker interface gets it, a new one included: an issue
 with no type, no priority, or no size (an epic needs none, since its
-children carry theirs) is filed, then named in a
-warning that carries the new issue's identifier. A filing that goes
+children carry theirs) is refused before a request is sent, with a message
+naming what it lacks. A filing that goes
 around the interface (an issue form, a person in the tracker's own page) is
 caught after it: every read of a pool lists an issue that lacks a facet as
 a gap, rather than ranking it as if it had none to carry.
@@ -349,8 +349,6 @@ build, which rejects a repeated key.
 
 ### Future
 
-- **A weekly sweep of the open issues** that returns one lacking a type, a
-  priority or a size to triage, for the issues no pool reads.
 - **The epic acceptance review, the tail sweep and the prioritization
   ranker** as runnable skills. The rules above are stated now; the tools that
   run them (a review that writes the accepting verdict, a sweep that extracts

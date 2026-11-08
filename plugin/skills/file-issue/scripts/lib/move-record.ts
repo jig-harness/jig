@@ -1,3 +1,4 @@
+import { MoveRecordError } from "./move-error.ts";
 /**
  * The move record (design/tracker-facets.md, "Moving a repository from one
  * store to another"): the file `check-fields.ts move --record <file>` names.
@@ -22,6 +23,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { validateRecordContents } from "./move-record-validation.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import type { FacetEntries } from "../../../do-item/scripts/lib/tracker/facets/config.ts";
 import {
@@ -78,7 +80,7 @@ export interface MoveRecord {
 }
 
 /** A record that cannot be read. */
-export class MoveRecordError extends Error {}
+export { MoveRecordError } from "./move-error.ts";
 
 function check(ok: boolean, path: string, what: string): void {
   if (!ok) throw new MoveRecordError(`${path} is not a move record: ${what}`);
@@ -93,8 +95,10 @@ export function readMoveRecord(path: string): MoveRecord {
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    throw new MoveRecordError(`${path} is not JSON`);
+  } catch (err) {
+    const why =
+      err instanceof SyntaxError ? "is not JSON" : "could not be read";
+    throw new MoveRecordError(`${path} ${why}`, { cause: err });
   }
   check(isRecord(raw), path, "not an object");
   const r = raw as Record<string, unknown>;
@@ -119,6 +123,7 @@ export function readMoveRecord(path: string): MoveRecord {
   );
   check(isRecord(r.snapshots), path, "no snapshots");
   check(Array.isArray(r.changes), path, "no changes");
+  validateRecordContents(r, path);
   return raw as MoveRecord;
 }
 

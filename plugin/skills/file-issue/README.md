@@ -190,8 +190,10 @@ is working it. The comment goes first and carries a hidden marker, so a
 run that stopped before the move finishes it next time without a second
 comment.
 
-It keeps to bounds: at most 20 pages of 100 issues read and 50 issues
-moved a run, writes paced at 30 a minute, a `Retry-After` waited out up to
+It reads one tracker census within a minute, shared across the listing
+pages and the started-issue list. The listing holds at most 20 pages of
+100 incomplete issues; this bounds the report, not the size of that census.
+It moves at most 50 issues a run, writes paced at 30 a minute, a `Retry-After` waited out up to
 3 times; a refused write stops the run, which reports what it moved and
 what remains. When more than half of the issues that must carry a facet
 lack it, or a store fails closed, it moves nothing and reports the store
@@ -244,6 +246,21 @@ deleted. `move --restore record.json --yes` puts back every value the
 record says the move changed, then revert the configuration commit. The
 exit codes: `0` done, `3` something left for a person or the next run
 (each listed by key), `1` a failed read or a refused write, `2` usage.
+
+
+Migration writes recheck the live source and destination after pacing and
+before each attempt. A changed issue is left as a conflict. The tracker
+interface has no atomic conditional update, so a person can still change
+an issue between that final read and the remote write. Run a move while
+other writers are idle. Commands using the same local record are serialized.
+Restore keeps the recorded alias labels, including their original spellings.
+
+A move refuses overlapping source and destination stores, including native
+GitHub priority and the named Priority field, and in-place value-map changes.
+An unmapped nonempty destination must be mapped before copying; it is never
+overwritten as though it were empty. Jira's required native priority cannot
+be retired, so a move from that store is refused before copying.
+
 
 ## A durable issue body
 

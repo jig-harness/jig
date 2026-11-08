@@ -40,10 +40,12 @@ describe("the audit's sweep finding", () => {
   it("says nothing of a repository whose workflow or timer runs the sweep", () => {
     const workflow = repo({
       ".github/workflows/issue-fields.yml":
-        "steps:\n  - run: bun plugin/skills/file-issue/scripts/check-fields.ts check --yes\n",
+        "on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  sweep:\n    steps:\n      - run: bun plugin/skills/file-issue/scripts/check-fields.ts check --yes\n",
     });
     expect(sweepFindings(tracker, workflow.root, workflow.tracked)).toEqual([]);
     const timer = repo({
+      "systemd/issue-fields.timer":
+        "[Timer]\nOnCalendar=weekly\n[Install]\nWantedBy=timers.target\n",
       "systemd/issue-fields.service":
         'ExecStart=bun "$PLUGIN/skills/file-issue/scripts/check-fields.ts" --yes\n',
     });
@@ -54,4 +56,16 @@ describe("the audit's sweep finding", () => {
     const { root, tracked } = repo({ "README.md": "hello\n" });
     expect(sweepFindings({ drive: {} }, root, tracked)).toEqual([]);
   });
+});
+
+it("does not count comments, report mode, disabled jobs or unscheduled workflows", () => {
+  for (const body of [
+    "on: push\njobs:\n  s:\n    steps:\n      - run: bun check-fields.ts check --yes\n",
+    "on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    steps:\n      - run: '# TODO: bun check-fields.ts check --yes'\n",
+    "on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    steps:\n      - run: bun check-fields.ts check\n",
+    "on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    if: false\n    steps:\n      - run: bun check-fields.ts check --yes\n",
+  ]) {
+    const { root, tracked } = repo({ ".github/workflows/sweep.yml": body });
+    expect(sweepFindings(tracker, root, tracked)).toHaveLength(1);
+  }
 });

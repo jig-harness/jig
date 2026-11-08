@@ -14,18 +14,21 @@
  */
 
 import { setTimeout as sleepMs } from "node:timers/promises";
+import { readSignal } from "../../../do-item/scripts/lib/tracker/facets/bounds.ts";
+import type { FacetReadOptions } from "../../../do-item/scripts/lib/tracker/port.ts";
 import { TrackerConfigError } from "../../../do-item/scripts/lib/tracker/config-error.ts";
 import { TrackerRequestError } from "../../../do-item/scripts/lib/tracker/port.ts";
 
 /** What pacing reads the time from, and how it waits; tests pass their own. */
 export interface Clock {
   now(): number;
-  sleep(ms: number): Promise<void>;
+  sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
 
 export const SYSTEM_CLOCK: Clock = {
   now: () => Date.now(),
-  sleep: (ms) => sleepMs(ms),
+  sleep: (ms, signal) =>
+    sleepMs(ms, undefined, signal === undefined ? {} : { signal }),
 };
 
 /** The bounds every write of the sweep and the move keeps to. */
@@ -46,12 +49,6 @@ function retryAfterOf(err: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
 }
 
-/** The first line of a message, up to any embedded body, at most 160 characters. */
-function oneLine(message: string): string {
-  const first = message.split(/\r?\n/)[0] ?? "";
-  return (first.split(/[{[]/)[0] ?? "").trim().slice(0, 160);
-}
-
 /**
  * A failure as one line of at most 300 characters: `what` (the operation
  * and the issue key), the tracker's status and its error codes. A refusal
@@ -64,9 +61,7 @@ export function failureLine(what: string, err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   const status = statusOf(err, message);
   const detail = detailOf(err, message);
-  const known =
-    detail === "" && status === "failed" ? `: ${oneLine(message)}` : "";
-  return `${what}: ${status}${detail === "" ? "" : ` (${detail})`}${known}`.slice(
+  return `${what}: ${status}${detail === "" ? "" : ` (${detail})`}`.slice(
     0,
     300,
   );
@@ -103,9 +98,10 @@ function detailOf(err: unknown, message: string): string {
 /** Paced writes, each refusal handled as the run's bounds say. */
 export interface Writer {
   /** Run one write; throws `WriteRefused` when the run must stop. */
-  write<T>(what: string, run: () => Promise<T>): Promise<T>;
+  write<T>(what: string, run: (signal?: AbortSignal) => Promise<T>): Promise<T>;
   /** Writes attempted so far, retries included. */
   readonly attempts: number;
+  readonly signal?: AbortSignal;
 }
 
 /** A writer that keeps to `limits`, timed by `clock`. */
@@ -116,11 +112,35 @@ export function pacedWriter(
     retries: number;
     maxWaitSec: number;
   } = WRITE_LIMITS,
+  bounds: FacetReadOptions = { deadline: Date.now() + 3_600_000 },
 ): Writer {
+  const signal = readSignal(bounds);
   const recent: number[] = [];
   let attempts = 0;
   /** The `Retry-After` waits this run has honoured. */
   let waited = 0;
+
+  async function bounded<T>(task: () => Promise<T>): Promise<T> {
+    signal?.throwIfAborted();
+    if (signal === undefined) return task();
+    let abort: () => void = () => {
+      /* assigned synchronously by the promise executor */
+    };
+    const stopped = new Promise<never>((_, reject) => {
+      abort = () =>
+        reject(
+          new WriteRefused(
+            "the write run was cancelled or its deadline expired",
+          ),
+        );
+      signal.addEventListener("abort", abort, { once: true });
+    });
+    try {
+      return await Promise.race([task(), stopped]);
+    } finally {
+      signal.removeEventListener("abort", abort);
+    }
+  }
 
   /** Wait until fewer than `perMinute` writes fall in the last minute. */
   async function pace(): Promise<void> {
@@ -132,11 +152,14 @@ export function pacedWriter(
         recent.push(now);
         return;
       }
-      await clock.sleep(60_000 - (now - (recent[0] as number)));
+      await bounded(() =>
+        clock.sleep(60_000 - (now - (recent[0] as number)), signal),
+      );
     }
   }
 
   return {
+    ...(signal === undefined ? {} : { signal }),
     get attempts() {
       return attempts;
     },
@@ -145,20 +168,21 @@ export function pacedWriter(
         await pace();
         attempts++;
         try {
-          return await run();
+          return await bounded(() => run(signal));
         } catch (err) {
           const wait = retryAfterOf(err);
           if (wait === null || wait > limits.maxWaitSec)
-            throw new WriteRefused(failureLine(what, err));
+            throw new WriteRefused(failureLine(what, err), { cause: err });
           if (waited >= limits.retries)
             throw new WriteRefused(
               `${failureLine(what, err)} (after ${waited} waits this run)`.slice(
                 0,
                 300,
               ),
+              { cause: err },
             );
           waited++;
-          await clock.sleep(wait * 1000);
+          await bounded(() => clock.sleep(wait * 1000, signal));
         }
       }
     },

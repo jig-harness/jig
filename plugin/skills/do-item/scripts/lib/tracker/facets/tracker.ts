@@ -1,3 +1,9 @@
+import {
+  addRestores,
+  restoringChange,
+  forwardRestores,
+  censusReader,
+} from "./restore-labels.ts";
 /**
  * The facets every adapter shares: an adapter (its core) reads and writes
  * the facets it keeps in the tracker's own fields, and `withFacets` adds the
@@ -259,6 +265,7 @@ export function withFacets(
       refuseEditContradiction(priority, value, patch);
       changes.push([priority, value]);
     }
+    addRestores(changes, patch.facetLabels, codecs, coreFacets);
     if (changes.length === 0) return { add: [], remove: [] };
     const current = await rest.poolIssue(key);
     if (current === null)
@@ -274,7 +281,12 @@ export function withFacets(
     const add: string[] = [];
     const remove: string[] = [];
     for (const [codec, value] of changes) {
-      const change = codec.change(current.labels, value);
+      const change = restoringChange(
+        codec,
+        current.labels,
+        value,
+        patch.facetLabels?.[codec.facet],
+      );
       add.push(...change.add);
       remove.push(...change.remove);
     }
@@ -285,6 +297,7 @@ export function withFacets(
     refuseFacetLabels(patch.addLabels ?? [], "to add");
     const labels = await facetLabels(key, patch);
     const out: IssuePatch = { ...patch };
+    forwardRestores(out, codecs);
     for (const f of LABEL_FACETS) {
       if (patch[f] === undefined) continue;
       if (codecs.has(f)) delete out[f];
@@ -353,6 +366,8 @@ export function withFacets(
     return f === "priority" ? issue.priority === 0 : issue[f] === null;
   }
 
+  const census = censusReader(openPopulation);
+
   async function incompleteIssues(
     query: IncompleteQuery,
     options?: FacetReadOptions,
@@ -365,7 +380,7 @@ export function withFacets(
     for (const f of query.missing) requireStore(f);
     const signal = readSignal(options);
     refuseStopped(signal);
-    const population = await openPopulation(signal);
+    const population = await census(options?.census, signal);
     refuseStopped(signal);
     refuseTruncatedLabels(population);
     const open = population.map(withValues);
@@ -462,7 +477,7 @@ export function withFacets(
       const population = await openPopulation(signal);
       refuseStopped(signal);
       refuseTruncatedLabels(population);
-      return population.map(({ hiddenLabels: _, ...i }) => withValues(i));
+      return population.map(withValues);
     },
     async facetStores(options) {
       refuseStopped(readSignal(options));

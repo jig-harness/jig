@@ -117,3 +117,27 @@ describe("the filing check inside createIssue", () => {
     expect(filed).toHaveLength(2);
   });
 });
+
+it("refuses a broken taxonomy slot instead of disabling its required facet", async () => {
+  let filed = false;
+  const inner = {
+    createIssue: async () => {
+      filed = true;
+      return { identifier: "#1", url: null };
+    },
+  } as unknown as Tracker;
+  const broken = {
+    ...facets,
+    type: {
+      facet: "type" as const,
+      store: null,
+      why: "invalid taxonomy",
+      problem: "type taxonomy failed lint",
+    },
+  };
+  const tracker = checkedTracker(inner, broken, null);
+  await expect(
+    tracker.createIssue(issue({ priority: 2 }, ["type", "size"])),
+  ).rejects.toThrow("taxonomy failed lint");
+  expect(filed).toBe(false);
+});

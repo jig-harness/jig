@@ -212,6 +212,10 @@ export const CLOSED_STATE_TYPES = [
  * states of one category), and a claim re-check compares ids.
  */
 export interface PoolIssue {
+  /** Complete labels hidden by ordinary pool display, for migration validation. */
+  hiddenLabels?: string[];
+  /** Nonempty native/field stores whose values have no canonical mapping. Never overwrite them through a canonical move. */
+  unmappedFacets?: Facet[];
   identifier: string;
   title: string;
   url: string | null;
@@ -323,6 +327,8 @@ export interface FacetReadOptions {
   deadline?: number;
   /** `facetStores` only: read the organization's issue types and fields; default true. */
   discovery?: boolean;
+  /** Share one census across pages in a single sweep; a fresh object starts a fresh read. */
+  census?: object;
 }
 
 /** One facet's store as `facetStores` reports it. */
@@ -448,6 +454,8 @@ export interface NewIssue {
  * kept.
  */
 export interface IssuePatch {
+  /** Exact labels of a label-kept facet to restore from a migration record. Must name only that facet's labels. */
+  facetLabels?: Partial<Record<Facet, string[]>>;
   title?: string;
   description?: string;
   type?: string | null;

@@ -89,6 +89,7 @@ export function readTarget(
   } catch (err) {
     throw new SectionError(
       `the target ${path} cannot be read as YAML: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`,
+      { cause: err },
     );
   }
   const section =
@@ -129,8 +130,11 @@ export function retiredLabels(
         }),
         root,
       )[report.facet];
-    } catch {
-      continue;
+    } catch (err) {
+      throw new SectionError(
+        `cannot resolve the former label store of ${report.facet}`,
+        { cause: err },
+      );
     }
     if (usable(slot))
       for (const [, labels] of slot.labels ?? []) out.push(...labels);

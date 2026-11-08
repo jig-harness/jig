@@ -50,7 +50,14 @@ export function incompleteness(
 /** The repository's label taxonomy, or `null` when it has none or it fails its lint. */
 export function readTaxonomy(root: string, setting: string): Taxonomy | null {
   const path = taxonomyAt(root, setting);
-  return existsSync(path) ? lintTaxonomyFile(path).taxonomy : null;
+  if (!existsSync(path)) return null;
+  const result = lintTaxonomyFile(path);
+  if (result.taxonomy === null)
+    throw new TrackerRequestError(
+      "invalid",
+      "the label taxonomy failed lint; repair it before filing",
+    );
+  return result.taxonomy;
 }
 
 /** "a, b and c". */
@@ -90,6 +97,11 @@ export function checkedTracker(
   return {
     ...tracker,
     async createIssue(issue) {
+      const problems = [facets.type, facets.priority, facets.size].flatMap(
+        (f) => (usable(f) || f.problem === null ? [] : [f.problem]),
+      );
+      if (problems.length > 0)
+        throw new TrackerRequestError("invalid", problems.join("; "));
       const missing = incompleteness(issue, facets, taxonomy);
       if (missing.length > 0)
         throw new TrackerRequestError("invalid", incompleteRefusal(missing));

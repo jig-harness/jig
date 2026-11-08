@@ -719,6 +719,11 @@ describe("GitHub adapter: reading in pages and refusing what it cannot do", () =
     await expect(
       t.updateIssue("other/lib#3", { addLabels: ["ui"] }),
     ).rejects.toThrow("issue of other/lib");
+    await expect(
+      t.updateIssue("other/lib#3", {
+        facetLabels: { priority: ["priority: low"] },
+      }),
+    ).rejects.toThrow("issue of other/lib");
     expect(calls).toEqual([]);
   });
 

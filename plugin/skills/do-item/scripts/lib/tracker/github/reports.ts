@@ -128,6 +128,9 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       title: issue.title,
       url: issue.url,
       ...(await client.facets.read(issue, raw, labels, signal)),
+      hiddenLabels: labels.filter((l) =>
+        model.priorityLabels.some((p) => same(p, l)),
+      ),
       createdAt: issue.createdAt,
       // The state's id is its canonical key: GitHub has no state objects,
       // and a claim re-check compares ids.

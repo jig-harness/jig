@@ -1,3 +1,4 @@
+import { failureLine } from "../scripts/lib/pace.ts";
 import { describe, expect, it } from "bun:test";
 import { pacedWriter, WriteRefused } from "../scripts/lib/pace.ts";
 import {
@@ -309,8 +310,88 @@ describe("the weekly sweep", () => {
     expect(sweepMarker(report.listed[0] as (typeof report.listed)[0])).toBe(
       "<!-- jig:issue-fields missing=- retired=bug,priority%3A%20high -->",
     );
-    expect((await tracker.openPopulation())[0]).not.toHaveProperty(
-      "hiddenLabels",
-    );
+    expect((await tracker.openPopulation())[0]?.hiddenLabels).toEqual([
+      "priority: high",
+    ]);
   });
+});
+
+it("does not disclose an unclassified upstream response", () => {
+  expect(
+    failureLine("update #1", new Error("private upstream plaintext")),
+  ).toBe("update #1: failed");
+});
+
+it("does not move an issue started while its write was paced", async () => {
+  const repo = setup();
+  const { tracker } = repo.view(LABEL_SECTION);
+  const writer = pacedWriter(fakeClock());
+  const report = await sweep(tracker, {
+    apply: true,
+    retired: none,
+    writer: {
+      get attempts() {
+        return writer.attempts;
+      },
+      async write(what, run) {
+        if (what === "move #10 to triage") repo.get("#10").state = "started";
+        return writer.write(what, run);
+      },
+    },
+  });
+  expect(repo.get("#10").state).toBe("started");
+  expect(report.moved).not.toContain("#10");
+});
+
+it("shares one census across the pages and started list", async () => {
+  const repo = setup();
+  const { tracker } = repo.view(LABEL_SECTION);
+  const read = tracker.openPopulation;
+  // Count at the core boundary by constructing a new withFacets wrapper below.
+  const core = {
+    ...tracker,
+    openPopulation: async () => {
+      calls++;
+      return read();
+    },
+  };
+  let calls = 0;
+  const { withFacets } = await import(
+    "../../do-item/scripts/lib/tracker/facets/tracker.ts"
+  );
+  const shared = withFacets(
+    core as unknown as import("../../do-item/scripts/lib/tracker/facets/tracker.ts").CoreTracker,
+    facetsFor(LABEL_SECTION),
+    new Set(["type", "priority", "size"]),
+  );
+  await sweep(shared, {
+    apply: false,
+    retired: none,
+    writer: pacedWriter(fakeClock()),
+    limits: { pageSize: 1 },
+  });
+  expect(calls).toBe(1);
+});
+
+it("stops retry sleeps when cancelled and starts no further effect", async () => {
+  const cancel = new AbortController();
+  let attempts = 0;
+  const clock = {
+    now: () => 0,
+    sleep: async () => {
+      cancel.abort();
+    },
+  };
+  const writer = pacedWriter(
+    clock,
+    { perMinute: 30, retries: 3, maxWaitSec: 600 },
+    { signal: cancel.signal },
+  );
+  await expect(
+    writer.write("update #1", async () => {
+      attempts++;
+      throw Object.assign(new Error("busy"), { retryAfterSec: 10 });
+    }),
+  ).rejects.toBeDefined();
+  expect(attempts).toBe(1);
 });

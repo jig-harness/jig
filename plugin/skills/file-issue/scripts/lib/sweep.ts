@@ -12,7 +12,7 @@
  * posts nothing again. An issue already started is listed, never moved,
  * since moving it would take it from the session working it.
  *
- * Its bounds: at most 20 pages of 100 issues read and 50 issues moved a run,
+ * Its bounds: at most 20 listing pages of 100 incomplete issues and 50 issues moved a run,
  * the writes paced (`pace.ts`); a refused write stops the run, which reports
  * what it moved and what remains. A store problem moves nothing: a store
  * that fails closed, or more than half of the issues that must carry a facet
@@ -43,6 +43,7 @@ export interface SweepOptions {
   limits?: Partial<{ pages: number; pageSize: number; moves: number }>;
   /** Told of each issue as it is moved, by key, so a run cut short still shows what it did. */
   progress?: (line: string) => void;
+  epic?: string;
 }
 
 export interface SweepReport {
@@ -132,22 +133,69 @@ async function readAll(
 ): Promise<void> {
   const pages = opts.limits?.pages ?? SWEEP_LIMITS.pages;
   const limit = opts.limits?.pageSize ?? SWEEP_LIMITS.pageSize;
+  const read = {
+    census: {},
+    deadline: Date.now() + 60_000,
+    ...(opts.writer.signal === undefined ? {} : { signal: opts.writer.signal }),
+  };
   let after: string | null = null;
   for (let page = 0; page < pages; page++) {
-    const got = await tracker.incompleteIssues({ ...query, after, limit });
+    const got = await tracker.incompleteIssues(
+      { ...query, after, limit },
+      read,
+    );
     if (page === 0) report.counts = got.counts;
     report.listed.push(...got.issues);
     after = got.next;
     if (after === null) break;
   }
   report.readCapped = after !== null;
-  const started = await tracker.incompleteIssues({
-    ...query,
-    limit,
-    started: true,
-  });
+  const started = await tracker.incompleteIssues(
+    {
+      ...query,
+      limit,
+      started: true,
+    },
+    read,
+  );
   report.started = started.issues;
   report.startedMore = started.next !== null;
+}
+
+class SweepChanged extends Error {}
+
+/** Revalidate after every paced wait, including retries; skip an issue a person has started or completed. */
+async function stillEligible(
+  tracker: Tracker,
+  issue: IncompleteIssue,
+  opts: SweepOptions,
+): Promise<void> {
+  opts.writer.signal?.throwIfAborted();
+  const now = await tracker.poolIssue(issue.identifier);
+  if (
+    now === null ||
+    now.truncated.length > 0 ||
+    !["backlog", "unstarted"].includes(now.state.type)
+  )
+    throw new SweepChanged("issue is no longer eligible");
+  const epic = now.labels.some(
+    (l) => l.toLowerCase() === (opts.epic ?? "epic").toLowerCase(),
+  );
+  const missing = issue.missing.filter((f) =>
+    f === "priority"
+      ? now.priority === 0
+      : (f !== "size" || !epic) && now[f] === null,
+  );
+  const labels = [...now.labels, ...(now.hiddenLabels ?? [])].map((l) =>
+    l.toLowerCase(),
+  );
+  const retired = issue.retired.filter((l) => labels.includes(l.toLowerCase()));
+  if (
+    missing.length !== issue.missing.length ||
+    retired.length !== issue.retired.length
+  )
+    throw new SweepChanged("issue fields changed since the census");
+  opts.writer.signal?.throwIfAborted();
 }
 
 /** Move one issue back to triage, its comment first unless a stopped run posted it. */
@@ -161,17 +209,26 @@ async function moveOne(
   const comments = await tracker.listComments(issue.identifier);
   const posted = comments.some((c) => c.body.includes(marker));
   if (!posted) {
-    await opts.writer.write(`comment on ${issue.identifier}`, () =>
-      tracker.postComment(issue.identifier, sweepComment(issue)),
-    );
+    await opts.writer.write(`comment on ${issue.identifier}`, async () => {
+      await stillEligible(tracker, issue, opts);
+      return tracker.postComment(issue.identifier, sweepComment(issue));
+    });
     report.commented.push(issue.identifier);
   }
-  await opts.writer.write(`move ${issue.identifier} to triage`, () =>
-    tracker.transition(issue.identifier, "triage"),
-  );
+  await opts.writer.write(`move ${issue.identifier} to triage`, async () => {
+    await stillEligible(tracker, issue, opts);
+    return tracker.transition(issue.identifier, "triage");
+  });
   report.moved.push(issue.identifier);
   opts.progress?.(
     `moved ${issue.identifier} to triage${posted ? " (its comment was already there)" : ""}`,
+  );
+}
+
+function changed(err: unknown): boolean {
+  return (
+    err instanceof SweepChanged ||
+    (err instanceof WriteRefused && err.cause instanceof SweepChanged)
   );
 }
 
@@ -180,7 +237,10 @@ export async function sweep(
   tracker: Tracker,
   opts: SweepOptions,
 ): Promise<SweepReport> {
-  const stores = await tracker.facetStores({ discovery: false });
+  const stores = await tracker.facetStores({
+    discovery: false,
+    ...(opts.writer.signal === undefined ? {} : { signal: opts.writer.signal }),
+  });
   const report: SweepReport = {
     stores: stores.facets.map((f) => ({
       facet: f.facet,
@@ -218,6 +278,7 @@ export async function sweep(
     try {
       await moveOne(tracker, issue, opts, report);
     } catch (err) {
+      if (changed(err)) continue;
       report.stopped =
         err instanceof WriteRefused
           ? err.message

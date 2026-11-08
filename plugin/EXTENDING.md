@@ -571,3 +571,13 @@ request, under [CONTRIBUTING.md](https://github.com/jig-harness/jig/blob/main/CO
   ([adding a plugin skill](https://github.com/jig-harness/jig/blob/main/CONTRIBUTING.md#adding-or-changing-a-plugin-skill)).
 - **Move, never copy.** An adapter a team already runs moves here with its
   tests, and the team deletes its own copy.
+
+
+Facet migrations read `PoolIssue.hiddenLabels` alongside its visible labels,
+and refuse `unmappedFacets` before overwriting a nonempty store whose value
+has no canonical mapping. An adapter must preserve that evidence when it
+normalizes a native value. `IssuePatch.facetLabels` restores the exact label
+representation of a facet from a move record; each label must belong to the
+facet's configured label codec. It cannot set workflow or arbitrary labels.
+Sweep pages pass one `FacetReadOptions.census` object to share a census;
+new objects start fresh reads and the caller supplies the shared deadline.

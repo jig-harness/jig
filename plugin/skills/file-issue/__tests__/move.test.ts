@@ -319,3 +319,140 @@ describe("the move record", () => {
     );
   });
 });
+
+describe("migration safety", () => {
+  it("refuses a record with malformed nested changes", () => {
+    const { rec } = setup();
+    const path = join(tmpdir(), `bad-move-${process.pid}.json`);
+    try {
+      writeMoveRecord(path, {
+        ...rec.record,
+        changes: [null],
+      } as unknown as MoveRecord);
+      expect(() => readMoveRecord(path)).toThrow(MoveRecordError);
+    } finally {
+      rmSync(path, { force: true });
+    }
+  });
+
+  it("reports missing destinations after sources have been retired", async () => {
+    const { repo, sides, rec } = setup();
+    repo.add("#7", { labels: [] });
+    const report = await retire(sides, rec, {
+      apply: true,
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(report.unresolved.filter((i) => i.issue === "#7")).toHaveLength(3);
+    expect(repo.writes.filter((w) => w.key === "#7")).toEqual([]);
+  });
+
+  it("does not clear a source changed during pacing", async () => {
+    const { repo, sides, rec } = setup();
+    await copy(sides, rec, { apply: true, writer: pacedWriter(fakeClock()) });
+    const writer = pacedWriter(fakeClock());
+    const report = await retire(sides, rec, {
+      apply: true,
+      writer: {
+        get attempts() {
+          return writer.attempts;
+        },
+        async write(what, run) {
+          if (what === "update #1")
+            repo.get("#1").labels = labelled("feature", "high", "small");
+          return writer.write(what, run);
+        },
+      },
+    });
+    expect(repo.get("#1").labels).toContain("feature");
+    expect(report.conflicts.some((c) => c.issue === "#1")).toBe(true);
+  });
+
+  it("restores original type aliases exactly", async () => {
+    const { repo, sides, rec } = setup();
+    repo.get("#1").labels.push("type:bug");
+    const before = state(repo);
+    const writer = pacedWriter(fakeClock());
+    await copy(sides, rec, { apply: true, writer });
+    await retire(sides, rec, { apply: true, writer });
+    await restore(sides, rec, { apply: true, writer });
+    expect(state(repo)).toEqual(before);
+  });
+
+  it("reports only successful copies as needing another retire run", async () => {
+    const { repo, sides, rec } = setup();
+    repo.refuse = () => new Error("no");
+    const report = await retire(sides, rec, {
+      apply: true,
+      writer: pacedWriter(fakeClock()),
+    });
+    expect(report.again).toEqual([]);
+  });
+});
+
+it("refuses unmapped destination values before copying", async () => {
+  const { sides, rec, repo } = setup();
+  const population = sides.target.openPopulation;
+  sides.target.openPopulation = async () =>
+    (await population()).map((i) => ({ ...i, unmappedFacets: ["type"] }));
+  const report = await copy(sides, rec, {
+    apply: true,
+    writer: pacedWriter(fakeClock()),
+  });
+  expect(
+    report.unresolved.some((i) => i.why.includes("unmapped destination")),
+  ).toBe(true);
+  expect(repo.writes).toEqual([]);
+});
+
+it("refuses overlapping native and named Priority stores before copying", async () => {
+  const { sides, rec, repo } = setup();
+  const a = repo.view(NATIVE_SECTION),
+    b = repo.view({
+      ...NATIVE_SECTION,
+      priority: { store: "field", field: "Priority" },
+    });
+  Object.assign(sides, {
+    source: a.tracker,
+    target: b.tracker,
+    sourceFacets: a.facets,
+    targetFacets: b.facets,
+  });
+  rec.record.moved = movedFacets(a.facets, b.facets);
+  const report = await copy(sides, rec, {
+    apply: true,
+    writer: pacedWriter(fakeClock()),
+  });
+  expect(report.problem).toContain("same physical store");
+  expect(repo.writes).toEqual([]);
+});
+
+it("detects priority conflicts from complete hidden labels", async () => {
+  const { sides, rec, repo } = setup();
+  const population = sides.source.openPopulation;
+  sides.source.openPopulation = async () =>
+    (await population()).map((i) => ({
+      ...i,
+      labels: i.labels.filter((l) => !l.startsWith("priority:")),
+      hiddenLabels: ["priority: high", "priority: low"],
+    }));
+  const report = await copy(sides, rec, {
+    apply: true,
+    writer: pacedWriter(fakeClock()),
+  });
+  expect(
+    report.unresolved.some((i) => i.why.includes("priority has two values")),
+  ).toBe(true);
+  expect(repo.writes).toEqual([]);
+});
+
+it("refuses contradictory exact labels rather than overriding a facet assignment", async () => {
+  const { repo, sides } = setup();
+  const before = state(repo);
+  await expect(
+    sides.source.updateIssue("#1", {
+      type: "bug",
+      facetLabels: { type: ["feature"] },
+    }),
+  ).rejects.toThrow("disagree");
+  expect(state(repo)).toEqual(before);
+});

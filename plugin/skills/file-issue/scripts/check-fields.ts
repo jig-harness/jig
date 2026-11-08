@@ -38,8 +38,9 @@
  * anything; 2 usage.
  */
 
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, realpathSync, mkdirSync } from "node:fs";
+import { dirname, basename, resolve } from "node:path";
+import { withFileLock } from "../../../shared/file-lock.ts";
 import { parseArgs } from "node:util";
 import { ExitError, fail, runMain } from "../../../shared/cli.ts";
 import { consumerRoot, readOverlay } from "../../../shared/consumer.ts";
@@ -66,6 +67,7 @@ import {
   readMoveRecord,
   writeMoveRecord,
 } from "./lib/move-record.ts";
+import { moveProblem } from "./lib/move-safety.ts";
 import { failureLine, pacedWriter } from "./lib/pace.ts";
 import {
   readTarget,
@@ -104,6 +106,7 @@ async function check(argv: string[]): Promise<number> {
   const tracker = openTracker(config, root);
   const report = await sweep(tracker, {
     apply: values.yes === true,
+    epic: config.labels.epic,
     retired: (stores) => retiredLabels(overlay, config, root, stores),
     writer: pacedWriter(),
     progress: (line) => console.error(line),
@@ -160,7 +163,7 @@ function moveOutcome(report: MoveReport): string[] {
   else if (report.apply) lines.push(`wrote ${report.written.length} issue(s)`);
   if (report.again.length > 0)
     lines.push(
-      `run --${report.phase} again for ${report.again.length} issue(s) whose value this run copied: ${report.again.join(", ")}`,
+      `run --${report.phase} again for ${report.again.length} issue(s) ${report.apply ? "whose value this run copied" : "that would need retirement after copying"}: ${report.again.join(", ")}`,
     );
   if (report.stopped !== null) lines.push(`stopped: ${report.stopped}`);
   if (!report.apply) lines.push("nothing written (--yes writes)");
@@ -225,6 +228,11 @@ function sidesOf(
     throw new MoveRecordError(
       `the move record is of ${record.adapter} ${record.team}, and this repository's tracker is ${sourceConfig.adapter} ${sides.source.team}`,
     );
+  const moved = movedFacets(sides.sourceFacets, sides.targetFacets);
+  if (JSON.stringify(moved) !== JSON.stringify(record.moved))
+    throw new MoveRecordError(
+      "the record's moved facets disagree with the resolved source and target",
+    );
   return sides;
 }
 
@@ -267,8 +275,11 @@ async function preview(
     snapshots: {},
     changes: [],
   };
+  const sides = sidesOf(overlay, root, record);
+  const problem = moveProblem(sides, moved);
+  if (problem !== null) throw new MoveRecordError(problem);
   writeMoveRecord(path, record);
-  return { record, sides: sidesOf(overlay, root, record) };
+  return { record, sides };
 }
 
 /** Whether a finished run left something for a person or another run. */
@@ -351,6 +362,24 @@ function runPhase(
 
 async function move(argv: string[]): Promise<number> {
   const opts = moveOptions(argv);
+  mkdirSync(dirname(opts.record), { recursive: true });
+  const path = existsSync(opts.record)
+    ? realpathSync(opts.record)
+    : resolve(realpathSync(dirname(opts.record)), basename(opts.record));
+  opts.record = path;
+  const locked = await withFileLock(path, () => moveLocked(opts), {
+    root: dirname(path),
+    name: "facet-move",
+    waitMs: 0,
+  });
+  if (locked === null)
+    throw new MoveRecordError(
+      "another command holds this move record; wait for it to finish",
+    );
+  return locked.value;
+}
+
+async function moveLocked(opts: MoveOptions): Promise<number> {
   const overlay = readOverlay();
   const root = consumerRoot();
   const made =

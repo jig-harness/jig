@@ -1,3 +1,8 @@
+import {
+  unmappedStores,
+  unmappedNativeType,
+  nativeTypeName,
+} from "./unmapped.ts";
 /**
  * The GitHub adapter's own facet stores: an issue's type kept in GitHub's
  * issue types (`native`), and any facet kept in an issue field of the
@@ -527,6 +532,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
         : [];
     const out: {
       priority: number;
+      unmappedFacets?: Facet[];
       type?: string | null;
       size?: string | null;
     } = {
@@ -539,19 +545,20 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
             })(),
     };
     if (typeKept?.store === "native") {
-      const t = raw.issueType;
-      const name =
-        t === null || t === undefined
-          ? null
-          : str(
-              record(t, `issue ${issue.key}.issueType`).name,
-              `issue ${issue.key}.issueType.name`,
-            );
+      const name = nativeTypeName(raw, issue.key);
       out.type =
         name === null ? null : (typeKept.map?.fromTracker(name) ?? null);
     } else if (typeKept !== null) out.type = fromField(typeKept, values);
     const size = kept("size");
     if (size !== null) out.size = fromField(size, values);
+    const unmapped = unmappedStores(
+      [...fieldStores, ...(nativePriority === null ? [] : [nativePriority])],
+      values,
+      fromField,
+      fieldName,
+    );
+    if (unmappedNativeType(typeKept, raw, out.type)) unmapped.push("type");
+    if (unmapped.length > 0) out.unmappedFacets = unmapped;
     return out;
   }
 

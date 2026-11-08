@@ -37,13 +37,14 @@ import type {
   ResolvedFacet,
 } from "../../../do-item/scripts/lib/tracker/facets/config.ts";
 import { usable } from "../../../do-item/scripts/lib/tracker/facets/config.ts";
-import { labelCodec } from "../../../do-item/scripts/lib/tracker/facets/label.ts";
 import {
-  fold,
-  type PriorityName,
-  priorityName,
-  priorityNumber,
-} from "../../../do-item/scripts/lib/tracker/facets/values.ts";
+  carriedLabels,
+  facetValue,
+  sourceValues,
+  setting,
+} from "./move-values.ts";
+import { labelCodec } from "../../../do-item/scripts/lib/tracker/facets/label.ts";
+import { fold } from "../../../do-item/scripts/lib/tracker/facets/values.ts";
 import {
   FACETS,
   type Facet,
@@ -57,6 +58,7 @@ import type {
   MoveRecord,
   StoreChange,
 } from "./move-record.ts";
+import { assertUnchanged, moveProblem } from "./move-safety.ts";
 import { failureLine, type Writer, WriteRefused } from "./pace.ts";
 
 /** The two trackers of a move, and the facets each keeps. */
@@ -123,51 +125,6 @@ export function movedFacets(source: Facets, target: Facets): Facet[] {
   );
 }
 
-/** An issue's value of a facet, a priority by its name. */
-function facetValue(issue: PoolIssue, f: Facet): FacetValue {
-  return f === "priority" ? priorityName(issue.priority) : issue[f];
-}
-
-/** The patch that sets `f` to `v` (`null`: none). */
-function setting(f: Facet, v: FacetValue): IssuePatch {
-  if (f === "priority")
-    return { priority: v === null ? 0 : priorityNumber(v as PriorityName) };
-  return { [f]: v };
-}
-
-/** Every value an issue's source representation of `f` names. */
-function sourceValues(
-  slot: ResolvedFacet,
-  issue: PoolIssue,
-  f: Facet,
-): string[] {
-  const v = facetValue(issue, f);
-  if (slot.store !== "label") return v === null ? [] : [v];
-  const codec = labelCodec(slot);
-  const found = new Set<string>();
-  for (const l of issue.labels) {
-    const x = codec.read([l]);
-    if (x !== null) found.add(x);
-  }
-  // A label the adapter keeps out of `labels` (GitHub's priority labels).
-  if (found.size === 0 && v !== null) found.add(v);
-  return [...found];
-}
-
-/** The labels of `slot`'s store an issue carries, for the record. */
-function carriedLabels(
-  slot: ResolvedFacet,
-  issue: PoolIssue,
-  value: FacetValue,
-): string[] {
-  if (slot.store !== "label") return [];
-  const codec = labelCodec(slot);
-  const visible = issue.labels.filter((l) => codec.owns(l));
-  return visible.length > 0 || value === null
-    ? visible
-    : [codec.labelOf(value)];
-}
-
 /** One store's change, with the labels a label store adds and takes off. */
 function storeChange(
   slot: ResolvedFacet,
@@ -200,7 +157,7 @@ function storeChange(
   return change;
 }
 
-interface Pair {
+export interface Pair {
   key: string;
   src: PoolIssue;
   dst: PoolIssue;
@@ -209,10 +166,12 @@ interface Pair {
 /** Every open issue, read through each tracker and joined by key. */
 async function readPairs(
   sides: MoveSides,
+  signal?: AbortSignal,
 ): Promise<{ pairs: Pair[]; skipped: string[] }> {
-  const src = await sides.source.openPopulation();
+  const options = signal === undefined ? {} : { signal };
+  const src = await sides.source.openPopulation(options);
   const dst = new Map(
-    (await sides.target.openPopulation()).map((i) => [i.identifier, i]),
+    (await sides.target.openPopulation(options)).map((i) => [i.identifier, i]),
   );
   const pairs: Pair[] = [];
   const skipped: string[] = [];
@@ -255,8 +214,12 @@ function emptyReport(
 async function destinationProblem(
   sides: MoveSides,
   moved: Facet[],
+  signal?: AbortSignal,
 ): Promise<string | null> {
-  const stores = await sides.target.facetStores({ discovery: false });
+  const stores = await sides.target.facetStores({
+    discovery: false,
+    ...(signal === undefined ? {} : { signal }),
+  });
   const bad = stores.facets
     .filter((f) => moved.includes(f.facet))
     .flatMap((f) =>
@@ -285,11 +248,13 @@ async function begin(
   phase: MoveReport["phase"],
   apply: boolean,
   moved: Facet[],
+  signal?: AbortSignal,
 ): Promise<{ report: MoveReport; pairs: Pair[] }> {
   const report = emptyReport(phase, apply, moved);
-  if (phase !== "restore")
-    report.problem = await destinationProblem(sides, moved);
-  const { pairs, skipped } = await readPairs(sides);
+  report.problem = moveProblem(sides, moved);
+  if (phase !== "restore" && report.problem === null)
+    report.problem = await destinationProblem(sides, moved, signal);
+  const { pairs, skipped } = await readPairs(sides, signal);
   report.open = pairs.length;
   report.skipped = skipped;
   return { report, pairs };
@@ -323,6 +288,12 @@ function copyPlan(pair: Pair, moved: Facet[], sides: MoveSides) {
   for (const f of moved) {
     const values = sourceValues(slotOf(sides.sourceFacets, f), pair.src, f);
     const d = facetValue(pair.dst, f);
+    if (pair.dst.unmappedFacets?.includes(f)) {
+      unresolved.push(
+        `${f} has an unmapped destination value; map it before moving`,
+      );
+      continue;
+    }
     if (values.length > 1) {
       unresolved.push(
         `${f} has two values in its source (${values.join(", ")})`,
@@ -363,13 +334,18 @@ async function recordedWrite(
   writer: Writer,
   change: Omit<MoveChange, "at" | "done">,
   send: () => Promise<void>,
+  verify: () => Promise<void>,
 ): Promise<void> {
-  const entry: MoveChange = { ...change, at: rec.now(), done: false };
-  rec.record.changes.push(entry);
-  rec.save(rec.record);
-  await writer.write(`update ${change.issue}`, send);
-  entry.done = true;
-  rec.save(rec.record);
+  await writer.write(`update ${change.issue}`, async () => {
+    await verify();
+    writer.signal?.throwIfAborted();
+    const entry: MoveChange = { ...change, at: rec.now(), done: false };
+    rec.record.changes.push(entry);
+    rec.save(rec.record);
+    await send();
+    entry.done = true;
+    rec.save(rec.record);
+  });
   rec.progress?.(`${change.phase}: updated ${change.issue}`);
 }
 
@@ -398,6 +374,7 @@ interface PlannedWrite {
   stores: StoreChange[];
   /** What the record learns once the write lands, such as a new snapshot. */
   landed?: () => void;
+  expected?: Pair;
 }
 
 /** What the report shows of each planned write. */
@@ -408,6 +385,17 @@ function shown(writes: PlannedWrite[]): MoveReport["writes"] {
     set,
     replaces,
   }));
+}
+
+/** A changed issue is a conflict; any other failure stops the write run. */
+function noteFailure(err: unknown, issue: string, report: MoveReport): boolean {
+  const conflict = err instanceof WriteRefused ? err.cause : err;
+  if (conflict instanceof Error && conflict.name === "MoveConflict") {
+    report.conflicts.push({ issue, why: conflict.message });
+    return true;
+  }
+  report.stopped = stoppedBy(err, issue);
+  return false;
 }
 
 /**
@@ -430,10 +418,19 @@ async function applyWrites(
         writer,
         { issue: w.issue, phase, stores: w.stores },
         () => tracker.updateIssue(w.issue, w.patch),
+        async () => {
+          if (w.expected !== undefined)
+            await assertUnchanged(
+              sides,
+              w.expected,
+              phase === "restore" ? w.tracker : undefined,
+            );
+          writer.signal?.throwIfAborted();
+        },
       );
     } catch (err) {
-      report.stopped = stoppedBy(err, w.issue);
-      return;
+      if (!noteFailure(err, w.issue, report)) return;
+      continue;
     }
     if (!report.written.includes(w.issue)) report.written.push(w.issue);
     if (w.landed !== undefined) {
@@ -463,6 +460,7 @@ function copyWrite(
   if (Object.keys(p.set).length === 0) return [];
   return [
     {
+      expected: p.pair,
       issue: p.pair.key,
       tracker: "target",
       set: p.set,
@@ -486,6 +484,7 @@ export async function copy(
     opts.preview === true ? "preview" : "copy",
     opts.apply,
     moved,
+    opts.writer.signal,
   );
   const plans = pairs.map((p) => ({ pair: p, ...copyPlan(p, moved, sides) }));
   const writes = plans.flatMap((p) => copyWrite(p, sides, rec));
@@ -495,7 +494,7 @@ export async function copy(
   );
   report.writes = shown(writes);
   if (report.unresolved.length > 0 && report.problem === null)
-    report.problem = `${report.unresolved.length} open issue(s) are unresolved: give each one value in its source first`;
+    report.problem = `${new Set(report.unresolved.map((i) => i.issue)).size} open issue(s) are unresolved: give each one value in its source first`;
   if (!opts.apply || report.problem !== null) return report;
   // An issue already copied: its destination holds the source's value.
   for (const p of plans)
@@ -530,7 +529,13 @@ function retireDecision(
       why: `${f} has two values in its source (${values.join(", ")})`,
     };
   const s = values[0];
-  if (s === undefined) return { kind: "none" };
+  if (s === undefined)
+    return d !== null
+      ? { kind: "none" }
+      : {
+          kind: "unresolved",
+          why: `${f}: neither source nor destination has a value`,
+        };
   if (d === s) return { kind: "retire" };
   if (snap === undefined)
     return d === null
@@ -566,6 +571,19 @@ function retirePlan(
   const unresolved: string[] = [];
   const conflicts: string[] = [];
   for (const f of moved) {
+    if (pair.dst.unmappedFacets?.includes(f)) {
+      unresolved.push(
+        `${f} has an unmapped destination value; map it before moving`,
+      );
+      continue;
+    }
+    if (
+      f === "size" &&
+      isEpic(pair.src, sides.sourceFacets) &&
+      facetValue(pair.src, f) === null &&
+      facetValue(pair.dst, f) === null
+    )
+      continue;
     const decision = retireDecision(
       f,
       sourceValues(slotOf(sides.sourceFacets, f), pair.src, f),
@@ -617,6 +635,7 @@ function retireWrite(
   if (Object.keys(p.copyNow).length > 0)
     return [
       {
+        expected: p.pair,
         issue: p.pair.key,
         tracker: "target",
         set: p.copyNow,
@@ -629,6 +648,7 @@ function retireWrite(
   if (p.retire.length === 0) return [];
   return [
     {
+      expected: p.pair,
       issue: p.pair.key,
       tracker: "source",
       set: Object.fromEntries(p.retire.map((f) => [f, null])),
@@ -656,7 +676,13 @@ export async function retire(
   opts: { apply: boolean; writer: Writer },
 ): Promise<MoveReport> {
   const moved = rec.record.moved;
-  const { report, pairs } = await begin(sides, "retire", opts.apply, moved);
+  const { report, pairs } = await begin(
+    sides,
+    "retire",
+    opts.apply,
+    moved,
+    opts.writer.signal,
+  );
   const plans = pairs.map((p): RetirePlan => {
     const plan = retirePlan(p, moved, sides, rec.record.snapshots[p.key]);
     // An issue a person must settle is left as it is, every facet of it.
@@ -677,11 +703,42 @@ export async function retire(
   report.writes = shown(writes);
   if (!opts.apply || report.problem !== null) return report;
   await applyWrites(sides, rec, opts.writer, "retire", writes, report);
+  report.again = report.again.filter((key) => report.written.includes(key));
   return report;
 }
 
 /** One issue's stores, by side and facet: the value before the move, and each it left. */
-type StoreHistory = Map<string, { before: FacetValue; afters: FacetValue[] }>;
+type StoreHistory = Map<
+  string,
+  {
+    before: FacetValue;
+    afters: FacetValue[];
+    labels: Array<{ add: string[]; remove: string[] }>;
+  }
+>;
+
+/** Reverse only the labels recorded by the migration, preserving unrelated labels. */
+function restoredLabels(
+  deltas: Array<{ add: string[]; remove: string[] }>,
+  current: string[],
+): string[] {
+  let labels = current;
+  for (const delta of [...deltas].reverse()) {
+    labels = labels.filter((l) => !delta.add.some((a) => fold(a) === fold(l)));
+    for (const l of delta.remove)
+      if (!labels.some((a) => fold(a) === fold(l))) labels.push(l);
+  }
+  return labels;
+}
+
+function rememberStore(seen: StoreHistory, s: StoreChange): void {
+  const key = `${s.side} ${s.facet}`;
+  const h = seen.get(key) ?? { before: s.before, afters: [], labels: [] };
+  h.afters.push(s.after);
+  if (s.store === "label")
+    h.labels.push({ add: s.labelsAdded ?? [], remove: s.labelsRemoved ?? [] });
+  seen.set(key, h);
+}
 
 /** Per issue, facet and side: the value before the move first changed it, and every value it left. */
 function history(record: MoveRecord): Map<string, StoreHistory> {
@@ -690,11 +747,7 @@ function history(record: MoveRecord): Map<string, StoreHistory> {
     for (const s of change.stores) {
       const perIssue: StoreHistory = out.get(change.issue) ?? new Map();
       out.set(change.issue, perIssue);
-      const key = `${s.side} ${s.facet}`;
-      const seen = perIssue.get(key);
-      if (seen === undefined)
-        perIssue.set(key, { before: s.before, afters: [s.after] });
-      else seen.afters.push(s.after);
+      rememberStore(perIssue, s);
     }
   return out;
 }
@@ -722,6 +775,7 @@ function restoreWrite(
   const facets = side === "source" ? sides.sourceFacets : sides.targetFacets;
   const issue = side === "source" ? pair.src : pair.dst;
   return {
+    expected: pair,
     issue: pair.key,
     tracker: side,
     set,
@@ -737,6 +791,25 @@ function restoreWrite(
       ),
     ),
   };
+}
+
+/** A native store has no labels to restore. */
+function restoreExactLabels(
+  out: Partial<Record<Facet, string[]>>,
+  f: Facet,
+  deltas: Array<{ add: string[]; remove: string[] }>,
+  pair: Pair,
+  sides: MoveSides,
+  side: "source" | "target",
+  now: FacetValue,
+): void {
+  const slot = slotOf(
+    side === "source" ? sides.sourceFacets : sides.targetFacets,
+    f,
+  );
+  const issue = side === "source" ? pair.src : pair.dst;
+  if (deltas.length > 0)
+    out[f] = restoredLabels(deltas, carriedLabels(slot, issue, now));
 }
 
 /**
@@ -755,6 +828,10 @@ function issueRestores(
     Partial<Record<Facet, FacetValue>>
   >;
   const was = { source: {}, target: {} } as typeof sets;
+  const exact: Record<"source" | "target", Partial<Record<Facet, string[]>>> = {
+    source: {},
+    target: {},
+  };
   for (const [key, h] of stores) {
     const [sideName, f] = key.split(" ") as ["source" | "destination", Facet];
     const side = sideName === "source" ? "source" : "target";
@@ -763,6 +840,7 @@ function issueRestores(
     if (now !== undefined && h.afters.includes(now)) {
       sets[side][f] = h.before;
       was[side][f] = now;
+      restoreExactLabels(exact[side], f, h.labels, pair, sides, side, now);
     } else
       report.conflicts.push({
         issue: pair.key,
@@ -771,7 +849,11 @@ function issueRestores(
   }
   return (["source", "target"] as const)
     .filter((side) => Object.keys(sets[side]).length > 0)
-    .map((side) => restoreWrite(pair, side, sets[side], was[side], sides));
+    .map((side) => {
+      const w = restoreWrite(pair, side, sets[side], was[side], sides);
+      w.patch.facetLabels = exact[side];
+      return w;
+    });
 }
 
 /** A restore run: `apply` puts back every store's value from before the move. */
@@ -785,6 +867,7 @@ export async function restore(
     "restore",
     opts.apply,
     rec.record.moved,
+    opts.writer.signal,
   );
   const byKey = new Map(pairs.map((p) => [p.key, p]));
   const writes: PlannedWrite[] = [];
