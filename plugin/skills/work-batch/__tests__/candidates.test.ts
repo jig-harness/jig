@@ -723,7 +723,9 @@ describe("labelling gaps", () => {
     const tracker = fakeTracker([issue("ENG-1")]);
     const p = await run(tracker, catalog(), noSizes, "billing", opts(), root());
     expect(tracker.queries).toHaveLength(1);
-    expect(p.warnings.join("\n")).toContain("labelling gaps are not reported");
+    expect(p.warnings.join("\n")).toContain(
+      "labelling gaps with no size are not reported",
+    );
   });
 });
 
@@ -817,6 +819,7 @@ describe("the table", () => {
     size: "small",
     points: 2,
     priority: 3,
+    type: "bug",
     createdAt: "2026-01-01T00:00:00Z",
     assignee: { id: "u1", name: "Sam" },
     state: { id: "s-b", name: "Backlog", type: "backlog" },
@@ -939,7 +942,13 @@ describe("the table", () => {
           },
         ],
         labellingGaps: [
-          { identifier: "ENG-8", title: "gap\u009b", url: null, labels: [] },
+          {
+            identifier: "ENG-8",
+            title: "gap\u009b",
+            url: null,
+            labels: [],
+            missing: ["size"],
+          },
         ],
         warnings: ["warn\u001b[0m"],
       }),
@@ -963,19 +972,21 @@ describe("the table", () => {
             title: "flagged",
             url: null,
             labels: ["hitl:legal", "area:billing"],
+            missing: ["size"],
           },
           {
             identifier: "ENG-8",
             title: "plain",
             url: null,
             labels: ["area:billing"],
+            missing: ["priority", "size"],
           },
         ],
       }),
       P,
     );
-    expect(text).toContain("ENG-7  flagged  [also: hitl:legal]");
-    expect(text).toMatch(/ENG-8 {2}plain$/m);
+    expect(text).toContain("ENG-7  flagged  (no size)  [also: hitl:legal]");
+    expect(text).toMatch(/ENG-8 {2}plain {2}\(no priority, no size\)$/m);
   });
 
   it("says when the batch is empty, and how much was left out", () => {

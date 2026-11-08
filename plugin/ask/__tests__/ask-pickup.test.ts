@@ -29,9 +29,10 @@ function world(): AskWorld {
   const w = askWorld();
   current = w;
   mkdirSync(join(w.repo, ".config"), { recursive: true });
+  // The facets' stores named, so no detection read comes before the item's.
   writeFileSync(
     join(w.repo, ".config", "jig.yaml"),
-    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${REPO}\ndispatch:\n  identity: factory-bot\n`,
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${REPO}\n  facets:\n    type: { store: label }\n    priority: { store: label }\ndispatch:\n  identity: factory-bot\n`,
   );
   server = Bun.serve({
     port: 0,

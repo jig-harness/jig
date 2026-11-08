@@ -444,8 +444,8 @@ describe("the facets on Linear and Jira, with today's behaviour", () => {
     expect((await t.poolIssue("ENG-1"))?.priority).toBe(0);
   });
 
-  it("refuses a priority label when a create asks for no priority", async () => {
-    const { t } = linear({
+  it("refuses a facet's label among a new issue's labels, pointing at the facet", async () => {
+    const { t, calls } = linear({
       facets: { priority: { store: "label", prefix: "P:" } },
     });
     await expect(
@@ -455,12 +455,23 @@ describe("the facets on Linear and Jira, with today's behaviour", () => {
         labels: ["P:high"],
         priority: 0,
       }),
-    ).rejects.toThrow(/priority label/);
+    ).rejects.toThrow(
+      "the label 'P:high' to file is the priority high; give it as the issue's priority (priority: 2 (high)), not as a label",
+    );
+    await expect(
+      t.createIssue({ title: "x", description: "", labels: ["feature"] }),
+    ).rejects.toThrow(/give it as the issue's type \(type: feature\)/);
+    expect(calls).toEqual([]);
   });
 
-  it("takes an added alias of the type it sets as no contradiction", async () => {
-    const { t } = linear();
-    await t.updateIssue("ENG-1", { type: "bug", addLabels: ["type:bug"] });
+  it("refuses a facet's label among the labels a change adds, its alias included", async () => {
+    const { t, calls } = linear();
+    await expect(
+      t.updateIssue("ENG-1", { type: "bug", addLabels: ["type:bug"] }),
+    ).rejects.toThrow(
+      "the label 'type:bug' to add is the type bug; give it as the issue's type (type: bug), not as a label",
+    );
+    expect(calls).toEqual([]);
   });
 
   it("changes a size on Linear in one update, from the issue's labels", async () => {

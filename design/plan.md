@@ -278,8 +278,11 @@ and the rule it rests on,
 `jig send`, its verbs, their checks and the refusal of a person's
 commands in a session the line started
 ([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do));
-and the operator skill, `/jig:operator`
-([plugin/skills/operator/](../plugin/skills/operator/SKILL.md)). Also
+the operator skill, `/jig:operator`
+([plugin/skills/operator/](../plugin/skills/operator/SKILL.md)); a
+launch's result naming its next owner, in the outcome row and `last.next`;
+and a park naming the person it waits on, in `waitsOn` and
+`jig ask --waiting --person`. Still
 open, for the hub (item 42), which builds them as its stage 2's first
 step: the thread grows under `ask`'s version 1, each entry with a stable
 id, a question with its key, its class and a status (open, answered, acted

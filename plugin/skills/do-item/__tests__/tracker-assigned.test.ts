@@ -39,6 +39,18 @@ describe("GitHub adapter: assignment reads", () => {
     );
   });
 
+  it("starts no request once the read's signal has aborted", async () => {
+    const { t, calls } = gitHub(() => {
+      throw new Error("a request was made after the read was stopped");
+    });
+    const stopped = new AbortController();
+    stopped.abort(new Error("the tick's deadline passed"));
+    await expect(
+      t.assignedIssues("factory", ["todo"], { signal: stopped.signal }),
+    ).rejects.toThrow("stopped");
+    expect(calls).toEqual([]);
+  });
+
   it("names who assigned the issue, trusted only with write access", async () => {
     const assigned = (actor: string | null, assignee = "factory") => ({
       repository: {

@@ -38,6 +38,7 @@ const CONVENTIONAL: TitleConvention = {
 const FREE: TitleConvention = { value: "free", source: "default" };
 
 const issue = (over: Partial<IssueFacts> = {}): IssueFacts => ({
+  type: null,
   labels: [],
   title: "Something",
   nativeType: null,
@@ -51,25 +52,57 @@ const derive = (
   convention: TitleConvention = CONVENTIONAL,
 ) => deriveType(facts, parseWorkTypes(config), async () => convention);
 
+/** Jig's own mapping: three taxonomy types are all Task work. */
+const JIG_TYPES = {
+  issue_tracker: {
+    types: {
+      bug: ["bug"],
+      feature: ["feature"],
+      task: ["docs", "chore", "infra"],
+    },
+  },
+};
+
 describe("the derivation's steps", () => {
-  it("types an issue by a type label, ignoring case", async () => {
-    const v = await derive(issue({ labels: ["frontend", "Type:Feature"] }));
+  it("types an issue by its type, ignoring case", async () => {
+    const v = await derive(issue({ type: "Feature", labels: ["bug"] }));
     expect(v.type).toBe("feature");
     expect(v.evidence).toMatchObject({
-      step: "label",
-      matched: "Type:Feature",
+      step: "type",
+      matched: "Feature",
+      summary: "type Feature",
+      unanswered: [],
     });
     expect(v.depth).toEqual(DEFAULT_ROWS.feature);
   });
 
-  it("reads bug's labels from issue_tracker.labels.bug", async () => {
+  it("maps a type to the work type issue_tracker.types lists it under", async () => {
+    const v = await derive(issue({ type: "docs" }), JIG_TYPES);
+    expect(v.type).toBe("task");
+    expect(v.evidence.summary).toBe("type docs (issue_tracker.types.task)");
+    expect(v.depth).toEqual(DEFAULT_ROWS.task);
+  });
+
+  it("reads bug's other names from issue_tracker.labels.bug", async () => {
     const config = { issue_tracker: { labels: { bug: ["defect"] } } };
-    expect((await derive(issue({ labels: ["defect"] }), config)).type).toBe(
-      "bug",
+    expect((await derive(issue({ type: "defect" }), config)).type).toBe("bug");
+    expect((await derive(issue({ type: "bug" }), config)).type).toBe("bug");
+  });
+
+  it("leaves a type that names no work type unanswered, and says so", async () => {
+    const v = await derive(
+      issue({ type: "incident", nativeType: "Bug" }),
+      JIG_TYPES,
     );
-    expect((await derive(issue({ labels: ["bug"] }), config)).type).toBe(
-      "unknown",
-    );
+    expect([v.type, v.evidence.step]).toEqual(["bug", "tracker_type"]);
+    expect(v.evidence.unanswered).toEqual([
+      { step: "type", reason: expect.stringContaining("incident") },
+    ]);
+  });
+
+  it("never reads a type from the labels", async () => {
+    const v = await derive(issue({ labels: ["bug", "type:feature"] }));
+    expect(v.type).toBe("unknown");
   });
 
   it("types an issue by the tracker's own type, ignoring case", async () => {
@@ -85,6 +118,7 @@ describe("the derivation's steps", () => {
     expect(v.type).toBe("task");
     expect(v.evidence.step).toBe("title_prefix");
     expect(v.evidence.unanswered).toEqual([
+      { step: "type", reason: expect.stringContaining("has no type") },
       {
         step: "tracker_type",
         reason: expect.stringContaining("Incident"),
@@ -109,7 +143,7 @@ describe("the derivation's steps", () => {
   it("reads no prefix when the title convention is free", async () => {
     const v = await derive(issue({ title: "fix: login" }), {}, FREE);
     expect(v.type).toBe("unknown");
-    expect(v.evidence.unanswered[0]?.reason).toContain("free");
+    expect(v.evidence.unanswered.at(-1)?.reason).toContain("free");
   });
 
   it("leaves a prefix whose type the repository dropped unanswered", async () => {
@@ -119,6 +153,7 @@ describe("the derivation's steps", () => {
     const v = await derive(issue({ title: "refactor: split" }), config);
     expect(v.type).toBe("unknown");
     expect(v.evidence.unanswered).toEqual([
+      { step: "type", reason: expect.stringContaining("has no type") },
       {
         step: "title_prefix",
         reason: expect.stringContaining("refactor:"),
@@ -129,13 +164,13 @@ describe("the derivation's steps", () => {
   it("leaves a prefix that names no work type unanswered", async () => {
     const v = await derive(issue({ title: "test: cover" }));
     expect(v.type).toBe("unknown");
-    expect(v.evidence.unanswered[0]?.step).toBe("title_prefix");
+    expect(v.evidence.unanswered.at(-1)?.step).toBe("title_prefix");
   });
 
   it("does not read the title convention when an earlier step answered", async () => {
     let asked = 0;
     const v = await deriveType(
-      issue({ labels: ["bug"], title: "feat: x" }),
+      issue({ type: "bug", title: "feat: x" }),
       parseWorkTypes({}),
       async () => {
         asked++;
@@ -147,11 +182,11 @@ describe("the derivation's steps", () => {
 });
 
 describe("the derivation's order", () => {
-  it("takes a label over the tracker's type and the title prefix", async () => {
+  it("takes the type over the tracker's type and the title prefix", async () => {
     const v = await derive(
-      issue({ labels: ["spike"], nativeType: "Bug", title: "feat: x" }),
+      issue({ type: "spike", nativeType: "Bug", title: "feat: x" }),
     );
-    expect([v.type, v.evidence.step]).toEqual(["spike", "label"]);
+    expect([v.type, v.evidence.step]).toEqual(["spike", "type"]);
   });
 
   it("takes the tracker's type over the title prefix", async () => {
@@ -159,22 +194,26 @@ describe("the derivation's order", () => {
     expect([v.type, v.evidence.step]).toEqual(["task", "tracker_type"]);
   });
 
-  it("answers unknown when labels mark two types, whatever comes after", async () => {
-    const v = await derive(
-      issue({ labels: ["bug", "feature"], nativeType: "Bug" }),
-    );
-    expect(v.type).toBe("unknown");
-    expect(v.evidence.summary).toContain("more than one type");
-    expect(v.evidence.summary).toContain("removing or correcting");
-    expect(v.evidence.summary).not.toContain("a type label clears it");
+  it("falls through to the tracker's type when the issue has no type, and says it has none", async () => {
+    const v = await derive(issue({ nativeType: "Bug", title: "feat: x" }));
+    expect([v.type, v.evidence.step]).toEqual(["bug", "tracker_type"]);
+    expect(v.evidence.unanswered).toEqual([
+      { step: "type", reason: expect.stringContaining("has no type") },
+    ]);
   });
 
   it("answers unknown, with the strictest depth, when nothing identifies the type", async () => {
     const v = await derive(issue());
     expect(v).toMatchObject({
       type: "unknown",
-      evidence: { step: "none", matched: null, unanswered: [] },
+      evidence: {
+        step: "none",
+        matched: null,
+        unanswered: [{ step: "type" }],
+      },
     });
+    expect(v.evidence.summary).toContain("has no type");
+    expect(v.evidence.summary).toContain("setting the issue's type clears it");
     expect(v.depth).toEqual(unknownRow(parseWorkTypes({})));
   });
 });
@@ -270,7 +309,7 @@ describe("the depth table", () => {
       issue_tracker: { types: { bug: ["bug"], chore: ["chore"] } },
       do_item: { work_types: { chore } },
     };
-    const v = await derive(issue({ labels: ["chore"] }), config);
+    const v = await derive(issue({ type: "chore" }), config);
     expect([v.type, v.depth]).toEqual(["chore", chore]);
   });
 });
@@ -445,16 +484,24 @@ describe("the loading rules refuse", () => {
 });
 
 describe("issue input", () => {
-  it("reads an issue printed before nativeType existed as having none", () => {
+  it("reads an issue printed before nativeType and the facets existed as having neither", () => {
     expect(issueFacts({ labels: ["bug"], title: "t" })).toEqual({
+      type: null,
       labels: ["bug"],
       title: "t",
       nativeType: null,
     });
   });
 
-  it("refuses a nativeType that is not text", () => {
+  it("reads the type facet", () => {
+    expect(issueFacts({ type: "docs", title: "t" })).toMatchObject({
+      type: "docs",
+    });
+  });
+
+  it("refuses a nativeType or a type that is not text", () => {
     expect(issueFacts({ nativeType: 3 })).toContain("nativeType");
+    expect(issueFacts({ type: 3 })).toContain("`type`");
   });
 });
 
@@ -473,6 +520,23 @@ describe("from get_issue.ts to the type", () => {
     expect(printed.nativeType).toBe("Feature");
     const facts = issueFacts(printed) as IssueFacts;
     expect((await derive(facts)).type).toBe("feature");
+  });
+
+  it("types a GitHub issue by the type its type label keeps", async () => {
+    const { t } = gitHub(() =>
+      oneIssue(
+        issueNode({
+          number: 5,
+          labels: ["type:spike"],
+          issueType: "Feature",
+          extra: { subIssues: conn([]) },
+        }),
+      ),
+    );
+    const printed = await getIssue("#5", t, numberKeys("acme/app"));
+    expect(printed.type).toBe("spike");
+    const v = await derive(issueFacts(printed) as IssueFacts);
+    expect([v.type, v.evidence.step]).toEqual(["spike", "type"]);
   });
 
   it("prints a Linear issue's nativeType as null", async () => {
@@ -536,7 +600,9 @@ describe("determine_type.ts", () => {
         step: "title_prefix",
         matched: "chore:",
         summary: "title prefix chore: (pull_requests.title_format)",
-        unanswered: [],
+        unanswered: [
+          { step: "type", reason: expect.stringContaining("has no type") },
+        ],
       },
       depth: DEFAULT_ROWS.task,
     });
@@ -546,7 +612,7 @@ describe("determine_type.ts", () => {
     const dir = mkdtempSync(join(tmpdir(), "determine-type-input-"));
     dirs.push(dir);
     const file = join(dir, "issue.json");
-    writeFileSync(file, JSON.stringify({ labels: ["type:spike"], title: "x" }));
+    writeFileSync(file, JSON.stringify({ type: "spike", title: "x" }));
     const r = run("{}\n", "", [file]);
     expectSpawnExit(r, 0);
     expect(JSON.parse(r.stdout).type).toBe("spike");
@@ -565,5 +631,6 @@ describe("determine_type.ts", () => {
   it("refuses input that is not an issue as a usage error", () => {
     expectSpawnExit(run("{}\n", "not json"), 2);
     expectSpawnExit(run("{}\n", '{"labels":"bug"}'), 2);
+    expectSpawnExit(run("{}\n", '{"type":["bug"]}'), 2);
   });
 });

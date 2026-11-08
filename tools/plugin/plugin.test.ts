@@ -867,7 +867,9 @@ drive:
   expect(
     doItem("determine_agent.ts", '{"labels":["codearea:api"],"title":"x"}'),
   ).toMatchObject({ primary_agent: "Backend Agent" });
-  expect(doItem("determine_type.ts", '{"labels":["type:bug"]}')).toMatchObject({
+  expect(
+    doItem("determine_type.ts", '{"type":"bug","labels":[]}'),
+  ).toMatchObject({
     type: "bug",
   });
 

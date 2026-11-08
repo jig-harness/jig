@@ -118,6 +118,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
   async function pool(
     issue: GhIssue,
     raw: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<CorePoolIssue> {
     const labels = wholeLabels(issue);
     const state = model.stateOf({ ...issue, labels });
@@ -126,7 +127,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       identifier: issue.key,
       title: issue.title,
       url: issue.url,
-      ...(await client.facets.read(issue, raw, labels)),
+      ...(await client.facets.read(issue, raw, labels, signal)),
       createdAt: issue.createdAt,
       // The state's id is its canonical key: GitHub has no state objects,
       // and a claim re-check compares ids.
@@ -150,9 +151,10 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
   /** Each read issue in pool form, one at a time: a facet may need a read of its own. */
   async function pools(
     read: Array<{ issue: GhIssue; raw: Record<string, unknown> }>,
+    signal?: AbortSignal,
   ): Promise<CorePoolIssue[]> {
     const out: CorePoolIssue[] = [];
-    for (const { issue, raw } of read) out.push(await pool(issue, raw));
+    for (const { issue, raw } of read) out.push(await pool(issue, raw, signal));
     return out;
   }
 
@@ -438,13 +440,16 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       return found === null ? null : pool(found.issue, found.raw);
     },
 
-    async openPopulation() {
-      return pools(await client.list({ states: ["OPEN"] }, OPEN_CHILDREN));
+    async openPopulation(signal) {
+      return pools(
+        await client.list({ states: ["OPEN"] }, OPEN_CHILDREN, signal),
+        signal,
+      );
     },
 
-    facetReport: () => client.facets.report(),
+    facetReport: (options) => client.facets.report(options),
 
-    async assignedIssues(identity, states) {
+    async assignedIssues(identity, states, signal) {
       if (states.length === 0)
         throw new TrackerRequestError(
           "invalid",
@@ -463,6 +468,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
           assignee: identity,
         },
         OPEN_CHILDREN,
+        signal,
       );
       return pools(
         read.filter(({ issue }) =>
@@ -470,6 +476,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
             model.stateOf({ ...issue, labels: wholeLabels(issue) }),
           ),
         ),
+        signal,
       );
     },
   };
