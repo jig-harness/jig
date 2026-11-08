@@ -152,3 +152,9 @@ This change builds no channel and submits no public listing. It changes no
 release channel, tag or promotion rule, supports no additional forge, and
 promises no compatibility with an agent runtime that Jig has not validated.
 Catalog compatibility work is not a shortcut around those checks.
+
+## Review
+
+Reviewed on 2026-11-08 by an independent Codex reviewer, `distribution_review`,
+against authored commit `978445ce`. The review covers the design and its build
+order; the bootstrap implementation remains separate work.
