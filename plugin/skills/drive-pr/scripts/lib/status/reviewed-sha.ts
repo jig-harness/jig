@@ -256,6 +256,8 @@ async function changeAt(
     "--no-textconv",
     "--text",
     "--no-renames",
+    "--no-relative",
+    "--ignore-submodules=none",
     "--unified=3",
     from,
     head,

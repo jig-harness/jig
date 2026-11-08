@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { delimiter, dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import {
@@ -41,6 +41,7 @@ function commitFile(
   name: string,
   text: string | Uint8Array,
 ): string {
+  mkdirSync(dirname(join(cwd, name)), { recursive: true });
   writeFileSync(join(cwd, name), text);
   git(cwd, "add", name);
   git(cwd, "commit", "-qm", `edit ${name}`, "--no-verify");
@@ -244,6 +245,24 @@ describe("drive-status.ts over a head the reviewer skipped", () => {
       repo.dir,
       at(repo, repo.merged),
       skipNotice(repo.merged),
+    );
+    expectSpawnExit(r, 22);
+    expect(r.state).toBe("REVIEW_SKIPPED");
+  });
+
+  it("stops as REVIEW_SKIPPED when a relative-diff setting would hide the moved lines", async () => {
+    const repo = mergedHistory(
+      "skipped-relative-diff",
+      { "feature.txt": `${LINES.join("\n")}\n`, "sub/keep.txt": "kept\n" },
+      { "feature.txt": withNewAfter(2) },
+      { "feature.txt": withNewAfter(6) },
+    );
+    git(repo.dir, "config", "diff.relative", "true");
+    const r = await gate(
+      repo.dir,
+      at(repo, repo.merged),
+      skipNotice(repo.merged),
+      { DRIVE_PR_WORKTREE: join(repo.dir, "sub") },
     );
     expectSpawnExit(r, 22);
     expect(r.state).toBe("REVIEW_SKIPPED");
