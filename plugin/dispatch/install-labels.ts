@@ -31,6 +31,26 @@ function unchecked(path: string, reason: string): true {
   return true;
 }
 
+/** Creates each missing label in turn; the labels the signed-in account could not create, each with why. */
+async function createMissing(
+  slug: string,
+  missing: LabelSpec[],
+): Promise<Array<{ label: LabelSpec; why: string }>> {
+  const refused: Array<{ label: LabelSpec; why: string }> = [];
+  for (const label of missing) {
+    let created: Awaited<ReturnType<typeof createLabel>>;
+    try {
+      created = await createLabel(slug, label);
+    } catch (error) {
+      refused.push({ label, why: failureText(error) });
+      continue;
+    }
+    if (created.ok) console.log(`${slug}: created ${label.name}`);
+    else refused.push({ label, why: created.failure.reason });
+  }
+  return refused;
+}
+
 /** One repository's labels; whether any it needs is still missing. */
 async function repoLabels(path: string, confirm: boolean): Promise<boolean> {
   const target = await repoTarget(path);
@@ -65,18 +85,7 @@ async function repoLabels(path: string, confirm: boolean): Promise<boolean> {
     for (const l of missing) console.log(`  ${l.name}: ${l.description}`);
     return false;
   }
-  const refused: Array<{ label: LabelSpec; why: string }> = [];
-  for (const label of missing) {
-    let created: Awaited<ReturnType<typeof createLabel>>;
-    try {
-      created = await createLabel(repo.slug, label);
-    } catch (error) {
-      refused.push({ label, why: failureText(error) });
-      continue;
-    }
-    if (created.ok) console.log(`${repo.slug}: created ${label.name}`);
-    else refused.push({ label, why: created.failure.reason });
-  }
+  const refused = await createMissing(repo.slug, missing);
   if (refused.length === 0) return false;
   console.log(
     `${repo.slug}: these labels could not be created with the signed-in account; a person who may create labels runs:`,

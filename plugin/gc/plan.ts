@@ -227,6 +227,20 @@ async function selection(
     return [{ path: selected }];
   return `Cannot identify the clone at ${selected}: ${checkouts.failure.reason}`;
 }
+/** The kinds the selected entries plan, in their order; the first refused declaration fails them all. */
+async function entriesPlan(
+  entries: Entry[],
+  options: PlanOptions,
+  machine: MachineConfig,
+): Promise<Outcome<CollectionKind[], "configuration">> {
+  const kinds: CollectionKind[] = [];
+  for (const entry of entries) {
+    const planned = await entryPlan(entry, options, machine);
+    if (!planned.ok) return planned;
+    kinds.push(...planned.value);
+  }
+  return ok(kinds);
+}
 /**
  * The kinds a run evaluates, or why it plans none: the machine's
  * configuration cannot be read, or a repository's declaration is refused.
@@ -258,12 +272,11 @@ export async function collectionPlan(options: {
         true,
       ),
     );
-  else
-    for (const entry of chosen) {
-      const planned = await entryPlan(entry, options, machine);
-      if (!planned.ok) return planned;
-      kinds.push(...planned.value);
-    }
+  else {
+    const planned = await entriesPlan(chosen, options, machine);
+    if (!planned.ok) return planned;
+    kinds.push(...planned.value);
+  }
   if (!selected && machine.receipts && !machine.disabled.includes("receipts"))
     kinds.push(receiptsKind(machine.receipts_days));
   return ok(

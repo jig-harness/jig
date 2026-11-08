@@ -295,7 +295,7 @@ export const SCHEMA_VERSION = MIGRATIONS.length;
  * newer reader. It is the cause of the usage exit `stateDb` refuses the
  * database with, so a command tells that refusal from any other.
  */
-export class StateVersionError extends JigError<"newer-schema"> {
+class StateVersionError extends JigError<"newer-schema"> {
   override name = "StateVersionError";
   readonly path: string;
   readonly version: number;

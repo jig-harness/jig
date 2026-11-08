@@ -469,6 +469,34 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!repos.ok) return repos;
   const accountList = accounts(top.accounts);
   if (!accountList.ok) return accountList;
+  const timing = limits(top);
+  if (!timing.ok) return timing;
+  const shared = surfaces(top);
+  if (!shared.ok) return shared;
+  return ok({
+    path: where,
+    repositories: repos.value,
+    accounts: accountList.value,
+    ...timing.value,
+    ...shared.value,
+  });
+}
+
+/** The tick's interval, backoff, timeouts, opens and retention, with defaults. */
+function limits(
+  top: Record<string, unknown>,
+): Checked<
+  Pick<
+    MachineConfig,
+    | "intervalMs"
+    | "wallBackoffMs"
+    | "runtimeTimeoutMs"
+    | "workspaceTimeoutMs"
+    | "opensPerTick"
+    | "receiptsDays"
+    | "unclaimedAfterMs"
+  >
+> {
   const intervalMs = optionalDuration(
     top.interval,
     "interval",
@@ -511,6 +539,26 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
     DEFAULTS.unclaimedAfterMs,
   );
   if (!unclaimedAfterMs.ok) return unclaimedAfterMs;
+  return ok({
+    intervalMs: intervalMs.value,
+    wallBackoffMs: wallBackoffMs.value,
+    runtimeTimeoutMs: runtimeTimeoutMs.value,
+    workspaceTimeoutMs: workspaceTimeoutMs.value,
+    opensPerTick: opensPerTick.value,
+    receiptsDays: receiptsDays.value,
+    unclaimedAfterMs: unclaimedAfterMs.value,
+  });
+}
+
+/** The dashboard, the shared records, and whether `jig send` and the change probe run here. */
+function surfaces(
+  top: Record<string, unknown>,
+): Checked<
+  Pick<
+    MachineConfig,
+    "dashboardListen" | "sharedRecords" | "send" | "changeProbe"
+  >
+> {
   const dashboardListen = dashboard(top.dashboard);
   if (!dashboardListen.ok) return dashboardListen;
   const sharedRecords = records(top.records);
@@ -520,16 +568,6 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   const changeProbe = flag(top.change_probe, "change_probe", true);
   if (!changeProbe.ok) return changeProbe;
   return ok({
-    path: where,
-    repositories: repos.value,
-    accounts: accountList.value,
-    intervalMs: intervalMs.value,
-    wallBackoffMs: wallBackoffMs.value,
-    runtimeTimeoutMs: runtimeTimeoutMs.value,
-    workspaceTimeoutMs: workspaceTimeoutMs.value,
-    opensPerTick: opensPerTick.value,
-    receiptsDays: receiptsDays.value,
-    unclaimedAfterMs: unclaimedAfterMs.value,
     dashboardListen: dashboardListen.value,
     sharedRecords: sharedRecords.value,
     send: send.value,

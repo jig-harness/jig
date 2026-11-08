@@ -175,6 +175,50 @@ function idleDays(value: unknown): Configured<MachineConfig["idle_days"]> {
   }
   return ok(idle_days);
 }
+/** `gc.repositories`: each entry valid, each path listed once. */
+function repositoryEntries(value: unknown): Configured<RepositoryEntry[]> {
+  if (!Array.isArray(value)) return refused("gc.repositories must be a list");
+  const repositories: RepositoryEntry[] = [];
+  for (const item of value) {
+    const entry = repositoryEntry(item);
+    if (!entry.ok) return entry;
+    repositories.push(entry.value);
+  }
+  if (
+    new Set(repositories.map((entry) => entry.path)).size !==
+    repositories.length
+  )
+    return refused("Duplicate gc.repositories.path");
+  return ok(repositories);
+}
+/** The machine's schedule and limits, with their defaults. */
+function schedule(
+  gc: Record<string, unknown>,
+): Configured<
+  Pick<
+    MachineConfig,
+    "receipts_days" | "hour" | "collect_day" | "min_free_bytes"
+  >
+> {
+  const receipts_days = integer(gc.receipts_days ?? 30, "gc.receipts_days", 1);
+  if (!receipts_days.ok) return receipts_days;
+  const hour = integer(gc.hour ?? 4, "gc.hour", 0, 23);
+  if (!hour.ok) return hour;
+  const collect_day = integer(gc.collect_day ?? 0, "gc.collect_day", 0, 6);
+  if (!collect_day.ok) return collect_day;
+  const min_free_bytes = integer(
+    gc.min_free_bytes ?? 0,
+    "gc.min_free_bytes",
+    0,
+  );
+  if (!min_free_bytes.ok) return min_free_bytes;
+  return ok({
+    receipts_days: receipts_days.value,
+    hour: hour.value,
+    collect_day: collect_day.value,
+    min_free_bytes: min_free_bytes.value,
+  });
+}
 export function parseMachine(value: unknown): Configured<MachineConfig> {
   const read = value === undefined ? ok(empty()) : mapping(value, "machine gc");
   if (!read.ok) return read;
@@ -195,19 +239,8 @@ export function parseMachine(value: unknown): Configured<MachineConfig> {
     "machine gc",
   );
   if (!known.ok) return known;
-  const repos = gc.repositories ?? [];
-  if (!Array.isArray(repos)) return refused("gc.repositories must be a list");
-  const repositories: RepositoryEntry[] = [];
-  for (const item of repos) {
-    const entry = repositoryEntry(item);
-    if (!entry.ok) return entry;
-    repositories.push(entry.value);
-  }
-  if (
-    new Set(repositories.map((entry) => entry.path)).size !==
-    repositories.length
-  )
-    return refused("Duplicate gc.repositories.path");
+  const repositories = repositoryEntries(gc.repositories ?? []);
+  if (!repositories.ok) return repositories;
   const idle_days = idleDays(gc.idle_days ?? {});
   if (!idle_days.ok) return idle_days;
   if (gc.receipts !== undefined && typeof gc.receipts !== "boolean")
@@ -216,27 +249,17 @@ export function parseMachine(value: unknown): Configured<MachineConfig> {
   if (!orca.ok) return orca;
   const disabled = kindList(gc.disabled ?? [], true);
   if (!disabled.ok) return disabled;
-  const receipts_days = integer(gc.receipts_days ?? 30, "gc.receipts_days", 1);
-  if (!receipts_days.ok) return receipts_days;
-  const hour = integer(gc.hour ?? 4, "gc.hour", 0, 23);
-  if (!hour.ok) return hour;
-  const collect_day = integer(gc.collect_day ?? 0, "gc.collect_day", 0, 6);
-  if (!collect_day.ok) return collect_day;
-  const min_free_bytes = integer(
-    gc.min_free_bytes ?? 0,
-    "gc.min_free_bytes",
-    0,
-  );
-  if (!min_free_bytes.ok) return min_free_bytes;
+  const times = schedule(gc);
+  if (!times.ok) return times;
   return ok({
-    repositories,
+    repositories: repositories.value,
     disabled: disabled.value,
     idle_days: idle_days.value,
-    receipts_days: receipts_days.value,
+    receipts_days: times.value.receipts_days,
     receipts: gc.receipts === true,
-    hour: hour.value,
-    collect_day: collect_day.value,
-    min_free_bytes: min_free_bytes.value,
+    hour: times.value.hour,
+    collect_day: times.value.collect_day,
+    min_free_bytes: times.value.min_free_bytes,
     ...(orca.value === undefined ? {} : { orca: orca.value }),
   });
 }

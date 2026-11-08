@@ -46,6 +46,31 @@ function commitIds(output: string): Outcome<string[], "malformed"> {
   }
   return ok(ids);
 }
+/** The commits a remote's branches point at, read through its URL. */
+async function remoteHeads(
+  root: string,
+  name: string,
+): Promise<Outcome<string[]>> {
+  const url = await git(root, ["remote", "get-url", name]);
+  if (!url.ok) return url;
+  const listed = await git(root, ["ls-remote", "--heads", "--", url.value]);
+  if (!listed.ok) return listed;
+  return commitIds(listed.value);
+}
+/** Whether one of `tips` contains `head`; null when some could not be told and none does. */
+async function coveredByTip(
+  root: string,
+  head: string,
+  tips: string[],
+): Promise<boolean | null> {
+  let unknown = false;
+  for (const tip of tips) {
+    const covered = await ancestry(root, head, tip);
+    if (covered === true) return true;
+    if (covered === null) unknown = true;
+  }
+  return unknown ? null : false;
+}
 export async function localOnlyCommits(
   root: string,
   head: string,
@@ -55,17 +80,11 @@ export async function localOnlyCommits(
   const names = remotes.value.split("\n").filter(Boolean);
   let unknown = false;
   for (const name of names) {
-    const url = await git(root, ["remote", "get-url", name]);
-    if (!url.ok) return url;
-    const listed = await git(root, ["ls-remote", "--heads", "--", url.value]);
-    if (!listed.ok) return listed;
-    const heads = commitIds(listed.value);
+    const heads = await remoteHeads(root, name);
     if (!heads.ok) return heads;
-    for (const tip of heads.value) {
-      const covered = await ancestry(root, head, tip);
-      if (covered === true) return ok(false);
-      if (covered === null) unknown = true;
-    }
+    const covered = await coveredByTip(root, head, heads.value);
+    if (covered === true) return ok(false);
+    if (covered === null) unknown = true;
   }
   return ok(unknown ? null : true);
 }

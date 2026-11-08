@@ -31,46 +31,40 @@ import {
 import { gcJobSpec } from "./job-spec.ts";
 import { stopped } from "./runner.ts";
 
-/**
- * `jig gc install`: preview the machine entry and the job, and with
- * `confirm` write them. A refused configuration exits 2 and any other
- * refusal 1, each with its reason on standard error (`stopped`).
- */
-export async function install(options: {
+/** What `jig gc install` was asked to do. */
+interface InstallOptions {
   repository: string;
   script: string;
   confirm: boolean;
   uninstall: boolean;
   machine: boolean;
-}): Promise<number> {
-  const supplied = resolve(options.repository);
+}
+/** The clone install acts for: its primary checkout and every path to it. */
+type Registered = { root: string; clone: Set<string> };
+/**
+ * `jig gc install`: preview the machine entry and the job, and with
+ * `confirm` write them. A refused configuration exits 2 and any other
+ * refusal 1, each with its reason on standard error (`stopped`).
+ */
+export async function install(options: InstallOptions): Promise<number> {
   // Removal needs only machine policy: a broken checkout cannot obstruct it.
   const repositoryText = options.uninstall ? null : undefined;
-  let registered: Outcome<{ root: string; clone: Set<string> }>;
-  // Machine-wide removal names no clone, so it never identifies one.
-  if (options.machine)
-    registered = ok({ root: supplied, clone: new Set<string>() });
-  else if (options.uninstall) {
-    const own = gcConfiguration(supplied, repositoryText);
-    registered = own.ok ? await registration(supplied, own.value.machine) : own;
-  } else registered = await registration(supplied, undefined);
+  const registered = await installRegistration(options, repositoryText);
   if (!registered.ok) return stopped(registered.failure);
-  const { root, clone } = registered.value;
+  const { root } = registered.value;
   const configuration = gcConfiguration(root, repositoryText);
   if (!configuration.ok) return stopped(configuration.failure);
   const { machine, machinePath, repositoryValues } = configuration.value;
-  let repositories: MachineConfig["repositories"];
-  if (options.machine) repositories = [];
-  else if (options.uninstall) repositories = otherClones(machine, root, clone);
-  else {
-    const others = otherClones(machine, root, clone);
-    const proposed = await proposedEntry(root, repositoryValues.repository);
-    if (!proposed.ok) return stopped(proposed.failure);
-    repositories = [...others, proposed.value];
-  }
+  const repositories = await nextRepositories(
+    options,
+    machine,
+    registered.value,
+    repositoryValues.repository,
+  );
+  if (!repositories.ok) return stopped(repositories.failure);
   const next = {
     ...machine,
-    repositories,
+    repositories: repositories.value,
     ...(options.machine ? { receipts: false } : {}),
   };
   const noEntries = next.repositories.length === 0 && !next.receipts;
@@ -101,44 +95,102 @@ export async function install(options: {
     const resolves = await checkLauncherResolves();
     if (!resolves.ok) return stopped(resolves.failure);
   }
-  return exclusiveInstallLock(async () => {
-    const original = previousMachineText(machinePath);
-    // Refuse a concurrent edit after the preview rather than overwrite it.
-    const reread = gcConfiguration(root, repositoryText);
-    if (!reread.ok) return stopped(reread.failure);
-    if (JSON.stringify(reread.value.machine) !== JSON.stringify(machine))
-      return stopped({
-        code: "changed",
-        reason: "Machine configuration changed during preview; retry install",
-      });
-    const values: unknown = original ? load(original) : {};
-    if (!isMapping(values))
-      return stopped({
-        code: "invalid",
-        reason: "Machine configuration must be a mapping",
-      });
-    if (keepJob) {
-      writeMachine(machinePath, dump({ ...values, gc: next }));
-      console.log("Scheduler unchanged: the job still serves the others");
-      return 0;
-    }
-    // Captured before anything changes, so a failure can put back the job
-    // that was actually running rather than one rebuilt from this copy.
-    const scheduler = detectScheduler();
-    if (!scheduler.ok) return stopped(scheduler.failure);
-    const previousJob = await snapshotScheduler(scheduler.value, gcJobSpec());
-    if (!previousJob.ok) return stopped(previousJob.failure);
-    mkdirSync(dirname(machinePath), { recursive: true, mode: 0o700 });
+  return exclusiveInstallLock(() =>
+    writeEntry({
+      root,
+      repositoryText,
+      machine,
+      machinePath,
+      next,
+      keepJob,
+      noEntries,
+    }),
+  );
+}
+/**
+ * The clone install acts for. Machine-wide removal names no clone, so it
+ * never identifies one; removing a repository's entry identifies the clone
+ * against the machine's entries, so a checkout Git cannot read can still be
+ * removed.
+ */
+async function installRegistration(
+  options: InstallOptions,
+  repositoryText: null | undefined,
+): Promise<Outcome<Registered>> {
+  const supplied = resolve(options.repository);
+  if (options.machine) return ok({ root: supplied, clone: new Set<string>() });
+  if (!options.uninstall) return registration(supplied, undefined);
+  const own = gcConfiguration(supplied, repositoryText);
+  return own.ok ? registration(supplied, own.value.machine) : own;
+}
+/**
+ * The machine's entries once install acts: none for machine-wide removal,
+ * the other clones' for removal, and theirs with the proposed entry for
+ * this clone otherwise.
+ */
+async function nextRepositories(
+  options: InstallOptions,
+  machine: MachineConfig,
+  registered: Registered,
+  repository: unknown,
+): Promise<Outcome<MachineConfig["repositories"]>> {
+  if (options.machine) return ok([]);
+  const others = otherClones(machine, registered.root, registered.clone);
+  if (options.uninstall) return ok(others);
+  const proposed = await proposedEntry(registered.root, repository);
+  return proposed.ok ? ok([...others, proposed.value]) : proposed;
+}
+/**
+ * Writes the machine entry and, unless the job is kept, updates the job,
+ * under the install lock. A failed job update restores the previous entry
+ * and job (`rollBack`).
+ */
+async function writeEntry(plan: {
+  root: string;
+  repositoryText: null | undefined;
+  machine: MachineConfig;
+  machinePath: string;
+  next: MachineConfig;
+  keepJob: boolean;
+  noEntries: boolean;
+}): Promise<number> {
+  const { machinePath, next, noEntries } = plan;
+  const original = previousMachineText(machinePath);
+  // Refuse a concurrent edit after the preview rather than overwrite it.
+  const reread = gcConfiguration(plan.root, plan.repositoryText);
+  if (!reread.ok) return stopped(reread.failure);
+  if (JSON.stringify(reread.value.machine) !== JSON.stringify(plan.machine))
+    return stopped({
+      code: "changed",
+      reason: "Machine configuration changed during preview; retry install",
+    });
+  const values: unknown = original ? load(original) : {};
+  if (!isMapping(values))
+    return stopped({
+      code: "invalid",
+      reason: "Machine configuration must be a mapping",
+    });
+  if (plan.keepJob) {
     writeMachine(machinePath, dump({ ...values, gc: next }));
-    const job = await updateJob(gcJobSpec(next.hour), noEntries);
-    if (!job.ok)
-      return stopped({
-        ...job.failure,
-        reason: `${job.failure.reason}; ${await rollBack(machinePath, original, previousJob.value)}`,
-      });
-    console.log(`Scheduler ${noEntries ? "removed" : "updated"}: ${job.value}`);
+    console.log("Scheduler unchanged: the job still serves the others");
     return 0;
-  });
+  }
+  // Captured before anything changes, so a failure can put back the job
+  // that was actually running rather than one rebuilt from this copy.
+  const scheduler = detectScheduler();
+  if (!scheduler.ok) return stopped(scheduler.failure);
+  const previousJob = await snapshotScheduler(scheduler.value, gcJobSpec());
+  if (!previousJob.ok) return stopped(previousJob.failure);
+  mkdirSync(dirname(machinePath), { recursive: true, mode: 0o700 });
+  writeMachine(machinePath, dump({ ...values, gc: next }));
+  const job = await updateJob(gcJobSpec(next.hour), noEntries);
+  if (!job.ok)
+    return stopped({
+      ...job.failure,
+      reason: `${job.failure.reason}; ${await rollBack(machinePath, original, previousJob.value)}`,
+    });
+  console.log(`Scheduler ${noEntries ? "removed" : "updated"}: ${job.value}`);
+  return 0;
 }
 /**
  * The path the entry names, the clone's primary checkout, from which the

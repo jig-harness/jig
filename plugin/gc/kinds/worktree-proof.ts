@@ -161,19 +161,28 @@ export function classifyIgnored(
   for (const path of paths) {
     const passed = late(deadline);
     if (passed) return passed;
-    const directory = path.endsWith("/") ? path.slice(0, -1) : null;
-    let dependency = false;
-    if (inputs && directory !== null) {
-      if (directory.split("/").pop() === "node_modules") dependency = true;
-      else {
-        const only = onlyDependencyDirectories(join(root, directory), deadline);
-        if (!only.ok) return only;
-        dependency = only.value;
-      }
-    }
-    (dependency ? rebuildable : other).push(path);
+    const dependency = inputs
+      ? dependencyEntry(root, path, deadline)
+      : ok(false);
+    if (!dependency.ok) return dependency;
+    (dependency.value ? rebuildable : other).push(path);
   }
   return ok({ rebuildable, other });
+}
+/**
+ * Whether one ignored entry is a dependency directory: a directory named
+ * `node_modules`, or a collapsed one holding nothing but dependency
+ * directories.
+ */
+function dependencyEntry(
+  root: string,
+  path: string,
+  deadline: number,
+): Outcome<boolean, "timed-out"> {
+  if (!path.endsWith("/")) return ok(false);
+  const directory = path.slice(0, -1);
+  if (directory.split("/").pop() === "node_modules") return ok(true);
+  return onlyDependencyDirectories(join(root, directory), deadline);
 }
 async function mergedHeadCoverage(
   root: string,
@@ -326,20 +335,15 @@ export async function runtimeWorktreeProof(
     },
   });
 }
-/**
- * The proof of a worktree no runtime manages, or the runtime's proof after
- * its registry showed no agent: what Git, the forge and the file system say.
- * Evidence that cannot be read fails it; the kind records that as
- * `unverified`.
- */
-export async function worktreeProof(
+/** What names a worktree: its branch (`HEAD` when detached), its commit and its Git directory. */
+interface WorktreeIdentity {
+  name: string;
+  head: string;
+  admin: string;
+}
+async function worktreeIdentity(
   path: string,
-  policy: WorktreePolicy,
-  idleDays: number,
-  coordinated = false,
-): Promise<Outcome<Proof>> {
-  if (!lstatSync(path).isDirectory())
-    return ok({ state: "finding", reason: "worktree root is not a directory" });
+): Promise<Outcome<WorktreeIdentity>> {
   const name = await git(path, ["rev-parse", "--abbrev-ref", "HEAD"]);
   if (!name.ok) return name;
   const head = await git(path, ["rev-parse", "HEAD"]);
@@ -347,22 +351,44 @@ export async function worktreeProof(
   const dir = await git(path, ["rev-parse", "--git-dir"]);
   if (!dir.ok) return dir;
   const admin = isAbsolute(dir.value) ? dir.value : resolve(path, dir.value);
-  // A detached tree a drive attached names its pull request, and the remote
-  // that pull request was fetched through, in its record, for as long as its
-  // head still descends from the commit attached and holds no other branch's
-  // work (`describesHead`). Unlike
-  // the drive's readers, no remote branch is required: a merged pull
-  // request's branch is often deleted, and that is when the tree is reported.
-  const record = name.value === "HEAD" ? readDrivenTree(admin) : null;
-  const driven =
-    record !== null && (await ancestry(path, record.head, head.value)) === true
-      ? record
-      : null;
-  if (name.value === "HEAD" && driven === null)
-    return failed(
-      "detached",
-      "HEAD is detached and no drive attached the worktree",
-    );
+  return ok({ name: name.value, head: head.value, admin });
+}
+/**
+ * The drive record of a detached tree, null for a tree on a branch, and a
+ * `detached` failure for a detached tree no drive attached. A detached tree
+ * a drive attached names its pull request, and the remote that pull request
+ * was fetched through, in its record, for as long as its head still descends
+ * from the commit attached and holds no other branch's work
+ * (`describesHead`). Unlike the drive's readers, no remote branch is
+ * required: a merged pull request's branch is often deleted, and that is
+ * when the tree is reported.
+ */
+async function attachedDrive(
+  path: string,
+  identity: WorktreeIdentity,
+): Promise<Outcome<DrivenTree | null>> {
+  if (identity.name !== "HEAD") return ok(null);
+  const record = readDrivenTree(identity.admin);
+  if (
+    record !== null &&
+    (await ancestry(path, record.head, identity.head)) === true
+  )
+    return ok(record);
+  return failed(
+    "detached",
+    "HEAD is detached and no drive attached the worktree",
+  );
+}
+/**
+ * What the tree itself holds: uncommitted and index-hidden changes, an
+ * operation in progress and its ignored content. Forge and history evidence
+ * start unread.
+ */
+async function localEvidence(
+  path: string,
+  admin: string,
+  coordinated: boolean,
+): Promise<Outcome<WorktreeEvidence>> {
   const flags = await git(path, ["ls-files", "-v", "-z"]);
   if (!flags.ok) return flags;
   const status = await git(path, [
@@ -395,7 +421,7 @@ export async function worktreeProof(
     ignored.value.split("\0").filter((entry) => entry !== ""),
   );
   if (!ignoredContent.ok) return ignoredContent;
-  const facts: WorktreeEvidence = {
+  return ok({
     dirty: !!status.value,
     hiddenIndexChanges: changes,
     operation: state,
@@ -407,36 +433,27 @@ export async function worktreeProof(
     held: null,
     idleMs: null,
     coordinated,
-  };
-  // Every return below carries the paths set aside as rebuildable, whatever
-  // the outcome, so the receipt says what was judged rebuildable even for a
-  // worktree that goes on to report `would-collect`.
-  const attach = (proof: Proof): Outcome<Proof> =>
-    ok(
-      facts.ignoredContent.rebuildable.length
-        ? {
-            ...proof,
-            details: { rebuildable: facts.ignoredContent.rebuildable },
-          }
-        : proof,
-    );
-  const local = localWorktreeVeto(facts);
-  if (local) return attach(local);
-  const found =
-    driven === null
-      ? await requests(path, policy.remote, name.value)
-      : await drivenRequests(path, driven);
-  if (!found.ok) return found;
-  facts.requests = found.value;
-  if (facts.requests.some((pr) => pr.state === "OPEN"))
-    return attach(classifyWorktree(facts, idleDays * 86_400_000));
-  const localOnly = await localOnlyCommits(path, head.value);
+  });
+}
+/**
+ * Fills in what history says of a tree with no open pull request: commits
+ * no remote branch holds and whether a merged pull request's head covers
+ * them, how far a tree with no pull request is ahead of the base, the
+ * process holding it and how long it has been idle.
+ */
+async function historyEvidence(
+  path: string,
+  policy: WorktreePolicy,
+  identity: WorktreeIdentity,
+  facts: WorktreeEvidence & { requests: WorktreeRequest[] },
+): Promise<Outcome<void>> {
+  const localOnly = await localOnlyCommits(path, identity.head);
   if (!localOnly.ok) return localOnly;
   facts.localOnlyCommits = localOnly.value;
   if (facts.localOnlyCommits)
     facts.mergedHeadCovers = await mergedHeadCoverage(
       path,
-      head.value,
+      identity.head,
       facts.requests,
     );
   if (facts.requests.length === 0) {
@@ -445,16 +462,81 @@ export async function worktreeProof(
     facts.aheadOfBase = ahead.value;
   }
   facts.held = await processHolder(path);
-  const idle = worktreeActivity(path, admin);
+  const idle = worktreeActivity(path, identity.admin);
   if (!idle.ok) return idle;
   facts.idleMs = idle.value;
+  return ok(undefined);
+}
+/** A `changed` failure when the tree's commit or branch moved while it was proved. */
+async function identityUnchanged(
+  path: string,
+  identity: WorktreeIdentity,
+): Promise<Outcome<void>> {
   const headAfter = await git(path, ["rev-parse", "HEAD"]);
   if (!headAfter.ok) return headAfter;
-  if (headAfter.value !== head.value)
+  if (headAfter.value !== identity.head)
     return failed("changed", "Worktree identity changed during the proof");
   const nameAfter = await git(path, ["rev-parse", "--abbrev-ref", "HEAD"]);
   if (!nameAfter.ok) return nameAfter;
-  if (nameAfter.value !== name.value)
+  if (nameAfter.value !== identity.name)
     return failed("changed", "Worktree identity changed during the proof");
-  return attach(classifyWorktree(facts, idleDays * 86_400_000));
+  return ok(undefined);
+}
+/**
+ * A proof carrying the paths set aside as rebuildable, whatever its state,
+ * so the receipt says what was judged rebuildable even for a worktree that
+ * goes on to report `would-collect`.
+ */
+function withRebuildable(
+  facts: WorktreeEvidence,
+  proof: Proof,
+): Outcome<Proof> {
+  return ok(
+    facts.ignoredContent.rebuildable.length
+      ? { ...proof, details: { rebuildable: facts.ignoredContent.rebuildable } }
+      : proof,
+  );
+}
+/**
+ * The proof of a worktree no runtime manages, or the runtime's proof after
+ * its registry showed no agent: what Git, the forge and the file system say.
+ * Evidence that cannot be read fails it; the kind records that as
+ * `unverified`.
+ */
+export async function worktreeProof(
+  path: string,
+  policy: WorktreePolicy,
+  idleDays: number,
+  coordinated = false,
+): Promise<Outcome<Proof>> {
+  if (!lstatSync(path).isDirectory())
+    return ok({ state: "finding", reason: "worktree root is not a directory" });
+  const identity = await worktreeIdentity(path);
+  if (!identity.ok) return identity;
+  const driven = await attachedDrive(path, identity.value);
+  if (!driven.ok) return driven;
+  const local = await localEvidence(path, identity.value.admin, coordinated);
+  if (!local.ok) return local;
+  const facts = local.value;
+  const veto = localWorktreeVeto(facts);
+  if (veto) return withRebuildable(facts, veto);
+  const found =
+    driven.value === null
+      ? await requests(path, policy.remote, identity.value.name)
+      : await drivenRequests(path, driven.value);
+  if (!found.ok) return found;
+  const proved = { ...facts, requests: found.value };
+  if (proved.requests.some((pr) => pr.state === "OPEN"))
+    return withRebuildable(
+      proved,
+      classifyWorktree(proved, idleDays * 86_400_000),
+    );
+  const history = await historyEvidence(path, policy, identity.value, proved);
+  if (!history.ok) return history;
+  const unchanged = await identityUnchanged(path, identity.value);
+  if (!unchanged.ok) return unchanged;
+  return withRebuildable(
+    proved,
+    classifyWorktree(proved, idleDays * 86_400_000),
+  );
 }

@@ -64,17 +64,27 @@ function outcomeLines(r: RepoReport): string[] {
   ];
 }
 
+/**
+ * The defects a repository's report carries: the one that stopped its turn,
+ * after which what its earlier phases did is still listed, then each one a
+ * stage caught, which stopped that stage only.
+ */
+function defectLines(r: RepoReport): string[] {
+  return [
+    ...(r.refused === null ? [] : [`  DEFECT   ${r.refused}`]),
+    ...(r.stageDefects ?? []).map(
+      (d) => `  DEFECT   ${d.stage ?? d.phase}: ${d.reason}`,
+    ),
+  ];
+}
+
 function repoLines(r: RepoReport, apply: boolean): string[] {
   const verb = apply ? "wants" : "would";
   const lines = [`${r.slug ?? "(unknown repository)"} (${r.path})`];
   const took = phaseLine("  took     ", r.phasesMs);
   if (r.refused !== null && r.defect === undefined)
     return [...lines, `  refused: ${r.refused}`, ...took];
-  // A defect stopped the turn: what its earlier phases did is still listed.
-  if (r.refused !== null) lines.push(`  DEFECT   ${r.refused}`);
-  // A defect a stage caught stopped that stage only.
-  for (const d of r.stageDefects ?? [])
-    lines.push(`  DEFECT   ${d.stage ?? d.phase}: ${d.reason}`);
+  lines.push(...defectLines(r));
   for (const x of r.records)
     lines.push(
       `  read ${x.ok ? "ok    " : "FAILED"} ${x.record.padEnd(7)} ${x.source}: ${x.detail}`,

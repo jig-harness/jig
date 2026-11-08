@@ -174,11 +174,30 @@ export function upgradeSettings(
   env: NodeJS.ProcessEnv = process.env,
 ): Outcome<UpgradeSettings, "invalid-upgrade-settings"> {
   const path = userConfigPath(env);
-  const fail = (field: string, why: string) =>
-    failed("invalid-upgrade-settings", `${path}: ${field} ${why}`);
-  let file: Record<string, unknown> | null = null;
+  const read = userUpgradeValue(env, path);
+  if (!read.ok) return read;
+  const value = read.value;
+  if (value === undefined || value === null || value === true || value === "on")
+    return settingsOf(path, true);
+  if (value === false || value === "off") return settingsOf(path, false);
+  if (!isMapping(value))
+    return invalidSetting(
+      path,
+      "upgrade",
+      "must be off, or a mapping of every and enabled",
+    );
+  return upgradeMapping(path, value);
+}
+
+/** The user file's `upgrade` value, or why the file does not read. */
+function userUpgradeValue(
+  env: NodeJS.ProcessEnv,
+  path: string,
+): Outcome<unknown, "invalid-upgrade-settings"> {
   try {
-    if (userLayerEnabled(env)) file = readConfigFile(path);
+    return ok(
+      userLayerEnabled(env) ? readConfigFile(path)?.upgrade : undefined,
+    );
   } catch (error) {
     // The reader's message names the file and what does not read in it.
     return failed(
@@ -187,32 +206,44 @@ export function upgradeSettings(
       error,
     );
   }
-  const value = file?.upgrade;
-  const settings = (enabled: boolean, every = DEFAULT_EVERY) =>
-    ok({
-      enabled,
-      every,
-      everyMs: everyMs(every) as number,
-      path,
-    });
-  if (value === undefined || value === null || value === true || value === "on")
-    return settings(true);
-  if (value === false || value === "off") return settings(false);
-  if (!isMapping(value))
-    return fail("upgrade", "must be off, or a mapping of every and enabled");
+}
+
+/** An `upgrade` section written as a mapping of `every` and `enabled`. */
+function upgradeMapping(
+  path: string,
+  value: Record<string, unknown>,
+): Outcome<UpgradeSettings, "invalid-upgrade-settings"> {
   for (const key of Object.keys(value))
     if (key !== "every" && key !== "enabled")
-      return fail("upgrade", `has no field ${key}: it takes every and enabled`);
+      return invalidSetting(
+        path,
+        "upgrade",
+        `has no field ${key}: it takes every and enabled`,
+      );
   const enabled = value.enabled ?? true;
   if (typeof enabled !== "boolean")
-    return fail("upgrade.enabled", "must be true or false");
+    return invalidSetting(path, "upgrade.enabled", "must be true or false");
   const every = value.every ?? DEFAULT_EVERY;
   if (typeof every !== "string" || everyMs(every) === null)
-    return fail(
+    return invalidSetting(
+      path,
       "upgrade.every",
       "must be a whole number of minutes, hours or days: 30m, 1h, 2d",
     );
-  return settings(enabled, every);
+  return settingsOf(path, enabled, every);
+}
+
+function settingsOf(
+  path: string,
+  enabled: boolean,
+  every = DEFAULT_EVERY,
+): Outcome<UpgradeSettings, "invalid-upgrade-settings"> {
+  return ok({ enabled, every, everyMs: everyMs(every) as number, path });
+}
+
+/** A setting of the user file that does not read, named by its `field`. */
+function invalidSetting(path: string, field: string, why: string) {
+  return failed("invalid-upgrade-settings", `${path}: ${field} ${why}`);
 }
 
 /** Writes `text` at `path` whole: staged beside it, then renamed. */

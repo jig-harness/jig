@@ -257,23 +257,10 @@ function adoptRule(value: unknown): Checked<AdoptRule> {
   });
 }
 
-/**
- * The `dispatch` section of parsed configuration values, with defaults;
- * `invalid`, its reason naming the setting, for the first value that does
- * not validate.
- */
-export function dispatchSection(
-  values: Record<string, unknown>,
-): Checked<DispatchSection> {
-  const raw = values.dispatch;
-  if (raw !== undefined && raw !== null && !isMapping(raw))
-    return invalid("dispatch must be a mapping");
-  const section = (raw ?? {}) as Record<string, unknown>;
-  const unknown = Object.keys(section).filter((k) => !KEYS.includes(k));
-  if (unknown.length > 0)
-    return invalid(
-      `dispatch has unknown key(s): ${unknown.join(", ")} (known: ${KEYS.join(", ")})`,
-    );
+/** `dispatch.labels` and `dispatch.adopt`, and what the adoption rule needs of the labels. */
+function labelsAndAdopt(
+  section: Record<string, unknown>,
+): Checked<Pick<DispatchSection, "labels" | "adopt">> {
   const labelConfig = labels(section.labels);
   if (!labelConfig.ok) return labelConfig;
   const adopt = adoptRule(section.adopt);
@@ -286,12 +273,35 @@ export function dispatchSection(
     return invalid(
       "dispatch.adopt needs dispatch.labels.only_labeled off: under only_labeled a pull request with no label of the set is never read, so none could be adopted",
     );
+  return ok({ labels: labelConfig.value, adopt: adopt.value });
+}
+
+/** Who picks up work, from which states, and the follow-up's command. */
+function pickup(
+  section: Record<string, unknown>,
+): Checked<Pick<DispatchSection, "identity" | "states" | "followupCommand">> {
   const identity = text(section.identity, "identity");
   if (!identity.ok) return identity;
   const pickupStates = states(section.states);
   if (!pickupStates.ok) return pickupStates;
   const followupCommand = text(section.followup_command, "followup_command");
   if (!followupCommand.ok) return followupCommand;
+  return ok({
+    identity: identity.value,
+    states: pickupStates.value,
+    followupCommand: followupCommand.value,
+  });
+}
+
+/** The section's waits and expectations, and where and how often notices go. */
+function timings(
+  section: Record<string, unknown>,
+): Checked<
+  Omit<
+    DispatchSection,
+    "identity" | "states" | "followupCommand" | "labels" | "adopt"
+  >
+> {
   const stalledAfterMs = wait(section.stalled_after, "stalled_after");
   if (!stalledAfterMs.ok) return stalledAfterMs;
   const blockedAfterMs = wait(section.blocked_after, "blocked_after");
@@ -331,9 +341,6 @@ export function dispatchSection(
   );
   if (!renotifyAfterMs.ok) return renotifyAfterMs;
   return ok({
-    identity: identity.value,
-    states: pickupStates.value,
-    followupCommand: followupCommand.value,
     stalledAfterMs: stalledAfterMs.value,
     blockedAfterMs: blockedAfterMs.value,
     driveRoundsFlat: driveRoundsFlat.value,
@@ -343,8 +350,37 @@ export function dispatchSection(
     noticesLingerMs: noticesLingerMs.value,
     noticesBranch: branch.value,
     renotifyAfterMs: renotifyAfterMs.value,
-    labels: labelConfig.value,
-    adopt: adopt.value,
+  });
+}
+
+/**
+ * The `dispatch` section of parsed configuration values, with defaults;
+ * `invalid`, its reason naming the setting, for the first value that does
+ * not validate.
+ */
+export function dispatchSection(
+  values: Record<string, unknown>,
+): Checked<DispatchSection> {
+  const raw = values.dispatch;
+  if (raw !== undefined && raw !== null && !isMapping(raw))
+    return invalid("dispatch must be a mapping");
+  const section = (raw ?? {}) as Record<string, unknown>;
+  const unknown = Object.keys(section).filter((k) => !KEYS.includes(k));
+  if (unknown.length > 0)
+    return invalid(
+      `dispatch has unknown key(s): ${unknown.join(", ")} (known: ${KEYS.join(", ")})`,
+    );
+  const rules = labelsAndAdopt(section);
+  if (!rules.ok) return rules;
+  const picked = pickup(section);
+  if (!picked.ok) return picked;
+  const waits = timings(section);
+  if (!waits.ok) return waits;
+  return ok({
+    ...picked.value,
+    ...waits.value,
+    labels: rules.value.labels,
+    adopt: rules.value.adopt,
   });
 }
 

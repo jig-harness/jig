@@ -63,9 +63,8 @@ export class Defect extends Error {
 
 /**
  * The one base of the plugin's error classes: a failure that still travels
- * as a throw, with the stable `code` an outcome's failure carries
- * (`outcome.ts`), its message as the `reason` and what led to it as its
- * `cause`. Code branches on `code` or on the class, never on the message.
+ * as a throw, with the stable `code` a `Failure` carries, its message as
+ * the `reason` and what led to it as its `cause`. Code branches on `code` or on the class, never on the message.
  * A defect is not one: it is a `Defect`, which nothing handles.
  */
 export class JigError<Code extends string = string> extends Error {
@@ -74,12 +73,5 @@ export class JigError<Code extends string = string> extends Error {
   constructor(code: Code, reason: string, options?: { cause?: unknown }) {
     super(reason, options);
     this.code = code;
-  }
-
-  /** This error as an outcome's failure. */
-  failure(): Failure<Code> {
-    return this.cause === undefined
-      ? { code: this.code, reason: this.message }
-      : { code: this.code, reason: this.message, cause: this.cause };
   }
 }

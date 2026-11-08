@@ -86,6 +86,30 @@ function allowed(argument: AstNode, caught: readonly string[]): boolean {
   return callee === "ExitError" && identifierName(args[0]) === "USAGE_EXIT";
 }
 
+/** A node's children, each with the catch bindings in force inside it. */
+function children(
+  node: AstNode,
+  caught: readonly string[],
+): Array<[AstNode, readonly string[]]> {
+  if (node.type === "CatchClause") {
+    const param = identifierName(node.param);
+    const inner = param === null ? caught : [...caught, param];
+    return isNode(node.body) ? [[node.body, inner]] : [];
+  }
+  return Object.entries(node)
+    .filter(([key]) => key !== "parent")
+    .flatMap(([, value]) => (Array.isArray(value) ? value : [value]))
+    .filter(isNode)
+    .map((child) => [child, caught]);
+}
+
+/** Where a throw is, by its 1-based line, and its first line of text. */
+function siteOf(source: string, node: AstNode): ThrowSite {
+  const before = source.slice(0, node.start);
+  const text = source.slice(node.start, node.end).split("\n")[0] ?? "";
+  return { line: before.split("\n").length, text: text.trim() };
+}
+
 /**
  * Every `throw` in `source` the rule does not allow, in source order.
  * Throws when the source does not parse: a tree recovered from errors
@@ -97,36 +121,12 @@ export function throwSites(source: string, file = "source.ts"): ThrowSite[] {
   });
   if (parsed.errors.length > 0)
     throw new Error(parsed.errors.map((e) => e.message).join("; "));
-  const lineStarts = [0];
-  for (let i = 0; i < source.length; i++)
-    if (source[i] === "\n") lineStarts.push(i + 1);
-  const lineOf = (offset: number) => {
-    let line = 0;
-    while (line + 1 < lineStarts.length && lineStarts[line + 1]! <= offset)
-      line++;
-    return line + 1;
-  };
   const sites: ThrowSite[] = [];
   const walk = (node: AstNode, caught: readonly string[]) => {
     if (node.type === "ThrowStatement" && isNode(node.argument)) {
-      if (!allowed(node.argument, caught))
-        sites.push({
-          line: lineOf(node.start),
-          text: source.slice(node.start, node.end).split("\n")[0]!.trim(),
-        });
+      if (!allowed(node.argument, caught)) sites.push(siteOf(source, node));
     }
-    if (node.type === "CatchClause") {
-      const param = identifierName(node.param);
-      const inner = param === null ? caught : [...caught, param];
-      if (isNode(node.body)) walk(node.body, inner);
-      return;
-    }
-    for (const [key, value] of Object.entries(node)) {
-      if (key === "parent") continue;
-      if (Array.isArray(value)) {
-        for (const item of value) if (isNode(item)) walk(item, caught);
-      } else if (isNode(value)) walk(value, caught);
-    }
+    for (const [child, binding] of children(node, caught)) walk(child, binding);
   };
   walk(parsed.program as unknown as AstNode, []);
   return sites;
