@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ok } from "../../shared/outcome.ts";
 import { runCollection } from "../runner.ts";
 import type { CollectionKind, Proof } from "../types.ts";
 
@@ -16,7 +17,7 @@ function fixture(
     name: "scratch",
     repository: "/fixture",
     declaration: "fixture base",
-    inventory: async () => [{ id: "one", bytes: 42 }],
+    inventory: async () => ok([{ id: "one", bytes: 42 }]),
     prove: async () => proofs[Math.min(index++, proofs.length - 1)] as Proof,
     collect: async () => {
       drop();
@@ -93,7 +94,7 @@ test("inventory and partial collection failures exit 1 and keep a receipt", asyn
   ]);
 });
 
-test("unreadable proof preserves the resource without failing the whole kind", async () => {
+test("unreadable proof preserves the resource, finishes the kind and ends the run nonzero", async () => {
   const kind = fixture([dead]);
   kind.prove = async () => {
     throw new Error("unreadable identity");
@@ -102,7 +103,22 @@ test("unreadable proof preserves the resource without failing the whole kind", a
     collect: true,
     receiptRoot: mkdtempSync(join(tmpdir(), "gc-receipt-")),
   });
-  expect(receipt.exitStatus).toBe(0);
+  expect(receipt.exitStatus).toBe(1);
+  expect(receipt.resources[0]?.outcome).toBe("unverified");
+});
+
+test("a final proof that throws after a dead first proof ends the run nonzero", async () => {
+  const kind = fixture([dead]);
+  let calls = 0;
+  kind.prove = async () => {
+    if (calls++ === 0) return dead;
+    throw new Error("unreadable on the locked proof");
+  };
+  const { receipt } = await runCollection([kind], {
+    collect: true,
+    receiptRoot: mkdtempSync(join(tmpdir(), "gc-receipt-")),
+  });
+  expect(receipt.exitStatus).toBe(1);
   expect(receipt.resources[0]?.outcome).toBe("unverified");
 });
 

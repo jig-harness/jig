@@ -9,6 +9,7 @@
  * outcome log (`serial-holds.ts`).
  */
 import { isRecord } from "../../../shared/guards.ts";
+import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import {
   catalogFailed,
   type Contention,
@@ -19,9 +20,6 @@ import { defaultBranchFile, pullRequestFiles } from "../forge.ts";
 import type { ReadRecord } from "../launches.ts";
 import { settleHolds } from "../serial-holds.ts";
 import type { DrivenPr, RepoReport, RepoTarget } from "../types.ts";
-
-/** The configured catalog names no file the default branch could hold. */
-class CatalogPathError extends Error {}
 
 /** What the forge gave the tick, as serialization reads it. */
 export interface ForgeView {
@@ -39,18 +37,19 @@ function configuredCatalog(values: Record<string, unknown>): string | null {
   return typeof value === "string" ? value : "";
 }
 
-/** The configured catalog as a path on the default branch; throws when it cannot name one. */
-function repositoryPath(value: string): string {
+/** The configured catalog as a path on the default branch; `invalid` when it cannot name one. */
+function repositoryPath(value: string): Outcome<string, "invalid"> {
   if (
     value.trim() === "" ||
     value.startsWith("/") ||
     /^[A-Za-z]:/.test(value) ||
     value.split("/").includes("..")
   )
-    throw new CatalogPathError(
+    return failed(
+      "invalid",
       "drive.change_areas_catalog must be a repository-relative path for the catalog to be read from the default branch",
     );
-  return value.replace(/^(\.\/)+/, "");
+  return ok(value.replace(/^(\.\/)+/, ""));
 }
 
 /**
@@ -69,7 +68,7 @@ export async function observeContention(
   forge: ForgeView & { heldElsewhere?: ReadonlySet<number>; owner?: boolean },
   launches: readonly ReadRecord[],
   nowMs: number,
-  threads: (pr: number) => Promise<number>,
+  threads: (pr: number) => Promise<Outcome<number>>,
   skipped: string | null = null,
 ): Promise<Contention> {
   if (!forge.ok) return UNREAD_CONTENTION;
@@ -91,7 +90,10 @@ export async function observeContention(
         : { heldElsewhere: forge.heldElsewhere }),
     },
     {
-      catalog: async (p) => defaultBranchFile(repo, repositoryPath(p)),
+      catalog: async (p) => {
+        const relative = repositoryPath(p);
+        return relative.ok ? defaultBranchFile(repo, relative.value) : relative;
+      },
       files: (pr) => pullRequestFiles(repo.slug, pr),
       threads,
     },

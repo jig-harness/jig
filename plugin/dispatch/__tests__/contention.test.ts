@@ -4,6 +4,7 @@
  * pull requests left unplaced when a read fails.
  */
 import { describe, expect, it } from "bun:test";
+import { failed, ok } from "../../shared/outcome.ts";
 import { type ContentionReads, readContention } from "../lib/contention.ts";
 import type { DrivenPr, LedgerClass } from "../lib/types.ts";
 
@@ -33,18 +34,18 @@ function reads(
   catalog: string | null = CATALOG,
 ): ContentionReads {
   return {
-    catalog: async () => catalog,
+    catalog: async () => ok(catalog),
     files: async (pr) => {
       const f = files[pr];
       if (f === "fail" || f === undefined)
-        throw new Error(`no files for ${pr}`);
-      return f;
+        return failed("unreadable", `no files for ${pr}`);
+      return ok(f);
     },
     threads: async (pr) => {
       const t = threads[pr];
       if (t === "fail" || t === undefined)
-        throw new Error(`no threads for ${pr}`);
-      return t;
+        return failed("unreadable", `no threads for ${pr}`);
+      return ok(t);
     },
   };
 }

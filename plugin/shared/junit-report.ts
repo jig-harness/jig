@@ -25,6 +25,7 @@
  * only as the root; a case skipped holds a <skipped> child, a case failed a
  * <failure> or an <error> child.
  */
+import { JigError } from "./errors.ts";
 
 /** One test case: its name, its class name, and its result. */
 export interface JunitCase {
@@ -67,8 +68,11 @@ export interface JunitReport {
 }
 
 /** A report this reader could not read: not well-formed, or not JUnit. */
-export class JunitReportError extends Error {
+export class JunitReportError extends JigError<"unreadable-report"> {
   override name = "JunitReportError";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("unreadable-report", reason, options);
+  }
 }
 
 interface Element {

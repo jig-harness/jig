@@ -676,7 +676,12 @@ the recorded result, or the last state):
 What the tick observes rather than what ends is an event row, once per
 cause: a stalled pickup, a double claim, a stage drifting from its
 expectation, a session waiting, a stop it notified on a drive it did not
-launch, and each nudge with whether it arrived. A stop the classifier cannot
+launch, each nudge with whether it arrived, and a
+[defect](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) that
+stopped one stage of a repository's `--apply` (event `defect`, with no
+class), which stops that stage only: the repository's other stages launch
+in the same tick, the receipt lists it under the repository's
+`stageDefects`, and its stack goes to the tick's error output. A stop the classifier cannot
 place is logged as `unknown`, never dropped, so a reason that recurs among
 those rows is what a new class is made from.
 

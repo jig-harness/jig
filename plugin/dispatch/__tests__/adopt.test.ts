@@ -154,37 +154,50 @@ describe("jig dispatch adopts a repository's own recent pull requests", () => {
 });
 
 describe("dispatch.adopt", () => {
+  /** The section read from `dispatch`, which the test expects to validate. */
+  const section = (dispatch: unknown) => {
+    const read = dispatchSection({ dispatch });
+    if (!read.ok) throw new Error(read.failure.reason);
+    return read.value;
+  };
+
   it("is off when absent, and on with its defaults when enabled", () => {
-    expect(dispatchSection({}).adopt).toEqual({
+    expect(section(undefined).adopt).toEqual({
       enabled: false,
       authors: null,
       withinMs: 168 * HOUR,
     });
     expect(
-      dispatchSection({
-        dispatch: { labels: { enabled: true }, adopt: { enabled: true } },
-      }).adopt,
+      section({ labels: { enabled: true }, adopt: { enabled: true } }).adopt,
     ).toEqual({ enabled: true, authors: null, withinMs: 168 * HOUR });
   });
 
   it("refuses an unknown key, an empty author, a window that is no duration, and only_labeled beside it", () => {
-    const read = (dispatch: unknown) => () => dispatchSection({ dispatch });
-    expect(read({ adopt: { enabled: true } })).toThrow("labels.enabled");
-    expect(
-      read({ labels: { enabled: true }, adopt: { enabled: true, age: "1h" } }),
-    ).toThrow("dispatch.adopt has unknown key(s): age");
-    expect(read({ adopt: { enabled: true, authors: [""] } })).toThrow(
+    const refusal = (dispatch: unknown, reason: string) =>
+      expect(dispatchSection({ dispatch })).toEqual({
+        ok: false,
+        failure: { code: "invalid", reason: expect.stringContaining(reason) },
+      });
+    refusal({ adopt: { enabled: true } }, "labels.enabled");
+    refusal(
+      { labels: { enabled: true }, adopt: { enabled: true, age: "1h" } },
+      "dispatch.adopt has unknown key(s): age",
+    );
+    refusal(
+      { adopt: { enabled: true, authors: [""] } },
       "dispatch.adopt.authors",
     );
-    expect(read({ adopt: { enabled: true, within: "a week" } })).toThrow(
+    refusal(
+      { adopt: { enabled: true, within: "a week" } },
       "dispatch.adopt.within",
     );
-    expect(
-      read({
+    refusal(
+      {
         labels: { enabled: true, only_labeled: true },
         adopt: { enabled: true },
-      }),
-    ).toThrow("only_labeled");
+      },
+      "only_labeled",
+    );
   });
 });
 

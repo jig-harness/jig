@@ -197,9 +197,18 @@ describe("jig dispatch line --json", () => {
         .query("UPDATE tick_line SET line = ? WHERE id = 1")
         .run(JSON.stringify(bad));
       closeStateDb(root);
-      expect(() =>
-        lineMain({ root, nowMs: NOW, print: () => undefined }),
-      ).toThrow("line-unreadable");
+      const errors: string[] = [];
+      expect(
+        lineMain({
+          root,
+          nowMs: NOW,
+          print: () => undefined,
+          printError: (text) => errors.push(text),
+        }),
+      ).toBe(1);
+      expect(errors).toEqual([
+        expect.stringMatching(/^jig dispatch line: line-unreadable: /),
+      ]);
     },
   );
 
@@ -279,9 +288,18 @@ describe("jig dispatch line --json", () => {
       .query("UPDATE tick_line SET line = ? WHERE id = 1")
       .run(JSON.stringify({ ...LINE, ...change }));
     closeStateDb(root);
-    expect(() =>
-      lineMain({ root, nowMs: NOW, print: () => undefined }),
-    ).toThrow("line-unreadable");
+    const errors: string[] = [];
+    expect(
+      lineMain({
+        root,
+        nowMs: NOW,
+        print: () => undefined,
+        printError: (text) => errors.push(text),
+      }),
+    ).toBe(1);
+    expect(errors).toEqual([
+      expect.stringMatching(/^jig dispatch line: line-unreadable: /),
+    ]);
   });
 
   it.each([undefined, null, "/srv/work/pr-7"])(
@@ -293,9 +311,7 @@ describe("jig dispatch line --json", () => {
         .query("UPDATE tick_line SET line = ? WHERE id = 1")
         .run(JSON.stringify({ ...LINE, needs: [{ ...NEED, workspace }] }));
       closeStateDb(root);
-      expect(() =>
-        lineMain({ root, nowMs: NOW, print: () => undefined }),
-      ).not.toThrow();
+      expect(lineMain({ root, nowMs: NOW, print: () => undefined })).toBe(0);
     },
   );
 

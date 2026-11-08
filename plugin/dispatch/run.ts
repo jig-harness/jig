@@ -114,7 +114,7 @@ import {
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
-import { StateVersionError } from "./lib/state.ts";
+import { newerStateRefusal } from "./lib/state.ts";
 import { writeWall } from "./lib/walls.ts";
 import { failedStartup } from "./lib/session-startup.ts";
 
@@ -660,8 +660,9 @@ export async function runMain(argv: string[]): Promise<number> {
     return await wrap(argv[0] as string, argv[1] as string);
   } catch (error) {
     // A state database a newer plugin wrote: nothing is started.
-    if (!(error instanceof StateVersionError)) throw error;
-    console.error(`jig dispatch run: ${error.message}`);
+    const newer = newerStateRefusal(error);
+    if (newer === null) throw error;
+    console.error(`jig dispatch run: ${newer}`);
     return 2;
   }
 }

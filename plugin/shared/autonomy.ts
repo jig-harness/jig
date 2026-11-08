@@ -59,6 +59,7 @@ import {
   parseSchedule,
   windowAt,
 } from "./off-hours.ts";
+import { JigError } from "./errors.ts";
 
 /** The levels, least autonomous first. */
 export const AUTONOMY_LEVELS = ["attended", "unattended", "wide"] as const;
@@ -175,8 +176,11 @@ export interface Autonomy {
 }
 
 /** A configuration value that cannot be read as an autonomy setting. */
-export class AutonomyConfigError extends Error {
+export class AutonomyConfigError extends JigError<"invalid-autonomy"> {
   override name = "AutonomyConfigError";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("invalid-autonomy", reason, options);
+  }
 }
 
 function isLevel(value: unknown): value is AutonomyLevel {

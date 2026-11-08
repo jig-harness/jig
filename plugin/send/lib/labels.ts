@@ -14,7 +14,7 @@
  */
 import { existsSync } from "node:fs";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
-import { attempt, ok, type Outcome } from "../../shared/outcome.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { commandLabel, type LabelConfig } from "../../dispatch/lib/labels.ts";
 import { writeCommandLabel } from "../../dispatch/lib/requests.ts";
 import { pendingRearm } from "../../dispatch/lib/actions/rearm-request.ts";
@@ -37,10 +37,14 @@ async function labelConfig(
     return refused(
       `whether ${ctx.address.repo} has its dispatch labels on cannot be told: ${where} did not read (${text.failure.reason})`,
     );
-  const section = attempt("refused", `${where} does not read`, () =>
-    readSection(text.value, where),
-  );
-  return section.ok ? ok(section.value.section.labels) : section;
+  const section = readSection(text.value, where);
+  return section.ok
+    ? ok(section.value.section.labels)
+    : failed(
+        "refused",
+        `${where} does not read: ${section.failure.reason}`,
+        section.failure.cause,
+      );
 }
 
 /** The pull request's labels and link, checked for `verb`; or why it cannot take it. */

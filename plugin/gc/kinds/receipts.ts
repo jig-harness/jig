@@ -1,5 +1,6 @@
 import { lstatSync, rmSync } from "node:fs";
 import { exclusiveGcLock } from "../../shared/gc-lock.ts";
+import { ok, type Outcome } from "../../shared/outcome.ts";
 import { readReceipt, receiptPaths, stateRoot } from "../receipts.ts";
 import type { CollectionKind, Proof, Receipt } from "../types.ts";
 
@@ -22,10 +23,12 @@ function inventoryFailed(receipt: Receipt, key: string): boolean {
  * The newest completed report for every kind and repository the archive
  * covers. Unfinished receipts are preserved on their own and never displace it.
  */
-function latestByScope(root: string): Map<string, string> {
+function latestByScope(root: string): Outcome<Map<string, string>> {
   const latest = new Map<string, { path: string; startedAt: string }>();
   for (const path of receiptPaths(root)) {
-    const receipt = readReceipt(path);
+    const read = readReceipt(path);
+    if (!read.ok) return read;
+    const receipt = read.value;
     if (!receipt.completed) continue;
     for (const kind of receipt.kinds) {
       const key = scopeKey(kind);
@@ -40,7 +43,7 @@ function latestByScope(root: string): Map<string, string> {
         latest.set(key, { path, startedAt: receipt.startedAt });
     }
   }
-  return new Map([...latest].map(([key, { path }]) => [key, path]));
+  return ok(new Map([...latest].map(([key, { path }]) => [key, path])));
 }
 export function receiptsKind(days: number, root = stateRoot()): CollectionKind {
   // Built once per census. Receipts written later are newer, so an index
@@ -50,16 +53,22 @@ export function receiptsKind(days: number, root = stateRoot()): CollectionKind {
     name: "receipts",
     declaration: "machine gc.receipts_days",
     inventory: async () => {
-      latest = latestByScope(root);
-      return receiptPaths(root).map((id) => ({
-        id,
-        bytes: lstatSync(id).size,
-      }));
+      const index = latestByScope(root);
+      if (!index.ok) return index;
+      latest = index.value;
+      return ok(
+        receiptPaths(root).map((id) => ({
+          id,
+          bytes: lstatSync(id).size,
+        })),
+      );
     },
     prove: async (resource): Promise<Proof> => {
       if (!lstatSync(resource.id).isFile())
         return { state: "finding", reason: "receipt is not a regular file" };
-      const candidate = readReceipt(resource.id);
+      const read = readReceipt(resource.id);
+      if (!read.ok) return { state: "unverified", reason: read.failure.reason };
+      const candidate = read.value;
       if (!candidate.completed)
         return {
           state: "unverified",
@@ -70,7 +79,12 @@ export function receiptsKind(days: number, root = stateRoot()): CollectionKind {
           state: "live",
           reason: "receipt retention guard has not elapsed",
         };
-      latest ??= latestByScope(root);
+      if (latest === undefined) {
+        const index = latestByScope(root);
+        if (!index.ok)
+          return { state: "unverified", reason: index.failure.reason };
+        latest = index.value;
+      }
       for (const kind of candidate.kinds)
         if (latest.get(scopeKey(kind)) === resource.id)
           return {

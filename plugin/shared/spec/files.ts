@@ -22,6 +22,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import type { CheckedFiles } from "./adapter.ts";
 import { type CheckedPath, checkFilePath } from "./references.ts";
+import { JigError } from "../errors.ts";
 
 /** A reader that also records what its checks refused. */
 export interface ReportingFiles extends CheckedFiles {
@@ -30,8 +31,11 @@ export interface ReportingFiles extends CheckedFiles {
 }
 
 /** A read the checks refused: the reference and why. */
-class RefusedRead extends Error {
+class RefusedRead extends JigError<"refused"> {
   override name = "RefusedRead";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("refused", reason, options);
+  }
 }
 
 const reasonOf = (err: unknown) =>

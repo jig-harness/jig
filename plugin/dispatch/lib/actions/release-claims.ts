@@ -71,7 +71,9 @@ async function changed(
   if (ctx.holdReason !== undefined) {
     try {
       const hold = await ctx.holdReason(pr);
-      if (hold !== null) return hold;
+      if (!hold.ok)
+        return `its labels cannot be read again: ${hold.failure.reason}`;
+      if (hold.value !== null) return hold.value;
     } catch (error) {
       return `its labels cannot be read again: ${failureText(error)}`;
     }

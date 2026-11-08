@@ -10,6 +10,7 @@ import {
   applyDrives,
   type FreshDrive,
 } from "../lib/actions/drive.ts";
+import { ok } from "../../shared/outcome.ts";
 import type { LaunchRecord } from "../lib/launches.ts";
 import { emptyReport } from "../lib/tick-context.ts";
 import type { SessionsReport } from "../lib/runtime/port.ts";
@@ -46,7 +47,7 @@ describe("replaying a pending drive launch", () => {
     const fresh: FreshDrive = {
       read: async () => {
         read++;
-        return null;
+        return ok(null);
       },
       held: () => false,
       unplaced: new Map([[5, "another tick acted while this one read"]]),
