@@ -1,10 +1,9 @@
 name: Proposed change
 description: A practice, mapping, adapter or skill change that needs a decision before the work (CONTRIBUTING.md § Outside contributions).
 labels: [proposal]
-# The issue type, set beside the label: Jig still keeps type, priority and
-# size in labels, and .config/jig.yaml names the label store for each, so
-# the two do not conflict. An issue form cannot fill in an issue field, so
-# priority and size are set when the issue is triaged.
+# Jig keeps an issue's type in its issue type; `proposal` is a flag, not a
+# type. An issue form cannot fill in an issue field, so priority and size are
+# set when the issue is triaged.
 type: Feature
 body:
   - type: textarea

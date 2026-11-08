@@ -82,15 +82,14 @@ issue_tracker:
   labels:
     followup: pr-followup
     epic: epic
-  # Type, priority and size stay in labels until this repository's move to
-  # the organization's issue types and Priority and Effort fields
-  # (design/tracker-facets.md, "Jig's own repository"). Named, so the issue
-  # forms' issue types beside the type labels are no conflict, and no read
-  # waits on detecting the stores.
+  # Type, priority and size are kept in the organization's issue types and
+  # its Priority and Effort fields, whose options are the taxonomy's types
+  # and sizes (design/tracker-facets.md, "Jig's own repository"). Named, so
+  # no read waits on detecting the stores.
   facets:
-    type: { store: label }
-    priority: { store: label }
-    size: { store: label }
+    type: { store: native }
+    priority: { store: native }
+    size: { store: field, field: Effort }
 do_item:
   agents:
     # The tracker's `area:` labels that name one catalog area, so
