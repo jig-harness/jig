@@ -20,6 +20,7 @@
  */
 
 import type { CanonicalState, IssuePatch, Tracker } from "../port.ts";
+import { type CoreTracker, withFacets } from "../facets/tracker.ts";
 import type { IssueComment, IssueRelation, IssueSummary } from "../port.ts";
 import { TrackerRequestError } from "../port.ts";
 import {
@@ -164,6 +165,8 @@ export interface CommentNode {
 export function gitHubTracker(client: Client): Tracker {
   const { home, model, ctx } = client;
   const fields = issueFields(ctx.board);
+  /** Priority is kept in labels, as the adapter always kept it, unless a store is named. */
+  const priorityInLabels = client.facetSlots.priority.store === "label";
 
   async function comments(
     key: string,
@@ -217,7 +220,7 @@ export function gitHubTracker(client: Client): Tracker {
     const ref = client.ref(key);
     const nodes = await pageAll(
       client.transport,
-      SUB_ISSUES(`${fields} ${extra}`),
+      SUB_ISSUES(`${client.fields} ${extra}`),
       { owner: ref.owner, name: ref.name, number: ref.number },
       (d) =>
         record(record(d.repository, "repository").issue, `issue ${key}`)
@@ -429,13 +432,17 @@ export function gitHubTracker(client: Client): Tracker {
     return all.filter((_, i) => ids.indexOf(ids[i] as string) === i);
   }
 
-  /** Whether a patch names labels or a milestone, which resolve per repository. */
+  /**
+   * Whether a patch names labels, a milestone or a facet kept in GitHub's
+   * own fields, which resolve per repository.
+   */
   function touchesRepositoryNames(patch: IssuePatch): boolean {
     return (
       (patch.addLabels ?? []).length > 0 ||
       (patch.removeLabels ?? []).length > 0 ||
       patch.priority !== undefined ||
-      patch.project !== undefined
+      patch.project !== undefined ||
+      client.facets.touches(patch)
     );
   }
 
@@ -444,7 +451,8 @@ export function gitHubTracker(client: Client): Tracker {
     carried: string[],
     priority: number | undefined,
   ): { add: string[]; remove: string[] } {
-    if (priority === undefined) return { add: [], remove: [] };
+    if (priority === undefined || !priorityInLabels)
+      return { add: [], remove: [] };
     const target = model.priorityLabel(priority);
     const isTarget = (l: string) => target !== null && same(l, target);
     return {
@@ -465,6 +473,7 @@ export function gitHubTracker(client: Client): Tracker {
     if (patch.description !== undefined) input.body = patch.description;
     if (patch.project !== undefined)
       input.milestoneId = (await client.milestone(patch.project)).id;
+    Object.assign(input, await client.facets.updateInput(patch));
     return Object.keys(input).length > 1 ? input : null;
   }
 
@@ -519,7 +528,7 @@ export function gitHubTracker(client: Client): Tracker {
       });
   }
 
-  const tracker: Tracker = {
+  const tracker: CoreTracker = {
     adapter: "github",
     team: slug(home),
     stateName: (state) => model.stateName(state),
@@ -538,6 +547,7 @@ export function gitHubTracker(client: Client): Tracker {
       const kids = onePage(raw.subIssues, `issue ${key}.subIssues`).map((n) =>
         summaryOf(parseIssue(n, ctx), model),
       );
+      const labels = wholeLabels(issue);
       return {
         id: issue.id,
         identifier: issue.key,
@@ -545,8 +555,9 @@ export function gitHubTracker(client: Client): Tracker {
         description: issue.body,
         url: issue.url,
         updatedAt: issue.updatedAt,
-        state: model.issueState({ ...issue, labels: wholeLabels(issue) }),
+        state: model.issueState({ ...issue, labels }),
         labels: model.visibleLabels(issue.labels),
+        ...(await client.facets.read(issue, raw, labels)),
         nativeType: nativeTypeOf(raw.issueType, `issue ${key}`),
         parent:
           issue.parent === null
@@ -600,7 +611,9 @@ export function gitHubTracker(client: Client): Tracker {
       requireTitle(issue.title);
       checkPriority(issue.priority);
       refuseReserved(issue.labels);
-      const priority = model.priorityLabel(issue.priority ?? 0);
+      const priority = priorityInLabels
+        ? model.priorityLabel(issue.priority ?? 0)
+        : null;
       const names = [...issue.labels, ...(priority === null ? [] : [priority])];
       const ids = await client.labelIds(names, (name) =>
         name === priority
@@ -617,6 +630,7 @@ export function gitHubTracker(client: Client): Tracker {
         input.parentIssueId = (await client.mustIssue(issue.parent)).id;
       if (issue.project !== undefined)
         input.milestoneId = (await client.milestone(issue.project)).id;
+      Object.assign(input, await client.facets.createInput(issue));
       const data = await client.mutate(M.create, { input });
       const created = record(
         record(data.createIssue, "createIssue").issue,
@@ -639,7 +653,7 @@ export function gitHubTracker(client: Client): Tracker {
       const remove = patch.removeLabels ?? [];
       refuseReserved([...add, ...remove]);
       if (touchesRepositoryNames(patch))
-        refuseForeign(key, "labels, priority or project");
+        refuseForeign(key, "labels, priority, type, size or project");
       const issue = await client.mustIssue(key);
       const priority = priorityChange(wholeLabels(issue), patch.priority);
       const labels = {
@@ -740,5 +754,5 @@ export function gitHubTracker(client: Client): Tracker {
           });
     },
   };
-  return tracker;
+  return withFacets(tracker, client.facetSlots, client.facets.own);
 }

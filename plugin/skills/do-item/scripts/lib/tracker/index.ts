@@ -9,6 +9,7 @@
 
 import { consumerRoot } from "../../../../../shared/consumer.ts";
 import {
+  facetsOf,
   ownTrackerConfig,
   requireTeamKey,
   type TrackerConfig,
@@ -36,11 +37,12 @@ export { CANONICAL_STATES } from "./port.ts";
 type AdapterFactory = (config: TrackerConfig, root: string) => Tracker;
 
 const ADAPTERS: Record<string, AdapterFactory> = {
-  linear: (config) =>
+  linear: (config, root) =>
     linearTracker({
       team: requireTeamKey(config),
       states: config.states,
       transport: defaultTransport(),
+      facets: facetsOf(config, root),
     }),
   github: (config, root) =>
     gitHubTracker(
@@ -49,9 +51,10 @@ const ADAPTERS: Record<string, AdapterFactory> = {
         model: gitHubModel(config.states, config.github),
         settings: config.github,
         transport: gitHubTransport(),
+        facets: facetsOf(config, root),
       }),
     ),
-  jira: (config) => {
+  jira: (config, root) => {
     const project = requireTeamKey(config);
     const site = requireSite(config.jira);
     return jiraTracker(
@@ -61,6 +64,7 @@ const ADAPTERS: Record<string, AdapterFactory> = {
         model: jiraModel(config.states, config.jira),
         settings: config.jira,
         transport: jiraTransport(site),
+        facets: facetsOf(config, root),
       }),
     );
   },
@@ -75,10 +79,12 @@ export function knownAdapters(): string[] {
  * The tracker the consumer configured. Throws with the field to fix when the
  * overlay is missing, names an unknown adapter, or lacks a setting the
  * adapter needs (a team for Linear and Jira, and a site for Jira; for GitHub, a repository when the
- * git remote of the repository at `root` does not name one). `root`
+ * git remote of the repository at `root` does not name one), or names a
+ * facet store its label taxonomy cannot back. `root`
  * defaults to the consumer root, the repository `ownTrackerConfig()` reads
- * its configuration from, so the configuration and the repository it
- * derives always come from the same place.
+ * its configuration from, so the configuration, the repository it derives
+ * and the label taxonomy the type and size values come from always come
+ * from the same place.
  */
 export function openTracker(
   config: TrackerConfig = ownTrackerConfig(),

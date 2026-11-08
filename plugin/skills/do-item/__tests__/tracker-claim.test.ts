@@ -45,6 +45,8 @@ function memory(
       title: "t",
       url: null,
       priority: 0,
+      type: null,
+      size: null,
       createdAt: "2026-10-01T00:00:00Z",
       state: { id: held.state, name: held.state, type: "unstarted" },
       assignee: held.holders[0] ?? null,

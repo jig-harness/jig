@@ -129,7 +129,15 @@ comment, file an issue, change its fields and labels, search this team's
 issues, read and add relations between issues, list the labels an issue can
 carry, read whether an item is open (`tracker.ts issue-states`, which M4's
 scheduled [deferral check](https://github.com/jig-harness/jig/blob/main/plugin/skills/docs/scripts/deferral-references/README.md)
-uses), and the reads that delivery metrics and batch proposals need. Labels
+uses), and the reads that delivery metrics and batch proposals need. Every
+issue it reads and writes carries its
+[issue facets](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), its
+type, priority and size, as values that mean the same in every repository,
+kept wherever `issue_tracker.facets` says
+([CONFIGURATION.md](CONFIGURATION.md#issue_tracker)); a pool can be narrowed
+by facet, one read lists the open issues not yet started that lack one
+(`incompleteIssues`), and another reports where each is kept
+(`facetStores`, `tracker.ts facet-stores`). Labels
 and projects are given by name and a parent by its key; the adapter resolves
 each to exactly one tracker resource or refuses before writing. A skill's
 procedure runs the issue operations as commands of
@@ -152,7 +160,16 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     default) or the option of a Projects board's single-select field
     (`project`); `todo` is the state with no label;
   - priority is a label per level (`issue_tracker.github.priority_labels`),
-    and a project is a milestone;
+    type and size a label per value, and a project is a milestone; a
+    repository that names the store keeps type in GitHub's issue types and
+    any facet in an issue field of its organization (priority in the
+    Priority field, size in a field such as Effort), read in the same
+    request as the rest of the issue and written in the request that files
+    or changes it, every name resolved first. `facetStores` reports what
+    GitHub's default would select for a facet the repository does not name,
+    from the labels and field values its issues already carry and the
+    fields its organization offers, and chooses nothing; a read it could not
+    make is an error naming the read and the credential;
   - parent and children are sub-issues, `blocks` is GitHub's issue
     dependency, `duplicate` closes the issue as a duplicate of the other;
     GitHub has no `related` link, so each issue gets a comment naming the
@@ -168,7 +185,8 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
 - **Linear** ([`linear.ts`](skills/do-item/scripts/lib/tracker/linear.ts)),
   the adapter `issue_tracker.adapter: linear` selects. It reads `LINEAR_API_KEY` or
   `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client.
-  Keys are `<TEAM>-<n>`, with the team from `issue_tracker.team`.
+  Keys are `<TEAM>-<n>`, with the team from `issue_tracker.team`. Priority
+  is Linear's priority field; type and size are labels.
 
 - **Jira Cloud** ([`jira/`](skills/do-item/scripts/lib/tracker/jira/tracker.ts)),
   the adapter `issue_tracker.adapter: jira` selects: the issues of one
@@ -192,7 +210,7 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     take, and a resolution field on the Done transition's screen;
   - priority is a Jira priority (`issue_tracker.jira.priorities`); a Jira
     issue always has one, so moving an issue to no priority is refused, and
-    one with another priority reads as none;
+    one with another priority reads as none; type and size are labels;
   - the issue type is the tracker's own type, so an issue of type Bug or
     Task is typed without a label; a new issue gets
     `issue_tracker.jira.issue_type`, or under a standard issue the sub-task
@@ -218,7 +236,13 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     project; an app's account, Jira Automation's own included, never is.
 
 **To add one.** Implement the `Tracker` interface in a module beside
-`linear.ts`, register it in `ADAPTERS` in
+`linear.ts` (the facets an adapter keeps in the tracker's own fields are its
+own to read and write; it passes its tracker through `withFacets` in
+[`facets/tracker.ts`](skills/do-item/scripts/lib/tracker/facets/tracker.ts),
+which keeps every other facet in labels, and adds the stores it can hold to
+`ADAPTER_STORES` in
+[`facets/config.ts`](skills/do-item/scripts/lib/tracker/facets/config.ts)),
+register it in `ADAPTERS` in
 [`index.ts`](skills/do-item/scripts/lib/tracker/index.ts), give its key
 shape an entry in [`keys.ts`](skills/do-item/scripts/lib/tracker/keys.ts),
 add its name to `issue_tracker.adapter`'s values in the audit's
@@ -231,7 +255,9 @@ adapter maps its tracker onto the interface's vocabulary:
 - an issue key has the shape the adapter's `keys.ts` entry defines; every
   caller that finds a key in text, reads one from a branch name or names a
   file after one goes through that entry;
-- priority is a number from 0 (none) to 4 (low);
+- priority is a number from 0 (none) to 4 (low); a type is a type of the
+  repository's label taxonomy and a size a label of its size group, each
+  `null` for none, whatever the tracker shows;
 - relations are directed and read from each issue's side: `relate A blocks
 B` makes B wait for A, and B reads it as `blocked_by` A; `relate A
 duplicate B` records A as the duplicate of B (the tracker may close A),

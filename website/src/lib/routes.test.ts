@@ -178,6 +178,17 @@ describe("glossary", () => {
     expect(entry?.anchor).toBe("shared-code");
   });
 
+  test("reads a qualifier after the bold term as part of the term, not of the entry before", () => {
+    const [first, second] = parseGlossary(
+      "## Tracker\n\n- **Facet** — a label that refines another.\n- **Facet store** (store) — where a tracker keeps\n  one value.\n",
+    );
+    expect(first?.definition).toBe("a label that refines another.");
+    expect(second?.term).toBe("Facet store (store)");
+    expect(second?.anchor).toBe("facet-store");
+    expect(second?.definition).toBe("where a tracker keeps one value.");
+    expect(second?.names).toEqual(["facet store"]);
+  });
+
   test("finds the entry a link text names", () => {
     expect(anchorFor(entries, "SSoT")).toBe("ssot");
     expect(anchorFor(entries, "single source of truth")).toBe("ssot");

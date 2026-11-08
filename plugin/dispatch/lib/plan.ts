@@ -38,6 +38,8 @@ import type { FollowupRelease } from "./followup-releases.ts";
 import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
+import { conflictNote } from "./sources/ledgers.ts";
+import { workspaceOfTree } from "./stall-tree.ts";
 import { planFollowups } from "./plan-followups.ts";
 import { planPickups } from "./plan-pickups.ts";
 import {
@@ -46,6 +48,7 @@ import {
   foreignHold,
 } from "./shared-launches.ts";
 import { failed } from "../../shared/outcome.ts";
+import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
@@ -90,6 +93,8 @@ export interface PlanInput {
   serialized?: Pick<Contention, "held" | "unplaced">;
   /** The shared records read this tick: this host, and each drive's launch claims (`shared-launches.ts`). */
   shared?: { host: string; drives: DriveClaims; owner?: boolean };
+  /** The machine file's `unclaimed_after`: past it, a launch answered as started that no wrapper claimed is stuck. */
+  unclaimedAfterMs?: number;
   nowMs: number;
 }
 
@@ -212,7 +217,13 @@ export function planTick(input: PlanInput): Plan {
   plan.actions.push(...drift.actions);
   plan.running.push(...drift.running);
   // A pending record no tick launches again waits on a person.
-  plan.actions.push(...planStuck(input.slug, input.launches));
+  plan.actions.push(
+    ...planStuck(input.slug, input.launches, {
+      nowMs: input.nowMs,
+      unclaimedAfterMs: input.unclaimedAfterMs ?? UNCLAIMED_AFTER_MS,
+      sessions,
+    }),
+  );
   holdBack(plan, input.held ?? new Set(), input.inScope);
   if (input.serialized !== undefined) serialBack(plan, input.serialized);
   return plan;
@@ -430,15 +441,48 @@ function planForeign(
   return true;
 }
 
+/**
+ * A stall re-drive bound to the tree that holds the work it left: `null`
+ * where that tree is another host's, whose dispatcher re-drives it there; a
+ * person's where it is this host's and no open workspace holds it, since a
+ * fresh tree would not carry the work; else the drive as it reads. Unread
+ * sessions leave it as it reads, for the plan's own report of them.
+ */
+function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
+  const tree = pr.stale?.tree;
+  if (tree === undefined) return pr;
+  if (!tree.here) return null;
+  if (
+    !sessions.ok ||
+    workspaceOfTree(sessions.workspaces, tree.actor) !== undefined
+  )
+    return pr;
+  const { stale: _bound, ...rest } = pr;
+  return {
+    ...rest,
+    class: "needs-person",
+    why: `${pr.stale?.cause ?? pr.why}, leaving work in its tree (${tree.actor}), which no open workspace on this host holds: a fresh tree would not carry the work, so a person recovers it${conflictNote(pr.evidence.mergeable)} (see the drive's handoff)`,
+  };
+}
+
 /** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
 function planDrive(
   input: PlanInput,
-  pr: DrivenPr,
+  read: DrivenPr,
   plan: Plan,
   want: Want,
 ): void {
   const { slug, launches } = input;
-  const target = `PR #${pr.number}`;
+  const target = `PR #${read.number}`;
+  const pr = treeBound(read, input.sessions);
+  if (pr === null) {
+    plan.quiet.push({
+      target,
+      class: read.class,
+      why: `${read.why}; that tree is on another host, whose dispatcher re-drives it there`,
+    });
+    return;
+  }
   const hold = driveHold(pr, launches);
   if (
     !(
