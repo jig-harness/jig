@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import { queued } from "../fixture-line.ts";
 import { fixture } from "../fixtures.ts";
 import { prStanding } from "./pr-standing.ts";
 
@@ -61,4 +62,50 @@ test("a forge read of an open draft outside the line is quiet", () => {
   );
   expect(s.kind).toBe("draft");
   expect(s.tone).toBe("quiet");
+});
+
+const entry = (
+  o: Partial<Parameters<typeof queued>[0]> & { holdWaited?: number },
+) =>
+  queued({
+    source: "label drive",
+    group: "starts",
+    repo: "acme/widget",
+    pr: 7,
+    title: "Work",
+    why: "waiting for a slot",
+    ...o,
+  });
+
+function queueOnly(q: ReturnType<typeof queued>): LineSnapshot {
+  const l = line("quiet");
+  l.needs = [];
+  l.sessions = [];
+  l.queue = [q];
+  return l;
+}
+
+test("a merged PR with a follow-up queued keeps the follow-up's progress", () => {
+  const q = entry({ source: "merged" });
+  const s = prStanding(queueOnly(q), "acme/widget", 7, merged, clock);
+  expect(s.label).toBe("Merged; awaiting follow-up");
+  expect(s.facts).toContain(q.why);
+});
+
+test("queued work the dispatcher reported or refused is not called queued", () => {
+  const label = (group: "reported" | "never") =>
+    prStanding(queueOnly(entry({ group })), "acme/widget", 7, null, clock)
+      .label;
+  expect(label("never")).toBe("Refused, will not start");
+  expect(label("reported")).toBe("Reported, not started");
+});
+
+test("a held queue entry says how long it has waited", () => {
+  const q = entry({
+    source: "held",
+    group: "held",
+    hold: { leader: 1, area: "docs", waited: 2 * 3_600_000 },
+  });
+  const s = prStanding(queueOnly(q), "acme/widget", 7, null, clock);
+  expect(s.facts.some((f) => f.startsWith("Waited "))).toBe(true);
 });

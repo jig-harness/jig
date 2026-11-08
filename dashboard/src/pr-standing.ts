@@ -12,6 +12,7 @@ import type {
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import type { DashboardPr } from "../../plugin/dispatch/lib/dashboard-pr.ts";
 import { ago } from "./format.ts";
+import { queuedFollowup } from "./followup-view.ts";
 import { type Clock, sessionKind } from "./view.ts";
 
 /** The icon a standing shows; one per kind, so colour is never the only signal. */
@@ -77,18 +78,26 @@ const SESSION_LABEL: Record<ReturnType<typeof sessionKind>, string> = {
   unknown: "Launch record unreadable",
 };
 
+/** A standing as chosen from the line; `followup` marks progress a finished forge state must not hide. */
+type Found = Omit<Standing, "tone"> & { followup?: true };
+
 function sessionStanding(
   s: LineSession,
   clock: Clock,
-): Pick<Standing, "kind" | "label"> {
+): Pick<Found, "kind" | "label" | "followup"> {
   const kind = sessionKind(s, clock.nowMs);
   const label = SESSION_LABEL[kind];
+  const followup = s.stage === "followup" ? { followup: true as const } : {};
   if (kind === "stuck" || kind === "unknown")
-    return { kind: "needs-person", label };
+    return { kind: "needs-person", label, ...followup };
   if (kind === "waitWall" || kind === "waitOther" || kind === "drift")
-    return { kind: "waiting", label };
+    return { kind: "waiting", label, ...followup };
   if (s.stage === "followup")
-    return { kind: "following-up", label: "Following up after the merge" };
+    return {
+      kind: "following-up",
+      label: "Following up after the merge",
+      ...followup,
+    };
   return { kind: "driving", label };
 }
 
@@ -107,8 +116,16 @@ function sessionFacts(s: LineSession, clock: Clock): string[] {
     ...(s.heartbeat === null
       ? []
       : [`Last ledger write ${ago(Date.parse(s.heartbeat), clock.nowMs)} ago`]),
+    ...(s.stuck == null ? [] : [s.stuck]),
+    ...(s.launchReason === null ? [] : [s.launchReason]),
     ...(s.drifting === null ? [] : [s.drifting]),
     ...(s.waiting === null ? [] : [s.waiting]),
+    ...(s.agent?.since == null ||
+    (s.agent.state !== "waiting" && s.agent.state !== "blocked")
+      ? []
+      : [
+          `${s.agent.state === "blocked" ? "Blocked" : "Waiting"} ${ago(Date.parse(s.agent.since), clock.nowMs)}`,
+        ]),
   ];
 }
 
@@ -124,18 +141,37 @@ function needFacts(n: LineNeed, clock: Clock): string[] {
   ];
 }
 
-function queuedStanding(q: LineQueued): Pick<Standing, "kind" | "label"> {
-  if (q.source === "held" || q.group === "held")
-    return { kind: "held", label: "Held back" };
+const GROUP_LABEL: Record<LineQueued["group"], string> = {
+  starts: "Queued",
+  held: "Held back",
+  reported: "Reported, not started",
+  never: "Refused, will not start",
+};
+
+function queuedStanding(
+  q: LineQueued,
+  clock: Clock,
+): Pick<Found, "kind" | "label" | "facts" | "followup"> {
+  const wait =
+    q.hold === null
+      ? []
+      : [`Waited ${ago(Date.parse(q.hold.since), clock.nowMs)}`];
+  const facts = [q.why, ...wait];
   if (q.source === "merged")
-    return { kind: "merged", label: "Merged, follow-up queued" };
+    return {
+      kind: "merged",
+      label: queuedFollowup(q.group),
+      facts,
+      followup: true,
+    };
+  if (q.source === "held" || q.group === "held")
+    return { kind: "held", label: "Held back", facts };
   return {
     kind: "queued",
-    label: q.stale ? "Converged, then went stale" : "Queued",
+    label: q.stale ? "Converged, then went stale" : GROUP_LABEL[q.group],
+    facts,
   };
 }
-
-type Found = Omit<Standing, "tone">;
 
 function needStanding(n: LineNeed, clock: Clock): Found {
   return {
@@ -164,8 +200,7 @@ function lineStanding(
       facts: sessionFacts(session, clock),
     };
   if (need !== undefined) return needStanding(need, clock);
-  if (queued !== undefined)
-    return { ...queuedStanding(queued), facts: [queued.why] };
+  if (queued !== undefined) return queuedStanding(queued, clock);
   return null;
 }
 
@@ -180,12 +215,14 @@ function finishedStanding(fact: DashboardPr | null): Found | null {
 
 /** A finished PR keeps what still needs a person, such as a failed follow-up. */
 function withFinished(finished: Found, found: Found | null): Standing {
-  if (found?.kind !== "needs-person")
-    return { ...finished, tone: KIND_TONE[finished.kind] };
+  if (
+    found === null ||
+    (found.kind !== "needs-person" && found.followup !== true)
+  )
+    return withTone(finished);
   return {
-    ...found,
+    ...withTone(found),
     label: `${finished.label}; ${found.label.toLowerCase()}`,
-    tone: "needs",
   };
 }
 
@@ -224,5 +261,6 @@ export function prStanding(
 }
 
 function withTone(found: Found): Standing {
-  return { ...found, tone: KIND_TONE[found.kind] };
+  const { followup: _followup, ...standing } = found;
+  return { ...standing, tone: KIND_TONE[found.kind] };
 }

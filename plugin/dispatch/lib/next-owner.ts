@@ -9,9 +9,7 @@ import { isMapping } from "../../shared/config-layers.ts";
 import type { LaunchAction } from "./launches.ts";
 
 export type NextOwner =
-  | { address: string }
-  | { person: string; act: string }
-  | { none: string };
+  { address: string } | { person: string; act: string } | { none: string };
 
 /** Read a launch's separately owned result handoff; old records have none. */
 export function readNext(value: string | null | undefined): NextOwner | null {

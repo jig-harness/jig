@@ -292,6 +292,14 @@ describe("the dashboard's address", () => {
       "dashboard:\n  listen: 127.0.0.1:8765\n  require_token: false\n",
     );
     expect(readMachineConfig(file)?.dashboardRequireToken).toBe(false);
+    expect(readMachineConfig(file)?.dashboardAllowedHosts).toEqual([]);
+    writeFileSync(
+      file,
+      "dashboard:\n  listen: 127.0.0.1:8765\n  require_token: false\n  allowed_hosts: [Front.Example.ts.net]\n",
+    );
+    expect(readMachineConfig(file)?.dashboardAllowedHosts).toEqual([
+      "front.example.ts.net",
+    ]);
     writeFileSync(
       file,
       "dashboard:\n  listen: 100.64.0.7:8765\n  require_token: false\n",

@@ -455,6 +455,16 @@ browserIt(
       expect(await page.locator(".pop").textContent()).not.toContain(
         "Current forge state unavailable",
       );
+      // The line's own need is shown, not the not-in-line fallback.
+      expect(await page.locator(".pop").textContent()).not.toContain(
+        "not in the dispatcher's line",
+      );
+      expect(await page.locator(".pop").textContent()).toMatch(
+        /Needs a person|Parked|Stalled|Stopped|Follow-up|Nudge|Claimed|Assigned/,
+      );
+      // The popup stays reachable: the mouse crosses the gap to its link.
+      await page.locator(".pop a").first().hover();
+      await shows(page, ".pop a");
     } finally {
       await context.close();
     }

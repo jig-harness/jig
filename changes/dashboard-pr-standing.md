@@ -7,7 +7,7 @@ The dispatch dashboard says where each pull request stands, can run without a to
 ### Added
 
 - Each pull request on the dashboard is an icon in the colour of its state: driving, following up after the merge, waiting, needs a person, queued, held, merged or closed. Hovering or tapping the pull request opens its state, round, unresolved thread count, how long it has waited and the dispatcher's own reason. The state comes from the newest tick's line, so a dashboard served without a GitHub login still shows it.
-- `dashboard.require_token: false` in the machine file serves the dashboard with no token. It is accepted only with a loopback `dashboard.listen`, so the only way in from another machine is a front on the host, such as Tailscale Serve, that authenticates the person first. See [the machine's dispatch file](../plugin/CONFIGURATION.md).
+- `dashboard.require_token: false` in the machine file serves the dashboard with no token. It is accepted only with a loopback `dashboard.listen`, so the only way in from another machine is a front on the host, such as Tailscale Serve, that authenticates the person first. A tokenless dashboard answers only `localhost`, `127.0.0.0/8` and `::1` as the request's `Host`, plus the names `dashboard.allowed_hosts` lists for the front, and refuses any other with 403. See [the machine's dispatch file](../plugin/CONFIGURATION.md).
 
 ### Changed
 

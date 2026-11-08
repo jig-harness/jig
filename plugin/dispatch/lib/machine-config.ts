@@ -28,6 +28,7 @@
  * dashboard:
  *   listen: 100.64.0.7:8765
  *   require_token: true     # false only with a loopback listen: a front authenticates
+ *   allowed_hosts: []       # host names that front forwards under (tokenless only)
  * records:
  *   shared: forge
  * send: true
@@ -107,6 +108,8 @@ export interface MachineConfig {
   dashboardListen: Listen | null;
   /** Whether a request to the dashboard needs the token its command prints (`dashboard.require_token`); `true` unless the file says `false`, which only a loopback `listen` accepts. */
   dashboardRequireToken: boolean;
+  /** The host names a front forwards under (`dashboard.allowed_hosts`), lower-cased; empty unless the file lists some. */
+  dashboardAllowedHosts: string[];
   /** Where the records another host reads are shared (`records.shared`). */
   sharedRecords: SharedMedium;
   /** Whether `jig send` may write a request from this machine (`send`); `true` unless the file says `false`. */
@@ -141,7 +144,7 @@ const TOP_KEYS = [
   "send",
   "change_probe",
 ];
-const DASHBOARD_KEYS = ["listen", "require_token"];
+const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts"];
 const RECORDS_KEYS = ["shared"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
 const ACCOUNT_KEYS = [
@@ -427,6 +430,7 @@ function parseValues(values: unknown, where: string): MachineConfig {
     ),
     dashboardListen: dashboard(top.dashboard),
     dashboardRequireToken: dashboardRequireToken(top.dashboard),
+    dashboardAllowedHosts: dashboardAllowedHosts(top.dashboard),
     sharedRecords: records(top.records),
     send: flag(top.send, "send", true),
     changeProbe: flag(top.change_probe, "change_probe", true),
@@ -478,6 +482,17 @@ function dashboardRequireToken(value: unknown): boolean {
       "dashboard.require_token: false needs a loopback dashboard.listen (127.0.0.1 or ::1), since only a front on this host that authenticates the person may reach a page with no token",
     );
   return required;
+}
+
+/** The front host names a tokenless dashboard also answers to. */
+function dashboardAllowedHosts(value: unknown): string[] {
+  const listed = isMapping(value) ? value.allowed_hosts : undefined;
+  if (listed === undefined || listed === null) return [];
+  if (!Array.isArray(listed))
+    throw new MachineConfigError("dashboard.allowed_hosts must be a list");
+  return listed.map((name, i) =>
+    text(name, `dashboard.allowed_hosts[${i}]`).toLowerCase(),
+  );
 }
 
 /** The machine file, or `null` when there is none; a file that does not read throws. */

@@ -13,7 +13,14 @@ import {
   type LucideIcon,
   Pause,
 } from "lucide-react";
-import { createContext, type PointerEvent, useContext, useState } from "react";
+import {
+  createContext,
+  type PointerEvent,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { prStanding, type Standing, type StandingKind } from "./pr-standing.ts";
 import type { Clock } from "./view.ts";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
@@ -204,15 +211,30 @@ function useStanding(repo: string, pr: string, fact: DashboardPr | null) {
   return prStanding(line, repo, Number(pr), fact, clock);
 }
 
-/** Opens a hint while a mouse rests anywhere on the element it spreads onto; touch and keyboard use the hint's trigger. */
+/** How long a mouse may take to cross the gap between the identity and its popup before the hint closes. */
+const LEAVE_GRACE_MS = 300;
+
+/** Opens a hint while a mouse rests anywhere on the element it spreads onto, and keeps it open while the mouse is on its popup; touch and keyboard use the hint's trigger. */
 function useMouseHover() {
   const [open, setOpen] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancel = () => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  useEffect(() => cancel, []);
   const hover = {
     onPointerEnter: (event: PointerEvent<HTMLElement>) => {
-      if (event.pointerType === "mouse") setOpen(true);
+      if (event.pointerType !== "mouse") return;
+      cancel();
+      setOpen(true);
     },
     onPointerLeave: (event: PointerEvent<HTMLElement>) => {
-      if (event.pointerType === "mouse") setOpen(false);
+      if (event.pointerType !== "mouse") return;
+      cancel();
+      timer.current = setTimeout(() => {
+        if (document.querySelector(".popPos:hover") === null) setOpen(false);
+      }, LEAVE_GRACE_MS);
     },
   };
   return { open, setOpen, hover };

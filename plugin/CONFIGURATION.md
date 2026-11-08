@@ -1285,6 +1285,7 @@ unclaimed_after: 15m                # a started launch no wrapper claimed by the
 dashboard:
   listen: 100.64.0.7:8765           # jig dispatch dashboard; private or loopback only
   # require_token: false            # only with a loopback listen: a front authenticates
+  # allowed_hosts: [host.example.ts.net]  # names that front forwards under
 records:
   shared: forge                     # where another host reads this host's launches
 send: true                          # false refuses every jig send from this machine
@@ -1314,6 +1315,7 @@ change_probe: true                  # false turns off the minute-by-minute chang
 | `change_probe` | `true`; whether the change probe runs: every minute, `jig dispatch probe --apply` (its own timer, which `jig install dispatch` writes beside the tick's) reads the forge once for the pull requests of every repository listed here with a stage, and wakes the tick of each repository where one was updated or its checks changed since the last probe. `false` makes a probe read and wake nothing, and the next `jig install dispatch --yes` removes its timer. Read by `jig dispatch probe` and the dispatcher's install |
 | `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
 | `dashboard.require_token` | `true`; whether a request needs the token the command prints. `false` serves the page with no token and is accepted only when `dashboard.listen` is a loopback address (`127.0.0.0/8`, `::1`), so the only way in from another machine is a front on the host (Tailscale Serve, a reverse proxy) that authenticates the person first. The page is read-only either way |
+| `dashboard.allowed_hosts` | None; the host names a front forwards requests under (the `Host` header), read only with `require_token: false`. A tokenless dashboard answers `localhost`, `127.0.0.0/8` and `::1` and these names, and refuses any other `Host` with 403, so a page on another origin cannot read it through DNS rebinding |
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one

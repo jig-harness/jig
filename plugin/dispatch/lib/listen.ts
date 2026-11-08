@@ -62,7 +62,27 @@ export function isLoopback(listen: Listen): boolean {
   const kind = isIP(listen.host);
   if (kind === 4) return listen.host.startsWith("127.");
   const lower = listen.host.toLowerCase();
-  return lower === "::1" || lower === "::ffff:127.0.0.1";
+  return lower === "::1" || /^::ffff:127(\.\d+){3}$/.test(lower);
+}
+
+/** The host name of a `Host` header (`name`, `name:port`, `[v6]:port`), lower-cased; `null` when it is empty. */
+export function authorityHost(authority: string | null): string | null {
+  const raw = (authority ?? "").trim().toLowerCase();
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(raw);
+  const host = bracketed?.[1] ?? raw.replace(/:\d+$/, "");
+  return host === "" ? null : host;
+}
+
+/** Whether a `Host` header names this machine's loopback, or one of the front host names the machine file lists. */
+export function authorityAllowed(
+  authority: string | null,
+  fronts: readonly string[],
+): boolean {
+  const host = authorityHost(authority);
+  if (host === null) return false;
+  if (host === "localhost" || host === "::1") return true;
+  if (isIP(host) === 4) return host.startsWith("127.");
+  return fronts.includes(host);
 }
 
 /** `host`, `host:port` or `[v6]:port`, held to the private and loopback ranges; throws with the reason. */

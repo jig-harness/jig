@@ -233,6 +233,28 @@ describe("jig dispatch dashboard", () => {
     const base = new URL(served.url);
     expect(base.search).toBe("");
     expect((await fetch(new URL("/state", base))).status).toBe(200);
+    const rebound = await fetch(new URL("/state", base), {
+      headers: { host: "attacker.example" },
+    });
+    expect(rebound.status).toBe(403);
+    expect(await rebound.json()).toMatchObject({
+      failure: { code: "host-refused" },
+    });
+    const fronted = serveDashboard({
+      listen: { host: "127.0.0.1", port: null },
+      port: 0,
+      root,
+      token: null,
+      allowedHosts: ["Front.Example.ts.net"],
+    });
+    try {
+      const through = await fetch(new URL("/state", fronted.url), {
+        headers: { host: "front.example.ts.net" },
+      });
+      expect(through.status).toBe(200);
+    } finally {
+      fronted.stop();
+    }
     expect(() =>
       serveDashboard({
         listen: { host: "100.64.0.7", port: null },

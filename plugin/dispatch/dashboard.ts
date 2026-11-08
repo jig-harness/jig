@@ -32,7 +32,7 @@ import { prReader } from "./lib/dashboard-pr.ts";
 import { queryLog } from "./lib/dashboard-log.ts";
 import { hostTimeZone } from "./lib/host-time.ts";
 import { readLine, readLineReceipt, stateAnswer } from "./lib/line-store.ts";
-import { isLoopback, type Listen } from "./lib/listen.ts";
+import { authorityAllowed, isLoopback, type Listen } from "./lib/listen.ts";
 import { existingStateDb } from "./lib/state.ts";
 import { stateRoot } from "./receipts.ts";
 
@@ -223,6 +223,8 @@ export function serveDashboard(options: {
   root?: string;
   /** The token a request needs; `null` serves without one, which only a loopback address may. */
   token?: string | null;
+  /** Host names a front forwards under, besides the loopback names; only read when no token is asked for. */
+  allowedHosts?: readonly string[];
   /** The clock the answers read; the real one unless a check holds it still. */
   now?: () => number;
   /** A forge reader; fixtures provide their own instead of reaching a live account. */
@@ -237,6 +239,7 @@ export function serveDashboard(options: {
       2,
       `the dashboard serves without a token only on a loopback address, not ${options.listen.host}`,
     );
+  const fronts = (options.allowedHosts ?? []).map((name) => name.toLowerCase());
   const root = options.root ?? stateRoot();
   const now = options.now ?? Date.now;
   const page = readPage("index.html");
@@ -279,6 +282,20 @@ export function serveDashboard(options: {
           failed("not-allowed", "this dashboard only reads"),
           request,
           405,
+        );
+      // Without a token the request's own authority is the only check: a page
+      // an attacker's name rebinds to this address must not read it.
+      if (
+        token === null &&
+        !authorityAllowed(request.headers.get("host"), fronts)
+      )
+        return answered(
+          failed(
+            "host-refused",
+            "this dashboard answers only to its loopback names and the front hosts the machine file lists",
+          ),
+          request,
+          403,
         );
       if (token !== null && !sameToken(url.searchParams.get("token"), token))
         return url.pathname === "/"
@@ -325,6 +342,7 @@ export async function dashboardMain(
   port: number | undefined,
   machinePath: string,
   requireToken = true,
+  allowedHosts: readonly string[] = [],
 ): Promise<number> {
   if (listen === null)
     throw new ExitError(
@@ -336,7 +354,7 @@ export async function dashboardMain(
   const dashboard = serveDashboard({
     listen,
     ...(port === undefined ? {} : { port }),
-    ...(requireToken ? {} : { token: null }),
+    ...(requireToken ? {} : { token: null, allowedHosts }),
   });
   console.log(`jig dispatch dashboard: ${dashboard.url}`);
   console.log(

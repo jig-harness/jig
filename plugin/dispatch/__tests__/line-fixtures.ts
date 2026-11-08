@@ -46,6 +46,7 @@ const MACHINE: MachineConfig = {
   unclaimedAfterMs: 900_000,
   dashboardListen: null,
   dashboardRequireToken: true,
+  dashboardAllowedHosts: [],
   sharedRecords: "forge",
   changeProbe: true,
   send: true,

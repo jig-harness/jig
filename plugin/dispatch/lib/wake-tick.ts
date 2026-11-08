@@ -106,9 +106,8 @@ async function installedTimer(): Promise<{
   const { dispatchJobSpec } = await import("../install.ts");
   const { detectScheduler, snapshotScheduler, launcherDirectory } =
     await import("../../runtime/scheduler.ts");
-  const { jobPresent, readInstalledJob } = await import(
-    "../../runtime/installed-job.ts"
-  );
+  const { jobPresent, readInstalledJob } =
+    await import("../../runtime/installed-job.ts");
   const snapshot = await snapshotScheduler(
     detectScheduler(),
     dispatchJobSpec(5),
