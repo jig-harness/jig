@@ -265,7 +265,7 @@ describe("the detected settings", () => {
   });
 
   test("a promoted status with surrounding space, or a repeat after trimming, is refused", () => {
-    for (const bad of [[" active "], ["active", "active "]])
+    for (const bad of [[" active "], ["active\n"], ["active", "active "]])
       expect(() =>
         parseDocsSettings({ promoted_statuses: bad }, temporary()),
       ).toThrow("docs.promoted_statuses must be a list of distinct statuses");

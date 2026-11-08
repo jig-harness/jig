@@ -30,6 +30,7 @@ function run(args: string[], env: Record<string, string> = {}) {
     {
       env: {
         ...process.env,
+        PROMOTED_STATUSES: "",
         ALLOWLIST: "",
         JIG_OVERLAY: "",
         JIG_CONSUMER_ROOT: bare,
@@ -242,6 +243,13 @@ test("frontmatter is excluded before every check", () => {
   expect(
     scanScars('---\ndescription: "~~literal~~"\nnotes:\n  - Reviewer: x\n---\nBody.\n'),
   ).toEqual([]);
+});
+
+test("a reviewer label opens a paragraph after frontmatter or a heading", () => {
+  expect(
+    scanScars("---\nstatus: approved\n---\nReviewer: please fix this.\n"),
+  ).toHaveLength(1);
+  expect(scanScars("# Review\nReviewer: please fix this.\n")).toHaveLength(1);
 });
 
 test("a reviewer label on a soft-wrapped line is not a paragraph opening", () => {

@@ -430,7 +430,7 @@ describe("the reading skills", () => {
         (f) => f.message,
       );
     expect(problems(["approved", "active"])).toEqual([]);
-    for (const bad of [["two words"], [" active"], ["active", "active"]])
+    for (const bad of [["two words"], [" active"], ["active\n"], ["active", "active"]])
       expect(problems(bad).length).toBeGreaterThan(0);
   });
 

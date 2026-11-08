@@ -66,8 +66,14 @@ export function scanScars(text: string): string[] {
   let previousBlank = true;
   const hits: string[] = [];
   for (const [index, raw] of splitLines(text).entries()) {
+    const wasFrontmatter = frontmatter;
     frontmatter = frontmatterState(frontmatter, index, raw);
     if (frontmatter || (index === 0 && raw.trim() === "---")) continue;
+    if (wasFrontmatter) {
+      // The closing delimiter ends the block; the body starts a paragraph.
+      previousBlank = true;
+      continue;
+    }
     if (/^\s*(```|~~~)/.test(raw)) {
       fence = !fence;
       previousBlank = true;
@@ -76,7 +82,8 @@ export function scanScars(text: string): string[] {
     if (fence) continue;
     if (isScar(raw.replace(/`[^`]*`/g, CODE_MASK), previousBlank))
       hits.push(`${index + 1}: ${raw}`);
-    previousBlank = raw.trim() === "";
+    // A heading is a block of its own: the line after it opens a paragraph.
+    previousBlank = raw.trim() === "" || /^\s{0,3}#{1,6}(\s|$)/.test(raw);
   }
   return hits;
 }
