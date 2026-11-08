@@ -358,8 +358,8 @@ function warning(count: number, budget: number, unreadable?: string): string {
   const remaining = budget - count;
   const urgency =
     remaining <= 0
-      ? "The cap is reached or passed: the next round-trip may be the one that aborts the session."
-      : `About ${remaining} agentic turns remain before the runtime aborts this session mid-action.`;
+      ? "The configured budget is reached or passed: where the runtime enforces a turn cap, the next round-trip may be the one that aborts the session."
+      : `About ${remaining} agentic turns remain in the configured budget; where the runtime enforces a turn cap, it aborts the session mid-action at that point.`;
   const driveState = join(
     import.meta.dir,
     "..",
@@ -373,7 +373,7 @@ function warning(count: number, budget: number, unreadable?: string): string {
     : "A short note where the successor session reads first.";
   return [
     `TURN BUDGET: about ${count} of ${budget} agentic turns used. ${urgency}`,
-    "The abort is hard: no handoff is written, no summary is produced, and what this session holds in memory is lost.",
+    "Where a cap is enforced the abort is hard: no handoff is written, no summary is produced, and what this session holds in memory is lost. A runtime with no turn cap (Codex) never aborts on this count; the budget is then advisory, and the wrap-up below is still the safe course.",
     "Wrap up now rather than starting new work:",
     "  1. Finish only the step already in flight (a push mid-sequence, a reply already promised).",
     `  2. Write the handoff. ${handoff}`,

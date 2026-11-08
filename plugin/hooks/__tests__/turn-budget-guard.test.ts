@@ -276,7 +276,7 @@ test("an explicit interval warns every that many turns, past the cap included", 
   fires(call(s, {}, env), "95: four turns later");
   turns(s, 8);
   const late = fires(call(s, {}, env), "103: past the cap");
-  expect(late).toContain("The cap is reached or passed");
+  expect(late).toContain("The configured budget is reached or passed");
 });
 
 test("a prompt restarts the count; a compaction summary does not", () => {
