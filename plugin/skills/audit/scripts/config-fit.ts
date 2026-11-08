@@ -22,9 +22,9 @@
  *   - a slash command in `issue_tracker.file_command` that resolves nowhere,
  *     commands CI runs that the gate command does not appear to (a
  *     heuristic), and a gate program the Claude Code settings do not allow;
- *   - configured tracker labels that the repository's label taxonomy
- *     (`issue_tracker.taxonomy`, else `label-taxonomy.yaml`) does not
- *     define, and a `review.taxonomy.types` that differs from its types;
+ *   - configured tracker labels the label taxonomy (`issue_tracker.taxonomy`,
+ *     else `label-taxonomy.yaml`) does not define, a `review.taxonomy.types`
+ *     that differs from its types, and a tracker kept with no weekly sweep;
  *   - settings the repository's shape suggests but does not use;
  *   - the facts a profile suggestion rests on (`lib/profile-facts.ts`):
  *     contributors, deploy signals in CI and in tracked deploy
@@ -83,7 +83,7 @@ import { facetFindings, reachTracker } from "./lib/tracker-fit.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { ghCall } from "../../../shared/proc.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
-import { taxonomyFindings } from "./lib/taxonomy-fit.ts";
+import { trackerFileFindings } from "./lib/sweep-fit.ts";
 import {
   configuredAt,
   trackedNeeds,
@@ -2336,7 +2336,7 @@ export async function configFit(opts: {
   report.findings.push(...staleSession());
   const files = trackedFiles(opts.root);
   if (report.configured)
-    report.findings.push(...taxonomyFindings(config, opts.root, files));
+    report.findings.push(...trackerFileFindings(config, opts.root, files));
   report.findings.push(...legacyFindings(opts.root, files, report.configured));
   report.findings.push(...contextDirFindings(opts.root));
   report.findings.push(...integrationBranch(config, opts.root, report));
