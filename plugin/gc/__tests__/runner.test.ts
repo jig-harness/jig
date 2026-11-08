@@ -107,6 +107,21 @@ test("unreadable proof preserves the resource, finishes the kind and ends the ru
   expect(receipt.resources[0]?.outcome).toBe("unverified");
 });
 
+test("a final proof that throws after a dead first proof ends the run nonzero", async () => {
+  const kind = fixture([dead]);
+  let calls = 0;
+  kind.prove = async () => {
+    if (calls++ === 0) return dead;
+    throw new Error("unreadable on the locked proof");
+  };
+  const { receipt } = await runCollection([kind], {
+    collect: true,
+    receiptRoot: mkdtempSync(join(tmpdir(), "gc-receipt-")),
+  });
+  expect(receipt.exitStatus).toBe(1);
+  expect(receipt.resources[0]?.outcome).toBe("unverified");
+});
+
 test("collection intent and proof exist on disk before removal", async () => {
   const root = mkdtempSync(join(tmpdir(), "gc-intent-"));
   const kind = fixture([dead], () => {
