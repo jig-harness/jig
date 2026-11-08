@@ -574,6 +574,13 @@ const TREE: RecordKind[] = [
   ),
   plain(
     "tree",
+    "facet-move-record",
+    "skills/file-issue/scripts/lib/move-record.ts",
+    "the file `check-fields.ts move --record` names (`.context/facet-move/record.json` in file-issue's procedure)",
+    1,
+  ),
+  plain(
+    "tree",
     "driven-tree",
     "shared/driven-tree.ts",
     "<git dir>/jig-driven-pr.json",
@@ -781,6 +788,14 @@ const TRACKER: RecordKind[] = [
     owner: "skills/do-item/scripts/lib/tracker/github/tracker.ts",
     at: "a comment on a GitHub issue relating it to another",
     markers: ["jig:related"],
+    version: 0,
+  },
+  {
+    name: "issue-fields-sweep",
+    medium: "tracker",
+    owner: "skills/file-issue/scripts/lib/sweep.ts",
+    at: "a comment on an issue the weekly sweep moved back to triage, naming what it lacks",
+    markers: ["jig:issue-fields"],
     version: 0,
   },
   {

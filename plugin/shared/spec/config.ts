@@ -9,6 +9,7 @@
 import { layeredConfig, withSource } from "../consumer.ts";
 import { isRecord } from "../guards.ts";
 import { headingKey, INLINE_HEADINGS } from "./markdown.ts";
+import { JigError } from "../errors.ts";
 
 /** The fields of `specs`; any other key is refused. */
 export const SPECS_FIELDS = ["adapters", "body_section"] as const;
@@ -24,8 +25,11 @@ export interface SpecsConfig {
 }
 
 /** A `specs` value the resolver cannot use. */
-class SpecConfigError extends Error {
+class SpecConfigError extends JigError<"invalid-specs"> {
   override name = "SpecConfigError";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("invalid-specs", reason, options);
+  }
 }
 
 function adapterList(value: unknown, known: readonly string[]): string[] {

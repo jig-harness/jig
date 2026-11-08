@@ -61,9 +61,14 @@ function drivesScript(): string {
 
 /** The dispatch file, or why it does not read; `null` when there is none. */
 export function machineFile(): Outcome<MachineConfig | null, "unreadable"> {
-  return attempt("unreadable", "the dispatch file does not read", () =>
-    readMachineConfig(),
-  );
+  const machine = readMachineConfig();
+  return machine.ok
+    ? machine
+    : failed(
+        "unreadable",
+        `the dispatch file does not read: ${machine.failure.reason}`,
+        machine.failure.cause,
+      );
 }
 
 /** The forge repository a checkout's git remote names, read locally; `null` when it names none. */
@@ -159,13 +164,18 @@ export function outcomeRows(
   target: string,
 ): LogRow[] {
   const state = openState(root);
-  const read = state.ok
-    ? attempt(
-        "unreadable",
-        `the outcome log does not read${behindNote(state.value)}`,
-        () => rowsFor(repo, target, root, state.value.db),
-      )
-    : state;
+  let read: Outcome<LogRow[]> = state.ok ? ok([]) : state;
+  if (state.ok) {
+    const what = `the outcome log does not read${behindNote(state.value)}`;
+    const rows = attempt("unreadable", what, () =>
+      rowsFor(repo, target, root, state.value.db),
+    );
+    read = !rows.ok
+      ? rows
+      : rows.value.ok
+        ? rows.value
+        : failed("unreadable", `${what}: ${rows.value.failure.reason}`);
+  }
   if (state.ok) state.value.db.close();
   reading.note(
     read.ok

@@ -118,9 +118,10 @@ console.log(JSON.stringify(await requests(${JSON.stringify(f.repo)}, "origin", "
     },
   );
   expectSpawnExit(result, 0);
-  expect(JSON.parse(result.stdout.toString())).toEqual([
-    { state: "CLOSED", head: "a".repeat(40) },
-  ]);
+  expect(JSON.parse(result.stdout.toString())).toEqual({
+    ok: true,
+    value: [{ state: "CLOSED", head: "a".repeat(40) }],
+  });
 });
 
 test("submodule settings cannot hide edits or execute a monitor during a report", async () => {
@@ -150,8 +151,8 @@ writeFileSync(${JSON.stringify(marker)}, "executed"); process.stdout.write("toke
   expect(
     await worktreeProof(f.repo, { remote: "origin", base: "main" }, 7),
   ).toMatchObject({
-    state: "live",
-    reason: "uncommitted or untracked changes",
+    ok: true,
+    value: { state: "live", reason: "uncommitted or untracked changes" },
   });
   expect(existsSync(marker)).toBe(false);
 });
@@ -210,12 +211,16 @@ test("a detached worktree is proven by the pull request a drive attached it to, 
   f.git("checkout", "--quiet", "--detach");
   const pr = `{ state: "OPEN", headRefOid: "a".repeat(40) }`;
   const head = `Bun.spawnSync(["git", "-C", ${JSON.stringify(f.repo)}, "rev-parse", "HEAD"]).stdout.toString().trim()`;
-  expect(
-    String(detachedProof(f, { pr, head: null, remote: "origin" }).error),
-  ).toContain("no drive attached");
+  expect(detachedProof(f, { pr, head: null, remote: "origin" })).toMatchObject({
+    ok: false,
+    failure: {
+      code: "detached",
+      reason: "HEAD is detached and no drive attached the worktree",
+    },
+  });
   expect(detachedProof(f, { pr, head, remote: "origin" })).toMatchObject({
-    state: "live",
-    reason: "branch has an open pull request",
+    ok: true,
+    value: { state: "live", reason: "branch has an open pull request" },
   });
   expect(readFileSync(join(f.root, "gh-calls"), "utf8")).toContain(
     "pr view 7 --repo github.com/team/repo",
@@ -239,18 +244,22 @@ test("a detached worktree moved onto a stacked branch's work is not proven by th
   const head = JSON.stringify(attached);
   const pr = (state: string) => `{ state: "${state}", headRefOid: ${head} }`;
   expect(
-    String(
-      detachedProof(f, { pr: pr("MERGED"), head, remote: "upstream" }).error,
-    ),
-  ).toContain("another branch's work");
+    detachedProof(f, { pr: pr("MERGED"), head, remote: "upstream" }),
+  ).toMatchObject({
+    ok: false,
+    failure: {
+      code: "other-work",
+      reason: expect.stringContaining("another branch's work"),
+    },
+  });
   // The record's own branch holding the head makes it the drive's work again
   // (an open pull request, so the proof ends before any remote is read).
   f.git("update-ref", "refs/remotes/upstream/topic", "HEAD");
   expect(
     detachedProof(f, { pr: pr("OPEN"), head, remote: "upstream" }),
   ).toMatchObject({
-    state: "live",
-    reason: "branch has an open pull request",
+    ok: true,
+    value: { state: "live", reason: "branch has an open pull request" },
   });
 });
 
@@ -288,35 +297,51 @@ console.log(JSON.stringify(await worktreePolicy(${JSON.stringify(f.repo)})));`;
   );
   expectSpawnExit(result, 0);
   expect(JSON.parse(result.stdout.toString())).toEqual({
-    remote: "upstream",
-    base: "trunk",
+    ok: true,
+    value: { remote: "upstream", base: "trunk" },
   });
 });
 
 test("ancestry ignores a replacement ref that fabricates descent", async () => {
   const f = repository();
-  const head = (await gcGit(f.repo, ["rev-parse", "HEAD"])).trim();
+  const revision = async () => {
+    const read = await gcGit(f.repo, ["rev-parse", "HEAD"]);
+    if (!read.ok) throw new Error(read.failure.reason);
+    return read.value.trim();
+  };
+  const head = await revision();
   writeFileSync(join(f.repo, "tracked.txt"), "second\n");
   f.git("commit", "-am", "second");
-  const second = (await gcGit(f.repo, ["rev-parse", "HEAD"])).trim();
+  const second = await revision();
   f.git("checkout", "--orphan", "other");
   f.git("commit", "-m", "unrelated", "--allow-empty");
-  const other = (await gcGit(f.repo, ["rev-parse", "HEAD"])).trim();
+  const other = await revision();
   expect(await ancestry(f.repo, head, other)).toBe(false);
   // Replace the unrelated tip with a commit that descends from `head`.
   f.git("replace", other, second);
   expect(await ancestry(f.repo, head, other)).toBe(false);
 });
 
+/** The ignored-content scan's failure past its deadline. */
+const timedOut = {
+  ok: false,
+  failure: {
+    code: "timed-out",
+    reason: "Ignored-content scan exceeded its deadline",
+  },
+};
 test("the ignored-content scan fails once its deadline has passed", () => {
   const root = mkdtempSync(join(tmpdir(), "gc-ignored-deadline-"));
   mkdirSync(join(root, "website", "node_modules"), { recursive: true });
   writeFileSync(join(root, "package.json"), "{}\n");
   writeFileSync(join(root, "package-lock.json"), "{}\n");
-  expect(() => classifyIgnored(root, ["website/"], Date.now() - 1)).toThrow(
-    "deadline",
+  expect(classifyIgnored(root, ["website/"], Date.now() - 1)).toMatchObject(
+    timedOut,
   );
-  expect(classifyIgnored(root, ["website/"]).rebuildable).toEqual(["website/"]);
+  expect(classifyIgnored(root, ["website/"])).toMatchObject({
+    ok: true,
+    value: { rebuildable: ["website/"] },
+  });
 });
 
 test("the deadline also covers a direct dependency directory and an empty one", () => {
@@ -326,8 +351,8 @@ test("the deadline also covers a direct dependency directory and an empty one", 
   writeFileSync(join(root, "package.json"), "{}\n");
   writeFileSync(join(root, "package-lock.json"), "{}\n");
   for (const path of ["node_modules/", "empty/"])
-    expect(() => classifyIgnored(root, [path], Date.now() - 1)).toThrow(
-      "deadline",
+    expect(classifyIgnored(root, [path], Date.now() - 1)).toMatchObject(
+      timedOut,
     );
 });
 
@@ -352,7 +377,9 @@ test("the deadline expiring mid-traversal stops the walk of a collapsed director
       clock.mockRestore();
     }
   };
-  for (const ticks of [1, 2, 3, 4])
-    expect(() => scan(ticks)).toThrow("deadline");
-  expect(scan(5).rebuildable).toEqual(["website/"]);
+  for (const ticks of [1, 2, 3, 4]) expect(scan(ticks)).toMatchObject(timedOut);
+  expect(scan(5)).toMatchObject({
+    ok: true,
+    value: { rebuildable: ["website/"] },
+  });
 });

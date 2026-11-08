@@ -48,6 +48,7 @@ import {
   dispatched,
   type SessionsReport,
 } from "../runtime/port.ts";
+import type { Outcome } from "../../../shared/outcome.ts";
 import { failureText } from "../text.ts";
 import { RECOVERY_FACTS, sameFacts } from "../recovery-facts.ts";
 import { workspaceOfTree } from "../stall-tree.ts";
@@ -84,7 +85,8 @@ export type { ApplyState } from "./launch.ts";
 
 /** A fresh read of one pull request's drive, whether a person's `hold` label is on it, and how a launch claims it where another host reads it. */
 export interface FreshDrive {
-  read: (pr: number) => Promise<DrivenPr | null>;
+  /** The drive read again; a failure when the pull request or its ledger does not read. */
+  read: (pr: number) => Promise<Outcome<DrivenPr | null>>;
   held: (pr: DrivenPr) => boolean;
   /** Whether `dispatch.labels` allows the tick to write a label; `false` leaves every rearm acknowledgment pending. */
   labelWrites?: boolean;
@@ -177,12 +179,15 @@ async function retryBlocked(
   record: LaunchRecord,
   fresh: FreshDrive,
 ): Promise<string | null> {
-  let read: DrivenPr | null;
+  let again: Outcome<DrivenPr | null>;
   try {
-    read = await fresh.read(record.pr as number);
+    again = await fresh.read(record.pr as number);
   } catch (error) {
     return `its ledger cannot be read again: ${failureText(error)}`;
   }
+  if (!again.ok)
+    return `its ledger cannot be read again: ${again.failure.reason}`;
+  const read = again.value;
   if (read === null) return "its ledger cannot be read again";
   if (fresh.held(read)) return HELD;
   if (!sameFacts(record.facts, factsOf(read)))
@@ -513,7 +518,7 @@ export async function applyDrives(
       continue;
     }
     const pr = Number(action.target.replace(/^PR #/, ""));
-    let read: DrivenPr | null;
+    let read: Outcome<DrivenPr | null>;
     try {
       read = await fresh.read(pr);
     } catch (error) {
@@ -522,8 +527,17 @@ export async function applyDrives(
       );
       continue;
     }
+    if (!read.ok) {
+      report.launches.push(
+        waits(
+          action,
+          `its ledger cannot be read again: ${read.failure.reason}`,
+        ),
+      );
+      continue;
+    }
     report.launches.push(
-      await launchOne(state, repo, action, read, sessions, fresh),
+      await launchOne(state, repo, action, read.value, sessions, fresh),
     );
   }
 }

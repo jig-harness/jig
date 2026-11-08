@@ -1,4 +1,5 @@
 /** Current forge state, separate from the immutable outcome log and tick snapshot. */
+import { Defect } from "../../shared/outcome.ts";
 import { readLine } from "./line-store.ts";
 
 export interface DashboardPr {
@@ -80,9 +81,8 @@ async function readForgePr(
     typeof data.html_url !== "string" ||
     !/^https:\/\//.test(data.html_url)
   )
-    throw new PrResponseError(
-      `${repo} PR #${pr}: forge response has invalid PR fields`,
-    );
+    // As a response that is not JSON, it reaches the dashboard's defect boundary: the page shows the defect answer.
+    throw new Defect(`${repo} PR #${pr}: forge response has invalid PR fields`);
   return {
     state: data.merged ? "MERGED" : data.state === "open" ? "OPEN" : "CLOSED",
     title: data.title,
@@ -99,5 +99,3 @@ function trimCache(cache: Map<string, { until: number }>) {
   const oldest = cache.keys().next().value;
   if (cache.size >= 500 && oldest !== undefined) cache.delete(oldest);
 }
-
-class PrResponseError extends Error {}

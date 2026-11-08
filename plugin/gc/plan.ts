@@ -1,20 +1,17 @@
-import { GcError } from "../shared/gc-error.ts";
 import { lstatSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { GcConfigurationError } from "../shared/gc-error.ts";
+import { failureFields } from "../shared/errors.ts";
+import { log } from "../shared/log.ts";
+import { type Failure, failed, ok, type Outcome } from "../shared/outcome.ts";
 import {
+  type ConfigurationCode,
   gcConfiguration,
   boundDeclaration,
   type Declaration,
   type MachineConfig,
   type RepositoryEntry,
 } from "./config.ts";
-import {
-  canonicalPath,
-  cloneCheckouts,
-  NotACheckoutError,
-  primaryCheckout,
-} from "./checkout.ts";
+import { canonicalPath, cloneCheckouts, primaryCheckout } from "./checkout.ts";
 import { orcaCommand } from "../shared/orca.ts";
 import { baseDeclaration } from "./git.ts";
 import { receiptsKind } from "./kinds/receipts.ts";
@@ -28,16 +25,16 @@ function finding(
   reason: string,
   name: KindName,
   declaration: string,
-  failed = false,
+  unavailable = false,
 ): CollectionKind {
   return {
     name,
     repository,
     declaration,
-    inventory: async () => {
-      if (failed) throw new GcError(reason);
-      return [{ id: "registration" }];
-    },
+    inventory: async () =>
+      unavailable
+        ? failed("unavailable", reason)
+        : ok([{ id: "registration" }]),
     prove: async () => ({ state: "finding", reason }),
     collect: async () => ({ outcome: "refused", reason }),
     describe: (resource) => resource.id,
@@ -86,16 +83,25 @@ interface PlanOptions {
   repository?: string;
   kind?: KindName;
 }
+/** A refused configuration, which stops the whole run (exit 2). */
+type Refused = { ok: false; failure: Failure<"configuration"> };
+function refusedConfiguration(outcome: {
+  ok: false;
+  failure: Failure;
+}): outcome is Refused {
+  return outcome.failure.code === "configuration";
+}
 async function confirmedPlan(
   entry: RepositoryEntry,
   name: KindName,
   machine: MachineConfig,
-): Promise<CollectionKind[]> {
+): Promise<Outcome<CollectionKind[]>> {
   const kinds: CollectionKind[] = [];
 
   const current = await baseDeclaration(entry);
+  if (!current.ok) return current;
   const { declaration, widened } = boundDeclaration(
-    current.declaration,
+    current.value.declaration,
     entry.bounds,
   );
   if (widened)
@@ -104,62 +110,74 @@ async function confirmedPlan(
         entry.path,
         "base declaration exceeds installed bounds; reinstall to confirm the widened authority",
         name,
-        current.source,
+        current.value.source,
       ),
     );
   kinds.push(
-    ...repositoryKinds(entry.path, declaration, current.source, machine, {
+    ...repositoryKinds(entry.path, declaration, current.value.source, machine, {
       remote: entry.remote,
       base: entry.base_branch,
     }),
   );
-  return kinds;
+  return ok(kinds);
 }
+function checkoutPlan(
+  entry: Entry,
+  machine: MachineConfig,
+): Outcome<CollectionKind[]> {
+  const current = gcConfiguration(entry.path);
+  if (!current.ok) return current;
+  return ok(
+    repositoryKinds(
+      entry.path,
+      current.value.declaration,
+      `${entry.path}/.config/jig.yaml (checkout; report only)`,
+      machine,
+    ),
+  );
+}
+/**
+ * The kinds one entry plans. A repository whose declaration cannot be read
+ * plans one failed inventory naming why; a refused declaration fails the
+ * whole plan.
+ */
 async function entryPlan(
   entry: Entry,
   options: PlanOptions,
   machine: MachineConfig,
-): Promise<CollectionKind[]> {
-  const kinds: CollectionKind[] = [];
+): Promise<Outcome<CollectionKind[], "configuration">> {
   const name = options.kind ?? "worktrees";
-  if (options.collect && !("bounds" in entry)) {
-    kinds.push(
+  if (options.collect && !("bounds" in entry))
+    return ok([
       finding(
         entry.path,
         "repository has no confirmed machine entry; run gc install",
         name,
         "none",
       ),
-    );
-    return kinds;
-  }
+    ]);
+  let planned: Outcome<CollectionKind[]>;
   try {
-    if (options.collect && "bounds" in entry) {
-      kinds.push(...(await confirmedPlan(entry, name, machine)));
-    } else {
-      const current = gcConfiguration(entry.path);
-      kinds.push(
-        ...repositoryKinds(
-          entry.path,
-          current.declaration,
-          `${entry.path}/.config/jig.yaml (checkout; report only)`,
-          machine,
-        ),
-      );
-    }
+    planned =
+      options.collect && "bounds" in entry
+        ? await confirmedPlan(entry, name, machine)
+        : checkoutPlan(entry, machine);
   } catch (error) {
-    if (error instanceof GcConfigurationError) throw error;
-    kinds.push(
-      finding(
-        entry.path,
-        error instanceof Error ? error.message : String(error),
-        name,
-        "unavailable",
-        true,
-      ),
+    log.error(
+      "gc caught a failure planning a repository",
+      failureFields(error),
+    );
+    planned = failed(
+      "thrown",
+      error instanceof Error ? error.message : String(error),
+      error,
     );
   }
-  return kinds;
+  if (planned.ok) return planned;
+  if (refusedConfiguration(planned)) return planned;
+  return ok([
+    finding(entry.path, planned.failure.reason, name, "unavailable", true),
+  ]);
 }
 /**
  * Whether `path` is confirmed to hold no `.git`: only a lookup that reports
@@ -197,24 +215,50 @@ async function selection(
   const own = matching(selected);
   if (own.length > 0) return own;
   if (!collect) return [{ path: selected }];
+  let checkouts: Awaited<ReturnType<typeof cloneCheckouts>>;
   try {
-    const primary = matching(
-      primaryCheckout(selected, await cloneCheckouts(selected)),
-    );
-    return primary.length > 0 ? primary : [{ path: selected }];
+    checkouts = await cloneCheckouts(selected);
   } catch (error) {
-    if (error instanceof NotACheckoutError || holdsNoGit(selected))
-      return [{ path: selected }];
-    const reason = error instanceof Error ? error.message : String(error);
-    return `Cannot identify the clone at ${selected}: ${reason}`;
+    checkouts = failed(
+      "git-failed",
+      error instanceof Error ? error.message : String(error),
+      error,
+    );
   }
+  if (checkouts.ok) {
+    const primary = matching(primaryCheckout(selected, checkouts.value));
+    return primary.length > 0 ? primary : [{ path: selected }];
+  }
+  if (checkouts.failure.code === "not-a-checkout" || holdsNoGit(selected))
+    return [{ path: selected }];
+  return `Cannot identify the clone at ${selected}: ${checkouts.failure.reason}`;
 }
+/** The kinds the selected entries plan, in their order; the first refused declaration fails them all. */
+async function entriesPlan(
+  entries: Entry[],
+  options: PlanOptions,
+  machine: MachineConfig,
+): Promise<Outcome<CollectionKind[], "configuration">> {
+  const kinds: CollectionKind[] = [];
+  for (const entry of entries) {
+    const planned = await entryPlan(entry, options, machine);
+    if (!planned.ok) return planned;
+    kinds.push(...planned.value);
+  }
+  return ok(kinds);
+}
+/**
+ * The kinds a run evaluates, or why it plans none: the machine's
+ * configuration cannot be read, or a repository's declaration is refused.
+ */
 export async function collectionPlan(options: {
   collect: boolean;
   repository?: string;
   kind?: KindName;
-}): Promise<CollectionKind[]> {
-  const { machine } = gcConfiguration(process.cwd(), null);
+}): Promise<Outcome<CollectionKind[], ConfigurationCode>> {
+  const configuration = gcConfiguration(process.cwd(), null);
+  if (!configuration.ok) return configuration;
+  const { machine } = configuration.value;
   const selected = options.repository ? resolve(options.repository) : undefined;
   // Receipts are machine-local: planning them must not fetch any base.
   const chosen =
@@ -234,10 +278,14 @@ export async function collectionPlan(options: {
         true,
       ),
     );
-  else
-    for (const entry of chosen)
-      kinds.push(...(await entryPlan(entry, options, machine)));
+  else {
+    const planned = await entriesPlan(chosen, options, machine);
+    if (!planned.ok) return planned;
+    kinds.push(...planned.value);
+  }
   if (!selected && machine.receipts && !machine.disabled.includes("receipts"))
     kinds.push(receiptsKind(machine.receipts_days));
-  return kinds.filter((kind) => !options.kind || kind.name === options.kind);
+  return ok(
+    kinds.filter((kind) => !options.kind || kind.name === options.kind),
+  );
 }

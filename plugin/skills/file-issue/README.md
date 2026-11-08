@@ -1,7 +1,9 @@
 # file-issue
 
 Files tracker issues that a person or an agent can pick up weeks later, and
-brings existing issues into the same shape.
+brings existing issues into the same shape. Its sweep finds the open issues
+filed without a type, a priority or a size, and its move carries those
+facets from one place in the tracker to another.
 
 An issue filed by hand drifts in two ways. Its labels are picked from
 memory: a facet goes on without the label it refines, two size labels end
@@ -26,6 +28,8 @@ validator. The agent's procedure is [SKILL.md](SKILL.md).
 /jig:file-issue Add CSV export      # the same, with a title to start from
 /jig:file-issue plan ENG-123        # re-label, split or relate an existing issue
 /jig:file-issue plan #123           # the same, on GitHub Issues
+/jig:file-issue check               # list open issues missing a type, priority or size
+/jig:file-issue move                # move type, priority and size to another store
 ```
 
 Filing goes: read the taxonomy, read the discussion, ask only what is
@@ -66,6 +70,8 @@ the repository configured.
    other skills that file issues (`do-item`, `decide`, `reflect`, …) tell
    the agent to file through this one.
 4. Run the lint in CI on any change to the taxonomy (below).
+5. Run the [weekly sweep](#the-weekly-sweep) on a schedule, so an issue
+   filed around the tracker scripts is caught.
 
 | Field | Default | What it sets |
 |-------|---------|--------------|
@@ -159,6 +165,105 @@ there.
 Without a diff or without a catalog, the labels come from the description,
 against each flag's written conditions in the taxonomy.
 
+## The weekly sweep
+
+Every issue filed through the tracker scripts carries a type, a priority
+and a size: the tracker refuses one without them (an epic needs no size).
+An issue filed another way, from an issue form or with the forge's own
+command, can still arrive without them, and an issue with no priority is
+not low priority but unranked, so no pool can work it in order. The pools
+report such an issue the next time they read it; the sweep catches the
+ones no pool reads.
+
+```bash
+bun <plugin>/skills/file-issue/scripts/check-fields.ts check          # report only
+bun <plugin>/skills/file-issue/scripts/check-fields.ts check --yes    # and move them to triage
+```
+
+It reads every open issue outside triage through the tracker interface, so
+it works on every tracker, and lists each one that lacks a type, a
+priority or a size, or carries a label of a facet the repository now keeps
+in the tracker's own field. With `--yes` it moves each one not yet started
+back to triage, with a comment naming what it lacks; one already started
+is listed and left where it is, since moving it would take it from whoever
+is working it. The comment goes first and carries a hidden marker, so a
+run that stopped before the move finishes it next time without a second
+comment.
+
+It reads one tracker census within a minute, shared across the listing
+pages and the started-issue list. The listing holds at most 20 pages of
+100 incomplete issues; this bounds the report, not the size of that census.
+It moves at most 50 issues a run, writes paced at 30 a minute, a `Retry-After` waited out up to
+3 times; a refused write stops the run, which reports what it moved and
+what remains. When more than half of the issues that must carry a facet
+lack it, or a store fails closed, it moves nothing and reports the store
+instead: that is a store that stopped answering, not a pile of bad
+filings. It prints issue keys, never a title or a body, so a public CI log
+holds nothing the tracker does not show.
+
+Schedule it weekly with a tracker credential that may read issues,
+comment on them and move them to triage. On GitHub Issues a workflow's own
+token does, with `permissions: { contents: read, issues: write }`, when the
+configuration names every facet's store (a facet left to the default needs
+a credential that can read the organization's issue types and fields).
+GitHub's `Retry-After` reaches the sweep only over the HTTPS transport, so
+there set `JIG_GITHUB_GRAPHQL_URL=https://api.github.com/graphql` beside
+the token: through `gh`, a rate limit stops the run at once. Exit `0` means
+it ran (a report without `--yes` still names a store problem it found);
+`1` a store problem that kept it from reading anything or, with `--yes`,
+from moving anything, a failed read, or a refused write; `2` a usage error.
+
+## Moving to another store
+
+A repository keeps each facet in a store: labels, the tracker's own field
+(GitHub's issue type and Priority field), or a custom
+field such as an Effort field. The move, `check-fields.ts` in its `move`
+mode, carries facets from one store to another, labels to fields, fields
+to labels, or field to field, for every open issue. It writes nothing
+without `--yes`.
+
+1. **Preview**: `move --target target.yaml --record record.json`, with the
+   `issue_tracker.facets` section the repository will commit in
+   `target.yaml`. It lists what each open issue would get, and the issues
+   whose source gives a facet no value or two, which a person settles
+   first. The record it writes keeps the section in force now beside the
+   target.
+2. **Give the tracker the fields** the target names, where it lacks them:
+   an issue type per type, an option per size.
+3. **Copy**: `move --record record.json --copy --yes` sets each open
+   issue's new store from its old one, and keeps the old one.
+4. **Switch**: commit the target section to `.config/jig.yaml`.
+5. **Retire**: `move --record record.json --retire --yes` takes the old
+   store's labels off (or clears its field) on each issue whose new store
+   holds the value. Where someone changed the old store since the copy,
+   the new value is copied first and retired by the next run; where both
+   changed, the issue is left as it is and listed for a person.
+
+Each run writes at most one update per open issue, paced as the sweep's,
+and a run that stopped is resumed by running it again. Its cancellation and
+deadline cover prerequisite reads as well as writes; an in-flight operation
+settles before the move releases its record lock. Closed issues are
+never touched, so they keep their labels as history, and no label is ever
+deleted. `move --restore record.json --yes` puts back every value the
+record says the move changed, then revert the configuration commit. The
+exit codes: `0` done, `3` something left for a person or the next run
+(each listed by key), `1` a failed read or a refused write, `2` usage.
+
+
+Migration writes recheck the live source and destination after pacing and
+before each attempt. A changed issue is left as a conflict. The tracker
+interface has no atomic conditional update, so a person can still change
+an issue between that final read and the remote write. Run a move while
+other writers are idle. Commands using the same local record are serialized.
+Restore keeps the recorded alias labels, including their original spellings.
+
+A move refuses overlapping source and destination stores, including native
+GitHub priority and the named Priority field, and in-place value-map changes.
+An unmapped nonempty destination must be mapped before copying; it is never
+overwritten as though it were empty. Jira's required native priority cannot
+be retired, so a move from that store is refused before copying.
+
+
 ## A durable issue body
 
 The body is written for a reader who arrives after the code has moved
@@ -180,7 +285,18 @@ The body is written for a reader who arrives after the code has moved
 | `SKILL.md` | The agent's procedure |
 | `scripts/check-label-taxonomy.ts` | The taxonomy lint |
 | `scripts/validate-labels.ts` | The label validator |
+| `scripts/check-fields.ts` | The weekly sweep and the move between stores |
+| `scripts/lib/sweep.ts` | The sweep's reads, moves and bounds |
+| `scripts/lib/move.ts`, `scripts/lib/move-record.ts` | The move's phases and its record |
+| `scripts/lib/pace.ts` | How the sweep and the move pace their writes and report a failure |
+| `scripts/lib/sections.ts` | The `issue_tracker.facets` sections a move goes between |
 | `scripts/lib/taxonomy.ts` | The schema and the lint's rules |
 | `scripts/lib/validate.ts` | The validator's rules |
 | `templates/issue-body.md` | The issue body skeleton |
 | `__tests__/` | The self-tests, with good and bad taxonomy fixtures |
+
+For a move from custom facet labels, keep the former full facets section in a
+YAML file and pass `check --yes --retired-from former-facets.yaml` to the weekly
+sweep after switching. This preserves the old prefixes and label mappings in
+its retired-label search. Without this option the sweep searches the default
+label representation. Keep the file while clients may still use that store.

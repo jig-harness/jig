@@ -63,7 +63,7 @@ review:
       [correctness, data-integrity, security, compliance, ux, performance, tests, docs, drift, style]
 issue_tracker:
   # Jig's work is the repository's own GitHub Issues: keys are `#<n>`, an
-  # open state is a `state:` label and a priority a `priority:` label.
+  # open state is a `state:` label; facets use GitHub's own fields below.
   adapter: github
   states:
     triage: "state:triage"
@@ -72,8 +72,8 @@ issue_tracker:
     in_review: "state:in-review"
     ops_pending: "state:ops-pending"
   file_command: /jig:file-issue
-  # The work types do-item derives from an issue's type label: the taxonomy's
-  # type labels, the docs, chore and infra ones all being Task work.
+  # The work types do-item derives from an issue's native type: the taxonomy's
+  # types, the docs, chore and infra ones all being Task work.
   types:
     bug: [bug]
     feature: [feature]
@@ -82,15 +82,31 @@ issue_tracker:
   labels:
     followup: pr-followup
     epic: epic
-  # Type, priority and size stay in labels until this repository's move to
-  # the organization's issue types and Priority and Effort fields
-  # (design/tracker-facets.md, "Jig's own repository"). Named, so the issue
-  # forms' issue types beside the type labels are no conflict, and no read
-  # waits on detecting the stores.
+  # Type, priority and size are kept in the organization's issue types and
+  # its Priority and Effort fields, whose options are the taxonomy's types
+  # and sizes (design/tracker-facets.md, "Jig's own repository"). Named, so
+  # no read waits on detecting the stores.
   facets:
-    type: { store: label }
-    priority: { store: label }
-    size: { store: label }
+    type: { store: native }
+    priority: { store: native }
+    size: { store: field, field: Effort }
+do_item:
+  agents:
+    # The tracker's `area:` labels that name one catalog area, so
+    # `/jig:work-batch` can draw a batch from an area. A label whose subject
+    # has no area of its own in the catalog (the other skills, `area:tracker`,
+    # `area:dispatch`, `area:modules`, which spans the reference, templates and
+    # module pages) is left out: mapping it to one broader or narrower
+    # area would pool unrelated issues or miss related ones.
+    codearea_areas:
+      "area:drive-pr": drive-pr
+      "area:do-item": do-item
+      "area:resolve-review-comments": resolve-review-comments
+      "area:plugin": plugin
+      "area:shared": plugin-shared
+      "area:gates": gates
+      "area:tools": tools
+      "area:website": website
 pull_requests:
   # One pull request per change against main; a person merges.
   stacking: none

@@ -286,7 +286,7 @@ groups:
     expect(readTaxonomyValues(repo(null), "label-taxonomy.yaml")).toBeNull();
   });
 
-  it("leaves type and size unreadable when it fails its lint, and refuses a store named for them", () => {
+  it("leaves type and size unreadable when it fails its lint, including explicit stores", () => {
     const broken = repo("version: 1\ntypes: oops\n");
     const config = parseTrackerConfig({});
     const f = facetsOf(config, broken);
@@ -295,14 +295,19 @@ groups:
       problem: expect.stringContaining("fails its lint"),
     });
     expect(f.priority.store).toBe("label");
-    expect(() =>
+    expect(
       facetsOf(
         parseTrackerConfig({
-          issue_tracker: { facets: { type: { store: "label" } } },
+          issue_tracker: {
+            facets: { type: { store: "label" }, size: { store: "label" } },
+          },
         }),
         broken,
-      ),
-    ).toThrow("fails its lint");
+      ).type,
+    ).toMatchObject({
+      store: null,
+      problem: expect.stringContaining("fails its lint"),
+    });
   });
 });
 

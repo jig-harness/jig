@@ -13,10 +13,14 @@
 import { join } from "node:path";
 import { jigHome } from "../config-layers.ts";
 import { spawnSync, withoutLeakyGitEnv } from "../guarded-git-spawn.ts";
+import { Defect, JigError } from "../errors.ts";
 
 /** A workspace step that cannot go on; the message says why and what to do. */
-export class HerdrError extends Error {
+export class HerdrError extends JigError<"workspace-step-failed"> {
   override name = "HerdrError";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("workspace-step-failed", reason, options);
+  }
 }
 
 export interface RunResult {
@@ -55,7 +59,7 @@ export const stderrLog: Log = (line) => console.error(line);
  */
 export const localRunner: Runner = (argv, options) => {
   const [command, ...args] = argv;
-  if (command === undefined) throw new HerdrError("empty command");
+  if (command === undefined) throw new Defect("empty command");
   const result = spawnSync(command, args, {
     env: { ...withoutLeakyGitEnv(), LC_ALL: "C", LANGUAGE: "" },
     timeout: options?.timeoutMs ?? COMMAND_TIMEOUT_MS,

@@ -485,6 +485,19 @@ export type RepoPhase =
   | "shared";
 
 /**
+ * The stages of a repository's `--apply`, each its own defect boundary:
+ * its launch stages, its nudges, its notifications, and the close that
+ * projects its labels and reports its shared records.
+ */
+export type ApplyStage =
+  | "rearm"
+  | "pickup"
+  | "followup"
+  | "steer"
+  | "notify"
+  | "close";
+
+/**
  * A defect: something no code expected threw (a bug, or a write the platform
  * refused where nothing turns the refusal into a value), caught once at the
  * boundary around the work it stopped
@@ -495,6 +508,8 @@ export interface Defect {
   code: "defect";
   /** The phase it was thrown in. */
   phase: string;
+  /** The stage of a repository's `--apply` it was thrown in, for a defect that stage's boundary caught. */
+  stage?: ApplyStage;
   /** For a person: what was thrown, in which phase, and the error's first line. Its stack goes to the tick's error output, never here. */
   reason: string;
 }
@@ -506,6 +521,8 @@ export interface RepoReport {
   refused: string | null;
   /** The defect that stopped the repository's turn; what its earlier phases did stays on the report. */
   defect?: Defect;
+  /** The defects a stage of `--apply` caught, each of which stopped its own stage only; absent when there were none. */
+  stageDefects?: Defect[];
   /** Milliseconds each phase of the repository's turn took; absent from a receipt written before phases were timed. */
   phasesMs?: Partial<Record<RepoPhase, number>>;
   section: DispatchSection | null;

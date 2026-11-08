@@ -431,16 +431,21 @@ function programsCheck(name: string, job: InstalledJob): DoctorCheck {
 async function installedJob(
   component: Component,
 ): Promise<{ job: InstalledJob | null; present: boolean }> {
-  try {
-    const snapshot = await snapshotScheduler(
-      detectScheduler(),
-      component.job(),
+  const scheduler = detectScheduler();
+  const snapshot = scheduler.ok
+    ? await snapshotScheduler(scheduler.value, component.job())
+    : scheduler;
+  if (!snapshot.ok) {
+    swallow(
+      snapshot.failure.cause ?? snapshot.failure.reason,
+      "the status check reports a scheduler that cannot be read",
     );
-    return { job: readInstalledJob(snapshot), present: jobPresent(snapshot) };
-  } catch (error) {
-    swallow(error, "the status check reports a scheduler that cannot be read");
     return { job: null, present: false };
   }
+  return {
+    job: readInstalledJob(snapshot.value),
+    present: jobPresent(snapshot.value),
+  };
 }
 
 /** A component's own checks (`Component.doctor`); one that throws is a failure. */
@@ -606,26 +611,28 @@ async function configFitCheck(pluginRoot: string): Promise<DoctorCheck> {
     ],
     { cwd: root, timeoutSec: 120 },
   );
+  const unread = (why: string) =>
+    fail(
+      id,
+      `the configuration-fit check ${result.timedOut ? "did not finish within 120s" : `exited ${result.code}`}: ${(result.stderr || result.stdout).trim().slice(-500) || why}`,
+      report,
+    );
+  // The check exits 1 when its report holds configuration errors; the report is then the answer.
+  if (
+    result.timedOut ||
+    result.spawnFailed ||
+    (result.code !== 0 && result.code !== 1)
+  )
+    return unread("the check did not complete");
   let fit: FitReport;
   try {
-    // The check exits 1 when its report holds configuration errors; the report is then the answer.
-    if (
-      result.timedOut ||
-      result.spawnFailed ||
-      (result.code !== 0 && result.code !== 1)
-    )
-      throw new Error("the check did not complete");
     fit = decodeJson(
       result.stdout,
       isFitReport,
       "the configuration-fit report",
     );
   } catch (error) {
-    return fail(
-      id,
-      `the configuration-fit check ${result.timedOut ? "did not finish within 120s" : `exited ${result.code}`}: ${(result.stderr || result.stdout).trim().slice(-500) || (error as Error).message}`,
-      report,
-    );
+    return unread((error as Error).message);
   }
   const count = (severity: string) =>
     fit.findings.filter((finding) => finding.severity === severity);

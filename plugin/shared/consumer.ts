@@ -17,6 +17,7 @@ import {
   repositoryConfigPath,
   sourceOf,
 } from "./config-layers.ts";
+import { JigError } from "./errors.ts";
 
 export { OVERLAY_RELPATH };
 
@@ -307,8 +308,11 @@ export function remoteName(
 }
 
 /** A `repository` section or `repository.remote` the skills cannot use. */
-class RemoteSettingError extends Error {
+class RemoteSettingError extends JigError<"invalid-remote"> {
   override readonly name = "RemoteSettingError";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("invalid-remote", reason, options);
+  }
 }
 
 /**

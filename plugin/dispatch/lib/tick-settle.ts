@@ -14,6 +14,7 @@
  * machine file counts: a person's report changes nothing there.
  */
 import { resolve } from "node:path";
+import { swallow } from "../../shared/errors.ts";
 import {
   clearFailure,
   entryOf,
@@ -51,7 +52,18 @@ export async function logRepo(
     {
       all,
       drives,
-      merged: (pr) => mergedNotClosed(slug, pr).catch(() => null),
+      merged: (pr) =>
+        // An unread merge state is null, which leaves the record's ending unclassified.
+        mergedNotClosed(slug, pr).then(
+          (read) => (read.ok ? read.value : null),
+          (error: unknown) => {
+            swallow(
+              error,
+              "an unread merge state leaves the ending unclassified",
+            );
+            return null;
+          },
+        ),
       nowIso: new Date(context.nowMs).toISOString(),
     },
   );
@@ -160,6 +172,7 @@ export async function settleOutcomes(
     receipt.repos.some(
       (r) =>
         r.refused !== null ||
+        (r.stageDefects?.length ?? 0) > 0 ||
         r.records.some((x) => !x.ok) ||
         // An individual claim, ledger or marker that did not read fails the turn as repoFailure says.
         r.unplaced.some(

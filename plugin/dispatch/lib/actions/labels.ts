@@ -229,19 +229,25 @@ export async function writeLabels(
       continue;
     }
     const of = { key, kind: "label" as const, target: base.target };
-    try {
-      await edit(slug, change.pr, change.add, change.remove);
-      out.push({ ...base, outcome: "written", detail: describe(change) });
-      mode.book?.ran(of, null);
-    } catch (error) {
-      const why = failureText(error);
+    const refused = (why: string) => {
       out.push({
         ...base,
         outcome: "failed",
         detail: `${describe(change)} was refused, and a later tick tries again: ${why}`,
       });
       mode.book?.ran(of, `${describe(change)} was refused: ${why}`);
+    };
+    let edited: Awaited<ReturnType<typeof edit>>;
+    try {
+      edited = await edit(slug, change.pr, change.add, change.remove);
+    } catch (error) {
+      refused(failureText(error));
+      continue;
     }
+    if (edited.ok) {
+      out.push({ ...base, outcome: "written", detail: describe(change) });
+      mode.book?.ran(of, null);
+    } else refused(edited.failure.reason);
   }
   return out;
 }

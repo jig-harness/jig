@@ -782,7 +782,8 @@ function baseHeads(slug: string, admit: Admit): Reading["baseHead"] {
     const known = read.get(branch);
     if (known !== undefined) return known;
     const head = admit(() => branchHead(slug, branch)).then(
-      (oid): BaseHead => ({ oid }),
+      (oid): BaseHead =>
+        oid.ok ? { oid: oid.value } : { unreadable: oid.failure.reason },
       (error: unknown): BaseHead => ({ unreadable: failureText(error) }),
     );
     read.set(branch, head);

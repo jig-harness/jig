@@ -76,6 +76,7 @@ import { type ForgeRead, readForge } from "./tick-forge.ts";
 import { lowBudget, type TickReads } from "./tick-reads.ts";
 import { openShared, readDriveClaims, type TickShared } from "./tick-shared.ts";
 import { failureText } from "./text.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type {
   ClaimedItem,
   DispatchSection,
@@ -154,35 +155,41 @@ export async function openRepo(
   const entry = machineRepository(options.machine ?? null, path);
   // The tick's query of the repository, else its view and its file read one by one.
   const queried = await context.reads.repository(path);
-  let repo: RepoTarget;
+  let target: Awaited<ReturnType<typeof repoTarget>>;
   try {
-    repo = queried.ok
-      ? queried.value.target
+    target = queried.ok
+      ? ok(queried.value.target)
       : await pool.run(() => repoTarget(path));
   } catch (error) {
+    target = failed("unreadable", failureText(error), error);
+  }
+  if (!target.ok)
     return emptyReport(
       path,
-      `the forge cannot say which repository this is: ${failureText(error)}`,
+      `the forge cannot say which repository this is: ${target.failure.reason}`,
     );
-  }
-  let read: ReturnType<typeof readSection>;
-  let file: string | null;
+  const repo: RepoTarget = target.value;
+  let config: Awaited<ReturnType<typeof defaultBranchConfig>>;
   const where = `${repo.slug}@${repo.defaultBranch}:.config/jig.yaml`;
+  const unread = (why: string): RepoReport => ({
+    ...emptyReport(
+      path,
+      `the dispatch section on the default branch cannot be read, so nothing is planned: ${why}`,
+    ),
+    slug: repo.slug,
+  });
   try {
-    file = queried.ok
-      ? queried.value.config
+    config = queried.ok
+      ? ok(queried.value.config)
       : await pool.run(() => defaultBranchConfig(repo));
-    read = readSection(file, where);
   } catch (error) {
-    return {
-      ...emptyReport(
-        path,
-        `the dispatch section on the default branch cannot be read, so nothing is planned: ${failureText(error)}`,
-      ),
-      slug: repo.slug,
-    };
+    return unread(failureText(error));
   }
-  const { values, section } = read;
+  if (!config.ok) return unread(config.failure.reason);
+  const file = config.value;
+  const read = readSection(file, where);
+  if (!read.ok) return unread(failureText(read.failure.reason));
+  const { values, section } = read.value;
   const report: RepoReport = {
     ...emptyReport(path, ""),
     refused: null,
@@ -432,7 +439,7 @@ async function observeRunning(
   drives: Awaited<ReturnType<typeof readDrives>>,
   sessions: SessionsReport,
   created: ReadonlyMap<number, string>,
-  threads: (pr: number) => Promise<number>,
+  threads: (pr: number) => Promise<Outcome<number>>,
 ): Promise<void> {
   const { records } = launches;
   if (launches.sample) await sampleThreads(records, repo.slug, drives, threads);
