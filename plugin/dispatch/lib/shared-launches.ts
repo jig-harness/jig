@@ -631,11 +631,15 @@ export async function settleOwnClaims(
       o.stage === "drive" ? ("claim-end" as const) : ("marker-answer" as const),
     target: `PR #${o.pr}`,
   });
-  // A pull request whose claims or markers did not read owes what it owed: its rows stay.
+  // A pull request whose claims, or any trusted marker, did not read owes what it owed: its rows stay.
   const unread = new Set<string>([
     ...[...claims].filter(([, read]) => !read.ok).map(([pr]) => `PR #${pr}`),
     ...merged
-      .filter((pr) => "unreadable" in pr.markers)
+      .filter(
+        (pr) =>
+          "unreadable" in pr.markers ||
+          pr.markers.some((m) => m.trusted && m.run.kind === "unreadable"),
+      )
       .map((pr) => `PR #${pr.number}`),
   ]);
   const unobserved = (target: string) => unread.has(target);
