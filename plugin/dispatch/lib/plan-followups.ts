@@ -19,7 +19,8 @@
  * | the same, stale, a claim on it released before | notified to a person, never released twice |
  * | this host's, its outcome done | quiet: done |
  * | this host's, its launch record still holding | running |
- * | this host's, its outcome failed, its record died, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one, never started again |
+ * | this host's, its pass died with no result and no question, not itself a run again | running: the tick releases the marker, and a later tick runs the follow-up again once, within the pull request's recovery budget |
+ * | this host's, its outcome failed, its run again died, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one, never started again |
  * | this host's, naming a record for anything else | reports it, starts nothing |
  *
  * A tick's marker names the host that posted it; one that names none was
@@ -52,7 +53,14 @@ import { holding } from "./holding.ts";
 import { holds, type ReadRecord, targetOf } from "./launches.ts";
 import { followupFailedNotice, staleClaimNotice } from "./notices.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
-import { retryableStartup } from "./session-startup.ts";
+import { localRecoverySpent } from "./no-cause-stops.ts";
+import { RECOVERY_FACTS } from "./recovery-facts.ts";
+import {
+  diedWithoutResult,
+  isRerun,
+  retriedDeath,
+  retryableStartup,
+} from "./session-startup.ts";
 import { questionOf } from "./session.ts";
 import type { Action, FollowupMarker, MarkedPr, RepoReport } from "./types.ts";
 
@@ -72,6 +80,8 @@ export interface FollowupInput {
   releases: ReadonlyMap<number, FollowupRelease>;
   /** Whether this host owns the repository: only the owner releases a claim. */
   owner: boolean;
+  /** The launch records whose marker a tick released as a retry, and whose claims owe nothing more (`settledEnds`). */
+  retried: ReadonlySet<string>;
   nowMs: number;
 }
 
@@ -290,6 +300,15 @@ function planTickMarker(
     });
     return;
   }
+  if (found !== undefined && retriedDeath(found, input.nowMs)) {
+    plan.running.push({
+      target,
+      stage: "followup",
+      reason: `launch record ${id}'s pass died with no result and no question: the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`,
+      evidence: { record: id, marker: marker.id },
+    });
+    return;
+  }
   if (
     found !== undefined &&
     (holds(found.state) || retryableStartup(found)) &&
@@ -318,8 +337,12 @@ function failedTick(
   const question = ended ? questionOf(found?.state) : null;
   const asked =
     question === null ? "" : `, on a question for a person: ${question}`;
+  const again =
+    found !== undefined && diedWithoutResult(found) && isRerun(found.record)
+      ? ", dying again after the tick ran it again once"
+      : "";
   const why = ended
-    ? `its pass under launch record ${id} ended without recording done${asked}`
+    ? `its pass under launch record ${id} ended without recording done${asked}${again}`
     : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`;
   const action = failed(input, pr, marker, why, ended, question);
   action.evidence.record = id;
@@ -371,19 +394,61 @@ function planTick(
     );
 }
 
-/** A merged pull request with no trusted follow-up marker: the tick wants one. */
+/**
+ * The follow-up of a pull request that a follow-up launched now runs again:
+ * this host's latest follow-up of it that started, when that one died for
+ * the first time and a tick released its marker as a retry (`retried`);
+ * `undefined` otherwise. A launch that never started is skipped, so the
+ * startup retry of a run again is one too. A follow-up a person asked for
+ * again by deleting a failed marker is a new one, not a run again.
+ */
+function deathOf(input: FollowupInput, pr: number): ReadRecord | undefined {
+  const latest = input.launches
+    .filter(
+      (r) =>
+        r.record.repo === input.slug &&
+        r.record.pr === pr &&
+        r.record.action === "followup" &&
+        !retryableStartup(r),
+    )
+    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
+    .at(-1);
+  return latest !== undefined &&
+    diedWithoutResult(latest) &&
+    !isRerun(latest.record) &&
+    input.retried.has(latest.record.id)
+    ? latest
+    : undefined;
+}
+
+/** A merged pull request with no trusted follow-up marker: the tick wants one, run again after a death within the recovery budget. */
 function wantFollowup(
   input: FollowupInput,
   pr: MarkedPr,
   ignored: readonly { id: number; login: string }[],
   want: Want,
 ): void {
+  const died = deathOf(input, pr.number);
+  const spent =
+    died === undefined
+      ? null
+      : localRecoverySpent(input.slug, pr.number, input.launches, input.nowMs);
+  if (died !== undefined && spent !== null) {
+    want(failedRerun(input, pr, died, spent), (w) => w.prs.includes(pr.number));
+    return;
+  }
   want(
     {
       stage: "followup",
       target: `PR #${pr.number}`,
       record: "forge",
-      reason: `merged ${pr.mergedAt} with no follow-up marker; run ${input.command} ${pr.number}`,
+      reason:
+        died === undefined
+          ? `merged ${pr.mergedAt} with no follow-up marker; run ${input.command} ${pr.number}`
+          : `merged ${pr.mergedAt}, and launch record ${died.record.id}'s follow-up died with no result: run ${input.command} ${pr.number} again, once`,
+      ...(died === undefined
+        ? {}
+        : { facts: `${RECOVERY_FACTS}merged ${pr.mergedAt}` }),
       evidence: {
         url: pr.url,
         head: pr.head,
@@ -470,6 +535,26 @@ function planMerged(
     marker as FollowupMarker & { run: { kind: "tick" } },
     plan,
   );
+}
+
+/** A follow-up that died, whose run again the pull request's spent recovery budget withholds: a person's. */
+function failedRerun(
+  input: FollowupInput,
+  pr: MarkedPr,
+  died: ReadRecord,
+  spent: string,
+): Action {
+  const why = `its pass under launch record ${died.record.id} died with no result, and ${spent}`;
+  return {
+    stage: "notify",
+    target: `PR #${pr.number}`,
+    record: "forge",
+    reason: `failed follow-up: ${why}`,
+    evidence: { url: pr.url, record: died.record.id },
+    cause: "followup-failed",
+    notice: followupFailedNotice(input.slug, pr, died.record.marker ?? 0, why),
+    launched: true,
+  };
 }
 
 export function planFollowups(

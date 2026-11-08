@@ -45,7 +45,7 @@ interface DriverRoundOptions {
   deadlineRetryBudget: number;
   /** What the first pass is told: a takeover, the answers a re-arm read, the stop it was armed after. */
   firstPassNotice: string;
-  /** The tree's edits at arm are a stalled drive's, which this drive finishes (`stop-pickup.ts`). */
+  /** The tree's edits at arm are a stalled or deadline-stopped drive's, which this drive finishes (`stop-pickup.ts`). */
   inheritsEdits?: boolean;
 }
 
