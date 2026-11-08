@@ -7,7 +7,6 @@
  * an unguarded collection runs as it would without the plugin.
  */
 import { isMapping } from "../../shared/config-layers.ts";
-import { GcError } from "../../shared/gc-error.ts";
 import {
   admit,
   guardRoot,
@@ -19,10 +18,11 @@ import type { CollectionKind, Resource } from "../types.ts";
 
 export type Collected = Awaited<ReturnType<CollectionKind["collect"]>>;
 
-/** A launch marker kept the worktree: a refusal, not a failure. */
-export class GuardKeep extends GcError {
-  override name = "GuardKeep";
-}
+/**
+ * The code of a removal step's failure when a launch marker kept the
+ * worktree: a refusal, not a failure.
+ */
+export const LAUNCH_VETO = "launch-veto";
 
 /** `"guarded"` or `"unguarded"`, as a receipt line's `details.guard` says it. */
 export function guardLabel(root = guardRoot()): {

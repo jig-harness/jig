@@ -1,4 +1,3 @@
-import { GcError } from "../shared/gc-error.ts";
 import {
   mkdirSync,
   readFileSync,
@@ -8,8 +7,13 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { canonicalPath, cloneCheckouts, primaryCheckout } from "./checkout.ts";
-import { gcConfiguration, type MachineConfig } from "./config.ts";
+import {
+  gcConfiguration,
+  type MachineConfig,
+  type RepositoryEntry,
+} from "./config.ts";
 import { baseDeclaration, gcGit as git } from "./git.ts";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { dump, load } from "../shared/yaml.ts";
 import { isMapping } from "../shared/config-layers.ts";
 import { remoteHeadBranch, worktreeRemote } from "./kinds/worktree-proof.ts";
@@ -25,7 +29,13 @@ import {
   updateJob,
 } from "../runtime/scheduler.ts";
 import { gcJobSpec } from "./job-spec.ts";
+import { stopped } from "./runner.ts";
 
+/**
+ * `jig gc install`: preview the machine entry and the job, and with
+ * `confirm` write them. A refused configuration exits 2 and any other
+ * refusal 1, each with its reason on standard error (`stopped`).
+ */
 export async function install(options: {
   repository: string;
   script: string;
@@ -36,27 +46,28 @@ export async function install(options: {
   const supplied = resolve(options.repository);
   // Removal needs only machine policy: a broken checkout cannot obstruct it.
   const repositoryText = options.uninstall ? null : undefined;
+  let registered: Outcome<{ root: string; clone: Set<string> }>;
   // Machine-wide removal names no clone, so it never identifies one.
-  const { root, clone } = options.machine
-    ? { root: supplied, clone: new Set<string>() }
-    : await registration(
-        supplied,
-        options.uninstall
-          ? gcConfiguration(supplied, repositoryText).machine
-          : undefined,
-      );
-  const { machine, machinePath, repositoryValues } = gcConfiguration(
-    root,
-    repositoryText,
-  );
-  const repositories = options.machine
-    ? []
-    : options.uninstall
-      ? otherClones(machine, root, clone)
-      : [
-          ...otherClones(machine, root, clone),
-          await proposedEntry(root, repositoryValues.repository),
-        ];
+  if (options.machine)
+    registered = ok({ root: supplied, clone: new Set<string>() });
+  else if (options.uninstall) {
+    const own = gcConfiguration(supplied, repositoryText);
+    registered = own.ok ? await registration(supplied, own.value.machine) : own;
+  } else registered = await registration(supplied, undefined);
+  if (!registered.ok) return stopped(registered.failure);
+  const { root, clone } = registered.value;
+  const configuration = gcConfiguration(root, repositoryText);
+  if (!configuration.ok) return stopped(configuration.failure);
+  const { machine, machinePath, repositoryValues } = configuration.value;
+  let repositories: MachineConfig["repositories"];
+  if (options.machine) repositories = [];
+  else if (options.uninstall) repositories = otherClones(machine, root, clone);
+  else {
+    const others = otherClones(machine, root, clone);
+    const proposed = await proposedEntry(root, repositoryValues.repository);
+    if (!proposed.ok) return stopped(proposed.failure);
+    repositories = [...others, proposed.value];
+  }
   const next = {
     ...machine,
     repositories,
@@ -79,23 +90,33 @@ export async function install(options: {
     return 0;
   }
   if (!installedScript(options.script))
-    throw new GcError(
-      "Scheduler installation requires the installed plugin copy, outside every worktree",
-    );
+    return stopped({
+      code: "refused",
+      reason:
+        "Scheduler installation requires the installed plugin copy, outside every worktree",
+    });
   // Removing an entry withdraws authority, so it never waits on plugin
   // discovery.
-  if (!options.uninstall) await checkLauncherResolves();
+  if (!options.uninstall) {
+    const resolves = await checkLauncherResolves();
+    if (!resolves.ok) return stopped(resolves.failure);
+  }
   return exclusiveInstallLock(async () => {
     const original = previousMachineText(machinePath);
     // Refuse a concurrent edit after the preview rather than overwrite it.
-    const current = gcConfiguration(root, repositoryText).machine;
-    if (JSON.stringify(current) !== JSON.stringify(machine))
-      throw new GcError(
-        "Machine configuration changed during preview; retry install",
-      );
+    const reread = gcConfiguration(root, repositoryText);
+    if (!reread.ok) return stopped(reread.failure);
+    if (JSON.stringify(reread.value.machine) !== JSON.stringify(machine))
+      return stopped({
+        code: "changed",
+        reason: "Machine configuration changed during preview; retry install",
+      });
     const values: unknown = original ? load(original) : {};
     if (!isMapping(values))
-      throw new GcError("Machine configuration must be a mapping");
+      return stopped({
+        code: "invalid",
+        reason: "Machine configuration must be a mapping",
+      });
     if (keepJob) {
       writeMachine(machinePath, dump({ ...values, gc: next }));
       console.log("Scheduler unchanged: the job still serves the others");
@@ -103,18 +124,19 @@ export async function install(options: {
     }
     // Captured before anything changes, so a failure can put back the job
     // that was actually running rather than one rebuilt from this copy.
-    const previousJob = await snapshotScheduler(detectScheduler(), gcJobSpec());
+    const scheduler = detectScheduler();
+    if (!scheduler.ok) return stopped(scheduler.failure);
+    const previousJob = await snapshotScheduler(scheduler.value, gcJobSpec());
+    if (!previousJob.ok) return stopped(previousJob.failure);
     mkdirSync(dirname(machinePath), { recursive: true, mode: 0o700 });
     writeMachine(machinePath, dump({ ...values, gc: next }));
-    let job: string;
-    try {
-      job = await updateJob(gcJobSpec(next.hour), noEntries);
-    } catch (error) {
-      throw new GcError(
-        `${message(error)}; ${await rollBack(machinePath, original, previousJob)}`,
-      );
-    }
-    console.log(`Scheduler ${noEntries ? "removed" : "updated"}: ${job}`);
+    const job = await updateJob(gcJobSpec(next.hour), noEntries);
+    if (!job.ok)
+      return stopped({
+        ...job.failure,
+        reason: `${job.failure.reason}; ${await rollBack(machinePath, original, previousJob.value)}`,
+      });
+    console.log(`Scheduler ${noEntries ? "removed" : "updated"}: ${job.value}`);
     return 0;
   });
 }
@@ -129,26 +151,29 @@ export async function install(options: {
 async function registration(
   supplied: string,
   machine?: MachineConfig,
-): Promise<{ root: string; clone: Set<string> }> {
+): Promise<Outcome<{ root: string; clone: Set<string> }, "unidentified">> {
+  let checkouts: Awaited<ReturnType<typeof cloneCheckouts>>;
   try {
-    const checkouts = await cloneCheckouts(supplied);
-    const root = primaryCheckout(supplied, checkouts);
-    return {
+    checkouts = await cloneCheckouts(supplied);
+  } catch (error) {
+    checkouts = failed("git-failed", message(error), error);
+  }
+  if (checkouts.ok) {
+    const root = primaryCheckout(supplied, checkouts.value);
+    return ok({
       root,
       clone: new Set(
-        [root, supplied, ...checkouts.worktrees].map(canonicalPath),
+        [root, supplied, ...checkouts.value.worktrees].map(canonicalPath),
       ),
-    };
-  } catch (error) {
-    const own = canonicalPath(supplied);
-    if (
-      machine?.repositories.some((entry) => canonicalPath(entry.path) === own)
-    )
-      return { root: supplied, clone: new Set([own]) };
-    throw new GcError(
-      `Cannot identify the clone at ${supplied}: ${message(error)}`,
-    );
+    });
   }
+  const own = canonicalPath(supplied);
+  if (machine?.repositories.some((entry) => canonicalPath(entry.path) === own))
+    return ok({ root: supplied, clone: new Set([own]) });
+  return failed(
+    "unidentified",
+    `Cannot identify the clone at ${supplied}: ${checkouts.failure.reason}`,
+  );
 }
 /**
  * The machine's entries for other clones. An entry naming another of this
@@ -177,21 +202,29 @@ function otherClones(
  * URL, shown for confirmation, and the repository's declared base branch,
  * else the branch that remote's `HEAD` points at.
  */
-async function proposedEntry(root: string, repository: unknown) {
+async function proposedEntry(
+  root: string,
+  repository: unknown,
+): Promise<Outcome<RepositoryEntry>> {
   const remote = worktreeRemote(root);
+  if (!remote.ok) return remote;
   const base =
     isMapping(repository) && typeof repository.base_branch === "string"
-      ? repository.base_branch
-      : await remoteHeadBranch(root, remote);
-  const entry = {
+      ? ok(repository.base_branch)
+      : await remoteHeadBranch(root, remote.value);
+  if (!base.ok) return base;
+  const url = await git(root, ["remote", "get-url", remote.value]);
+  if (!url.ok) return url;
+  const entry: RepositoryEntry = {
     path: root,
-    remote,
-    remote_url: (await git(root, ["remote", "get-url", remote])).trim(),
-    base_branch: base,
+    remote: remote.value,
+    remote_url: url.value.trim(),
+    base_branch: base.value,
     bounds: { kinds: [], worktree_roots: [], scratch_prefixes: [] },
   };
   const current = await baseDeclaration(entry);
-  return { ...entry, bounds: current.declaration };
+  if (!current.ok) return current;
+  return ok({ ...entry, bounds: current.value.declaration });
 }
 /** Preserve unrelated YAML settings when only the machine's gc entry changes. */
 function previousMachineText(path: string): string {
@@ -222,10 +255,8 @@ async function rollBack(
 ): Promise<string> {
   if (original) writeMachine(path, original);
   else rmSync(path, { force: true });
-  try {
-    await restoreScheduler(previousJob);
-    return "machine configuration and previous scheduler job restored";
-  } catch (error) {
-    return `machine configuration restored; previous scheduler job not restored: ${message(error)}`;
-  }
+  const restored = await restoreScheduler(previousJob);
+  return restored.ok
+    ? "machine configuration and previous scheduler job restored"
+    : `machine configuration restored; previous scheduler job not restored: ${restored.failure.reason}`;
 }

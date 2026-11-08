@@ -1,23 +1,27 @@
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { gcGit as git } from "./git.ts";
 
 /**
- * `root` lies inside a clone but is none of its checkouts: Git discovers the
- * enclosing clone from any directory beneath a checkout, and that clone is
- * not the one the path names.
- */
-export class NotACheckoutError extends Error {}
-/**
  * The clone's worktrees, as `git worktree list` names them, primary first.
  * Read NUL-delimited, since a path may hold any character but NUL. A bare
- * clone has no primary checkout: `primary` is then null. A `root` that is
- * neither a worktree nor the bare clone throws `NotACheckoutError`.
+ * clone has no primary checkout: `primary` is then null. A `root` that lies
+ * inside a clone but is none of its checkouts fails `not-a-checkout`: Git
+ * discovers the enclosing clone from any directory beneath a checkout, and
+ * that clone is not the one the path names.
  */
 export async function cloneCheckouts(
   root: string,
-): Promise<{ primary: string | null; worktrees: string[] }> {
-  const blocks = (await git(root, ["worktree", "list", "--porcelain", "-z"]))
+): Promise<
+  Outcome<
+    { primary: string | null; worktrees: string[] },
+    "git-failed" | "not-a-checkout"
+  >
+> {
+  const listed = await git(root, ["worktree", "list", "--porcelain", "-z"]);
+  if (!listed.ok) return listed;
+  const blocks = listed.value
     .split("\0\0")
     .filter(Boolean)
     .map((block) => block.split("\0"));
@@ -33,19 +37,20 @@ export async function cloneCheckouts(
     return entry !== undefined && canonicalPath(entry) === own;
   };
   if (!blocks.some(named))
-    throw new NotACheckoutError(
+    return failed(
+      "not-a-checkout",
       `${root} lies inside a clone but is none of its checkouts`,
     );
   const first = blocks[0];
   const primary =
     first === undefined || first.includes("bare") ? undefined : path(first);
-  return {
+  return ok({
     primary: primary ?? null,
     worktrees: blocks
       .filter((fields) => !fields.includes("bare"))
       .map(path)
       .filter((entry): entry is string => entry !== undefined),
-  };
+  });
 }
 /**
  * The clone's primary checkout, which a machine entry names whichever of the

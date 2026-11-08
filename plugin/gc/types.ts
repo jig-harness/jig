@@ -1,4 +1,5 @@
 /** Lifecycle evidence is separate from age and from authority to remove. */
+import type { Outcome as Result } from "../shared/outcome.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
 
 export type KindName = "worktrees" | "tool-state" | "scratch" | "receipts";
@@ -26,7 +27,8 @@ export interface CollectionKind {
   name: KindName;
   repository?: string;
   declaration: string;
-  inventory(): Promise<Resource[]>;
+  /** The resources to prove, or why they cannot be listed (an `unverified` inventory line). */
+  inventory(): Promise<Result<Resource[]>>;
   prove(resource: Resource): Promise<Proof>;
   collect(resource: Resource): Promise<{
     outcome: "collected" | "refused" | "failed";
@@ -59,4 +61,15 @@ export interface Receipt {
   exitStatus: number;
   /** The plugin upgrade the launcher ran before this scheduled run (`runtime/upgrade-record.ts`). */
   upgrade?: ScheduledUpgrade;
+  /**
+   * Why the run collected nothing before any kind was planned: its
+   * configuration was refused (`configuration`, exit 2) or could not be read
+   * (`unreadable`, exit 1). Absent when the run planned its kinds.
+   */
+  failure?: RunFailure;
+}
+/** A run's failure as its receipt records it: a stable code and its reason. */
+export interface RunFailure {
+  code: string;
+  reason: string;
 }

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ok } from "../../shared/outcome.ts";
 import { runCollection } from "../runner.ts";
 import type { CollectionKind, Proof } from "../types.ts";
 
@@ -16,7 +17,7 @@ function fixture(
     name: "scratch",
     repository: "/fixture",
     declaration: "fixture base",
-    inventory: async () => [{ id: "one", bytes: 42 }],
+    inventory: async () => ok([{ id: "one", bytes: 42 }]),
     prove: async () => proofs[Math.min(index++, proofs.length - 1)] as Proof,
     collect: async () => {
       drop();

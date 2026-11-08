@@ -1,8 +1,12 @@
-import { GcConfigurationError } from "../shared/gc-error.ts";
 /** GC keeps repository authority separate from machine policy and overrides. */
 import { isAbsolute, resolve } from "node:path";
 import { layeredConfig } from "../shared/consumer.ts";
-import { isMapping, userConfigPath } from "../shared/config-layers.ts";
+import {
+  type ConfigLayer,
+  isMapping,
+  userConfigPath,
+} from "../shared/config-layers.ts";
+import { failed, type Failure, ok, type Outcome } from "../shared/outcome.ts";
 import type { KindName } from "./types.ts";
 
 const REPOSITORY_KINDS = ["worktrees", "tool-state", "scratch"] as const;
@@ -30,78 +34,152 @@ export interface MachineConfig {
   /** Orca's command, for a run no Orca terminal started (the scheduler's). */
   orca?: { command: string };
 }
-function mapping(value: unknown, field: string): Record<string, unknown> {
-  if (!isMapping(value))
-    throw new GcConfigurationError(`${field} must be a mapping`);
-  return value;
+/** A configuration gc refuses: the run collects nothing and exits 2. */
+type Configured<T> = Outcome<T, "configuration">;
+function refused(reason: string): {
+  ok: false;
+  failure: Failure<"configuration">;
+} {
+  return failed("configuration", reason);
+}
+/** An absent section: a mapping with no fields. */
+function empty(): Record<string, unknown> {
+  return {};
+}
+function mapping(
+  value: unknown,
+  field: string,
+): Configured<Record<string, unknown>> {
+  return isMapping(value) ? ok(value) : refused(`${field} must be a mapping`);
 }
 function keys(
   value: Record<string, unknown>,
   allowed: string[],
   field: string,
-): void {
-  for (const key of Object.keys(value))
-    if (!allowed.includes(key))
-      throw new GcConfigurationError(`Unknown ${field}.${key}`);
+): Configured<undefined> {
+  const unknown = Object.keys(value).find((key) => !allowed.includes(key));
+  return unknown === undefined
+    ? ok(undefined)
+    : refused(`Unknown ${field}.${unknown}`);
 }
-function list(value: unknown, field: string): string[] {
+function list(value: unknown, field: string): Configured<string[]> {
   if (
     !Array.isArray(value) ||
     value.some((x) => typeof x !== "string" || !x.trim()) ||
     new Set(value).size !== value.length
   )
-    throw new GcConfigurationError(
-      `${field} must be a list of distinct nonempty strings`,
-    );
-  return value as string[];
+    return refused(`${field} must be a list of distinct nonempty strings`);
+  return ok(value as string[]);
 }
 function integer(
   value: unknown,
   field: string,
   min: number,
   max = Number.MAX_SAFE_INTEGER,
-): number {
+): Configured<number> {
   if (
     typeof value !== "number" ||
     !Number.isSafeInteger(value) ||
     value < min ||
     value > max
   )
-    throw new GcConfigurationError(
-      `${field} must be an integer from ${min} to ${max}`,
-    );
-  return value;
+    return refused(`${field} must be an integer from ${min} to ${max}`);
+  return ok(value);
 }
-function kindList(value: unknown, machine: boolean): KindName[] {
+function kindList(value: unknown, machine: boolean): Configured<KindName[]> {
   const result = list(value, "gc.kinds");
+  if (!result.ok) return result;
   const allowed: readonly string[] = machine
     ? [...REPOSITORY_KINDS, "receipts"]
     : REPOSITORY_KINDS;
-  if (result.some((kind) => !allowed.includes(kind)))
-    throw new GcConfigurationError(`gc.kinds supports ${allowed.join(", ")}`);
-  return result as KindName[];
+  if (result.value.some((kind) => !allowed.includes(kind)))
+    return refused(`gc.kinds supports ${allowed.join(", ")}`);
+  return ok(result.value as KindName[]);
 }
-export function parseDeclaration(value: unknown, root: string): Declaration {
-  const gc = value === undefined ? {} : mapping(value, "gc");
-  keys(gc, ["kinds", "worktree_roots", "scratch_prefixes"], "gc");
-  const paths = (field: "worktree_roots" | "scratch_prefixes"): string[] =>
-    list(gc[field] ?? [], `gc.${field}`).map((path) => {
-      const absolute = resolve(root, path);
-      if (absolute === resolve(absolute, ".."))
-        throw new GcConfigurationError(
-          `gc.${field} cannot name the filesystem root`,
-        );
-      return absolute;
-    });
-  return {
-    kinds: kindList(gc.kinds ?? [], false) as Declaration["kinds"],
-    worktree_roots: paths("worktree_roots"),
-    scratch_prefixes: paths("scratch_prefixes"),
+export function parseDeclaration(
+  value: unknown,
+  root: string,
+): Configured<Declaration> {
+  const gc = value === undefined ? ok(empty()) : mapping(value, "gc");
+  if (!gc.ok) return gc;
+  const known = keys(
+    gc.value,
+    ["kinds", "worktree_roots", "scratch_prefixes"],
+    "gc",
+  );
+  if (!known.ok) return known;
+  const paths = (
+    field: "worktree_roots" | "scratch_prefixes",
+  ): Configured<string[]> => {
+    const listed = list(gc.value[field] ?? [], `gc.${field}`);
+    if (!listed.ok) return listed;
+    const absolute = listed.value.map((path) => resolve(root, path));
+    if (absolute.some((path) => path === resolve(path, "..")))
+      return refused(`gc.${field} cannot name the filesystem root`);
+    return ok(absolute);
   };
+  const kinds = kindList(gc.value.kinds ?? [], false);
+  if (!kinds.ok) return kinds;
+  const worktree_roots = paths("worktree_roots");
+  if (!worktree_roots.ok) return worktree_roots;
+  const scratch_prefixes = paths("scratch_prefixes");
+  if (!scratch_prefixes.ok) return scratch_prefixes;
+  return ok({
+    kinds: kinds.value as Declaration["kinds"],
+    worktree_roots: worktree_roots.value,
+    scratch_prefixes: scratch_prefixes.value,
+  });
 }
-export function parseMachine(value: unknown): MachineConfig {
-  const gc = value === undefined ? {} : mapping(value, "machine gc");
-  keys(
+function repositoryEntry(item: unknown): Configured<RepositoryEntry> {
+  const entry = mapping(item, "gc.repositories entry");
+  if (!entry.ok) return entry;
+  const known = keys(
+    entry.value,
+    ["path", "remote", "remote_url", "base_branch", "bounds"],
+    "gc.repositories entry",
+  );
+  if (!known.ok) return known;
+  const values = entry.value;
+  for (const field of ["path", "remote", "remote_url", "base_branch"])
+    if (
+      typeof values[field] !== "string" ||
+      !(values[field] as string).trim() ||
+      (values[field] as string).startsWith("-")
+    )
+      return refused(
+        `gc.repositories.${field} must be a nonempty value without a leading dash`,
+      );
+  const path = values.path as string;
+  if (!isAbsolute(path))
+    return refused("gc.repositories.path must be absolute");
+  const bounds = parseDeclaration(values.bounds, path);
+  if (!bounds.ok) return bounds;
+  return ok({
+    path,
+    remote: values.remote as string,
+    remote_url: values.remote_url as string,
+    base_branch: values.base_branch as string,
+    bounds: bounds.value,
+  });
+}
+function idleDays(value: unknown): Configured<MachineConfig["idle_days"]> {
+  const idle = mapping(value, "gc.idle_days");
+  if (!idle.ok) return idle;
+  const known = keys(idle.value, [...REPOSITORY_KINDS], "gc.idle_days");
+  if (!known.ok) return known;
+  const idle_days: MachineConfig["idle_days"] = {};
+  for (const [kind, days] of Object.entries(idle.value)) {
+    const parsed = integer(days, `gc.idle_days.${kind}`, 7, 365);
+    if (!parsed.ok) return parsed;
+    idle_days[kind as KindName] = parsed.value;
+  }
+  return ok(idle_days);
+}
+export function parseMachine(value: unknown): Configured<MachineConfig> {
+  const read = value === undefined ? ok(empty()) : mapping(value, "machine gc");
+  if (!read.ok) return read;
+  const gc = read.value;
+  const known = keys(
     gc,
     [
       "repositories",
@@ -116,94 +194,108 @@ export function parseMachine(value: unknown): MachineConfig {
     ],
     "machine gc",
   );
+  if (!known.ok) return known;
   const repos = gc.repositories ?? [];
-  if (!Array.isArray(repos))
-    throw new GcConfigurationError("gc.repositories must be a list");
-  const repositories = repos.map((item): RepositoryEntry => {
-    const entry = mapping(item, "gc.repositories entry");
-    keys(
-      entry,
-      ["path", "remote", "remote_url", "base_branch", "bounds"],
-      "gc.repositories entry",
-    );
-    for (const field of ["path", "remote", "remote_url", "base_branch"])
-      if (
-        typeof entry[field] !== "string" ||
-        !(entry[field] as string).trim() ||
-        (entry[field] as string).startsWith("-")
-      )
-        throw new GcConfigurationError(
-          `gc.repositories.${field} must be a nonempty value without a leading dash`,
-        );
-    const path = entry.path as string;
-    if (!isAbsolute(path))
-      throw new GcConfigurationError("gc.repositories.path must be absolute");
-    return {
-      path,
-      remote: entry.remote as string,
-      remote_url: entry.remote_url as string,
-      base_branch: entry.base_branch as string,
-      bounds: parseDeclaration(entry.bounds, path),
-    };
-  });
+  if (!Array.isArray(repos)) return refused("gc.repositories must be a list");
+  const repositories: RepositoryEntry[] = [];
+  for (const item of repos) {
+    const entry = repositoryEntry(item);
+    if (!entry.ok) return entry;
+    repositories.push(entry.value);
+  }
   if (
     new Set(repositories.map((entry) => entry.path)).size !==
     repositories.length
   )
-    throw new GcConfigurationError("Duplicate gc.repositories.path");
-  const idle = mapping(gc.idle_days ?? {}, "gc.idle_days");
-  keys(idle, [...REPOSITORY_KINDS], "gc.idle_days");
-  const idle_days: MachineConfig["idle_days"] = {};
-  for (const [kind, days] of Object.entries(idle))
-    idle_days[kind as KindName] = integer(days, `gc.idle_days.${kind}`, 7, 365);
+    return refused("Duplicate gc.repositories.path");
+  const idle_days = idleDays(gc.idle_days ?? {});
+  if (!idle_days.ok) return idle_days;
   if (gc.receipts !== undefined && typeof gc.receipts !== "boolean")
-    throw new GcConfigurationError("gc.receipts must be boolean");
-  const orca = gc.orca === undefined ? undefined : orcaEntry(gc.orca);
-  return {
+    return refused("gc.receipts must be boolean");
+  const orca = gc.orca === undefined ? ok(undefined) : orcaEntry(gc.orca);
+  if (!orca.ok) return orca;
+  const disabled = kindList(gc.disabled ?? [], true);
+  if (!disabled.ok) return disabled;
+  const receipts_days = integer(gc.receipts_days ?? 30, "gc.receipts_days", 1);
+  if (!receipts_days.ok) return receipts_days;
+  const hour = integer(gc.hour ?? 4, "gc.hour", 0, 23);
+  if (!hour.ok) return hour;
+  const collect_day = integer(gc.collect_day ?? 0, "gc.collect_day", 0, 6);
+  if (!collect_day.ok) return collect_day;
+  const min_free_bytes = integer(
+    gc.min_free_bytes ?? 0,
+    "gc.min_free_bytes",
+    0,
+  );
+  if (!min_free_bytes.ok) return min_free_bytes;
+  return ok({
     repositories,
-    disabled: kindList(gc.disabled ?? [], true),
-    idle_days,
-    receipts_days: integer(gc.receipts_days ?? 30, "gc.receipts_days", 1),
+    disabled: disabled.value,
+    idle_days: idle_days.value,
+    receipts_days: receipts_days.value,
     receipts: gc.receipts === true,
-    hour: integer(gc.hour ?? 4, "gc.hour", 0, 23),
-    collect_day: integer(gc.collect_day ?? 0, "gc.collect_day", 0, 6),
-    min_free_bytes: integer(gc.min_free_bytes ?? 0, "gc.min_free_bytes", 0),
-    ...(orca === undefined ? {} : { orca }),
-  };
+    hour: hour.value,
+    collect_day: collect_day.value,
+    min_free_bytes: min_free_bytes.value,
+    ...(orca.value === undefined ? {} : { orca: orca.value }),
+  });
 }
 /**
  * Orca's command as an absolute path: the scheduler's `PATH` is not the
  * shell's, so a bare name could find another program or none.
  */
-function orcaEntry(value: unknown): { command: string } {
+function orcaEntry(value: unknown): Configured<{ command: string }> {
   const orca = mapping(value, "gc.orca");
-  keys(orca, ["command"], "gc.orca");
-  const command = orca.command;
+  if (!orca.ok) return orca;
+  const known = keys(orca.value, ["command"], "gc.orca");
+  if (!known.ok) return known;
+  const command = orca.value.command;
   if (typeof command !== "string" || !isAbsolute(command))
-    throw new GcConfigurationError("gc.orca.command must be an absolute path");
-  return { command };
+    return refused("gc.orca.command must be an absolute path");
+  return ok({ command });
 }
-export function gcConfiguration(
-  root: string,
-  repositoryText?: string | null,
-): {
+/** The configuration gc runs with: the machine's policy and the repository's declaration. */
+export interface GcConfiguration {
   machine: MachineConfig;
   declaration: Declaration;
   repositoryValues: Record<string, unknown>;
   machinePath: string;
-} {
-  const layers = layeredConfig(root, process.env, repositoryText).layers;
+}
+/**
+ * Why gc's configuration cannot be used: `configuration` when a gc field is
+ * refused (a run exits 2), `unreadable` when a configuration file cannot be
+ * read or parsed at all (a run exits 1).
+ */
+export type ConfigurationCode = "configuration" | "unreadable";
+export function gcConfiguration(
+  root: string,
+  repositoryText?: string | null,
+): Outcome<GcConfiguration, ConfigurationCode> {
+  let layers: ConfigLayer[];
+  try {
+    layers = layeredConfig(root, process.env, repositoryText).layers;
+  } catch (error) {
+    return failed(
+      "unreadable",
+      error instanceof Error ? error.message : String(error),
+      error,
+    );
+  }
   const user = layers.find((layer) => layer.name === "user")?.values ?? {};
   const repositoryValues =
     layers.find((layer) => layer.name === "repository")?.values ?? {};
   // Environment and repository fields cannot widen deletion authority or alter
   // the machine's scheduler and retention policy. Report the two sources.
-  return {
-    machine: parseMachine(user.gc),
-    declaration: parseDeclaration(repositoryValues.gc, root),
+  const machine = parseMachine(user.gc);
+  if (!machine.ok) return machine;
+  const declaration = parseDeclaration(repositoryValues.gc, root);
+  if (!declaration.ok) return declaration;
+  return ok({
+    machine: machine.value,
+    declaration: declaration.value,
     repositoryValues,
     machinePath: userConfigPath(),
-  };
+  });
 }
 export function boundDeclaration(
   current: Declaration,
