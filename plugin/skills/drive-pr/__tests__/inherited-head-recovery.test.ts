@@ -44,12 +44,24 @@ const leftovers = (
   uncommitted,
   unpushed,
   operation: null,
+  operationProbed: true,
   head: HEAD,
   commits: [],
   onRemote: true,
   baseExists: true,
   edits: uncommitted,
   ...more,
+});
+
+describe("leftoverHeadOf with an inherited operation", () => {
+  it("owes a round for an open or unprobed operation over a clean tree, only when owned", () => {
+    const open = leftovers("", 0, { operation: "merge" });
+    const unknown = leftovers("", 0, { operationProbed: false });
+    expect(leftoverHeadOf(open, "", true)).toBe(HEAD);
+    expect(leftoverHeadOf(unknown, "", true)).toBe(HEAD);
+    expect(leftoverHeadOf(open, "", false)).toBe("");
+    expect(leftoverHeadOf(leftovers("", 0), "", true)).toBe("");
+  });
 });
 
 describe("inheritedHeadOf", () => {
@@ -61,6 +73,15 @@ describe("inheritedHeadOf", () => {
 
   it("names nothing for a clean, pushed tree", () => {
     expect(inheritedHeadOf(leftovers("", 0))).toBe("");
+  });
+
+  it("names the head over an open operation whose status is clean", () => {
+    expect(
+      inheritedHeadOf(leftovers("", 0, { operation: "merge in progress" })),
+    ).toBe(HEAD);
+    expect(inheritedHeadOf(leftovers("", 0, { operationProbed: false }))).toBe(
+      HEAD,
+    );
   });
 });
 

@@ -10,11 +10,18 @@
  * install recorded stay, and only the form this release writes changes.
  * Nothing is written where nothing differs, and a job that is enabled or
  * running stays so. The installed jobs are the components' jobs
- * (`Component.job()`) the scheduler holds, so a third component's job is
- * refreshed with no change here.
+ * (`Component.job()`, and the companion jobs a component's install writes
+ * beside it, `Component.companionJobs()`) the scheduler holds, so a third
+ * component's job is refreshed with no change here.
+ *
+ * A refresh a timer's job runs (`scheduled`) leaves a loaded launchd job's
+ * file as it is: launchd reads a new one only when the job is booted out and
+ * in again, which stops a running job, and the job may be the one running the
+ * refresh. Its launcher copy is still refreshed; `jig upgrade` run by a
+ * person rewrites the job.
  */
 import { swallow } from "../shared/errors.ts";
-import { exclusiveGcLock } from "../shared/gc-lock.ts";
+import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import type { Component } from "./component.ts";
 import {
   type InstalledJob,
@@ -50,6 +57,11 @@ export interface RefreshResult {
 
 /** Sees each scheduler command before it runs. */
 export type Announce = (command: string[]) => void;
+
+/** How a refresh runs: `scheduled` when a timer's job runs it. */
+export interface RefreshOptions {
+  scheduled?: boolean;
+}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -112,21 +124,27 @@ function readableJob(
   return installed;
 }
 
+/** A component's jobs: its own, then the ones its install writes beside it. */
+function componentJobs(component: Component): JobSpec[] {
+  return [component.job(), ...(component.companionJobs?.() ?? [])];
+}
+
 /**
- * Refreshes one component's job, under the lock installs take, so a
- * concurrent `jig install` never interleaves with it.
+ * Refreshes one of a component's jobs, `spec`, under the lock installs
+ * take, so a concurrent `jig install` never interleaves with it.
  */
 function refreshJob(
   component: Component,
+  spec: JobSpec,
   scheduler: Scheduler,
   announce?: Announce,
+  options: RefreshOptions = {},
 ): Promise<RefreshResult> {
-  const spec = component.job();
   const result = (
     outcome: RefreshResult["outcome"],
     detail: string,
   ): RefreshResult => ({ target: spec.name, outcome, detail });
-  return exclusiveGcLock("install", async () => {
+  return exclusiveInstallLock(async () => {
     const snapshot = await snapshotScheduler(scheduler, spec);
     const installed = readableJob(component, snapshot, scheduler);
     if (Array.isArray(installed)) return result(...installed);
@@ -149,15 +167,37 @@ function refreshJob(
       guardLauncher(directory, snapshot.launcher, () =>
         installLauncher(directory),
       );
+    const copied = stale && `copied the launcher to ${directory}`;
+    if (changed && keepsJob(snapshot, options))
+      return result(
+        "skipped",
+        refreshed([
+          copied,
+          "the loaded launchd job is rewritten by the next jig upgrade a person runs, since rewriting it would stop it",
+        ]),
+      );
     if (changed) await rewriteJob(snapshot, files, announce);
     return result(
       "refreshed",
-      refreshed([
-        stale && `copied the launcher to ${directory}`,
-        changed && `rewrote the ${scheduler} job`,
-      ]),
+      refreshed([copied, changed && `rewrote the ${scheduler} job`]),
     );
   });
+}
+
+/**
+ * Whether a refresh leaves the job's file as it is: a timer's refresh and a
+ * loaded launchd job, which booting out to read a new file would stop, and
+ * which may be the job running this refresh.
+ */
+function keepsJob(
+  snapshot: SchedulerSnapshot,
+  options: RefreshOptions,
+): boolean {
+  return (
+    options.scheduled === true &&
+    snapshot.scheduler === "launchd" &&
+    snapshot.active
+  );
 }
 
 /**
@@ -193,6 +233,7 @@ export async function recordedPrograms(
 export async function refreshInstalled(
   components: readonly Component[],
   announce?: Announce,
+  options: RefreshOptions = {},
 ): Promise<RefreshResult[]> {
   const results: RefreshResult[] = [];
   let scheduler: Scheduler | null = null;
@@ -201,27 +242,30 @@ export async function refreshInstalled(
   } catch {
     // Windows: no component has a job; the command is still refreshed.
   }
-  for (const component of components) {
-    const target = component.job().name;
-    if (scheduler === null) {
-      results.push({
-        target,
-        outcome: "skipped",
-        detail: "scheduled jobs need macOS or Linux",
-      });
-      continue;
+  for (const component of components)
+    for (const spec of componentJobs(component)) {
+      const target = spec.name;
+      if (scheduler === null) {
+        results.push({
+          target,
+          outcome: "skipped",
+          detail: "scheduled jobs need macOS or Linux",
+        });
+        continue;
+      }
+      try {
+        results.push(
+          await refreshJob(component, spec, scheduler, announce, options),
+        );
+      } catch (error) {
+        results.push({ target, outcome: "failed", detail: message(error) });
+      }
     }
-    try {
-      results.push(await refreshJob(component, scheduler, announce));
-    } catch (error) {
-      results.push({ target, outcome: "failed", detail: message(error) });
-    }
-  }
   try {
     // Under the lock installs and removals take, as a job's refresh is.
     results.push({
       target: "jig command",
-      ...(await exclusiveGcLock("install", async () => refreshCommand())),
+      ...(await exclusiveInstallLock(async () => refreshCommand())),
     });
   } catch (error) {
     results.push({

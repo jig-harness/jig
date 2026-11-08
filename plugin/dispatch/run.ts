@@ -54,8 +54,12 @@
  * `jig send` refuses that session a person's commands
  * (`shared/launched-session.ts`).
  *
- * The exit of a follow-up's pass or a pickup's session is recorded, and no
- * wall is written for it. Once the exit is recorded, the wrapper writes the
+ * A Claude follow-up that exits unsuccessfully within a minute, without a
+ * result, a question or its own transcript, could not start: its account
+ * backs off and its claim is released for retry. A recognized vendor usage
+ * notice identifies a quota wall; otherwise its cause stays unknown. An
+ * unreadable transcript scan withholds that classification.
+ * Once the exit is recorded, the wrapper writes the
  * launch's end onto the shared claim this host made for it (a drive's launch
  * claim, a follow-up's marker; `lib/shared-launches.ts`'s `settleAtExit`), so
  * another host reads the end when the launch ends; a write that fails is one
@@ -73,6 +77,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { swallow } from "../shared/errors.ts";
 import { QuestionTail } from "./lib/question-tail.ts";
 import { NO_WATCH, watchWindowsTree } from "./lib/windows-tree.ts";
@@ -111,6 +116,7 @@ import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
 import { StateVersionError } from "./lib/state.ts";
 import { writeWall } from "./lib/walls.ts";
+import { failedStartup } from "./lib/session-startup.ts";
 
 const CLAIMED = 3;
 const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
@@ -146,7 +152,7 @@ function driveScript(): string {
   return process.env.JIG_DISPATCH_DRIVE_SCRIPT || driveTs;
 }
 
-/** How much of a follow-up pass's last `Question:` line its exit keeps: the only part of the output that is persisted. */
+/** How much of a follow-up pass's last `Question:` line its exit keeps. */
 const QUESTION_CHARS = 1000;
 /** How long a pass stopped at its deadline has to end before it is killed. */
 const STOP_GRACE_MS = 10_000;
@@ -154,6 +160,9 @@ const STOP_GRACE_MS = 10_000;
 const DRAIN_MS = 2000;
 
 interface Ran {
+  started?: number;
+  exited?: number;
+  output?: string;
   code: number | null;
   signal: string | null;
   /** The stage's last `Question:` line, where the wrapper kept it. */
@@ -228,6 +237,8 @@ async function drainOutput(
 function releasePipe(child: ChildProcess): void {
   child.stdout?.removeAllListeners("data");
   child.stdout?.destroy();
+  child.stderr?.removeAllListeners("data");
+  child.stderr?.destroy();
 }
 
 function runStage(
@@ -237,6 +248,11 @@ function runStage(
   options: RunOptions = { keepOutput: false, deadlineSec: 0 },
 ): Promise<Ran> {
   return new Promise((settle) => {
+    const started = Date.now();
+    let stdout = "";
+    let stderr = "";
+    const stdoutDecoder = new StringDecoder("utf8");
+    const stderrDecoder = new StringDecoder("utf8");
     // A pass under a deadline leads its own process group, so the deadline reaches what the agent started too.
     const grouped = options.deadlineSec > 0 && process.platform !== "win32";
     // Windows has no process group to signal; its tree is walked and ended by identity.
@@ -245,7 +261,7 @@ function runStage(
       cwd,
       env,
       detached: grouped,
-      stdio: options.keepOutput ? ["inherit", "pipe", "inherit"] : "inherit",
+      stdio: options.keepOutput ? ["inherit", "pipe", "pipe"] : "inherit",
     });
     const watch = treed
       ? watchWindowsTree(
@@ -271,6 +287,7 @@ function runStage(
     const tail = new QuestionTail(QUESTION_PREFIX, QUESTION_CHARS);
     let drained = !options.keepOutput;
     child.stdout?.on("data", (chunk: Buffer) => {
+      stdout = (stdout + stdoutDecoder.write(chunk)).slice(-8192);
       if (!process.stdout.write(chunk)) {
         child.stdout?.pause();
         process.stdout.once("drain", () => child.stdout?.resume());
@@ -278,7 +295,20 @@ function runStage(
       tail.write(chunk);
     });
     child.stdout?.on("end", () => {
+      stdout = (stdout + stdoutDecoder.end()).slice(-8192);
       drained = true;
+    });
+    let stderrDrained = !options.keepOutput;
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderr = (stderr + stderrDecoder.write(chunk)).slice(-8192);
+      if (!process.stderr.write(chunk)) {
+        child.stderr?.pause();
+        process.stderr.once("drain", () => child.stderr?.resume());
+      }
+    });
+    child.stderr?.on("end", () => {
+      stderr = (stderr + stderrDecoder.end()).slice(-8192);
+      stderrDrained = true;
     });
     const forward = (name: NodeJS.Signals) => signalTree(name);
     for (const name of FORWARDED) process.on(name, forward);
@@ -289,17 +319,21 @@ function runStage(
     const done = async (code: number | null, signal: string | null) => {
       if (ended) return;
       ended = true;
+      const exited = Date.now();
       for (const timer of timers) clearTimeout(timer);
       watch.stopSampling();
       // What the agent started can outlive it; the exit is published once the group has ended.
       if (grouped) await endGroup(child.pid, signalTree);
       await endWindowsTree();
       for (const name of FORWARDED) process.off(name, forward);
-      await drainOutput(child, () => drained);
+      await drainOutput(child, () => drained && stderrDrained);
       tail.end();
       settle({
         code,
         signal,
+        started,
+        exited,
+        output: `${stdout}\n${stderr}`,
         ...(!treeEnded ? { unconfirmed: true as const } : {}),
         ...(options.keepOutput && tail.question !== ""
           ? { said: tail.question }
@@ -483,6 +517,44 @@ async function wrap(id: string, token: string): Promise<number> {
   return finishRun(id, record, ran);
 }
 
+/** Startup evidence is checked only when the session left no result or question. */
+function startupOf(record: LaunchRecord, ran: Ran) {
+  if (
+    readResult(record.id) !== null ||
+    ran.said ||
+    ran.started === undefined ||
+    ran.exited === undefined
+  )
+    return undefined;
+  return failedStartup(
+    record,
+    ran.code,
+    ran.started,
+    ran.output ?? "",
+    ran.exited,
+  );
+}
+
+/** Back off an account before releasing the slot held by an unstarted session. */
+function recordStartupWall(record: LaunchRecord, startup: string): boolean {
+  try {
+    writeWall({
+      account: record.account,
+      vendor: record.vendor,
+      configDir: record.configDir,
+      resetAt: new Date(Date.now() + record.wallBackoffMs).toISOString(),
+      source: `session could not start (${startup}); wall_backoff`,
+    });
+    return true;
+  } catch (error) {
+    swallow(
+      error,
+      "the unstarted session's account backoff could not be recorded",
+    );
+    return false;
+  }
+}
+
 /** Publish a finished stage's exit, unless its processes may still run. */
 async function finishRun(
   id: string,
@@ -500,11 +572,17 @@ async function finishRun(
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
   const wallUnrecorded = !(await wallRecorded(record, code));
+  const startup = startupOf(record, ran);
+  const startupWallUnrecorded =
+    startup !== undefined && !recordStartupWall(record, startup);
   recordExit(id, {
     at: new Date().toISOString(),
     code,
     signal,
-    ...(wallUnrecorded ? { wallUnrecorded: true as const } : {}),
+    ...(wallUnrecorded || startupWallUnrecorded
+      ? { wallUnrecorded: true as const }
+      : {}),
+    ...(startup === undefined ? {} : { startup }),
     ...saidOf(record, ran),
   });
   await endSharedClaim(id);

@@ -95,8 +95,12 @@ describe("round-plan.ts unconcluded git operation guard", () => {
     writeFileSync(join(dir, ".config", "jig.yaml"), JSON.stringify(overlay));
   }
 
-  function roundPlan(): { code: number; stdout: string; stderr: string } {
-    const r = Bun.spawnSync([process.execPath, ROUND_PLAN], {
+  function roundPlan(...args: string[]): {
+    code: number;
+    stdout: string;
+    stderr: string;
+  } {
+    const r = Bun.spawnSync([process.execPath, ROUND_PLAN, ...args], {
       cwd: dir,
       env: env(),
       stdout: "pipe",
@@ -246,6 +250,46 @@ process.stdout.write(JSON.stringify({ validation: { localChecks: ['echo stub-che
     );
     expect(r.stdout).not.toContain("echo stub-check");
   });
+
+  // A merge the round inherits, its conflict resolved but not committed: the
+  // base moved on (a conflicting edit to a.txt, and b.txt it alone adds), and
+  // the tree is planned as the merge commit will hold it, against the merge
+  // base that commit will have, so the base's own b.txt is not the change's.
+  it.skipIf(
+    skipsOnWindows(
+      "git-bash",
+      "the overlay-configured validation_plan_command runs through cmd.exe, which mangles its double-quoted executable path",
+    ),
+  )(
+    "plans a merge whose conflicts are resolved, against the base its commit will have",
+    () => {
+      mustGit("checkout", "-q", "-b", "incoming", "origin/develop");
+      writeFileSync(join(dir, "a.txt"), "incoming\n");
+      writeFileSync(join(dir, "b.txt"), "base only\n");
+      mustGit("add", "-A");
+      mustGit("commit", "-q", "-m", "incoming change");
+      mustGit("update-ref", "refs/remotes/origin/develop", "HEAD");
+      mustGit("checkout", "-q", "main");
+      expect(git("merge", "origin/develop").code).not.toBe(0);
+      const unresolved = roundPlan("--json");
+      expect(unresolved.code).toBe(1);
+      expect(unresolved.stderr).toContain("some path is still unmerged");
+
+      writeFileSync(join(dir, "a.txt"), "branch, with incoming\n");
+      mustGit("add", "a.txt");
+      const r = roundPlan("--json");
+      expect(`${r.code}: ${r.stderr}`).toStartWith("0:");
+      const plan = JSON.parse(r.stdout) as { files: string[]; base: string };
+      expect(plan.files).toEqual(["a.txt"]);
+      expect(plan.base).toBe(mustGit("rev-parse", "origin/develop"));
+      // A delta plan is still refused mid-merge.
+      const delta = roundPlan("--delta", "--since", "HEAD");
+      expect(delta.code).toBe(1);
+      expect(delta.stderr).toContain(
+        "A delta plan cannot be resolved mid-merge",
+      );
+    },
+  );
 
   // The rest are synthesized: the probe reads marker existence, and each is
   // what git leaves behind for its paused operation.

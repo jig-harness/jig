@@ -1,4 +1,6 @@
 /** Lifecycle evidence is separate from age and from authority to remove. */
+import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
+
 export type KindName = "worktrees" | "tool-state" | "scratch" | "receipts";
 export type Outcome =
   | "collected"
@@ -55,4 +57,6 @@ export interface Receipt {
   kinds: { name: KindName; repository?: string; declaration: string }[];
   resources: ReceiptLine[];
   exitStatus: number;
+  /** The plugin upgrade the launcher ran before this scheduled run (`runtime/upgrade-record.ts`). */
+  upgrade?: ScheduledUpgrade;
 }

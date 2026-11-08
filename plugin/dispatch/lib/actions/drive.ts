@@ -41,6 +41,8 @@ import {
   type SessionsReport,
 } from "../runtime/port.ts";
 import { failureText } from "../text.ts";
+import { RECOVERY_FACTS, sameFacts } from "../recovery-facts.ts";
+import { workspaceOfTree } from "../stall-tree.ts";
 import type {
   Action,
   DrivenPr,
@@ -144,14 +146,10 @@ async function retryBlocked(
   }
   if (read === null) return "its ledger cannot be read again";
   if (fresh.held(read)) return HELD;
-  if (record.facts !== factsOf(read))
+  if (!sameFacts(record.facts, factsOf(read)))
     return `its ledger changed since the launch (now ${factsOf(read)})`;
-  const want = wantedClass(
-    record.action === "takeover",
-    record.redrive,
-    record.facts,
-  );
-  if (read.class !== want) return `its ledger now reads ${read.class}`;
+  const unwanted = classBlocked(record, read);
+  if (unwanted !== null) return unwanted;
   // A stop on a conflict stands whatever moved since: its base moves often, and
   // this record holds the pull request until its launch is replayed. The replay
   // then acts on the change read now, so the record names that one, and keeps
@@ -162,6 +160,24 @@ async function retryBlocked(
       : changedStale(record.redrive, read);
   if (blocked !== null) return blocked;
   return accountBlocked(state, record);
+}
+
+/**
+ * Why a pending record's launch no longer acts on the class its ledger reads
+ * now; `null` when it does. A takeover of a driver no launch started stands
+ * only while this host still shows that driver's run ended.
+ */
+function classBlocked(record: LaunchRecord, read: DrivenPr): string | null {
+  const takeover = record.action === "takeover";
+  const want = wantedClass(takeover, record.redrive, record.facts);
+  if (read.class !== want) return `its ledger now reads ${read.class}`;
+  const gone =
+    takeover &&
+    record.replaces === null &&
+    record.facts.startsWith(RECOVERY_FACTS);
+  return gone && read.evidence.driverGone !== true
+    ? `this host no longer shows its driver's run ended: ${String(read.evidence.driverCheck)}`
+    : null;
 }
 
 /**
@@ -223,11 +239,13 @@ function stillWanted(
 ): string | null {
   if (fresh === null) return "its ledger cannot be read again";
   if (held(fresh)) return HELD;
-  if (factsOf(fresh) !== action.facts)
+  if (!sameFacts(factsOf(fresh), action.facts))
     return `its ledger changed since the plan read it (now ${factsOf(fresh)})`;
   const want = wantedClass(isTakeover(action), action.redrive, action.facts);
   if (fresh.class !== want)
     return `its ledger now reads ${fresh.class}: ${fresh.why}`;
+  if (action.takeoverGone !== undefined && fresh.evidence.driverGone !== true)
+    return `this host no longer shows its driver's run ended: ${String(fresh.evidence.driverCheck)}`;
   return changedStale(action.redrive, fresh);
 }
 
@@ -238,7 +256,20 @@ async function workspaceFor(
   head: string,
   sessions: SessionsReport,
   named: Dispatched,
+  tree?: string,
 ): Promise<Opened> {
+  // A stall or a deadline that left work runs where the work is, or not at all: a fresh
+  // tree would not carry it.
+  if (tree !== undefined) {
+    const own = sessions.ok
+      ? workspaceOfTree(sessions.workspaces, tree)
+      : undefined;
+    return own === undefined
+      ? {
+          refused: `the stop left work in its tree (${tree}), which no open workspace holds now; a fresh tree would not carry it`,
+        }
+      : { workspace: { id: own.id, path: own.path } };
+  }
   const held = sessions.ok
     ? sessions.workspaces.find((w) => w.prs.includes(pr))
     : undefined;
@@ -277,7 +308,15 @@ async function launchOne(
     state,
     action,
     slots,
-    workspaceFor(state, repo, pr.number, pr.head, sessions, named),
+    workspaceFor(
+      state,
+      repo,
+      pr.number,
+      pr.head,
+      sessions,
+      named,
+      action.redrive?.tree?.actor,
+    ),
   );
   if ("outcome" in opened) return opened.outcome;
   const { workspace } = opened;

@@ -7,6 +7,16 @@
  * installed now and runs that copy's `jig.ts` with the arguments after `--`;
  * a plugin update therefore reaches them without a new install.
  *
+ * Before a job runs, the launcher runs the installed copy's
+ * `jig upgrade --scheduled` with the agent tools the job recorded, under its
+ * own deadline, then asks again which copy is installed, so the job runs the
+ * copy the upgrade installed. The upgrade's code is the installed copy's,
+ * never the launcher's. An upgrade that fails, runs past its deadline or is
+ * withheld never stops the job: the job runs on the copy that is there, and
+ * gets the upgrade's line of JSON in `JIG_SCHEDULED_UPGRADE` for its receipt.
+ * The `jig` command's script sets `JIG_LAUNCHER_ROLE=command`, and a woken
+ * dispatcher tick `wake`: neither is a timer's job, and neither upgrades.
+ *
  * It runs alone, from that copy: Bun's built-ins and `node:` modules only.
  * Copies written by earlier releases keep running, so what it passes to
  * `jig.ts` (`--config=<plugin>/gc/bunfig.toml`, then the arguments) stays.
@@ -378,27 +388,257 @@ export async function runCollector(
   command: string[],
   deadlineMs = collectionDeadlineMs(),
   graceMs = 30_000,
+  env?: NodeJS.ProcessEnv,
 ): Promise<number> {
   const { code, stopped } = await supervise(command, {
     deadlineMs,
     graceMs,
     announce: "the run",
+    ...(env === undefined ? {} : { env }),
   });
   // A stopped run did not finish, even when the collector exits 0 on SIGTERM.
   return stopped ? code || 1 : (code ?? 1);
 }
 
+/** Who started the launcher, when it is not a timer: `command` (the `jig` command) or `wake` (a woken tick). */
+const ROLE = "JIG_LAUNCHER_ROLE";
+/** The scheduled upgrade's line, passed to the job (`upgrade-record.ts`). */
+const UPGRADE_RESULT = "JIG_SCHEDULED_UPGRADE";
+/** How long the scheduled upgrade may run before the job goes on without it. */
+const UPGRADE_DEADLINE_MS = 30 * 60_000;
+
+/** The installed `entry`, run by this Bun with its own trusted startup file. */
+function entryCommand(entry: string): string[] {
+  return [
+    process.execPath,
+    "--no-env-file",
+    `--config=${join(dirname(entry), "gc", "bunfig.toml")}`,
+    entry,
+  ];
+}
+
+/**
+ * The longest result line passed to a job: the system bounds one environment
+ * value (128 KiB on Linux), and a longer one would stop the job starting.
+ */
+const RESULT_LIMIT = 8 * 1024;
+/** The longest detail a scheduled upgrade's own result carries, kept whole when wrapped. */
+const DETAIL_LIMIT = 2000;
+/** The outcomes a result may name (`upgrade-record.ts`). */
+const OUTCOMES = ["withheld", "skipped", "unchanged", "updated", "failed"];
+
+/** `text`, cut to `limit` characters, saying how much was cut. */
+function clip(text: string, limit = 1000): string {
+  return text.length <= limit
+    ? text
+    : `${text.slice(0, limit)} … (${text.length - limit} more characters)`;
+}
+
+/** The last `limit` characters of `text`, saying how much was cut from its start. */
+function tail(text: string, limit: number): string {
+  return text.length <= limit
+    ? text
+    : `(${text.length - limit} earlier characters) … ${text.slice(-limit)}`;
+}
+
+/** `text` cut to `limit` characters from both ends, saying how much was cut between. */
+function ends(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const head = Math.ceil(limit / 2);
+  const rest = limit - head;
+  return `${text.slice(0, head)} … (${text.length - limit} characters) … ${rest > 0 ? text.slice(-rest) : ""}`;
+}
+
+/** A result line for an upgrade that printed none that reads, saying why. */
+function failedUpgrade(detail: string, limit?: number): string {
+  const at = new Date().toISOString();
+  let keep = limit ?? 1000;
+  // The line is bounded as serialized, whatever the detail holds: JSON escapes
+  // a control character into six bytes, so a character count alone is no bound.
+  // Each shrink keeps the detail's beginning and its diagnostic tail.
+  for (;;) {
+    const text = JSON.stringify({
+      outcome: "failed",
+      detail: ends(detail, keep),
+      at,
+    });
+    if (Buffer.byteLength(text, "utf8") <= RESULT_LIMIT || keep <= 16)
+      return text;
+    keep = Math.floor(keep / 2);
+  }
+}
+
+/** Whether `value` is a result as `upgrade-record.ts`'s `isScheduledUpgrade` reads one. */
+function isResult(value: unknown): value is { detail: string } {
+  const result = value as Record<string, unknown> | null;
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    !Array.isArray(result) &&
+    OUTCOMES.includes(result.outcome as string) &&
+    typeof result.detail === "string" &&
+    typeof result.at === "string" &&
+    ["undefined", "string"].includes(typeof result.from) &&
+    ["undefined", "string"].includes(typeof result.to)
+  );
+}
+
+/**
+ * The result line the upgrade printed last (with its detail), or a failed one when that line
+ * is JSON but not a result or too long to pass on; null when its last line is
+ * not JSON at all.
+ */
+function resultLine(stdout: string): { text: string; detail: string } | null {
+  const line = stdout.trim().split("\n").at(-1) ?? "";
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch (error) {
+    // Not the result line: an installed copy too old for --scheduled, or one that crashed.
+    console.error(
+      `jig launcher: the scheduled upgrade printed no result (${(error as Error).message})`,
+    );
+    return null;
+  }
+  if (!isResult(value))
+    return {
+      text: failedUpgrade(
+        `jig upgrade --scheduled printed a result that does not read: ${line}`,
+      ),
+      detail: line,
+    };
+  const text = JSON.stringify(value);
+  const bytes = Buffer.byteLength(text, "utf8");
+  return {
+    text:
+      bytes <= RESULT_LIMIT
+        ? text
+        : failedUpgrade(
+            `jig upgrade --scheduled printed a result of ${bytes} bytes, more than the ${RESULT_LIMIT} a job is passed: ${value.detail}`,
+          ),
+    detail: value.detail,
+  };
+}
+
+/** What the supervised upgrade came to, as its result line. */
+function upgradeResult(outcome: Outcome, deadlineMs: number): string {
+  const { code, stopped, stdout, stderr } = outcome;
+  if (stopped === "deadline")
+    return failedUpgrade(
+      `jig upgrade --scheduled ran past ${deadlineMs / 1000}s`,
+    );
+  if (stopped === "output")
+    return failedUpgrade("jig upgrade --scheduled printed more than 4 MiB");
+  if (stopped) throw new LauncherStopped(`received ${stopped}`);
+  const said = clip(stderr.trim().split("\n").at(-1) ?? "", 500);
+  const printed = resultLine(stdout);
+  if (printed === null)
+    return failedUpgrade(
+      `jig upgrade --scheduled exited ${code} without a result${said ? `: ${said}` : ""}`,
+    );
+  if (code === 0) return printed.text;
+  // The result's detail keeps its diagnostic tail, as the upgrade bounded it.
+  const context = `jig upgrade --scheduled exited ${code} after printing a result: `;
+  return failedUpgrade(
+    context + tail(printed.detail, DETAIL_LIMIT),
+    context.length + DETAIL_LIMIT + 64,
+  );
+}
+
+/**
+ * Runs the installed copy's `jig upgrade --scheduled` and returns the line of
+ * JSON it printed, or, when it printed none, one that says the upgrade
+ * failed and why. Only a stop signal to the launcher ends the launch.
+ */
+async function scheduledUpgrade(
+  entry: string,
+  programs: { claude?: string; codex?: string },
+  env: NodeJS.ProcessEnv,
+  deadlineMs = UPGRADE_DEADLINE_MS,
+): Promise<string> {
+  const upgrade = [
+    ...entryCommand(entry),
+    "upgrade",
+    "--scheduled",
+    ...Object.entries(programs).map(
+      ([name, program]) => `--${name}-program=${program}`,
+    ),
+  ];
+  let outcome: Outcome;
+  try {
+    outcome = await supervise(upgrade, {
+      deadlineMs,
+      graceMs: 10_000,
+      captureBytes: 4 * 1024 * 1024,
+      announce: "the scheduled upgrade",
+      env,
+    });
+  } catch (error) {
+    return failedUpgrade(
+      `jig upgrade --scheduled did not start: ${(error as Error).message}`,
+    );
+  }
+  process.stderr.write(outcome.stderr);
+  return upgradeResult(outcome, deadlineMs);
+}
+
+/**
+ * The job's entry once the upgrade ran: the copy installed now, or the one
+ * it started with when the lookup fails, so a failed upgrade never stops it.
+ */
+async function entryAfterUpgrade(
+  programs: { claude?: string; codex?: string },
+  before: string,
+): Promise<string> {
+  try {
+    return await installedEntry(programs);
+  } catch (error) {
+    if (error instanceof LauncherStopped) throw error;
+    console.error(
+      `jig launcher: ${(error as Error).message}; running ${before}`,
+    );
+    return before;
+  }
+}
+
+/**
+ * The jobs the plugin is upgraded before: collection's and the dispatcher's
+ * ticks, whose receipts record the upgrade. Any other job, such as the
+ * dispatcher's minute-by-minute change probe, runs without one.
+ */
+const UPGRADED_JOBS = [
+  ["gc", "--scheduled"],
+  ["dispatch", "--apply"],
+];
+
+/** Whether the job `rest` names runs the scheduled upgrade first. */
+export function upgradesFirst(rest: readonly string[]): boolean {
+  return UPGRADED_JOBS.some((job) =>
+    job.every((word, index) => rest[index] === word),
+  );
+}
+
 async function main(argv: string[]): Promise<number> {
   try {
     const { programs, rest } = parseLauncherArguments(argv);
-    const entry = await installedEntry(programs);
-    return await runCollector([
-      process.execPath,
-      "--no-env-file",
-      `--config=${join(dirname(entry), "gc", "bunfig.toml")}`,
-      entry,
-      ...rest,
-    ]);
+    const env = { ...process.env };
+    const role = env[ROLE];
+    delete env[ROLE];
+    delete env[UPGRADE_RESULT];
+    let entry = await installedEntry(programs);
+    if ((role === undefined || role === "") && upgradesFirst(rest)) {
+      const result = await scheduledUpgrade(entry, programs, env);
+      env[UPGRADE_RESULT] = result;
+      // Only an update, or a failure part-way through one, can move the installed copy.
+      if (["updated", "failed"].includes(JSON.parse(result).outcome))
+        entry = await entryAfterUpgrade(programs, entry);
+    }
+    return await runCollector(
+      [...entryCommand(entry), ...rest],
+      collectionDeadlineMs(),
+      30_000,
+      env,
+    );
   } catch (error) {
     console.error(`jig launcher: ${(error as Error).message}`);
     return 1;

@@ -15,10 +15,9 @@ import type {
   IssueFact,
   LabelledIssueState,
   LedgerIssue,
-  PoolIssue,
   StartedIssueActivity,
-  Tracker,
 } from "../port.ts";
+import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
 import type { Client } from "./client.ts";
@@ -41,7 +40,7 @@ import {
 import { JiraApiError, offsetPages, searchPages } from "./transport.ts";
 
 type ReportOps = Pick<
-  Tracker,
+  CoreTracker,
   | "issuesByKeys"
   | "issuesInWindow"
   | "startedIssueActivity"
@@ -53,6 +52,7 @@ type ReportOps = Pick<
   | "openChildren"
   | "poolIssue"
   | "assignedIssues"
+  | "openPopulation"
 >;
 
 /** The ancestors the attribution walk reads; a further one fails the read. */
@@ -198,7 +198,7 @@ export function reportOperations(client: Client): ReportOps {
     return out;
   }
 
-  async function pools(issues: JiraIssue[]): Promise<PoolIssue[]> {
+  async function pools(issues: JiraIssue[]): Promise<CorePoolIssue[]> {
     const parents = await withOpenChildren(issues.map((i) => i.key));
     return issues.map((issue) => {
       const { state } = model.read(issue);
@@ -426,6 +426,15 @@ export function reportOperations(client: Client): ReportOps {
     async openChildren(key) {
       requireOwnKey(key);
       return pools(await client.children(key, true));
+    },
+
+    async openPopulation() {
+      return pools(
+        await client.search(
+          inProject(project, OPEN),
+          `open issues of ${project}`,
+        ),
+      );
     },
 
     async poolIssue(key) {

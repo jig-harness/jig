@@ -39,6 +39,7 @@ import {
   useStateRead,
 } from "./reads.ts";
 import { Refused } from "./refused.tsx";
+import { TicksPanel } from "./ticks.tsx";
 import { forgetOldReplies } from "./replies.ts";
 import {
   type LogFilter,
@@ -389,7 +390,7 @@ function NowPanels({ view, log }: { view: PageView; log: RowsAnswer | null }) {
   );
 }
 
-/** History: the window over the outcome log and the log itself. */
+/** History: how the recent ticks ran, the window over the outcome log and the log itself. */
 function HistoryPanels({
   theme,
   view,
@@ -407,9 +408,12 @@ function HistoryPanels({
   rowClock: RowClock;
   forges: Forges;
 }) {
-  const { gone } = view;
+  const { gone, line, clock } = view;
   return (
     <>
+      <PanelBoundary name="How the ticks ran" className="pTicks" reads={line}>
+        <TicksPanel line={line} clock={clock} />
+      </PanelBoundary>
       {log?.logHasRows === true ? (
         <PanelBoundary name="Window" className="pWindow" reads={log}>
           <WindowPanel

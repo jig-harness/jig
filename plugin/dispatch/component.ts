@@ -19,7 +19,6 @@ import type {
   Component,
   DoctorCheck,
   DoctorContext,
-  LastRun,
 } from "../runtime/component.ts";
 import type { InstalledJob } from "../runtime/installed-job.ts";
 import { orcaCommandOrInstalled } from "../shared/orca.ts";
@@ -33,14 +32,14 @@ import {
   strictDispatchCommand,
   winningIntervalArguments,
 } from "./cli.ts";
-import { dispatchJobSpec, installDispatch } from "./install.ts";
+import { dispatchJobSpec, installDispatch, probeJobSpec } from "./install.ts";
 import { installLabels } from "./install-labels.ts";
 import {
   type MachineConfig,
   machineConfigPath,
   readMachineConfig,
 } from "./lib/machine-config.ts";
-import { readReceipt, receiptPaths } from "./receipts.ts";
+import { lastTick } from "./receipts.ts";
 
 /**
  * The tick's job, by its names, arguments and deadline: what `jig run` runs
@@ -49,15 +48,21 @@ import { readReceipt, receiptPaths } from "./receipts.ts";
  * installed job's own schedule is what status reports.
  */
 function job() {
+  const machine = readableMachine();
+  const minutes =
+    machine === null ? 5 : Math.max(1, Math.ceil(machine.intervalMs / 60_000));
+  return dispatchJobSpec(minutes, machine);
+}
+
+/** The machine file, or null when there is none or it does not read: install refuses that with its message. */
+function readableMachine(): MachineConfig | null {
   let machine: MachineConfig | null = null;
   try {
     machine = machineFile();
   } catch {
     // Left to install, which refuses the file with its message.
   }
-  const minutes =
-    machine === null ? 5 : Math.max(1, Math.ceil(machine.intervalMs / 60_000));
-  return dispatchJobSpec(minutes, machine);
+  return machine;
 }
 
 function missingOptIn(): string | null {
@@ -65,22 +70,6 @@ function missingOptIn(): string | null {
   return existsSync(path)
     ? null
     : `no machine file ${path}. The dispatcher's timer starts drives on the accounts that file names; write it (CONFIGURATION.md, the machine's dispatch file), then run jig install dispatch`;
-}
-
-/** The newest receipt that reads; null when there is none. */
-function lastRun(): LastRun | null {
-  for (const path of receiptPaths().reverse()) {
-    const receipt = readReceipt(path);
-    if (receipt !== null)
-      return {
-        runId: receipt.runId,
-        startedAt: receipt.startedAt,
-        completed: receipt.completed,
-        exitStatus: receipt.exitStatus,
-        path,
-      };
-  }
-  return null;
 }
 
 /**
@@ -159,6 +148,8 @@ export const dispatchComponent: Component<DispatchArguments> = {
       ? winningIntervalArguments(argv)
       : null,
   job,
+  // The change probe's job, which its install writes beside the tick's and upgrade keeps.
+  companionJobs: () => [probeJobSpec(readableMachine())],
   missingOptIn,
   install: async (request) => {
     const timer = await installDispatch(
@@ -188,7 +179,7 @@ export const dispatchComponent: Component<DispatchArguments> = {
     scheduledStatus(
       "dispatch",
       job(),
-      lastRun(),
+      lastTick(),
       missingOptIn() === null
         ? undefined
         : `no machine file ${machineConfigPath()}`,

@@ -1,3 +1,4 @@
+import { derivedNext } from "../../dispatch/lib/next-owner.ts";
 /**
  * The `drive` station of a pull request: who drives it, the state of its
  * drive, what that waits on and how its last launch ended, from the records
@@ -46,6 +47,7 @@ import {
 } from "../../shared/records/shared.ts";
 import { settleNoCauseStops } from "../../dispatch/lib/no-cause-stops.ts";
 import { settleConflictStops } from "../../dispatch/lib/actions/drive-hold.ts";
+import { settlesWithPerson } from "../../dispatch/lib/redrive-settle.ts";
 import { isDrive } from "../../dispatch/lib/launches.ts";
 import { settleSharedConflictStops } from "../../dispatch/lib/shared-launches.ts";
 import { driveClass, lastEnded } from "../../dispatch/lib/log.ts";
@@ -54,7 +56,12 @@ import {
   classifyLedger,
   type ParkReading,
   type PrFacts,
+  readsBaseHead,
 } from "../../dispatch/lib/sources/ledgers.ts";
+import {
+  type DriverPresence,
+  driverPresence,
+} from "../../dispatch/lib/sources/silent-driver.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
 import type { Holder, Last, ThreadEntry, WaitsOn } from "./answer.ts";
 import {
@@ -65,6 +72,7 @@ import {
   readComments,
 } from "./forge.ts";
 import { driveRow, type DriveRow } from "./local.ts";
+import { takeoverSettled } from "./drive-takeover.ts";
 import {
   type AskContext,
   dispatcherReads,
@@ -209,14 +217,18 @@ function stoppedState(
   };
 }
 
-/** Why a stop on a conflict is a person's to settle, when this machine or another host already re-drove it for the change it shows now; `null` otherwise. */
+/** Why a stop on a conflict, a stall or a spent CI-repair budget is a person's to settle, when this machine or another host already re-drove it for the change it shows now; `null` otherwise. */
 function conflictSettled(
   placed: Classified,
   ledger: Ledger,
   r: DriveReads,
   host: string | null,
 ): string | null {
-  if (placed.class !== "stale" || placed.stale?.conflictStop !== true)
+  if (
+    placed.class !== "stale" ||
+    placed.stale === undefined ||
+    !settlesWithPerson(placed.stale)
+  )
     return null;
   const own = settleConflictStops(
     [
@@ -232,6 +244,7 @@ function conflictSettled(
           generation: ledger.generation,
           exit: ledger.driver.exit ?? null,
           heartbeat: ledger.driver.heartbeat,
+          mergeable: r.pull.mergeable ?? null,
         },
       },
     ],
@@ -244,6 +257,13 @@ function conflictSettled(
     host ?? "",
   );
   return settled?.class === "needs-person" ? settled.why : null;
+}
+
+/** A stall bound to its tree is re-driven only there, and whether an open workspace holds it is the dispatcher's read of its runtime, not this one's. */
+function staleWhy(placed: { why: string; stale?: { tree?: unknown } }): string {
+  return placed.stale?.tree === undefined
+    ? placed.why
+    : `${placed.why}; the dispatcher refuses it, and a person recovers the work, where no open workspace on its host holds that tree`;
 }
 
 /** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
@@ -315,8 +335,9 @@ function waitsOnOf(
     case "parked":
       return { person: "answer", why: placed.why };
     case "re-armable":
-    case "stale":
       return rearm(placed.why);
+    case "stale":
+      return rearm(staleWhy(placed));
     case "refused":
     case "unplaced":
       return { waiting: placed.why };
@@ -421,6 +442,7 @@ function lastOfClaim(r: DriveReads, ended: ReadClaim): Last | null {
       at: end.at,
       reason: end.reason,
       from: "launch claim",
+      next: derivedNext("rearm", "died", end.reason),
     };
   const placed =
     end.exit === null
@@ -438,6 +460,7 @@ function lastOfClaim(r: DriveReads, ended: ReadClaim): Last | null {
     at: end.at,
     reason: placed.reason,
     from: "launch claim",
+    next: derivedNext("rearm", placed.class, placed.reason),
   };
 }
 
@@ -708,6 +731,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
       };
   const holder = holderOf(reads, read, ctx);
   const base = await baseHeadOf(ctx, read, doc);
+  const presence = await silentPresence(read, doc, holder);
   const entries = recordEntries(reads, read, ctx);
   if (ctx.thread) entries.push(...(await threadReads(reads, ctx)));
   const answer: StationAnswer = {
@@ -724,7 +748,11 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
     stateDetail: [detail, ...diagnosticDetail(reads.row, read, holder)].join(
       "; ",
     ),
-    waitsOn: driveWait(reads, read, ctx, holder, { read: pull.read, base }),
+    waitsOn: driveWait(reads, read, ctx, holder, {
+      read: pull.read,
+      base,
+      presence,
+    }),
     last: lastOf(reads),
     entries,
   };
@@ -738,7 +766,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
   };
 }
 
-/** The head of the pull request's base branch, which the classifier reads only for a ledger that stopped on a conflict; noted in the sources. */
+/** The head of the pull request's base branch, which the classifier reads only for a ledger whose stop a conflict re-drives; noted in the sources. */
 async function baseHeadOf(
   ctx: AskContext,
   ledger: Ledger | null,
@@ -747,8 +775,7 @@ async function baseHeadOf(
   if (
     ledger === null ||
     doc.state !== "OPEN" ||
-    ledger.driver.state !== "stopped" ||
-    ledger.driver.exit !== DRIVE_EXIT.PR_CONFLICTING
+    !readsBaseHead(ledger, doc.mergeable)
   )
     return undefined;
   if (doc.baseRef === "")
@@ -793,13 +820,37 @@ async function rowOf(ctx: AskContext, pr: number): Promise<DriveRow | null> {
   return row.ok ? row.value : null;
 }
 
+/** What this host shows of a silent ledger's driver that no launch holds, as the dispatcher reads it; `null` for any other ledger. */
+async function silentPresence(
+  ledger: Ledger | null,
+  doc: PullDoc,
+  holder: Holder | "none",
+): Promise<DriverPresence | null> {
+  if (
+    ledger === null ||
+    doc.state !== "OPEN" ||
+    holder !== "none" ||
+    ledger.driver.state !== "running" ||
+    ledger.driver.personStop !== undefined
+  )
+    return null;
+  const beat = Date.parse(ledger.driver.heartbeat);
+  if (!Number.isFinite(beat) || Date.now() - beat <= stallThresholdMs())
+    return null;
+  return driverPresence(doc.number, ledger);
+}
+
 /** Select the station's wait after reconciling the current pull request and local diagnosis. */
 function driveWait(
   reads: DriveReads,
   ledger: Ledger | null,
   ctx: AskContext,
   holder: Holder | "none",
-  facts: { read: boolean; base: PrFacts["base"] },
+  facts: {
+    read: boolean;
+    base: PrFacts["base"];
+    presence: DriverPresence | null;
+  },
 ): WaitsOn {
   if (!facts.read)
     return {
@@ -807,6 +858,22 @@ function driveWait(
         "the pull request could not be read; its head and CI hold are unknown",
     };
   if (reads.pull.state !== "OPEN") return "none";
+  if (facts.presence?.gone === true && ledger !== null) {
+    const spent = takeoverSettled(
+      reads.pull,
+      reads.records,
+      reads.claims,
+      ctx.host,
+      ledger,
+      parkReading(ledger, reads.comments),
+      facts.base,
+    );
+    return spent === null
+      ? {
+          waiting: `its heartbeat is past the lease window and this host shows its driver's run ended (${facts.presence.why}): a dispatcher may take it over, once per ledger state and within the pull request's recovery budget, and drive.ts --take-over decides`,
+        }
+      : { person: "re-arm", why: spent };
+  }
   const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
   if (diagnosis !== null) return diagnosis;
   return ledger === null
