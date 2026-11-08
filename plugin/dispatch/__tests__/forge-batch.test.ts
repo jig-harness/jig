@@ -203,6 +203,17 @@ describe("the repository query's pull requests", () => {
         labels: { ...node.labels, nodes: [{ name: "a" }, null] },
       }),
     ).toThrow("unreadable labels");
+    const { labels: _l, ...noLabels } = node;
+    for (const labels of [
+      null,
+      { pageInfo: { hasNextPage: false }, nodes: null },
+      { nodes: [{ name: "a" }] },
+      { pageInfo: {}, nodes: [{ name: "a" }] },
+    ])
+      expect(() => listedPullRequest({ ...noLabels, labels })).toThrow(
+        "unreadable labels",
+      );
+    expect(() => listedPullRequest(noLabels)).toThrow("unreadable labels");
   });
 });
 

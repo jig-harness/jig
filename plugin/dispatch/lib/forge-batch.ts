@@ -162,7 +162,8 @@ function listedAuthor(
 /** One open pull request of the query in the pull request listing's shape; throws when its labels read in part. */
 export function listedPullRequest(node: unknown): Record<string, unknown> {
   if (!isRecord(node)) throw new PartialRead("a pull request is unreadable");
-  if (field(node, "labels", "pageInfo", "hasNextPage") === true)
+  const more = field(node, "labels", "pageInfo", "hasNextPage");
+  if (more === true)
     throw new PartialRead(
       `PR #${String(node.number)} has more labels than one read holds`,
     );
@@ -170,10 +171,9 @@ export function listedPullRequest(node: unknown): Record<string, unknown> {
   if (typeof node.number !== "number" || !text(node.headRefName))
     throw new PartialRead("a pull request lacks its number or head branch");
   if (
-    labels !== undefined &&
-    labels !== null &&
-    (!Array.isArray(labels) ||
-      !labels.every((l) => isRecord(l) && text(l.name)))
+    more !== false ||
+    !Array.isArray(labels) ||
+    !labels.every((l) => isRecord(l) && text(l.name))
   )
     throw new PartialRead(`PR #${node.number} has unreadable labels`);
   const author = listedAuthor(node.author);
@@ -194,7 +194,7 @@ export function listedPullRequest(node: unknown): Record<string, unknown> {
     ),
     ...(typeof node.isDraft === "boolean" ? { isDraft: node.isDraft } : {}),
     ...(author === null ? {} : { author }),
-    labels: Array.isArray(labels) ? labels : null,
+    labels,
   };
 }
 
