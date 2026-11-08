@@ -227,13 +227,7 @@ function changes(git: Git): string | null {
 function hiddenChanges(git: Git): string | null {
   const reads = [
     ["ls-files", "-v", "-z"],
-    [
-      "submodule",
-      "foreach",
-      "--quiet",
-      "--recursive",
-      "git ls-files -v -z",
-    ],
+    ["submodule", "foreach", "--quiet", "--recursive", "git ls-files -v -z"],
   ];
   for (const args of reads) {
     const flags = git(args);
