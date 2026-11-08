@@ -221,6 +221,36 @@ describe("jig dispatch --apply and a silent driver no launch started", () => {
     expect(second.repos[0]?.actions[0]?.takeoverHolder).toBeUndefined();
   }, 180_000);
 
+  it("does not take a silent drive over again after a takeover the doctor's reading started ended", async () => {
+    const w = fixture(`${CLONE}@ffffffffffffffff`, await deadPid());
+    writeFileSync(
+      join(w.dir, "doctor.json"),
+      JSON.stringify({
+        stateDir: "/state",
+        rows: [
+          {
+            kind: "pr",
+            key: "7",
+            state: "stale",
+            doctor: {
+              verdict: "DEAD",
+              reason: "its process is gone",
+              recovery: null,
+            },
+          },
+        ],
+      }),
+    );
+    const [launched] = launches(await tick(w));
+    expect(launched).toBeDefined();
+    await waitFor("the takeover's exit", () =>
+      exitWritten(w, launched?.record ?? ""),
+    );
+    const second = await tick(w);
+    expect(launches(second)).toEqual([]);
+    expect(notified(second)).toEqual([["PR #7", "needs-person", "sent"]]);
+  }, 180_000);
+
   it("tells a person, and does not take it over, while its driver's pid still runs", async () => {
     sleeper = Bun.spawn(
       [process.execPath, "-e", "setInterval(() => {}, 1000)"],

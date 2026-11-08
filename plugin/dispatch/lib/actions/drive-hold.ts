@@ -38,7 +38,6 @@
  */
 import { noCauseFacts } from "../no-cause-stops.ts";
 import {
-  goneUnlaunched,
   isRecovery,
   RECOVERY_FACTS,
   sameFacts,
@@ -240,8 +239,8 @@ export function settleConflictStops(
 
 /**
  * Each silent drive as the plan reads it once this machine's launch records
- * are read beside it: one whose driver this host shows gone, which this
- * machine already took over on the ledger facts it shows now, that takeover
+ * are read beside it: one, whether this host shows its driver gone or the
+ * doctor reads its holder, which this machine already took over on the ledger facts it shows now, that takeover
  * having ended without moving the ledger on, is notified as silent and not
  * taken over again. While a record still holds it, it reads as it is.
  */
@@ -250,7 +249,7 @@ export function settleSilentTakeovers(
   records: ReadRecord[],
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (!goneUnlaunched(pr)) return pr;
+    if (pr.class !== "silent") return pr;
     const facts = factsOf(pr);
     const mine = records.filter(
       (r) =>
