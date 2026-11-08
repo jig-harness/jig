@@ -7,11 +7,23 @@
  * after a successful follow-up does not turn it into a failure. An outcome
  * counts only for the marker that names its launch record: a later
  * attempt's outcome replaces it when that attempt ends.
+ *
+ * Beside the outcome it keeps what the pass asked (`asked`, JSON naming the
+ * launch record it is of): the question it stopped on, that question's
+ * routine class (`routine-questions.ts`) and whether the attempt was itself
+ * a run again. A row an earlier release wrote, or one whose record's prompt
+ * offered no routine tags, has no class field (`routine` absent), which
+ * `routine-reruns.ts` reads as a follow-up that failed before passes tagged
+ * their questions.
  */
 import { stateRoot } from "../receipts.ts";
+import { isMapping } from "../../shared/config-layers.ts";
+import { swallow } from "../../shared/errors.ts";
 import type { ReadRecord } from "./launches.ts";
+import { routineClassOf } from "./routine-questions.ts";
+import { questionOf } from "./session.ts";
 import { stateDb } from "./state.ts";
-import { retryableFollowup } from "./session-startup.ts";
+import { isRerun, retryableFollowup } from "./session-startup.ts";
 
 export interface FollowupOutcome {
   /** The repository's `owner/name`. */
@@ -23,6 +35,36 @@ export interface FollowupOutcome {
   at: string;
   /** When that launch record was created. */
   created: string;
+  /** The question the pass stopped on; `null` when it stated none; absent on a row that kept none. */
+  question?: string | null;
+  /** The routine class its question was tagged with, `null` when it carried none; absent when the record's prompt offered no tags (an earlier release's row). */
+  routine?: string | null;
+  /** Whether the attempt was itself a run again (its facts carry the recovery tag); absent on a row that kept none. */
+  rerun?: boolean;
+}
+
+/** What a row keeps of the pass's question, as its `asked` column holds it. */
+export type Asked = Pick<FollowupOutcome, "question" | "routine" | "rerun">;
+
+/** The `asked` column of a row of `record`: its fields, or none when it is empty, does not read, or names another record. */
+function parseAsked(text: string | null, record: string): Asked {
+  if (text === null) return {};
+  try {
+    const value: unknown = JSON.parse(text);
+    if (!isMapping(value) || value.record !== record) return {};
+    return {
+      question: typeof value.question === "string" ? value.question : null,
+      ...(value.routine === undefined
+        ? {}
+        : {
+            routine: typeof value.routine === "string" ? value.routine : null,
+          }),
+      rerun: value.rerun === true,
+    };
+  } catch (error) {
+    swallow(error, "a follow-up outcome's question does not read");
+    return {};
+  }
 }
 
 /** The outcome records of `repo`, by pull request. */
@@ -32,10 +74,27 @@ export function readOutcomes(
 ): Map<number, FollowupOutcome> {
   const rows = stateDb(root)
     .query(
-      "SELECT repo, pr, record, outcome, at, created FROM followup_outcomes WHERE repo = ?",
+      "SELECT repo, pr, record, outcome, at, created, asked FROM followup_outcomes WHERE repo = ?",
     )
-    .all(repo) as FollowupOutcome[];
-  return new Map(rows.map((o) => [o.pr, o]));
+    .all(repo) as (FollowupOutcome & { asked: string | null })[];
+  return new Map(
+    rows.map(({ asked, ...o }) => [
+      o.pr,
+      { ...o, ...parseAsked(asked, o.record) },
+    ]),
+  );
+}
+
+/** What an ended follow-up record asked: its question, its tag's class where its prompt offered tags, and whether it was a run again. */
+export function askedBy(r: ReadRecord): Asked {
+  const question = questionOf(r.state);
+  return {
+    question,
+    ...(r.record.routineTags === true
+      ? { routine: routineClassOf(question) }
+      : {}),
+    rerun: isRerun(r.record),
+  };
 }
 
 /** How an ended follow-up record ended: its session's recorded result, else failed; `null` while it holds, or for a retry (a startup that never began, a first death). */
@@ -66,10 +125,11 @@ export function settleFollowups(
 ): void {
   const known = new Map<string, Map<number, FollowupOutcome>>();
   const write = stateDb(root).query(
-    `INSERT INTO followup_outcomes (repo, pr, record, outcome, at, created)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO followup_outcomes (repo, pr, record, outcome, at, created, asked)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (repo, pr) DO UPDATE SET record = excluded.record,
-       outcome = excluded.outcome, at = excluded.at, created = excluded.created`,
+       outcome = excluded.outcome, at = excluded.at, created = excluded.created,
+       asked = excluded.asked`,
   );
   for (const r of records) {
     const { record } = r;
@@ -85,6 +145,7 @@ export function settleFollowups(
     if (written?.record === record.id && written.outcome === outcome) continue;
     // A later attempt's outcome stands over an earlier record that ends after it: ordered by when the record was created, the ids only break a tie (their suffix is random within a second).
     if (written !== undefined && supersedes(written, record)) continue;
+    const asked = askedBy(r);
     const value: FollowupOutcome = {
       repo: record.repo,
       pr: record.pr,
@@ -92,6 +153,7 @@ export function settleFollowups(
       outcome,
       at: new Date().toISOString(),
       created: record.createdAt,
+      ...asked,
     };
     write.run(
       value.repo,
@@ -100,6 +162,7 @@ export function settleFollowups(
       value.outcome,
       value.at,
       value.created,
+      JSON.stringify({ record: record.id, ...asked }),
     );
     outcomes.set(record.pr, value);
   }

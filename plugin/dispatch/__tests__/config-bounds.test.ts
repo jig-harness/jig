@@ -42,7 +42,8 @@ describe("the machine file's bounds", () => {
       "opens_per_tick: 8\nworkspace_timeout: 1h\nruntime_timeout: 1m\n",
     )() as NonNullable<ReturnType<typeof readMachineConfig>>;
     expect(machine.opensPerTick).toBe(8);
-    expect(tickBudgetMs(machine)).toBe(8 * 3_600_000 + 8 * 60_000);
+    // The follow-ups' lane adds its two default opens.
+    expect(tickBudgetMs(machine)).toBe((8 + 2) * 3_600_000 + 8 * 60_000);
     expect(tickDeadlineMs(machine)).toBe(tickBudgetMs(machine));
     expect(dispatchJobSpec(5, machine).deadlineSec).toBe(
       Math.ceil(tickBudgetMs(machine) / 1000),
@@ -60,6 +61,34 @@ describe("the machine file's bounds", () => {
     expect(config("opens_per_tick: 1000\nworkspace_timeout: 1h\n")).toThrow(
       "longer than 24d",
     );
+  });
+
+  it("reads the follow-ups' lane with its defaults, and counts its opens in the tick's budget", () => {
+    type Lane = { followupOpensPerTick: number; followupConcurrency: number };
+    const defaults = config("")() as Lane;
+    expect(defaults.followupOpensPerTick).toBe(2);
+    expect(defaults.followupConcurrency).toBe(2);
+    const machine = config(
+      "opens_per_tick: 4\nfollowup_opens_per_tick: 3\nfollowup_concurrency: 5\nworkspace_timeout: 1h\nruntime_timeout: 1m\n",
+    )() as NonNullable<ReturnType<typeof readMachineConfig>>;
+    expect(machine.followupOpensPerTick).toBe(3);
+    expect(machine.followupConcurrency).toBe(5);
+    expect(tickBudgetMs(machine)).toBe((4 + 3) * 3_600_000 + 8 * 60_000);
+    expect(tickDeadlineMs(machine)).toBe(tickBudgetMs(machine));
+  });
+
+  it("refuses an invalid lane value, and lane opens that push the tick past the timer, naming the field", () => {
+    for (const field of ["followup_opens_per_tick", "followup_concurrency"])
+      for (const value of ["0", "-1", "1.5", "many"])
+        expect(config(`${field}: ${value}\n`)).toThrow(
+          `${field} must be a positive whole number`,
+        );
+    // Four launch opens of an hour fit; six hundred more from the lane do not.
+    expect(config("workspace_timeout: 1h\n")()).not.toBeNull();
+    const read = config(
+      "followup_opens_per_tick: 600\nworkspace_timeout: 1h\n",
+    );
+    expect(read).toThrow("followup_opens_per_tick 600 pushes a tick past 24d");
   });
 
   it("refuses a duration past the supported range, however large", () => {

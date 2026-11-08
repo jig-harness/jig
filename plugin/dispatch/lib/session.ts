@@ -20,6 +20,7 @@ import {
   skillPrompt,
 } from "../../skills/drive-pr/scripts/lib/pass-command.ts";
 import type { LaunchRecord, LaunchState, SessionResult } from "./launches.ts";
+import { ROUTINE_QUESTIONS, routineQuestion } from "./routine-questions.ts";
 
 /** The skill a pickup starts. */
 export const PICKUP_SKILL = "/jig:do-item";
@@ -77,6 +78,33 @@ function pickupPrompt(
   ].join("\n");
 }
 
+/**
+ * The routine question classes, for the pass to tag its own question with
+ * (`routine-questions.ts`); and, on a routine run again, the question the
+ * earlier pass stopped on and the standing answers to apply.
+ */
+function routineLines(record: LaunchRecord): string[] {
+  const tags = [
+    `When your question is only about one of these routine classes, put the class's tag in brackets right after "${QUESTION_PREFIX}" (${QUESTION_PREFIX} [${ROUTINE_QUESTIONS[0]?.id}] …); tag no other question:`,
+    ...ROUTINE_QUESTIONS.map((q) => `- ${q.id}: ${q.covers}`),
+  ];
+  const standing = record.standing;
+  if (standing === undefined || standing === null) return tags;
+  const answers = standing.classes
+    .map(routineQuestion)
+    .filter((q) => q !== undefined)
+    .map((q) => `- ${q.id} (${q.covers}): ${q.answer}`);
+  return [
+    ...tags,
+    standing.question === null
+      ? "This pass runs the follow-up again: the earlier pass stopped short of done."
+      : `This pass runs the follow-up again: the earlier pass stopped on the question: ${standing.question}`,
+    "Where it stopped on one of these classes, apply the class's standing answer, which needs no person:",
+    ...answers,
+    "Apply that answer, finish every other arm and record done; stop on a question only for a decision none of these answers covers.",
+  ];
+}
+
 /** The prompt a follow-up's headless pass starts with. */
 function followupPrompt(record: LaunchRecord): string {
   const pr = String(record.pr);
@@ -88,6 +116,7 @@ function followupPrompt(record: LaunchRecord): string {
     `It claimed the follow-up with the marker comment ${marker} on the pull request. That claim is this pass's: post no marker of your own. Before each act that writes outside the pull request (an issue closed, a tag pushed), check that you still hold the claim, and stop on any nonzero exit (an earlier marker, an unreadable forge, a missing marker): ${jigCommand(["marker", "check", pr, "--comment", marker, "--repo", record.repo])}`,
     "Leave routine local housekeeping (branch retention, retired workspaces and scratch notes) to periodic cleanup, even when no collector covers a leftover yet. Do not ask a person about it or treat it as an incomplete arm or a failed result. Evidence of unlanded work or an active operational problem still belongs in the follow-up.",
     `Where a step needs a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
+    ...routineLines(record),
     "When you stop, record how the follow-up ended, once:",
     `- every arm is settled, what you may carry out carried out and the rest reported: ${resultCommand(record, "done")}`,
     `- you stopped short of that (a question, a failure, an earlier marker): ${resultCommand(record, "failed")}`,

@@ -42,6 +42,8 @@ const MACHINE: MachineConfig = {
   runtimeTimeoutMs: 60_000,
   workspaceTimeoutMs: 60_000,
   opensPerTick: 4,
+  followupOpensPerTick: 2,
+  followupConcurrency: 2,
   receiptsDays: 30,
   unclaimedAfterMs: 900_000,
   dashboardListen: null,

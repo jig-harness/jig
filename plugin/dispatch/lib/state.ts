@@ -12,7 +12,7 @@
  * | `notices_content` | workspace | the exact dispatcher-only comment last confirmed, and the intended write awaiting an exact read |
  * | `notices_read` | repository | when the tick first found its notices workspace read, until it is unread again or removed |
  * | `nudges` | session and waiting episode | one nudge per episode, its delivery marked once |
- * | `followup_outcomes` | repository and merged pull request | the latest attempt's outcome |
+ * | `followup_outcomes` | repository and merged pull request | the latest attempt's outcome, with the question its pass stopped on and that question's routine class |
  * | `followup_releases` | repository and merged pull request | the one stale claim the tick released, pending until the forge deleted its marker |
  * | `idle` | repository and claimed item | the stall clock starts once |
  * | `holds` | repository and pull request held behind another in a serialized area | the hold's start, written with its event row |
@@ -282,6 +282,11 @@ const MIGRATIONS: readonly Migration[] = [
   `,
   },
   { additive: true, sql: "ALTER TABLE launches ADD COLUMN result_next TEXT;" },
+  {
+    // What a follow-up's question was and its routine class (`followup-outcomes.ts`), as JSON naming the record it is of. A row an earlier release wrote has none.
+    additive: true,
+    sql: "ALTER TABLE followup_outcomes ADD COLUMN asked TEXT;",
+  },
 ];
 
 /** The schema version this plugin writes. */

@@ -14,7 +14,9 @@
  * 3. the pull request's workspace: the one joined to it, else its head
  *    branch opened (a branch the merge deleted is cut from the base) in a
  *    workspace named for the follow-up and the pull request (`dispatched`
- *    in `runtime/port.ts`), under the launch record's id minted here;
+ *    in `runtime/port.ts`), under the launch record's id minted here, from
+ *    the follow-ups' own lane (`followup-lane.ts`), whose cap and per-tick
+ *    budget are checked before the account is admitted;
  * 4. write the launch record, which holds the slot from here on;
  * 5. post the marker naming the record and this host, the follow-up's
  *    shared record (`shared/records/shared.ts`), which reads it back: an
@@ -84,6 +86,7 @@ import {
   waits,
 } from "./launch.ts";
 import { applyReleases, isRelease } from "./release-claims.ts";
+import { laneBudgetWait, laneCapWait } from "./followup-lane.ts";
 
 /** What a repository's follow-ups need beyond the apply state. */
 export interface FollowupContext {
@@ -151,25 +154,52 @@ async function changed(
     : null;
 }
 
-/** The pull request's workspace: the one joined to it, else its head branch opened. */
+type WorkspaceRef = { id: string; path: string };
+
+/** The workspace joined to the pull request, read afresh; `undefined` when none is, or the runtime cannot say. */
+async function joinedWorkspace(
+  ctx: FollowupContext,
+  pr: number,
+): Promise<WorkspaceRef | undefined> {
+  const sessions = await ctx.sessions().catch(() => null);
+  const joined = sessions?.ok
+    ? sessions.workspaces.find((w) => w.prs.includes(pr))
+    : undefined;
+  return joined === undefined
+    ? undefined
+    : { id: joined.id, path: joined.path };
+}
+
+/** The pull request's workspace: the one joined to it, else its head branch opened within the follow-ups' lane. */
 async function workspaceFor(
   state: ApplyState,
   repo: RepoTarget,
-  ctx: FollowupContext,
   pr: MarkedPr,
   named: Dispatched,
+  joined: WorkspaceRef | undefined,
 ): Promise<Opened> {
-  const sessions = await ctx.sessions().catch(() => null);
-  const joined = sessions?.ok
-    ? sessions.workspaces.find((w) => w.prs.includes(pr.number))
-    : undefined;
-  if (joined !== undefined)
-    return { workspace: { id: joined.id, path: joined.path } };
-  return openWithinBudget(state, repo, {
-    pr: pr.number,
-    head: pr.head,
-    dispatched: named,
-  });
+  if (joined !== undefined) return { workspace: joined };
+  return openWithinBudget(
+    state,
+    repo,
+    { pr: pr.number, head: pr.head, dispatched: named },
+    true,
+  );
+}
+
+/** Why the follow-ups' lane holds this one back, and on what; `null` when it may go on to admission. */
+function laneHolds(
+  state: ApplyState,
+  action: Action,
+  joined: WorkspaceRef | undefined,
+): LaunchOutcome | null {
+  const cap = laneCapWait(state);
+  if (cap !== null) return { ...waits(action, cap), waitsOn: "lane-cap" };
+  // A joined workspace needs no open, so the lane's budget does not hold it.
+  const budget = joined === undefined ? laneBudgetWait(state) : null;
+  return budget === null
+    ? null
+    : { ...waits(action, budget), waitsOn: "lane-budget" };
 }
 
 /**
@@ -265,7 +295,7 @@ function newFollowupRecord(
   slots: Slots,
   workspace: { id: string; path: string },
   named: { id: string; mark: string },
-  facts: string | undefined,
+  action: Pick<Action, "facts" | "standing">,
 ): LaunchRecord & { pr: number } {
   return {
     version: 1,
@@ -284,8 +314,8 @@ function newFollowupRecord(
     passTimeoutSec: state.passDeadlineSec,
     codexBypass: state.codexOptIn.on,
     replaces: null,
-    // A run again of a follow-up that died says so in its facts: a second death is a person's.
-    facts: facts ?? `merged ${pr.mergedAt}`,
+    // A run again of a follow-up that died or stopped on a routine question says so in its facts: a second failure is a person's.
+    facts: action.facts ?? `merged ${pr.mergedAt}`,
     createdAt: new Date().toISOString(),
     workspace,
     attempts: [],
@@ -296,6 +326,8 @@ function newFollowupRecord(
     command: ctx.section.followupCommand,
     marker: null,
     sessionId: sessionIdFor(admittedVendor(slots.account)),
+    routineTags: true,
+    ...(action.standing === undefined ? {} : { standing: action.standing }),
   };
 }
 
@@ -313,6 +345,9 @@ async function launchOne(
     return waits(action, "the merged pull request is not in this tick's read");
   const before = await changed(repo, ctx, pr.number);
   if (before !== null) return waits(action, before);
+  const joined = await joinedWorkspace(ctx, pr.number);
+  const held = laneHolds(state, action, joined);
+  if (held !== null) return held;
   const admitted = await admitAccount(state, action);
   if ("outcome" in admitted) return admitted.outcome;
   const { slots } = admitted;
@@ -322,7 +357,7 @@ async function launchOne(
     state,
     action,
     slots,
-    workspaceFor(state, repo, ctx, pr, named),
+    workspaceFor(state, repo, pr, named, joined),
   );
   if ("outcome" in opened) return opened.outcome;
   const after = await changed(repo, ctx, pr.number);
@@ -335,7 +370,7 @@ async function launchOne(
     slots,
     opened.workspace,
     { id, mark: named.mark },
-    action.facts,
+    action,
   );
   return claimAndLaunch(state, repo, action, ctx, record, slots);
 }

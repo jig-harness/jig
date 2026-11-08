@@ -89,7 +89,9 @@ it("gives a timer-free tick the configured workspace and runtime budget", () => 
     "jig-dispatch.timer": null,
   });
   expect(result).toMatchObject({ ok: true });
-  if (result.ok) expect(result.value.timeoutSec).toBe(16 * 3600 + 8 * 60 + 60);
+  // Four launch opens and the follow-ups' two, of four hours each, eight runtime calls and a minute's grace.
+  if (result.ok)
+    expect(result.value.timeoutSec).toBe((4 + 2) * 4 * 3600 + 8 * 60 + 60);
 });
 
 it("runs a complete installed timer", () => {

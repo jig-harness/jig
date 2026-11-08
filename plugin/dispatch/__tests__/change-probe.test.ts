@@ -127,6 +127,8 @@ function machine(changeProbe = true): MachineConfig {
     unclaimedAfterMs: 900_000,
     workspaceTimeoutMs: 60_000,
     opensPerTick: 4,
+    followupOpensPerTick: 2,
+    followupConcurrency: 2,
     receiptsDays: 30,
     dashboardListen: null,
     sharedRecords: "forge",

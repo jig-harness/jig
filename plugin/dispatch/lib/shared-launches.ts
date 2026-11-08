@@ -60,6 +60,7 @@ import type { LaunchClaimer } from "./actions/launch.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
 import { retriedDeath, retryableFollowup } from "./session-startup.ts";
+import { routineEnd, routineRerun } from "./routine-reruns.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
@@ -594,8 +595,8 @@ export async function settleOwnClaims(
     ...merged.flatMap((pr) =>
       ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).flatMap(
         (m) =>
-          // A retry's marker is released, never answered.
-          retryable(byId.get(m.run.record))
+          // A retry's marker is released, never answered; so is one a routine run again follows.
+          released(m.run.record, byId, outcomes.get(pr.number), records)
             ? []
             : owed(
                 pr.number,
@@ -766,6 +767,18 @@ function ownRecordClaims(
   );
 }
 
+/** Whether the marker naming `record` is released rather than answered: a retry's, or one a routine run again follows. */
+function released(
+  record: string,
+  byId: ReadonlyMap<string, ReadRecord>,
+  written: FollowupOutcome | undefined,
+  records: readonly ReadRecord[],
+): boolean {
+  const r = byId.get(record);
+  if (retryable(r) || (r !== undefined && routineEnd(r))) return true;
+  return routineRerun(written, records)?.record === record;
+}
+
 /** Whether a record's end is a follow-up's retry, whose marker is released rather than answered. */
 function retryable(r: ReadRecord | undefined): boolean {
   return r !== undefined && retryableFollowup(r);
@@ -795,14 +808,15 @@ async function releaseStartupClaims(
  * launch ends. Every forge call, the read of the login among them, goes
  * through `ghCall` under `AT_EXIT_CALL_SEC`. Best effort: it returns why an
  * end was not written, and the tick's settle writes it. Retryable startup
- * markers are released only by the tick, which reads current dispatch scope.
+ * markers, and those of a follow-up that owes a routine run again, are
+ * released only by the tick, which reads current dispatch scope.
  */
 export async function settleAtExit(
   r: ReadRecord,
   root = stateRoot(),
 ): Promise<string[]> {
   // A retry's marker deletion needs the tick's current scope and dispute checks.
-  if (retryableFollowup(r)) return [];
+  if (retryableFollowup(r) || routineEnd(r)) return [];
   const nowIso = new Date().toISOString();
   if (owedAtExit(r, nowIso) === null) return [];
   const login = await resolveLogin(AT_EXIT_CALL_SEC);

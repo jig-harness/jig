@@ -49,10 +49,12 @@ import { retryable } from "../stuck-launches.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
+  LaneWait,
   LaunchOutcome,
   RepoReport,
   RepoTarget,
 } from "../types.ts";
+import { laneBudgetWait } from "./followup-lane.ts";
 
 /** What `--apply` carries across a tick's repositories. */
 export interface ApplyState {
@@ -81,6 +83,8 @@ export interface ApplyState {
   opened?: number;
   /** Opens spent on notices, which do not consume the launches' allowance. */
   noticesOpened?: number;
+  /** The follow-up workspaces this tick has opened so far, within `followup_opens_per_tick`, outside `opened` (`followup-lane.ts`). */
+  followupOpened?: number;
   /** When the tick began (its invocation, not its act phase), for its overall deadline. */
   startedAt?: number;
   /** The index of this tick among the applying ticks, which rotates the order of everything that shares the allowance. */
@@ -205,7 +209,7 @@ export function rotated<T>(
 
 export type Opened =
   | { workspace: { id: string; path: string }; cleanupFailure?: string }
-  | { waits: string }
+  | { waits: string; waitsOn?: LaneWait }
   | { refused: string };
 
 /** Total and launch-specific allowances count notices once. */
@@ -236,12 +240,16 @@ function openBudgetWait(state: ApplyState, notice: boolean): string | null {
 /**
  * Open a workspace through the runtime, within the tick's budget: a tick
  * opens at most `opens_per_tick` (four by default), one of them kept for the notices workspace, and a launch that needs another waits for
- * the next tick rather than run past the deadline the timer gives it.
+ * the next tick rather than run past the deadline the timer gives it. A
+ * follow-up's open (`lane`) is counted against `followup_opens_per_tick`
+ * instead, and never against the launches' allowance or the notices'
+ * reservation.
  */
 export async function openWithinBudget(
   state: ApplyState,
   repo: RepoTarget,
   target: ItemTarget | PullRequestTarget | NoticesTarget,
+  lane = false,
 ): Promise<Opened> {
   const late = outOfTime(state);
   if (late !== null) return { waits: late };
@@ -257,10 +265,16 @@ export async function openWithinBudget(
         "the tick deadline has no room for the repository lookup, another workspace_timeout and its receipt; a later tick opens this one",
     };
   const notice = "notices" in target;
-  const waiting = openBudgetWait(state, notice);
-  if (waiting !== null) return { waits: waiting };
-  state.opened = (state.opened ?? 0) + 1;
-  if (notice) state.noticesOpened = (state.noticesOpened ?? 0) + 1;
+  if (lane) {
+    const spent = laneBudgetWait(state);
+    if (spent !== null) return { waits: spent, waitsOn: "lane-budget" };
+    state.followupOpened = (state.followupOpened ?? 0) + 1;
+  } else {
+    const waiting = openBudgetWait(state, notice);
+    if (waiting !== null) return { waits: waiting };
+    state.opened = (state.opened ?? 0) + 1;
+    if (notice) state.noticesOpened = (state.noticesOpened ?? 0) + 1;
+  }
   let opened: RuntimeReceipt;
   try {
     opened = await state.runtime.openWorkspace(repo, target);
@@ -463,7 +477,12 @@ function workspaceOr(
   account: string,
 ): { workspace: { id: string; path: string } } | { outcome: LaunchOutcome } {
   if ("waits" in opened)
-    return { outcome: waits(action, opened.waits, account) };
+    return {
+      outcome: {
+        ...waits(action, opened.waits, account),
+        ...(opened.waitsOn === undefined ? {} : { waitsOn: opened.waitsOn }),
+      },
+    };
   if ("refused" in opened)
     return { outcome: refused(action, opened.refused, account) };
   return opened;
@@ -614,7 +633,11 @@ export async function admitAccount(
     const admitted = admission(state, action, failed);
     if ("waits" in admitted)
       return {
-        outcome: refusal ?? waits(action, admitted.waits),
+        outcome: refusal ?? {
+          ...waits(action, admitted.waits),
+          // A follow-up says what it waits on: here, the accounts.
+          ...(action.stage === "followup" ? { waitsOn: "accounts" } : {}),
+        },
       };
     const slots = admitted.admitted;
     const identity = await identityOf(state, slots);

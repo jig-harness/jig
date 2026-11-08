@@ -5,6 +5,7 @@
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
 import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
+import type { StandingAnswer } from "./routine-questions.ts";
 
 /** The records a tick reads, by who owns them. */
 export type RecordName = "tracker" | "forge" | "runtime";
@@ -294,6 +295,8 @@ export interface Action {
   nudge?: { record: string; agent: string; episode: string; account: string };
   /** For a follow-up: the stale claim the tick releases, rather than a launch. */
   release?: StaleClaim;
+  /** For a follow-up's routine run again: the earlier question and the classes whose standing answers its prompt gives. */
+  standing?: StandingAnswer;
 }
 
 /** What `--apply` did with one stale follow-up claim. */
@@ -330,7 +333,17 @@ export interface LaunchOutcome {
   account: string | null;
   record: string | null;
   detail: string;
+  /**
+   * For a follow-up that waits for its lane: what it waits on. `lane-budget`:
+   * the tick spent `followup_opens_per_tick`; `lane-cap`: the host runs
+   * `followup_concurrency` follow-ups already; `accounts`: no admitted
+   * account has a free slot.
+   */
+  waitsOn?: LaneWait;
 }
+
+/** What a follow-up that waits for its lane waits on. */
+export type LaneWait = "lane-budget" | "lane-cap" | "accounts";
 
 /** What `--apply` did with one notification. */
 export interface NotifyOutcome {
