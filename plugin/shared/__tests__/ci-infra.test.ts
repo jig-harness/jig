@@ -87,7 +87,7 @@ describe("readInfrastructure", () => {
       ),
     );
     expect(r.infrastructure).toBe(false);
-    expect(r.why).toContain("names no infrastructure failure");
+    expect(r.why).toContain("permanent HTTP failure");
   });
 
   it("reads a lost runner as infrastructure in any step", () => {
@@ -143,6 +143,48 @@ describe("readInfrastructure", () => {
     const r = readInfrastructure("Unexpected HTTP response: 504\n");
     expect(r.infrastructure).toBe(false);
     expect(r.why).toContain("no step is named for");
+  });
+
+  it("rejects runner loss without job and step provenance", () => {
+    for (const log of [
+      "The runner has received a shutdown signal.",
+      step("", "Run tests", "The runner has received a shutdown signal."),
+      step("test", "", "The runner has received a shutdown signal."),
+    ])
+      expect(readInfrastructure(log).infrastructure).toBe(false);
+  });
+
+  it("rejects permanent diagnostics beside transient failures", () => {
+    for (const diagnostic of [
+      "FAILED tests/test_cart.py::test_total",
+      "npm ERR! code E403",
+      "npm error code E403",
+      "error: HTTP 403 Forbidden",
+    ])
+      expect(
+        readInfrastructure(
+          step(
+            "test",
+            "Install dependencies",
+            "Unexpected HTTP response: 503",
+            diagnostic,
+            "The runner has received a shutdown signal.",
+          ),
+        ).infrastructure,
+      ).toBe(false);
+  });
+
+  it("classifies the full error annotation before truncating its display", () => {
+    expect(
+      readInfrastructure(
+        step(
+          "build",
+          "Download tool",
+          `##[error]Unable to download https://example.test/${"a".repeat(250)}: Unexpected HTTP response: 503`,
+          EXIT,
+        ),
+      ).infrastructure,
+    ).toBe(true);
   });
 
   it("reads an empty log as the code's", () => {

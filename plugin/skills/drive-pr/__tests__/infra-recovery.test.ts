@@ -13,6 +13,7 @@ import { join } from "node:path";
 import {
   everyFailureInfrastructure,
   type Exec,
+  wholeOr,
   type FailingChecks,
   type InfraDeps,
   moveHead,
@@ -37,7 +38,13 @@ const MOVED = "b".repeat(40);
 const FAILING: FailingChecks = {
   checkRunNames: ["Analyze (python)", "Analyze (actions)"],
   statusNames: [],
-  runs: [{ id: 41, createdAt: "2026-11-08T10:11:00Z" }],
+  runs: [
+    {
+      id: 41,
+      createdAt: "2026-11-08T10:11:00Z",
+      jobNames: ["Analyze (python)", "Analyze (actions)"],
+    },
+  ],
 };
 
 /** The fields of the round context this step reads and writes. */
@@ -187,6 +194,50 @@ describe("recoverInfrastructureFailure", () => {
 });
 
 describe("everyFailureInfrastructure", () => {
+  it("does not overwrite a code failure with a same-named infrastructure job", () => {
+    const failing = {
+      ...FAILING,
+      checkRunNames: ["test", "test"],
+      runs: [
+        { id: 1, createdAt: "", jobNames: ["test"] },
+        { id: 2, createdAt: "", jobNames: ["test"] },
+      ],
+    };
+    expect(
+      everyFailureInfrastructure(failing, [
+        "test\tRun tests\tFAIL src/a.test.ts",
+        "test\tSet up job\tThe runner has received a shutdown signal.",
+      ]).infrastructure,
+    ).toBe(false);
+  });
+
+  it("rejects unplaced negative evidence beside named infrastructure jobs", () => {
+    expect(
+      everyFailureInfrastructure(FAILING, [
+        DOWNLOAD_504 + "\nFAIL src/a.test.ts",
+      ]).infrastructure,
+    ).toBe(false);
+  });
+
+  it("does not cover a non-workflow check through another check's name", () => {
+    expect(
+      everyFailureInfrastructure(
+        {
+          ...FAILING,
+          checkRunNames: [...(FAILING.checkRunNames ?? []), "Analyze (python)"],
+        },
+        [DOWNLOAD_504],
+      ).infrastructure,
+    ).toBe(false);
+  });
+
+  it("bounds numeric retry inputs", () => {
+    for (const raw of ["9".repeat(400), "9007199254740992", "101", "-1", "no"])
+      expect(wholeOr(raw, 2)).toBe(2);
+    expect(wholeOr("0", 2)).toBe(0);
+    expect(wholeOr("100", 2)).toBe(100);
+  });
+
   it("names the check no failed-run log covers", () => {
     const r = everyFailureInfrastructure(
       { ...FAILING, checkRunNames: ["lint"] },
@@ -194,7 +245,7 @@ describe("everyFailureInfrastructure", () => {
     );
     expect(r).toEqual({
       infrastructure: false,
-      why: "no failed-run log names the failing check 'lint'",
+      why: "a failing check has no unique workflow-run coverage",
     });
   });
 });
@@ -236,7 +287,7 @@ describe("moveHead", () => {
     expect(calls.at(-1)).toContain(`guarded-push 999 --expect-head ${MOVED}`);
   });
 
-  it("pushes the base merged into a branch that was behind it, with no empty commit", async () => {
+  it("hands a base merge to the next validated round, with no empty commit", async () => {
     const commits: string[] = [];
     const { exec, calls } = execOf({
       "base-sync": { code: 0, stdout: '{"action":"merged","reason":"merged"}' },
@@ -257,7 +308,7 @@ describe("moveHead", () => {
 
   it("never pushes a head that did not move", async () => {
     const { exec, calls } = execOf({
-      "base-sync": { code: 0, stdout: '{"action":"none"}' },
+      "base-sync": { code: 0, stdout: '{"action":"none","reason":"in-sync"}' },
       "rev-parse": { code: 0, stdout: `${HEAD}\n` },
     });
     expect(
@@ -273,7 +324,9 @@ describe("moveHead", () => {
   it("reports a closed pull request as 5, and a refused commit as 1", async () => {
     const closed = execOf({ "base-sync": { code: 5 } });
     expect(await moveHead("999", HEAD, closed.exec)).toBe(5);
-    const refused = execOf({ "base-sync": { code: 0, stdout: "{}" } });
+    const refused = execOf({
+      "base-sync": { code: 0, stdout: '{"action":"none","reason":"in-sync"}' },
+    });
     expect(
       await moveHead("999", HEAD, refused.exec, async () => ({
         code: 1,
@@ -281,6 +334,48 @@ describe("moveHead", () => {
         stderr: "the tree holds tracked changes",
       })),
     ).toBe(1);
+  });
+
+  it("propagates base-sync refusals without committing or pushing", async () => {
+    for (const code of [1, 2, 3, 11]) {
+      const { exec, calls } = execOf({ "base-sync": { code } });
+      let committed = false;
+      expect(
+        await moveHead("999", HEAD, exec, async () => {
+          committed = true;
+          return { code: 0, stdout: "", stderr: "" };
+        }),
+      ).toBe(code);
+      expect(committed).toBe(false);
+      expect(calls).toHaveLength(1);
+    }
+  });
+
+  it("rejects malformed or undecided base-sync reports", async () => {
+    for (const stdout of [
+      "not json",
+      "{}",
+      '{"action":"none","reason":"fetch-failed"}',
+    ]) {
+      const { exec, calls } = execOf({ "base-sync": { code: 0, stdout } });
+      let committed = false;
+      expect(
+        await moveHead("999", HEAD, exec, async () => {
+          committed = true;
+          return { code: 0, stdout: "", stderr: "" };
+        }),
+      ).toBe(1);
+      expect(committed).toBe(false);
+      expect(calls).toHaveLength(1);
+    }
+  });
+
+  it("leaves a base merge for the next validated round before any push", async () => {
+    const { exec, calls } = execOf({
+      "base-sync": { code: 0, stdout: '{"action":"merged","reason":"merged"}' },
+    });
+    expect(await moveHead("999", HEAD, exec)).toBe("continue");
+    expect(calls).toHaveLength(1);
   });
 
   it("names the empty commit for what it does", () => {

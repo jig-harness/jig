@@ -15,7 +15,8 @@
  * 2. when a run cannot be re-run (the forge refuses it, as it does for a
  *    default-setup code scan, or the run is under the hold) or the re-runs on
  *    this head are spent, moves the head: merges the base when the branch is
- *    behind it, otherwise commits an empty commit, and pushes it, at most
+ *    behind it for the next validated round to push, otherwise commits and
+ *    pushes an empty commit, at most
  *    `DRIVE_PR_CI_INFRA_HEAD_MOVES` (default 2) times per drive;
  * 3. past both, stops `CI_INFRA_PERSISTED` (exit `22`), which the dispatcher
  *    re-drives after a backoff.
@@ -87,10 +88,13 @@ export interface InfraRecovery {
   moveBudget: number;
 }
 
-const wholeOr = (raw: string | undefined, fallback: number): number =>
-  raw !== undefined && /^[0-9]+$/.test(raw)
-    ? Number.parseInt(raw, 10)
+/** Invalid or excessive retry counts use the bounded default. */
+export const wholeOr = (raw: string | undefined, fallback: number): number => {
+  const value = raw !== undefined && /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
+  return Number.isSafeInteger(value) && value >= 0 && value <= 100
+    ? value
     : fallback;
+};
 
 /** The bounds, read once at the start of the drive. */
 export function infraRecoveryBudget(): InfraRecovery {
@@ -122,23 +126,58 @@ export function everyFailureInfrastructure(
     };
   if (names === null || names.length === 0)
     return { infrastructure: false, why: "no failing check-run is named" };
-  const jobs = new Map(
-    logs.flatMap((log) => readInfrastructure(log).jobs).map((j) => [j.job, j]),
-  );
-  for (const name of names) {
-    const job = jobs.get(name);
-    if (job === undefined)
-      return {
-        infrastructure: false,
-        why: `no failed-run log names the failing check '${name}'`,
-      };
-    if (!job.infrastructure)
-      return { infrastructure: false, why: `'${name}': ${job.why}` };
+  const runs = failedRunsField(failing.runs);
+  const missing = workflowCoverage(runs, names, logs.length);
+  return missing ?? classifyRunLogs(runs, logs);
+}
+
+/** Require a workflow identity for every failing check, including duplicate names. */
+function workflowCoverage(
+  runs: readonly FailedRun[],
+  names: readonly string[],
+  logCount: number,
+): { infrastructure: false; why: string } | null {
+  if (
+    runs.length !== logCount ||
+    runs.some(
+      (run) =>
+        !Array.isArray(run.jobNames) ||
+        run.jobNames.some((name) => typeof name !== "string" || name === ""),
+    )
+  )
+    return {
+      infrastructure: false,
+      why: "the failing checks' workflow provenance could not be read",
+    };
+  const covered = runs.flatMap((run) => run.jobNames ?? []).sort();
+  if (JSON.stringify(covered) !== JSON.stringify([...names].sort()))
+    return {
+      infrastructure: false,
+      why: "a failing check has no unique workflow-run coverage",
+    };
+  return null;
+}
+
+/** Classify each log in its own workflow run and retain its overall verdict. */
+function classifyRunLogs(
+  runs: readonly FailedRun[],
+  logs: readonly string[],
+): { infrastructure: boolean; why: string } {
+  const reasons: string[] = [];
+  for (const [index, run] of runs.entries()) {
+    const reading = readInfrastructure(logs[index] ?? "");
+    if (!reading.infrastructure) return reading;
+    for (const name of run.jobNames ?? []) {
+      const job = reading.jobs.find((job) => job.job === name);
+      if (job === undefined)
+        return {
+          infrastructure: false,
+          why: `no failed-run log names the failing check '${name}' in run ${run.id}`,
+        };
+      reasons.push(`run ${run.id} '${name}': ${job.why}`);
+    }
   }
-  return {
-    infrastructure: true,
-    why: names.map((n) => `'${n}': ${jobs.get(n)?.why ?? ""}`).join("; "),
-  };
+  return { infrastructure: true, why: reasons.join("; ") };
 }
 
 /**
@@ -294,31 +333,46 @@ const inTree = (): { cwd?: string } => {
 
 /**
  * Merge the base into the branch when it is behind it (`base-sync.ts
- * --force`): `"merged"`, `"none"` when it is not behind or the merge could
- * not be made (an empty commit then moves the head), `5` when the pull
- * request closed, `"conflict"` when the base does not merge cleanly.
+ * --force`): `"merged"`, `"none"` only on a confirmed in-sync reading,
+ * a numeric refusal otherwise, `"conflict"` when the base does not merge cleanly.
  */
 async function mergeBase(
   pr: string,
   exec: Exec,
-): Promise<"merged" | "none" | "conflict" | 5> {
+): Promise<"merged" | "none" | "conflict" | number> {
   const sync = await exec(tsArgv(baseSync, [pr, "--force", "--json"]), {
     timeoutSec: seconds("DRIVE_PR_FETCH_TIMEOUT", 120) + 60,
     ...inTree(),
   });
-  if (sync.code === 5) return 5;
   if (sync.code === 9) return "conflict";
   if (sync.code !== 0) {
     console.error(
-      `  Merging the base failed (base-sync.ts exit ${sync.code}): ${sync.stderr.trim()}; committing an empty commit instead.`,
+      `  Merging the base failed (base-sync.ts exit ${sync.code}): ${sync.stderr.trim()}; refusing to move the head.`,
     );
-    return "none";
+    return sync.code;
   }
+  return readBaseSync(sync.stdout);
+}
+
+/** Only positive base-sync reports authorize a head move. */
+function readBaseSync(stdout: string): "merged" | "none" | 1 {
   try {
-    const report: unknown = JSON.parse(sync.stdout);
-    return isRecord(report) && report.action === "merged" ? "merged" : "none";
+    const report: unknown = JSON.parse(stdout);
+    if (isRecord(report)) {
+      if (report.action === "merged" && report.reason === "merged")
+        return "merged";
+      if (report.action === "none" && report.reason === "in-sync")
+        return "none";
+    }
+    console.error(
+      "  base-sync.ts returned no confirmed merge or in-sync reading; refusing to move the head.",
+    );
+    return 1;
   } catch {
-    return "none";
+    console.error(
+      "  base-sync.ts returned malformed JSON; refusing to move the head.",
+    );
+    return 1;
   }
 }
 
@@ -357,8 +411,9 @@ async function pushMoved(
 
 /**
  * Move the head: merge the base when the branch is behind it, else commit an
- * empty commit, then push through `guarded-push.ts`. `"continue"` once
- * pushed, and when the base conflicts (the re-gate takes the conflict to its
+ * empty commit and push it through `guarded-push.ts`. A local base merge is
+ * handed to the next ordinary round for validation before its push. `"continue"`
+ * once pushed or handed off, and when the base conflicts (the re-gate takes it to its
  * repair round); `5` when the pull request closed; `1` when the tree or the
  * push refused, the stop printing why.
  */
@@ -369,15 +424,19 @@ export async function moveHead(
   commitEmpty: (pr: string) => Promise<Ran> = emptyCommit,
 ): Promise<number | "continue"> {
   const merged = await mergeBase(pr, exec);
-  if (merged === 5) return 5;
+  if (typeof merged === "number") return merged;
   if (merged === "conflict") {
     console.error(
       "  The base does not merge cleanly into the branch; re-gating, which takes the conflict to its repair round.",
     );
     return "continue";
   }
-  if (merged === "merged")
-    return await pushMoved(pr, head, exec, "the base merged into the branch");
+  if (merged === "merged") {
+    console.error(
+      "  The base merged locally; the next round inherits this commit and must run its validation plan before finish-round.ts pushes it.",
+    );
+    return "continue";
+  }
   const commit = await commitEmpty(pr);
   if (commit.code !== 0) {
     console.error(

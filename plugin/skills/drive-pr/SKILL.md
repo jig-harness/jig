@@ -309,11 +309,18 @@ and never a run created under the CI hold's label; when the forge refuses the
 re-run (it does for a default-setup code scan) or the re-runs are spent, it
 moves the head: it merges the base when the branch is behind it, and otherwise
 pushes an empty commit, `ci: re-run checks after an infrastructure failure`, at
-most `DRIVE_PR_CI_INFRA_HEAD_MOVES` (default 2) times per drive. Either way it
-re-gates and waits for the checks as usual, and the CI-repair budget does not
-move. Past both bounds it stops `22` (`CI_INFRA_PERSISTED`). A commit status, a
+most `DRIVE_PR_CI_INFRA_HEAD_MOVES` (default 2) times per drive. It re-gates;
+a local base merge goes through a validated review round before its push,
+then the driver waits for checks as usual. The CI-repair budget does not move. Past both bounds it stops `22` (`CI_INFRA_PERSISTED`). A commit status, a
 check no failed-run log names, or a log that cannot be read is left to the
 repair path.
+
+Infrastructure retry budgets accept integers from 0 through 100; invalid or
+excessive values use the default. A base-sync refusal or unreadable report
+stops recovery without an empty commit. A successful local base merge is
+handed to the next review round, which runs the configured validation plan
+before pushing it through `finish-round.ts`. Log classification keeps each
+failed job tied to its workflow run and rejects unplaced negative evidence.
 
 **A cancelled check is waited for, never repaired and never passed.** It says
 nothing about the code, so the verdict reads `cancelled: …`. That covers only a

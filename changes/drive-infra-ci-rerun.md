@@ -28,3 +28,7 @@ release: minor
 - A drive no longer stops `21` (`CI_REPAIR_SPENT`) over checks no code change
   could fix. Before, the dispatcher left such a stop for a person once its
   head had been re-driven, and the head moved only when a person moved it.
+- Recovery preserves each failing job's workflow-run identity and rejects
+  missing provenance, mixed code failures and unreadable base-sync reports.
+  Base merges pass through a validated review round before their push;
+  retry budgets reject unsafe or excessive numeric values.

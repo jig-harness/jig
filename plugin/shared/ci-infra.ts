@@ -24,7 +24,7 @@
  * `<job>\t<step>\t`, then the timestamp, and only the failed steps' lines.
  */
 
-import { type CiError, parseCiErrors } from "./ci-log.ts";
+import { type CiError, head, parseCiErrors } from "./ci-log.ts";
 
 /** One failed job's reading. */
 export interface JobReading {
@@ -110,22 +110,44 @@ function splitLine(raw: string): LogLine {
 function codeDiagnostic(error: CiError): string | null {
   if (error.category === "process_exit") return null;
   const line = error.raw;
+  const display = head(line, 200);
   if (error.category === "gate_failure") {
     if (matchesAny(NEUTRAL, line)) return null;
     if (matchesAny(RUNNER_LOST, line) || matchesAny(NETWORK, line)) return null;
-    return `an error annotation names no infrastructure failure: ${line}`;
+    return `an error annotation names no infrastructure failure: ${display}`;
   }
-  return `a ${error.category} diagnostic: ${line}`;
+  return `a ${error.category} diagnostic: ${display}`;
+}
+
+/** Code diagnostics and permanent HTTP failures outrank transient evidence. */
+function permanentDiagnostic(text: readonly string[]): string | null {
+  const parsed = parseCiErrors(text.join("\n"), "", Number.MAX_SAFE_INTEGER);
+  for (const error of parsed.errors) {
+    const why = codeDiagnostic(error);
+    if (why !== null) return why;
+  }
+  const permanent = text.find((line) =>
+    /\b(?:HTTP(?: status code| response| error| code)?|status code|response code|returned error):? ?4\d\d\b/iu.test(
+      line,
+    ),
+  );
+  if (permanent !== undefined)
+    return `a permanent HTTP failure: ${head(permanent, 200)}`;
+  return null;
 }
 
 /** One failed job's lines, read against the rule. */
 function readJob(job: string, lines: readonly LogLine[]): JobReading {
+  if (job.trim() === "" || lines.some((line) => line.step.trim() === ""))
+    return {
+      job,
+      infrastructure: false,
+      why: "no job or no step is named for its lines",
+    };
   const text = lines.map((l) => l.text);
-  const parsed = parseCiErrors(text.join("\n"));
-  for (const error of parsed.errors) {
-    const why = codeDiagnostic(error);
-    if (why !== null) return { job, infrastructure: false, why };
-  }
+  const diagnostic = permanentDiagnostic(text);
+  if (diagnostic !== null)
+    return { job, infrastructure: false, why: diagnostic };
   const lost = text.find((line) => matchesAny(RUNNER_LOST, line));
   if (lost !== undefined)
     return { job, infrastructure: true, why: `the runner was lost: ${lost}` };

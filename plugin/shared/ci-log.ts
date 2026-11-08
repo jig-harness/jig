@@ -67,6 +67,10 @@ const PATTERNS: [RegExp, Category][] = [
   [/(\S+\.tsx?):(\d+):(\d+)\s+.*(?:\xc3\x97|error)\s+(.+)/su, "biome_lint"],
   // Test runner: FAIL path/to/file.spec.ts
   [/FAIL\s+(\S+\.(?:spec|test)\.tsx?)/su, "test_failure"],
+  // Pytest reports the failing test node after FAILED.
+  [/^FAILED\s+(\S+\.py)(?:::.*)?/su, "test_failure"],
+  // Package managers report permanent failures without an Actions annotation.
+  [/^npm\s+(?:ERR!|error)\s+code\s+(.+)/isu, "gate_failure"],
   // Test assertion: file > suite > ... > test, split on the `>` delimiters in
   // `entryFor` so the message keeps the whole path.
   [/(\S+\.(?:spec|test)\.tsx?)\s+>\s+(.+)/su, "test_failure"],
@@ -125,8 +129,9 @@ function entryFor(
   origin: { job?: string; step?: string },
   line: string,
   groups: (string | undefined)[],
+  rawLimit: number,
 ): CiError {
-  const entry: CiError = { category, ...origin, raw: head(line, 200) };
+  const entry: CiError = { category, ...origin, raw: head(line, rawLimit) };
   const g = (i: number) => groups[i] ?? "";
   switch (category) {
     case "typescript":
@@ -164,7 +169,10 @@ function entryFor(
 }
 
 /** The entry the first pattern that matches `rawLine` makes of it, with its key; `null` when none does. */
-function lineEntry(rawLine: string): { entry: CiError; key: string } | null {
+function lineEntry(
+  rawLine: string,
+  rawLimit: number,
+): { entry: CiError; key: string } | null {
   const trimmed = rawLine.trim();
   const origin = provenance(LOG_PREFIX.exec(trimmed)?.[0] ?? "");
   const line = trimmed.replace(LOG_PREFIX, "").trim();
@@ -172,7 +180,7 @@ function lineEntry(rawLine: string): { entry: CiError; key: string } | null {
   for (const [pattern, category] of PATTERNS) {
     const match = pattern.exec(line);
     if (match === null) continue;
-    const entry = entryFor(category, origin, line, match.slice(1));
+    const entry = entryFor(category, origin, line, match.slice(1), rawLimit);
     // The whole line, not the possibly truncated or constant `message`, and
     // the step that printed it, so only a repeat of the same diagnostic from
     // the same step collapses: two steps' identical exit notes stay apart.
@@ -193,10 +201,14 @@ function lineEntry(rawLine: string): { entry: CiError; key: string } | null {
 }
 
 /** Categorize every error line in a failed run's log. */
-export function parseCiErrors(logContent: string, runId = ""): ParseResult {
+export function parseCiErrors(
+  logContent: string,
+  runId = "",
+  rawLimit = 200,
+): ParseResult {
   const byKey = new Map<string, CiError>();
   for (const rawLine of logContent.replace(/\r\n?/g, "\n").split("\n")) {
-    const found = lineEntry(rawLine);
+    const found = lineEntry(rawLine, rawLimit);
     if (found !== null && !byKey.has(found.key))
       byKey.set(found.key, found.entry);
   }

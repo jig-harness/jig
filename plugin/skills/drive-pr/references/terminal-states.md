@@ -56,6 +56,13 @@ path that produces the exit, not because none of them name one.
 | `20` | `TAKEN_OVER` | **yes** | `drive.ts` only: another clone took the drive over. At a round boundary, before spawning a pass, or after renewing its ledger heartbeat through a quota sleep or a mailbox pause, the driver read a takeover claim in force on the PR, from another clone, newer than its own position (its own claim, or the position its clone's ledger records), and stopped without another pass, so it never replies beside its successor; it writes no further ledger. A `--take-over` whose own claim lost to a rival's earlier claim on the same ledger generation stops with it too. Nothing to recover here: that clone drives now. Re-arming beside it is refused with exit `13` while the ledger names it running (§ Picking up a stopped drive) |
 | `2` | `UNSUPPORTED_CLI` | **yes** | A `gh` that cannot report every required PR field, including draft state and mergeability. Reported through the JSON contract; an argument error, which precedes any PR to describe, exits without one |
 
+Infrastructure retry budgets accept integers from 0 through 100; invalid or
+excessive values use the default. A base-sync refusal or unreadable report
+stops recovery without an empty commit. A successful local base merge is
+handed to the next review round, which runs the configured validation plan
+before pushing it through `finish-round.ts`. Log classification keeps each
+failed job tied to its workflow run and rejects unplaced negative evidence.
+
 The JSON report (`--json`) carries `state`, `exit`, `reason`, the head pair, the
 `base` block (`refName`, `oid`, `drift`), the `merge` pair (`mergeable`,
 `stateStatus`), the reviewer's identity/status/reviewed-SHA, the work counts,
@@ -96,7 +103,7 @@ to a human or to a pass.
 | Trigger | Pass | Budget (env, `0` disables) | Falls back to |
 |---|---|---|---|
 | Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `DRIVE_PR_CI_REPAIR_ROUNDS`, default 2 | exit `21` (`CI_REPAIR_SPENT`), handing the red CI back for repair; exit `1` when the budget is `0` |
-| The same, every failing check failed on the infrastructure | no pass: the driver re-runs the failed jobs, or moves the head when a run cannot be re-run, and spends no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | exit `22` (`CI_INFRA_PERSISTED`) |
+| The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | exit `22` (`CI_INFRA_PERSISTED`) |
 | `PR_CONFLICTING` with no workable finding | `conflict-resolve` (`base-sync.ts`, then resolve the conflict) | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1 | exit `9`, with its `Fix:` command |
 
 The task reaches the pass in its **environment** (`DRIVE_PR_ROUND_TASK`,
