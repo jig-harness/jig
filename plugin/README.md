@@ -334,8 +334,9 @@ that bypass to push, and nobody is there to approve. An account of any other
 vendor, which the drive documents no pass command for, is accepted by the
 machine file and never admitted. Each run reports these at its top
 (`accepted, not admitted`, with the reason) and in its receipt
-(`accountsNotAdmitted`). The `review-arbiter` agent and the turn-budget
-hook stay Claude Code's ([Codex notes](#codex-notes)).
+(`accountsNotAdmitted`). The `review-arbiter` agent stays Claude Code's;
+the turn-budget hook counts responses in both runtimes
+([Codex notes](#codex-notes)).
 
 **Pickups** (the `pickup` stage) start one `do-item` session per item
 assigned to the factory identity in a dispatch state, once: just before
@@ -1500,8 +1501,9 @@ them together.
 - **The turn-budget hook runs once trusted.** Codex reads the plugin's
   `hooks/hooks.json` but skips a plugin's hooks until their current
   definition is trusted (`/hooks`), and asks again when a release changes
-  them. Codex's transcript is not in the format the guard reads, so there it
-  counts nothing and reports could not check once.
+  them. The guard counts distinct response ids from Codex token usage
+  records, resets at each task-start event, and warns near the configured
+  budget. The warning does not impose a runtime turn cap.
 - **The `review-arbiter` agent is Claude Code only.** Codex plugins carry
   skills, MCP servers, apps and hooks, but not agents; Codex reads custom
   agents only from its own agent folders (`~/.codex/agents/` or a
@@ -1523,10 +1525,10 @@ them together.
   from `routing.models.codex`. `drive.pass_model` is Claude Code's. Both
   skills arm Codex through a terminal tab or its managed background command
   tool; where the host ends children with the session, keep it alive until
-  the drive ends or use an external terminal. Since the
-  turn-budget hook counts nothing under Codex, a Codex pass has no turn cap
-  of its own: the pass deadline (`DRIVE_PR_PASS_TIMEOUT`, 90 minutes by
-  default) is what ends one that runs on, so keep it on for a Codex drive.
+  the drive ends or use an external terminal. The turn-budget hook warns
+  under Codex but imposes no runtime turn cap: the pass deadline
+  (`DRIVE_PR_PASS_TIMEOUT`, 90 minutes by default) is what ends one that runs
+  on, so keep it on for a Codex drive.
 
 ## Call a skill's scripts from repository code
 
