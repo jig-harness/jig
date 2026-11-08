@@ -5,6 +5,11 @@ import { layeredConfig, remoteName } from "../../shared/consumer.ts";
 import { readDrivenTree, type DrivenTree } from "../../shared/driven-tree.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import {
+  CHANGES_STATUS_ARGS,
+  GIT_OPERATION_MARKERS,
+  hidesIndexChanges,
+} from "../../shared/idle-holder.ts";
 import { detectPackageManager } from "../../shared/detect/package-manager.ts";
 import { orcaFailure, orcaResult, runOrca } from "../../shared/orca.ts";
 import { gcGit as git, type GitOutcome } from "../git.ts";
@@ -74,15 +79,7 @@ export async function remoteHeadBranch(
   return head.ok ? ok(head.value.replace(prefix, "")) : head;
 }
 async function operation(admin: string): Promise<string | null> {
-  for (const name of [
-    "MERGE_HEAD",
-    "CHERRY_PICK_HEAD",
-    "REVERT_HEAD",
-    "BISECT_LOG",
-    "rebase-merge",
-    "rebase-apply",
-    "sequencer",
-  ]) {
+  for (const name of GIT_OPERATION_MARKERS) {
     try {
       lstatSync(resolve(admin, name));
       return name;
@@ -391,17 +388,9 @@ async function localEvidence(
 ): Promise<Outcome<WorktreeEvidence>> {
   const flags = await git(path, ["ls-files", "-v", "-z"]);
   if (!flags.ok) return flags;
-  const status = await git(path, [
-    "status",
-    "--porcelain=v1",
-    "--untracked-files=all",
-    "--ignore-submodules=none",
-    "-z",
-  ]);
+  const status = await git(path, [...CHANGES_STATUS_ARGS]);
   if (!status.ok) return status;
-  const changes = flags.value
-    .split("\0")
-    .some((entry) => /^[a-zS] /.test(entry));
+  const changes = hidesIndexChanges(flags.value);
   const state = await operation(admin);
   const ignored = await git(path, [
     "ls-files",

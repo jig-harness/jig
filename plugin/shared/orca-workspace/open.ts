@@ -25,6 +25,7 @@ import {
   refreshBaseRef,
 } from "./git.ts";
 import { ensureCreateHook, gitDirOf } from "./hooks.ts";
+import { releaseHiddenHolder } from "./holder.ts";
 import { type OpenPort, orcaResult } from "./port.ts";
 import { output } from "./runner.ts";
 
@@ -165,8 +166,9 @@ export function listedWorktree(
 
 /**
  * The worktree that already holds the branch, as Orca lists it, or null.
- * A checkout made with plain git that Orca hides is refused rather than
- * duplicated: Orca shows such checkouts when asked to.
+ * A checkout made with plain git that Orca hides is never duplicated: it is
+ * detached when idle, so the branch is free for a new worktree (null), and
+ * refused otherwise (`holder.ts`).
  */
 function existingWorktree(
   port: OpenPort,
@@ -177,10 +179,10 @@ function existingWorktree(
   if (path === null) return null;
   assertLinkedWorktree(port.host, path, `reattach to ${branch}`);
   const row = listedWorktree(port, repo, path);
-  if (row === null)
-    throw new OrcaError(
-      `${branch} is checked out at ${path}, which Orca${port.where} does not list; show the repository's non-Orca worktrees (orca repo set --repo id:${repo.id} --external-worktree-visibility show) and open it again, or remove that checkout`,
-    );
+  if (row === null) {
+    releaseHiddenHolder(port, repo.path, branch, path, repo.id);
+    return null;
+  }
   port.host.log(`↺ reattaching: ${branch} is at ${path}`);
   return row;
 }

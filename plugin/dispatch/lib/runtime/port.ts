@@ -17,7 +17,7 @@
  * dispatcher started it.
  */
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
-import type { RepoTarget } from "../types.ts";
+import type { BusyHolder, RepoTarget } from "../types.ts";
 
 /** An agent in a workspace, by the id the runtime reports it under. */
 export interface AgentSession {
@@ -96,6 +96,8 @@ export interface RuntimeReceipt {
   lost?: boolean;
   /** For `retire`: a safety check found work or identity it cannot authorize removing. */
   refused?: boolean;
+  /** For `openWorkspace`: the open was refused because a checkout the runtime does not list holds the branch and is in use. */
+  busyHolder?: BusyHolder;
   /** For `notify`: the target's comment as the runtime reads it back after the write. */
   comment?: string;
   /** For `notify`: the unread mark read back with the comment. */

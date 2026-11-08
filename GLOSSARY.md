@@ -871,6 +871,11 @@ make, use the entry's term instead.
   workspace launcher name an issue's branch with the issue key followed by
   the slug of its title
   ([tools/launcher/README.md](tools/launcher/README.md)).
+- **Git reflog** — a local history of where a Git reference, such as a branch
+  or `HEAD`, pointed. `git reflog` can locate commits no longer named by a
+  branch. A missing linked working directory does not prove its commits
+  disappeared from the clone's shared Git storage; inspect the surviving
+  branch references and reflogs before reconstructing work.
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a

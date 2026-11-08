@@ -159,6 +159,15 @@ export interface StaleCause {
   earlier?: string[];
 }
 
+/** What the repository clone's drive doctor (`drives.ts --doctor`) reads of a pull request's lock holder. */
+export interface HolderReading {
+  /** The doctor's verdict: `WEDGED`, `DEAD`, `HEALTHY`, `UNKNOWN`, … */
+  verdict: string;
+  reason: string;
+  /** The lock's state: `live`, `stale`, `empty`, … */
+  lock: string;
+}
+
 /** One open pull request whose comments hold a drive ledger. */
 export interface DrivenPr {
   number: number;
@@ -283,6 +292,8 @@ export interface Action {
   takeover?: string;
   /** For a takeover of a driver another host started: that host's launch claim, which names the launch. */
   takeoverClaim?: { id: number; host: string; record: string };
+  /** For a takeover of a driver no launch started: what this clone's drive doctor read of its holder. */
+  takeoverHolder?: HolderReading;
   /** For a takeover of a driver no launch started, whose run this host shows ended: what showed it. */
   takeoverGone?: string;
   /** For a re-drive: why the drive's stop no longer settles its pull request. */
@@ -311,6 +322,13 @@ export interface ReleaseOutcome {
   detail: string;
 }
 
+/** A checkout the runtime does not list that holds a launch's branch and is in use: where it is, the branch, and what keeps it busy. */
+export interface BusyHolder {
+  path: string;
+  branch: string;
+  reasons: string[];
+}
+
 /** What `--apply` did with one planned launch. */
 export interface LaunchOutcome {
   target: string;
@@ -335,6 +353,8 @@ export interface LaunchOutcome {
   account: string | null;
   record: string | null;
   detail: string;
+  /** For a launch refused because a busy checkout the runtime does not list holds its branch: that checkout, which the tick notifies a person of. */
+  holder?: BusyHolder;
 }
 
 /** What `--apply` did with one notification. */

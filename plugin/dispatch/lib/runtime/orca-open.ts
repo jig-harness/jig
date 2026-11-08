@@ -9,12 +9,18 @@
  * `workspace_timeout`: every call is cut to what is left of it, and an open
  * that reaches it stops, its answer lost.
  *
+ * A checkout Orca does not list that holds the branch is detached when it
+ * is idle, judged with the drive's records of what drives a tree
+ * (`tree-drivers.ts`); one in use refuses the open, and the receipt names
+ * it (`busyHolder`) for the notice a person gets.
+ *
  * A workspace the open creates is named by the target's `dispatched` name
  * (`--name`) and carries its mark as its comment (`--comment`); one it
  * reattaches to keeps its name and its comment, and `launch` adds the mark
  * to that comment.
  */
 import { orcaCommandOrInstalled } from "../../../shared/orca.ts";
+import { BusyHolderError } from "../../../shared/orca-workspace/holder.ts";
 import { openBranch } from "../../../shared/orca-workspace/open.ts";
 import {
   boundedHook,
@@ -26,6 +32,7 @@ import {
   localContext,
   withLimit,
 } from "../../../shared/orca-workspace/runner.ts";
+import { treeDrivers } from "../../../skills/drive-pr/scripts/lib/state/tree-drivers.ts";
 import { failureText } from "../text.ts";
 import { call } from "./orca-comment.ts";
 import type {
@@ -44,6 +51,7 @@ function portOn(ctx: Context): OpenPort {
     orcaCall: <T>(args: string[], what: string) =>
       orcaAnswer<T>(ctx.run([orca, ...args, "--json"]), what),
     where: "",
+    drivers: treeDrivers,
   };
 }
 
@@ -185,6 +193,15 @@ async function open(
       ok: false,
       lost: Date.now() - started >= timeoutMs,
       detail: [failureText(error), ...lines.slice(-3)].join("; "),
+      ...(error instanceof BusyHolderError
+        ? {
+            busyHolder: {
+              path: error.path,
+              branch: error.branch,
+              reasons: error.reasons,
+            },
+          }
+        : {}),
     };
   }
 }
