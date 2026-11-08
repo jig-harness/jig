@@ -717,7 +717,7 @@ const FORGE: RecordKind[] = [
     medium: "forge",
     owner: `${DRIVE}lib/overlay.ts`,
     foreign: "the repository's AI reviewer",
-    at: "the reviewer's sticky comment, and the reviewed commit marked in it (`review.sticky_marker`, `review.reviewed_sha_marker`)",
+    at: "the reviewer's sticky comment, and the reviewed commit and any skip notice marked in it (`review.sticky_marker`, `review.reviewed_sha_marker`, `review.skip_notice_marker`)",
     markers: ["ai-code-review"],
     version: 0,
   },

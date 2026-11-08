@@ -325,6 +325,13 @@ export interface ReleaseOutcome {
   detail: string;
 }
 
+/** A checkout the runtime does not list that holds a launch's branch and is in use: where it is, the branch, and what keeps it busy. */
+export interface BusyHolder {
+  path: string;
+  branch: string;
+  reasons: string[];
+}
+
 /** What `--apply` did with one planned launch. */
 export interface LaunchOutcome {
   target: string;
@@ -356,6 +363,8 @@ export interface LaunchOutcome {
    * account has a free slot.
    */
   waitsOn?: LaneWait;
+  /** For a launch refused because a busy checkout the runtime does not list holds its branch: that checkout, which the tick notifies a person of. */
+  holder?: BusyHolder;
 }
 
 /** What a follow-up that waits for its lane waits on. */

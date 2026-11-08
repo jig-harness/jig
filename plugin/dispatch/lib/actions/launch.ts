@@ -44,12 +44,14 @@ import {
   tabTitle,
 } from "../runtime/port.ts";
 import { passTimeoutSeconds } from "../../../skills/drive-pr/scripts/lib/driver/settings.ts";
+import { holderRefusal } from "../holder-notices.ts";
 import { PICKUP_SKILL } from "../session.ts";
 import { retryable } from "../stuck-launches.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
   LaneWait,
+  BusyHolder,
   LaunchOutcome,
   RepoReport,
   RepoTarget,
@@ -213,7 +215,7 @@ export function rotated<T>(
 export type Opened =
   | { workspace: { id: string; path: string }; cleanupFailure?: string }
   | { waits: string; waitsOn?: LaneWait }
-  | { refused: string };
+  | { refused: string; holder?: BusyHolder };
 
 /** Total and launch-specific allowances count notices once. */
 function openAllowance(state: ApplyState) {
@@ -308,6 +310,7 @@ export async function openWithinBudget(
     };
   return {
     refused: `the workspace could not be opened${opened.lost ? " in time" : ""}: ${opened.detail}`,
+    ...(opened.busyHolder === undefined ? {} : { holder: opened.busyHolder }),
   };
 }
 
@@ -501,7 +504,15 @@ function workspaceOr(
       },
     };
   if ("refused" in opened)
-    return { outcome: refused(action, opened.refused, account) };
+    return {
+      outcome:
+        opened.holder === undefined
+          ? refused(action, opened.refused, account)
+          : {
+              ...refused(action, holderRefusal(opened.holder), account),
+              holder: opened.holder,
+            },
+    };
   return opened;
 }
 

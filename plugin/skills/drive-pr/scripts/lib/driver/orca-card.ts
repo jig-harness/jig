@@ -44,6 +44,10 @@ const FAILURE_STOPS: readonly (readonly [string, string])[] = [
   ["MAX_ROUNDS", "used its round budget without converging"],
   ["REVIEWER_FAILED", "stopped: the posting reviewer's check did not pass"],
   [
+    "REVIEW_SKIPPED",
+    "stopped: the reviewer skipped its head and will not review it",
+  ],
+  [
     "PR_CONFLICTING",
     "stopped: it conflicts with its base and has nothing left to work",
   ],

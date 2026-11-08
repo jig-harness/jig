@@ -176,7 +176,12 @@ async function resolveWorktreeRoot(): Promise<string> {
  * module.
  */
 export async function resolveActor(): Promise<string> {
-  return `wt-${await worktreeKey()}`;
+  return actorOfTreeKey(await worktreeKey());
+}
+
+/** The actor id of the tree whose `worktreeKey` is `key`. */
+export function actorOfTreeKey(key: string): string {
+  return `wt-${key}`;
 }
 
 /**

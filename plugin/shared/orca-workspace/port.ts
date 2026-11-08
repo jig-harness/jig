@@ -5,6 +5,7 @@
  * a paired server's host over SSH; a caller with the clone on this machine
  * builds it from one local context.
  */
+import type { TreeDrivers } from "../idle-holder.ts";
 import { type OrcaEnvelope, OrcaError, orcaErrorText } from "./envelope.ts";
 import { HOOK_TIMEOUT_MS } from "./limits.ts";
 import { budget, type Context } from "./runner.ts";
@@ -35,6 +36,13 @@ export interface OpenPort {
   orcaCall<T>(args: string[], what: string): OrcaEnvelope<T>;
   /** Where Orca runs, for messages: "" for this machine, " on <server>" for a paired one. */
   where: string;
+  /**
+   * What keeps a tree driven (`shared/idle-holder.ts`), read on the machine
+   * the clone is on. With it, a checkout Orca does not list that holds the
+   * branch is detached when it is idle (`holder.ts`); without it, the open
+   * refuses such a checkout.
+   */
+  drivers?: TreeDrivers;
 }
 
 /** The result of an Orca call that must succeed. */
