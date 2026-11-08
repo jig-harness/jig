@@ -108,7 +108,7 @@ ${body}`,
       );
     fake(
       "git",
-      `if(['GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR','GIT_OBJECT_DIRECTORY','GIT_ALTERNATE_OBJECT_DIRECTORIES','GIT_CONFIG'].some(key=>process.env[key]))process.exit(44);
+      `if(['GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR','GIT_OBJECT_DIRECTORY','GIT_ALTERNATE_OBJECT_DIRECTORIES','GIT_CONFIG','GIT_CONFIG_COUNT','GIT_CONFIG_PARAMETERS','GIT_CONFIG_KEY_0','GIT_CONFIG_VALUE_0'].some(key=>process.env[key]))process.exit(44);
 if(args.includes('rev-parse'))console.log('${revision}');else if(key==='--version')console.log('git version 2.50.0');`,
     );
     fake(
@@ -145,6 +145,10 @@ if(args.includes('rev-parse'))console.log('${revision}');else if(key==='--versio
             GIT_OBJECT_DIRECTORY: "C:/other/objects",
             GIT_ALTERNATE_OBJECT_DIRECTORIES: "C:/other/alternate",
             GIT_CONFIG: "C:/other/config",
+            GIT_CONFIG_COUNT: "1",
+            GIT_CONFIG_KEY_0: "core.worktree",
+            GIT_CONFIG_VALUE_0: "C:/other",
+            GIT_CONFIG_PARAMETERS: "'core.worktree'='C:/other'",
             PATH: [scratch, dirname(process.execPath)].join(delimiter),
           },
           stdout: "pipe",

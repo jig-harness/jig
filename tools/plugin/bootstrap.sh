@@ -2,7 +2,8 @@
 # Run only from a reviewed checkout. Bun's archive is pinned by version and digest.
 set -euo pipefail
 # Verification and the installer must refer to this checkout, including in hooks.
-unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS
+for name in ${!GIT_CONFIG_KEY_@} ${!GIT_CONFIG_VALUE_@}; do unset "$name"; done
 provision=0
 trust_local=0
 source_arg=''
@@ -47,7 +48,7 @@ verify_source() {
   local head dirty
   head=$(git -C "$root" rev-parse HEAD) || return 1
   [[ "$head" == "$revision" ]] || { echo 'Checkout does not match reviewed revision' >&2; return 1; }
-  dirty=$(git -C "$root" status --porcelain --untracked-files=no) || return 1
+  dirty=$(git -C "$root" --work-tree="$root" status --porcelain --untracked-files=no) || return 1
   [[ -z "$dirty" ]] || { echo 'Tracked source has local changes; review a clean checkout first' >&2; return 1; }
   git -C "$root" ls-files --error-unmatch -- tools/plugin/bootstrap.sh tools/plugin/bootstrap.ts >/dev/null
 }

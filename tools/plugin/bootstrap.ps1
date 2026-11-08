@@ -15,7 +15,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 # Keep verification and the installer bound to this checkout, even inside hooks.
-foreach ($name in @('GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR','GIT_OBJECT_DIRECTORY','GIT_ALTERNATE_OBJECT_DIRECTORIES','GIT_CONFIG')) {
+foreach ($name in @('GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR','GIT_OBJECT_DIRECTORY','GIT_ALTERNATE_OBJECT_DIRECTORIES','GIT_CONFIG','GIT_CONFIG_COUNT','GIT_CONFIG_PARAMETERS') + @(Get-ChildItem Env: | Where-Object Name -Match '^GIT_CONFIG_(KEY|VALUE)_' | ForEach-Object Name)) {
     [Environment]::SetEnvironmentVariable($name, $null, 'Process')
 }
 function Invoke-Provision([string]$Program, [string[]]$Arguments) {
@@ -74,7 +74,7 @@ if ($availableAgents.Count -eq 0) { throw 'Install a supported agent CLI explici
 function Assert-Source {
     $head = & git -C $root rev-parse HEAD
     if ($LASTEXITCODE -ne 0 -or $head -ne $Revision) { throw 'Checkout does not match reviewed revision' }
-    $dirty = & git -C $root status --porcelain --untracked-files=no
+    $dirty = & git -C $root "--work-tree=$root" status --porcelain --untracked-files=no
     if ($LASTEXITCODE -ne 0 -or $dirty) { throw 'Tracked source has local changes; review a clean checkout first' }
     & git -C $root ls-files --error-unmatch -- tools/plugin/bootstrap.ps1 tools/plugin/bootstrap.ts | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Bootstrap files are not part of the reviewed commit' }

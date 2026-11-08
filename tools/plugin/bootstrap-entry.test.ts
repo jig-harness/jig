@@ -31,22 +31,24 @@ function entry(
     });
   program(
     "git",
-    `if [ "$RESPONSE" = git-env ] && [ -n "$GIT_DIR$GIT_WORK_TREE$GIT_INDEX_FILE$GIT_COMMON_DIR$GIT_OBJECT_DIRECTORY$GIT_ALTERNATE_OBJECT_DIRECTORIES$GIT_CONFIG" ]; then exit 128; fi
-case "$1" in rev-parse) echo '${revision}';; esac\ncase "$3" in rev-parse) if [ "$RESPONSE" = wrong-revision ]; then echo wrong; else echo '${revision}'; fi;; status) if [ "$RESPONSE" = git-failed ]; then exit 128; fi;; esac`,
+    `if [ "$RESPONSE" = git-env ] && [ -n "$GIT_DIR$GIT_WORK_TREE$GIT_INDEX_FILE$GIT_COMMON_DIR$GIT_OBJECT_DIRECTORY$GIT_ALTERNATE_OBJECT_DIRECTORIES$GIT_CONFIG$GIT_CONFIG_COUNT$GIT_CONFIG_PARAMETERS$GIT_CONFIG_KEY_0$GIT_CONFIG_VALUE_0" ]; then exit 128; fi
+case "$1" in rev-parse) echo '${revision}';; esac\ncase "$4" in status) if [ "$RESPONSE" = git-failed ]; then exit 128; fi;; esac
+case "$3" in rev-parse) if [ "$RESPONSE" = wrong-revision ]; then echo wrong; else echo '${revision}'; fi;; status) if [ "$RESPONSE" = git-failed ]; then exit 128; fi;; esac`,
   );
   program("gh", "exit 0");
   program("codex", "exit 0");
   if (response === "git-env")
     program(
       "bun",
-      'test -z "$GIT_DIR$GIT_WORK_TREE$GIT_INDEX_FILE$GIT_COMMON_DIR$GIT_OBJECT_DIRECTORY$GIT_ALTERNATE_OBJECT_DIRECTORIES$GIT_CONFIG"',
+      'test -z "$GIT_DIR$GIT_WORK_TREE$GIT_INDEX_FILE$GIT_COMMON_DIR$GIT_OBJECT_DIRECTORY$GIT_ALTERNATE_OBJECT_DIRECTORIES$GIT_CONFIG$GIT_CONFIG_COUNT$GIT_CONFIG_PARAMETERS$GIT_CONFIG_KEY_0$GIT_CONFIG_VALUE_0"',
     );
   if (response === "provisioned")
     program("unzip", "printf '#!/bin/sh\\nexit 0\\n'");
   if (response === "package-timeout" || response === "apt-timeout") {
     rmSync(join(scratch, "gh"));
-    for (const name of ["uname", "dirname", "sleep"])
+    for (const name of ["dirname", "sleep"])
       symlinkSync(Bun.which(name) as string, join(scratch, name));
+    program("uname", 'if [ "$1" = -s ]; then echo Linux; else echo x86_64; fi');
     if (response === "apt-timeout") {
       program("sudo", 'exec "$@"');
       program("apt-get", "while :; do sleep 1; done");
@@ -185,6 +187,10 @@ test.skipIf(shellOnly)(
       GIT_OBJECT_DIRECTORY: "/other/objects",
       GIT_ALTERNATE_OBJECT_DIRECTORIES: "/other/alternate",
       GIT_CONFIG: "/other/config",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "core.worktree",
+      GIT_CONFIG_VALUE_0: "/other",
+      GIT_CONFIG_PARAMETERS: "'core.worktree'='/other'",
     });
     expectSpawnExit(result, 0);
   },

@@ -273,6 +273,19 @@ test("fresh shorthand sources register the same HTTPS repository checked for acc
       "--ref",
       "v1.2.3",
     ]);
+    const rerun = f.run([
+      "--apply",
+      "--source",
+      "example-org/example-repo#v1.2.3",
+    ]);
+    expectSpawnExit(rerun, 0);
+    expect(rerun.calls).toContainEqual([
+      "codex",
+      "plugin",
+      "marketplace",
+      "upgrade",
+      "jig",
+    ]);
     expect(
       result.calls.some((call) =>
         call.includes("repos/example-org/example-repo"),

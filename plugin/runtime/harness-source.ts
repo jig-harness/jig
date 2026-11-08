@@ -1,4 +1,5 @@
 /** Source addresses, pins and release channels for agent marketplaces. */
+import { existsSync } from "node:fs";
 /** The release channels, each a branch of the repository (plugin/README.md). */
 export const CHANNELS = ["latest", "stable"] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -55,14 +56,19 @@ export function followsMain(ref: string | undefined): boolean {
 }
 
 /**
- * Compare sources ignoring a trailing `.git` or slash. A requested `#ref` must
+ * Compare GitHub shorthand and HTTPS sources ignoring a trailing `.git` or slash. A requested `#ref` must
  * match the registered one; a request without a ref accepts any registered
  * ref, so an existing pin is kept unless the caller asks for another.
  */
 export function sameSource(registered: string, requested: string): boolean {
   const norm = (value: string) => {
     const [base = "", ref] = value.split("#");
-    return { base: base.replace(/\/+$/, "").replace(/\.git$/, ""), ref };
+    const address = base.replace(/\/+$/, "").replace(/\.git$/, "");
+    const canonical =
+      /^[\w.-]+\/[\w.-]+$/.test(address) && !existsSync(base)
+        ? `https://github.com/${address}`
+        : address;
+    return { base: canonical, ref };
   };
   const a = norm(registered);
   const b = norm(requested);
