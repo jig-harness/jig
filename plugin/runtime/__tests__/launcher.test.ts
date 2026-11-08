@@ -24,6 +24,7 @@ import {
   outsideCheckout,
   parseLauncherArguments,
   runCollector,
+  upgradesFirst,
 } from "../launcher.ts";
 
 /** The launcher as install leaves it: its file and startup config, alone. */
@@ -81,6 +82,14 @@ test("the launcher takes the recorded programs, then the collector's arguments",
   expect(() => parseLauncherArguments(["--other=1", "--"])).toThrow(
     "Unknown launcher argument",
   );
+});
+
+test("only collection's and the dispatcher's ticks upgrade the plugin first", () => {
+  expect(upgradesFirst(["gc", "--scheduled"])).toBe(true);
+  expect(upgradesFirst(["dispatch", "--apply"])).toBe(true);
+  expect(upgradesFirst(["dispatch", "probe", "--apply"])).toBe(false);
+  expect(upgradesFirst(["gc", "--collect"])).toBe(false);
+  expect(upgradesFirst([])).toBe(false);
 });
 
 test("a copy inside a checkout is refused and the next tool is tried", async () => {
@@ -537,3 +546,172 @@ test.skipIf(
   expectSpawnExit(result, 1);
   expect(result.stderr.toString()).toContain("run jig install again");
 });
+
+/** A plugin copy too old for `jig upgrade --scheduled`, which logs each run and the upgrade it was passed. */
+function oldCopy(root: string, log: string): string {
+  const directory = join(root, "old");
+  mkdirSync(join(directory, "gc"), { recursive: true });
+  writeFileSync(join(directory, "gc", "bunfig.toml"), "");
+  writeFileSync(
+    join(directory, "jig.ts"),
+    `require("node:fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), upgrade: process.env.JIG_SCHEDULED_UPGRADE ?? null }) + "\\n");
+if (process.argv[2] === "upgrade") { console.error("Unexpected option: --scheduled"); process.exit(2); }
+`,
+  );
+  return realpathSync(directory);
+}
+
+test.skipIf(
+  skipsOnWindows(
+    "powershell",
+    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+  ),
+)(
+  "a timer's job upgrades first and runs on whatever copy is there when the upgrade fails; the jig command never upgrades",
+  () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    const log = join(root, "runs.log");
+    const copy = oldCopy(root, log);
+    const { launcher, config } = installedLauncher(root);
+    const claude = join(root, "claude");
+    writeFakeProgram(
+      claude,
+      `#!/usr/bin/env bun\nconsole.log(JSON.stringify([{ id: "jig@jig", scope: "user", installPath: ${JSON.stringify(copy)} }]));\n`,
+    );
+    const start = (role?: string) =>
+      Bun.spawnSync(
+        [
+          process.execPath,
+          "--no-env-file",
+          `--config=${config}`,
+          launcher,
+          `--claude=${claude}`,
+          "--",
+          "gc",
+          "--scheduled",
+        ],
+        {
+          env: {
+            ...process.env,
+            JIG_LAUNCHER_ROLE: role,
+            JIG_SCHEDULED_UPGRADE:
+              '{"outcome":"updated","detail":"stale","at":"x"}',
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: 30000,
+        },
+      );
+    const runs = () =>
+      readFileSync(log, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map(
+          (line) =>
+            JSON.parse(line) as { argv: string[]; upgrade: string | null },
+        );
+
+    expectSpawnExit(start(), 0);
+    const [upgrade, job] = runs();
+    expect(upgrade?.argv).toEqual([
+      "upgrade",
+      "--scheduled",
+      `--claude-program=${claude}`,
+    ]);
+    // The upgrade's own run inherits no earlier result.
+    expect(upgrade?.upgrade).toBeNull();
+    expect(job?.argv).toEqual(["gc", "--scheduled"]);
+    expect(JSON.parse(job?.upgrade as string)).toMatchObject({
+      outcome: "failed",
+      detail: expect.stringContaining(
+        "exited 2 without a result: Unexpected option: --scheduled",
+      ),
+    });
+
+    expectSpawnExit(start("command"), 0);
+    expect(runs().slice(2)).toEqual([
+      { argv: ["gc", "--scheduled"], upgrade: null },
+    ]);
+  },
+);
+
+test.skipIf(
+  skipsOnWindows(
+    "powershell",
+    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+  ),
+)(
+  "a result line too long to pass on, or one that is not a result, reaches the job as a short failed line",
+  () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    const log = join(root, "runs.log");
+    const { launcher, config } = installedLauncher(root);
+    const directory = join(root, "copy");
+    mkdirSync(join(directory, "gc"), { recursive: true });
+    writeFileSync(join(directory, "gc", "bunfig.toml"), "");
+    const printed = join(root, "printed.txt");
+    writeFileSync(
+      join(directory, "jig.ts"),
+      `const fs = require("node:fs");
+if (process.argv[2] === "upgrade") console.log(fs.readFileSync(${JSON.stringify(printed)}, "utf8"));
+else fs.appendFileSync(${JSON.stringify(log)}, (process.env.JIG_SCHEDULED_UPGRADE ?? "") + "\\n");
+`,
+    );
+    const claude = join(root, "claude");
+    writeFakeProgram(
+      claude,
+      `#!/usr/bin/env bun\nconsole.log(JSON.stringify([{ id: "jig@jig", scope: "user", installPath: ${JSON.stringify(realpathSync(directory))} }]));\n`,
+    );
+    const run = (line: string) => {
+      writeFileSync(printed, line);
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          "--no-env-file",
+          `--config=${config}`,
+          launcher,
+          `--claude=${claude}`,
+          "--",
+          "gc",
+          "--scheduled",
+        ],
+        { stdout: "pipe", stderr: "pipe", timeout: 30000 },
+      );
+      expectSpawnExit(result, 0);
+      const raw = readFileSync(log, "utf8").trim().split("\n").at(-1) as string;
+      return {
+        raw,
+        ...(JSON.parse(raw) as { outcome: string; detail: string }),
+      };
+    };
+    const long = run(
+      JSON.stringify({
+        outcome: "updated",
+        detail: "y".repeat(300_000),
+        at: "2026-11-07T04:00:00.000Z",
+      }),
+    );
+    expect(long.outcome).toBe("failed");
+    expect(long.detail).toContain("more than the 8192 a job is passed");
+    expect(long.detail.length).toBeLessThan(1200);
+    expect(Buffer.byteLength(long.raw, "utf8")).toBeLessThanOrEqual(8192);
+    // Escapes make a short detail long once serialized; its tail still shows.
+    const escaped = run(
+      JSON.stringify({
+        outcome: "failed",
+        detail: `${"\0".repeat(1988)}network down`,
+        at: "2026-11-07T04:00:00.000Z",
+      }),
+    );
+    expect(escaped.outcome).toBe("failed");
+    expect(escaped.detail).toContain("network down");
+    expect(Buffer.byteLength(escaped.raw, "utf8")).toBeLessThanOrEqual(8192);
+    const odd = run(
+      JSON.stringify({ outcome: "done", detail: "x", at: "2026-11-07" }),
+    );
+    expect(odd).toMatchObject({
+      outcome: "failed",
+      detail: expect.stringContaining("a result that does not read"),
+    });
+  },
+);

@@ -20,7 +20,7 @@
 import { resolve } from "node:path";
 import { ExitError } from "../shared/cli.ts";
 import { GcError } from "../shared/gc-error.ts";
-import { exclusiveGcLock } from "../shared/gc-lock.ts";
+import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import { jobPresent } from "../runtime/installed-job.ts";
 import type { JobSpec } from "../runtime/job-spec.ts";
 import {
@@ -217,7 +217,7 @@ export async function installDispatch(
       "Scheduler installation requires the installed plugin copy, outside every worktree",
     );
   if (!options.uninstall) await checkLauncherResolves();
-  return exclusiveGcLock("install", async () => {
+  return exclusiveInstallLock(async () => {
     for (const line of await updateJobs(changes)) console.log(line);
     return 0;
   });

@@ -34,6 +34,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -50,6 +51,8 @@ import {
   lockIdentity,
   type ProcessIdentity,
 } from "../shared/liveness.ts";
+import type { LastRun } from "../runtime/component.ts";
+import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
 import type { ReflectionReport } from "./lib/reflection-route.ts";
 import { failureText } from "./lib/text.ts";
@@ -89,6 +92,10 @@ export interface TickReceipt {
   defect?: Defect;
   /** The classes that recur, as the reflection route recorded them, left them pending or would record them; absent when it had nothing to do. */
   reflection?: ReflectionReport;
+  /** Set on the receipt of a tick that found the tick lock held, naming the holder: it holds only the upgrade its launcher ran, and did nothing else. */
+  lockHeldBy?: string;
+  /** The plugin upgrade the launcher ran before this tick (`runtime/upgrade-record.ts`); absent from a tick no timer started. */
+  upgrade?: ScheduledUpgrade;
   repos: RepoReport[];
 }
 
@@ -134,6 +141,11 @@ export function writeReceipt(receipt: TickReceipt, root = stateRoot()): string {
   } finally {
     closeSync(fd);
   }
+  // The file's time is when it is published, which the morning report reads:
+  // the fsync above can take arbitrarily long, so stamp it just before the
+  // rename, which keeps it.
+  const published = new Date();
+  utimesSync(temporary, published, published);
   renameSync(temporary, path);
   return path;
 }
@@ -176,21 +188,46 @@ function isRepoEntry(value: unknown): boolean {
 
 /** A receipt, or `null` when the file does not hold one. */
 export function readReceipt(path: string): TickReceipt | null {
+  const read = receiptOrWhy(path);
+  return typeof read === "string" ? null : read;
+}
+
+/** A receipt, or why the file does not hold one: the read's or the parse's error, or the shape it lacks. */
+export function receiptOrWhy(path: string): TickReceipt | string {
+  let value: unknown;
   try {
-    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return isMapping(value) &&
-      value.version === 1 &&
-      typeof value.runId === "string" &&
-      typeof value.startedAt === "string" &&
-      typeof value.completed === "boolean" &&
-      Array.isArray(value.repos) &&
-      value.repos.every(isRepoEntry)
-      ? (value as unknown as TickReceipt)
-      : null;
+    value = JSON.parse(readFileSync(path, "utf8"));
   } catch (err) {
-    swallow(err, `${path} is not a receipt`);
-    return null;
+    return String(err);
   }
+  return isMapping(value) &&
+    value.version === 1 &&
+    typeof value.runId === "string" &&
+    typeof value.startedAt === "string" &&
+    typeof value.completed === "boolean" &&
+    Array.isArray(value.repos) &&
+    value.repos.every(isRepoEntry)
+    ? (value as unknown as TickReceipt)
+    : "it is not a tick's receipt";
+}
+
+/**
+ * The newest receipt of a tick that ran, for `jig status` and `jig doctor`;
+ * null when there is none. A tick that found the lock held ran nothing.
+ */
+export function lastTick(root = stateRoot()): LastRun | null {
+  for (const path of receiptPaths(root).reverse()) {
+    const receipt = readReceipt(path);
+    if (receipt !== null && receipt.lockHeldBy === undefined)
+      return {
+        runId: receipt.runId,
+        startedAt: receipt.startedAt,
+        completed: receipt.completed,
+        exitStatus: receipt.exitStatus,
+        path,
+      };
+  }
+  return null;
 }
 
 /**

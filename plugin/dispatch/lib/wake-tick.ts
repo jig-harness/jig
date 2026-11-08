@@ -12,8 +12,11 @@
  * the tick the way the installed timer does: the job's own launcher command
  * and environment, read back from the scheduler, with `dispatch --apply
  * --repo <path>` as its arguments. With no timer installed it runs this copy
- * of the plugin's `jig.ts`. A tick that ends with exit 3 found its
- * repository or the act lock held and is tried again after the minute. The waiter's notes, and each
+ * of the plugin's `jig.ts`. The launcher is told it runs a woken tick
+ * (`JIG_LAUNCHER_ROLE=wake`), so the plugin is not upgraded first: that is
+ * the timer's, and a woken tick is to run soon. A tick that ends with exit 3
+ * found its repository or the act lock held and is tried again after the
+ * minute. The waiter's notes, and each
  * run's command, exit code and output, go to `last-run.log` beside the wake.
  *
  * `JIG_WAKE_COMMAND`, a JSON array, names the command a test runs in place
@@ -174,7 +177,11 @@ export async function tickCall(
   const deadline = Number(timer.env.JIG_LAUNCHER_DEADLINE_SEC);
   return ok({
     argv: [...timer.prefix, ...tickArgs(path)],
-    env: { ...environment(SESSION_VARIABLE), ...timer.env },
+    env: {
+      ...environment(SESSION_VARIABLE),
+      ...timer.env,
+      JIG_LAUNCHER_ROLE: "wake",
+    },
     timeoutSec:
       (Number.isSafeInteger(deadline) && deadline > 0
         ? deadline

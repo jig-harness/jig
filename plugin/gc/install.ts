@@ -13,7 +13,7 @@ import { baseDeclaration, gcGit as git } from "./git.ts";
 import { dump, load } from "../shared/yaml.ts";
 import { isMapping } from "../shared/config-layers.ts";
 import { remoteHeadBranch, worktreeRemote } from "./kinds/worktree-proof.ts";
-import { exclusiveGcLock } from "../shared/gc-lock.ts";
+import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import {
   checkLauncherResolves,
   detectScheduler,
@@ -85,7 +85,7 @@ export async function install(options: {
   // Removing an entry withdraws authority, so it never waits on plugin
   // discovery.
   if (!options.uninstall) await checkLauncherResolves();
-  return exclusiveGcLock("install", async () => {
+  return exclusiveInstallLock(async () => {
     const original = previousMachineText(machinePath);
     // Refuse a concurrent edit after the preview rather than overwrite it.
     const current = gcConfiguration(root, repositoryText).machine;

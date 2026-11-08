@@ -80,7 +80,7 @@ import {
   type TickContext,
   type TickOptions,
 } from "./lib/tick-context.ts";
-import { copyLog, writeTickLine } from "./lib/tick-line.ts";
+import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
 import {
   fillBudgets,
   lowBudget,
@@ -98,6 +98,7 @@ import { routeRecurrences } from "./lib/reflection-route.ts";
 import { settleOutcomes } from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
 import type { RepoReport } from "./lib/types.ts";
+import { takeScheduledUpgrade } from "../runtime/upgrade-record.ts";
 import {
   type Lock,
   newRunId,
@@ -142,6 +143,16 @@ interface StartedTick {
   settleFailed: boolean;
 }
 
+/**
+ * The plugin upgrade the launcher ran before this tick, as the receipt's
+ * field: taken out of the environment, so the sessions the tick launches
+ * never carry it.
+ */
+function upgradeField(): Pick<TickReceipt, "upgrade"> {
+  const upgrade = takeScheduledUpgrade();
+  return upgrade === undefined ? {} : { upgrade };
+}
+
 /** Read this machine's launch records as the observe phase sees them, and the receipt the tick fills. */
 async function startTick(options: TickOptions): Promise<StartedTick> {
   // The deadline counts from here, so the startup read below spends it too.
@@ -158,6 +169,7 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
     completed: false,
     apply: false,
     exitStatus: 0,
+    ...upgradeField(),
     unreadableLaunches: read.unreadable,
     repos: [],
   };
@@ -428,10 +440,36 @@ async function closeTick(
   });
 }
 
-/** The repositories this tick read: one another tick held was not, and the line is written only by a tick that read every one. */
+/**
+ * The repositories this tick read: one another tick held was not, and the line is written only by a tick that read every one.
+ */
 function readRepos(receipt: TickReceipt, context: TickContext): string[] {
   const busy = new Set((receipt.busy ?? []).map((b) => b.path));
   return context.options.repos.filter((path) => !busy.has(path));
+}
+
+/**
+ * A tick that found its repositories or the act lock held writes no receipt of
+ * its own work; one its launcher ran the plugin upgrade before gets a receipt
+ * holding that upgrade and the holder, so the morning report still sees it.
+ */
+function heldReceipt(started: StartedTick, heldBy: string): void {
+  const { options } = started.context;
+  const { upgrade } = started.receipt;
+  if (upgrade === undefined) return;
+  const now = options.now ?? new Date();
+  writeReceipt({
+    version: 1,
+    runId: newRunId(now),
+    startedAt: now.toISOString(),
+    finishedAt: new Date().toISOString(),
+    completed: false,
+    apply: options.apply === true,
+    exitStatus: 3,
+    lockHeldBy: heldBy,
+    repos: [],
+    upgrade,
+  });
 }
 
 /** The act phase and the close under the act lock, and the receipt written. */
@@ -452,6 +490,9 @@ async function actAndClose(
     receipt.exitStatus = 1;
     receipt.finishedAt = new Date().toISOString();
     logDefect("the tick", receipt.defect, error);
+    receipt.phasesMs = { ...timer.ms };
+    if (context.options.machine)
+      recordTickHealth(receipt, context.options.machine);
   }
   receipt.phasesMs = { ...timer.ms };
   const path = writeReceipt(receipt);
@@ -471,15 +512,21 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     if (
       options.repos.length > 0 &&
       observe.busy.size === new Set(options.repos).size
-    )
-      return { held: [...observe.busy.values()].join("; ") };
+    ) {
+      const heldBy = [...observe.busy.values()].join("; ");
+      heldReceipt(started, heldBy);
+      return { held: heldBy };
+    }
     const act = await timer.time("wait", () =>
       waitForActLock(
         options.actLockWaitMs ?? ACT_LOCK_WAIT_MS,
         started.context,
       ),
     );
-    if ("heldBy" in act) return { held: act.heldBy };
+    if ("heldBy" in act) {
+      heldReceipt(started, act.heldBy);
+      return { held: act.heldBy };
+    }
     try {
       return await actAndClose(started, observe, locks, timer);
     } finally {

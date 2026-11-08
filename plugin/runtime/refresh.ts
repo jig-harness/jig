@@ -13,9 +13,15 @@
  * (`Component.job()`, and the companion jobs a component's install writes
  * beside it, `Component.companionJobs()`) the scheduler holds, so a third
  * component's job is refreshed with no change here.
+ *
+ * A refresh a timer's job runs (`scheduled`) leaves a loaded launchd job's
+ * file as it is: launchd reads a new one only when the job is booted out and
+ * in again, which stops a running job, and the job may be the one running the
+ * refresh. Its launcher copy is still refreshed; `jig upgrade` run by a
+ * person rewrites the job.
  */
 import { swallow } from "../shared/errors.ts";
-import { exclusiveGcLock } from "../shared/gc-lock.ts";
+import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import type { Component } from "./component.ts";
 import {
   type InstalledJob,
@@ -51,6 +57,11 @@ export interface RefreshResult {
 
 /** Sees each scheduler command before it runs. */
 export type Announce = (command: string[]) => void;
+
+/** How a refresh runs: `scheduled` when a timer's job runs it. */
+export interface RefreshOptions {
+  scheduled?: boolean;
+}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -127,12 +138,13 @@ function refreshJob(
   spec: JobSpec,
   scheduler: Scheduler,
   announce?: Announce,
+  options: RefreshOptions = {},
 ): Promise<RefreshResult> {
   const result = (
     outcome: RefreshResult["outcome"],
     detail: string,
   ): RefreshResult => ({ target: spec.name, outcome, detail });
-  return exclusiveGcLock("install", async () => {
+  return exclusiveInstallLock(async () => {
     const snapshot = await snapshotScheduler(scheduler, spec);
     const installed = readableJob(component, snapshot, scheduler);
     if (Array.isArray(installed)) return result(...installed);
@@ -155,15 +167,37 @@ function refreshJob(
       guardLauncher(directory, snapshot.launcher, () =>
         installLauncher(directory),
       );
+    const copied = stale && `copied the launcher to ${directory}`;
+    if (changed && keepsJob(snapshot, options))
+      return result(
+        "skipped",
+        refreshed([
+          copied,
+          "the loaded launchd job is rewritten by the next jig upgrade a person runs, since rewriting it would stop it",
+        ]),
+      );
     if (changed) await rewriteJob(snapshot, files, announce);
     return result(
       "refreshed",
-      refreshed([
-        stale && `copied the launcher to ${directory}`,
-        changed && `rewrote the ${scheduler} job`,
-      ]),
+      refreshed([copied, changed && `rewrote the ${scheduler} job`]),
     );
   });
+}
+
+/**
+ * Whether a refresh leaves the job's file as it is: a timer's refresh and a
+ * loaded launchd job, which booting out to read a new file would stop, and
+ * which may be the job running this refresh.
+ */
+function keepsJob(
+  snapshot: SchedulerSnapshot,
+  options: RefreshOptions,
+): boolean {
+  return (
+    options.scheduled === true &&
+    snapshot.scheduler === "launchd" &&
+    snapshot.active
+  );
 }
 
 /**
@@ -199,6 +233,7 @@ export async function recordedPrograms(
 export async function refreshInstalled(
   components: readonly Component[],
   announce?: Announce,
+  options: RefreshOptions = {},
 ): Promise<RefreshResult[]> {
   const results: RefreshResult[] = [];
   let scheduler: Scheduler | null = null;
@@ -219,7 +254,9 @@ export async function refreshInstalled(
         continue;
       }
       try {
-        results.push(await refreshJob(component, spec, scheduler, announce));
+        results.push(
+          await refreshJob(component, spec, scheduler, announce, options),
+        );
       } catch (error) {
         results.push({ target, outcome: "failed", detail: message(error) });
       }
@@ -228,7 +265,7 @@ export async function refreshInstalled(
     // Under the lock installs and removals take, as a job's refresh is.
     results.push({
       target: "jig command",
-      ...(await exclusiveGcLock("install", async () => refreshCommand())),
+      ...(await exclusiveInstallLock(async () => refreshCommand())),
     });
   } catch (error) {
     results.push({

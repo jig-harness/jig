@@ -336,7 +336,7 @@ const MACHINE: RecordKind[] = [
     "machine",
     "gc-admission",
     "shared/gc-lock.ts",
-    "~/.local/state/jig/gc-locks/<kind>/writer, reader-<pid>-<id>",
+    "~/.local/state/jig/gc-locks/<kind>/writer, reader-<pid>-<id>, install/writer-takeover.<hash>.lock",
     0,
   ),
   plain(
@@ -351,6 +351,27 @@ const MACHINE: RecordKind[] = [
     "gc-machine-entry",
     "gc/install.ts",
     "~/.jig/jig.yaml, its gc section",
+    0,
+  ),
+  plain(
+    "machine",
+    "upgrade-setting",
+    "runtime/upgrade-record.ts",
+    "~/.jig/jig.yaml, its upgrade section",
+    0,
+  ),
+  plain(
+    "machine",
+    "upgrade-stamp",
+    "runtime/upgrade-stamp.ts",
+    "~/.local/state/jig/upgrade/last.json",
+    1,
+  ),
+  plain(
+    "machine",
+    "upgrade-claim-lock",
+    "runtime/scheduled-upgrade.ts",
+    "~/.local/state/jig/upgrade/claim.<hash>.lock",
     0,
   ),
   plain(
