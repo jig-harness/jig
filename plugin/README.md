@@ -312,7 +312,7 @@ re-driven once per head commit, a stall that left work in its tree only in
 that tree, and a person is told when the same head stops the same way again;
 a stop a person is told of says so when its pull request also conflicts with
 its base. A drive whose failing checks kept failing on the CI service's
-infrastructure through its re-runs and head moves (exit `22`) is re-driven
+infrastructure through its re-runs and head moves (exit `23`) is re-driven
 once per stop, after a backoff from the stop that doubles with each such stop
 in a row (15 minutes, at most 4 hours), and a person is told once 7 stand in a
 row. A pass deadline that recurred past the drive's restarts (exit `15`)

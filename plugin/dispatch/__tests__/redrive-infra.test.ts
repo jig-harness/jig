@@ -52,7 +52,7 @@ afterEach(() => {
 const minutesAgo = (m: number) =>
   new Date(Date.now() - m * 60_000).toISOString();
 
-/** A stop event `22`, `m` minutes ago. */
+/** A stop event `23`, `m` minutes ago. */
 const infraStop = (m: number): DriveEvent => ({
   at: minutesAgo(m),
   round: 3,

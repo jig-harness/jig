@@ -13,9 +13,9 @@ release: minor
   the re-runs are spent, it moves the head: it merges the base when the branch
   is behind it, and otherwise pushes the empty commit `ci: re-run checks after
   an infrastructure failure` (`DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive,
-  default 2). Past both bounds it stops with the new exit `22`
+  default 2). Past both bounds it stops with the new exit `23`
   (`CI_INFRA_PERSISTED`).
-- `jig dispatch` re-drives a drive stopped `22` once per stop, after a backoff
+- `jig dispatch` re-drives a drive stopped `23` once per stop, after a backoff
   that starts at 15 minutes and doubles with each such stop in a row, up to 4
   hours. It tells a person only once 7 such stops stand in a row. A tick inside
   the backoff launches nothing.
