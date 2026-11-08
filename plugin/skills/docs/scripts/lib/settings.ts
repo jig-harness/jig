@@ -136,7 +136,9 @@ export function promotedStatuses(section: unknown): string[] {
   if (
     !Array.isArray(value) ||
     value.length === 0 ||
-    value.some((status) => typeof status !== "string" || !/^\S+$/.test(status)) ||
+    value.some(
+      (status) => typeof status !== "string" || !/^\S+$/.test(status),
+    ) ||
     new Set(value).size !== value.length
   )
     throw new SettingsError(

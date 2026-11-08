@@ -234,14 +234,19 @@ test("a malformed docs.promoted_statuses is refused with exit 2", () => {
 
 test("a malformed docs section is refused, not defaulted", () => {
   const root = configured("docs: [active]\n");
-  const result = run([fix("clean.md")], { JIG_CONSUMER_ROOT: root, HOME: root });
+  const result = run([fix("clean.md")], {
+    JIG_CONSUMER_ROOT: root,
+    HOME: root,
+  });
   expectSpawnExit(result, 2);
   expect(result.err).toContain("docs must be a mapping");
 });
 
 test("frontmatter is excluded before every check", () => {
   expect(
-    scanScars('---\ndescription: "~~literal~~"\nnotes:\n  - Reviewer: x\n---\nBody.\n'),
+    scanScars(
+      '---\ndescription: "~~literal~~"\nnotes:\n  - Reviewer: x\n---\nBody.\n',
+    ),
   ).toEqual([]);
 });
 
@@ -253,13 +258,17 @@ test("a reviewer label opens a paragraph after frontmatter or a heading", () => 
 });
 
 test("a reviewer label on a soft-wrapped line is not a paragraph opening", () => {
-  expect(scanScars("The fields include\nReviewer: the approver.\n")).toEqual([]);
+  expect(scanScars("The fields include\nReviewer: the approver.\n")).toEqual(
+    [],
+  );
   expect(scanScars("Intro.\n\nReviewer: looks wrong.\n")).toHaveLength(1);
 });
 
 test("masking inline code does not manufacture an opening attribution", () => {
   expect(scanScars("`primary` Reviewer: selects an approver.\n")).toEqual([]);
-  expect(scanScars("| `primary` Reviewer: selects an approver. | x |\n")).toEqual([]);
+  expect(
+    scanScars("| `primary` Reviewer: selects an approver. | x |\n"),
+  ).toEqual([]);
 });
 
 test("resolution phrasing counts only where it opens the item", () => {
