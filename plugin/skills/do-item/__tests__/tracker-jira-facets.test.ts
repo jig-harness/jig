@@ -303,6 +303,29 @@ describe("Jira: reading a type kept in the issue types", () => {
     ]);
   });
 
+  it("lets a type label win over issue_type where issue_type is itself a type's issue type", async () => {
+    const typed = async (labels: string[], type = "Task") => {
+      const { t } = jira(
+        routes({
+          ...SITE,
+          "GET issue/ENG-1": issue({ key: "ENG-1", type, labels }),
+        }),
+        {
+          issue_tracker: {
+            facets: {
+              type: { store: "native", values: { chore: "Task" } },
+            },
+          },
+          taxonomy: JIG_TAXONOMY,
+        },
+      );
+      return (await t.getIssue("ENG-1"))?.type;
+    };
+    expect(await typed([])).toBe("chore");
+    expect(await typed(["docs"])).toBe("docs");
+    expect(await typed(["docs"], "Bug")).toBeNull();
+  });
+
   it("reads an issue type no type is kept as as none, and marks it unmapped", async () => {
     expect(await read({ type: "Incident" })).toEqual([null, ["type"]]);
     expect(await read({ type: "Task" })).toEqual([null, []]);
@@ -471,7 +494,7 @@ describe("Jira: a custom field named by name or id", () => {
             size: {
               store: "field",
               field: "customfield_10016",
-              values: { xs: 1, small: 2, medium: 3, large: 5, xl: 8 },
+              values: { xs: 1, small: 2, medium: 3, large: "5.0", xl: 8 },
             },
           },
         },
