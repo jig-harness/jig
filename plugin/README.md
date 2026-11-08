@@ -178,8 +178,11 @@ jig run       [COMPONENT...]
   differs, and a job that was enabled or running stays so. Every command
   that changes state is printed before it runs (read-only queries, such as
   a version or a plugin list, are not), and `--json` prints what became of each
-  harness and job. `--jobs-only` refreshes the jobs and the command without
-  updating the plugin, for after a tool updated it on its own. Each tool
+  harness and job. In Claude Code it also refreshes each project- and
+  local-scope install of the plugin from its directory, and removes from
+  Claude Code's install record each whose directory no longer exists; one it
+  cannot update safely it leaves as it was, saying why. `--jobs-only`
+  refreshes the jobs and the command without updating the plugin, for after a tool updated it on its own. Each tool
   command is limited to `JIG_SETUP_TIMEOUT_SECONDS` (default 300).
   `--scheduled` is what the timers run before each job
   ([automatic updates](#automatic-updates)); it prints one line of JSON.
@@ -188,7 +191,10 @@ jig run       [COMPONENT...]
   Jig tests; `claude` and `codex` resolving outside every git checkout (a
   job never records an agent tool inside one, so a development shim ahead
   of the real tool on `PATH` leaves the jobs without it); the plugin in
-  each harness and the channel it follows; the `jig` command's launcher
+  each harness and the channel it follows; every project- and local-scope
+  install of it in Claude Code, with its directory and version, failing
+  one older than the user-scope install or whose directory is gone; the
+  `jig` command's launcher
   copy; the latest scheduled upgrade, which fails while that upgrade failed,
   naming it and the agent tool's error; for each component, or those named, its machine file, its job's
   launcher copy against the installed plugin's, the programs its job names
@@ -1247,6 +1253,14 @@ fails. Without the `jig` command, the tools list their plugins:
 claude plugin list        # shows jig@jig, enabled
 codex plugin list         # same for Codex
 ```
+
+Claude Code can also hold the plugin per directory, at project or local
+scope (`claude plugin install --scope project`), alongside the user-scope
+install above. Where both exist, Claude Code (2.1.311) loads the user-scope
+copy, but `claude plugin update jig@jig` without `--scope` updates the most
+specific one, so a forgotten project-scope copy falls behind unseen.
+`jig doctor` lists each and fails one older than the user-scope install or
+left behind by a deleted directory; `jig upgrade` refreshes or removes them.
 
 Start a **new** session afterwards. Sessions that were already open load the
 plugin after `/reload-plugins` (Claude Code) or a restart (Codex).
