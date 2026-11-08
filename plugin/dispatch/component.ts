@@ -33,7 +33,7 @@ import {
   strictDispatchCommand,
   winningIntervalArguments,
 } from "./cli.ts";
-import { dispatchJobSpec, installDispatch } from "./install.ts";
+import { dispatchJobSpec, installDispatch, probeJobSpec } from "./install.ts";
 import { installLabels } from "./install-labels.ts";
 import {
   type MachineConfig,
@@ -49,15 +49,21 @@ import { readReceipt, receiptPaths } from "./receipts.ts";
  * installed job's own schedule is what status reports.
  */
 function job() {
+  const machine = readableMachine();
+  const minutes =
+    machine === null ? 5 : Math.max(1, Math.ceil(machine.intervalMs / 60_000));
+  return dispatchJobSpec(minutes, machine);
+}
+
+/** The machine file, or null when there is none or it does not read: install refuses that with its message. */
+function readableMachine(): MachineConfig | null {
   let machine: MachineConfig | null = null;
   try {
     machine = machineFile();
   } catch {
     // Left to install, which refuses the file with its message.
   }
-  const minutes =
-    machine === null ? 5 : Math.max(1, Math.ceil(machine.intervalMs / 60_000));
-  return dispatchJobSpec(minutes, machine);
+  return machine;
 }
 
 function missingOptIn(): string | null {
@@ -159,6 +165,8 @@ export const dispatchComponent: Component<DispatchArguments> = {
       ? winningIntervalArguments(argv)
       : null,
   job,
+  // The change probe's job, which its install writes beside the tick's and upgrade keeps.
+  companionJobs: () => [probeJobSpec(readableMachine())],
   missingOptIn,
   install: async (request) => {
     const timer = await installDispatch(

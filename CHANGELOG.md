@@ -387,6 +387,102 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.158.1] - 2026-11-07
+
+### Fixed
+
+- `jig dispatch` no longer leaves a launch the session runtime answered as started, but whose wrapper never claimed its launch record, holding its stage and an account slot with no notice. Once the machine file's new `unclaimed_after` (default `15m`) has passed since that answer, the record is reported as stuck: notified to a person as needing them (cause `needs-person`, once, then on `dispatch.renotify_after`), shown on the dashboard as needing a person, and released with `jig dispatch clear <record>`. A record claimed within `unclaimed_after` is never flagged. When the runtime reports a session joined to the record's target, the notice says so, since that wrapper may have started its stage without claiming the record; the slot is never freed automatically.
+
+## [0.158.0] - 2026-11-07
+
+### Added
+
+- The tracker interface carries every issue's type, priority and size, its [issue facets](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), wherever the tracker keeps them. A repository that sets nothing keeps each in the store it has always used and files, reads and pools exactly as before: type and size as labels on every adapter, priority as labels on GitHub Issues and in the priority field on Jira and Linear. The type and size values are the types and size group of the repository's label taxonomy (`issue_tracker.taxonomy`); with no taxonomy, the work types are the types and there is no size facet.
+- `issue_tracker.facets` names where a facet is kept: `label`, with its labels or a prefix, on every adapter; on GitHub Issues also the issue type (`type: { store: native }`), the organization's Priority field (`priority: { store: native }`) and any issue field of the organization (`size: { store: field, field: Effort }`), with a `values` map where names differ. A store is refused when the configuration is read if the adapter cannot hold it, and a value that names nothing in its store is refused before anything is written ([CONFIGURATION.md](https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md#issue_tracker)). The skills still read type and size from labels in this release, so name a store other than `label` for them only to try it.
+- `do-item`'s `tracker.ts create` and `update` take `type`, `priority` and `size` and write each to its store (`update` removes one with `null`), and `tracker.ts facet-stores` prints each facet's store and why it is in force, a named store's health, and, on GitHub Issues, what the default would select from the labels and field values the repository's issues carry and what its organization offers. That report chooses nothing, and a read it could not make (denied, rate limited, timed out) is shown as an error naming the read and the credential, never as "no field".
+- Launch outcomes name the next owner, and `jig ask` shows the handoff as
+  `last.next`: a station address, a person and their act, or nobody with a
+  reason. A converged drive hands to a maintainer to merge, and a completed
+  follow-up has no next owner. Older records remain readable. Late pickup
+  results refresh the outcome and its text archive; malformed stored
+  handoffs, including addresses without a full repository, remain unknown.
+  Late failures preserve the recorded question,
+  and archive refreshes read revisions in bounded batches.
+
+### Changed
+
+- **Breaking:** a completed pickup must report `jig dispatch result <record>
+  <token> done --pr <number>`, or `done --none "<reason>"` when no pull request
+  was needed. Update commands that report a pickup's result; new launch
+  prompts include these arguments. Follow-up and failed-result commands keep
+  their existing form.
+
+## [0.157.1] - 2026-11-07
+
+### Fixed
+
+- A dead drive whose worktree was removed can be taken over from the remote head. The doctor reports `DEAD` for a missing tree; existing trees that cannot be inspected still refuse takeover.
+
+## [0.157.0] - 2026-11-07
+
+### Added
+
+- The dispatcher's change probe: `jig install dispatch` now also writes a
+  timer that runs `jig dispatch probe --apply` every minute. It makes one
+  search on the forge over every repository the machine file dispatches
+  (on GitHub one GraphQL call for a single page of results, 1 point of the 5,000 an hour; further pages add calls and points) and wakes the
+  tick of each repository where a pull request was reviewed, commented on,
+  labelled, pushed to, merged or closed, or its checks changed, since the
+  last probe, so such a change starts that repository's tick within about a
+  minute rather than at the next sweep. A minute with no change starts no
+  tick, and a probe that cannot read the forge wakes nothing and says why.
+  `jig dispatch probe` without `--apply` says what it would wake and writes
+  nothing. Turn it off with `change_probe: false` in
+  `~/.jig/dispatch.yaml`. `jig upgrade` keeps and refreshes the probe's
+  timer; on a machine whose dispatcher timer is already installed, run
+  `jig install dispatch --yes` once to add it.
+- Each wake of a repository's tick now records who asked and why
+  (`send: …` or `probe: …`), and the wake's `last-run.log` names them
+  beside the tick it ran.
+- `/jig:drive-pr` stops with its own exit, `21` (`CI_REPAIR_SPENT`), when the
+  review converged but CI still fails after its CI-repair passes, so a caller
+  can tell that CI repair from a crash (`1`). A harness that reads exit `1`
+  as "CI still red" reads `21` for a spent budget now; repair disabled
+  (`DRIVE_PR_CI_REPAIR_ROUNDS=0`) still stops `1`.
+- `jig dispatch` re-drives a stall (exit `14`) and a spent CI-repair budget
+  (exit `21`) once per head commit, on any account, and tells a person when
+  the same head stops the same way again. A stall that left work in its tree,
+  or whose stop never measured it, is re-driven only in that tree; with no open workspace holding it, a person
+  is told. The re-armed drive's first pass is told the stop and, after a
+  stall, what its passes recorded last, and it takes the edits the stall left
+  as its own to finish, only when it is armed in the tree that stalled.
+- A stop the dispatcher hands a person says so when the pull request also
+  conflicts with its base.
+
+### Changed
+
+- The `jig:converged` label is created green and `jig:parked` red, so a pull request ready for a person to merge, or stopped on something only a person settles, stands out from one the dispatcher still drives. A repository that already has these labels keeps their colors until someone changes them (`gh label edit jig:converged --color 0e8a16`, `gh label edit jig:parked --color d93f0b`).
+
+### Fixed
+
+- A drive round that inherits a base merge an earlier pass left open, with its
+  conflicts resolved but not committed, can now finish instead of stalling:
+  `round-plan.ts` plans an open merge against the merge base its commit will
+  have, so the pass can validate the merge before concluding it, and
+  `/jig:drive-pr` tells the pass to finish what the tree holds (validate,
+  commit, then sync the base and push) before the round's own work. A merge
+  with a conflict still unresolved, and any other unfinished git operation,
+  is still refused.
+- The [ratchet](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md)
+  measures a working tree in the middle of a merge against the merge base the
+  merge commit will have, so a finding the target branch gained and the change
+  merged in no longer counts as the change's.
+- A stalled drive (exit `14`) tells its extra round what the tree holds, and
+  its stop prints what that round's pass recorded: the refusal that stops the
+  round now, not an earlier pass's. When that pass recorded nothing, the stop
+  says the lines it prints predate it. A pass that ends a round without
+  pushing names the step that refused and what would unblock it.
+
 ## [0.156.4] - 2026-11-07
 
 ### Fixed
@@ -5650,7 +5746,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.156.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.158.1...HEAD
+[0.158.1]: https://github.com/jig-harness/jig/compare/v0.158.0...v0.158.1
+[0.158.0]: https://github.com/jig-harness/jig/compare/v0.157.1...v0.158.0
+[0.157.1]: https://github.com/jig-harness/jig/compare/v0.157.0...v0.157.1
+[0.157.0]: https://github.com/jig-harness/jig/compare/v0.156.4...v0.157.0
 [0.156.4]: https://github.com/jig-harness/jig/compare/v0.156.3...v0.156.4
 [0.156.3]: https://github.com/jig-harness/jig/compare/v0.156.2...v0.156.3
 [0.156.2]: https://github.com/jig-harness/jig/compare/v0.156.1...v0.156.2

@@ -18,6 +18,7 @@ import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import { parseListen } from "../lib/listen.ts";
 import { exportLog } from "../lib/log-export.ts";
 import {
+  endedRow,
   writeRow,
   classifyEnded,
   type EndedRow,
@@ -154,6 +155,36 @@ function exited(
 }
 
 describe("the outcome classifier", () => {
+  it("keeps every ended launch's derived or stated next owner without changing its class", () => {
+    expect(endedRow(exited(0), AT, NONE, null).next).toEqual({
+      person: "repository maintainer",
+      act: "merge the pull request",
+    });
+    const pickup = {
+      ...exited(0, { action: "pickup", pr: null, item: "#4" }),
+      result: "done" as const,
+      next: { address: "drive@o/a#42" },
+    };
+    expect(endedRow(pickup, AT, NONE, null)).toMatchObject({
+      class: "converged",
+      next: pickup.next,
+    });
+    expect(
+      endedRow({ ...pickup, next: { none: "duplicate" } }, AT, NONE, null).next,
+    ).toEqual({ none: "duplicate" });
+    expect(
+      endedRow(
+        { ...exited(0, { action: "followup" }), result: "done" },
+        AT,
+        NONE,
+        null,
+      ).next,
+    ).toEqual({ none: "the follow-up is complete" });
+    expect(endedRow(exited(99), AT, NONE, null).next).toEqual({
+      none: "no handoff was recorded: exit 99",
+    });
+  });
+
   it("places each drive exit in its class, first match in table order", () => {
     const cases: Array<[number | null, OutcomeClass]> = [
       [0, "converged"],

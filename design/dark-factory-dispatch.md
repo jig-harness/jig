@@ -497,6 +497,28 @@ to discard: the pass finishes it or starts it over (`drive-pr` `SKILL.md` § 0),
 and a tree that holds one behind a moved head refuses the attach, which leaves
 the ledger stopped `9`, so a person is told.
 
+A drive that stopped `14` (stalled: its passes changed nothing for the stall
+threshold and one extra round) or `21` (the review converged, but CI still
+fails with its CI-repair passes spent) stopped on a cause whose next step is
+the drive's own, not a person's decision: a pass that reads why the stalled
+passes did not act, or a CI repair with a fresh budget. So each is re-driven
+once per change, here the pull request's head commit with the exit, on any
+admitted account. The re-armed drive's first pass is told the stop and, for a
+stall, what its passes recorded last, which the drive reads from its own
+state and the ledger, wherever it runs. A stall whose stop recorded work left
+in its tree (uncommitted edits, an open merge, unpushed commits) is re-driven
+in that tree, the one the ledger names, and never in a fresh one, which would
+not carry the work: on another host the tick leaves it to that host's
+dispatcher, and on this host, with no open workspace holding that tree, a
+person is told. A person is told too once a re-drive leaves the same stop at
+the same head, as for a conflict stop; a head that moves is a new attempt.
+Exit `1` stays a person's: it names a crash, a failed pass or an unreadable
+state, not a next step.
+
+A needs-a-person stop whose pull request also conflicts with its base says so
+in its notice and its report line, so the person knows a base merge is owed
+too.
+
 A deliberate stop records the person's decision, with their reason when
 given. Mailbox stops and pauses keep exits `18` and `19`; `drives.ts --stop`
 records an explicit person's stop even when it must force the process to end.
@@ -550,6 +572,8 @@ the budget; a new ledger then follows the ordinary budget.
 | stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
 | stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
 | stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies per stop, with the exit and the drive's handoff |
+| stopped `14` (stalled) or `21` (CI still failing with its repair passes spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit | stale | re-arms on any admitted account; a stall that left work in its tree, or whose stop never measured it, re-arms only in that tree: on another host it is left to that host, and with no open workspace holding it here, a person is told |
+| stopped `14` or `21`, this machine or another host already having re-driven that head with that exit, however that launch ended | needs a person | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does |
 | stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
 | stopped with an explicit person's-stop record, or `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
 | stopped with no exit and no person's-stop record, budget available | re-armable | re-arms on an admitted account; a legacy ledger gets at most one attempt |
@@ -559,7 +583,7 @@ the budget; a new ledger then follows the ordinary budget.
 | stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive) | re-armable | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to |
 | stopped `8`, an item unanswered | parked | notifies per park |
 | stopped `11` or `13` | refused | nothing; another driver holds it |
-| stopped on any other exit (`1`, `2`, `6`, `7`, `12`, `14`, `15`, or one this table does not know) | needs a person | notifies per stop, with the exit and the drive's handoff |
+| stopped on any other exit (`1`, `2`, `6`, `7`, `12`, `15`, or one this table does not know) | needs a person | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does |
 
 The tick reads every pull request merged after the date the follow-up
 stage was switched on for the repository (`followup_since` in the machine
@@ -758,14 +782,22 @@ tick calls again, is **stuck**: both of its launches went unanswered (or
 one went unanswered and the runtime answered the other as not started),
 since an unanswered launch
 may have started a session and a third call is never made, or a follow-up's
-replay could not be proven safe (see Guards against a second launch). A
+replay could not be proven safe (see Guards against a second launch), or the
+runtime answered its last launch as started longer ago than the machine
+file's `unclaimed_after` (15 minutes by default) and no wrapper has claimed
+it. The wrapper claims its record before anything else, seconds after its
+terminal starts, and the workspace is opened before the launch call, so a
+claim that has not come by then is not coming; within it, a wrapper slow to
+start is never mistaken for one, and while the runtime cannot say which
+sessions run the tick waits for a read that can. Past it, a session the
+runtime joins to the record's target is named in why the record is stuck:
+that wrapper may have started its stage without claiming the record, so the
+record keeps its slot and a person checks that session before clearing it. A
 stuck record is notified to a person as needing them (see Notifications),
 shown on the dashboard as needing a person rather than as an ordinary
 pending launch, and holds its stage and slot until a person checks for a
 session it started and clears it (`jig dispatch clear <record>`, which
-refuses a record whose process is alive). A record whose last launch the
-runtime answered as started is never stuck, since its wrapper may still
-claim it. The next
+refuses a record whose process is alive). The next
 tick reads the records: a record whose process is alive under that same
 identity holds its stage; one that ended carries the stage's answer; one
 whose identity cannot be checked (another boot, an unreadable process
@@ -1476,7 +1508,7 @@ replaced by a takeover is stalled, not refused.
 | stalled | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over` |
 | died | a process gone without an exit; an interactive session that ended with no result |
 | refused | a stage's own refusal or a stop it was given: exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; exit `5` on a closed pull request; an item already claimed; a person's `drives.ts --stop` |
-| gates failed | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`; a recorded result `failed` |
+| gates failed | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`, `21`; a recorded result `failed` |
 | double claim | used by event rows only |
 | unknown | anything not placed above, with its last state |
 
@@ -1767,7 +1799,38 @@ tick, and a tick refused for the held tick lock tried again after the
 minute. `send` keeps its pending requests on disk
 (`plugin/shared/wake.ts`), since it exits at once; its waiter runs the
 tick with the installed timer's launcher and environment and exits after
-it.
+it. Each request records who asked and why, and the waiter's log names
+them beside the tick it ran.
+
+A change on the forge (a review, a comment, a label a person adds, a push,
+a check that ends, a merge) wakes a tick through the **change probe**
+(`plugin/dispatch/lib/change-probe.ts`), not through an event: the host
+still opens no inbound route. Every minute its own timer, which
+`jig install dispatch` writes beside the tick's, makes one search on the
+forge over every repository the machine file dispatches: the pull requests
+updated since the last probe, open, merged or closed, and every open one's
+head commit and check state, since a check that ends does not move a pull
+request's update time. It compares that with what the last probe saw (each
+pull request's update time inside a window that starts ten minutes before
+the last probe, so a change the search index reports late is still found,
+and each open pull request's head and checks) and wakes, under the same
+rule, only the repositories where something changed: a minute with no
+change starts no tick, and a probe that cannot read the forge wakes nothing
+and is logged. On GitHub the search is one GraphQL call for a single page of results (further pages add calls and points), 1 point of the
+5,000 an hour, measured with eleven repositories and sixty-odd open pull
+requests, about sixty calls an hour. The probe has a timer of its own
+rather than a place in the tick's: the two run at different intervals, a
+probe inside the tick's job would wait out every sweep (the systemd and
+launchd schedulers never overlap two runs of one job; cron can, and there
+the probe's holder lock keeps two applying probes apart), and a probe that
+fails or hangs then never delays a sweep. A scheduler ends whatever a job
+leaves running (systemd stops its whole control group), so the probe is the
+woken ticks' waiter itself and exits after them, the repositories' waiters
+running together. The machine
+file's `change_probe: false` turns it off. A change the line makes itself
+(a drive's comment, a label the tick writes) wakes a tick too, at most one
+a minute for the repository; that tick finds the records as the sweep
+would.
 
 ## Build order
 
@@ -1932,7 +1995,8 @@ One pull request each, in this order; each is usable on its own.
   ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).
   A Herdr implementation of the session runtime interface comes when Herdr
   can supply one.
-- **Webhooks.** The tick polls. An outbound wake-up channel (a relay that
+- **Webhooks.** The tick polls, and the change probe polls the forge once
+  a minute for what changed. An outbound wake-up channel (a relay that
   takes the tracker's and forge's events and that the host holds a
   connection to) can start ticks early later; the sources stay behind
   interfaces such a channel can replace, and no inbound route to the host

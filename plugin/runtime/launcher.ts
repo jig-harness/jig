@@ -560,6 +560,23 @@ async function entryAfterUpgrade(
   }
 }
 
+/**
+ * The jobs the plugin is upgraded before: collection's and the dispatcher's
+ * ticks, whose receipts record the upgrade. Any other job, such as the
+ * dispatcher's minute-by-minute change probe, runs without one.
+ */
+const UPGRADED_JOBS = [
+  ["gc", "--scheduled"],
+  ["dispatch", "--apply"],
+];
+
+/** Whether the job `rest` names runs the scheduled upgrade first. */
+export function upgradesFirst(rest: readonly string[]): boolean {
+  return UPGRADED_JOBS.some((job) =>
+    job.every((word, index) => rest[index] === word),
+  );
+}
+
 async function main(argv: string[]): Promise<number> {
   try {
     const { programs, rest } = parseLauncherArguments(argv);
@@ -568,7 +585,7 @@ async function main(argv: string[]): Promise<number> {
     delete env[ROLE];
     delete env[UPGRADE_RESULT];
     let entry = await installedEntry(programs);
-    if (role === undefined || role === "") {
+    if ((role === undefined || role === "") && upgradesFirst(rest)) {
       const result = await scheduledUpgrade(entry, programs, env);
       env[UPGRADE_RESULT] = result;
       // Only an update, or a failure part-way through one, can move the installed copy.

@@ -108,6 +108,7 @@ describe("the outcome log's key column", () => {
     old.run("DROP TABLE followup_releases");
     old.run("DROP TABLE reflection_findings");
     old.run("DROP TABLE merge_reads");
+    old.run("ALTER TABLE launches DROP COLUMN result_next");
     old.run(`PRAGMA user_version = ${BEFORE_TARGET}`);
     old.run("UPDATE db_meta SET version = ?", [BEFORE_TARGET]);
     old.close();

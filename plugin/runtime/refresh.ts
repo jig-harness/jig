@@ -10,8 +10,9 @@
  * install recorded stay, and only the form this release writes changes.
  * Nothing is written where nothing differs, and a job that is enabled or
  * running stays so. The installed jobs are the components' jobs
- * (`Component.job()`) the scheduler holds, so a third component's job is
- * refreshed with no change here.
+ * (`Component.job()`, and the companion jobs a component's install writes
+ * beside it, `Component.companionJobs()`) the scheduler holds, so a third
+ * component's job is refreshed with no change here.
  *
  * A refresh a timer's job runs (`scheduled`) leaves a loaded launchd job's
  * file as it is: launchd reads a new one only when the job is booted out and
@@ -123,17 +124,22 @@ function readableJob(
   return installed;
 }
 
+/** A component's jobs: its own, then the ones its install writes beside it. */
+function componentJobs(component: Component): JobSpec[] {
+  return [component.job(), ...(component.companionJobs?.() ?? [])];
+}
+
 /**
- * Refreshes one component's job, under the lock installs take, so a
- * concurrent `jig install` never interleaves with it.
+ * Refreshes one of a component's jobs, `spec`, under the lock installs
+ * take, so a concurrent `jig install` never interleaves with it.
  */
 function refreshJob(
   component: Component,
+  spec: JobSpec,
   scheduler: Scheduler,
   announce?: Announce,
   options: RefreshOptions = {},
 ): Promise<RefreshResult> {
-  const spec = component.job();
   const result = (
     outcome: RefreshResult["outcome"],
     detail: string,
@@ -236,22 +242,25 @@ export async function refreshInstalled(
   } catch {
     // Windows: no component has a job; the command is still refreshed.
   }
-  for (const component of components) {
-    const target = component.job().name;
-    if (scheduler === null) {
-      results.push({
-        target,
-        outcome: "skipped",
-        detail: "scheduled jobs need macOS or Linux",
-      });
-      continue;
+  for (const component of components)
+    for (const spec of componentJobs(component)) {
+      const target = spec.name;
+      if (scheduler === null) {
+        results.push({
+          target,
+          outcome: "skipped",
+          detail: "scheduled jobs need macOS or Linux",
+        });
+        continue;
+      }
+      try {
+        results.push(
+          await refreshJob(component, spec, scheduler, announce, options),
+        );
+      } catch (error) {
+        results.push({ target, outcome: "failed", detail: message(error) });
+      }
     }
-    try {
-      results.push(await refreshJob(component, scheduler, announce, options));
-    } catch (error) {
-      results.push({ target, outcome: "failed", detail: message(error) });
-    }
-  }
   try {
     // Under the lock installs and removals take, as a job's refresh is.
     results.push({

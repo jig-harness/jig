@@ -216,12 +216,13 @@ development and shipped as a version.
   (`runtime/refresh.ts`, `runtime/installed-job.ts`). It writes nothing
   where nothing differs. A tool that updates the plugin on its own
   ([automatic updates](README.md#automatic-updates)) leaves the launcher
-  copies as they were. Before a timer's job, the launcher runs the
-  installed copy's `jig upgrade --scheduled` under its own deadline, then
+  copies as they were. Before `gc --scheduled` and `dispatch --apply`, the
+  launcher runs the installed copy's `jig upgrade --scheduled` under its own deadline, then
   asks the agent tool again which copy is installed and runs the job on it;
   whatever the upgrade came to, the job runs, and gets the upgrade's line
   for its receipt in `JIG_SCHEDULED_UPGRADE`. The `jig` command's script and
-  a woken tick mark their launches (`JIG_LAUNCHER_ROLE`) and do not upgrade.
+  a woken tick mark their launches (`JIG_LAUNCHER_ROLE`) and do not upgrade,
+  and the dispatcher's change probe, run every minute, does not either.
   `jig upgrade --scheduled` (`runtime/scheduled-upgrade.ts`) reads the user
   file's `upgrade` setting, withholds the upgrade on a machine that opted
   out, takes the interval under a file lock (`shared/file-lock.ts`) by
@@ -374,7 +375,11 @@ development and shipped as a version.
   `jig dispatch result <record> <token> done|failed` (`dispatch/result.ts`).
   That answer is the session's own judgement; the script refuses another
   record's token, a drive pass's record and a second answer. Nothing
-  else reasoned writes these records.
+  else reasoned writes these records. A completed pickup names its pull
+  request with `--pr <number>`, or `--none "<reason>"` when none was needed.
+  The answer and its next owner are written together. An ended launch's
+  outcome keeps that handoff, deriving it where the line fixes it; `jig ask`
+  prints it as `last.next`.
 - **Boundary.** The tick tunes none of its own settings. A class that keeps
   recurring is a finding: where reflection is on, the tick records it, once
   a week, as a finding about the dispatcher in the reflection store

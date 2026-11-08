@@ -69,8 +69,8 @@ here reaches every repository at once.
   reads the `jobs` list it prints, so that command line and that report
   keep their meaning too, and a job is rewritten only from what
   `runtime/installed-job.ts` reads back from the form `jobFiles` writes:
-  change one, change the other. Before a timer's job, each launcher copy
-  runs the installed copy's
+  change one, change the other. Before `gc --scheduled` and
+  `dispatch --apply`, each launcher copy runs the installed copy's
   `jig upgrade --scheduled [--claude-program=<path>] [--codex-program=<path>]`
   and passes the last line it prints, one JSON object with `outcome`,
   `detail` and `at` (`runtime/upgrade-record.ts`) of at most 8 KiB, to the

@@ -6,39 +6,23 @@
  * notified to a person as stuck, never launched again, and released only by
  * `jig dispatch clear`.
  */
+import { FOLLOWUP_CONFIG, followupWorkspace } from "./followup-fixtures.ts";
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { manualMarker, MARKER } from "../lib/followup-marker.ts";
 import { type LaunchRecord, readRecord, writeRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
-import { mergedPr, SLUG, type World, world } from "./fixtures.ts";
+import { SLUG, type World, world } from "./fixtures.ts";
 import {
-  account,
   dispatchState,
   exitWritten,
-  machineFile,
   recordIds,
   waitFor,
 } from "./launch-fixtures.ts";
-import {
-  applyTick,
-  claudeRuns,
-  notifyWrites,
-  withOrigin,
-} from "./pickup-fixtures.ts";
-
-const CONFIG = `issue_tracker:
-  adapter: github
-  github:
-    repository: ${SLUG}
-dispatch:
-  followup_command: /followup
-`;
-
-const HEAD = "feature/9-done";
+import { applyTick, claudeRuns, notifyWrites } from "./pickup-fixtures.ts";
 
 let current: World | null = null;
 afterEach(() => {
@@ -51,20 +35,7 @@ afterEach(() => {
 function fixture(): World {
   const w = world();
   current = w;
-  w.setConfig(CONFIG);
-  withOrigin(w);
-  w.setPrs("merged", [mergedPr(9, HEAD, "2026-10-31T12:00:00Z")]);
-  w.setComments(9, []);
-  const ws = join(w.root, "ws-9");
-  mkdirSync(ws, { recursive: true });
-  w.setWorkspaces([{ branch: HEAD, linkedPR: 9, path: ws }]);
-  machineFile(
-    w,
-    [account(w, "a", "a@example.com")],
-    { runtime_timeout: "2s" },
-    ["followup", "notify"],
-    { followup_since: "2026-10-30T00:00:00Z" },
-  );
+  followupWorkspace(w, { runtime_timeout: "2s" });
   return w;
 }
 
@@ -185,7 +156,7 @@ describe("a follow-up whose launch never ran after its marker was posted", () =>
   it("waits, and is not marked never replayable, while the repository sets no follow-up command", async () => {
     const w = fixture();
     const record = await stoppedBeforeTheAnswer(w);
-    w.setConfig(CONFIG.replace("  followup_command: /followup\n", ""));
+    w.setConfig(FOLLOWUP_CONFIG.replace("  followup_command: /followup\n", ""));
 
     const next = await applyTick(w, false);
     expect(launches(next)).toEqual([

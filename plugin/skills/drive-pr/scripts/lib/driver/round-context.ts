@@ -46,6 +46,8 @@ export interface DriveRoundContext {
   deadlineRetryBudget: number;
   /** The stall stop already granted its one extra round in this streak. */
   stallExtraRound: boolean;
+  /** The handoff narrative as it stood when that extra round was granted: what its pass adds is what the stop prints. */
+  stallNarrative: string[] | null;
   /**
    * What the next review pass is told about the stop the driver recovered
    * from (`$DRIVE_PR_PASS_NOTICE`): a killed pass, a stall. Cleared once a
@@ -78,4 +80,10 @@ export interface DriveRoundContext {
    */
   uncommittedMeasured: string | null;
   uncommittedBeforePass: string | null;
+  /**
+   * A stalled drive left an open git operation in this tree that the drive
+   * finishes, until one pass completes: the tree owes a round for it even
+   * when its status is clean.
+   */
+  inheritsOperation: boolean;
 }

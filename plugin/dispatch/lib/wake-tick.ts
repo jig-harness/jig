@@ -35,7 +35,12 @@ import { join, resolve } from "node:path";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { GcError } from "../../shared/gc-error.ts";
 import { run } from "../../shared/proc.ts";
-import { requestWake, waitAndRun, wakeDir } from "../../shared/wake.ts";
+import {
+  requestWake,
+  type WaitEnd,
+  waitAndRun,
+  wakeDir,
+} from "../../shared/wake.ts";
 import { stateRoot } from "../receipts.ts";
 import {
   MIN_TICK_DEADLINE_MS,
@@ -219,21 +224,51 @@ function startWaiter(path: string, dir: string): void {
 }
 
 /**
- * Ask for a tick of the machine-file repository at `path` soon: when it
- * can start, when idle and no sooner than a minute after the last start; or why
- * the request could not be recorded.
+ * Ask for a tick of the machine-file repository at `path` soon, saying who
+ * asks and why (`reason`, which the waiter's log names): when it can start,
+ * when idle and no sooner than a minute after the last start; or why the
+ * request could not be recorded.
  */
-export function wakeTick(path: string): Outcome<"now" | "soon", "failed"> {
+export function wakeTick(
+  path: string,
+  reason: string,
+): Outcome<"now" | "soon", "failed"> {
   const dir = tickWakeDir(path);
   return attempt("failed", "the wake did not record", () => {
-    const requested = requestWake(dir);
+    const requested = requestWake(dir, undefined, reason);
     if (requested.startWaiter) startWaiter(path, dir);
     return requested.when;
   });
 }
 
+/**
+ * Ask for a tick of the machine-file repository at `path`, as `wakeTick`
+ * does, and when no live waiter holds the wake be its waiter in this
+ * process, returning once it ends: for a caller a scheduler runs, which ends
+ * every process a job leaves behind (systemd stops the job's whole control
+ * group), so a detached waiter would not outlive it. `elsewhere` when another
+ * waiter takes the request; otherwise how the waiter ended.
+ */
+export async function wakeTickHere(
+  path: string,
+  reason: string,
+): Promise<Outcome<WaitEnd, "failed">> {
+  const dir = tickWakeDir(path);
+  const requested = attempt("failed", "the wake did not record", () =>
+    requestWake(dir, undefined, reason),
+  );
+  if (!requested.ok) return requested;
+  if (!requested.value.startWaiter) return ok("elsewhere");
+  try {
+    return ok(await waiterMain(path));
+  } catch (error) {
+    const thrown = error instanceof Error ? error.message : String(error);
+    return failed("failed", `the waiter did not run: ${thrown}`, error);
+  }
+}
+
 /** The waiter: run the repository's tick under the wake's rule, then exit. */
-async function waiterMain(path: string): Promise<number> {
+async function waiterMain(path: string): Promise<WaitEnd> {
   const dir = tickWakeDir(path);
   // The log keeps the last few wakes: one past its bound starts over.
   if (
@@ -266,10 +301,11 @@ async function waiterMain(path: string): Promise<number> {
       return ok(result.code);
     },
   });
-  return end === "failed" ? 1 : 0;
+  return end;
 }
 
 if (import.meta.main) {
   const [path] = process.argv.slice(2);
-  process.exitCode = path === undefined ? 2 : await waiterMain(path);
+  process.exitCode =
+    path === undefined ? 2 : (await waiterMain(path)) === "failed" ? 1 : 0;
 }

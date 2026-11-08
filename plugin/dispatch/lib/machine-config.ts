@@ -24,11 +24,13 @@
  * workspace_timeout: 50m
  * opens_per_tick: 4
  * receipts_days: 30
+ * unclaimed_after: 15m
  * dashboard:
  *   listen: 100.64.0.7:8765
  * records:
  *   shared: forge
  * send: true
+ * change_probe: true
  * ```
  *
  * An unknown key anywhere is refused, so a misspelt dial never reads as its
@@ -98,12 +100,16 @@ export interface MachineConfig {
   /** Workspace opens per tick, including the reserved notices open. */
   opensPerTick: number;
   receiptsDays: number;
+  /** How long a launch the runtime answered as started may go unclaimed by its wrapper before it is stuck (`unclaimed_after`). */
+  unclaimedAfterMs: number;
   /** The address `jig dispatch dashboard` listens on (`dashboard.listen`); `null` when the file names none. */
   dashboardListen: Listen | null;
   /** Where the records another host reads are shared (`records.shared`). */
   sharedRecords: SharedMedium;
   /** Whether `jig send` may write a request from this machine (`send`); `true` unless the file says `false`. */
   send: boolean;
+  /** Whether the change probe wakes the ticks of repositories that changed on the forge (`change_probe`); `true` unless the file says `false`. */
+  changeProbe: boolean;
 }
 
 const DEFAULTS = {
@@ -114,6 +120,7 @@ const DEFAULTS = {
   workspaceTimeoutMs: OPEN_LIMIT_MS,
   opensPerTick: 4,
   receiptsDays: 30,
+  unclaimedAfterMs: 15 * 60_000,
 } as const;
 
 const TOP_KEYS = [
@@ -125,9 +132,11 @@ const TOP_KEYS = [
   "workspace_timeout",
   "opens_per_tick",
   "receipts_days",
+  "unclaimed_after",
   "dashboard",
   "records",
   "send",
+  "change_probe",
 ];
 const DASHBOARD_KEYS = ["listen"];
 const RECORDS_KEYS = ["shared"];
@@ -301,6 +310,18 @@ const MAX_TIMER_MS = 2_147_483_647;
 /** The default workspaces one tick may open, including the notices reservation. */
 export const OPENS_PER_TICK = DEFAULTS.opensPerTick;
 
+/**
+ * The default `unclaimed_after`. The runtime answers a launch as started
+ * once the terminal running the wrapper exists (each call bounded by
+ * `runtime_timeout`, a minute by default); the workspace was opened before
+ * the call, so its clone and create hook are not in this window. The
+ * wrapper's first act is to read its record, read its own process identity
+ * and claim the record: seconds on a host under load. Fifteen minutes is
+ * many times that, and three ticks at the default interval, so a slow
+ * start is never read as a claim that is not coming.
+ */
+export const UNCLAIMED_AFTER_MS = DEFAULTS.unclaimedAfterMs;
+
 /** What one tick may spend at the file's limits: its workspace opens and eight runtime calls, in milliseconds. */
 export function tickBudgetMs(limits: {
   workspaceTimeoutMs: number;
@@ -396,9 +417,15 @@ function parseValues(values: unknown, where: string): MachineConfig {
       "receipts_days",
       DEFAULTS.receiptsDays,
     ),
+    unclaimedAfterMs: optionalDuration(
+      top.unclaimed_after,
+      "unclaimed_after",
+      DEFAULTS.unclaimedAfterMs,
+    ),
     dashboardListen: dashboard(top.dashboard),
     sharedRecords: records(top.records),
     send: flag(top.send, "send", true),
+    changeProbe: flag(top.change_probe, "change_probe", true),
   };
 }
 

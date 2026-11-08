@@ -192,10 +192,12 @@ describe("base-sync.ts over a merge left open", () => {
     expect(r.stderr).toContain("finish that merge, or abort it and start over");
   });
 
-  test("tells any other caller to conclude or abort it", () => {
+  test("tells any other caller to validate and conclude the merge it inherits, or abort it", () => {
     const r = baseSync({});
     expectSpawnExit(r, 3, "base-sync.ts");
-    expect(r.stderr).toContain("Conclude or abort it first");
+    expect(r.stderr).toContain("The round inherits it");
+    expect(r.stderr).toContain("round-plan.ts (it plans an open merge)");
+    expect(r.stderr).toContain("git merge --abort");
   });
 });
 

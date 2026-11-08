@@ -14,7 +14,9 @@
  * done; `jig dispatch dashboard` serves one page over the outcome log while
  * it runs; `jig dispatch log` prints the outcome log as text; `jig dispatch
  * line --json` prints the newest tick's line as the dashboard serves it;
- * `jig dispatch clear` removes a launch record only a person can settle.
+ * `jig dispatch clear` removes a launch record only a person can settle;
+ * `jig dispatch probe` reads the forge for what changed since the last probe
+ * and, with `--apply`, wakes those repositories' ticks.
  */
 import { basename, dirname } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
@@ -54,6 +56,7 @@ import {
 } from "./lib/machine-config.ts";
 import { elapsed, formatReceipt } from "./lib/report.ts";
 import { markerMain } from "./marker.ts";
+import { probeMain } from "./probe-command.ts";
 import { readReceipt, receiptPaths, type TickReceipt } from "./receipts.ts";
 import { upgradeLine } from "../runtime/upgrade-record.ts";
 import { resultMain } from "./result.ts";
@@ -185,6 +188,16 @@ const result = command(
     outcome: argument(string({ metavar: "done|failed" }), {
       description: message`How the session ended.`,
     }),
+    pr: optional(
+      option("--pr", countValue("PR"), {
+        description: message`The pull request a completed pickup opened; its next owner is the drive station.`,
+      }),
+    ),
+    none: optional(
+      option("--none", string({ metavar: "REASON" }), {
+        description: message`Why a completed pickup needs no pull request. Mutually exclusive with --pr.`,
+      }),
+    ),
   }),
   { brief: message`Record how a dispatched interactive session ended.` },
 );
@@ -262,6 +275,23 @@ const clear = command(
   },
 );
 
+const probe = command(
+  "probe",
+  object({
+    action: constant("probe"),
+    apply: option("--apply", {
+      description: message`Wake the tick of each repository that changed, and keep what the probe saw for the next one. Without it, the probe only says what it would wake, and writes nothing.`,
+    }),
+    json: option("--json", {
+      description: message`Print the probe's report as JSON.`,
+    }),
+  }),
+  {
+    brief: message`Read the forge once for what changed since the last probe, and wake those repositories' ticks.`,
+    description: message`One search over every repository the machine file dispatches: the pull requests updated since the last probe and every open one's checks. With --apply, each repository where something changed has its tick woken, under the rule jig send's wakes follow; its own timer runs it every minute. A forge that does not read wakes nothing and exits 1.`,
+  },
+);
+
 /** A port between 1 and 65535. */
 const portValue: ValueParser<"sync", number> = {
   mode: "sync",
@@ -295,7 +325,7 @@ const dashboard = command(
 
 /**
  * `jig dispatch`: one tick by default, with `result`, `marker`, `dashboard`,
- * `log`, `line` and `clear` as its subcommands. Its `install` and `receipts`
+ * `log`, `line`, `clear` and `probe` as its subcommands. Its `install` and `receipts`
  * subcommands do what the lifecycle verbs `jig install dispatch` and
  * `jig receipts dispatch` do, and stay for the command lines that use them,
  * hidden from help.
@@ -313,6 +343,7 @@ const dispatch = (wholeMinutes: boolean) =>
         log,
         line,
         clear,
+        probe,
         tick,
       ),
       {
@@ -426,14 +457,29 @@ function repositories(options: Tick, machine: MachineConfig | null): string[] {
 
 type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
 
+/** Forward a session result and its mutually exclusive handoff arguments. */
+function sessionResultMain(
+  args: Extract<Subcommand, { action: "result" }>,
+): number {
+  if (args.pr !== undefined && args.none !== undefined) {
+    console.error("jig dispatch result: pass either --pr or --none, not both");
+    return 2;
+  }
+  return resultMain([
+    args.record,
+    args.token,
+    args.outcome,
+    ...(args.pr === undefined ? [] : ["--pr", String(args.pr)]),
+    ...(args.none === undefined ? [] : ["--none", args.none]),
+  ]);
+}
+
 /** A subcommand's run: everything but the tick. */
 function subcommandMain(
   args: Subcommand,
   script: string,
 ): number | Promise<number> {
-  if (args.action === "result")
-    // An interactive session's own answer, under its launch record's token.
-    return resultMain([args.record, args.token, args.outcome]);
+  if (args.action === "result") return sessionResultMain(args);
   if (args.action === "receipts") return showReceipts(args.runId);
   if (args.action === "log")
     return logMain({
@@ -442,6 +488,8 @@ function subcommandMain(
     });
   if (args.action === "line") return lineMain();
   if (args.action === "clear") return clearMain(args.record);
+  if (args.action === "probe")
+    return probeMain({ apply: args.apply, json: args.json }, machineFile());
   if (args.action === "dashboard")
     return dashboardMain(
       machineFile()?.dashboardListen ?? null,

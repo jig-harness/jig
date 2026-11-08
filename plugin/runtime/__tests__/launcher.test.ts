@@ -24,6 +24,7 @@ import {
   outsideCheckout,
   parseLauncherArguments,
   runCollector,
+  upgradesFirst,
 } from "../launcher.ts";
 
 /** The launcher as install leaves it: its file and startup config, alone. */
@@ -81,6 +82,14 @@ test("the launcher takes the recorded programs, then the collector's arguments",
   expect(() => parseLauncherArguments(["--other=1", "--"])).toThrow(
     "Unknown launcher argument",
   );
+});
+
+test("only collection's and the dispatcher's ticks upgrade the plugin first", () => {
+  expect(upgradesFirst(["gc", "--scheduled"])).toBe(true);
+  expect(upgradesFirst(["dispatch", "--apply"])).toBe(true);
+  expect(upgradesFirst(["dispatch", "probe", "--apply"])).toBe(false);
+  expect(upgradesFirst(["gc", "--collect"])).toBe(false);
+  expect(upgradesFirst([])).toBe(false);
 });
 
 test("a copy inside a checkout is refused and the next tool is tried", async () => {
@@ -664,6 +673,7 @@ else fs.appendFileSync(${JSON.stringify(log)}, (process.env.JIG_SCHEDULED_UPGRAD
           `--claude=${claude}`,
           "--",
           "gc",
+          "--scheduled",
         ],
         { stdout: "pipe", stderr: "pipe", timeout: 30000 },
       );
