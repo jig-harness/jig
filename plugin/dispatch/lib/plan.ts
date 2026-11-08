@@ -30,11 +30,13 @@
  * launch started is taken over from here. Claims that cannot be read leave
  * the pull request unplaced.
  *
- * A silent driver no launch record or claim started is taken over when it
- * ran on this host and this host shows its run ended (`driverGone`,
- * `sources/silent-driver.ts`), a re-drive the pull request's recovery budget
- * counts; `drive.ts --take-over` decides whether it is admitted. Where this
- * host cannot show that, it is notified.
+ * A silent driver that no launch record and no launch claim started is taken
+ * over when it ran on this host and this host shows its run ended
+ * (`driverGone`, `sources/silent-driver.ts`), a re-drive the pull request's
+ * recovery budget counts, or when the repository clone's drive doctor reads
+ * its holder `DEAD` or `WEDGED` (`sources/doctor.ts`); otherwise it is
+ * reported with the doctor's reading. `drive.ts --take-over` decides whether
+ * a takeover is admitted.
  */
 import { type DriveHold, driveHold, factsOf } from "./actions/drive-hold.ts";
 import { type Contention, heldReason } from "./contention.ts";
@@ -56,6 +58,7 @@ import {
   foreignHold,
 } from "./shared-launches.ts";
 import { failed } from "../../shared/outcome.ts";
+import { type HolderReadings, orphanTakeover } from "./sources/doctor.ts";
 import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
@@ -64,6 +67,7 @@ import type {
   ClaimedItem,
   DispatchSection,
   DrivenPr,
+  HolderReading,
   LedgerClass,
   MarkedPr,
   NotifyCause,
@@ -103,6 +107,8 @@ export interface PlanInput {
   serialized?: Pick<Contention, "held" | "unplaced">;
   /** The shared records read this tick: this host, and each drive's launch claims (`shared-launches.ts`). */
   shared?: { host: string; drives: DriveClaims; owner?: boolean };
+  /** Each pull request's lock holder as this clone's drive doctor reads it, where a silent drive had it read (`sources/doctor.ts`). */
+  holders?: HolderReadings;
   /** The machine file's `unclaimed_after`: past it, a launch answered as started that no wrapper claimed is stuck. */
   unclaimedAfterMs?: number;
   nowMs: number;
@@ -375,6 +381,7 @@ function wantReason(
   pr: DrivenPr,
   takeover: string | null,
   claim: TakeoverClaim | null,
+  holder: HolderReading | null,
   gone: string | null = null,
 ): string {
   if (gone !== null)
@@ -383,6 +390,8 @@ function wantReason(
     return `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`;
   if (claim !== null)
     return `drive ledger silent, and host ${claim.host}'s launch claim (comment ${claim.id}, its launch record ${claim.record}) started its driver: take it over (drive.ts --take-over decides)`;
+  if (holder !== null)
+    return `drive ledger silent, no launch started its driver, and this clone's drive doctor reads its holder ${holder.verdict} (${holder.reason}): take it over (drive.ts --take-over decides)`;
   const source =
     pr.class !== "unarmed"
       ? "drive ledger"
@@ -537,8 +546,10 @@ function planDrive(
   const placed = planForeign(input, pr, plan);
   if (placed === true) return;
   const foreign = takeover === null ? placed : null;
-  const gone = takeover === null && foreign === null ? goneDriver(pr) : null;
-  if (QUIET.has(pr.class) && takeover === null && foreign === null) {
+  const { holder, gone, unread } = orphanReading(pr, input, takeover, foreign);
+  const taken =
+    takeover !== null || foreign !== null || holder !== null || gone !== null;
+  if (QUIET.has(pr.class) && !taken) {
     plan.quiet.push({ target, class: pr.class, why: pr.why });
     return;
   }
@@ -546,23 +557,48 @@ function planDrive(
     plan.unplaced.push({ target, record: "forge", reason: pr.why });
     return;
   }
-  const cause =
-    takeover !== null || foreign !== null || gone !== null
-      ? undefined
-      : NOTIFY.get(pr.class);
+  const cause = taken ? undefined : NOTIFY.get(pr.class);
+  const staged = unread === null ? pr : { ...pr, why: unread };
   want(
     {
       stage: cause === undefined ? "rearm" : "notify",
       target,
       record: "forge",
-      reason: wantReason(pr, takeover, foreign, gone),
+      reason: unread ?? wantReason(pr, takeover, foreign, holder, gone),
       evidence: { url: pr.url, head: pr.head, ...pr.evidence },
-      ...stageFields(slug, pr, cause, launches),
-      ...takeoverFields(takeover, foreign),
-      ...(gone === null ? {} : { takeoverGone: gone }),
+      ...stageFields(slug, staged, cause, launches),
+      ...takeoverFields(takeover, foreign, holder, gone),
     },
     (w) => w.prs.includes(pr.number),
   );
+}
+
+/**
+ * A silent driver no launch started is taken over once this clone's doctor
+ * reads its holder dead or wedged; otherwise a person is notified with the
+ * doctor's reading.
+ */
+function orphanReading(
+  pr: DrivenPr,
+  input: PlanInput,
+  takeover: string | null,
+  foreign: TakeoverClaim | null,
+): {
+  holder: HolderReading | null;
+  gone: string | null;
+  unread: string | null;
+} {
+  if (takeover !== null || foreign !== null)
+    return { holder: null, gone: null, unread: null };
+  const gone = goneDriver(pr);
+  if (pr.class !== "silent" || gone !== null)
+    return { holder: null, gone, unread: null };
+  if (pr.evidence.settled === true)
+    return { holder: null, gone: null, unread: pr.why };
+  const orphan = orphanTakeover(pr, input.holders);
+  return "why" in orphan
+    ? { holder: null, gone: null, unread: orphan.why }
+    : { holder: orphan.holder, gone: null, unread: null };
 }
 
 /** Whether this machine's launch records placed a drive: held by a record, or quiet behind one. */
@@ -582,11 +618,18 @@ function placedByHold(target: string, hold: DriveHold, plan: Plan): boolean {
   return true;
 }
 
-/** A takeover's fields: the launch record whose driver it replaces, or the claim of another host's that started it. */
+/** A takeover's fields: the launch record whose driver it replaces, the claim of another host's that started it, or the holder the doctor read. */
 function takeoverFields(
   takeover: string | null,
   claim: TakeoverClaim | null,
-): Pick<Action, "takeover" | "takeoverClaim"> {
+  holder: HolderReading | null,
+  gone: string | null,
+): Pick<
+  Action,
+  "takeover" | "takeoverClaim" | "takeoverHolder" | "takeoverGone"
+> {
   if (takeover !== null) return { takeover };
-  return claim === null ? {} : { takeoverClaim: claim };
+  if (claim !== null) return { takeoverClaim: claim };
+  if (gone !== null) return { takeoverGone: gone };
+  return holder === null ? {} : { takeoverHolder: holder };
 }

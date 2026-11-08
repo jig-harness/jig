@@ -134,8 +134,12 @@ describe("one tick lists each pull request's comments once", () => {
     expect(receipt.repos[0]?.actions).toEqual([
       expect.objectContaining({ stage: "rearm", target: "PR #7" }),
     ]);
-    expect(listings(w, 7)).toBe(1);
-    // The claims were still read, from that listing.
+    // The repository's query read them; no listing of its own was made.
+    expect(listings(w, 7)).toBe(0);
+    expect(
+      ghCalls(w).filter((c) => c.includes("query DispatchRepository")),
+    ).toHaveLength(1);
+    // The claims were still read, from those comments.
     expect(receipt.repos[0]?.shared?.ops).toContainEqual({
       op: "list",
       target: "PR #7",

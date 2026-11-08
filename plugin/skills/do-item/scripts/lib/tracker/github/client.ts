@@ -10,7 +10,11 @@
 
 import { TrackerConfigError } from "../config-error.ts";
 import { defaultFacets, type Facets } from "../facets/config.ts";
-import { type GitHubFacets, gitHubFacets } from "./facets.ts";
+import {
+  type GitHubFacetOptions,
+  type GitHubFacets,
+  gitHubFacets,
+} from "./facets.ts";
 import type { GitHubSettings } from "./settings.ts";
 import { TrackerRequestError } from "../port.ts";
 import type { GitHubModel } from "./model.ts";
@@ -165,6 +169,8 @@ export interface ClientOptions {
   facets?: Facets;
   /** Names the credential the transport uses, for messages; default from the environment. */
   credential?: string;
+  /** Where detection answers are kept, and the token that fingerprints them; none by default. */
+  detection?: Pick<GitHubFacetOptions, "cache" | "token" | "detected">;
 }
 
 export function gitHubClient(opts: ClientOptions): Client {
@@ -182,6 +188,7 @@ export function gitHubClient(opts: ClientOptions): Client {
     model,
     transport,
     credential: opts.credential ?? credentialOf(),
+    ...opts.detection,
   });
   const fields =
     facets.fields === ""

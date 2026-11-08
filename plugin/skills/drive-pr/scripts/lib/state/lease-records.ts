@@ -271,6 +271,27 @@ export function peekLiveLeasesFor(
   }
 }
 
+/**
+ * The live per-PR and tree leases the tree `actor` names holds, read through
+ * `db`, a connection the caller opened (read-only, for a caller that must
+ * leave the disk as it is) on the database of clone `clone`.
+ */
+export function liveLeasesOfTree(
+  db: Database,
+  clone: string,
+  actor: string,
+): Lease[] {
+  const rows = [
+    ...(db
+      .query("SELECT * FROM leases WHERE clone = ? AND actor = ?")
+      .all(clone, actor) as LeaseRow[]),
+    ...(db
+      .query("SELECT * FROM tree_leases WHERE clone = ? AND actor = ?")
+      .all(clone, actor) as LeaseRow[]),
+  ];
+  return rows.map(fromRow).filter(leaseAlive);
+}
+
 /** Whether a live session is still behind this tree's lease. */
 export function liveTreeLeaseFor(stateDir: string, actor: string): boolean {
   const l = readTreeLease(treeLeaseRef(stateDir, actor));

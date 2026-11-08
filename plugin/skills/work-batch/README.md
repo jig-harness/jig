@@ -35,8 +35,9 @@ Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·
    the open issues that match it, holds back every issue that may not join a
    batch, ranks the rest and fills a batch up to a [size budget](#batch-size).
    It prints the proposed batch, the issues it held back with the reason for
-   each, and the matching issues that carry no size label at all (a
-   labelling gap, which would otherwise make an area look empty).
+   each, and the matching issues that have no size or no priority (a
+   labelling gap, which would otherwise make an area look empty, or leave an
+   unranked issue to be batched as the least urgent).
 2. **Check.** The agent reads each proposed issue in full (description and
    comments) and confirms what the script cannot: the issues are
    independent of each other, none is larger than its size label says, and
@@ -74,7 +75,7 @@ Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·
 
 | Anchor | Pool |
 |--------|------|
-| Change-area name | Open issues carrying a label that names the area, and a batchable size label |
+| Change-area name | Open issues carrying a label that names the area, and a batchable size |
 | Path in the repository | The same, for each area the path belongs to |
 | Epic | The epic's open children |
 | One issue | Open issues sharing its area-naming label; the issue itself is kept first when it is eligible, and an ineligible one ends the proposal with a recommendation to work it alone |
@@ -120,9 +121,16 @@ No setting removes a label the first two sources supply.
 Every other read that cannot be completed holds the issue back rather than
 admitting it. An issue whose label list came back truncated is held back,
 because a solo-only flag could be on the part that was not read. An issue
-with no size label, no type label, or only context or area labels the
-configuration does not know is held back too, with a reason that says which label to add. The issue is not dropped
-without a word.
+with no size, no type, or only context or area labels the
+configuration does not know is held back too, with a reason that says what to set. An issue with no priority is
+held back last and listed as a labelling gap: it is unranked, not the least
+urgent. The issue is not dropped without a word.
+
+Where the repository's label taxonomy has a size group, size and type are
+[issue facets](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): the
+tracker reads them wherever it keeps them, labels or its own fields, and
+each size a setting names is read as a size or as the label of one. Without
+a size group they are read from labels, as before.
 
 Provenance labels are not sensitivity flags. An issue filed from a review
 finding (`issue_tracker.labels.followup`) is already-owed work, already

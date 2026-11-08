@@ -16,7 +16,8 @@
  *               which at least one label each must be present beside it)
  *   groups      closed single-select families beyond `types` (a size, a
  *               repository): at most one label of a group per issue, and one
- *               when the group is `required`
+ *               when the group is `required`, except on an issue carrying a
+ *               flag its `not_required_on` lists (no size on an epic)
  *   categories  prefixed multi-select families (`area:billing`): a label's
  *               name is the category's `prefix` and its id. A category lists
  *               its `labels`, accepts any slug `open` matches (a regular
@@ -61,7 +62,7 @@ const ENTRY_KEYS: Record<string, string[]> = {
     "requires",
     "requires_category",
   ],
-  groups: ["id", "notes", "required", "labels"],
+  groups: ["id", "notes", "required", "not_required_on", "labels"],
   categories: [
     "id",
     "notes",
@@ -80,6 +81,8 @@ const FLAG_SCOPES = ["shipping-item", "container"];
 export interface LabelGroup {
   id: string;
   required: boolean;
+  /** Flags whose issues need no label of a required group. */
+  notRequiredOn: string[];
   labels: string[];
 }
 
@@ -275,6 +278,15 @@ function readFlag({ id, entry }: Entry, problems: string[]): LabelFlag {
 function readGroup({ id, entry }: Entry, problems: string[]): LabelGroup {
   const what = `group '${id}'`;
   const required = flagField(problems, what, entry, "required");
+  const notRequiredOn = textValues(entry.not_required_on);
+  if (notRequiredOn === undefined)
+    problems.push(
+      `${what} has a 'not_required_on:' that is not a list of flag ids`,
+    );
+  else if (notRequiredOn.length > 0 && !required)
+    problems.push(
+      `${what} has 'not_required_on:' but is not 'required: true', so there is no requirement to lift`,
+    );
   let labels: string[] = [];
   if (!Array.isArray(entry.labels) || entry.labels.length === 0)
     problems.push(`${what} declares no 'labels:' (must be a non-empty list)`);
@@ -283,7 +295,7 @@ function readGroup({ id, entry }: Entry, problems: string[]): LabelGroup {
     problems.push(...read.problems);
     labels = read.entries.map((e) => e.id);
   }
-  return { id, required, labels };
+  return { id, required, notRequiredOn: notRequiredOn ?? [], labels };
 }
 
 /** A category's closed labels, by full name. */
@@ -521,6 +533,13 @@ export function lintTaxonomy(doc: unknown): TaxonomyLint {
     ...categories.flatMap((c) => c.labels),
   ]);
   problems.push(...referenceProblems(flags, categories, labels));
+  const flagIds = new Set(ids("flags"));
+  for (const g of groups)
+    for (const flag of g.notRequiredOn)
+      if (!flagIds.has(flag))
+        problems.push(
+          `group '${g.id}' is not required on '${flag}', which is not a flag of this taxonomy`,
+        );
   return {
     count,
     problems,

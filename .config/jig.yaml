@@ -82,6 +82,15 @@ issue_tracker:
   labels:
     followup: pr-followup
     epic: epic
+  # Type, priority and size stay in labels until this repository's move to
+  # the organization's issue types and Priority and Effort fields
+  # (design/tracker-facets.md, "Jig's own repository"). Named, so the issue
+  # forms' issue types beside the type labels are no conflict, and no read
+  # waits on detecting the stores.
+  facets:
+    type: { store: label }
+    priority: { store: label }
+    size: { store: label }
 pull_requests:
   # One pull request per change against main; a person merges.
   stacking: none

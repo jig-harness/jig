@@ -3,8 +3,14 @@
  * forge target and the dispatch section on its default branch), read the
  * tracker, the forge and every host's launch claims, join the runtime's
  * sessions, and run Control's reads (each running drive's threads, each
- * waiting session's wall, the contention between drives). It hands the plan
+ * waiting session's wall, the contention between drives) and, when a drive
+ * fell silent, the clone's drive doctor (`sources/doctor.ts`). It hands the plan
  * one `RepoObservation`.
+ *
+ * Opening a repository takes its target and its configuration from the
+ * tick's query of it (`forge-batch.ts`), which also lists its open pull
+ * requests and their comments for the forge's read; a query that does not
+ * read leaves each of these to its own read.
  *
  * Every repository is observed at once, and within one the sources that do
  * not depend on each other are read side by side: the tracker beside the
@@ -61,8 +67,10 @@ import {
   type SharedContext,
 } from "./shared-launches.ts";
 import { observeContention } from "./sources/contention.ts";
+import { type HolderReadings, readHolders } from "./sources/doctor.ts";
 import type { readDrives } from "./sources/ledgers.ts";
 import { readPickups } from "./sources/tracker.ts";
+import { facetBound } from "./sources/tracker-facets.ts";
 import { emptyReport, type TickOptions } from "./tick-context.ts";
 import { type ForgeRead, readForge } from "./tick-forge.ts";
 import { lowBudget, type TickReads } from "./tick-reads.ts";
@@ -86,6 +94,8 @@ export interface ObserveContext {
   records: ReadRecord[];
   /** What the tick reads once and shares between its repositories' observe phases. */
   reads: TickReads;
+  /** When the tick must have ended, less its receipt's time (epoch milliseconds); absent for a tick no launcher bounds. */
+  deadline?: number;
 }
 
 /** A repository opened for its tick: its target, its dispatch section, its machine-file entry and the report the tick fills. */
@@ -130,6 +140,8 @@ export interface RepoObservation {
   serialized: Contention;
   /** The pull requests a person's hold label keeps every stage off. */
   held: Set<number>;
+  /** Each pull request's lock holder as this clone's drive doctor reads it, read when a drive fell silent. */
+  holders?: HolderReadings;
 }
 
 /** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
@@ -140,9 +152,13 @@ export async function openRepo(
   const { options, nowMs } = context;
   const { pool } = context.reads;
   const entry = machineRepository(options.machine ?? null, path);
+  // The tick's query of the repository, else its view and its file read one by one.
+  const queried = await context.reads.repository(path);
   let repo: RepoTarget;
   try {
-    repo = await pool.run(() => repoTarget(path));
+    repo = queried.ok
+      ? queried.value.target
+      : await pool.run(() => repoTarget(path));
   } catch (error) {
     return emptyReport(
       path,
@@ -153,7 +169,9 @@ export async function openRepo(
   let file: string | null;
   const where = `${repo.slug}@${repo.defaultBranch}:.config/jig.yaml`;
   try {
-    file = await pool.run(() => defaultBranchConfig(repo));
+    file = queried.ok
+      ? queried.value.config
+      : await pool.run(() => defaultBranchConfig(repo));
     read = readSection(file, where);
   } catch (error) {
     return {
@@ -234,7 +252,14 @@ export async function observeRepo(
     [tracked, forge] = await settled(
       timer.time("tracker", () =>
         pool.run(() =>
-          readTracker(values, repo, section, trackerReport, where),
+          readTracker(
+            values,
+            repo,
+            section,
+            trackerReport,
+            where,
+            context.deadline,
+          ),
         ),
       ),
       timer.time("forge", () =>
@@ -307,6 +332,19 @@ export async function observeRepo(
       );
     }),
   );
+  // A silent drive's holder, read only when one fell silent.
+  const holders = forge.drives.some((d) => d.class === "silent")
+    ? await timer.time("observe", () =>
+        pool.run(() =>
+          readHolders(
+            repo.path,
+            Math.ceil(
+              (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
+            ),
+          ),
+        ),
+      )
+    : undefined;
   return {
     opened,
     tracked,
@@ -319,6 +357,7 @@ export async function observeRepo(
     sessions,
     serialized,
     held,
+    ...(holders === undefined ? {} : { holders }),
   };
 }
 
@@ -419,6 +458,7 @@ async function readTracker(
   section: DispatchSection,
   report: RepoReport,
   where: string,
+  deadline: number | undefined,
 ): Promise<Tracked> {
   const tracked: Tracked = {
     keys: null,
@@ -429,10 +469,14 @@ async function readTracker(
   try {
     const config = trackerConfigOf(values, repo.slug);
     tracked.keys = issueKeysOf(config);
-    const reading = await readPickups(() => {
-      tracked.tracker = openTracker(config, repo.path);
-      return tracked.tracker;
-    }, section);
+    const reading = await readPickups(
+      () => {
+        tracked.tracker = openTracker(config, repo.path);
+        return tracked.tracker;
+      },
+      section,
+      { bound: () => facetBound(deadline), epic: config.labels.epic },
+    );
     report.records.push(reading.read);
     report.unplaced.push(...reading.unplaced);
     tracked.pickups = reading.wanted;

@@ -91,7 +91,11 @@ export function assertBranchName(ctx: Context, branch: string): void {
  * exists. Any other failure is retried once, since two launches sharing a
  * clone race each other's ref updates, and then thrown.
  */
-function fetchBranchRef(ctx: Context, repo: string, branch: string): void {
+export function fetchBranchRef(
+  ctx: Context,
+  repo: string,
+  branch: string,
+): void {
   const argv = [
     "git",
     "-C",

@@ -7,13 +7,14 @@
 # `.config/jig.yaml` (`issue_tracker.states`) and by its defaults.
 version: 1
 
-# types — CLOSED. What kind of work this is. Exactly one per issue. The
-# label is the source the skills read: `issue_tracker.types` in
-# `.config/jig.yaml` maps bug and feature to themselves and docs, chore and
-# infra to the task work type. Set GitHub's own issue type to match as well
-# (Bug, Feature, Docs, Chore, Infra): the tracker scripts write it only where
-# `issue_tracker.facets.type` names the issue type as its store
-# (plugin/CONFIGURATION.md § issue_tracker), which this repository does not.
+# types — CLOSED. What kind of work this is. Exactly one per issue: the
+# issue's type facet, which this repository keeps in these labels
+# (`issue_tracker.facets.type` in `.config/jig.yaml`), and which
+# `issue_tracker.types` maps to work types (bug and feature to themselves,
+# docs, chore and infra to task). The tracker scripts write the label; the
+# issue forms set GitHub's own issue type beside it (Bug, Feature, Docs,
+# Chore, Infra), which no skill reads until the configuration names the
+# issue type as the store (plugin/CONFIGURATION.md § issue_tracker).
 types:
   - id: bug
     notes: a defect against documented or expected behaviour
@@ -50,8 +51,10 @@ statuses:
 
 # groups — CLOSED, single-select.
 groups:
+  # The size facet's values. Every issue but an epic carries one.
   - id: size
     required: true
+    not_required_on: [epic]
     notes: effort estimate; split an item larger than xl, or make it an epic
     labels:
       - id: xs
