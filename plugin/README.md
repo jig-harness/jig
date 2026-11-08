@@ -893,7 +893,10 @@ The session runtime it reads and launches in is
 `ORCA_CLI_BIN_DIR`, else `orca-ide` on `PATH` on Linux and `orca` elsewhere,
 the names Orca installs its command under; on Linux a bare `orca` is often
 GNOME's screen reader),
-behind an interface a second runtime can be added to. The repository's
+behind an interface a second runtime can be added to. A timer's environment
+holds none of a login shell's, so the install writes the two variables, as
+the shell that runs it sets them, into both the tick's job and the probe's.
+The repository's
 values are its [`dispatch` section](CONFIGURATION.md#dispatch), read from
 its default branch on the forge.
 
