@@ -30,7 +30,7 @@
  *   rule, never by a claim alone.
  */
 import { recoveryReservationRefusal } from "./no-cause-stops.ts";
-import { budgeted, RECOVERY_FACTS, sameFacts } from "./recovery-facts.ts";
+import { budgeted, sameFacts } from "./recovery-facts.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import { settledWhy, settlesWithPerson } from "./redrive-settle.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
@@ -200,8 +200,10 @@ function silentHold(
  * executed spent nothing.
  */
 function takenOver(pr: DrivenPr, theirs: ReadClaim[]): ForeignHold | null {
-  // A driver shown gone is replaced on recovery facts; any other silent
+  // A driver shown gone may be replaced on recovery facts, any other silent
   // driver is the doctor's, and a launch that started it stays that launch's.
+  // A completed takeover is spent whichever of the two it was made as: this
+  // reader's presence probe may differ from the one that planned it.
   const gone = pr.evidence.driverGone === true;
   if (pr.evidence.settled === true) return null;
   if (!gone && theirs.some((c) => startedDriver(c, pr))) return null;
@@ -210,7 +212,6 @@ function takenOver(pr: DrivenPr, theirs: ReadClaim[]): ForeignHold | null {
     return (
       s.action === "takeover" &&
       s.facts !== null &&
-      (!gone || s.facts.startsWith(RECOVERY_FACTS)) &&
       sameFacts(s.facts, factsOf(pr)) &&
       s.end !== null &&
       !(s.end.state === "died" && s.end.executed === false)

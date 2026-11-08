@@ -489,6 +489,15 @@ describe("another host's takeover of a driver no launch started", () => {
     expect(hold(takeover(facts, claim(5, facts).says))).toBe("refused");
   });
 
+  it("is spent for a reader that now shows the driver gone, when it was made as a doctor-only takeover", () => {
+    const plain = "generation 3, exit null, heartbeat 2026-11-07T08:00:00.000Z";
+    const ended = takeover(plain, claim(5, plain).says);
+    expect(hold(ended)).toBe("refused");
+    const claims = new Map([[7, { ok: true as const, value: [ended] }]]);
+    const [settled] = settleSharedTakeovers([silent()], claims, "this-host");
+    expect(settled?.evidence.settled).toBe(true);
+  });
+
   it("settles as a silent drive a person hears of, and is then held by no foreign claim", () => {
     const claims = new Map([
       [
