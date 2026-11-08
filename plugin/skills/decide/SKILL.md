@@ -260,7 +260,7 @@ ruling to the drive's decisions taken unattended (drive-pr § 8) with its
 record's link. The sensitivity row does not change with the level.
 
 **The last row depends on the level too, at `wide` only.** Under `wide` (a
-drive's pass where the repository's `max_level` allows it, often inside an
+drive's pass where the base branch's `max_level` allows it, often inside an
 `autonomy.off_hours` window), a call that reaches **Anything else** with no
 sensitivity flag, no `hitl:<stakeholder>` category, and no persisted-data or
 published-contract consequence is decided by the architect agent and marked

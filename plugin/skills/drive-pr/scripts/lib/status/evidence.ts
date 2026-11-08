@@ -27,6 +27,7 @@ import {
   withoutSuperseded,
   workflowRunsBehind,
 } from "./workflow-runs.ts";
+import { type SkipNotice, skipNoticeIn } from "./skip-notice.ts";
 
 // ── Reviewer identity ────────────────────────────────────────────────────────
 // Identify the posting reviewer by its GitHub APP SLUG, not by check-run name.
@@ -697,59 +698,6 @@ export async function ciReportFor(
   };
 }
 
-/**
- * The reviewer's own record of what it reviewed, read from the newest STICKY
- * comment it posted. Restricted to comments carrying the sticky marker: the
- * reviewer posts inline comments and can post auxiliary ones, and any of those
- * quoting or carrying a marker would otherwise override the real witness.
- *
- * Returns the marker SHA ('' when the reviewer has posted no sticky), or
- * `null` when the query itself failed. The distinction is the whole point of
- * the second witness. Collapsing a failed request into "no marker exists"
- * makes the caller fall back to the check-run — which is queried BY the head
- * and therefore always agrees — so a timeout or a 403 would let a stale sticky
- * marker slip past the one check that catches it.
- */
-export async function reviewedShaFromComments(
-  owner: string,
-  repo: string,
-  pr: string,
-): Promise<string | null> {
-  const r = await ghCall(
-    [
-      "api",
-      "--paginate",
-      "--slurp",
-      `repos/${owner}/${repo}/issues/${pr}/comments?per_page=100`,
-    ],
-    { stderr: "ignore" },
-  );
-  if (r.code !== 0) return null;
-  const pages = parsePages(r.stdout);
-  if (pages === null) return null;
-  const markerRe = new RegExp(
-    `<!--\\s*${SHA_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
-    "g",
-  );
-  // The SHA is extracted per comment IN ORDER, and the last match anywhere
-  // wins — "the newest comment's marker", never "a marker in an older body
-  // that happened to sit on a later line".
-  let last = "";
-  for (const page of pages) {
-    const comments = Array.isArray(page) ? page : [];
-    for (const c of comments as Array<Record<string, unknown>>) {
-      const login = String(
-        ((c.user as Record<string, unknown> | null)?.login ?? "") || "",
-      );
-      const body = String(c.body ?? "");
-      if (!isReviewerLogin(login)) continue;
-      if (!body.includes(STICKY_MARKER)) continue;
-      for (const m of body.matchAll(markerRe)) last = m[1] ?? "";
-    }
-  }
-  return last;
-}
-
 export interface ReviewerSticky {
   /** The `ai-reviewed-sha` marker from the newest STICKY comment, or `''`
    * when the reviewer has posted no sticky. */
@@ -769,35 +717,32 @@ export interface ReviewerSticky {
    * an earlier, already-completed run on the same head.
    */
   updatedAt: string;
+  /** The skip notice in that SAME comment (`skip-notice.ts`), or `null`. */
+  skip: SkipNotice | null;
 }
 
 /**
- * The reviewer's SHA, round and last-updated markers read TOGETHER off the same
- * newest STICKY comment `reviewedShaFromComments` reads — added for the
- * stranded-check-run bypass, which needs every field off the SAME comment:
- * pairing a fresh round from one comment with a stale SHA from another would
- * misreport what the reviewer actually witnessed. The fields are therefore
- * assigned TOGETHER, from the same matching comment, never independently — a
- * comment carrying no SHA marker updates none of them, so a later sticky-marked
- * reply with no `ai-reviewed-sha` (an auxiliary comment, say) cannot pair its
- * own round against an EARLIER comment's SHA. `updatedAt` joins that same
- * assignment for the same reason: a timestamp taken off a different comment
- * than the SHA would date evidence that comment never carried.
+ * The reviewer's own record of what it reviewed, read from the newest STICKY
+ * comment it posted: its SHA, round, last-updated and skip-notice markers,
+ * TOGETHER. Restricted to comments carrying the sticky marker: the reviewer
+ * posts inline comments and can post auxiliary ones, and any of those quoting
+ * or carrying a marker would otherwise override the real witness.
  *
- * The SHA extraction mirrors `reviewedShaFromComments`'s own regex and
- * last-match-wins semantics exactly (matchAll, not `.match`), rather than
- * importing `summary-findings.ts`'s `reviewedShaFrom` (first-match-wins) — two
- * functions in this file must not disagree with each other about which marker
- * occurrence wins within one body, even though a body carries at most one in
- * practice today. `parseReviewRound` IS imported: unlike the SHA regex, this
- * file has no round-parsing precedent of its own to stay consistent with, so
- * reusing `summary-findings.ts`'s parser avoids re-deriving that grammar a
- * second time (parse with one parser, or pin the shape — never a second
- * hand-rolled recognizer).
+ * Every field comes off the SAME comment, never independently: pairing a
+ * fresh round, a timestamp or a skip notice from one comment with a stale SHA
+ * from another would misreport what the reviewer actually witnessed. A
+ * comment carrying no SHA marker therefore updates none of them, so a later
+ * sticky-marked reply with no `ai-reviewed-sha` (an auxiliary comment, say)
+ * cannot pair its own fields against an EARLIER comment's SHA. Within one
+ * body the last SHA marker wins (matchAll, not `.match`). `parseReviewRound`
+ * is `summary-findings.ts`'s parser, so the round grammar has one recognizer.
  *
- * `null` when the query itself failed — fail closed, same distinction
- * `reviewedShaFromComments` makes. `{ sha: '', round: null, updatedAt: '' }`
- * is the "no sticky posted yet" case, not a failed read.
+ * `null` when the query itself failed, and `{ sha: '', … }` when the reviewer
+ * has posted no sticky. The distinction is the whole point of the second
+ * witness: collapsing a failed request into "no marker exists" makes the
+ * caller fall back to the check-run — which is queried BY the head and
+ * therefore always agrees — so a timeout or a 403 would let a stale sticky
+ * marker slip past the one check that catches it.
  */
 export async function reviewerStickyMarkers(
   owner: string,
@@ -820,9 +765,12 @@ export async function reviewerStickyMarkers(
     `<!--\\s*${SHA_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
     "g",
   );
-  let sha = "";
-  let round: number | null = null;
-  let updatedAt = "";
+  let sticky: ReviewerSticky = {
+    sha: "",
+    round: null,
+    updatedAt: "",
+    skip: null,
+  };
   for (const page of pages) {
     const comments = Array.isArray(page) ? page : [];
     for (const c of comments as Array<Record<string, unknown>>) {
@@ -835,15 +783,18 @@ export async function reviewerStickyMarkers(
       let bodySha = "";
       for (const m of body.matchAll(markerRe)) bodySha = m[1] ?? "";
       if (bodySha === "") continue;
-      sha = bodySha;
-      round = parseReviewRound(body);
-      // Absent/malformed reads as `''`, never as "now" — a caller flooring on
-      // this must fail closed on an undatable sticky rather than treat it as
-      // freshly written.
-      updatedAt = String(c.updated_at ?? "");
+      sticky = {
+        sha: bodySha,
+        round: parseReviewRound(body),
+        // Absent/malformed reads as `''`, never as "now" — a caller flooring
+        // on this must fail closed on an undatable sticky rather than treat it
+        // as freshly written.
+        updatedAt: String(c.updated_at ?? ""),
+        skip: skipNoticeIn(body),
+      };
     }
   }
-  return { sha, round, updatedAt };
+  return sticky;
 }
 
 export interface UnresolvedThread {

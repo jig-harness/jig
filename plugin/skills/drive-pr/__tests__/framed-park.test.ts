@@ -338,6 +338,42 @@ describe("the class is the arbiter's ruling", () => {
     expect(park.stderr).toContain("the arbiter ruled 'rejected'");
   });
 
+  it("a ruling whose class the failed-closed policy no longer lists parks under human-decision", async () => {
+    const d = stateDirFor("rule-class-gone");
+    expectSpawnExit(
+      await rule(d, { key: "PRRT_a", verdict: "escalate", class: "merge" }),
+      0,
+    );
+    // A driver pass whose base-branch policy cannot be read: the park
+    // classes are the kept ones only, and `merge` is not among them.
+    const unreadable = { DRIVE_PR_TARGET: "999", DRIVE_PR_POLICY_BASE: "" };
+    const asMerge = await state(
+      d,
+      parkArgs("PRRT_a", "thread", "merge"),
+      unreadable,
+      parkRecord(QUESTION, "merge"),
+    );
+    expectSpawnExit(asMerge, 2);
+    expect(asMerge.stderr).toContain("'merge' is not a park class");
+    const asEscalated = await state(
+      d,
+      parkArgs("PRRT_a", "thread", "escalated"),
+      unreadable,
+      parkRecord(QUESTION, "escalated"),
+    );
+    expectSpawnExit(asEscalated, 2);
+    expect(asEscalated.stderr).toContain("the arbiter ruled the class 'merge'");
+    expectSpawnExit(
+      await state(
+        d,
+        parkArgs("PRRT_a", "thread", "human-decision"),
+        unreadable,
+        parkRecord(QUESTION, "human-decision"),
+      ),
+      0,
+    );
+  });
+
   it("a humanDecision or class that is not the right type is refused, not read as no", async () => {
     const d = stateDirFor("rule-wrong-type");
     for (const ruling of [

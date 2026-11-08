@@ -387,6 +387,88 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.171.0] - 2026-11-08
+
+### Changed
+
+- A drive reads `autonomy.max_level` and `autonomy.park_classes` from the
+  branch the pull request targets, not from the pull request's own checkout,
+  so an edit to either applies to a pull request's drive once it is on that
+  branch, never through the pull request that makes it; for a stacked layer
+  that branch is the layer below, bounded by the integration branch's
+  policy (the lower ceiling, the union of the park classes). The ceiling's fallback comes from the base too: the
+  base's `max_level`, else the base's `level`, else `attended`; a
+  `JIG_OVERLAY` redirect no longer moves either field in a drive. The driver
+  resolves the base's commit at its start and before every round and hands
+  it to its passes in `DRIVE_PR_POLICY_BASE`; the line it prints each round
+  names that commit. A session with a person in it reads both fields from
+  the working tree, as before
+  ([configuration](plugin/CONFIGURATION.md#autonomy)).
+
+### Security
+
+- When the base branch's policy cannot be read (its commit is not in the
+  clone, git fails, or the file does not parse or names an invalid ceiling
+  or class list), a drive fails closed: it runs at `attended`, the only park
+  classes are `escalated`, `human-decision` and `human-thread`, and the pass
+  parks every decision under `human-decision` until the policy reads.
+
+## [0.170.0] - 2026-11-08
+
+The dispatch dashboard says where each pull request stands, can run without a token behind a front on the host, and stacks its panels in one column.
+
+### Added
+
+- Each pull request on the dashboard is an icon in the colour of its state: driving, following up after the merge, waiting, needs a person, queued, held, merged or closed. Hovering or tapping the pull request opens its state, round, unresolved thread count, how long it has waited and the dispatcher's own reason. The state comes from the newest tick's line, so a dashboard served without a GitHub login still shows it.
+- `dashboard.require_token: false` in the machine file serves the dashboard with no token. It is accepted only with a loopback `dashboard.listen`, so the only way in from another machine is a front on the host, such as Tailscale Serve, that authenticates the person first. A tokenless dashboard answers only `localhost`, `127.0.0.0/8` and `::1` as the request's `Host`, plus the names `dashboard.allowed_hosts` lists for the front, and refuses any other with 403. See [the machine's dispatch file](plugin/CONFIGURATION.md).
+
+### Changed
+
+- The dashboard's Now view, running slots and legend no longer sit side by side at any width: one column keeps vertical scrolling the same on a phone and a desktop.
+
+### Fixed
+
+- Every pull request on a dashboard whose server could not call the forge showed "Unknown" with no popover content; its icon now opens the state the line holds.
+
+## [0.169.0] - 2026-11-08
+
+### Added
+
+- A drive reads the reviewer's skip notice: a block in its sticky comment,
+  marked `review.skip_notice_marker` (default `ai-review-skip-notice`,
+  `DRIVE_PR_SKIP_NOTICE_MARKER` overrides it), saying it did not review a
+  pushed head. A skipped head whose pull-request diff equals the diff at the
+  head the reviewer last reviewed, such as a merge of the base branch, is
+  judged on that review: the report names the earlier head as the reviewed
+  one (`reviewedShaSource: "skip-notice"`) and the skip as the reason, and
+  the drive can converge
+  ([terminal states](plugin/skills/drive-pr/references/terminal-states.md)).
+- A new terminal state, `REVIEW_SKIPPED` (exit `22`): the reviewer skipped
+  the head, and its earlier review does not cover it because the pull
+  request's diff changed: the diffs are compared with their context, exactly
+  where the base did not move and, for the files it did move, without hunk
+  positions. A moved file whose hunk repeats elsewhere in it, or whose patch
+  is not valid UTF-8 or cannot be read, is reported as different. A merge that moved or edited
+  the change's lines differs. A commit the comparison needs that the clone lacks is
+  fetched once; still missing, the evaluation is `INDETERMINATE` (exit `1`)
+  and runs again. The stop quotes the
+  notice and says what a person does next; `jig dispatch` hands it to a
+  person, labelling the pull request parked where dispatch labels are enabled,
+  rather than re-arming it at the same head. A harness that reads the drive's exit codes should treat `22`
+  as a stop for a person.
+
+### Fixed
+
+- A drive no longer waits as `STALE_REVIEW` (exit `4`) for as long as a head
+  stands when the reviewer has said it will not review that head; a
+  dispatcher re-armed such a drive at the same head indefinitely.
+
+## [0.168.2] - 2026-11-08
+
+### Added
+
+- The install guide names the planned common setup path and the conditions for considering an own Homebrew tap, while keeping plugin installation and updates with the agent tool's marketplace.
+
 ## [0.168.1] - 2026-11-08
 
 ### Fixed
@@ -5986,7 +6068,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.168.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.171.0...HEAD
+[0.171.0]: https://github.com/jig-harness/jig/compare/v0.170.0...v0.171.0
+[0.170.0]: https://github.com/jig-harness/jig/compare/v0.169.0...v0.170.0
+[0.169.0]: https://github.com/jig-harness/jig/compare/v0.168.2...v0.169.0
+[0.168.2]: https://github.com/jig-harness/jig/compare/v0.168.1...v0.168.2
 [0.168.1]: https://github.com/jig-harness/jig/compare/v0.168.0...v0.168.1
 [0.168.0]: https://github.com/jig-harness/jig/compare/v0.167.0...v0.168.0
 [0.167.0]: https://github.com/jig-harness/jig/compare/v0.166.0...v0.167.0
