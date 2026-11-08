@@ -341,7 +341,7 @@ fields:
   review.skip_notice_marker:
     type: string
     read_by: [drive-pr]
-    since: next
+    since: 0.169.0
   review.severity_formats:
     type: list
     nullable: true
