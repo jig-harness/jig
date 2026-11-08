@@ -150,6 +150,19 @@ export function reviewedShaMarker(): string {
 }
 
 /**
+ * The marker around the reviewer's notice, in that comment, that it did not
+ * review a pushed head: `DRIVE_PR_SKIP_NOTICE_MARKER`, else
+ * `review.skip_notice_marker`, else `ai-review-skip-notice`.
+ */
+export function skipNoticeMarker(): string {
+  return (
+    nonEmptyEnv("DRIVE_PR_SKIP_NOTICE_MARKER") ??
+    optionalString("review", "skip_notice_marker") ??
+    "ai-review-skip-notice"
+  );
+}
+
+/**
  * `review.bots` as entries, each a login or `{login, …markers}`; `undefined`
  * when the field is not a list. Entries of another shape are dropped, as
  * this best-effort reader always has.

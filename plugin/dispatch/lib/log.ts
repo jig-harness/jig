@@ -300,6 +300,7 @@ const DRIVE_EXITS: ReadonlyMap<number, [OutcomeClass, string]> = new Map([
   [DRIVE_EXIT.TAKEN_OVER, ["refused", "taken over by another clone"]],
   [DRIVE_EXIT.INDETERMINATE, ["gates failed", "failed"]],
   [DRIVE_EXIT.REVIEWER_FAILED, ["gates failed", "reviewer failed"]],
+  [DRIVE_EXIT.REVIEW_SKIPPED, ["gates failed", "review skipped"]],
   [DRIVE_EXIT.PR_CONFLICTING, ["gates failed", "conflicting with its base"]],
   [DRIVE_EXIT.WORKTREE_UNCLEAN, ["gates failed", "worktree unclean"]],
   [DRIVE_EXIT.PASS_DEADLINE, ["gates failed", "pass deadline"]],

@@ -465,6 +465,18 @@ function sessionResultMain(
   ]);
 }
 
+/** `jig dispatch dashboard`: the machine file's address and whether it asks for the token. */
+function dashboardCommand(port: number | undefined): Promise<number> {
+  const machine = machineFile();
+  return dashboardMain(
+    machine?.dashboardListen ?? null,
+    port,
+    machineConfigPath(),
+    machine?.dashboardRequireToken ?? true,
+    machine?.dashboardAllowedHosts ?? [],
+  );
+}
+
 /** A subcommand's run: everything but the tick. */
 function subcommandMain(
   args: Subcommand,
@@ -481,12 +493,7 @@ function subcommandMain(
   if (args.action === "clear") return clearMain(args.record);
   if (args.action === "probe")
     return probeMain({ apply: args.apply, json: args.json }, machineFile());
-  if (args.action === "dashboard")
-    return dashboardMain(
-      machineFile()?.dashboardListen ?? null,
-      args.port,
-      machineConfigPath(),
-    );
+  if (args.action === "dashboard") return dashboardCommand(args.port);
   if (args.action === "marker")
     return markerMain({
       verb: args.verb,

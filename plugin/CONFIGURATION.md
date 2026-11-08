@@ -211,6 +211,7 @@ the `review` skill's semantic tier runs.
 | `review.reviewer_check_pattern` | anchored regular expression | `^ai[ _-]?review(\s*\(.+\))?$`, used once a reviewer is expected | drive-pr | Name of the posting reviewer's check run. Matched case-insensitively, so `^ai review$` also matches `AI Review`; POSIX classes such as `[[:space:]]` are accepted. Without `review.reviewer_app`, reviewer checks are recognised by name from any app and the summary comment is accepted only from `review.bots`. `DRIVE_PR_REVIEWER_CHECK` overrides it |
 | `review.sticky_marker` | text | `<!-- ai-code-review -->` | drive-pr | Text identifying the reviewer's summary comment. Read only when a reviewer is expected. `DRIVE_PR_STICKY_MARKER` overrides it |
 | `review.reviewed_sha_marker` | text | `ai-reviewed-sha` | drive-pr | Marker for the commit the reviewer reviewed, inside that comment. Read only when a reviewer is expected. `DRIVE_PR_SHA_MARKER` overrides it |
+| `review.skip_notice_marker` | text | `ai-review-skip-notice` | drive-pr | Marker around the reviewer's notice, inside that comment, that it did not review a pushed commit: `<!-- <marker> -->`, the notice naming the commit, then `<!-- /<marker> -->`. A skipped head whose pull-request diff equals the reviewed one's converges on that review; any other skip of the head stops the drive with `REVIEW_SKIPPED` (`22`). Read only when a reviewer is expected. `DRIVE_PR_SKIP_NOTICE_MARKER` overrides it |
 | `review.severity_formats` | list of `{login, shape, severities}` | none: the [built-in formats](EXTENDING.md#severity-formats) only | drive-pr, resolve-review-comments | How a reviewer writes a finding's severity, so the decline ladder can use it: a reviewer with no built-in format, or words or a shape a built-in format does not read. `login` is the reviewer's GitHub login (`[bot]` optional); `shape` is `bold-token` (`🟡 **Major**`), `badge` (a `![P1 Badge]` image), `html-badge` (an `<img alt="P1">` image), `pipe-fields` (`**category** \| **Major** \| **effort**`) or `icon-fields` (`**<picture>…</picture> Major** · **category** · **effort**`); `severities` maps each of the reviewer's words to `blocker`, `high`, `medium` or `low`. Read before the built-in formats, which still apply to a comment no entry reads, and only on comments that login posted. `null` means not set |
 | `review.lenses.dir` | path | none: only the plugin's seed lenses run | review, do-item | Folder of the repository's own lens files, one Markdown file per lens in the plugin's lens format, read from the base branch. A repository lens keeps its `LENS-NNN` number; the `jig.` prefix is the seed lenses'. A lens file the change under review adds is reported as proposed and not run |
 | `review.lenses.off` | list of lens ids | none | review, do-item | Lenses not to run. `--lens=<id>` still runs one. An id that names no lens stops the review |
@@ -1284,6 +1285,8 @@ receipts_days: 30
 unclaimed_after: 15m                # a started launch no wrapper claimed by then needs a person
 dashboard:
   listen: 100.64.0.7:8765           # jig dispatch dashboard; private or loopback only
+  # require_token: false            # only with a loopback listen: a front authenticates
+  # allowed_hosts: [host.example.ts.net]  # names that front forwards under
 records:
   shared: forge                     # where another host reads this host's launches
 send: true                          # false refuses every jig send from this machine
@@ -1312,6 +1315,8 @@ change_probe: true                  # false turns off the minute-by-minute chang
 | `send` | `true`; whether [`jig send`](README.md#telling-a-station-what-to-do) may write a request from this machine. `false` refuses every send, `--dry-run` included, so a machine whose sessions should only ask the line can say so once. Read by `jig send` alone; the dispatcher ignores it |
 | `change_probe` | `true`; whether the change probe runs: every minute, `jig dispatch probe --apply` (its own timer, which `jig install dispatch` writes beside the tick's) reads the forge once for the pull requests of every repository listed here with a stage, and wakes the tick of each repository where one was updated or its checks changed since the last probe. `false` makes a probe read and wake nothing, and the next `jig install dispatch --yes` removes its timer. Read by `jig dispatch probe` and the dispatcher's install |
 | `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
+| `dashboard.require_token` | `true`; whether a request needs the token the command prints. `false` serves the page with no token and is accepted only when `dashboard.listen` is a loopback address (`127.0.0.0/8`, `::1`), so the only way in from another machine is a front on the host (Tailscale Serve, a reverse proxy) that authenticates the person first. The page is read-only either way |
+| `dashboard.allowed_hosts` | None; the host names a front forwards requests under (the `Host` header), read only with `require_token: false`. A tokenless dashboard answers `localhost`, `127.0.0.0/8` and `::1` and these names, and refuses any other `Host` with 403, so a page on another origin cannot read it by pointing its own name at this address |
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
@@ -1402,6 +1407,7 @@ review:
   reviewer_check_pattern: "^ai[ _-]?review(\\s*\\(.+\\))?$"
   sticky_marker: "<!-- ai-code-review -->"
   reviewed_sha_marker: ai-reviewed-sha
+  skip_notice_marker: ai-review-skip-notice
   severity_formats:
     - login: example-linter[bot]
       shape: badge                       # bold-token | badge | html-badge | pipe-fields | icon-fields

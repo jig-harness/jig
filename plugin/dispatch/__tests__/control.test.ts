@@ -15,7 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
-import { parseListen } from "../lib/listen.ts";
+import { authorityAllowed, parseListen } from "../lib/listen.ts";
 import { exportLog } from "../lib/log-export.ts";
 import {
   endedRow,
@@ -279,6 +279,12 @@ describe("the dashboard's address", () => {
     );
   });
 
+  it("accepts a Host header naming a mapped loopback, in dots or in the hex a URL writes", () => {
+    expect(authorityAllowed("[::ffff:127.0.0.1]:8765", [])).toBe(true);
+    expect(authorityAllowed("[::ffff:7f00:1]:8765", [])).toBe(true);
+    expect(authorityAllowed("[::ffff:8.8.8.8]:8765", [])).toBe(false);
+  });
+
   it("refuses a machine file whose dashboard.listen is public", () => {
     const file = join(root(), "dispatch.yaml");
     writeFileSync(file, "dashboard:\n  listen: 203.0.113.9:8765\n");
@@ -295,6 +301,41 @@ describe("the dashboard's address", () => {
       host: "192.168.1.20",
       port: 8765,
     });
+  });
+
+  const dashboardOf = (file: string) => {
+    const read = readMachineConfig(file);
+    return read.ok ? read.value : null;
+  };
+  const failureOf = (file: string) => {
+    const read = readMachineConfig(file);
+    return read.ok ? "" : read.failure.reason;
+  };
+
+  it("serves without a token only on a loopback address", () => {
+    const file = join(root(), "dispatch.yaml");
+    writeFileSync(file, "dashboard:\n  listen: 127.0.0.1:8765\n");
+    expect(dashboardOf(file)?.dashboardRequireToken).toBe(true);
+    writeFileSync(
+      file,
+      "dashboard:\n  listen: 127.0.0.1:8765\n  require_token: false\n",
+    );
+    expect(dashboardOf(file)?.dashboardRequireToken).toBe(false);
+    expect(dashboardOf(file)?.dashboardAllowedHosts).toEqual([]);
+    writeFileSync(
+      file,
+      "dashboard:\n  listen: 127.0.0.1:8765\n  require_token: false\n  allowed_hosts: [Front.Example.ts.net]\n",
+    );
+    expect(dashboardOf(file)?.dashboardAllowedHosts).toEqual([
+      "front.example.ts.net",
+    ]);
+    writeFileSync(
+      file,
+      "dashboard:\n  listen: 100.64.0.7:8765\n  require_token: false\n",
+    );
+    expect(failureOf(file)).toContain("needs a loopback");
+    writeFileSync(file, "dashboard:\n  require_token: false\n");
+    expect(failureOf(file)).toContain("needs a loopback");
   });
 });
 

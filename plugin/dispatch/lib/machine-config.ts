@@ -27,6 +27,8 @@
  * unclaimed_after: 15m
  * dashboard:
  *   listen: 100.64.0.7:8765
+ *   require_token: true     # false only with a loopback listen: a front authenticates
+ *   allowed_hosts: []       # host names that front forwards under (tokenless only)
  * records:
  *   shared: forge
  * send: true
@@ -43,7 +45,7 @@ import { isMapping, jigHome } from "../../shared/config-layers.ts";
 import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { load } from "../../shared/yaml.ts";
-import { type Listen, parseListen } from "./listen.ts";
+import { isLoopback, type Listen, parseListen } from "./listen.ts";
 
 /** The stages a machine file can enable. */
 const MACHINE_STAGES = [
@@ -105,6 +107,10 @@ export interface MachineConfig {
   unclaimedAfterMs: number;
   /** The address `jig dispatch dashboard` listens on (`dashboard.listen`); `null` when the file names none. */
   dashboardListen: Listen | null;
+  /** Whether a request to the dashboard needs the token its command prints (`dashboard.require_token`); `true` unless the file says `false`, which only a loopback `listen` accepts. */
+  dashboardRequireToken: boolean;
+  /** The host names a front forwards under (`dashboard.allowed_hosts`), lower-cased; empty unless the file lists some. */
+  dashboardAllowedHosts: string[];
   /** Where the records another host reads are shared (`records.shared`). */
   sharedRecords: SharedMedium;
   /** Whether `jig send` may write a request from this machine (`send`); `true` unless the file says `false`. */
@@ -139,7 +145,7 @@ const TOP_KEYS = [
   "send",
   "change_probe",
 ];
-const DASHBOARD_KEYS = ["listen"];
+const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts"];
 const RECORDS_KEYS = ["shared"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
 const ACCOUNT_KEYS = [
@@ -556,11 +562,20 @@ function surfaces(
 ): Checked<
   Pick<
     MachineConfig,
-    "dashboardListen" | "sharedRecords" | "send" | "changeProbe"
+    | "dashboardListen"
+    | "dashboardRequireToken"
+    | "dashboardAllowedHosts"
+    | "sharedRecords"
+    | "send"
+    | "changeProbe"
   >
 > {
   const dashboardListen = dashboard(top.dashboard);
   if (!dashboardListen.ok) return dashboardListen;
+  const requireToken = dashboardRequireToken(top.dashboard);
+  if (!requireToken.ok) return requireToken;
+  const allowedHosts = dashboardAllowedHosts(top.dashboard);
+  if (!allowedHosts.ok) return allowedHosts;
   const sharedRecords = records(top.records);
   if (!sharedRecords.ok) return sharedRecords;
   const send = flag(top.send, "send", true);
@@ -569,6 +584,8 @@ function surfaces(
   if (!changeProbe.ok) return changeProbe;
   return ok({
     dashboardListen: dashboardListen.value,
+    dashboardRequireToken: requireToken.value,
+    dashboardAllowedHosts: allowedHosts.value,
     sharedRecords: sharedRecords.value,
     send: send.value,
     changeProbe: changeProbe.value,
@@ -603,6 +620,36 @@ function dashboard(value: unknown): Checked<Listen | null> {
   return listen.ok
     ? listen
     : invalid(`dashboard.listen: ${listen.failure.reason}`);
+}
+
+/** Whether the dashboard demands its token. Turning it off is accepted only where nothing but a front on this host can reach the port. */
+function dashboardRequireToken(value: unknown): Checked<boolean> {
+  const listen = dashboard(value);
+  if (!listen.ok) return listen;
+  const required = flag(
+    isMapping(value) ? value.require_token : undefined,
+    "dashboard.require_token",
+    true,
+  );
+  if (!required.ok) return required;
+  if (!required.value && (listen.value === null || !isLoopback(listen.value)))
+    return invalid(
+      "dashboard.require_token: false needs a loopback dashboard.listen (127.0.0.1 or ::1), since only a front on this host that authenticates the person may reach a page with no token",
+    );
+  return required;
+}
+
+/** The front host names a tokenless dashboard also answers to. */
+function dashboardAllowedHosts(value: unknown): Checked<string[]> {
+  const listed = isMapping(value) ? value.allowed_hosts : undefined;
+  if (listed === undefined || listed === null) return ok([]);
+  if (!Array.isArray(listed))
+    return invalid("dashboard.allowed_hosts must be a list");
+  const names = each(listed, (name, i) =>
+    text(name, `dashboard.allowed_hosts[${i}]`),
+  );
+  if (!names.ok) return names;
+  return ok(names.value.map((name) => name.toLowerCase()));
 }
 
 /**

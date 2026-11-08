@@ -338,6 +338,10 @@ fields:
   review.reviewed_sha_marker:
     type: string
     read_by: [drive-pr]
+  review.skip_notice_marker:
+    type: string
+    read_by: [drive-pr]
+    since: 0.169.0
   review.severity_formats:
     type: list
     nullable: true
