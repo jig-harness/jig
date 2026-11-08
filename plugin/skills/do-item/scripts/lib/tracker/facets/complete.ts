@@ -7,8 +7,8 @@
  * size facet wherever it is kept.
  *
  * It runs inside the tracker `openTracker()` returns, so every caller of
- * `createIssue` gets it. In this release an incomplete issue is filed and
- * what it lacks is printed; the next release refuses it.
+ * `createIssue` gets it: an incomplete issue is refused before anything is
+ * written, naming what it lacks.
  */
 
 import { existsSync } from "node:fs";
@@ -21,7 +21,7 @@ import {
   missingGroups,
   SIZE_GROUP,
 } from "../../../../../file-issue/scripts/lib/validate.ts";
-import type { NewIssue, Tracker } from "../port.ts";
+import { type NewIssue, type Tracker, TrackerRequestError } from "../port.ts";
 import { type Facets, usable } from "./config.ts";
 import { fold } from "./values.ts";
 
@@ -53,29 +53,47 @@ export function readTaxonomy(root: string, setting: string): Taxonomy | null {
   return existsSync(path) ? lintTaxonomyFile(path).taxonomy : null;
 }
 
-/** The warning an incomplete filing prints. */
-export function incompleteWarning(key: string, missing: string[]): string {
-  const named = missing.map((m) =>
-    ["type", "priority", "size"].includes(m) ? m : `a ${m} label`,
-  );
-  return `warning: ${key} was filed without ${named.join(", ")}; the next release refuses an issue filed without them, so give each when filing (tracker.ts create takes "type", "priority" 1 to 4, and "size")`;
+/** "a, b and c". */
+function listed(items: string[]): string {
+  return items.length <= 1
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
 }
 
-/** `tracker` with every `createIssue` checked: an incomplete issue is filed, and `warn` told what it lacks. */
+/** Why an incomplete filing is refused, naming what it lacks. */
+export function incompleteRefusal(missing: string[]): string {
+  const facets = missing.filter((m) =>
+    ["type", "priority", "size"].includes(m),
+  );
+  const groups = missing.filter((m) => !facets.includes(m));
+  const named = [
+    ...facets.map((f) => `no ${f}`),
+    ...groups.map((g) => `no ${g} label`),
+  ];
+  const how = [
+    facets.length > 0
+      ? `"type", "priority" (1 to 4) and "size" in the issue tracker.ts create reads (an epic needs no size)`
+      : "",
+    groups.length > 0
+      ? "a label of each required group of the label taxonomy"
+      : "",
+  ].filter((s) => s !== "");
+  return `refused to file an issue with ${listed(named)}: every issue is filed with its type, priority and size, so give ${listed(how)}`;
+}
+
+/** `tracker` with every `createIssue` checked: an incomplete issue is refused before anything is written. */
 export function checkedTracker(
   tracker: Tracker,
   facets: Facets,
   taxonomy: Taxonomy | null,
-  warn: (message: string) => void,
 ): Tracker {
   return {
     ...tracker,
     async createIssue(issue) {
       const missing = incompleteness(issue, facets, taxonomy);
-      const filed = await tracker.createIssue(issue);
       if (missing.length > 0)
-        warn(incompleteWarning(filed.identifier, missing));
-      return filed;
+        throw new TrackerRequestError("invalid", incompleteRefusal(missing));
+      return tracker.createIssue(issue);
     },
   };
 }

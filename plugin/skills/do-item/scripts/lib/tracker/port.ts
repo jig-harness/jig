@@ -279,6 +279,11 @@ export interface IncompleteQuery {
   after?: string | null;
   /** The most issues one page holds, 1 to 100. */
   limit: number;
+  /**
+   * List the open issues already started instead of those not yet started:
+   * the sweep reads one such page, to list them without moving them.
+   */
+  started?: boolean;
 }
 
 /** An open issue `incompleteIssues` lists, by key, never by its content. */
@@ -589,13 +594,20 @@ export interface Tracker {
    * carry a `retired` label, oldest first, with the cursor of the next page
    * and the counts over every open issue outside triage. The one read that
    * returns part of a population on purpose: a started issue is never
-   * listed. Throws on an unknown facet, a facet the repository has no store
-   * for, or a `limit` outside 1 to 100.
+   * listed, unless `started` asks for the started ones alone. Throws on an
+   * unknown facet, a facet the repository has no store for, or a `limit`
+   * outside 1 to 100.
    */
   incompleteIssues(
     query: IncompleteQuery,
     options?: FacetReadOptions,
   ): Promise<IncompletePage>;
+  /**
+   * Every open issue of this team, in pool form, read whole, with its
+   * facets read from the stores this tracker keeps them in: the move
+   * between two stores reads each issue through a tracker of each.
+   */
+  openPopulation(options?: FacetReadOptions): Promise<PoolIssue[]>;
 
   // ── Facets ──
   /**

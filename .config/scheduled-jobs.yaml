@@ -27,3 +27,14 @@ jobs:
     grace: 6h
     max_run: 15m
     red_after: 1
+  # .github/workflows/issue-fields.yml: the weekly sweep for open issues
+  # without a type, a priority or a size, Mondays at 05:37 UTC. A run takes a
+  # few minutes, or under 45 with every Retry-After wait it honours, so one
+  # going for over an hour is hung; one failure is red, since a failed sweep
+  # is a store that stopped answering or a refused write, which a person
+  # looks at.
+  - id: issue-fields
+    cadence: 7d
+    grace: 1d
+    max_run: 1h
+    red_after: 1

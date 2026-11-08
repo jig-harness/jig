@@ -1,0 +1,16 @@
+---
+release: minor
+---
+
+An issue filed through the tracker scripts without a type, a priority or a size is now refused, before anything is written. `/jig:file-issue` gains a weekly sweep for the issues filed around those scripts, and a move that carries a repository's type, priority and size from one store to another.
+
+### Added
+
+- `/jig:file-issue check`, the weekly sweep ([file-issue](../plugin/skills/file-issue/README.md#the-weekly-sweep)): `check-fields.ts check` lists, by issue key, every open issue outside triage that lacks a type, a priority or a size (an epic needs no size) or carries the label of a facet the configuration keeps in the tracker's own field, and with `--yes` moves each one not yet started back to triage with a comment naming what it lacks, listing the started ones without moving them. It reads at most 20 pages of 100 issues and moves at most 50 a run, paces its writes at 30 a minute, waits out a `Retry-After` up to 3 times a run, and stops at a refused write, reporting what it moved and what remains. A store that fails closed, or more than half of the issues that must carry a facet lacking it, moves nothing. Schedule it weekly with a credential that may comment on issues and move them to triage; on GitHub Issues, set `JIG_GITHUB_GRAPHQL_URL` for it to see GitHub's `Retry-After`.
+- `/jig:file-issue move` ([file-issue](../plugin/skills/file-issue/README.md#moving-to-another-store)): `check-fields.ts move` carries type, priority and size from one store to another (labels to the tracker's own fields, back again, or one field to another) for every open issue, in a preview that writes a move record, a copy, the person's commit of the new `issue_tracker.facets` section, and a retire; `--restore` puts back every value the record says it changed. Nothing is written without `--yes`; each run writes at most one update per open issue, is paced as the sweep is, and is resumed by running it again; closed issues keep their labels.
+- The audit's configuration check suggests the sweep to a repository that keeps its issues' facets on a tracker and runs the sweep from no workflow, systemd unit or crontab (`suggestion:issue_tracker.sweep`).
+- The tracker interface reads every open issue with its facets (`Tracker.openPopulation`); `incompleteIssues` lists the started issues apart (`started: true`), and on GitHub Issues sees a retired `priority:` label, which an issue's labels leave out.
+
+### Changed
+
+- **Breaking**: `tracker.ts create`, and every other filing through the tracker interface, refuses an issue without a type, a priority (1 to 4) or a size (an issue carrying `issue_tracker.labels.epic` needs no size), or without a label of another required group of the label taxonomy, before anything is written, naming what it lacks (exit 2); the previous release filed it with a warning. Give `"type"`, `"priority"` and `"size"` in every issue `tracker.ts create` reads, and a label of each required group. A deferred finding `file-deferred.ts` files carries the follow-up label alone, so in a repository whose taxonomy requires another group it stays in its pull request's section for a person to file through `/jig:file-issue`.

@@ -441,10 +441,21 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     },
 
     async openPopulation(signal) {
-      return pools(
-        await client.list({ states: ["OPEN"] }, OPEN_CHILDREN, signal),
+      const read = await client.list(
+        { states: ["OPEN"] },
+        OPEN_CHILDREN,
         signal,
       );
+      const out: CorePoolIssue[] = [];
+      for (const { issue, raw } of read) {
+        const one = await pool(issue, raw, signal);
+        // The priority labels the pool form hides, so a retired one is seen.
+        const hidden = wholeLabels(issue).filter((l) =>
+          model.priorityLabels.some((p) => same(p, l)),
+        );
+        out.push(hidden.length === 0 ? one : { ...one, hiddenLabels: hidden });
+      }
+      return out;
     },
 
     facetReport: (options) => client.facets.report(options),

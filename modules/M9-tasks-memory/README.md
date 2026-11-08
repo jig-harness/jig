@@ -281,10 +281,16 @@ practice:
 - The tracker interface (`do-item`'s
   [`lib/tracker/`](../../plugin/skills/do-item/scripts/lib/tracker/))
   checks every issue filed through it for a type, a priority and a size,
-  and names what is missing; in this release it warns and files, and the
-  next release refuses. `work-batch` lists a pool's issue that lacks a
-  priority or a size as a labelling gap, and the dispatcher's tick record
-  lists the assigned items that lack one.
+  and refuses one that lacks any, naming what is missing. `work-batch`
+  lists a pool's issue that lacks a priority or a size as a labelling gap,
+  and the dispatcher's tick record lists the assigned items that lack one.
+- [`file-issue`](../../plugin/skills/file-issue/README.md)'s weekly sweep
+  (`check-fields.ts check`) catches an issue filed around that check, by an
+  issue form or by hand: it moves each one not yet started back to triage
+  with a comment naming what it lacks, and lists the started ones. Its move
+  (`check-fields.ts move`) carries a repository's facets from one store to
+  another, labels to the tracker's own fields or back, with a record that
+  undoes it.
 - [`resolve-review-comments`](../../plugin/skills/resolve-review-comments/SKILL.md)
   files a deferred review finding with its type, its priority set from the
   severity mapping (an unknown severity as medium) and its size, refuses a type outside the declared taxonomy or a missing

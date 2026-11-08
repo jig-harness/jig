@@ -8,7 +8,11 @@ import {
   incompleteness,
 } from "../scripts/lib/tracker/facets/complete.ts";
 import { resolveFacets } from "../scripts/lib/tracker/facets/config.ts";
-import type { NewIssue, Tracker } from "../scripts/lib/tracker/port.ts";
+import {
+  type NewIssue,
+  type Tracker,
+  TrackerRequestError,
+} from "../scripts/lib/tracker/port.ts";
 import { lintTaxonomy } from "../../file-issue/scripts/lib/taxonomy.ts";
 import { JIG_TAXONOMY } from "./github-fixtures.ts";
 
@@ -81,7 +85,7 @@ describe("the filing check inside createIssue", () => {
     ).toEqual([]);
   });
 
-  it("files an incomplete issue, then warns naming it and what it lacks", async () => {
+  it("refuses an incomplete issue before writing it, naming what it lacks", async () => {
     const filed: NewIssue[] = [];
     const inner = {
       createIssue: async (i: NewIssue) => {
@@ -89,19 +93,27 @@ describe("the filing check inside createIssue", () => {
         return { identifier: "#7", url: null };
       },
     } as unknown as Tracker;
-    const warnings: string[] = [];
-    const t = checkedTracker(inner, facets, taxonomy, (m) => warnings.push(m));
-    expect(await t.createIssue(issue({}, ["priority"]))).toEqual({
+    const t = checkedTracker(inner, facets, taxonomy);
+    const refusal = (i: NewIssue) =>
+      t.createIssue(i).then(
+        () => null,
+        (e: unknown) =>
+          e instanceof TrackerRequestError ? `${e.code}: ${e.message}` : e,
+      );
+    expect(await refusal(issue({}, ["priority"]))).toBe(
+      'invalid: refused to file an issue with no priority: every issue is filed with its type, priority and size, so give "type", "priority" (1 to 4) and "size" in the issue tracker.ts create reads (an epic needs no size)',
+    );
+    expect(await refusal(issue({ labels: [] }, ["size"]))).toBe(
+      'invalid: refused to file an issue with no size and no repo label: every issue is filed with its type, priority and size, so give "type", "priority" (1 to 4) and "size" in the issue tracker.ts create reads (an epic needs no size) and a label of each required group of the label taxonomy',
+    );
+    expect(filed).toEqual([]);
+    expect(await t.createIssue(issue({}))).toEqual({
       identifier: "#7",
       url: null,
     });
-    expect(filed).toHaveLength(1);
-    expect(warnings).toEqual([
-      'warning: #7 was filed without priority; the next release refuses an issue filed without them, so give each when filing (tracker.ts create takes "type", "priority" 1 to 4, and "size")',
-    ]);
-    await t.createIssue(issue({ labels: [] }));
-    expect(warnings.at(-1)).toContain("filed without a repo label");
-    await t.createIssue(issue({}));
-    expect(warnings).toHaveLength(2);
+    expect(await refusal(issue({ labels: ["jig", "epic"] }, ["size"]))).toBe(
+      null,
+    );
+    expect(filed).toHaveLength(2);
   });
 });

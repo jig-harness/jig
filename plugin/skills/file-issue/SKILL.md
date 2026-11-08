@@ -1,7 +1,7 @@
 ---
 name: file-issue
-description: "File a tracker issue from the discussion, or plan an existing one (re-label, split into sub-issues, relate): write a durable body, derive labels from the change's areas or its description, check them against the repository's label taxonomy, search for duplicates, confirm, then write through the tracker scripts."
-argument-hint: "[title or summary] | plan <issue-key>"
+description: "File a tracker issue from the discussion, or plan an existing one (re-label, split into sub-issues, relate): write a durable body, derive labels from the change's areas or its description, check them against the repository's label taxonomy, search for duplicates, confirm, then write through the tracker scripts; or sweep open issues for a missing type, priority or size, or move those to another store."
+argument-hint: "[title or summary] | plan <issue-key> | check | move"
 allowed-tools: "Read Grep Glob Write Bash(bun *) Bash(git *) AskUserQuestion"
 ---
 
@@ -98,9 +98,10 @@ says (labels, its own issue type, or a field) and refuses a facet's label
 among `labels` or `addLabels`. Priority is `1` (urgent), `2` (high), `3`
 (medium) or `4` (low); `0` (none) is for a correction only. Every filing is
 checked inside the tracker: one without a type, a priority or a size (an
-epic needs no size) is filed with a warning in this release and refused in
-the next. Write each file with the Write tool under `.context/`, never by
-interpolating text into a shell command.
+epic needs no size), or without a label of a required group, is refused
+before anything is written (exit `2`), naming what it lacks. Write each
+file with the Write tool under `.context/`, never by interpolating text
+into a shell command.
 
 ### Asking the user
 
@@ -118,6 +119,12 @@ level, which the level itself answers.
   discussion ([File](#file-a-new-issue)).
 - `/jig:file-issue plan <KEY>`: plan an existing issue: re-label it, split
   it into sub-issues, record its relations ([Plan](#plan-an-existing-issue)).
+- `/jig:file-issue check`: sweep the open issues for one without a type, a
+  priority or a size, or carrying a label of a facet kept elsewhere
+  ([Check](#check-the-open-issues)).
+- `/jig:file-issue move`: move the repository's type, priority and size
+  from one store to another, such as from labels to the tracker's own
+  fields ([Move](#move-the-facets-to-another-store)).
 
 ## The rules every write obeys
 
@@ -387,9 +394,10 @@ with `"parent": "<PARENT-KEY>"`, each from its own JSON file:
 bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create --input .context/file-issue/<n>.json
 ```
 
-Each prints the new issue's key and URL. A `warning:` on standard error
-names a facet or group the issue was filed without; set it with an update
-before reporting. On a failure, stop: report which
+Each prints the new issue's key and URL. Exit `2` with `refused to file
+an issue with no …` names what the issue lacks, and nothing was written:
+add it to the issue's JSON, validate again (step 8) and file it. On any
+other failure, stop: report which
 issues were created (with their keys) and which were not, and do not retry
 blindly, which could file a copy.
 
@@ -488,3 +496,98 @@ exist, report that the issue still carries the flags its children now carry,
 and the update that would remove them. Then record the relations as in
 [File, step 11](#11-record-the-relations). Report as in
 [File, step 12](#12-report), headed `## Planned <KEY>: <title>`.
+
+## Check the open issues
+
+**exact** — The sweep, `check-fields.ts`, reads every open issue outside
+triage through the tracker interface. Report first; it writes nothing:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/check-fields.ts" check
+```
+
+It prints each facet's store and the tracker's counts, then, by key only,
+every issue not yet started that lacks a type, a priority or a size (an
+epic needs no size) or carries a retired label (a facet's label where the
+repository keeps that facet in the tracker's own field), and the started
+ones apart. With the user's go-ahead, or when they asked for it, run it
+again with `--yes`: it moves each listed issue that is not yet started back
+to triage, a comment naming what it lacks posted first, and lists the
+started ones without moving them. It moves at most 50 a run and reads at
+most 20 pages of 100; the next run takes what remains. Offer to settle a
+listed issue with [Plan](#plan-an-existing-issue).
+
+Exit `0`: it ran (read every line: what it lists is the result, and a
+report without `--yes` may still name a store problem). Exit `1`: a store
+that fails closed or a facet with no store kept it from reading anything;
+with `--yes`, more than half of the issues that must carry a facet lacking
+it kept it from moving any (a store that stopped answering, not a pile of
+bad filings, so report it rather than move them by hand); a read failed;
+or a refused write stopped it, after which it prints what it moved and
+what remains. Exit `2`: a usage error in your command. Add `--json` for
+the report as one object.
+
+## Move the facets to another store
+
+**exact** — A move changes where every open issue keeps its type, priority
+and size, such as from labels to the tracker's own issue type and fields.
+Only a person decides one, so this mode always confirms, whatever the
+autonomy level. Run it from the repository's default branch, in a clone
+the user keeps until the move is done.
+
+1. **The target.** Write the `issue_tracker.facets` section the
+   repository will commit, naming a store for every facet it has
+   ([configuration reference](../../CONFIGURATION.md#issue_tracker)), to
+   `.context/facet-move/target.yaml` with the Write tool, either as the
+   section itself or under `issue_tracker: { facets: … }`.
+2. **Preview.** It reads every open issue, writes nothing to the tracker,
+   and writes the move record, the section in force now beside the target:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/check-fields.ts" move --target .context/facet-move/target.yaml --record .context/facet-move/record.json
+   ```
+
+   Show the user what each issue would get and every **unresolved** issue
+   (its source gives a facet no value or two): each is settled in its
+   source first, with [Plan](#plan-an-existing-issue). A refusal to start
+   names a destination store that cannot be written: the tracker needs the
+   field, the issue type or the option it names first, which a person with
+   the rights to add it sets up.
+3. **Copy**, once the user accepts the preview. It sets each open issue's
+   destination from its source and keeps the source:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/check-fields.ts" move --record .context/facet-move/record.json --copy --yes
+   ```
+
+4. **Switch.** The user commits the target section to the repository's
+   configuration, through a pull request; filings write the new stores
+   from its merge on.
+5. **Retire**, after the switch. It takes the source off each issue whose
+   destination holds its value, copying first where the source changed
+   since the copy:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/check-fields.ts" move --record .context/facet-move/record.json --retire --yes
+   ```
+
+   Run it again until it exits `0`: an issue whose value it had to copy is
+   retired by the next run. A conflict (its source and its destination
+   both changed since the copy) and a destination someone cleared are
+   left as they are and listed: the user settles each, then runs it again.
+
+Each run writes at most one update per open issue, 30 a minute, and is
+resumed by running it again: a stopped run's issues are skipped once done.
+Closed issues keep their labels, and no label is deleted. Without `--yes`,
+`--copy` and `--retire` print what they would write. To go back, run
+`move --restore .context/facet-move/record.json --yes`, which puts back
+every value the record says the move changed, where the store still holds
+what the move left, and then revert the configuration commit. Keep the
+record until the user no longer wants that way back.
+
+Exit `0`: the phase is done for every open issue. Exit `3`: it finished
+with something left, each listed by key: an issue for the user to settle,
+one the next run finishes, or a phase that refused to start (nothing was
+written). Exit `1`: a read failed, or a refused write stopped the run,
+which the record shows; run it again once the cause is fixed. Exit `2`: a
+usage error, or a record or target it cannot read.

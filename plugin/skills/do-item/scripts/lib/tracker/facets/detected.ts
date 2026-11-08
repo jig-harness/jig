@@ -205,6 +205,11 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
       refuseBlocked(s);
       return s.tracker.incompleteIssues(query, options);
     },
+    async openPopulation(options) {
+      const s = await settle(readSignal(options));
+      refuseBlocked(s);
+      return s.tracker.openPopulation(options);
+    },
     async facetStores(options) {
       let s: Settled;
       try {

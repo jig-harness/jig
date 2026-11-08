@@ -1,0 +1,57 @@
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { sweepFindings } from "../scripts/lib/sweep-fit.ts";
+
+const scratch = mkdtempSync(join(tmpdir(), "sweep-fit-"));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+let n = 0;
+
+/** A repository holding `files`, and the paths it tracks. */
+function repo(files: Record<string, string>): {
+  root: string;
+  tracked: string[];
+} {
+  const root = join(scratch, `repo-${n++}`);
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+  return { root, tracked: Object.keys(files) };
+}
+
+const tracker = { issue_tracker: { adapter: "github" } };
+
+describe("the audit's sweep finding", () => {
+  it("names a repository that keeps facets and runs no sweep", () => {
+    const { root, tracked } = repo({
+      ".github/workflows/ci.yml": "jobs: {}\n",
+      // A document naming the command runs nothing.
+      "docs/issues.md": "Run check-fields.ts check --yes weekly.\n",
+      ".github/workflows/move.yml":
+        "steps:\n  - run: bun check-fields.ts move --record r.json\n",
+    });
+    expect(sweepFindings(tracker, root, tracked).map((f) => f.id)).toEqual([
+      "suggestion:issue_tracker.sweep",
+    ]);
+  });
+
+  it("says nothing of a repository whose workflow or timer runs the sweep", () => {
+    const workflow = repo({
+      ".github/workflows/issue-fields.yml":
+        "steps:\n  - run: bun plugin/skills/file-issue/scripts/check-fields.ts check --yes\n",
+    });
+    expect(sweepFindings(tracker, workflow.root, workflow.tracked)).toEqual([]);
+    const timer = repo({
+      "systemd/issue-fields.service":
+        'ExecStart=bun "$PLUGIN/skills/file-issue/scripts/check-fields.ts" --yes\n',
+    });
+    expect(sweepFindings(tracker, timer.root, timer.tracked)).toEqual([]);
+  });
+
+  it("says nothing of a repository that keeps no tracker", () => {
+    const { root, tracked } = repo({ "README.md": "hello\n" });
+    expect(sweepFindings({ drive: {} }, root, tracked)).toEqual([]);
+  });
+});

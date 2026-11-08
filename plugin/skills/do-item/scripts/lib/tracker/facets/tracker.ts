@@ -54,9 +54,13 @@ import { canonical, fold, PRIORITY_NAMES } from "./values.ts";
 export type CoreIssue = Omit<Issue, "type" | "size"> &
   Partial<Pick<Issue, "type" | "size">>;
 
-/** A pool issue as an adapter's core reads it. */
+/**
+ * A pool issue as an adapter's core reads it. `hiddenLabels` are labels the
+ * core keeps out of `labels` (GitHub's priority labels): only the open
+ * population carries them, so `incompleteIssues` can list a retired one.
+ */
 export type CorePoolIssue = Omit<PoolIssue, "type" | "size"> &
-  Partial<Pick<PoolIssue, "type" | "size">>;
+  Partial<Pick<PoolIssue, "type" | "size">> & { hiddenLabels?: string[] };
 
 /** The adapter's own part of `facetStores`. */
 export interface CoreFacetReport {
@@ -76,6 +80,7 @@ export interface CoreTracker
     | "poolIssue"
     | "assignedIssues"
     | "incompleteIssues"
+    | "openPopulation"
     | "facetStores"
   > {
   getIssue(key: string): Promise<CoreIssue | null>;
@@ -375,10 +380,16 @@ export function withFacets(
     }
     const retired = query.retired.map(fold);
     const listed: Array<IncompleteIssue & { createdAt: string }> = [];
+    const wanted = (type: string) =>
+      query.started === true
+        ? type === "started"
+        : type === "backlog" || type === "unstarted";
     for (const i of outside) {
-      if (i.state.type !== "backlog" && i.state.type !== "unstarted") continue;
+      if (!wanted(i.state.type)) continue;
       const missing = query.missing.filter((f) => lacks(i, f, true));
-      const carried = i.labels.filter((l) => retired.includes(fold(l)));
+      const carried = [...i.labels, ...(i.hiddenLabels ?? [])].filter((l) =>
+        retired.includes(fold(l)),
+      );
       if (missing.length === 0 && carried.length === 0) continue;
       listed.push({
         identifier: i.identifier,
@@ -445,6 +456,14 @@ export function withFacets(
     createIssue,
     updateIssue,
     incompleteIssues,
+    async openPopulation(options) {
+      const signal = readSignal(options);
+      refuseStopped(signal);
+      const population = await openPopulation(signal);
+      refuseStopped(signal);
+      refuseTruncatedLabels(population);
+      return population.map(({ hiddenLabels: _, ...i }) => withValues(i));
+    },
     async facetStores(options) {
       refuseStopped(readSignal(options));
       const extra: CoreFacetReport =
