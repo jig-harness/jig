@@ -387,6 +387,17 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.165.1] - 2026-11-08
+
+### Fixed
+
+- The dispatcher's change probe job (`jig-dispatch-probe`) is now installed
+  with the same Orca command configuration (`ORCA_CLI_COMMAND`,
+  `ORCA_CLI_BIN_DIR`) as the tick's job. Before, only the tick's job took
+  these from the installing shell. `jig upgrade` keeps whatever the installed
+  probe job already holds. A probe job installed before this release gets the
+  values from the next `jig install dispatch --yes`.
+
 ## [0.165.0] - 2026-11-08
 
 ### Fixed
@@ -5920,7 +5931,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.165.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.165.1...HEAD
+[0.165.1]: https://github.com/jig-harness/jig/compare/v0.165.0...v0.165.1
 [0.165.0]: https://github.com/jig-harness/jig/compare/v0.164.0...v0.165.0
 [0.164.0]: https://github.com/jig-harness/jig/compare/v0.163.0...v0.164.0
 [0.163.0]: https://github.com/jig-harness/jig/compare/v0.162.0...v0.163.0
