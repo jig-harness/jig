@@ -73,7 +73,9 @@ among the files checked, or no skill to check. Its self-test sits beside it.
 - **A whole file is exempted only by three facts together**: it is named with
   `--exempt`, it opens with a generated-file banner, and the banner carries
   the file-level marker (`skill-invocation-fallback: exempt-file` by
-  default). A marker alone would be an exemption a file grants itself, and
+  default). The banner must start within the first 5 lines after any leading
+  YAML frontmatter block (`---` through its closing `---`), or within the
+  first 5 lines of a file without frontmatter. A marker alone would be an exemption a file grants itself, and
   the list alone would hide a hand-written file. A listed file that does not
   carry both is a finding, and its lines are still checked. There is no
   per-line exemption: a fallback is one link.

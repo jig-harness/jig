@@ -386,6 +386,8 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+- M0's skill-invocation fallback gate recognizes generated-file exemption banners
+  within the first 5 lines after a leading frontmatter block of any length.
 
 ## [0.174.0] - 2026-11-08
 
