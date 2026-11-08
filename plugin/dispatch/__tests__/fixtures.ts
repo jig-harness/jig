@@ -463,10 +463,11 @@ export interface World {
   setFiles(pr: number, files: string[]): void;
   /** A file the default branch holds beside `.config/jig.yaml`. */
   setRepoFile(path: string, text: string): void;
-  /** Run `jig dispatch` with `args` (or the script `entry` in its place); resolves to its exit and output. */
+  /** Run `jig dispatch` with `args` (or the script `entry` in its place), `extra` added to its environment; resolves to its exit and output. */
   dispatch(
     args: string[],
     entry?: string,
+    extra?: Record<string, string>,
   ): Promise<{
     exitCode: number | null;
     stdout: string;
@@ -671,7 +672,7 @@ export function world(): World {
       if (yaml === null) rmSync(join(dir, "jig.yaml"), { force: true });
       else write("jig.yaml", yaml);
     },
-    async dispatch(args, entry) {
+    async dispatch(args, entry, extra = {}) {
       const child = Bun.spawn(
         [
           process.execPath,
@@ -680,7 +681,12 @@ export function world(): World {
           ...(entry === undefined ? [JIG, "dispatch"] : [entry]),
           ...args,
         ],
-        { cwd: forge.repo, env, stdout: "pipe", stderr: "pipe" },
+        {
+          cwd: forge.repo,
+          env: { ...env, ...extra },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
       );
       const deadline = setTimeout(() => child.kill(), 60_000);
       const [stdout, stderr, exitCode] = await Promise.all([

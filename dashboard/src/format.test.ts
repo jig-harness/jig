@@ -7,6 +7,7 @@ import {
   instantOf,
   lengthOf,
   plural,
+  seconds,
   serverNow,
   span,
   stamp,
@@ -14,6 +15,19 @@ import {
 } from "./format.ts";
 
 const AT = Date.UTC(2026, 10, 3, 16, 45, 30);
+
+describe("a tick's lengths", () => {
+  it("says milliseconds, tenths of a second below ten, whole seconds, then minutes and seconds", () => {
+    expect(seconds(20)).toBe("20 ms");
+    expect(seconds(999)).toBe("999 ms");
+    expect(seconds(8_340)).toBe("8.3 s");
+    expect(seconds(9_960)).toBe("10 s");
+    expect(seconds(41_400)).toBe("41 s");
+    expect(seconds(120_000)).toBe("2 min");
+    expect(seconds(121_000)).toBe("2 min 1 s");
+    expect(seconds(-5)).toBe("0 ms");
+  });
+});
 
 describe("spans", () => {
   it("says minutes, then hours and minutes, then days", () => {

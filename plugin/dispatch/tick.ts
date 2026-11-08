@@ -64,12 +64,13 @@ import {
   type TickContext,
   type TickOptions,
 } from "./lib/tick-context.ts";
-import { copyLog, writeTickLine } from "./lib/tick-line.ts";
+import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
 import { fillBudgets, tickReads } from "./lib/tick-reads.ts";
 import { defectReport, runTurn, startTurn } from "./lib/tick-repo.ts";
 import { routeRecurrences } from "./lib/reflection-route.ts";
 import { settleOutcomes } from "./lib/tick-settle.ts";
 import type { Defect, RepoReport } from "./lib/types.ts";
+import { takeScheduledUpgrade } from "../runtime/upgrade-record.ts";
 import {
   newRunId,
   pruneReceipts,
@@ -101,6 +102,16 @@ interface StartedTick {
   withheld: string | undefined;
   /** Whether settling the launch records' follow-up outcomes failed; each repository's turn settles its own again, and the close retries. */
   settleFailed: boolean;
+}
+
+/**
+ * The plugin upgrade the launcher ran before this tick, as the receipt's
+ * field: taken out of the environment, so the sessions the tick launches
+ * never carry it.
+ */
+function upgradeField(): Pick<TickReceipt, "upgrade"> {
+  const upgrade = takeScheduledUpgrade();
+  return upgrade === undefined ? {} : { upgrade };
 }
 
 /** Read this machine's launch records and build the apply state and the receipt the tick fills. */
@@ -139,6 +150,7 @@ async function startTick(options: TickOptions): Promise<StartedTick> {
     completed: false,
     apply: apply !== null,
     exitStatus: 0,
+    ...upgradeField(),
     ...(withheld === undefined ? {} : { applyWithheld: withheld }),
     ...accountsReport(machine, apply),
     ...(startDefect === undefined ? {} : { defect: startDefect }),
@@ -247,9 +259,35 @@ async function closeTick(
   });
 }
 
+/**
+ * A tick that found the lock held writes no receipt of its own work; one its
+ * launcher ran the plugin upgrade before gets a receipt holding that upgrade
+ * and the holder, so the morning report still sees it.
+ */
+function heldReceipt(options: TickOptions, heldBy: string): void {
+  const upgrade = upgradeField();
+  if (upgrade.upgrade === undefined) return;
+  const now = options.now ?? new Date();
+  writeReceipt({
+    version: 1,
+    runId: newRunId(now),
+    startedAt: now.toISOString(),
+    finishedAt: new Date().toISOString(),
+    completed: false,
+    apply: options.apply === true,
+    exitStatus: 3,
+    lockHeldBy: heldBy,
+    repos: [],
+    ...upgrade,
+  });
+}
+
 export async function runTick(options: TickOptions): Promise<TickResult> {
   const lock = takeTickLock();
-  if ("heldBy" in lock) return { held: lock.heldBy };
+  if ("heldBy" in lock) {
+    heldReceipt(options, lock.heldBy);
+    return { held: lock.heldBy };
+  }
   try {
     const timer = new PhaseTimer<TickPhase>();
     const started = await timer.time("start", () => startTick(options));
@@ -264,6 +302,8 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       receipt.exitStatus = 1;
       receipt.finishedAt = new Date().toISOString();
       logDefect("the tick", receipt.defect, error);
+      receipt.phasesMs = { ...timer.ms };
+      if (options.machine) recordTickHealth(receipt, options.machine);
     }
     receipt.phasesMs = { ...timer.ms };
     const path = writeReceipt(receipt);

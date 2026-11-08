@@ -69,7 +69,17 @@ here reaches every repository at once.
   reads the `jobs` list it prints, so that command line and that report
   keep their meaning too, and a job is rewritten only from what
   `runtime/installed-job.ts` reads back from the form `jobFiles` writes:
-  change one, change the other.
+  change one, change the other. Before `gc --scheduled` and
+  `dispatch --apply`, each launcher copy runs the installed copy's
+  `jig upgrade --scheduled [--claude-program=<path>] [--codex-program=<path>]`
+  and passes the last line it prints, one JSON object with `outcome`,
+  `detail` and `at` (`runtime/upgrade-record.ts`) of at most 8 KiB, to the
+  job in `JIG_SCHEDULED_UPGRADE`, replacing a longer or malformed one with a
+  short `failed` line; it skips the upgrade when `JIG_LAUNCHER_ROLE` is
+  set, which the `jig` command's script and a woken tick set, and
+  `jig upgrade --jobs-only` reads `JIG_UPGRADE_SCHEDULED=1` as a timer's
+  refresh. Those command lines, that line and those variables keep their
+  meaning across releases as well.
 - **Skills call each other by sibling path** (`../<skill>/scripts/…`), never
   through a path in the consumer repository.
 - **A runtime-specific capability names its fallback**

@@ -7,6 +7,8 @@
  * plugin copy it has installed, so a test can move it as a plugin update
  * does). Every command runs as a child with that home, so no test reaches
  * the real scheduler, the real `~/.local/bin` or the real machine files.
+ * `runJob` runs an installed job's own command with its own environment, as
+ * the scheduler starts it.
  */
 import {
   cpSync,
@@ -22,6 +24,8 @@ import { delimiter, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../lib/test-helpers/fake-program.ts";
 import { gitEnvironment } from "../gc/git.ts";
+import { readInstalledJob } from "../runtime/installed-job.ts";
+import type { JobSpec } from "../runtime/job-spec.ts";
 import { dump } from "../shared/yaml.ts";
 import { type AgentState, writeAgentFakes } from "./agent-fakes.ts";
 
@@ -94,6 +98,8 @@ export interface Machine {
   release(version: string, path: string): void;
   /** What each agent tool fake has installed. */
   agents(): AgentState;
+  /** Changes what the agent tool fakes have installed and answer (`agent-fakes.ts`). */
+  agentState(change: (state: AgentState) => void): void;
   /** Each agent tool command run so far, as `<tool> <arguments>`. */
   agentCalls(): string[];
   /** Whether the scheduler holds the job named `name` (`jig-gc`, `jig-dispatch`). */
@@ -102,6 +108,10 @@ export interface Machine {
   jobText(name: string): string;
   /** Writes the dispatcher's machine file, the opt-in its install needs. */
   writeDispatchFile(): void;
+  /** Runs the installed job `name` as its scheduler starts it: its own command and environment; `env` adds to them. */
+  runJob(name: string, env?: NodeJS.ProcessEnv): Run;
+  /** Starts the installed job `name` as `runJob` runs it, resolving when it ends, so two can run at once. */
+  startJob(name: string, env?: NodeJS.ProcessEnv): Promise<Run>;
 }
 
 export function machine(variant: Variant): Machine {
@@ -132,6 +142,8 @@ export function machine(variant: Variant): Machine {
     CODEX_HOME: undefined,
     ORCA_CLI_COMMAND: undefined,
     ORCA_CLI_BIN_DIR: undefined,
+    JIG_LAUNCHER_ROLE: undefined,
+    JIG_SCHEDULED_UPGRADE: undefined,
   };
   const git = (args: string[], cwd = repo) => {
     const result = Bun.spawnSync(["git", ...args], {
@@ -177,6 +189,32 @@ export function machine(variant: Variant): Machine {
   });
   for (const name of ["systemctl", "crontab", "launchctl"])
     writeFakeProgram(join(bin, name), schedulerFake(name, state, units));
+  const jobFiles = (name: string): Record<string, string | null> => {
+    const read = (path: string) =>
+      existsSync(path) ? readFileSync(path, "utf8") : null;
+    if (variant === "cron") return { crontab: read(join(state, "crontab")) };
+    if (variant === "systemd")
+      return Object.fromEntries(
+        [`${name}.service`, `${name}.timer`].map((unit) => [
+          join(units, unit),
+          read(join(units, unit)),
+        ]),
+      );
+    return { [jobFile(name)]: read(jobFile(name)) };
+  };
+  /** The installed job's command and the environment its scheduler gives it. */
+  const installedJob = (name: string) => {
+    const job = readInstalledJob({
+      scheduler: variant,
+      spec: { name } as JobSpec,
+      files: jobFiles(name),
+      launcher: {},
+      enabled: true,
+      active: true,
+    });
+    if (job === null) throw new Error(`no installed job ${name}`);
+    return { command: job.command, jobEnv: { ...env, ...job.env } };
+  };
   const jobFile = (name: string) =>
     variant === "systemd"
       ? join(units, `${name}.timer`)
@@ -220,6 +258,7 @@ export function machine(variant: Variant): Machine {
         state.newest = { version, path };
       }),
     agents: agents.read,
+    agentState: agents.update,
     agentCalls: agents.calls,
     hasJob: (name) =>
       variant === "cron"
@@ -237,6 +276,36 @@ export function machine(variant: Variant): Machine {
               : jobFile(name),
             "utf8",
           ),
+    runJob: (name, extra = {}) => {
+      const { command, jobEnv } = installedJob(name);
+      return Bun.spawnSync(command, {
+        cwd: home,
+        env: { ...jobEnv, ...extra },
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 120000,
+      });
+    },
+    startJob: async (name, extra = {}) => {
+      const { command, jobEnv } = installedJob(name);
+      const child = Bun.spawn(command, {
+        cwd: home,
+        env: { ...jobEnv, ...extra },
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 120000,
+      });
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(child.stdout).arrayBuffer(),
+        new Response(child.stderr).arrayBuffer(),
+        child.exited,
+      ]);
+      return {
+        exitCode,
+        stdout: Buffer.from(stdout),
+        stderr: Buffer.from(stderr),
+      };
+    },
     writeDispatchFile: () => {
       const config = join(root, "config-a");
       mkdirSync(config, { recursive: true });

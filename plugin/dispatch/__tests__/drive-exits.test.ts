@@ -66,18 +66,18 @@ describe("a stopped ledger's class", () => {
       ["MAX_ROUNDS", "needs-person"],
       ["REVIEWER_FAILED", "needs-person"],
       ["WORKTREE_UNCLEAN", "needs-person"],
-      ["PASS_DEADLINE", "needs-person"],
     ];
     for (const [name, cls] of cases)
       expect<[string, string]>([name, ledgerClass(name)]).toEqual([name, cls]);
   });
 
-  it("reads the pull request beside CONVERGED, PR_CONFLICTING, STALLED and CI_REPAIR_SPENT, and the parks beside HITL_PARKED", () => {
+  it("reads the pull request beside CONVERGED, PR_CONFLICTING, STALLED, CI_REPAIR_SPENT and PASS_DEADLINE, and the parks beside HITL_PARKED", () => {
     // With nothing read from the forge or the parks, none of them can be placed yet.
     expect(ledgerClass("CONVERGED")).toBe("unplaced");
     expect(ledgerClass("PR_CONFLICTING")).toBe("unplaced");
     expect(ledgerClass("STALLED")).toBe("unplaced");
     expect(ledgerClass("CI_REPAIR_SPENT")).toBe("unplaced");
+    expect(ledgerClass("PASS_DEADLINE")).toBe("unplaced");
     expect(ledgerClass("HITL_PARKED")).toBe("unplaced");
     expect(
       classifyLedger(stoppedLedger(7, DRIVE_EXIT.HITL_PARKED), NOW, WINDOW, {

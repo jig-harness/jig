@@ -10,7 +10,9 @@
  * recorded, by the absolute paths found at install.
  *
  * The script carries a marker line, so a file at that path that `jig install`
- * did not write is never replaced or removed.
+ * did not write is never replaced or removed. It sets
+ * `JIG_LAUNCHER_ROLE=command`, which tells the launcher a person started it:
+ * only a timer's job upgrades the plugin first (`launcher.ts`).
  */
 import {
   mkdirSync,
@@ -80,13 +82,14 @@ export function commandText(
       deadlineSec === undefined
         ? ""
         : `if not defined JIG_LAUNCHER_DEADLINE_SEC set JIG_LAUNCHER_DEADLINE_SEC=${deadlineSec}\r\n`;
-    return `@echo off\r\nrem ${MARKER}; ${purpose}.\r\n${deadline}${quoted.join(" ")} %*\r\n`;
+    // setlocal keeps the variables out of the caller's console.
+    return `@echo off\r\nrem ${MARKER}; ${purpose}.\r\nsetlocal\r\nset JIG_LAUNCHER_ROLE=command\r\n${deadline}${quoted.join(" ")} %*\r\n`;
   }
   const deadline =
     deadlineSec === undefined
       ? ""
       : `JIG_LAUNCHER_DEADLINE_SEC="\${JIG_LAUNCHER_DEADLINE_SEC:-${deadlineSec}}"\nexport JIG_LAUNCHER_DEADLINE_SEC\n`;
-  return `#!/bin/sh\n# ${MARKER}; ${purpose}.\n${deadline}exec ${command.map(shellQuote).join(" ")} "$@"\n`;
+  return `#!/bin/sh\n# ${MARKER}; ${purpose}.\nJIG_LAUNCHER_ROLE=command\nexport JIG_LAUNCHER_ROLE\n${deadline}exec ${command.map(shellQuote).join(" ")} "$@"\n`;
 }
 
 /**
