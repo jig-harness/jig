@@ -45,6 +45,7 @@ interface DriverRoundOptions {
   deadlineRetryBudget: number;
   /** What the first pass is told: a takeover, the answers a re-arm read, the stop it was armed after. */
   firstPassNotice: string;
+  settleWorktree?: boolean;
   /** The tree's edits at arm are a stalled or deadline-stopped drive's, which this drive finishes (`stop-pickup.ts`). */
   inheritsEdits?: boolean;
 }
@@ -63,6 +64,7 @@ export async function runDriverRounds({
   markReadyPolicy,
   deadlineRetryBudget,
   firstPassNotice,
+  settleWorktree = false,
   inheritsEdits = false,
 }: DriverRoundOptions): Promise<number> {
   const passes = 0;
@@ -185,6 +187,7 @@ export async function runDriverRounds({
     return (await standDownOnNewerClaim(pr)) ?? outcome;
   };
   const context: DriveRoundContext = {
+    settleWorktree,
     prevFingerprint,
     noopRounds,
     readyMarkFailures,

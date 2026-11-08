@@ -390,7 +390,7 @@ describe("jig install dispatch --repo", () => {
     ghCalls(w, true);
     const made = await labelsPart(w, "--yes");
     expectSpawnExit(made, 0);
-    expect(created(ghCalls(w, true))).toHaveLength(7);
+    expect(created(ghCalls(w, true))).toHaveLength(8);
     expect(JSON.parse(readFileSync(labelsFile(w), "utf8")).sort()).toEqual(
       [
         "bug",
@@ -401,6 +401,7 @@ describe("jig install dispatch --repo", () => {
         "jig:held",
         "jig:hold",
         "jig:parked",
+        "jig:rearm",
         "jig:stale",
       ].sort(),
     );

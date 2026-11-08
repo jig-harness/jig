@@ -82,6 +82,12 @@ function commandsOf(
         ? driveNote(drive)
         : "merged: the label does nothing here, and is left as it is",
     });
+  if (hasCommand(config, labels, "rearm"))
+    out.push({
+      target,
+      command: "rearm",
+      note: "a person's request to re-arm a stopped drive in its existing tree; consumed after its launch is accepted",
+    });
   if (hasCommand(config, labels, "hold"))
     out.push({ target, command: "hold", note: HOLD_NOTE });
   return out;

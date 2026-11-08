@@ -203,7 +203,7 @@ describe("jig send refuses before it writes", () => {
     const unknown = await w.send([ADDRESS, "merge"]);
     expectSpawnExit(unknown, 2);
     expect(unknown.stderr).toContain(
-      "drive takes drive, hold, release, answer <key> <text>",
+      "drive takes drive, rearm, hold, release, answer <key> <text>",
     );
     const wrong = await w.send([`followup@${REPO}#12`, "pause"]);
     expectSpawnExit(wrong, 2);
@@ -235,6 +235,7 @@ describe("jig send in a session the line started", () => {
     pullRequest(w, 12, [], [ledgerOn(701, parkedLedger(12))]);
     for (const args of [
       [ADDRESS, "drive"],
+      [ADDRESS, "rearm"],
       [ADDRESS, "hold"],
       [ADDRESS, "release"],
       [ADDRESS, "answer", PARK_KEY, "yes"],

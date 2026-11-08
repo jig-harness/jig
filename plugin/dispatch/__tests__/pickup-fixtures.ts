@@ -99,8 +99,10 @@ export function claudeRuns(w: World): Array<{
 }> {
   const path = join(w.dir, "claude-runs.jsonl");
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
-    .trim()
+  const text = readFileSync(path, "utf8");
+  return text
+    .slice(0, text.lastIndexOf("\n") + 1)
     .split("\n")
+    .filter((line) => line !== "")
     .map((line) => JSON.parse(line));
 }

@@ -20,6 +20,7 @@ import {
 import { parkedQuestions, readDrive } from "../../ask/lib/drive.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
 import { NEXT_TICK, type Planned, refused, type TickReader } from "./plan.ts";
+import { openDrive } from "./open-drive.ts";
 
 /** The re-arm, which the tick starts under the rearm stage, as an answer's reader. */
 const TICK: TickReader = {
@@ -38,16 +39,9 @@ export async function planAnswer(
 ): Promise<Planned> {
   const d = await readDrive(ctx);
   const pr = Number(ctx.address.key);
-  if (d.pull === null) return refused(d.answer.stateDetail);
-  const { doc, read } = d.pull;
-  if (!read)
-    return refused(
-      `pull request ${pr} did not read, so whether it is open is not known`,
-    );
-  if (doc.state !== "OPEN")
-    return refused(
-      `pull request ${pr} is ${doc.state.toLowerCase()}: no drive waits on an answer`,
-    );
+  const opened = openDrive(d, pr, "no drive waits on an answer");
+  if (!opened.ok) return opened;
+  const doc = opened.value;
   if (d.comments === null)
     return refused(
       `the comments of pull request ${pr} did not read, so its parked questions and their answers are not known`,
