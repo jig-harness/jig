@@ -34,7 +34,6 @@ import {
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { GcError } from "../../shared/gc-error.ts";
 import { run } from "../../shared/proc.ts";
 import {
   requestWake,
@@ -98,22 +97,29 @@ function testCommand(): Outcome<string[] | null, "unstarted"> {
     : failed("unstarted", "JIG_WAKE_COMMAND must be a JSON array of strings");
 }
 
-/** The installed timer's launcher command (up to `--`) and environment; `null` only when no timer is installed. */
-async function installedTimer(): Promise<{
-  prefix: string[];
-  env: Record<string, string>;
-} | null> {
+/**
+ * The installed timer's launcher command (up to `--`) and environment;
+ * `null` only when no timer is installed, and `malformed` when the installed
+ * job is incomplete; or why the scheduler cannot be read.
+ */
+async function installedTimer(): Promise<
+  Outcome<
+    { prefix: string[]; env: Record<string, string> } | null,
+    "malformed" | "unsupported" | "unreadable"
+  >
+> {
   const { dispatchJobSpec } = await import("../install.ts");
   const { detectScheduler, snapshotScheduler, launcherDirectory } =
     await import("../../runtime/scheduler.ts");
   const { jobPresent, readInstalledJob } = await import(
     "../../runtime/installed-job.ts"
   );
-  const snapshot = await snapshotScheduler(
-    detectScheduler(),
-    dispatchJobSpec(5),
-  );
-  if (!jobPresent(snapshot)) return null;
+  const scheduler = detectScheduler();
+  if (!scheduler.ok) return scheduler;
+  const read = await snapshotScheduler(scheduler.value, dispatchJobSpec(5));
+  if (!read.ok) return read;
+  const snapshot = read.value;
+  if (!jobPresent(snapshot)) return ok(null);
   const job = readInstalledJob(snapshot);
   const separator = job?.command.indexOf("--") ?? -1;
   if (
@@ -126,8 +132,11 @@ async function installedTimer(): Promise<{
         ] !== "string",
     )
   )
-    throw new GcError("the installed timer is incomplete or malformed");
-  return { prefix: job.command.slice(0, separator + 1), env: job.env };
+    return failed(
+      "malformed",
+      "the installed timer is incomplete or malformed",
+    );
+  return ok({ prefix: job.command.slice(0, separator + 1), env: job.env });
 }
 
 /** How the waiter runs the tick for the repository at `path`. */
@@ -142,9 +151,9 @@ export async function tickCall(
       env: environment(LINE_VARIABLE),
       timeoutSec: DEFAULT_DEADLINE_SEC,
     });
-  let timer: Awaited<ReturnType<typeof installedTimer>>;
+  let installed: Awaited<ReturnType<typeof installedTimer>>;
   try {
-    timer = await installedTimer();
+    installed = await installedTimer();
   } catch (error) {
     return failed(
       "unstarted",
@@ -152,13 +161,20 @@ export async function tickCall(
       error,
     );
   }
-  if (timer === null) {
-    const machine = attempt(
+  if (!installed.ok)
+    return failed(
       "unstarted",
-      "the machine configuration does not read",
-      () => readMachineConfig(),
+      `the installed timer does not read: ${installed.failure.reason}`,
     );
-    if (!machine.ok) return machine;
+  const timer = installed.value;
+  if (timer === null) {
+    const machine = readMachineConfig();
+    if (!machine.ok)
+      return failed(
+        "unstarted",
+        `the machine configuration does not read: ${machine.failure.reason}`,
+        machine.failure.cause,
+      );
     return ok({
       argv: [
         process.execPath,

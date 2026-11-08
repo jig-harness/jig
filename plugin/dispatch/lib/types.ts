@@ -425,11 +425,26 @@ export type RepoPhase =
  * boundary around the work it stopped
  * ([ADR-0012](../../../docs/adr/ADR-0012-failures-as-values.md)).
  */
+/**
+ * The stages of a repository's `--apply`, each its own defect boundary:
+ * its launch stages, its nudges, its notifications, and the close that
+ * projects its labels and reports its shared records.
+ */
+export type ApplyStage =
+  | "rearm"
+  | "pickup"
+  | "followup"
+  | "steer"
+  | "notify"
+  | "close";
+
 export interface Defect {
   /** For code and tests: always `defect`, so a reader tells it from a refusal without parsing the reason. */
   code: "defect";
   /** The phase it was thrown in. */
   phase: string;
+  /** The stage of a repository's `--apply` it was thrown in, for a defect that stage's boundary caught. */
+  stage?: ApplyStage;
   /** For a person: what was thrown, in which phase, and the error's first line. Its stack goes to the tick's error output, never here. */
   reason: string;
 }
@@ -441,6 +456,8 @@ export interface RepoReport {
   refused: string | null;
   /** The defect that stopped the repository's turn; what its earlier phases did stays on the report. */
   defect?: Defect;
+  /** The defects a stage of `--apply` caught, each of which stopped its own stage only; absent when there were none. */
+  stageDefects?: Defect[];
   /** Milliseconds each phase of the repository's turn took; absent from a receipt written before phases were timed. */
   phasesMs?: Partial<Record<RepoPhase, number>>;
   section: DispatchSection | null;

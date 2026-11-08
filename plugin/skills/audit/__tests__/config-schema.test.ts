@@ -371,6 +371,8 @@ describe("the reading skills", () => {
 
   test("use the defaults the schema lists", () => {
     const policy = parsePrPolicy({});
+    const dispatch = dispatchSection({});
+    if (!dispatch.ok) throw new Error(dispatch.failure.reason);
     const defaults = Object.fromEntries(
       schema.fields
         .filter((f) => f.default !== undefined)
@@ -418,7 +420,7 @@ describe("the reading skills", () => {
       "dispatch.labels.enabled": DEFAULT_LABELS.enabled,
       "dispatch.labels.prefix": DEFAULT_LABELS.prefix,
       "dispatch.labels.only_labeled": DEFAULT_LABELS.onlyLabeled,
-      "dispatch.adopt.enabled": dispatchSection({}).adopt.enabled,
+      "dispatch.adopt.enabled": dispatch.value.adopt.enabled,
     });
   });
 

@@ -34,7 +34,11 @@ export async function logRepo(
     {
       all,
       drives,
-      merged: (pr) => mergedNotClosed(slug, pr).catch(() => null),
+      merged: (pr) =>
+        mergedNotClosed(slug, pr).then(
+          (read) => (read.ok ? read.value : null),
+          () => null,
+        ),
       nowIso: new Date(context.nowMs).toISOString(),
     },
   );
@@ -143,6 +147,7 @@ export async function settleOutcomes(
     receipt.repos.some(
       (r) =>
         r.refused !== null ||
+        (r.stageDefects?.length ?? 0) > 0 ||
         r.records.some((x) => !x.ok) ||
         r.unplaced.some((u) => u.target === "the outcome log"),
     )

@@ -21,6 +21,7 @@
  * expectation.
  */
 import { swallow } from "../../shared/errors.ts";
+import type { Outcome } from "../../shared/outcome.ts";
 import { unresolvedThreadCount } from "./forge.ts";
 import {
   isDrive,
@@ -48,8 +49,8 @@ function runningDrive(r: ReadRecord): boolean {
 /** A reader of unresolved thread counts that asks the forge once per pull request, for every consumer of one tick. */
 export function tickThreadReader(
   slug: string,
-): (pr: number) => Promise<number> {
-  const reads = new Map<number, Promise<number>>();
+): (pr: number) => Promise<Outcome<number>> {
+  const reads = new Map<number, Promise<Outcome<number>>>();
   return (pr) => {
     let read = reads.get(pr);
     if (read === undefined) {
@@ -69,7 +70,7 @@ export async function sampleThreads(
   records: ReadRecord[],
   repo: string,
   drives: DrivenPr[],
-  count: (pr: number) => Promise<number>,
+  count: (pr: number) => Promise<Outcome<number>>,
   root?: string,
 ): Promise<void> {
   for (const r of records) {
@@ -79,13 +80,21 @@ export async function sampleThreads(
     if (typeof round !== "number") continue;
     const samples = record.samples ?? [];
     if (samples.some((s) => s.round === round)) continue;
-    let threads: number;
+    let read: Outcome<number>;
     try {
-      threads = await count(record.pr as number);
+      read = await count(record.pr as number);
     } catch (error) {
       swallow(error, `PR #${record.pr}'s threads at round ${round} are a gap`);
       continue;
     }
+    if (!read.ok) {
+      swallow(
+        read.failure,
+        `PR #${record.pr}'s threads at round ${round} are a gap`,
+      );
+      continue;
+    }
+    const threads = read.value;
     const sample = { round, threads, at: new Date().toISOString() };
     stateDb(root)
       .query(

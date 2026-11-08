@@ -21,7 +21,7 @@
 import { basename, dirname } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
 import { ExitError } from "../shared/cli.ts";
-import { dateValue, pathValue } from "../shared/command-line.ts";
+import { dateValue, pathValue, USAGE_EXIT } from "../shared/command-line.ts";
 import {
   argument,
   choice,
@@ -44,13 +44,12 @@ import {
 import { DEFAULT_PORT, dashboardMain } from "./dashboard.ts";
 import { clearMain } from "./clear.ts";
 import { installDispatch } from "./install.ts";
-import { StateVersionError } from "./lib/state.ts";
+import { newerStateRefusal } from "./lib/state.ts";
 import { lineMain } from "./line-command.ts";
 import { logMain } from "./log-command.ts";
 import {
   duration,
   type MachineConfig,
-  MachineConfigError,
   machineConfigPath,
   readMachineConfig,
 } from "./lib/machine-config.ts";
@@ -90,20 +89,15 @@ const intervalValue = (wholeMinutes: boolean): ValueParser<"sync", number> => ({
   metavar: "DURATION",
   placeholder: 60_000,
   parse: (input) => {
-    try {
-      const ms = duration(input, "The interval");
-      if (wholeMinutes && ms % 60_000 !== 0)
-        return {
-          success: false,
-          error: [
-            text(`The interval must be whole minutes, but got ${input}.`),
-          ],
-        };
-      return { success: true, value: ms };
-    } catch (error) {
-      if (!(error instanceof MachineConfigError)) throw error;
-      return { success: false, error: [text(`${error.message}.`)] };
-    }
+    const ms = duration(input, "The interval");
+    if (!ms.ok)
+      return { success: false, error: [text(`${ms.failure.reason}.`)] };
+    if (wholeMinutes && ms.value % 60_000 !== 0)
+      return {
+        success: false,
+        error: [text(`The interval must be whole minutes, but got ${input}.`)],
+      };
+    return { success: true, value: ms.value };
   },
   format: (ms) => `${ms / 60_000}m`,
 });
@@ -395,6 +389,7 @@ function took(r: TickReceipt): string {
 function defects(r: TickReceipt): string {
   const n =
     r.repos.filter((repo) => repo.defect !== undefined).length +
+    r.repos.reduce((sum, repo) => sum + (repo.stageDefects?.length ?? 0), 0) +
     (r.defect === undefined ? 0 : 1);
   return n === 0 ? "" : `, ${n} defect(s)`;
 }
@@ -431,20 +426,16 @@ export function showReceipts(id: string | undefined): number {
     (p) => p.endsWith(`/${id}.json`) || p.endsWith(`\\${id}.json`),
   );
   const receipt = path === undefined ? null : readReceipt(path);
-  if (receipt === null) throw new ExitError(2, `No receipt ${id}`);
+  if (receipt === null) throw new ExitError(USAGE_EXIT, `No receipt ${id}`);
   console.log(JSON.stringify(receipt, null, 2));
   return 0;
 }
 
 /** The machine file, or null without one; one that does not read is a usage error (exit 2). */
 export function machineFile(): MachineConfig | null {
-  try {
-    return readMachineConfig();
-  } catch (error) {
-    if (error instanceof MachineConfigError)
-      throw new ExitError(2, error.message);
-    throw error;
-  }
+  const machine = readMachineConfig();
+  if (!machine.ok) throw new ExitError(USAGE_EXIT, machine.failure.reason);
+  return machine.value;
 }
 
 /** The repositories a tick reads: `--repo`, else the machine file's, else this checkout. */
@@ -523,8 +514,11 @@ export async function dispatchMain(
     return await commandMain(args, script);
   } catch (error) {
     // A state database a newer plugin wrote is refused by every command that reads it.
-    if (error instanceof StateVersionError)
-      throw new ExitError(2, `jig dispatch: ${error.message}`);
+    const newer = newerStateRefusal(error);
+    if (newer !== null)
+      throw new ExitError(USAGE_EXIT, `jig dispatch: ${newer}`, {
+        cause: error,
+      });
     throw error;
   }
 }
@@ -537,7 +531,7 @@ async function commandMain(
   const machine = machineFile();
   if (args.apply && machine === null)
     throw new ExitError(
-      2,
+      USAGE_EXIT,
       `jig dispatch --apply needs the machine file ${machineConfigPath()}: the repositories, the stages enabled for each and the accounts it may bill (see CONFIGURATION.md § The machine's dispatch file). Run without --apply for the report.`,
     );
   const result = await runTick({

@@ -19,7 +19,9 @@
  */
 import { resolve } from "node:path";
 import { ExitError } from "../shared/cli.ts";
-import { GcError } from "../shared/gc-error.ts";
+import { USAGE_EXIT } from "../shared/command-line.ts";
+import { log } from "../shared/log.ts";
+import { type Failure, failed, ok, type Outcome } from "../shared/outcome.ts";
 import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import { jobPresent } from "../runtime/installed-job.ts";
 import type { JobSpec } from "../runtime/job-spec.ts";
@@ -124,40 +126,53 @@ interface JobChange {
 }
 
 /**
- * Write or remove each job in turn; a failure puts every job back as the
- * snapshots taken first had it, and says so.
+ * Write or remove each job in turn, and what was done; a failure puts every
+ * job back as the snapshots taken first had it, and says so. A scheduler
+ * whose jobs cannot be read changes nothing.
  */
-async function updateJobs(changes: readonly JobChange[]): Promise<string[]> {
+async function updateJobs(
+  changes: readonly JobChange[],
+): Promise<Outcome<string[], "not-written" | "unsupported" | "unreadable">> {
+  const scheduler = detectScheduler();
+  if (!scheduler.ok) return scheduler;
   const previous: SchedulerSnapshot[] = [];
-  for (const change of changes)
-    previous.push(await snapshotScheduler(detectScheduler(), change.spec));
+  for (const change of changes) {
+    const snapshot = await snapshotScheduler(scheduler.value, change.spec);
+    if (!snapshot.ok) return snapshot;
+    previous.push(snapshot.value);
+  }
   const written: string[] = [];
-  try {
-    for (const [i, change] of changes.entries()) {
-      // A job that is not there needs no removal.
-      if (change.remove && !jobPresent(previous[i] as SchedulerSnapshot))
-        continue;
-      const job = await updateJob(change.spec, change.remove);
-      written.push(
-        `Scheduler ${change.remove ? "removed" : "updated"}: ${job}`,
-      );
-    }
-  } catch (error) {
-    // Every job is put back on its own: one that will not restore does not stop the rest.
-    const unrestored: string[] = [];
-    for (const snapshot of previous.reverse())
-      try {
-        await restoreScheduler(snapshot);
-      } catch (restoreError) {
-        unrestored.push((restoreError as Error).message);
-      }
-    throw new GcError(
-      unrestored.length === 0
-        ? `${(error as Error).message}; the previous scheduler jobs are restored`
-        : `${(error as Error).message}; some scheduler jobs could not be restored: ${unrestored.join("; ")}`,
+  for (const [i, change] of changes.entries()) {
+    // A job that is not there needs no removal.
+    if (change.remove && !jobPresent(previous[i] as SchedulerSnapshot))
+      continue;
+    const job = await updateJob(change.spec, change.remove);
+    if (!job.ok) return restoreAll(previous, job.failure);
+    written.push(
+      `Scheduler ${change.remove ? "removed" : "updated"}: ${job.value}`,
     );
   }
-  return written;
+  return ok(written);
+}
+
+/** Every job put back as `previous` saw it after `failure`, and whether each was. */
+async function restoreAll(
+  previous: SchedulerSnapshot[],
+  failure: Failure,
+): Promise<{ ok: false; failure: Failure<"not-written"> }> {
+  // Every job is put back on its own: one that will not restore does not stop the rest.
+  const unrestored: string[] = [];
+  for (const snapshot of previous.reverse()) {
+    const restored = await restoreScheduler(snapshot);
+    if (!restored.ok) unrestored.push(restored.failure.reason);
+  }
+  return failed(
+    "not-written",
+    unrestored.length === 0
+      ? `${failure.reason}; the previous scheduler jobs are restored`
+      : `${failure.reason}; some scheduler jobs could not be restored: ${unrestored.join("; ")}`,
+    failure.cause,
+  );
 }
 
 /**
@@ -170,13 +185,13 @@ function intervalMinutes(
 ): number {
   if (override !== null && override % 60_000 !== 0)
     throw new ExitError(
-      2,
+      USAGE_EXIT,
       `the interval must be whole minutes; --interval is ${override / 1000}s`,
     );
   const ms = override ?? machine?.intervalMs ?? 5 * 60_000;
   if (ms % 60_000 !== 0)
     throw new ExitError(
-      2,
+      USAGE_EXIT,
       `the interval must be whole minutes; the machine file's interval is ${ms / 1000}s`,
     );
   return ms / 60_000;
@@ -190,7 +205,7 @@ export async function installDispatch(
   if (options.intervalMs !== null) intervalMinutes(options.intervalMs, null);
   if (machine === null && !options.uninstall)
     throw new ExitError(
-      2,
+      USAGE_EXIT,
       `the dispatch timer needs the machine file ${machineConfigPath()} first: it runs --apply, and that file says what it may start`,
     );
   const changes: JobChange[] = [
@@ -212,13 +227,26 @@ export async function installDispatch(
     console.log("Preview only. Repeat with --yes to write the jobs.");
     return 0;
   }
-  if (!installedScript(script))
-    throw new GcError(
+  if (!installedScript(script)) {
+    log.error(
       "Scheduler installation requires the installed plugin copy, outside every worktree",
     );
-  if (!options.uninstall) await checkLauncherResolves();
+    return 1;
+  }
+  if (!options.uninstall) {
+    const resolves = await checkLauncherResolves();
+    if (!resolves.ok) {
+      log.error(resolves.failure.reason);
+      return 1;
+    }
+  }
   return exclusiveInstallLock(async () => {
-    for (const line of await updateJobs(changes)) console.log(line);
+    const updated = await updateJobs(changes);
+    if (!updated.ok) {
+      log.error(updated.failure.reason);
+      return 1;
+    }
+    for (const line of updated.value) console.log(line);
     return 0;
   });
 }

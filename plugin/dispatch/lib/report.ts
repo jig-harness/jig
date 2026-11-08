@@ -72,6 +72,9 @@ function repoLines(r: RepoReport, apply: boolean): string[] {
     return [...lines, `  refused: ${r.refused}`, ...took];
   // A defect stopped the turn: what its earlier phases did is still listed.
   if (r.refused !== null) lines.push(`  DEFECT   ${r.refused}`);
+  // A defect a stage caught stopped that stage only.
+  for (const d of r.stageDefects ?? [])
+    lines.push(`  DEFECT   ${d.stage ?? d.phase}: ${d.reason}`);
   for (const x of r.records)
     lines.push(
       `  read ${x.ok ? "ok    " : "FAILED"} ${x.record.padEnd(7)} ${x.source}: ${x.detail}`,

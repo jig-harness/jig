@@ -35,16 +35,21 @@ export async function writeCommandLabel(
   add: boolean,
   edit: typeof editLabels = editLabels,
 ): Promise<Outcome<void, "refused">> {
-  try {
-    await edit(slug, pr, add ? [label] : [], add ? [] : [label]);
-    return ok(undefined);
-  } catch (error) {
-    return failed(
+  const refused = (why: string, cause: unknown) =>
+    failed(
       "refused",
-      `the forge refused to ${add ? "add" : "remove"} ${label} on pull request ${pr}: ${failureText(error)}`,
-      error,
+      `the forge refused to ${add ? "add" : "remove"} ${label} on pull request ${pr}: ${why}`,
+      cause,
     );
+  let edited: Awaited<ReturnType<typeof edit>>;
+  try {
+    edited = await edit(slug, pr, add ? [label] : [], add ? [] : [label]);
+  } catch (error) {
+    return refused(failureText(error), error);
   }
+  return edited.ok
+    ? ok(undefined)
+    : refused(edited.failure.reason, edited.failure.cause);
 }
 
 /** The tracker operations a pick-up assignment uses. */

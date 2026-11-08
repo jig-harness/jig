@@ -23,6 +23,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ExitError } from "../shared/cli.ts";
+import { USAGE_EXIT } from "../shared/command-line.ts";
 import { attempt, failed, type Outcome } from "../shared/outcome.ts";
 import type { Answer, RowsAnswer } from "./lib/dashboard-contract.ts";
 import { prReader } from "./lib/dashboard-pr.ts";
@@ -315,7 +316,7 @@ export async function dashboardMain(
 ): Promise<number> {
   if (listen === null)
     throw new ExitError(
-      2,
+      USAGE_EXIT,
       `jig dispatch dashboard needs dashboard.listen in ${machinePath}: an address in the private or loopback ranges the host already trusts (see CONFIGURATION.md § The machine's dispatch file)`,
     );
   // A database a newer plugin wrote is refused before the page is served.

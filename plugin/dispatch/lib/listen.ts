@@ -6,11 +6,7 @@
  * since what it resolves to cannot be held to a range.
  */
 import { isIP } from "node:net";
-
-/** An address the dashboard may not listen on, with the reason. */
-class ListenError extends Error {
-  override name = "ListenError";
-}
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 
 export interface Listen {
   host: string;
@@ -57,28 +53,37 @@ function isPrivateAddress(host: string): boolean {
   return false;
 }
 
-/** `host`, `host:port` or `[v6]:port`, held to the private and loopback ranges; throws with the reason. */
-export function parseListen(value: string): Listen {
+/**
+ * `host`, `host:port` or `[v6]:port`, held to the private and loopback
+ * ranges; `invalid`, with the reason, for an address the dashboard may not
+ * listen on.
+ */
+export function parseListen(value: string): Outcome<Listen, "invalid"> {
   const raw = value.trim();
   const bracketed = /^\[([^\]]+)\](?::(\d+))?$/.exec(raw);
   const plain = /^([^:]+)(?::(\d+))?$/.exec(raw);
   const match = bracketed ?? (isIP(raw) === 6 ? [raw, raw, undefined] : plain);
   if (match === null)
-    throw new ListenError(`${value} is not an address with an optional port`);
+    return failed(
+      "invalid",
+      `${value} is not an address with an optional port`,
+    );
   const host = match[1] as string;
   const port = match[2] === undefined ? null : Number(match[2]);
   if (isIP(host) === 0)
-    throw new ListenError(
+    return failed(
+      "invalid",
       `${value} names no IP address: the dashboard listens on an address it can hold to the private ranges`,
     );
   if (!isPrivateAddress(host))
-    throw new ListenError(
+    return failed(
+      "invalid",
       `${host} is outside the private and loopback ranges, and the dashboard opens no route into the host beyond them`,
     );
   if (
     port !== null &&
     (!Number.isSafeInteger(port) || port < 1 || port > 65_535)
   )
-    throw new ListenError(`${value} names no port between 1 and 65535`);
-  return { host, port };
+    return failed("invalid", `${value} names no port between 1 and 65535`);
+  return ok({ host, port });
 }
