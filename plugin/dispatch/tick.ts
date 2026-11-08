@@ -64,7 +64,7 @@ import {
   type TickContext,
   type TickOptions,
 } from "./lib/tick-context.ts";
-import { copyLog, writeTickLine } from "./lib/tick-line.ts";
+import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
 import { fillBudgets, tickReads } from "./lib/tick-reads.ts";
 import { defectReport, runTurn, startTurn } from "./lib/tick-repo.ts";
 import { routeRecurrences } from "./lib/reflection-route.ts";
@@ -264,6 +264,8 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       receipt.exitStatus = 1;
       receipt.finishedAt = new Date().toISOString();
       logDefect("the tick", receipt.defect, error);
+      receipt.phasesMs = { ...timer.ms };
+      if (options.machine) recordTickHealth(receipt, options.machine);
     }
     receipt.phasesMs = { ...timer.ms };
     const path = writeReceipt(receipt);
