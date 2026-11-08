@@ -119,7 +119,8 @@ export function hostCodexOptIn(env: Env = process.env): CodexOptIn {
 
 /** What a launch starts, on a host's opt-in: a drive's headless pass under its deadline (seconds, `0` for none), or an interactive session. */
 export type LaunchKind = { codex: CodexOptIn } & (
-  { kind: "pass"; deadlineSec: number } | { kind: "interactive" }
+  | { kind: "pass"; deadlineSec: number }
+  | { kind: "interactive" }
 );
 
 /**

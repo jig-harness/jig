@@ -56,8 +56,9 @@ async function readForgePr(
   repo: string,
   pr: string,
 ): Promise<DashboardPr | null> {
-  const { ghCall, ghRepoEnv } =
-    await import("../../skills/drive-pr/scripts/lib/proc.ts");
+  const { ghCall, ghRepoEnv } = await import(
+    "../../skills/drive-pr/scripts/lib/proc.ts"
+  );
   const result = await ghCall(["api", `repos/${repo}/pulls/${pr}`], {
     env: ghRepoEnv(),
     stderr: "pipe",

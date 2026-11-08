@@ -337,31 +337,33 @@ function needsOf(
   });
   const refused = view.report.unplaced
     .filter((u) => u.cause === "assigner-cannot-write")
-    .map((u): LineNeed => ({
-      cause: "assigner-cannot-write",
-      stage: "pickup",
-      repo: view.slug,
-      target: u.target,
-      pr: null,
-      item: u.target,
-      url: view.url(u.target),
-      title: view.title(u.target),
-      workspace: needWorkspace(
-        view.report,
-        u.target,
-        "pickup",
-        view.input?.sessions,
-        view.records,
-      ),
-      since:
-        firstSeen(previous, view.slug, u.target, "assigner-cannot-write") ??
-        nowIso,
-      reason: u.reason,
-      question: null,
-      decisions: [],
-      notified: null,
-      workspaces: [],
-    }));
+    .map(
+      (u): LineNeed => ({
+        cause: "assigner-cannot-write",
+        stage: "pickup",
+        repo: view.slug,
+        target: u.target,
+        pr: null,
+        item: u.target,
+        url: view.url(u.target),
+        title: view.title(u.target),
+        workspace: needWorkspace(
+          view.report,
+          u.target,
+          "pickup",
+          view.input?.sessions,
+          view.records,
+        ),
+        since:
+          firstSeen(previous, view.slug, u.target, "assigner-cannot-write") ??
+          nowIso,
+        reason: u.reason,
+        question: null,
+        decisions: [],
+        notified: null,
+        workspaces: [],
+      }),
+    );
   return [...planned, ...refused];
 }
 

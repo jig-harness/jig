@@ -39,7 +39,8 @@ export interface LineNotified {
 
 /** Causes that wait on a person and on nothing else: what the tick notifies, and an item assigned by someone who cannot write, which it only reports. */
 export type NeedCause =
-  Exclude<NotifyCause, "waiting" | "drifting"> | "assigner-cannot-write";
+  | Exclude<NotifyCause, "waiting" | "drifting">
+  | "assigner-cannot-write";
 
 /** One thing the line waits on a person for. */
 export interface LineNeed {
@@ -153,7 +154,11 @@ export interface LineSession {
 
 /** Where a queued target came from: the record that wants it. */
 export type QueueSource =
-  "re-armable" | "label drive" | "held" | "assigned" | "merged";
+  | "re-armable"
+  | "label drive"
+  | "held"
+  | "assigned"
+  | "merged";
 
 /**
  * What will happen to a queued target, which is how the page orders them:
