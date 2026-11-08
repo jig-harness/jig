@@ -34,6 +34,17 @@ const stopped = () => {
 const open = (n: number) =>
   issueNode({ number: n, labels: ["area:x"], extra: { subIssues: conn([]) } });
 
+/** Every `l_<facet>_<n>` count the query asks for, answered as the facet's first. */
+function labelCounts(
+  query: string,
+  first: Record<string, { totalCount: number }>,
+): Record<string, { totalCount: number }> {
+  const out: Record<string, { totalCount: number }> = {};
+  for (const m of query.matchAll(/(l_(\w+?)_\d+):/g))
+    out[m[1] as string] = first[`l_${m[2]}_0`] ?? { totalCount: 0 };
+  return out;
+}
+
 describe("facet reads within their caller's bounds", () => {
   it("starts no request once the signal has aborted or the deadline has passed", async () => {
     const { t, calls } = gitHub(() => ({}), { taxonomy: JIG_TAXONOMY });
@@ -79,9 +90,7 @@ describe("facet reads within their caller's bounds", () => {
           repository: {
             issueTypes: conn([{ id: "IT_Bug", name: "Bug" }]),
             issueFields: conn([]),
-            l_type: { totalCount: 0 },
-            l_priority: { totalCount: 0 },
-            l_size: { totalCount: 0 },
+            ...labelCounts(c.query, {}),
           },
         };
       },
@@ -142,5 +151,20 @@ describe("facet reads within their caller's bounds", () => {
       j.t.incompleteIssues(QUERY, { deadline: Date.now() - 1 }),
     ).rejects.toThrow("deadline");
     expect(j.calls).toEqual([]);
+  });
+});
+
+describe("a bounded wait on a detection another caller started", () => {
+  it("ends at its own deadline while the shared detection is unbounded", async () => {
+    const { t } = gitHubDefaulted(() => new Promise(() => undefined), {
+      taxonomy: JIG_TAXONOMY,
+    });
+    // The first caller bounds nothing and keeps the detection running.
+    void t.getIssue("#1").catch(() => undefined);
+    const started = Date.now();
+    await expect(
+      t.incompleteIssues(QUERY, { deadline: Date.now() + 50 }),
+    ).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 });

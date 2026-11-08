@@ -148,11 +148,11 @@ describe("the batch sizes, whatever store size is in", () => {
     expect({ ...p.ranking.sizes }).toEqual({ small: 4 });
   });
 
-  it("keeps reading sizes and types from labels where the taxonomy has no size group", async () => {
+  it("keeps reading sizes from labels where the taxonomy has no size group, and types from their facet", async () => {
     const p = batchPolicy(OVERLAY, catalog(), taxonomyFacets(OVERLAY, null));
     expect(p.facets).toBe(false);
-    expect(p).toEqual(policy());
-    const tracker = fakeTracker([issue("ENG-1")]);
+    expect(p).toEqual({ ...policy(), typeFacet: true });
+    const tracker = fakeTracker([issue("ENG-1", { type: "bug" })]);
     const proposal = await run(
       tracker,
       catalog(),

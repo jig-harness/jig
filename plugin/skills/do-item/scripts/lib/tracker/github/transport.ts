@@ -303,15 +303,15 @@ export function defaultTransport(env = process.env): GitHubTransport {
  */
 export function credentialToken(
   env = process.env,
-): () => Promise<string | null> {
-  return async () => {
+): (signal?: AbortSignal) => Promise<string | null> {
+  return async (signal) => {
     const own = resolveGitHubToken(env);
     if (own !== null) return own;
     if (env.JIG_GITHUB_GRAPHQL_URL?.trim()) return null;
     try {
       const r = await runClient(ghCall, ["auth", "token"], {
         timeoutMs: 10_000,
-        signal: undefined,
+        signal,
       });
       const token = r.stdout.trim();
       return r.code === 0 && token !== "" ? token : null;

@@ -689,6 +689,7 @@ export interface EligibilityReport {
   version: number;
   policy: {
     facets: boolean;
+    typeFacet: boolean;
     batchSizes: string[];
     sizes: string[] | null;
     sizePoints: Record<string, number>;
@@ -727,6 +728,7 @@ export function eligibilityReport(
     version: OUTPUT_VERSION,
     policy: {
       facets: policy.facets,
+      typeFacet: policy.typeFacet,
       batchSizes: policy.batchSizes,
       sizes: policy.sizes,
       sizePoints: { ...policy.sizePoints },
@@ -871,7 +873,7 @@ const REVALIDATION_FIELDS: ReadonlyArray<{
   {
     key: "type",
     render: (c, p) =>
-      `type: ${listed(p.facets ? (c.type === null ? [] : [c.type]) : c.labels.filter((l) => p.typeLabels?.includes(l)))}`,
+      `type: ${listed(p.typeFacet ? (c.type === null ? [] : [c.type]) : c.labels.filter((l) => p.typeLabels?.includes(l)))}`,
   },
   {
     key: "repo",

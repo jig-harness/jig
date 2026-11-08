@@ -119,6 +119,17 @@ async function byTrustedAssigner(
   return { wanted, unplaced };
 }
 
+/** `read`, or a rejection once `bound` has ended it. */
+function within<T>(read: Promise<T>, bound: FacetBound): Promise<T> {
+  const stopped = new Promise<never>((_, reject) => {
+    const stop = () => reject(new Error("stopped at the tick's deadline"));
+    if (bound.signal.aborted) stop();
+    else bound.signal.addEventListener("abort", stop, { once: true });
+  });
+  read.catch(() => undefined);
+  return Promise.race([read, stopped]);
+}
+
 /**
  * The pickups; `open` opens the tracker, and is not called when there are
  * none to read. With `facets`, the record also says where the tracker
@@ -152,10 +163,14 @@ export async function readPickups(
       : await readFacetStores(tracker, facets.bound());
   let issues: Awaited<ReturnType<Tracker["assignedIssues"]>>;
   try {
-    issues = await tracker.assignedIssues(
+    // The read may run detection again after a failed facet read, so it is
+    // held to the same bound: the tick's deadline outlasts a stalled service.
+    const read = tracker.assignedIssues(
       identity,
       section.states as CanonicalState[],
     );
+    issues =
+      facets === undefined ? await read : await within(read, facets.bound());
   } catch (error) {
     return {
       read: {

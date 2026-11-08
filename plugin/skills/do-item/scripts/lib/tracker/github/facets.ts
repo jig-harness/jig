@@ -23,7 +23,7 @@
 import { TrackerConfigError } from "../config-error.ts";
 import type { CoreFacetReport } from "../facets/tracker.ts";
 import { type Facets, type ResolvedFacet, usable } from "../facets/config.ts";
-import { readSignal } from "../facets/bounds.ts";
+import { readSignal, refuseStopped } from "../facets/bounds.ts";
 import {
   candidateFor,
   type Detected,
@@ -128,7 +128,7 @@ export interface GitHubFacetOptions {
   /** Where detection answers are kept; none by default. */
   cache?: DetectionCache;
   /** The credential's token, read only to fingerprint a cache entry. */
-  token?: () => Promise<string | null>;
+  token?: (signal?: AbortSignal) => Promise<string | null>;
   /**
    * What detection found when the stores of `facets` were selected: the
    * report shows it rather than reading again.
@@ -697,10 +697,14 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
   });
 
   /** The cache key of this repository's detection, or `null` when no cache keeps it. */
-  async function cacheKey(asked: Facet[]): Promise<string | null> {
+  async function cacheKey(
+    asked: Facet[],
+    signal?: AbortSignal,
+  ): Promise<string | null> {
     const { cache, token } = opts;
     if (cache === undefined || token === undefined) return null;
-    const secret = await token();
+    refuseStopped(signal);
+    const secret = await token(signal);
     const print = secret === null ? null : cache.fingerprint(secret);
     if (print === null) return null;
     return detectionKey([
@@ -719,7 +723,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     asked: Facet[],
     signal?: AbortSignal,
   ): Promise<Detected> {
-    const key = await cacheKey(asked);
+    const key = await cacheKey(asked, signal);
     const hit = key === null ? null : (opts.cache?.get(key) ?? null);
     if (hit !== null && asked.every((f) => hit[f]?.status === "read"))
       return { found: hit, cached: true };
@@ -865,13 +869,15 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
     signal?: AbortSignal,
   ): Promise<Partial<Record<Facet, FacetDetection>>> {
     const counted = (q: string) => `${q} { totalCount }`;
-    const labelCounts = asked
-      .filter((f) => labelsOf(f).length > 0)
-      .map((f) =>
+    // One count per label: `filterBy.labels` needs every listed label on the
+    // issue, while one label of the facet is evidence enough.
+    const labelCounts = asked.flatMap((f) =>
+      labelsOf(f).map((label, i) =>
         counted(
-          `l_${f}: issues(filterBy: { labels: ${JSON.stringify(labelsOf(f))} })`,
+          `l_${f}_${i}: issues(filterBy: { labels: ${JSON.stringify([label])} })`,
         ),
-      );
+      ),
+    );
     const first = await ask(
       `
       query TrackerFacetEvidence($owner: String!, $name: String!) {
@@ -922,7 +928,8 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
       };
       out[f] = detection({
         labelEvidence:
-          declared(f) || (labelsOf(f).length > 0 && count(first, `l_${f}`) > 0),
+          declared(f) ||
+          labelsOf(f).some((_, i) => count(first, `l_${f}_${i}`) > 0),
         nativeEvidence: c.evidence.some(
           (_, i) => count(second, `n_${f}_${i}`) > 0,
         ),

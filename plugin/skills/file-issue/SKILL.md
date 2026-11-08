@@ -443,8 +443,9 @@ Then load the taxonomy and the label roles as in
 
 **judgment** — Check the issue's labels and its facets (the `type`,
 `priority` and `size` `get_issue.ts` prints) against the taxonomy (run
-`validate-labels.ts` on them as they are, with `--type`, `--priority` and
-`--size`) and against what the issue describes, deriving as in
+`validate-labels.ts` on the labels without those that spell the type or
+the size, which `get_issue.ts` keeps beside the facets and the validator
+refuses as a second input, with `--type`, `--priority` and `--size`) and against what the issue describes, deriving as in
 [File, step 6](#6-derive-the-labels). A missing priority is asked for, as
 when filing. Keep each
 existing label unless the assessment replaces it; replacing a group's

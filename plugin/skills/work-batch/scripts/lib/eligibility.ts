@@ -207,7 +207,7 @@ const repoReason: Check = (issue, policy) => {
 const typeReason: Check = (issue, policy) => {
   const typeLabels = policy.typeLabels;
   if (typeLabels === null) return null;
-  if (policy.facets)
+  if (policy.typeFacet)
     return issue.type !== null && typeLabels.includes(issue.type)
       ? null
       : { kind: "no-type-label" };
@@ -396,7 +396,7 @@ const DESCRIBE: Describers = {
   "conflicting-type-labels": (r) =>
     `conflicting type labels (${codes(r.types)}); keep one and re-run`,
   "no-type-label": (_r, policy) =>
-    `no type${policy.facets ? "" : " label"}; ${policy.facets ? "set" : "add"} one of ${codes(policy.typeLabels ?? [])} and re-run`,
+    `no type${policy.typeFacet ? "" : " label"}; ${policy.typeFacet ? "set" : "add"} one of ${codes(policy.typeLabels ?? [])} and re-run`,
   "no-context-label": (_r, policy) =>
     `no context label; add one starting with ${codes(policy.contextPrefixes ?? [])} and re-run`,
   "unknown-context-label": (r) =>

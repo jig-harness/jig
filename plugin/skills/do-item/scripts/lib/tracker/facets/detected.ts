@@ -90,6 +90,13 @@ function settleStores(inputs: DefaultInputs, detected: Detected): Settled {
   };
 }
 
+function stopReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  return reason instanceof Error
+    ? reason
+    : new Error("the facet read was stopped");
+}
+
 /** Throw for the first of `facets` that fails closed. */
 function refuseBlocked(
   settled: Settled,
@@ -107,18 +114,57 @@ export function defaultedTracker(inputs: DefaultInputs): Tracker {
   const base = inputs.build(inputs.configured, null);
   if (inputs.unnamed.length === 0) return base;
   let settled: Promise<Settled> | undefined;
+  let shared: AbortController | undefined;
+  let waiting = 0;
+  /**
+   * The settlement, asked once and shared. Detection stops only when every
+   * caller waiting on it has stopped; each caller's own signal ends its own
+   * wait, whichever caller started the work.
+   */
   function settle(signal?: AbortSignal): Promise<Settled> {
+    if (signal?.aborted === true) return Promise.reject(stopReason(signal));
     if (settled === undefined) {
+      const own = new AbortController();
       const attempt = inputs
-        .detect(signal)
+        .detect(own.signal)
         .then((detected) => settleStores(inputs, detected));
+      shared = own;
+      waiting = 0;
       settled = attempt;
       // A failed detection is asked again by the next operation.
       attempt.catch(() => {
         if (settled === attempt) settled = undefined;
       });
     }
-    return settled;
+    const attempt = settled;
+    const work = shared as AbortController;
+    if (signal === undefined) {
+      waiting = Number.POSITIVE_INFINITY;
+      return attempt;
+    }
+    waiting += 1;
+    return new Promise<Settled>((resolve, reject) => {
+      const stop = () => {
+        waiting -= 1;
+        if (waiting <= 0 && settled === attempt) {
+          settled = undefined;
+          work.abort(signal.reason);
+        }
+        reject(stopReason(signal));
+      };
+      signal.addEventListener("abort", stop, { once: true });
+      const done = () => signal.removeEventListener("abort", stop);
+      attempt.then(
+        (v) => {
+          done();
+          resolve(v);
+        },
+        (e) => {
+          done();
+          reject(e);
+        },
+      );
+    });
   }
   /** `run` on the settled tracker, once no facet it needs fails closed. */
   async function on<T>(

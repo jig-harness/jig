@@ -68,6 +68,17 @@ interface Repository {
   other?: (c: Call) => unknown;
 }
 
+/** Every `l_<facet>_<n>` count the query asks for, answered as the facet's first. */
+function labelCounts(
+  query: string,
+  first: Record<string, { totalCount: number }>,
+): Record<string, { totalCount: number }> {
+  const out: Record<string, { totalCount: number }> = {};
+  for (const m of query.matchAll(/(l_(\w+?)_\d+):/g))
+    out[m[1] as string] = first[`l_${m[2]}_0`] ?? { totalCount: 0 };
+  return out;
+}
+
 /** A repository of Jig's organization, as detection and the stores read it. */
 function repository(r: Repository = {}) {
   const fields = conn([
@@ -82,9 +93,11 @@ function repository(r: Repository = {}) {
         repository: {
           issueTypes: types,
           issueFields: fields,
-          l_type: count(r.labels?.includes("type") === true),
-          l_priority: count(r.labels?.includes("priority") === true),
-          l_size: count(r.labels?.includes("size") === true),
+          ...labelCounts(c.query, {
+            l_type_0: count(r.labels?.includes("type") === true),
+            l_priority_0: count(r.labels?.includes("priority") === true),
+            l_size_0: count(r.labels?.includes("size") === true),
+          }),
         },
       };
     if (c.op === "TrackerFacetNativeEvidence") {
@@ -396,9 +409,11 @@ describe("GitHub's field default where the tracker has no field to offer", () =>
           repository: {
             issueTypes: null,
             issueFields: null,
-            l_type: { totalCount: 7 },
-            l_priority: { totalCount: 0 },
-            l_size: { totalCount: 3 },
+            ...labelCounts(c.query, {
+              l_type_0: { totalCount: 7 },
+              l_priority_0: { totalCount: 0 },
+              l_size_0: { totalCount: 3 },
+            }),
           },
         };
       if (c.op === "TrackerFacetOwner")
@@ -444,9 +459,7 @@ describe("GitHub's field default where the tracker has no field to offer", () =>
           repository: {
             issueTypes: types,
             issueFields,
-            l_type: { totalCount: 0 },
-            l_priority: { totalCount: 0 },
-            l_size: { totalCount: 0 },
+            ...labelCounts(c.query, {}),
           },
         };
       if (c.op === "TrackerFacetNativeEvidence") {

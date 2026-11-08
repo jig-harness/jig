@@ -117,10 +117,12 @@ export interface WorkBatchSettings {
 
 export interface BatchPolicy extends WorkBatchSettings {
   /**
-   * Whether size and type are read from the issue's facets (the repository's
-   * label taxonomy has a size group); otherwise from its labels.
+   * Whether size is read from the issue's facet (the repository's label
+   * taxonomy has a size group); otherwise from its labels.
    */
   facets: boolean;
+  /** Whether type is read from the issue's facet; otherwise from its labels. */
+  typeFacet: boolean;
   /** Sizes an issue may carry and join a batch (`issue_tracker.labels.batch_sizes`). */
   batchSizes: string[];
   /**
@@ -456,7 +458,8 @@ export function batchPolicy(
   const routing = parseAgentRouting(overlay);
   const faceted = facets !== null && usable(facets.size);
   const sizeOf = facetValueOf(faceted ? facets.size : undefined);
-  const typeOf = facetValueOf(faceted ? facets.type : undefined);
+  const typed = facets !== null && usable(facets.type);
+  const typeOf = facetValueOf(typed ? facets.type : undefined);
   const batchSizes = labels.batchSizes.map(sizeOf);
   const settings = parseWorkBatchSection(overlay, batchSizes, sizeOf);
 
@@ -480,6 +483,7 @@ export function batchPolicy(
   return {
     ...settings,
     facets: faceted,
+    typeFacet: typed,
     batchSizes,
     knownSizes: [
       ...new Set([

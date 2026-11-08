@@ -275,8 +275,10 @@ native integration, or the reverse.
 **exact** — **Type the item.** Write the issue JSON to `issue.json` with the
 file-writing tool (from the native transport: its `title`, its label names
 as `labels`, its own issue type's name as `nativeType`, or `null` when it
-reports none, and `type` as `null`, since only the script reads the
-repository's type facet), then derive its
+reports none, and `type` as the `type` that
+`bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<KEY>"` prints, since
+`determine_type.ts` reads no store and the tracker reader alone supplies
+the repository's type facet, a label-store type included), then derive its
 [work type](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
 
 ```bash
