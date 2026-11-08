@@ -111,6 +111,9 @@ function maskCode(text: string): string {
 const LIST_OPENER = /^\s*(?:[-*+]|1[.)])\s/;
 /** Any ordered item: follows a sibling item of an ordered list. */
 const ORDERED_ITEM = /^\s*\d+[.)]\s/;
+/** The column where the text of an ordered item starts: its content offset. */
+const ORDERED_OFFSET = /^(\s*\d+[.)]\s+)/;
+
 /** Leading blockquote markers, with the content that follows them. */
 const QUOTE_PREFIX = /^(?:\s{0,3}>\s?)+/;
 
@@ -141,8 +144,19 @@ function endsParagraph(raw: string, first: string): boolean {
     BLOCK_BOUNDARY.test(content) ||
     EQUALS_UNDERLINE.test(content) ||
     LIST_OPENER.test(content) ||
-    (ORDERED_ITEM.test(opened.content) && ORDERED_ITEM.test(content))
+    isOrderedSibling(opened.content, content)
   );
+}
+
+/**
+ * Whether `content` is a later item of the ordered list `opened` begins: a
+ * numeral indented to the first item's text or beyond cannot interrupt its
+ * paragraph (only an item numbered 1 can), so it continues the paragraph.
+ */
+function isOrderedSibling(opened: string, content: string): boolean {
+  const offset = ORDERED_OFFSET.exec(opened)?.[1]?.length;
+  if (offset === undefined || !ORDERED_ITEM.test(content)) return false;
+  return (/^\s*/.exec(content)?.[0].length ?? 0) < offset;
 }
 
 /** The lines of the paragraph starting at `start`, code masked across them. */

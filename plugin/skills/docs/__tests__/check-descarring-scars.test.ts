@@ -360,3 +360,15 @@ test("scar lint: text after a multiline span opens no prefix", () => {
     scanScars("Use `the value\nsuffix` - Addressed: normal prose."),
   ).toEqual([]);
 });
+
+test("scar lint: an indented numeral continues an ordered item's paragraph", () => {
+  expect(
+    scanScars("1. Use `the handle\n   2. coderabbitai[bot]` here."),
+  ).toEqual([]);
+  expect(
+    scanScars("1) Use `the handle\n   2) coderabbitai[bot]` here."),
+  ).toEqual([]);
+  expect(
+    scanScars("1. Use `the handle\n  2. coderabbitai[bot]` here."),
+  ).toHaveLength(1);
+});
