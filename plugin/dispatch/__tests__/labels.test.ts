@@ -340,13 +340,25 @@ describe("jig dispatch with the labels off", () => {
     w.setComments(7, [converged(7)]);
 
     const r = await tick(w);
+    // The repository's query lists the labels before the section that turns them off is read; none is used.
+    expect(edits(ghCalls(w))).toEqual([]);
+    expect(repo(r)?.labels).toBeUndefined();
+    expect(labelsOf(w, 7)).toEqual(["jig:driving"]);
+  }, 60_000);
+
+  it("lists the pull requests without their labels when the repository's query does not read", async () => {
+    const w = fixture(OFF);
+    w.setPrs("open", [labeled(openPr(7, "feature/7"), "jig:driving")]);
+    w.setComments(7, [converged(7)]);
+    writeFileSync(join(w.dir, "repository-query-fail"), "");
+
+    const r = await tick(w);
     const calls = ghCalls(w);
     const listing = calls.find((c) => c.startsWith("pr list"));
     expect(listing).toBeDefined();
     expect(listing).not.toContain("labels");
     expect(edits(calls)).toEqual([]);
     expect(repo(r)?.labels).toBeUndefined();
-    expect(labelsOf(w, 7)).toEqual(["jig:driving"]);
   }, 60_000);
 });
 
