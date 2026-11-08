@@ -150,18 +150,28 @@ Jig's work is the repository's own
 [GitHub Issues](https://github.com/jig-harness/jig/issues), named in
 [`.config/jig.yaml`](.config/jig.yaml) (`issue_tracker.adapter: github`): an
 issue's open state is a `state:` label, its priority a `priority:` label,
-and every other label comes from the [label taxonomy](label-taxonomy.yaml)
-at the root. A roadmap item has an `epic` issue labelled `roadmap`; the
-item's steps are its sub-issues, and a pull request that builds one says
-`Part of #<epic>` or `Closes #<sub-issue>`.
+its type and its size labels of the [label taxonomy](label-taxonomy.yaml)
+at the root (the configuration names the label store for each of the
+three), and every other label comes from that taxonomy too. A roadmap item
+has an `epic` issue labelled `roadmap`; the item's steps are its
+sub-issues, and a pull request that builds one says `Part of #<epic>` or
+`Closes #<sub-issue>`.
 
 A maintainer files with `/jig:file-issue`, which checks the labels against
-the taxonomy before it writes, and picks work up with `/jig:do-item #<n>`.
-A contributor opens an issue with the bug or "Proposed change" template, or
-a [discussion](https://github.com/jig-harness/jig/discussions) for a question
-or an idea ([Outside contributions](#outside-contributions)); a maintainer
-who accepts it labels it from the taxonomy and, when it is a step of a
-roadmap item, makes it a sub-issue of that item's epic.
+the taxonomy before it writes, or from a script with
+`bun "$plugin_dir/skills/do-item/scripts/tracker.ts" create` (`plugin_dir`
+as below), the issue as JSON on standard input with its `type`, `priority`
+and `size`. Both write through the tracker interface, which checks that the
+issue carries a type, a priority and a size (an epic needs no size) and
+names any it lacks. An issue filed with `gh issue create` by hand skips
+that check and reaches the pools as a labelling gap. A maintainer picks
+work up with `/jig:do-item #<n>`. A contributor opens an issue with the bug
+or "Proposed change" template, which sets its issue type beside its label,
+or a [discussion](https://github.com/jig-harness/jig/discussions) for a
+question or an idea ([Outside contributions](#outside-contributions)); a
+maintainer who accepts it gives it a priority and a size, labels it from
+the taxonomy and, when it is a step of a roadmap item, makes it a sub-issue
+of that item's epic.
 
 From a checkout, with `plugin_dir` the installed Jig plugin's absolute path,
 check the taxonomy and a set of proposed labels:

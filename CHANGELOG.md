@@ -387,6 +387,61 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.168.1] - 2026-11-08
+
+### Fixed
+
+- `jig dispatch` no longer refuses a pull request's re-arm on every tick while a worktree Orca does not list (an agent's leftover isolation worktree, or one another tool made) holds its head branch. When that worktree is idle (a clean tree, no unfinished git operation, no commit the remote's branch lacks, no live driver or session lease, and no process working in it), the open detaches it at its commit and creates the workspace on the branch. When it is in use, the launch is refused and a person is notified once, through the repository's notices workspace, with the worktree's path and what keeps it busy (cause `needs-person`), instead of the refusal being repeated in the log every tick. The idle test is shared code (`plugin/shared/idle-holder.ts`) for any step that takes a branch from another checkout.
+
+## [0.168.0] - 2026-11-08
+
+### Changed
+
+- `drive-pr`: a driver whose process is confirmed gone and whose working tree no longer exists (the directory is gone) is now a dead holder with nothing left: `drives.ts --doctor` reads it `DEAD`, a new verdict also given to a gone holder whose tree is clean, and `drive.ts --take-over` admits it with no person needed, as the plain arm's lock recovery already did. The takeover records the missing tree in its `takeovers` entry (`vanishedTree`, kept off the ledger); its first pass's `TAKEN OVER` notice directs it to inspect branch refs and reflogs in shared Git storage for recoverable commits before redoing work. A holder is confirmed gone by its recorded identity (its pid answers no signal, or now belongs to a process with another start time on POSIX, or another boot; Windows refuses a PID that still answers when its identity cannot be verified), the rule the lock's own recovery uses. A tree that exists but cannot be inspected stays `UNKNOWN` and is refused.
+- `jig dispatch`: a drive whose ledger fell silent past the lease window and whose driver no launch record of this machine and no launch claim of another host started is now taken over by the `rearm` stage when the repository clone's drive doctor (`drives.ts --json`, read only in a tick where a drive fell silent) reads its holder `DEAD` or `WEDGED`; `drive.ts --take-over` checks it again before anything is stopped. A holder that is alive and making progress, or a driver in a clone this host cannot read, is reported with the doctor's reading, as is any pull request a person's `hold` label is on.
+
+## [0.167.0] - 2026-11-08
+
+On GitHub Issues, a type, priority or size whose store `issue_tracker.facets` does not name now waits on detecting where the repository keeps it before its first read or write: a repository whose credential cannot read its organization's issue types and fields (a workflow's `GITHUB_TOKEN`, a repository-scoped token), or whose issue forms or people set GitHub's issue types or fields beside its type, priority or size labels, names each store in `issue_tracker.facets` before upgrading (`bun plugin/skills/do-item/scripts/tracker.ts facet-stores` prints the line to add). A facet no issue of an organization's repository carries a label of, with no store named and no label declared for it (`issue_tracker.github.priority_labels` counts as a declaration), moves to the organization's matching field on upgrade when the organization has a qualifying one: in such a repository whose issues carry no `priority:` label, every filing from then on sets the organization's Priority field instead of a label, and reads it from there. Without a qualifying field the facet stays in labels. To keep such a facet in labels, name `store: label` for it before upgrading. A repository a person owns has no issue types or fields and keeps every facet in labels. The release after this one refuses an issue filed without a type, a priority or a size; this one files it and warns.
+
+### Added
+
+- Every issue filed through the tracker scripts is checked inside the write ([CONFIGURATION.md](plugin/CONFIGURATION.md#issue_tracker)): one filed without a type, a priority (1 to 4) or a size (an epic needs none), or without a label of another required group of the label taxonomy, is filed with a warning naming what it lacks. The next release refuses it, so give `type`, `priority` and `size` to every `tracker.ts create`.
+- A GitHub repository with no labels for a facet, none declared in `issue_tracker.github`, and no store named for it, now keeps it in its organization's matching field when the organization has a qualifying one: the issue type matched by name, the Priority field, and an Effort field whose options are the taxonomy's sizes. A repository that keeps a facet in labels keeps filing and reading those labels; one whose issues carry both the facet's labels and its native values is in conflict, and its reads and writes of issues fail, naming both stores, until `issue_tracker.facets` names one. Detection's answer is cached on the machine for an hour (`JIG_FACET_CACHE_DIR`, or `JIG_FACET_CACHE=off`).
+- `tracker.ts facet-stores` reports why each facet is in its store (`configured`, `kept in labels`, `detected`, `default` or `conflict`) and the field a facet kept in labels could move to.
+- The dispatcher's tracker record shows each facet's store and the assigned items that lack a facet, read within the tick's deadline.
+- A label taxonomy's group can be spared on an issue carrying a flag (`not_required_on: [epic]`), and [M9](modules/M9-tasks-memory/README.md)'s taxonomy template spares an epic its size.
+- A Jig bug reported through `/jig:jig` or Jig's issue forms gets GitHub's issue type (Bug, or Feature for a change request) beside its label, where the account may set issue types.
+
+### Changed
+
+- The skills read an issue's type, priority and size as its facets, never the labels behind them: `do-item` types an item from its type facet, `work-batch` pools by the size facet and lists an issue that lacks a priority or a size as a labelling gap, and `routing.raise.sizes` and the size lists work-batch reads take a size value or the label of one.
+- **Breaking**: a type, priority or size label among the labels `tracker.ts create` files or `update` adds is refused, pointing at the facet: give `"type"`, `"priority"` or `"size"` instead.
+- `/jig:file-issue` asks for a priority, and `validate-labels.ts` checks the type, size and priority as facets (`--type`, `--priority`, `--size`, or the issue `tracker.ts create` takes on standard input).
+- A review finding deferred into its pull request records its type, severity and category (`defer-in-pr.ts --type --severity --category`), and `file-deferred.ts` files it with a type, a priority from its severity and a size (`small` unless the entry names one). An entry written before stays in the pull request for a person to file through `/jig:file-issue`.
+- A finding of unknown severity files as medium on every deferral path, and a priority weaker than medium is raised to it.
+- A facet read (`facetStores`, `incompleteIssues`) takes a cancellation signal and a deadline, and starts no further request once either stops it.
+
+## [0.166.0] - 2026-11-08
+
+### Changed
+
+- `jig dispatch` reads each repository in one GraphQL query per tick: the
+  repository and its default branch, the dispatch configuration on that
+  branch, and the open pull requests with their labels, heads,
+  mergeability and comments, 50 pull requests to a page at one point of
+  the forge's GraphQL budget each. It replaces the repository view, the
+  configuration file read, the pull request listing and one comment
+  listing per open pull request, so a sweep of many repositories makes a
+  few calls per repository instead of one per pull request. A pull request
+  with more than 100 comments is listed on its own, in full. The merges
+  whose follow-up markers a tick reads again have their comments read in
+  one query too, 50 to a page. Where a query fails, the tick reads each of
+  these on its own as before. The reads just
+  before a launch, a claim or an end still go to the forge one by one. The
+  forge record says how the open pull requests were read, and what the
+  query cost.
+
 ## [0.165.1] - 2026-11-08
 
 ### Fixed
@@ -5931,7 +5986,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.165.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.168.1...HEAD
+[0.168.1]: https://github.com/jig-harness/jig/compare/v0.168.0...v0.168.1
+[0.168.0]: https://github.com/jig-harness/jig/compare/v0.167.0...v0.168.0
+[0.167.0]: https://github.com/jig-harness/jig/compare/v0.166.0...v0.167.0
+[0.166.0]: https://github.com/jig-harness/jig/compare/v0.165.1...v0.166.0
 [0.165.1]: https://github.com/jig-harness/jig/compare/v0.165.0...v0.165.1
 [0.165.0]: https://github.com/jig-harness/jig/compare/v0.164.0...v0.165.0
 [0.164.0]: https://github.com/jig-harness/jig/compare/v0.163.0...v0.164.0

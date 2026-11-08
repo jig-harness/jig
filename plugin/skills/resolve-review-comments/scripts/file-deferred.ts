@@ -13,9 +13,15 @@
  *
  * Each entry is filed through the configured tracker adapter (`do-item`'s
  * tracker interface, `issue_tracker.adapter`) with the label of the
- * `followup` role, unless the tracker already holds an issue whose body
- * carries the entry's identity line (its source url and fingerprint; a run
- * stopped after filing it): that issue is reused rather than filed twice.
+ * `followup` role and every facet: the type the entry records, the priority
+ * its severity maps to (`lib/severity-priority.ts`, `unknown` as medium) and
+ * the size it names, else `small`. The tracker already holding an issue whose
+ * body carries the entry's identity line (its source url and fingerprint; a
+ * run stopped after filing it) reuses that issue rather than filing twice.
+ * An entry that records no type or severity, written before entries
+ * recorded them, or one whose type or size the repository does not have, is
+ * left in the body for a person to file through `/jig:file-issue`, and the
+ * others are filed.
  * Each entry is read afresh before it is filed, so a person's correction
  * since the run began is what gets filed. An issue carries a digest of the
  * text it was filed from, and one filed from an earlier text of a corrected
@@ -37,15 +43,28 @@
  *
  * Exit codes: 0 every entry filed (or none to file), 1 the forge or the
  * tracker failed, a filing could not be recorded, or the answers could not
- * all be read, 2 usage, 3 entries remain because no adapter could file, 4 a
- * `**deferred**` answer links an entry the section lacks.
+ * all be read, 2 usage, 3 entries remain because no adapter could file them
+ * or a person files them, 4 a `**deferred**` answer links an entry the
+ * section lacks.
  */
 import { createHash } from "node:crypto";
 import { fail, runMain } from "../../../shared/cli.ts";
-import { readConfig } from "../../../shared/consumer.ts";
-import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
+import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
+import {
+  facetsOf,
+  parseTrackerConfig,
+} from "../../do-item/scripts/lib/tracker/config.ts";
+import {
+  type Facets,
+  type FacetSlot,
+  facetValueOf,
+  usable,
+} from "../../do-item/scripts/lib/tracker/facets/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
-import type { Tracker } from "../../do-item/scripts/lib/tracker/port.ts";
+import type {
+  NewIssue,
+  Tracker,
+} from "../../do-item/scripts/lib/tracker/port.ts";
 import {
   type DeferredEntry,
   DeferredSectionError,
@@ -59,6 +78,16 @@ import {
   type PrBodyForge,
   updatePrBody,
 } from "./lib/pr-body.ts";
+import {
+  SEVERITY_TO_PRIORITY,
+  severityPriority,
+} from "./lib/severity-priority.ts";
+
+/** Where a person files an entry this script leaves in the body. */
+const BY_HAND = "/jig:file-issue";
+
+/** The size an entry is filed at when it names none. */
+const DEFAULT_SIZE = "small";
 
 /**
  * The line an issue filed for `entry` carries, naming exactly that entry:
@@ -83,13 +112,63 @@ export function textLine(entry: { text: string }): string {
   return `Deferred finding text: sha256 ${digest}`;
 }
 
+/**
+ * The value of a facet `recorded` names: the value itself, or the value one
+ * of its labels is, ignoring case; `null` when it names none.
+ */
+function facetValue(slot: FacetSlot, recorded: string): string | null {
+  if (!usable(slot)) return null;
+  const named = facetValueOf(slot)(recorded);
+  return slot.values.includes(named) ? named : null;
+}
+
+/**
+ * The facets an entry is filed with, or why a person files it: its type,
+ * the priority its severity maps to, and its size (else `small`). A facet the
+ * repository has no store for is left out, as the write would refuse it.
+ * Without the repository's facets (no tracker to file with) only the
+ * recorded fields are checked.
+ */
+export function entryFacets(
+  entry: DeferredEntry,
+  facets: Facets | null,
+): Pick<NewIssue, "type" | "priority" | "size"> | { why: string } {
+  if (entry.type === undefined || entry.severity === undefined)
+    return {
+      why: "it records no type or severity, as an entry deferred before entries recorded them",
+    };
+  if (!Object.hasOwn(SEVERITY_TO_PRIORITY, entry.severity))
+    return {
+      why: `its severity '${entry.severity}' is none of ${Object.keys(SEVERITY_TO_PRIORITY).join(", ")}`,
+    };
+  const out: Pick<NewIssue, "type" | "priority" | "size"> = {
+    priority: severityPriority(entry.severity),
+  };
+  for (const [facet, recorded] of [
+    ["type", entry.type],
+    ["size", entry.size ?? DEFAULT_SIZE],
+  ] as const) {
+    if (facets === null) continue;
+    const slot = facets[facet];
+    if (!usable(slot)) continue;
+    const value = facetValue(slot, recorded);
+    if (value === null)
+      return {
+        why: `its ${facet} '${recorded}' is no ${facet} of this repository (${slot.values.join(", ")})`,
+      };
+    out[facet] = value;
+  }
+  return out;
+}
+
 /** The issue an entry becomes. */
 function issueFor(
   entry: DeferredEntry,
   pr: string,
   prUrl: string,
   label: string,
-): { title: string; description: string; labels: string[] } {
+  facets: Pick<NewIssue, "type" | "priority" | "size">,
+): NewIssue {
   const quote = entry.text
     .split("\n")
     .find((l) => l.startsWith("> ") && l.trim().length > 2);
@@ -104,10 +183,13 @@ function issueFor(
       "",
       entry.text,
       "",
+      `Severity: ${entry.severity ?? "unknown"}. Category: ${entry.category ?? "unknown"}.`,
+      "",
       identityLine(entry),
       textLine(entry),
     ].join("\n"),
     labels: [label],
+    ...facets,
   };
 }
 
@@ -124,6 +206,8 @@ export interface FileDeferredResult {
   /** Filed, but the entry could not be replaced: printed so it is not lost. */
   unrecorded: Filing[];
   remaining: DeferredEntry[];
+  /** Left in the body for a person to file, each with why. */
+  forPerson: Array<{ entry: DeferredEntry; why: string }>;
   /** Why entries remain or a filing went unrecorded; `null` when neither. */
   why: string | null;
 }
@@ -265,19 +349,22 @@ export async function fileDeferred(
   pr: string,
   opts: {
     label: string;
+    /** The repository's facets, which it has and their values; `null` with no tracker. */
+    facets: Facets | null;
     dryRun?: boolean;
     noTrackerWhy?: string;
     onFiled?: (f: Filing) => void;
   },
 ): Promise<FileDeferredResult> {
   const { body, url } = await forge.read(pr);
-  const open = deferredEntries(body).filter((e) => e.filed === undefined);
   const result: FileDeferredResult = {
     filed: [],
     unrecorded: [],
     remaining: [],
+    forPerson: [],
     why: null,
   };
+  const open = fileable(deferredEntries(body), opts.facets, result);
   const skipped = whyNotFiling(tracker, opts);
   if (tracker === null || skipped !== null) {
     result.remaining = open;
@@ -287,7 +374,16 @@ export async function fileDeferred(
   for (const [i, initial] of open.entries()) {
     const entry = await stillOpen(forge, pr, initial);
     if (entry === null) continue;
-    const step = await fileOne(forge, tracker, pr, entry, { ...opts, url });
+    const facets = entryFacets(entry, opts.facets);
+    if ("why" in facets) {
+      result.forPerson.push({ entry, why: facets.why });
+      continue;
+    }
+    const step = await fileOne(forge, tracker, pr, entry, {
+      ...opts,
+      url,
+      facets,
+    });
     if (step.why === null) {
       result.filed.push(step.filing);
       continue;
@@ -299,6 +395,26 @@ export async function fileDeferred(
     return result;
   }
   return result;
+}
+
+/**
+ * The unfiled entries this run can file; each it cannot (no type or
+ * severity recorded, or a value the repository lacks) goes to `result`'s
+ * `forPerson`, with why.
+ */
+function fileable(
+  entries: DeferredEntry[],
+  facets: Facets | null,
+  result: FileDeferredResult,
+): DeferredEntry[] {
+  const open: DeferredEntry[] = [];
+  for (const entry of entries) {
+    if (entry.filed !== undefined) continue;
+    const found = entryFacets(entry, facets);
+    if ("why" in found) result.forPerson.push({ entry, why: found.why });
+    else open.push(entry);
+  }
+  return open;
 }
 
 /** Why a run files nothing at all, or `null` when it can file. */
@@ -322,7 +438,12 @@ async function fileOne(
   tracker: Tracker,
   pr: string,
   entry: DeferredEntry,
-  opts: { label: string; url: string; onFiled?: (f: Filing) => void },
+  opts: {
+    label: string;
+    url: string;
+    facets: Pick<NewIssue, "type" | "priority" | "size">;
+    onFiled?: (f: Filing) => void;
+  },
 ): Promise<
   { filing: Filing; why: null } | { filing: Filing | null; why: string }
 > {
@@ -331,7 +452,7 @@ async function fileOne(
     got = await issueOf(
       tracker,
       entry,
-      issueFor(entry, pr, opts.url, opts.label),
+      issueFor(entry, pr, opts.url, opts.label, opts.facets),
     );
   } catch (err) {
     return { filing: null, why: `the tracker refused: ${message(err)}` };
@@ -392,39 +513,62 @@ function answered(m: DeferredReply): string {
   return "thread" in m ? m.thread : `the summary finding ${m.fingerprint}`;
 }
 
-/** The configured tracker and its follow-up label, or why none can file. */
+/** The configured tracker, its follow-up label and facets, or why none can file. */
 function configuredTracker(): {
   tracker: Tracker | null;
   label: string;
+  facets: Facets | null;
   why?: string;
 } {
   try {
     const config = parseTrackerConfig(readConfig());
-    return { tracker: openTracker(config), label: config.labels.followup };
+    return {
+      tracker: openTracker(config),
+      label: config.labels.followup,
+      facets: facetsOf(config, consumerRoot()),
+    };
   } catch (err) {
     return {
       tracker: null,
       label: "pr-followup",
+      facets: null,
       why: `no tracker adapter can file: ${message(err)}`,
     };
   }
 }
 
+/** An entry by its source, and its fingerprint where it has one. */
+const named = (e: DeferredEntry) =>
+  `${e.source} ${e.fingerprint ?? ""}`.trimEnd();
+
 /** What a run that left work undone prints, and its exit code. */
 function report(r: FileDeferredResult, dryRun: boolean): number {
+  const byHand = () => {
+    for (const p of r.forPerson)
+      console.error(
+        `  stays in the body for a person to file through ${BY_HAND}: ${named(p.entry)}: ${p.why}`,
+      );
+  };
   if (dryRun) {
     for (const e of r.remaining)
       process.stdout.write(`would file ${e.source}\n`);
+    byHand();
     return 0;
   }
-  if (r.why === null) return 0;
+  if (r.why === null) {
+    if (r.forPerson.length === 0) return 0;
+    console.error(
+      `file-deferred: ${r.forPerson.length} entr${r.forPerson.length === 1 ? "y stays" : "ies stay"} in the body for a person to file`,
+    );
+    byHand();
+    return 3;
+  }
   console.error(`file-deferred: ${r.why}`);
   for (const f of r.unrecorded)
     console.error(`  filed, not recorded: ${f.key} for ${f.source}`);
   for (const e of r.remaining)
-    console.error(
-      `  stays in the body: ${e.source} ${e.fingerprint ?? ""}`.trimEnd(),
-    );
+    console.error(`  stays in the body: ${named(e)}`);
+  byHand();
   return r.unrecorded.length > 0 || r.why.startsWith("the tracker refused")
     ? 1
     : 3;
@@ -437,13 +581,14 @@ async function main(): Promise<number> {
   const pr = rest[0] ?? "";
   if (rest.length !== 1 || !/^\d+$/.test(pr))
     fail(2, "usage: file-deferred.ts <PR> [--dry-run]");
-  const { tracker, label, why } = configuredTracker();
+  const { tracker, label, facets, why } = configuredTracker();
   const forge = ghPrBodyForge();
   let code: number;
   let missing: DeferredReply[];
   try {
     const r = await fileDeferred(forge, tracker, pr, {
       label,
+      facets,
       dryRun,
       ...(why === undefined ? {} : { noTrackerWhy: why }),
       onFiled: (f) =>

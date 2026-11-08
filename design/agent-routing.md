@@ -109,12 +109,16 @@ implementer ran ([the record](#where-it-is-read)):
      closure reaches, the side M3 reads mandatory reviews from (an
      under-triggered review is a missed defect): one whose `review.skills`
      names at least one skill;
-   - a **size label** in `routing.raise.sizes`; by default, every size the
+   - a **size** in `routing.raise.sizes`; by default, every size the
      repository knows outside `issue_tracker.labels.batch_sizes` (the sizes
      too large to batch), with the known sizes taken as `work-batch` takes
      them (`work_batch.sizes`, else the batchable sizes, always together
      with `review.taxonomy.sizes`), and `[large]` where that leaves none (the
-     labels `batch_sizes` names never raise);
+     sizes `batch_sizes` names never raise). Where the repository has a size
+     [issue facet](../GLOSSARY.md) (its label taxonomy has a size group), the
+     item's size is that facet's value, the facet's values are known sizes
+     too, and each size these settings list is read as a size value or as
+     the label of one; without one, the item's labels are read;
    - the human-in-the-loop label, `issue_tracker.labels.hitl`, counted
      once even where the catalog also lists it as a flag.
 4. **The cap.** An effort raised past `max` stays at `max`; the tier never

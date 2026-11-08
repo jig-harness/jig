@@ -232,6 +232,12 @@ import {
   CATEGORY_UNKNOWN,
   SEVERITY_UNKNOWN,
 } from "./lib/ladder.ts";
+import {
+  priorityAfterSeverity,
+  priorityReflectsSeverity,
+  priorityText,
+  SEVERITY_TO_PRIORITY,
+} from "./lib/severity-priority.ts";
 import { type Clock, systemClock } from "../../../shared/clock.ts";
 import {
   batchKeyMarker,
@@ -324,153 +330,6 @@ export function isBatchableSize(name: string): boolean {
   return (BATCH_SIZES as readonly string[]).includes(name);
 }
 
-/**
- * Linear's `priority` field for each severity token — the priority-preservation
- * rule: without it, follow-up issues carry no priority at all, because severity
- * is accepted by the deferral tooling and then silently dropped on the floor
- * rather than written anywhere.
- *
- * Linear defines urgent=1, high=2, medium=3, low=4, none=0. A blocker maps
- * to urgent because ranking it below high would understate the one severity
- * that should never have been deferred at all (see the contradiction warning
- * in runDeferBatch). The consumer's severity mapping is tested against this
- * map so the deferral and triage tools cannot disagree about priority.
- *
- * This map is a BIJECTION onto Linear's full `{0,1,2,3,4}` priority domain —
- * every priority value has exactly one severity token that produces it, which
- * is what makes `PRIORITY_TO_SEVERITY` (its total, well-defined inverse)
- * possible below.
- */
-export const SEVERITY_TO_PRIORITY: Record<string, number> = {
-  [SEVERITY_UNKNOWN]: 0, // None
-  low: 4,
-  medium: 3,
-  high: 2,
-  blocker: 1, // Urgent
-};
-
-// Fails CLOSED at import time if this map's key set ever drifts from the
-// canonical severity vocabulary. Unlike `SEVERITY_RANK_ORDER` (derived from
-// `CANONICAL_SEVERITIES` below), this map's VALUES — Linear priority numbers
-// — have no derivable relationship to severity tokens, so the map itself
-// must stay hand-written; only its key set can be checked against the
-// accepted vocabulary. Without this, a canonical severity token added to
-// `lib/ladder.ts` with no matching entry here parses fine in `parseArgs`
-// (which validates against `CANONICAL_SEVERITIES` directly) and then
-// silently produces `undefined` from `SEVERITY_TO_PRIORITY[token]` —
-// `priorityAfterSeverity` returns `undefined`, so CREATE sends no `priority`
-// field at all and the severity is accepted and then dropped, exactly the
-// failure class the other boundaries already reject
-// (concurrent-write regression).
-{
-  const expected = new Set([...CANONICAL_SEVERITIES, SEVERITY_UNKNOWN]);
-  const actual = new Set(Object.keys(SEVERITY_TO_PRIORITY));
-  const missing = [...expected].filter((s) => !actual.has(s));
-  const extra = [...actual].filter((s) => !expected.has(s));
-  if (missing.length > 0 || extra.length > 0) {
-    throw new Error(
-      `defer-batch: SEVERITY_TO_PRIORITY's keys no longer match the canonical severity vocabulary` +
-        `${missing.length > 0 ? ` — missing [${missing.join(", ")}]` : ""}` +
-        `${extra.length > 0 ? ` — stale [${extra.join(", ")}]` : ""}. ` +
-        `Update SEVERITY_TO_PRIORITY (and PRIORITY_TO_SEVERITY) to match CANONICAL_SEVERITIES/SEVERITY_UNKNOWN.`,
-    );
-  }
-}
-
-/**
- * The inverse of `SEVERITY_TO_PRIORITY`. Well-defined and total because
- * Linear's `priority` field only ever holds one of exactly `{0,1,2,3,4}`, and
- * `SEVERITY_TO_PRIORITY` is a bijection onto that set — every live priority
- * this script ever reads back from Linear resolves to exactly one severity
- * token here.
- *
- * Needed by `priorityAfterSeverity`/`priorityReflectsSeverity`: a batch's
- * LIVE `priority` is a Linear priority NUMBER, not a severity token, so
- * answering "does this priority already reflect at least this severity"
- * requires converting it back to a severity first and comparing RANKS (see
- * `SEVERITY_RANK_ORDER`) — comparing the raw numbers directly is wrong (see
- * that constant's own doc).
- */
-export const PRIORITY_TO_SEVERITY: Record<number, string> = {
-  0: SEVERITY_UNKNOWN,
-  4: "low",
-  3: "medium",
-  2: "high",
-  1: "blocker",
-};
-
-/**
- * Severity, weakest→strongest, `unknown` lowest of all.
- *
- * Deliberately NOT `SEVERITY_TO_PRIORITY`'s own values, and not derivable
- * from them by numeric comparison: those are Linear PRIORITY numbers, where a
- * lower number is MORE urgent (1 Urgent, 4 Low) except for 0 (None), which is
- * numerically the lowest of all despite being the LEAST severe — the absence
- * of a priority, not a real one. Comparing `SEVERITY_TO_PRIORITY` values
- * directly to decide "which severity is more severe" is therefore wrong in
- * two different ways at once. This is the explicit rank table
- * `severityRank`/`priorityAfterSeverity`/`priorityReflectsSeverity` use
- * instead of ever touching the priority numbers for that comparison.
- *
- * DERIVED from `CANONICAL_SEVERITIES` (already weakest-first per
- * `lib/ladder.ts`'s own doc), not a second hand-copy of it: `parseArgs`
- * validates `--severity` against `[...CANONICAL_SEVERITIES, SEVERITY_UNKNOWN]`
- * — a hand-maintained literal here could silently drift from that list if a
- * token is ever added there, and the failure mode is exactly the bug this
- * file exists to close: `severityRank` would return `-1` (`indexOf` on a miss)
- * for the new token, making `priorityReflectsSeverity` true against EVERY live
- * priority (so a batch is never escalated) and `SEVERITY_TO_PRIORITY[token]`
- * `undefined` (so CREATE sends no `priority` field at all) — severity accepted
- * and then silently dropped, fail-open where the other boundaries already
- * fail closed.
- */
-export const SEVERITY_RANK_ORDER = [SEVERITY_UNKNOWN, ...CANONICAL_SEVERITIES];
-
-/** Where `severity` sits on `SEVERITY_RANK_ORDER` — higher is more severe. */
-export function severityRank(severity: string): number {
-  return SEVERITY_RANK_ORDER.indexOf(severity);
-}
-
-/**
- * Does a batch's LIVE `priority` field already imply a severity at least as
- * severe as `severity`? Converts the live Linear priority number back to its
- * severity token via the total `PRIORITY_TO_SEVERITY` map and compares RANKS
- * (`severityRank`), never the raw priority numbers — see
- * `SEVERITY_RANK_ORDER`'s own doc for why a numeric comparison would be
- * wrong. `?? SEVERITY_UNKNOWN` is defensive only: every priority this script
- * ever reads back from Linear is one of the five `PRIORITY_TO_SEVERITY` keys.
- */
-export function priorityReflectsSeverity(
-  currentPriority: number,
-  severity: string,
-): boolean {
-  const currentSeverity =
-    PRIORITY_TO_SEVERITY[currentPriority] ?? SEVERITY_UNKNOWN;
-  return severityRank(currentSeverity) >= severityRank(severity);
-}
-
-/**
- * The priority a batch's live `priority` field SHOULD have once it also
- * reflects `severity` — NEVER a downgrade, only an escalation or a no-op.
- *
- * A batch may already carry a MORE severe priority than the finding being
- * added (an earlier, worse finding in the same batch), and that must be
- * preserved rather than overwritten down to this finding's own weaker
- * severity — the same "keep the stronger of the two" contract
- * `missingSingleValued`'s Size handling documents for a different field.
- */
-export function priorityAfterSeverity(
-  currentPriority: number,
-  severity: string,
-): number {
-  if (priorityReflectsSeverity(currentPriority, severity)) {
-    return currentPriority;
-  }
-  const priority = SEVERITY_TO_PRIORITY[severity];
-  if (priority === undefined) throw new Error(`Unknown severity '${severity}'`);
-  return priority;
-}
-
 /** How many times an append re-reads and retries against a concurrent writer. */
 export const APPEND_ATTEMPTS = 3;
 
@@ -546,7 +405,7 @@ export interface EntryInput {
   entryKey?: string;
   finding: string;
   reason: string;
-  /** A `SEVERITY_RANK_ORDER` token — always rendered, even `unknown`. */
+  /** A severity token, or `unknown` — always rendered. */
   severity: string;
   /** A `REVIEW_CATEGORIES` token, or `unknown` — always rendered. */
   category: string;
@@ -1486,7 +1345,7 @@ export interface Args {
   /** Heading-key identity: source URL for threads, comment-id + fingerprint for summaries. */
   entryKey: string;
   reason: string;
-  /** A `SEVERITY_RANK_ORDER` token — required, never defaulted (see USAGE). */
+  /** A severity token, or `unknown` — required, never defaulted (see USAGE). */
   severity: string;
   /** A `REVIEW_CATEGORIES` token, or `CATEGORY_UNKNOWN` — required, never defaulted (see USAGE). */
   category: string;
@@ -2326,12 +2185,11 @@ export async function appendWithRetry(
         : `the batch contract (${contractProblems.join("; ")})`,
       priorityOk
         ? ""
-        : // Named by SEVERITY, not by the raw Linear priority number — Linear's
-          // scale runs LOWER-is-more-urgent (except 0/None, the exception to
-          // that too), so "requires priority 2 or higher" reads as satisfied by
-          // 3/4 to a human, which is backwards. This is the one message an
-          // operator sees when the retry loop gives up on this clause.
-          `the priority (finding severity '${args.severity}' needs the batch's Linear priority to reflect AT LEAST that severity; live priority is ${livePriority} — '${PRIORITY_TO_SEVERITY[livePriority] ?? SEVERITY_UNKNOWN}', which is less severe)`,
+        : // Each priority named as well as numbered: the numbers count down
+          // with urgency, so "priority 2 or higher" reads backwards. This is
+          // the one message an operator sees when the retry loop gives up on
+          // this clause.
+          `the priority (finding severity '${args.severity}' needs the batch's Linear priority at least as urgent as ${priorityText(SEVERITY_TO_PRIORITY[args.severity] ?? 0)}; live priority is ${priorityText(livePriority)}, which is less urgent)`,
     ]
       .filter((x) => x !== "")
       .join(" and ");

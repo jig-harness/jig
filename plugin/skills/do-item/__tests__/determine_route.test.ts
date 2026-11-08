@@ -188,6 +188,16 @@ describe("the raises", () => {
     expect(route({ labels: ["medium"] }).effort).toBe("medium");
   });
 
+  it("reads the item's size facet, not its labels, where it has one", () => {
+    const sized = { knownSizes: ["xs", "small", "medium", "large", "xl"] };
+    expect(route({ ...sized, labels: ["xl"], sizes: [] }).effort).toBe(
+      "medium",
+    );
+    expect(route({ ...sized, sizes: ["xl"] }).reasons).toContain(
+      "effort: high (size xl raised medium)",
+    );
+  });
+
   it("raises on a size routing.raise.sizes lists", () => {
     const config = { routing: { raise: { sizes: ["medium"] } } };
     expect(route({ labels: ["medium"] }, config).effort).toBe("high");
@@ -573,8 +583,9 @@ describe("determine_route.ts", () => {
     return { ...r, exitCode: r.status };
   };
 
+  /** A bug, its type in its type facet as `get_issue.ts` prints it. */
   const issue = (labels: string[], title = "x") =>
-    JSON.stringify({ labels, title, nativeType: null });
+    JSON.stringify({ type: "bug", labels, title, nativeType: null });
 
   it("prints a flagged bug's route, raised by the catalog's flag", () => {
     const r = run(
@@ -634,6 +645,61 @@ describe("determine_route.ts", () => {
     expect(JSON.parse(r.stdout).reasons).toContain(
       "effort: high (size xl raised medium)",
     );
+  });
+
+  /** A taxonomy whose size group is the five sizes, and a type `bug`. */
+  const SIZED_TAXONOMY =
+    "version: 1\ntypes:\n  - id: bug\nstatuses:\n  - id: todo\ngroups:\n  - id: size\n    labels:\n      - id: xs\n      - id: small\n      - id: medium\n      - id: large\n      - id: xl\n";
+
+  /** A bug with `size` in its size facet and `labels` beside it. */
+  const sized = (size: string | null, labels: string[] = []) =>
+    JSON.stringify({ type: "bug", size, labels, title: "x", nativeType: null });
+
+  it("raises on the size facet's value, a taxonomy size beyond the batchable ones", () => {
+    const r = run(
+      { "jig.yaml": "routing: {}\n", "label-taxonomy.yaml": SIZED_TAXONOMY },
+      sized("xl"),
+    );
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).reasons).toContain(
+      "effort: high (size xl raised medium)",
+    );
+  });
+
+  it("reads routing.raise.sizes as size values", () => {
+    const r = run(
+      {
+        "jig.yaml": "routing:\n  raise:\n    sizes: [medium]\n",
+        "label-taxonomy.yaml": SIZED_TAXONOMY,
+      },
+      sized("medium"),
+    );
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).reasons).toContain(
+      "effort: high (size medium raised medium)",
+    );
+  });
+
+  it("reads the batchable sizes as the labels of size values kept under a prefix", () => {
+    const r = run(
+      {
+        "jig.yaml":
+          "routing: {}\nissue_tracker:\n  labels:\n    batch_sizes: ['size:xs', 'size:small', 'size:medium']\n  facets:\n    size: { store: label, prefix: 'size:' }\n",
+        "label-taxonomy.yaml": SIZED_TAXONOMY,
+      },
+      sized("medium", ["size:medium"]),
+    );
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).effort).toBe("medium");
+  });
+
+  it("never reads a size label beside an unset size facet", () => {
+    const r = run(
+      { "jig.yaml": "routing: {}\n", "label-taxonomy.yaml": SIZED_TAXONOMY },
+      sized(null, ["xl"]),
+    );
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).effort).toBe("medium");
   });
 
   it("proposes no model where no runtime is identified", () => {

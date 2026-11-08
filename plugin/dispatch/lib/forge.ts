@@ -10,7 +10,8 @@
  * closed one merged. Where the repository turns dispatch labels on, each listing
  * and view carries the pull requests' labels too, and a pull request's
  * labels are changed with one `gh pr edit` call; with them off, no label
- * is read or written. Each read
+ * is used or written (the repository's query, `forge-batch.ts`, lists them
+ * before the section that turns them on is read, and they are dropped). Each read
  * returns what it was asked for or throws with the reason, so a population
  * read in part is never planned from.
  */
@@ -288,6 +289,20 @@ export async function openPullRequests(
   read = NO_LABELS,
 ): Promise<ListedPr[]> {
   return listPrs(slug, ["open"], read);
+}
+
+/**
+ * The open pull requests a repository's query listed (`forge-batch.ts`),
+ * read as `openPullRequests` reads its listing: their labels only when
+ * `read` asks for them.
+ */
+export function listedOpen(
+  listed: readonly unknown[],
+  read = NO_LABELS,
+): ListedPr[] {
+  return listed.map((p, i) =>
+    listedPr(p, `pull request ${i} of the repository query`, read),
+  );
 }
 
 /**

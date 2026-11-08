@@ -55,9 +55,6 @@ import {
   ownerDomainMismatches,
   parseArgs,
   pickBatch,
-  PRIORITY_TO_SEVERITY,
-  priorityAfterSeverity,
-  priorityReflectsSeverity,
   PROVENANCE_LABEL,
   RELATED_TYPE,
   renderEntry,
@@ -68,14 +65,15 @@ import {
   retryBackoffMs,
   REVIEW_CATEGORIES,
   runDeferBatch,
-  SEVERITY_RANK_ORDER,
-  SEVERITY_TO_PRIORITY,
-  severityRank,
   SIZE_GROUP,
   summaryEntryKey,
   threadUrlPattern,
   TYPE_GROUP,
 } from "../scripts/defer-batch.ts";
+import {
+  priorityReflectsSeverity,
+  SEVERITY_TO_PRIORITY,
+} from "../scripts/lib/severity-priority.ts";
 import { ExitError } from "../../../shared/cli.ts";
 import {
   CANONICAL_SEVERITIES,
@@ -411,138 +409,6 @@ describe("isBatchableSize", () => {
     for (const s of BATCH_SIZES) expect(isBatchableSize(s)).toBe(true);
     for (const s of ["medium", "large", "xl", "Small", ""]) {
       expect(isBatchableSize(s)).toBe(false);
-    }
-  });
-});
-
-// ── Severity → Linear priority ───────────────────────────────────────────────
-
-describe("SEVERITY_TO_PRIORITY / PRIORITY_TO_SEVERITY", () => {
-  it("matches the issue spec and labels.yaml priority.levels.*.linear_value", () => {
-    expect(required(SEVERITY_TO_PRIORITY[SEVERITY_UNKNOWN])).toBe(0); // None
-    expect(required(SEVERITY_TO_PRIORITY.low)).toBe(4);
-    expect(required(SEVERITY_TO_PRIORITY.medium)).toBe(3);
-    expect(required(SEVERITY_TO_PRIORITY.high)).toBe(2);
-    expect(required(SEVERITY_TO_PRIORITY.blocker)).toBe(1); // Urgent — not one of
-    // Linear's own five levels; mapped to the top of the scale deliberately.
-  });
-
-  it("is a bijection onto {0,1,2,3,4} — PRIORITY_TO_SEVERITY is its total inverse", () => {
-    const priorities = Object.values(SEVERITY_TO_PRIORITY).sort();
-    expect(priorities).toEqual([0, 1, 2, 3, 4]);
-    for (const [severity, priority] of Object.entries(SEVERITY_TO_PRIORITY)) {
-      expect(PRIORITY_TO_SEVERITY[priority]).toBe(severity);
-    }
-  });
-
-  // The bijection test above only examines this map's EXISTING entries — it
-  // says nothing about whether that entry set equals the accepted severity
-  // vocabulary. A canonical severity added to `lib/ladder.ts` with no matching
-  // entry here would still pass every assertion above while silently producing
-  // `undefined` from `SEVERITY_TO_PRIORITY[token]` at runtime. The module's own
-  // import-time assertion (this map's declaration site) is what actually
-  // enforces this in production; this test exists so a key-set drift fails in
-  // this suite with a readable assertion diff, not only as an import-time throw
-  // the very first time the module happens to load in CI.
-  it("key set exactly equals the canonical severity vocabulary — CANONICAL_SEVERITIES plus SEVERITY_UNKNOWN, no more and no less", () => {
-    expect(Object.keys(SEVERITY_TO_PRIORITY).sort()).toEqual(
-      [...CANONICAL_SEVERITIES, SEVERITY_UNKNOWN].sort(),
-    );
-  });
-});
-
-describe("severityRank", () => {
-  it("ranks unknown lowest, blocker highest, and is NOT the same order as SEVERITY_TO_PRIORITY", () => {
-    expect(SEVERITY_RANK_ORDER).toEqual([
-      SEVERITY_UNKNOWN,
-      "low",
-      "medium",
-      "high",
-      "blocker",
-    ]);
-    expect(severityRank(SEVERITY_UNKNOWN)).toBe(0);
-    expect(severityRank("low")).toBeLessThan(severityRank("medium"));
-    expect(severityRank("medium")).toBeLessThan(severityRank("high"));
-    expect(severityRank("high")).toBeLessThan(severityRank("blocker"));
-    // The trap the issue calls out explicitly: comparing raw
-    // SEVERITY_TO_PRIORITY values would rank 'unknown' (priority 0) BELOW
-    // every real severity, even though it is the LEAST severe token — the
-    // opposite of what severityRank must say.
-    expect(required(SEVERITY_TO_PRIORITY[SEVERITY_UNKNOWN])).toBeLessThan(
-      required(SEVERITY_TO_PRIORITY.low),
-    );
-    expect(severityRank(SEVERITY_UNKNOWN)).toBeLessThan(severityRank("low"));
-  });
-});
-
-describe("priorityReflectsSeverity", () => {
-  it("is false when the live priority is None and severity is real", () => {
-    expect(priorityReflectsSeverity(0, "high")).toBe(false);
-  });
-
-  it("is true when the live priority already implies a MORE severe token", () => {
-    // Live priority 1 (Urgent/blocker) already reflects 'high'.
-    expect(priorityReflectsSeverity(1, "high")).toBe(true);
-  });
-
-  it("is true when the live priority implies EXACTLY this severity", () => {
-    expect(priorityReflectsSeverity(2, "high")).toBe(true); // 2 = high
-  });
-
-  it("is always true against severity unknown, regardless of live priority", () => {
-    for (const p of [0, 1, 2, 3, 4]) {
-      expect(priorityReflectsSeverity(p, SEVERITY_UNKNOWN)).toBe(true);
-    }
-  });
-});
-
-describe("priorityAfterSeverity — escalate-never-downgrade", () => {
-  it("escalates from None (0) to the severity’s own priority", () => {
-    expect(priorityAfterSeverity(0, "high")).toBe(
-      required(SEVERITY_TO_PRIORITY.high),
-    );
-  });
-
-  it("escalates from a LOWER real priority (a weaker earlier finding)", () => {
-    // Live priority 4 (Low) with an incoming 'high' finding must escalate to
-    // 2 (High), not stay at 4 or land somewhere in between.
-    expect(priorityAfterSeverity(4, "high")).toBe(
-      required(SEVERITY_TO_PRIORITY.high),
-    );
-  });
-
-  it("is a no-op when the batch already carries a MORE severe priority", () => {
-    // Live priority 1 (Urgent, from an earlier blocker finding) must not be
-    // downgraded to 3 (Medium) by a later, weaker 'medium' finding.
-    expect(priorityAfterSeverity(1, "medium")).toBe(1);
-  });
-
-  it("is a no-op when the live priority already equals the target exactly", () => {
-    expect(priorityAfterSeverity(2, "high")).toBe(2);
-  });
-
-  it("blocker always forces Urgent (1), even escalating past a real priority", () => {
-    expect(priorityAfterSeverity(0, "blocker")).toBe(1);
-    expect(priorityAfterSeverity(4, "blocker")).toBe(1);
-    expect(priorityAfterSeverity(3, "blocker")).toBe(1);
-    // Already Urgent: no-op, not an error.
-    expect(priorityAfterSeverity(1, "blocker")).toBe(1);
-  });
-
-  it("never demands a priority outside the mutation, for any severity/priority pair", () => {
-    for (const severity of [...CANONICAL_SEVERITIES, SEVERITY_UNKNOWN]) {
-      for (const p of [0, 1, 2, 3, 4]) {
-        const result = priorityAfterSeverity(p, severity);
-        expect([0, 1, 2, 3, 4]).toContain(result);
-        // The defining contract: the result's implied severity is always at
-        // least as severe as both the input priority's AND the target's.
-        expect(priorityReflectsSeverity(result, severity)).toBe(true);
-        expect(
-          severityRank(required(PRIORITY_TO_SEVERITY[result])),
-        ).toBeGreaterThanOrEqual(
-          severityRank(required(PRIORITY_TO_SEVERITY[p])),
-        );
-      }
     }
   });
 });
@@ -1393,12 +1259,9 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     sourceUrl: threadUrl,
     entryKey: threadUrl,
     reason: "r",
-    // 'unknown' is deliberate for these fixtures: it makes
-    // priorityAfterSeverity/priorityReflectsSeverity a no-op (see their own
-    // docs — SEVERITY_RANK_ORDER's 'unknown' is the minimum rank, so it never
-    // demands a priority bump), so the priority machinery does not interfere
-    // with tests that predate it and are not testing priority themselves.
-    // Dedicated severity/priority behavior has its own describe block.
+    // 'unknown' against a batch already at medium (its floor) makes the
+    // priority machinery a no-op, so it does not interfere with tests that
+    // are not testing priority themselves; severity-priority.test.ts does.
     severity: "unknown",
     category: "unknown",
     originating: "ENG-1234",
@@ -1435,11 +1298,10 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
   /**
    * A tiny fake Linear server: applies writes, reflects them on reads.
    *
-   * `seedPriority` defaults to `required(SEVERITY_TO_PRIORITY[SEVERITY_UNKNOWN])` (0,
-   * None) — the neutral starting point for every test in this describe block
-   * that is not itself testing priority escalation (`baseArgs.severity` is
-   * `'unknown'` there, so `priorityAfterSeverity`/`priorityReflectsSeverity`
-   * never engage regardless of the seed).
+   * `seedPriority` defaults to `required(SEVERITY_TO_PRIORITY[SEVERITY_UNKNOWN])`
+   * (medium) — the neutral starting point for every test in this describe
+   * block that is not itself testing priority escalation (`baseArgs.severity`
+   * is `'unknown'` there, whose floor that seed already meets).
    *
    * `priming`, when given, is what the ONE pre-attempt-1 priming read
    * sees instead of `seedLabels`/`''` — modelling a concurrent
@@ -1585,7 +1447,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       entry,
       baseArgs,
       "small", // originalSize — matches the batch's own Size label
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext, // incomingOwnership — same set, guaranteed overlap
       requiredContext,
       neverAbort(),
@@ -1641,7 +1503,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       entry,
       baseArgs,
       "small", // originalSize — matches the batch's own Size label
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext, // incomingOwnership — same set, guaranteed overlap
       requiredContext,
       neverAbort(),
@@ -1701,6 +1563,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       calls.push("verify");
       return {
         issue: {
+          priority: 3,
           description: seedDescription, // our entry already landed
           labels: {
             pageInfo: { hasNextPage: false },
@@ -1721,7 +1584,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       entry,
       baseArgs,
       "small",
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       neverAbort(),
@@ -1787,6 +1650,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       // ALWAYS missing agent:meta, no matter what this run just wrote.
       return {
         issue: {
+          priority: 3,
           description: seedDescription,
           labels: { pageInfo: { hasNextPage: false }, nodes: withoutAgentMeta },
         },
@@ -1805,7 +1669,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       entry,
       baseArgs,
       "small", // originalSize — matches the batch's own Size label
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext, // incomingOwnership — same set, guaranteed overlap
       requiredContext,
       neverAbort(),
@@ -1889,6 +1753,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
         verifyCount === 1 ? "clobbered by someone else" : serverDescription;
       return {
         issue: {
+          priority: 3,
           description,
           labels: { pageInfo: { hasNextPage: false }, nodes: serverLabels },
         },
@@ -1906,7 +1771,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       entry,
       baseArgs,
       "small", // originalSize — matches the batch's own Size label
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext, // incomingOwnership — same set, guaranteed overlap
       requiredContext,
       neverAbort(),
@@ -1964,6 +1829,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       // write — forcing the mid-loop rebuild's empty-description branch.
       return {
         issue: {
+          priority: 3,
           description: verifyCount === 1 ? "" : serverDescription,
           parent: null,
           labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -1982,7 +1848,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       entry,
       noParentArgs,
       "small", // originalSize — matches the batch's own Size label
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext, // incomingOwnership — same set, guaranteed overlap
       requiredContext,
       neverAbort(),
@@ -2043,6 +1909,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       verifyCount++;
       return {
         issue: {
+          priority: 3,
           description: verifyCount === 1 ? "" : serverDescription,
           // The batch's FIRST entry selected a normal epic parent — still
           // set, unaffected by this run's own `--no-parent`.
@@ -2063,7 +1930,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       entry,
       noParentArgs,
       "small",
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       neverAbort(),
@@ -2119,6 +1986,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       return {
         // `parent` deliberately absent — not `parent: null`.
         issue: {
+          priority: 3,
           description: verifyCount === 1 ? "" : serverDescription,
           labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
         },
@@ -2136,7 +2004,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       entry,
       noParentArgs,
       "small",
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       neverAbort(),
@@ -2183,6 +2051,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       calls.push("verify");
       return {
         issue: {
+          priority: 3,
           description: seedDescription, // our entry already landed
           labels: { pageInfo: { hasNextPage: false }, nodes: swappedLabels },
         },
@@ -2201,7 +2070,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
         entry,
         baseArgs,
         "small", // originalSize — matches the batch's own Size label
-        0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+        3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
         requiredContext, // incomingOwnership: ['agent:meta', 'domain:tooling']
         requiredContext,
         neverAbort(),
@@ -2274,6 +2143,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       calls.push("verify");
       return {
         issue: {
+          priority: 3,
           description: seedDescription, // our entry already landed
           labels: { pageInfo: { hasNextPage: false }, nodes: serverLabels },
         },
@@ -2292,7 +2162,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
         entry,
         { ...baseArgs, extraLabels: ["manual-ops"] },
         "small",
-        0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+        3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
         requiredContext, // incomingOwnership: ['agent:meta', 'domain:tooling']
         requiredContext,
         neverAbort(),
@@ -2358,6 +2228,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       }
       return {
         issue: {
+          priority: 3,
           description: serverDescription,
           labels: { pageInfo: { hasNextPage: false }, nodes: serverLabels },
         },
@@ -2375,7 +2246,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
       entry,
       baseArgs, // args.size = 'small'
       "xs", // originalSize — the batch's OWN size, frozen at the read
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       neverAbort(),
@@ -2810,12 +2681,9 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     sourceUrl: threadUrl,
     entryKey: threadUrl,
     reason: "r",
-    // 'unknown' is deliberate for these fixtures: it makes
-    // priorityAfterSeverity/priorityReflectsSeverity a no-op (see their own
-    // docs — SEVERITY_RANK_ORDER's 'unknown' is the minimum rank, so it never
-    // demands a priority bump), so the priority machinery does not interfere
-    // with tests that predate it and are not testing priority themselves.
-    // Dedicated severity/priority behavior has its own describe block.
+    // 'unknown' against a batch already at medium (its floor) makes the
+    // priority machinery a no-op, so it does not interfere with tests that
+    // are not testing priority themselves; severity-priority.test.ts does.
     severity: "unknown",
     category: "unknown",
     originating: "ENG-1234",
@@ -2869,6 +2737,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
           // and attempt 1 writes that, same as before this fix.
           return {
             issue: {
+              priority: 3,
               description: "",
               parent: null,
               labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -2880,6 +2749,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
         // priming read and this verify.
         return {
           issue: {
+            priority: 3,
             description: rebuiltNoParentDescription,
             parent: { id: "epic-uuid-1" },
             labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -2897,7 +2767,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
         entry,
         baseArgs,
         "small",
-        0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+        3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
         requiredContext,
         requiredContext,
         new AbortController().signal,
@@ -2945,6 +2815,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
         if (queryCount === 1) {
           return {
             issue: {
+              priority: 3,
               description: "",
               parent: null,
               labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -2953,6 +2824,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
         }
         return {
           issue: {
+            priority: 3,
             description: liveDescriptionWithConcurrentEntry,
             parent: { id: "epic-uuid-1" },
             labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -2970,7 +2842,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
         entry,
         baseArgs,
         "small",
-        0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+        3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
         requiredContext,
         requiredContext,
         new AbortController().signal,
@@ -3016,6 +2888,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
         if (queryCount === 1) {
           return {
             issue: {
+              priority: 3,
               description: "",
               parent: { id: "epic-uuid-1" },
               labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -3024,6 +2897,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
         }
         return {
           issue: {
+            priority: 3,
             description: rebuiltHasParentDescription,
             parent: null,
             labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -3041,7 +2915,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
         entry,
         baseArgs,
         "small",
-        0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+        3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
         requiredContext,
         requiredContext,
         new AbortController().signal,
@@ -3064,6 +2938,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       }
       return {
         issue: {
+          priority: 3,
           description: rebuiltNoParentDescription,
           parent: null, // still genuinely parentless — matches the claim
           labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -3081,7 +2956,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       entry,
       baseArgs,
       "small",
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       new AbortController().signal,
@@ -3102,6 +2977,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       }
       return {
         issue: {
+          priority: 3,
           description: rebuiltNoParentDescription,
           parent: { id: "epic-uuid-1" },
           labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -3119,7 +2995,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       entry,
       baseArgs,
       "small",
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       new AbortController().signal,
@@ -3163,6 +3039,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       // an ordinary wipe the ordinary mid-loop rebuild must repair.
       return {
         issue: {
+          priority: 3,
           description: verifyCount === 1 ? "" : serverDescription,
           parent: null,
           labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -3180,7 +3057,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       entry,
       baseArgs,
       "small",
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       new AbortController().signal,
@@ -3232,6 +3109,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
         // nothing to do with placement yet.
         return {
           issue: {
+            priority: 3,
             description: "",
             parent: null,
             labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -3244,6 +3122,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       // rebuild set `everRebuiltScaffold`.
       return {
         issue: {
+          priority: 3,
           description: serverDescription,
           parent: { id: "epic-uuid-1" },
           labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -3264,7 +3143,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
         entry,
         baseArgs,
         "small",
-        0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+        3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
         requiredContext,
         requiredContext,
         new AbortController().signal,
@@ -3331,6 +3210,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       }
       return {
         issue: {
+          priority: 3,
           description: serverDescription,
           parent: null,
           labels: { pageInfo: { hasNextPage: false }, nodes: fullLabels },
@@ -3348,7 +3228,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
       entry,
       baseArgs,
       "small",
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       new AbortController().signal,
@@ -3388,12 +3268,9 @@ describe("appendWithRetry — the run-wide deadline", () => {
     sourceUrl: threadUrl,
     entryKey: threadUrl,
     reason: "r",
-    // 'unknown' is deliberate for these fixtures: it makes
-    // priorityAfterSeverity/priorityReflectsSeverity a no-op (see their own
-    // docs — SEVERITY_RANK_ORDER's 'unknown' is the minimum rank, so it never
-    // demands a priority bump), so the priority machinery does not interfere
-    // with tests that predate it and are not testing priority themselves.
-    // Dedicated severity/priority behavior has its own describe block.
+    // 'unknown' against a batch already at medium (its floor) makes the
+    // priority machinery a no-op, so it does not interfere with tests that
+    // are not testing priority themselves; severity-priority.test.ts does.
     severity: "unknown",
     category: "unknown",
     originating: "ENG-1234",
@@ -3428,7 +3305,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
       entry,
       baseArgs,
       "small",
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       controller.signal,
@@ -3473,6 +3350,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
       controller.abort();
       return {
         issue: {
+          priority: 3,
           description: "", // never has the entry — would retry forever otherwise
           parent: null,
           labels: { pageInfo: { hasNextPage: false }, nodes: [] },
@@ -3490,7 +3368,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
       entry,
       baseArgs,
       "small",
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       controller.signal,
@@ -3560,6 +3438,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
       verifyCount++;
       return {
         issue: {
+          priority: 3,
           description: "", // never has the entry — forces a retry
           parent: null,
           labels: { pageInfo: { hasNextPage: false }, nodes: [] },
@@ -3581,7 +3460,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
       entry,
       baseArgs,
       "small",
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       controller.signal,
@@ -3648,6 +3527,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
       verifyCount++;
       return {
         issue: {
+          priority: 3,
           description: seedDescription,
           parent: null,
           labels: { pageInfo: { hasNextPage: false }, nodes: serverLabels },
@@ -3665,7 +3545,7 @@ describe("appendWithRetry — the run-wide deadline", () => {
       entry,
       baseArgs,
       "small",
-      0, // originalPriority — args.severity is 'unknown', so priorityAfterSeverity/priorityReflectsSeverity never engage
+      3, // originalPriority — medium, the floor an 'unknown' severity asks for, so no priority bump engages
       requiredContext,
       requiredContext,
       controller.signal,
@@ -3772,6 +3652,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
       state.verifies += 1;
       return {
         issue: {
+          priority: 3,
           description: state.verifies === 1 ? "" : state.written,
           parent: freshParent,
           labels: target.labels,
@@ -3836,6 +3717,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
       // with the real run and read as "the entry did not survive".
       return {
         issue: {
+          priority: 3,
           description: written,
           parent: null,
           labels: target.labels,
@@ -4025,6 +3907,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
         // claim attempt 1 always would have.
         return {
           issue: {
+            priority: 3,
             description: "",
             parent: null,
             labels: target.labels,
@@ -4036,6 +3919,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
       // with the (now stale) no-parent claim.
       return {
         issue: {
+          priority: 3,
           description: writtenDescription,
           parent: { id: "epic-uuid-1" },
           labels: target.labels,
@@ -4087,6 +3971,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
       }
       return {
         issue: {
+          priority: 3,
           description: "",
           parent: null,
           labels: target.labels,

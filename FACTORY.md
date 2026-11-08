@@ -197,7 +197,8 @@ never the dispatcher.
 - **Start a second session on a claimed item.** A stalled pickup, or an item
   two sessions joined, goes to a person.
 - **Stop a driver that is making progress.** It takes over only a stalled
-  driver its own machine started.
+  driver: one its own machine started, or one whose process is gone or
+  stuck, whoever started it.
 - **Change its own limits.** A class that recurs on the dashboard is recorded
   as a finding, and what to change is a person's decision.
 

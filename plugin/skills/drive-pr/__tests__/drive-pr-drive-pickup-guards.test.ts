@@ -8,13 +8,16 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import {
+  gitCleanEnv,
   HEAD,
   hold,
   park,
+  SCRIPTS,
   scratchClean,
   useDrivePrSuite,
   writeFixture,
@@ -31,11 +34,36 @@ import {
   loginAccount,
   loginEnv,
   trackedLinkedTree,
+  trackedTree,
 } from "./drive-pr-pickup-fixtures.ts";
 
 useDrivePrSuite();
 
 const NOOP = ["sh", "-c", ": pass for 999"];
+
+/** `drives.ts --doctor --json`'s rows for the fixture's state directory. */
+async function doctorRows(
+  stateDir: string,
+): Promise<
+  Array<{ key: string; doctor: { verdict: string; reason: string } | null }>
+> {
+  const proc = Bun.spawn(
+    scriptArgv(join(SCRIPTS, "drives.ts"), "--doctor", "--json"),
+    {
+      cwd: scratchClean.dir,
+      env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: stateDir },
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  expectSpawnExit({ stdout, stderr, exitCode }, 0);
+  return JSON.parse(stdout).rows;
+}
 
 /** A minute from now: later than any park a test just made. */
 const later = () => new Date(Date.now() + 60_000).toISOString();
@@ -231,6 +259,30 @@ describe("drive.ts --take-over admits and refuses by the holder", () => {
     expect(after.takeovers.map((t: { verdict: string }) => t.verdict)).toEqual([
       "DEAD",
     ]);
+  });
+
+  it("admits a dead holder whose tree no longer exists, saying what it lost", async () => {
+    const { dir, stateDir } = await merged();
+    const tree = trackedTree("takeover-vanished");
+    rmSync(tree, { recursive: true, force: true });
+    plantPrLock(stateDir, await deadPid(), tree);
+    await progressAt(stateDir, new Date().toISOString());
+    const row = (await doctorRows(stateDir)).find((r) => r.key === "999");
+    expect(row?.doctor?.verdict).toBe("DEAD");
+    expect(row?.doctor?.reason).toContain(`(${tree}) is missing`);
+    const r = await runDriveIn(dir, stateDir, [
+      "--take-over",
+      "--no-head-sync",
+      "--",
+      ...NOOP,
+    ]);
+    expectSpawnExit({ ...r, stdout: null }, 5);
+    expect(r.stderr).toContain("is missing");
+    expect(r.stderr).toContain("taking the drive over");
+    const after = JSON.parse((await state(stateDir, ["get", "999"])).stdout);
+    expect(after.takeovers).toHaveLength(1);
+    expect(after.takeovers[0].verdict).toBe("DEAD");
+    expect(after.takeovers[0].vanishedTree).toBe(tree);
   });
 
   it("refuses a stale lock whose process is still alive", async () => {

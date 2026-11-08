@@ -4,7 +4,11 @@
  * ledger, the park answers, the launch claims and the follow-up markers.
  * One listing per pull request is filled through one promise, so readers
  * that ask for the same pull request at once share the one read, and a
- * listing that failed is the answer for the rest of the tick too.
+ * listing that failed is the answer for the rest of the tick too. The
+ * repository's query (`forge-batch.ts`) fills the listings of the open pull
+ * requests whose comments it read in full (`seed`); every other pull
+ * request's comments are listed on their own, the first time one is asked
+ * for.
  *
  * Only the observe phase reads through it. Every read just before a launch
  * goes to the forge (a drive read again, a follow-up's markers read again, a
@@ -43,6 +47,17 @@ export interface TickComments {
   startedAt(repo: string, pr: number): number | null;
   /** Drop the listing of a pull request this tick wrote on. */
   forget(repo: string, pr: number): void;
+  /**
+   * Hold `comments` as the listing of `pr`, read in a query that began at
+   * `startedAtMs`: kept only where no listing is held yet and no write this
+   * tick dropped one since the query began, which the query may predate.
+   */
+  seed(
+    repo: string,
+    pr: number,
+    comments: unknown[],
+    startedAtMs: number,
+  ): void;
 }
 
 const keyOf = (repo: string, pr: number) => `${repo}#${pr}`;
@@ -58,6 +73,7 @@ export function tickComments(
     options.list ?? ((target) => listComments(target, {} satisfies Deadline));
   const listings = new Map<string, Promise<Listing>>();
   const started = new Map<string, number>();
+  const forgotten = new Map<string, number>();
   return {
     read(repo, pr) {
       const key = keyOf(repo, pr);
@@ -75,7 +91,15 @@ export function tickComments(
     forget(repo, pr) {
       listings.delete(keyOf(repo, pr));
       started.delete(keyOf(repo, pr));
+      forgotten.set(keyOf(repo, pr), Date.now());
       options.written?.(repo, pr);
+    },
+    seed(repo, pr, comments, startedAtMs) {
+      const key = keyOf(repo, pr);
+      if (listings.has(key) || (forgotten.get(key) ?? -1) >= startedAtMs)
+        return;
+      started.set(key, startedAtMs);
+      listings.set(key, Promise.resolve({ ok: true, value: comments }));
     },
   };
 }

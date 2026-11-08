@@ -1,10 +1,16 @@
 /** Acquire and release generation-addressed driver locks without removing a successor's. */
+import type { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { isAliveSync, lockIdentity } from "../../../../../shared/liveness.ts";
 import { fail } from "./../cli.ts";
-import { type ClaimDiag, claimLive, parseDiagText } from "./../claim.ts";
+import {
+  type ClaimDiag,
+  claimLive,
+  parseDiagText,
+  samePidNamespace,
+} from "./../claim.ts";
 import { formatAccountIdentity } from "./../identity.ts";
 import { dbPathFor, driveDb } from "./../state/db.ts";
 import {
@@ -132,10 +138,47 @@ export function claimAlive(claim: Claim): boolean {
   });
 }
 
+/**
+ * Is the holder's process confirmed gone: on this host and pid namespace, and
+ * judged dead by its recorded identity (its pid answers no signal, or now
+ * belongs to a process with another start time or boot)? Stricter than a
+ * lock that merely reads stale: a live pid whose heartbeat aged out is not
+ * gone, and a holder this host cannot judge is never confirmed gone.
+ */
+export function holderGone(claim: Claim): boolean {
+  if (!samePidNamespace(claim)) return false;
+  const verdict = isAliveSync({
+    hostId: claim.hostId,
+    host: claim.host,
+    bootId: claim.bootId,
+    pid: claim.pid,
+    start: claim.start,
+  });
+  return verdict.ok && verdict.value.state === "dead";
+}
+
 /** The claim of the live driver holding lock `name`, else `null`. */
 export function liveHolder(stateDir: string, name: string): Claim | null {
   const claim = inspectLock(stateDir, name);
   return claim !== null && claimAlive(claim) ? claim : null;
+}
+
+/**
+ * The claim of the live driver holding lock `name` of clone `clone`, read
+ * through `db`, a connection the caller opened (read-only, for a caller that
+ * must leave the disk as it is); `null` when nobody live holds it.
+ */
+export function liveHolderIn(
+  db: Database,
+  clone: string,
+  name: string,
+): Claim | null {
+  const row = db
+    .query("SELECT * FROM locks WHERE clone = ? AND name = ?")
+    .get(clone, name) as LockRow | null;
+  if (row === null) return null;
+  const claim = claimOf(row);
+  return claimAlive(claim) ? claim : null;
 }
 
 /** Take the lock over `seen` (or a free slot); whether this process now holds it. */
