@@ -308,8 +308,8 @@ function withoutPositions(section: string): string {
 
 /**
  * Whether dropping `section`'s positions would lose which place it changed:
- * its text is not valid UTF-8, or a hunk's old side occurs more than once in
- * the file at `from`.
+ * its text is not valid UTF-8, the file at `from` cannot be read, or a hunk's
+ * old side occurs more than once in it.
  */
 async function losesInformation(
   from: string,
@@ -318,7 +318,7 @@ async function losesInformation(
 ): Promise<boolean> {
   if (section.includes("\uFFFD")) return true;
   const old = await localGit(["show", `${from}:${path}`]);
-  if (old.code !== 0) return false;
+  if (old.code !== 0) return true;
   return oldSides(section).some((block) => {
     const first = old.stdout.indexOf(block);
     return first !== -1 && old.stdout.indexOf(block, first + 1) !== -1;
@@ -345,8 +345,12 @@ async function changeAt(
   if (mergeBase.code !== 0 || from === "")
     return gitFailure(`merge-base ${base} ${head}`, mergeBase.stderrTail);
   const diff = await localGit([
+    "-c",
+    "core.quotePath=false",
     "diff",
     "--no-color",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
     "--no-ext-diff",
     "--no-textconv",
     "--text",

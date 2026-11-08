@@ -18,7 +18,7 @@ release: minor
   request's diff changed: the diffs are compared with their context, exactly
   where the base did not move and, for the files it did move, without hunk
   positions. A moved file whose hunk repeats elsewhere in it, or whose patch
-  is not valid UTF-8, is reported as different. A merge that moved or edited
+  is not valid UTF-8 or cannot be read, is reported as different. A merge that moved or edited
   the change's lines differs. A commit the comparison needs that the clone lacks is
   fetched once; still missing, the evaluation is `INDETERMINATE` (exit `1`)
   and runs again. The stop quotes the
