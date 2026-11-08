@@ -105,7 +105,12 @@ describe("why a tick failed", () => {
     const { root, context, receipt } = world(["/a"]);
     const repo = receipt.repos[0] as unknown as { stageDefects: unknown[] };
     repo.stageDefects = [
-      { code: "defect", phase: "apply", stage: "notify", reason: "notify threw" },
+      {
+        code: "defect",
+        phase: "apply",
+        stage: "notify",
+        reason: "notify threw",
+      },
     ];
     settleFailures(receipt, context);
     const rows = readFailures(undefined, root);

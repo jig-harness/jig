@@ -19,8 +19,7 @@
  *   so another host keeps the request reserved until then; and by that host's
  *   next tick with `--apply` for every claim whose launch record ended and
  *   still has none (`settleOwnClaims`), the backstop for a wrapper that died
- *   before its write and a forge that refused it, backed off while the forge
- *   keeps refusing it (`failures.ts`). A claim whose record is
+ *   before its write and a forge that refused it. A claim whose record is
  *   gone from its host ends as died.
  * - **Another host's claims** are read for every pull request the plan
  *   classifies (`readSharedDrives`, and the follow-up markers), and placed
@@ -570,9 +569,7 @@ function endOfRecord(
  * Write the end of each of this host's own claims that has none, once its
  * launch record ended or is gone; with `--apply` only, since it writes to the
  * forge. Returns why an end could not be written, for the report: a later
- * tick writes it. With `book`, the failure ledger (`failures.ts`), each end
- * and marker answer is counted under its claim comment, and one that keeps
- * failing waits until its next try.
+ * tick writes it. `book`, the failure ledger, backs off a repeating failure.
  */
 export async function settleOwnClaims(
   ctx: SharedContext,
