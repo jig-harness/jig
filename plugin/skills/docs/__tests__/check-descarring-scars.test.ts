@@ -372,3 +372,15 @@ test("scar lint: an indented numeral continues an ordered item's paragraph", () 
     scanScars("1. Use `the handle\n  2. coderabbitai[bot]` here."),
   ).toHaveLength(1);
 });
+
+test("scar lint: a tab advances to the next four-column stop", () => {
+  expect(
+    scanScars("1. Use `the handle\n\t2. coderabbitai[bot]` here."),
+  ).toEqual([]);
+  expect(
+    scanScars("1. Use `the handle\n \t2. coderabbitai[bot]` here."),
+  ).toEqual([]);
+  expect(
+    scanScars("1. Use `the handle\n2. coderabbitai[bot]` here."),
+  ).toHaveLength(1);
+});

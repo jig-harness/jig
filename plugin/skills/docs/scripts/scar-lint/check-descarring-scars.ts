@@ -114,6 +114,14 @@ const ORDERED_ITEM = /^\s*\d+[.)]\s/;
 /** The column where the text of an ordered item starts: its content offset. */
 const ORDERED_OFFSET = /^(\s*\d+[.)]\s+)/;
 
+/** Leading tabs as spaces, to the four-column tab stops block structure uses. */
+function expandIndent(line: string): string {
+  const lead = /^[ \t]*/.exec(line)?.[0] ?? "";
+  let width = 0;
+  for (const ch of lead) width += ch === "\t" ? 4 - (width % 4) : 1;
+  return " ".repeat(width) + line.slice(lead.length);
+}
+
 /** Leading blockquote markers, with the content that follows them. */
 const QUOTE_PREFIX = /^(?:\s{0,3}>\s?)+/;
 
@@ -154,9 +162,10 @@ function endsParagraph(raw: string, first: string): boolean {
  * paragraph (only an item numbered 1 can), so it continues the paragraph.
  */
 function isOrderedSibling(opened: string, content: string): boolean {
-  const offset = ORDERED_OFFSET.exec(opened)?.[1]?.length;
+  const first = expandIndent(opened);
+  const offset = ORDERED_OFFSET.exec(first)?.[1]?.length;
   if (offset === undefined || !ORDERED_ITEM.test(content)) return false;
-  return (/^\s*/.exec(content)?.[0].length ?? 0) < offset;
+  return (/^\s*/.exec(expandIndent(content))?.[0].length ?? 0) < offset;
 }
 
 /** The lines of the paragraph starting at `start`, code masked across them. */
