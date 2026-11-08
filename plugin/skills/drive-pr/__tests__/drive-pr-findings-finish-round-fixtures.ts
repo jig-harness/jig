@@ -123,6 +123,7 @@ export function createFindingsFinishRoundFixtures() {
   function stateEnv(stateDir: string, fixtureDir: string) {
     return {
       ...gitCleanEnv(),
+      JIG__dispatch__person: "maintainer",
       DRIVE_PR_STATE_DIR: stateDir,
       // Required beside the override — an unaccompanied
       // `$DRIVE_PR_STATE_DIR` reads as a superseded driver and refuses.
