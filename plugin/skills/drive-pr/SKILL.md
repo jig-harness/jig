@@ -3383,10 +3383,11 @@ telemetry could clear the failed pass's real wall. So `drive.ts` binds the
 evidence immediately before the spawn:
 
 - `snapshotQuotaSessions()` records every session file its walk reaches — the
-  Claude adapter's `candidateFiles()` scans the projects root and one
-  directory level beneath it, which does not include a **subagent**
-  transcript nested a level deeper (`<project>/<session-id>/subagents/
-  agent-*.jsonl`); widening that walk is deferred. Both vendors
+  Claude adapter's `candidateFiles()` walks through
+  `<project>/<session-id>/subagents/agent-*.jsonl`, with a directory-depth
+  bound and one aggregate entry and time budget for the whole tree. The
+  snapshot and detection share that walk. Subagent records carry the parent
+  session id and use the same exact-id correlation below. Both vendors
   create a session's file when the session starts, so anything
   appearing afterwards is a session started during the pass — and, absent the
   exact-id correlation below, anything in the snapshot is treated as somebody
