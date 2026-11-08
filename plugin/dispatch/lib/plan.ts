@@ -573,6 +573,8 @@ function orphanReading(
   const gone = goneDriver(pr);
   if (pr.class !== "silent" || gone !== null)
     return { holder: null, gone, unread: null };
+  if (pr.evidence.settled === true)
+    return { holder: null, gone: null, unread: pr.why };
   const orphan = orphanTakeover(pr, input.holders);
   return "why" in orphan
     ? { holder: null, gone: null, unread: orphan.why }

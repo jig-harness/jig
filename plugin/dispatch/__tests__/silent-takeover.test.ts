@@ -6,7 +6,7 @@
  * told, once.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { bootId } from "../../shared/liveness.ts";
 import { join } from "node:path";
@@ -189,6 +189,36 @@ describe("jig dispatch --apply and a silent driver no launch started", () => {
     expect(second.repos[0]?.actions[0]?.notice?.text).toContain(
       `launch record ${record} already took it over on these ledger facts`,
     );
+  }, 180_000);
+
+  it("keeps a settled takeover settled when the doctor reads its holder dead", async () => {
+    const w = fixture(`${CLONE}@${hostLabel()}`, await deadPid());
+    const [launched] = launches(await tick(w));
+    await waitFor("the takeover's exit", () =>
+      exitWritten(w, launched?.record ?? ""),
+    );
+    writeFileSync(
+      join(w.dir, "doctor.json"),
+      JSON.stringify({
+        stateDir: "/state",
+        rows: [
+          {
+            kind: "pr",
+            key: "7",
+            state: "stale",
+            doctor: {
+              verdict: "DEAD",
+              reason: "its process is gone",
+              recovery: null,
+            },
+          },
+        ],
+      }),
+    );
+    const second = await tick(w);
+    expect(launches(second)).toEqual([]);
+    expect(notified(second)).toEqual([["PR #7", "needs-person", "sent"]]);
+    expect(second.repos[0]?.actions[0]?.takeoverHolder).toBeUndefined();
   }, 180_000);
 
   it("tells a person, and does not take it over, while its driver's pid still runs", async () => {
