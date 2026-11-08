@@ -51,7 +51,7 @@ import { registerSignalHandler, shutdownRequested } from "./cleanup.ts";
 import type { SpawnOptions } from "node:child_process";
 import { traceEnv, traceGhRunner, traceRunner } from "./trace.ts";
 import { fail } from "./cli.ts";
-import { errnoCode } from "./errors.ts";
+import { errnoCode, JigError } from "./errors.ts";
 import { detachedTreeRecord } from "./driven-tree.ts";
 
 /**
@@ -169,9 +169,10 @@ const SUBCOMMAND_PROGRAMS = new Set(["gh", "git"]);
  * Pass it as the `cause` of the error a caller throws (`failFrom` in
  * `cli.ts`), so the command-line boundary shows it under `JIG_LOG=debug`.
  */
-export class ChildFailure extends Error {
+export class ChildFailure extends JigError<"child-failed"> {
   readonly command: string;
-  readonly code: number;
+  /** The child's exit code. */
+  readonly exitCode: number;
   readonly stderrTail: string;
   constructor(argv: readonly string[], result: RunResult) {
     const [program = "", next] = argv;
@@ -189,10 +190,10 @@ export class ChildFailure extends Error {
         : result.bufferExceeded
           ? "was killed for too much output"
           : `exited ${result.code}`;
-    super(`${command} ${how}`);
+    super("child-failed", `${command} ${how}`);
     this.name = "ChildFailure";
     this.command = command;
-    this.code = result.code;
+    this.exitCode = result.code;
     this.stderrTail = result.stderrTail;
   }
 }

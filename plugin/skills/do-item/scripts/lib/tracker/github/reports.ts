@@ -128,6 +128,9 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       title: issue.title,
       url: issue.url,
       ...(await client.facets.read(issue, raw, labels, signal)),
+      hiddenLabels: labels.filter((l) =>
+        model.priorityLabels.some((p) => same(p, l)),
+      ),
       createdAt: issue.createdAt,
       // The state's id is its canonical key: GitHub has no state objects,
       // and a claim re-check compares ids.
@@ -435,16 +438,27 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       );
     },
 
-    async poolIssue(key) {
-      const found = await client.issue(client.ref(key), OPEN_CHILDREN);
-      return found === null ? null : pool(found.issue, found.raw);
+    async poolIssue(key, signal) {
+      const found = await client.issue(client.ref(key), OPEN_CHILDREN, signal);
+      return found === null ? null : pool(found.issue, found.raw, signal);
     },
 
     async openPopulation(signal) {
-      return pools(
-        await client.list({ states: ["OPEN"] }, OPEN_CHILDREN, signal),
+      const read = await client.list(
+        { states: ["OPEN"] },
+        OPEN_CHILDREN,
         signal,
       );
+      const out: CorePoolIssue[] = [];
+      for (const { issue, raw } of read) {
+        const one = await pool(issue, raw, signal);
+        // The priority labels the pool form hides, so a retired one is seen.
+        const hidden = wholeLabels(issue).filter((l) =>
+          model.priorityLabels.some((p) => same(p, l)),
+        );
+        out.push(hidden.length === 0 ? one : { ...one, hiddenLabels: hidden });
+      }
+      return out;
     },
 
     facetReport: (options) => client.facets.report(options),

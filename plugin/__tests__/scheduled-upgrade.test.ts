@@ -84,7 +84,11 @@ const gcState = (m: Machine) => join(m.home, ".local", "state", "jig", "gc");
 
 /** Collection's receipts, oldest first. */
 function receipts(m: Machine): Receipt[] {
-  return receiptPaths(gcState(m)).map(readReceipt);
+  return receiptPaths(gcState(m)).map((path) => {
+    const read = readReceipt(path);
+    if (!read.ok) throw new Error(read.failure.reason);
+    return read.value;
+  });
 }
 
 /** The scheduled upgrade the newest receipt carries. */

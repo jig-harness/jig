@@ -9,7 +9,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
-import { commandPath, commandText } from "../path-command.ts";
+import { commandPath, commandText as commandOutcome } from "../path-command.ts";
+
+/** The script `commandOutcome` writes, which the test expects it to write. */
+function commandText(...args: Parameters<typeof commandOutcome>): string {
+  const written = commandOutcome(...args);
+  if (!written.ok) throw new Error(written.failure.reason);
+  return written.value;
+}
 
 test("the command is ~/.local/bin/jig, and jig.cmd on Windows", () => {
   expect(commandPath("linux", "/home/me")).toBe(
@@ -72,10 +79,18 @@ test("each script marks its launches as a person's, so the launcher never upgrad
 });
 
 test("a value the script cannot carry is refused", () => {
-  expect(() => commandText(["/bin/bun\n", "x"], "linux")).toThrow("line break");
-  expect(() => commandText(['C:\\a"b\\bun.exe'], "win32")).toThrow(
-    "double quote",
-  );
+  const breaks = commandOutcome(["/bin/bun\n", "x"], "linux");
+  expect(breaks.ok).toBe(false);
+  if (!breaks.ok) {
+    expect(breaks.failure.code).toBe("refused");
+    expect(breaks.failure.reason).toContain("line break");
+  }
+  const quotes = commandOutcome(['C:\\a"b\\bun.exe'], "win32");
+  expect(quotes.ok).toBe(false);
+  if (!quotes.ok) {
+    expect(quotes.failure.code).toBe("refused");
+    expect(quotes.failure.reason).toContain("double quote");
+  }
 });
 
 test("a deadline is carried unless the caller sets one", () => {

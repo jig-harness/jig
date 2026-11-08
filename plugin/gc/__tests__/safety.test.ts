@@ -20,6 +20,7 @@ import {
   sharedGcLock,
 } from "../../shared/gc-lock.ts";
 import { withFileLock } from "../../shared/file-lock.ts";
+import type { Outcome } from "../../shared/outcome.ts";
 import { SCRATCH_OWNER_FILE } from "../../shared/scratch-owner.ts";
 import { boundDeclaration, parseDeclaration, parseMachine } from "../config.ts";
 import { jobFiles } from "../../runtime/scheduler.ts";
@@ -48,8 +49,13 @@ function record(dir: string, pid: number, start: string) {
   );
 }
 const later = Date.now() + 10 * 86_400_000;
+/** The value of an outcome a test expects to succeed. */
+function value<T>(outcome: Outcome<T>): T {
+  if (!outcome.ok) throw new Error(outcome.failure.reason);
+  return outcome.value;
+}
 test("an old scope without registration is a finding", () => {
-  expect(scratchProof(root(), [], 7, later).state).toBe("finding");
+  expect(value(scratchProof(root(), [], 7, later)).state).toBe("finding");
 });
 test("an owner in a nested scope vetoes its dead parent's collection", () => {
   const dir = root();
@@ -61,30 +67,34 @@ test("an owner in a nested scope vetoes its dead parent's collection", () => {
     7,
     later,
   );
-  expect(proof.state).toBe("live");
+  expect(value(proof).state).toBe("live");
 });
 test("reused pids do not revive an owner, but scratch still reports only", () => {
   const dir = root();
   record(dir, 2, "old");
   expect(
-    scratchProof(
-      dir,
-      [{ pid: 2, start: "new", ppid: 0, pgid: 2, stat: "R", args: "" }],
-      7,
-      later,
+    value(
+      scratchProof(
+        dir,
+        [{ pid: 2, start: "new", ppid: 0, pgid: 2, stat: "R", args: "" }],
+        7,
+        later,
+      ),
     ),
   ).toMatchObject({ state: "dead", reportOnly: expect.any(String) });
 });
 test("unreadable identities and process tables fail closed", () => {
   const dir = root();
   record(dir, 2, "old");
-  expect(scratchProof(dir, null, 7, later).state).toBe("unverified");
+  expect(value(scratchProof(dir, null, 7, later)).state).toBe("unverified");
   expect(
-    scratchProof(
-      dir,
-      [{ pid: 2, start: "", ppid: 0, pgid: 2, stat: "R", args: "" }],
-      7,
-      later,
+    value(
+      scratchProof(
+        dir,
+        [{ pid: 2, start: "", ppid: 0, pgid: 2, stat: "R", args: "" }],
+        7,
+        later,
+      ),
     ).state,
   ).toBe("unverified");
 });
@@ -99,7 +109,7 @@ test("an owner recorded without a process identity keeps its scope", () => {
       createdAt: "2000-01-01T00:00:00.000Z",
     }),
   );
-  expect(scratchProof(dir, [], 7, later).state).toBe("unverified");
+  expect(value(scratchProof(dir, [], 7, later)).state).toBe("unverified");
 });
 test("a scope is still recorded where no process table can be read", () => {
   const dir = root();
@@ -290,27 +300,40 @@ test("an admission token in its earlier empty form is judged by the pid its name
   ]);
 });
 test("repository declarations cannot register commands or production kinds", () => {
-  expect(() => parseDeclaration({ command: "rm -rf" }, "/repo")).toThrow(
-    "Unknown gc.command",
-  );
-  expect(() => parseDeclaration({ kinds: ["production"] }, "/repo")).toThrow(
-    "supports",
-  );
-  expect(() => parseDeclaration({ scratch_prefixes: ["/"] }, "/repo")).toThrow(
-    "filesystem root",
-  );
+  expect(parseDeclaration({ command: "rm -rf" }, "/repo")).toMatchObject({
+    ok: false,
+    failure: { code: "configuration", reason: "Unknown gc.command" },
+  });
+  expect(parseDeclaration({ kinds: ["production"] }, "/repo")).toMatchObject({
+    ok: false,
+    failure: {
+      code: "configuration",
+      reason: expect.stringContaining("supports"),
+    },
+  });
+  expect(parseDeclaration({ scratch_prefixes: ["/"] }, "/repo")).toMatchObject({
+    ok: false,
+    failure: {
+      code: "configuration",
+      reason: expect.stringContaining("filesystem root"),
+    },
+  });
 });
 test("a base change can only narrow the confirmed install bounds", () => {
-  const installed = parseDeclaration(
-    { kinds: ["scratch"], scratch_prefixes: ["/tmp/test-"] },
-    "/repo",
+  const installed = value(
+    parseDeclaration(
+      { kinds: ["scratch"], scratch_prefixes: ["/tmp/test-"] },
+      "/repo",
+    ),
   );
-  const current = parseDeclaration(
-    {
-      kinds: ["scratch", "worktrees"],
-      scratch_prefixes: ["/tmp/test-", "/tmp/"],
-    },
-    "/repo",
+  const current = value(
+    parseDeclaration(
+      {
+        kinds: ["scratch", "worktrees"],
+        scratch_prefixes: ["/tmp/test-", "/tmp/"],
+      },
+      "/repo",
+    ),
   );
   const result = boundDeclaration(current, installed);
   expect(result.widened).toBe(true);
@@ -319,18 +342,28 @@ test("a base change can only narrow the confirmed install bounds", () => {
 test("a scratch scan past its deadline refuses rather than stalling", () => {
   const scope = root();
   writeFileSync(join(scope, SCRATCH_OWNER_FILE), "{}");
-  expect(() => scratchProof(scope, [], 7, Date.now(), 0)).toThrow(
-    "exceeded its deadline",
-  );
+  expect(scratchProof(scope, [], 7, Date.now(), 0)).toMatchObject({
+    ok: false,
+    failure: {
+      code: "timed-out",
+      reason: "Scratch scan exceeded its deadline",
+    },
+  });
 });
 /** The clock passes the walk's entry check, then expires inside its loop. */
-function expiringAfterEntry(body: () => void): void {
+function expiringAfterEntry(body: () => Outcome<unknown>): void {
   let calls = 0;
   const clock = spyOn(Date, "now").mockImplementation(() =>
     calls++ === 0 ? 0 : 2,
   );
   try {
-    expect(body).toThrow("exceeded its deadline");
+    expect(body()).toMatchObject({
+      ok: false,
+      failure: {
+        code: "timed-out",
+        reason: expect.stringContaining("exceeded its deadline"),
+      },
+    });
   } finally {
     clock.mockRestore();
   }
@@ -343,13 +376,17 @@ test("a flat directory's walk checks its deadline between entries", () => {
   expiringAfterEntry(() => worktreeActivity(scope, scope, 1));
 });
 test("machine guards cannot shorten the kind's default or add authority", () => {
-  expect(() => parseMachine({ idle_days: { scratch: 1 } })).toThrow(
-    "integer from 7",
+  const refusal = (reason: string) => ({
+    ok: false,
+    failure: { code: "configuration", reason: expect.stringContaining(reason) },
+  });
+  expect(parseMachine({ idle_days: { scratch: 1 } })).toMatchObject(
+    refusal("integer from 7"),
   );
-  expect(() => parseMachine({ scratch_prefixes: ["/tmp/"] })).toThrow(
-    "Unknown",
+  expect(parseMachine({ scratch_prefixes: ["/tmp/"] })).toMatchObject(
+    refusal("Unknown"),
   );
-  expect(() => parseMachine({ hour: 24 })).toThrow("integer");
+  expect(parseMachine({ hour: 24 })).toMatchObject(refusal("integer"));
 });
 test("the schedule reports daily and collects weekly or under pressure", () => {
   const policy = { collect_day: 0, min_free_bytes: 100 };
@@ -443,7 +480,13 @@ test("a receipt whose dates would not sort chronologically is refused", () => {
     receipt("2000-10-01T00-00-00.000Z-1-abcd", "October 1, 2000", "scratch"),
     dir,
   );
-  expect(() => readReceipt(path)).toThrow("Invalid collection receipt");
+  expect(readReceipt(path)).toMatchObject({
+    ok: false,
+    failure: {
+      code: "invalid",
+      reason: `Invalid collection receipt: ${path}`,
+    },
+  });
 });
 
 test("forge and Git identity overrides are scrubbed case-insensitively", () => {

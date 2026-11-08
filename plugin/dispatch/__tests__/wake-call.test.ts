@@ -25,12 +25,12 @@ function call(
         JSON.stringify(resolve(import.meta.dir, "../../runtime/scheduler.ts")) +
         ", () => ({",
       "...scheduler,",
-      'detectScheduler: () => "systemd",',
-      "snapshotScheduler: async (_, spec) => ({ scheduler: 'systemd', spec, files: " +
+      'detectScheduler: () => ({ ok: true, value: "systemd" }),',
+      "snapshotScheduler: async (_, spec) => ({ ok: true, value: { scheduler: 'systemd', spec, files: " +
         JSON.stringify(files) +
         ", launcher: Object.fromEntries(Object.entries(" +
         JSON.stringify(launcher) +
-        ").map(([name, text]) => [join(scheduler.launcherDirectory(spec), name), text])) }),",
+        ").map(([name, text]) => [join(scheduler.launcherDirectory(spec), name), text])) } }),",
       "}));",
       "const { tickCall } = await import(" +
         JSON.stringify(resolve(import.meta.dir, "../lib/wake-tick.ts")) +

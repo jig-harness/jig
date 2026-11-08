@@ -26,13 +26,20 @@ const drive = (cls: LedgerClass, exit: number | null = null): DrivenPr => ({
 });
 
 describe("dispatch.labels", () => {
+  /** The section read from `dispatch`, which the test expects to validate. */
+  const section = (dispatch: unknown) => {
+    const read = dispatchSection({ dispatch });
+    if (!read.ok) throw new Error(read.failure.reason);
+    return read.value;
+  };
+
   it("accepts the drive-owned recipient setting", () => {
-    expect(() =>
-      dispatchSection({ dispatch: { person: "maintainer" } }),
-    ).not.toThrow();
+    expect(dispatchSection({ dispatch: { person: "maintainer" } }).ok).toBe(
+      true,
+    );
   });
   it("is off by default, with the jig: prefix", () => {
-    expect(dispatchSection({}).labels).toEqual({
+    expect(section(undefined).labels).toEqual({
       enabled: false,
       prefix: "jig:",
       onlyLabeled: false,
@@ -41,26 +48,27 @@ describe("dispatch.labels", () => {
 
   it("reads a prefix of the repository's own", () => {
     expect(
-      dispatchSection({
-        dispatch: {
-          labels: { enabled: true, prefix: "bot/", only_labeled: true },
-        },
+      section({
+        labels: { enabled: true, prefix: "bot/", only_labeled: true },
       }).labels,
     ).toEqual({ enabled: true, prefix: "bot/", onlyLabeled: true });
   });
 
   it("refuses an unknown key, a prefix gh would split or the forge would cut, and only_labeled with the labels off", () => {
-    const read = (labels: unknown) => () =>
-      dispatchSection({ dispatch: { labels } });
-    expect(read({ enabled: true, colour: "red" })).toThrow(
+    const refusal = (labels: unknown, reason: string) =>
+      expect(dispatchSection({ dispatch: { labels } })).toEqual({
+        ok: false,
+        failure: { code: "invalid", reason: expect.stringContaining(reason) },
+      });
+    refusal(
+      { enabled: true, colour: "red" },
       "dispatch.labels has unknown key(s): colour",
     );
-    expect(read({ enabled: true, prefix: "a,b" })).toThrow("no comma");
-    expect(read({ enabled: true, prefix: "x".repeat(40) })).toThrow(
-      "at most 39 characters",
-    );
-    expect(read({ enabled: "yes" })).toThrow("must be true or false");
-    expect(read({ only_labeled: true })).toThrow(
+    refusal({ enabled: true, prefix: "a,b" }, "no comma");
+    refusal({ enabled: true, prefix: "x".repeat(40) }, "at most 39 characters");
+    refusal({ enabled: "yes" }, "must be true or false");
+    refusal(
+      { only_labeled: true },
       "only_labeled needs dispatch.labels.enabled",
     );
   });

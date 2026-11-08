@@ -58,8 +58,8 @@ import {
 import {
   type RemovalSteps,
   removeThroughOrca,
-  WorktreeRemovalError,
 } from "../../plugin/gc/worktree-removal.ts";
+import { ok } from "../../plugin/shared/outcome.ts";
 import { KICKOFF_KEY } from "../herdr/kickoff.ts";
 import { PARK_TIMEOUT_MS, parkJournal } from "../herdr/lifecycle.ts";
 import { UsageError } from "../herdr/options.ts";
@@ -377,29 +377,28 @@ export async function removeWorkspace(
     );
   const steps: RemovalSteps = {
     hook: (worktree) => hookOf(ws, worktree, "remove"),
-    runHook: (worktree, hook) => ws.runHook(ws.host, worktree, hook),
+    runHook: async (worktree, hook) => {
+      await ws.runHook(ws.host, worktree, hook);
+      return ok(undefined);
+    },
     park: async (worktree) => {
       if (ws.ssh === undefined) await parkJournal(ws.host, worktree);
       else assertNoUnsentFindings(ws, worktree, ws.ssh);
+      return ok(undefined);
     },
   };
-  try {
-    await removeThroughOrca({
-      worktree: path,
-      id: row.id,
-      force: options.force,
-      orca: async (args) => {
-        const done = ws.orca.run(orcaArgv(ws.target, args));
-        return { code: done.status, stdout: done.stdout, stderr: done.stderr };
-      },
-      log: (line) => ws.host.log(line),
-      steps,
-    });
-  } catch (error) {
-    if (error instanceof WorktreeRemovalError)
-      throw new OrcaError(error.message);
-    throw error;
-  }
+  const removed = await removeThroughOrca({
+    worktree: path,
+    id: row.id,
+    force: options.force,
+    orca: async (args) => {
+      const done = ws.orca.run(orcaArgv(ws.target, args));
+      return { code: done.status, stdout: done.stdout, stderr: done.stderr };
+    },
+    log: (line) => ws.host.log(line),
+    steps,
+  });
+  if (!removed.ok) throw new OrcaError(removed.failure.reason);
   return path;
 }
 

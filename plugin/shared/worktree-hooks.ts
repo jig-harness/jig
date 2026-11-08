@@ -26,6 +26,7 @@ import {
   withoutLeakyGitEnv,
 } from "./guarded-git-spawn.ts";
 import { HOOK_TIMEOUT_MS, HOOKS_DIR } from "./orca-workspace/limits.ts";
+import { JigError } from "./errors.ts";
 
 export { HOOK_TIMEOUT_MS, HOOKS_DIR };
 /** The hook output kept for the log; a dependency install is verbose. */
@@ -36,8 +37,11 @@ const SUPERVISOR_SLACK_MS = 10_000;
 export type Hook = "create" | "remove";
 
 /** A hook that cannot run: present but not executable. */
-export class WorktreeHookError extends Error {
+export class WorktreeHookError extends JigError<"hook-not-executable"> {
   override name = "WorktreeHookError";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("hook-not-executable", reason, options);
+  }
 }
 
 /** The hook's path in the worktree, or null when the repository has none. */

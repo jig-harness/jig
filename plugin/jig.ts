@@ -15,7 +15,6 @@
  * definitions that parse.
  */
 import { fileURLToPath } from "node:url";
-import { GcConfigurationError } from "./shared/gc-error.ts";
 import { gcComponent } from "./gc/component.ts";
 import { dispatchComponent } from "./dispatch/component.ts";
 import { askComponent } from "./ask/component.ts";
@@ -61,13 +60,9 @@ const program = programOf(false);
 // does, so it is checked in a second one.
 const strictProgram = programOf(true);
 
-function reportError(error: unknown): never {
-  if (error instanceof GcConfigurationError) {
-    console.error(error.message);
-    throw new ExitError(2, error.message);
-  }
+/** A command line's exit carries its message to standard error; anything else reaches `runMain`. */
+function reportExit(error: unknown): void {
   if (error instanceof ExitError) console.error(error.message);
-  throw error;
 }
 
 /**
@@ -136,7 +131,8 @@ export async function main(argv: string[]): Promise<number> {
     try {
       return await dispatchRun(argv.slice(2));
     } catch (error) {
-      reportError(error);
+      reportExit(error);
+      throw error;
     }
   const parsed = parseCommandLine(argv);
   const strict = strictArgv(parsed, argv);
@@ -144,7 +140,8 @@ export async function main(argv: string[]): Promise<number> {
   try {
     return await execute(parsed, script);
   } catch (error) {
-    reportError(error);
+    reportExit(error);
+    throw error;
   }
 }
 if (import.meta.main) runMain("jig", () => main(process.argv.slice(2)));

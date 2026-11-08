@@ -17,6 +17,7 @@ import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { cloneCheckouts, primaryCheckout } from "../checkout.ts";
 import { gitEnvironment } from "../git.ts";
+import { readReceipt, receiptPaths } from "../receipts.ts";
 import { dump } from "../../shared/yaml.ts";
 import type { Receipt } from "../types.ts";
 
@@ -276,8 +277,9 @@ test("a primary checkout whose path holds a newline is read whole", async () => 
     0,
   );
   const checkouts = await cloneCheckouts(linked);
-  expect(checkouts.primary).toBe(realpathSync(primary));
-  expect(primaryCheckout(linked, checkouts)).toBe(realpathSync(primary));
+  if (!checkouts.ok) throw new Error(checkouts.failure.reason);
+  expect(checkouts.value.primary).toBe(realpathSync(primary));
+  expect(primaryCheckout(linked, checkouts.value)).toBe(realpathSync(primary));
 });
 test("collect from a linked worktree selects the primary checkout's entry", () => {
   const f = setup();
@@ -447,6 +449,40 @@ test("bad configuration and arguments return exit 2", () => {
   expectSpawnExit(run(f, ["--kind", "missing"]), 2);
   writeFileSync(join(f.repo, ".config/jig.yaml"), "gc: {command: unsafe}\n");
   expectSpawnExit(run(f, ["--repo", f.repo]), 2);
+});
+/** Every receipt the runs in `f`'s home wrote, oldest first. */
+function receiptsIn(f: ReturnType<typeof setup>): Receipt[] {
+  return receiptPaths(join(f.user, ".local/state/jig/gc")).map((path) => {
+    const read = readReceipt(path);
+    if (!read.ok) throw new Error(read.failure.reason);
+    return read.value;
+  });
+}
+test("a scheduled run whose configuration fails collects nothing and its receipt names the failure", () => {
+  const f = setup();
+  const scope = `${f.declaration.scratch_prefixes[0]}dead`;
+  mkdirSync(scope);
+  writeFileSync(f.homeFile, dump({ gc: { ...f.machine, hour: 24 } }));
+  const refused = run(f, ["--scheduled"]);
+  expectSpawnExit(refused, 2);
+  expect(refused.stderr.toString()).toBe(
+    "gc.hour must be an integer from 0 to 23\n",
+  );
+  expect(refused.stdout.toString()).toBe("");
+  expect(receiptsIn(f)).toMatchObject([
+    {
+      collect: false,
+      completed: true,
+      kinds: [],
+      resources: [],
+      exitStatus: 2,
+      failure: {
+        code: "configuration",
+        reason: "gc.hour must be an integer from 0 to 23",
+      },
+    },
+  ]);
+  expect(existsSync(scope)).toBe(true);
 });
 
 test("trusted startup prevents a checkout preload and environment file from executing", () => {

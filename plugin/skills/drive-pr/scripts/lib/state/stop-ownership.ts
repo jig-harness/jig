@@ -47,16 +47,26 @@ export async function canStopPublishedDriver(row: {
       "why" in ownership
         ? ownership.why
         : "the ledger does not record this exact acquisition with the current stop-publication capability; hold dispatch and re-arm with the current plugin";
-    const labels = dispatchSection(readConfig()).labels;
+    const section = dispatchSection(readConfig());
+    if (!section.ok) {
+      unverified(row.key, `Error: ${section.failure.reason}`);
+      return false;
+    }
+    const labels = section.value.labels;
     console.log(
       `refusing to stop PR #${row.key}: this acquisition has not published its running ownership, or its ledger no longer belongs to it (${why}). No stop was sent or recorded. Retry after startup publishes its ledger; to keep dispatch off meanwhile, add the configured hold label ${commandLabel(labels, "hold")} when dispatch labels are enabled.`,
     );
   } catch (error) {
-    console.log(
-      `refusing to stop PR #${row.key}: its ledger ownership could not be verified (${String(error)}). No stop was sent or recorded. Retry once the ledger reads; use the repository's configured dispatch hold label to prevent automatic re-arms meanwhile.`,
-    );
+    unverified(row.key, String(error));
   }
   return false;
+}
+
+/** Say that a stop is refused because the ledger's ownership, or what the refusal names, could not be read: `detail` says what failed. */
+function unverified(key: string, detail: string): void {
+  console.log(
+    `refusing to stop PR #${key}: its ledger ownership could not be verified (${detail}). No stop was sent or recorded. Retry once the ledger reads; use the repository's configured dispatch hold label to prevent automatic re-arms meanwhile.`,
+  );
 }
 
 /** Publish intent without changing the canonical resumable state or claiming termination. */

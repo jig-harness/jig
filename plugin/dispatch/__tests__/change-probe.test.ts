@@ -449,12 +449,14 @@ describe("the machine file's change_probe switch", () => {
     const read = (body: string) => {
       const file = join(dir, "dispatch.yaml");
       writeFileSync(file, body);
-      return () => readMachineConfig(file)?.changeProbe;
+      const machine = readMachineConfig(file);
+      return machine.ok ? machine.value?.changeProbe : machine.failure;
     };
-    expect(read("repositories: []\n")()).toBe(true);
-    expect(read("change_probe: false\n")()).toBe(false);
-    expect(read("change_probe: sometimes\n")).toThrow(
-      "change_probe must be true or false",
-    );
+    expect(read("repositories: []\n")).toBe(true);
+    expect(read("change_probe: false\n")).toBe(false);
+    expect(read("change_probe: sometimes\n")).toEqual({
+      code: "invalid",
+      reason: expect.stringContaining("change_probe must be true or false"),
+    });
   });
 });

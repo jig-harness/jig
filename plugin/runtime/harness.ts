@@ -29,6 +29,8 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { JigError } from "../shared/errors.ts";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 
 const PLUGIN = "jig";
 const MARKETPLACE = "jig";
@@ -36,8 +38,11 @@ export const PLUGIN_ID = `${PLUGIN}@${MARKETPLACE}`;
 export const DEFAULT_SOURCE = "https://github.com/jig-harness/jig.git";
 
 /** A request that cannot be carried out as given: the command line contradicts itself. */
-export class UpgradeRequestError extends Error {
+export class UpgradeRequestError extends JigError<"contradictory-request"> {
   override name = "UpgradeRequestError";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("contradictory-request", reason, options);
+  }
 }
 
 /**
@@ -45,8 +50,11 @@ export class UpgradeRequestError extends Error {
  * answered something unreadable, a named harness not on `PATH`, or a
  * marketplace registered from a source other than the one asked for.
  */
-class HarnessError extends Error {
+class HarnessError extends JigError<"harness-unusable"> {
   override name = "HarnessError";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("harness-unusable", reason, options);
+  }
 }
 
 /** The release channels, each a branch of the repository (plugin/README.md). */
@@ -710,36 +718,46 @@ function programOf(harness: Harness, request: HarnessRequest): string {
   return request.programs?.[harness] ?? harness;
 }
 
-/** The request for `--source`, `--channel` and `--claude`/`--codex` as given. */
+/**
+ * The request for `--source`, `--channel` and `--claude`/`--codex` as given,
+ * or `contradictory-request` when they contradict each other.
+ */
 export function harnessRequest(
   options: { source?: string; channel?: Channel; only?: Harness | null },
   env: NodeJS.ProcessEnv = process.env,
-): HarnessRequest {
+): Outcome<HarnessRequest, "contradictory-request"> {
   const fromEnv = env.JIG_MARKETPLACE;
   const source = options.source ?? (fromEnv || DEFAULT_SOURCE);
   const explicit = options.source !== undefined || Boolean(fromEnv);
   const only = options.only ?? null;
-  if (options.channel !== undefined)
-    return {
-      source: atChannel(source, options.channel),
-      explicit: true,
-      defaulted: false,
-      only,
-    };
-  return { source, explicit, defaulted: !explicit, only };
+  if (options.channel === undefined)
+    return ok({ source, explicit, defaulted: !explicit, only });
+  const channelled = atChannel(source, options.channel);
+  if (!channelled.ok) return channelled;
+  return ok({
+    source: channelled.value,
+    explicit: true,
+    defaulted: false,
+    only,
+  });
 }
 
 /** `source` at `channel`'s ref; refused where a channel cannot apply. */
-function atChannel(source: string, channel: Channel): string {
+function atChannel(
+  source: string,
+  channel: Channel,
+): Outcome<string, "contradictory-request"> {
   if (splitSource(source).ref !== undefined)
-    throw new UpgradeRequestError(
+    return failed(
+      "contradictory-request",
       `--channel and a source that names a ref (${source}) contradict each other; give one`,
     );
   if (!isGitAddress(source))
-    throw new UpgradeRequestError(
+    return failed(
+      "contradictory-request",
       `--channel needs a Git address; ${source} is a directory, which has no channels`,
     );
-  return `${source}#${channel}`;
+  return ok(`${source}#${channel}`);
 }
 
 /**

@@ -38,7 +38,6 @@ import { join } from "node:path";
 import {
   PARK_TIMEOUT_MS,
   parkFindings,
-  WorktreeRemovalError,
 } from "../../plugin/gc/worktree-removal.ts";
 import { errnoCode } from "../../plugin/shared/errors.ts";
 import {
@@ -435,13 +434,11 @@ export async function parkJournal(
   ctx: Context,
   worktree: string,
 ): Promise<void> {
-  try {
-    await parkFindings(worktree, Date.now() + budget(ctx, PARK_TIMEOUT_MS));
-  } catch (error) {
-    if (error instanceof WorktreeRemovalError)
-      throw new HerdrError(error.message);
-    throw error;
-  }
+  const parked = await parkFindings(
+    worktree,
+    Date.now() + budget(ctx, PARK_TIMEOUT_MS),
+  );
+  if (!parked.ok) throw new HerdrError(parked.failure.reason);
 }
 
 export interface RemoveOptions {

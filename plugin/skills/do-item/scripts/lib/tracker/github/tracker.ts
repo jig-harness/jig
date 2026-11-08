@@ -1,3 +1,6 @@
+import { validateRestore } from "../facets/restore-labels.ts";
+import { priorityName } from "../facets/values.ts";
+import { labelCodec } from "../facets/label.ts";
 /**
  * The GitHub Issues adapter of the tracker port (`port.ts`).
  *
@@ -238,23 +241,29 @@ export function gitHubTracker(client: Client): Tracker {
   async function setOpenness(
     issue: GhIssue,
     state: CanonicalState,
+    signal?: AbortSignal,
   ): Promise<void> {
     if (isClosedState(state)) {
       const reason = CLOSE_REASONS[state];
       if (!issue.open && (issue.stateReason ?? "COMPLETED") === reason) return;
-      await client.mutate(M.close, {
-        issueId: issue.id,
-        stateReason: reason,
-        duplicateIssueId: null,
-      });
+      await client.mutate(
+        M.close,
+        {
+          issueId: issue.id,
+          stateReason: reason,
+          duplicateIssueId: null,
+        },
+        signal,
+      );
     } else if (!issue.open) {
-      await client.mutate(M.reopen, { issueId: issue.id });
+      await client.mutate(M.reopen, { issueId: issue.id }, signal);
     }
   }
 
   async function transitionByLabels(
     issue: GhIssue,
     state: CanonicalState,
+    signal?: AbortSignal,
   ): Promise<void> {
     const carried = wholeLabels(issue).filter((l) =>
       model.stateLabels.some((s) => same(s, l)),
@@ -267,25 +276,35 @@ export function gitHubTracker(client: Client): Tracker {
       [...add, ...remove],
       (name) =>
         `issue_tracker.states.${state} names '${name}', which is not a label of ${slug(home)}; create it (gh label create "${name}" --repo ${slug(home)}) or name another`,
+      signal,
     );
-    await setOpenness(issue, state);
+    await setOpenness(issue, state, signal);
     if (add.length > 0)
-      await client.mutate(M.addLabels, {
-        id: issue.id,
-        labelIds: add.map((l) => ids.get(l)),
-      });
+      await client.mutate(
+        M.addLabels,
+        {
+          id: issue.id,
+          labelIds: add.map((l) => ids.get(l)),
+        },
+        signal,
+      );
     if (remove.length > 0)
-      await client.mutate(M.removeLabels, {
-        id: issue.id,
-        labelIds: remove.map((l) => ids.get(l)),
-      });
+      await client.mutate(
+        M.removeLabels,
+        {
+          id: issue.id,
+          labelIds: remove.map((l) => ids.get(l)),
+        },
+        signal,
+      );
   }
 
   async function transitionOnBoard(
     issue: GhIssue,
     state: CanonicalState,
+    signal?: AbortSignal,
   ): Promise<void> {
-    const board = await client.board();
+    const board = await client.board(signal);
     const name = model.stateName(state);
     const options = board.options.filter((o) => same(o.name, name));
     // A closed state needs no option: closing the issue is the state, and
@@ -299,10 +318,14 @@ export function gitHubTracker(client: Client): Tracker {
     if (option !== undefined) {
       let itemId = issue.boardItem?.id;
       if (itemId === undefined) {
-        const added = await client.mutate(M.addItem, {
-          projectId: board.projectId,
-          contentId: issue.id,
-        });
+        const added = await client.mutate(
+          M.addItem,
+          {
+            projectId: board.projectId,
+            contentId: issue.id,
+          },
+          signal,
+        );
         itemId = str(
           record(
             record(added.addProjectV2ItemById, "addProjectV2ItemById").item,
@@ -311,14 +334,18 @@ export function gitHubTracker(client: Client): Tracker {
           "item.id",
         );
       }
-      await client.mutate(M.setStatus, {
-        projectId: board.projectId,
-        itemId,
-        fieldId: board.fieldId,
-        optionId: option.id,
-      });
+      await client.mutate(
+        M.setStatus,
+        {
+          projectId: board.projectId,
+          itemId,
+          fieldId: board.fieldId,
+          optionId: option.id,
+        },
+        signal,
+      );
     }
-    await setOpenness(issue, state);
+    await setOpenness(issue, state, signal);
   }
 
   /**
@@ -440,6 +467,7 @@ export function gitHubTracker(client: Client): Tracker {
     return (
       (patch.addLabels ?? []).length > 0 ||
       (patch.removeLabels ?? []).length > 0 ||
+      patch.facetLabels !== undefined ||
       patch.priority !== undefined ||
       patch.project !== undefined ||
       client.facets.touches(patch)
@@ -467,13 +495,14 @@ export function gitHubTracker(client: Client): Tracker {
   async function fieldsInput(
     issue: GhIssue,
     patch: IssuePatch,
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown> | null> {
     const input: Record<string, unknown> = { id: issue.id };
     if (patch.title !== undefined) input.title = patch.title;
     if (patch.description !== undefined) input.body = patch.description;
     if (patch.project !== undefined)
-      input.milestoneId = (await client.milestone(patch.project)).id;
-    Object.assign(input, await client.facets.updateInput(patch));
+      input.milestoneId = (await client.milestone(patch.project, signal)).id;
+    Object.assign(input, await client.facets.updateInput(patch, signal));
     return Object.keys(input).length > 1 ? input : null;
   }
 
@@ -481,14 +510,17 @@ export function gitHubTracker(client: Client): Tracker {
   async function parentChange(
     issue: GhIssue,
     parent: string | null | undefined,
+    signal?: AbortSignal,
   ): Promise<{ to: GhIssue | null; from: GhIssue | null }> {
     if (parent === undefined) return { to: null, from: null };
     if (parent !== null)
-      return { to: await client.mustIssue(parent), from: null };
+      return { to: await client.mustIssue(parent, signal), from: null };
     return {
       to: null,
       from:
-        issue.parent === null ? null : await client.mustIssue(issue.parent.key),
+        issue.parent === null
+          ? null
+          : await client.mustIssue(issue.parent.key, signal),
     };
   }
 
@@ -496,36 +528,54 @@ export function gitHubTracker(client: Client): Tracker {
     issue: GhIssue,
     labels: { add: string[]; remove: string[] },
     ids: Map<string, string>,
+    signal?: AbortSignal,
   ): Promise<void> {
     const idsOf = (names: string[]) => [
       ...new Set(names.map((l) => ids.get(l))),
     ];
     if (labels.add.length > 0)
-      await client.mutate(M.addLabels, {
-        id: issue.id,
-        labelIds: idsOf(labels.add),
-      });
+      await client.mutate(
+        M.addLabels,
+        {
+          id: issue.id,
+          labelIds: idsOf(labels.add),
+        },
+        signal,
+      );
     if (labels.remove.length > 0)
-      await client.mutate(M.removeLabels, {
-        id: issue.id,
-        labelIds: idsOf(labels.remove),
-      });
+      await client.mutate(
+        M.removeLabels,
+        {
+          id: issue.id,
+          labelIds: idsOf(labels.remove),
+        },
+        signal,
+      );
   }
 
   async function reparent(
     issue: GhIssue,
     parents: { to: GhIssue | null; from: GhIssue | null },
+    signal?: AbortSignal,
   ): Promise<void> {
     if (parents.to !== null)
-      await client.mutate(M.addSubIssue, {
-        issueId: parents.to.id,
-        subIssueId: issue.id,
-      });
+      await client.mutate(
+        M.addSubIssue,
+        {
+          issueId: parents.to.id,
+          subIssueId: issue.id,
+        },
+        signal,
+      );
     if (parents.from !== null)
-      await client.mutate(M.removeSubIssue, {
-        issueId: parents.from.id,
-        subIssueId: issue.id,
-      });
+      await client.mutate(
+        M.removeSubIssue,
+        {
+          issueId: parents.from.id,
+          subIssueId: issue.id,
+        },
+        signal,
+      );
   }
 
   const tracker: CoreTracker = {
@@ -569,11 +619,13 @@ export function gitHubTracker(client: Client): Tracker {
       };
     },
 
-    async listComments(key) {
-      const out: IssueComment[] = (await comments(key)).comments.map((c) => ({
-        body: c.body,
-        createdAt: c.createdAt,
-      }));
+    async listComments(key, signal) {
+      const out: IssueComment[] = (await comments(key, signal)).comments.map(
+        (c) => ({
+          body: c.body,
+          createdAt: c.createdAt,
+        }),
+      );
       return out.sort((a, b) =>
         (a.createdAt ?? "").localeCompare(b.createdAt ?? ""),
       );
@@ -583,13 +635,13 @@ export function gitHubTracker(client: Client): Tracker {
       return (await children(key)).map(({ issue }) => summaryOf(issue, model));
     },
 
-    async transition(key, state) {
+    async transition(key, state, signal) {
       // On a board the state is the board's, whatever the repository; a
       // state label belongs to the home repository's labels.
       if (ctx.board === null) refuseForeign(key, "workflow state");
-      const issue = await client.mustIssue(key);
-      if (ctx.board === null) await transitionByLabels(issue, state);
-      else await transitionOnBoard(issue, state);
+      const issue = await client.mustIssue(key, signal);
+      if (ctx.board === null) await transitionByLabels(issue, state, signal);
+      else await transitionOnBoard(issue, state, signal);
     },
 
     async postComment(issue, body, signal) {
@@ -647,21 +699,54 @@ export function gitHubTracker(client: Client): Tracker {
       };
     },
 
-    async updateIssue(key, patch) {
+    async updateIssue(key, patch, signal) {
+      signal?.throwIfAborted();
       checkPatch(key, patch);
       const add = patch.addLabels ?? [];
       const remove = patch.removeLabels ?? [];
       refuseReserved([...add, ...remove]);
       if (touchesRepositoryNames(patch))
         refuseForeign(key, "labels, priority, type, size or project");
-      const issue = await client.mustIssue(key);
-      const priority = priorityChange(wholeLabels(issue), patch.priority);
+      const issue = await client.mustIssue(key, signal);
+      const exact = patch.facetLabels?.priority;
+      if (
+        Object.keys(patch.facetLabels ?? {}).some((f) => f !== "priority") ||
+        (exact !== undefined && !priorityInLabels)
+      )
+        throw new TrackerRequestError(
+          "invalid",
+          "exact facet labels require a label store",
+        );
+      const slot = client.facetSlots.priority;
+      const codec = slot.store === "label" ? labelCodec(slot) : null;
+      if (exact !== undefined && codec !== null)
+        validateRestore(
+          codec,
+          exact,
+          patch.priority === undefined
+            ? undefined
+            : priorityName(patch.priority),
+        );
+      const carried = wholeLabels(issue);
+      const priority =
+        exact === undefined
+          ? priorityChange(carried, patch.priority)
+          : {
+              add: exact.filter((l) => !carried.some((c) => same(c, l))),
+              remove: carried.filter(
+                (l) => codec?.owns(l) && !exact.some((c) => same(c, l)),
+              ),
+            };
       const labels = {
         add: [...add, ...priority.add],
         remove: [...remove, ...priority.remove],
       };
       // Every name resolves before the first write, so a typo changes nothing.
-      const ids = await client.labelIds([...labels.add, ...labels.remove]);
+      const ids = await client.labelIds(
+        [...labels.add, ...labels.remove],
+        undefined,
+        signal,
+      );
       // Label names resolve case-insensitively, so 'Bug' and 'bug' are one
       // label; adding and removing it would leave it removed.
       const removed = new Set(labels.remove.map((l) => ids.get(l)));
@@ -671,11 +756,15 @@ export function gitHubTracker(client: Client): Tracker {
           "invalid",
           `the patch for ${key} both adds and removes ${both.map((l) => `'${l}'`).join(", ")}`,
         );
-      const fields = await fieldsInput(issue, patch);
-      const parents = await parentChange(issue, patch.parent);
-      if (fields !== null) await client.mutate(M.update, { input: fields });
-      await relabel(issue, labels, ids);
-      await reparent(issue, parents);
+      const fields = await fieldsInput(issue, patch, signal);
+      const parents = await parentChange(issue, patch.parent, signal);
+      signal?.throwIfAborted();
+      if (fields !== null)
+        await client.mutate(M.update, { input: fields }, signal);
+      signal?.throwIfAborted();
+      await relabel(issue, labels, ids, signal);
+      signal?.throwIfAborted();
+      await reparent(issue, parents, signal);
     },
 
     async listLabels() {

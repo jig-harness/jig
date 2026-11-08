@@ -77,6 +77,7 @@ describe("run's stderr tail", () => {
     const argv = [...noisy(3)];
     const failure = new ChildFailure(argv, await run(argv));
     expect(failure.message).toBe(`${process.execPath} exited 3`);
+    expect(failure).toMatchObject({ code: "child-failed", exitCode: 3 });
     const result = await run(argv);
     expect(new ChildFailure(["gh", "api", "graphql"], result).command).toBe(
       "gh api",

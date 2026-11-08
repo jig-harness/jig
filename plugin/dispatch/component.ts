@@ -97,10 +97,18 @@ function orcaCheck(job: InstalledJob | null): DoctorCheck {
 async function doctor({ job }: DoctorContext): Promise<DoctorCheck[]> {
   const id = "dispatch:machine-file";
   const path = machineConfigPath(job?.env ?? process.env);
+  const machine = readMachineConfig(path);
   let file: DoctorCheck;
-  try {
+  if (!machine.ok)
+    file = {
+      id,
+      status: "fail",
+      detail: machine.failure.reason,
+      fix: `edit ${path}: CONFIGURATION.md's section on the machine's dispatch file lists its settings`,
+    };
+  else {
     file =
-      readMachineConfig(path) === null
+      machine.value === null
         ? {
             id,
             status: "skip",
@@ -114,13 +122,6 @@ async function doctor({ job }: DoctorContext): Promise<DoctorCheck[]> {
         detail: `no ${path}, but the dispatcher's timer is installed: every tick fails without it`,
         fix: `write ${path} (CONFIGURATION.md's section on the machine's dispatch file), or remove the timer with jig uninstall dispatch --machine`,
       };
-  } catch (error) {
-    file = {
-      id,
-      status: "fail",
-      detail: (error as Error).message,
-      fix: `edit ${path}: CONFIGURATION.md's section on the machine's dispatch file lists its settings`,
-    };
   }
   if (file.status === "skip" && job === null)
     return [
@@ -157,8 +158,8 @@ export const dispatchComponent: Component<DispatchArguments> = {
       request.script,
       machineFile(),
     );
-    // A repository named with --repo also gets the dispatch labels it lacks.
-    if (request.repository === undefined) return timer;
+    // A repository named with --repo also gets the dispatch labels it lacks, once the timer is written.
+    if (request.repository === undefined || timer !== 0) return timer;
     const labels = await installLabels([request.repository], request.confirm);
     return Math.max(timer, labels);
   },

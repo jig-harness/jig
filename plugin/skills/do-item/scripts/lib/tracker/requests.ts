@@ -45,6 +45,7 @@ export function checkPatch(key: string, patch: IssuePatch): void {
       "size",
       "parent",
       "project",
+      "facetLabels",
     ] as const
   ).filter((f) => patch[f] !== undefined);
   if (fields.length === 0 && add.length === 0 && remove.length === 0)
