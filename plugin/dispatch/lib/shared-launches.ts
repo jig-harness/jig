@@ -590,17 +590,18 @@ export async function settleOwnClaims(
   const ends = [
     ...driveEnds(claims, ctx.host, byId, nowIso),
     ...merged.flatMap((pr) =>
-      ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).flatMap((m) =>
-        // A retry's marker is released, never answered.
-        retryable(byId.get(m.run.record))
-          ? []
-          : owed(
-              pr.number,
-              "followup",
-              m.id,
-              markerEnd(m.run.record, outcomes.get(pr.number), byId, nowIso),
-              m.run.host === undefined ? ctx.host : undefined,
-            ),
+      ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).flatMap(
+        (m) =>
+          // A retry's marker is released, never answered.
+          retryable(byId.get(m.run.record))
+            ? []
+            : owed(
+                pr.number,
+                "followup",
+                m.id,
+                markerEnd(m.run.record, outcomes.get(pr.number), byId, nowIso),
+                m.run.host === undefined ? ctx.host : undefined,
+              ),
       ),
     ),
   ];
