@@ -330,6 +330,13 @@ describe("Jira: reading a type kept in the issue types", () => {
     expect(await read({ type: "Incident" })).toEqual([null, ["type"]]);
     expect(await read({ type: "Task" })).toEqual([null, []]);
   });
+
+  it("reads an unmapped issue type as none even beside a type label", async () => {
+    expect(await read({ type: "Incident", labels: ["bug"] })).toEqual([
+      null,
+      ["type"],
+    ]);
+  });
 });
 
 describe("Jira: changing a type and a size kept in Jira's own fields", () => {
@@ -397,6 +404,15 @@ describe("Jira: changing a type and a size kept in Jira's own fields", () => {
     ).rejects.toThrow(
       "a Jira issue always has an issue type, and ENG-1's is Bug, the type bug",
     );
+  });
+
+  it("refuses to remove the label of the type the write sets", async () => {
+    await expect(
+      change(issue({ key: "ENG-1", type: "Sub-task", labels: ["bug"] }), {
+        type: "bug",
+        removeLabels: ["bug"],
+      }),
+    ).rejects.toThrow("the label 'bug' to remove is the type 'bug'");
   });
 
   it("sets and clears the size field, its option checked against the edit screen", async () => {

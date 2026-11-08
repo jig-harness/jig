@@ -93,6 +93,11 @@ function kindOf(
 ): FacetField["kind"] {
   const r = (schema ?? {}) as Record<string, unknown>;
   const custom = typeof r.custom === "string" ? r.custom : "";
+  if (typeof r.system === "string")
+    throw new TrackerConfigError(
+      where,
+      `${where}: the field '${name}' is one of Jira's system fields; a facet is kept in a custom field`,
+    );
   const rich =
     custom.endsWith(":textarea") ||
     r.system === "description" ||
@@ -221,16 +226,26 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     const values = new Set(labelled);
     if (typed !== null && !(isFallback(t) && labelled.size > 0))
       values.add(typed);
+    const unmapped = t !== null && typed === null && !isFallback(t);
     return {
-      value: values.size === 1 ? ([...values][0] as string) : null,
-      unmapped: t !== null && typed === null && !isFallback(t),
+      value: !unmapped && values.size === 1 ? ([...values][0] as string) : null,
+      unmapped,
     };
   }
 
   /** The canonical value one value of a field names, or `null`. */
-  function fromValue(s: ResolvedFacet, raw: string): string | null {
+  function fromValue(
+    s: ResolvedFacet,
+    raw: string,
+    numeric: boolean,
+  ): string | null {
     const exact = s.map?.fromTracker(raw) ?? null;
-    if (exact !== null || raw.trim() === "" || !Number.isFinite(Number(raw)))
+    if (
+      exact !== null ||
+      !numeric ||
+      raw.trim() === "" ||
+      !Number.isFinite(Number(raw))
+    )
       return exact;
     // A number field answers with the number, not its configured spelling.
     const n = Number(raw);
@@ -247,7 +262,8 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
         "invalid",
         `issue ${issue.key} was read without the field ${s.facet} is kept in`,
       );
-    const named = raws.map((r) => fromValue(s, r));
+    const numeric = issue.numericFacets?.includes(s.facet) === true;
+    const named = raws.map((r) => fromValue(s, r, numeric));
     const values = new Set(named.filter((v): v is string => v !== null));
     const unmapped = named.includes(null);
     return {
@@ -269,9 +285,12 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   }
 
   /** The issue type a type value is kept as, `null` where it falls back to `issue_type` and its label. */
-  async function issueTypeOf(value: string): Promise<IssueTypeMeta | null> {
+  async function issueTypeOf(
+    value: string,
+    signal?: AbortSignal,
+  ): Promise<IssueTypeMeta | null> {
     const name = type?.map?.toTracker(value) ?? value;
-    const types = standard(await client.issueTypes());
+    const types = standard(await client.issueTypes(signal));
     const found = types.find((t) => same(t.name, name));
     const named = type?.named?.some((v) => same(v, value)) === true;
     if (found !== undefined || !named) return found ?? null;
@@ -282,8 +301,8 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   }
 
   /** `issue_tracker.jira.issue_type`, which a type with no issue type of its own falls back to. */
-  async function fallbackType(): Promise<IssueTypeMeta> {
-    const found = (await client.issueTypes()).find((t) =>
+  async function fallbackType(signal?: AbortSignal): Promise<IssueTypeMeta> {
+    const found = (await client.issueTypes(signal)).find((t) =>
       same(t.name, settings.issueType),
     );
     if (found === undefined)
@@ -364,7 +383,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   /** The create screen of an issue type, by its name; `null` where the project lists no such type. */
   function createScreen(issueType: string, signal?: AbortSignal) {
     return async () => {
-      const t = (await client.issueTypes()).find((x) =>
+      const t = (await client.issueTypes(signal)).find((x) =>
         same(x.name, issueType),
       );
       if (t === undefined) return null;
@@ -443,11 +462,16 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   async function health(s: ResolvedFacet, signal?: AbortSignal) {
     try {
       if (s.store === "native") {
-        await fallbackType();
-        for (const v of s.values) await issueTypeOf(v);
+        await fallbackType(signal);
+        for (const v of s.values) {
+          refuseStopped(signal);
+          await issueTypeOf(v, signal);
+        }
       } else
-        for (const v of s.values)
+        for (const v of s.values) {
+          refuseStopped(signal);
           await encode(s, v, createScreen(settings.issueType, signal), signal);
+        }
       return { status: "ok" as const };
     } catch (err) {
       return {
@@ -503,6 +527,19 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     async update(issue, patch, signal) {
       const out: FacetWrite = { fields: {}, add: [], remove: [] };
       if (type !== null && patch.type !== undefined) {
+        const dropped =
+          patch.type === null
+            ? undefined
+            : (patch.removeLabels ?? []).find(
+                (l) =>
+                  (fallback as LabelCodec).owns(l) &&
+                  (fallback as LabelCodec).read([l]) === patch.type,
+              );
+        if (dropped !== undefined)
+          throw new TrackerRequestError(
+            "invalid",
+            `the label '${dropped}' to remove is the type '${patch.type}' this write sets`,
+          );
         const change = await typeChange(issue, patch.type);
         Object.assign(out.fields, change.fields);
         out.add.push(...change.add);

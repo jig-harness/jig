@@ -112,7 +112,7 @@ export interface Client {
   /** The configured link types, each resolved to exactly one. */
   linkTypes(): Promise<Record<LinkedRelation, LinkType>>;
   /** The project's issue types, with their hierarchy level. */
-  issueTypes(): Promise<IssueTypeMeta[]>;
+  issueTypes(signal?: AbortSignal): Promise<IssueTypeMeta[]>;
   /**
    * The fields `issue_tracker.jira.field_labels` names, each resolved to
    * exactly one field of the site; read once, and without a request when
@@ -581,7 +581,8 @@ export function jiraClient(opts: ClientOptions): Client {
       return links;
     },
 
-    issueTypes() {
+    issueTypes(signal) {
+      if (signal?.aborted === true) return Promise.reject(abortedError(signal));
       types ??= (async () => {
         const values = await offsetPages(
           transport,
@@ -609,7 +610,7 @@ export function jiraClient(opts: ClientOptions): Client {
       types.catch(() => {
         types = undefined;
       });
-      return types;
+      return signal === undefined ? types : until(types, signal);
     },
 
     fieldLabels(signal) {
@@ -658,6 +659,7 @@ export function jiraClient(opts: ClientOptions): Client {
     },
 
     createMeta(issueTypeId, signal) {
+      if (signal?.aborted === true) return Promise.reject(abortedError(signal));
       let screen = createScreens.get(issueTypeId);
       if (screen === undefined) {
         const where = `create screen of issue type ${issueTypeId} in ${project}`;
@@ -673,7 +675,6 @@ export function jiraClient(opts: ClientOptions): Client {
                 items: "fields",
                 idOf: (f) => f.fieldId,
                 where,
-                ...(signal === undefined ? {} : { signal }),
               },
             ),
             where,
@@ -681,7 +682,7 @@ export function jiraClient(opts: ClientOptions): Client {
         screen.catch(() => createScreens.delete(issueTypeId));
         createScreens.set(issueTypeId, screen);
       }
-      return screen;
+      return signal === undefined ? screen : until(screen, signal);
     },
 
     async editMeta(key, signal) {

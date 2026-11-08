@@ -96,6 +96,8 @@ export interface JiraIssue {
   updatedAt: string;
   /** The values of the fields a facet is kept in, by facet; empty when none is. */
   facetValues: Partial<Record<Facet, string[]>>;
+  /** The facets whose field is a number field, which answers with the number rather than its configured spelling. */
+  numericFacets?: Facet[];
 }
 
 const STATUS_CATEGORIES = ["new", "indeterminate", "done"];
@@ -260,7 +262,7 @@ export function parseIssue(
   v: unknown,
   site: string,
   fieldLabels: ReadonlyArray<FieldLabel> = [],
-  facetFields: ReadonlyArray<{ facet: Facet; id: string }> = [],
+  facetFields: ReadonlyArray<{ facet: Facet; id: string; kind?: string }> = [],
 ): JiraIssue {
   const raw = record(v, "issue");
   const key = str(raw.key, "issue.key");
@@ -293,8 +295,14 @@ export function parseIssue(
     links: linksOf(f.issuelinks, at("issuelinks")),
     createdAt: iso(f.created, at("created")),
     updatedAt: iso(f.updated, at("updated")),
+    // A field the response omits stays absent, so a read without it fails.
     facetValues: Object.fromEntries(
-      facetFields.map((ff) => [ff.facet, fieldValues(f[ff.id], at(ff.id))]),
+      facetFields
+        .filter((ff) => ff.id in f)
+        .map((ff) => [ff.facet, fieldValues(f[ff.id], at(ff.id))]),
     ),
+    numericFacets: facetFields
+      .filter((ff) => ff.kind === "number")
+      .map((ff) => ff.facet),
   };
 }

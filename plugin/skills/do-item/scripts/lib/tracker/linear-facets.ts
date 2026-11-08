@@ -33,7 +33,7 @@ import {
   withFacets,
 } from "./facets/tracker.ts";
 import { TrackerConfigError } from "./config-error.ts";
-import { readSignal } from "./facets/bounds.ts";
+import { readSignal, refuseStopped } from "./facets/bounds.ts";
 import { fold, PRIORITY_NAMES } from "./facets/values.ts";
 import { type Facet, type Tracker, TrackerRequestError } from "./port.ts";
 import { ShapeError } from "./linear-shapes.ts";
@@ -232,42 +232,66 @@ export function estimateStore(
       : null;
   let points: Promise<ReadonlyArray<readonly [string, number]>> | undefined;
   function map(signal?: AbortSignal) {
+    refuseStopped(signal);
     // Called only where size is kept in the estimate.
     const sized = kept as Facets;
+    // The shared read belongs to no caller; each caller's wait is its own.
     points ??= (async () =>
-      sizePoints(sized, await readScale(transport, team, signal), team))();
-    points.catch(() => {
-      points = undefined;
+      sizePoints(sized, await readScale(transport, team), team))();
+    const shared = points;
+    shared.catch(() => {
+      if (points === shared) points = undefined;
     });
-    return points;
+    if (signal === undefined) return shared;
+    return new Promise<ReadonlyArray<readonly [string, number]>>(
+      (resolve, reject) => {
+        const stop = () => {
+          try {
+            refuseStopped(signal);
+          } catch (err) {
+            reject(err);
+          }
+        };
+        signal.addEventListener("abort", stop, { once: true });
+        shared
+          .then(resolve, reject)
+          .finally(() => signal.removeEventListener("abort", stop));
+      },
+    );
   }
 
   /** The size an estimate holds; an estimate no size has is unmapped. */
   async function sizeOf(
     estimate: number | null | undefined,
+    signal?: AbortSignal,
   ): Promise<{ size: string | null; unmapped: boolean }> {
     if (estimate === undefined)
       throw new ShapeError("an issue was read without its estimate");
     if (estimate === null) return { size: null, unmapped: false };
-    const found = (await map()).find(([, n]) => n === estimate)?.[0] ?? null;
+    const found =
+      (await map(signal)).find(([, n]) => n === estimate)?.[0] ?? null;
     return { size: found, unmapped: found === null };
   }
 
   /** The issue a read returns, its estimate read as its size. */
-  async function issueOf(issue: WithEstimate<CoreIssue>): Promise<CoreIssue> {
+  async function issueOf(
+    issue: WithEstimate<CoreIssue>,
+    signal?: AbortSignal,
+  ): Promise<CoreIssue> {
     const { estimate, ...rest } = issue;
-    return { ...rest, size: (await sizeOf(estimate)).size };
+    return { ...rest, size: (await sizeOf(estimate, signal)).size };
   }
   async function pool(
     issue: WithEstimate<CorePoolIssue>,
+    signal?: AbortSignal,
   ): Promise<CorePoolIssue> {
     const { estimate, ...rest } = issue;
-    const { size, unmapped } = await sizeOf(estimate);
+    const { size, unmapped } = await sizeOf(estimate, signal);
     const facets: Facet[] = [...(rest.unmappedFacets ?? []), "size"];
     return { ...rest, size, ...(unmapped ? { unmappedFacets: facets } : {}) };
   }
-  const pools = (issues: WithEstimate<CorePoolIssue>[]) =>
-    Promise.all(issues.map(pool));
+  const pools = (issues: WithEstimate<CorePoolIssue>[], signal?: AbortSignal) =>
+    Promise.all(issues.map((i) => pool(i, signal)));
 
   return {
     fields: kept === null ? "" : " estimate",
@@ -294,12 +318,12 @@ export function estimateStore(
         openChildren: async (key) => pools(await core.openChildren(key)),
         async poolIssue(key, signal) {
           const issue = await core.poolIssue(key, signal);
-          return issue === null ? null : pool(issue);
+          return issue === null ? null : pool(issue, signal);
         },
         assignedIssues: async (identity, states, signal) =>
-          pools(await core.assignedIssues(identity, states, signal)),
+          pools(await core.assignedIssues(identity, states, signal), signal),
         openPopulation: async (signal) =>
-          pools(await core.openPopulation(signal)),
+          pools(await core.openPopulation(signal), signal),
         async facetReport(options): Promise<CoreFacetReport> {
           let health: { status: "ok" } | { status: "failed"; error: string };
           try {
