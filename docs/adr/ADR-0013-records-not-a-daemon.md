@@ -5,7 +5,7 @@ status: draft
 description: "Jig's components share registered records on the machine, in the working tree and on the forge and tracker, and each derives what to do from records it does not own; no resident daemon or message bus coordinates them, one resident reader per machine may serve a person's view of them, and the record names the conditions for reopening that"
 lifecycle: permanent
 version: "1.1"
-last_updated: 2026-11-06
+last_updated: 2026-11-07
 owner: maintainers
 decision_date: 2026-11-04
 supersedes: ~
@@ -49,11 +49,10 @@ weigh against it.
   day Jig holds a resident process with real concurrency. A coordinator
   daemon is that process. A reader that answers each request from one read
   of the records, with no state that two requests change, is not.
-- **An early wake-up is planned without one.** The planned `jig` plugin
-  for Orca would run a tick when an agent's status changes
+- **An early wake-up works without one.** The `jig` plugin
+  for Orca runs a tick when an agent waits, blocks or finishes
   ([design/orca-integration.md](../../design/orca-integration.md#the-jig-plugin-for-orca)),
-  with the machine's timer catching what an event misses. Until that
-  integration is built, the timer supplies the wake-ups.
+  with the machine's timer catching what an event misses.
 - **A person needs one view of the line.** The [hub](../../GLOSSARY.md)
   ([design/hub.md](../../design/hub.md)) shows every
   [piece of work](../../GLOSSARY.md) across a person's machines, and a page
@@ -150,6 +149,9 @@ coordinator.
 `scripts/check-records-registry.ts` in the gates fails a hidden-marker
 literal, a drive state-file family or a SQLite table under `plugin/` that
 the registry does not hold, and a registry entry the code no longer names.
+The gate parses source with oxc-parser rather than a tokenizer because regular
+expressions, division and nested template expressions determine where SQL
+string and template literals begin and end.
 That no component opens a listening socket other than the dashboard's,
 which the hub grows from, is not checked, nor that the hub listens only on
 loopback or on a front's socket; review holds both.

@@ -83,7 +83,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 14;
+const DISPATCH_DB = 15;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 4;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -155,6 +155,15 @@ const DRIVE_STATE: RecordKind[] = [
     `${DRIVE}lib/ledger-stop.ts`,
     "driver_records",
   ),
+  {
+    ...driveFile(
+      "drive-observation",
+      `${DRIVE}lib/driver-observation.ts`,
+      "drive-observation-<PR>-<acquisition hash>.json",
+      "driver-observation",
+    ),
+    version: 1,
+  },
   driveTable("drive-state-import", `${STATE}import.ts`, "imports"),
   driveTable("drive-counter", `${STATE}db.ts`, "counters"),
   driveTable(
@@ -286,6 +295,13 @@ const DISPATCHER: RecordKind[] = [
   ),
   plain(
     "machine",
+    "dispatch-probe",
+    "dispatch/lib/change-probe.ts",
+    `${DISPATCH_DIR}probe/state.json`,
+    1,
+  ),
+  plain(
+    "machine",
     "dispatch-outcome-log",
     "dispatch/lib/log-export.ts",
     `${DISPATCH_DIR}log-<year>-<month>.jsonl`,
@@ -320,7 +336,7 @@ const MACHINE: RecordKind[] = [
     "machine",
     "gc-admission",
     "shared/gc-lock.ts",
-    "~/.local/state/jig/gc-locks/<kind>/writer, reader-<pid>-<id>",
+    "~/.local/state/jig/gc-locks/<kind>/writer, reader-<pid>-<id>, install/writer-takeover.<hash>.lock",
     0,
   ),
   plain(
@@ -339,9 +355,30 @@ const MACHINE: RecordKind[] = [
   ),
   plain(
     "machine",
+    "upgrade-setting",
+    "runtime/upgrade-record.ts",
+    "~/.jig/jig.yaml, its upgrade section",
+    0,
+  ),
+  plain(
+    "machine",
+    "upgrade-stamp",
+    "runtime/upgrade-stamp.ts",
+    "~/.local/state/jig/upgrade/last.json",
+    1,
+  ),
+  plain(
+    "machine",
+    "upgrade-claim-lock",
+    "runtime/scheduled-upgrade.ts",
+    "~/.local/state/jig/upgrade/claim.<hash>.lock",
+    0,
+  ),
+  plain(
+    "machine",
     "scheduled-job",
     "runtime/scheduler.ts",
-    "a systemd user timer, a launchd job or a crontab line per component, and its launcher copy under ~/.local/state/jig/<component>/launcher/",
+    "a systemd user timer, a launchd job or a crontab line per component job, and its launcher copy under ~/.local/state/jig/<component>/launcher/ (the dispatcher's change probe: ~/.local/state/jig/dispatch/probe/launcher/)",
     0,
   ),
   plain(

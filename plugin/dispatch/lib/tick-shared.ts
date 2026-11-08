@@ -18,7 +18,11 @@ import {
 } from "../../shared/records/shared.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import { settleNoCauseStops } from "./no-cause-stops.ts";
-import { settleConflictStops } from "./actions/drive-hold.ts";
+import {
+  driveHold,
+  settleConflictStops,
+  settleSilentTakeovers,
+} from "./actions/drive-hold.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { type ReadRecord, settledEnds } from "./launches.ts";
 import {
@@ -29,12 +33,14 @@ import {
 } from "./merge-reads.ts";
 import {
   type DriveClaims,
+  foreignHold,
   hostOf,
   ownersSeen,
   readSharedDrives,
   type SharedContext,
   settleOwnClaims,
   settleSharedConflictStops,
+  settleSharedTakeovers,
 } from "./shared-launches.ts";
 import {
   forgettingWrites,
@@ -42,7 +48,7 @@ import {
   type TickComments,
 } from "./tick-comments.ts";
 import type { ForgeRead } from "./tick-forge.ts";
-import type { MarkedPr, RepoReport, SharedReport } from "./types.ts";
+import type { DrivenPr, MarkedPr, RepoReport, SharedReport } from "./types.ts";
 
 /** A repository's shared records for one tick. */
 export interface TickShared {
@@ -213,21 +219,88 @@ export async function readDriveClaims(
     ? await readSharedDrives(reading, forge.drives)
     : new Map();
   if (forge.ok) await addEndedLaunches(reading, forge, records, claims, nowMs);
-  forge.drives = settleSharedConflictStops(
-    settleConflictStops(
-      forge.drives,
-      records.filter((r) => r.record.repo === ctx.slug),
-    ),
+  forge.drives = settleDrives(ctx, forge.drives, records, claims);
+  return claims;
+}
+
+/**
+ * Each drive as the plan reads it once this host's records and every host's
+ * claims are read beside it: a re-drive already made for the change it shows
+ * now is a person's (by this host's records, then by another host's claims),
+ * a silent driver already taken over on its facts is notified, and what is
+ * left is bounded by the pull request's recovery budget.
+ */
+export function settleDrives(
+  ctx: Pick<SharedContext, "slug" | "host">,
+  drives: readonly DrivenPr[],
+  records: readonly ReadRecord[],
+  claims: DriveClaims,
+): DrivenPr[] {
+  return settleOwnDrives(
+    drives,
+    records.filter((r) => r.record.repo === ctx.slug),
     claims,
     ctx.host,
   );
-  forge.drives = settleNoCauseStops(
-    forge.drives,
-    records.filter((r) => r.record.repo === ctx.slug),
+}
+
+/** `settleDrives` over launch records already scoped to the drives' repository. */
+export function settleOwnDrives(
+  drives: readonly DrivenPr[],
+  own: ReadRecord[],
+  claims: DriveClaims,
+  host: string,
+): DrivenPr[] {
+  const placed = markUnlaunched(
+    settleSharedTakeovers(drives, claims, host),
+    own,
+    claims,
+    host,
+  );
+  return settleNoCauseStops(
+    settleSharedConflictStops(
+      settleSilentTakeovers(settleConflictStops(placed, own), own),
+      claims,
+      host,
+    ),
+    own,
     claims,
     Date.now(),
   );
-  return claims;
+}
+
+/**
+ * Each silent drive whose driver this host shows gone, marked `unlaunched`
+ * when neither this host's launch records nor another host's claims place it
+ * (start its driver, hold it, or answer it with a refusal): only that
+ * takeover is a re-drive the recovery budget counts. A takeover of a driver
+ * a launch started is planned from that launch's record or claim, outside
+ * the budget.
+ */
+function markUnlaunched(
+  drives: readonly DrivenPr[],
+  own: ReadRecord[],
+  claims: DriveClaims,
+  host: string,
+): DrivenPr[] {
+  return drives.map((pr) => {
+    if (pr.class !== "silent" || pr.evidence.driverGone !== true) return pr;
+    // This host's own refused takeover places no driver by itself: it is the
+    // takeover `settleSilentTakeovers` settles. It hides the drive from that
+    // only when no older record started the driver, which settlement (reading
+    // the drive as settled) would take over again.
+    const hold = driveHold(pr, own);
+    const unplaced =
+      hold.kind === "none" ||
+      (hold.kind === "refused" &&
+        hold.record.record.action === "takeover" &&
+        driveHold({ ...pr, evidence: { ...pr.evidence, settled: true } }, own)
+          .kind === "none");
+    return unplaced &&
+      foreignHold(pr, claims.get(pr.number), host).kind === "none"
+      ? { ...pr, evidence: { ...pr.evidence, unlaunched: true } }
+      : pr;
+  });
 }
 
 /** With `--apply`: write the end of this host's own claims whose launch records ended, and report what could not be written. */
@@ -249,6 +322,13 @@ export async function endOwnClaims(
     inputs.records.filter((r) => r.record.repo === ctx.slug),
     inputs.outcomes,
     new Date(inputs.nowMs).toISOString(),
+    inputs.forge.scoped
+      ? new Set(
+          [...inputs.forge.inScope].filter(
+            (pr) => !inputs.forge.disputed.has(pr),
+          ),
+        )
+      : undefined,
   );
   for (const reason of failures)
     report.unplaced.push({

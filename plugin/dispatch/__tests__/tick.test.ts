@@ -3,10 +3,10 @@
  * installed command in a child with its own home.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import type { TickReceipt } from "../receipts.ts";
+import { lastTick, type TickReceipt } from "../receipts.ts";
 import {
   assignedIssue,
   ledgerComment,
@@ -192,6 +192,77 @@ describe("jig dispatch receipts", () => {
     const listed = await w.dispatch(["receipts"]);
     expectSpawnExit(listed, 0);
     expect(listed.stdout.trim().split("\n")).toHaveLength(2);
+  });
+
+  it("carries the plugin upgrade its launcher ran into the receipt, and the listing shows it", async () => {
+    const w = fixture();
+    const upgrade = {
+      outcome: "updated",
+      detail: "claude 0.2.0 -> 0.3.0",
+      at: "2026-11-07T04:00:00.000Z",
+      from: "0.2.0",
+      to: "0.3.0",
+    };
+    const r = await w.dispatch(["--repo", w.repo, "--json"], undefined, {
+      JIG_SCHEDULED_UPGRADE: JSON.stringify(upgrade),
+    });
+    expectSpawnExit(r, 0);
+    expect((JSON.parse(r.stdout) as TickReceipt).upgrade).toEqual(
+      upgrade as TickReceipt["upgrade"],
+    );
+    const listed = await w.dispatch(["receipts"]);
+    expectSpawnExit(listed, 0);
+    expect(listed.stdout).toContain("  upgrade 0.2.0 -> 0.3.0  ");
+    const report = await w.dispatch(["--repo", w.repo], undefined, {
+      JIG_SCHEDULED_UPGRADE: JSON.stringify({ ...upgrade, outcome: "failed" }),
+    });
+    expectSpawnExit(report, 0);
+    expect(report.stdout).toContain("upgrade: failed: claude 0.2.0 -> 0.3.0");
+  });
+});
+
+describe("a tick that finds the tick lock held", () => {
+  it("keeps the upgrade its launcher ran in a receipt naming the holder", async () => {
+    const w = fixture();
+    const state = join(w.home, ".local", "state", "jig", "dispatch");
+    // A tick that ran, before the one that finds the lock held.
+    const ran = await tick(w);
+    // This test's own process holds the lock, as a running tick does.
+    writeFileSync(join(state, "tick.lock"), String(process.pid));
+    const upgrade = {
+      outcome: "failed",
+      detail: "network down",
+      at: "2026-11-07T04:00:00.000Z",
+    };
+    const r = await w.dispatch(["--repo", w.repo], undefined, {
+      JIG_SCHEDULED_UPGRADE: JSON.stringify(upgrade),
+    });
+    expectSpawnExit(r, 3);
+    const receipts = () =>
+      readdirSync(join(state, "receipts"), { recursive: true })
+        .filter((name) => String(name).endsWith(".json"))
+        .map(
+          (name) =>
+            JSON.parse(
+              readFileSync(join(state, "receipts", String(name)), "utf8"),
+            ) as TickReceipt,
+        );
+    const held = receipts().filter((one) => one.runId !== ran.runId);
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatchObject({
+      upgrade,
+      repos: [],
+      lockHeldBy: expect.stringContaining(String(process.pid)),
+    });
+    const listed = await w.dispatch(["receipts"]);
+    expect(listed.stdout).toContain("lock held");
+    // `jig status` and `jig doctor` still read the tick that ran as the last run.
+    expect(lastTick(state)?.runId).toBe(ran.runId);
+
+    // Without an upgrade to keep, a held tick writes nothing.
+    const plain = await w.dispatch(["--repo", w.repo]);
+    expectSpawnExit(plain, 3);
+    expect(receipts()).toHaveLength(2);
   });
 });
 

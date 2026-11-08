@@ -393,90 +393,6 @@ when the operator chat proposes and never sends and, once item 40 has
 settled, a commit from the hub writes only as the person, after proof that
 they are present and a dry run that still matches.
 
-### 35. One jig command line
-
-The plugin's machine-level tools are separate commands with no shared
-shape: `jig gc` and `jig dispatch` each install, remove and report on their
-own job in their own words, and installing, updating and checking the
-plugin itself is a script in this repository (`tools/plugin/setup.ts`), not
-a command the plugin ships. This item makes `jig` one command line, parsed
-with [Optique](https://optique.dev) (vendored as a bundle Jig builds,
-[ADR-0001](../docs/adr/ADR-0001-bun-typescript-toolchain.md)), with
-resource collection and the dispatcher as its components: each component
-defines its command beside its code (`plugin/gc/cli.ts`,
-`plugin/dispatch/cli.ts`) and `plugin/jig.ts` combines them, so `--help`,
-`jig help <command>` and `jig completion <shell>` come from the
-definitions that parse. Across the components come the lifecycle verbs
-`install`, `uninstall`, `upgrade`, `doctor`, `status`, `receipts` and `run`
-(`jig install dispatch`, `jig status`), through one component interface a
-third component joins without touching the verbs, while each component's
-own work stays under its name (`jig gc --collect`, `jig dispatch --apply`).
-`jig` reaches `PATH` through the launcher the installed jobs already run,
-which finds the installed plugin copy at each run, so a plugin update
-reaches it without a new install. The audit stays a skill; `jig doctor`
-runs its configuration-fit check beside its own.
-
-What must keep working through every step, because jobs already installed
-on machines run it: each timer's launcher, copied under the gc state
-directory, calls `<plugin copy>/jig.ts` with
-`--config=<plugin copy>/gc/bunfig.toml` and `gc --scheduled` or
-`dispatch --apply`. So `plugin/jig.ts` stays where it is,
-`plugin/gc/bunfig.toml` and `plugin/dispatch/bunfig.toml` stay (the
-dispatcher's pass wrapper and launches use the second), those two command
-lines keep their meaning, the heavy-run lock's re-run of
-`jig.ts gc … --collect` keeps working, and `jig dispatch run` stays the
-pass wrapper's passthrough.
-
-Built in this order:
-
-1. **Optique, behaviour unchanged**: one parser with a `gc` and a
-   `dispatch` command replaces the hand-written ones, every current form
-   keeping its meaning and exit code, with generated help and completion.
-2. **Lifecycle verbs over one component interface, `jig` on `PATH`**: the
-   verbs above for both components, each component's `install` and
-   `receipts` reached through them with the old forms still working, and
-   `jig install` writing a `jig` command that runs the installed copy
-   through the launcher.
-3. **`doctor` and `upgrade`**: `tools/plugin/setup.ts`'s install, update
-   and check move into the plugin as `jig upgrade` and `jig doctor`, moved
-   and not copied: `tools/plugin/setup.ts` keeps only a call into the
-   plugin's code, so a first install from a checkout still works. After
-   the plugin, `jig upgrade` has the newly installed copy refresh each
-   installed job's launcher copy and job, and the `jig` command, keeping
-   what each install recorded. `doctor` also runs the audit's
-   configuration-fit check, offline.
-4. **The timers keep the plugin current**: the launcher runs the installed
-   copy's `jig upgrade --scheduled` before each job and resolves the entry
-   again, so the job runs the copy the upgrade installed. The upgrade is on
-   by default (a machine that runs the dispatcher is the one with nobody at
-   the keyboard), follows the channel the machine installed from, and a pin
-   receives nothing. It runs at most once per `upgrade.every` (an hour)
-   whichever timer fires first, is a line in that job's receipt and in the
-   morning report, and when it fails it is reported, named by `jig doctor`,
-   and not tried again inside the interval. The launcher runs it from the
-   installed copy, never from itself, and the launcher copy is refreshed by
-   `jig upgrade` as step 3 has it. A versioned cache install puts each
-   version into its own directory, so a run already started keeps the files
-   it started with. A plugin loaded in place from a local marketplace has no
-   such directory: the scheduled upgrade skips it, reports the skip in the
-   job's receipt, and leaves updating it to the person who maintains that
-   folder. `jig install --no-upgrade`, or `upgrade: off` in the machine
-   file, opts a machine out.
-
-Done when `jig` on `PATH` installs, upgrades, checks and removes both
-components through the same verbs, `jig doctor` reports the plugin's
-installation and the repository's configuration fit, `tools/plugin/setup.ts`
-holds no logic of its own, a job installed before the first step still
-runs on a machine that took every release since, two timers firing within
-one interval run the upgrade once and the job after it runs the newly
-installed copy, a failed upgrade is reported and withheld for the rest of
-the interval while the job still runs, a successful and a failed upgrade
-each appear in the job's receipt and the morning report and `jig doctor`
-names the failed one, a scheduled run on a plugin loaded
-in place from a local marketplace leaves that folder untouched, records the
-skip in the receipt and still runs the job, and a pinned machine or one with
-`upgrade: off` runs no upgrade.
-
 ### 34. Jig in the Orca ecosystem
 
 Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
@@ -678,28 +594,62 @@ a custom field, labels or a command, and only `file-issue` checks that an
 issue it files is complete. What it will build: the tracker
 interface carries an issue's type, priority and size as canonical values, and
 where each of the three is kept is per-repository configuration
-(`issue_tracker.attributes`): the tracker's own field, a named custom field,
-labels, or the repository's own command, with a documented default per
-adapter:
+(`issue_tracker.facets`): the tracker's own field, a named custom field or
+labels, with a documented default per adapter:
 
 - **GitHub Issues**: the issue type; the organization's Priority field; the
-  Effort field when its options carry the size names, else size labels.
-- **Jira**: the issue type, matched by name; the priority field; size as
-  labels until a size field is named.
+  Effort field when its options carry the size names, else size labels;
+  each only for a repository that keeps no labels for it.
+- **Jira**: type labels, with every new issue filed as the configured
+  `issue_tracker.jira.issue_type` until a type store is named; the priority
+  field; size as labels until a size field is named.
 - **Linear**: labels for type and size; its priority field; the estimate as
   an option for size.
 
-Today's `issue_tracker.types`, `issue_tracker.github.priority_labels` and
+No repository's store moves unless its configuration says so or a person
+runs the move. Today's `issue_tracker.types`, `issue_tracker.github.priority_labels`,
 `issue_tracker.jira.field_labels` and `issue_tracker.jira.priorities` become
-the label or field form of their attribute, and the native-type read the
-interface already has is kept. Every filing path (`file-issue`, `file-deferred.ts`,
-`report-bug.ts`, the issue forms) sets and checks all three, and a weekly
-check reports the issues missing one. It includes reading and writing the
-tracker's own issue type, not only a type label.
+the label or field form of their facet, and the native-type read the
+interface already has is kept. Every filing path through
+the interface (`file-issue`, `file-deferred.ts`) sets and checks all three inside the write; the issue forms
+and `report-bug.ts`, which file around the interface, set the type and leave priority and size to triage, and a weekly check
+reports the issues missing one. It includes reading and writing the
+tracker's own issue type, not only a type label. A store kept by the
+repository's own command waits until a repository names a facet that needs
+it. The design is [tracker-facets.md](tracker-facets.md), built in the
+steps of its [build order](tracker-facets.md#build-order).
 
 Done when a repository on each adapter files and reads all three in its
 configured store, and Jig's own repository keeps them in GitHub's fields
 with no type, priority or size labels.
+
+### 43. Consumer actions: which Jig changes a repository must act on
+
+A Jig release sometimes asks something of the repositories that use it: a
+runbook that describes old behaviour, a configuration key to change, a plugin
+source on a machine. Today a person reads the changelog by hand and tests each
+entry against the repository, nothing records which release a repository has
+already taken, and `/followup` stops on "which repositories are consumers?"
+because Jig names none. [design/consumer-actions.md](consumer-actions.md) has
+how it works. What it will build: a change note names the **consumer action**
+in its list item (the level it is taken at: machine, configuration or
+instructions; required or advised; hints that say how to detect it), which the
+changelog check validates and the release step derives into a record in the
+plugin; a repository records the version it last reconciled with
+(`jig.reconciled`); `jig reconcile` reads the record between that version and
+the installed one (machine actions are checked on every host regardless), tests each action against the repository and reports
+required, advised, needs-a-look and not-applicable with file and line
+evidence, and files the repository's own tracker items only for what a person
+approved; a `reconcile` dispatch stage runs it per dispatched repository and
+notifies once per new required entry, so a machine's dispatch file is the
+list of consumers; `/followup`'s Breaking-changes arm reads its result; and
+`/jig:jig` points at it for what changed.
+
+Done when a fixture repository and changelog produce a required, an advised
+and a not-applicable entry with evidence and file nothing unapproved, a
+dispatch tick notifies once per new required entry, `/followup` no longer asks
+which consumers are affected, and `/jig:jig` no longer sends a reader to read
+the changelog by hand.
 
 ### 12. More tracker adapters
 

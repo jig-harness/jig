@@ -11,6 +11,8 @@ import {
 
 import { loopEconomy, leftoverReport, severityWarnings } from "./reports.ts";
 
+import { describeLeftovers, passLeftovers } from "./restart.ts";
+
 import { run, tsArgv } from "./../proc.ts";
 
 import { fail, isDigits } from "./../cli.ts";
@@ -23,9 +25,18 @@ import { prepareQuotaSpawn } from "./../quota/index.ts";
 
 import { passEnv } from "./repair.ts";
 
-import { recordedDecisions, stallNotice } from "./restart.ts";
+import {
+  linesSince,
+  narrativeLines,
+  recordedDecisions,
+  stallNotice,
+} from "./restart.ts";
 
 import { recordDriveEvent } from "./rearm.ts";
+
+import { driverRuntime } from "./runtime.ts";
+
+import { measureStop } from "./stop-measure.ts";
 
 import {
   currentAutonomy,
@@ -74,7 +85,11 @@ export async function checkRoundStall(
     // is the measured case, and a second identical gate after it stops.
     if (!context.stallExtraRound) {
       context.stallExtraRound = true;
-      context.passNotice = stallNotice(diagnostics);
+      context.stallNarrative = await narrativeLines(context.pr);
+      context.passNotice = stallNotice(
+        diagnostics,
+        describeLeftovers(await passLeftovers({ fingerprint: false })),
+      );
       await recordDriveEvent(context.pr, "restart", "stall");
       console.error(
         "  Running ONE more round with these diagnostics in the pass notice before stopping.",
@@ -87,13 +102,7 @@ export async function checkRoundStall(
     console.error(
       `  on no-ops; fix why the passes did not act, then re-arm. ($DRIVE_PR_STALL_ROUNDS=${stallRounds}; 0 disables this stop.)`,
     );
-    const decided = await recordedDecisions(context.pr);
-    console.error(
-      decided.length === 0
-        ? "  What the passes decided: nothing recorded in the handoff narrative — read the pass output."
-        : "  What the passes decided (the end of the handoff narrative):",
-    );
-    for (const line of decided) console.error(`    ${line}`);
+    for (const line of await stallDecisions(context)) console.error(line);
     // WHY it stopped is above; WHAT it left behind is here. A pass can make
     // substantive, correct edits and still trip this stop by standing down
     // before committing them — the stall predicate keys on what the loop can
@@ -104,10 +113,36 @@ export async function checkRoundStall(
     const economyReport = await loopEconomy(context.pr);
     process.stderr.write(await leftoverReport());
     process.stderr.write(economyReport);
+    driverRuntime.stopLeftWork = await measureStop();
     return STALLED_EXIT;
   }
 
   return null;
+}
+
+/**
+ * What the passes recorded deciding, as the stall stop prints it: what the
+ * extra round's pass wrote, which names what stops the round now; when it
+ * wrote nothing, the narrative's last lines, said to predate that round,
+ * since what they describe may no longer hold.
+ */
+async function stallDecisions(context: DriveRoundContext): Promise<string[]> {
+  const now = await narrativeLines(context.pr);
+  const fresh = linesSince(context.stallNarrative ?? [], now).slice(-12);
+  if (fresh.length > 0)
+    return [
+      "  What the passes decided (what the extra round's pass recorded, the end of the handoff narrative):",
+      ...fresh.map((line) => `    ${line}`),
+    ];
+  const earlier = await recordedDecisions(context.pr);
+  if (earlier.length === 0)
+    return [
+      "  What the passes decided: nothing recorded in the handoff narrative — read the pass output.",
+    ];
+  return [
+    "  What the passes decided: the extra round's pass recorded nothing. The narrative's last lines predate it, so what they describe may no longer hold:",
+    ...earlier.map((line) => `    ${line}`),
+  ];
 }
 
 /** What the stalled passes left unchanged, as the stop and the notice print it. */

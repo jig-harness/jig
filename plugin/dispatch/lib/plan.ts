@@ -29,6 +29,12 @@
  * same head it made counts as this host's would; and a silent driver its
  * launch started is taken over from here. Claims that cannot be read leave
  * the pull request unplaced.
+ *
+ * A silent driver no launch record or claim started is taken over when it
+ * ran on this host and this host shows its run ended (`driverGone`,
+ * `sources/silent-driver.ts`), a re-drive the pull request's recovery budget
+ * counts; `drive.ts --take-over` decides whether it is admitted. Where this
+ * host cannot show that, it is notified.
  */
 import { type DriveHold, driveHold, factsOf } from "./actions/drive-hold.ts";
 import { type Contention, heldReason } from "./contention.ts";
@@ -38,6 +44,9 @@ import type { FollowupRelease } from "./followup-releases.ts";
 import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
+import { goneUnlaunched } from "./recovery-facts.ts";
+import { conflictNote } from "./sources/ledgers.ts";
+import { workspaceOfTree } from "./stall-tree.ts";
 import { planFollowups } from "./plan-followups.ts";
 import { planPickups } from "./plan-pickups.ts";
 import {
@@ -46,6 +55,7 @@ import {
   foreignHold,
 } from "./shared-launches.ts";
 import { failed } from "../../shared/outcome.ts";
+import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
@@ -75,6 +85,8 @@ export interface PlanInput {
   outcomes: ReadonlyMap<number, FollowupOutcome>;
   /** The stale follow-up claims this host released, by pull request. */
   releases?: ReadonlyMap<number, FollowupRelease>;
+  /** The launch records whose follow-up marker a tick released as a retry (`settledEnds`). */
+  retried?: ReadonlySet<string>;
   sessions: SessionsReport;
   /** Each pull request's creation time; a pickup's pull request is one created after its launch. */
   created?: ReadonlyMap<number, string>;
@@ -90,6 +102,8 @@ export interface PlanInput {
   serialized?: Pick<Contention, "held" | "unplaced">;
   /** The shared records read this tick: this host, and each drive's launch claims (`shared-launches.ts`). */
   shared?: { host: string; drives: DriveClaims; owner?: boolean };
+  /** The machine file's `unclaimed_after`: past it, a launch answered as started that no wrapper claimed is stuck. */
+  unclaimedAfterMs?: number;
   nowMs: number;
 }
 
@@ -109,7 +123,6 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
 /** The ledger classes that need nothing from the tick but a line in the report. */
 const QUIET: ReadonlySet<LedgerClass> = new Set([
   "driven",
-  "silent",
   "done",
   "stopped-by-person",
   "refused",
@@ -120,6 +133,7 @@ const NOTIFY: ReadonlyMap<LedgerClass, NotifyCause> = new Map([
   ["stopped-unknown", "stopped-unknown"],
   ["parked", "parked"],
   ["needs-person", "needs-person"],
+  ["silent", "needs-person"],
 ] as const);
 
 export function planTick(input: PlanInput): Plan {
@@ -184,6 +198,7 @@ export function planTick(input: PlanInput): Plan {
         staleAfterMs: input.section.followupStaleAfterMs,
         releases: input.releases ?? new Map(),
         owner: input.shared?.owner ?? true,
+        retried: input.retried ?? new Set(),
         nowMs: input.nowMs,
       },
       plan,
@@ -212,7 +227,13 @@ export function planTick(input: PlanInput): Plan {
   plan.actions.push(...drift.actions);
   plan.running.push(...drift.running);
   // A pending record no tick launches again waits on a person.
-  plan.actions.push(...planStuck(input.slug, input.launches));
+  plan.actions.push(
+    ...planStuck(input.slug, input.launches, {
+      nowMs: input.nowMs,
+      unclaimedAfterMs: input.unclaimedAfterMs ?? UNCLAIMED_AFTER_MS,
+      sessions,
+    }),
+  );
   holdBack(plan, input.held ?? new Set(), input.inScope);
   if (input.serialized !== undefined) serialBack(plan, input.serialized);
   return plan;
@@ -343,12 +364,20 @@ const QUIET_HOLDS: ReadonlyMap<DriveHold["kind"], LedgerClass> = new Map([
   ["armed", "unarmed"],
 ]);
 
+/** What showed a silent driver no launch started gone, when this host may take it over; `null` otherwise. */
+function goneDriver(pr: DrivenPr): string | null {
+  return goneUnlaunched(pr) ? String(pr.evidence.driverCheck) : null;
+}
+
 /** Why the plan wants a drive's action, in one sentence. */
 function wantReason(
   pr: DrivenPr,
   takeover: string | null,
   claim: TakeoverClaim | null,
+  gone: string | null = null,
 ): string {
+  if (gone !== null)
+    return `drive ledger silent, no launch started its driver, and this host shows its run ended (${gone}): take it over (drive.ts --take-over decides)`;
   if (takeover !== null)
     return `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`;
   if (claim !== null)
@@ -430,15 +459,48 @@ function planForeign(
   return true;
 }
 
+/**
+ * A stall re-drive bound to the tree that holds the work it left: `null`
+ * where that tree is another host's, whose dispatcher re-drives it there; a
+ * person's where it is this host's and no open workspace holds it, since a
+ * fresh tree would not carry the work; else the drive as it reads. Unread
+ * sessions leave it as it reads, for the plan's own report of them.
+ */
+function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
+  const tree = pr.stale?.tree;
+  if (tree === undefined) return pr;
+  if (!tree.here) return null;
+  if (
+    !sessions.ok ||
+    workspaceOfTree(sessions.workspaces, tree.actor) !== undefined
+  )
+    return pr;
+  const { stale: _bound, ...rest } = pr;
+  return {
+    ...rest,
+    class: "needs-person",
+    why: `${pr.stale?.cause ?? pr.why}, leaving work in its tree (${tree.actor}), which no open workspace on this host holds: a fresh tree would not carry the work, so a person recovers it${conflictNote(pr.evidence.mergeable)} (see the drive's handoff)`,
+  };
+}
+
 /** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
 function planDrive(
   input: PlanInput,
-  pr: DrivenPr,
+  read: DrivenPr,
   plan: Plan,
   want: Want,
 ): void {
   const { slug, launches } = input;
-  const target = `PR #${pr.number}`;
+  const target = `PR #${read.number}`;
+  const pr = treeBound(read, input.sessions);
+  if (pr === null) {
+    plan.quiet.push({
+      target,
+      class: read.class,
+      why: `${read.why}; that tree is on another host, whose dispatcher re-drives it there`,
+    });
+    return;
+  }
   const hold = driveHold(pr, launches);
   if (
     !(
@@ -455,6 +517,7 @@ function planDrive(
   const placed = planForeign(input, pr, plan);
   if (placed === true) return;
   const foreign = takeover === null ? placed : null;
+  const gone = takeover === null && foreign === null ? goneDriver(pr) : null;
   if (QUIET.has(pr.class) && takeover === null && foreign === null) {
     plan.quiet.push({ target, class: pr.class, why: pr.why });
     return;
@@ -463,16 +526,20 @@ function planDrive(
     plan.unplaced.push({ target, record: "forge", reason: pr.why });
     return;
   }
-  const cause = NOTIFY.get(pr.class);
+  const cause =
+    takeover !== null || foreign !== null || gone !== null
+      ? undefined
+      : NOTIFY.get(pr.class);
   want(
     {
       stage: cause === undefined ? "rearm" : "notify",
       target,
       record: "forge",
-      reason: wantReason(pr, takeover, foreign),
+      reason: wantReason(pr, takeover, foreign, gone),
       evidence: { url: pr.url, head: pr.head, ...pr.evidence },
       ...stageFields(slug, pr, cause, launches),
       ...takeoverFields(takeover, foreign),
+      ...(gone === null ? {} : { takeoverGone: gone }),
     },
     (w) => w.prs.includes(pr.number),
   );

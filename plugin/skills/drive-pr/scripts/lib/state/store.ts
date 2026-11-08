@@ -92,6 +92,16 @@ function cloneDirUnder(root: string, key: string, commonDir: string): string {
   return join(root, key);
 }
 
+/**
+ * The state directory of the clone whose key is `key`, under this machine's
+ * root: for a reader of another clone's rows, which reads no checkout's
+ * identity and mints none.
+ */
+export function stateDirOfClone(key: string): string {
+  const root = resolvedOverride() ?? defaultStateRoot();
+  return basename(root) === key ? root : join(root, key);
+}
+
 /** This clone's state directory, minting the clone's identity when it has none. */
 export async function resolveStateDir(): Promise<string> {
   const root = resolvedOverride() ?? defaultStateRoot();

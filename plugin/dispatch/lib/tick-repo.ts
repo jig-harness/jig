@@ -6,7 +6,8 @@
  * (tick-labels.ts), and report the shared records' reads and writes
  * (tick-shared.ts). Each phase hands the next what it read; the report is
  * filled as they go, and each phase's milliseconds are kept on it
- * (`phasesMs`).
+ * (`phasesMs`). Applying ticks reconcile abandoned local ledgers before
+ * planning; that reconciliation time is charged to apply.
  *
  * A turn is run inside the tick's boundary: what throws out of it is a
  * defect (`defectReport`), which stops this repository's turn only. The
@@ -22,6 +23,7 @@ import { observeRepo, openRepo, type RepoObservation } from "./tick-observe.ts";
 import { planObserved } from "./tick-plan.ts";
 import { logRepo } from "./tick-settle.ts";
 import { sharedReport } from "./tick-shared.ts";
+import { recoverLedgers } from "./recover-ledgers.ts";
 import type { RepoPhase, RepoReport } from "./types.ts";
 
 /** One repository's turn as it runs: its phases' clock, and its report once the repository opened. */
@@ -57,14 +59,21 @@ export async function runTurn(
     },
     timer,
   );
-  const { forge } = observation;
+  const { forge, tracked, sessions } = observation;
+  // Observations belong to the tick even when a later phase fails.
+  context.lineInputs.set(
+    path,
+    lineInputOf(forge.drives, forge, tracked, sessions),
+  );
+  if (context.apply !== null)
+    await timer.time("apply", () => recoverLedgers(context, observation));
   await timer.time("plan", () => planObserved(context, observation));
   await timer.time("log", () =>
     logRepo(context, opened.repo.slug, report, forge.drives),
   );
   const close = async () => {
     await timer.time("labels", () => projectObserved(context, observation));
-    await timer.time("shared", () => closeShared(context, observation, path));
+    await timer.time("shared", () => closeShared(context, observation));
     timed(report, timer);
   };
   if (context.apply === null) {
@@ -94,12 +103,8 @@ export async function runTurn(
 }
 
 /** The shared records' report, and what the line and the tick's close read of this repository. */
-function closeShared(
-  context: TickContext,
-  observation: RepoObservation,
-  path: string,
-): void {
-  const { forge, tracked, sessions } = observation;
+function closeShared(context: TickContext, observation: RepoObservation): void {
+  const { forge } = observation;
   const report = observation.opened.report;
   report.shared = sharedReport(
     observation.shared,
@@ -113,10 +118,6 @@ function closeShared(
       report: report.shared,
       records: observation.ctx.records,
     });
-  context.lineInputs.set(
-    path,
-    lineInputOf(forge.drives, forge, tracked, sessions),
-  );
 }
 
 function timed(report: RepoReport, timer: PhaseTimer<RepoPhase>): RepoReport {

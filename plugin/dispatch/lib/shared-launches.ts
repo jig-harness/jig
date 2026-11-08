@@ -29,11 +29,10 @@
  *   past the lease window is taken over by this host, under the ledger's own
  *   rule, never by a claim alone.
  */
-import {
-  NO_CAUSE_FACTS,
-  recoveryReservationRefusal,
-} from "./no-cause-stops.ts";
+import { recoveryReservationRefusal } from "./no-cause-stops.ts";
+import { budgeted, RECOVERY_FACTS, sameFacts } from "./recovery-facts.ts";
 import type { Outcome } from "../../shared/outcome.ts";
+import { settledWhy, settlesWithPerson } from "./redrive-settle.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import {
@@ -58,6 +57,7 @@ import { factsOf } from "./actions/drive-hold.ts";
 import type { LaunchClaimer } from "./actions/launch.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
+import { retriedDeath, retryableFollowup } from "./session-startup.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
@@ -66,6 +66,7 @@ import {
   type LaunchRecord,
   type ReadRecord,
   settleEnds,
+  settledEnds,
   writeRecord,
   cancelledBeforeExecution,
 } from "./launches.ts";
@@ -171,19 +172,53 @@ function silentHold(
   if (
     latest !== null &&
     open(latest) &&
-    latest.says.value.facts === factsOf(pr)
+    sameFacts(latest.says.value.facts, factsOf(pr))
   )
     return {
       kind: "held",
       claim: latest,
       why: `${claimWords(latest)} acts on these same ledger facts and has not ended`,
     };
-  const refused = refusedOn(pr, latest, "taken over");
+  // A drive settlement marked for notification as silent is a person's to
+  // hear of, whatever a refused takeover once said on these facts. A driver
+  // merely not shown gone (another host's, or unproven) keeps that refusal.
+  const refused =
+    pr.evidence.settled === true ? null : refusedOn(pr, latest, "taken over");
   if (refused !== null) return refused;
+  const taken = takenOver(pr, theirs);
+  if (taken !== null) return taken;
   const owner = theirs.findLast((c) => startedDriver(c, pr));
   return owner === undefined
     ? { kind: "none" }
     : { kind: "takeover", claim: owner };
+}
+
+/**
+ * Another host's takeover of a driver no launch started, made on the ledger
+ * facts as they are now and ended: the once-per-ledger takeover is spent, and
+ * only a person settles the ledger until it moves. A takeover that never
+ * executed spent nothing.
+ */
+function takenOver(pr: DrivenPr, theirs: ReadClaim[]): ForeignHold | null {
+  if (pr.evidence.driverGone !== true) return null;
+  const done = theirs.findLast((c) => {
+    const s = c.says.value;
+    return (
+      s.action === "takeover" &&
+      s.facts !== null &&
+      s.facts.startsWith(RECOVERY_FACTS) &&
+      sameFacts(s.facts, factsOf(pr)) &&
+      s.end !== null &&
+      !(s.end.state === "died" && s.end.executed === false)
+    );
+  });
+  return done === undefined
+    ? null
+    : {
+        kind: "refused",
+        claim: done,
+        why: `${claimWords(done)} already took it over on these ledger facts and has ended, leaving its ledger as it was: only a person settles it until its ledger moves`,
+      };
 }
 
 /** Another host's latest launch, when it ended on `drive.ts`'s refusal on the ledger facts as they are now: the stage's answer, never fought. */
@@ -196,7 +231,7 @@ function refusedOn(
   if (
     latest === null ||
     refused === null ||
-    latest.says.value.facts !== factsOf(pr)
+    !sameFacts(latest.says.value.facts, factsOf(pr))
   )
     return null;
   return {
@@ -267,9 +302,10 @@ function armedOrRedriven(
 
 /**
  * Each drive as the plan reads it once another host's claims are read
- * beside it: a ledger that stopped on a conflict, another host having
- * re-driven the change it shows now and that launch having ended, is a
- * person's to settle, as when this host re-drove it.
+ * beside it: a ledger that stopped on a conflict, a stall or a spent
+ * CI-repair budget, another host having re-driven the change it shows now
+ * and that launch having ended, is a person's to settle, as when this host
+ * re-drove it.
  */
 export function settleSharedConflictStops(
   drives: readonly DrivenPr[],
@@ -277,14 +313,49 @@ export function settleSharedConflictStops(
   host: string,
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (pr.stale?.conflictStop !== true) return pr;
+    if (!settlesWithPerson(pr.stale)) return pr;
     const hold = foreignHold(pr, claims.get(pr.number), host);
     if (hold.kind !== "redriven" || open(hold.claim)) return pr;
     const { stale: _settled, ...rest } = pr;
     return {
       ...rest,
       class: "needs-person",
-      why: `stopped on a conflict with its base, and ${claimWords(hold.claim)} already re-drove it for this change and has ended: only a person settles it until its head or its base moves (see the drive's handoff)`,
+      why: settledWhy(
+        pr,
+        `${claimWords(hold.claim)} already re-drove it for this change and has ended`,
+      ),
+    };
+  });
+}
+
+/**
+ * Each silent drive another host already took over on the ledger facts it
+ * shows now, that takeover having ended without moving the ledger on, as the
+ * plan reads it: notified as silent and not taken over again, as when this
+ * host's own record shows it. Left as the foreign hold the plan would
+ * otherwise file quietly, no person would hear of the drive.
+ */
+export function settleSharedTakeovers(
+  drives: readonly DrivenPr[],
+  claims: DriveClaims,
+  host: string,
+): DrivenPr[] {
+  return drives.map((pr) => {
+    if (pr.class !== "silent" || pr.evidence.driverGone !== true) return pr;
+    const read = claims.get(pr.number);
+    if (read === undefined || !read.ok) return pr;
+    const hold = foreignHold(pr, read, host);
+    if (hold.kind !== "refused") return pr;
+    const theirs = winners(read.value).filter(
+      (c) => c.says.value.host !== host,
+    );
+    const taken = takenOver(pr, theirs);
+    if (taken?.kind !== "refused" || taken.claim.id !== hold.claim.id)
+      return pr;
+    return {
+      ...pr,
+      why: `${pr.why}; ${taken.why}`,
+      evidence: { ...pr.evidence, driverGone: false, settled: true },
     };
   });
 }
@@ -382,7 +453,7 @@ async function checkedReservation(
   record: LaunchRecord,
   own: number,
 ): Promise<{ claim: number } | { refused: string; uncertain?: boolean }> {
-  const history = record.facts.startsWith(NO_CAUSE_FACTS)
+  const history = budgeted(record.facts)
     ? await ctx.records.list({ repo: ctx.slug, pr: Number(record.pr) }, "drive")
     : null;
   const why =
@@ -504,25 +575,49 @@ export async function settleOwnClaims(
   records: readonly ReadRecord[],
   outcomes: ReadonlyMap<number, FollowupOutcome>,
   nowIso: string,
+  startupScope?: ReadonlySet<number>,
 ): Promise<string[]> {
   const byId = new Map(records.map((r) => [r.record.id, r]));
+  const retryFailures: string[] = [];
+  const settled = settledEnds(ctx.root);
+  for (const r of records) {
+    if (
+      r.record.repo === ctx.slug &&
+      retryableFollowup(r) &&
+      !settled.has(r.record.id) &&
+      (startupScope === undefined || startupScope.has(Number(r.record.pr)))
+    )
+      retryFailures.push(
+        ...(await settleRecordClaims(ctx, r, nowIso, ctx.root)),
+      );
+  }
   const ends = [
     ...driveEnds(claims, ctx.host, byId, nowIso),
     ...merged.flatMap((pr) =>
-      ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).flatMap((m) =>
-        owed(
-          pr.number,
-          "followup",
-          m.id,
-          markerEnd(m.run.record, outcomes.get(pr.number), byId, nowIso),
-          m.run.host === undefined ? ctx.host : undefined,
-        ),
+      ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).flatMap(
+        (m) =>
+          // A retry's marker is released, never answered.
+          retryable(byId.get(m.run.record))
+            ? []
+            : owed(
+                pr.number,
+                "followup",
+                m.id,
+                markerEnd(m.run.record, outcomes.get(pr.number), byId, nowIso),
+                m.run.host === undefined ? ctx.host : undefined,
+              ),
       ),
     ),
   ];
-  const failures: string[] = [];
+  const failures: string[] = [...retryFailures];
   const written = new Set<number>();
   for (const o of ends) {
+    if (
+      o.stage === "followup" &&
+      o.end.state === "ended" &&
+      o.end.outcome === null
+    )
+      continue;
     const r = await ctx.records.end(
       { repo: ctx.slug, pr: o.pr },
       o.stage,
@@ -576,6 +671,7 @@ async function settleRecordClaims(
   ctx: Pick<SharedContext, "records" | "host">,
   r: ReadRecord,
   nowIso: string,
+  root = stateRoot(),
 ): Promise<string[]> {
   const owed = owedAtExit(r, nowIso);
   if (owed === null) return [];
@@ -590,16 +686,56 @@ async function settleRecordClaims(
   const unread = unreadClaims(read);
   const failures: string[] =
     unread === null ? [] : [`PR #${owed.pr}: ${unread}`];
-  const matches = readable(read.value).filter(
-    (c) =>
-      c.says.value.record === r.record.id &&
-      (c.says.value.host === ctx.host ||
-        (owed.stage === "followup" && c.says.value.host === null)),
+  const matches = ownRecordClaims(
+    read.value,
+    r.record.id,
+    ctx.host,
+    owed.stage,
   );
+  if (retryableFollowup(r)) {
+    // A death's marker may already carry an answer an earlier settle wrote; it is released all the same.
+    const ids = matches
+      .filter((c) => open(c) || retriedDeath(r))
+      .map((c) => c.id);
+    // The listing can lag a post or omit a marker already deleted by a tick.
+    // Delete the recorded id as well: only a successful deletion or an explicit
+    // not-found response confirms that this launch's marker no longer exists.
+    if (
+      !matches.some((c) => c.id === r.record.marker) &&
+      r.record.marker !== null
+    ) {
+      ids.push(r.record.marker);
+    }
+    const released = await releaseStartupClaims(
+      ctx,
+      target,
+      ids,
+      retriedDeath(r) ? "died" : "unstarted",
+    );
+    if (
+      r.record.marker !== null &&
+      failures.length === 0 &&
+      released.length === 0
+    )
+      settleEnds([r.record.id], nowIso, root);
+    return [...failures, ...released];
+  }
   if (matches.length === 0)
     return [
+      ...failures,
       `PR #${owed.pr}: no readable claim for launch record ${r.record.id} was observed`,
     ];
+  return [...failures, ...(await writeRecordEnds(ctx, target, owed, matches))];
+}
+
+/** Publish each readable still-open claim's end, keeping independent write failures. */
+async function writeRecordEnds(
+  ctx: Pick<SharedContext, "records" | "host">,
+  target: { repo: string; pr: number },
+  owed: { stage: SharedStage; pr: number; end: LaunchEnd },
+  matches: ReadClaim[],
+): Promise<string[]> {
+  const failures: string[] = [];
   for (const c of matches) {
     if (!open(c)) continue;
     const done = await ctx.records.end(
@@ -617,22 +753,63 @@ async function settleRecordClaims(
   return failures;
 }
 
+/** Match readable claims to this host's record, including legacy hostless follow-ups. */
+function ownRecordClaims(
+  claims: SharedClaim[],
+  record: string,
+  host: string,
+  stage: SharedStage,
+): ReadClaim[] {
+  return readable(claims).filter(
+    (c) =>
+      c.says.value.record === record &&
+      (c.says.value.host === host ||
+        (stage === "followup" && c.says.value.host === null)),
+  );
+}
+
+/** Whether a record's end is a follow-up's retry, whose marker is released rather than answered. */
+function retryable(r: ReadRecord | undefined): boolean {
+  return r !== undefined && retryableFollowup(r);
+}
+
+/** A retried follow-up releases only its own claims. */
+async function releaseStartupClaims(
+  ctx: Pick<SharedContext, "records">,
+  target: { repo: string; pr: number },
+  ids: number[],
+  what: "unstarted" | "died",
+): Promise<string[]> {
+  const failures: string[] = [];
+  for (const id of ids) {
+    const released = await ctx.records.release(target, id);
+    if (!released.ok && released.failure.code !== "not-found")
+      failures.push(
+        `PR #${target.pr}: the ${what} follow-up's marker ${id} could not be released: ${released.failure.reason}`,
+      );
+  }
+  return failures;
+}
+
 /**
  * The wrapper's settle, right after it records the stage's exit: the end of
  * its own launch's claims, written at once so another host reads it when the
  * launch ends. Every forge call, the read of the login among them, goes
  * through `ghCall` under `AT_EXIT_CALL_SEC`. Best effort: it returns why an
- * end was not written, and the tick's settle writes it.
+ * end was not written, and the tick's settle writes it. Retryable startup
+ * markers are released only by the tick, which reads current dispatch scope.
  */
 export async function settleAtExit(
   r: ReadRecord,
   root = stateRoot(),
 ): Promise<string[]> {
+  // A retry's marker deletion needs the tick's current scope and dispute checks.
+  if (retryableFollowup(r)) return [];
   const nowIso = new Date().toISOString();
   if (owedAtExit(r, nowIso) === null) return [];
   const login = await resolveLogin(AT_EXIT_CALL_SEC);
   const records = forgeShared({ login, timeoutSec: AT_EXIT_CALL_SEC });
-  return settleRecordClaims({ records, host: hostOf(root) }, r, nowIso);
+  return settleRecordClaims({ records, host: hostOf(root) }, r, nowIso, root);
 }
 
 /**

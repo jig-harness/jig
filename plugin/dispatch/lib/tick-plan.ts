@@ -14,7 +14,7 @@ import { releaseEnded, settleAgents } from "./actions/pickup-hold.ts";
 import { readOutcomes, settleFollowups } from "./followup-outcomes.ts";
 import { readReleases, reconcileReleases } from "./followup-releases.ts";
 import { readIdle, updateIdle } from "./idle.ts";
-import type { ReadRecord } from "./launches.ts";
+import { type ReadRecord, settledEnds } from "./launches.ts";
 import { holdBack, type PlanInput, planTick } from "./plan.ts";
 import type { SessionsReport } from "./runtime/port.ts";
 import type { TickContext } from "./tick-context.ts";
@@ -41,6 +41,9 @@ export function planObserved(
     held: observation.held,
     serialized: observation.serialized,
     shared: { host: ctx.host, drives: claims, owner: ctx.owner },
+    ...(context.options.machine == null
+      ? {}
+      : { unclaimedAfterMs: context.options.machine.unclaimedAfterMs }),
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
@@ -73,6 +76,7 @@ function planRepo(
       input.merged,
     ),
     launches: records,
+    retried: settledEnds(),
     idleSince: readIdle(repo),
     nowMs,
   });

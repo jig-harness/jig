@@ -72,6 +72,7 @@ if (single !== null) {
   // A comment's update or removal, on whichever pull request's file holds it; an update is refused while comment-edit-fail exists.
   const id = Number(single[1]);
   const method = args[args.indexOf("-X") + 1];
+  if (method === "DELETE" && fs.existsSync(F + "/comment-delete-fail")) { fs.writeFileSync(F + "/comment-delete-refused", String(id)); process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
   if (method === "PATCH" && fs.existsSync(F + "/comment-edit-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
   const input = method === "PATCH" ? JSON.parse(fs.readFileSync(0, "utf8")) : null;
   for (const name of fs.readdirSync(F).filter((n) => /^comments-\\d+\\.json$/.test(n))) {
@@ -83,6 +84,7 @@ if (single !== null) {
     if (method === "DELETE" && fs.existsSync(F + "/comment-delete-lost")) { process.stderr.write("gh: response lost\\n"); process.exit(1); }
     out("{}");
   }
+  if (args.includes("--include")) process.stdout.write("HTTP/2.0 404 Not Found\\r\\n\\r\\n");
   process.stderr.write("gh: Not Found (HTTP 404)\\n");
   process.exit(1);
 }
@@ -335,12 +337,17 @@ while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(5
 if (fs.existsSync(F + "/claude-said")) {
   const said = fs.readFileSync(F + "/claude-said");
   // With \`claude-split\` present, the first multi-byte character is cut between two writes.
+  const stream = fs.existsSync(F + "/claude-stderr") ? process.stderr : process.stdout;
   const cut = fs.existsSync(F + "/claude-split") ? said.findIndex((b) => b >= 0xc0) + 1 : 0;
   if (cut > 0) {
-    process.stdout.write(said.subarray(0, cut));
+    stream.write(said.subarray(0, cut));
+    if (fs.existsSync(F + "/claude-interleave")) {
+      Bun.sleepSync(150);
+      (stream === process.stderr ? process.stdout : process.stderr).write("diagnostic\\n");
+    }
     Bun.sleepSync(300);
   }
-  process.stdout.write(said.subarray(cut));
+  stream.write(said.subarray(cut));
 }
 process.exit(Number(fs.existsSync(F + "/claude-exit") ? fs.readFileSync(F + "/claude-exit", "utf8") : 0) || 0);
 `;
@@ -449,10 +456,11 @@ export interface World {
   setFiles(pr: number, files: string[]): void;
   /** A file the default branch holds beside `.config/jig.yaml`. */
   setRepoFile(path: string, text: string): void;
-  /** Run `jig dispatch` with `args` (or the script `entry` in its place); resolves to its exit and output. */
+  /** Run `jig dispatch` with `args` (or the script `entry` in its place), `extra` added to its environment; resolves to its exit and output. */
   dispatch(
     args: string[],
     entry?: string,
+    extra?: Record<string, string>,
   ): Promise<{
     exitCode: number | null;
     stdout: string;
@@ -655,7 +663,7 @@ export function world(): World {
       if (yaml === null) rmSync(join(dir, "jig.yaml"), { force: true });
       else write("jig.yaml", yaml);
     },
-    async dispatch(args, entry) {
+    async dispatch(args, entry, extra = {}) {
       const child = Bun.spawn(
         [
           process.execPath,
@@ -664,7 +672,12 @@ export function world(): World {
           ...(entry === undefined ? [JIG, "dispatch"] : [entry]),
           ...args,
         ],
-        { cwd: forge.repo, env, stdout: "pipe", stderr: "pipe" },
+        {
+          cwd: forge.repo,
+          env: { ...env, ...extra },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
       );
       const deadline = setTimeout(() => child.kill(), 60_000);
       const [stdout, stderr, exitCode] = await Promise.all([

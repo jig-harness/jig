@@ -841,12 +841,12 @@ describe("what the replay must not trust or run", () => {
     s.git("config", "merge.renormalize", "true");
     for (const kind of ["clean", "smudge"])
       s.git("config", `filter.touchy.${kind}`, `touch '${marker}'; cat`);
-    s.git("config", "filter.touchy.process", `touch '${marker}'; false`);
     mkdirSync(join(s.root, ".git", "info"), { recursive: true });
     writeFileSync(
       join(s.root, ".git", "info", "attributes"),
       "*.txt filter=touchy\n",
     );
+    s.git("config", "filter.touchy.process", `touch '${marker}'; false`);
     const rep = report();
     expect(existsSync(marker)).toBe(false);
     expect(rep.merges[0]?.conflicted).toBe(true);

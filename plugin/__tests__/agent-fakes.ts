@@ -6,7 +6,10 @@
  * commands the plugin runs (`--version`, `plugin list --json`,
  * `plugin marketplace list --json`, and the update and install commands) and
  * refuses any other with exit 2. `claude plugin list --json` names the plugin
- * copy it holds, which is what the launcher runs.
+ * copy it holds, which is what the launcher runs. A test can register a
+ * tool's marketplace elsewhere (`marketplace`: a pin, a local folder), have
+ * Claude Code load the plugin in place (`readFromFolder`), or make the tool's
+ * update commands fail with a message (`fail`).
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,21 +23,33 @@ export interface Release {
   path: string;
 }
 
+/** One tool's install, and what a test changed about it. */
+export type ToolState = Release & {
+  enabled: boolean;
+  snapshot: Release;
+  /** The marketplace entry `plugin marketplace list --json` prints, in place of the stable channel's. */
+  marketplace?: Record<string, unknown>;
+  /** Claude Code only: the folder the plugin is loaded from in place. */
+  readFromFolder?: string;
+  /** The message an update command fails with, exiting 1. */
+  fail?: string;
+};
+
 /** What the channel offers next, and what each tool has installed and refreshed. */
 export interface AgentState {
   newest: Release;
-  claude: Release & { enabled: boolean; snapshot: Release };
-  codex: Release & { enabled: boolean; snapshot: Release };
+  claude: ToolState;
+  codex: ToolState;
 }
 
 const CLAUDE = `
 if (line === "--version") console.log("2.1.300 (Claude Code)");
 else if (line === "plugin list --json")
-  console.log(JSON.stringify([{ id: "jig@jig", scope: "user", version: tool.version, enabled: tool.enabled, installPath: tool.path }]));
+  console.log(JSON.stringify([{ id: "jig@jig", scope: "user", version: tool.version, enabled: tool.enabled, installPath: tool.path, ...(tool.readFromFolder ? { readFromFolder: tool.readFromFolder } : {}) }]));
 else if (line === "plugin marketplace list --json")
-  console.log(JSON.stringify([{ name: "jig", source: "git", url: SOURCE, ref: "stable" }]));
-else if (line === "plugin marketplace update jig") tool.snapshot = state.newest;
-else if (line === "plugin update jig@jig --scope user") Object.assign(tool, tool.snapshot);
+  console.log(JSON.stringify([tool.marketplace ?? { name: "jig", source: "git", url: SOURCE, ref: "stable" }]));
+else if (line === "plugin marketplace update jig") { failing(); tool.snapshot = state.newest; }
+else if (line === "plugin update jig@jig --scope user") { failing(); Object.assign(tool, tool.snapshot); }
 else refuse();
 `;
 
@@ -43,9 +58,9 @@ if (line === "--version") console.log("codex-cli 0.159.0");
 else if (line === "plugin list --json")
   console.log(JSON.stringify({ installed: [{ pluginId: "jig@jig", version: tool.version, enabled: tool.enabled }] }));
 else if (line === "plugin marketplace list --json")
-  console.log(JSON.stringify({ marketplaces: [{ name: "jig", marketplaceSource: { sourceType: "git", source: SOURCE } }] }));
-else if (line === "plugin marketplace upgrade jig") tool.snapshot = state.newest;
-else if (line === "plugin add jig@jig") Object.assign(tool, tool.snapshot);
+  console.log(JSON.stringify({ marketplaces: [tool.marketplace ?? { name: "jig", marketplaceSource: { sourceType: "git", source: SOURCE } }] }));
+else if (line === "plugin marketplace upgrade jig") { failing(); tool.snapshot = state.newest; }
+else if (line === "plugin add jig@jig") { failing(); Object.assign(tool, tool.snapshot); }
 else refuse();
 `;
 
@@ -60,6 +75,11 @@ const tool = state[${JSON.stringify(name)}];
 function refuse() {
   console.error("unexpected: " + line);
   process.exit(2);
+}
+function failing() {
+  if (!tool.fail) return;
+  console.error(tool.fail);
+  process.exit(1);
 }
 ${name === "claude" ? CLAUDE : CODEX}
 writeFileSync(${JSON.stringify(state)}, JSON.stringify(state));

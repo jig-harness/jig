@@ -121,8 +121,31 @@ export interface WaitingPark {
 export interface StaleCause {
   cause: string;
   change: string;
-  /** The drive stopped `9`: a re-drive that leaves it so at this change is a person's to settle. */
+  /**
+   * The drive stopped `9`, or stopped `1` while its pull request conflicts
+   * with its base: a re-drive that leaves it so at this change is a person's
+   * to settle.
+   */
   conflictStop?: true;
+  /**
+   * The drive stopped on a cause its own next step settles: a stall (`14`),
+   * a spent CI-repair budget (`21`) or a pass deadline with its restarts
+   * spent (`15`). Re-driven once per head commit; a re-drive that leaves the
+   * same stop at the same head is a person's.
+   */
+  mechanicalStop?: "stall" | "ci-repair" | "deadline";
+  /**
+   * The re-drive draws on the pull request's recovery budget, which the
+   * re-arms of stops with no recorded cause share (`no-cause-stops.ts`): a
+   * pass deadline, and a failure on a conflicting pull request.
+   */
+  recovery?: true;
+  /**
+   * For a stall or a pass deadline that left work in its tree: that tree, as the ledger names it
+   * (`wt-<key>`), and whether it is on this host. The re-drive runs there,
+   * never in a fresh tree, which would not carry the work.
+   */
+  tree?: { actor: string; here: boolean };
   /** Changes an earlier launch of the same record may have acted on before a replay moved `change` on; each counts as re-driven. */
   earlier?: string[];
 }
@@ -251,6 +274,8 @@ export interface Action {
   takeover?: string;
   /** For a takeover of a driver another host started: that host's launch claim, which names the launch. */
   takeoverClaim?: { id: number; host: string; record: string };
+  /** For a takeover of a driver no launch started, whose run this host shows ended: what showed it. */
+  takeoverGone?: string;
   /** For a re-drive: why the drive's stop no longer settles its pull request. */
   redrive?: StaleCause;
   /** For a notification: its cause. */

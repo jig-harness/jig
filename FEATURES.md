@@ -154,6 +154,9 @@ did. They answer each park from the phone and merge what converged.
 
 The dispatcher is one part of the [`jig` command](plugin/README.md#the-jig-command),
 which installs, checks, updates and removes the plugin's tools on a machine.
+Its timers also keep the plugin on its channel's newest version. A pinned
+machine stays where it is. A machine whose jobs an older release installed
+runs `jig upgrade` once to turn this on.
 The dispatcher starts sessions through a [session runtime](GLOSSARY.md).
 Orca is the first, and another runtime joins by implementing the same
 interface.
@@ -165,9 +168,8 @@ interface.
   [M12](modules/M12-parallel-agent-ergonomics/),
   [M11](modules/M11-process-observability/),
   [M3](modules/M3-change-area-catalog/)
-- **On the roadmap:** pickups in Orca (item 33) and timers updating the
-  plugin (item 35); a launch guard and an Orca panel for what waits on a
-  person (item 34)
+- **On the roadmap:** pickups in Orca (item 33); a launch guard and an Orca
+  panel for what waits on a person (item 34)
 
 ## Review in tiers, with an arbiter for contested findings
 

@@ -13,8 +13,8 @@
  * - a `stale` ledger this machine already re-drove for the same change, however
  *   that launch ended, is not launched again: a re-drive is launched once per
  *   change, so a drive that stops the same way again does not start a loop. A
- *   converged one is reported; one that stopped on a conflict is a person's to
- *   settle (`settleConflictStops`);
+ *   converged one is reported; one that stopped on a conflict, a stall or a
+ *   spent CI-repair budget is a person's to settle (`settleConflictStops`);
  * - a pull request with no ledger that its `drive` label asks to arm, which
  *   this machine already armed at the same head commit, is reported, not
  *   armed again: an arm that ended without leaving a ledger would otherwise
@@ -27,9 +27,22 @@
  *   holds its stage and has not yet produced a driver (pending, unknown, or
  *   acting on the ledger facts as they still are) holds the pull request
  *   first, so a lost launch stays visible and a takeover in flight is not
- *   stacked on.
+ *   stacked on;
+ * - a `silent` ledger whose driver no launch started and this host shows
+ *   gone is taken over once per ledger facts: once this machine's takeover
+ *   on those facts ended without moving the ledger on, it is notified as
+ *   silent (`settleSilentTakeovers`).
+ *
+ * Facts are compared without the recovery budget's tag (`sameFacts`): it
+ * says how a launch is counted, not what the ledger said.
  */
 import { noCauseFacts } from "../no-cause-stops.ts";
+import {
+  goneUnlaunched,
+  isRecovery,
+  RECOVERY_FACTS,
+  sameFacts,
+} from "../recovery-facts.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   holds,
@@ -38,6 +51,7 @@ import {
   redrivenChanges,
   UNARMED_FACTS,
 } from "../launches.ts";
+import { settledWhy, settlesWithPerson } from "../redrive-settle.ts";
 import type { DrivenPr } from "../types.ts";
 
 export type DriveHold =
@@ -53,7 +67,8 @@ export function factsOf(pr: DrivenPr): string {
   const e = pr.evidence;
   if (e.noCause === true) return noCauseFacts(pr);
   if (pr.class === "unarmed") return `${UNARMED_FACTS}${String(e.headSha)}`;
-  return `generation ${String(e.generation)}, exit ${String(e.exit)}, heartbeat ${String(e.heartbeat)}`;
+  const facts = `generation ${String(e.generation)}, exit ${String(e.exit)}, heartbeat ${String(e.heartbeat)}`;
+  return isRecovery(pr) ? `${RECOVERY_FACTS}${facts}` : facts;
 }
 
 function describe(r: ReadRecord): string {
@@ -111,7 +126,7 @@ function standingRefusal(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
   if (
     latest === undefined ||
     refused === null ||
-    latest.record.facts !== factsOf(pr)
+    !sameFacts(latest.record.facts, factsOf(pr))
   )
     return null;
   return {
@@ -129,12 +144,15 @@ export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
     const inFlight = mine.find(
       (r) =>
         holds(r.state) &&
-        (r.state.kind !== "alive" || r.record.facts === factsOf(pr)),
+        (r.state.kind !== "alive" || sameFacts(r.record.facts, factsOf(pr))),
     );
     if (inFlight !== undefined)
       return { kind: "held", record: inFlight, why: describe(inFlight) };
     // An older owner must not be taken over again behind a later refusal.
-    const standing = standingRefusal(pr, mine);
+    // A drive settled as silent is a person's to hear of, whatever a refused
+    // takeover of this host once said on these facts.
+    const standing =
+      pr.evidence.settled === true ? null : standingRefusal(pr, mine);
     if (standing !== null) return standing;
     const started =
       typeof pr.evidence.started === "string" ? pr.evidence.started : null;
@@ -192,27 +210,61 @@ function redriven(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
 
 /**
  * Each drive as the plan and the labels read it once this machine's launch
- * records are read beside it: a ledger that stopped `PR_CONFLICTING`, this
- * machine already having re-driven the change it shows now, is a person's to
- * settle, however
- * that re-drive ended (a stop of its own, or a refusal or a crash that left the
- * older stop standing), since nothing else will drive it until its head or its
- * base moves. While a record still holds it, or another driver's refusal
- * stands, it reads as the ledger alone says.
+ * records are read beside it: a ledger that stopped `PR_CONFLICTING`,
+ * `STALLED` or `CI_REPAIR_SPENT`, this machine already having re-driven the
+ * change it shows now, is a person's to settle, however that re-drive ended
+ * (a stop of its own, or a refusal or a crash that left the older stop
+ * standing), since nothing else will drive it until that change moves. While
+ * a record still holds it, or another driver's refusal stands, it reads as
+ * the ledger alone says.
  */
 export function settleConflictStops(
   drives: readonly DrivenPr[],
   records: ReadRecord[],
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (pr.stale?.conflictStop !== true) return pr;
+    if (!settlesWithPerson(pr.stale)) return pr;
     const hold = driveHold(pr, records);
     if (hold.kind !== "redriven") return pr;
     const { stale: _settled, ...rest } = pr;
     return {
       ...rest,
       class: "needs-person",
-      why: `stopped 9, and launch record ${hold.record.record.id} already re-drove it for this change and ${endOf(hold.record)}: only a person settles it until its head or its base moves (see the drive's handoff)`,
+      why: settledWhy(
+        pr,
+        `launch record ${hold.record.record.id} already re-drove it for this change and ${endOf(hold.record)}`,
+      ),
+    };
+  });
+}
+
+/**
+ * Each silent drive as the plan reads it once this machine's launch records
+ * are read beside it: one whose driver this host shows gone, which this
+ * machine already took over on the ledger facts it shows now, that takeover
+ * having ended without moving the ledger on, is notified as silent and not
+ * taken over again. While a record still holds it, it reads as it is.
+ */
+export function settleSilentTakeovers(
+  drives: readonly DrivenPr[],
+  records: ReadRecord[],
+): DrivenPr[] {
+  return drives.map((pr) => {
+    if (!goneUnlaunched(pr)) return pr;
+    const facts = factsOf(pr);
+    const mine = records.filter(
+      (r) =>
+        isDrive(r.record) &&
+        r.record.pr === pr.number &&
+        r.record.action === "takeover",
+    );
+    if (mine.some((r) => holds(r.state))) return pr;
+    const earlier = mine.findLast((r) => sameFacts(r.record.facts, facts));
+    if (earlier === undefined) return pr;
+    return {
+      ...pr,
+      why: `${pr.why}; launch record ${earlier.record.id} already took it over on these ledger facts and ${endOf(earlier)}, leaving its ledger as it was: only a person settles it until its ledger moves`,
+      evidence: { ...pr.evidence, driverGone: false, settled: true },
     };
   });
 }
