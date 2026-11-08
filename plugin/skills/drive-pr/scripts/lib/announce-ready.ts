@@ -11,7 +11,7 @@
 import { isRecord } from "../../../../shared/guards.ts";
 import { withdrawAnnouncement } from "./announce.ts";
 import { readMergeFacts } from "./merge-facts.ts";
-import { type ForgeFacts, type Lane, readiness } from "./merge-ready.ts";
+import { type Lane, readiness } from "./merge-ready.ts";
 import {
   ciHoldLabelSetting,
   readOptionalOverlay,
@@ -33,18 +33,14 @@ export async function announceReady(
   head: string,
 ): Promise<AnnounceReady> {
   const n = Number(pr);
-  let facts: ForgeFacts | undefined;
-  try {
-    facts = (await readMergeFacts(null, [n], ghCallTimeoutSeconds())).pulls.get(
-      n,
-    );
-  } catch (error) {
+  const read = await readMergeFacts(null, [n], ghCallTimeoutSeconds());
+  if (!read.ok)
     return {
       rc: 1,
       lane: null,
-      says: `the forge's merge facts did not read: ${String(error)}`,
+      says: `the forge's merge facts did not read: ${read.failure.reason}`,
     };
-  }
+  const facts = read.value.pulls.get(n);
   if (facts === undefined)
     return { rc: 1, lane: null, says: "the forge's merge facts did not read" };
   const app = reviewerApp();

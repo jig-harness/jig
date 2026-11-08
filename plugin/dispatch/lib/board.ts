@@ -42,7 +42,7 @@ import { DEFAULT_REVIEWER_CHECK } from "../../skills/drive-pr/scripts/lib/overla
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { isRecord } from "../../shared/guards.ts";
 import type { Contention } from "./contention.ts";
-import { failureText } from "./text.ts";
+import type { Outcome } from "../../shared/outcome.ts";
 import type { TickBudget } from "./tick-reads.ts";
 import { readyNotice } from "./notices.ts";
 import type { Action, DrivenPr } from "./types.ts";
@@ -114,7 +114,7 @@ export interface BoardIo {
     slug: string,
     numbers: readonly number[],
     timeoutSec: number,
-  ) => Promise<FactsRead>;
+  ) => Promise<Outcome<FactsRead, "unreadable">>;
   wait: (ms: number) => Promise<void>;
   now: () => number;
 }
@@ -182,27 +182,32 @@ async function readFacts(
   numbers: number[],
   io: BoardIo,
   startedMs: number,
-): Promise<FactsRead> {
+): Promise<Outcome<FactsRead, "unreadable">> {
   const left = () => BOARD_DEADLINE_MS - (io.now() - startedMs);
   const seconds = () => Math.max(1, Math.floor(left() / 1000));
-  const first = await io.read(input.slug, numbers, seconds());
+  const read = await io.read(input.slug, numbers, seconds());
+  if (!read.ok) return read;
+  const first = read.value;
   const again = (f: ForgeFacts | undefined, n: number) =>
     f !== undefined &&
     (f.head !== input.heads.get(n) || f.mergeable === "UNKNOWN");
   const retry = numbers.filter((n) => again(first.pulls.get(n), n));
-  if (retry.length === 0) return first;
+  if (retry.length === 0) return read;
   const unknown = retry.some(
     (n) => first.pulls.get(n)?.mergeable === "UNKNOWN",
   );
   if (unknown) {
-    if (left() <= UNKNOWN_WAIT_MS + 1000) return first;
+    if (left() <= UNKNOWN_WAIT_MS + 1000) return read;
     await io.wait(UNKNOWN_WAIT_MS);
   }
-  const second = await io.read(input.slug, retry, seconds());
+  // A second read that fails leaves the first: its moved heads unplaced, its unknown mergeability where it was.
+  const reread = await io.read(input.slug, retry, seconds());
+  if (!reread.ok) return read;
+  const second = reread.value;
   for (const [n, f] of second.pulls) first.pulls.set(n, f);
   first.cost += second.cost;
   first.remaining = second.remaining ?? first.remaining;
-  return first;
+  return read;
 }
 
 /** One repository's board read (see the module comment). */
@@ -226,16 +231,14 @@ export async function readBoard(
   const floor = budgetFloor(input.budget);
   if (floor !== null) return notRead(floor, numbers);
   const startedMs = io.now();
-  let read: FactsRead;
-  try {
-    read = await readFacts(input, numbers, io, startedMs);
-  } catch (error) {
+  const facts = await readFacts(input, numbers, io, startedMs);
+  if (!facts.ok)
     return notRead(
-      `the board read failed: ${failureText(error)}`,
+      `the board read failed: ${facts.failure.reason}`,
       numbers,
       io.now() - startedMs,
     );
-  }
+  const read = facts.value;
   const ms = io.now() - startedMs;
   if (ms > BOARD_DEADLINE_MS)
     return notRead(
@@ -332,7 +335,7 @@ function oneUpdateNext(cards: BoardCard[]): BoardCard[] {
   return [...placed, ...cards.filter((c) => c.lane === null)];
 }
 
-/** The board read in the observe phase: never throws, so a defect in it leaves the rest of the tick as it was. */
+/** The board read in the observe phase: a failure is a value on the report, and touches nothing the tick plans or launches (ADR-0012). */
 export async function observeBoard(
   input: Omit<BoardInput, "budget" | "heads"> & {
     open: ReadonlyArray<{ number: number; headRefOid?: string }>;
@@ -340,22 +343,12 @@ export async function observeBoard(
   },
   io: BoardIo = realIo,
 ): Promise<BoardRead> {
-  try {
-    const heads = new Map(
-      input.open.flatMap((p) =>
-        p.headRefOid === undefined ? [] : [[p.number, p.headRefOid] as const],
-      ),
-    );
-    return await readBoard(
-      { ...input, heads, budget: await input.budget() },
-      io,
-    );
-  } catch (error) {
-    return notRead(
-      `the board read failed: ${failureText(error)}`,
-      convergedDrives(input.drives).map((d) => d.number),
-    );
-  }
+  const heads = new Map(
+    input.open.flatMap((p) =>
+      p.headRefOid === undefined ? [] : [[p.number, p.headRefOid] as const],
+    ),
+  );
+  return await readBoard({ ...input, heads, budget: await input.budget() }, io);
 }
 
 /** The notifications of the pull requests in merge now and approve first: each sent once per pull request and verified head. */

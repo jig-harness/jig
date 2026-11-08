@@ -69,29 +69,29 @@ export async function convergedWait(
   if (ledger === null || !converged || doc.state !== "OPEN")
     return { person: "merge", why: "its drive has not converged" };
   ctx.reading.forgeCall();
-  const read = await within(ctx.reading.sourceSec(), () =>
+  const bounded = await within(ctx.reading.sourceSec(), () =>
     readMergeFacts(ctx.address.repo, [doc.number], ctx.reading.sourceSec()),
-  ).catch((error: unknown) => ({ failed: String(error) }));
-  const facts =
-    read !== null && "value" in read
-      ? read.value.pulls.get(doc.number)
-      : undefined;
+  );
+  const read = bounded === null ? null : bounded.value;
+  const facts = read?.ok ? read.value.pulls.get(doc.number) : undefined;
   ctx.reading.note({
     record: "merge facts",
     read: facts !== undefined,
     ...(facts === undefined
       ? {
           detail:
-            read !== null && "failed" in read
-              ? read.failed
-              : "the forge did not give them in time",
+            read === null
+              ? "the forge did not give them in time"
+              : read.ok
+                ? "the forge did not give this pull request"
+                : read.failure.reason,
         }
       : {}),
   });
   if (facts === undefined)
     return { waiting: "the forge's merge facts did not read" };
   const rules = rulesFrom(
-    read !== null && "value" in read ? read.value.config : undefined,
+    read?.ok ? read.value.config : undefined,
     ctx.address.repo,
   );
   if (rules === null)

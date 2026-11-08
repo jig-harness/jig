@@ -17,6 +17,7 @@ import {
   UNKNOWN_WAIT_MS,
 } from "../lib/board.ts";
 import type { DrivenPr } from "../lib/types.ts";
+import { failed, ok } from "../../shared/outcome.ts";
 
 const SLUG = "example-org/example-repo";
 const HEAD = "a".repeat(40);
@@ -100,14 +101,14 @@ function io(answers: Array<Map<number, ForgeFacts> | Error>): BoardIo & {
       reads.push([...numbers]);
       const next = answers.shift();
       if (next === undefined || next instanceof Error)
-        throw next ?? new Error("no answer");
+        return failed("unreadable", next?.message ?? "no answer");
       const pulls = new Map([...next].filter(([n]) => numbers.includes(n)));
-      return {
+      return ok({
         pulls,
         cost: 1,
         remaining: 4800,
         limit: 5000,
-      } satisfies FactsRead;
+      } satisfies FactsRead);
     },
     wait: async (ms) => {
       waited.push(ms);
@@ -197,21 +198,25 @@ describe("the board read", () => {
     expect(read.reason).toContain("HTTP 502");
   });
 
-  it("never throws from the observe phase, whatever the read does", async () => {
+  it("reads in the observe phase on the listing's heads, a budget that did not read keeping no floor", async () => {
     const read = await observeBoard(
       {
         ...input([converged(7)]),
         open: [{ number: 7, headRefOid: HEAD }],
-        budget: async () => {
-          throw new Error("budget unreadable");
-        },
+        budget: async () => ({ unreadable: "rate_limit did not read" }),
       },
-      io([]),
+      io([new Map([[7, forge(7)]])]),
     );
-    expect([read.ok, read.reason]).toEqual([
-      false,
-      "the board read failed: budget unreadable",
+    expect(read.cards.map((c) => c.lane)).toEqual(["merge-now"]);
+  });
+
+  it("keeps the first read when the second fails: a moved head stays unplaced", async () => {
+    const forgeIo = io([
+      new Map([[7, forge(7, { head: MOVED })]]),
+      new Error("HTTP 502"),
     ]);
+    const read = await readBoard(input([converged(7)]), forgeIo);
+    expect([read.ok, read.cards, read.pending]).toEqual([true, [], [7]]);
   });
 
   it("does not place a pull request whose head moved between the tick's reads, after reading it once more", async () => {
@@ -238,12 +243,12 @@ describe("the board read", () => {
       ...io([]),
       read: async (_s, numbers) => {
         now += BOARD_DEADLINE_MS + 1;
-        return {
+        return ok({
           pulls: new Map(numbers.map((n) => [n, forge(n)])),
           cost: 1,
           remaining: null,
           limit: null,
-        };
+        });
       },
       now: () => now,
     };

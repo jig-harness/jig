@@ -16,6 +16,12 @@
  */
 import { OVERLAY_RELPATH } from "../../../../shared/config-layers.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import {
+  Defect,
+  failed,
+  ok,
+  type Outcome,
+} from "../../../../shared/outcome.ts";
 import type { ForgeFacts, HeadCheck, HeadReview } from "./merge-ready.ts";
 import { ghCall, ghRepoEnv } from "./proc.ts";
 
@@ -185,11 +191,6 @@ export function parsePull(
   };
 }
 
-/** Why the board query did not read: a failed call or an answer that is not JSON. */
-export class FactsUnread extends Error {
-  override name = "FactsUnread";
-}
-
 /** What one query read: each pull request's facts, and what the forge charged. */
 export interface FactsRead {
   pulls: Map<number, ForgeFacts>;
@@ -237,7 +238,7 @@ export function parseAnswer(
 
 /**
  * The facts of `numbers` in `slug`, `FACTS_PAGE` to a query, each under
- * `timeoutSec`; throws with the reason when a query fails. With `slug`
+ * `timeoutSec`, or why a query did not read (ADR-0012). With `slug`
  * `null` the repository is the one the forge client's own view of the
  * working directory names (its `{owner}` and `{repo}` placeholders).
  */
@@ -245,11 +246,11 @@ export async function readMergeFacts(
   slug: string | null,
   numbers: readonly number[],
   timeoutSec: number,
-): Promise<FactsRead> {
+): Promise<Outcome<FactsRead, "unreadable">> {
   const [owner = "", name = ""] =
     slug === null ? ["{owner}", "{repo}"] : slug.split("/");
   if (numbers.some((n) => !Number.isSafeInteger(n) || n <= 0))
-    throw new FactsUnread("a pull request number is not a whole number");
+    throw new Defect("a pull request number is not a whole number");
   const read: FactsRead = {
     pulls: new Map(),
     cost: 0,
@@ -274,15 +275,20 @@ export async function readMergeFacts(
     );
     if (r.code !== 0) {
       const tail = r.stderr.trim().split("\n").at(-1) ?? "";
-      throw new FactsUnread(
+      return failed(
+        "unreadable",
         `gh api graphql exited ${r.code}${tail === "" ? "" : `: ${tail}`}`,
       );
     }
     let answer: unknown;
     try {
       answer = JSON.parse(r.stdout);
-    } catch {
-      throw new FactsUnread("the board query's answer is not JSON");
+    } catch (error) {
+      return failed(
+        "unreadable",
+        "the board query's answer is not JSON",
+        error,
+      );
     }
     const part = parseAnswer(answer, chunk);
     for (const [n, f] of part.pulls) read.pulls.set(n, f);
@@ -291,5 +297,5 @@ export async function readMergeFacts(
     read.limit = part.limit ?? read.limit;
     if (part.config !== undefined) read.config = part.config;
   }
-  return read;
+  return ok(read);
 }

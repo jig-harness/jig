@@ -9,6 +9,7 @@
  * object; and nothing is written to the forge.
  */
 import { afterEach, describe, expect, it } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
@@ -33,6 +34,7 @@ import type { AskAnswer } from "../lib/answer.ts";
 import {
   type AskWorld,
   askWorld,
+  boardAnswer,
   comment,
   pullDoc,
   REPO,
@@ -331,6 +333,7 @@ describe("jig ask", () => {
       w.state,
     );
 
+    writeFileSync(join(w.dir, "board.json"), boardAnswer(9, "a".repeat(40)));
     const { r, answer } = await askJson(w, [`drive@${REPO}#9`]);
     expectSpawnExit(r, 0);
     expect(answer.holder).toBe("none");
@@ -343,6 +346,10 @@ describe("jig ask", () => {
       next: { person: "repository maintainer", act: "merge the pull request" },
     });
     expect(answer.waitsOn).toMatchObject({ person: "merge" });
+    // The predicate's lane and the merge command pinned to the verified head.
+    expect(JSON.stringify(answer.waitsOn)).toContain(
+      `merge-now: converged, witnessed and mergeable at the verified head; gh pr merge 9 --repo ${REPO} --match-head-commit ${"a".repeat(40)} --squash`,
+    );
   });
 
   it("answers from a launch claim's end where no outcome log holds the launch", async () => {
