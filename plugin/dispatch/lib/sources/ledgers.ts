@@ -508,7 +508,7 @@ function ledgerEvidence(
 }
 
 /** An unclean stop gets one recovery for its known head. */
-function uncleanClass(forge: PrFacts): Classified {
+function uncleanClass(ledger: Ledger, forge: PrFacts): Classified {
   if (forge.head === null || forge.head === "")
     return {
       class: "unplaced",
@@ -521,6 +521,7 @@ function uncleanClass(forge: PrFacts): Classified {
       cause: "stopped 12, uncommitted work in the original tree",
       change: `unclean head ${forge.head}`,
       uncleanTree: true,
+      tree: ledgerTree(ledger),
     },
   };
 }
@@ -565,7 +566,7 @@ function exitClass(
   park: ParkReading | undefined,
   forge: PrFacts,
 ): Classified {
-  if (exit === DRIVE_EXIT.WORKTREE_UNCLEAN) return uncleanClass(forge);
+  if (exit === DRIVE_EXIT.WORKTREE_UNCLEAN) return uncleanClass(ledger, forge);
   if (exit === DRIVE_EXIT.HITL_PARKED) return parkClass(park);
   if (exit === DRIVE_EXIT.CONVERGED) return convergedClass(ledger, forge);
   if (exit === DRIVE_EXIT.PR_CONFLICTING) return conflictStopClass(forge);
@@ -771,7 +772,12 @@ function rearmRequest(
         };
   return {
     classified: next,
-    evidence: { rearm: true, rearmLabel: `${labels.prefix}rearm` },
+    evidence: {
+      rearm: true,
+      rearmLabel: `${labels.prefix}rearm`,
+      noCause: false,
+      legacyNoCause: false,
+    },
   };
 }
 

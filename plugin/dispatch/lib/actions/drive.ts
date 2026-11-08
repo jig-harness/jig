@@ -332,7 +332,7 @@ async function workspaceFor(
 ): Promise<Opened> {
   // A stall or a deadline that left work runs where the work is, or not at all: a fresh
   // tree would not carry it.
-  if (tree !== undefined) {
+  if (tree !== undefined && originalActor === null) {
     const own = sessions.ok
       ? workspaceOfTree(sessions.workspaces, tree)
       : undefined;

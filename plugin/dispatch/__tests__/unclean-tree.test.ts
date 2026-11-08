@@ -93,9 +93,16 @@ it("retries exit 12 once per head in the same tree with a settlement pass", asyn
 it("never opens a fresh tree for exit 12", async () => {
   const { w } = fixture(false);
   const r = await tick(w);
-  expect(r.repos[0]?.launches[0]).toMatchObject({ outcome: "waits" });
+  expect(r.repos[0]?.launches).toEqual([]);
+  expect(r.repos[0]?.actions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        stage: "notify",
+        reason: expect.stringContaining("no open workspace"),
+      }),
+    ]),
+  );
   expect(driveRuns(w)).toEqual([]);
-  expect(r.repos[0]?.launches[0]?.detail).toContain("existing");
 });
 
 it("honors an explicit rearm request on a needs-person stop in the existing tree", async () => {
@@ -156,13 +163,14 @@ it("retries a failed request-label removal without launching again", async () =>
 }, 90000);
 
 it("refuses a clean same-branch tree belonging to another driver", async () => {
-  const { w } = fixture();
+  const { w, ws } = fixture();
   const ledger = stoppedLedger(7, 12);
+  ledger.driver.clone = cloneId(cloneKey(join(ws, ".git")));
   ledger.driver.actor = "wt-0000000000000000";
   w.setComments(7, [ledgerComment(701, ledger)]);
-  expect((await tick(w)).repos[0]?.launches[0]).toMatchObject({
-    outcome: "waits",
-  });
+  const report = (await tick(w)).repos[0];
+  expect(report?.launches).toEqual([]);
+  expect(report?.actions.some((a) => a.stage === "notify")).toBe(true);
   expect(driveRuns(w)).toEqual([]);
 });
 
@@ -170,7 +178,9 @@ it("refuses the same path in another clone", async () => {
   const { w, ws } = fixture();
   const ledger = stoppedLedger(7, 12);
   ledger.driver.actor = `wt-${worktreePathKey(ws)}`;
-  ledger.driver.clone = "another-clone";
+  ledger.driver.clone = `another-clone@${cloneId(cloneKey(join(ws, ".git")))
+    .split("@")
+    .at(-1)}`;
   w.setComments(7, [ledgerComment(701, ledger)]);
   expect((await tick(w)).repos[0]?.launches[0]).toMatchObject({
     outcome: "waits",
@@ -189,3 +199,30 @@ it("refuses an ambiguous runtime listing of the original tree", async () => {
   });
   expect(driveRuns(w)).toEqual([]);
 });
+
+it("admits an explicit request after the legacy automatic no-cause attempt is spent", async () => {
+  const { w, ws } = fixture();
+  const ledger = stoppedLedger(7, undefined);
+  ledger.driver.clone = cloneId(cloneKey(join(ws, ".git")));
+  ledger.driver.actor = `wt-${worktreePathKey(ws)}`;
+  w.setComments(7, [ledgerComment(701, ledger)]);
+  const first = await tick(w);
+  const id = first.repos[0]?.launches[0]?.record ?? "";
+  expect(first.repos[0]?.launches[0]?.outcome).toBe("launched");
+  await waitFor("the automatic recovery exit", () => exitWritten(w, id));
+  w.setConfig(
+    `dispatch:\n  labels: {enabled: true}\nissue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\n`,
+  );
+  w.setPrs("open", [
+    { ...openPr(7, "feature/unclean"), labels: [{ name: "jig:rearm" }] },
+  ]);
+  const next = await tick(w);
+  const launched = next.repos[0]?.launches.find((l) => l.action === "rearm");
+  expect(launched?.outcome).toBe("launched");
+  await waitFor("the explicit recovery exit", () =>
+    exitWritten(w, launched?.record ?? ""),
+  );
+  expect(
+    readRecord(launched?.record ?? "", dispatchState(w))?.facts,
+  ).not.toStartWith("no-cause:");
+}, 90000);
