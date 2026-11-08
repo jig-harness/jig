@@ -149,7 +149,10 @@ export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
     if (inFlight !== undefined)
       return { kind: "held", record: inFlight, why: describe(inFlight) };
     // An older owner must not be taken over again behind a later refusal.
-    const standing = standingRefusal(pr, mine);
+    // A drive settled as silent is a person's to hear of, whatever a refused
+    // takeover of this host once said on these facts.
+    const standing =
+      pr.evidence.settled === true ? null : standingRefusal(pr, mine);
     if (standing !== null) return standing;
     const started =
       typeof pr.evidence.started === "string" ? pr.evidence.started : null;

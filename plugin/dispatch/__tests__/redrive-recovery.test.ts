@@ -16,7 +16,12 @@ import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.t
 import type { DriveEvent } from "../../skills/drive-pr/scripts/lib/state/events.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { hostLabel } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
-import { settleConflictStops } from "../lib/actions/drive-hold.ts";
+import {
+  driveHold,
+  factsOf,
+  settleConflictStops,
+  settleSilentTakeovers,
+} from "../lib/actions/drive-hold.ts";
 import { foreignHold, settleSharedTakeovers } from "../lib/shared-launches.ts";
 import { type ReadRecord, readRecord } from "../lib/launches.ts";
 import { noCauseFacts, settleNoCauseStops } from "../lib/no-cause-stops.ts";
@@ -537,6 +542,27 @@ describe("another host's takeover of a driver no launch started", () => {
       evidence: { ...unproven.evidence, driverGone: false },
     } as DrivenPr;
     expect(foreignHold(pr, claims.get(7), "this-host").kind).toBe("refused");
+  });
+
+  it("settles as silent past this host's own refused takeover on the same facts, holding it only before", () => {
+    const gone = {
+      ...silent(),
+      evidence: { ...silent().evidence, unlaunched: true },
+    } as DrivenPr;
+    const base = redrove(gone, 11);
+    const record: ReadRecord = {
+      ...base,
+      record: {
+        ...base.record,
+        action: "takeover",
+        facts: factsOf(gone),
+        redrive: null,
+      },
+    };
+    expect(driveHold(gone, [record]).kind).toBe("refused");
+    const [settled] = settleSilentTakeovers([gone], [record]);
+    expect(settled?.evidence.settled).toBe(true);
+    expect(driveHold(settled as DrivenPr, [record]).kind).toBe("none");
   });
 
   it("is not spent by one that never executed, or on other ledger facts", () => {
