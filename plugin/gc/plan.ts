@@ -163,7 +163,7 @@ async function entryPlan(
         ? await confirmedPlan(entry, name, machine)
         : checkoutPlan(entry, machine);
   } catch (error) {
-    log.debug(
+    log.error(
       "gc caught a failure planning a repository",
       failureFields(error),
     );

@@ -94,7 +94,7 @@ test("inventory and partial collection failures exit 1 and keep a receipt", asyn
   ]);
 });
 
-test("unreadable proof preserves the resource without failing the whole kind", async () => {
+test("unreadable proof preserves the resource, finishes the kind and ends the run nonzero", async () => {
   const kind = fixture([dead]);
   kind.prove = async () => {
     throw new Error("unreadable identity");
@@ -103,7 +103,7 @@ test("unreadable proof preserves the resource without failing the whole kind", a
     collect: true,
     receiptRoot: mkdtempSync(join(tmpdir(), "gc-receipt-")),
   });
-  expect(receipt.exitStatus).toBe(0);
+  expect(receipt.exitStatus).toBe(1);
   expect(receipt.resources[0]?.outcome).toBe("unverified");
 });
 

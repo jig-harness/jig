@@ -17,20 +17,24 @@ import type {
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
-/** What a boundary records of what it caught: its message; under `JIG_LOG=debug`, its stack and causes too. */
+/** What a boundary records of what it caught: its message in the receipt, and its stack and causes on the error log, since a throw here is a defect (ADR-0012). */
 function caught(error: unknown): string {
-  log.debug("gc caught a failure at its boundary", failureFields(error));
+  log.error("gc caught a failure at its boundary", failureFields(error));
   return message(error);
 }
 function outcome(proof: Proof): ReceiptLine["outcome"] {
   if (proof.state === "dead") return "would-collect";
   return proof.state === "live" ? "refused" : proof.state;
 }
-async function prove(kind: CollectionKind, resource: Resource): Promise<Proof> {
+/** The proof gc relies on is conservative when the kind's proof throws; `thrown` marks that the run must still end nonzero. */
+async function prove(
+  kind: CollectionKind,
+  resource: Resource,
+): Promise<Proof & { thrown?: true }> {
   try {
     return await kind.prove(resource);
   } catch (error) {
-    return { state: "unverified", reason: caught(error) };
+    return { state: "unverified", reason: caught(error), thrown: true };
   }
 }
 /** The kind's inventory; what it throws (a platform error or a defect) fails it the same way. */
@@ -90,6 +94,7 @@ async function evaluate(
   persist: () => void,
 ): Promise<void> {
   const proof = await prove(kind, resource);
+  if (proof.thrown) receipt.exitStatus = 1;
   const line: ReceiptLine = {
     kind: kind.name,
     ...scope(kind),
