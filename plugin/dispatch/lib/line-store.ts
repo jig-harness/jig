@@ -115,6 +115,32 @@ const ENTRY_FIELDS = {
   },
 } satisfies Record<string, Fields>;
 
+/** Whether `value` is a mapping of phase names to milliseconds. */
+const isPhases = (value: unknown): boolean =>
+  isMapping(value) && Object.values(value).every(isNumber);
+
+/** What the tick strip reads of each recent tick. */
+const TICK_FIELDS: Fields = {
+  runId: isString,
+  startedAt: isTime,
+  tookMs: isNumber,
+  exitStatus: isNumber,
+  sweep: (value) => typeof value === "boolean",
+  phasesMs: isPhases,
+  repos: listOf({
+    repo: isString,
+    ms: isNumber,
+    phasesMs: isPhases,
+    defect: nullOr(isString),
+  }),
+  budget: nullOr((value) =>
+    hasFields(value, { remaining: isNumber, limit: isNumber }),
+  ),
+  busy: (value) => Array.isArray(value) && value.every(isString),
+  lowBudget: nullOr((value) => Array.isArray(value) && value.every(isString)),
+  defects: isNumber,
+};
+
 const LINE_FIELDS: Fields = {
   runId: isString,
   startedAt: isTime,
@@ -126,6 +152,7 @@ const LINE_FIELDS: Fields = {
   longestTickMs: isNumber,
   recentTicksMs: (value) =>
     value === undefined || (Array.isArray(value) && value.every(isNumber)),
+  ticks: (value) => value === undefined || listOf(TICK_FIELDS)(value),
   plugin: nullOr(isString),
   timeZone: (value) => value === undefined || isZone(value),
   lastAccount: nullOr(isString),

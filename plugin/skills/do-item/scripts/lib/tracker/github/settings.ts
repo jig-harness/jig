@@ -12,7 +12,10 @@
 
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
+import { PRIORITY_NAMES, type PriorityName } from "../facets/values.ts";
 import { nonEmpty, settingsSection } from "../settings-fields.ts";
+
+export { PRIORITY_NAMES, type PriorityName };
 
 /** Where the GitHub adapter keeps an open issue's workflow state. */
 export const GITHUB_STATE_SOURCES = ["labels", "project"] as const;
@@ -21,10 +24,6 @@ export const DEFAULT_STATES_FROM: GitHubStateSource = "labels";
 
 /** The board field that holds the state when none is named. */
 export const DEFAULT_STATUS_FIELD = "Status";
-
-/** The priorities a label stands for, 1 (urgent) to 4 (low), by name. */
-export const PRIORITY_NAMES = ["urgent", "high", "medium", "low"] as const;
-export type PriorityName = (typeof PRIORITY_NAMES)[number];
 
 /** A GitHub Projects board, as its web address names it. */
 export interface GitHubProject {
@@ -44,6 +43,8 @@ export interface GitHubSettings {
   statusField: string;
   /** The label that carries each priority. */
   priorityLabels: Record<PriorityName, string>;
+  /** `priority_labels` is set, so the repository keeps priority in labels. */
+  priorityLabelsDeclared: boolean;
 }
 
 const FIELDS = [
@@ -155,5 +156,7 @@ export function parseGitHubSettings(raw: unknown): GitHubSettings {
         ? DEFAULT_STATUS_FIELD
         : nonEmpty(section.status_field, field("status_field")),
     priorityLabels: priorityLabelsOf(section.priority_labels),
+    priorityLabelsDeclared:
+      section.priority_labels !== undefined && section.priority_labels !== null,
   };
 }

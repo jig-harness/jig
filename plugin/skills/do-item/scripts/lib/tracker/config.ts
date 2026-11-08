@@ -15,6 +15,8 @@
  *       project: https://github.com/orgs/owner/projects/1
  *       status_field: Status
  *       priority_labels: { urgent: …, high: …, medium: …, low: … }
+ *     facets:                  # where type, priority and size are kept (`facets/config.ts`)
+ *       size: { store: field, field: Effort }
  *     jira:                    # Jira Cloud only (`jira/settings.ts`)
  *       site: https://example.atlassian.net
  *       issue_type: Task
@@ -39,6 +41,17 @@ import { type GitHubSettings, parseGitHubSettings } from "./github/settings.ts";
 import { gitHubModel } from "./github/model.ts";
 import { type JiraSettings, parseJiraSettings } from "./jira/settings.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import {
+  entryLabels,
+  type FacetEntries,
+  type FacetInputs,
+  type Facets,
+  parseFacetEntries,
+  readTaxonomyValues,
+  resolveFacets,
+} from "./facets/config.ts";
+import { fold, PRIORITY_NAMES } from "./facets/values.ts";
+import { DEFAULT_TAXONOMY } from "../../../../file-issue/scripts/lib/config.ts";
 
 export interface TrackerConfig {
   adapter: string;
@@ -52,6 +65,12 @@ export interface TrackerConfig {
   github: GitHubSettings;
   /** The Jira adapter's settings, defaults filled in. */
   jira: JiraSettings;
+  /** `issue_tracker.facets`, checked against the adapter; a facet left out keeps its default. */
+  facets: FacetEntries;
+  /** `issue_tracker.types`: work type → the labels that mark it; `null` when unset. */
+  types: Record<string, string[]> | null;
+  /** `issue_tracker.taxonomy` as written, or the default `label-taxonomy.yaml`. */
+  taxonomy: string;
 }
 
 export const DEFAULT_ADAPTER = "github";
@@ -166,6 +185,133 @@ function refuseTeamWithoutAdapter(adapter: unknown, team: unknown): void {
     );
 }
 
+/** `issue_tracker.types` as work type → labels, its shape checked; `null` when unset. */
+function typeLabelsOf(raw: unknown): Record<string, string[]> | null {
+  if (raw === undefined || raw === null) return null;
+  const bad = (field: string, what: string) =>
+    new TrackerConfigError(field, `${field} must be ${what}`);
+  if (!isRecord(raw) || Object.keys(raw).length === 0)
+    throw bad(
+      "issue_tracker.types",
+      "a mapping from at least one type to the labels that mark it",
+    );
+  const out: Record<string, string[]> = {};
+  for (const [type, list] of Object.entries(raw)) {
+    const field = `issue_tracker.types.${type}`;
+    if (
+      !Array.isArray(list) ||
+      !list.every((l) => typeof l === "string" && l.trim() !== "") ||
+      new Set(list).size !== list.length
+    )
+      throw bad(field, "a list of distinct nonempty label names");
+    out[type] = [...list];
+  }
+  return out;
+}
+
+/** `issue_tracker.taxonomy` as written, or the default. */
+function taxonomyOf(raw: unknown): string {
+  if (raw === undefined || raw === null) return DEFAULT_TAXONOMY;
+  if (typeof raw !== "string" || raw.trim() === "")
+    throw new TrackerConfigError(
+      "issue_tracker.taxonomy",
+      "issue_tracker.taxonomy must be a path to the label taxonomy, relative to the repository root",
+    );
+  return raw;
+}
+
+/**
+ * On GitHub, the priority labels a facet entry names become the adapter's;
+ * `priority_labels` set too must name the same ones.
+ */
+function withFacetPriorityLabels(
+  github: GitHubSettings,
+  adapter: string,
+  facets: FacetEntries,
+  raw: unknown,
+): GitHubSettings {
+  const entry = facets.priority;
+  if (
+    adapter !== "github" ||
+    entry?.store !== "label" ||
+    (entry.labels === undefined && entry.prefix === undefined)
+  )
+    return github;
+  const labels = { ...github.priorityLabels };
+  for (const p of PRIORITY_NAMES)
+    labels[p] = entryLabels(entry, p, () => [labels[p]])[0] as string;
+  const declared = isRecord(raw) && raw.priority_labels !== undefined;
+  const differs = PRIORITY_NAMES.find(
+    (p) => fold(labels[p]) !== fold(github.priorityLabels[p]),
+  );
+  if (declared && differs !== undefined)
+    throw new TrackerConfigError(
+      "issue_tracker.facets.priority",
+      `issue_tracker.facets.priority keeps ${differs} in '${labels[differs]}', but issue_tracker.github.priority_labels.${differs} names '${github.priorityLabels[differs]}'; keep one, or make them agree`,
+    );
+  return { ...github, priorityLabels: labels };
+}
+
+/**
+ * On Jira, a native priority's `values` are the Jira priorities;
+ * `issue_tracker.jira.priorities` set too must name the same ones.
+ */
+function withFacetPriorities(
+  jira: JiraSettings,
+  adapter: string,
+  facets: FacetEntries,
+  raw: unknown,
+): JiraSettings {
+  const values = facets.priority?.values;
+  if (adapter !== "jira" || values === undefined) return jira;
+  const declared =
+    isRecord(raw) && isRecord(raw.priorities) ? raw.priorities : {};
+  const priorities = { ...jira.priorities };
+  for (const [key, name] of Object.entries(values)) {
+    const p = PRIORITY_NAMES.find((n) => fold(n) === fold(key));
+    if (p === undefined) continue;
+    const own = declared[p];
+    if (typeof own === "string" && fold(own) !== fold(name))
+      throw new TrackerConfigError(
+        `issue_tracker.facets.priority.values.${key}`,
+        `issue_tracker.facets.priority.values.${key} names '${name}', but issue_tracker.jira.priorities.${p} names '${own}'; keep one, or make them agree`,
+      );
+    priorities[p] = name;
+  }
+  return { ...jira, priorities };
+}
+
+/** What resolving the facets reads from the tracker configuration. */
+export function facetInputs(config: TrackerConfig): FacetInputs {
+  return {
+    adapter: config.adapter,
+    entries: config.facets,
+    types: config.types,
+    bugLabels: config.labels.bug,
+    epic: config.labels.epic,
+    priorityLabels:
+      config.adapter === "github" ? config.github.priorityLabels : null,
+    priorityLabelsDeclared: config.github.priorityLabelsDeclared,
+    jiraPriorities: config.adapter === "jira" ? config.jira.priorities : null,
+    stateLabels:
+      config.adapter === "github"
+        ? gitHubModel(config.states, config.github).stateLabels
+        : [],
+  };
+}
+
+/**
+ * The repository's facets: the configuration, with the type and size values
+ * of the label taxonomy of the repository at `root`, or with none when
+ * `root` is `null`.
+ */
+export function facetsOf(config: TrackerConfig, root: string | null): Facets {
+  return resolveFacets(
+    facetInputs(config),
+    root === null ? null : readTaxonomyValues(root, config.taxonomy),
+  );
+}
+
 /** Validate the `issue_tracker` section of a parsed overlay. */
 export function parseTrackerConfig(
   overlay: Record<string, unknown>,
@@ -209,8 +355,19 @@ export function parseTrackerConfig(
       states[key as CanonicalState] = name;
     }
   }
-  const github = parseGitHubSettings(section.github);
-  const jira = parseJiraSettings(section.jira);
+  const facets = parseFacetEntries(section.facets, adapter);
+  const github = withFacetPriorityLabels(
+    parseGitHubSettings(section.github),
+    adapter,
+    facets,
+    section.github,
+  );
+  const jira = withFacetPriorities(
+    parseJiraSettings(section.jira),
+    adapter,
+    facets,
+    section.jira,
+  );
   refuseAmbiguousStates(states, adapter, jira);
   refuseSharedLabels(adapter, states, github);
   return {
@@ -220,6 +377,9 @@ export function parseTrackerConfig(
     labels: parseTrackerLabels(overlay),
     github,
     jira,
+    facets,
+    types: typeLabelsOf(section.types),
+    taxonomy: taxonomyOf(section.taxonomy),
   };
 }
 

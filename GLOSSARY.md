@@ -65,6 +65,17 @@ make, use the entry's term instead.
   holds one concrete, tested implementation of it, and what it learns comes
   back as *backflow*. Short form: consumer. *Avoid*: instance, downstream
   repository, target repository, adopting repository.
+- **Consumer action** — what a Jig change asks a *consumer repository* to do,
+  declared in the change note's entry: the level it is taken at (`machine`,
+  `configuration` or `instructions`), whether it is `required` or `advised`,
+  and optional hints that detect whether a repository is affected. The check
+  that reads them is `jig reconcile`. Planned, not built yet: see
+  [the design](design/consumer-actions.md).
+- **Reconciled version** — the Jig version a *consumer repository* last took
+  every consumer action up to, recorded in its configuration as
+  `jig.reconciled`; for repository-level actions the check reads only the
+  changes after it. Planned, not
+  built yet: see [the design](design/consumer-actions.md).
 - **Invariant** — the tool-independent statement of a practice ("every
   committed generated file has a drift check"), as opposed to any particular
   tool that implements it.
@@ -795,19 +806,17 @@ make, use the entry's term instead.
   and its size, held by the *tracker interface* as a value that means the
   same in every repository: a type from the *label taxonomy*'s type list,
   a priority from 1 (urgent) to 4 (low) or none, a size from the
-  taxonomy's size group. Planned, not built: today the interface carries
-  labels and a priority, and the design says where the rest is headed. Once
-  built, where the tracker keeps the value is its *facet store*, and the
-  skills read the value, never the label or field behind it
-  ([design](design/tracker-facets.md)).
+  taxonomy's size group. The interface reads and writes all three on every
+  issue; where the tracker keeps the value is its *facet store*. The skills
+  still read type and size from labels, and are planned to read the value,
+  never the label or field behind it ([design](design/tracker-facets.md)).
 - **Facet store** (store) — where a tracker keeps one *issue facet*: the
   tracker's own field for it (`native`, such as GitHub's or Jira's issue
   type), a custom field the repository names (`field`), or a label per
-  value (`label`). Planned, not built: the design gives each facet a
-  default store per *tracker adapter*, lets a repository name its own in
-  `issue_tracker.facets`, and moves no repository's store unless its
-  configuration says so or a person runs the move
-  ([design](design/tracker-facets.md)).
+  value (`label`). Each facet has a default store per *tracker adapter*,
+  the one it has always had; a repository names its own in
+  `issue_tracker.facets`, and no repository's store moves unless its
+  configuration says so ([design](design/tracker-facets.md)).
 - **Sensitivity flag** — a *flag label* marking a change that carries extra
   obligations, such as a database migration, a published contract, personal
   data or a manual operational step. `decide` reads them under fixed names:
@@ -1214,7 +1223,18 @@ make, use the entry's term instead.
   past, still mergeable at the verified head, is left alone. A drive that
   stopped on a conflict it could not repair is re-driven too, once for each
   pair of its pull request's head and its base branch's head, and a person is
-  told only if that re-drive stops the same way.
+  told only if that re-drive stops the same way. So is a stop whose next step
+  is the drive's own rather than a person's decision: a stall, a spent
+  CI-repair budget or a pass deadline that recurred, once per head; a failure
+  while the pull request conflicts with its base, once per pair of heads.
+- **Recovery budget (of a pull request)** — how many times in a rolling hour
+  the *dispatcher* starts work on one pull request again after a stop nobody
+  decided: a drive that stopped with no recorded cause, a *re-drive* of a
+  recurring pass deadline or of a failure on a conflicting pull request, the
+  takeover of a silent driver no launch started whose run its host shows
+  ended, and the run again of a follow-up whose session died. Every kind
+  counts against the one budget of 3, so a stop that keeps recurring ends as a
+  notice to a person rather than a loop.
 - **Permission mode (of a pass)** — the setting of an agent tool that
   decides which of its actions ask a person first. Claude Code's
   `default` mode asks before most edits and commands; a pass of a *PR
@@ -1779,6 +1799,14 @@ make, use the entry's term instead.
   its updates, where a pinned version receives none. npm's dist-tags
   (`latest`, `next`) are channels; Jig's plugin has `latest` and `stable`
   ([plugin/README.md](plugin/README.md#release-channels)).
+- **Scheduled upgrade** — the plugin update a machine's timers make on
+  their own: before collection's run and each dispatcher tick, the job's launcher has the
+  installed plugin copy update the plugin on the *release channel* the
+  machine follows, at most once per interval whichever timer fires first,
+  then runs the job on the copy now installed. A pinned machine, one whose
+  plugin is loaded in place from a local folder, and one that opted out
+  receive nothing; each job's receipt says what the upgrade came to
+  ([plugin/README.md](plugin/README.md#automatic-updates)).
 - **Trusted publishing** — publishing to a package registry without a
   stored token: the registry is told once which repository and workflow may
   publish a package, the publishing job proves it is that workflow with a
@@ -1949,7 +1977,8 @@ make, use the entry's term instead.
 - **Stuck launch record** — a *launch record* still pending that no tick
   launches again: every launch it is allowed (two) ended as not started or
   unanswered with at least one unanswered, a follow-up's replay can never be
-  proven safe, or it names no workspace. Unlike a retryable pending record, which a tick
+  proven safe, it names no workspace, or the runtime answered its launch as
+  started longer ago than `unclaimed_after` and no wrapper claimed it. Unlike a retryable pending record, which a tick
   launches again once its guards allow (a hold, a failed read, a missing
   command or an account's *wall* can delay that), and an unknown one, whose
   session may still be running, it waits for a person to clear it. The

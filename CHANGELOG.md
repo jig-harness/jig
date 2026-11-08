@@ -387,6 +387,112 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.160.0] - 2026-11-08
+
+The installed timers now keep the plugin current: a machine that runs the dispatcher stays on its channel's newest version with nobody at the keyboard. On a machine whose jobs an earlier release installed, run `jig upgrade` (or `jig upgrade --jobs-only`) once: it refreshes each job's launcher copy, and only a launcher copy from this release on runs the upgrade.
+
+### Added
+
+- The dispatch dashboard's History view opens with **How the ticks ran**:
+  one compact row per recent tick, the newest first, with how long it took,
+  its own phases as a bar scaled to the longest retained tick, the slowest
+  single phase and the repository it was in, the forge's rate budget it
+  read, and a chip for a tick with a defect or one that ended with a failure.
+  Low-budget and busy-repository chips require a tick producer that records
+  those signals; the current producer does not. Each row opens to the time of
+  every phase and every repository. The line carries the last 48 ticks,
+  and a tick that reads only some repositories, such as a wake-up, adds
+  its row without replacing the rest of the line. A tick whose closing steps
+  fail also adds its health while preserving the previous snapshot; failed
+  history reads are reported on the receipt.
+- Before collection's run and each dispatcher tick (`jig gc --scheduled`, `jig dispatch --apply`), the job's launcher runs the installed plugin copy's new `jig upgrade --scheduled`, then runs the job on the copy now installed. It updates the plugin on the channel each agent tool follows and refreshes the launcher copies and the `jig` command, at most once per `upgrade.every` (an hour) whichever timer fires first. A failed upgrade is not tried again inside the interval, and the job still runs on the copy that is there. A machine pinned to a tag or ref receives nothing, and a plugin Claude Code loads in place from a local marketplace folder is skipped and that folder left untouched. The `jig` command, a woken dispatcher tick and the dispatcher's change probe never upgrade first ([automatic updates](plugin/README.md#automatic-updates)).
+- The user file's `upgrade` section: `upgrade: off`, or `every` and `enabled`; `jig install --no-upgrade` writes `upgrade.enabled: false` ([CONFIGURATION.md](plugin/CONFIGURATION.md#upgrade-user-file-only)).
+- Each timer run's receipt carries an `upgrade` line (withheld, skipped, unchanged, `0.114.0 -> 0.115.0`, or failed with the agent tool's error), shown by `jig receipts gc` and `jig receipts dispatch`; the drive morning report lists the updates and the failures since the last report, under `upgrades` in its JSON.
+- `jig doctor`'s `upgrade` check fails while the latest scheduled upgrade failed, or its process died before it finished, naming it and the agent tool's error; a successful `jig upgrade` clears it.
+
+### Changed
+
+- On a machine whose timers upgrade the plugin, a drive's rounds may span plugin versions: the driver keeps the copy it started with, and each pass runs the copy installed when it starts.
+- A scheduled refresh leaves a loaded launchd job's file as it is, since rewriting it stops the job; `jig upgrade` run by a person rewrites it.
+- An install, a refresh or `jig install --no-upgrade` takes over the install lock from a process that died holding it, instead of refusing until a person removes the file; collection's own locks are still never taken over.
+
+### Fixed
+
+- The turn-budget guard recognizes Codex task and response records, avoiding hook errors and counting responses within each task. It rescans older parser checkpoints and reports malformed response records that would otherwise freeze the count.
+
+## [0.159.0] - 2026-11-08
+
+### Added
+
+- `jig dispatch` [re-drives](GLOSSARY.md) the stops whose next step is
+  mechanical, rather than listing them for a person:
+  - a drive that stopped `15` (a pass reached its deadline again after the
+    driver spent its restarts) is re-armed once per head commit, on any
+    admitted account. Its stop now records, as a stall's does, whether it
+    left work in its tree; one that did is re-armed only in that tree, and
+    the re-armed drive takes the edits as its own to finish;
+  - a drive that stopped `1` while its pull request conflicts with its base
+    is re-armed once per pair of its head and its base branch's head, so its
+    conflict-resolve round runs;
+  - a silent drive whose driver no launch started, armed by hand or by
+    another tool in any clone, is taken over when the driver ran on this host
+    and this host shows its run ended, on the evidence drive-pr's own
+    recovery accepts (`drive-pr/scripts/driver-presence.ts`, read-only);
+    `drive.ts --take-over` still decides. A driver on another host, or one
+    whose run this host cannot show ended, is notified once. The takeover of
+    a driver a launch started does not draw on the recovery budget;
+  - a follow-up whose pass died during its work with no result and no
+    question, within the last 6 hours, is run again once: the tick releases
+    the marker it left, even one already answered failed, and a later tick
+    starts it again. On the first tick after upgrading, a follow-up that died
+    in the 6 hours before has its marker released and runs again; an older
+    death stays a failed follow-up, notified, its marker kept. A
+    follow-up a person asks for again by deleting a failed marker starts as a
+    new one.
+
+  A second stop at the same change (the same head, the same pair of heads,
+  the same ledger facts, the same follow-up) is a person's, with the stop's
+  handoff.
+- One [recovery budget](GLOSSARY.md) per pull request bounds these re-drives
+  together with
+  the re-arms of stops with no recorded cause: 3 in a rolling hour, across
+  accounts and hosts. A launch that draws on it says so in its ledger facts
+  (`recovery: `, beside the existing `no-cause: `); once it is spent, a person
+  is told the re-drives repeated.
+- `jig ask` says when a silent drive's driver is shown gone and a dispatcher
+  may take it over, and reads a conflicting failure's base branch head as the
+  dispatcher does.
+
+## [0.158.1] - 2026-11-07
+
+### Fixed
+
+- `jig dispatch` no longer leaves a launch the session runtime answered as started, but whose wrapper never claimed its launch record, holding its stage and an account slot with no notice. Once the machine file's new `unclaimed_after` (default `15m`) has passed since that answer, the record is reported as stuck: notified to a person as needing them (cause `needs-person`, once, then on `dispatch.renotify_after`), shown on the dashboard as needing a person, and released with `jig dispatch clear <record>`. A record claimed within `unclaimed_after` is never flagged. When the runtime reports a session joined to the record's target, the notice says so, since that wrapper may have started its stage without claiming the record; the slot is never freed automatically.
+
+## [0.158.0] - 2026-11-07
+
+### Added
+
+- The tracker interface carries every issue's type, priority and size, its [issue facets](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), wherever the tracker keeps them. A repository that sets nothing keeps each in the store it has always used and files, reads and pools exactly as before: type and size as labels on every adapter, priority as labels on GitHub Issues and in the priority field on Jira and Linear. The type and size values are the types and size group of the repository's label taxonomy (`issue_tracker.taxonomy`); with no taxonomy, the work types are the types and there is no size facet.
+- `issue_tracker.facets` names where a facet is kept: `label`, with its labels or a prefix, on every adapter; on GitHub Issues also the issue type (`type: { store: native }`), the organization's Priority field (`priority: { store: native }`) and any issue field of the organization (`size: { store: field, field: Effort }`), with a `values` map where names differ. A store is refused when the configuration is read if the adapter cannot hold it, and a value that names nothing in its store is refused before anything is written ([CONFIGURATION.md](https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md#issue_tracker)). The skills still read type and size from labels in this release, so name a store other than `label` for them only to try it.
+- `do-item`'s `tracker.ts create` and `update` take `type`, `priority` and `size` and write each to its store (`update` removes one with `null`), and `tracker.ts facet-stores` prints each facet's store and why it is in force, a named store's health, and, on GitHub Issues, what the default would select from the labels and field values the repository's issues carry and what its organization offers. That report chooses nothing, and a read it could not make (denied, rate limited, timed out) is shown as an error naming the read and the credential, never as "no field".
+- Launch outcomes name the next owner, and `jig ask` shows the handoff as
+  `last.next`: a station address, a person and their act, or nobody with a
+  reason. A converged drive hands to a maintainer to merge, and a completed
+  follow-up has no next owner. Older records remain readable. Late pickup
+  results refresh the outcome and its text archive; malformed stored
+  handoffs, including addresses without a full repository, remain unknown.
+  Late failures preserve the recorded question,
+  and archive refreshes read revisions in bounded batches.
+
+### Changed
+
+- **Breaking:** a completed pickup must report `jig dispatch result <record>
+  <token> done --pr <number>`, or `done --none "<reason>"` when no pull request
+  was needed. Update commands that report a pickup's result; new launch
+  prompts include these arguments. Follow-up and failed-result commands keep
+  their existing form.
+
 ## [0.157.1] - 2026-11-07
 
 ### Fixed
@@ -5716,7 +5822,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.157.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.160.0...HEAD
+[0.160.0]: https://github.com/jig-harness/jig/compare/v0.159.0...v0.160.0
+[0.159.0]: https://github.com/jig-harness/jig/compare/v0.158.1...v0.159.0
+[0.158.1]: https://github.com/jig-harness/jig/compare/v0.158.0...v0.158.1
+[0.158.0]: https://github.com/jig-harness/jig/compare/v0.157.1...v0.158.0
 [0.157.1]: https://github.com/jig-harness/jig/compare/v0.157.0...v0.157.1
 [0.157.0]: https://github.com/jig-harness/jig/compare/v0.156.4...v0.157.0
 [0.156.4]: https://github.com/jig-harness/jig/compare/v0.156.3...v0.156.4

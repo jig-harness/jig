@@ -124,6 +124,7 @@ function machine(changeProbe = true): MachineConfig {
     intervalMs: 300_000,
     wallBackoffMs: 3_600_000,
     runtimeTimeoutMs: 60_000,
+    unclaimedAfterMs: 900_000,
     workspaceTimeoutMs: 60_000,
     opensPerTick: 4,
     receiptsDays: 30,

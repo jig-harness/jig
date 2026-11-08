@@ -49,6 +49,7 @@ describe("issue_tracker.github", () => {
         medium: "priority: medium",
         low: "priority: low",
       },
+      priorityLabelsDeclared: false,
     });
   });
 

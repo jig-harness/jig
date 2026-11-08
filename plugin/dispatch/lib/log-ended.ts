@@ -4,8 +4,11 @@
  * the time the row carries) and the row are written in one transaction,
  * so either both are in the database or neither is: a record with its end
  * written has its row, and one without is ended and logged by the next
- * tick that reads it.
+ * tick that reads it. The result and handoff are read under the same write
+ * transaction so a session reporting during a tick is not lost.
  */
+import { Defect } from "../../shared/errors.ts";
+import { readNext } from "./next-owner.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { failureText } from "./text.ts";
 import { isDrive, type ReadRecord, writeRecord } from "./launches.ts";
@@ -48,14 +51,27 @@ export async function logEnded(
           : null;
       const takenOver = ctx.all.some((x) => x.record.replaces === record.id);
       const endedAt = endTime(r, ctx.nowIso);
-      const row = endedRow(
-        r,
-        endedAt,
-        { takenOver, merged },
-        isDrive(record) ? endRound(r, ctx.drives) : null,
-      );
       const db = stateDb(ctx.root);
       inTransaction(db, () => {
+        const current = db
+          .query("SELECT result, result_next FROM launches WHERE id = ?")
+          .get(record.id) as {
+          result: ReadRecord["result"];
+          result_next: string | null;
+        } | null;
+        if (current === null)
+          throw new Defect("the launch record disappeared before logging");
+        const fresh = {
+          ...r,
+          result: current.result,
+          next: readNext(current.result_next),
+        };
+        const row = endedRow(
+          fresh,
+          endedAt,
+          { takenOver, merged },
+          isDrive(record) ? endRound(r, ctx.drives) : null,
+        );
         writeRecord({ ...record, endedAt }, ctx.root);
         insertRow(db, row);
       });

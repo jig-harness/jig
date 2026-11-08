@@ -1,3 +1,4 @@
+import { nextText } from "../../dispatch/lib/next-owner.ts";
 /**
  * An answer printed for a person. A record's own words are printed with
  * their control characters removed, so a comment cannot move the cursor,
@@ -107,6 +108,11 @@ export function renderAnswer(a: AskAnswer): string {
     ...field("state", [`${a.state}: ${a.stateDetail}`]),
     ...field("waitsOn", [waitsLine(a.waitsOn)]),
     ...field("last", [lastLine(a.last)]),
+    ...(a.last === null
+      ? []
+      : field("last.next", [
+          a.last.next == null ? "not recorded" : nextText(a.last.next),
+        ])),
     ...field("sources", [
       ...a.sources.records.map(sourceLine),
       `forge calls ${a.sources.forgeCalls}, tracker calls ${a.sources.trackerCalls}`,

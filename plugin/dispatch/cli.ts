@@ -58,6 +58,7 @@ import { elapsed, formatReceipt } from "./lib/report.ts";
 import { markerMain } from "./marker.ts";
 import { probeMain } from "./probe-command.ts";
 import { readReceipt, receiptPaths, type TickReceipt } from "./receipts.ts";
+import { upgradeLine } from "../runtime/upgrade-record.ts";
 import { resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
 
@@ -187,6 +188,16 @@ const result = command(
     outcome: argument(string({ metavar: "done|failed" }), {
       description: message`How the session ended.`,
     }),
+    pr: optional(
+      option("--pr", countValue("PR"), {
+        description: message`The pull request a completed pickup opened; its next owner is the drive station.`,
+      }),
+    ),
+    none: optional(
+      option("--none", string({ metavar: "REASON" }), {
+        description: message`Why a completed pickup needs no pull request. Mutually exclusive with --pr.`,
+      }),
+    ),
   }),
   { brief: message`Record how a dispatched interactive session ended.` },
 );
@@ -388,14 +399,19 @@ function defects(r: TickReceipt): string {
   return n === 0 ? "" : `, ${n} defect(s)`;
 }
 
-/** One line per receipt that reads: its run, outcome, duration, size, defects and file. */
+/** The upgrade the launcher ran before the tick, where it ran one. */
+function upgraded(r: TickReceipt): string {
+  return r.upgrade === undefined ? "" : `  upgrade ${upgradeLine(r.upgrade)}`;
+}
+
+/** One line per receipt that reads: its run, outcome, duration, size, defects, upgrade and file. */
 function listReceipts(paths: readonly string[]): void {
   for (const path of paths) {
     const r = readReceipt(path);
     if (r === null) continue;
     const actions = r.repos.reduce((n, repo) => n + repo.actions.length, 0);
     console.log(
-      `${r.runId}  ${r.startedAt}  ${r.completed ? `exit ${r.exitStatus}` : "incomplete"}${took(r)}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)${defects(r)}  ${path}`,
+      `${r.runId}  ${r.startedAt}  ${r.lockHeldBy !== undefined ? "lock held" : r.completed ? `exit ${r.exitStatus}` : "incomplete"}${took(r)}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)${defects(r)}${upgraded(r)}  ${path}`,
     );
   }
 }
@@ -441,14 +457,29 @@ function repositories(options: Tick, machine: MachineConfig | null): string[] {
 
 type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
 
+/** Forward a session result and its mutually exclusive handoff arguments. */
+function sessionResultMain(
+  args: Extract<Subcommand, { action: "result" }>,
+): number {
+  if (args.pr !== undefined && args.none !== undefined) {
+    console.error("jig dispatch result: pass either --pr or --none, not both");
+    return 2;
+  }
+  return resultMain([
+    args.record,
+    args.token,
+    args.outcome,
+    ...(args.pr === undefined ? [] : ["--pr", String(args.pr)]),
+    ...(args.none === undefined ? [] : ["--none", args.none]),
+  ]);
+}
+
 /** A subcommand's run: everything but the tick. */
 function subcommandMain(
   args: Subcommand,
   script: string,
 ): number | Promise<number> {
-  if (args.action === "result")
-    // An interactive session's own answer, under its launch record's token.
-    return resultMain([args.record, args.token, args.outcome]);
+  if (args.action === "result") return sessionResultMain(args);
   if (args.action === "receipts") return showReceipts(args.runId);
   if (args.action === "log")
     return logMain({

@@ -5,7 +5,7 @@
  * receipt and makes the tick's exit `1`; what the tick launched stands, and
  * the next tick writes both again.
  */
-import { attempt } from "../../shared/outcome.ts";
+import { attempt, ok, type Outcome } from "../../shared/outcome.ts";
 import { pluginVersion } from "../../shared/plugin-version.ts";
 import {
   type CodexOptIn,
@@ -22,13 +22,14 @@ import {
   type RepoLineInput,
   type RepoStored,
 } from "./line.ts";
-import { readLine, writeLine } from "./line-store.ts";
+import { readLine, readLineReceipt, writeLine } from "./line-store.ts";
 import { hostTimeZone } from "./host-time.ts";
 import { exportLog } from "./log-export.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
 import { stateDb } from "./state.ts";
 import { failureText } from "./text.ts";
+import { tickHealthOf, withTick } from "./tick-health.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { ClaimedItem, DrivenPr, WantedItem } from "./types.ts";
@@ -130,10 +131,57 @@ function readsTheMachine(machine: MachineConfig, repos: string[]): boolean {
   return repos.length === listed.size && repos.every((r) => listed.has(r));
 }
 
+/** Add health to the previous snapshot without replacing its state or receipt. */
+function addTick(receipt: TickReceipt, sweep: boolean): Outcome<void> {
+  const previous = readLine();
+  if (!previous.ok) return previous;
+  if (previous.value === null) return ok(undefined);
+  const stored = readLineReceipt();
+  if (!stored.ok) return stored;
+  if (stored.value?.runId !== previous.value.runId)
+    return {
+      ok: false,
+      failure: {
+        code: "line-unreadable",
+        reason: "the dashboard's line changed while its receipt was read",
+      },
+    };
+  const line = previous.value;
+  const receiptText = stored.value.receipt;
+  return attempt(
+    "line-unwritten",
+    "the dashboard's recent ticks were not brought up to date",
+    () =>
+      writeLine(
+        { ...line, ticks: withTick(line.ticks, tickHealthOf(receipt, sweep)) },
+        receiptText,
+      ),
+  );
+}
+
+/** Keep a partial or failed tick in history, preserving the last complete snapshot. */
+export function recordTickHealth(
+  receipt: TickReceipt,
+  machine: MachineConfig,
+): void {
+  const added = addTick(
+    receipt,
+    readsTheMachine(
+      machine,
+      receipt.repos.map((repo) => repo.path),
+    ),
+  );
+  if (added.ok) return;
+  receipt.lineFailed = added.failure.reason;
+  receipt.exitStatus = 1;
+}
+
 /**
- * Write the line of a finished tick from the machine file. The tick's own work
- * is done and depends on none of this, so what throws here, a bug included,
- * becomes the reason on the receipt rather than a stop.
+ * Write the line of a finished tick from the machine file; a tick that read
+ * only some of its repositories adds itself to the line's recent ticks and
+ * leaves the rest. The tick's own work is done and depends on none of this,
+ * so what throws here, a bug included, becomes the reason on the receipt
+ * rather than a stop.
  */
 export function writeTickLine(
   receipt: TickReceipt,
@@ -147,41 +195,45 @@ export function writeTickLine(
   },
 ): void {
   const { machine, records } = tick;
-  if (machine === null || !readsTheMachine(machine, tick.repos)) return;
+  if (machine === null) return;
+  if (!readsTheMachine(machine, tick.repos)) {
+    recordTickHealth(receipt, machine);
+    return;
+  }
   const written = attempt(
     "line-unwritten",
     "the dashboard's line was not written, so it keeps showing the tick before",
     () => {
       const previous = readLine();
-      writeLine(
-        buildLine({
-          runId: receipt.runId,
-          startedAt: receipt.startedAt,
-          finishedAt: receipt.finishedAt,
-          exitStatus: receipt.exitStatus,
-          apply: receipt.apply,
-          applyWithheld: receipt.applyWithheld ?? null,
-          plugin: pluginVersion(),
-          timeZone: hostTimeZone(),
+      const line = buildLine({
+        runId: receipt.runId,
+        startedAt: receipt.startedAt,
+        finishedAt: receipt.finishedAt,
+        exitStatus: receipt.exitStatus,
+        apply: receipt.apply,
+        applyWithheld: receipt.applyWithheld ?? null,
+        plugin: pluginVersion(),
+        timeZone: hostTimeZone(),
+        machine,
+        reports: receipt.repos,
+        inputs: tick.inputs,
+        stored: storedFor,
+        records,
+        accounts: accountsOf(
           machine,
-          reports: receipt.repos,
-          inputs: tick.inputs,
-          stored: storedFor,
           records,
-          accounts: accountsOf(
-            machine,
-            records,
-            Date.parse(receipt.finishedAt),
-            tick.codexOptIn,
-          ),
-          lastAccount: lastAccount(records),
-          previousNeeds: previous.ok ? (previous.value?.needs ?? []) : [],
-          recentTicksMs: previous.ok
-            ? (previous.value?.recentTicksMs ?? [])
-            : [],
-        }),
-        JSON.stringify(receipt, null, 2),
+          Date.parse(receipt.finishedAt),
+          tick.codexOptIn,
+        ),
+        lastAccount: lastAccount(records),
+        previousNeeds: previous.ok ? (previous.value?.needs ?? []) : [],
+        recentTicksMs: previous.ok ? (previous.value?.recentTicksMs ?? []) : [],
+      });
+      const ticks = withTick(
+        previous.ok ? previous.value?.ticks : undefined,
+        tickHealthOf(receipt, true),
       );
+      writeLine({ ...line, ticks }, JSON.stringify(receipt, null, 2));
     },
   );
   if (written.ok) return;

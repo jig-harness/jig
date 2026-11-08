@@ -7,7 +7,8 @@
  * entries not yet filed; then what the dispatcher launched, refused and
  * notified on this machine, the workspaces it launched into with the name
  * each carries now, and how many pull requests its latest run projected each
- * dispatch label for. `--json` prints the gathered report instead.
+ * dispatch label for; and the plugin upgrades the timers ran that moved the
+ * plugin or failed. `--json` prints the gathered report instead.
  */
 import { join } from "node:path";
 import type { DispatchedWorkspace } from "../../../../dispatch/lib/dispatched.ts";
@@ -145,6 +146,16 @@ export function renderMorningReport(r: MorningReport): string {
           .join(", ");
         return `  ${l.at} ${l.repo}: ${counts === "" ? "none" : counts}`;
       }),
+    );
+  if (r.upgrades.length > 0)
+    lines.push(
+      "",
+      "Plugin upgrades the timers ran on this machine (from the jobs' receipts):",
+      ...r.upgrades.map((u) =>
+        u.count === 1
+          ? `  ${u.at} ${u.job}: ${u.line}`
+          : `  ${u.at} to ${u.last} ${u.job}: ${u.line} (${u.count} times)`,
+      ),
     );
   if (r.unread.length > 0)
     lines.push(

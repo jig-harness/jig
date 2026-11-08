@@ -25,15 +25,10 @@ import { formatField, isMapping } from "../../../../shared/config-layers.ts";
 import { doItemSection } from "./overlay.ts";
 import { parseTrackerConfig } from "./tracker/config.ts";
 import { gitHubModel } from "./tracker/github/model.ts";
+import { DEFAULT_TYPES } from "./tracker/facets/values.ts";
 
 /** The types every repository has unless `issue_tracker.types` says otherwise. */
-export const DEFAULT_TYPES = [
-  "bug",
-  "feature",
-  "improvement",
-  "task",
-  "spike",
-] as const;
+export { DEFAULT_TYPES };
 
 /** The type of an item none of the derivation's steps identifies. */
 export const UNKNOWN_TYPE = "unknown";

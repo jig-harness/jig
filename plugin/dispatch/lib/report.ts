@@ -1,4 +1,5 @@
 /** A tick's receipt as the terminal reads it. */
+import { upgradeLine } from "../../runtime/upgrade-record.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { SerialReport } from "./contention.ts";
 import type {
@@ -199,6 +200,9 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
   return [
     head,
     "",
+    ...(receipt.upgrade === undefined
+      ? []
+      : [`upgrade: ${upgradeLine(receipt.upgrade)}`, ""]),
     ...(receipt.applyWithheld === undefined
       ? []
       : [

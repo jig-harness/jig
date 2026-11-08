@@ -13,7 +13,11 @@
  * writes.
  */
 import { COMMANDS, PROJECTED_STATES } from "../../../../dispatch/lib/labels.ts";
-import { readReceipt, receiptPaths } from "../../../../dispatch/receipts.ts";
+import {
+  type readReceipt,
+  receiptOrWhy,
+  receiptPaths,
+} from "../../../../dispatch/receipts.ts";
 
 export interface DispatchEntry {
   /** When the tick that did it started (a tick enters the report when its receipt is published, at its end). */
@@ -278,9 +282,9 @@ export function dispatchSince(since: number, root?: string): DispatchSince {
   const entries = new Map<string, DispatchEntry>();
   const labels = new Map<string, Latest>();
   for (const path of listed) {
-    const receipt = readReceipt(path);
-    if (receipt === null)
-      unread.push(`the dispatch receipt ${path} does not read`);
+    const receipt = receiptOrWhy(path);
+    if (typeof receipt === "string")
+      unread.push(`the dispatch receipt ${path} does not read (${receipt})`);
     else if (publishedAt(receipt) >= since)
       collect(receipt, path, entries, unread, labels);
   }
