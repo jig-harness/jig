@@ -63,7 +63,7 @@ review:
       [correctness, data-integrity, security, compliance, ux, performance, tests, docs, drift, style]
 issue_tracker:
   # Jig's work is the repository's own GitHub Issues: keys are `#<n>`, an
-  # open state is a `state:` label and a priority a `priority:` label.
+  # open state is a `state:` label; facets use GitHub's own fields below.
   adapter: github
   states:
     triage: "state:triage"
@@ -72,8 +72,8 @@ issue_tracker:
     in_review: "state:in-review"
     ops_pending: "state:ops-pending"
   file_command: /jig:file-issue
-  # The work types do-item derives from an issue's type label: the taxonomy's
-  # type labels, the docs, chore and infra ones all being Task work.
+  # The work types do-item derives from an issue's native type: the taxonomy's
+  # types, the docs, chore and infra ones all being Task work.
   types:
     bug: [bug]
     feature: [feature]
