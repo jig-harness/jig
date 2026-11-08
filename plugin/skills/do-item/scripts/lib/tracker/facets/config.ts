@@ -14,7 +14,9 @@
  * the repository's label taxonomy and checks the rest. A facet the section
  * leaves out keeps its adapter's default, which is the store it has today:
  * labels for type and size everywhere; priority in labels on GitHub Issues
- * and in the tracker's own priority field on Jira and Linear.
+ * and in the tracker's own priority field on Jira and Linear. On Jira, a
+ * type or a size whose labels an `issue_tracker.jira.field_labels` entry
+ * gives is kept in that entry's field.
  */
 
 import { existsSync } from "node:fs";
