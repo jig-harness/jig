@@ -407,6 +407,61 @@ test("a generated file on the list, with the marker in its banner, is exempt", (
   );
 });
 
+test("the banner window starts after leading frontmatter of any length", () => {
+  for (const length of [0, 10, 100]) {
+    for (const newline of ["\n", "\r\n"]) {
+      const frontmatter = `---\n${"# metadata\n".repeat(length)}---\n`;
+      const text = `${frontmatter}${"\n".repeat(4)}<!-- GENERATED skill-invocation-fallback: exempt-file -->\n- /release-notes\n`;
+      const file = doc(text.replaceAll("\n", newline));
+      expectSpawnExit(check(file, "--exempt", file), 0);
+      expectSpawnExit(check(file), 1, "the allowlist is still required");
+    }
+  }
+});
+
+test("a banner beyond the window after frontmatter is not exempt", () => {
+  const file = doc(
+    `---\n${"# metadata\n".repeat(10)}---\n${"\n".repeat(5)}<!-- GENERATED skill-invocation-fallback: exempt-file -->\n- /release-notes\n`,
+  );
+  const result = check(file, "--exempt", file);
+  expectSpawnExit(result, 1);
+  expect(result.output).toContain("on the exemption list, but");
+  expect(result.output).toContain("/release-notes names no fallback");
+});
+
+test("frontmatter delimiters accept trailing whitespace at both boundaries", () => {
+  for (const opening of ["---", "--- ", "---\t"]) {
+    for (const closing of ["---", "--- ", "---\t"]) {
+      const file = doc(
+        `${opening}\nnotes: metadata\n${closing}\n<!-- GENERATED skill-invocation-fallback: exempt-file -->\n- /release-notes\n`,
+      );
+      expectSpawnExit(check(file, "--exempt", file), 0);
+    }
+  }
+});
+
+test("a metadata banner after a whitespace-bearing opening cannot exempt", () => {
+  for (const opening of ["--- ", "---\t"]) {
+    const file = doc(
+      `${opening}\nnotes: |\n  <!-- GENERATED skill-invocation-fallback: exempt-file -->\n---\n- /release-notes\n`,
+    );
+    const result = check(file, "--exempt", file);
+    expectSpawnExit(result, 1);
+    expect(result.output).toContain("on the exemption list, but");
+  }
+});
+
+test("a banner inside frontmatter cannot exempt the file", () => {
+  for (const ending of ["", "---\n"]) {
+    const file = doc(
+      `---\n<!-- GENERATED skill-invocation-fallback: exempt-file -->\n${ending}- /release-notes\n`,
+    );
+    const result = check(file, "--exempt", file);
+    expectSpawnExit(result, 1);
+    expect(result.output).toContain("on the exemption list, but");
+  }
+});
+
 test("the exemption needs the list, the banner and the marker together", () => {
   const cases: [string, string][] = [
     [
