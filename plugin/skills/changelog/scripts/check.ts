@@ -103,7 +103,19 @@ function readBranch(
   base: string,
 ): Branch | { skipped: string } | { failed: string } {
   const head = tryGit(root, ["rev-parse", "HEAD"])?.trim();
-  const mergeBase = tryGit(root, ["merge-base", "HEAD", base])?.trim();
+  const incoming = tryGit(root, [
+    "rev-parse",
+    "--verify",
+    "MERGE_HEAD",
+  ])?.trim();
+  // Judge the tree against the ancestor its concluding merge will have.
+  // Releases imported from the base are not edits proposed by this branch.
+  const mergeBase = tryGit(root, [
+    "merge-base",
+    base,
+    "HEAD",
+    ...(incoming ? [incoming] : []),
+  ])?.trim();
   if (!head || !mergeBase)
     return {
       failed: `the branch cannot be compared with ${base} (no such revision, or no merge base): fetch it, or give a base git can find`,
