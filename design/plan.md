@@ -23,24 +23,6 @@ First what keeps an unattended pass from getting past a person, then what
 keeps the line from stranding work, then one place to see and steer it,
 then Orca, the dispatcher's first session runtime.
 
-### 32. Driving any pull request from anywhere, with autonomy that fits the hour
-
-Most of [the design](dark-factory-driving.md) is built, in
-[`drive-pr`](../plugin/skills/drive-pr/README.md) and
-[CONFIGURATION.md § `autonomy`](../plugin/CONFIGURATION.md#autonomy). What
-it still holds is **the policy from the base branch**: `autonomy.max_level`
-and `autonomy.park_classes` read from the pull request's base branch,
-failing closed when it cannot be read. Today they come from the working
-tree, so a pull request that edits them changes what its own drive may
-decide.
-
-`wide` and `off_hours` ship opt-in and documented as not yet validated, a
-maintainer's recorded exception to the dark-by-default rule, revisited once
-a working repository has run them for a month against the design's
-validation measure.
-
-Done when a drive reads its ceiling and park classes from the base branch.
-
 ### 40. The pass trust boundary as mechanisms
 
 A drive pass runs with no person at its terminal, usually signed in as the

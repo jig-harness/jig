@@ -153,7 +153,7 @@ export function skillValidation(
       hasRepository: true,
     };
     resolveAutonomy(layered, {});
-    parkClasses(layered);
+    parkClasses(layered, {});
   });
   attempt("adr", () => adrConfig(path));
   attempt("decide, explain (sheets)", () => sheetRepositories(config, root));

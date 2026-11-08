@@ -9,6 +9,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { commitPolicyBase } from "../../../../lib/test-helpers/policy-base.ts";
 import { isRecordUrl } from "../scripts/lib/state/decisions.ts";
 import { redact } from "../scripts/lib/state/ledger.ts";
 import { useDrivePrSuite } from "./drive-pr-harness.ts";
@@ -18,13 +19,20 @@ useDrivePrSuite();
 
 const { stateDirFor, state } = createStateDurabilityFixtures();
 
-function unattendedOverlay(): string {
-  const path = join(
-    mkdtempSync(join(tmpdir(), "decisions-overlay-")),
-    "jig.yaml",
-  );
+/**
+ * A driver pass's configuration at `unattended`: the level from an overlay,
+ * and the base-branch policy that allows it, in a scratch clone the pass
+ * reads as its repository.
+ */
+function unattendedOverlay(): Record<string, string> {
+  const dir = mkdtempSync(join(tmpdir(), "decisions-overlay-"));
+  const path = join(dir, "jig.yaml");
   writeFileSync(path, "autonomy:\n  level: unattended\n");
-  return path;
+  return {
+    JIG_OVERLAY: path,
+    JIG_CONSUMER_ROOT: dir,
+    ...commitPolicyBase(dir, "autonomy:\n  max_level: unattended\n"),
+  };
 }
 
 describe("record-decision", () => {
@@ -33,7 +41,7 @@ describe("record-decision", () => {
     const env = {
       DRIVE_PR_HANDOFF_DIR: join(d, "handoff"),
       DRIVE_PR_TARGET: "999",
-      JIG_OVERLAY: unattendedOverlay(),
+      ...unattendedOverlay(),
     };
     const r = await state(
       d,
@@ -62,7 +70,7 @@ describe("record-decision", () => {
     const env = {
       DRIVE_PR_HANDOFF_DIR: join(d, "handoff"),
       DRIVE_PR_TARGET: "999",
-      JIG_OVERLAY: unattendedOverlay(),
+      ...unattendedOverlay(),
     };
     const r = await state(
       d,
@@ -88,7 +96,7 @@ describe("record-decision", () => {
     const r = await state(
       d,
       ["record-decision", "999"],
-      { DRIVE_PR_TARGET: "999", JIG_OVERLAY: unattendedOverlay() },
+      { DRIVE_PR_TARGET: "999", ...unattendedOverlay() },
       JSON.stringify({
         class: "file-issue",
         what: "filed it",
