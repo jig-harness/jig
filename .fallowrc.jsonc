@@ -11,9 +11,7 @@
     // The page's own entry, which the dashboard's build hands to the bundler.
     "dashboard/src/main.tsx",
     "plugin/skills/*/scripts/**/*.ts",
-    "modules/*/reference/**/*.ts",
-    // Loaded by path from the dispatch tests' fake `gh`, never imported.
-    "plugin/dispatch/__tests__/repository-query-fake.ts"
+    "modules/*/reference/**/*.ts"
   ],
   "ignorePatterns": [
     "**/fixtures/**",

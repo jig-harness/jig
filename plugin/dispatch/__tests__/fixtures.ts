@@ -2,7 +2,7 @@
  * A world for one tick: the drive suite's fake forge (a `gh` that keeps
  * each pull request's comments in a file), wrapped by a `gh` that also
  * answers the calls the tick adds (the repository's query, answered by
- * `repository-query-fake.ts`, the repository view, the configuration file
+ * `fixtures/repository-query-fake.ts`, the repository view, the configuration file
  * on the default branch, the pull request listings, and a comment's
  * update or removal on whichever pull request holds it, an update refused
  * while `comment-edit-fail` exists); a fake Orca command (on `PATH` under
@@ -37,7 +37,7 @@ import { orcaInstalledName } from "../../shared/orca.ts";
 export const SLUG = "example-org/example-repo";
 const JIG = resolve(import.meta.dir, "../../jig.ts");
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
-const QUERY_FAKE = resolve(import.meta.dir, "repository-query-fake.ts");
+const QUERY_FAKE = resolve(import.meta.dir, "fixtures", "repository-query-fake.ts");
 
 const WRAPPER = (driveGh: string) => `#!/usr/bin/env bun
 const fs = require("node:fs");
