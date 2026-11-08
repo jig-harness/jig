@@ -265,6 +265,7 @@ function newFollowupRecord(
   slots: Slots,
   workspace: { id: string; path: string },
   named: { id: string; mark: string },
+  facts: string | undefined,
 ): LaunchRecord & { pr: number } {
   return {
     version: 1,
@@ -283,7 +284,8 @@ function newFollowupRecord(
     passTimeoutSec: state.passDeadlineSec,
     codexBypass: state.codexOptIn.on,
     replaces: null,
-    facts: `merged ${pr.mergedAt}`,
+    // A run again of a follow-up that died says so in its facts: a second death is a person's.
+    facts: facts ?? `merged ${pr.mergedAt}`,
     createdAt: new Date().toISOString(),
     workspace,
     attempts: [],
@@ -333,6 +335,7 @@ async function launchOne(
     slots,
     opened.workspace,
     { id, mark: named.mark },
+    action.facts,
   );
   return claimAndLaunch(state, repo, action, ctx, record, slots);
 }

@@ -1,4 +1,12 @@
-/** Bounded recovery of accidental stops, from durable local launches and shared claims. */
+/**
+ * A pull request's recovery budget: the re-arms of stops with no recorded
+ * cause and the re-drives of stops whose next step is mechanical (a pass
+ * deadline, a failure on a conflicting pull request, a silent driver this
+ * host shows gone), counted together from this host's launch records and
+ * every host's launch claims by the tag on their facts
+ * (`recovery-facts.ts`). Once a rolling hour holds `NO_CAUSE_LIMIT` of them,
+ * the next such stop is a person's.
+ */
 import {
   type SharedClaim,
   readable,
@@ -10,13 +18,24 @@ import { cancelledBeforeExecution, isDrive } from "./launches.ts";
 import type { DriveClaims } from "./shared-launches.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import type { LaunchRecord } from "./launches.ts";
+import {
+  budgeted,
+  isRecovery,
+  NO_CAUSE_FACTS,
+  RECOVERY_FACTS,
+} from "./recovery-facts.ts";
 import type { DrivenPr } from "./types.ts";
 
 const NO_CAUSE_LIMIT = 3;
 export const NO_CAUSE_WINDOW_MS = 60 * 60_000;
-export const NO_CAUSE_FACTS = "no-cause: ";
 
-/** One old ledger receives at most one attempt, even beyond the rolling window. */
+/**
+ * Each drive the recovery budget bounds, read beside the attempts already
+ * made: a stop with no recorded cause whose budget is spent is
+ * `stopped-unknown`, and one old ledger receives at most one attempt, even
+ * beyond the rolling window; a re-drive whose budget is spent is a person's,
+ * a stale stop `needs-person` and a silent driver notified as silent.
+ */
 export function settleNoCauseStops(
   drives: readonly DrivenPr[],
   records: readonly ReadRecord[],
@@ -24,18 +43,47 @@ export function settleNoCauseStops(
   nowMs: number,
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (pr.evidence.noCause !== true) return pr;
+    const kind = boundedKind(pr);
+    if (kind === null) return pr;
     const fault = claimsFault(claims, pr.number);
     if (fault !== null) return { ...pr, class: "unplaced", why: fault };
-    const attempts = attemptsOf(pr, records, claims);
+    const recovery = kind === "recovery";
     const why = limitReason(
-      noCauseFacts(pr),
-      pr.evidence.legacyNoCause === true,
-      attempts,
+      recovery ? recoveryTag(pr) : noCauseFacts(pr),
+      !recovery && pr.evidence.legacyNoCause === true,
+      attemptsOf(pr, records, claims),
       nowMs,
     );
-    return why === null ? pr : { ...pr, class: "stopped-unknown", why };
+    if (why === null) return pr;
+    return recovery
+      ? spentRecovery(pr, why)
+      : { ...pr, class: "stopped-unknown", why };
   });
+}
+
+/** Which launch of a drive the budget bounds: a no-cause re-arm, a recovery re-drive, or none. */
+function boundedKind(pr: DrivenPr): "no-cause" | "recovery" | null {
+  if (pr.evidence.noCause === true) return "no-cause";
+  const launchable = pr.class === "stale" || pr.class === "silent";
+  return launchable && isRecovery(pr) ? "recovery" : null;
+}
+
+/** The tag a re-drive's facts carry; only its prefix is read here. */
+function recoveryTag(pr: DrivenPr): string {
+  return `${RECOVERY_FACTS}generation ${String(pr.evidence.generation)}`;
+}
+
+/** A re-drive whose budget is spent: a stale stop a person settles, a silent driver notified as one. */
+function spentRecovery(pr: DrivenPr, why: string): DrivenPr {
+  const spent = `${pr.stale?.cause ?? pr.why}; ${why}`;
+  if (pr.class === "silent")
+    return {
+      ...pr,
+      why: spent,
+      evidence: { ...pr.evidence, driverGone: false, settled: true },
+    };
+  const { stale: _spent, ...rest } = pr;
+  return { ...rest, class: "needs-person", why: spent };
 }
 
 export function noCauseFacts(pr: DrivenPr): string {
@@ -63,7 +111,7 @@ function attemptsOf(
   for (const r of records)
     if (
       !cancelled.has(r.record.id) &&
-      isDrive(r.record) &&
+      (isDrive(r.record) || r.record.action === "followup") &&
       r.record.pr === pr.number &&
       (!losingRecords.has(r.record.id) || executed(r))
     )
@@ -124,17 +172,43 @@ function limitReason(
     legacy && [...attempts.values()].some((a) => a.facts === facts);
   const invalid = [...attempts.values()].some(
     (a) =>
-      a.facts.startsWith(NO_CAUSE_FACTS) &&
+      budgeted(a.facts) &&
       (!Number.isFinite(Date.parse(a.at)) || Date.parse(a.at) > nowMs),
   );
   const count = [...attempts.values()].filter(
-    (a) =>
-      a.facts.startsWith(NO_CAUSE_FACTS) &&
-      Date.parse(a.at) > nowMs - NO_CAUSE_WINDOW_MS,
+    (a) => budgeted(a.facts) && Date.parse(a.at) > nowMs - NO_CAUSE_WINDOW_MS,
   ).length;
+  const what = facts.startsWith(RECOVERY_FACTS)
+    ? "repeated recovery re-drives"
+    : "repeated no-cause stops";
   return oldAttempt || invalid || count >= NO_CAUSE_LIMIT
-    ? `repeated no-cause stops: needs a person; ${invalid ? "a recovery attempt has an unreadable or future time" : oldAttempt ? "this legacy no-exit ledger already received its one recovery attempt" : `${count} recovery attempts within one hour (budget ${NO_CAUSE_LIMIT})`}; read the drive's handoff`
+    ? `${what}: needs a person; ${invalid ? "a recovery attempt has an unreadable or future time" : oldAttempt ? "this legacy no-exit ledger already received its one recovery attempt" : `${count} recovery attempts within one hour (budget ${NO_CAUSE_LIMIT})`}; read the drive's handoff`
     : null;
+}
+
+/**
+ * Why a pull request's recovery budget is spent by this host's own launch
+ * records of it, of any stage; `null` while it is not. For a stage whose
+ * attempts no other host's claims count, a follow-up's run again among them.
+ */
+export function localRecoverySpent(
+  repo: string,
+  pr: number,
+  records: readonly ReadRecord[],
+  nowMs: number,
+): string | null {
+  const attempts = new Map<string, { facts: string; at: string }>();
+  for (const r of records)
+    if (
+      r.record.repo === repo &&
+      r.record.pr === pr &&
+      !cancelledBeforeExecution(r)
+    )
+      attempts.set(r.record.id, {
+        facts: r.record.facts,
+        at: r.record.createdAt,
+      });
+  return limitReason(RECOVERY_FACTS, false, attempts, nowMs);
 }
 
 /** Re-read after winning a reservation: only earlier claims can have consumed its budget. */
@@ -144,7 +218,7 @@ export function recoveryReservationRefusal(
   history: Outcome<SharedClaim[], "unreadable">,
   nowMs: number,
 ): string | null {
-  if (!record.facts.startsWith(NO_CAUSE_FACTS)) return null;
+  if (!budgeted(record.facts)) return null;
   const fault = claimsFault(new Map([[0, history]]), 0);
   if (fault !== null) return fault;
   if (!history.ok) return history.failure.reason;
