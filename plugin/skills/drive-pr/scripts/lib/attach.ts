@@ -280,6 +280,25 @@ async function requireSettled(tree: string, which: string): Promise<void> {
     );
 }
 
+/**
+ * Whether the tree holds uncommitted changes or an unfinished operation; a
+ * status that cannot be read counts as holding them, so the tree stays put.
+ */
+async function holdsWork(tree: string): Promise<boolean> {
+  const status = await g(tree, [
+    "status",
+    "--porcelain",
+    "--untracked-files=normal",
+    "--ignore-submodules=none",
+  ]);
+  if (status.code !== 0 || status.stdout.trim() !== "") return true;
+  const op = await unconcludedGitOpMarker(gitCallTimeoutSeconds(), {
+    cwd: tree,
+    env: gitIdentityEnv(),
+  });
+  return !op.ok || op.marker !== null;
+}
+
 /** Is `a` an ancestor of (or equal to) `b`? */
 async function ancestor(tree: string, a: string, b: string): Promise<boolean> {
   return (await g(tree, ["merge-base", "--is-ancestor", a, b])).code === 0;
@@ -515,7 +534,9 @@ async function move(
   if (
     current.branch === "" &&
     recorded?.pr === Number(target.number) &&
-    (holder !== null || !(await ancestor(tree, current.sha, target.head)))
+    (holder !== null ||
+      !(await ancestor(tree, current.sha, target.head)) ||
+      (await holdsWork(tree)))
   ) {
     if (holder !== null) await requireHolderBehind(holder, target);
     await catchUp(tree, target, current.sha, true);
@@ -529,8 +550,9 @@ async function move(
 /**
  * Whether `move` leaves the tree where it is: at or past the PR's head, on
  * the head branch, or detached under this PR's record while another tree
- * holds the branch or the tree has commits of its own. A detached tree exactly
- * at the head with the branch free takes the branch by name, so it moves.
+ * holds the branch or the tree has commits of its own or uncommitted work. A
+ * clean detached tree exactly at the head with the branch free takes the
+ * branch by name, so it moves.
  */
 async function staysInPlace(
   tree: string,
@@ -544,7 +566,7 @@ async function staysInPlace(
   const recorded = await detachedTreeRecord((args) => g(tree, args));
   return (
     recorded?.pr === Number(target.number) &&
-    (holder !== null || current.sha !== target.head)
+    (holder !== null || current.sha !== target.head || (await holdsWork(tree)))
   );
 }
 
