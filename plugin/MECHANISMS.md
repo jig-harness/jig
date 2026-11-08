@@ -227,8 +227,8 @@ development and shipped as a version.
   file's `upgrade` setting, withholds the upgrade on a machine that opted
   out, takes the interval under a file lock (`shared/file-lock.ts`) by
   writing a stamp naming its process (`runtime/upgrade-stamp.ts`) unless the
-  latest one is younger than `upgrade.every` or names a process still
-  running it, withholds it for a harness pinned to a tag or ref, skips
+  latest one is younger than `upgrade.every` (an attempt whose process
+  died counting as a failed one) or names a process still running it, withholds it for a harness pinned to a tag or ref, skips
   a plugin loaded in place from a local folder, and otherwise runs the same
   update and refresh as `jig upgrade`, leaving a loaded launchd job's file
   alone. `jig doctor` (`runtime/doctor.ts`) checks Bun, the

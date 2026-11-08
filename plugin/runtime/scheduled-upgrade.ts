@@ -51,9 +51,10 @@ import {
   upgradeSettings,
 } from "./upgrade-record.ts";
 import {
-  holderGone,
+  holderOf,
   readStamp,
   stampPath,
+  stillRunning,
   upgradeStateRoot,
   writeStamp,
 } from "./upgrade-stamp.ts";
@@ -229,8 +230,10 @@ async function attempt(options: ScheduledOptions): Promise<Result> {
 
 /**
  * Why the interval's attempt is withheld, from the latest stamp; null when it
- * is due: no stamp, one that does not read, a `running` one whose holder
- * died, or one older (or further ahead of this clock) than the interval.
+ * is due: no stamp, one that does not read, or one older (or further ahead of
+ * this clock) than the interval. A `running` stamp withholds while its holder
+ * runs, whatever its age; one whose holder died is a failed attempt, which
+ * withholds for the rest of its interval like any other.
  */
 function withheldBy(
   settings: UpgradeSettings,
@@ -241,17 +244,19 @@ function withheldBy(
   const last = read.stamp;
   const withheld = (detail: string) => (at: string) =>
     ({ outcome: "withheld", detail: capped(detail), at }) as const;
-  if (last.outcome === "running")
-    return holderGone(last) === null
-      ? withheld(`the upgrade a job started at ${last.at} is still running`)
-      : null;
+  const holder = last.outcome === "running" ? holderOf(last) : null;
+  if (holder !== null && !holder.gone)
+    return withheld(stillRunning(last, holder));
   // A stamp a little ahead of this clock is fresh too: another job may have
   // written it after this one read the time.
   const elapsed = now.getTime() - Date.parse(last.at);
   if (Math.abs(elapsed) >= settings.everyMs) return null;
   const due = new Date(Date.parse(last.at) + settings.everyMs).toISOString();
+  const latest = holder?.gone
+    ? `the upgrade started at ${last.at} did not finish (${holder.reason})`
+    : `the latest, at ${last.at}, ${upgradeLine({ ...last, outcome: last.outcome as ScheduledUpgrade["outcome"] })}`;
   return withheld(
-    `upgrade.every is ${settings.every}: the latest, at ${last.at}, ${upgradeLine({ ...last, outcome: last.outcome })}; the next is due at ${due}`,
+    `upgrade.every is ${settings.every}: ${latest}; the next is due at ${due}`,
   );
 }
 

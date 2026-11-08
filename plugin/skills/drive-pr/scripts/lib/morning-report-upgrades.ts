@@ -84,7 +84,8 @@ function upgradesOf(
     [
       "dispatch",
       () => tickReceiptPaths(roots.dispatch),
-      (path) => readTickReceipt(path) ?? "it is not a tick's receipt",
+      // One that does not read is the dispatcher's part's to report, once.
+      (path) => readTickReceipt(path) ?? {},
     ],
   ];
   for (const [job, paths, read] of jobs) {

@@ -6,6 +6,7 @@
  * time, is not.
  */
 import { afterEach, describe, expect, it } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
@@ -78,6 +79,37 @@ function tickReceipt(forge: Forge, upgrade: ScheduledUpgrade): void {
 }
 
 describe("drives.ts --report: the plugin upgrades", () => {
+  it("names a dispatch receipt that does not read once, with why", async () => {
+    const forge = fakeForge("");
+    forge.write("login", "drive-bot");
+    forge.write("search.json", { items: [] });
+    const root = join(
+      forge.env.HOME as string,
+      ".local",
+      "state",
+      "jig",
+      "dispatch",
+    );
+    roots.push(root);
+    const at = new Date(Date.now() - 3_600_000);
+    const day = join(root, "receipts", at.toISOString().slice(0, 10));
+    mkdirSync(day, { recursive: true });
+    const bad = join(day, `${newRunId(at)}.json`);
+    writeFileSync(bad, "{ not json");
+    const json = await runIn(forge, join(SCRIPTS, "drives.ts"), [
+      "--report",
+      "--json",
+      "--since",
+      "12h",
+    ]);
+    expectSpawnExit(json, 0);
+    const named = (JSON.parse(json.stdout).unread as string[]).filter((u) =>
+      u.includes(bad),
+    );
+    expect(named).toHaveLength(1);
+    expect(named[0]).toMatch(/does not read \(SyntaxError: /);
+  });
+
   it("lists each upgrade that moved the plugin or failed since the report's time, from both jobs' receipts", async () => {
     const forge = fakeForge("");
     forge.write("login", "drive-bot");

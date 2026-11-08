@@ -26,6 +26,7 @@ import type { Receipt } from "../gc/types.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
 import { stampPath, upgradeStateRoot } from "../runtime/upgrade-stamp.ts";
 import { withFileLock } from "../shared/file-lock.ts";
+import { ownIdentity } from "../shared/liveness.ts";
 import { upgradesSince } from "../skills/drive-pr/scripts/lib/morning-report-upgrades.ts";
 import { dump, load } from "../shared/yaml.ts";
 import { type Machine, machine, SCHEDULERS } from "./lifecycle-fixtures.ts";
@@ -534,11 +535,23 @@ test.skipIf(onWindows)(
 );
 
 test.skipIf(onWindows)(
-  "a running stamp withholds the upgrade while its holder lives, whatever its age, and stops withholding, and fails doctor, once its holder is gone",
+  "a running stamp withholds the upgrade while its holder lives, whatever its age; once its holder is gone it fails doctor and counts as a failed attempt, withheld for the rest of its interval",
   () => {
     const m = machine(SCHEDULERS[0]);
     installed(m);
     nextRelease(m, "0.3.0", "next-release");
+    // This test's process, judged alive, holds it.
+    stamp(m, {
+      outcome: "running",
+      detail: "a scheduled job started it",
+      at: new Date(Date.now() - 5 * 3_600_000).toISOString(),
+      holder: ownIdentity(),
+    });
+    expectSpawnExit(m.runJob("jig-gc"), 0);
+    expect(updates(m)).toEqual([]);
+    expect(lastUpgrade(m)?.detail).toMatch(/started at \S+ is still running$/);
+
+    // A holder named by its pid alone cannot be judged, and the line says so.
     stamp(m, {
       outcome: "running",
       detail: "a scheduled job started it",
@@ -546,7 +559,9 @@ test.skipIf(onWindows)(
     });
     expectSpawnExit(m.runJob("jig-gc"), 0);
     expect(updates(m)).toEqual([]);
-    expect(lastUpgrade(m)?.detail).toContain("is still running");
+    expect(lastUpgrade(m)?.detail).toContain(
+      "is taken to be still running: its process cannot be judged",
+    );
 
     stamp(m, {
       outcome: "running",
@@ -559,6 +574,23 @@ test.skipIf(onWindows)(
     expect(doctor.stdout.toString()).toMatch(
       /FAIL {2}upgrade: the scheduled upgrade started at \S+ did not finish: no process has pid \d+ now/,
     );
+    // Killed at its deadline, say: not tried again inside the interval.
+    expectSpawnExit(m.runJob("jig-gc"), 0);
+    expect(updates(m)).toEqual([]);
+    expect(lastUpgrade(m)).toMatchObject({
+      outcome: "withheld",
+      detail: expect.stringMatching(
+        /the upgrade started at \S+ did not finish \(no process has pid \d+ now\); the next is due at /,
+      ),
+    });
+
+    // Once the interval has passed, it is due.
+    stamp(m, {
+      outcome: "running",
+      detail: "a scheduled job started it",
+      at: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+      pid: exitedPid(),
+    });
     expectSpawnExit(m.runJob("jig-gc"), 0);
     expect(lastUpgrade(m)).toMatchObject({ outcome: "updated", to: "0.3.0" });
   },

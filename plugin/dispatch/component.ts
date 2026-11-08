@@ -19,7 +19,6 @@ import type {
   Component,
   DoctorCheck,
   DoctorContext,
-  LastRun,
 } from "../runtime/component.ts";
 import type { InstalledJob } from "../runtime/installed-job.ts";
 import { orcaCommandOrInstalled } from "../shared/orca.ts";
@@ -40,7 +39,7 @@ import {
   machineConfigPath,
   readMachineConfig,
 } from "./lib/machine-config.ts";
-import { readReceipt, receiptPaths } from "./receipts.ts";
+import { lastTick } from "./receipts.ts";
 
 /**
  * The tick's job, by its names, arguments and deadline: what `jig run` runs
@@ -71,22 +70,6 @@ function missingOptIn(): string | null {
   return existsSync(path)
     ? null
     : `no machine file ${path}. The dispatcher's timer starts drives on the accounts that file names; write it (CONFIGURATION.md, the machine's dispatch file), then run jig install dispatch`;
-}
-
-/** The newest receipt of a tick that ran; null when there is none. A tick that found the lock held ran nothing. */
-function lastRun(): LastRun | null {
-  for (const path of receiptPaths().reverse()) {
-    const receipt = readReceipt(path);
-    if (receipt !== null && receipt.lockHeldBy === undefined)
-      return {
-        runId: receipt.runId,
-        startedAt: receipt.startedAt,
-        completed: receipt.completed,
-        exitStatus: receipt.exitStatus,
-        path,
-      };
-  }
-  return null;
 }
 
 /**
@@ -196,7 +179,7 @@ export const dispatchComponent: Component<DispatchArguments> = {
     scheduledStatus(
       "dispatch",
       job(),
-      lastRun(),
+      lastTick(),
       missingOptIn() === null
         ? undefined
         : `no machine file ${machineConfigPath()}`,

@@ -19,6 +19,7 @@ import {
   exclusiveInstallLock,
   sharedGcLock,
 } from "../../shared/gc-lock.ts";
+import { withFileLock } from "../../shared/file-lock.ts";
 import { SCRATCH_OWNER_FILE } from "../../shared/scratch-owner.ts";
 import { boundDeclaration, parseDeclaration, parseMachine } from "../config.ts";
 import { jobFiles } from "../../runtime/scheduler.ts";
@@ -28,6 +29,12 @@ import { readReceipt, writeReceipt, receiptPaths } from "../receipts.ts";
 import type { Receipt } from "../types.ts";
 
 const root = () => mkdtempSync(join(tmpdir(), "gc-safety-"));
+/** A process that has exited, for a lock whose holder is gone. */
+function exitedPid(): number {
+  const child = Bun.spawnSync([process.execPath, "-e", "0"]);
+  expectSpawnExit(child, 0);
+  return child.pid;
+}
 function record(dir: string, pid: number, start: string) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(
@@ -192,6 +199,52 @@ test("the install lock takes over a writer whose holder was killed while it held
     exclusiveInstallLock(async () => undefined, dir),
   ).rejects.toThrow("another collection holds");
 });
+test("an install lock that loses its takeover says why, and never asks for a live writer to be removed", async () => {
+  const dir = root();
+  mkdirSync(join(dir, "install"));
+  const writer = join(dir, "install", "writer");
+  const takeover = { root: join(dir, "install"), name: "writer-takeover" };
+  const dead = () => writeFileSync(writer, String(exitedPid()));
+
+  // The writer changes hands while the takeover waits for its lock.
+  dead();
+  let changed: Promise<unknown> = Promise.resolve();
+  await withFileLock(
+    writer,
+    async () => {
+      changed = exclusiveInstallLock(async () => undefined, dir);
+      writeFileSync(writer, String(process.pid));
+    },
+    takeover,
+  );
+  const lost = await changed.then(
+    () => "",
+    (error: Error) => error.message,
+  );
+  expect(lost).toContain(
+    `was not taken over from the holder that exited (${writer}`,
+  );
+  expect(lost).toContain(
+    `another process holds it now (${writer} (pid ${process.pid}`,
+  );
+  expect(lost).not.toContain("remove it");
+
+  // Another process holds the takeover's own lock past the wait.
+  dead();
+  const waited = await withFileLock(
+    writer,
+    () =>
+      exclusiveInstallLock(async () => undefined, dir).then(
+        () => "",
+        (error: Error) => error.message,
+      ),
+    takeover,
+  );
+  expect(waited?.value).toContain(
+    "another process is taking it over: the takeover's lock was not taken in time",
+  );
+  expect(waited?.value).not.toContain("remove it");
+}, 30_000);
 test("an admission token whose creator exited is reported stale with its holder, and kept", async () => {
   const dir = root();
   const lock = join(import.meta.dir, "../../shared/gc-lock.ts");

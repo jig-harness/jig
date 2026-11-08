@@ -164,20 +164,41 @@ function writerText(writer: string): string | null {
 
 /**
  * Replaces a writer whose holder is judged dead with this process's, under a
- * file lock, only while it still holds `seen`; false when it changed or
- * another process published first.
+ * file lock, only while it still holds `seen`. Null when it took over;
+ * otherwise why not: another process holds the writer now, or the takeover's
+ * own lock was not taken in time.
  */
-async function takeOverDead(writer: string, seen: string): Promise<boolean> {
+async function takeOverDead(
+  writer: string,
+  seen: string,
+): Promise<string | null> {
+  const now = () => {
+    const held = judged(writer, null);
+    return `another process holds it now (${held?.text ?? writer})`;
+  };
   const taken = await withFileLock(
     writer,
     async () => {
-      if (writerText(writer) !== seen) return false;
+      if (writerText(writer) !== seen) return now();
       rmSync(writer, { force: true });
-      return publishWriter(writer);
+      return publishWriter(writer) ? null : now();
     },
     { root: dirname(writer), name: "writer-takeover" },
   );
-  return taken?.value === true;
+  return taken === null
+    ? "another process is taking it over: the takeover's lock was not taken in time"
+    : taken.value;
+}
+
+/** Why `writer` cannot be taken: its holder, or, for a holder that exited, what to do. */
+function refusal(
+  kind: string,
+  writer: string,
+  held: ReturnType<typeof judged>,
+): string {
+  return held?.gone === true
+    ? `gc ${kind}: ${writer} names a process that has exited (${held.text}); remove it after inspection`
+    : `gc ${kind}: another collection holds ${held?.text ?? writer}`;
 }
 
 export async function exclusiveGcLock<T>(
@@ -192,16 +213,12 @@ export async function exclusiveGcLock<T>(
   if (!publishWriter(writer)) {
     const seen = writerText(writer);
     const held = judged(writer, null);
-    const taken =
-      options.takeOverDead === true &&
-      held?.gone === true &&
-      seen !== null &&
-      (await takeOverDead(writer, seen));
-    if (!taken)
+    if (options.takeOverDead !== true || held?.gone !== true || seen === null)
+      throw new GcError(refusal(kind, writer, held));
+    const lost = await takeOverDead(writer, seen);
+    if (lost !== null)
       throw new GcError(
-        held?.gone === true
-          ? `gc ${kind}: ${writer} names a process that has exited (${held.text}); remove it after inspection`
-          : `gc ${kind}: another collection holds ${held?.text ?? writer}`,
+        `gc ${kind}: ${writer} was not taken over from the holder that exited (${held.text}): ${lost}`,
       );
     console.error(
       `gc ${kind}: took over ${writer} from a holder that has exited (${held?.text})`,

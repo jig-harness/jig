@@ -1045,14 +1045,16 @@ jobs still run.
 
 | Setting in the user file's `upgrade` section | Default / meaning |
 |----------------------------------------------|-------------------|
-| `every` | `1h`; the shortest time between two scheduled upgrades, as a whole number of minutes, hours or days (`30m`, `1h`, `2d`). An attempt, whatever it came to, withholds the next one for this long: two timers firing within it upgrade once, and a failed upgrade is not tried again inside it. Read by `jig upgrade --scheduled` and `jig doctor` |
+| `every` | `1h`; the shortest time between two scheduled upgrades, as a whole number of minutes, hours or days (`30m`, `1h`, `2d`). An attempt, whatever it came to, withholds the next one for this long: two timers firing within it upgrade once, and a failed upgrade, or one whose process died before it finished, is not tried again inside it. One still running withholds the next for as long as it runs. Read by `jig upgrade --scheduled` and `jig doctor` |
 | `enabled` | `true`; `false` opts the machine out, as `upgrade: off` does. Written by `jig install --no-upgrade`; read by `jig upgrade --scheduled` and `jig doctor` |
 
 The latest attempt is kept under `~/.local/state/jig/upgrade/`: when it ran,
 what it came to and the process that made it. An attempt still running
-withholds the next one while its process lives, and claims nothing once it
-has died; a `jig upgrade` you run that succeeds counts as the interval's
-upgrade too. A machine whose marketplace is pinned to a tag or
+withholds the next one while its process lives, however long it takes. One
+whose process died before it finished (stopped at the launcher's deadline,
+say) counts as a failed attempt: the next is withheld until `every` has
+passed since it started. A `jig upgrade` you run that succeeds counts as the
+interval's upgrade too. A machine whose marketplace is pinned to a tag or
 another ref receives nothing, and a plugin Claude Code loads in place from a
 local marketplace folder is skipped; each says so in the job's receipt.
 

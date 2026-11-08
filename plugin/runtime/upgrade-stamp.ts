@@ -5,7 +5,8 @@
  * `running` when it claims an interval and again with the outcome; a
  * successful `jig upgrade` a person runs writes it too. While the stamp is
  * younger than `upgrade.every`, or `running` with its holder still alive,
- * the next attempt is withheld. `jig doctor` fails while the latest attempt
+ * the next attempt is withheld: a `running` stamp whose holder died counts
+ * as a failed attempt, due again only once the interval has passed. `jig doctor` fails while the latest attempt
  * failed, or its holder died before it finished.
  *
  * A stamp that cannot be read is no claim: the next attempt is due, and
@@ -104,15 +105,32 @@ export function writeStamp(
   );
 }
 
-/** Why the stamp's holder counts as gone; null while it may still run, or cannot be judged. */
-export function holderGone(stamp: UpgradeStamp): string | null {
+/**
+ * The stamp's holder as judged now: `gone` with why, or not gone, with why
+ * it could not be judged when it could not be. A holder that cannot be
+ * judged is taken to still run.
+ */
+export function holderOf(
+  stamp: UpgradeStamp,
+): { gone: true; reason: string } | { gone: false; unjudged?: string } {
   const identity =
     (stamp.holder === undefined ? null : decodeIdentity(stamp.holder)) ??
     legacyIdentity(stamp.pid);
   const verdict = isAliveSync(identity);
-  return verdict.ok && verdict.value.state === "dead"
-    ? verdict.value.reason
-    : null;
+  if (!verdict.ok) return { gone: false, unjudged: verdict.failure.reason };
+  return verdict.value.state === "dead"
+    ? { gone: true, reason: verdict.value.reason }
+    : { gone: false };
+}
+
+/** How a running attempt whose holder lives, or cannot be judged, is described. */
+export function stillRunning(
+  stamp: UpgradeStamp,
+  holder: { unjudged?: string },
+): string {
+  return holder.unjudged === undefined
+    ? `the upgrade a job started at ${stamp.at} is still running`
+    : `the upgrade a job started at ${stamp.at} is taken to be still running: its process cannot be judged (${holder.unjudged})`;
 }
 
 /**
@@ -161,19 +179,15 @@ export function upgradeCheck(): DoctorCheck {
       fix,
     };
   if (stamp.outcome === "running") {
-    const gone = holderGone(stamp);
-    return gone === null
+    const holder = holderOf(stamp);
+    return holder.gone
       ? {
           id,
-          status: "pass",
-          detail: `a scheduled upgrade started at ${stamp.at} is running`,
-        }
-      : {
-          id,
           status: "fail",
-          detail: `the scheduled upgrade started at ${stamp.at} did not finish: ${gone}`,
+          detail: `the scheduled upgrade started at ${stamp.at} did not finish: ${holder.reason}`,
           fix,
-        };
+        }
+      : { id, status: "pass", detail: stillRunning(stamp, holder) };
   }
   return {
     id,
