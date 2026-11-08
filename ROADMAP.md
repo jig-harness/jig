@@ -369,7 +369,7 @@ reflections passes its tests against a stand-in for Notion's API. This item
 runs it against Notion itself and fixes what differs. That run waits on a
 person with an access token for a Notion workspace.
 
-### 44. Distribution: a common setup entry point
+### 45. Distribution: a common setup entry point
 
 A common setup path checks the machine and explains missing prerequisites
 before installing Jig through the agent tool's marketplace. It preserves the

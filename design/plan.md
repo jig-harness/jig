@@ -1089,7 +1089,7 @@ where the fake and Notion disagree, in both.
 Done when that test passes, and a repository reflects into a database `init`
 created using only `NOTION_TOKEN` and `reflection.notion.database`.
 
-### 44. Distribution: a common setup entry point
+### 45. Distribution: a common setup entry point
 
 A person installing Jig must find the marketplace address and prepare its
 prerequisites. The [distribution design](distribution.md) starts with one
