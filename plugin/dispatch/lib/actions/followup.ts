@@ -14,7 +14,9 @@
  * 3. the pull request's workspace: the one joined to it, else its head
  *    branch opened (a branch the merge deleted is cut from the base) in a
  *    workspace named for the follow-up and the pull request (`dispatched`
- *    in `runtime/port.ts`), under the launch record's id minted here;
+ *    in `runtime/port.ts`), under the launch record's id minted here, from
+ *    the follow-ups' own lane (`followup-lane.ts`), whose cap and per-tick
+ *    budget are checked before the account is admitted;
  * 4. write the launch record, which holds the slot from here on;
  * 5. post the marker naming the record and this host, the follow-up's
  *    shared record (`shared/records/shared.ts`), which reads it back: an
@@ -59,6 +61,7 @@ import {
   dispatched,
   type SessionsReport,
 } from "../runtime/port.ts";
+import type { Outcome } from "../../../shared/outcome.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
@@ -84,6 +87,12 @@ import {
   waits,
 } from "./launch.ts";
 import { applyReleases, isRelease } from "./release-claims.ts";
+import {
+  joinedWorkspace,
+  laneBudgetWait,
+  laneCapWait,
+  type WorkspaceRef,
+} from "./followup-lane.ts";
 
 /** What a repository's follow-ups need beyond the apply state. */
 export interface FollowupContext {
@@ -93,8 +102,8 @@ export interface FollowupContext {
   merged: MarkedPr[];
   /** The runtime's answer read afresh, for the read just before a launch. */
   sessions: () => Promise<SessionsReport>;
-  /** Why a person's label stands the dispatcher down from the pull request now, read afresh; `null` when none does. */
-  holdReason?: (pr: number) => Promise<string | null>;
+  /** Why a person's label stands the dispatcher down from the pull request now, read afresh; `null` when none does, a failure when its labels do not read. */
+  holdReason?: (pr: number) => Promise<Outcome<string | null>>;
   /** The shared records the marker is posted and read through. */
   shared: SharedContext;
 }
@@ -118,11 +127,15 @@ async function heldNow(
   pr: number,
 ): Promise<string | null> {
   if (ctx.holdReason === undefined) return null;
+  let hold: Outcome<string | null>;
   try {
-    return await ctx.holdReason(pr);
+    hold = await ctx.holdReason(pr);
   } catch (error) {
     return `its labels cannot be read again: ${failureText(error)}`;
   }
+  return hold.ok
+    ? hold.value
+    : `its labels cannot be read again: ${hold.failure.reason}`;
 }
 
 /** Why the follow-up must not be started now; `null` when nothing changed. */
@@ -151,25 +164,38 @@ async function changed(
     : null;
 }
 
-/** The pull request's workspace: the one joined to it, else its head branch opened. */
+/** The pull request's workspace: the one joined to it, else its head branch opened within the follow-ups' lane. */
 async function workspaceFor(
   state: ApplyState,
   repo: RepoTarget,
-  ctx: FollowupContext,
   pr: MarkedPr,
   named: Dispatched,
+  joined: WorkspaceRef | undefined,
 ): Promise<Opened> {
-  const sessions = await ctx.sessions().catch(() => null);
-  const joined = sessions?.ok
-    ? sessions.workspaces.find((w) => w.prs.includes(pr.number))
-    : undefined;
-  if (joined !== undefined)
-    return { workspace: { id: joined.id, path: joined.path } };
-  return openWithinBudget(state, repo, {
-    pr: pr.number,
-    head: pr.head,
-    dispatched: named,
-  });
+  if (joined !== undefined) return { workspace: joined };
+  return openWithinBudget(
+    state,
+    repo,
+    { pr: pr.number, head: pr.head, dispatched: named },
+    true,
+  );
+}
+
+/** Why the follow-ups' lane holds this one back, and on what; `null` when it may go on to admission. */
+function laneHolds(
+  state: ApplyState,
+  repo: RepoTarget,
+  action: Action,
+  read: { sessions: SessionsReport; joined: WorkspaceRef | undefined },
+): LaunchOutcome | null {
+  const { joined } = read;
+  const cap = laneCapWait(state, read.sessions, repo.slug);
+  if (cap !== null) return { ...waits(action, cap), waitsOn: "lane-cap" };
+  // A joined workspace needs no open, so the lane's budget does not hold it.
+  const budget = joined === undefined ? laneBudgetWait(state) : null;
+  return budget === null
+    ? null
+    : { ...waits(action, budget), waitsOn: "lane-budget" };
 }
 
 /**
@@ -265,7 +291,7 @@ function newFollowupRecord(
   slots: Slots,
   workspace: { id: string; path: string },
   named: { id: string; mark: string },
-  facts: string | undefined,
+  action: Pick<Action, "facts" | "standing">,
 ): LaunchRecord & { pr: number } {
   return {
     version: 1,
@@ -284,8 +310,8 @@ function newFollowupRecord(
     passTimeoutSec: state.passDeadlineSec,
     codexBypass: state.codexOptIn.on,
     replaces: null,
-    // A run again of a follow-up that died says so in its facts: a second death is a person's.
-    facts: facts ?? `merged ${pr.mergedAt}`,
+    // A run again of a follow-up that died or stopped on a routine question says so in its facts: a second failure is a person's.
+    facts: action.facts ?? `merged ${pr.mergedAt}`,
     createdAt: new Date().toISOString(),
     workspace,
     attempts: [],
@@ -296,6 +322,8 @@ function newFollowupRecord(
     command: ctx.section.followupCommand,
     marker: null,
     sessionId: sessionIdFor(admittedVendor(slots.account)),
+    routineTags: true,
+    ...(action.standing === undefined ? {} : { standing: action.standing }),
   };
 }
 
@@ -313,6 +341,14 @@ async function launchOne(
     return waits(action, "the merged pull request is not in this tick's read");
   const before = await changed(repo, ctx, pr.number);
   if (before !== null) return waits(action, before);
+  const read = await joinedWorkspace(ctx.sessions, pr.number);
+  if ("failed" in read)
+    return waits(
+      action,
+      `the runtime's sessions could not be listed again, so whether a workspace is joined to it cannot be told: ${read.failed}`,
+    );
+  const held = laneHolds(state, repo, action, read);
+  if (held !== null) return held;
   const admitted = await admitAccount(state, action);
   if ("outcome" in admitted) return admitted.outcome;
   const { slots } = admitted;
@@ -322,7 +358,7 @@ async function launchOne(
     state,
     action,
     slots,
-    workspaceFor(state, repo, ctx, pr, named),
+    workspaceFor(state, repo, pr, named, read.joined),
   );
   if ("outcome" in opened) return opened.outcome;
   const after = await changed(repo, ctx, pr.number);
@@ -335,7 +371,7 @@ async function launchOne(
     slots,
     opened.workspace,
     { id, mark: named.mark },
-    action.facts,
+    action,
   );
   return claimAndLaunch(state, repo, action, ctx, record, slots);
 }

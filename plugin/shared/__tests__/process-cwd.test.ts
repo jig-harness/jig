@@ -112,6 +112,20 @@ describe("cwdHolders", () => {
     expect(cwdHolders(run, TOP)).toEqual({ pids: [] });
   });
 
+  test("accepts a process that exits while find visits its task directory", () => {
+    const { run } = runner(
+      result(1, "/proc/1\t/\n", "find: '/proc/77/task': No such process\n"),
+    );
+    expect(cwdHolders(run, TOP)).toEqual({ pids: [] });
+    const denied = runner(
+      result(1, "/proc/1\t/\n", "find: '/proc/77/cwd': Permission denied\n"),
+      {
+        "77": result(1, "", "cat: /proc/77/status: No such process"),
+      },
+    );
+    expect(cwdHolders(denied.run, TOP)).toEqual({ pids: [] });
+  });
+
   test("accepts a denied process that holds privileges its owner lacks, or ended since", () => {
     const { run, calls } = runner(
       result(1, "/proc/1\t/\n", "find: '/proc/42/cwd': Permission denied\n"),

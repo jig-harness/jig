@@ -25,12 +25,12 @@ function call(
         JSON.stringify(resolve(import.meta.dir, "../../runtime/scheduler.ts")) +
         ", () => ({",
       "...scheduler,",
-      'detectScheduler: () => "systemd",',
-      "snapshotScheduler: async (_, spec) => ({ scheduler: 'systemd', spec, files: " +
+      'detectScheduler: () => ({ ok: true, value: "systemd" }),',
+      "snapshotScheduler: async (_, spec) => ({ ok: true, value: { scheduler: 'systemd', spec, files: " +
         JSON.stringify(files) +
         ", launcher: Object.fromEntries(Object.entries(" +
         JSON.stringify(launcher) +
-        ").map(([name, text]) => [join(scheduler.launcherDirectory(spec), name), text])) }),",
+        ").map(([name, text]) => [join(scheduler.launcherDirectory(spec), name), text])) } }),",
       "}));",
       "const { tickCall } = await import(" +
         JSON.stringify(resolve(import.meta.dir, "../lib/wake-tick.ts")) +
@@ -89,7 +89,9 @@ it("gives a timer-free tick the configured workspace and runtime budget", () => 
     "jig-dispatch.timer": null,
   });
   expect(result).toMatchObject({ ok: true });
-  if (result.ok) expect(result.value.timeoutSec).toBe(16 * 3600 + 8 * 60 + 60);
+  // Four launch opens and the follow-ups' two, of four hours each, eight runtime calls and a minute's grace.
+  if (result.ok)
+    expect(result.value.timeoutSec).toBe((4 + 2) * 4 * 3600 + 8 * 60 + 60);
 });
 
 it("runs a complete installed timer", () => {

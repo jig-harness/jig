@@ -94,6 +94,7 @@ criteria:
       - "one severity mapping is the source for the priority every filing path sets (a deferral script, an issue template, a scheduled-failure reporter)"
       - "the filing path requires a category for each issue and checks it against one category list; a category derived from severity is not credited"
       - "the filing path refuses an issue missing a mandatory taxonomy group before writing it"
+      - "an issue filed around that check (an issue form, a filing by hand) is caught on a schedule: a sweep lists every open issue missing a type, a priority or a size and moves the ones not yet started back to triage; a repository that keeps these on its tracker and runs no sweep is named (config-fit's suggestion:issue_tracker.sweep)"
       - "the filing path looks up an open container for the same source and type and appends to it, filing a new issue only when none fits"
       - "the share of filed issues carrying no priority is measured over the issues the filing paths create (by a scheduled report, a tracker query or export, or drive-pr's fractal-metrics.ts for open follow-ups), so a filing path that skips priority shows up"
       - "the ranked shortlist is reproducible from a tracker snapshot and a committed weights file; a ranker that is only planned or documented is not credited"

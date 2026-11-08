@@ -50,11 +50,14 @@ import { retryable } from "../stuck-launches.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
+  LaneWait,
   BusyHolder,
   LaunchOutcome,
   RepoReport,
   RepoTarget,
 } from "../types.ts";
+import type { SessionsReport } from "../runtime/port.ts";
+import { laneBudgetWait } from "./followup-lane.ts";
 
 /** What `--apply` carries across a tick's repositories. */
 export interface ApplyState {
@@ -79,10 +82,14 @@ export interface ApplyState {
    * it, so the pass command does what was judged.
    */
   codexOptIn: CodexOptIn;
+  /** Each repository's sessions as its observation read them, by slug, for judging another repository's stuck records (`followup-lane.ts`). */
+  sessionsOf?: Map<string, SessionsReport>;
   /** The workspaces this tick has opened so far, within `opens_per_tick`. */
   opened?: number;
   /** Opens spent on notices, which do not consume the launches' allowance. */
   noticesOpened?: number;
+  /** The follow-up workspaces this tick has opened so far, within `followup_opens_per_tick`, outside `opened` (`followup-lane.ts`). */
+  followupOpened?: number;
   /** When the tick began (its invocation, not its act phase), for its overall deadline. */
   startedAt?: number;
   /** The index of this tick among the applying ticks, which rotates the order of everything that shares the allowance. */
@@ -207,7 +214,7 @@ export function rotated<T>(
 
 export type Opened =
   | { workspace: { id: string; path: string }; cleanupFailure?: string }
-  | { waits: string }
+  | { waits: string; waitsOn?: LaneWait }
   | { refused: string; holder?: BusyHolder };
 
 /** Total and launch-specific allowances count notices once. */
@@ -235,34 +242,57 @@ function openBudgetWait(state: ApplyState, notice: boolean): string | null {
   return `this tick has opened the ${notice ? budget : cap} workspaces its per-tick budget covers${reservation}; a later tick opens this one`;
 }
 
+/** Why the tick deadline has no room for another open; `null` while it has. */
+function openRoomWait(state: ApplyState): string | null {
+  if (state.startedAt === undefined) return null;
+  const left =
+    enforcedDeadlineMs(state.machine) - (Date.now() - state.startedAt);
+  const needed =
+    state.machine.workspaceTimeoutMs +
+    2 * state.machine.runtimeTimeoutMs +
+    2 * KILL_GRACE_MS;
+  return left < needed
+    ? "the tick deadline has no room for the repository lookup, another workspace_timeout and its receipt; a later tick opens this one"
+    : null;
+}
+
+/** Count one open against its allowance (the follow-ups' lane's, else the launches' or the notices'); why it waits when that allowance is spent. */
+function takeOpen(
+  state: ApplyState,
+  notice: boolean,
+  lane: boolean,
+): { waits: string; waitsOn?: LaneWait } | null {
+  if (lane) {
+    const spent = laneBudgetWait(state);
+    if (spent !== null) return { waits: spent, waitsOn: "lane-budget" };
+    state.followupOpened = (state.followupOpened ?? 0) + 1;
+    return null;
+  }
+  const waiting = openBudgetWait(state, notice);
+  if (waiting !== null) return { waits: waiting };
+  state.opened = (state.opened ?? 0) + 1;
+  if (notice) state.noticesOpened = (state.noticesOpened ?? 0) + 1;
+  return null;
+}
+
 /**
  * Open a workspace through the runtime, within the tick's budget: a tick
  * opens at most `opens_per_tick` (four by default), one of them kept for the notices workspace, and a launch that needs another waits for
- * the next tick rather than run past the deadline the timer gives it.
+ * the next tick rather than run past the deadline the timer gives it. A
+ * follow-up's open (`lane`) is counted against `followup_opens_per_tick`
+ * instead, and never against the launches' allowance or the notices'
+ * reservation.
  */
 export async function openWithinBudget(
   state: ApplyState,
   repo: RepoTarget,
   target: ItemTarget | PullRequestTarget | NoticesTarget,
+  lane = false,
 ): Promise<Opened> {
-  const late = outOfTime(state);
+  const late = outOfTime(state) ?? openRoomWait(state);
   if (late !== null) return { waits: late };
-  if (
-    state.startedAt !== undefined &&
-    enforcedDeadlineMs(state.machine) - (Date.now() - state.startedAt) <
-      state.machine.workspaceTimeoutMs +
-        2 * state.machine.runtimeTimeoutMs +
-        2 * KILL_GRACE_MS
-  )
-    return {
-      waits:
-        "the tick deadline has no room for the repository lookup, another workspace_timeout and its receipt; a later tick opens this one",
-    };
-  const notice = "notices" in target;
-  const waiting = openBudgetWait(state, notice);
-  if (waiting !== null) return { waits: waiting };
-  state.opened = (state.opened ?? 0) + 1;
-  if (notice) state.noticesOpened = (state.noticesOpened ?? 0) + 1;
+  const spent = takeOpen(state, "notices" in target, lane);
+  if (spent !== null) return spent;
   let opened: RuntimeReceipt;
   try {
     opened = await state.runtime.openWorkspace(repo, target);
@@ -467,7 +497,12 @@ function workspaceOr(
   account: string,
 ): { workspace: { id: string; path: string } } | { outcome: LaunchOutcome } {
   if ("waits" in opened)
-    return { outcome: waits(action, opened.waits, account) };
+    return {
+      outcome: {
+        ...waits(action, opened.waits, account),
+        ...(opened.waitsOn === undefined ? {} : { waitsOn: opened.waitsOn }),
+      },
+    };
   if ("refused" in opened)
     return {
       outcome:
@@ -626,7 +661,11 @@ export async function admitAccount(
     const admitted = admission(state, action, failed);
     if ("waits" in admitted)
       return {
-        outcome: refusal ?? waits(action, admitted.waits),
+        outcome: refusal ?? {
+          ...waits(action, admitted.waits),
+          // A follow-up says what it waits on: here, the accounts.
+          ...(action.stage === "followup" ? { waitsOn: "accounts" } : {}),
+        },
       };
     const slots = admitted.admitted;
     const identity = await identityOf(state, slots);

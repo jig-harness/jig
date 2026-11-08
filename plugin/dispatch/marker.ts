@@ -30,6 +30,7 @@ import type {
 } from "../shared/records/shared.ts";
 import { forgeShared } from "../shared/records/shared-forge.ts";
 import { localWriter } from "../shared/records/writer.ts";
+import { ok, type Outcome } from "../shared/outcome.ts";
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { repoTarget } from "./lib/forge.ts";
 import { failureText } from "./lib/text.ts";
@@ -43,8 +44,12 @@ export interface MarkerArguments {
 
 const EARLIER = 3;
 
-async function slugOf(repo: string | null): Promise<string> {
-  return repo ?? (await repoTarget(process.cwd())).slug;
+async function slugOf(
+  repo: string | null,
+): Promise<Outcome<string, "unreadable">> {
+  if (repo !== null) return ok(repo);
+  const target = await repoTarget(process.cwd());
+  return target.ok ? ok(target.value.slug) : target;
 }
 
 function stop(code: number, message: string): number {
@@ -168,12 +173,15 @@ async function checkOrDone(
 }
 
 export async function markerMain(args: MarkerArguments): Promise<number> {
-  let slug: string;
+  let named: Outcome<string, "unreadable">;
   try {
-    slug = await slugOf(args.repo);
+    named = await slugOf(args.repo);
   } catch (error) {
     return stop(1, `the repository cannot be named: ${failureText(error)}`);
   }
+  if (!named.ok)
+    return stop(1, `the repository cannot be named: ${named.failure.reason}`);
+  const slug = named.value;
   const login = await resolveLogin();
   const shared = forgeShared({ login });
   const target = { repo: slug, pr: args.pr };

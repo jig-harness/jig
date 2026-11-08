@@ -1,6 +1,6 @@
 /** Shared bounded retries and deadline-based polling. Durations are milliseconds. */
 import { type Clock, systemClock } from "./clock.ts";
-import { Defect } from "./errors.ts";
+import { Defect, JigError } from "./errors.ts";
 import { span } from "./trace.ts";
 
 export type RetryOptions = {
@@ -169,9 +169,9 @@ export function retrySync<T>(
   }
 }
 
-export class PollTimeoutError extends Error {
+export class PollTimeoutError extends JigError<"timed-out"> {
   constructor() {
-    super("poll deadline elapsed");
+    super("timed-out", "poll deadline elapsed");
     this.name = "PollTimeoutError";
   }
 }

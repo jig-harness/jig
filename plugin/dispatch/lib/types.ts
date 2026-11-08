@@ -11,6 +11,7 @@ import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
 import type { BoardRead } from "./board.ts";
 import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
+import type { StandingAnswer } from "./routine-questions.ts";
 
 /** The records a tick reads, by who owns them. */
 export type RecordName = "tracker" | "forge" | "runtime";
@@ -312,6 +313,8 @@ export interface Action {
   nudge?: { record: string; agent: string; episode: string; account: string };
   /** For a follow-up: the stale claim the tick releases, rather than a launch. */
   release?: StaleClaim;
+  /** For a follow-up's routine run again: the earlier question and the classes whose standing answers its prompt gives. */
+  standing?: StandingAnswer;
 }
 
 /** What `--apply` did with one stale follow-up claim. */
@@ -355,9 +358,19 @@ export interface LaunchOutcome {
   account: string | null;
   record: string | null;
   detail: string;
+  /**
+   * For a follow-up that waits for its lane: what it waits on. `lane-budget`:
+   * the tick spent `followup_opens_per_tick`; `lane-cap`: the host runs
+   * `followup_concurrency` follow-ups already; `accounts`: no admitted
+   * account has a free slot.
+   */
+  waitsOn?: LaneWait;
   /** For a launch refused because a busy checkout the runtime does not list holds its branch: that checkout, which the tick notifies a person of. */
   holder?: BusyHolder;
 }
+
+/** What a follow-up that waits for its lane waits on. */
+export type LaneWait = "lane-budget" | "lane-cap" | "accounts";
 
 /** What `--apply` did with one notification. */
 export interface NotifyOutcome {
@@ -473,6 +486,19 @@ export type RepoPhase =
   | "shared";
 
 /**
+ * The stages of a repository's `--apply`, each its own defect boundary:
+ * its launch stages, its nudges, its notifications, and the close that
+ * projects its labels and reports its shared records.
+ */
+export type ApplyStage =
+  | "rearm"
+  | "pickup"
+  | "followup"
+  | "steer"
+  | "notify"
+  | "close";
+
+/**
  * A defect: something no code expected threw (a bug, or a write the platform
  * refused where nothing turns the refusal into a value), caught once at the
  * boundary around the work it stopped
@@ -483,6 +509,8 @@ export interface Defect {
   code: "defect";
   /** The phase it was thrown in. */
   phase: string;
+  /** The stage of a repository's `--apply` it was thrown in, for a defect that stage's boundary caught. */
+  stage?: ApplyStage;
   /** For a person: what was thrown, in which phase, and the error's first line. Its stack goes to the tick's error output, never here. */
   reason: string;
 }
@@ -494,6 +522,8 @@ export interface RepoReport {
   refused: string | null;
   /** The defect that stopped the repository's turn; what its earlier phases did stays on the report. */
   defect?: Defect;
+  /** The defects a stage of `--apply` caught, each of which stopped its own stage only; absent when there were none. */
+  stageDefects?: Defect[];
   /** Milliseconds each phase of the repository's turn took; absent from a receipt written before phases were timed. */
   phasesMs?: Partial<Record<RepoPhase, number>>;
   section: DispatchSection | null;

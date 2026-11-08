@@ -319,6 +319,13 @@ make, use the entry's term instead.
   is a mechanical property of how it was raised, not an author's judgment. It
   maps to a generic server-side failure and is never caught to drive control
   flow.
+- **Defect boundary** — the one place a *defect* is caught, around the work
+  it stops: one stage of a dispatcher tick, one repository's turn, the tick
+  itself. It records the defect where a person reads it, with its stack on
+  the error output only, and lets the work beside it go on. In Jig's plugin
+  an expected failure travels as an `Outcome`, the plugin's *result type*,
+  so a throw that reaches a defect boundary is a bug
+  ([ADR-0012](docs/adr/ADR-0012-failures-as-values.md)).
 - **Error boundary** — the one place errors reach a caller: the handler that
   maps each error to a fixed response shape (code, message key, severity,
   recovery hint, *correlation id*: the complete public field set), turns an
@@ -1245,9 +1252,23 @@ make, use the entry's term instead.
   decided: a drive that stopped with no recorded cause, a *re-drive* of a
   recurring pass deadline or of a failure on a conflicting pull request, the
   takeover of a silent driver no launch started whose run its host shows
-  ended, and the run again of a follow-up whose session died. Every kind
-  counts against the one budget of 3, so a stop that keeps recurring ends as a
-  notice to a person rather than a loop.
+  ended, and the run again of a follow-up whose session died or that stopped
+  on a *routine question*. Every kind counts against the one budget of 3, so
+  a stop that keeps recurring ends as a notice to a person rather than a
+  loop.
+- **Routine question (class)** — a question a follow-up's headless pass may
+  stop on that has one safe answer, so the *dispatcher* gives it without a
+  person: housekeeping whose safe answer is to keep and list, such as a local
+  branch or worktree the pass may not delete without asking
+  (`local-leftover`). The classes are a fixed list in the dispatcher's code,
+  each with its **standing answer**; the pass tags its own question with the
+  class, and a follow-up that stopped on one is run again once with that
+  answer in its prompt. Any other question waits for a person.
+- **Follow-up lane** — the *dispatcher's* own allowance for follow-ups: a
+  per-tick budget of workspace opens and a cap on how many follow-up passes
+  run at once, beside the drive launches' allowance, so a follow-up never
+  waits for a drive's launch and a drive's launch never waits behind
+  follow-ups. Both share the accounts' slots.
 - **Permission mode (of a pass)** — the setting of an agent tool that
   decides which of its actions ask a person first. Claude Code's
   `default` mode asks before most edits and commands; a pass of a *PR

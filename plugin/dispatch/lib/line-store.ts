@@ -204,15 +204,12 @@ function isLine(value: unknown): value is LineSnapshot {
 
 type Stored = { runId: string; line: string; receipt: string };
 
-/** A database a newer plugin wrote that this copy cannot read. */
-class NewerSchemaError extends Error {}
-
-/** Refuse a database a newer plugin wrote that needs a newer reader, as the shared opener does. */
-function refuseNewer(db: Database, path: string): void {
+/** Why a database a newer plugin wrote needs a newer reader, as the shared opener refuses it; `null` when this copy reads it. */
+function newerSchema(db: Database, path: string): string | null {
   const { user_version: version } = db.query("PRAGMA user_version").get() as {
     user_version: number;
   };
-  if (version <= SCHEMA_VERSION) return;
+  if (version <= SCHEMA_VERSION) return null;
   const meta = db
     .query(
       "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'db_meta'",
@@ -224,50 +221,63 @@ function refuseNewer(db: Database, path: string): void {
     : null;
   const minReader =
     meta !== null && meta.version === version ? meta.min_reader : version;
-  if (minReader > SCHEMA_VERSION)
-    throw new NewerSchemaError(
-      `${path} is at state schema version ${version}, which needs a reader of version ${minReader} or later; this plugin knows version ${SCHEMA_VERSION}`,
-    );
+  return minReader > SCHEMA_VERSION
+    ? `${path} is at state schema version ${version}, which needs a reader of version ${minReader} or later; this plugin knows version ${SCHEMA_VERSION}`
+    : null;
 }
 
 /**
  * The stored row, read through a read-only connection: opening the state
  * database for writing would migrate an older schema and take SQLite's write
  * lock, which a reader polling beside the tick must not. A database with no
- * `tick_line` table (a schema before it) holds no line yet.
+ * `tick_line` table (a schema before it) holds no line yet. A failure's
+ * reason is `what` followed by why.
  */
-function stored(root: string): Stored | null {
-  const path = statePath(root);
-  if (!existsSync(path)) return null;
-  const db = new Database(path, { readonly: true });
-  try {
-    db.run("PRAGMA busy_timeout = 10000");
-    refuseNewer(db, path);
-    const table = db
-      .query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
-      .get("tick_line");
-    if (table === null) return null;
-    return (
-      (db
-        .query(
-          "SELECT run_id AS runId, line, receipt FROM tick_line WHERE id = 1",
-        )
-        .get() as Stored | null | undefined) ?? null
-    );
-  } finally {
-    db.close();
-  }
+function stored(
+  root: string,
+  what: string,
+): Outcome<Stored | null, "line-unreadable"> {
+  const read = attempt(
+    "line-unreadable",
+    what,
+    (): { row: Stored | null } | { newer: string } => {
+      const path = statePath(root);
+      if (!existsSync(path)) return { row: null };
+      const db = new Database(path, { readonly: true });
+      try {
+        db.run("PRAGMA busy_timeout = 10000");
+        const newer = newerSchema(db, path);
+        if (newer !== null) return { newer };
+        const table = db
+          .query(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+          )
+          .get("tick_line");
+        if (table === null) return { row: null };
+        return {
+          row:
+            (db
+              .query(
+                "SELECT run_id AS runId, line, receipt FROM tick_line WHERE id = 1",
+              )
+              .get() as Stored | null | undefined) ?? null,
+        };
+      } finally {
+        db.close();
+      }
+    },
+  );
+  if (!read.ok) return read;
+  return "newer" in read.value
+    ? failed("line-unreadable", `${what}: ${read.value.newer}`)
+    : ok(read.value.row);
 }
 
 /** The stored line; `null` before a tick wrote one. */
 export function readLine(
   root = stateRoot(),
 ): Outcome<LineSnapshot | null, "line-unreadable"> {
-  const row = attempt(
-    "line-unreadable",
-    "the newest tick's line cannot be read",
-    () => stored(root),
-  );
+  const row = stored(root, "the newest tick's line cannot be read");
   if (!row.ok) return row;
   if (row.value === null) return ok(null);
   const { line } = row.value;
@@ -310,12 +320,11 @@ export function stateAnswer(
 export function readLineReceipt(
   root = stateRoot(),
 ): Outcome<{ runId: string; receipt: string } | null, "line-unreadable"> {
-  return attempt(
-    "line-unreadable",
-    "the newest tick's receipt cannot be read",
-    () => {
-      const row = stored(root);
-      return row === null ? null : { runId: row.runId, receipt: row.receipt };
-    },
+  const row = stored(root, "the newest tick's receipt cannot be read");
+  if (!row.ok) return row;
+  return ok(
+    row.value === null
+      ? null
+      : { runId: row.value.runId, receipt: row.value.receipt },
   );
 }

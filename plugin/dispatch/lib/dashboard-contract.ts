@@ -190,8 +190,12 @@ export interface LineQueued {
   assignedBy: string | null;
   /** For a pull request held behind a serialized leader. */
   hold: { leader: number; area: string; since: string } | null;
-  /** What the newest tick's launch of it did; `null` when it did not try. */
-  launch: { outcome: LaunchOutcome["outcome"]; detail: string } | null;
+  /** What the newest tick's launch of it did, and, for a follow-up that waits for its lane, what it waits on; `null` when it did not try. */
+  launch: {
+    outcome: LaunchOutcome["outcome"];
+    detail: string;
+    waitsOn?: LaunchOutcome["waitsOn"];
+  } | null;
 }
 
 /** One repository the machine file lists. */
@@ -279,7 +283,7 @@ export interface LineTick {
   busy: string[];
   /** The optional reads it skipped because the forge's budget was low; `null` when it skipped none. */
   lowBudget: string[] | null;
-  /** The defects it recorded: its own and its repositories'. */
+  /** The defects it recorded: its own, its repositories' and their stages'. */
   defects: number;
 }
 

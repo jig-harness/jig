@@ -6,7 +6,8 @@
  * It only reads: it takes no tick lock and never creates the database, and
  * with no database or no line yet it prints the answer whose `line` is `null`.
  */
-import { ExitError } from "../shared/cli.ts";
+import { failureFields } from "../shared/errors.ts";
+import { log } from "../shared/log.ts";
 import { stateAnswer } from "./lib/line-store.ts";
 import { stateRoot } from "./receipts.ts";
 
@@ -18,6 +19,8 @@ export interface LineOptions {
   /** The clock `now` reads; the real one unless a check holds it still. */
   nowMs?: number;
   print?: (text: string) => void;
+  /** Where the line that says why the stored line does not read goes; standard error unless a check collects it. */
+  printError?: (text: string) => void;
 }
 
 /** Print the `GET /state` answer; a line that does not read is one line on stderr and exit 1. */
@@ -26,12 +29,16 @@ export function lineMain(options: LineOptions = {}): number {
     options.nowMs ?? Date.now(),
     options.root ?? stateRoot(),
   );
-  if (!answer.ok)
-    throw new ExitError(
-      LINE_UNREADABLE_EXIT,
+  if (!answer.ok) {
+    (options.printError ?? console.error)(
       `jig dispatch line: ${answer.failure.code}: ${answer.failure.reason.replace(/\s+/g, " ")}`,
-      { cause: answer.failure.cause },
     );
+    log.debug(
+      `exit ${LINE_UNREADABLE_EXIT}`,
+      failureFields(answer.failure.cause),
+    );
+    return LINE_UNREADABLE_EXIT;
+  }
   (options.print ?? console.log)(JSON.stringify(answer));
   return 0;
 }

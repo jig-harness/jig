@@ -73,9 +73,7 @@ export function trackerAt(
       "unknown-tracker",
       "the configuration names no tracker team, so its item keys have no form",
     );
-  const section = attempt("unknown-tracker", "", () =>
-    dispatchSection(values.value),
-  );
+  const section = dispatchSection(values.value);
   return ok({
     config: config.value,
     keys: (input) => keys.normalize(input),

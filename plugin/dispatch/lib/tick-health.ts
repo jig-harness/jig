@@ -25,7 +25,7 @@ export type HealthReceipt = Pick<
   repos: ReadonlyArray<
     Pick<
       TickReceipt["repos"][number],
-      "path" | "slug" | "phasesMs" | "defect" | "shared"
+      "path" | "slug" | "phasesMs" | "defect" | "stageDefects" | "shared"
     >
   >;
   busy?: ReadonlyArray<{ path: string }>;
@@ -110,7 +110,8 @@ export function tickHealthOf(receipt: HealthReceipt, sweep: boolean): LineTick {
       receipt.lowBudget === undefined ? null : [...receipt.lowBudget.skipped],
     defects:
       (receipt.defect === undefined ? 0 : 1) +
-      repos.filter((r) => r.defect !== null).length,
+      repos.filter((r) => r.defect !== null).length +
+      receipt.repos.reduce((n, r) => n + (r.stageDefects?.length ?? 0), 0),
   };
 }
 

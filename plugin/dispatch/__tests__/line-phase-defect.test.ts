@@ -47,7 +47,9 @@ mock.module(path, () => ({ ...real, ${name}: async (...args) => {
 const { runTick } = await import(${JSON.stringify(`${DISPATCH}/tick.ts`)});
 const { readLine } = await import(${JSON.stringify(`${DISPATCH}/lib/line-store.ts`)});
 const { readMachineConfig } = await import(${JSON.stringify(`${DISPATCH}/lib/machine-config.ts`)});
-const machine = readMachineConfig();
+const read = readMachineConfig();
+if (!read.ok) throw new Error(read.failure.reason);
+const machine = read.value;
 if (machine === null) throw new Error("no machine file");
 const result = await runTick({ repos: process.argv.slice(2), machine });
 if ("held" in result) process.exit(3);

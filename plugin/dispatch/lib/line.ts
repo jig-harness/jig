@@ -414,7 +414,15 @@ function plannedStage(view: RepoView, action: Action): LineQueued | null {
   const launchFields =
     launch === undefined
       ? {}
-      : { launch: { outcome: launch.outcome, detail: launch.detail } };
+      : {
+          launch: {
+            outcome: launch.outcome,
+            detail: launch.detail,
+            ...(launch.waitsOn === undefined
+              ? {}
+              : { waitsOn: launch.waitsOn }),
+          },
+        };
   if (action.stage === "rearm") {
     const labelled = view.report.labels?.commands.some(
       (c) => c.target === action.target && c.command === "drive",
