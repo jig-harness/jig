@@ -51,6 +51,7 @@ const RUNNER_LOST: readonly RegExp[] = [
 
 /** A network or service failure: infrastructure when a setup step failed on it. */
 const NETWORK: readonly RegExp[] = [
+  /^npm\s+(?:ERR!|error)\s+code\s+E5\d\d\b/iu,
   /\bHTTP(?: status code| response| error| code)?:? ?5\d\d\b/iu,
   /\b5\d\d (?:Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out)\b/iu,
   /\b(?:status code|response code|returned error):? ?5\d\d\b/iu,

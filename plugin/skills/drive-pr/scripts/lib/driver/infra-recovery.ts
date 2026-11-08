@@ -90,7 +90,8 @@ export interface InfraRecovery {
 
 /** Invalid or excessive retry counts use the bounded default. */
 export const wholeOr = (raw: string | undefined, fallback: number): number => {
-  const value = raw !== undefined && /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
+  const value =
+    raw !== undefined && /^[0-9]+$/.test(raw) ? Number(raw) : Number.NaN;
   return Number.isSafeInteger(value) && value >= 0 && value <= 100
     ? value
     : fallback;
@@ -149,8 +150,13 @@ function workflowCoverage(
       infrastructure: false,
       why: "the failing checks' workflow provenance could not be read",
     };
-  const covered = runs.flatMap((run) => run.jobNames ?? []).sort();
-  if (JSON.stringify(covered) !== JSON.stringify([...names].sort()))
+  const covered = runs
+    .flatMap((run) => run.jobNames ?? [])
+    .sort((a, b) => a.localeCompare(b));
+  if (
+    JSON.stringify(covered) !==
+    JSON.stringify([...names].sort((a, b) => a.localeCompare(b)))
+  )
     return {
       infrastructure: false,
       why: "a failing check has no unique workflow-run coverage",

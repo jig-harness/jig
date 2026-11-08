@@ -154,6 +154,21 @@ describe("readInfrastructure", () => {
       expect(readInfrastructure(log).infrastructure).toBe(false);
   });
 
+  it("reads both npm transient service diagnostic spellings as infrastructure", () => {
+    for (const spelling of ["npm ERR!", "npm error"])
+      expect(
+        readInfrastructure(
+          step(
+            "test",
+            "Install dependencies",
+            "Unexpected HTTP response: 503",
+            `${spelling} code E503`,
+            EXIT,
+          ),
+        ).infrastructure,
+      ).toBe(true);
+  });
+
   it("rejects permanent diagnostics beside transient failures", () => {
     for (const diagnostic of [
       "FAILED tests/test_cart.py::test_total",
