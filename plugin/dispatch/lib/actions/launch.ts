@@ -237,6 +237,39 @@ function openBudgetWait(state: ApplyState, notice: boolean): string | null {
   return `this tick has opened the ${notice ? budget : cap} workspaces its per-tick budget covers${reservation}; a later tick opens this one`;
 }
 
+/** Why the tick deadline has no room for another open; `null` while it has. */
+function openRoomWait(state: ApplyState): string | null {
+  if (state.startedAt === undefined) return null;
+  const left =
+    enforcedDeadlineMs(state.machine) - (Date.now() - state.startedAt);
+  const needed =
+    state.machine.workspaceTimeoutMs +
+    2 * state.machine.runtimeTimeoutMs +
+    2 * KILL_GRACE_MS;
+  return left < needed
+    ? "the tick deadline has no room for the repository lookup, another workspace_timeout and its receipt; a later tick opens this one"
+    : null;
+}
+
+/** Count one open against its allowance (the follow-ups' lane's, else the launches' or the notices'); why it waits when that allowance is spent. */
+function takeOpen(
+  state: ApplyState,
+  notice: boolean,
+  lane: boolean,
+): { waits: string; waitsOn?: LaneWait } | null {
+  if (lane) {
+    const spent = laneBudgetWait(state);
+    if (spent !== null) return { waits: spent, waitsOn: "lane-budget" };
+    state.followupOpened = (state.followupOpened ?? 0) + 1;
+    return null;
+  }
+  const waiting = openBudgetWait(state, notice);
+  if (waiting !== null) return { waits: waiting };
+  state.opened = (state.opened ?? 0) + 1;
+  if (notice) state.noticesOpened = (state.noticesOpened ?? 0) + 1;
+  return null;
+}
+
 /**
  * Open a workspace through the runtime, within the tick's budget: a tick
  * opens at most `opens_per_tick` (four by default), one of them kept for the notices workspace, and a launch that needs another waits for
@@ -251,30 +284,10 @@ export async function openWithinBudget(
   target: ItemTarget | PullRequestTarget | NoticesTarget,
   lane = false,
 ): Promise<Opened> {
-  const late = outOfTime(state);
+  const late = outOfTime(state) ?? openRoomWait(state);
   if (late !== null) return { waits: late };
-  if (
-    state.startedAt !== undefined &&
-    enforcedDeadlineMs(state.machine) - (Date.now() - state.startedAt) <
-      state.machine.workspaceTimeoutMs +
-        2 * state.machine.runtimeTimeoutMs +
-        2 * KILL_GRACE_MS
-  )
-    return {
-      waits:
-        "the tick deadline has no room for the repository lookup, another workspace_timeout and its receipt; a later tick opens this one",
-    };
-  const notice = "notices" in target;
-  if (lane) {
-    const spent = laneBudgetWait(state);
-    if (spent !== null) return { waits: spent, waitsOn: "lane-budget" };
-    state.followupOpened = (state.followupOpened ?? 0) + 1;
-  } else {
-    const waiting = openBudgetWait(state, notice);
-    if (waiting !== null) return { waits: waiting };
-    state.opened = (state.opened ?? 0) + 1;
-    if (notice) state.noticesOpened = (state.noticesOpened ?? 0) + 1;
-  }
+  const spent = takeOpen(state, "notices" in target, lane);
+  if (spent !== null) return spent;
   let opened: RuntimeReceipt;
   try {
     opened = await state.runtime.openWorkspace(repo, target);

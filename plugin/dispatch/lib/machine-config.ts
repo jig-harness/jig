@@ -333,7 +333,7 @@ export const OPENS_PER_TICK = DEFAULTS.opensPerTick;
 export const UNCLAIMED_AFTER_MS = DEFAULTS.unclaimedAfterMs;
 
 /** The default workspaces the follow-ups' own lane may open in one tick. */
-export const FOLLOWUP_OPENS_PER_TICK = DEFAULTS.followupOpensPerTick;
+const FOLLOWUP_OPENS_PER_TICK = DEFAULTS.followupOpensPerTick;
 
 /** The limits a tick's budget is calculated from. */
 interface TickLimits {
