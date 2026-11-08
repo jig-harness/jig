@@ -467,7 +467,7 @@ export function reportOperations(client: Client): ReportOps {
           "an assigned-issues query needs at least one state",
         );
       if (signal?.aborted === true) throw abortedError(signal);
-      const accountId = await client.accountId(identity);
+      const accountId = await client.accountId(identity, signal);
       const names = [...new Set(states.map((s) => model.stateName(s)))];
       const read = await client.search(
         inProject(

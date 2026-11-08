@@ -281,8 +281,9 @@ reports none; and `type` as the `type` that
 the repository's type facet, a label-store type included. On the native
 transport run that script for `type` alone; when it cannot run here, leave
 `type` out and say in the run's notes that the type facet was not read: a
-type kept in labels is then unseen, the work type comes from `nativeType`
-or the title prefix, and a bug pre-scout keyed on the label does not run),
+type kept in labels is then unseen, so the work type comes from `nativeType`
+or the title prefix alone and a bug marked only by the label facet reads as
+another type),
 then derive its
 [work type](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
 
