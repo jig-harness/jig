@@ -1,5 +1,7 @@
 import { lstatSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { failureFields } from "../shared/errors.ts";
+import { log } from "../shared/log.ts";
 import { type Failure, failed, ok, type Outcome } from "../shared/outcome.ts";
 import {
   type ConfigurationCode,
@@ -161,6 +163,10 @@ async function entryPlan(
         ? await confirmedPlan(entry, name, machine)
         : checkoutPlan(entry, machine);
   } catch (error) {
+    log.debug(
+      "gc caught a failure planning a repository",
+      failureFields(error),
+    );
     planned = failed(
       "thrown",
       error instanceof Error ? error.message : String(error),

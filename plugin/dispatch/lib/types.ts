@@ -470,12 +470,6 @@ export type RepoPhase =
   | "shared";
 
 /**
- * A defect: something no code expected threw (a bug, or a write the platform
- * refused where nothing turns the refusal into a value), caught once at the
- * boundary around the work it stopped
- * ([ADR-0012](../../../docs/adr/ADR-0012-failures-as-values.md)).
- */
-/**
  * The stages of a repository's `--apply`, each its own defect boundary:
  * its launch stages, its nudges, its notifications, and the close that
  * projects its labels and reports its shared records.
@@ -488,6 +482,12 @@ export type ApplyStage =
   | "notify"
   | "close";
 
+/**
+ * A defect: something no code expected threw (a bug, or a write the platform
+ * refused where nothing turns the refusal into a value), caught once at the
+ * boundary around the work it stopped
+ * ([ADR-0012](../../../docs/adr/ADR-0012-failures-as-values.md)).
+ */
 export interface Defect {
   /** For code and tests: always `defect`, so a reader tells it from a refusal without parsing the reason. */
   code: "defect";

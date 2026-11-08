@@ -21,11 +21,10 @@ tags: [adr, errors, plugin]
 
 Jig's runnable code runs with nobody at the keyboard, so a failure has to
 reach a receipt or a page as something a person can read, and a bug must not
-stop the work around it. Some of the code returned failures as typed
-results and turned each read's failure into a report record at its edge,
-while other code threw and stopped, and each module grew its own error
-classes and its own shape for "this could not be done", so a caller had to
-know which one it was holding.
+stop the work around it. A caller can handle a failure only when it can see
+from a signature that a call can fail and tell one failure from another
+without reading a message; a thrown error with a module's own class shows
+neither, and one forgotten catch stops everything around it.
 
 ## Decision
 
@@ -48,8 +47,8 @@ Under `plugin/` this holds as follows:
   notifications, its close), so a defect in one stage leaves the others'
   launches standing; and, in resource collection, the runner around each
   kind's inventory, proof and removal. A failed configuration read stops a
-  collection run as it always did, and the run's receipt names the
-  failure's code and reason.
+  collection run before it collects anything, and the run's receipt names
+  the failure's code and reason.
 - **The shared code and the `jig` command's runtime** (`plugin/shared/`,
   `plugin/runtime/`, `plugin/jig.ts`) return outcomes from the edges the
   dispatcher, resource collection and the lifecycle verbs call, such as the
@@ -107,4 +106,7 @@ gates` runs, reads the syntax of every file under `plugin/dispatch/` and
 `throw new ExitError(USAGE_EXIT, …)` or a rethrow of the enclosing `catch`
 clause's binding. A defect boundary catches what is thrown; it does not
 throw, so the boundaries need no exception of their own. The shared code,
-the runtime and the skill scripts are outside its scope.
+the runtime and the skill scripts are outside its scope. It reads each
+`throw` statement, not what runs: a rejected promise, a throw inside a
+shared helper the code calls, an import renamed to `Defect` or a rethrow of
+a shadowed binding pass it, and review catches those.

@@ -7,6 +7,7 @@
  * records whose rows are in the log (`settleOutcomes`).
  */
 import { resolve } from "node:path";
+import { swallow } from "../../shared/errors.ts";
 import { mergedNotClosed } from "./forge.ts";
 import { logEnded } from "./log-ended.ts";
 import { hasEnded } from "./log.ts";
@@ -35,9 +36,16 @@ export async function logRepo(
       all,
       drives,
       merged: (pr) =>
+        // An unread merge state is null, which leaves the record's ending unclassified.
         mergedNotClosed(slug, pr).then(
           (read) => (read.ok ? read.value : null),
-          () => null,
+          (error: unknown) => {
+            swallow(
+              error,
+              "an unread merge state leaves the ending unclassified",
+            );
+            return null;
+          },
         ),
       nowIso: new Date(context.nowMs).toISOString(),
     },

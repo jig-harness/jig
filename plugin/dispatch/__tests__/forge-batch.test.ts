@@ -192,9 +192,9 @@ describe("the repository query's pull requests", () => {
 
   it("read as the pull request listing gives them, a bot author's login as app/<name>", () => {
     const read = { labels: true };
-    expect(listedOpen([listed(node)], read)).toEqual(
-      listedOpen([listing], read),
-    );
+    const batched = listedOpen([listed(node)], read);
+    expect(batched).toMatchObject({ ok: true });
+    expect(batched).toEqual(listedOpen([listing], read));
     const unlabelled = listedOpen([listed(node)]);
     expect(unlabelled.ok && unlabelled.value[0]?.labels).toBeUndefined();
   });

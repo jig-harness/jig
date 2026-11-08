@@ -11,10 +11,19 @@
  * browser bundle can hold them; they are exported here too.
  */
 import { type Fields, log, MAX_CAUSE_DEPTH } from "./log.ts";
+import { JigError } from "./outcome.ts";
 
-/** The `code` of a system error (`ENOENT`, `EACCES`, ...), if it has one. */
+/**
+ * The `code` of a system error (`ENOENT`, `EACCES`, ...), if it has one. A
+ * `JigError`'s code is the plugin's own failure code, never a system one.
+ */
 export function errnoCode(err: unknown): string | undefined {
-  if (typeof err !== "object" || err === null || !("code" in err))
+  if (
+    typeof err !== "object" ||
+    err === null ||
+    err instanceof JigError ||
+    !("code" in err)
+  )
     return undefined;
   return typeof err.code === "string" ? err.code : undefined;
 }

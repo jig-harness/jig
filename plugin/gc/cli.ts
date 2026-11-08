@@ -1,7 +1,7 @@
 import { basename, dirname, join } from "node:path";
 import { statfsSync } from "node:fs";
 import { consumerRoot } from "../shared/consumer.ts";
-import { ExitError } from "../shared/cli.ts";
+import { ExitError, failureExit } from "../shared/cli.ts";
 import { pathValue, USAGE_EXIT } from "../shared/command-line.ts";
 import { log } from "../shared/log.ts";
 import { type Failure, failed } from "../shared/outcome.ts";
@@ -245,10 +245,7 @@ export function showReceipts(query: string | undefined): number {
   const path = paths.find((path) => basename(path, ".json") === query);
   if (!path) throw new ExitError(USAGE_EXIT, `No receipt ${query}`);
   const receipt = readReceipt(path);
-  if (!receipt.ok) {
-    log.error(receipt.failure.reason);
-    return 1;
-  }
+  if (!receipt.ok) return failureExit(receipt.failure);
   console.log(JSON.stringify(receipt.value, null, 2));
   return 0;
 }

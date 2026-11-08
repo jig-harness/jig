@@ -165,6 +165,7 @@ export async function tickCall(
     return failed(
       "unstarted",
       `the installed timer does not read: ${installed.failure.reason}`,
+      installed.failure.cause,
     );
   const timer = installed.value;
   if (timer === null) {

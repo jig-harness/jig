@@ -18,7 +18,7 @@
  * sweep a probe.
  */
 import { resolve } from "node:path";
-import { ExitError } from "../shared/cli.ts";
+import { ExitError, failureExit } from "../shared/cli.ts";
 import { USAGE_EXIT } from "../shared/command-line.ts";
 import { log } from "../shared/log.ts";
 import { type Failure, failed, ok, type Outcome } from "../shared/outcome.ts";
@@ -238,17 +238,11 @@ export async function installDispatch(
   }
   if (!options.uninstall) {
     const resolves = await checkLauncherResolves();
-    if (!resolves.ok) {
-      log.error(resolves.failure.reason);
-      return 1;
-    }
+    if (!resolves.ok) return failureExit(resolves.failure);
   }
   return exclusiveInstallLock(async () => {
     const updated = await updateJobs(changes);
-    if (!updated.ok) {
-      log.error(updated.failure.reason);
-      return 1;
-    }
+    if (!updated.ok) return failureExit(updated.failure);
     for (const line of updated.value) console.log(line);
     return 0;
   });

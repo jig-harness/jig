@@ -294,10 +294,10 @@ async function applyStages(
   await guard("steer", async () => {
     if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
   });
-  // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
-  report.actions.push(...holderActions(repo.slug, report.launches));
-  // A host that does not own the repository never notifies for it: the owner does, once.
   await guard("notify", async () => {
+    // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
+    report.actions.push(...holderActions(repo.slug, report.launches));
+    // A host that does not own the repository never notifies for it: the owner does, once.
     if (enabled.has("notify") && inputs.shared.owner)
       await applyNotices(apply, repo, report, inputs.sessions, {
         lingerMs: section.noticesLingerMs,

@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { openReceipt, writeReceipt } from "./receipts.ts";
 import { type Failure, failed, type Outcome } from "../shared/outcome.ts";
 import { isMapping } from "../shared/config-layers.ts";
+import { failureExit } from "../shared/cli.ts";
+import { failureFields } from "../shared/errors.ts";
 import { log } from "../shared/log.ts";
 import { scheduledUpgradeOf, upgradeLine } from "../runtime/upgrade-record.ts";
 import type {
@@ -15,6 +17,11 @@ import type {
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+/** What a boundary records of what it caught: its message; under `JIG_LOG=debug`, its stack and causes too. */
+function caught(error: unknown): string {
+  log.debug("gc caught a failure at its boundary", failureFields(error));
+  return message(error);
+}
 function outcome(proof: Proof): ReceiptLine["outcome"] {
   if (proof.state === "dead") return "would-collect";
   return proof.state === "live" ? "refused" : proof.state;
@@ -23,7 +30,7 @@ async function prove(kind: CollectionKind, resource: Resource): Promise<Proof> {
   try {
     return await kind.prove(resource);
   } catch (error) {
-    return { state: "unverified", reason: message(error) };
+    return { state: "unverified", reason: caught(error) };
   }
 }
 /** The kind's inventory; what it throws (a platform error or a defect) fails it the same way. */
@@ -31,7 +38,7 @@ async function inventory(kind: CollectionKind): Promise<Outcome<Resource[]>> {
   try {
     return await kind.inventory();
   } catch (error) {
-    return failed("thrown", message(error), error);
+    return failed("thrown", caught(error), error);
   }
 }
 function scope(kind: CollectionKind): { repository?: string } {
@@ -105,7 +112,7 @@ async function evaluate(
     await collectResource(kind, resource, line, persist);
   } catch (error) {
     line.outcome = "failed";
-    line.reason = message(error);
+    line.reason = caught(error);
   }
   if (line.outcome === "failed") receipt.exitStatus = 1;
 }
@@ -137,15 +144,14 @@ const CONFIGURATION_EXIT = 2;
 /**
  * The exit for a failure that stops a gc command before it does anything: a
  * refused configuration exits 2 with its reason alone on standard error;
- * anything else exits 1 with its reason logged as an error.
+ * anything else exits 1 with its reason logged as an error (`failureExit`).
  */
 export function stopped(failure: Failure): number {
   if (failure.code === "configuration") {
     console.error(failure.reason);
     return CONFIGURATION_EXIT;
   }
-  log.error(failure.reason);
-  return 1;
+  return failureExit(failure);
 }
 function newReceipt(collect: boolean): Receipt {
   const startedAt = new Date().toISOString();
