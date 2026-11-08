@@ -31,7 +31,10 @@ const TABLE_ATTRIBUTION = new RegExp(`^\\s*\\|\\s*(${REVIEWER})\\s*:`);
 const PARAGRAPH_ATTRIBUTION = /^\s*(reviewer|shadow reviewer)\s*:/;
 /** A review bot's account name, as GitHub prints it. */
 const BOT_HANDLE =
-  /\b(?:coderabbitai|copilot|codex|[a-z0-9-]*review[a-z0-9-]*)\[bot\]/;
+  /(?<![\w-])(?:coderabbitai|copilot|codex|[a-z0-9-]*review[a-z0-9-]*)\[bot\]/;
+/** An ATX heading, a setext underline, or a thematic break. */
+const BLOCK_BOUNDARY =
+  /^\s{0,3}(?:#{1,6}(?:\s|$)|=+\s*$|-+\s*$|([-*_])(?:\s*\1){2,}\s*$)/;
 /** Stands in for inline code: not whitespace, so masking opens no prefix. */
 const CODE_MASK = "\u0001";
 
@@ -80,10 +83,11 @@ export function scanScars(text: string): string[] {
       continue;
     }
     if (fence) continue;
-    if (isScar(raw.replace(/`[^`]*`/g, CODE_MASK), previousBlank))
+    if (isScar(raw.replace(/(`+)(?:(?!\1).)+?\1/g, CODE_MASK), previousBlank))
       hits.push(`${index + 1}: ${raw}`);
-    // A heading is a block of its own: the line after it opens a paragraph.
-    previousBlank = raw.trim() === "" || /^\s{0,3}#{1,6}(\s|$)/.test(raw);
+    // A heading, setext underline or thematic break is a block of its own: the
+    // line after it opens a paragraph.
+    previousBlank = raw.trim() === "" || BLOCK_BOUNDARY.test(raw);
   }
   return hits;
 }

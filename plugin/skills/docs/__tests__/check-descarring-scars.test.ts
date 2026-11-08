@@ -277,3 +277,20 @@ test("resolution phrasing counts only where it opens the item", () => {
   expect(scanScars("- Addressed: moved the guard.\n")).toHaveLength(1);
   expect(scanScars("- [x] **Good catch** on the guard.\n")).toHaveLength(1);
 });
+
+test("scar lint: a hyphenated prefix is not a bot account", () => {
+  expect(scanScars("not-codex[bot] said")).toEqual([]);
+  expect(scanScars("by codex[bot]")).toHaveLength(1);
+});
+
+test("scar lint: a double-backtick span is masked", () => {
+  expect(scanScars("Use ``coderabbitai[bot]`` as the handle")).toEqual([]);
+});
+
+test("scar lint: a setext underline or thematic break opens a paragraph", () => {
+  expect(scanScars("Review\n======\nReviewer: please fix this.")).toHaveLength(
+    1,
+  );
+  expect(scanScars("Intro\n\n***\nReviewer: please fix this.")).toHaveLength(1);
+  expect(scanScars("Reviewer is asked\nReviewer: soft wrap")).toEqual([]);
+});
