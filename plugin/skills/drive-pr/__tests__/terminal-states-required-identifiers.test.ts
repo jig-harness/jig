@@ -366,7 +366,7 @@ describe("driverOnlyExitBindings — requires a real module for live export valu
     expect(byName.MAILBOX_PAUSE_TIMEOUT_EXIT).toBe(19);
     expect(byName.TAKEN_OVER_EXIT).toBe(20);
     expect(byName.CI_REPAIR_SPENT_EXIT).toBe(21);
-    expect(byName.CI_INFRA_PERSISTED_EXIT).toBe(22);
+    expect(byName.CI_INFRA_PERSISTED_EXIT).toBe(23);
   });
 
   test("a module missing an export reports NaN for it, rather than throwing past the caller", () => {

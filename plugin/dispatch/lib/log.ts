@@ -16,7 +16,8 @@
  * - **event**: once per cause, timed when the tick observed it, for what
  *   the tick observed rather than what ended (a stalled pickup, a double
  *   claim, a stage drifting from its expectation, a session waiting, a stop
- *   it notified on a stage it did not launch, each nudge sent, and a pull
+ *   it notified on a stage it did not launch, each nudge sent, a defect that
+ *   stopped one stage of a repository's `--apply` (`defect.ts`), and a pull
  *   request's hold behind another in a serialized area beginning and
  *   ending, the end carrying how long it waited: `serial-holds.ts`).
  *
@@ -34,6 +35,7 @@ import type { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
 import {
@@ -91,10 +93,11 @@ export interface EventRow {
   key: string;
   at: string;
   repo: string;
-  /** The stage the cause is about: a drive's `rearm`, a `pickup`, a `followup`, a nudge's `steer`. */
+  /** The stage the cause is about: a drive's `rearm`, a `pickup`, a `followup`, a nudge's `steer`; for a defect, the stage it stopped. */
   stage: string;
+  /** The pull request or item; empty for a defect, which is about a stage rather than a target. */
   target: string;
-  /** What was observed: the notification's cause, or `nudge`. */
+  /** What was observed: the notification's cause, `nudge`, or `defect`. */
   event: string;
   account: string | null;
   /** The class the closed list places it in; `null` for an observation no class names (a drift, a wait, a nudge, a hold). */
@@ -193,9 +196,6 @@ export function insertRow(db: Database, row: LogRow): boolean {
   return done.changes === 1;
 }
 
-/** A lookup the log's schema cannot answer completely within a bound. */
-class UnindexedLogError extends Error {}
-
 /**
  * Every row about one piece of work of a repository (`target` as the rows
  * name it: `PR #<n>`, or an item's key), in the order they were written;
@@ -203,25 +203,26 @@ class UnindexedLogError extends Error {}
  * which also reads the rows a copy one release behind wrote without it
  * (their target is in the row's own text). A reader that must not migrate
  * the database passes its own read-only connection as `db` (`null` for none).
- * On a schema before the `target` column it throws: no index serves a lookup
- * by the row's text and the log keeps every outcome, so the scan could be
- * neither complete nor bounded; the reader names the source as not read until
- * a tick migrates it.
+ * On a schema before the `target` column it fails as `unindexed`: no index
+ * serves a lookup by the row's text and the log keeps every outcome, so the
+ * scan could be neither complete nor bounded; the reader names the source as
+ * not read until a tick migrates it.
  */
 export function rowsFor(
   repo: string,
   target: string,
   root = stateRoot(),
   db: Database | null = existingStateDb(root),
-): LogRow[] {
-  if (db === null) return [];
+): Outcome<LogRow[], "unindexed"> {
+  if (db === null) return ok([]);
   const byText =
     "CASE WHEN json_valid(row) THEN json_extract(row, '$.target') END = ?";
   const hasColumn = (
     db.query("PRAGMA table_info(log)").all() as Array<{ name: string }>
   ).some((c) => c.name === "target");
   if (!hasColumn)
-    throw new UnindexedLogError(
+    return failed(
+      "unindexed",
       "the outcome log has no target column yet, and its rows cannot be found by their text without scanning every outcome",
     );
   const selected = db
@@ -229,7 +230,7 @@ export function rowsFor(
       `SELECT row FROM log WHERE repo = ? AND (target = ? OR (target IS NULL AND ${byText})) ORDER BY seq`,
     )
     .all(repo, target, target) as Array<{ row: string }>;
-  return rowsOf(selected).filter((r) => r.target === target);
+  return ok(rowsOf(selected).filter((r) => r.target === target));
 }
 
 /** The newest ended row among `stages` of one piece of work's rows (`rowsFor`); `null` when it has none. */
@@ -299,6 +300,7 @@ const DRIVE_EXITS: ReadonlyMap<number, [OutcomeClass, string]> = new Map([
   [DRIVE_EXIT.TAKEN_OVER, ["refused", "taken over by another clone"]],
   [DRIVE_EXIT.INDETERMINATE, ["gates failed", "failed"]],
   [DRIVE_EXIT.REVIEWER_FAILED, ["gates failed", "reviewer failed"]],
+  [DRIVE_EXIT.REVIEW_SKIPPED, ["gates failed", "review skipped"]],
   [DRIVE_EXIT.PR_CONFLICTING, ["gates failed", "conflicting with its base"]],
   [DRIVE_EXIT.WORKTREE_UNCLEAN, ["gates failed", "worktree unclean"]],
   [DRIVE_EXIT.PASS_DEADLINE, ["gates failed", "pass deadline"]],

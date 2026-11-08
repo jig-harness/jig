@@ -27,6 +27,8 @@
  * unclaimed_after: 15m
  * dashboard:
  *   listen: 100.64.0.7:8765
+ *   require_token: true     # false only with a loopback listen: a front authenticates
+ *   allowed_hosts: []       # host names that front forwards under (tokenless only)
  * records:
  *   shared: forge
  * send: true
@@ -41,8 +43,9 @@ import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { isMapping, jigHome } from "../../shared/config-layers.ts";
 import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { load } from "../../shared/yaml.ts";
-import { type Listen, parseListen } from "./listen.ts";
+import { isLoopback, type Listen, parseListen } from "./listen.ts";
 
 /** The stages a machine file can enable. */
 const MACHINE_STAGES = [
@@ -104,6 +107,10 @@ export interface MachineConfig {
   unclaimedAfterMs: number;
   /** The address `jig dispatch dashboard` listens on (`dashboard.listen`); `null` when the file names none. */
   dashboardListen: Listen | null;
+  /** Whether a request to the dashboard needs the token its command prints (`dashboard.require_token`); `true` unless the file says `false`, which only a loopback `listen` accepts. */
+  dashboardRequireToken: boolean;
+  /** The host names a front forwards under (`dashboard.allowed_hosts`), lower-cased; empty unless the file lists some. */
+  dashboardAllowedHosts: string[];
   /** Where the records another host reads are shared (`records.shared`). */
   sharedRecords: SharedMedium;
   /** Whether `jig send` may write a request from this machine (`send`); `true` unless the file says `false`. */
@@ -138,7 +145,7 @@ const TOP_KEYS = [
   "send",
   "change_probe",
 ];
-const DASHBOARD_KEYS = ["listen"];
+const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts"];
 const RECORDS_KEYS = ["shared"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
 const ACCOUNT_KEYS = [
@@ -149,8 +156,18 @@ const ACCOUNT_KEYS = [
   "max_per_account",
 ];
 
-export class MachineConfigError extends Error {
-  override name = "MachineConfigError";
+/**
+ * Why the machine file, or one of its values, is refused: `unreadable` for a
+ * file that cannot be read or is not YAML, `invalid` for a value that does
+ * not validate. The reason names the file and the setting.
+ */
+export type MachineConfigCode = "unreadable" | "invalid";
+
+/** A value read from the machine file, or why it does not validate. */
+type Checked<T> = Outcome<T, "invalid">;
+
+function invalid(reason: string): Checked<never> {
+  return failed("invalid", reason);
 }
 
 export function machineConfigPath(
@@ -163,145 +180,193 @@ function only(
   value: Record<string, unknown>,
   allowed: string[],
   where: string,
-): void {
+): Checked<true> {
   const unknown = Object.keys(value).filter((k) => !allowed.includes(k));
-  if (unknown.length > 0)
-    throw new MachineConfigError(
-      `${where} has unknown key(s): ${unknown.join(", ")} (known: ${allowed.join(", ")})`,
-    );
+  return unknown.length > 0
+    ? invalid(
+        `${where} has unknown key(s): ${unknown.join(", ")} (known: ${allowed.join(", ")})`,
+      )
+    : ok(true);
 }
 
-function text(value: unknown, where: string): string {
+function text(value: unknown, where: string): Checked<string> {
   if (typeof value !== "string" || value.trim() === "")
-    throw new MachineConfigError(`${where} must be a nonempty string`);
-  return value.trim();
+    return invalid(`${where} must be a nonempty string`);
+  return ok(value.trim());
 }
 
 /** A path, `~/` expanded; relative paths are refused, since a timer has no working directory to read them against. */
-function path(value: unknown, where: string): string {
+function path(value: unknown, where: string): Checked<string> {
   const raw = text(value, where);
-  const expanded = raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : raw;
+  if (!raw.ok) return raw;
+  const expanded = raw.value.startsWith("~/")
+    ? join(homedir(), raw.value.slice(2))
+    : raw.value;
   if (!isAbsolute(expanded))
-    throw new MachineConfigError(`${where} must be an absolute path: ${raw}`);
-  return resolve(expanded);
+    return invalid(`${where} must be an absolute path: ${raw.value}`);
+  return ok(resolve(expanded));
 }
 
 const UNITS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000 };
 /** The longest duration any setting takes: inside the 2,147,483,647 ms a timer holds, which the deadlines of child processes are armed with. */
 const MAX_DURATION_MS = 24 * 86_400_000;
 
-/** A duration such as `90s`, `5m` or `1h`, in milliseconds. */
-export function duration(value: unknown, where: string): number {
+/** A duration such as `90s`, `5m` or `1h`, in milliseconds; `invalid` names `where` when it is not one. */
+export function duration(value: unknown, where: string): Checked<number> {
   const match =
     typeof value === "string" ? /^(\d+)\s*([smh])$/.exec(value.trim()) : null;
   const ms = match ? Number(match[1]) * (UNITS[match[2] as string] ?? 0) : 0;
   if (!match || ms <= 0 || ms > MAX_DURATION_MS)
-    throw new MachineConfigError(
+    return invalid(
       `${where} must be a positive duration such as 90s, 5m or 1h, at most 24d`,
     );
-  return ms;
+  return ok(ms);
 }
 
 function optionalDuration(
   value: unknown,
   where: string,
   fallback: number,
-): number {
+): Checked<number> {
   return value === undefined || value === null
-    ? fallback
+    ? ok(fallback)
     : duration(value, where);
 }
 
-function count(value: unknown, where: string, fallback: number): number {
-  if (value === undefined || value === null) return fallback;
+function count(
+  value: unknown,
+  where: string,
+  fallback: number,
+): Checked<number> {
+  if (value === undefined || value === null) return ok(fallback);
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
-    throw new MachineConfigError(`${where} must be a positive whole number`);
-  return value;
+    return invalid(`${where} must be a positive whole number`);
+  return ok(value);
 }
 
-function list(value: unknown, where: string): unknown[] {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value))
-    throw new MachineConfigError(`${where} must be a list`);
-  return value;
+function list(value: unknown, where: string): Checked<unknown[]> {
+  if (value === undefined || value === null) return ok([]);
+  if (!Array.isArray(value)) return invalid(`${where} must be a list`);
+  return ok(value);
 }
 
-function stages(value: unknown, where: string): MachineStage[] {
+/** Each item read in turn; the first that does not validate. */
+function each<T>(
+  items: unknown[],
+  read: (item: unknown, i: number) => Checked<T>,
+): Checked<T[]> {
+  const out: T[] = [];
+  for (const [i, item] of items.entries()) {
+    const one = read(item, i);
+    if (!one.ok) return one;
+    out.push(one.value);
+  }
+  return ok(out);
+}
+
+function stages(value: unknown, where: string): Checked<MachineStage[]> {
   const raw = list(value, where);
+  if (!raw.ok) return raw;
   if (
-    raw.some((s) => !(MACHINE_STAGES as readonly unknown[]).includes(s)) ||
-    new Set(raw).size !== raw.length
+    raw.value.some(
+      (s) => !(MACHINE_STAGES as readonly unknown[]).includes(s),
+    ) ||
+    new Set(raw.value).size !== raw.value.length
   )
-    throw new MachineConfigError(
+    return invalid(
       `${where} must list distinct stages from ${MACHINE_STAGES.join(", ")}`,
     );
-  return raw as MachineStage[];
+  return ok(raw.value as MachineStage[]);
 }
 
-function since(value: unknown, where: string): string | null {
-  if (value === undefined || value === null) return null;
+function since(value: unknown, where: string): Checked<string | null> {
+  if (value === undefined || value === null) return ok(null);
   const raw = value instanceof Date ? value.toISOString() : value;
   if (typeof raw !== "string" || !Number.isFinite(Date.parse(raw)))
-    throw new MachineConfigError(`${where} must be a date`);
-  return new Date(raw).toISOString();
+    return invalid(`${where} must be a date`);
+  return ok(new Date(raw).toISOString());
 }
 
-function repository(value: unknown, i: number): MachineRepository {
+function repository(value: unknown, i: number): Checked<MachineRepository> {
   const where = `repositories[${i}]`;
-  if (!isMapping(value))
-    throw new MachineConfigError(`${where} must be a mapping`);
-  only(value, REPOSITORY_KEYS, where);
-  return {
-    path: path(value.path, `${where}.path`),
-    stages: stages(value.stages, `${where}.stages`),
-    followupSince: since(value.followup_since, `${where}.followup_since`),
-    owner: flag(value.owner, `${where}.owner`, true),
-  };
+  if (!isMapping(value)) return invalid(`${where} must be a mapping`);
+  const known = only(value, REPOSITORY_KEYS, where);
+  if (!known.ok) return known;
+  const repoPath = path(value.path, `${where}.path`);
+  if (!repoPath.ok) return repoPath;
+  const enabled = stages(value.stages, `${where}.stages`);
+  if (!enabled.ok) return enabled;
+  const followupSince = since(value.followup_since, `${where}.followup_since`);
+  if (!followupSince.ok) return followupSince;
+  const owner = flag(value.owner, `${where}.owner`, true);
+  if (!owner.ok) return owner;
+  return ok({
+    path: repoPath.value,
+    stages: enabled.value,
+    followupSince: followupSince.value,
+    owner: owner.value,
+  });
 }
 
-function flag(value: unknown, where: string, fallback: boolean): boolean {
-  if (value === undefined || value === null) return fallback;
+function flag(
+  value: unknown,
+  where: string,
+  fallback: boolean,
+): Checked<boolean> {
+  if (value === undefined || value === null) return ok(fallback);
   if (typeof value !== "boolean")
-    throw new MachineConfigError(`${where} must be true or false`);
-  return value;
+    return invalid(`${where} must be true or false`);
+  return ok(value);
 }
 
-function account(value: unknown, i: number): MachineAccount {
+function account(value: unknown, i: number): Checked<MachineAccount> {
   const where = `accounts[${i}]`;
-  if (!isMapping(value))
-    throw new MachineConfigError(`${where} must be a mapping`);
-  only(value, ACCOUNT_KEYS, where);
+  if (!isMapping(value)) return invalid(`${where} must be a mapping`);
+  const known = only(value, ACCOUNT_KEYS, where);
+  if (!known.ok) return known;
   const vendor = text(value.vendor, `${where}.vendor`);
-  if (!/^[a-z][a-z0-9-]*$/.test(vendor))
-    throw new MachineConfigError(
-      `${where}.vendor must be an agent tool's name in lowercase letters, digits and dashes (claude, codex): ${vendor}`,
+  if (!vendor.ok) return vendor;
+  if (!/^[a-z][a-z0-9-]*$/.test(vendor.value))
+    return invalid(
+      `${where}.vendor must be an agent tool's name in lowercase letters, digits and dashes (claude, codex): ${vendor.value}`,
     );
   const name = text(value.name, `${where}.name`);
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name))
-    throw new MachineConfigError(
-      `${where}.name must be letters, digits, dot, dash or underscore: ${name}`,
+  if (!name.ok) return name;
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name.value))
+    return invalid(
+      `${where}.name must be letters, digits, dot, dash or underscore: ${name.value}`,
     );
-  return {
-    name,
-    vendor,
-    configDir: path(value.config_dir, `${where}.config_dir`),
-    identity: text(value.identity, `${where}.identity`),
-    maxPerAccount: count(
-      value.max_per_account,
-      `${where}.max_per_account`,
-      DEFAULTS.maxPerAccount,
-    ),
-  };
+  const configDir = path(value.config_dir, `${where}.config_dir`);
+  if (!configDir.ok) return configDir;
+  const identity = text(value.identity, `${where}.identity`);
+  if (!identity.ok) return identity;
+  const maxPerAccount = count(
+    value.max_per_account,
+    `${where}.max_per_account`,
+    DEFAULTS.maxPerAccount,
+  );
+  if (!maxPerAccount.ok) return maxPerAccount;
+  return ok({
+    name: name.value,
+    vendor: vendor.value,
+    configDir: configDir.value,
+    identity: identity.value,
+    maxPerAccount: maxPerAccount.value,
+  });
 }
 
-function distinct<T>(items: T[], key: (t: T) => string, what: string): T[] {
+function distinct<T>(
+  items: T[],
+  key: (t: T) => string,
+  what: string,
+): Checked<T[]> {
   const seen = new Set<string>();
   for (const item of items) {
     const k = key(item);
-    if (seen.has(k)) throw new MachineConfigError(`${what} listed twice: ${k}`);
+    if (seen.has(k)) return invalid(`${what} listed twice: ${k}`);
     seen.add(k);
   }
-  return items;
+  return ok(items);
 }
 
 /** The longest a timer holds: the tick's overall deadline is armed with it. */
@@ -350,143 +415,274 @@ export function tickDeadlineMs(limits: {
 }
 
 /** The machine file's values, with defaults. */
-function parseMachineConfig(values: unknown, where: string): MachineConfig {
-  const config = parseValues(values, where);
+function parseMachineConfig(
+  values: unknown,
+  where: string,
+): Checked<MachineConfig> {
+  const parsed = parseValues(values, where);
+  if (!parsed.ok) return parsed;
+  const config = parsed.value;
   if (
     config.opensPerTick < 2 &&
     config.repositories.some((repo) => repo.stages.includes("notify"))
   )
-    throw new MachineConfigError(
+    return invalid(
       `${where}: opens_per_tick must be at least 2 when notify is enabled, to keep one open for launches beside the notices reservation`,
     );
   if (tickBudgetMs(config) > MAX_TIMER_MS)
-    throw new MachineConfigError(
+    return invalid(
       `${where}: opens_per_tick, workspace_timeout and runtime_timeout together allow a tick longer than 24d (${config.opensPerTick} workspace opens plus 8 runtime calls); lower opens_per_tick or shorten the timeouts`,
     );
-  return config;
+  return ok(config);
 }
 
-function parseValues(values: unknown, where: string): MachineConfig {
+/** The repositories, each path listed once. */
+function repositories(value: unknown): Checked<MachineRepository[]> {
+  const raw = list(value, "repositories");
+  if (!raw.ok) return raw;
+  const read = each(raw.value, repository);
+  if (!read.ok) return read;
+  return distinct(read.value, (r) => r.path, "a repository");
+}
+
+/** The accounts, each name, identity and configuration directory listed once. */
+function accounts(value: unknown): Checked<MachineAccount[]> {
+  const raw = list(value, "accounts");
+  if (!raw.ok) return raw;
+  const read = each(raw.value, account);
+  if (!read.ok) return read;
+  const named = distinct(read.value, (a) => a.name, "an account");
+  if (!named.ok) return named;
+  const identities = distinct(
+    named.value,
+    (a) => `${a.vendor}:${a.identity.toLowerCase()}`,
+    "an account identity",
+  );
+  if (!identities.ok) return identities;
+  return distinct(
+    identities.value,
+    (a) => `${a.vendor}:${a.configDir}`,
+    "an account configuration directory",
+  );
+}
+
+function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   const top = values ?? {};
-  if (!isMapping(top))
-    throw new MachineConfigError(`${where} must be a mapping`);
-  only(top, TOP_KEYS, where);
-  return {
+  if (!isMapping(top)) return invalid(`${where} must be a mapping`);
+  const known = only(top, TOP_KEYS, where);
+  if (!known.ok) return known;
+  const repos = repositories(top.repositories);
+  if (!repos.ok) return repos;
+  const accountList = accounts(top.accounts);
+  if (!accountList.ok) return accountList;
+  const timing = limits(top);
+  if (!timing.ok) return timing;
+  const shared = surfaces(top);
+  if (!shared.ok) return shared;
+  return ok({
     path: where,
-    repositories: distinct(
-      list(top.repositories, "repositories").map(repository),
-      (r) => r.path,
-      "a repository",
-    ),
-    accounts: distinct(
-      distinct(
-        distinct(
-          list(top.accounts, "accounts").map(account),
-          (a) => a.name,
-          "an account",
-        ),
-        (a) => `${a.vendor}:${a.identity.toLowerCase()}`,
-        "an account identity",
-      ),
-      (a) => `${a.vendor}:${a.configDir}`,
-      "an account configuration directory",
-    ),
-    intervalMs: optionalDuration(top.interval, "interval", DEFAULTS.intervalMs),
-    wallBackoffMs: optionalDuration(
-      top.wall_backoff,
-      "wall_backoff",
-      DEFAULTS.wallBackoffMs,
-    ),
-    runtimeTimeoutMs: optionalDuration(
-      top.runtime_timeout,
-      "runtime_timeout",
-      DEFAULTS.runtimeTimeoutMs,
-    ),
-    workspaceTimeoutMs: optionalDuration(
-      top.workspace_timeout,
-      "workspace_timeout",
-      DEFAULTS.workspaceTimeoutMs,
-    ),
-    opensPerTick: count(
-      top.opens_per_tick,
-      "opens_per_tick",
-      DEFAULTS.opensPerTick,
-    ),
-    receiptsDays: count(
-      top.receipts_days,
-      "receipts_days",
-      DEFAULTS.receiptsDays,
-    ),
-    unclaimedAfterMs: optionalDuration(
-      top.unclaimed_after,
-      "unclaimed_after",
-      DEFAULTS.unclaimedAfterMs,
-    ),
-    dashboardListen: dashboard(top.dashboard),
-    sharedRecords: records(top.records),
-    send: flag(top.send, "send", true),
-    changeProbe: flag(top.change_probe, "change_probe", true),
-  };
+    repositories: repos.value,
+    accounts: accountList.value,
+    ...timing.value,
+    ...shared.value,
+  });
+}
+
+/** The tick's interval, backoff, timeouts, opens and retention, with defaults. */
+function limits(
+  top: Record<string, unknown>,
+): Checked<
+  Pick<
+    MachineConfig,
+    | "intervalMs"
+    | "wallBackoffMs"
+    | "runtimeTimeoutMs"
+    | "workspaceTimeoutMs"
+    | "opensPerTick"
+    | "receiptsDays"
+    | "unclaimedAfterMs"
+  >
+> {
+  const intervalMs = optionalDuration(
+    top.interval,
+    "interval",
+    DEFAULTS.intervalMs,
+  );
+  if (!intervalMs.ok) return intervalMs;
+  const wallBackoffMs = optionalDuration(
+    top.wall_backoff,
+    "wall_backoff",
+    DEFAULTS.wallBackoffMs,
+  );
+  if (!wallBackoffMs.ok) return wallBackoffMs;
+  const runtimeTimeoutMs = optionalDuration(
+    top.runtime_timeout,
+    "runtime_timeout",
+    DEFAULTS.runtimeTimeoutMs,
+  );
+  if (!runtimeTimeoutMs.ok) return runtimeTimeoutMs;
+  const workspaceTimeoutMs = optionalDuration(
+    top.workspace_timeout,
+    "workspace_timeout",
+    DEFAULTS.workspaceTimeoutMs,
+  );
+  if (!workspaceTimeoutMs.ok) return workspaceTimeoutMs;
+  const opensPerTick = count(
+    top.opens_per_tick,
+    "opens_per_tick",
+    DEFAULTS.opensPerTick,
+  );
+  if (!opensPerTick.ok) return opensPerTick;
+  const receiptsDays = count(
+    top.receipts_days,
+    "receipts_days",
+    DEFAULTS.receiptsDays,
+  );
+  if (!receiptsDays.ok) return receiptsDays;
+  const unclaimedAfterMs = optionalDuration(
+    top.unclaimed_after,
+    "unclaimed_after",
+    DEFAULTS.unclaimedAfterMs,
+  );
+  if (!unclaimedAfterMs.ok) return unclaimedAfterMs;
+  return ok({
+    intervalMs: intervalMs.value,
+    wallBackoffMs: wallBackoffMs.value,
+    runtimeTimeoutMs: runtimeTimeoutMs.value,
+    workspaceTimeoutMs: workspaceTimeoutMs.value,
+    opensPerTick: opensPerTick.value,
+    receiptsDays: receiptsDays.value,
+    unclaimedAfterMs: unclaimedAfterMs.value,
+  });
+}
+
+/** The dashboard, the shared records, and whether `jig send` and the change probe run here. */
+function surfaces(
+  top: Record<string, unknown>,
+): Checked<
+  Pick<
+    MachineConfig,
+    | "dashboardListen"
+    | "dashboardRequireToken"
+    | "dashboardAllowedHosts"
+    | "sharedRecords"
+    | "send"
+    | "changeProbe"
+  >
+> {
+  const dashboardListen = dashboard(top.dashboard);
+  if (!dashboardListen.ok) return dashboardListen;
+  const requireToken = dashboardRequireToken(top.dashboard);
+  if (!requireToken.ok) return requireToken;
+  const allowedHosts = dashboardAllowedHosts(top.dashboard);
+  if (!allowedHosts.ok) return allowedHosts;
+  const sharedRecords = records(top.records);
+  if (!sharedRecords.ok) return sharedRecords;
+  const send = flag(top.send, "send", true);
+  if (!send.ok) return send;
+  const changeProbe = flag(top.change_probe, "change_probe", true);
+  if (!changeProbe.ok) return changeProbe;
+  return ok({
+    dashboardListen: dashboardListen.value,
+    dashboardRequireToken: requireToken.value,
+    dashboardAllowedHosts: allowedHosts.value,
+    sharedRecords: sharedRecords.value,
+    send: send.value,
+    changeProbe: changeProbe.value,
+  });
 }
 
 /** Where the shared records live: `forge` when the file names none; a medium this version does not know is refused. */
-function records(value: unknown): SharedMedium {
-  if (value === undefined || value === null) return "forge";
-  if (!isMapping(value))
-    throw new MachineConfigError("records must be a mapping");
-  only(value, RECORDS_KEYS, "records");
+function records(value: unknown): Checked<SharedMedium> {
+  if (value === undefined || value === null) return ok("forge");
+  if (!isMapping(value)) return invalid("records must be a mapping");
+  const known = only(value, RECORDS_KEYS, "records");
+  if (!known.ok) return known;
   const shared = value.shared;
-  if (shared === undefined || shared === null) return "forge";
+  if (shared === undefined || shared === null) return ok("forge");
   if (!(SHARED_MEDIA as readonly unknown[]).includes(shared))
-    throw new MachineConfigError(
+    return invalid(
       `records.shared must be one of ${SHARED_MEDIA.join(", ")}: ${String(shared)}`,
     );
-  return shared as SharedMedium;
+  return ok(shared as SharedMedium);
 }
 
 /** The dashboard's address; `null` when the file names none. */
-function dashboard(value: unknown): Listen | null {
-  if (value === undefined || value === null) return null;
-  if (!isMapping(value))
-    throw new MachineConfigError("dashboard must be a mapping");
-  only(value, DASHBOARD_KEYS, "dashboard");
-  if (value.listen === undefined || value.listen === null) return null;
-  try {
-    return parseListen(text(value.listen, "dashboard.listen"));
-  } catch (error) {
-    if (error instanceof MachineConfigError) throw error;
-    throw new MachineConfigError(
-      `dashboard.listen: ${(error as Error).message}`,
-    );
-  }
+function dashboard(value: unknown): Checked<Listen | null> {
+  if (value === undefined || value === null) return ok(null);
+  if (!isMapping(value)) return invalid("dashboard must be a mapping");
+  const known = only(value, DASHBOARD_KEYS, "dashboard");
+  if (!known.ok) return known;
+  if (value.listen === undefined || value.listen === null) return ok(null);
+  const address = text(value.listen, "dashboard.listen");
+  if (!address.ok) return address;
+  const listen = parseListen(address.value);
+  return listen.ok
+    ? listen
+    : invalid(`dashboard.listen: ${listen.failure.reason}`);
 }
 
-/** The machine file, or `null` when there is none; a file that does not read throws. */
+/** Whether the dashboard demands its token. Turning it off is accepted only where nothing but a front on this host can reach the port. */
+function dashboardRequireToken(value: unknown): Checked<boolean> {
+  const listen = dashboard(value);
+  if (!listen.ok) return listen;
+  const required = flag(
+    isMapping(value) ? value.require_token : undefined,
+    "dashboard.require_token",
+    true,
+  );
+  if (!required.ok) return required;
+  if (!required.value && (listen.value === null || !isLoopback(listen.value)))
+    return invalid(
+      "dashboard.require_token: false needs a loopback dashboard.listen (127.0.0.1 or ::1), since only a front on this host that authenticates the person may reach a page with no token",
+    );
+  return required;
+}
+
+/** The front host names a tokenless dashboard also answers to. */
+function dashboardAllowedHosts(value: unknown): Checked<string[]> {
+  const listed = isMapping(value) ? value.allowed_hosts : undefined;
+  if (listed === undefined || listed === null) return ok([]);
+  if (!Array.isArray(listed))
+    return invalid("dashboard.allowed_hosts must be a list");
+  const names = each(listed, (name, i) =>
+    text(name, `dashboard.allowed_hosts[${i}]`),
+  );
+  if (!names.ok) return names;
+  return ok(names.value.map((name) => name.toLowerCase()));
+}
+
+/**
+ * The machine file, or `null` when there is none. A file that cannot be read
+ * or is not YAML is `unreadable`; one whose values do not validate is
+ * `invalid`. Each reason begins with the file's path.
+ */
 export function readMachineConfig(
   file: string = machineConfigPath(),
-): MachineConfig | null {
+): Outcome<MachineConfig | null, MachineConfigCode> {
   let raw: string;
   try {
     raw = readFileSync(file, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw new MachineConfigError(
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return ok(null);
+    return failed(
+      "unreadable",
       `${file} cannot be read: ${(error as Error).message}`,
+      error,
     );
   }
   let values: unknown;
   try {
     values = load(raw);
   } catch (error) {
-    throw new MachineConfigError(
+    return failed(
+      "unreadable",
       `${file} is not YAML: ${(error as Error).message.split("\n")[0]}`,
+      error,
     );
   }
-  try {
-    return parseMachineConfig(values, file);
-  } catch (error) {
-    throw new MachineConfigError(`${file}: ${(error as Error).message}`);
-  }
+  const config = parseMachineConfig(values, file);
+  return config.ok ? config : invalid(`${file}: ${config.failure.reason}`);
 }
 
 /** The machine file's entry for a repository path, if any. */

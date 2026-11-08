@@ -10,6 +10,7 @@
  * on as ISO 8601 in UTC.
  */
 
+import { cancellableRequest } from "../cancellation.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { defaultFacets, type Facets } from "../facets/config.ts";
@@ -99,9 +100,9 @@ export interface Client {
   /** Every changelog entry of an issue. */
   changelog(key: string): Promise<ChangelogEntry[]>;
   /** A fix version of the project by its name; its id. */
-  version(name: string): Promise<string>;
+  version(name: string, signal?: AbortSignal): Promise<string>;
   /** A priority by its name; its id. */
-  priority(name: string): Promise<string>;
+  priority(name: string, signal?: AbortSignal): Promise<string>;
   /** The configured link types, each resolved to exactly one. */
   linkTypes(): Promise<Record<LinkedRelation, LinkType>>;
   /** The project's issue types, with their hierarchy level. */
@@ -278,7 +279,9 @@ function until<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 export function jiraClient(opts: ClientOptions): Client {
-  const { project, site, model, settings, transport } = opts;
+  const { project, site, model, settings } = opts;
+  const transport: JiraTransport = (request, signal) =>
+    cancellableRequest(signal, () => opts.transport(request, signal));
   const get: Get = (path, query, signal) =>
     transport(
       {
@@ -435,8 +438,8 @@ export function jiraClient(opts: ClientOptions): Client {
       });
     },
 
-    async version(name) {
-      const raw = await get(`project/${project}/versions`);
+    async version(name, signal) {
+      const raw = await get(`project/${project}/versions`, undefined, signal);
       if (!Array.isArray(raw))
         throw new JiraApiError(`versions of ${project}: expected a list`);
       const versions = raw.map((v, i) => {
@@ -446,11 +449,16 @@ export function jiraClient(opts: ClientOptions): Client {
       return onlyNamed(versions, name, `fix versions of ${project}`).id;
     },
 
-    async priority(name) {
+    async priority(name, signal) {
       const values = await offsetPages(
         transport,
         { method: "GET", path: "priority/search" },
-        { items: "values", idOf: (p) => p.id, where: "priorities" },
+        {
+          items: "values",
+          idOf: (p) => p.id,
+          where: "priorities",
+          ...(signal === undefined ? {} : { signal }),
+        },
       );
       const priorities = values.map((p) => ({
         id: String(p.id),

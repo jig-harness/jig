@@ -18,7 +18,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { errnoCode } from "./errors.ts";
+import { errnoCode, JigError } from "./errors.ts";
 import { decodeJson, isRecord } from "./guards.ts";
 import {
   type CaseResult,
@@ -41,8 +41,11 @@ const VERIFY_FIELDS = [
 ] as const;
 
 /** A configuration or store problem the command line reports and exits on. */
-export class EvidenceError extends Error {
+export class EvidenceError extends JigError<"evidence-unusable"> {
   override name = "EvidenceError";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("evidence-unusable", reason, options);
+  }
 }
 
 /** The `verify` section, resolved. */

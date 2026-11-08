@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { commitPolicyBase } from "../../../../lib/test-helpers/policy-base.ts";
 
 const script = join(import.meta.dir, "..", "scripts", "confirm-step.ts");
 const scratch = mkdtempSync(join(tmpdir(), "confirm-step-"));
@@ -22,9 +23,10 @@ async function run(
 ): Promise<{ stdout: string; stderr: string }> {
   const root = join(scratch, `repo-${n++}`);
   mkdirSync(join(root, ".config"), { recursive: true });
-  mkdirSync(join(root, ".git"));
   mkdirSync(join(root, "home"));
   writeFileSync(join(root, ".config", "jig.yaml"), config);
+  // A driver pass reads its ceiling from the base branch, which holds the same.
+  const base = commitPolicyBase(root, config);
   const proc = Bun.spawn(scriptArgv(script, ...(opts.args ?? [])), {
     cwd: root,
     env: {
@@ -32,7 +34,7 @@ async function run(
       SYSTEMROOT: process.env.SYSTEMROOT ?? "",
       JIG_HOME: join(root, "home"),
       JIG_CONSUMER_ROOT: root,
-      ...(opts.driver ? { DRIVE_PR_TARGET: "42" } : {}),
+      ...(opts.driver ? { DRIVE_PR_TARGET: "42", ...base } : {}),
     },
     stdout: "pipe",
     stderr: "pipe",

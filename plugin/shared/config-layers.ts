@@ -33,6 +33,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { load } from "./yaml.ts";
+import { JigError } from "./errors.ts";
 
 /** The repository layer's file, relative to the repository root. */
 export const OVERLAY_RELPATH = ".config/jig.yaml";
@@ -154,8 +155,11 @@ export const USER_ONLY_FIELDS: readonly string[] = Object.keys(USER_ONLY);
 const SLUG = /^[^/\s]+\/[^/\s]+$/;
 
 /** A configuration field holds what its reader cannot use. */
-class ConfigFieldError extends Error {
+class ConfigFieldError extends JigError<"invalid-field"> {
   override name = "ConfigFieldError";
+  constructor(reason: string, options?: { cause?: unknown }) {
+    super("invalid-field", reason, options);
+  }
 }
 
 /**

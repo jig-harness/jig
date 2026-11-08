@@ -1,11 +1,11 @@
 ---
 title: "ADR-0012: Failures are values, and a throw is a defect"
 type: adr
-status: draft
+status: approved
 description: "Plugin code returns an Outcome for a failure its caller handles; a throw is a bug, caught once at a boundary. Effect was weighed and declined, with the condition for reopening it"
 lifecycle: permanent
 version: "1.0"
-last_updated: 2026-11-03
+last_updated: 2026-11-08
 owner: maintainers
 decision_date: 2026-11-02
 supersedes: ~
@@ -15,17 +15,16 @@ tags: [adr, errors, plugin]
 
 # ADR-0012: Failures are values, and a throw is a defect
 
-**Status:** Draft · **Date:** 2026-11-02 · **Deciders:** Jig's maintainers through pull-request review
+**Status:** Approved · **Date:** 2026-11-02 · **Deciders:** Jig's maintainers through pull-request review
 
 ## Context
 
 Jig's runnable code runs with nobody at the keyboard, so a failure has to
 reach a receipt or a page as something a person can read, and a bug must not
-stop the work around it. Today the dispatcher returns most failures as typed
-results and turns each read's failure into a report record at its edge, while
-garbage collection throws and stops. Each module has grown its own error
-classes and its own shape for "this could not be done", so a caller has to
-know which one it is holding.
+stop the work around it. A caller can handle a failure only when it can see
+from a signature that a call can fail and tell one failure from another
+without reading a message; a thrown error with a module's own class shows
+neither, and one forgotten catch stops everything around it.
 
 ## Decision
 
@@ -37,9 +36,36 @@ the platform throws into one. Anything that still throws is a defect, caught
 once at a boundary and reported with its stack; one defect stops only what it
 is inside. Neither the code nor the reason is parsed from the other.
 
-The first code built on this is `jig dispatch dashboard`. Bringing the rest of
-the plugin under the rule is open work: until then, code that throws today
-keeps its behaviour.
+Under `plugin/` this holds as follows:
+
+- **The dispatcher and resource collection** (`plugin/dispatch/`,
+  `plugin/gc/`) throw nothing but a `Defect`, the usage exit
+  (`ExitError(USAGE_EXIT, …)`, exit 2, for a command the running copy
+  refuses to run) and a rethrow of what a `catch` caught. Their defect
+  boundaries are the dispatcher tick, each repository's turn in it, and
+  each stage of that turn's `--apply` (its launch stages, its nudges, its
+  notifications, its close), so a defect in one stage leaves the others'
+  launches standing; and, in resource collection, the runner around each
+  kind's inventory, proof and removal. A failed configuration read stops a
+  collection run before it collects anything, and the run's receipt names
+  the failure's code and reason.
+- **The shared code and the `jig` command's runtime** (`plugin/shared/`,
+  `plugin/runtime/`, `plugin/jig.ts`) return outcomes from the edges the
+  dispatcher, resource collection and the lifecycle verbs call, such as the
+  scheduler's reads and writes and the Orca port. A bug there is a
+  `Defect`. A failure that still travels as a throw does so to a catch that
+  handles it, in the skill scripts or inside these modules (the harness
+  commands an upgrade runs, the scheduler's helpers, the collection locks),
+  as an error class built on one base, `JigError`
+  ([plugin/shared/outcome.ts](../../plugin/shared/outcome.ts)), which
+  carries the same `code` and `cause` an outcome's failure does. The
+  launcher keeps its own classes: earlier releases copy it out to run on
+  its own, so it imports nothing of the plugin's.
+- **The lifecycle verbs** report a component's failure as an outcome and
+  exit with its code; a refused command line stays the usage exit.
+- **The skill scripts** under `plugin/skills/` are not under the rule: they
+  keep their own error handling, and bringing them under it is an item of
+  its own.
 
 ## Alternatives considered
 
@@ -67,12 +93,20 @@ keeps its behaviour.
 
 ### Costs
 
-- Two styles live side by side until the rest of the plugin is brought under
-  the rule.
+- Two styles live side by side while the skill scripts keep their own
+  error handling.
 - A framework that expects rejected promises gets one adapter that turns a
   failure back into one.
 
 ## Extraction (decisions-become-checks)
 
-Not mechanically checked yet. A gate counting throws outside the defect
-boundaries and the usage exit would check it once the plugin is under the rule.
+[`scripts/check-throws.ts`](../../scripts/check-throws.ts), which `bun run
+gates` runs, reads the syntax of every file under `plugin/dispatch/` and
+`plugin/gc/` and fails on any `throw` that is not `throw new Defect(…)`,
+`throw new ExitError(USAGE_EXIT, …)` or a rethrow of the enclosing `catch`
+clause's binding. A defect boundary catches what is thrown; it does not
+throw, so the boundaries need no exception of their own. The shared code,
+the runtime and the skill scripts are outside its scope. It reads each
+`throw` statement, not what runs: a rejected promise, a throw inside a
+shared helper the code calls, an import renamed to `Defect` or a rethrow of
+a shadowed binding pass it, and review catches those.

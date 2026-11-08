@@ -1,5 +1,5 @@
 /**
- * The re-drive of a drive that stopped `CI_INFRA_PERSISTED` (exit `22`):
+ * The re-drive of a drive that stopped `CI_INFRA_PERSISTED` (exit `23`):
  * every failing check on its converged head had failed on the infrastructure
  * through the re-runs and head moves the drive spends on it, so no code
  * change settles it and the forge must recover first.

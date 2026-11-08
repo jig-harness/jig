@@ -10,6 +10,7 @@ import { driverRuntime } from "./runtime.ts";
 import type { DriveRoundContext } from "./round-context.ts";
 
 import { runRepairPass } from "./repair.ts";
+import { announcePolicyBase } from "./policy-base.ts";
 
 import { beforeConflictPass, mergeOpen } from "./conflict-merge.ts";
 
@@ -119,6 +120,9 @@ async function attemptConflictRepair(
     `  Running conflict-resolution pass ${context.conflictRepairs + 1}/${conflictBudget} (DRIVE_PR_CONFLICT_REPAIR_ROUNDS=${conflictBudget}; 0 stops here instead).`,
   );
   const settleMerge = await beforeConflictPass(context.pr, context.held);
+  // The repair dispatches ahead of the round's own refresh: resolve the
+  // policy base again, for a pull request retargeted since.
+  await announcePolicyBase(context.pr);
   const resolve = await runRepairPass(
     context.agent,
     context.held,

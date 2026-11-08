@@ -145,7 +145,8 @@ export type EvaluateStateName =
   | "PR_NOT_OPEN"
   | "REVIEWER_FAILED"
   | "HITL_PARKED"
-  | "PR_CONFLICTING";
+  | "PR_CONFLICTING"
+  | "REVIEW_SKIPPED";
 
 const EVALUATE_EMITTER = "drive-status.ts (lib/status/evaluate.ts)";
 
@@ -233,6 +234,14 @@ export const TERMINAL_STATES: Readonly<
   },
   PR_CONFLICTING: {
     exitCode: 9,
+    category: "state",
+    terminal: true,
+    emittedBy: EVALUATE_EMITTER,
+  },
+  // The reviewer skipped the PR head, and its review of an earlier head does
+  // not cover it (`reviewed-sha.ts`): no review of this head will come.
+  REVIEW_SKIPPED: {
+    exitCode: 22,
     category: "state",
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
@@ -375,7 +384,7 @@ export const TERMINAL_STATES: Readonly<
   // spent. `drive.ts` exports
   // `CI_INFRA_PERSISTED_EXIT = driverOnlyExitCode('CI_INFRA_PERSISTED')`.
   CI_INFRA_PERSISTED: {
-    exitCode: 22,
+    exitCode: 23,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (CI_INFRA_PERSISTED_EXIT)",
@@ -558,6 +567,7 @@ export type DriveExitName =
   | "REVIEWER_FAILED"
   | "HITL_PARKED"
   | "PR_CONFLICTING"
+  | "REVIEW_SKIPPED"
   | "SINGLE_INSTANCE_LOCK"
   | "WORKTREE_UNCLEAN"
   | "DRIVE_HELD_BY_OTHER_WORKTREE"
@@ -580,6 +590,7 @@ const DRIVE_EXIT_NAMES: readonly DriveExitName[] = [
   "REVIEWER_FAILED",
   "HITL_PARKED",
   "PR_CONFLICTING",
+  "REVIEW_SKIPPED",
   "SINGLE_INSTANCE_LOCK",
   "WORKTREE_UNCLEAN",
   "DRIVE_HELD_BY_OTHER_WORKTREE",

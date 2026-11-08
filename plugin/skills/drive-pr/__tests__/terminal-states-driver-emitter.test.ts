@@ -75,7 +75,7 @@ describe("runCheck — the drive.ts emitter checks reach the real entry point", 
     "export const MAILBOX_PAUSE_TIMEOUT_EXIT = 19;",
     "export const TAKEN_OVER_EXIT = 20;",
     "export const CI_REPAIR_SPENT_EXIT = 21;",
-    "export const CI_INFRA_PERSISTED_EXIT = 22;",
+    "export const CI_INFRA_PERSISTED_EXIT = 23;",
     "",
   ].join("\n");
 

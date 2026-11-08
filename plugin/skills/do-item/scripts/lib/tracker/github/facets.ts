@@ -1,3 +1,8 @@
+import {
+  unmappedStores,
+  unmappedNativeType,
+  nativeTypeName,
+} from "./unmapped.ts";
 /**
  * The GitHub adapter's own facet stores: an issue's type kept in GitHub's
  * issue types (`native`), and any facet kept in an issue field of the
@@ -152,7 +157,10 @@ export interface GitHubFacets {
   /** What `createIssue`'s input adds for the facets kept in GitHub's own fields. */
   createInput(issue: NewIssue): Promise<Record<string, unknown>>;
   /** What `updateIssue`'s input adds for a patch of those facets. */
-  updateInput(patch: IssuePatch): Promise<Record<string, unknown>>;
+  updateInput(
+    patch: IssuePatch,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>>;
   /** Whether a patch changes a facet kept in GitHub's own fields. */
   touches(patch: IssuePatch): boolean;
   /** Store health, detection and discovery, for `facetStores()`. */
@@ -527,6 +535,7 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
         : [];
     const out: {
       priority: number;
+      unmappedFacets?: Facet[];
       type?: string | null;
       size?: string | null;
     } = {
@@ -539,19 +548,20 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
             })(),
     };
     if (typeKept?.store === "native") {
-      const t = raw.issueType;
-      const name =
-        t === null || t === undefined
-          ? null
-          : str(
-              record(t, `issue ${issue.key}.issueType`).name,
-              `issue ${issue.key}.issueType.name`,
-            );
+      const name = nativeTypeName(raw, issue.key);
       out.type =
         name === null ? null : (typeKept.map?.fromTracker(name) ?? null);
     } else if (typeKept !== null) out.type = fromField(typeKept, values);
     const size = kept("size");
     if (size !== null) out.size = fromField(size, values);
+    const unmapped = unmappedStores(
+      [...fieldStores, ...(nativePriority === null ? [] : [nativePriority])],
+      values,
+      fromField,
+      fieldName,
+    );
+    if (unmappedNativeType(typeKept, raw, out.type)) unmapped.push("type");
+    if (unmapped.length > 0) out.unmappedFacets = unmapped;
     return out;
   }
 
@@ -587,11 +597,12 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
 
   async function updateInput(
     patch: IssuePatch,
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
     const input: Record<string, unknown> = {};
     if (typeKept?.store === "native" && patch.type !== undefined)
       input.issueTypeId =
-        patch.type === null ? null : await issueTypeId(patch.type);
+        patch.type === null ? null : await issueTypeId(patch.type, signal);
     const updates: Array<Record<string, unknown>> = [];
     for (const s of [
       ...fieldStores,
@@ -600,10 +611,10 @@ export function gitHubFacets(opts: GitHubFacetOptions): GitHubFacets {
       const v = patchValue(s, patch);
       if (v === undefined) continue;
       if (v === null) {
-        const field = await fieldOf(s);
+        const field = await fieldOf(s, signal);
         updates.push({ fieldName: field.name, operation: "CLEAR" });
       } else {
-        const { field, name } = await fieldValue(s, v);
+        const { field, name } = await fieldValue(s, v, signal);
         updates.push({ fieldName: field.name, operation: "SET", value: name });
       }
     }

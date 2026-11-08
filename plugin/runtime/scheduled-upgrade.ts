@@ -302,12 +302,9 @@ async function scheduledUpgrade(
   now = new Date(),
 ): Promise<ScheduledUpgrade> {
   const at = now.toISOString();
-  let settings: UpgradeSettings;
-  try {
-    settings = upgradeSettings();
-  } catch (error) {
-    return { outcome: "failed", detail: message(error), at };
-  }
+  const read = upgradeSettings();
+  if (!read.ok) return { outcome: "failed", detail: read.failure.reason, at };
+  const settings = read.value;
   if (!settings.enabled)
     return {
       outcome: "withheld",

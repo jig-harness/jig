@@ -13,7 +13,7 @@
  * | stopped `CONVERGED` (`0`), the pull request conflicting or its head past the verified head | stale |
  * | stopped `PR_CONFLICTING` (`9`) | stale |
  * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` (`21`), `PASS_DEADLINE` (`15`) | stale, once per head commit |
- * | stopped `CI_INFRA_PERSISTED` (`22`) | stale, once per stop after a backoff (`infra-backoff.ts`); needs-person past its re-drives |
+ * | stopped `CI_INFRA_PERSISTED` (`23`) | stale, once per stop after a backoff (`infra-backoff.ts`); needs-person past its re-drives |
  * | stopped `INDETERMINATE` (`1`), the pull request conflicting with its base | stale, once per head and base head |
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
  * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
@@ -25,6 +25,7 @@
  * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |
  * | stopped `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`) | refused |
+ * | stopped `REVIEW_SKIPPED` (`22`) | needs-person, naming the skip |
  * | stopped on any other exit | needs-person, saying so when the pull request conflicts with its base |
  *
  * A converged ledger is read beside what its stop does not fix: the pull
@@ -448,6 +449,10 @@ const EXITS: Record<number, (ledger: Ledger) => Classified> = {
     class: "refused",
     why: `stopped ${DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE}: another driver holds it`,
   }),
+  [DRIVE_EXIT.REVIEW_SKIPPED]: () => ({
+    class: "needs-person",
+    why: `stopped ${DRIVE_EXIT.REVIEW_SKIPPED} (the reviewer skipped its head, and its review of an earlier head does not cover it): a re-arm waits for a review that will not come, so a person has the reviewer review the head or pushes a commit it reviews (see the drive's handoff)`,
+  }),
 };
 
 function runningClass(
@@ -788,7 +793,8 @@ function baseHeads(slug: string, admit: Admit): Reading["baseHead"] {
     const known = read.get(branch);
     if (known !== undefined) return known;
     const head = admit(() => branchHead(slug, branch)).then(
-      (oid): BaseHead => ({ oid }),
+      (oid): BaseHead =>
+        oid.ok ? { oid: oid.value } : { unreadable: oid.failure.reason },
       (error: unknown): BaseHead => ({ unreadable: failureText(error) }),
     );
     read.set(branch, head);

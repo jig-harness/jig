@@ -25,6 +25,7 @@ import { ciPolicy } from "./../ci-policy.ts";
 import { failedRunsToTell } from "./failed-runs.ts";
 
 import { runRepairPass } from "./repair.ts";
+import { announcePolicyBase } from "./policy-base.ts";
 
 import {
   type FailingChecks,
@@ -381,6 +382,9 @@ async function repairConvergedCi(
     // dispatch below, if it happens, will actually become.
     `  Running CI-repair pass ${context.ciRepairs + 1}/${context.ciRepairBudget} (DRIVE_PR_CI_REPAIR_ROUNDS=${context.ciRepairBudget}; 0 stops here instead).`,
   );
+  // The repair dispatches ahead of the round's own refresh: resolve the
+  // policy base again, for a pull request retargeted since.
+  await announcePolicyBase(context.pr);
   const repair = await runRepairPass(
     context.agent,
     context.held,

@@ -18,7 +18,7 @@
  *    behind it for the next validated round to push, otherwise commits and
  *    pushes an empty commit, at most
  *    `DRIVE_PR_CI_INFRA_HEAD_MOVES` (default 2) times per drive;
- * 3. past both, stops `CI_INFRA_PERSISTED` (exit `22`), which the dispatcher
+ * 3. past both, stops `CI_INFRA_PERSISTED` (exit `23`), which the dispatcher
  *    re-drives after a backoff.
  *
  * Each step then re-gates from the top, which waits for the checks as usual.

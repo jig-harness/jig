@@ -12,10 +12,12 @@
  *
  * Each part is run inside the tick's boundary: what throws out of it is a
  * defect (`defectReport`), which stops this repository's turn only. The
- * report keeps what the phases before it did, launches included.
+ * report keeps what the phases before it did, launches included. Inside
+ * `--apply`, each stage is a boundary of its own (`stageDefect`): a defect
+ * in one stops that stage only, and the turn's other stages still run.
  */
 import { enforcedDeadlineMs } from "./actions/launch.ts";
-import { defectOf, logDefect } from "./defect.ts";
+import { defectOf, logDefect, logStageDefect } from "./defect.ts";
 import { PhaseTimer } from "./phase-timer.ts";
 import { actObserved } from "./tick-apply.ts";
 import { allRecords, emptyReport, type TickContext } from "./tick-context.ts";
@@ -31,7 +33,7 @@ import { planObserved } from "./tick-plan.ts";
 import { logRepo } from "./tick-settle.ts";
 import { sharedReport } from "./tick-shared.ts";
 import { recoverLedgers } from "./recover-ledgers.ts";
-import type { RepoPhase, RepoReport } from "./types.ts";
+import type { ApplyStage, RepoPhase, RepoReport } from "./types.ts";
 
 /** One repository's turn as it runs: its phases' clock, and its report once the repository opened. */
 export interface RepoTurn {
@@ -129,16 +131,17 @@ export async function actTurn(
     await timer.time("apply", () => Promise.resolve());
     await close();
   } else {
-    // The launches run after every repository is gathered; a defect in one stops this repository's remaining turns only.
-    let stopped = false;
+    // The launches run after every repository is gathered; a defect in one stage stops that stage only.
     // Work that times its own phases (the close) runs with `inApply` false, so apply is not charged for it.
-    const guard = async (run: () => Promise<void>, inApply = true) => {
-      if (stopped) return;
+    const guard = async (
+      stage: ApplyStage,
+      run: () => Promise<void>,
+      inApply = true,
+    ) => {
       try {
         await (inApply ? timer.time("apply", run) : run());
       } catch (error) {
-        stopped = true;
-        defectReport(turn, error);
+        stageDefect(turn, report, stage, error);
       } finally {
         // The timer adds a turn's time when the turn returns, so the receipt's copy is taken after it.
         timed(report, timer);
@@ -188,6 +191,30 @@ function timed(report: RepoReport, timer: PhaseTimer<RepoPhase>): RepoReport {
     ]),
   );
   return report;
+}
+
+/**
+ * A defect one stage of `--apply` threw, which stops that stage only: on the
+ * report beside any other stage's, in the outcome log, and on the error
+ * output with its stack. The turn's other stages run as if it had not.
+ */
+function stageDefect(
+  turn: RepoTurn,
+  report: RepoReport,
+  stage: ApplyStage,
+  error: unknown,
+): void {
+  const defect = {
+    ...defectOf(turn.timer.caught() ?? "apply", error, stage),
+    stage,
+  };
+  report.stageDefects = [...(report.stageDefects ?? []), defect];
+  logDefect(
+    `the ${stage} stage of ${report.slug ?? turn.path}'s turn`,
+    defect,
+    error,
+  );
+  logStageDefect(report.slug ?? turn.path, defect);
 }
 
 /**

@@ -2,7 +2,7 @@
  * A drive armed after a stop whose next step is the drive's own: a stall
  * (`STALLED`, exit `14`), CI still red with its repair passes spent
  * (`CI_REPAIR_SPENT`, exit `21`), checks still failing on the infrastructure
- * after their re-runs (`CI_INFRA_PERSISTED`, exit `22`) or a pass deadline the driver did not
+ * after their re-runs (`CI_INFRA_PERSISTED`, exit `23`) or a pass deadline the driver did not
  * restart from (`PASS_DEADLINE`, exit `15`). The dispatcher re-drives each once per head
  * commit (the infrastructure stop once per stop, after a backoff), and a person
  * may re-arm any. The stop is the drive state's last

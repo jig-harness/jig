@@ -37,12 +37,10 @@ import {
   loadCatalogText,
   matchesGlob,
 } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { holds, isDrive, type ReadRecord } from "./launches.ts";
 import { failureText } from "./text.ts";
 import type { DrivenPr, Stage } from "./types.ts";
-
-/** The catalog cannot say which areas are serialized. */
-class CatalogReadError extends Error {}
 
 /** Why one pull request waits: the area it is held in, and the pull request leading it. */
 export interface Hold {
@@ -92,12 +90,12 @@ export interface Contention {
   failure?: string;
 }
 
-/** The reads serialization makes, each throwing with its reason. */
+/** The reads serialization makes, each failing with its reason. */
 export interface ContentionReads {
   /** The catalog's text on the default branch; `null` when the branch has no such file. */
-  catalog: (path: string) => Promise<string | null>;
-  files: (pr: number) => Promise<string[]>;
-  threads: (pr: number) => Promise<number>;
+  catalog: (path: string) => Promise<Outcome<string | null>>;
+  files: (pr: number) => Promise<Outcome<string[]>>;
+  threads: (pr: number) => Promise<Outcome<number>>;
 }
 
 export interface ContentionInput {
@@ -209,19 +207,37 @@ export function catalogFailed(
   };
 }
 
-/** The serialized areas' globs, by area, in catalog order; throws with why the catalog does not read. */
+/**
+ * The serialized areas' globs, by area, in catalog order, or why the
+ * catalog does not read: `missing` when the default branch has no such
+ * file, `invalid` when it is not a valid catalog.
+ */
 async function serializedAreas(
   input: ContentionInput & { catalogPath: string },
   reads: ContentionReads,
-): Promise<Map<string, string[]>> {
-  const text = await reads.catalog(input.catalogPath);
-  if (text === null)
-    throw new CatalogReadError(
+): Promise<Outcome<Map<string, string[]>>> {
+  let text: Outcome<string | null>;
+  try {
+    text = await reads.catalog(input.catalogPath);
+  } catch (error) {
+    return failed("unreadable", failureText(error), error);
+  }
+  if (!text.ok) return text;
+  if (text.value === null)
+    return failed(
+      "missing",
       `drive.change_areas_catalog names ${input.catalogPath}, which the default branch does not have`,
     );
-  const catalog = loadCatalogText(text, input.where);
-  return new Map(
-    [...catalog].filter(([, a]) => a.serialize).map(([k, a]) => [k, a.globs]),
+  let catalog: ReturnType<typeof loadCatalogText>;
+  try {
+    catalog = loadCatalogText(text.value, input.where);
+  } catch (error) {
+    return failed("invalid", failureText(error), error);
+  }
+  return ok(
+    new Map(
+      [...catalog].filter(([, a]) => a.serialize).map(([k, a]) => [k, a.globs]),
+    ),
   );
 }
 
@@ -232,23 +248,27 @@ async function placeDrives(
   reads: ContentionReads,
 ): Promise<{ groups: Map<string, DrivenPr[]>; failed: Map<number, string> }> {
   const groups = new Map<string, DrivenPr[]>();
-  const failed = new Map<number, string>();
+  const unread = new Map<number, string>();
   for (const drive of drives) {
-    let files: string[];
+    let read: Outcome<string[]>;
     try {
-      files = await reads.files(drive.number);
+      read = await reads.files(drive.number);
     } catch (error) {
-      failed.set(
+      read = failed("unreadable", failureText(error), error);
+    }
+    if (!read.ok) {
+      unread.set(
         drive.number,
-        `its changed files do not read, so whether it touches a serialized area cannot be told this tick: ${failureText(error)}`,
+        `its changed files do not read, so whether it touches a serialized area cannot be told this tick: ${read.failure.reason}`,
       );
       continue;
     }
+    const files = read.value;
     for (const [area, globs] of areas)
       if (files.some((f) => globs.some((g) => matchesGlob(f, g))))
         groups.set(area, [...(groups.get(area) ?? []), drive]);
   }
-  return { groups, failed };
+  return { groups, failed: unread };
 }
 
 /** One group ordered, or why its order cannot be told. */
@@ -285,12 +305,12 @@ export async function readContention(
   const considered = input.drives.map((d) => d.number);
   const path = input.catalogPath;
   if (path === null) return empty(true, considered);
-  let areas: Map<string, string[]>;
-  try {
-    areas = await serializedAreas({ ...input, catalogPath: path }, reads);
-  } catch (error) {
-    return catalogFailed(input, failureText(error));
-  }
+  const serialized = await serializedAreas(
+    { ...input, catalogPath: path },
+    reads,
+  );
+  if (!serialized.ok) return catalogFailed(input, serialized.failure.reason);
+  const areas = serialized.value;
   if (areas.size === 0) return empty(true, considered);
 
   const { groups, failed } = await placeDrives(input.drives, areas, reads);
@@ -300,7 +320,10 @@ export async function readContention(
     if (!counts.has(pr))
       counts.set(
         pr,
-        await reads.threads(pr).catch((error: unknown) => failureText(error)),
+        await reads.threads(pr).then(
+          (read) => (read.ok ? read.value : read.failure.reason),
+          (error: unknown) => failureText(error),
+        ),
       );
     return counts.get(pr) as number | string;
   };

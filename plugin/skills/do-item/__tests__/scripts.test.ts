@@ -1298,32 +1298,15 @@ describe("tracker.ts", () => {
     });
   });
 
-  it("files an issue given no priority, and warns naming the facet it lacks", () => {
-    const r = run(
-      ["create"],
-      [
-        {
-          operation: "query TrackerTeam",
-          variables: '{"key":"ENG"}',
-          payload:
-            '{"data":{"teams":{"pageInfo":{"hasNextPage":false},"nodes":[{"id":"team-1","key":"ENG"}]}}}',
-        },
-        LABEL_LIST,
-        {
-          operation: "mutation TrackerCreate",
-          variables:
-            '{"input":{"teamId":"team-1","title":"Fix it","description":"","labelIds":["l-bug","l-xs"]}}',
-          payload:
-            '{"data":{"issueCreate":{"success":true,"issue":{"identifier":"ENG-11","url":null}}}}',
-        },
-      ],
-      JSON.stringify({ title: "Fix it", labels: [], type: "bug", size: "xs" }),
-    );
-    expectSpawnExit({ ...r, exitCode: r.status }, 0);
-    expect(JSON.parse(r.stdout)).toEqual({ identifier: "ENG-11", url: null });
-    expect(r.stderr.trim()).toBe(
-      'warning: ENG-11 was filed without priority; the next release refuses an issue filed without them, so give each when filing (tracker.ts create takes "type", "priority" 1 to 4, and "size")',
-    );
+  it("refuses an issue with no priority, or no size, naming it, before any request", () => {
+    for (const [issue, lacks] of [
+      [{ type: "bug", size: "xs" }, "priority"],
+      [{ type: "bug", priority: 3 }, "size"],
+    ] as const) {
+      const r = run(["create"], [], JSON.stringify({ title: "t", ...issue }));
+      expectSpawnExit({ ...r, exitCode: r.status }, 2);
+      expect(r.stderr).toContain(`refused to file an issue with no ${lacks}:`);
+    }
   });
 
   it("fails a filing whose label the tracker does not have", () => {
@@ -1338,7 +1321,7 @@ describe("tracker.ts", () => {
         },
         LABEL_LIST,
       ],
-      JSON.stringify({ title: "Fix it", labels: ["size"] }),
+      '{"title":"Fix it","labels":["size"],"type":"bug","priority":3,"size":"xs"}',
     );
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("'size' matches no label");

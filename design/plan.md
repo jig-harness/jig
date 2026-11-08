@@ -23,24 +23,6 @@ First what keeps an unattended pass from getting past a person, then what
 keeps the line from stranding work, then one place to see and steer it,
 then Orca, the dispatcher's first session runtime.
 
-### 32. Driving any pull request from anywhere, with autonomy that fits the hour
-
-Most of [the design](dark-factory-driving.md) is built, in
-[`drive-pr`](../plugin/skills/drive-pr/README.md) and
-[CONFIGURATION.md § `autonomy`](../plugin/CONFIGURATION.md#autonomy). What
-it still holds is **the policy from the base branch**: `autonomy.max_level`
-and `autonomy.park_classes` read from the pull request's base branch,
-failing closed when it cannot be read. Today they come from the working
-tree, so a pull request that edits them changes what its own drive may
-decide.
-
-`wide` and `off_hours` ship opt-in and documented as not yet validated, a
-maintainer's recorded exception to the dark-by-default rule, revisited once
-a working repository has run them for a month against the design's
-validation measure.
-
-Done when a drive reads its ceiling and park classes from the base branch.
-
 ### 40. The pass trust boundary as mechanisms
 
 A drive pass runs with no person at its terminal, usually signed in as the
@@ -1040,6 +1022,23 @@ where the fake and Notion disagree, in both.
 
 Done when that test passes, and a repository reflects into a database `init`
 created using only `NOTION_TOKEN` and `reflection.notion.database`.
+
+### 44. Distribution: a common setup entry point
+
+A person installing Jig must find the marketplace address and prepare its
+prerequisites. The [distribution design](distribution.md) starts with one
+shell and PowerShell setup path for macOS, Linux and Windows. It will inspect
+the machine without writes and obtain explicit consent before provisioning
+missing prerequisites. Once those tools exist, it will check registrations
+and authentication before plugin or profile writes, then install through the
+agent tool's own marketplace, preserving existing sources and pins. Scheduler activation stays
+separate. An own Homebrew tap is a candidate only after this path is validated;
+other catalogs wait for component, identity and update compatibility evidence.
+
+Done when fresh and repeated installs work on the supported platforms,
+existing pins and custom sources survive, failures leave a usable installation,
+and the install guide names the validated setup path. The design records the
+conditions for considering a tap without adopting one ahead of that evidence.
 
 ## Later
 

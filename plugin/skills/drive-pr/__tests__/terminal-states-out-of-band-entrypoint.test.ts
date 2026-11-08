@@ -57,7 +57,7 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
     "export const MAILBOX_PAUSE_TIMEOUT_EXIT = 19;",
     "export const TAKEN_OVER_EXIT = 20;",
     "export const CI_REPAIR_SPENT_EXIT = 21;",
-    "export const CI_INFRA_PERSISTED_EXIT = 22;",
+    "export const CI_INFRA_PERSISTED_EXIT = 23;",
     "",
   ].join("\n");
   const healthyDriveTsSource = [
@@ -282,7 +282,7 @@ describe("runCheck — the outOfBand name-pairing check reaches the real entry p
     "export const MAILBOX_PAUSE_TIMEOUT_EXIT = 19;",
     "export const TAKEN_OVER_EXIT = 20;",
     "export const CI_REPAIR_SPENT_EXIT = 21;",
-    "export const CI_INFRA_PERSISTED_EXIT = 22;",
+    "export const CI_INFRA_PERSISTED_EXIT = 23;",
     "",
   ].join("\n");
   const healthyDriveTsSource = [

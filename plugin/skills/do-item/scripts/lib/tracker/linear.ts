@@ -12,6 +12,20 @@
  * nested connections silently, so every nested read carries its `pageInfo`.
  */
 
+import {
+  ShapeError,
+  record,
+  str,
+  optStr,
+  timestamp,
+  optTimestamp,
+  complete,
+  labelNames,
+  labelPage,
+  priorityOf,
+  stateOf,
+} from "./linear-shapes.ts";
+import { cancellableRequest } from "./cancellation.ts";
 import { type RunResult, run } from "../../../../drive-pr/scripts/lib/proc.ts";
 import { pager, postGraphQL, runClient } from "./graphql.ts";
 import {
@@ -32,7 +46,6 @@ import {
   type IssueFact,
   type IssuePatch,
   type IssueRelation,
-  type IssueState,
   type IssueSummary,
   type LabelledIssueState,
   type LedgerIssue,
@@ -240,89 +253,7 @@ export function defaultTransport(env = process.env): LinearTransport {
 
 // ── Shape helpers ──────────────────────────────────────────────────────────
 
-class ShapeError extends Error {}
-
-function record(v: unknown, where: string): Record<string, unknown> {
-  if (!isRecord(v)) throw new ShapeError(`${where}: expected an object`);
-  return v;
-}
-
-function str(v: unknown, where: string): string {
-  if (typeof v !== "string")
-    throw new ShapeError(`${where}: expected a string`);
-  return v;
-}
-
-function optStr(v: unknown, where: string): string | null {
-  return v === null || v === undefined ? null : str(v, where);
-}
-
-function timestamp(v: unknown, where: string): string {
-  const s = str(v, where);
-  if (!Number.isFinite(Date.parse(s)))
-    throw new ShapeError(`${where}: not a timestamp`);
-  return s;
-}
-
-function optTimestamp(v: unknown, where: string): string | null {
-  return v === null ? null : timestamp(v, where);
-}
-
-/** Does the connection positively say there is no next page? */
-function complete(conn: Record<string, unknown>): boolean {
-  return isRecord(conn.pageInfo) && conn.pageInfo.hasNextPage === false;
-}
-
-/**
- * Label names off a label connection. Strict: a missing or truncated
- * connection read as "no labels" would silently erase an epic attribution.
- */
-export function labelNames(v: unknown, where: string): string[] {
-  if (!isRecord(v) || !Array.isArray(v.nodes))
-    throw new ShapeError(`${where}: labels connection missing or malformed`);
-  if (!complete(v))
-    throw new ShapeError(
-      `${where}: labels list is truncated or its pageInfo is unreadable`,
-    );
-  return v.nodes.map((n) => {
-    if (!isRecord(n) || typeof n.name !== "string")
-      throw new ShapeError(`${where}: a label node is malformed`);
-    return n.name;
-  });
-}
-
-/** A label page that may have more: its names, and whether it had more. */
-function labelPage(
-  v: unknown,
-  where: string,
-): { names: string[]; truncated: boolean } {
-  const labels = record(v, `${where}.labels`);
-  if (!Array.isArray(labels.nodes))
-    throw new ShapeError(`${where}.labels: nodes missing`);
-  const info = labels.pageInfo;
-  if (!isRecord(info) || typeof info.hasNextPage !== "boolean")
-    throw new ShapeError(`${where}.labels.pageInfo: unreadable`);
-  return {
-    names: labels.nodes.map((l) =>
-      str(record(l, `${where}.labels[]`).name, `${where}.labels[].name`),
-    ),
-    truncated: info.hasNextPage,
-  };
-}
-
-/** A priority Linear reports: an integer, 0 (none) to 4 (low). */
-function priorityOf(v: unknown, where: string): number {
-  if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 4)
-    throw new ShapeError(`${where}.priority: expected an integer 0 to 4`);
-  return v;
-}
-function stateOf(v: unknown, where: string): IssueState {
-  const s = record(v, where);
-  return {
-    name: typeof s.name === "string" ? s.name : "",
-    type: typeof s.type === "string" ? s.type : "",
-  };
-}
+export { labelNames } from "./linear-shapes.ts";
 
 /**
  * Read every page of one connection (`pager`): a node is told apart by its
@@ -973,7 +904,9 @@ export interface LinearTrackerOptions {
 
 /** The Linear implementation of the tracker port. */
 export function linearTracker(opts: LinearTrackerOptions): Tracker {
-  const { team, states, transport } = opts;
+  const { team, states } = opts;
+  const transport: LinearTransport = (query, variables, signal) =>
+    cancellableRequest(signal, () => opts.transport(query, variables, signal));
   const keyRe = new RegExp(
     `^(${team.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})-(\\d+)$`,
   );
@@ -997,7 +930,9 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
   }
 
   /** The labels an issue of this team can carry: the workspace's and the team's. */
-  async function assignableLabels(): Promise<LinearLabel[]> {
+  async function assignableLabels(
+    signal?: AbortSignal,
+  ): Promise<LinearLabel[]> {
     const nodes = await pageAll(
       transport,
       LABELS_QUERY,
@@ -1008,6 +943,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       },
       (d) => d.issueLabels,
       `labels of ${team}`,
+      signal,
     );
     return nodes
       .map((n, i) => parseLabel(n, `labels of ${team}[${i}]`))
@@ -1019,10 +955,13 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
    * Label names to ids. Every name must match exactly one label this team's
    * issues can carry; the error names each that matches none or several.
    */
-  async function labelIds(names: string[]): Promise<Map<string, string>> {
+  async function labelIds(
+    names: string[],
+    signal?: AbortSignal,
+  ): Promise<Map<string, string>> {
     const ids = new Map<string, string>();
     if (names.length === 0) return ids;
-    const labels = await assignableLabels();
+    const labels = await assignableLabels(signal);
     const problems: string[] = [];
     for (const name of new Set(names)) {
       const matches = labels.filter((l) => l.name === name);
@@ -1051,8 +990,14 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     return str(node.id, `team '${team}'.id`);
   }
 
-  async function projectId(name: string): Promise<string> {
-    const data = record(await transport(PROJECT_QUERY, { name }), "data");
+  async function projectId(
+    name: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const data = record(
+      await transport(PROJECT_QUERY, { name }, signal),
+      "data",
+    );
     const node = onlyMatch(data.projects, name, "name", `project '${name}'`);
     return str(node.id, `project '${name}'.id`);
   }
@@ -1078,13 +1023,14 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       return issue === null ? null : parseIssue(issue);
     },
 
-    async listComments(key) {
+    async listComments(key, signal) {
       const nodes = await pageAll(
         transport,
         COMMENTS_QUERY,
         { id: key },
         (d) => record(d.issue, `issue ${key}`).comments,
         `comments of ${key}`,
+        signal,
       );
       const out: IssueComment[] = nodes.map((c, i) => {
         const n = record(c, `comments of ${key}[${i}]`);
@@ -1111,10 +1057,13 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       return nodes.map((c, i) => summaryOf(c, `children of ${key}[${i}]`));
     },
 
-    async transition(key, state) {
+    async transition(key, state, signal) {
       const name = states[state];
-      const { id, teamId } = await issueIdAndTeam(key);
-      const data = record(await transport(STATES_QUERY, { teamId }), "data");
+      const { id, teamId } = await issueIdAndTeam(key, signal);
+      const data = record(
+        await transport(STATES_QUERY, { teamId }, signal),
+        "data",
+      );
       const conn = record(record(data.team, "team").states, "team.states");
       if (!complete(conn) || !Array.isArray(conn.nodes))
         throw new ShapeError("team.states: not readable in one page");
@@ -1125,7 +1074,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
         );
       const stateId = str(record(matches[0], "state").id, "state.id");
       const result = record(
-        await transport(UPDATE_MUTATION, { id, input: { stateId } }),
+        await transport(UPDATE_MUTATION, { id, input: { stateId } }, signal),
         "data",
       );
       assertMutationOk(result.issueUpdate, `moving ${key} to ${name}`);
@@ -1415,10 +1364,10 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       return nodes.map(parsePoolIssue);
     },
 
-    async poolIssue(key) {
+    async poolIssue(key, signal) {
       let data: unknown;
       try {
-        data = await transport(POOL_ISSUE_QUERY, { id: key });
+        data = await transport(POOL_ISSUE_QUERY, { id: key }, signal);
       } catch (err) {
         if (err instanceof LinearApiError && err.notFound) return null;
         throw err;
@@ -1460,7 +1409,8 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       };
     },
 
-    async updateIssue(key, patch) {
+    async updateIssue(key, patch, signal) {
+      signal?.throwIfAborted();
       checkPatch(key, patch);
       const add = patch.addLabels ?? [];
       const remove = patch.removeLabels ?? [];
@@ -1469,22 +1419,22 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
         input.parentId =
           patch.parent === null
             ? null
-            : (await issueIdAndTeam(patch.parent)).id;
+            : (await issueIdAndTeam(patch.parent, signal)).id;
       if (patch.project !== undefined)
-        input.projectId = await projectId(patch.project);
+        input.projectId = await projectId(patch.project, signal);
       // Labels change by id, added and removed, so a label another writer
       // set since this caller last read the issue is never dropped.
       if (add.length > 0 || remove.length > 0) {
-        const ids = await labelIds([...add, ...remove]);
+        const ids = await labelIds([...add, ...remove], signal);
         const idsOf = (names: string[]) => [
           ...new Set(names.map((l) => ids.get(l) as string)),
         ];
         if (add.length > 0) input.addedLabelIds = idsOf(add);
         if (remove.length > 0) input.removedLabelIds = idsOf(remove);
       }
-      const { id } = await issueIdAndTeam(key);
+      const { id } = await issueIdAndTeam(key, signal);
       const result = record(
-        await transport(UPDATE_MUTATION, { id, input }),
+        await transport(UPDATE_MUTATION, { id, input }, signal),
         "data",
       );
       assertMutationOk(result.issueUpdate, `the update of ${key}`);

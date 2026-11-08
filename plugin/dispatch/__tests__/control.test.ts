@@ -15,7 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
-import { parseListen } from "../lib/listen.ts";
+import { authorityAllowed, parseListen } from "../lib/listen.ts";
 import { exportLog } from "../lib/log-export.ts";
 import {
   endedRow,
@@ -26,10 +26,7 @@ import {
   logFile,
   readRows,
 } from "../lib/log.ts";
-import {
-  MachineConfigError,
-  readMachineConfig,
-} from "../lib/machine-config.ts";
+import { readMachineConfig } from "../lib/machine-config.ts";
 import { screenNotReady } from "../lib/runtime/orca-steer.ts";
 
 const dirs: string[] = [];
@@ -258,29 +255,87 @@ describe("the outcome classifier", () => {
 
 describe("the dashboard's address", () => {
   it("takes an address in the private or loopback ranges, and refuses any other", () => {
-    expect(parseListen("127.0.0.1")).toEqual({ host: "127.0.0.1", port: null });
+    expect(parseListen("127.0.0.1")).toEqual({
+      ok: true,
+      value: { host: "127.0.0.1", port: null },
+    });
     expect(parseListen("100.101.12.3:8765")).toEqual({
-      host: "100.101.12.3",
-      port: 8765,
+      ok: true,
+      value: { host: "100.101.12.3", port: 8765 },
     });
     expect(parseListen("[fd7a:115c::1]:80")).toEqual({
-      host: "fd7a:115c::1",
-      port: 80,
+      ok: true,
+      value: { host: "fd7a:115c::1", port: 80 },
     });
-    expect(() => parseListen("8.8.8.8:80")).toThrow("outside the private");
-    expect(() => parseListen("0.0.0.0")).toThrow("outside the private");
-    expect(() => parseListen("host.example:80")).toThrow("names no IP address");
+    const refusal = (reason: string) =>
+      ({
+        ok: false,
+        failure: { code: "invalid", reason: expect.stringContaining(reason) },
+      }) as const;
+    expect(parseListen("8.8.8.8:80")).toEqual(refusal("outside the private"));
+    expect(parseListen("0.0.0.0")).toEqual(refusal("outside the private"));
+    expect(parseListen("host.example:80")).toEqual(
+      refusal("names no IP address"),
+    );
+  });
+
+  it("accepts a Host header naming a mapped loopback, in dots or in the hex a URL writes", () => {
+    expect(authorityAllowed("[::ffff:127.0.0.1]:8765", [])).toBe(true);
+    expect(authorityAllowed("[::ffff:7f00:1]:8765", [])).toBe(true);
+    expect(authorityAllowed("[::ffff:8.8.8.8]:8765", [])).toBe(false);
   });
 
   it("refuses a machine file whose dashboard.listen is public", () => {
     const file = join(root(), "dispatch.yaml");
     writeFileSync(file, "dashboard:\n  listen: 203.0.113.9:8765\n");
-    expect(() => readMachineConfig(file)).toThrow(MachineConfigError);
+    expect(readMachineConfig(file)).toEqual({
+      ok: false,
+      failure: {
+        code: "invalid",
+        reason: `${file}: dashboard.listen: 203.0.113.9 is outside the private and loopback ranges, and the dashboard opens no route into the host beyond them`,
+      },
+    });
     writeFileSync(file, "dashboard:\n  listen: 192.168.1.20:8765\n");
-    expect(readMachineConfig(file)?.dashboardListen).toEqual({
+    const read = readMachineConfig(file);
+    expect(read.ok ? read.value?.dashboardListen : read.failure).toEqual({
       host: "192.168.1.20",
       port: 8765,
     });
+  });
+
+  const dashboardOf = (file: string) => {
+    const read = readMachineConfig(file);
+    return read.ok ? read.value : null;
+  };
+  const failureOf = (file: string) => {
+    const read = readMachineConfig(file);
+    return read.ok ? "" : read.failure.reason;
+  };
+
+  it("serves without a token only on a loopback address", () => {
+    const file = join(root(), "dispatch.yaml");
+    writeFileSync(file, "dashboard:\n  listen: 127.0.0.1:8765\n");
+    expect(dashboardOf(file)?.dashboardRequireToken).toBe(true);
+    writeFileSync(
+      file,
+      "dashboard:\n  listen: 127.0.0.1:8765\n  require_token: false\n",
+    );
+    expect(dashboardOf(file)?.dashboardRequireToken).toBe(false);
+    expect(dashboardOf(file)?.dashboardAllowedHosts).toEqual([]);
+    writeFileSync(
+      file,
+      "dashboard:\n  listen: 127.0.0.1:8765\n  require_token: false\n  allowed_hosts: [Front.Example.ts.net]\n",
+    );
+    expect(dashboardOf(file)?.dashboardAllowedHosts).toEqual([
+      "front.example.ts.net",
+    ]);
+    writeFileSync(
+      file,
+      "dashboard:\n  listen: 100.64.0.7:8765\n  require_token: false\n",
+    );
+    expect(failureOf(file)).toContain("needs a loopback");
+    writeFileSync(file, "dashboard:\n  require_token: false\n");
+    expect(failureOf(file)).toContain("needs a loopback");
   });
 });
 

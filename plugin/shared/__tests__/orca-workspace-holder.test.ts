@@ -7,11 +7,15 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
-import type { OrcaEnvelope } from "../orca-workspace/envelope.ts";
 import { OrcaError } from "../orca-workspace/envelope.ts";
 import { BusyHolderError } from "../orca-workspace/holder.ts";
 import { openBranch } from "../orca-workspace/open.ts";
-import { boundedHook, type OpenPort } from "../orca-workspace/port.ts";
+import {
+  boundedHook,
+  type OpenPort,
+  type OrcaAnswer,
+} from "../orca-workspace/port.ts";
+import { ok } from "../outcome.ts";
 import { type Context, localContext } from "../orca-workspace/runner.ts";
 import type { TreeDrivers } from "../idle-holder.ts";
 import { BRANCH, ENV, git, heldTree } from "./holder-fixture.ts";
@@ -31,10 +35,10 @@ function portOf(
   const port: OpenPort = {
     host: host(localContext((line) => lines.push(line))),
     runHook: boundedHook,
-    orcaCall<T>(args: string[]): OrcaEnvelope<T> {
+    orcaCall<T>(args: string[]): OrcaAnswer<T> {
       orca.push(args);
       if (args[0] === "worktree" && args[1] === "list")
-        return { ok: true, result: { worktrees: created } as T };
+        return ok({ ok: true, result: { worktrees: created } as T });
       if (args[0] === "worktree" && args[1] === "create") {
         const base = args[args.indexOf("--base-branch") + 1] ?? "";
         const path = join(root, "orca-ws");
@@ -45,9 +49,9 @@ function portOf(
           branch: "refs/heads/orca/ws",
         };
         created.push(row);
-        return { ok: true, result: { worktree: row } as T };
+        return ok({ ok: true, result: { worktree: row } as T });
       }
-      return { ok: false, error: { code: "unhandled" } };
+      return ok({ ok: false, error: { code: "unhandled" } });
     },
     where: "",
     ...(drivers === undefined ? {} : { drivers }),
