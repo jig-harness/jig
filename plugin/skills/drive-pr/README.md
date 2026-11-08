@@ -728,6 +728,8 @@ stops recovery without an empty commit. A successful local base merge is
 handed to the next review round, which runs the configured validation plan
 before pushing it through `finish-round.ts`. Log classification keeps each
 failed job tied to its workflow run and rejects unplaced negative evidence.
+An empty recovery commit must retain the reviewed parent and tree; a changed
+head or tree stops its direct push and needs a validated review round.
 
 ### Recovering a stranded CI hold
 

@@ -32,3 +32,6 @@ release: minor
   missing provenance, mixed code failures and unreadable base-sync reports.
   Base merges pass through a validated review round before their push;
   retry budgets reject unsafe or excessive numeric values.
+- Pytest collection errors remain code failures even when the runner also
+  shuts down. Empty recovery commits verify their reviewed parent and tree
+  under the worktree fence, and only that certified commit can be pushed.

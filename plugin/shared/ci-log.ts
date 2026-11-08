@@ -67,8 +67,8 @@ const PATTERNS: [RegExp, Category][] = [
   [/(\S+\.tsx?):(\d+):(\d+)\s+.*(?:\xc3\x97|error)\s+(.+)/su, "biome_lint"],
   // Test runner: FAIL path/to/file.spec.ts
   [/FAIL\s+(\S+\.(?:spec|test)\.tsx?)/su, "test_failure"],
-  // Pytest reports the failing test node after FAILED.
-  [/^FAILED\s+(\S+\.py)(?:::.*)?/su, "test_failure"],
+  // Pytest reports failing nodes and collection errors.
+  [/^(?:FAILED|ERROR)\s+(\S+\.py)(?:::.*)?/su, "test_failure"],
   // Package managers report permanent failures without an Actions annotation.
   [/^npm\s+(?:ERR!|error)\s+code\s+(.+)/isu, "gate_failure"],
   // Test assertion: file > suite > ... > test, split on the `>` delimiters in

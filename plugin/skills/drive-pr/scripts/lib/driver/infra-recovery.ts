@@ -388,15 +388,21 @@ async function pushMoved(
   head: string,
   exec: Exec,
   what: string,
+  certified: string,
 ): Promise<number | "continue"> {
   const local = await exec(["git", "rev-parse", "HEAD"], {
     timeoutSec: gitCallTimeoutSeconds(),
     ...inTree(),
   });
   const moved = local.stdout.trim();
-  if (local.code !== 0 || moved === "" || moved === head) {
+  if (
+    local.code !== 0 ||
+    moved === "" ||
+    moved === head ||
+    moved !== certified
+  ) {
     console.error(
-      `  The head did not move (local HEAD '${moved || "unreadable"}'); not pushing.`,
+      `  The local head '${moved || "unreadable"}' is not the certified recovery commit; not pushing.`,
     );
     return 1;
   }
@@ -427,7 +433,7 @@ export async function moveHead(
   pr: string,
   head: string,
   exec: Exec = execInTree,
-  commitEmpty: (pr: string) => Promise<Ran> = emptyCommit,
+  commitEmpty: (pr: string, head: string) => Promise<Ran> = emptyCommit,
 ): Promise<number | "continue"> {
   const merged = await mergeBase(pr, exec);
   if (typeof merged === "number") return merged;
@@ -443,7 +449,7 @@ export async function moveHead(
     );
     return "continue";
   }
-  const commit = await commitEmpty(pr);
+  const commit = await commitEmpty(pr, head);
   if (commit.code !== 0) {
     console.error(
       `  Committing '${RERUN_COMMIT_MESSAGE}' failed: ${commit.stderr.trim()}`,
@@ -455,6 +461,7 @@ export async function moveHead(
     head,
     exec,
     `an empty commit, '${RERUN_COMMIT_MESSAGE}'`,
+    commit.stdout.trim(),
   );
 }
 
@@ -462,7 +469,7 @@ export async function moveHead(
  * The empty commit, under this tree's fence, refused over a tree holding
  * staged or modified tracked files: the commit must carry nothing.
  */
-async function emptyCommit(pr: string): Promise<Ran> {
+async function emptyCommit(pr: string, head: string): Promise<Ran> {
   const cwd = drivenTree();
   const opts = {
     ...(cwd === undefined ? {} : { cwd }),
@@ -481,26 +488,50 @@ async function emptyCommit(pr: string): Promise<Ran> {
     };
   }
   try {
-    const status = await git(
-      ["status", "--porcelain", "--untracked-files=no"],
-      opts,
-    );
-    if (status.code !== 0 || status.stdout.trim() !== "")
-      return {
-        ...status,
-        code: 1,
-        stderr:
-          status.code !== 0
-            ? status.stderr
-            : `the tree holds tracked changes: ${status.stdout.trim()}`,
-      };
-    return await git(
-      ["commit", "--allow-empty", "-m", RERUN_COMMIT_MESSAGE],
-      opts,
-    );
+    return await checkedEmptyCommit(head, (argv) => git(argv.slice(1), opts));
   } finally {
     fence?.release();
   }
+}
+
+/** Under the tree fence, certify that hooks committed only the reviewed tree. */
+export async function checkedEmptyCommit(
+  head: string,
+  exec: Exec,
+): Promise<Ran> {
+  const opts = { timeoutSec: gitCallTimeoutSeconds(), ...inTree() };
+  const refused = (reason: string): Ran => ({
+    code: 1,
+    stdout: "",
+    stderr: reason,
+  });
+  const before = await exec(["git", "rev-parse", "HEAD", "HEAD^{tree}"], opts);
+  const [parent, tree] = before.stdout.trim().split("\n");
+  if (before.code !== 0 || parent !== head || !tree)
+    return refused(
+      "HEAD no longer matches the reviewed head; use a validated round",
+    );
+  const status = await exec(
+    ["git", "status", "--porcelain", "--untracked-files=no"],
+    opts,
+  );
+  if (status.code !== 0 || status.stdout.trim() !== "")
+    return refused("the tree holds tracked changes or could not be read");
+  const commit = await exec(
+    ["git", "commit", "--allow-empty", "-m", RERUN_COMMIT_MESSAGE],
+    opts,
+  );
+  if (commit.code !== 0) return commit;
+  const after = await exec(
+    ["git", "rev-parse", "HEAD", "HEAD^", "HEAD^{tree}"],
+    opts,
+  );
+  const [sha, actualParent, actualTree] = after.stdout.trim().split("\n");
+  if (after.code !== 0 || !sha || actualParent !== head || actualTree !== tree)
+    return refused(
+      "the recovery commit changed the reviewed parent or tree; use a validated round",
+    );
+  return { code: 0, stdout: sha, stderr: "" };
 }
 
 /** The repository the drive's forge reads name, `owner/name`; `null` when unread. */

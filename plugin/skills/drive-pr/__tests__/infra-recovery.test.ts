@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  checkedEmptyCommit,
   everyFailureInfrastructure,
   type Exec,
   wholeOr,
@@ -280,11 +281,25 @@ describe("moveHead", () => {
     });
     const r = await moveHead("999", HEAD, exec, async (pr) => {
       commits.push(pr);
-      return { code: 0, stdout: "", stderr: "" };
+      return { code: 0, stdout: MOVED, stderr: "" };
     });
     expect(r).toBe("continue");
     expect(commits).toEqual(["999"]);
     expect(calls.at(-1)).toContain(`guarded-push 999 --expect-head ${MOVED}`);
+  });
+
+  it("never pushes a head different from the certified empty commit", async () => {
+    const { exec, calls } = execOf({
+      "base-sync": { code: 0, stdout: '{"action":"none","reason":"in-sync"}' },
+      "rev-parse": { code: 0, stdout: "unexpected\n" },
+    });
+    expect(
+      await moveHead("999", HEAD, exec, async (_pr, expected) => {
+        expect(expected).toBe(HEAD);
+        return { code: 0, stdout: MOVED, stderr: "" };
+      }),
+    ).toBe(1);
+    expect(calls.some((c) => c.includes("guarded-push"))).toBe(false);
   });
 
   it("hands a base merge to the next validated round, with no empty commit", async () => {
@@ -383,4 +398,26 @@ describe("moveHead", () => {
       "ci: re-run checks after an infrastructure failure",
     );
   });
+});
+
+describe("checkedEmptyCommit", () => {
+  for (const scenario of ["moved-before", "hook-tree", "hook-head", "empty"]) {
+    it(`checks the reviewed parent and tree: ${scenario}`, async () => {
+      let committed = false;
+      const exec: Exec = async (argv) => {
+        const command = argv.slice(1).join(" ");
+        let stdout = "";
+        if (command === "rev-parse HEAD HEAD^{tree}")
+          stdout = `${scenario === "moved-before" ? MOVED : HEAD}\ntree\n`;
+        if (command.startsWith("commit ")) committed = true;
+        if (command === "rev-parse HEAD HEAD^ HEAD^{tree}")
+          stdout = `${MOVED}\n${scenario === "hook-head" ? MOVED : HEAD}\n${scenario === "hook-tree" ? "changed" : "tree"}\n`;
+        return { code: 0, stdout, stderr: "" };
+      };
+      const result = await checkedEmptyCommit(HEAD, exec);
+      expect(result.code).toBe(scenario === "empty" ? 0 : 1);
+      expect(committed).toBe(scenario !== "moved-before");
+      if (scenario === "empty") expect(result.stdout).toBe(MOVED);
+    });
+  }
 });

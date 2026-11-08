@@ -172,6 +172,7 @@ describe("readInfrastructure", () => {
   it("rejects permanent diagnostics beside transient failures", () => {
     for (const diagnostic of [
       "FAILED tests/test_cart.py::test_total",
+      "ERROR tests/test_cart.py - ImportError: cannot import name cart",
       "npm ERR! code E403",
       "npm error code E403",
       "error: HTTP 403 Forbidden",
