@@ -495,13 +495,14 @@ export function gitHubTracker(client: Client): Tracker {
   async function fieldsInput(
     issue: GhIssue,
     patch: IssuePatch,
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown> | null> {
     const input: Record<string, unknown> = { id: issue.id };
     if (patch.title !== undefined) input.title = patch.title;
     if (patch.description !== undefined) input.body = patch.description;
     if (patch.project !== undefined)
-      input.milestoneId = (await client.milestone(patch.project)).id;
-    Object.assign(input, await client.facets.updateInput(patch));
+      input.milestoneId = (await client.milestone(patch.project, signal)).id;
+    Object.assign(input, await client.facets.updateInput(patch, signal));
     return Object.keys(input).length > 1 ? input : null;
   }
 
@@ -509,14 +510,17 @@ export function gitHubTracker(client: Client): Tracker {
   async function parentChange(
     issue: GhIssue,
     parent: string | null | undefined,
+    signal?: AbortSignal,
   ): Promise<{ to: GhIssue | null; from: GhIssue | null }> {
     if (parent === undefined) return { to: null, from: null };
     if (parent !== null)
-      return { to: await client.mustIssue(parent), from: null };
+      return { to: await client.mustIssue(parent, signal), from: null };
     return {
       to: null,
       from:
-        issue.parent === null ? null : await client.mustIssue(issue.parent.key),
+        issue.parent === null
+          ? null
+          : await client.mustIssue(issue.parent.key, signal),
     };
   }
 
@@ -615,11 +619,13 @@ export function gitHubTracker(client: Client): Tracker {
       };
     },
 
-    async listComments(key) {
-      const out: IssueComment[] = (await comments(key)).comments.map((c) => ({
-        body: c.body,
-        createdAt: c.createdAt,
-      }));
+    async listComments(key, signal) {
+      const out: IssueComment[] = (await comments(key, signal)).comments.map(
+        (c) => ({
+          body: c.body,
+          createdAt: c.createdAt,
+        }),
+      );
       return out.sort((a, b) =>
         (a.createdAt ?? "").localeCompare(b.createdAt ?? ""),
       );
@@ -736,7 +742,11 @@ export function gitHubTracker(client: Client): Tracker {
         remove: [...remove, ...priority.remove],
       };
       // Every name resolves before the first write, so a typo changes nothing.
-      const ids = await client.labelIds([...labels.add, ...labels.remove]);
+      const ids = await client.labelIds(
+        [...labels.add, ...labels.remove],
+        undefined,
+        signal,
+      );
       // Label names resolve case-insensitively, so 'Bug' and 'bug' are one
       // label; adding and removing it would leave it removed.
       const removed = new Set(labels.remove.map((l) => ids.get(l)));
@@ -746,8 +756,8 @@ export function gitHubTracker(client: Client): Tracker {
           "invalid",
           `the patch for ${key} both adds and removes ${both.map((l) => `'${l}'`).join(", ")}`,
         );
-      const fields = await fieldsInput(issue, patch);
-      const parents = await parentChange(issue, patch.parent);
+      const fields = await fieldsInput(issue, patch, signal);
+      const parents = await parentChange(issue, patch.parent, signal);
       signal?.throwIfAborted();
       if (fields !== null)
         await client.mutate(M.update, { input: fields }, signal);

@@ -59,7 +59,7 @@ function statusWrapper(lines: string[]): boolean {
   );
 }
 
-/** Match an executable's script and allowed arguments without shell evaluation. */
+/** Certify only literal script paths (or quoted paths) and the supported arguments. */
 function sweepCommand(line: string): boolean {
   // Read the executable's script argument, never a comment or later argument.
   const m = /^(?:exec\s+)?bun\s+("[^"`]+"|'[^']+'|[^\s'"`]+)\s+(.*)$/u.exec(
@@ -67,6 +67,12 @@ function sweepCommand(line: string): boolean {
   );
   if (m === null) return false;
   const token = m[1] ?? "";
+  if (
+    !token.startsWith('"') &&
+    !token.startsWith("'") &&
+    !/^[a-zA-Z0-9_./:-]+$/u.test(token)
+  )
+    return false;
   const script =
     token.startsWith('"') || token.startsWith("'") ? token.slice(1, -1) : token;
   if (script.includes("$(") || script.split("/").at(-1) !== "check-fields.ts")
@@ -109,7 +115,7 @@ function weeklyCron(value: unknown): boolean {
   );
 }
 
-/** A workflow counts only when its parsed schedule runs an unconditional applying job. */
+/** A workflow counts only with an independent job and no uncertain preceding steps. */
 function scheduledWorkflow(text: string, branch: string | null): boolean {
   const doc = load(text);
   if (
@@ -129,7 +135,8 @@ function scheduledWorkflow(text: string, branch: string | null): boolean {
       job.needs === undefined &&
       Array.isArray(job.steps) &&
       job.steps.some(
-        (step) =>
+        (step, index) =>
+          index === 0 &&
           isMapping(step) &&
           scheduleSafe(step.if, branch) &&
           step["continue-on-error"] !== true &&

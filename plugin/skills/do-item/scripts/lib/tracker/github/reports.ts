@@ -438,9 +438,9 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
       );
     },
 
-    async poolIssue(key) {
-      const found = await client.issue(client.ref(key), OPEN_CHILDREN);
-      return found === null ? null : pool(found.issue, found.raw);
+    async poolIssue(key, signal) {
+      const found = await client.issue(client.ref(key), OPEN_CHILDREN, signal);
+      return found === null ? null : pool(found.issue, found.raw, signal);
     },
 
     async openPopulation(signal) {

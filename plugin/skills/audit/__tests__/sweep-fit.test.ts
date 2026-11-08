@@ -70,16 +70,20 @@ it("does not count comments, report mode, disabled jobs or unscheduled workflows
   }
 });
 
-it("recognizes the shipped guarded sweep with its status wrapper", () => {
+it("keeps the shipped sweep advisory because preceding actions may fail", () => {
   const root = process.cwd();
   expect(
     sweepFindings(tracker, root, [".github/workflows/issue-fields.yml"]),
-  ).toEqual([]);
+  ).toHaveLength(1);
 });
 
 it("does not mistake a comment or quoted argument for a sweep", () => {
   for (const run of [
     "bun unrelated.ts # check-fields.ts check --yes",
+    "bun unrelated.ts;#/check-fields.ts check --yes",
+    "bun unrelated.ts&&#/check-fields.ts check --yes",
+    "bun */check-fields.ts check --yes",
+    "bun foo/$(echo check-fields.ts) check --yes",
     "bun unrelated.ts 'check-fields.ts check --yes'",
   ]) {
     const { root, tracked } = repo({
@@ -112,6 +116,31 @@ it("requires a validated weekly cron cadence in workflows and crontabs", () => {
   }
   const { root, tracked } = repo({
     "jobs.cron": "37 5 * * 1 bun check-fields.ts check --yes\n",
+  });
+  expect(sweepFindings(tracker, root, tracked)).toEqual([]);
+});
+
+it("keeps uncertain preceding steps advisory", () => {
+  for (const prior of [
+    "run: exit 1",
+    "run: echo ready",
+    "uses: actions/checkout@v4",
+  ]) {
+    const { root, tracked } = repo({
+      ".github/workflows/sweep.yml": `on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    steps:\n      - ${prior}\n      - run: bun check-fields.ts check --yes\n`,
+    });
+    expect(sweepFindings(tracker, root, tracked)).toHaveLength(1);
+  }
+});
+
+it("recognizes the supported status wrapper without preceding steps", () => {
+  const run = `status=0
+bun check-fields.ts check --yes > "$RUNNER_TEMP/sweep.txt" || status=$?
+cat "$RUNNER_TEMP/sweep.txt"
+{ echo 'text'; cat "$RUNNER_TEMP/sweep.txt"; echo 'end'; } >> "$GITHUB_STEP_SUMMARY"
+exit "$status"`;
+  const { root, tracked } = repo({
+    ".github/workflows/sweep.yml": `on:\n  schedule:\n    - cron: '37 5 * * 1'\njobs:\n  s:\n    steps:\n      - run: ${JSON.stringify(run)}\n`,
   });
   expect(sweepFindings(tracker, root, tracked)).toEqual([]);
 });

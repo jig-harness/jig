@@ -74,9 +74,13 @@ export async function assertUnchanged(
   sides: MoveSides,
   expected: Pair,
   only?: "source" | "target",
+  signal?: AbortSignal,
 ): Promise<void> {
-  const src = await sides.source.poolIssue(expected.key);
-  const dst = await sides.target.poolIssue(expected.key);
+  signal?.throwIfAborted();
+  const src = await sides.source.poolIssue(expected.key, signal);
+  signal?.throwIfAborted();
+  const dst = await sides.target.poolIssue(expected.key, signal);
+  signal?.throwIfAborted();
   const stamp = (i: PoolIssue, side: "source" | "target") => {
     const facets = side === "source" ? sides.sourceFacets : sides.targetFacets;
     return JSON.stringify([

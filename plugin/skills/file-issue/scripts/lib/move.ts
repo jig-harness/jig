@@ -299,10 +299,10 @@ async function recordedWrite(
   writer: Writer,
   change: Omit<MoveChange, "at" | "done">,
   send: (signal?: AbortSignal) => Promise<void>,
-  verify: () => Promise<void>,
+  verify: (signal?: AbortSignal) => Promise<void>,
 ): Promise<void> {
   await writer.write(`update ${change.issue}`, async (signal) => {
-    await verify();
+    await verify(signal);
     writer.signal?.throwIfAborted();
     const entry: MoveChange = { ...change, at: rec.now(), done: false };
     rec.record.changes.push(entry);
@@ -383,12 +383,13 @@ async function applyWrites(
         writer,
         { issue: w.issue, phase, stores: w.stores },
         (signal) => tracker.updateIssue(w.issue, w.patch, signal),
-        async () => {
+        async (signal) => {
           if (w.expected !== undefined)
             await assertUnchanged(
               sides,
               w.expected,
               phase === "restore" ? w.tracker : undefined,
+              signal,
             );
           writer.signal?.throwIfAborted();
         },
@@ -782,14 +783,20 @@ function restoreExactLabels(
   sides: MoveSides,
   side: "source" | "target",
   now: FacetValue,
-): void {
+): boolean {
   const slot = slotOf(
     side === "source" ? sides.sourceFacets : sides.targetFacets,
     f,
   );
   const issue = side === "source" ? pair.src : pair.dst;
-  if (deltas.length > 0)
-    out[f] = restoredLabels(deltas, carriedLabels(slot, issue, now));
+  if (deltas.length === 0) return false;
+  const current = carriedLabels(slot, issue, now);
+  const wanted = restoredLabels(deltas, current);
+  out[f] = wanted;
+  return !(
+    wanted.length === current.length &&
+    wanted.every((l) => current.some((c) => fold(c) === fold(l)))
+  );
 }
 
 /**
@@ -816,16 +823,25 @@ function issueRestores(
     const [sideName, f] = key.split(" ") as ["source" | "destination", Facet];
     const side = sideName === "source" ? "source" : "target";
     const now = storeNow(pair, f, side, sides);
-    if (now === h.before) continue;
-    if (now !== undefined && h.afters.includes(now)) {
-      sets[side][f] = h.before;
-      was[side][f] = now;
-      restoreExactLabels(exact[side], f, h.labels, pair, sides, side, now);
-    } else
+    if (now === undefined || (now !== h.before && !h.afters.includes(now))) {
       report.conflicts.push({
         issue: pair.key,
         why: `${f} in its ${sideName} changed since the move (now ${now ?? "two values"}), so it is left as it is`,
       });
+      continue;
+    }
+    const labelsChanged = restoreExactLabels(
+      exact[side],
+      f,
+      h.labels,
+      pair,
+      sides,
+      side,
+      now,
+    );
+    if (now === h.before && !labelsChanged) continue;
+    sets[side][f] = h.before;
+    was[side][f] = now;
   }
   return (["source", "target"] as const)
     .filter((side) => Object.keys(sets[side]).length > 0)

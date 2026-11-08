@@ -460,3 +460,29 @@ it("forwards the writer cancellation to comment and transition effects", async (
   expect(report.moved).toEqual([]);
   expect(report.stopped).not.toBeNull();
 });
+
+it("forwards cancellation through comment and eligibility reads", async () => {
+  const repo = setup();
+  const { tracker } = repo.view(LABEL_SECTION);
+  const controller = new AbortController();
+  const observed: Array<AbortSignal | undefined> = [];
+  const comments = tracker.listComments;
+  tracker.listComments = async (key, signal) => {
+    observed.push(signal);
+    return comments(key, signal);
+  };
+  tracker.poolIssue = async (_key, signal) => {
+    observed.push(signal);
+    controller.abort();
+    signal?.throwIfAborted();
+    throw new Error("unreachable");
+  };
+  const report = await sweep(tracker, {
+    apply: true,
+    retired: none,
+    writer: pacedWriter(fakeClock(), undefined, { signal: controller.signal }),
+  });
+  expect(report.moved).toEqual([]);
+  expect(repo.writes).toEqual([]);
+  expect(observed).toEqual([controller.signal, controller.signal]);
+});

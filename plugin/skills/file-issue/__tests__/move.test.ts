@@ -605,3 +605,55 @@ it("refuses colliding destination fields including native Priority aliases", asy
     expect(repo.writes).toEqual([]);
   }
 });
+
+it("restores destination aliases when a recopy returns to the original canonical value", async () => {
+  const { repo, sides, rec } = setup();
+  [sides.source, sides.target] = [sides.target, sides.source];
+  [sides.sourceFacets, sides.targetFacets] = [
+    sides.targetFacets,
+    sides.sourceFacets,
+  ];
+  [rec.record.source, rec.record.target] = [
+    rec.record.target,
+    rec.record.source,
+  ];
+  repo.get("#1").labels = ["type:bug", "priority: high", "small"];
+  repo.get("#1").native = { type: "feature", priority: 2, size: "small" };
+  const writer = pacedWriter(fakeClock());
+  await copy(sides, rec, { apply: true, writer });
+  expect(repo.get("#1").labels).toContain("feature");
+  repo.get("#1").native.type = "bug";
+  await retire(sides, rec, { apply: true, writer });
+  expect(repo.get("#1").labels).toContain("bug");
+  await restore(sides, rec, { apply: true, writer });
+  expect(repo.get("#1").labels).toContain("type:bug");
+  expect(repo.get("#1").labels).not.toContain("bug");
+});
+
+it("cancels migration revalidation before reading the destination", async () => {
+  const { assertUnchanged } = await import("../scripts/lib/move-safety.ts");
+  const { sides } = setup();
+  const src = await sides.source.poolIssue("#1");
+  const dst = await sides.target.poolIssue("#1");
+  if (src === null || dst === null) throw new Error("missing test issue");
+  const controller = new AbortController();
+  const calls: Array<[string, AbortSignal | undefined]> = [];
+  sides.source.poolIssue = async (_key, signal) => {
+    calls.push(["source", signal]);
+    controller.abort(new Error("cancelled revalidation"));
+    return src;
+  };
+  sides.target.poolIssue = async (_key, signal) => {
+    calls.push(["target", signal]);
+    return dst;
+  };
+  await expect(
+    assertUnchanged(
+      sides,
+      { key: "#1", src, dst },
+      undefined,
+      controller.signal,
+    ),
+  ).rejects.toThrow("cancelled revalidation");
+  expect(calls).toEqual([["source", controller.signal]]);
+});

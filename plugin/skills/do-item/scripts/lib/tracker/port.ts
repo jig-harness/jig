@@ -515,7 +515,7 @@ export interface Tracker {
   /** One issue with its labels and children; `null` when it does not exist. */
   getIssue(key: string): Promise<Issue | null>;
   /** Every comment on an issue, oldest first. */
-  listComments(key: string): Promise<IssueComment[]>;
+  listComments(key: string, signal?: AbortSignal): Promise<IssueComment[]>;
   /** Every child of an issue. */
   listChildren(key: string): Promise<IssueSummary[]>;
   /** Move an issue to a canonical state. */
@@ -581,7 +581,7 @@ export interface Tracker {
   /** The open children, of this team, of one of this team's issues. */
   openChildren(key: string): Promise<PoolIssue[]>;
   /** One issue in pool form, whatever its state; `null` when it does not exist. */
-  poolIssue(key: string): Promise<PoolIssue | null>;
+  poolIssue(key: string, signal?: AbortSignal): Promise<PoolIssue | null>;
   /**
    * This team's issues assigned to `identity` (a GitHub login; a Linear
    * user's email or display name) in one of `states`. An empty `states`

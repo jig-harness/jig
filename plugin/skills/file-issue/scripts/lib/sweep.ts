@@ -171,9 +171,12 @@ async function stillEligible(
   tracker: Tracker,
   issue: IncompleteIssue,
   opts: SweepOptions,
+  signal?: AbortSignal,
 ): Promise<void> {
   opts.writer.signal?.throwIfAborted();
-  const now = await tracker.poolIssue(issue.identifier);
+  signal?.throwIfAborted();
+  const now = await tracker.poolIssue(issue.identifier, signal);
+  signal?.throwIfAborted();
   if (
     now === null ||
     now.truncated.length > 0 ||
@@ -208,13 +211,16 @@ async function moveOne(
   report: SweepReport,
 ): Promise<void> {
   const marker = sweepMarker(issue);
-  const comments = await tracker.listComments(issue.identifier);
+  const comments = await tracker.listComments(
+    issue.identifier,
+    opts.writer.signal,
+  );
   const posted = comments.some((c) => c.body.includes(marker));
   if (!posted) {
     await opts.writer.write(
       `comment on ${issue.identifier}`,
       async (signal) => {
-        await stillEligible(tracker, issue, opts);
+        await stillEligible(tracker, issue, opts, signal);
         return tracker.postComment(
           issue.identifier,
           sweepComment(issue),
@@ -227,7 +233,7 @@ async function moveOne(
   await opts.writer.write(
     `move ${issue.identifier} to triage`,
     async (signal) => {
-      await stillEligible(tracker, issue, opts);
+      await stillEligible(tracker, issue, opts, signal);
       return tracker.transition(issue.identifier, "triage", signal);
     },
   );

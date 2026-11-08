@@ -240,7 +240,9 @@ without `--yes`.
    changed, the issue is left as it is and listed for a person.
 
 Each run writes at most one update per open issue, paced as the sweep's,
-and a run that stopped is resumed by running it again. Closed issues are
+and a run that stopped is resumed by running it again. Its cancellation and
+deadline cover prerequisite reads as well as writes; an in-flight operation
+settles before the move releases its record lock. Closed issues are
 never touched, so they keep their labels as history, and no label is ever
 deleted. `move --restore record.json --yes` puts back every value the
 record says the move changed, then revert the configuration commit. The

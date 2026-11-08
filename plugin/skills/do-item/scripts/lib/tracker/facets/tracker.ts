@@ -92,7 +92,7 @@ export interface CoreTracker
   getIssue(key: string): Promise<CoreIssue | null>;
   openIssues(query: PoolQuery): Promise<CorePoolIssue[]>;
   openChildren(key: string): Promise<CorePoolIssue[]>;
-  poolIssue(key: string): Promise<CorePoolIssue | null>;
+  poolIssue(key: string, signal?: AbortSignal): Promise<CorePoolIssue | null>;
   assignedIssues(
     identity: string,
     states: ReadonlyArray<CanonicalState>,
@@ -247,6 +247,7 @@ export function withFacets(
   async function facetLabels(
     key: string,
     patch: IssuePatch,
+    signal?: AbortSignal,
   ): Promise<{ add: string[]; remove: string[] }> {
     const changes: Array<[LabelCodec, string | null]> = [];
     for (const f of LABEL_FACETS) {
@@ -267,7 +268,7 @@ export function withFacets(
     }
     addRestores(changes, patch.facetLabels, codecs, coreFacets);
     if (changes.length === 0) return { add: [], remove: [] };
-    const current = await rest.poolIssue(key);
+    const current = await rest.poolIssue(key, signal);
     if (current === null)
       throw new TrackerRequestError(
         "unresolved",
@@ -300,7 +301,7 @@ export function withFacets(
   ) {
     signal?.throwIfAborted();
     refuseFacetLabels(patch.addLabels ?? [], "to add");
-    const labels = await facetLabels(key, patch);
+    const labels = await facetLabels(key, patch, signal);
     const out: IssuePatch = { ...patch };
     forwardRestores(out, codecs);
     for (const f of LABEL_FACETS) {
@@ -453,8 +454,8 @@ export function withFacets(
     async openChildren(key) {
       return (await rest.openChildren(key)).map(withValues);
     },
-    async poolIssue(key) {
-      const issue = await rest.poolIssue(key);
+    async poolIssue(key, signal) {
+      const issue = await rest.poolIssue(key, signal);
       return issue === null ? null : withValues(issue);
     },
     async assignedIssues(identity, states, options) {

@@ -454,10 +454,12 @@ export function reportOperations(client: Client): ReportOps {
       );
     },
 
-    async poolIssue(key) {
+    async poolIssue(key, signal) {
       if (!KEY.test(key)) return null;
-      const issue = await client.issue(key);
-      return issue === null ? null : ((await pools([issue]))[0] ?? null);
+      const issue = await client.issue(key, signal);
+      return issue === null
+        ? null
+        : ((await pools([issue], signal))[0] ?? null);
     },
 
     async assignedIssues(identity, states, signal) {

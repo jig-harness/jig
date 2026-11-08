@@ -8,6 +8,7 @@
  * is refused before anything is written.
  */
 
+import { cancellableRequest } from "../cancellation.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { defaultFacets, type Facets } from "../facets/config.ts";
 import {
@@ -93,7 +94,10 @@ export interface Client {
     signal?: AbortSignal,
   ): Promise<Map<string, string>>;
   /** A milestone of the home repository by its title. */
-  milestone(title: string): Promise<{ id: string; number: number }>;
+  milestone(
+    title: string,
+    signal?: AbortSignal,
+  ): Promise<{ id: string; number: number }>;
   /** Run a mutation and return its data. */
   mutate(
     query: string,
@@ -178,7 +182,9 @@ export interface ClientOptions {
 }
 
 export function gitHubClient(opts: ClientOptions): Client {
-  const { home, model, settings, transport } = opts;
+  const { home, model, settings } = opts;
+  const transport: GitHubTransport = (query, variables, signal) =>
+    cancellableRequest(signal, () => opts.transport(query, variables, signal));
   const board: Board | null =
     settings.statesFrom === "project" && settings.project !== null
       ? { url: settings.project.url, statusField: settings.statusField }
@@ -329,13 +335,14 @@ export function gitHubClient(opts: ClientOptions): Client {
       return ids;
     },
 
-    async milestone(title) {
+    async milestone(title, signal) {
       const nodes = await pageAll(
         transport,
         MILESTONES_QUERY,
         { ...repoVars, query: title },
         (d) => record(d.repository, "repository").milestones,
         `milestones of ${slug(home)}`,
+        signal,
       );
       const matches = nodes.filter(
         (n) => record(n, "milestone").title === title,
