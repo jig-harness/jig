@@ -679,13 +679,37 @@ export async function prBaseRef(
   const key = `${root}\0${pr}`;
   const cached = prBaseRefCache.get(key);
   if (cached !== undefined) return cached;
-  const remote = readRemoteName(consumerRoot(root));
-  const result =
-    "error" in remote
-      ? remote
-      : await resolvePrBaseRef(root, remote.remote, pr, timeoutSec);
+  const result = await uncachedPrBaseRef(root, pr, timeoutSec);
   prBaseRefCache.set(key, result);
   return result;
+}
+
+/**
+ * `prBaseRef` read afresh, for a long-running caller that must see a pull
+ * request retargeted at another base while it runs: the driver, which
+ * resolves the base its policy is read from once per round.
+ */
+export async function freshPrBaseRef(
+  root: string,
+  pr: string,
+  timeoutSec?: number,
+): Promise<{ ref: string } | { error: string }> {
+  return uncachedPrBaseRef(
+    root,
+    await attachedPr(root, pr, timeoutSec),
+    timeoutSec,
+  );
+}
+
+async function uncachedPrBaseRef(
+  root: string,
+  pr: string,
+  timeoutSec?: number,
+): Promise<{ ref: string } | { error: string }> {
+  const remote = readRemoteName(consumerRoot(root));
+  return "error" in remote
+    ? remote
+    : resolvePrBaseRef(root, remote.remote, pr, timeoutSec);
 }
 
 async function resolvePrBaseRef(

@@ -72,6 +72,7 @@ import { pickUpDrive } from "./takeover-complete.ts";
 import { stopPickup } from "./stop-pickup.ts";
 
 import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
+import { announcePolicyBase } from "./policy-base.ts";
 
 import {
   armLedger,
@@ -394,6 +395,9 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
         `drive.ts: PR #${pr} is not open; its restart count still stands`,
       );
   });
+  // The base-branch commit the autonomy policy is read from, before
+  // anything below reads the level (the re-arm does); every round refreshes it.
+  await announcePolicyBase(pr);
   const registry = createDriverRegistry(held);
   await startDriverObservation(
     stateDir,

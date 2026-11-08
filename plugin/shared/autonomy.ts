@@ -17,6 +17,16 @@
  * once it is set, the schedule defaults to weekday nights and the weekend.
  * A person's session never runs at the off-hours level: a person is there.
  *
+ * The ceiling `max_level` and `park_classes` bound what every agent may
+ * decide, so a driver pass reads them from the pull request's base branch,
+ * never from the pull request's own checkout: a pull request that edits them
+ * takes effect after it merges. The driver resolves the base branch's commit
+ * and hands it to itself and its passes in `$DRIVE_PR_POLICY_BASE`; this
+ * reader takes `.config/jig.yaml` at that commit, ignoring `JIG_OVERLAY` and
+ * the working tree's copy for these fields. When the base cannot be read,
+ * the policy fails closed (`readPolicySnapshot`). A person's session reads
+ * them from the working tree: the person is there to see what they say.
+ *
  * The level is read at each decision point rather than once per run, so a
  * configuration changed mid-drive, or a window that opens mid-drive, applies
  * to the next decision. Nothing here touches the decision classes the
@@ -36,10 +46,12 @@ import {
   isMapping,
   type LayeredConfig,
   OVERLAY_RELPATH,
+  parseConfigText,
   sourceOf,
   valueAt,
 } from "./config-layers.ts";
-import { layeredConfig } from "./consumer.ts";
+import { consumerRoot, layeredConfig } from "./consumer.ts";
+import { spawnSync, withoutLeakyGitEnv } from "./guarded-git-spawn.ts";
 import {
   DEFAULT_OFF_HOURS_SCHEDULE,
   OffHoursScheduleError,
@@ -92,7 +104,26 @@ const CLASS_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 /** The variable a driver sets for its passes; unset in a person's session. */
 const DRIVER_PASS_VARIABLE = "DRIVE_PR_TARGET";
 
+/**
+ * The variable a driver sets, for itself and its passes, to the commit of
+ * the pull request's base branch the policy is read from; empty when the
+ * driver could not resolve it.
+ */
+export const POLICY_BASE_VARIABLE = "DRIVE_PR_POLICY_BASE";
+
 type Env = Record<string, string | undefined>;
+
+/**
+ * Where a session's policy (`max_level`, `park_classes`, and what the
+ * ceiling falls back on) comes from: the working tree in a person's
+ * session; the `.config/jig.yaml` at the base branch's commit in a driver
+ * pass (`values` empty when the base has no such file); or nowhere, with the
+ * reason, when that snapshot cannot be read.
+ */
+export type PolicySnapshot =
+  | { from: "working-tree" }
+  | { from: "base"; commit: string; values: Record<string, unknown> }
+  | { from: "unreadable"; reason: string };
 
 export interface Autonomy {
   /** The level the decision points act on. */
@@ -115,6 +146,16 @@ export interface Autonomy {
    * name the off-hours level.
    */
   offHours: { window: string } | null;
+  /**
+   * Where the ceiling and the park classes came from: the working tree (a
+   * person's session), the base branch at `commit`, or nowhere, with the
+   * reason, in which case the ceiling is `attended` and every decision is a
+   * person's until the policy reads.
+   */
+  policy:
+    | { from: "working-tree" }
+    | { from: "base"; commit: string }
+    | { from: "unreadable"; reason: string };
 }
 
 /** A configuration value that cannot be read as an autonomy setting. */
@@ -188,13 +229,21 @@ function repositoryValues(
 
 /**
  * The repository's level and its ceiling, from the repository's file alone:
- * a ceiling another layer could move would be no ceiling.
+ * a ceiling another layer could move would be no ceiling. In a driver pass
+ * the ceiling comes from the policy snapshot instead (`snapshotCeiling`);
+ * the working tree's level is still the repository's choice of level, which
+ * that ceiling caps.
  */
-function repositoryCeiling(config: LayeredConfig): Ceiling {
+function repositoryCeiling(
+  config: LayeredConfig,
+  policy: PolicySnapshot,
+): Ceiling {
   const values = repositoryValues(config, "autonomy.max_level");
   const repository = config.layers.find((l) => l.name === "repository");
   const where = repository?.source ?? config.repositoryPath;
   const repositoryLevel = levelAt(values, "autonomy.level", where);
+  if (policy.from !== "working-tree")
+    return { repositoryLevel, ...snapshotCeiling(policy) };
   const declared = levelAt(values, "autonomy.max_level", where);
   // A repository that names a level and no ceiling allows what it named.
   const ceiling = declared ?? repositoryLevel ?? DEFAULT_LEVEL;
@@ -205,19 +254,53 @@ function repositoryCeiling(config: LayeredConfig): Ceiling {
   return {
     repositoryLevel,
     ceiling,
-    ceilingSource: describeCeiling(config, declared, repositoryLevel),
+    ceilingSource: describeCeiling(
+      config.repositoryPath,
+      declared,
+      repositoryLevel,
+    ),
+  };
+}
+
+/** The short form of a commit, for the printed line. */
+const short = (commit: string) => commit.slice(0, 12);
+
+/**
+ * The ceiling a driver pass works under: the base branch's `max_level`,
+ * else the base's own `level`, else `attended`, and never anything from the
+ * working tree; `attended` when the snapshot cannot be read. The base's
+ * level above the base's own ceiling is an error in the base's file.
+ */
+function snapshotCeiling(
+  policy: Exclude<PolicySnapshot, { from: "working-tree" }>,
+): Omit<Ceiling, "repositoryLevel"> {
+  if (policy.from === "unreadable")
+    return {
+      ceiling: DEFAULT_LEVEL,
+      ceilingSource: "the base branch's policy, which cannot be read",
+    };
+  const where = `${OVERLAY_RELPATH} at ${short(policy.commit)} on the base branch`;
+  const baseLevel = levelAt(policy.values, "autonomy.level", where);
+  const declared = levelAt(policy.values, "autonomy.max_level", where);
+  const ceiling = declared ?? baseLevel ?? DEFAULT_LEVEL;
+  if (baseLevel !== undefined && rank(baseLevel) > rank(ceiling))
+    throw new AutonomyConfigError(
+      `autonomy.level ${baseLevel} is above autonomy.max_level ${ceiling}: ${where}`,
+    );
+  return {
+    ceiling,
+    ceilingSource: describeCeiling(where, declared, baseLevel),
   };
 }
 
 function describeCeiling(
-  config: LayeredConfig,
+  where: string,
   declared: AutonomyLevel | undefined,
   repositoryLevel: AutonomyLevel | undefined,
 ): string {
-  if (declared !== undefined)
-    return `autonomy.max_level in ${config.repositoryPath}`;
+  if (declared !== undefined) return `autonomy.max_level in ${where}`;
   return repositoryLevel !== undefined
-    ? `autonomy.level in ${config.repositoryPath}, which sets no max_level`
+    ? `autonomy.level in ${where}, which sets no max_level`
     : "the default, which allows attended only";
 }
 
@@ -323,18 +406,33 @@ function offHoursSetting(config: LayeredConfig): OffHoursSetting | null {
     : { level, source: where, schedule: schedule.schedule };
 }
 
+/** Whether `env` is a person's session rather than a driver pass. */
+function isInteractive(env: Env): boolean {
+  return (env[DRIVER_PASS_VARIABLE] ?? "").trim() === "";
+}
+
 /**
  * The effective autonomy level of the repository whose layers `config`
  * holds, for a session whose environment is `env`, at the instant `now`.
+ * `policy` is where the ceiling comes from; by default the working tree in
+ * a person's session and the base branch's snapshot in a driver pass
+ * (`readPolicySnapshot`). A person's session always reads the working tree.
  */
 export function resolveAutonomy(
   config: LayeredConfig,
   env: Env = process.env,
   now: Date = new Date(),
+  policy: PolicySnapshot = readPolicySnapshot(env),
 ): Autonomy {
   checkSection(config);
-  const { repositoryLevel, ceiling, ceilingSource } = repositoryCeiling(config);
-  const interactive = (env[DRIVER_PASS_VARIABLE] ?? "").trim() === "";
+  const interactive = isInteractive(env);
+  const snapshot: PolicySnapshot = interactive
+    ? { from: "working-tree" }
+    : policy;
+  const { repositoryLevel, ceiling, ceilingSource } = repositoryCeiling(
+    config,
+    snapshot,
+  );
   const offHours = offHoursSetting(config);
   const window =
     offHours === null || interactive
@@ -354,6 +452,10 @@ export function resolveAutonomy(
     capped,
     interactive,
     offHours: window === null ? null : { window: window.text },
+    policy:
+      snapshot.from === "base"
+        ? { from: "base", commit: snapshot.commit }
+        : snapshot,
   };
 }
 
@@ -368,7 +470,12 @@ export function describeAutonomy(a: Autonomy): string {
   if (a.offHours !== null)
     parts.push(`, inside the off-hours window "${a.offHours.window}"`);
   if (a.capped) parts.push(`, capped at ${a.ceiling} by ${a.ceilingSource}`);
-  return `${parts.join("")})`;
+  if (a.policy.from === "base")
+    parts.push(`; policy from the base branch at ${short(a.policy.commit)}`);
+  const line = `${parts.join("")})`;
+  return a.policy.from === "unreadable"
+    ? `${line}. The base branch's policy cannot be read (${a.policy.reason}): the ceiling is attended, and every decision is parked under human-decision until it reads`
+    : line;
 }
 
 /**
@@ -376,13 +483,29 @@ export function describeAutonomy(a: Autonomy): string {
  * own file when it sets them, else the registry template's rows; `escalated`
  * and `human-decision` always, since the review arbiter emits them. No other
  * layer may set the list: a person or a run that could widen it could park
- * whatever they liked.
+ * whatever they liked. In a driver pass the list comes from the base
+ * branch's snapshot (`policy`), never the pull request's own checkout.
  */
-export function parkClasses(config: LayeredConfig): string[] {
-  const raw = valueAt(
-    repositoryValues(config, "autonomy.park_classes"),
-    "autonomy.park_classes",
-  );
+export function parkClasses(
+  config: LayeredConfig,
+  env: Env = process.env,
+  policy: PolicySnapshot = readPolicySnapshot(env),
+): string[] {
+  const own = repositoryValues(config, "autonomy.park_classes");
+  const snapshot: PolicySnapshot = isInteractive(env)
+    ? { from: "working-tree" }
+    : policy;
+  // An unreadable policy keeps only the classes kept whatever a repository
+  // lists, and the pass parks every decision under `human-decision`: the
+  // default list could be weaker than the repository's own, which may name
+  // a class the defaults leave to the agent, so no list stands in for it.
+  if (snapshot.from === "unreadable") return [...KEPT_CLASSES];
+  return classesIn(snapshot.from === "base" ? snapshot.values : own);
+}
+
+/** The park classes `values` (one repository file's) name, checked. */
+function classesIn(values: Record<string, unknown>): string[] {
+  const raw = valueAt(values, "autonomy.park_classes");
   if (raw === undefined || raw === null) return [...DEFAULT_PARK_CLASSES];
   if (
     !Array.isArray(raw) ||
@@ -395,6 +518,88 @@ export function parkClasses(config: LayeredConfig): string[] {
     );
   const classes = raw as string[];
   return [...classes, ...KEPT_CLASSES.filter((c) => !classes.includes(c))];
+}
+
+/** Seconds one git call reading the snapshot may take: `GIT_CALL_TIMEOUT`, else 30. */
+function gitTimeoutMs(env: Env): number {
+  const raw = (env.GIT_CALL_TIMEOUT ?? "").trim();
+  const seconds = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 0;
+  return (seconds > 0 ? seconds : 30) * 1000;
+}
+
+/** One git call in `root`, bounded; its output, or the reason it failed. */
+function gitIn(
+  root: string,
+  args: string[],
+  env: Env,
+): { out: string } | { error: string } {
+  const r = spawnSync("git", ["-C", root, ...args], {
+    env: withoutLeakyGitEnv(process.env),
+    timeout: gitTimeoutMs(env),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (r.error !== undefined)
+    return { error: `git ${args[0]} failed: ${r.error.message}` };
+  if (r.status !== 0)
+    return {
+      error: `git ${args[0]} exited ${r.status ?? r.signal}: ${(r.stderr ?? "").trim()}`,
+    };
+  return { out: r.stdout };
+}
+
+/**
+ * The policy snapshot for a session whose environment is `env`: the working
+ * tree in a person's session; in a driver pass, the repository's
+ * `.config/jig.yaml` at the base branch's commit the driver named in
+ * `$DRIVE_PR_POLICY_BASE`, read from the repository at `root`. A base with
+ * no such file is a readable snapshot that sets nothing. The snapshot is
+ * unreadable, with the reason, when the variable names no commit, the
+ * commit is not in the clone, git fails or runs out of time, or the file
+ * does not parse or names an invalid ceiling or class list: the policy then
+ * fails closed, so a broken base never lets a pass decide more.
+ */
+export function readPolicySnapshot(
+  env: Env = process.env,
+  root: string = consumerRoot(process.cwd(), env),
+): PolicySnapshot {
+  if (isInteractive(env)) return { from: "working-tree" };
+  const commit = (env[POLICY_BASE_VARIABLE] ?? "").trim();
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(commit))
+    return {
+      from: "unreadable",
+      reason:
+        commit === ""
+          ? `the driver named no base-branch commit in $${POLICY_BASE_VARIABLE}`
+          : `$${POLICY_BASE_VARIABLE} is not a commit id`,
+    };
+  const listed = gitIn(
+    root,
+    ["ls-tree", "--full-tree", "--name-only", commit, "--", OVERLAY_RELPATH],
+    env,
+  );
+  if ("error" in listed) return { from: "unreadable", reason: listed.error };
+  if (listed.out.trim() === "") return { from: "base", commit, values: {} };
+  const text = gitIn(
+    root,
+    ["cat-file", "blob", `${commit}:${OVERLAY_RELPATH}`],
+    env,
+  );
+  if ("error" in text) return { from: "unreadable", reason: text.error };
+  try {
+    const values = parseConfigText(
+      text.out,
+      `${OVERLAY_RELPATH} at ${short(commit)}`,
+    );
+    const snapshot: PolicySnapshot = { from: "base", commit, values };
+    snapshotCeiling(snapshot);
+    classesIn(values);
+    return snapshot;
+  } catch (err) {
+    return {
+      from: "unreadable",
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 /** The effective level for the repository the working directory is in. */
@@ -444,7 +649,7 @@ async function main(): Promise<number> {
   }
   try {
     if (parsed.command === "classes")
-      for (const c of parkClasses(layeredConfig()))
+      for (const c of parkClasses(layeredConfig(), process.env))
         process.stdout.write(`${c}\n`);
     else printLevel(parsed.json, parsed.at);
     return 0;

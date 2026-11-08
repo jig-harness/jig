@@ -33,6 +33,7 @@ import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { gitIdentityEnv } from "../scripts/lib/proc.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { commitPolicyBase } from "../../../../lib/test-helpers/policy-base.ts";
 
 export const SCRIPTS = join(import.meta.dir, "..", "scripts");
 export const RRC = join(
@@ -173,7 +174,10 @@ export interface Forge {
   calls(): string[];
 }
 
-/** A fake forge, a scratch tree and a state directory; `overlay` is the repository's configuration. */
+/**
+ * A fake forge, a scratch tree and a state directory; `overlay` is the
+ * repository's configuration, on its base branch as in its working tree.
+ */
 export function fakeForge(overlay = ""): Forge {
   const root = mkdtempSync(join(tmpdir(), "provisional-"));
   const dir = join(root, "forge");
@@ -207,6 +211,9 @@ export function fakeForge(overlay = ""): Forge {
     DRIVE_PR_SESSION: String(process.pid),
     DRIVE_PR_HANDOFF_DIR: join(root, "handoff"),
     JIG_OVERLAY: overlayFile,
+    // A driver pass reads its ceiling and park classes from the base branch:
+    // the base holds the same configuration.
+    ...commitPolicyBase(tree, overlay),
     JIG_HOME: join(root, "home"),
     // The dispatcher's receipts the morning report reads are this home's, never the machine's.
     HOME: join(root, "home"),

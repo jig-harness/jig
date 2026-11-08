@@ -1740,8 +1740,7 @@ make, use the entry's term instead.
   is taken and listed first in the morning report, so a person can reverse
   it before the merge. Under `wide`, a drive that parked re-arms once every
   unanswered item is provisionally decided, where the item's class allows
-  it. Planned, with `wide`'s column and the morning report
-  ([design](design/dark-factory-driving.md#provisional-decisions)).
+  it ([configuration](plugin/CONFIGURATION.md#autonomy)).
 - **Consumer overlay** — a repository's own values for a shared procedure,
   such as its gate command and reviewer names, kept in
   `.config/jig.yaml` and read by the procedure when it runs.
