@@ -66,16 +66,17 @@ describe("facet reads within their caller's bounds", () => {
 
   it("reads no further page of the population once the signal aborts", async () => {
     const stop = new AbortController();
+    const reason = new Error("cancelled population read");
     const { t, calls } = gitHub(
       () => {
-        stop.abort();
+        stop.abort(reason);
         return { repository: { issues: conn([open(1)], "c1") } };
       },
       { issue_tracker: { facets: { priority: { store: "label" } } } },
     );
     await expect(
       t.incompleteIssues(QUERY, { signal: stop.signal }),
-    ).rejects.toThrow("cancelled");
+    ).rejects.toBe(reason);
     expect(calls.map((c) => c.op)).toEqual(["TrackerIssues"]);
   });
 

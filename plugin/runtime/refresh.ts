@@ -145,7 +145,9 @@ function refreshJob(
     detail: string,
   ): RefreshResult => ({ target: spec.name, outcome, detail });
   return exclusiveInstallLock(async () => {
-    const snapshot = await snapshotScheduler(scheduler, spec);
+    const read = await snapshotScheduler(scheduler, spec);
+    if (!read.ok) return result("failed", read.failure.reason);
+    const snapshot = read.value;
     const installed = readableJob(component, snapshot, scheduler);
     if (Array.isArray(installed)) return result(...installed);
     const call = launcherCall(installed.command);
@@ -163,10 +165,12 @@ function refreshJob(
     // The launcher first: a rewritten job may start at once and run it.
     // One transaction: a failed launcher copy puts the snapshot's files back,
     // as a failed job rewrite does.
-    if (stale)
-      guardLauncher(directory, snapshot.launcher, () =>
+    if (stale) {
+      const guarded = guardLauncher(directory, snapshot.launcher, () =>
         installLauncher(directory),
       );
+      if (!guarded.ok) return result("failed", guarded.failure.reason);
+    }
     const copied = stale && `copied the launcher to ${directory}`;
     if (changed && keepsJob(snapshot, options))
       return result(
@@ -176,7 +180,10 @@ function refreshJob(
           "the loaded launchd job is rewritten by the next jig upgrade a person runs, since rewriting it would stop it",
         ]),
       );
-    if (changed) await rewriteJob(snapshot, files, announce);
+    if (changed) {
+      const rewrote = await rewriteJob(snapshot, files, announce);
+      if (!rewrote.ok) return result("failed", rewrote.failure.reason);
+    }
     return result(
       "refreshed",
       refreshed([copied, changed && `rewrote the ${scheduler} job`]),
@@ -211,21 +218,27 @@ export async function recordedPrograms(
 ): Promise<{ claude?: string; codex?: string }> {
   // The command's first, then each job's for a tool none before it named.
   const programs: { claude?: string; codex?: string } = commandPrograms();
-  for (const component of components)
-    try {
-      const job = readInstalledJob(
-        await snapshotScheduler(detectScheduler(), component.job()),
+  const scheduler = detectScheduler();
+  for (const component of components) {
+    const snapshot = scheduler.ok
+      ? await snapshotScheduler(scheduler.value, component.job())
+      : scheduler;
+    if (!snapshot.ok) {
+      swallow(
+        snapshot.failure.cause ?? snapshot.failure.reason,
+        "a job that cannot be read names no agent tool",
       );
-      const recorded =
-        (job === null ? null : launcherCall(job.command))?.programs ?? {};
-      for (const tool of ["claude", "codex"] as const) {
-        const program = recorded[tool];
-        if (programs[tool] === undefined && program !== undefined)
-          programs[tool] = program;
-      }
-    } catch (error) {
-      swallow(error, "a job that cannot be read names no agent tool");
+      continue;
     }
+    const job = readInstalledJob(snapshot.value);
+    const recorded =
+      (job === null ? null : launcherCall(job.command))?.programs ?? {};
+    for (const tool of ["claude", "codex"] as const) {
+      const program = recorded[tool];
+      if (programs[tool] === undefined && program !== undefined)
+        programs[tool] = program;
+    }
+  }
   return programs;
 }
 
@@ -236,12 +249,9 @@ export async function refreshInstalled(
   options: RefreshOptions = {},
 ): Promise<RefreshResult[]> {
   const results: RefreshResult[] = [];
-  let scheduler: Scheduler | null = null;
-  try {
-    scheduler = detectScheduler();
-  } catch {
-    // Windows: no component has a job; the command is still refreshed.
-  }
+  // Windows: no component has a job; the command is still refreshed.
+  const detected = detectScheduler();
+  const scheduler: Scheduler | null = detected.ok ? detected.value : null;
   for (const component of components)
     for (const spec of componentJobs(component)) {
       const target = spec.name;

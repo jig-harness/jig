@@ -4,9 +4,11 @@
  * stages the machine file enables for the repository run in this tick's
  * rotated order (actions/drive.ts, actions/pickup.ts, actions/followup.ts),
  * then its nudges (actions/steer.ts) and its notifications
- * (actions/notify.ts). Each launch reads its target again just before it
- * starts. The apply state these change as they go, the slot table, the
- * records and the deadline, is built here once per tick.
+ * (actions/notify.ts), then the close. Each launch reads its target again
+ * just before it starts. Each stage runs inside its own defect boundary
+ * (`StageGuard`), so a defect in one leaves the others' launches standing.
+ * The apply state these change as they go, the slot table, the records and
+ * the deadline, is built here once per tick.
  */
 import type { Contention } from "./contention.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
@@ -25,6 +27,7 @@ import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
 import { readOutcomes } from "./followup-outcomes.ts";
 import { holderActions } from "./holder-notices.ts";
 import { openPullRequest, pullRequestLabels } from "./forge.ts";
+import { ok } from "../../shared/outcome.ts";
 import { carriesSet, hasCommand } from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
 import type { ReadRecord } from "./launches.ts";
@@ -48,6 +51,7 @@ import {
 import { afterWait } from "./tick-plan.ts";
 import { endOwnClaims } from "./tick-shared.ts";
 import type {
+  ApplyStage,
   DispatchSection,
   MarkedPr,
   RepoReport,
@@ -94,18 +98,27 @@ export function applyState(
 }
 
 /**
+ * Runs one stage of a repository's `--apply` inside its own defect
+ * boundary, charged to the apply phase unless `inApply` is false (the
+ * close, which times its own phases).
+ */
+export type StageGuard = (
+  stage: ApplyStage,
+  run: () => Promise<void>,
+  inApply?: boolean,
+) => Promise<void>;
+
+/**
  * Act on one observed and planned repository; nothing without `--apply`.
  * Its own claims end now; its launches and notifications are handed to
  * `context.pending`, run in turns once every repository is gathered, and
- * `after` runs when its last turn is done; `guard` bounds each of them.
+ * `after`, the close, runs when its last turn is done; `guard` bounds each
+ * stage of them.
  */
 export async function actObserved(
   context: TickContext,
   observation: RepoObservation,
-  hooks: {
-    guard: (run: () => Promise<void>, inApply?: boolean) => Promise<void>;
-    after: () => Promise<void>;
-  },
+  hooks: { guard: StageGuard; after: () => Promise<void> },
 ): Promise<void> {
   const apply = context.apply;
   if (apply === null) return;
@@ -134,16 +147,19 @@ export async function actObserved(
   };
   context.pending.push({
     apply: (group) =>
-      hooks.guard(() =>
-        applyStages(apply, opened.stages, report, inputs, group),
-      ),
+      applyStages(apply, opened.stages, report, inputs, group, hooks.guard),
     finish: () =>
-      hooks
-        .guard(() =>
-          applyStages(apply, opened.stages, report, inputs, "finish"),
-        )
-        // `after` times its own phases; the same exception boundary, outside the apply timer.
-        .then(() => hooks.guard(hooks.after, false)),
+      applyStages(
+        apply,
+        opened.stages,
+        report,
+        inputs,
+        "finish",
+        hooks.guard,
+      ).then(() =>
+        // `after` times its own phases: a boundary of its own, outside the apply timer.
+        hooks.guard("close", hooks.after, false),
+      ),
   });
 }
 
@@ -174,8 +190,8 @@ interface ApplyInputs {
 
 /**
  * `--apply` for one repository: the launch stages its machine-file entry
- * enables, in this tick's turn, then its notifications, which open no
- * session and so share no turn.
+ * enables, in this tick's turn, then its nudges and notifications, which
+ * open no session and so share no turn; each inside `guard`.
  */
 async function applyStages(
   apply: ApplyState,
@@ -183,21 +199,24 @@ async function applyStages(
   report: RepoReport,
   inputs: ApplyInputs,
   group: LaunchGroup | "finish",
+  guard: StageGuard,
 ): Promise<void> {
   const { repo, runtime, section, tracked, login, join } = inputs;
   const fresh = () => readSessions(runtime, repo, join);
   const labels = section.labels.enabled ? section.labels : null;
-  const drive: FreshDrive = {
+  const drive = (): FreshDrive => ({
     read: async (pr) => {
       // The pull request read again too: a stale drive's head and mergeability are its facts, and a hold label may have appeared.
-      const listed = await openPullRequest(repo.slug, pr, {
+      const view = await openPullRequest(repo.slug, pr, {
         labels: labels !== null,
       });
+      if (!view.ok) return view;
+      const listed = view.value;
       if (
         labels?.onlyLabeled === true &&
         !carriesSet(labels, listed.labels ?? [])
       )
-        return null;
+        return ok(null);
       const [again] = await readDrives(
         repo.slug,
         login,
@@ -206,69 +225,86 @@ async function applyStages(
         labels,
         adoptionOf(section, login),
       );
-      return again ?? null;
+      return ok(again ?? null);
     },
     held: (pr) => labels !== null && hasCommand(labels, pr.labels, "hold"),
     labelWrites: labels !== null,
     claimer: launchClaimer(inputs.shared),
     unplaced: inputs.unplaced,
-  };
-  const stages = [
-    async () => {
-      if (enabled.has("rearm"))
-        await applyDrives(apply, repo, report, inputs.sessions, drive);
-    },
-    async () => {
-      const { tracker, keys } = tracked;
-      if (enabled.has("pickup") && tracker !== null && keys)
-        await applyPickups(apply, repo, report, {
-          section,
-          tracker,
-          keys,
-          branchPattern: join.branchPattern,
-          sessions: fresh,
-        });
-    },
-    async () => {
-      if (enabled.has("followup"))
-        await applyFollowups(apply, repo, report, {
-          section,
-          login,
-          merged: inputs.merged,
-          sessions: fresh,
-          shared: inputs.shared,
-          ...(labels === null
-            ? {}
-            : {
-                holdReason: async (pr: number) => {
-                  const now = await pullRequestLabels(repo.slug, pr);
-                  if (hasCommand(labels, now, "hold"))
-                    return "a person's hold label is on it now";
-                  return labels.onlyLabeled && !carriesSet(labels, now)
-                    ? "it carries no dispatch label now"
-                    : null;
-                },
-              }),
-        });
-    },
+  });
+  const stages: Array<[ApplyStage, () => Promise<void>]> = [
+    [
+      "rearm",
+      async () => {
+        if (enabled.has("rearm"))
+          await applyDrives(apply, repo, report, inputs.sessions, drive());
+      },
+    ],
+    [
+      "pickup",
+      async () => {
+        const { tracker, keys } = tracked;
+        if (enabled.has("pickup") && tracker !== null && keys)
+          await applyPickups(apply, repo, report, {
+            section,
+            tracker,
+            keys,
+            branchPattern: join.branchPattern,
+            sessions: fresh,
+          });
+      },
+    ],
+    [
+      "followup",
+      async () => {
+        if (enabled.has("followup"))
+          await applyFollowups(apply, repo, report, {
+            section,
+            login,
+            merged: inputs.merged,
+            sessions: fresh,
+            shared: inputs.shared,
+            ...(labels === null
+              ? {}
+              : {
+                  holdReason: async (pr: number) => {
+                    const read = await pullRequestLabels(repo.slug, pr);
+                    if (!read.ok) return read;
+                    const now = read.value;
+                    if (hasCommand(labels, now, "hold"))
+                      return ok("a person's hold label is on it now");
+                    return ok(
+                      labels.onlyLabeled && !carriesSet(labels, now)
+                        ? "it carries no dispatch label now"
+                        : null,
+                    );
+                  },
+                }),
+          });
+      },
+    ],
   ];
-  for (const stage of launchStageOrder(
+  for (const [stage, run] of launchStageOrder(
     stages,
     group,
     apply.tick ?? 0,
     apply.repos ?? 1,
   ))
-    await stage();
+    await guard(stage, run);
   if (group !== "finish") return;
   // The nudges first: a nudge that went unanswered is notified in the same tick.
-  if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
-  // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
-  report.actions.push(...holderActions(repo.slug, report.launches));
-  // A host that does not own the repository never notifies for it: the owner does, once.
-  if (enabled.has("notify") && inputs.shared.owner)
-    await applyNotices(apply, repo, report, inputs.sessions, {
-      lingerMs: section.noticesLingerMs,
-      renotifyAfterMs: section.renotifyAfterMs,
-      branch: section.noticesBranch,
-    });
+  await guard("steer", async () => {
+    if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
+  });
+  await guard("notify", async () => {
+    // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
+    report.actions.push(...holderActions(repo.slug, report.launches));
+    // A host that does not own the repository never notifies for it: the owner does, once.
+    if (enabled.has("notify") && inputs.shared.owner)
+      await applyNotices(apply, repo, report, inputs.sessions, {
+        lingerMs: section.noticesLingerMs,
+        renotifyAfterMs: section.renotifyAfterMs,
+        branch: section.noticesBranch,
+      });
+  });
 }

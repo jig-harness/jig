@@ -238,7 +238,7 @@ export interface LineTick {
   busy: string[];
   /** The optional reads it skipped because the forge's budget was low; `null` when it skipped none. */
   lowBudget: string[] | null;
-  /** The defects it recorded: its own and its repositories'. */
+  /** The defects it recorded: its own, its repositories' and their stages'. */
   defects: number;
 }
 

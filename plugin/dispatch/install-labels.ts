@@ -25,19 +25,52 @@ function createCommand(slug: string, label: LabelSpec): string {
   return `gh label create ${quote(label.name)} --repo ${slug} --color ${label.color} --description ${quote(label.description)}`;
 }
 
+/** Say why one repository's labels cannot be checked; it still misses what it needs. */
+function unchecked(path: string, reason: string): true {
+  console.error(`${path}: the dispatch labels cannot be checked: ${reason}`);
+  return true;
+}
+
+/** Creates each missing label in turn; the labels the signed-in account could not create, each with why. */
+async function createMissing(
+  slug: string,
+  missing: LabelSpec[],
+): Promise<Array<{ label: LabelSpec; why: string }>> {
+  const refused: Array<{ label: LabelSpec; why: string }> = [];
+  for (const label of missing) {
+    let created: Awaited<ReturnType<typeof createLabel>>;
+    try {
+      created = await createLabel(slug, label);
+    } catch (error) {
+      refused.push({ label, why: failureText(error) });
+      continue;
+    }
+    if (created.ok) console.log(`${slug}: created ${label.name}`);
+    else refused.push({ label, why: created.failure.reason });
+  }
+  return refused;
+}
+
 /** One repository's labels; whether any it needs is still missing. */
 async function repoLabels(path: string, confirm: boolean): Promise<boolean> {
-  const repo = await repoTarget(path);
+  const target = await repoTarget(path);
+  if (!target.ok) return unchecked(path, target.failure.reason);
+  const repo = target.value;
   const where = `${repo.slug}@${repo.defaultBranch}:.config/jig.yaml`;
-  const { section } = readSection(await defaultBranchConfig(repo), where);
-  const config = section.labels;
+  const file = await defaultBranchConfig(repo);
+  if (!file.ok) return unchecked(path, file.failure.reason);
+  const read = readSection(file.value, where);
+  if (!read.ok) return unchecked(path, failureText(read.failure.reason));
+  const config = read.value.section.labels;
   if (!config.enabled) {
     console.log(
       `${repo.slug}: dispatch.labels is off on ${repo.defaultBranch}, so it needs no label`,
     );
     return false;
   }
-  const have = new Set(await repositoryLabels(repo.slug));
+  const labels = await repositoryLabels(repo.slug);
+  if (!labels.ok) return unchecked(path, labels.failure.reason);
+  const have = new Set(labels.value);
   const missing = labelSet(config).filter((l) => !have.has(l.name));
   if (missing.length === 0) {
     console.log(
@@ -52,15 +85,7 @@ async function repoLabels(path: string, confirm: boolean): Promise<boolean> {
     for (const l of missing) console.log(`  ${l.name}: ${l.description}`);
     return false;
   }
-  const refused: Array<{ label: LabelSpec; why: string }> = [];
-  for (const label of missing) {
-    try {
-      await createLabel(repo.slug, label);
-      console.log(`${repo.slug}: created ${label.name}`);
-    } catch (error) {
-      refused.push({ label, why: failureText(error) });
-    }
-  }
+  const refused = await createMissing(repo.slug, missing);
   if (refused.length === 0) return false;
   console.log(
     `${repo.slug}: these labels could not be created with the signed-in account; a person who may create labels runs:`,
@@ -80,9 +105,7 @@ export async function installLabels(
     try {
       if (await repoLabels(path, confirm)) failed = true;
     } catch (error) {
-      console.error(
-        `${path}: the dispatch labels cannot be checked: ${failureText(error)}`,
-      );
+      unchecked(path, failureText(error));
       failed = true;
     }
   }

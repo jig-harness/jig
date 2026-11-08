@@ -53,6 +53,9 @@ import {
   schemaVersion,
 } from "../../shared/records/db.ts";
 import { stateRoot } from "../receipts.ts";
+import { ExitError } from "../../shared/cli.ts";
+import { USAGE_EXIT } from "../../shared/command-line.ts";
+import { Defect, JigError } from "../../shared/errors.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 
 /** The database's file name under the state directory. */
@@ -292,16 +295,27 @@ const MIGRATIONS: readonly Migration[] = [
 /** The schema version this plugin writes. */
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
-/** A database this plugin cannot use: a newer plugin wrote it, and it needs a newer reader. */
-export class StateVersionError extends Error {
+/**
+ * A database this plugin cannot use: a newer plugin wrote it, and it needs a
+ * newer reader. It is the cause of the usage exit `stateDb` refuses the
+ * database with, so a command tells that refusal from any other.
+ */
+class StateVersionError extends JigError<"newer-schema"> {
+  override name = "StateVersionError";
   readonly path: string;
   readonly version: number;
   constructor(path: string, version: number, reason: string) {
-    super(reason);
-    this.name = "StateVersionError";
+    super("newer-schema", reason);
     this.path = path;
     this.version = version;
   }
+}
+
+/** Why the state database was refused, when `error` is `stateDb`'s refusal of one a newer plugin wrote; `null` for anything else. */
+export function newerStateRefusal(error: unknown): string | null {
+  return error instanceof ExitError && error.cause instanceof StateVersionError
+    ? error.cause.message
+    : null;
 }
 
 /** The database file under a state directory. */
@@ -311,10 +325,11 @@ export function statePath(root = stateRoot()): string {
 
 /**
  * The state database under `root`, opened once per process: created and
- * migrated to this plugin's schema when it is new or older, refused
- * (`StateVersionError`) when a newer plugin wrote it and it needs a newer
- * reader. A database that cannot be opened at all is a defect here, as it
- * always was: what the platform threw is thrown.
+ * migrated to this plugin's schema when it is new or older, refused with
+ * the usage exit (its cause a `StateVersionError`, `newerStateRefusal`) when
+ * a newer plugin wrote it and it needs a newer reader. A database that cannot
+ * be opened at all is a defect here, carrying what the platform threw as its
+ * cause and its message.
  */
 export function stateDb(root = stateRoot()): Database {
   const path = statePath(root);
@@ -322,8 +337,10 @@ export function stateDb(root = stateRoot()): Database {
   if (opened.ok) return opened.value;
   const { code, reason, cause } = opened.failure;
   if (code === "newer-schema")
-    throw new StateVersionError(path, schemaVersion(path) ?? 0, reason);
-  throw cause instanceof Error ? cause : new Error(reason);
+    throw new ExitError(USAGE_EXIT, reason, {
+      cause: new StateVersionError(path, schemaVersion(path) ?? 0, reason),
+    });
+  throw new Defect(cause instanceof Error ? cause.message : reason, { cause });
 }
 
 /** Close and forget the connection to the state database under `root`, when this process holds one. */

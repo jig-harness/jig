@@ -136,12 +136,15 @@ type, priority and size, as values that mean the same in every repository,
 kept wherever `issue_tracker.facets` says
 ([CONFIGURATION.md](CONFIGURATION.md#issue_tracker)); a pool can be narrowed
 by facet, one read lists the open issues not yet started that lack one
-(`incompleteIssues`), and another reports where each is kept
-(`facetStores`, `tracker.ts facet-stores`); both take their caller's
-cancellation signal and deadline, and start no further request or page once
-either stops them. Every filing through `openTracker` is checked inside
-`createIssue`: one without a type, a priority or a size is filed, and what it
-lacks is printed. A label a label store owns is the facet's to write: the
+(`incompleteIssues`, which lists the started ones instead when asked),
+another reads every open issue with its facets (`openPopulation`, which
+the move between stores reads through a tracker of each store), and
+another reports where each is kept (`facetStores`, `tracker.ts
+facet-stores`); they take their caller's cancellation signal and deadline,
+and start no further request or page once either stops them. Every filing
+through `openTracker` is checked inside `createIssue`: one without a type,
+a priority or a size is refused before anything is written, naming what it
+lacks. A label a label store owns is the facet's to write: the
 interface refuses it among the labels a filing or a change adds. Labels
 and projects are given by name and a parent by its key; the adapter resolves
 each to exactly one tracker resource or refuses before writing. A skill's
@@ -569,3 +572,13 @@ request, under [CONTRIBUTING.md](https://github.com/jig-harness/jig/blob/main/CO
   ([adding a plugin skill](https://github.com/jig-harness/jig/blob/main/CONTRIBUTING.md#adding-or-changing-a-plugin-skill)).
 - **Move, never copy.** An adapter a team already runs moves here with its
   tests, and the team deletes its own copy.
+
+
+Facet migrations read `PoolIssue.hiddenLabels` alongside its visible labels,
+and refuse `unmappedFacets` before overwriting a nonempty store whose value
+has no canonical mapping. An adapter must preserve that evidence when it
+normalizes a native value. `IssuePatch.facetLabels` restores the exact label
+representation of a facet from a move record; each label must belong to the
+facet's configured label codec. It cannot set workflow or arbitrary labels.
+Sweep pages pass one `FacetReadOptions.census` object to share a census;
+new objects start fresh reads and the caller supplies the shared deadline.

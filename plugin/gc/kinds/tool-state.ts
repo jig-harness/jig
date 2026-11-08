@@ -1,5 +1,5 @@
 import { isMapping } from "../../shared/config-layers.ts";
-import { GcError } from "../../shared/gc-error.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 /**
  * drive-pr's state as a collection kind: what `reap-state.ts` would retire of
  * the files a clone keeps beside the drive's database (a merged PR's logs,
@@ -42,10 +42,11 @@ function validReport(value: unknown): value is ReaperReport {
     value.failures.every((item) => typeof item === "string")
   );
 }
-function parseReport(text: string): ReaperReport {
+function parseReport(text: string): Outcome<ReaperReport, "invalid-report"> {
   const value: unknown = JSON.parse(text);
-  if (!validReport(value)) throw new GcError("Invalid state reaper report");
-  return value;
+  if (!validReport(value))
+    return failed("invalid-report", "Invalid state reaper report");
+  return ok(value);
 }
 /**
  * Worktree identity is dropped, but the relocated state root is the supported
@@ -69,7 +70,9 @@ export function toolStateKind(
   idleDays: number,
 ): CollectionKind {
   let latest: ReaperReport;
-  const inspect = async (): Promise<ReaperReport> => {
+  const inspect = async (): Promise<
+    Outcome<ReaperReport, "reaper-failed" | "invalid-report">
+  > => {
     const result = await run(
       [
         process.execPath,
@@ -92,7 +95,8 @@ export function toolStateKind(
       },
     );
     if (![0, 1].includes(result.code) || !result.stdout.trim())
-      throw new GcError(
+      return failed(
+        "reaper-failed",
         `state reaper failed: ${result.stderr || result.stdout}`,
       );
     return parseReport(result.stdout);
@@ -101,12 +105,17 @@ export function toolStateKind(
     name: "tool-state",
     repository,
     declaration,
-    inventory: async (): Promise<Resource[]> => {
-      latest = await inspect();
-      return [{ id: latest.stateDir ?? repository, details: latest }];
+    inventory: async (): Promise<Outcome<Resource[]>> => {
+      const report = await inspect();
+      if (!report.ok) return report;
+      latest = report.value;
+      return ok([{ id: latest.stateDir ?? repository, details: latest }]);
     },
     prove: async (resource): Promise<Proof> => {
-      latest = await inspect();
+      const report = await inspect();
+      if (!report.ok)
+        return { state: "unverified", reason: report.failure.reason };
+      latest = report.value;
       resource.details = latest;
       if (latest.failures.length)
         return { state: "unverified", reason: latest.failures.join("; ") };

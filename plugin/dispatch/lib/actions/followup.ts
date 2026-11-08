@@ -61,6 +61,7 @@ import {
   dispatched,
   type SessionsReport,
 } from "../runtime/port.ts";
+import type { Outcome } from "../../../shared/outcome.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
@@ -101,8 +102,8 @@ export interface FollowupContext {
   merged: MarkedPr[];
   /** The runtime's answer read afresh, for the read just before a launch. */
   sessions: () => Promise<SessionsReport>;
-  /** Why a person's label stands the dispatcher down from the pull request now, read afresh; `null` when none does. */
-  holdReason?: (pr: number) => Promise<string | null>;
+  /** Why a person's label stands the dispatcher down from the pull request now, read afresh; `null` when none does, a failure when its labels do not read. */
+  holdReason?: (pr: number) => Promise<Outcome<string | null>>;
   /** The shared records the marker is posted and read through. */
   shared: SharedContext;
 }
@@ -126,11 +127,15 @@ async function heldNow(
   pr: number,
 ): Promise<string | null> {
   if (ctx.holdReason === undefined) return null;
+  let hold: Outcome<string | null>;
   try {
-    return await ctx.holdReason(pr);
+    hold = await ctx.holdReason(pr);
   } catch (error) {
     return `its labels cannot be read again: ${failureText(error)}`;
   }
+  return hold.ok
+    ? hold.value
+    : `its labels cannot be read again: ${hold.failure.reason}`;
 }
 
 /** Why the follow-up must not be started now; `null` when nothing changed. */

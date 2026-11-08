@@ -189,21 +189,23 @@ describe("the machine file's unclaimed_after", () => {
   afterEach(() => {
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true });
   });
-  const read = (body: string) => () => {
+  const read = (body: string) => {
     const dir = mkdtempSync(join(tmpdir(), "jig-dispatch-unclaimed-"));
     dirs.push(dir);
     const file = join(dir, "dispatch.yaml");
     writeFileSync(file, body);
-    return readMachineConfig(file);
+    const machine = readMachineConfig(file);
+    return machine.ok ? machine.value?.unclaimedAfterMs : machine.failure;
   };
 
   it("is fifteen minutes unless the file says otherwise, and a duration when it does", () => {
-    expect(read("interval: 5m\n")()?.unclaimedAfterMs).toBe(15 * 60_000);
-    expect(read("unclaimed_after: 40m\n")()?.unclaimedAfterMs).toBe(
-      40 * 60_000,
-    );
-    expect(read("unclaimed_after: soon\n")).toThrow(
-      "unclaimed_after must be a positive duration",
-    );
+    expect(read("interval: 5m\n")).toBe(15 * 60_000);
+    expect(read("unclaimed_after: 40m\n")).toBe(40 * 60_000);
+    expect(read("unclaimed_after: soon\n")).toEqual({
+      code: "invalid",
+      reason: expect.stringContaining(
+        "unclaimed_after must be a positive duration",
+      ),
+    });
   });
 });

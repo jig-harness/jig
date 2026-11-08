@@ -4,8 +4,8 @@
  * `Tracker` port; they never import an adapter.
  *
  * Every tracker opened here checks each new issue inside `createIssue`
- * (`facets/complete.ts`): one filed without a type, a priority or a size is
- * filed, and what it lacks is printed. On GitHub, a facet the configuration
+ * (`facets/complete.ts`): one without a type, a priority or a size is
+ * refused before anything is written, naming what it lacks. On GitHub, a facet the configuration
  * leaves to the default gets its store from detection before its first read
  * or write (`facets/detected.ts`).
  *
@@ -116,13 +116,11 @@ export function knownAdapters(): string[] {
  * defaults to the consumer root, the repository `ownTrackerConfig()` reads
  * its configuration from, so the configuration, the repository it derives
  * and the label taxonomy the type and size values come from always come
- * from the same place. `warn` receives what an incomplete filing lacks
- * (standard error by default).
+ * from the same place.
  */
 export function openTracker(
   config: TrackerConfig = ownTrackerConfig(),
   root: string = consumerRoot(),
-  warn: (message: string) => void = (message) => console.error(message),
 ): Tracker {
   const factory = Object.hasOwn(ADAPTERS, config.adapter)
     ? ADAPTERS[config.adapter]
@@ -137,10 +135,7 @@ export function openTracker(
     return facets;
   };
   const tracker = factory(config, root, resolve);
-  return checkedTracker(
-    tracker,
-    resolve(),
+  return checkedTracker(tracker, resolve(), () =>
     readTaxonomy(root, config.taxonomy),
-    warn,
   );
 }

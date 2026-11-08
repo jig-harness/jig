@@ -546,7 +546,7 @@ export function resolveFacets(
           type: typeSlot(inputs, defaults),
           size: sizeSlot(inputs, tax),
         }
-      : unreadable(inputs, broken.problem);
+      : unreadable(broken.problem);
   const priority = priorityFacet(inputs);
   if (usable(type)) refuseDisagreement(type, defaults.labels, inputs);
   refuseSharedLabels([type, priority, size].filter(usable), inputs);
@@ -579,15 +579,10 @@ function typeSlot(
 }
 
 /**
- * Type and size when the taxonomy fails its lint: unreadable, and refused
- * where a store is named for either.
+ * Type and size when the taxonomy fails its lint: unreadable until repaired.
+ * Recovery reads remain available; checkedTracker refuses filing.
  */
-function unreadable(
-  inputs: FacetInputs,
-  problem: string,
-): { type: FacetSlot; size: FacetSlot } {
-  if (inputs.entries.type !== undefined || inputs.entries.size !== undefined)
-    throw new TrackerConfigError("issue_tracker.taxonomy", problem);
+function unreadable(problem: string): { type: FacetSlot; size: FacetSlot } {
   return {
     type: { facet: "type", store: null, problem },
     size: { facet: "size", store: null, problem },

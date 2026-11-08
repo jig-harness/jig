@@ -50,16 +50,20 @@ function driverSource(paths: Markers & { units: string }): string {
   return `import { writeFileSync } from "node:fs";
 import { restoreScheduler, snapshotScheduler } from ${JSON.stringify(scheduler)};
 import { gcJobSpec } from ${JSON.stringify(gcJob)};
-const snapshot = await snapshotScheduler("systemd", gcJobSpec());
+const read = await snapshotScheduler("systemd", gcJobSpec());
+if (!read.ok) {
+  console.error(read.failure.reason);
+  process.exit(1);
+}
+const snapshot = read.value;
 writeFileSync(${JSON.stringify(join(units, "jig-gc.timer"))}, "replacement timer\\n");
 writeFileSync(${JSON.stringify(enabled)}, "");
 writeFileSync(${JSON.stringify(active)}, "");
 if (process.env.FAIL_DISABLE) writeFileSync(${JSON.stringify(failDisable)}, "");
-try {
-  await restoreScheduler(snapshot);
-  console.log("restored");
-} catch (error) {
-  console.error(String(error));
+const restored = await restoreScheduler(snapshot);
+if (restored.ok) console.log("restored");
+else {
+  console.error(restored.failure.reason);
   process.exit(1);
 }
 `;
