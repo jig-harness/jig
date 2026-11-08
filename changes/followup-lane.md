@@ -29,9 +29,11 @@ release: minor
   branch or worktree the pass may not delete without asking, answered keep
   it, list it, finish the rest and record done); the pass tags its own
   question (`Question: [local-leftover] …`). A follow-up that failed before
-  this release is run again once, with every class's standing answer, while
-  its launch record is still on the host (`receipts_days`); one whose record
-  is gone waits for a person. An untagged question, a question the outcome
+  this release is run again once, with every class's standing answer; once
+  the dispatcher has kept an outcome's retry evidence the launch record is no
+  longer needed, and an outcome from before that is run again only while its
+  launch record is still on the host (`receipts_days`), else it waits for a
+  person. An untagged question, a question the outcome
   record cannot read back, or a failure of the run again waits for a person
   as before, and a follow-up is never run again more than once by a death
   and a routine question together, within the pull request's recovery

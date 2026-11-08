@@ -21,7 +21,12 @@ import {
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { MARKER } from "../lib/followup-marker.ts";
 import { readOutcomes } from "../lib/followup-outcomes.ts";
-import { claimRecord, readRecord, recordExit } from "../lib/launches.ts";
+import {
+  claimRecord,
+  readRecord,
+  recordExit,
+  removeRecord,
+} from "../lib/launches.ts";
 import { stateDb } from "../lib/state.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { mergedPr, SLUG, type World, world } from "./fixtures.ts";
@@ -354,6 +359,11 @@ it("keeps what an earlier release's outcome row lacks before releasing the marke
     record: OLD,
     rerun: false,
   });
+  // The launch record expires; the kept answer alone carries the run again.
+  removeRecord(OLD, dispatchState(w));
+  expect(readRecord(OLD, dispatchState(w))).toBeNull();
+  const { prompt } = await rerun(w);
+  expect(prompt).toContain(STANDING);
 }, 120_000);
 
 it("hands a follow-up whose outcome record's question does not read to a person even while its launch record from before the tags is on the host", async () => {

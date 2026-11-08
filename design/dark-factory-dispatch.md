@@ -394,10 +394,13 @@ guards keep one stage from starting twice:
   that failed before passes tagged their questions (an outcome record with
   no class field, written by an earlier release, or a launch record whose
   prompt offered no tags) is run again once in that manner, whatever its
-  question, with every class's standing answer, while its launch record is
-  still on this host: only that record says whether it was itself a run
-  again, so one whose record is gone (past `receipts_days`) is a person's, as
-  is another host's failed answer. An outcome record whose kept question
+  question, with every class's standing answer. An outcome whose retry
+  evidence was kept (the tick stores whether the attempt was a run again
+  before it releases the marker) needs no launch record; an outcome from
+  before that was kept needs the launch record still on this host, since
+  only that record says whether it was itself a run again, so one whose
+  record is gone (past `receipts_days`) is a person's, as is another host's
+  failed answer. An outcome record whose kept question
   does not read (not JSON, not a mapping, or naming another launch record)
   is never read as an earlier release's: it is logged and the follow-up is a
   person's. The prompt of a routine run again quotes the earlier question,

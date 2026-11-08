@@ -54,6 +54,7 @@ import type {
   RepoReport,
   RepoTarget,
 } from "../types.ts";
+import type { SessionsReport } from "../runtime/port.ts";
 import { laneBudgetWait } from "./followup-lane.ts";
 
 /** What `--apply` carries across a tick's repositories. */
@@ -79,6 +80,8 @@ export interface ApplyState {
    * it, so the pass command does what was judged.
    */
   codexOptIn: CodexOptIn;
+  /** Each repository's sessions as its observation read them, by slug, for judging another repository's stuck records (`followup-lane.ts`). */
+  sessionsOf?: Map<string, SessionsReport>;
   /** The workspaces this tick has opened so far, within `opens_per_tick`. */
   opened?: number;
   /** Opens spent on notices, which do not consume the launches' allowance. */

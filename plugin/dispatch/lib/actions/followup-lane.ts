@@ -28,9 +28,9 @@ import type { ApplyState } from "./launch.ts";
  * cannot hold the lane until a person clears it. A stuck record whose
  * target has a session running, or whose sessions cannot be told, keeps its
  * place: that wrapper may run its stage without having claimed the record.
- * `sessions` is the listing of repository `repo`, so it can show a target
- * free only for that repository's records; a stuck record of another
- * repository keeps its place.
+ * `sessions` is the fresh listing of repository `repo`; a record of another
+ * repository is judged by the listing its own observation read this tick
+ * (`state.sessionsOf`), and keeps its place when there is none.
  */
 export function laneCapWait(
   state: ApplyState,
@@ -38,21 +38,22 @@ export function laneCapWait(
   repo: string,
 ): string | null {
   const cap = state.machine.followupConcurrency;
-  const clock = {
-    nowMs: Date.now(),
-    unclaimedAfterMs: state.machine.unclaimedAfterMs,
-    sessions,
-  };
-  const running = state.records.filter(
-    (r) =>
-      r.record.action === "followup" &&
-      holds(r.state) &&
-      !(
-        r.record.repo === repo &&
-        stuckWhy(r, clock) !== null &&
-        holding(sessions, joinedTo(r.record)).kind === "free"
-      ),
-  ).length;
+  const nowMs = Date.now();
+  const running = state.records.filter((r) => {
+    if (r.record.action !== "followup" || !holds(r.state)) return false;
+    const seen =
+      r.record.repo === repo ? sessions : state.sessionsOf?.get(r.record.repo);
+    if (seen === undefined) return true;
+    const clock = {
+      nowMs,
+      unclaimedAfterMs: state.machine.unclaimedAfterMs,
+      sessions: seen,
+    };
+    return !(
+      stuckWhy(r, clock) !== null &&
+      holding(seen, joinedTo(r.record)).kind === "free"
+    );
+  }).length;
   return running < cap
     ? null
     : `the host runs ${running} follow-ups, the ${cap} its followup_concurrency allows; a later tick starts this one`;

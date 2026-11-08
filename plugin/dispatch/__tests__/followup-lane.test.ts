@@ -127,6 +127,20 @@ it("counts a stuck follow-up of another repository, whose absence from this list
   );
 });
 
+it("leaves a stuck follow-up of another repository out of the cap once that repository's own listing shows its target free", () => {
+  const s = state();
+  s.machine = { ...s.machine, followupConcurrency: 1, unclaimedAfterMs: 1 };
+  s.records = [followupRecord("stuck", "pending", "its marker is gone")];
+  s.sessionsOf = new Map([[SLUG, listed]]);
+  expect(laneCapWait(s, listed, "owner/other")).toBeNull();
+  s.sessionsOf = new Map([
+    [SLUG, { ok: false, source: "orca", reason: "timed out" }],
+  ]);
+  expect(laneCapWait(s, listed, "owner/other")).toContain(
+    "followup_concurrency",
+  );
+});
+
 it("counts a stuck follow-up whose target has a session running, or whose sessions cannot be read", () => {
   const s = state();
   s.machine = { ...s.machine, followupConcurrency: 1, unclaimedAfterMs: 1 };
