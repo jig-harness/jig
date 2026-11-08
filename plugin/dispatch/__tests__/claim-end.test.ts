@@ -171,6 +171,7 @@ describe("the wrapper ends its launch's shared claim", () => {
       token: TOKEN,
       action: "followup",
       command: "/followup",
+      routineTags: true,
     });
     writeFileSync(join(w.dir, "claude-exit"), "0");
     w.setComments(7, [
@@ -199,6 +200,7 @@ describe("the wrapper ends its launch's shared claim", () => {
       token: TOKEN,
       action: "followup",
       command: "/followup",
+      routineTags: true,
     });
     writeFileSync(join(w.dir, "claude-exit"), "0");
     const body = `${FOLLOWUP_MARKER}\njig dispatch follow-up · record: 20261105T120000Z-bbbbbbbb`;

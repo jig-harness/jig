@@ -23,6 +23,8 @@
  * runtime_timeout: 1m
  * workspace_timeout: 50m
  * opens_per_tick: 4
+ * followup_opens_per_tick: 2
+ * followup_concurrency: 2
  * receipts_days: 30
  * unclaimed_after: 15m
  * failures:
@@ -107,6 +109,10 @@ export interface MachineConfig {
   workspaceTimeoutMs: number;
   /** Workspace opens per tick, including the reserved notices open. */
   opensPerTick: number;
+  /** The follow-ups' own workspace opens per tick, beside `opensPerTick` (`followup_opens_per_tick`). */
+  followupOpensPerTick: number;
+  /** How many follow-up passes may run on the host at once (`followup_concurrency`). */
+  followupConcurrency: number;
   receiptsDays: number;
   /** How long a launch the runtime answered as started may go unclaimed by its wrapper before it is stuck (`unclaimed_after`). */
   unclaimedAfterMs: number;
@@ -133,6 +139,8 @@ const DEFAULTS = {
   runtimeTimeoutMs: 60_000,
   workspaceTimeoutMs: OPEN_LIMIT_MS,
   opensPerTick: 4,
+  followupOpensPerTick: 2,
+  followupConcurrency: 2,
   receiptsDays: 30,
   unclaimedAfterMs: 15 * 60_000,
 } as const;
@@ -145,6 +153,8 @@ const TOP_KEYS = [
   "runtime_timeout",
   "workspace_timeout",
   "opens_per_tick",
+  "followup_opens_per_tick",
+  "followup_concurrency",
   "receipts_days",
   "unclaimed_after",
   "failures",
@@ -396,16 +406,23 @@ export const OPENS_PER_TICK = DEFAULTS.opensPerTick;
  */
 export const UNCLAIMED_AFTER_MS = DEFAULTS.unclaimedAfterMs;
 
-/** What one tick may spend at the file's limits: its workspace opens and eight runtime calls, in milliseconds. */
-export function tickBudgetMs(limits: {
+/** The default workspaces the follow-ups' own lane may open in one tick. */
+const FOLLOWUP_OPENS_PER_TICK = DEFAULTS.followupOpensPerTick;
+
+/** The limits a tick's budget is calculated from. */
+interface TickLimits {
   workspaceTimeoutMs: number;
   runtimeTimeoutMs: number;
   opensPerTick?: number;
-}): number {
-  return (
-    (limits.opensPerTick ?? OPENS_PER_TICK) * limits.workspaceTimeoutMs +
-    8 * limits.runtimeTimeoutMs
-  );
+  followupOpensPerTick?: number;
+}
+
+/** What one tick may spend at the file's limits: its workspace opens, the follow-ups' lane's among them, and eight runtime calls, in milliseconds. */
+export function tickBudgetMs(limits: TickLimits): number {
+  const opens =
+    (limits.opensPerTick ?? OPENS_PER_TICK) +
+    (limits.followupOpensPerTick ?? FOLLOWUP_OPENS_PER_TICK);
+  return opens * limits.workspaceTimeoutMs + 8 * limits.runtimeTimeoutMs;
 }
 
 /** The least a tick may run before the launcher stops it: several repositories' workspace opens and launches. */
@@ -415,11 +432,7 @@ export const MIN_TICK_DEADLINE_MS = 6 * 3600 * 1000;
  * How long the installed launcher lets a tick run: its planning and its
  * launches together, never less than `MIN_TICK_DEADLINE_MS`.
  */
-export function tickDeadlineMs(limits: {
-  workspaceTimeoutMs: number;
-  runtimeTimeoutMs: number;
-  opensPerTick?: number;
-}): number {
+export function tickDeadlineMs(limits: TickLimits): number {
   return Math.max(MIN_TICK_DEADLINE_MS, tickBudgetMs(limits));
 }
 
@@ -438,10 +451,16 @@ function parseMachineConfig(
     return invalid(
       `${where}: opens_per_tick must be at least 2 when notify is enabled, to keep one open for launches beside the notices reservation`,
     );
-  if (tickBudgetMs(config) > MAX_TIMER_MS)
+  if (tickBudgetMs(config) > MAX_TIMER_MS) {
+    // The lane's opens alone pushed the tick past the limit: name its field.
+    const lane =
+      tickBudgetMs({ ...config, followupOpensPerTick: 0 }) <= MAX_TIMER_MS;
     return invalid(
-      `${where}: opens_per_tick, workspace_timeout and runtime_timeout together allow a tick longer than 24d (${config.opensPerTick} workspace opens plus 8 runtime calls); lower opens_per_tick or shorten the timeouts`,
+      lane
+        ? `${where}: followup_opens_per_tick ${config.followupOpensPerTick} pushes a tick past 24d (${config.opensPerTick + config.followupOpensPerTick} workspace opens plus 8 runtime calls at workspace_timeout and runtime_timeout); lower followup_opens_per_tick`
+        : `${where}: opens_per_tick, workspace_timeout and runtime_timeout together allow a tick longer than 24d (${config.opensPerTick} workspace opens, ${config.followupOpensPerTick} more from followup_opens_per_tick, plus 8 runtime calls); lower opens_per_tick or shorten the timeouts`,
     );
+  }
   return ok(config);
 }
 
@@ -508,6 +527,8 @@ function limits(
     | "runtimeTimeoutMs"
     | "workspaceTimeoutMs"
     | "opensPerTick"
+    | "followupOpensPerTick"
+    | "followupConcurrency"
     | "receiptsDays"
     | "unclaimedAfterMs"
   >
@@ -542,6 +563,18 @@ function limits(
     DEFAULTS.opensPerTick,
   );
   if (!opensPerTick.ok) return opensPerTick;
+  const followupOpensPerTick = count(
+    top.followup_opens_per_tick,
+    "followup_opens_per_tick",
+    DEFAULTS.followupOpensPerTick,
+  );
+  if (!followupOpensPerTick.ok) return followupOpensPerTick;
+  const followupConcurrency = count(
+    top.followup_concurrency,
+    "followup_concurrency",
+    DEFAULTS.followupConcurrency,
+  );
+  if (!followupConcurrency.ok) return followupConcurrency;
   const receiptsDays = count(
     top.receipts_days,
     "receipts_days",
@@ -560,6 +593,8 @@ function limits(
     runtimeTimeoutMs: runtimeTimeoutMs.value,
     workspaceTimeoutMs: workspaceTimeoutMs.value,
     opensPerTick: opensPerTick.value,
+    followupOpensPerTick: followupOpensPerTick.value,
+    followupConcurrency: followupConcurrency.value,
     receiptsDays: receiptsDays.value,
     unclaimedAfterMs: unclaimedAfterMs.value,
   });

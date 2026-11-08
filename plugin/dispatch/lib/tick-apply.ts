@@ -140,6 +140,8 @@ export async function actObserved(
     nowMs: context.nowMs,
     book,
   });
+  apply.sessionsOf ??= new Map();
+  apply.sessionsOf.set(repo.slug, observation.sessions);
   const inputs: ApplyInputs = {
     repo,
     runtime: context.runtime,
