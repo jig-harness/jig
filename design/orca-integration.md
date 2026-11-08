@@ -275,9 +275,9 @@ minute; a tick takes the count when it starts, and one trailing tick
 starts once the running tick has finished and the minute has passed.
 Once the tick has processed the repository, the plugin clears the pending
 flag only if no event has arrived since that count, and otherwise keeps it
-for the trailing tick. The tick lock is machine-wide, so a timer tick or
-another repository's tick can refuse any invocation, the first one
-included, without reading this repository: the plugin keeps the flag on a
+for the trailing tick. A sweep that is reading this repository refuses a tick for it, and one
+whose act phase outlasts the wait for the act lock refuses any tick, the
+first one included: the plugin keeps the flag on a
 refusal and retries after the same minute. While the worker lives, a status change after a tick read its
 state is therefore never dropped, and the next tick that runs processes it,
 later than a minute when a tick runs long or the lock is busy. The flag and

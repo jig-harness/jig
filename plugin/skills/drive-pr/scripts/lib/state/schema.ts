@@ -42,7 +42,8 @@ import { type DrivenBranch, isOptionalDrivenBranch } from "./driven-branch.ts";
 import { isAccountHash } from "../identity.ts";
 import { type TakeoverRecord, isOptionalTakeovers } from "./takeover.ts";
 import { isOptionalRetryCount } from "./deadline-retries.ts";
-import { isOptionalFrame } from "./park-frame.ts";
+import { isParkedItem } from "./park-frame.ts";
+export { isParkedItem } from "./park-frame.ts";
 import { type UnattendedDecision, isOptionalDecisions } from "./decisions.ts";
 import { type DriveEvent, isOptionalEvents } from "./events.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
@@ -78,6 +79,8 @@ export interface QuotaParkRecord {
 }
 
 export interface ParkedItem {
+  /** The person this question routes to; absent only on older parks. */
+  person?: string;
   key: string;
   kind: "thread" | "finding";
   /** The decision's question; a park from before framing holds its reason. */
@@ -509,24 +512,6 @@ export function normalizeRoundPathsUncapped(raw: readonly string[]): string[] {
  */
 function isCount(v: unknown): boolean {
   return typeof v === "number" && Number.isInteger(v) && v >= 0;
-}
-
-/** A parked item every reader can match and render (`ParkedItem`). */
-export function isParkedItem(p: unknown): boolean {
-  if (typeof p !== "object" || p === null) return false;
-  const e = p as Record<string, unknown>;
-  return (
-    typeof e.key === "string" &&
-    e.key.length > 0 &&
-    !/[\n\r]/.test(e.key) &&
-    (e.kind === "thread" || e.kind === "finding") &&
-    typeof e.reason === "string" &&
-    e.reason.length > 0 &&
-    isOptionalFrame(e) &&
-    isCount(e.round) &&
-    (e.at === undefined ||
-      (typeof e.at === "string" && Number.isFinite(Date.parse(e.at))))
-  );
 }
 
 /**

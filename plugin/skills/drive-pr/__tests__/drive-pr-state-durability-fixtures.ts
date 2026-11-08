@@ -25,7 +25,7 @@ export function createStateDurabilityFixtures() {
   async function state(
     dir: string,
     args: string[],
-    env: Record<string, string> = {},
+    env: Record<string, string | undefined> = {},
     stdin?: string,
   ) {
     // gitCleanEnv(), not process.env: resolveActor() runs `git rev-parse` in
@@ -37,7 +37,12 @@ export function createStateDurabilityFixtures() {
     const proc = Bun.spawn(
       scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
       {
-        env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: dir, ...env },
+        env: {
+          ...gitCleanEnv(),
+          DRIVE_PR_STATE_DIR: dir,
+          JIG__dispatch__person: "maintainer",
+          ...env,
+        },
         stdin: stdin !== undefined ? "pipe" : undefined,
         stdout: "pipe",
         stderr: "pipe",

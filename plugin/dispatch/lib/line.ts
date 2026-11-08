@@ -124,6 +124,7 @@ function section(lines: string[], heading: string): string | null {
  * spaces, loses the indent.
  */
 export function decisionOf(park: {
+  person?: string;
   key: string;
   kind: "thread" | "finding";
   lines: string[];
@@ -136,6 +137,7 @@ export function decisionOf(park: {
   const named = framed?.[1];
   return {
     key: park.key,
+    ...(park.person === undefined ? {} : { person: park.person }),
     kind: park.kind,
     lines,
     question: section(lines, "Question"),

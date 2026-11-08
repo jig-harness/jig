@@ -4,18 +4,27 @@
  * claims, back-dated progress, billing-account hashes and scratch trees.
  */
 
+import { beforeAll } from "bun:test";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { accountHash } from "../scripts/lib/identity.ts";
 import {
+  type Fixture,
   binDir,
   gitCleanEnv,
   makeScratchRepo,
   scratchClean,
   tmpRoot,
+  writeFixture,
 } from "./drive-pr-harness.ts";
-import { state } from "./drive-loop-harness.ts";
+import {
+  lockDirs,
+  runDriveIn,
+  spawnDriveIn,
+  state,
+  worktreeLockNameFor,
+} from "./drive-loop-harness.ts";
 import { editState, putLock } from "./state-rows.ts";
 
 /** The hashed account a Claude pass logged in as `email` bills. */
@@ -34,7 +43,11 @@ export function loginAccount(email: string): string {
  * The environment of a Claude pass logged in as `email`: a config directory
  * whose `.claude.json` names it, and no token or API key in front of it.
  */
-export function loginEnv(email: string): Record<string, string> {
+export function loginEnv(email: string): {
+  CLAUDE_CONFIG_DIR: string;
+  CLAUDE_CODE_OAUTH_TOKEN: string;
+  ANTHROPIC_API_KEY: string;
+} {
   const dir = join(tmpRoot, `login-${email.replace(/[^a-z0-9]/gi, "-")}`);
   mkdirSync(dir, { recursive: true });
   writeFileSync(
@@ -79,6 +92,67 @@ export function trackedTree(name: string): string {
   git(tmpRoot, "init", "-q", "--bare", origin);
   git(tree, "remote", "add", "origin", origin);
   git(tree, "push", "-q", "-u", "origin", "main");
+  return tree;
+}
+
+/** A tracked scratch tree and the worktree-lock name a driver standing in it takes. */
+export interface LockTree {
+  dir: string;
+  lock: string;
+  /** Run a driver to completion in this tree. */
+  run(
+    dir: string,
+    stateDir: string,
+    args: string[],
+    opts?: { env?: Record<string, string> },
+  ): ReturnType<typeof runDriveIn>;
+  /** Spawn a driver in this tree with the suite's isolated environment. */
+  spawn(
+    dir: string,
+    stateDir: string,
+    args: string[],
+    env?: Record<string, string>,
+    stdout?: "pipe" | "ignore",
+  ): Bun.Subprocess<"ignore", "pipe" | "ignore", "pipe">;
+  /** `writeFixture` for a driver standing in this tree. */
+  fixture(
+    f: Fixture,
+  ): { dir: string; stateDir: string } & ReturnType<typeof lockDirs>;
+}
+
+/**
+ * A `trackedTree` for every test in a file, made once the suite's scratch
+ * root exists. A driver spawned with `cwd: tree.dir` measures this tree's
+ * commits and edits against its own pushed upstream, so what the test sees
+ * depends only on the fixture, never on whether the checkout running the
+ * suite has unpushed commits or uncommitted edits. Its worktree lock is
+ * `tree.lock`, not `WORKTREE_LOCK`, which names the suite's own checkout.
+ * Call after `useDrivePrSuite()`.
+ */
+export function useTrackedTree(name: string): LockTree {
+  const tree: LockTree = {
+    dir: "",
+    lock: "",
+    run: (dir, stateDir, args, opts) =>
+      runDriveIn(dir, stateDir, args, tree.dir, opts),
+    spawn: (dir, stateDir, args, env = {}, stdout = "pipe") =>
+      spawnDriveIn(dir, stateDir, args, tree.dir, {
+        env,
+        stdout,
+        pacing: false,
+      }),
+    fixture: (f) => {
+      const fixture = writeFixture(f, tree.dir);
+      return {
+        ...fixture,
+        ...lockDirs(fixture.dir, fixture.stateDir, tree.lock),
+      };
+    },
+  };
+  beforeAll(async () => {
+    tree.dir = trackedTree(name);
+    tree.lock = await worktreeLockNameFor(tree.dir);
+  });
   return tree;
 }
 

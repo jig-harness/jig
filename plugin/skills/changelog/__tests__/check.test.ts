@@ -61,6 +61,29 @@ describe("checkNotes", () => {
     expect(check(root, { base: null }).skipped).toBe("no base branch given");
   });
 
+  test("a resolved open merge imports releases without exempting branch edits", () => {
+    const root = branch();
+    commit(root, { "other.txt": "branch work\n" }, "branch work");
+    git(root, "checkout", "main");
+    commit(
+      root,
+      {
+        "a/plugin.json": MANIFEST("1.3.0"),
+        "b/plugin.json": MANIFEST("1.3.0"),
+        "CHANGELOG.md": KEEP_CHANGELOG.replace(
+          "## [1.2.0]",
+          "## [1.3.0]\n\n### Changed\n\n- Release.\n\n## [1.2.0]",
+        ),
+      },
+      "release",
+    );
+    git(root, "checkout", "work");
+    git(root, "merge", "--no-commit", "--no-ff", "main");
+    expect(check(root).findings).toEqual([]);
+    write(root, "a/plugin.json", MANIFEST("1.4.0"));
+    expect(check(root).findings.join("\n")).toContain("1.4.0");
+  });
+
   test("a base git cannot compare against is a finding, not a skip", () => {
     const root = branch();
     const result = check(root, { base: "origin/nowhere" });
@@ -172,6 +195,37 @@ describe("checkNotes", () => {
     );
     expect(findings).toContain("CHANGELOG.md: the branch adds to Unreleased");
     expect(findings).toContain("adds or removes a release section");
+  });
+
+  test("an open base merge keeps imported releases while judging branch edits", () => {
+    const root = branch();
+    commit(root, { "src/x.ts": "feature\n" }, "feature");
+    git(root, "checkout", "main");
+    const released = KEEP_CHANGELOG.replace(
+      "## [1.2.0]",
+      "## [1.3.0] - 2026-02-03\n\n### Fixed\n\n- released\n\n## [1.2.0]",
+    );
+    commit(
+      root,
+      {
+        "CHANGELOG.md": released,
+        "a/plugin.json": MANIFEST("1.3.0"),
+        "b/plugin.json": MANIFEST("1.3.0"),
+      },
+      "release",
+    );
+    git(root, "checkout", "work");
+    git(root, "merge", "--no-commit", "main");
+    write(
+      root,
+      "changes/work.md",
+      "---\nrelease: patch\n---\n\n### Fixed\n\n- feature\n",
+    );
+    expect(check(root).findings).toEqual([]);
+    write(root, "a/plugin.json", MANIFEST("1.4.0"));
+    expect(check(root).findings.join("\n")).toContain(
+      "the branch moves the version from 1.3.0 to 1.4.0",
+    );
   });
 
   test("an entry already under Unreleased may be corrected or removed, never added to", () => {

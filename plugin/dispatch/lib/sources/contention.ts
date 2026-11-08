@@ -10,6 +10,7 @@
  */
 import { isRecord } from "../../../shared/guards.ts";
 import {
+  catalogFailed,
   type Contention,
   readContention,
   UNREAD_CONTENTION,
@@ -56,6 +57,10 @@ function repositoryPath(value: string): string {
  * Decide serialization for one repository, report it, and keep its holds.
  * Only the host that owns the repository writes the holds and their rows in
  * the outcome log; another host reads the same order and writes neither.
+ * With `skipped`, the reasons its reads were skipped this tick, nothing is
+ * read where a catalog is configured: every drive is unplaced with that
+ * reason, so no re-arm starts on one whose area cannot be told, and no hold
+ * begins or ends.
  */
 export async function observeContention(
   repo: RepoTarget,
@@ -65,11 +70,14 @@ export async function observeContention(
   launches: readonly ReadRecord[],
   nowMs: number,
   threads: (pr: number) => Promise<number>,
+  skipped: string | null = null,
 ): Promise<Contention> {
   if (!forge.ok) return UNREAD_CONTENTION;
   const merged = new Set(forge.merged.map((m) => m.number));
   const drives = forge.drives.filter((d) => !merged.has(d.number));
   const path = configuredCatalog(values);
+  if (skipped !== null && path !== null)
+    return catalogFailed({ drives }, skipped);
   const where = `${repo.slug}@${repo.defaultBranch}:${path ?? ""}`;
   const contention = await readContention(
     {

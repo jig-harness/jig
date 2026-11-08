@@ -478,6 +478,8 @@ describe("drive.ts loop control", () => {
         reviewedSha: scratchClean.head,
       },
       ["--max-rounds", "3", "--", ...PASS_PARKS_ONE],
+      undefined,
+      { env: { JIG__dispatch__person: "maintainer" } },
     );
     expect(r.exitCode).toBe(6);
     expect(r.stderr).not.toContain("changed NOTHING");

@@ -1,7 +1,9 @@
 /**
  * What every phase of one tick shares: the options it was run with, the
  * session runtime, the tick's clock, this machine's launch records and, with
- * `--apply`, the apply state the launches change as they go.
+ * `--apply`, the apply state the launches change as they go. The observe
+ * phase reads the launch records as the tick started; the act phase reads
+ * them again under the act lock, and builds the apply state from that read.
  */
 import type { ApplyState } from "./actions/drive.ts";
 import type { PendingRepository } from "./apply-order.ts";
@@ -22,6 +24,10 @@ export interface TickOptions {
   machine?: MachineConfig | null;
   now?: Date;
   runtime?: SessionRuntime;
+  /** How many reads the observe phase keeps in flight (`pool.ts`). */
+  poolSize?: number;
+  /** How long the act phase waits for another tick's act lock before it gives up, in milliseconds. */
+  actLockWaitMs?: number;
 }
 
 /** What one repository's turn needs beyond its path. */
@@ -29,6 +35,8 @@ export interface TickContext {
   options: TickOptions;
   runtime: SessionRuntime;
   nowMs: number;
+  /** When this invocation began, on the clock the launcher's deadline runs on; the apply state counts its deadline from here. */
+  startedMs: number;
   launches: ReadRecord[];
   apply: ApplyState | null;
   /** What each repository's tick read beside its report, by path, for the line. */
@@ -37,6 +45,8 @@ export interface TickContext {
   reflections: RepoReflection[];
   /** The repositories whose launches wait for every repository to be gathered, to be applied in turns. */
   pending: PendingRepository[];
+  /** The act lock was held when the tick first asked: what serialization read may predate that tick's launches. */
+  actWaited?: boolean;
   /** What the tick reads once and shares between its repositories' observe phases. */
   reads: TickReads;
 }

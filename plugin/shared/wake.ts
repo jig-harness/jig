@@ -25,8 +25,8 @@
  *   starts and removes only those when it ends; a request made while it runs
  *   stays pending, and one trailing run starts after the running one ends
  *   and the minute has passed.
- * - **A refused run is retried.** A run that ends `busy` (the tick lock is
- *   machine-wide, so another tick can hold it) keeps its requests and is
+ * - **A refused run is retried.** A run that ends `busy` (another tick
+ *   holds its target, or a machine-wide lock it needs) keeps its requests and is
  *   tried again after the same minute.
  * - **No resident process.** The waiter exits when nothing is pending, after
  *   `WAKE_ATTEMPTS` runs, or when a run cannot start; a request it leaves is

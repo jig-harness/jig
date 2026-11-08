@@ -33,12 +33,13 @@ const DISPATCH = resolve(import.meta.dir, "..");
 const MALFORMED_RUNTIME = `import { orcaRuntime } from ${JSON.stringify(`${DISPATCH}/lib/runtime/orca.ts`)};
 import { runTick } from ${JSON.stringify(`${DISPATCH}/tick.ts`)};
 const orca = orcaRuntime();
-let calls = 0;
+const first = process.argv[2];
 const runtime = {
   ...orca,
   name: orca.name,
   interactiveBinding: orca.interactiveBinding,
-  sessions: async (repo, join) => (calls++ === 0 ? { ok: true, source: "stub", workspaces: null } : orca.sessions(repo, join)),
+  // The first repository's answer is malformed, whichever repository asks first.
+  sessions: async (repo, join) => (repo.path === first ? { ok: true, source: "stub", workspaces: null } : orca.sessions(repo, join)),
   // Every answer comes from \`sessions\` above, not Orca's reader for a tick.
   sessionsOnce: undefined,
 };
@@ -261,13 +262,17 @@ describe("the receipt's timings", () => {
     }
     expect(Object.keys(receipt.phasesMs ?? {})).toEqual([
       "start",
-      "repos",
+      "observe",
+      "wait",
+      "act",
       "close",
     ]);
     const text = await w.dispatch(["--repo", w.repo]);
     expectSpawnExit(text, 0);
     expect(text.stdout).toMatch(/\n {2}took {5}\d.*: open \d+ ms, tracker /);
-    expect(text.stdout).toMatch(/\nTick took .*: start .*, repos .*, close /);
+    expect(text.stdout).toMatch(
+      /\nTick took .*: start .*, observe .*, wait .*, act .*, close /,
+    );
     const listed = await w.dispatch(["receipts"]);
     expectSpawnExit(listed, 0);
     expect(listed.stdout).toMatch(/exit 0 in \d/);

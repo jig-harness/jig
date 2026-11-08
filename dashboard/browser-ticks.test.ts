@@ -105,7 +105,8 @@ describe("the tick strip", () => {
         await openView(page, "History");
         await shows(page, ".pTicks .tkRow");
         await page
-          .locator(".pTicks .foldBtn", { hasText: "Details" })
+          .locator(".pTicks")
+          .getByRole("button", { name: "Details", exact: true })
           .first()
           .click();
         await shows(page, ".pTicks .tkKv");

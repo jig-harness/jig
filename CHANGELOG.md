@@ -387,6 +387,68 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.163.0] - 2026-11-08
+
+### Changed
+
+- `jig dispatch` re-drives a parked pull request that comes to conflict with
+  its base. The drive attempts to merge the base in, then parks on unanswered
+  questions if repair succeeds. While the re-drive is owed, the pull request carries
+  `jig:stale` in place of `jig:parked`. It is re-driven once for each pair of
+  its head and its base branch's head. When that re-drive leaves the conflict
+  in place (for example two requirements that contradict each other), the
+  drive stops `PR_CONFLICTING` and needs a person to resolve it; if it remains
+  parked, the park notice says it also conflicts with its base.
+
+### Fixed
+
+- Changelog checks compare an open merge against its resulting ancestry, so
+  releases imported from the base branch do not prevent validation before
+  the merge is committed. Branch edits to release versions remain errors.
+- The drive-pr driver-lock tests that ran against the caller's checkout now
+  use scratch repositories with their own remotes and isolated spawn
+  environments. They pass on a branch with commits not yet pushed or just
+  amended, and inside an active drive, where they used to fail.
+
+## [0.162.0] - 2026-11-08
+
+### Changed
+
+- `jig dispatch` reads every repository at once, then acts on them one at a
+  time. The read phase keeps at most six reads in flight, and reads a
+  repository's tracker and forge side by side. The act phase plans each
+  repository in turn, then runs every repository's launches and writes its
+  labels, in the same rotated order as before, so the same launches are
+  admitted. On a host with eleven
+  repositories, a sweep that took about 42 seconds now takes about 8.
+- A tick for one repository (the Orca plugin's wake-up, or `jig send`'s) no
+  longer waits for a full sweep's reads. Each repository is read and acted on
+  under its own lock (`~/.local/state/jig/dispatch/observe/`), and acting is
+  under `tick.lock`, the lock earlier versions take for their whole run, so a
+  tick of this version and one of an earlier version never act at once. A
+  tick waits up to two minutes for another tick's act phase, and leaves a
+  repository another tick is reading to that tick, listing it under `busy` on
+  its receipt. Two checkouts of one repository count as one repository.
+- The forge's rate limit is now read once, as the tick starts. While less
+  than a tenth of it is left, the tick skips the running drives' thread
+  samples and serialization's reads. Without serialization's reads, no
+  re-arm starts in a repository with a change-area catalog for that tick. The
+  receipt lists what was skipped (`lowBudget`). A receipt's tick phases are
+  now `start`, `observe`, `wait`, `act` and `close`.
+
+## [0.161.0] - 2026-11-08
+
+### Added
+
+- Parked questions name the person they wait on: the question's change-area owner, else `dispatch.person`, else the pull request's author. Notifications and `jig ask` carry that person, and `jig ask --waiting --person <login>` filters the line by named recipients without changing who may answer.
+
+### Fixed
+
+- The dispatch dashboard shows current PR state separately from historical drive outcomes, with direct PR and repository links, hover context, and copy controls that copy only IDs. Merged or closed drive decisions leave What needs you after a successful forge refresh; follow-up failures remain visible.
+- Copy controls use Lucide icons with accessible labels and feedback. Disclosure controls use rotating chevrons and keep their position when expanded.
+- Merged PRs show whether their follow-up is awaiting a slot, starting, running, waiting, blocked, or needs attention, with a summary above the panels.
+- Changelog checks during an open base merge allow imported releases while continuing to reject branch edits to release versions and sections.
+
 ## [0.160.0] - 2026-11-08
 
 The installed timers now keep the plugin current: a machine that runs the dispatcher stays on its channel's newest version with nobody at the keyboard. On a machine whose jobs an earlier release installed, run `jig upgrade` (or `jig upgrade --jobs-only`) once: it refreshes each job's launcher copy, and only a launcher copy from this release on runs the upgrade.
@@ -5822,7 +5884,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.160.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.163.0...HEAD
+[0.163.0]: https://github.com/jig-harness/jig/compare/v0.162.0...v0.163.0
+[0.162.0]: https://github.com/jig-harness/jig/compare/v0.161.0...v0.162.0
+[0.161.0]: https://github.com/jig-harness/jig/compare/v0.160.0...v0.161.0
 [0.160.0]: https://github.com/jig-harness/jig/compare/v0.159.0...v0.160.0
 [0.159.0]: https://github.com/jig-harness/jig/compare/v0.158.1...v0.159.0
 [0.158.1]: https://github.com/jig-harness/jig/compare/v0.158.0...v0.158.1

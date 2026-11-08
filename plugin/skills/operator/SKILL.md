@@ -100,8 +100,9 @@ pick-up's or a follow-up's thread is `--thread` on its own address. Write a
 - **What waits on a person.** `jig ask --waiting` lists every address that
   waits on a person across the repositories this machine dispatches, from
   the dispatcher's newest tick, and says when that tick ran: say that time.
-  It lists what waits on anyone, not only on this person: `--person` is
-  refused until a park records whom it waits on, so do not pass it. Open an
+  For a named person's waiting questions, add `--person <login>`; it filters
+  by the people recorded on parked questions. Older unnamed parks remain
+  in the unfiltered list. Open an
   address (`jig ask` on it) only to say more about one entry. When `unread`
   is non-null or `tick` is null, relay why the line is unavailable, and
   offer to ask about one address instead.

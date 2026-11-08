@@ -1227,6 +1227,11 @@ make, use the entry's term instead.
   is the drive's own rather than a person's decision: a stall, a spent
   CI-repair budget or a pass deadline that recurred, once per head; a failure
   while the pull request conflicts with its base, once per pair of heads.
+  So is a drive parked on a question for a person whose pull request comes
+  to conflict with its base: the re-drive attempts to merge the base, and
+  parks again on the questions still open only when that repair succeeds;
+  with repair disabled or spent, an unreadable base or a failed repair it
+  stops as a conflicting pull request instead.
 - **Recovery budget (of a pull request)** — how many times in a rolling hour
   the *dispatcher* starts work on one pull request again after a stop nobody
   decided: a drive that stopped with no recorded cause, a *re-drive* of a
@@ -2104,6 +2109,19 @@ make, use the entry's term instead.
   `dispatch.notices_linger`, or it is unread and every cause it carries is gone, the
   dispatcher removes it with its branch, unless it holds anything a person
   made.
+- **Observe lock** — the lock a *dispatcher* *tick* holds on a repository
+  while it reads it and until it is done acting on it, so no other tick
+  acts on that repository from reads made before this one acted. It is one
+  per repository path, and a second one per forge repository, so two
+  checkouts of one repository exclude each other. A tick never waits for an
+  observe lock: a repository another tick holds is left to that tick and
+  named on the receipt. Taken before the *act lock*.
+- **Act lock** — the one lock (`tick.lock`) a *dispatcher* *tick* holds
+  while it acts: plans, launches and writes labels. One tick acts per
+  machine; a tick waits for it up to two minutes. Taken after the tick's
+  *observe locks* for its reads, and the only lock a tick waits for. Its
+  close tries the observe locks of repositories it did not read, without
+  waiting.
 - **Dispatched mark** — the line that says the *dispatcher* started a
   session in a workspace: a short mark, the stage, the key and the *launch
   record*'s id (`⚙ dispatched · rearm #456 · launch <id>`). It is kept in

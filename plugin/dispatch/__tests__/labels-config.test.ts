@@ -26,6 +26,11 @@ const drive = (cls: LedgerClass, exit: number | null = null): DrivenPr => ({
 });
 
 describe("dispatch.labels", () => {
+  it("accepts the drive-owned recipient setting", () => {
+    expect(() =>
+      dispatchSection({ dispatch: { person: "maintainer" } }),
+    ).not.toThrow();
+  });
   it("is off by default, with the jig: prefix", () => {
     expect(dispatchSection({}).labels).toEqual({
       enabled: false,
