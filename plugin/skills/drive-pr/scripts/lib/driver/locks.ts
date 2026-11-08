@@ -1,4 +1,5 @@
 /** Acquire and release generation-addressed driver locks without removing a successor's. */
+import type { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
@@ -160,6 +161,24 @@ export function holderGone(claim: Claim): boolean {
 export function liveHolder(stateDir: string, name: string): Claim | null {
   const claim = inspectLock(stateDir, name);
   return claim !== null && claimAlive(claim) ? claim : null;
+}
+
+/**
+ * The claim of the live driver holding lock `name` of clone `clone`, read
+ * through `db`, a connection the caller opened (read-only, for a caller that
+ * must leave the disk as it is); `null` when nobody live holds it.
+ */
+export function liveHolderIn(
+  db: Database,
+  clone: string,
+  name: string,
+): Claim | null {
+  const row = db
+    .query("SELECT * FROM locks WHERE clone = ? AND name = ?")
+    .get(clone, name) as LockRow | null;
+  if (row === null) return null;
+  const claim = claimOf(row);
+  return claimAlive(claim) ? claim : null;
 }
 
 /** Take the lock over `seen` (or a free slot); whether this process now holds it. */
