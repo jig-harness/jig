@@ -319,6 +319,13 @@ make, use the entry's term instead.
   is a mechanical property of how it was raised, not an author's judgment. It
   maps to a generic server-side failure and is never caught to drive control
   flow.
+- **Defect boundary** — the one place a *defect* is caught, around the work
+  it stops: one stage of a dispatcher tick, one repository's turn, the tick
+  itself. It records the defect where a person reads it, with its stack on
+  the error output only, and lets the work beside it go on. In Jig's plugin
+  an expected failure travels as an `Outcome`, the plugin's *result type*,
+  so a throw that reaches a defect boundary is a bug
+  ([ADR-0012](docs/adr/ADR-0012-failures-as-values.md)).
 - **Error boundary** — the one place errors reach a caller: the handler that
   maps each error to a fixed response shape (code, message key, severity,
   recovery hint, *correlation id*: the complete public field set), turns an
