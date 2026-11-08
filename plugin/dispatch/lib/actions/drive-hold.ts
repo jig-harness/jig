@@ -39,14 +39,10 @@
  */
 import { noCauseFacts } from "../no-cause-stops.ts";
 import { pendingRearm } from "../rearm-state.ts";
-import {
-  goneUnlaunched,
-  isRecovery,
-  RECOVERY_FACTS,
-  sameFacts,
-} from "../recovery-facts.ts";
+import { isRecovery, RECOVERY_FACTS, sameFacts } from "../recovery-facts.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
+  cancelledBeforeExecution,
   holds,
   isDrive,
   type ReadRecord,
@@ -275,8 +271,8 @@ export function settledConflict(pr: DrivenPr, redriven: string): DrivenPr {
 
 /**
  * Each silent drive as the plan reads it once this machine's launch records
- * are read beside it: one whose driver this host shows gone, which this
- * machine already took over on the ledger facts it shows now, that takeover
+ * are read beside it: one, whether this host shows its driver gone or the
+ * doctor reads its holder, which this machine already took over on the ledger facts it shows now, that takeover
  * having ended without moving the ledger on, is notified as silent and not
  * taken over again. While a record still holds it, it reads as it is.
  */
@@ -285,13 +281,22 @@ export function settleSilentTakeovers(
   records: ReadRecord[],
 ): DrivenPr[] {
   return drives.map((pr) => {
-    if (!goneUnlaunched(pr)) return pr;
+    if (pr.class !== "silent") return pr;
+    // A driver a launch record started stays that record's to take over; the
+    // standing refusal, not this settlement, answers a takeover refused since.
+    const attributed = driveHold(
+      { ...pr, evidence: { ...pr.evidence, settled: true } },
+      records,
+    );
+    if (attributed.kind !== "none") return pr;
     const facts = factsOf(pr);
+    // A takeover cancelled before it ran never acted on the ledger.
     const mine = records.filter(
       (r) =>
         isDrive(r.record) &&
         r.record.pr === pr.number &&
-        r.record.action === "takeover",
+        r.record.action === "takeover" &&
+        !cancelledBeforeExecution(r),
     );
     if (mine.some((r) => holds(r.state))) return pr;
     const earlier = mine.findLast((r) => sameFacts(r.record.facts, facts));

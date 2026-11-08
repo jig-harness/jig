@@ -3,7 +3,8 @@
  * forge target and the dispatch section on its default branch), read the
  * tracker, the forge and every host's launch claims, join the runtime's
  * sessions, and run Control's reads (each running drive's threads, each
- * waiting session's wall, the contention between drives). It hands the plan
+ * waiting session's wall, the contention between drives) and, when a drive
+ * fell silent, the clone's drive doctor (`sources/doctor.ts`). It hands the plan
  * one `RepoObservation`.
  *
  * Opening a repository takes its target and its configuration from the
@@ -66,6 +67,7 @@ import {
   type SharedContext,
 } from "./shared-launches.ts";
 import { observeContention } from "./sources/contention.ts";
+import { type HolderReadings, readHolders } from "./sources/doctor.ts";
 import type { readDrives } from "./sources/ledgers.ts";
 import { readPickups } from "./sources/tracker.ts";
 import { facetBound } from "./sources/tracker-facets.ts";
@@ -138,6 +140,8 @@ export interface RepoObservation {
   serialized: Contention;
   /** The pull requests a person's hold label keeps every stage off. */
   held: Set<number>;
+  /** Each pull request's lock holder as this clone's drive doctor reads it, read when a drive fell silent. */
+  holders?: HolderReadings;
 }
 
 /** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
@@ -328,6 +332,19 @@ export async function observeRepo(
       );
     }),
   );
+  // A silent drive's holder, read only when one fell silent.
+  const holders = forge.drives.some((d) => d.class === "silent")
+    ? await timer.time("observe", () =>
+        pool.run(() =>
+          readHolders(
+            repo.path,
+            Math.ceil(
+              (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
+            ),
+          ),
+        ),
+      )
+    : undefined;
   return {
     opened,
     tracked,
@@ -340,6 +357,7 @@ export async function observeRepo(
     sessions,
     serialized,
     held,
+    ...(holders === undefined ? {} : { holders }),
   };
 }
 

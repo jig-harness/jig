@@ -313,6 +313,13 @@ while (fs.existsSync(F + "/drive-hold") && Date.now() < until) Bun.sleepSync(50)
 process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
 `;
 
+/** The drive doctor the tick reads in tests: \`doctor.json\` as \`drives.ts --json\` prints it, or no rows. */
+const FAKE_DOCTOR = `const fs = require("node:fs");
+const F = process.env.DISPATCH_FAKE_DIR;
+fs.appendFileSync(F + "/doctor-runs.jsonl", JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }) + "\\n");
+process.stdout.write(fs.existsSync(F + "/doctor.json") ? fs.readFileSync(F + "/doctor.json", "utf8") : JSON.stringify({ rows: [] }));
+`;
+
 /** The Codex a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears. */
 const FAKE_CODEX = `#!/usr/bin/env bun
 const fs = require("node:fs");
@@ -500,6 +507,7 @@ export function world(): World {
   writeFakeProgram(join(bin, "claude"), FAKE_CLAUDE);
   writeFakeProgram(join(bin, "codex"), FAKE_CODEX);
   writeFileSync(join(root, "fake-drive.js"), FAKE_DRIVE);
+  writeFileSync(join(root, "fake-doctor.js"), FAKE_DOCTOR);
   const write = (name: string, value: unknown) =>
     writeFileSync(
       join(dir, name),
@@ -623,6 +631,7 @@ export function world(): World {
     JIG_USER_LAYER: "off",
     DISPATCH_FAKE_DIR: dir,
     JIG_DISPATCH_DRIVE_SCRIPT: join(root, "fake-drive.js"),
+    JIG_DISPATCH_DOCTOR_SCRIPT: join(root, "fake-doctor.js"),
     JIG_GITHUB_GRAPHQL_URL: `http://127.0.0.1:${server.port}/graphql`,
     GH_TOKEN: "test-token",
   };

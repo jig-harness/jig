@@ -5,6 +5,11 @@ import { layeredConfig, remoteName } from "../../shared/consumer.ts";
 import { readDrivenTree, type DrivenTree } from "../../shared/driven-tree.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
+import {
+  CHANGES_STATUS_ARGS,
+  GIT_OPERATION_MARKERS,
+  hidesIndexChanges,
+} from "../../shared/idle-holder.ts";
 import { detectPackageManager } from "../../shared/detect/package-manager.ts";
 import { orcaFailure, orcaResult, runOrca } from "../../shared/orca.ts";
 import { gcGit as git } from "../git.ts";
@@ -66,15 +71,7 @@ export async function remoteHeadBranch(
   );
 }
 async function operation(admin: string): Promise<string | null> {
-  for (const name of [
-    "MERGE_HEAD",
-    "CHERRY_PICK_HEAD",
-    "REVERT_HEAD",
-    "BISECT_LOG",
-    "rebase-merge",
-    "rebase-apply",
-    "sequencer",
-  ]) {
+  for (const name of GIT_OPERATION_MARKERS) {
     try {
       lstatSync(resolve(admin, name));
       return name;
@@ -326,16 +323,8 @@ export async function worktreeProof(
     throw new GcError("HEAD is detached and no drive attached the worktree");
   const flags = await git(path, ["ls-files", "-v", "-z"]);
   const facts: WorktreeEvidence = {
-    dirty: !!(await git(path, [
-      "status",
-      "--porcelain=v1",
-      "--untracked-files=all",
-      "--ignore-submodules=none",
-      "-z",
-    ])),
-    hiddenIndexChanges: flags
-      .split("\0")
-      .some((entry) => /^[a-zS] /.test(entry)),
+    dirty: !!(await git(path, [...CHANGES_STATUS_ARGS])),
+    hiddenIndexChanges: hidesIndexChanges(flags),
     operation: await operation(admin),
     ignoredContent: classifyIgnored(
       path,

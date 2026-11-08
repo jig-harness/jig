@@ -1,4 +1,8 @@
 /** Both retirement stages require visible, ignored and index-hidden local content to be absent. */
+import {
+  CHANGES_STATUS_ARGS,
+  hidesIndexChanges,
+} from "../../shared/idle-holder.ts";
 import { gitIdentityEnv, run } from "../../shared/proc.ts";
 import { probeFailure } from "./text.ts";
 
@@ -8,20 +12,13 @@ export async function retirementCheckoutVeto(
 ): Promise<string | null> {
   for (const [args, accepts, why] of [
     [
-      [
-        "status",
-        "--porcelain=v1",
-        "--untracked-files=all",
-        "--ignore-submodules=none",
-        "-z",
-      ],
+      CHANGES_STATUS_ARGS,
       (text: string) => text === "",
       "git reports changes in it",
     ],
     [
       ["ls-files", "-v", "-z"],
-      (text: string) =>
-        !text.split("\0").some((entry) => /^[a-zS] /.test(entry)),
+      (text: string) => !hidesIndexChanges(text),
       "index flags hide possible changes from git status",
     ],
     [
