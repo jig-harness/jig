@@ -100,16 +100,22 @@ function maskCode(text: string): string {
   return out;
 }
 
-/** A list item marker opening a line: a new block, so no span runs into it. */
-const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s/;
+/**
+ * A list item marker that interrupts a paragraph: a bullet, or an ordered
+ * marker numbered 1. Any other number soft-wraps the paragraph it follows.
+ */
+const LIST_ITEM = /^\s*(?:[-*+]|1[.)])\s/;
+/** A blockquote opening a line: a container block of its own. */
+const QUOTE = /^\s{0,3}>/;
 
 /**
  * Whether `raw` ends the paragraph above it. A code span runs across the lines
  * of one paragraph, never past a blank line, fence, heading, underline or item.
  */
-function endsParagraph(raw: string): boolean {
+function endsParagraph(raw: string, inQuote: boolean): boolean {
   return (
     raw.trim() === "" ||
+    (!inQuote && QUOTE.test(raw)) ||
     /^\s*(```|~~~)/.test(raw) ||
     BLOCK_BOUNDARY.test(raw) ||
     EQUALS_UNDERLINE.test(raw) ||
@@ -119,8 +125,14 @@ function endsParagraph(raw: string): boolean {
 
 /** The lines of the paragraph starting at `start`, code masked across them. */
 function maskParagraph(lines: string[], start: number): string[] {
+  const first = lines[start] ?? "";
+  // A heading or thematic break is one line: no span opened on it runs on.
   let stop = start + 1;
-  while (stop < lines.length && !endsParagraph(lines[stop] ?? "")) stop++;
+  if (!BLOCK_BOUNDARY.test(first)) {
+    const inQuote = QUOTE.test(first);
+    while (stop < lines.length && !endsParagraph(lines[stop] ?? "", inQuote))
+      stop++;
+  }
   return maskCode(lines.slice(start, stop).join("\n")).split("\n");
 }
 

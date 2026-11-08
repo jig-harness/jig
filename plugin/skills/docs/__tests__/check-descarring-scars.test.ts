@@ -318,3 +318,18 @@ test("scar lint: a code span may run across the lines of a paragraph", () => {
     1,
   );
 });
+
+test("scar lint: a span opened in one block does not reach into the next", () => {
+  expect(scanScars("# Heading `\ncoderabbitai[bot]")).toHaveLength(1);
+  expect(scanScars("Intro `\n> coderabbitai[bot]")).toHaveLength(1);
+  expect(scanScars("> Use `the handle\n> coderabbitai[bot]` here.")).toEqual(
+    [],
+  );
+});
+
+test("scar lint: only a list numbered 1 interrupts a paragraph", () => {
+  expect(scanScars("Use `the handle\n2. coderabbitai[bot]` here.")).toEqual([]);
+  expect(
+    scanScars("Use `the handle\n1. coderabbitai[bot]` here."),
+  ).toHaveLength(1);
+});
