@@ -99,3 +99,20 @@ describe("the tick's own failure row", () => {
     expect(readFailures(undefined, root)).toEqual([]);
   });
 });
+
+describe("whether a tick failed", () => {
+  it("counts an individually unreadable claim, ledger or marker as a failed tick", async () => {
+    const { settleOutcomes } = await import("../lib/tick-settle.ts");
+    const { context, receipt } = world(["/a"]);
+    Object.assign(context, { launches: [], nowMs: Date.now() });
+    const repo = receipt.repos[0] as unknown as { unplaced: unknown[] };
+    expect(await settleOutcomes(receipt, context, undefined)).toBe(false);
+    repo.unplaced.push({
+      target: "PR #4",
+      record: "forge",
+      reason: "its ledger did not read",
+      readFailed: true,
+    });
+    expect(await settleOutcomes(receipt, context, undefined)).toBe(true);
+  });
+});

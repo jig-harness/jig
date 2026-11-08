@@ -161,7 +161,10 @@ export async function settleOutcomes(
       (r) =>
         r.refused !== null ||
         r.records.some((x) => !x.ok) ||
-        r.unplaced.some((u) => u.target === "the outcome log"),
+        // An individual claim, ledger or marker that did not read fails the turn as repoFailure says.
+        r.unplaced.some(
+          (u) => u.readFailed === true || u.target === "the outcome log",
+        ),
     )
   );
 }

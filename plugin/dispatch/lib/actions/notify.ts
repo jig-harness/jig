@@ -823,6 +823,14 @@ function earlierSend(
   );
 }
 
+/** The suppression records that keep an unread notices workspace: the repository's own and the host failures' at any repository, which can be told here. */
+function retirementRecords(repo: string, root: string): Suppression[] {
+  const records = readSuppressions(repo, root);
+  for (const [key, record] of readHostSuppressions(root))
+    if (!records.has(key)) records.set(key, record);
+  return [...records.values()];
+}
+
 /** `--apply` for one repository's notifications, then its notices workspace. */
 export async function applyNotices(
   state: ApplyState,
@@ -849,7 +857,7 @@ export async function applyNotices(
     takesComment: notices !== null && ownsComment(notices, root),
     written,
     causes: causes.map((c) => c.notice.key),
-    records: [...readSuppressions(repo.slug, root).values()],
+    records: retirementRecords(repo.slug, root),
     lingerMs,
     nowMs: Date.now(),
     root,
@@ -927,24 +935,36 @@ async function sendNotices(
       );
     }
   };
-  const group = await atDestination(
-    state,
-    repo,
-    due,
-    { workspaces: sessions.workspaces, report },
-    settings.branch,
+  const written = new Set<string>();
+  const deliver = async (batch: Cause[]): Promise<void> => {
+    if (batch.length === 0) return;
+    const group = await atDestination(
+      state,
+      repo,
+      batch,
+      { workspaces: sessions.workspaces, report },
+      settings.branch,
+    );
+    if (group === null) return;
+    const outcomes = await sendTo(
+      state,
+      group.workspace,
+      group.causes,
+      suppressed,
+      root,
+      repo.slug,
+      settings.branch !== null,
+    );
+    report.notifications.push(...outcomes);
+    if (settings.book != null) countDeliveries(settings.book, batch, outcomes);
+    written.add(group.workspace.path);
+  };
+  // The notices go first: a delivery that recovers here clears its row before the failure notice about it is decided.
+  await deliver(due.filter((c) => !isFailureCause(c.cause)));
+  await deliver(
+    due.filter(
+      (c) => isFailureCause(c.cause) && failureStands(settings.book, c),
+    ),
   );
-  if (group === null) return new Set();
-  const outcomes = await sendTo(
-    state,
-    group.workspace,
-    group.causes,
-    suppressed,
-    root,
-    repo.slug,
-    settings.branch !== null,
-  );
-  report.notifications.push(...outcomes);
-  if (settings.book != null) countDeliveries(settings.book, due, outcomes);
-  return new Set([group.workspace.path]);
+  return written;
 }
