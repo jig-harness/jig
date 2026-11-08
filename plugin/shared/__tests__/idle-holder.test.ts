@@ -38,6 +38,34 @@ function reasons(holder: string, drivers?: TreeDrivers): string[] {
   return v.reasons;
 }
 
+/** A pushed holder with a submodule `mod` holding `inner.txt`. */
+function holderWithSubmodule() {
+  const tree = heldTree();
+  const { root, holder } = tree;
+  const sub = join(root, "sub-origin");
+  mkdirSync(sub);
+  git(sub, "init", "-q", "-b", "main");
+  writeFileSync(join(sub, "inner.txt"), "one\n");
+  git(sub, "add", "inner.txt");
+  git(sub, "commit", "-q", "-m", "inner");
+  git(
+    holder,
+    "-c",
+    "protocol.file.allow=always",
+    "submodule",
+    "add",
+    "-q",
+    sub,
+    "mod",
+  );
+  git(holder, "commit", "-q", "-m", "add submodule");
+  git(holder, "push", "-q", "origin", `HEAD:refs/heads/${BRANCH}`);
+  return tree;
+}
+
+const HIDDEN =
+  "assume-unchanged or skip-worktree flags hide possible changes from git status";
+
 describe("holderVerdict", () => {
   test("calls a clean, pushed, undriven tree with nothing in it idle, at its commit", () => {
     const { holder } = heldTree();
@@ -73,30 +101,24 @@ describe("holderVerdict", () => {
   });
 
   test("an index flag hiding a change inside a submodule keeps it busy", () => {
-    const { root, holder } = heldTree();
-    const sub = join(root, "sub-origin");
-    mkdirSync(sub);
-    git(sub, "init", "-q", "-b", "main");
-    writeFileSync(join(sub, "inner.txt"), "one\n");
-    git(sub, "add", "inner.txt");
-    git(sub, "commit", "-q", "-m", "inner");
-    git(
-      holder,
-      "-c",
-      "protocol.file.allow=always",
-      "submodule",
-      "add",
-      "-q",
-      sub,
-      "mod",
-    );
-    git(holder, "commit", "-q", "-m", "add submodule");
-    git(holder, "push", "-q", "origin", `HEAD:refs/heads/${BRANCH}`);
+    const { holder } = holderWithSubmodule();
     git(join(holder, "mod"), "update-index", "--assume-unchanged", "inner.txt");
     writeFileSync(join(holder, "mod", "inner.txt"), "hidden\n");
-    expect(reasons(holder)).toEqual([
-      "assume-unchanged or skip-worktree flags hide possible changes from git status",
-    ]);
+    expect(reasons(holder)).toEqual([HIDDEN]);
+  });
+
+  test("an index flag on the submodule's own gitlink keeps it busy", () => {
+    const { holder } = holderWithSubmodule();
+    git(holder, "update-index", "--assume-unchanged", "mod");
+    expect(reasons(holder)).toEqual([HIDDEN]);
+  });
+
+  test("an index flag inside an inactive but populated submodule keeps it busy", () => {
+    const { holder } = holderWithSubmodule();
+    git(holder, "config", "submodule.mod.active", "false");
+    git(join(holder, "mod"), "update-index", "--assume-unchanged", "inner.txt");
+    writeFileSync(join(holder, "mod", "inner.txt"), "hidden\n");
+    expect(reasons(holder)).toEqual([HIDDEN]);
   });
 
   for (const marker of GIT_OPERATION_MARKERS)

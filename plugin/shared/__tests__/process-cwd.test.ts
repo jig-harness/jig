@@ -46,10 +46,10 @@ describe("parseCwdListing", () => {
         "/proc/1\t/\n/proc/2\t/w/holder\n/proc/3\t/w/holder/sub\n/proc/4\t/w/holder-2\n/proc/5\t\n",
         TOP,
       ),
-    ).toEqual({ pids: ["2", "3"], unread: ["5"] });
+    ).toEqual({ pids: ["2", "3"], unread: ["5"], partial: [] });
     expect(
       parseCwdListing("p10\nfcwd\nn/w/holder/x\np11\nfcwd\nn/w/other\n", TOP),
-    ).toEqual({ pids: ["10"], unread: [] });
+    ).toEqual({ pids: ["10"], unread: [], partial: [] });
   });
 });
 
@@ -60,7 +60,7 @@ describe("parseCwdListing lsof escapes", () => {
         "p10\nfcwd\nn/w/caf\\xc3\\xa9/x\np11\nfcwd\nn/w/other\n",
         "/w/café",
       ),
-    ).toEqual({ pids: ["10"], unread: [] });
+    ).toEqual({ pids: ["10"], unread: [], partial: [] });
   });
 });
 
@@ -74,6 +74,7 @@ describe("parseCwdListing lsof control characters", () => {
     expect(parseCwdListing(`p10\nfcwd\nn${printed}\n`, top)).toEqual({
       pids: ["10"],
       unread: [],
+      partial: [],
     });
   });
 
@@ -81,6 +82,7 @@ describe("parseCwdListing lsof control characters", () => {
     expect(parseCwdListing("p10\nfcwd\nn/w/my^Itree/x\n", "/w/other")).toEqual({
       pids: [],
       unread: [],
+      partial: [],
     });
   });
 });
@@ -89,6 +91,14 @@ describe("cwdHolders", () => {
   test("answers from a clean listing", () => {
     const { run } = runner(result(0, "/proc/1\t/\n/proc/2\t/w/holder/a\n"));
     expect(cwdHolders(run, TOP)).toEqual({ pids: ["2"] });
+  });
+
+  test("is no answer when lsof gave only part of a name, as `/ -- work/holder`", () => {
+    const { run } = runner(result(0, "p7\nfcwd\nn/ -- work/holder\n"));
+    expect(cwdHolders(run, TOP)).toEqual({
+      unknown:
+        "lsof gave only part of a working directory's name (/ -- work/holder)",
+    });
   });
 
   test("accepts exit 1 when every error names a process that ended", () => {

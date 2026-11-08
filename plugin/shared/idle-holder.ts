@@ -217,14 +217,32 @@ function changes(git: Git): string | null {
     : "it has uncommitted or untracked changes";
 }
 
-/** Why index flags may hide a change, or `null`. */
+/**
+ * Why index flags may hide a change, or `null`. The superproject's own flags
+ * (a gitlink's included) are read without recursion, because a recursive
+ * listing shows an active submodule's files instead of its gitlink; every
+ * populated submodule, active or not, nested ones too, is then read through
+ * `submodule foreach`.
+ */
 function hiddenChanges(git: Git): string | null {
-  const flags = git(["ls-files", "-v", "-z", "--recurse-submodules"]);
-  if (flags.status !== 0)
-    return `its index flags cannot be read: ${output(flags)}`;
-  return hidesIndexChanges(flags.stdout)
-    ? "assume-unchanged or skip-worktree flags hide possible changes from git status"
-    : null;
+  const reads = [
+    ["ls-files", "-v", "-z"],
+    [
+      "submodule",
+      "foreach",
+      "--quiet",
+      "--recursive",
+      "git ls-files -v -z",
+    ],
+  ];
+  for (const args of reads) {
+    const flags = git(args);
+    if (flags.status !== 0)
+      return `its index flags cannot be read: ${output(flags)}`;
+    if (hidesIndexChanges(flags.stdout))
+      return "assume-unchanged or skip-worktree flags hide possible changes from git status";
+  }
+  return null;
 }
 
 /** The drives and sessions on the tree, as reasons. */

@@ -83,13 +83,22 @@ function insideLsof(name: string, top: string): boolean {
   );
 }
 
-/** The listing's pids working in `top`, and the pids whose directory it could not read. */
+/**
+ * Whether lsof gave only part of a name: it prints a filesystem name, ` -- `
+ * and the components it could recover, which no path comparison can place.
+ */
+function incompleteLsof(name: string): boolean {
+  return name.includes(" -- ");
+}
+
+/** The listing's pids working in `top`, the pids whose directory it could not read and the names lsof gave only in part. */
 export function parseCwdListing(
   listing: string,
   top: string,
-): { pids: string[]; unread: string[] } {
+): { pids: string[]; unread: string[]; partial: string[] } {
   const pids: string[] = [];
   const unread: string[] = [];
+  const partial: string[] = [];
   let pid: string | null = null;
   for (const line of listing.split("\n")) {
     const proc = /^\/proc\/(\d+)\t(.*)$/.exec(line);
@@ -100,14 +109,13 @@ export function parseCwdListing(
       continue;
     }
     if (line.startsWith("p")) pid = line.slice(1);
-    else if (
-      line.startsWith("n") &&
-      pid !== null &&
-      insideLsof(line.slice(1), top)
-    )
-      pids.push(pid);
+    else if (line.startsWith("n") && pid !== null) {
+      const name = line.slice(1);
+      if (insideLsof(name, top)) pids.push(pid);
+      else if (incompleteLsof(name)) partial.push(name);
+    }
   }
-  return { pids: [...new Set(pids)], unread };
+  return { pids: [...new Set(pids)], unread, partial };
 }
 
 /**
@@ -155,7 +163,11 @@ export function cwdHolders(run: ProbeRun, top: string): CwdAnswer {
     };
   const errors = sortCwdErrors(listed.stderr);
   if ("unknown" in errors) return { unknown: errors.unknown };
-  const { pids, unread } = parseCwdListing(listed.stdout, top);
+  const { pids, unread, partial } = parseCwdListing(listed.stdout, top);
+  if (partial.length > 0)
+    return {
+      unknown: `lsof gave only part of a working directory's name (${partial[0]})`,
+    };
   for (const pid of new Set([...errors.denied, ...unread])) {
     const why = deniedWhy(run, pid);
     if (why !== null) return { unknown: why };
