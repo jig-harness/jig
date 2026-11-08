@@ -50,6 +50,8 @@
 # A group is a closed family an issue carries at most one label of:
 #   id        the family's name (unique among groups and categories)
 #   required  optional, default false; true: every issue carries one
+#   not_required_on  optional, with `required: true`; flag ids whose issues
+#             need none (no size on an epic, whose children carry theirs)
 #   labels    non-empty list of label ids
 #
 # A category is a family of prefixed labels an issue may carry several of:
@@ -121,8 +123,10 @@ statuses:
 # required group exactly one.
 # ---------------------------------------------------------------------------
 groups:
+  # Every issue but an epic carries one: an epic's children carry theirs.
   - id: size
     required: true
+    not_required_on: [epic]
     notes: effort estimate; split an item larger than the largest size
     labels:
       - id: small

@@ -37,7 +37,12 @@ import {
   stringList,
   widened,
 } from "./jql.ts";
-import { JiraApiError, offsetPages, searchPages } from "./transport.ts";
+import {
+  abortedError,
+  JiraApiError,
+  offsetPages,
+  searchPages,
+} from "./transport.ts";
 
 type ReportOps = Pick<
   CoreTracker,
@@ -176,7 +181,10 @@ export function reportOperations(client: Client): ReportOps {
   }
 
   /** The keys among `keys` with at least one open child. */
-  async function withOpenChildren(keys: string[]): Promise<Set<string>> {
+  async function withOpenChildren(
+    keys: string[],
+    signal?: AbortSignal,
+  ): Promise<Set<string>> {
     const out = new Set<string>();
     for (let i = 0; i < keys.length; i += BATCH) {
       const batch = keys.slice(i, i + BATCH);
@@ -185,6 +193,7 @@ export function reportOperations(client: Client): ReportOps {
         `parent in ${keyList(batch)} AND ${OPEN}${ORDER}`,
         ["parent"],
         `open children of ${batch.join(", ")}`,
+        signal,
       );
       for (const child of found) {
         const fields = record(
@@ -198,8 +207,14 @@ export function reportOperations(client: Client): ReportOps {
     return out;
   }
 
-  async function pools(issues: JiraIssue[]): Promise<CorePoolIssue[]> {
-    const parents = await withOpenChildren(issues.map((i) => i.key));
+  async function pools(
+    issues: JiraIssue[],
+    signal?: AbortSignal,
+  ): Promise<CorePoolIssue[]> {
+    const parents = await withOpenChildren(
+      issues.map((i) => i.key),
+      signal,
+    );
     return issues.map((issue) => {
       const { state } = model.read(issue);
       return {
@@ -428,12 +443,14 @@ export function reportOperations(client: Client): ReportOps {
       return pools(await client.children(key, true));
     },
 
-    async openPopulation() {
+    async openPopulation(signal) {
       return pools(
         await client.search(
           inProject(project, OPEN),
           `open issues of ${project}`,
+          signal,
         ),
+        signal,
       );
     },
 
@@ -443,13 +460,14 @@ export function reportOperations(client: Client): ReportOps {
       return issue === null ? null : ((await pools([issue]))[0] ?? null);
     },
 
-    async assignedIssues(identity, states) {
+    async assignedIssues(identity, states, signal) {
       if (states.length === 0)
         throw new TrackerRequestError(
           "invalid",
           "an assigned-issues query needs at least one state",
         );
-      const accountId = await client.accountId(identity);
+      if (signal?.aborted === true) throw abortedError(signal);
+      const accountId = await client.accountId(identity, signal);
       const names = [...new Set(states.map((s) => model.stateName(s)))];
       const read = await client.search(
         inProject(
@@ -458,6 +476,7 @@ export function reportOperations(client: Client): ReportOps {
           `status in ${stringList(names)}`,
         ),
         `issues assigned to ${identity}`,
+        signal,
       );
       const wanted = new Set<CanonicalState>(states);
       return pools(
@@ -465,6 +484,7 @@ export function reportOperations(client: Client): ReportOps {
           const s = model.read(i).canonical;
           return s !== null && wanted.has(s);
         }),
+        signal,
       );
     },
   };

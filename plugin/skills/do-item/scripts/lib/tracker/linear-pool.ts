@@ -99,6 +99,7 @@ type Pager = (
   variables: Record<string, unknown>,
   pick: (data: Record<string, unknown>) => unknown,
   where: string,
+  signal?: AbortSignal,
 ) => Promise<unknown[]>;
 
 export interface AssignedOptions {
@@ -172,7 +173,7 @@ export function assignedOperations(
   const { team, states, transport, pageAll } = opts;
   return {
     ...claimOperations(transport),
-    async openPopulation() {
+    async openPopulation(signal) {
       const filter = { and: [{ team: { key: { eq: team } } }, OPEN] };
       const nodes = await pageAll(
         transport,
@@ -180,10 +181,11 @@ export function assignedOperations(
         { filter },
         (d) => d.issues,
         `open issues of ${team}`,
+        signal,
       );
       return nodes.map(opts.parsePool);
     },
-    async assignedIssues(identity, wanted) {
+    async assignedIssues(identity, wanted, signal) {
       if (wanted.length === 0)
         throw new TrackerRequestError(
           "invalid",
@@ -209,6 +211,7 @@ export function assignedOperations(
         { filter },
         (d) => d.issues,
         `issues assigned to ${identity}`,
+        signal,
       );
       return nodes.map(opts.parsePool);
     },

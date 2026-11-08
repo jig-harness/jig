@@ -21,17 +21,21 @@ record the line already acts on. An operator skill turns a person's
 sentence into those commands. No agent stays resident to hold an
 address, and no new store holds what is said to one.
 
-This is the design of [plan.md](plan.md) item 39. Steps 1 to 3 of the
-build order are built: `jig ask`, with `--thread` and `--waiting`, in
+This is the design of [plan.md](plan.md) item 39. Every step of the
+build order is built: `jig ask`, with `--thread` and `--waiting`, in
 `plugin/ask/` and `plugin/shared/address.ts`
 ([plugin/README.md § Asking a station where it stands](../plugin/README.md#asking-a-station-where-it-stands)),
 the outcome log's key column, and the rule it rests on,
 [ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md);
 `jig send`, in `plugin/send/`
 ([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do));
-and step 3, the operator skill, in
-[plugin/skills/operator/](../plugin/skills/operator/SKILL.md). The other
-steps are open.
+the operator skill, in
+[plugin/skills/operator/](../plugin/skills/operator/SKILL.md); a launch's
+result naming its next owner, kept in the outcome row and shown as
+`last.next`; and a park naming the person it waits on, carried in
+`waitsOn` and filtered by `jig ask --waiting --person`. What stays open is
+what the thread gains for the hub
+([What the thread gains for the hub](#what-the-thread-gains-for-the-hub)).
 
 The [hub](../GLOSSARY.md), one page to watch and steer the line
 ([hub.md](hub.md), item 42), reads the line through these commands. It
@@ -158,9 +162,8 @@ lists) and refused elsewhere as a usage error naming why.
 waits on a person, with the act each waits for, across the repositories the
 machine dispatches. It reads the newest tick's line, which the dispatcher
 already keeps for its dashboard, so it costs no forge or tracker call and
-is as fresh as the last tick; it says when that tick ran. Once step 5
-records whom a park waits on, `--person <login>` keeps the entries that
-name that person; until then it is refused, naming that step. On a machine that
+is as fresh as the last tick; it says when that tick ran. `--person
+<login>` keeps the entries that name that person. On a machine that
 dispatches nothing it says there is no line to read.
 
 The answer prints for a person by default and as one JSON object with
@@ -231,7 +234,8 @@ session that reads it.
 }
 ```
 
-Until step 5 names whom a park waits on, a question's `to` is `a person`.
+A question's `to` is `a person`; the logins a park waits on are in
+`waitsOn`'s `people`.
 Beside these, the answer carries `title` and `url` (the pull request or
 item as the forge or tracker names it), `stateDetail` (why the state reads
 so), `holder.local` (the account, the session, the launch record and the
@@ -391,8 +395,9 @@ session runs `jig ask` and reads its plain answer.
 - **The skill run on its own** answers "what is waiting on me", and a
   bare number is the status of that pull request, or of the item of that
   number where no pull request has it.
-- **"What is waiting on me"** is `jig ask --waiting --person <login>` once
-  step 5 has built, one read; before it, `jig ask --waiting`. The operator opens an address only to say more about one entry.
+- **"What is waiting on me"** is `jig ask --waiting`, one read; for a named
+  person's questions the operator adds `--person <login>`. The operator opens
+  an address only to say more about one entry.
 - **The status of a pull request** is `jig ask drive@<repository>#<PR>`,
   with whether it is ready to merge once item 36's predicate exists.
 - **It sends a person's command only on that person's instruction in the

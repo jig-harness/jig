@@ -208,8 +208,9 @@ export function ledgerFromState(
     })),
     held: s.held.map(ledgerHeld),
     quotaPark: withoutAccount(s.quotaPark),
+    // A local tree's path stays on its machine, as the accounts do.
     takeovers: (s.takeovers ?? []).map(
-      ({ fromAccount: _from, toAccount: _to, ...t }) => t,
+      ({ fromAccount: _from, toAccount: _to, vanishedTree: _tree, ...t }) => t,
     ),
     claims: opts.claims,
     decisions: (s.decisions ?? []).map((d) => ({

@@ -192,7 +192,12 @@ writing.
 `--severity` is **required**: silently discarding severity creates follow-ups
 without actionable priority. Pass the reviewer's own severity marker, or
 `unknown` when absent. The adapter sets issue priority, escalating an existing
-batch's priority but never downgrading it. A deferred `blocker`
+batch's priority but never downgrading it. A finding of `unknown` severity
+files as medium: a finding nothing ranked is not low priority but unranked,
+and medium keeps it in the queue until someone ranks it, so it raises a batch
+at low or no priority to medium and leaves a higher one alone. Every deferral
+path takes the priority from this one mapping
+(`scripts/lib/severity-priority.ts`). A deferred `blocker`
 is a contradiction (see [When to defer](#when-to-defer) above — it should
 have been fixed or escalated, not deferred); the script warns loudly when
 one is passed, but still files it, at Urgent priority. `--category` is
@@ -223,12 +228,20 @@ autonomy level. Write the reviewer's finding verbatim to `finding.txt` with
 the file-writing tool, then:
 
 ```bash
-bun "<skill-dir>/../../shared/command.ts" --stdin-file finding.txt -- bun "<skill-dir>/scripts/defer-in-pr.ts" <PR#> --thread-url <url> --reason '<why deferred>'
+bun "<skill-dir>/../../shared/command.ts" --stdin-file finding.txt -- bun "<skill-dir>/scripts/defer-in-pr.ts" <PR#> --thread-url <url> --type <type> --severity <blocker|high|medium|low|unknown> --category <cat|unknown> [--size <size>] --reason '<why deferred>'
 ```
+
+The entry records what the finding is filed as, the values `defer-batch.ts`
+takes: `--type`, `--severity` and `--category` are each required, and
+`--size` is given when the fix is larger than `small`. The type is chosen
+from the finding ([Labels](#labels)), and from `review.taxonomy.types` where
+the repository declares them; the category from
+`review.taxonomy.categories`, or `unknown`.
 
 A summary-only finding uses `--comment-url <url> --fingerprint <fp>` in place
 of `--thread-url`, as for `defer-batch.ts`. The script adds the entry (the
-finding quoted, the reason, the source's link) between hidden markers in the
+finding quoted, the reason, the source's link, and in its hidden opening
+marker the type, severity, category and size) between hidden markers in the
 body, by read-modify-write against the body's `updated_at`, so a person's
 edits to the body survive; a finding already there is not added twice. It
 prints the section's link. Then reply, opening with the `**deferred**` token
@@ -240,7 +253,10 @@ and linking the section, and resolve:
 
 The entries are filed later, where an adapter can: `file-deferred.ts`
 files each through the tracker interface (`issue_tracker.adapter`) with the
-`followup` role's label, and replaces it with its issue's link. Run it from
+`followup` role's label and every facet the tracker keeps: the type the entry
+records, the priority its severity maps to (`unknown` as medium) and the
+size it names, else `small`. The issue's description carries the severity
+and the category. It replaces each entry with its issue's link. Run it from
 the repository's own post-merge step, or on a pull request closed without
 merging:
 
@@ -256,8 +272,12 @@ issue was filed: then it reports the issue as filed but not recorded and
 leaves the correction in the body. It reads each entry afresh
 before filing it, so a correction made during the run is what gets filed,
 prints each filing as it is made, and reports a filing as not recorded when
-its entry was removed, changed or filed as another issue in the meantime. It
-exits `3` when entries remain because no adapter could file them. The body's write is
+its entry was removed, changed or filed as another issue in the meantime.
+An entry that records no type or severity, deferred before entries recorded
+them, or one whose type or size the repository does not have, stays in the
+body and is reported for a person to file through `/jig:file-issue`; the
+other entries are filed. It exits `3` when entries remain because no adapter
+could file them or a person files them. The body's write is
 not atomic against a person's own save of the body, so the script also
 checks every resolved thread whose `**deferred**` reply links this pull
 request's section, and every summary finding whose `**deferred**` answer
@@ -288,6 +308,11 @@ Type is chosen from the finding, not from the parent. A deferred correctness
 finding is a `bug` even when the PR that surfaced it was a `feature`. A batch
 issue's Type comes from its batched findings, which must all share it — that
 is why batches are keyed per PR *and* Type (see above).
+
+Through the tracker interface (`file-deferred.ts`) the type, the priority
+and the size are the issue's facets, written wherever the tracker keeps
+each (`issue_tracker.facets`), so the script names no type, size or priority
+label itself.
 
 ### Parent
 

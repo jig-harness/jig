@@ -88,7 +88,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit
 
 | Anchor | Pool |
 |--------|------|
-| A change-area name | Open issues carrying a label that names the area (`do_item.agents.codearea_areas`) and a batchable size label |
+| A change-area name | Open issues carrying a label that names the area (`do_item.agents.codearea_areas`) and a batchable size |
 | A path in the repository | The same, for each area whose own `paths` match the path |
 | An epic's key | The epic's open children |
 | One issue's key | Open issues sharing its area-naming label; the issue is kept first. An issue that may not join a batch itself ends the run with a recommendation to work it alone |
@@ -96,6 +96,15 @@ bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit
 An issue key is `ENG-123` on Linear and Jira and `#123` on GitHub Issues, an issue of
 the configured repository; this document writes it as `<KEY>`. Quote a key,
 and an anchor, on a command line: an unquoted `#` starts a shell comment.
+
+An issue's size and type are its
+[facets](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) where the
+repository's label taxonomy has a size group: the tracker reads them
+wherever it keeps them (labels, or the tracker's own fields), and each size
+the settings name (`issue_tracker.labels.batch_sizes`, `work_batch.sizes`,
+`size_points`, `ranking.sizes`) is read as a size, or as the label of one.
+Without a size group they are read from the labels, as the settings name
+them.
 
 The batch is filled in rank order to a point budget (each size costs points)
 and an item limit, whichever binds first, skipping an issue that does not fit
@@ -115,12 +124,14 @@ Read all three lists the script prints:
   that names a label to add (no size, no type, no repository or context label,
   a context or area label the configuration does not know) is a labelling gap: fix the label and re-run.
   The solo-only rows must stay held back.
-- **Labelling gaps**: issues matching the anchor that carry no size label at
-  all, so the pool read never returned them. Size them and re-run: the
+- **Labelling gaps**: issues matching the anchor that have no size, so the
+  pool read never returned them, or no priority, so they are unranked and
+  left out; each row says which it lacks (an epic needs no size). Set what
+  each lacks (`/jig:file-issue` plans an existing issue) and re-run: the
   re-run decides whether they are batchable. `[also: …]` names a blocker
   their labels already show; a bare row means no known blocker, not
-  batchable. An epic anchor has no such list: a child with no size is held
-  back instead.
+  batchable. An epic anchor reads no gaps with no size: a child with no size
+  is held back instead.
 
 A `WARNING` line means part of the picture is missing (a gap read that
 failed, labels that came back truncated, a seed over budget); say so in your
@@ -379,9 +390,11 @@ interface's pool form (`PoolIssue` in
 required: `identifier`, `title`, `url` (or `null`), `priority` (0 none, 1
 urgent to 4 low), `createdAt`, `state` `{ id, name, type }`, `assignee`
 `{ id, name }` or `null`, `labels`, `hasOpenChildren`, and `truncated` (the
-lists the read could not take in full; `[]` when complete). An omitted field
-is refused, never defaulted: a missing `truncated` would read a partial label
-list as complete.
+lists the read could not take in full; `[]` when complete); and the facets
+`type` and `size`, each a value or `null`. An omitted field is refused, never
+defaulted: a missing `truncated` would read a partial label list as complete.
+An omitted facet reads as none, as a reader of an earlier release wrote
+none.
 
 **Output**: one JSON document.
 
@@ -389,6 +402,7 @@ list as complete.
 {
   "version": 1,
   "policy": {
+    "facets": true,
     "batchSizes": ["xs", "small", "medium"],
     "sizes": ["xs", "small", "medium", "large", "xl"],
     "sizePoints": { "xs": 1, "small": 2, "medium": 6 },
@@ -425,7 +439,13 @@ list as complete.
 `no-type-label`, `no-context-label`, `unknown-context-label`,
 `unknown-area-label`,
 `has-open-children`, `unknown-state`, `already-closed`, `already-assigned`,
-`already-started`; `message` is the reason as a person reads it.
+`already-started`, `no-priority`; `message` is the reason as a person reads
+it. `no-priority` is checked last, so an issue it holds back is otherwise
+eligible; the proposal lists it as a labelling gap. Where `policy.facets` is
+`true` (the repository's taxonomy has a size group), `size` and `type` are
+read from each issue's `size` and `type` fields, and `batchSizes`, `sizes`,
+`knownSizes` and `typeLabels` are values of those facets; otherwise they
+are read from `labels`.
 `areaFlags` maps each catalog area that carries a flag to its flags: an
 issue whose area-naming label names one is `solo-area`. `stateNames` maps
 each `issue_tracker.states` name, lower case, to its canonical state; it

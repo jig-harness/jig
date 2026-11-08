@@ -4,7 +4,12 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { isAliveSync, lockIdentity } from "../../../../../shared/liveness.ts";
 import { fail } from "./../cli.ts";
-import { type ClaimDiag, claimLive, parseDiagText } from "./../claim.ts";
+import {
+  type ClaimDiag,
+  claimLive,
+  parseDiagText,
+  samePidNamespace,
+} from "./../claim.ts";
 import { formatAccountIdentity } from "./../identity.ts";
 import { dbPathFor, driveDb } from "./../state/db.ts";
 import {
@@ -130,6 +135,25 @@ export function claimAlive(claim: Claim): boolean {
     platform: claim.platform,
     ageMs: Number.isFinite(age) ? age : null,
   });
+}
+
+/**
+ * Is the holder's process confirmed gone: on this host and pid namespace, and
+ * judged dead by its recorded identity (its pid answers no signal, or now
+ * belongs to a process with another start time or boot)? Stricter than a
+ * lock that merely reads stale: a live pid whose heartbeat aged out is not
+ * gone, and a holder this host cannot judge is never confirmed gone.
+ */
+export function holderGone(claim: Claim): boolean {
+  if (!samePidNamespace(claim)) return false;
+  const verdict = isAliveSync({
+    hostId: claim.hostId,
+    host: claim.host,
+    bootId: claim.bootId,
+    pid: claim.pid,
+    start: claim.start,
+  });
+  return verdict.ok && verdict.value.state === "dead";
 }
 
 /** The claim of the live driver holding lock `name`, else `null`. */

@@ -39,6 +39,11 @@
  *      below, so it is deferred to the trailing `UNKNOWN` default (7)
  *      instead of returned here — see `classifyDrive`'s own comment on
  *      `uninspectableLeftoversReason` for the bug this closed.
+ *      A holder whose process is confirmed gone (`processConfirmedGone`) with
+ *      nothing left to save — a clean tree, or a missing one — is `DEAD`,
+ *      also returned here, since a clean or absent tree admits a takeover.
+ *      Shared Git storage may still hold commits of a missing tree for the
+ *      successor to recover.
  *   3. A recorded quota park → `QUOTA_PARKED`. Outranks both `WEDGED` and
  *      `NEEDS_HUMAN` below because a park is TIME-BOUNDED and self-resolving
  *      in the ordinary case (the window reopens) — including the SLEEP path
@@ -289,6 +294,40 @@ function needsHumanReason(input: DoctorInput): string {
     : `${input.parkedCount} item(s) parked awaiting a human decision`;
 }
 
+/**
+ * A holder confirmed gone with a clean tree → `DEAD`: nothing is left to
+ * save, so a takeover is admitted. `null` otherwise: a tree that could not be
+ * inspected, a human park, or a quota park whose wall is still up or whose
+ * reset is unknown, which keep their own verdict (a missing tree is answered
+ * in `classifyDrive`). A quota park whose `resetAt` has passed no longer
+ * protects anything: nothing re-arms a dead driver, so it reads as `DEAD`.
+ */
+function deadHolder(input: DoctorInput, now: Date): DoctorRow | null {
+  if (input.processConfirmedGone !== true) return null;
+  const park = input.quotaPark;
+  if (
+    park !== null &&
+    (park.resetAt === null || Date.parse(park.resetAt) > now.getTime())
+  )
+    return null;
+  if (input.parkedCount > 0) return null;
+  const l = input.leftovers;
+  if (
+    l !== null &&
+    l !== "missing" &&
+    !l.uncommitted &&
+    !l.unpushed &&
+    l.unconcludedOp === null
+  )
+    return {
+      verdict: "DEAD",
+      reason:
+        "no live driver: its process is gone, and its worktree holds nothing unpushed or uncommitted; a takeover is admitted",
+      recovery: null,
+    };
+  return null;
+}
+
 export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   // 1. Fail closed first. A lock row the listing could not interpret
   // (`contested`, `unreadable`) has established NOTHING positive about this
@@ -310,7 +349,7 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
     if (confirmedDead)
       return {
         verdict: "DEAD",
-        reason: `no live driver, and the working tree (${input.worktreePath}) is missing; local work may need recovery; resume from the remote head`,
+        reason: `no live driver, and the working tree (${input.worktreePath}) is missing; local work may need recovery; commits may remain in shared Git storage, so inspect branch refs and reflogs before redoing work; resume from the remote head`,
         recovery: null,
       };
     uninspectableLeftoversReason =
@@ -356,6 +395,8 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   // quota park"). So it is DEFERRED to the trailing fallback (7) instead,
   // and used there ONLY if nothing more specific claimed the row first.
   if (noLiveDriver(input.lockState)) {
+    const dead = deadHolder(input, now);
+    if (dead !== null) return dead;
     if (input.leftovers === null) {
       // `worktreePath === null` means the probe was never even ATTEMPTED
       // (no claim to read a worktree from at all — an `empty` lock, or a

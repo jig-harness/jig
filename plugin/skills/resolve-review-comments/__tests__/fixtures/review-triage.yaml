@@ -18,7 +18,7 @@ severity_mapping:
     priority: 1
     acceptance: Blocker
   unknown:
-    priority: 0
+    priority: 3
 categories:
   - correctness
   - data-integrity

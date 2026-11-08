@@ -209,6 +209,9 @@ export async function completeTakeover(
         ? { reopenFailed: notReopened.map((r) => r.key) }
         : {}),
       reconciled,
+      ...(plan.vanishedTree === undefined
+        ? {}
+        : { vanishedTree: plan.vanishedTree }),
     }),
   );
   settleTakeover();
@@ -226,6 +229,10 @@ export async function completeTakeover(
   const notice = [
     `TAKEN OVER: this drive was taken over from ${from} and resumes at its durable round.`,
   ];
+  if (plan.vanishedTree !== undefined)
+    notice.push(
+      `The previous driver's working tree (${plan.vanishedTree}) no longer exists, so its working files cannot be inspected. Unpushed commits may still be recoverable in the clone's shared Git storage: inspect branch refs and reflogs, compare recovered commits with the pull request's remote head, and recover applicable work before redoing what its threads and findings still ask for.`,
+    );
   if (!reconciled)
     notice.push(
       `reconcile-replied-threads.ts FAILED before this pass (exit ${reconcile.code}); the gate's sweep runs it again, so read each thread's last reply before triaging it.`,

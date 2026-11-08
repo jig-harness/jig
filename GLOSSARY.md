@@ -808,13 +808,16 @@ make, use the entry's term instead.
   a priority from 1 (urgent) to 4 (low) or none, a size from the
   taxonomy's size group. The interface reads and writes all three on every
   issue; where the tracker keeps the value is its *facet store*. The skills
-  still read type and size from labels, and are planned to read the value,
-  never the label or field behind it ([design](design/tracker-facets.md)).
+  read the value, never the label or field behind it, and every filing
+  through the interface is checked for all three
+  ([design](design/tracker-facets.md)).
 - **Facet store** (store) — where a tracker keeps one *issue facet*: the
   tracker's own field for it (`native`, such as GitHub's or Jira's issue
   type), a custom field the repository names (`field`), or a label per
-  value (`label`). Each facet has a default store per *tracker adapter*,
-  the one it has always had; a repository names its own in
+  value (`label`). Each facet has a default store per *tracker adapter*: on
+  Jira and Linear the one it has always had; on GitHub Issues labels where
+  the repository's issues carry them, else the organization's matching
+  field, read by detection. A repository names its own in
   `issue_tracker.facets`, and no repository's store moves unless its
   configuration says so ([design](design/tracker-facets.md)).
 - **Sensitivity flag** — a *flag label* marking a change that carries extra
@@ -861,6 +864,11 @@ make, use the entry's term instead.
   workspace launcher name an issue's branch with the issue key followed by
   the slug of its title
   ([tools/launcher/README.md](tools/launcher/README.md)).
+- **Git reflog** — a local history of where a Git reference, such as a branch
+  or `HEAD`, pointed. `git reflog` can locate commits no longer named by a
+  branch. A missing linked working directory does not prove its commits
+  disappeared from the clone's shared Git storage; inspect the surviving
+  branch references and reflogs before reconstructing work.
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a

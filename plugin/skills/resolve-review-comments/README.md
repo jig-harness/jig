@@ -230,7 +230,9 @@ read-modify-write against the body's update time so a person's edit there
 survives, and the thread resolves with `**deferred**` linking that section.
 `file-deferred.ts`, run from the repository's post-merge step or on a
 pull request closed without merging, files each entry through the tracker
-interface where an adapter can and replaces it with its issue's link.
+interface where an adapter can, with the type, severity and size the entry
+records as its type, priority and size, and replaces it with its issue's
+link.
 
 A review bot's follow-up to a reply (a confirmation, or a chat
 acknowledgement with no outcome token and no finding) is transparent: it is

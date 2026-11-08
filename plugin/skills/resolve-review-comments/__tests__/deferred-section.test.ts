@@ -2,8 +2,8 @@
  * Deferral without a tracker: a finding recorded in the pull request's
  * `## Deferred` section by read-modify-write against the body's `updated_at`,
  * so a person's edit survives, and `file-deferred.ts` filing each entry
- * through a tracker adapter (the GitHub adapter over a fake transport) and
- * replacing it with its issue.
+ * through a tracker adapter (the GitHub adapter over a fake transport) with
+ * the type, priority and size it records, and replacing it with its issue.
  */
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
@@ -13,11 +13,23 @@ import {
   conn,
   gitHub,
   issueNode,
+  JIG_TAXONOMY,
   oneIssue,
   repoLabels,
 } from "../../do-item/__tests__/github-fixtures.ts";
-import { deferInPr, deferralRoute } from "../scripts/defer-in-pr.ts";
 import {
+  facetInputs,
+  parseTrackerConfig,
+} from "../../do-item/scripts/lib/tracker/config.ts";
+import { resolveFacets } from "../../do-item/scripts/lib/tracker/facets/config.ts";
+import type { NewIssue } from "../../do-item/scripts/lib/tracker/port.ts";
+import {
+  deferInPr,
+  deferralRoute,
+  recordedError,
+} from "../scripts/defer-in-pr.ts";
+import {
+  entryFacets,
   fileDeferred,
   identityLine,
   missingEntries,
@@ -40,6 +52,18 @@ const PR_URL = "https://github.com/example/project/pull/42";
 const THREAD = `${PR_URL}#discussion_r1001`;
 const FINDING =
   "The retry budget is read without validation.\n\nIt can go negative.";
+/** What an entry records to be filed as. */
+const REC = { type: "bug", severity: "high", category: "correctness" };
+/** Every type and size label of Jig's taxonomy. */
+const TYPES_SIZES = [...JIG_TAXONOMY.types, ...JIG_TAXONOMY.sizes];
+const PRIORITY_LABELS = ["urgent", "high", "medium", "low"].map(
+  (p) => `priority: ${p}`,
+);
+/** The facets of a GitHub repository with Jig's taxonomy, kept in labels. */
+const FACETS = resolveFacets(
+  facetInputs(parseTrackerConfig({ issue_tracker: { adapter: "github" } })),
+  { path: "label-taxonomy.yaml", ...JIG_TAXONOMY },
+);
 
 /** A pull request body in memory, with a hook that runs before each read. */
 function fakeForge(initial: string): PrBodyForge & {
@@ -297,6 +321,7 @@ describe("written by read-modify-write against updated_at", () => {
     const r = await deferInPr(forge, {
       pr: "42",
       source: THREAD,
+      recorded: REC,
       reason: "later",
       finding: FINDING,
     });
@@ -318,6 +343,7 @@ describe("written by read-modify-write against updated_at", () => {
     const r = await deferInPr(forge, {
       pr: "42",
       source: THREAD,
+      recorded: REC,
       reason: "it needs the configuration rework first",
       finding: FINDING,
     });
@@ -333,6 +359,7 @@ describe("written by read-modify-write against updated_at", () => {
     const args = {
       pr: "42",
       source: THREAD,
+      recorded: REC,
       reason: "later",
       finding: FINDING,
     };
@@ -348,52 +375,60 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     existing: Array<{ number: number; body: string }> = [],
   ) {
     let next = 40;
-    return gitHub((c) => {
-      if (c.op === "TrackerSearch")
-        return {
-          search: {
-            issueCount: existing.length,
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: existing.map((e) => issueNode(e)),
-          },
-        };
-      if (c.op === "TrackerIssue") {
-        const n = Number(String(c.variables.number ?? "").replace("#", ""));
-        const hit = existing.find((e) => e.number === n) ?? existing[0];
-        return oneIssue(
-          hit === undefined
-            ? null
-            : issueNode({ ...hit, extra: { subIssues: conn([]) } }),
-        );
-      }
-      if (c.op === "TrackerRepository") return { repository: { id: "R_1" } };
-      if (c.op === "TrackerLabels") return repoLabels("pr-followup");
-      if (c.op === "TrackerCreate") {
-        next += 1;
-        return {
-          createIssue: {
-            issue: {
-              number: next,
-              url: `https://github.com/acme/app/issues/${next}`,
+    return gitHub(
+      (c) => {
+        if (c.op === "TrackerSearch")
+          return {
+            search: {
+              issueCount: existing.length,
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: existing.map((e) => issueNode(e)),
             },
-          },
-        };
-      }
-      throw new Error(`unexpected ${c.op}`);
-    });
+          };
+        if (c.op === "TrackerIssue") {
+          const n = Number(String(c.variables.number ?? "").replace("#", ""));
+          const hit = existing.find((e) => e.number === n) ?? existing[0];
+          return oneIssue(
+            hit === undefined
+              ? null
+              : issueNode({ ...hit, extra: { subIssues: conn([]) } }),
+          );
+        }
+        if (c.op === "TrackerRepository") return { repository: { id: "R_1" } };
+        if (c.op === "TrackerLabels")
+          return repoLabels("pr-followup", ...TYPES_SIZES, ...PRIORITY_LABELS);
+        if (c.op === "TrackerCreate") {
+          next += 1;
+          return {
+            createIssue: {
+              issue: {
+                number: next,
+                url: `https://github.com/acme/app/issues/${next}`,
+              },
+            },
+          };
+        }
+        throw new Error(`unexpected ${c.op}`);
+      },
+      { taxonomy: JIG_TAXONOMY },
+    );
   }
 
   test("replaces each entry with its issue, leaving the rest of the body", async () => {
     let body = "## Summary\n\nWhat changed.";
     for (const n of [1, 2])
       body = withDeferredEntry(body, {
+        ...REC,
         source: `${PR_URL}#discussion_r${n}`,
         finding: `Finding ${n} is real.`,
         reason: `reason ${n}`,
       }).body;
     const forge = fakeForge(body);
     const { t, calls } = trackerThatFiles();
-    const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    const r = await fileDeferred(forge, t, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+    });
     expect(r.filed.map((f) => f.key)).toEqual(["#41", "#42"]);
     expect(r.remaining).toEqual([]);
     const entries = deferredEntries(forge.state.body);
@@ -415,22 +450,34 @@ describe("file-deferred.ts files each entry through the tracker", () => {
 
   test("a second run files nothing more", async () => {
     const forge = fakeForge(
-      withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
-        .body,
+      withDeferredEntry("", {
+        ...REC,
+        source: THREAD,
+        finding: FINDING,
+        reason: "r",
+      }).body,
     );
     await fileDeferred(forge, trackerThatFiles().t, "42", {
       label: "pr-followup",
+      facets: FACETS,
     });
     const { t, calls } = trackerThatFiles();
-    const again = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    const again = await fileDeferred(forge, t, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+    });
     expect(again.filed).toEqual([]);
     expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
   });
 
   test("an issue an earlier run filed for the entry is reused, not filed twice", async () => {
     const forge = fakeForge(
-      withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
-        .body,
+      withDeferredEntry("", {
+        ...REC,
+        source: THREAD,
+        finding: FINDING,
+        reason: "r",
+      }).body,
     );
     const [entry] = deferredEntries(forge.state.body);
     const { t, calls } = trackerThatFiles([
@@ -439,7 +486,10 @@ describe("file-deferred.ts files each entry through the tracker", () => {
         body: `Filed by file-deferred.ts.\n\n${identityLine({ source: THREAD })}\n${textLine({ text: entry?.text ?? "" })}`,
       },
     ]);
-    const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    const r = await fileDeferred(forge, t, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+    });
     expect(r.why).toBeNull();
     expect(r.filed).toEqual([
       expect.objectContaining({ key: "#7", reused: true }),
@@ -450,6 +500,7 @@ describe("file-deferred.ts files each entry through the tracker", () => {
 
   test("an issue filed from an earlier text of a corrected entry does not replace the correction", async () => {
     const original = withDeferredEntry("", {
+      ...REC,
       source: THREAD,
       finding: FINDING,
       reason: "r",
@@ -463,7 +514,10 @@ describe("file-deferred.ts files each entry through the tracker", () => {
         body: `${identityLine({ source: THREAD })}\n${textLine({ text: before?.text ?? "" })}`,
       },
     ]);
-    const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    const r = await fileDeferred(forge, t, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+    });
     expect(r.filed).toEqual([]);
     expect(r.unrecorded.map((f) => f.key)).toEqual(["#7"]);
     expect(r.why).toContain("earlier text");
@@ -474,12 +528,14 @@ describe("file-deferred.ts files each entry through the tracker", () => {
   test("an issue that only mentions the source, or names another fingerprint on it, is not reused", async () => {
     const comment = `${PR_URL}#issuecomment-77`;
     let body = withDeferredEntry("", {
+      ...REC,
       source: comment,
       fingerprint: "fp-a",
       finding: "first",
       reason: "r",
     }).body;
     body = withDeferredEntry(body, {
+      ...REC,
       source: comment,
       fingerprint: "fp-b",
       finding: "second",
@@ -492,7 +548,10 @@ describe("file-deferred.ts files each entry through the tracker", () => {
         body: `Mentions ${comment}.\n\n${identityLine({ source: comment, fingerprint: "fp-a" })}\n${textLine({ text: deferredEntries(body)[0]?.text ?? "" })}`,
       },
     ]);
-    const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    const r = await fileDeferred(forge, t, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+    });
     expect(r.filed.map((f) => [f.key, f.reused])).toEqual([
       ["#7", true],
       ["#41", false],
@@ -509,11 +568,13 @@ describe("file-deferred.ts files each entry through the tracker", () => {
   test("an entry a person corrects during the run is filed as corrected", async () => {
     const other = `${PR_URL}#discussion_r2002`;
     let body = withDeferredEntry("", {
+      ...REC,
       source: THREAD,
       finding: "first",
       reason: "r",
     }).body;
     body = withDeferredEntry(body, {
+      ...REC,
       source: other,
       finding: "second",
       reason: "r",
@@ -525,7 +586,10 @@ describe("file-deferred.ts files each entry through the tracker", () => {
       st.body = st.body.replace("> second", "> second, corrected");
     });
     const { t, calls } = trackerThatFiles();
-    const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    const r = await fileDeferred(forge, t, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+    });
     expect(r.why).toBeNull();
     const created = calls.filter((c) => c.op === "TrackerCreate");
     expect(
@@ -548,8 +612,12 @@ describe("file-deferred.ts files each entry through the tracker", () => {
       },
     ]) {
       const forge = fakeForge(
-        withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
-          .body,
+        withDeferredEntry("", {
+          ...REC,
+          source: THREAD,
+          finding: FINDING,
+          reason: "r",
+        }).body,
       );
       // The initial read and the fresh read, then the person edits.
       forge.beforeRead.push(
@@ -559,6 +627,7 @@ describe("file-deferred.ts files each entry through the tracker", () => {
       );
       const r = await fileDeferred(forge, trackerThatFiles().t, "42", {
         label: "pr-followup",
+        facets: FACETS,
       });
       expect(r.filed).toEqual([]);
       expect(r.unrecorded.map((f) => f.key)).toEqual(["#41"]);
@@ -570,13 +639,18 @@ describe("file-deferred.ts files each entry through the tracker", () => {
 
   test("a filing whose entry cannot be replaced is reported with its key", async () => {
     const forge = fakeForge(
-      withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
-        .body,
+      withDeferredEntry("", {
+        ...REC,
+        source: THREAD,
+        finding: FINDING,
+        reason: "r",
+      }).body,
     );
     forge.failWrites = true;
     const heard: string[] = [];
     const r = await fileDeferred(forge, trackerThatFiles().t, "42", {
       label: "pr-followup",
+      facets: FACETS,
       onFiled: (f) => heard.push(f.key),
     });
     expect(heard).toEqual(["#41"]);
@@ -588,6 +662,7 @@ describe("file-deferred.ts files each entry through the tracker", () => {
 
   test("an issue url carrying = survives the entry's marker", async () => {
     const body = withDeferredEntry("", {
+      ...REC,
       source: THREAD,
       finding: FINDING,
       reason: "r",
@@ -608,16 +683,189 @@ describe("file-deferred.ts files each entry through the tracker", () => {
 
   test("with no tracker, the entries stay and say why", async () => {
     const forge = fakeForge(
-      withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
-        .body,
+      withDeferredEntry("", {
+        ...REC,
+        source: THREAD,
+        finding: FINDING,
+        reason: "r",
+      }).body,
     );
     const r = await fileDeferred(forge, null, "42", {
       label: "pr-followup",
       noTrackerWhy: "no tracker adapter can file: none configured",
+      facets: null,
     });
     expect(r.remaining).toHaveLength(1);
     expect(r.why).toContain("none configured");
     expect(forge.writes).toBe(0);
+  });
+
+  /** The tracker, with every issue it is asked to file recorded. */
+  function recording() {
+    const { t, calls } = trackerThatFiles();
+    const asked: NewIssue[] = [];
+    const tracker = {
+      ...t,
+      createIssue: (issue: NewIssue) => {
+        asked.push(issue);
+        return t.createIssue(issue);
+      },
+    };
+    return { tracker, asked, calls };
+  }
+
+  test("files a finding with its type, the priority its severity maps to, and a size", async () => {
+    let body = withDeferredEntry("", {
+      ...REC,
+      source: THREAD,
+      finding: FINDING,
+      reason: "r",
+    }).body;
+    body = withDeferredEntry(body, {
+      type: "docs",
+      severity: "unknown",
+      category: "unknown",
+      size: "xs",
+      source: `${PR_URL}#discussion_r2`,
+      finding: "A second finding.",
+      reason: "r",
+    }).body;
+    const forge = fakeForge(body);
+    const { tracker, asked, calls } = recording();
+    const r = await fileDeferred(forge, tracker, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+    });
+    expect(r.why).toBeNull();
+    expect(asked).toEqual([
+      expect.objectContaining({
+        labels: ["pr-followup"],
+        type: "bug",
+        priority: 2,
+        size: "small",
+      }),
+      expect.objectContaining({ type: "docs", priority: 3, size: "xs" }),
+    ]);
+    expect(asked[0]?.description).toContain(
+      "Severity: high. Category: correctness.",
+    );
+    // The facets reach the tracker's store: here, each value's label.
+    const labelled = (c: (typeof calls)[number]) =>
+      (c.variables.input as { labelIds?: string[] }).labelIds ?? [];
+    const created = calls.filter((c) => c.op === "TrackerCreate");
+    expect(labelled(created[0] as (typeof calls)[number]).join(" ")).toMatch(
+      /_bug\b.*_small\b|_small\b.*_bug\b/,
+    );
+    expect(labelled(created[0] as (typeof calls)[number]).join(" ")).toContain(
+      "_priority: high",
+    );
+  });
+
+  test("leaves an entry that records no type or severity for a person, and files the rest", async () => {
+    let body = withDeferredEntry("", {
+      source: THREAD,
+      finding: FINDING,
+      reason: "r",
+    }).body;
+    body = withDeferredEntry(body, {
+      ...REC,
+      source: `${PR_URL}#discussion_r2`,
+      finding: "A second finding.",
+      reason: "r",
+    }).body;
+    const forge = fakeForge(body);
+    const { tracker, asked } = recording();
+    const r = await fileDeferred(forge, tracker, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+    });
+    expect(r.why).toBeNull();
+    expect(r.filed.map((f) => f.source)).toEqual([`${PR_URL}#discussion_r2`]);
+    expect(asked).toHaveLength(1);
+    expect(r.forPerson.map((p) => [p.entry.source, p.why])).toEqual([
+      [THREAD, expect.stringContaining("records no type or severity")],
+    ]);
+    const [old] = deferredEntries(forge.state.body);
+    expect(old?.source).toBe(THREAD);
+    expect(old?.filed).toBeUndefined();
+  });
+
+  test("leaves an entry whose type the repository does not have for a person", () => {
+    const entry = { ...REC, source: THREAD, text: "t", type: "spike" };
+    expect(entryFacets(entry, FACETS)).toEqual({
+      why: "its type 'spike' is no type of this repository (bug, feature, docs, chore, infra)",
+    });
+    expect(entryFacets({ ...entry, type: "BUG" }, FACETS)).toEqual({
+      type: "bug",
+      priority: 2,
+      size: "small",
+    });
+  });
+});
+
+describe("what an entry records", () => {
+  test("is written into the entry's marker and read back; an older entry records none", () => {
+    const body = withDeferredEntry("", {
+      ...REC,
+      size: "medium",
+      source: THREAD,
+      finding: FINDING,
+      reason: "r",
+    }).body;
+    expect(body).toContain(
+      `<!-- deferred-entry: ${THREAD} type=bug severity=high category=correctness size=medium -->`,
+    );
+    const [entry] = deferredEntries(body);
+    expect(entry).toMatchObject({ ...REC, size: "medium" });
+    const filed = deferredEntries(
+      withFiledEntry(body, { source: THREAD }, { key: "#9", url: null }),
+    )[0];
+    expect(filed).toMatchObject({ ...REC, filed: { key: "#9", url: null } });
+    const old = deferredEntries(
+      withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
+        .body,
+    )[0];
+    expect(old?.type).toBeUndefined();
+    expect(old?.severity).toBeUndefined();
+  });
+
+  test("is checked against the review taxonomy and the severity vocabulary", () => {
+    const vocabulary = { types: ["bug", "docs"], categories: ["correctness"] };
+    expect(recordedError(REC, vocabulary)).toBeNull();
+    expect(recordedError({ ...REC, type: "spike" }, vocabulary)).toContain(
+      "--type must be one of bug|docs",
+    );
+    expect(
+      recordedError({ ...REC, severity: "critical" }, vocabulary),
+    ).toContain("--severity must be one of low|medium|high|blocker|unknown");
+    expect(recordedError({ ...REC, category: "style" }, vocabulary)).toContain(
+      "--category must be one of correctness|unknown",
+    );
+    expect(recordedError({ ...REC, size: "a b" }, vocabulary)).toContain(
+      "--size must be one token",
+    );
+  });
+
+  test("the command line refuses a deferral that records no type", async () => {
+    const proc = Bun.spawn(
+      scriptArgv(
+        join(import.meta.dir, "..", "scripts", "defer-in-pr.ts"),
+        "42",
+        "--thread-url",
+        THREAD,
+        "--severity",
+        "high",
+        "--category",
+        "unknown",
+        "--reason",
+        "later",
+      ),
+      { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
+    );
+    proc.stdin.end();
+    const err = await new Response(proc.stderr).text();
+    await expectSpawnExited(proc, 2);
+    expect(err).toContain("--type <type>");
   });
 });
 
