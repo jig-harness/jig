@@ -387,6 +387,19 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.161.0] - 2026-11-08
+
+### Added
+
+- Parked questions name the person they wait on: the question's change-area owner, else `dispatch.person`, else the pull request's author. Notifications and `jig ask` carry that person, and `jig ask --waiting --person <login>` filters the line by named recipients without changing who may answer.
+
+### Fixed
+
+- The dispatch dashboard shows current PR state separately from historical drive outcomes, with direct PR and repository links, hover context, and copy controls that copy only IDs. Merged or closed drive decisions leave What needs you after a successful forge refresh; follow-up failures remain visible.
+- Copy controls use Lucide icons with accessible labels and feedback. Disclosure controls use rotating chevrons and keep their position when expanded.
+- Merged PRs show whether their follow-up is awaiting a slot, starting, running, waiting, blocked, or needs attention, with a summary above the panels.
+- Changelog checks during an open base merge allow imported releases while continuing to reject branch edits to release versions and sections.
+
 ## [0.160.0] - 2026-11-08
 
 The installed timers now keep the plugin current: a machine that runs the dispatcher stays on its channel's newest version with nobody at the keyboard. On a machine whose jobs an earlier release installed, run `jig upgrade` (or `jig upgrade --jobs-only`) once: it refreshes each job's launcher copy, and only a launcher copy from this release on runs the upgrade.
@@ -5822,7 +5835,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.160.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.161.0...HEAD
+[0.161.0]: https://github.com/jig-harness/jig/compare/v0.160.0...v0.161.0
 [0.160.0]: https://github.com/jig-harness/jig/compare/v0.159.0...v0.160.0
 [0.159.0]: https://github.com/jig-harness/jig/compare/v0.158.1...v0.159.0
 [0.158.1]: https://github.com/jig-harness/jig/compare/v0.158.0...v0.158.1
