@@ -283,14 +283,19 @@ function markUnlaunched(
   claims: DriveClaims,
   host: string,
 ): DrivenPr[] {
-  return drives.map((pr) =>
-    pr.class === "silent" &&
-    pr.evidence.driverGone === true &&
-    driveHold(pr, own).kind === "none" &&
-    foreignHold(pr, claims.get(pr.number), host).kind === "none"
+  return drives.map((pr) => {
+    if (pr.class !== "silent" || pr.evidence.driverGone !== true) return pr;
+    // This host's own refused takeover places no driver: it is the takeover
+    // `settleSilentTakeovers` settles, so it must not hide the drive from it.
+    const hold = driveHold(pr, own);
+    const unplaced =
+      hold.kind === "none" ||
+      (hold.kind === "refused" && hold.record.record.action === "takeover");
+    return unplaced &&
+      foreignHold(pr, claims.get(pr.number), host).kind === "none"
       ? { ...pr, evidence: { ...pr.evidence, unlaunched: true } }
-      : pr,
-  );
+      : pr;
+  });
 }
 
 /** With `--apply`: write the end of this host's own claims whose launch records ended, and report what could not be written. */

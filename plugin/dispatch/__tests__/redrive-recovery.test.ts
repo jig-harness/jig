@@ -24,6 +24,7 @@ import {
 } from "../lib/actions/drive-hold.ts";
 import { foreignHold, settleSharedTakeovers } from "../lib/shared-launches.ts";
 import { type ReadRecord, readRecord } from "../lib/launches.ts";
+import { settleOwnDrives } from "../lib/tick-shared.ts";
 import { noCauseFacts, settleNoCauseStops } from "../lib/no-cause-stops.ts";
 import { classifyLedger, type PrFacts } from "../lib/sources/ledgers.ts";
 import type { DrivenPr } from "../lib/types.ts";
@@ -561,6 +562,31 @@ describe("another host's takeover of a driver no launch started", () => {
     };
     expect(driveHold(gone, [record]).kind).toBe("refused");
     const [settled] = settleSilentTakeovers([gone], [record]);
+    expect(settled?.evidence.settled).toBe(true);
+    expect(driveHold(settled as DrivenPr, [record]).kind).toBe("none");
+  });
+
+  it("settles a drive shown gone past this host's own refused takeover without a pre-set unlaunched", () => {
+    const gone = {
+      ...silent(),
+      evidence: { ...silent().evidence, driverGone: true },
+    } as DrivenPr;
+    const base = redrove(gone, 11);
+    const record: ReadRecord = {
+      ...base,
+      record: {
+        ...base.record,
+        action: "takeover",
+        facts: factsOf(gone),
+        redrive: null,
+      },
+    };
+    const [settled] = settleOwnDrives(
+      [gone],
+      [record],
+      new Map([[gone.number, { ok: true as const, value: [] }]]),
+      "this-host",
+    );
     expect(settled?.evidence.settled).toBe(true);
     expect(driveHold(settled as DrivenPr, [record]).kind).toBe("none");
   });
