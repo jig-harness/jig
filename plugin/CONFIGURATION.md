@@ -405,6 +405,33 @@ says by what. A session with a person in it, rather than a drive's pass
 (`$DRIVE_PR_TARGET` unset), reads `attended` unless that person set a level
 in their own file or the environment.
 
+**In a drive, the policy comes from the base branch.** `max_level` and
+`park_classes` bound what every agent in the repository may decide, so a
+drive's pass reads them from `.config/jig.yaml` on the branch the pull
+request targets (its base branch), not from the pull request's own checkout.
+An edit to either field therefore applies to a pull request's drive once the
+edit is on that branch, never through the pull request that makes it. For a
+stacked layer the branch it targets is the layer below, whose policy no one
+has reviewed yet, so the integration branch's policy bounds it (the
+branch the default branch's committed `repository.base_branch` names, else
+the default branch; the pull request's own checkout never names it): the ceiling
+is the lower of the two, and the park classes are the union of the two lists.
+A layer below can narrow what the integration branch allows and never widen
+it. The ceiling's fallback comes from the base too: the
+base's `max_level`, else the base's own `level`, else `attended`; the pull
+request's `level` is still the level chosen, capped by that ceiling.
+`JIG_OVERLAY` does not redirect these fields in a drive. The driver resolves
+the base branch's commit at its start and before every round, so a pull
+request retargeted at another base is read from the new one at the next
+round. When that commit or its file cannot be read (the base is not in the
+clone, git fails, the file does not parse or names an invalid ceiling or
+class list), the policy fails closed: the ceiling is `attended`, the only
+park classes are `escalated`, `human-decision` and `human-thread`, and the
+printed line tells the pass to park every decision under `human-decision`
+until the policy reads. A default class list could be weaker than the
+repository's own, so none stands in for it. A session with a person in it
+reads both fields from the working tree.
+
 `off_hours` widens the level during the hours nobody is there to ask: inside
 one of its schedule's windows, a drive's pass runs at `off_hours.level`
 instead, capped by `max_level` like any other choice, and the printed line
@@ -444,16 +471,17 @@ then parks it under `human-thread`. An unresolve alone reverses nothing.
 recorded exception to Jig's rule against shipping unvalidated dials, to be
 revisited once a working repository has run them for a month with at least ten counted
 provisional decisions and fewer than one in ten of them reversed before the merge (`loop-metrics.ts`
-reports the share per pull request). Until then, opt in only to take part in
-that measurement.
+reports the share per pull request). A decision counts once its pull request
+has merged or closed, since only then has a person had the chance to reverse
+it. Until then, opt in only to take part in that measurement.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `autonomy.level` | `attended`, `unattended` or `wide` | `attended`, today's behaviour | drive-pr, resolve-review-comments, file-issue, decide | The level a drive's pass decides at outside the off-hours windows, per the table above. `wide` is not yet validated (above) |
-| `autonomy.max_level` | `attended`, `unattended` or `wide` | The repository's own `level`, else `attended` | drive-pr, resolve-review-comments, file-issue, decide | The highest level any layer may choose. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
+| `autonomy.max_level` | `attended`, `unattended` or `wide` | The repository's own `level`, else `attended` | drive-pr, resolve-review-comments, file-issue, decide | The highest level any layer may choose. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error. A drive reads it, and the `level` it falls back on, from the pull request's base branch (above) |
 | `autonomy.off_hours.level` | `attended`, `unattended` or `wide` | Off-hours is off | drive-pr, resolve-review-comments, file-issue, decide | The level a drive's pass decides at inside a window of `off_hours.schedule`, capped by `max_level`. Any layer may set it; the repository's ceiling still bounds it. Not yet validated (above) |
 | `autonomy.off_hours.schedule` | nonempty list of windows | `Mon-Fri 20:00-07:00`, `Sat-Sun` and `Mon 00:00-07:00`, once `off_hours.level` is set | drive-pr, resolve-review-comments, file-issue, decide | When off-hours applies, in the machine's local time zone. A window is `<days> [HH:MM-HH:MM]`: a day (`Mon`), a range (`Mon-Fri`; `Fri-Mon` wraps across the end of the week) or a comma list of those, then optionally times; without times it is those days whole; times alone (`22:00-06:00`) mean every day. An end at or before the start closes the next day, so a window crosses midnight; the days name the day it opens, which is why the default names Sunday night's end, `Mon 00:00-07:00`, on its own. A schedule without a level is an error |
-| `autonomy.park_classes` | list of distinct class names (lower-case words joined by hyphens) | `ready`, `merge`, `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`, `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`, `escalated`, `human-decision` | drive-pr | The decision classes a drive may park on: the rows of the repository's [human-in-the-loop registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md), by default the template's. Set, it replaces the default list; `escalated` and `human-decision`, which the review arbiter emits, and `human-thread`, which a reversed provisional decision is parked under, are kept whatever it lists. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
+| `autonomy.park_classes` | list of distinct class names (lower-case words joined by hyphens) | `ready`, `merge`, `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`, `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`, `escalated`, `human-decision` | drive-pr | The decision classes a drive may park on: the rows of the repository's [human-in-the-loop registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md), by default the template's. Set, it replaces the default list; `escalated` and `human-decision`, which the review arbiter emits, and `human-thread`, which a reversed provisional decision is parked under, are kept whatever it lists. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error. A drive reads it from the pull request's base branch (above) |
 
 ## `ci`
 
@@ -978,6 +1006,8 @@ These are set per machine or per run, not committed:
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
 | `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
 | `DRIVE_PR_LEDGER` | `off` makes `drive.ts` drive without the drive ledger on the pull request: no seeding from it, no check for another clone's driver, no writes; `on` or unset uses it ([where its state lives](skills/drive-pr/README.md#where-its-state-lives)) |
+| `DRIVE_PR_POLICY_BASE` | Set by the driver, never by a person: the commit of the pull request's base branch whose `.config/jig.yaml` the driver and its passes read `autonomy.max_level` and `autonomy.park_classes` from ([`autonomy`](#autonomy)); empty when the base cannot be resolved, which fails closed. The driver overwrites any inherited value |
+| `DRIVE_PR_POLICY_BOUND` | Set by the driver, never by a person, only when the pull request's base is not the integration branch (a stacked layer): the integration branch's commit whose policy bounds the base's. Unset otherwise; the driver removes any inherited value |
 | `DRIVE_PR_STATE_DIR` | State root: rounds, locks and leases live in its database, `state.sqlite`, keyed by clone, and each clone's log and kept files in its `<clone-key>/` subdirectory. An inherited resolved clone directory is also accepted. A root holding a drive's files directly refuses until they are relocated. |
 | `JIG_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |

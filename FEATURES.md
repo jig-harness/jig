@@ -91,9 +91,8 @@ restarts the drive.
   [M9](modules/M9-tasks-memory/)
 - **On the roadmap:** a converged drive arming the merge it certified
   (roadmap item 9); the route applied to the implementer and recorded on the
-  pull request (roadmap item 31); what an agent may decide, read from the
-  base branch so a pull request cannot widen it (roadmap item 32); the
-  drive's CI-repair round running `fix-ci` (Later)
+  pull request (roadmap item 31); the drive's CI-repair round running
+  `fix-ci` (Later)
 
 ## A line that runs with nobody at the keyboard
 

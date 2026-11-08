@@ -486,15 +486,18 @@ const baseBranchCache = new Map<string, string | null>();
  * remote is `repository.remote`, else `origin`), else
  * `gh repo view --json defaultBranchRef`. A derived answer is cached per
  * process and repository.
+ * `trustedOnly` skips `repository.base_branch`, which a pull request's own
+ * checkout can set: the answer is then the environment's, else derived.
  * `null` when none of them answers; callers fail closed on it.
  */
 export async function baseBranch(
   root: string,
   timeoutSec?: number,
+  trustedOnly = false,
 ): Promise<string | null> {
   const explicit =
     nonEmptyEnv("DRIVE_PR_BASE_BRANCH") ??
-    optionalString("repository", "base_branch");
+    (trustedOnly ? undefined : optionalString("repository", "base_branch"));
   if (explicit !== undefined) return explicit;
   const cached = baseBranchCache.get(root);
   if (cached !== undefined) return cached;
@@ -692,13 +695,37 @@ export async function prBaseRef(
   const key = `${root}\0${pr}`;
   const cached = prBaseRefCache.get(key);
   if (cached !== undefined) return cached;
-  const remote = readRemoteName(consumerRoot(root));
-  const result =
-    "error" in remote
-      ? remote
-      : await resolvePrBaseRef(root, remote.remote, pr, timeoutSec);
+  const result = await uncachedPrBaseRef(root, pr, timeoutSec);
   prBaseRefCache.set(key, result);
   return result;
+}
+
+/**
+ * `prBaseRef` read afresh, for a long-running caller that must see a pull
+ * request retargeted at another base while it runs: the driver, which
+ * resolves the base its policy is read from once per round.
+ */
+export async function freshPrBaseRef(
+  root: string,
+  pr: string,
+  timeoutSec?: number,
+): Promise<{ ref: string } | { error: string }> {
+  return uncachedPrBaseRef(
+    root,
+    await attachedPr(root, pr, timeoutSec),
+    timeoutSec,
+  );
+}
+
+async function uncachedPrBaseRef(
+  root: string,
+  pr: string,
+  timeoutSec?: number,
+): Promise<{ ref: string } | { error: string }> {
+  const remote = readRemoteName(consumerRoot(root));
+  return "error" in remote
+    ? remote
+    : resolvePrBaseRef(root, remote.remote, pr, timeoutSec);
 }
 
 async function resolvePrBaseRef(
