@@ -233,7 +233,7 @@ function scopedCheck(): DoctorCheck {
     return fail(
       id,
       `${stale.length} of ${scoped.length} project- or local-scope ${PLUGIN_ID} installs need attention: ${stale.map((entry) => entry.line).join("; ")}`,
-      `jig upgrade --claude refreshes each from its directory and removes each whose directory is gone; one it cannot update it leaves, naming why, and claude plugin uninstall ${PLUGIN_ID} --scope <scope>, run in that directory, removes it`,
+      `jig upgrade --claude refreshes each from its directory and removes each whose directory is gone, naming any it leaves and why; to remove one whose directory remains, run claude plugin uninstall ${PLUGIN_ID} --scope <scope> in that directory`,
     );
   } catch (error) {
     return fail(

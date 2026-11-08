@@ -21,6 +21,7 @@
 import { spawnSync } from "node:child_process";
 import {
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -183,12 +184,13 @@ export function claudeScopedInstalls(list: unknown): ScopedInstall[] {
     entry?.id === PLUGIN_ID &&
     (entry.scope === "project" || entry.scope === "local") &&
     typeof entry.projectPath === "string" &&
-    entry.projectPath !== ""
+    entry.projectPath !== "" &&
+    typeof entry.version === "string"
       ? [
           {
             scope: entry.scope,
             project: entry.projectPath,
-            version: String(entry.version),
+            version: entry.version,
             enabled: entry.enabled === true,
           },
         ]
@@ -438,9 +440,18 @@ const scopedKey = (scope: unknown, project: unknown) =>
  * beside it: the keys it dropped, or why it left the record as it was.
  */
 function pruneRecord(
-  record: string,
+  link: string,
   gone: readonly ScopedInstall[],
 ): Set<string> | string {
+  let record: string;
+  let before: ReturnType<typeof statSync>;
+  try {
+    // A record kept as a link is written where the link points.
+    record = realpathSync(link);
+    before = statSync(record);
+  } catch (error) {
+    return `${link} cannot be read: ${reason(error)}`;
+  }
   const read = recordEntries(record);
   if (typeof read === "string") return read;
   const wanted = new Set(gone.map((i) => scopedKey(i.scope, i.project)));
@@ -459,7 +470,17 @@ function pruneRecord(
   else plugins[PLUGIN_ID] = kept;
   const next = `${record}.jig-${process.pid}`;
   try {
-    writeFileSync(next, `${JSON.stringify(read.data, null, 2)}\n`);
+    writeFileSync(next, `${JSON.stringify(read.data, null, 2)}\n`, {
+      mode: Number(before.mode) & 0o777,
+    });
+    // Claude Code writes this record too; one it rewrote meanwhile is left
+    // for the next upgrade rather than overwritten. The window that remains,
+    // between this check and the rename, can still lose its write.
+    const now = statSync(record);
+    if (now.mtimeMs !== before.mtimeMs || now.size !== before.size) {
+      rmSync(next, { force: true });
+      return `${record} changed while it was being edited; the next upgrade tries again`;
+    }
     renameSync(next, record);
   } catch (error) {
     rmSync(next, { force: true });
@@ -531,15 +552,32 @@ function settled(
   updated: readonly ScopedInstall[],
 ): ScopedResult[] {
   if (updated.length === 0) return [];
+  let listed: ScopedInstall[];
+  try {
+    listed = scopedInstalls(program);
+  } catch (error) {
+    return updated.map((install) =>
+      scopedResult(
+        install,
+        "left",
+        `updated, but its version cannot be read back: ${reason(error)}`,
+      ),
+    );
+  }
   const now = new Map(
-    scopedInstalls(program).map((entry) => [
+    listed.map((entry) => [
       scopedKey(entry.scope, entry.project),
       entry.version,
     ]),
   );
   return updated.map((install) => {
-    const version =
-      now.get(scopedKey(install.scope, install.project)) ?? install.version;
+    const version = now.get(scopedKey(install.scope, install.project));
+    if (version === undefined)
+      return scopedResult(
+        install,
+        "left",
+        "claude plugin update finished, but claude plugin list no longer lists it",
+      );
     return version === install.version
       ? scopedResult(install, "unchanged", `already at ${version}`)
       : scopedResult(
@@ -553,12 +591,14 @@ function settled(
 
 /**
  * Refreshes each of Claude Code's project- and local-scope installs from its
- * directory, and removes each whose directory is gone; says what became of
- * each that changed or was left.
+ * directory, unless it is already at `current` (the user-scope version), and
+ * removes each whose directory is gone; says what became of each that
+ * changed or was left.
  */
 export function refreshScoped(
   program: string,
   say: Say,
+  current: string | null = null,
   record: string = claudeInstallRecord(),
 ): ScopedResult[] {
   const left: ScopedResult[] = [];
@@ -567,6 +607,7 @@ export function refreshScoped(
   for (const install of scopedInstalls(program)) {
     const where = directoryState(install.project);
     if (where === "gone") gone.push(install);
+    else if (install.version === current) updated.push(install);
     else if (where !== "present")
       left.push(scopedResult(install, "left", where));
     else
@@ -831,9 +872,28 @@ export function upgradeHarnesses(
     const after = report(harness, say, program);
     const result = outcome(harness, before, after);
     return harness === "claude"
-      ? { ...result, scoped: refreshScoped(program, say) }
+      ? { ...result, scoped: scopedStep(program, say, result.version) }
       : result;
   });
+}
+
+/**
+ * The scoped installs' refresh after the user-scope one: a failure here is
+ * reported, never the user-scope upgrade's outcome.
+ */
+function scopedStep(
+  program: string,
+  say: Say,
+  current: string | undefined,
+): ScopedResult[] {
+  try {
+    return refreshScoped(program, say, current ?? null);
+  } catch (error) {
+    console.error(
+      `claude: the project- and local-scope installs of ${PLUGIN_ID} were not refreshed: ${reason(error)}`,
+    );
+    return [];
+  }
 }
 
 function outcome(

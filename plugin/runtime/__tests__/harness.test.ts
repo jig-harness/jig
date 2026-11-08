@@ -100,7 +100,12 @@ test.skipIf(
     const text = JSON.stringify({ version: 3, plugins: {} });
     writeFileSync(record, text);
     const lines: string[] = [];
-    const results = refreshScoped(claude, (line) => lines.push(line), record);
+    const results = refreshScoped(
+      claude,
+      (line) => lines.push(line),
+      null,
+      record,
+    );
     expect(results).toEqual([
       expect.objectContaining({
         project: gone,

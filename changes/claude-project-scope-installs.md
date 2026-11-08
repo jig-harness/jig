@@ -10,5 +10,6 @@ release: minor
   check, which fails one older than the user-scope install or whose
   directory no longer exists. `jig upgrade` refreshes each from its
   directory, removes from Claude Code's install record each whose directory
-  is gone, and names any it leaves as it was. The plugin README says which
-  copy Claude Code loads where both exist.
+  is gone, and names any it leaves as it was; `bun tools/plugin/setup.ts`
+  does the same. The plugin README says which copy Claude Code loads where
+  both exist.
