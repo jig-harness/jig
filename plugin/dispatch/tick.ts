@@ -105,7 +105,11 @@ import {
   startTurn,
 } from "./lib/tick-repo.ts";
 import { routeRecurrences } from "./lib/reflection-route.ts";
-import { settleFailures, settleOutcomes } from "./lib/tick-settle.ts";
+import {
+  finalizeTickFailure,
+  settleFailures,
+  settleOutcomes,
+} from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
 import type { RepoReport } from "./lib/types.ts";
 import { takeScheduledUpgrade } from "../runtime/upgrade-record.ts";
@@ -449,6 +453,8 @@ async function closeTick(
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
   });
+  // Writing the line can set the exit to 1: the tick's failure row follows it.
+  finalizeTickFailure(receipt, context);
 }
 
 /**
@@ -505,6 +511,7 @@ async function actAndClose(
     receipt.phasesMs = { ...timer.ms };
     if (context.options.machine)
       recordTickHealth(receipt, context.options.machine);
+    finalizeTickFailure(receipt, context);
   }
   receipt.phasesMs = { ...timer.ms };
   const path = writeReceipt(receipt);

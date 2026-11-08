@@ -385,11 +385,13 @@ export async function applySteers(
   repo: string,
   report: RepoReport,
   book: ActionBook | null = null,
+  observed = true,
 ): Promise<void> {
   const root = state.root ?? stateRoot();
   const steers: SteerOutcome[] = [];
   const planned = report.actions.filter((a) => a.stage === "steer");
-  book?.wanted("nudge", planned.map(ledgerKey));
+  // An unreadable session listing cannot show a waiting agent gone: the rows stay.
+  if (observed) book?.wanted("nudge", planned.map(ledgerKey));
   for (const action of planned) {
     const key = ledgerKey(action);
     const waits = book?.waits(key) ?? null;

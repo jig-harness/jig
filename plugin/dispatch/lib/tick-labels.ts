@@ -15,6 +15,7 @@ import {
   writeLabels,
 } from "./actions/labels.ts";
 import type { LabelConfig } from "./labels.ts";
+import { unobservedTarget } from "./notices.ts";
 import { bookOf, type TickContext } from "./tick-context.ts";
 import type { ForgeRead } from "./tick-forge.ts";
 import type { RepoObservation } from "./tick-observe.ts";
@@ -75,6 +76,10 @@ async function projectLabels(
   book?.wanted(
     "label",
     writing ? planned.changes.map((c) => labelKey(c.pr)) : [],
+    // A pull request the listings disagree on is read again next tick: its write is not known to be unwanted.
+    (target) =>
+      unobservedTarget(report, target) ||
+      [...forge.disputed].some((n) => target === `PR #${n}`),
   );
   planned.report.writes = await writeLabels(slug, planned.changes, {
     apply: writing,

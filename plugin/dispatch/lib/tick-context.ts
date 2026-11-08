@@ -56,6 +56,8 @@ export interface TickContext {
   books?: Map<string, ActionBook>;
   /** The failure ledger's rows for the repositories and the tick were written: a defect after it counts nothing twice. */
   failuresSettled?: boolean;
+  /** The exit status the tick's failure row was last settled for. */
+  tickSettledExit?: number;
 }
 
 /**

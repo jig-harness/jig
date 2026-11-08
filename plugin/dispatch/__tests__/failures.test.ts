@@ -124,6 +124,15 @@ describe("a repository's book of its actions", () => {
     expect(book.waits(LABEL.key)).toBeNull();
     expect(failed).toEqual([]);
   });
+
+  it("keeps the rows of targets the tick did not observe when it drops the unwanted", () => {
+    const root = stateRootForTest();
+    const book = actionBook("o/r", SETTINGS, () => undefined, root);
+    book.ran(LABEL, "refused");
+    book.ran({ key: "label PR #8", kind: "label", target: "PR #8" }, "refused");
+    book.wanted("label", [], (target) => target === "PR #7");
+    expect(readFailures("o/r", root).map((r) => r.key)).toEqual([LABEL.key]);
+  });
 });
 
 function row(
@@ -216,6 +225,28 @@ describe("the failure ledger's notifications", () => {
       "The dispatcher's turn for o/c has failed 3 ticks in a row since",
     );
     expect(failureCauses("o/c", "/c", [tick, failingC], machine)).toEqual([]);
+  });
+
+  it("keys the host's own failures without the destination, so a home that moves tells nothing twice", () => {
+    const machine = { repositories: [repository("/c"), repository("/d")] };
+    const tick = row({
+      repo: "",
+      key: "ticks sweep",
+      kind: "tick",
+      target: "ticks of several repositories",
+    });
+    const failingC = row({
+      repo: "/c",
+      key: "repository",
+      kind: "repository",
+      target: "o/c",
+    });
+    const atD = failureCauses("o/d", "/d", [tick, failingC], machine);
+    const atC = failureCauses("o/c", "/c", [tick], machine);
+    expect(atC[0]?.notice?.key).toBe(
+      "host ticks sweep failing since 2026-11-06T10:00:00.000Z",
+    );
+    expect(atD[0]?.notice?.key).toBe(atC[0]?.notice?.key);
   });
 
   it("never notifies a repository's failures from a host that does not own it", () => {

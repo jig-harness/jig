@@ -222,9 +222,7 @@ describe("jig dispatch tells a person about a repository whose turn keeps failin
       outcome: "sent",
     });
     const key = notice?.key ?? "";
-    expect(key).toMatch(
-      new RegExp(`^${SLUG} repository .+ failing since \\d{4}-`),
-    );
+    expect(key).toMatch(/^host repository .+ failing since \d{4}-/);
     const workspaces = JSON.parse(
       readFileSync(join(w.dir, "orca-ps.json"), "utf8"),
     ) as { worktrees: Array<{ comment: string }> };

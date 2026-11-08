@@ -266,7 +266,14 @@ async function applyStages(
   if (group !== "finish") return;
   // The nudges first: a nudge that went unanswered is notified in the same tick.
   if (enabled.has("steer"))
-    await applySteers(apply, repo.slug, report, inputs.book);
+    await applySteers(
+      apply,
+      repo.slug,
+      report,
+      inputs.book,
+      // Which nudges are wanted is known only from a session listing that read.
+      inputs.sessions.ok && report.records.every((r) => r.ok),
+    );
   // A host that does not own the repository never notifies for it: the owner does, once.
   if (enabled.has("notify") && inputs.shared.owner)
     await applyNotices(apply, repo, report, inputs.sessions, {

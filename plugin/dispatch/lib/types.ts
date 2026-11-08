@@ -170,6 +170,8 @@ export interface DrivenPr {
   stale?: StaleCause;
   /** Its labels, read only where the repository turns dispatch labels on. */
   labels?: string[];
+  /** For an `unplaced` ledger: its comments or its ledger did not read, as against a state the forge leaves undecided. */
+  readFailed?: true;
 }
 
 /** One pull request merged since the follow-up stage's start. */
@@ -226,6 +228,8 @@ export interface Unplaced {
   reason: string;
   /** Set for an item assigned by someone who cannot write: only a person can settle it. */
   cause?: "assigner-cannot-write";
+  /** Set when reading the record failed (a comment listing, an unreadable ledger), as against a state the record legitimately leaves unplaced. */
+  readFailed?: true;
 }
 
 /** What a notification is about. */

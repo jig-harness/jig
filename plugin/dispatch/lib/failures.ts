@@ -228,18 +228,26 @@ export function clearFailure(
     .run(repo, key);
 }
 
-/** The rows of `kind` under `repo` whose key is not in `wanted` go: their action left the plan. */
+/**
+ * The rows of `kind` under `repo` whose key is not in `wanted` go: their
+ * action left the plan. A row whose target `unobserved` names stays: its
+ * action's absence from the plan proves nothing while its target was not
+ * observed.
+ */
 function dropUnwanted(
   repo: string,
   kind: FailureKind,
   wanted: ReadonlySet<string>,
+  unobserved: ((target: string) => boolean) | undefined,
   root = stateRoot(),
 ): void {
   const db = stateDb(root);
   const rows = db
-    .query("SELECT key FROM failures WHERE repo = ? AND kind = ?")
-    .all(repo, kind) as Array<{ key: string }>;
-  const gone = rows.filter((r) => !wanted.has(r.key));
+    .query("SELECT key, target FROM failures WHERE repo = ? AND kind = ?")
+    .all(repo, kind) as Array<{ key: string; target: string }>;
+  const gone = rows.filter(
+    (r) => !wanted.has(r.key) && unobserved?.(r.target) !== true,
+  );
   if (gone.length === 0) return;
   const drop = db.query("DELETE FROM failures WHERE repo = ? AND key = ?");
   inTransaction(db, () => {
@@ -292,8 +300,16 @@ export interface ActionBook {
   waits(key: string): string | null;
   /** An attempt: `failure` its reason, `null` a success. */
   ran(of: Omit<FailureOf, "repo">, failure: string | null): void;
-  /** The planner of `kind` ran whole and wants these keys: the others' rows go. */
-  wanted(kind: FailureKind, keys: Iterable<string>): void;
+  /**
+   * The planner of `kind` ran whole and wants these keys: the others' rows
+   * go, except those whose target `unobserved` names (not observed this
+   * tick, so its action's absence is no evidence it left the plan).
+   */
+  wanted(
+    kind: FailureKind,
+    keys: Iterable<string>,
+    unobserved?: (target: string) => boolean,
+  ): void;
 }
 
 export function actionBook(
@@ -333,12 +349,17 @@ export function actionBook(
           recordFailure({ ...of, repo }, failure, Date.now(), settings, root),
         );
       }),
-    wanted: (kind, keys) =>
+    wanted: (kind, keys, unobserved) =>
       write(() => {
         const keep = new Set(keys);
-        dropUnwanted(repo, kind, keep, root);
+        dropUnwanted(repo, kind, keep, unobserved, root);
         for (const [key, row] of rows)
-          if (row.kind === kind && !keep.has(key)) rows.delete(key);
+          if (
+            row.kind === kind &&
+            !keep.has(key) &&
+            unobserved?.(row.target) !== true
+          )
+            rows.delete(key);
       }),
   };
 }

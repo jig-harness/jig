@@ -60,8 +60,12 @@ import {
   type LogRow,
   type OutcomeClass,
 } from "../log.ts";
-import type { ActionBook } from "../failures.ts";
-import { isFailureCause } from "../failure-notices.ts";
+import { type ActionBook, readFailures } from "../failures.ts";
+import {
+  HOST_NOTICE,
+  hostNoticeKeys,
+  isFailureCause,
+} from "../failure-notices.ts";
 import { carries, holdsNotice, unobservedTarget } from "../notices.ts";
 import {
   MAX_COMMENT,
@@ -118,11 +122,28 @@ function readSuppressions(
   repo: string,
   root: string,
 ): Map<string, Suppression> {
+  return suppressionsWhere("repo = ?", [repo], root);
+}
+
+/**
+ * The suppression records of the host's own failures at any repository, by
+ * key, the latest send of a key standing: the destination of such a notice
+ * can move, its identity and suppression do not.
+ */
+function readHostSuppressions(root: string): Map<string, Suppression> {
+  return suppressionsWhere("key LIKE ?", [`${HOST_NOTICE} %`], root);
+}
+
+function suppressionsWhere(
+  where: string,
+  params: string[],
+  root: string,
+): Map<string, Suppression> {
   const rows = stateDb(root)
     .query(
-      "SELECT repo, key, target, workspace, at, sent_at, lasting FROM notices WHERE repo = ?",
+      `SELECT repo, key, target, workspace, at, sent_at, lasting FROM notices WHERE ${where} ORDER BY COALESCE(sent_at, at)`,
     )
-    .all(repo) as Array<
+    .all(...params) as Array<
     Omit<Suppression, "lasting" | "sentAt"> & {
       lasting: number;
       sent_at: string | null;
@@ -742,13 +763,16 @@ function wantedDeliveries(
 ): void {
   if (book == null || !report.records.every((r) => r.ok)) return;
   const of = causes.map(deliveryOf);
+  const unobserved = (target: string) => unobservedTarget(report, target);
   book.wanted(
     "notice",
     of.filter((d) => d.kind === "notice").map((d) => d.key),
+    unobserved,
   );
   book.wanted(
     "failure-notice",
     of.filter((d) => d.kind === "failure-notice").map((d) => d.key),
+    unobserved,
   );
 }
 
@@ -761,6 +785,26 @@ function dueAgain(
   if (everyMs <= 0 || record.lasting) return false;
   const last = Date.parse(record.sentAt);
   return Number.isFinite(last) && nowMs - last >= everyMs;
+}
+
+/** The keys that stand: the causes named, and the host failures still standing, whose records stay at the repository that told them wherever they are told now. */
+function standingKeys(causes: readonly Cause[], root: string): Set<string> {
+  const live = new Set(causes.map((c) => c.notice.key));
+  for (const key of hostNoticeKeys(readFailures(undefined, root)))
+    live.add(key);
+  return live;
+}
+
+/** The send of a cause that stands: a host failure's at any repository, else this repository's. */
+function earlierSend(
+  c: Cause,
+  sent: ReadonlyMap<string, Suppression>,
+  hostSent: ReadonlyMap<string, Suppression>,
+): Suppression | undefined {
+  return (
+    (isFailureCause(c.cause) ? hostSent.get(c.notice.key) : undefined) ??
+    sent.get(c.notice.key)
+  );
 }
 
 /** `--apply` for one repository's notifications, then its notices workspace. */
@@ -809,12 +853,13 @@ async function sendNotices(
   }: { causes: Cause[]; root: string; settings: NoticeSettings },
 ): Promise<Set<string>> {
   const sent = readSuppressions(repo.slug, root);
-  prune(report, new Set(causes.map((c) => c.notice.key)), sent, root);
+  const hostSent = readHostSuppressions(root);
+  prune(report, standingKeys(causes, root), sent, root);
   wantedDeliveries(settings.book, report, causes);
   const nowMs = Date.now();
   const all: Cause[] = [];
   for (const c of causes) {
-    const earlier = sent.get(c.notice.key);
+    const earlier = earlierSend(c, sent, hostSent);
     if (earlier === undefined) all.push(c);
     else if (dueAgain(earlier, settings.renotifyAfterMs, nowMs))
       all.push(asRepeat(c, earlier, settings.renotifyAfterMs, nowMs));

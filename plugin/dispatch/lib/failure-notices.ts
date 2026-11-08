@@ -14,7 +14,10 @@
  * the repository can be told there, so their rows are notified at one
  * repository, the host's home: the first the machine file lists that this
  * host owns with `notify` enabled and whose own turn is not failing, else
- * the first it owns with `notify`.
+ * the first it owns with `notify`. A failure of the host's own has one
+ * identity wherever it is told: its notice key carries `host`, not the
+ * destination's slug, and a delivery at any repository suppresses it at the
+ * others (`hostNoticeKeys`).
  */
 import { resolve } from "node:path";
 import { stateRoot } from "../receipts.ts";
@@ -82,6 +85,18 @@ function actionOf(row: FailureRow): { what: string; record: RecordName } {
 
 const RECEIPT =
   "Each tick's receipt lists it under failures (`jig receipts dispatch`).";
+
+/** What the key of a host failure's notice starts with, in place of a repository's slug. */
+export const HOST_NOTICE = "host";
+
+/** The notice keys of the rows of this host's own failures: those of its repositories' turns and of its ticks. */
+export function hostNoticeKeys(rows: readonly FailureRow[]): Set<string> {
+  return new Set(
+    rows
+      .filter((r) => r.kind === "tick" || r.kind === "repository")
+      .map((r) => hostCause(HOST_NOTICE, r).notice?.key as string),
+  );
+}
 
 /** The cause for one row past the threshold. */
 function causeOf(
@@ -184,7 +199,7 @@ export function failureCauses(
       due(r) &&
       (r.kind === "tick" || (r.kind === "repository" && owned.has(r.repo)))
     )
-      actions.push(hostCause(slug, r));
+      actions.push(hostCause(HOST_NOTICE, r));
   return actions;
 }
 

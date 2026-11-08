@@ -1499,9 +1499,13 @@ once and then on `dispatch.renotify_after`, like every cause: an action's
 as `action-failing` at its own repository, a repository's as
 `repository-failing` and the tick's as `ticks-failing` at this host's home,
 the first repository the machine file lists that this host owns with
-`notify` enabled and whose own turn is not failing. A repository that does
-not open cannot be told anything at its own destination, which is why the
-host's own failures have one. The notice names the key, the count, since
+`notify` enabled and whose own turn is not failing, or, when every such
+repository is failing, the first of them. A repository that does not open
+cannot be told anything at its own destination, which is why the host's
+own failures have one. Such a notice has one identity wherever it is
+told: its key carries `host` in place of the destination's slug, and a
+send at one repository suppresses it at the others, so the home moving
+does not tell the same run of failures again. The notice names the key, the count, since
 when and the last reason. Its key carries when the run of failures began,
 so a later run is a new notice. A failure's own notice is counted like any
 delivery and never notified itself. Only the host that owns a repository

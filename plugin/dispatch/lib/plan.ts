@@ -69,6 +69,7 @@ import type {
   RepoReport,
   Running,
   Stage,
+  Unplaced,
   WantedItem,
 } from "./types.ts";
 
@@ -483,6 +484,16 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   };
 }
 
+/** A drive left unplaced; a ledger or comments that did not read are said to be a failed read. */
+function unplacedDrive(target: string, pr: DrivenPr): Unplaced {
+  return {
+    target,
+    record: "forge",
+    reason: pr.why,
+    ...(pr.readFailed === true ? { readFailed: true as const } : {}),
+  };
+}
+
 /** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
 function planDrive(
   input: PlanInput,
@@ -523,7 +534,7 @@ function planDrive(
     return;
   }
   if (pr.class === "unplaced") {
-    plan.unplaced.push({ target, record: "forge", reason: pr.why });
+    plan.unplaced.push(unplacedDrive(target, pr));
     return;
   }
   const cause =

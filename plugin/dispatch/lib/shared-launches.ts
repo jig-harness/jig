@@ -628,13 +628,23 @@ export async function settleOwnClaims(
       o.stage === "drive" ? ("claim-end" as const) : ("marker-answer" as const),
     target: `PR #${o.pr}`,
   });
+  // A pull request whose claims or markers did not read owes what it owed: its rows stay.
+  const unread = new Set<string>([
+    ...[...claims].filter(([, read]) => !read.ok).map(([pr]) => `PR #${pr}`),
+    ...merged
+      .filter((pr) => "unreadable" in pr.markers)
+      .map((pr) => `PR #${pr.number}`),
+  ]);
+  const unobserved = (target: string) => unread.has(target);
   book?.wanted(
     "claim-end",
     owing.filter((o) => o.stage === "drive").map((o) => endOf(o).key),
+    unobserved,
   );
   book?.wanted(
     "marker-answer",
     owing.filter((o) => o.stage !== "drive").map((o) => endOf(o).key),
+    unobserved,
   );
   for (const o of owing) {
     const backing = book?.waits(endOf(o).key) ?? null;

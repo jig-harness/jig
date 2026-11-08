@@ -856,11 +856,23 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
         ? snapshotFromListing(listing.value, login)
         : listing.failure.reason;
   if (typeof snapshot === "string")
-    return { ...base, class: "unplaced", why: snapshot, evidence: {} };
+    return {
+      ...base,
+      class: "unplaced",
+      why: snapshot,
+      evidence: {},
+      readFailed: true,
+    };
   const why = unreadable(snapshot);
   if (why === "") return unarmed(pr, base, r);
   if (why !== null || snapshot.canonical?.parsed.kind !== "ledger")
-    return { ...base, class: "unplaced", why: why ?? "", evidence: {} };
+    return {
+      ...base,
+      class: "unplaced",
+      why: why ?? "",
+      evidence: {},
+      readFailed: true,
+    };
   const ledger = snapshot.canonical.parsed.ledger;
   const park = await parkOf(
     pr.number,
