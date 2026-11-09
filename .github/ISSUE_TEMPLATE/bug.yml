@@ -2,8 +2,9 @@ name: Bug
 description: Something Jig does today is wrong.
 # Jig keeps an issue's type in its issue type, not in a label. An issue form
 # cannot fill in an issue field, so priority and size are set when the issue
-# is triaged.
+# is triaged. `jig` is the repository label (`review.repo_label`).
 type: Bug
+labels: [jig]
 body:
   - type: input
     id: version
