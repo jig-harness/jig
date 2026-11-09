@@ -22,6 +22,11 @@ import {
 } from "./fixtures.ts";
 import { account, machineFile } from "./launch-fixtures.ts";
 import { withOrigin } from "./pickup-fixtures.ts";
+import type { ReadRecord } from "../lib/launches.ts";
+import { loadState } from "../lib/load.ts";
+import { LOAD_DEFAULTS } from "../lib/load-config.ts";
+import type { LoadReading } from "../lib/load-read.ts";
+import { outstandingReservations } from "../lib/tick-load.ts";
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -106,7 +111,36 @@ async function tick(
 
 const launches = (r: TickReceipt) => r.repos[0]?.launches ?? [];
 
+function windowsReading(): LoadReading {
+  return {
+    host: { load1: null, cores: 8, availableBytes: TOTAL },
+    totalBytes: TOTAL,
+    platform: "win32",
+    disk: { freeBytes: 500 * GIB, totalBytes: 1000 * GIB, path: "/ws" },
+    lock: { holders: 0, waiters: 0 },
+    forge: { remaining: 4000, limit: 5000 },
+    sessions: null,
+  };
+}
+
 describe("jig dispatch reads the host's load each tick", () => {
+  it("retains a pending Windows launch reservation until a process can represent it", () => {
+    const reading = windowsReading();
+    const load = loadState(
+      LOAD_DEFAULTS,
+      reading,
+      { held: 1, capacity: 4 },
+      new Map(),
+    );
+    const records = [
+      {
+        record: { action: "rearm", workspace: { id: "ws", path: "/ws" } },
+        state: { kind: "pending" },
+      },
+    ] as ReadRecord[];
+    expect(outstandingReservations(records, reading, load)).toBe(1.5 * GIB);
+  });
+
   it("carries each gauge, the load factor and the gauge that binds on the receipt and the line", async () => {
     const w = fixture(["pickup"]);
     // 1 GiB above the floor: 12.6 GiB used of 13.6 usable, 93%.

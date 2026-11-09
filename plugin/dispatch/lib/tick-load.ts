@@ -39,14 +39,21 @@ function running(
 }
 
 /** Reservations whose sessions the host reading does not represent yet. */
-function outstandingReservations(
+export function outstandingReservations(
   records: readonly ReadRecord[],
   reading: ReturnType<typeof readLoad>,
   load: LoadState,
 ): number {
   return records.reduce((total, { record, state }) => {
     if (!holds(state)) return total;
-    if (record.workspace !== null && reading.sessions === null) return total;
+    // Windows cannot attribute RSS to a workspace, but a pending record has
+    // not started a process for the host reading to account for yet.
+    if (
+      record.workspace !== null &&
+      reading.sessions === null &&
+      state.kind !== "pending"
+    )
+      return total;
     const kind = kindOfRecord(record);
     const reserved =
       load.reservations.find((entry) => entry.kind === kind)?.bytes ?? 0;
