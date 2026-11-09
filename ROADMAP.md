@@ -191,8 +191,9 @@ does not already keep them in labels. No repository's store moves unless it
 asks. Every way Jig's tools file an issue through the tracker sets all three
 (an epic needs no size) and checks them. The issue forms set the type and
 leave priority and size to triage. The weekly check can move an issue missing an attribute back to
-triage while it has not been started. Still to come are Jira's issue-type
-and custom-field stores, Linear's estimate, and live checks of those stores.
+triage while it has not been started. Jira's issue-type and custom-field
+stores and Linear's estimate are built; still to come are live checks of
+those stores.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
