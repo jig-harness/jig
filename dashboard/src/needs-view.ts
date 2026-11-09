@@ -65,10 +65,10 @@ export interface NeedView {
 }
 
 /** The act a need asks for, as `jig ask` names it. */
-export const needAct: (n: LineNeed) => NeedAct = actOfLineNeed;
+const needAct: (n: LineNeed) => NeedAct = actOfLineNeed;
 
 /** Who a need waits on: every person its parks name. */
-export function needPeople(n: LineNeed): string[] {
+function needPeople(n: LineNeed): string[] {
   return uniqueLogins(
     n.decisions.flatMap((d) => (d.person === undefined ? [] : [d.person])),
   );
@@ -156,7 +156,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     act: needAct(n),
     recommended,
     otherOptions: options.filter((o) => o !== recommended),
-    steps: n.decisions.flatMap((d) => d.steps ?? []),
+    steps: [...new Set(n.decisions.flatMap((d) => d.steps ?? []))],
     people: needPeople(n),
     target: n.target,
     repo: n.repo,

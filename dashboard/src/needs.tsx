@@ -95,15 +95,76 @@ function Steps({ steps, target }: { steps: string[]; target: string }) {
       <h3>Steps for you</h3>
       <ul>
         {steps.map((step, i) => (
-          <li key={`${i} ${step}`}>
+          <li key={step}>
             <label>
-              <input type="checkbox" aria-label={`Step ${i + 1} for ${target}: ${step}`} />{" "}
+              <input
+                type="checkbox"
+                aria-label={`Step ${i + 1} for ${target}: ${step}`}
+              />{" "}
               <span>{step}</span>
             </label>
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/** What a card says first, after its act: the ask, the recommended option with what it changes and costs, and who it waits on. */
+function NeedAsk({ need }: { need: NeedView }) {
+  return (
+    <>
+      {need.question === null ? null : <p className="q">{need.question}</p>}
+      {need.recommended === null ? null : (
+        <p className="sm rec">
+          Recommended: <OptionText option={need.recommended} />
+        </p>
+      )}
+      {need.recommendation === null ? null : (
+        <p className="sm mut">{need.recommendation}</p>
+      )}
+      {need.people.length === 0 ? null : (
+        <p className="sm waitsOn">
+          Waits on <span className="m">{need.people.join(", ")}</span>
+        </p>
+      )}
+    </>
+  );
+}
+
+/** What a card folds: the other options, the steps for a person as a checklist, the whole decision and the evidence. */
+function NeedFold({ need }: { need: NeedView }) {
+  return (
+    <Fold label={need.foldLabel}>
+      {need.otherOptions.length === 0 ? null : (
+        <div className="options">
+          <h3>Other options</h3>
+          <ul>
+            {need.otherOptions.map((o) => (
+              <li key={o.name}>
+                <OptionText option={o} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {need.steps.length === 0 ? null : (
+        <Steps steps={need.steps} target={need.target} />
+      )}
+      {need.decision === null ? null : (
+        <>
+          <DecisionText source={need.decision} />
+          <div className="copyRow">
+            <CopyButton
+              text={need.decision}
+              idle="Copy decision"
+              aria={`Copy the whole decision for ${need.target}`}
+            />
+          </div>
+        </>
+      )}
+      <Evidence rows={need.evidence} />
+    </Fold>
   );
 }
 
@@ -126,20 +187,7 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
           label={need.stage === "followup" ? "Follow-up needs attention" : null}
         />
       </div>
-      {need.question === null ? null : <p className="q">{need.question}</p>}
-      {need.recommended === null ? null : (
-        <p className="sm rec">
-          Recommended: <OptionText option={need.recommended} />
-        </p>
-      )}
-      {need.recommendation === null ? null : (
-        <p className="sm mut">{need.recommendation}</p>
-      )}
-      {need.people.length === 0 ? null : (
-        <p className="sm waitsOn">
-          Waits on <span className="m">{need.people.join(", ")}</span>
-        </p>
-      )}
+      <NeedAsk need={need} />
       <div className="sm">
         <span className="m">{need.recorded}</span>
         <span className="mut">{need.classNote}</span>
@@ -162,36 +210,7 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
             aria={`Copy key ${need.keyText}`}
           />
         ) : null}
-        <Fold label={need.foldLabel}>
-          {need.otherOptions.length === 0 ? null : (
-            <div className="options">
-              <h3>Other options</h3>
-              <ul>
-                {need.otherOptions.map((o) => (
-                  <li key={o.name}>
-                    <OptionText option={o} />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {need.steps.length === 0 ? null : (
-            <Steps steps={need.steps} target={need.target} />
-          )}
-          {need.decision === null ? null : (
-            <>
-              <DecisionText source={need.decision} />
-              <div className="copyRow">
-                <CopyButton
-                  text={need.decision}
-                  idle="Copy decision"
-                  aria={`Copy the whole decision for ${need.target}`}
-                />
-              </div>
-            </>
-          )}
-          <Evidence rows={need.evidence} />
-        </Fold>
+        <NeedFold need={need} />
       </div>
     </article>
   );
@@ -257,20 +276,18 @@ export function NeedsPanel({
       <div className="panelHead">
         <h2 id="h-needs">What needs you</h2>
         <PanelHelp panel="What needs you">
-          Stops only a person can settle, grouped by what you do: Decide
-          among framed options, Authorize what only a person may, Reply to a
-          person or a waiting session, Do a step outside the line, or
-          Investigate what the line could not recover. Oldest first in each.
-          Answer on the pull request; the next tick re-arms the drive.
+          Stops only a person can settle, grouped by what you do: Decide among
+          framed options, Authorize what only a person may, Reply to a person or
+          a waiting session, Do a step outside the line, or Investigate what the
+          line could not recover. Oldest first in each. Answer on the pull
+          request; the next tick re-arms the drive.
         </PanelHelp>
         {people.length === 0 ? null : (
           <label className="personFilter sm">
             <span className="mut">Waits on</span>
             <select
               value={person ?? ""}
-              onChange={(event) =>
-                setPerson(event.currentTarget.value || null)
-              }
+              onChange={(event) => setPerson(event.currentTarget.value || null)}
             >
               <option value="">anyone</option>
               {people.map((p) => (

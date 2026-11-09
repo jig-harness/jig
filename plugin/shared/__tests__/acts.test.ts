@@ -9,7 +9,13 @@ import { actOfClass, actOfNeed, NEED_ACTS } from "../acts.ts";
 describe("actOfClass", () => {
   it("names each registry class's act", () => {
     expect(
-      ["scope", "next-item", "reopen-or-waive", "escalated", "human-decision"].map(actOfClass),
+      [
+        "scope",
+        "next-item",
+        "reopen-or-waive",
+        "escalated",
+        "human-decision",
+      ].map(actOfClass),
     ).toEqual(Array(5).fill("Decide"));
     expect(
       [

@@ -79,8 +79,7 @@ function stateOf(
 }
 
 function waitsOnOf(state: string, detail: string, ctx: AskContext): WaitsOn {
-  if (state === "failed")
-    return personWait("re-run the follow-up", detail);
+  if (state === "failed") return personWait("re-run the follow-up", detail);
   if (state === "not claimed" && ctx.dispatches)
     return {
       waiting: "the dispatcher's next tick, which starts the follow-up",

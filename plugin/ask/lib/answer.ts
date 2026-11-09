@@ -7,7 +7,7 @@ import type { NextOwner } from "../../dispatch/lib/next-owner.ts";
  * an answer on to another machine leaves out.
  */
 import type { Station } from "../../shared/address.ts";
-import { type NeedAct } from "../../shared/acts.ts";
+import type { NeedAct } from "../../shared/acts.ts";
 
 /** The version `--json` prints as `v`. */
 export const ANSWER_VERSION = 1;
@@ -80,11 +80,6 @@ const ACT_OF_PERSON: Record<PersonAct, NeedAct> = {
   "assign the item as someone who can write": "Do",
 };
 
-/** The act a person's act is, when no record names a more exact one. */
-export function actOfPerson(person: PersonAct): NeedAct {
-  return ACT_OF_PERSON[person];
-}
-
 /** What a station waits on: nothing, something that settles by itself, or a person's act. */
 export type WaitsOn =
   | "none"
@@ -99,7 +94,7 @@ export function personWait(
 ): WaitsOn {
   return {
     person,
-    act: more.act ?? actOfPerson(person),
+    act: more.act ?? ACT_OF_PERSON[person],
     why,
     ...(more.people === undefined ? {} : { people: more.people }),
   };

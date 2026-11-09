@@ -1,4 +1,3 @@
-import { uniqueLogins } from "../../shared/forge-logins.ts";
 import { derivedNext } from "../../dispatch/lib/next-owner.ts";
 /**
  * The `drive` station of a pull request: who drives it, the state of its
@@ -21,7 +20,6 @@ import {
   driveExitName,
 } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stallThresholdMs } from "../../skills/drive-pr/scripts/lib/doctor.ts";
-import { answersKey } from "../../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import {
   type Ledger,
   type LedgerSnapshot,
@@ -70,7 +68,7 @@ import {
   type ThreadEntry,
   type WaitsOn,
 } from "./answer.ts";
-import { actOfClass } from "../../shared/acts.ts";
+import { answered, parkedWait } from "./park-wait.ts";
 import {
   type CommentFields,
   commentFields,
@@ -95,7 +93,6 @@ import {
   answerEntries,
   claimEntries,
   commentUrl,
-  countsAsAnswer,
   localLaunchEntries,
   logEntries,
   loggedRecords,
@@ -127,19 +124,6 @@ function ledgerOf(snapshot: LedgerSnapshot | null): Ledger | string | null {
   return canonical.parsed.kind === "unknown-version"
     ? `its drive ledger is version ${String(canonical.parsed.version)}, which this reader does not know`
     : `its drive ledger does not read: ${canonical.parsed.reason}`;
-}
-
-/** Whether a trusted comment made after the park answers its key, as the re-arm reads an answer. */
-function answered(
-  key: string,
-  at: string | undefined,
-  comments: readonly CommentFields[],
-): boolean {
-  if (at === undefined) return false;
-  const after = Date.parse(at);
-  return comments.some(
-    (c) => countsAsAnswer(c, after) && answersKey(c.body, key),
-  );
 }
 
 /** The parks' answers the pull request's conversation holds; a reply on a parked thread is not read here. */
@@ -338,22 +322,8 @@ function waitsOnOf(
   switch (placed.class) {
     case "driven":
       return "none";
-    case "parked": {
-      const open = ledger.parked.filter(
-        (p) => r.comments === null || !answered(p.key, p.at, r.comments),
-      );
-      // The oldest open park's class names the act, as the dashboard's card does.
-      return personWait("answer", placed.why, {
-        act: actOfClass(open[0]?.class),
-        people: uniqueLogins(
-          open.flatMap((p) =>
-            p.person === undefined
-              ? [r.pull.author].filter(Boolean)
-              : [p.person],
-          ),
-        ),
-      });
-    }
+    case "parked":
+      return parkedWait(ledger.parked, r.comments, r.pull.author, placed.why);
     case "re-armable":
       return rearm(placed.why);
     case "stale":

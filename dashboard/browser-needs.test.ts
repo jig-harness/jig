@@ -25,30 +25,30 @@ describe("Needs you", () => {
       try {
         await shows(page, ".pNeeds .need");
         expect(
-          await page.locator(".pNeeds .groupHead").allInnerTexts(),
+          await page.locator(".pNeeds .groupHead").allTextContents(),
         ).toEqual(["Decide", "Authorize", "Investigate"]);
         const card = page.locator(".pNeeds .need").first();
-        expect(await card.locator(".act").innerText()).toBe("Decide");
-        expect(await card.locator(".q").innerText()).toBe(
+        expect(await card.locator(".act").textContent()).toBe("Decide");
+        expect(await card.locator(".q").textContent()).toBe(
           "Should the retry cover 4xx responses too?",
         );
-        expect(await card.locator(".rec strong").innerText()).toBe(
+        expect(await card.locator(".rec strong").textContent()).toBe(
           "A: retry 5xx only",
         );
-        expect(await card.locator(".rec").innerText()).toContain(
+        expect(await card.locator(".rec").textContent()).toContain(
           "changes: the retry helper.; costs: leaves 429 unhandled.",
         );
-        expect(await card.locator(".waitsOn").innerText()).toBe(
+        expect(await card.locator(".waitsOn").textContent()).toBe(
           "Waits on maintainer-a",
         );
         await card.getByRole("button", { name: "The whole decision" }).click();
         await shows(page, ".pNeeds .need .options");
-        expect(await card.locator(".options li").innerText()).toContain(
+        expect(await card.locator(".options li").textContent()).toContain(
           "B: retry 5xx and 429",
         );
-        expect(
-          await card.locator(".steps input[type=checkbox]").count(),
-        ).toBe(1);
+        expect(await card.locator(".steps input[type=checkbox]").count()).toBe(
+          1,
+        );
       } finally {
         await context.close();
       }
@@ -76,8 +76,8 @@ describe("Needs you", () => {
           async () => (await page.locator(".pNeeds .need").count()) === 1,
         );
         const card = page.locator(".pNeeds .need").first();
-        expect(await card.locator(".act").innerText()).toBe("Authorize");
-        expect(await card.locator(".waitsOn").innerText()).toBe(
+        expect(await card.locator(".act").textContent()).toBe("Authorize");
+        expect(await card.locator(".waitsOn").textContent()).toBe(
           "Waits on maintainer-b",
         );
       } finally {

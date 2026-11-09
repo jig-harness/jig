@@ -204,6 +204,26 @@ function isNeed(action: Action): action is Action & { cause: NeedCause } {
   );
 }
 
+/** A need's open decisions and its act: a stuck launch record has no decisions and is investigated. */
+function needDecisions(
+  view: RepoView,
+  action: Action & { cause: NeedCause },
+  pr: number | null,
+): Pick<LineNeed, "decisions"> & { act: NonNullable<LineNeed["act"]> } {
+  const stuck = text(action.evidence, "stuck") !== null;
+  const decisions = stuck
+    ? []
+    : (view.drive(pr)?.waiting ?? []).map(decisionOf);
+  return {
+    decisions,
+    act: actOfNeed({
+      cause: action.cause,
+      decisionClass: decisions[0]?.decisionClass ?? null,
+      stuck,
+    }),
+  };
+}
+
 function isItemTarget(target: string): boolean {
   return prNumber(target) === null;
 }
@@ -298,10 +318,7 @@ function needsOf(
 ): LineNeed[] {
   const planned = view.report.actions.filter(isNeed).map((action): LineNeed => {
     const pr = prNumber(action.target);
-    const stuck = text(action.evidence, "stuck") !== null;
-    const decisions = stuck
-      ? []
-      : (view.drive(pr)?.waiting ?? []).map(decisionOf);
+    const { act, decisions } = needDecisions(view, action, pr);
     const notification = view.report.notifications.find(
       (n) => n.key === action.notice?.key,
     );
@@ -311,11 +328,7 @@ function needsOf(
         : view.stored.notified.get(action.notice.key);
     return {
       cause: action.cause,
-      act: actOfNeed({
-        cause: action.cause,
-        decisionClass: decisions[0]?.decisionClass ?? null,
-        stuck,
-      }),
+      act,
       stage: stageOfNeed(action),
       repo: view.slug,
       target: action.target,
