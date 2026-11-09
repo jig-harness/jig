@@ -60,10 +60,12 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { claimServedIssue } from "./lib/served-claim.ts";
+import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue } from "./lib/claim.ts";
 import { runEntry } from "./lib/cli.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
-import { ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
+import { issueKeysOf, ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
 import {
   CANONICAL_STATES,
   type CanonicalState,
@@ -337,7 +339,30 @@ const OPERATIONS: Record<string, Operation> = {
   claim: {
     arity: 1,
     takes: "one issue key",
-    run: ([key]) => claimIssue(openTracker(), key as string),
+    run: ([key], flags) =>
+      withClaimLock(key as string, () => {
+        const person = [...flags].find((f) => f.startsWith("--for="))?.slice(6);
+        const ancestor = [...flags]
+          .find((f) => f.startsWith("--ancestor="))
+          ?.slice(11);
+        if (ancestor && !person)
+          throw new UsageError("--ancestor requires --for");
+        const tracker = openTracker();
+        const shape = issueKeysOf(ownTrackerConfig());
+        const normalized = shape?.normalize(key as string) ?? (key as string);
+        const ancestorKey = ancestor
+          ? (shape?.normalize(ancestor) ?? ancestor)
+          : undefined;
+        return person
+          ? claimServedIssue(tracker, normalized, {
+              person,
+              ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+              epicLabel: ownTrackerConfig().labels.epic,
+              hitlLabel: ownTrackerConfig().labels.hitl,
+              manualOpsLabel: ownTrackerConfig().labels.manualOps,
+            })
+          : claimIssue(tracker, key as string);
+      }),
     exitOf: (out) => {
       const result = out as Awaited<ReturnType<typeof claimIssue>>;
       if (result.outcome !== "claimed") console.error(result.reason);
@@ -475,7 +500,14 @@ function operationArguments(op: Operation, name: string, rest: string[]) {
     ...rest.slice(boundary + 1),
   ];
   const allowed = new Set(op.flags);
-  const unknown = flags.filter((flag) => !allowed.has(flag));
+  const unknown = flags.filter(
+    (flag) =>
+      !allowed.has(flag) &&
+      !(
+        name === "claim" &&
+        (/^--for=.+/.test(flag) || /^--ancestor=.+/.test(flag))
+      ),
+  );
   if (unknown.length)
     throw new UsageError(`unknown option: ${unknown.join(", ")}`);
   if (args.length !== op.arity)
@@ -491,10 +523,26 @@ function reportFailure(error: unknown): number {
   return 1;
 }
 
+/** Normalize valued claim options before generic positional/flag validation. */
+function normalizeClaimOptions(rest: string[]): void {
+  for (const flag of ["--for", "--ancestor"]) {
+    const index = rest.indexOf(flag);
+    if (index === -1) continue;
+    const value = rest[index + 1];
+    if (!value || value.startsWith("--"))
+      throw new UsageError(`${flag} requires an identity or issue key`);
+    rest.splice(index, 2, `${flag}=${value}`);
+  }
+  for (const flag of ["--for=", "--ancestor="])
+    if (rest.filter((v) => v.startsWith(flag)).length > 1)
+      throw new UsageError("duplicate claim option");
+}
+
 export async function main(argv: string[]): Promise<number> {
   try {
     const [name, ...rest] = argv;
     const op = operationNamed(name);
+    if (name === "claim") normalizeClaimOptions(rest);
     const input = inputFile(op, rest);
     const { args, flags } = operationArguments(op, name as string, rest);
     const out = await op.run(args, flags, input);

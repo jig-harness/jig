@@ -97,7 +97,12 @@ function endedHow(r: ReadRecord): string {
 /** The records of one item's pickups, oldest first. */
 function recordsOf(item: string, records: ReadRecord[]): ReadRecord[] {
   return records
-    .filter((r) => r.record.action === "pickup" && r.record.item === item)
+    .filter(
+      (r) =>
+        r.record.action === "pickup" &&
+        (r.record.item === item ||
+          r.record.batchItems?.some((i) => i.key === item) === true),
+    )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
 }
 
@@ -148,10 +153,11 @@ export function releaseEnded(
     const item = record.item as string;
     // A claim seen while the pass still runs counts too: the item may be
     // back among the dispatch states by the time the record ends.
-    const isClaimed = claimed.has(item);
+    const members = record.batchItems?.map((i) => i.key) ?? [item];
+    const isClaimed = members.some((key) => claimed.has(key));
     if (isClaimed) noteClaim(record, root);
     if (isClaimed || holds(r.state)) continue;
-    if (wantsRecord(record, item, wanted, returned)) continue;
+    if (keepsWanted(record, members, wanted, returned)) continue;
     record.released = true;
     writeRecord(record, root);
   }
@@ -174,4 +180,15 @@ function noteClaim(record: LaunchRecord, root?: string): void {
   if (record.claimedSeen === true) return;
   record.claimedSeen = true;
   writeRecord(record, root);
+}
+
+function keepsWanted(
+  record: LaunchRecord,
+  members: string[],
+  wanted: ReadonlySet<string>,
+  returned: ReadonlySet<string>,
+): boolean {
+  if (record.batchItems !== undefined && members.some((key) => wanted.has(key)))
+    return true;
+  return members.some((key) => wantsRecord(record, key, wanted, returned));
 }

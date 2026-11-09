@@ -304,6 +304,10 @@ const MIGRATIONS: readonly Migration[] = [
   CREATE INDEX load_samples_kind ON load_samples (kind, seq);
   `,
   },
+  {
+    additive: true,
+    sql: `CREATE TABLE pickup_reads (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
+  },
 ];
 
 /** The schema version this plugin writes. */

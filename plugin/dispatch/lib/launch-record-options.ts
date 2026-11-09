@@ -32,10 +32,13 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "mark",
       "rearmLabel",
       "noReplay",
+      "servedPerson",
+      "ancestorEpic",
     ].every((k) => optionalText(value[k])) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
+    batchShape(value.batchItems) &&
     optionalSeconds(value.passTimeoutSec) &&
     (value.rearmConsumed === undefined ||
       typeof value.rearmConsumed === "boolean") &&
@@ -65,5 +68,19 @@ function isRedrive(value: unknown): boolean {
       (value.earlier === undefined ||
         (Array.isArray(value.earlier) &&
           value.earlier.every((c) => typeof c === "string"))))
+  );
+}
+
+function batchShape(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.every(
+        (i) =>
+          isMapping(i) &&
+          typeof i.key === "string" &&
+          typeof i.person === "string" &&
+          optionalText(i.ancestor),
+      ))
   );
 }

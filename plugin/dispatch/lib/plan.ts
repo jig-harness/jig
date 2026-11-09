@@ -79,6 +79,7 @@ import type {
 } from "./types.ts";
 
 export interface PlanInput {
+  values?: Record<string, unknown>;
   /** The repository's `owner/name`. */
   slug: string;
   /** The board read: the converged pull requests it placed, notified as they enter Ready to merge. */

@@ -675,6 +675,17 @@ implementation. Skip this check for issues about the repository's own code.
    bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" claim "<KEY>"
    ```
 
+   A served-person dispatch prompt supplies the tracker identity and, for
+   inherited assignment, its ancestor epic. Use the same claim command with
+   `--for <identity>` and, when supplied, `--ancestor <epic-key>`.
+   Keep these as separate quoted arguments. The claim keeps that person as
+   sole assignee, checks writer authority and live ancestry, and refuses
+   changed holds or assignment. A refusal or stand-down requires a fresh
+   queue read; never retry without the served-person options. GitHub supports
+   inherited claims; Linear and Jira refuse them because their assignment
+   APIs cannot preserve a concurrent assignee. Claims serialize on this
+   host; simultaneous same-person claims on separate hosts remain a race.
+
    Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
    is already `in_progress` or assigned to someone else. Exit `4` is a
    stand-down: the claim was written, and reading the issue back showed

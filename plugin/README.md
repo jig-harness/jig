@@ -374,14 +374,25 @@ machine file and never admitted. Each run reports these at its top
 the turn-budget hook counts responses in both runtimes
 ([Codex notes](#codex-notes)).
 
-**Pickups** (the `pickup` stage) start one `do-item` session per item
-assigned to the factory identity in a dispatch state, once: just before
-the launch the item is read again (still assigned, still in a dispatch
-state, no session running for it, no launch record holding it), an account
-with a free slot is admitted and its identity checked, the item gets a
-workspace (a new branch named by `pull_requests.branch_name`, its issue
-linked), and the session starts on `/jig:do-item <key>` with the model and
-effort of the item's route. Its prompt ends by asking the session to record
+**Pickups** (the `pickup` stage) start headless `do-item` passes for
+items assigned to the factory identity in a dispatch state, and for the
+people the host's machine file names under `serve:`. A served person's
+open, not-started assignments need no dispatch state. Unassigned items
+under an epic assigned to them inherit that person, including nested
+epics. Only assignments made by a repository writer qualify.
+
+The Queue view names holds: an open blocker reads "waiting on #N";
+`hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".
+Eligible items are ranked by priority, the work they unblock, epic order,
+size and age. Assignment provenance, relations and children are cached
+until the item's update time changes. Assignment lists refresh with
+headroom and at least every 15 minutes. Served forge logins also join the
+pull-request adoption authors.
+
+Before launching, the tick rechecks the item and admits an account. The
+pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
+it keeps the orchestrator's model and effort and forwards the item's route
+to its implementer. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
@@ -401,23 +412,11 @@ reported as stalled and never relaunched; an item more than one running
 session joins to is reported as a double claim; a session waiting longer
 than `dispatch.blocked_after` is reported.
 
-A pickup starts only where the session runtime binds the session to the
-account it bills, whatever account the host has active. Orca cannot yet:
-`orca agent launch` takes no account and no environment of its own (`orca
-account select` covers OpenCode and Devin only), and starts its agent with
-the configuration directory of the account the host has selected, which a
-person can switch at any moment. So with Orca every pickup is reported,
-with that reason, and nothing is opened or started. The launch path is
-built behind the runtime's answer: a terminal tab running the dispatcher's
-wrapper, which starts the agent of the account's vendor (Claude Code, or
-Codex on the route's `routing.models.codex` model and `routing.efforts.codex`
-effort), binds it through the account's configuration directory as it does
-a drive's pass, and reads the agent's id back as the terminal's tab and
-pane, the id `orca worktree ps` reports agents under. Orca reports a Codex
-session started that way as an agent under that id, but Codex first asks
-whether to trust a folder it has not seen, and nobody answers; that it
-reports a Claude Code session started that way is not shown. It switches on
-once both are settled.
+A pickup starts only where the session runtime binds the pass to the
+account it bills. On Orca it runs through the headless wrapper used by
+follow-ups, with the admitted account's configuration directory and an
+identity check before launch. An interactive launch remains unavailable
+until the runtime can bind it to an account.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]

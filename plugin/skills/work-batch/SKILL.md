@@ -80,6 +80,17 @@ Work the issue alone with [`/jig:do-item`](../do-item/SKILL.md) when:
 
 ### 1. Propose
 
+**Dispatched served batch.** A dispatcher launch may name a fixed set of
+items, their served tracker identity and each inherited item's ancestor
+epic. That set is the maximum scope; do not add siblings. Use the first named key as the anchor. Run the proposal
+and its revalidation with every fixed key in `--claimed`, so their existing
+served assignment does not exclude them. Keep only named items the other
+eligibility checks permit. This flag does not claim an item: the live claim
+below still checks its state, assignment, holds and assignment provenance.
+Read the full issues and assess their independence as for any batch. A
+question that needs a person ends the pass with `Question:`; record the
+failed result through the launch's result command. Never choose for them.
+
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit N] [--claimed "KEY,KEY"] [--format json]
 ```
@@ -177,6 +188,12 @@ the release in step 4 restores them. Then, for each:
    ```bash
    bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" claim "<KEY>"
    ```
+
+   For a dispatched served batch, append `--for "<identity>"` and that item's
+   `--ancestor "<epic-key>"` when supplied. Keep each identity and ancestor
+   as one quoted argument. Preserve the served assignee.
+   Use the script transport for this claim; a native tracker update does
+   not perform its guards. Never retry a refusal without those options.
 
    On exit `3` (someone already holds it) or `4` (another claim landed
    first), drop the issue from the batch as a changed line is dropped.

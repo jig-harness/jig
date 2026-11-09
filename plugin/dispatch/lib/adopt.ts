@@ -49,7 +49,12 @@ export function adoptionOf(
   const rule = section.adopt;
   if (!rule.enabled) return null;
   return {
-    authors: rule.authors ?? (login === null ? [] : [login]),
+    authors: [
+      ...new Set([
+        ...(rule.authors ?? (login === null ? [] : [login])),
+        ...(rule.servedAuthors ?? []),
+      ]),
+    ],
     named: rule.authors !== null,
     withinMs: rule.withinMs,
   };

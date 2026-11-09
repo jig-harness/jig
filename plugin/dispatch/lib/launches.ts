@@ -121,6 +121,9 @@ export interface LaunchRecord {
   passTimeoutSec?: number | null;
   /** For a pickup: it runs as a headless pass of `do-item` through the wrapper. Absent on an interactive pickup an earlier release started. */
   headless?: boolean;
+  servedPerson?: string;
+  ancestorEpic?: string;
+  batchItems?: import("./queue-batch.ts").BatchItem[];
   /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */

@@ -31,6 +31,7 @@ export function planObserved(
   const onlyLabeled = observation.labels?.onlyLabeled === true;
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
+    values: opened.values,
     ...(observation.board === undefined ? {} : { board: observation.board }),
     section,
     pickups: tracked.pickups,

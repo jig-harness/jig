@@ -250,6 +250,9 @@ async function applyStages(
             tracker,
             keys,
             branchPattern: join.branchPattern,
+            ...(tracked.servedPolicy === undefined
+              ? {}
+              : { servedPolicy: tracked.servedPolicy }),
             sessions: fresh,
           });
       },
