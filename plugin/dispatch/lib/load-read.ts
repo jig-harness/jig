@@ -31,7 +31,13 @@ export interface LoadReading {
   /** The host's memory in bytes. */
   totalBytes: number;
   platform: NodeJS.Platform;
-  disk: Read<{ freeBytes: number; totalBytes: number; path: string }>;
+  disk: Read<{
+    freeBytes: number;
+    totalBytes: number;
+    path: string;
+    /** Some workspace filesystems could not be read. */
+    incomplete?: string;
+  }>;
   lock: Read<{ holders: number; waiters: number }>;
   forge: Read<{ remaining: number; limit: number }>;
   /** The bytes the processes in each workspace use, by its path; `null` where the platform shows no process's working directory. */
@@ -113,6 +119,11 @@ function readDisk(paths: readonly string[]): LoadReading["disk"] {
       failures.push(`${path}: ${failureText(error)}`);
     }
   }
+  if (least !== null && failures.length > 0)
+    return {
+      ...least,
+      incomplete: `free space incomplete (${failures.join("; ")})`,
+    };
   if (failures.length > 0)
     return { unread: `free space not read (${failures.join("; ")})` };
   return least ?? { unread: "no workspace to read free space at" };

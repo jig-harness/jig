@@ -220,6 +220,28 @@ function recordHolder(lock: string): void {
     rmSync(staged, { force: true });
   }
 }
+// A wait announcement is named for its process id. If that id was reused
+// after a crash, only its recorded identity can prove the old announcement is
+// stale. Never unlink an unreadable entry or one that names a live process.
+function reclaimWaitingAnnouncement(path: string): boolean {
+  try {
+    const announced = decodeIdentity(readFileSync(path, "utf8"));
+    const verdict = announced === null ? null : isAliveSync(announced);
+    if (
+      announced === null ||
+      verdict === null ||
+      !verdict.ok ||
+      verdict.value.state === "alive"
+    )
+      return false;
+    if (!lstatSync(path).isFile()) return false;
+    rmSync(path);
+    return true;
+  } catch (error) {
+    swallow(error, "the stale wait announcement was not reclaimed");
+    return false;
+  }
+}
 /** Refuse a setting or an argument: the entry point reports it and exits 2. */
 function refuse(message: string): never {
   throw new Error(message);
@@ -810,7 +832,19 @@ export async function main(
           writeFileSync(waiting, encodeIdentity(ownIdentity()), { flag: "wx" });
           announced = true;
         } catch (error) {
-          swallow(error, "the wait goes uncounted, not unserved");
+          if (
+            errorCode(error) === "EEXIST" &&
+            reclaimWaitingAnnouncement(waiting)
+          ) {
+            try {
+              writeFileSync(waiting, encodeIdentity(ownIdentity()), {
+                flag: "wx",
+              });
+              announced = true;
+            } catch (retryError) {
+              swallow(retryError, "the wait goes uncounted, not unserved");
+            }
+          } else swallow(error, "the wait goes uncounted, not unserved");
         }
       if (key === said) return;
       said = key;

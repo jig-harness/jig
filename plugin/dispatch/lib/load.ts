@@ -224,7 +224,7 @@ function diskGauge({ settings, reading }: LoadState): LineLoadGauge {
             disk.totalBytes,
             settings.diskFreeBytes,
           ),
-          reads: `${gib(disk.freeBytes)} free`,
+          reads: `${gib(disk.freeBytes)} free${disk.incomplete === undefined ? "" : `; ${disk.incomplete}`}`,
         },
   );
 }

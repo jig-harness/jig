@@ -42,17 +42,19 @@ function running(
 function outstandingReservations(
   records: readonly ReadRecord[],
   reading: ReturnType<typeof readLoad>,
-  machine: MachineConfig,
+  load: LoadState,
 ): number {
   return records.reduce((total, { record, state }) => {
     if (!holds(state)) return total;
-    const represented =
-      record.workspace !== null &&
-      reading.sessions !== null &&
-      (reading.sessions.get(record.workspace.path) ?? 0) > 0;
-    if (represented) return total;
+    if (record.workspace !== null && reading.sessions === null) return total;
     const kind = kindOfRecord(record);
-    return total + machine.load.reservations[kind];
+    const reserved =
+      load.reservations.find((entry) => entry.kind === kind)?.bytes ?? 0;
+    const represented =
+      record.workspace === null
+        ? 0
+        : (reading.sessions?.get(record.workspace.path) ?? 0);
+    return total + Math.max(reserved - represented, 0);
   }, 0);
 }
 
@@ -93,12 +95,13 @@ export function readTickLoad(input: {
       passTimeoutSeconds(),
       input.codexOptIn,
     );
-    return loadState(
+    const load = loadState(
       machine.load,
       reading,
       accountsReading(table, refused),
       readSamples(),
-      outstandingReservations(records, reading, machine),
     );
+    load.spentBytes = outstandingReservations(records, reading, load);
+    return load;
   });
 }

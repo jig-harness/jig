@@ -34,7 +34,7 @@ describe("the load gauge", () => {
           expect(await head.locator("b").textContent()).toBe("Load 82%");
           expect(await head.textContent()).toContain("memory binds");
           expect(await page.locator(".pLine .load").textContent()).toContain(
-            "Reporting only: 1 launch would have been held this tick, and started.",
+            "Reporting only: 1 launch would have been held this tick.",
           );
           // It sits above the accounts.
           const [load, account] = await Promise.all([
