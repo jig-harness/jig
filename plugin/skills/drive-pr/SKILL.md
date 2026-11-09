@@ -1993,8 +1993,9 @@ with nothing to hold or resolve) has no outcome for `triage-thread.ts` to
 dispatch on — use `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/reply-to-thread.ts" --no-outcome` directly for that case.
 
 A legacy marked moot on a bot-started thread resolves on both direct retry
-and automatic reconciliation. Its marker proves that no push was needed; it
-does not authorize leaving a bot thread open.
+and automatic reconciliation once any code-scanning alert is confirmed fixed,
+closed or dismissed. Its marker proves that no push was needed; it does not
+bypass the alert check or authorize leaving another bot thread open.
 
 **Leaving a human thread open.** A merit outcome (`rejected`/`wont-fix`/
 `deferred`/plain `moot`) is resolved automatically — pass `--leave-open` to
