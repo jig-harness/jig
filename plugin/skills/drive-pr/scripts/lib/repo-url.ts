@@ -65,6 +65,35 @@ async function resolvedSshHost(
 ): Promise<string> {
   const { host, port, user } = remote;
   if (!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(host)) return "";
+  // `ssh -G` below must model the command Git will use for its push.  This
+  // resolver intentionally supports the ordinary OpenSSH configuration, but
+  // cannot safely interpret an arbitrary replacement command or its options.
+  // Refusing those overrides is safer than certifying a destination Git could
+  // resolve differently.
+  const override =
+    env.GIT_SSH_COMMAND || env.GIT_SSH ? "GIT_SSH_COMMAND or GIT_SSH" : "";
+  if (override) {
+    throw new JigError(
+      "SSH_TRANSPORT_OVERRIDE",
+      `Cannot verify SSH host ${host}: ${override} overrides Git's SSH transport.`,
+    );
+  }
+  const configured = await run(["git", "config", "--get", "core.sshCommand"], {
+    timeoutSec: gitCallTimeoutSeconds(),
+    env,
+  });
+  if (configured.code === 0 && configured.stdout.trim() !== "") {
+    throw new JigError(
+      "SSH_TRANSPORT_OVERRIDE",
+      `Cannot verify SSH host ${host}: core.sshCommand overrides Git's SSH transport.`,
+    );
+  }
+  if (configured.code !== 0 && configured.code !== 1) {
+    throw new JigError(
+      "SSH_TRANSPORT_UNREADABLE",
+      `Cannot verify SSH host ${host}: git config --get core.sshCommand exited ${configured.code}: ${configured.stderr?.trim() || "no diagnostic output"}`,
+    );
+  }
   const result = await resolveSsh(
     [
       "ssh",

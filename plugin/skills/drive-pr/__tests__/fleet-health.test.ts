@@ -1095,6 +1095,7 @@ function deps(over: Partial<RunDeps> = {}): RunDeps {
     },
     prFiles: async () => [],
     prBody: async () => "",
+    driveRearms: async () => [],
     classifier: {
       classify: () => ({
         productPr: true,

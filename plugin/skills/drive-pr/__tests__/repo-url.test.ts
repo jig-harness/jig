@@ -45,6 +45,14 @@ test("SSH aliases must resolve to the forge under a deadline", async () => {
   ).rejects.toThrow("ssh -G exited 124: deadline");
 });
 
+test("SSH transport overrides are refused rather than verified with another command", async () => {
+  await expect(
+    repoOfUrl("git@github-work:example-org/example-repo.git", {
+      GIT_SSH_COMMAND: "ssh -F alternate-config",
+    }),
+  ).rejects.toThrow("overrides Git's SSH transport");
+});
+
 test("enterprise forge selection comes from gh's host settings", async () => {
   const remote = "https://forge.example.invalid/example-org/example-repo.git";
   expect(await repoOfUrl(remote, { GH_HOST: "forge.example.invalid" })).toBe(

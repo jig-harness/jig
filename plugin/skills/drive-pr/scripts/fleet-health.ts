@@ -134,7 +134,7 @@ export interface RunDeps {
   prFiles(pr: number): Promise<PrFileStat[]>;
   prBody(pr: number): Promise<string | null>;
   /** A diagnostic string explains an unreadable ledger; `null` is a legacy reader refusal. */
-  driveRearms?(pr: number): Promise<string[] | string | null>;
+  driveRearms(pr: number): Promise<string[] | string | null>;
   /** `null` + a reason when the catalog could not be loaded. */
   classifier: Classifier | null;
   classifierError: string | null;
@@ -253,6 +253,7 @@ export async function runFleetHealth(
   const failed: number[] = [];
   const pastEndPrs: number[] = [];
   const failureReasons = new Set<string>();
+  const rearmGaps = new Map<number, string>();
   const recentAttempts: boolean[] = [];
   let breakerTripped = false;
   const listings = new Map<number, PrListing>(
@@ -281,6 +282,9 @@ export async function runFleetHealth(
           failed.push(l.number);
           return null;
         }
+        const rearms = await readRearmsWithReason(deps.driveRearms, l.number);
+        const driveRearms = typeof rearms === "string" ? [] : rearms;
+        if (typeof rearms === "string") rearmGaps.set(l.number, rearms);
         if (heads !== null && heads <= cfg.ceremony.freeRounds) {
           // No rounds to charge and no carousel possible, so no sample. The listing
           // still decides whether the PR matters: merged in the window (progress,
@@ -290,7 +294,8 @@ export async function runFleetHealth(
             !inWindow(l.mergedAt, win) &&
             !inWindow(l.closedAt, win) &&
             !inWindow(l.createdAt, win) &&
-            (l.state !== "OPEN" || !inWindow(l.updatedAt, win))
+            (l.state !== "OPEN" || !inWindow(l.updatedAt, win)) &&
+            !driveRearms.some((at) => inWindow(at, win))
           )
             return null;
           return {
@@ -305,6 +310,7 @@ export async function runFleetHealth(
             openingAdditions: 0,
             threads: { total: 0, answered: 0, accepted: 0 },
             productPr: null,
+            driveRearms,
           };
         }
         if (breakerTripped) {
@@ -336,6 +342,7 @@ export async function runFleetHealth(
           inWindow(l.mergedAt, win) ||
           inWindow(l.closedAt, win) ||
           allRounds.some((at) => inWindow(at, win)) ||
+          driveRearms.some((at) => inWindow(at, win)) ||
           inWindow(l.createdAt, win) ||
           (l.state === "OPEN" && inWindow(l.updatedAt, win));
         if (!activeInWindow) return null;
@@ -371,22 +378,18 @@ export async function runFleetHealth(
               .length,
           },
           productPr: null,
+          driveRearms,
         };
       },
     )
   ).filter((f): f is PrFact => f !== null);
-  const readRearms = deps.driveRearms;
-  if (readRearms !== undefined)
-    await mapLimit(facts, opts.concurrency, async (f) => {
-      const times = deadlineFired()
-        ? DEADLINE_MESSAGE
-        : await readRearmsWithReason(readRearms, f.number);
-      if (typeof times === "string")
-        gaps.push(
-          `#${f.number}: drive re-arms could not be read from the forge ledger (${times})`,
-        );
-      else f.driveRearms = times;
-    });
+  for (const f of facts) {
+    const gap = rearmGaps.get(f.number);
+    if (gap !== undefined)
+      gaps.push(
+        `#${f.number}: drive re-arms could not be read from the forge ledger (${gap})`,
+      );
+  }
   if (failed.length > 0) {
     const why = [
       ...(failureReasons.size > 0

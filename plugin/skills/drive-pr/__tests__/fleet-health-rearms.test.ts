@@ -214,3 +214,56 @@ test("the collector reads a cheap PR's ledger and reports an unreadable history 
     "#1: drive re-arms could not be read from the forge ledger (permission denied)",
   );
 });
+
+test("the collector retains a historical PR when a drive re-arm falls in the window", async () => {
+  const reads: number[] = [];
+  const result = await runFleetHealth(
+    { until: "2026-09-15", days: 14, limit: 10, concurrency: 1 },
+    {
+      cfg: parseConfig(raw),
+      nowMs: () => window.untilMs,
+      budget: async () => ({ remaining: 5000, resetAt: at }),
+      listCandidates: async () => ({
+        prs: [
+          {
+            number: 2,
+            title: "historical work",
+            state: "CLOSED",
+            body: "",
+            createdAt: "2026-08-01T00:00:00Z",
+            updatedAt: "2026-09-20T00:00:00Z",
+            mergedAt: null,
+            closedAt: "2026-09-20T00:00:00Z",
+          },
+        ],
+        capped: false,
+      }),
+      reviewedHeads: async () => 0,
+      samplePr: async () => {
+        throw new Error("no expensive sample needed");
+      },
+      driveRearms: async (pr) => {
+        reads.push(pr);
+        return [at];
+      },
+      prFiles: async () => [],
+      prBody: async () => "",
+      classifier: null,
+      classifierError: "no catalog",
+      tracker: null,
+      trackerError: "no tracker",
+      fetchIssues: async () => new Map(),
+      fetchWindowIssues: async () => ({
+        followups: [],
+        sdlcIssues: [],
+        completed: [],
+      }),
+      fetchEpicActivity: async () => [],
+      fetchAcceptedEpics: async () => new Set(),
+      fetchEpicComments: async () => ({ uuid: "epic", comments: [] }),
+      note: () => undefined,
+    },
+  );
+  expect(reads).toEqual([2]);
+  expect(result.report.counts.prs).toBe(1);
+});
