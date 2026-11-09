@@ -33,8 +33,8 @@ the [re-arm](../GLOSSARY.md) that reads answers
 A person's answer to a framed decision is either a **structured answer**,
 whose whole text names exactly one of the decision's options, or a **free
 answer** in the person's own words. The line hands a structured answer's
-option to the pass as the decision record states it; a pass interprets a
-free answer, as it does today. Text that is not exactly a structured form
+option to the pass as the decision record states it, narrowed by any note
+the person added; a pass interprets a free answer, as it does today. Text that is not exactly a structured form
 is a free answer, so an answer is never lost for its wording. A structured
 answer adds no authority: who may answer is decided in one place
 (`shared/trusted-authors.ts`) for both forms. An answer that names the
@@ -85,8 +85,10 @@ that does not know a label still shows it, as the label and its text, so a
 new field reaches the card and `jig ask` with no change to either.
 
 **The option's fields are a closed list in one table**
-(`OPTION_FIELDS`). Each is a label in the option's `- ` item, usually on an
-indented line of its own:
+(`OPTION_FIELDS`). `Changes:` and `Costs:` stay as they are written today.
+Each optional field is an exact, case-sensitive label at the start of an
+indented line of its own, after `Costs:`, so that a word in a sentence
+(`one more obligation: update the runbook`) is never read as a field:
 
 | Label | Says | Required |
 | --- | --- | --- |
@@ -99,7 +101,8 @@ indented line of its own:
 
 Together these are the pros and cons of an option, each said as what
 happens. A new field is one row here and its check. A plugin older than the
-field reads its text as part of the field before it, and shows it there.
+field reads its text as part of `Costs:` and shows it there. `items()` keeps
+each line's start, so the labels can be told from the text around them.
 
 **The decision's own optional sections** follow the required ones, each
 once: `## Related` (see [Several decisions on one
@@ -112,7 +115,8 @@ stop a section at the next heading, so an older plugin passes over these.
 **A record has a size limit.** The drive ledger is one comment of at most
 65,536 bytes, shared by every parked decision on the pull request, and the
 ledger is not written when the parks alone exceed it. So the park refuses
-a record over 8 KiB and names its size.
+a record over 8 KiB, and refuses any park the ledger could not then hold: it
+renders the ledger with the new park first and names both sizes.
 
 **What this leaves room for**, none of it built here:
 
@@ -209,9 +213,15 @@ answer PRRT_abc: choose Keep [3fa9c2d1e0b4]
 note PRRT_abc: only after the migration merges
 ```
 
-The option chosen is still known without reading the note. The note binds
-the pass all the same: it applies the option as the note qualifies it, and
-parks the item again, quoting the note, when it cannot do both. A person
+The option chosen is known without reading the note, so every reader can
+show and count it. The note is the one part a pass still interprets, and
+what it may do is limited: a note may narrow an option or set a condition
+on it, and never widen what the option allows. The digest covers the
+record, not the note, so a pass that reads a note as widening the option,
+or cannot apply both, parks the item again and quotes the note. A line that
+fails the check, a note over 500 characters typed on the forge say, is
+another line, so the answer is free. A comment holding only a `note <key>:`
+line is no answer, and `jig ask` shows it as a note with no answer. A person
 whose answer is really something other than an option writes a free answer.
 
 There is no `decline` form. Every framed decision offers at least two
@@ -230,13 +240,14 @@ answer is their latest one, structured or free, so a person who changes
 their mind before the re-arm reads it simply answers again, and a later
 "wait, don't" replaces their earlier `approve`. Across people:
 
-- When every person's latest answer is structured and all choose the same
-  option, that option is chosen, and every note is handed on.
+- When every person's latest answer is structured, all choose the same
+  option and no two notes differ, that option is chosen.
 - When every person's latest answer is free, the item is answered and every
   one of them is handed on for the pass to interpret, as today.
-- When two people's latest answers are not the same option (two structured
-  answers choosing different options, or a structured answer beside
-  another person's free one), the item is **disputed**. It is not answered:
+- When two people's latest answers are not the same option with the same
+  note (two structured answers choosing different options or adding
+  different notes, or a structured answer beside another person's free
+  one), the item is **disputed**. It is not answered:
   it waits, and the notification names the answers. A disagreement between
   two people is theirs to settle, and a free answer beside an approval may
   well be one.
@@ -321,8 +332,11 @@ the pass then reads, for an item answered with one structured choice:
 > 3fa9c2d1e0b4. Apply this option as the decision record states it.
 
 with the person's note, when there is one, and the instruction to apply
-the option as the note qualifies it, followed by the decision record, so
-the pass has the option's Changes and Costs in front of it. The pass records the item's outcome as it does today,
+the option as the note narrows it, followed by the decision record, so
+the pass has the option's Changes and Costs in front of it. When the
+notice runs out of room it never cuts a chosen option or a note: the
+records share what is left, and each that is cut names the kept file that
+holds it whole. The pass records the item's outcome as it does today,
 and its reply names the option and who chose it. Once the ledger keeps
 resolved parks (the hub's first stage,
 [hub.md § Build order](hub.md#build-order)), each keeps its choice beside
@@ -402,7 +416,11 @@ ask and folds the rest.
   options and its pick. The card keeps the act of its oldest decision for
   the group it sits in; a row whose act differs shows its own, so a decision
   that asks for authorization is never read as a choice because of its
-  neighbour.
+  neighbour. A card's group can change when its oldest decision is
+  answered, since the need then holds the next oldest first.
+- **A row is short.** It shows the question, the recommendation and the
+  pick. The other options and the details stay folded, on a phone too, as
+  a card folds the full decision today.
 - **A decision is one call.** It has one key, one question and options that
   exclude each other, and it takes one answer. A piece of work with several
   calls parks several decisions. Two calls that affect each other say so
@@ -435,18 +453,23 @@ Needs you · Decide                       PR #456 · waits on ana · 2h
 ▸ 2 of 2  Drop the unused table now?                      destructive
     [1] ○ Do not drop (recommended)   changes …   costs …
     [2] ○ Drop                        changes …   costs …
-1 2 pick   [ ] decision   u undo   r own words   c copy   p open PR
+1 2 pick   h l decision   u undo   r words   c copy   p open PR
 ```
 
 On the focused card (`j` and `k` move between cards, as they do today):
 
 | Key | Does |
 | --- | --- |
-| `1` to `9` | picks that option of the current decision, then moves to the next decision with no pick |
-| `[` and `]` | the previous or next decision on the card |
-| `u` | clears the current decision's pick |
-| `r` | opens the current decision's text field: a note beside a pick, or a free answer without one |
-| `c` | copies the card's picks as one comment, each with its digest and note |
+| `1` to `9` | picks that option of the current decision, then moves to the next decision with no pick; a held or repeated digit picks once |
+| `h` and `l` | the previous or next decision on the card |
+| `u` | clears the last pick made on the card, and returns to that decision |
+| `r` | beside a pick, a one-line note; with no pick, a free answer |
+| `Escape` | leaves that field, so the card's keys work again |
+| `c` | copies the card's answers as one comment, each with its digest and note |
+
+The current decision is held by its key and digest, not its place, because
+a tick can reorder a need's decisions or remove an answered one. When it
+goes, the current decision is the first one left with no pick.
 
 - **An option's number is its place on the card.** The recommended option
   is always 1, the others follow in the record's order, and one function
@@ -458,12 +481,23 @@ On the focused card (`j` and `k` move between cards, as they do today):
 - **A pick belongs to one framing.** Picks are kept like the reply drafts
   (`dashboard/src/replies.ts`), by repository, key and digest. When a
   decision is framed again its pick is dropped and the row says so.
-- **A digit never commits, on any surface.** Where a pick is of a class the
-  acts table does not list as Decide by name, or of an option whose
-  `Reversible:` says `no`, the first `c` opens that option's Changes and
-  Costs and says what the pick allows, and the second copies. With no picks,
-  `c` copies what it copies today, and an `approve` line only for a card of
-  one decision whose class is listed as Decide by name.
+- **Notes and free answers are kept apart.** A note and a free answer are
+  separate drafts, so clearing a pick never turns its note into an answer
+  and a later pick never turns a draft into a note. Both are checked as an
+  answer's text is, by a check that moves from `answer-comment.ts` to
+  `shared/` so the page can run it, and a row that fails holds the copy
+  back and says why. A row with neither a pick nor a free answer is left out
+  of the comment.
+- **A digit never commits, on any surface.** A pick is guarded when its
+  class is one the acts table does not list as Decide by name, or its
+  option's `Reversible:` says `no`. Copying picks that include a guarded one
+  takes two steps, however it is started (the `c` key, the card's Copy
+  button or the palette): the first shows every guarded pick's Changes and
+  Costs, and the second copies. The first step's effect ends when any pick
+  changes, a digest changes or the card loses focus. With no picks, `c`
+  copies an `approve` line for a card of one decision whose class is listed
+  as Decide by name; for any other card it copies the `answer <key>:`
+  starting line, as it does today.
 - **Every action has a target for a pointer and a screen reader.** On a
   phone an option's row is what is tapped, digits are not shown, and the
   pick is announced. Keys fire only on the focused card and never inside a
@@ -649,19 +683,19 @@ and its pull request saying what changed in the audit.
    leaves the item waiting, and the re-arm, the tick and `jig ask` agree on
    every item of a test pull request.
 2. **The decision digest.** `ParkedItem.digest` stored at the park and
-   published in the ledger, the digest suffix and the stale answer in
-   `answer-forms.ts`, the stale comments in the notice's key, and the
-   notification's answer lines with the digest. Done when a line copied
+   published in the ledger and on the tick's line, the digest suffix and the
+   stale answer in `answer-forms.ts`, the stale comments in the notice's
+   key, and the notification's answer lines with the digest. Done when a line copied
    from a notification counts, and the same line after the item was framed
    again leaves the drive parked and the next notification says why.
-3. **Writing them.** `jig send … answer --approve | --choose | --all`, a
-   correcting answer, the record's payload fields and its RECORDS.md row,
+3. **Writing them.** `jig send … answer --approve | --choose | --all`,
+   `--note`, a correcting answer, the record's payload fields and its RECORDS.md row,
    and the operator's verbs. Done when a send naming no option is refused
    before it writes, `--all` leaves out every class the acts table does not
    list as Decide, and a person's second send replaces their first.
 4. **Showing them.** `jig ask`'s question and answer fields, the
-   dashboard's stale or disputed answers, the waiting parks' digests and
-   options on the tick's line, and the outcome log's answered-park event. Done when
+   dashboard's stale or disputed answers, and the outcome log's
+   answered-park event. Done when
    the panel, `jig ask` and the dashboard show the same options and the
    same choice for one park.
 5. **Recommendation acceptance.** The per-class report in `jig dispatch
@@ -675,8 +709,9 @@ and its pull request saying what changed in the audit.
 7. **The picking card.** A row per decision, `## Related` beside its
    decisions, the numbering function, the keys, kept picks, the second `c`,
    the phone's rows, and the Orca panel's picks and Send, with
-   [dispatch-board.md](dispatch-board.md) updated. Steps 6 and 7 need only
-   steps 1 and 2, and may come before steps 3 to 5. Done when `j`, `1`, `c`
+   [dispatch-board.md](dispatch-board.md) updated. Steps 6 and 7 may come
+   before steps 3 to 5: step 6 needs nothing before it, the card needs steps
+   1, 2 and 6, and only the panel's Send waits on step 3. Done when `j`, `1`, `c`
    on a card of one decision copies its recommended option with the digest,
    a card of two decisions copies one comment with both, a reframed
    decision drops its pick, and every pick can be made by a pointer alone.
@@ -724,4 +759,6 @@ and its pull request saying what changed in the audit.
 Reviewed on 2026-11-09 by two fresh-context agent sessions acting as
 adversaries, before the first pull request that builds it: one read the
 first draft, the other the design at commit `b0171a9a`, each against the
-code it names and the designs and decision records it builds on.
+code it names and the designs and decision records it builds on. A third
+session reviewed the option fields, several decisions on one card and
+picking at commit `ff3d102e`, against the code they build on.
