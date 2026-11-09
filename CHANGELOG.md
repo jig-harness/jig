@@ -390,6 +390,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.185.2] - 2026-11-09
+
+### Fixed
+
+- Ready to merge, the merge-ready announcement and `jig ask` use the latest
+  ordinary check run by start time, then completion time. Superseded cancelled,
+  failed or pending runs no longer hide a successful retry; a latest failed or
+  cancelled required check still blocks merging and names the check.
+
 ## [0.185.1] - 2026-11-09
 
 ### Fixed
@@ -6500,7 +6509,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.185.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.185.2...HEAD
+[0.185.2]: https://github.com/jig-harness/jig/compare/v0.185.1...v0.185.2
 [0.185.1]: https://github.com/jig-harness/jig/compare/v0.185.0...v0.185.1
 [0.185.0]: https://github.com/jig-harness/jig/compare/v0.184.1...v0.185.0
 [0.184.1]: https://github.com/jig-harness/jig/compare/v0.184.0...v0.184.1
