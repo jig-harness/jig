@@ -226,7 +226,7 @@ async function retryBlocked(
  * only while this host still shows that driver's run ended.
  */
 function classBlocked(record: LaunchRecord, read: DrivenPr): string | null {
-  return idleBlocksStart(read) ? IDLE : classChanged(record, read);
+  return idleBlocksStart(read, true) ? IDLE : classChanged(record, read);
 }
 
 /** Why a pending record's launch no longer acts on the class its ledger reads now, by the class alone. */

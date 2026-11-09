@@ -301,4 +301,17 @@ describe("an automation pull request with no trouble observed", () => {
       {},
     );
   });
+
+  it("blocks a pending launch's replay through a park, unless a person asked for it", async () => {
+    const { idleBlocksStart } = await import("../lib/automation.ts");
+    const pr = (cls: string, evidence: object) =>
+      ({
+        class: cls,
+        evidence: { automationIdle: true, ...evidence },
+      }) as never;
+    expect(idleBlocksStart(pr("parked", {}))).toBe(false);
+    expect(idleBlocksStart(pr("parked", {}), true)).toBe(true);
+    expect(idleBlocksStart(pr("parked", { rearm: true }), true)).toBe(false);
+    expect(idleBlocksStart(pr("unarmed", {}), true)).toBe(false);
+  });
 });

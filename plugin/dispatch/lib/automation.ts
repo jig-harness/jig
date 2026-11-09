@@ -144,11 +144,14 @@ const AUTOMATIC: ReadonlySet<LedgerClass> = new Set([
   "re-armable",
 ]);
 
+/** The classes a pending launch may still replay from: the automatic ones, and a park a pending conflict repair replays through. */
+const REPLAYED: ReadonlySet<LedgerClass> = new Set([...AUTOMATIC, "parked"]);
+
 /** Whether a drive's pull request is an automation pull request that needs no work, so that no drive is started on it of itself; a person's rearm request still starts one. */
-export function idleBlocksStart(pr: DrivenPr): boolean {
+export function idleBlocksStart(pr: DrivenPr, replay = false): boolean {
   return (
     pr.evidence.automationIdle === true &&
     pr.evidence.rearm !== true &&
-    AUTOMATIC.has(pr.class)
+    (replay ? REPLAYED : AUTOMATIC).has(pr.class)
   );
 }
