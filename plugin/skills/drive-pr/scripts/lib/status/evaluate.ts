@@ -45,7 +45,6 @@
  */
 
 import {
-  asCommentRecord,
   isLeftOpenThread,
   latestCommentUrl,
   openThreadVersions,
@@ -78,6 +77,7 @@ import {
   mayEndWithoutWork,
 } from "./inherited-head.ts";
 import { resolveMarkerSha, reviewedShaGate, skipNote } from "./reviewed-sha.ts";
+import { readHeldEvidence, isFindingHoldCurrent } from "./held-evidence.ts";
 import { terminal } from "./terminal-states.ts";
 import type { WaitingEvaluationCache } from "./waiting-cache.ts";
 
@@ -1244,42 +1244,18 @@ async function evaluateFresh(
   // ROUND_READY/HITL_PARKED/CONVERGED/PR_CONFLICTING verdict below) are
   // untouched, because a held item is still live work for the round it belongs
   // to — only its RECURRENCE evidence is stale.
-  const heldRes = await run(tsArgv(ctx.driveStateScript, ["held", ctx.pr]), {
-    stderr: "inherit",
-    timeoutSec: ctx.helperTimeoutSec,
-  });
-  let heldByKey: Map<string, string | undefined>;
-  let heldKeys: Set<string>;
-  if (heldRes.code !== 0) {
-    console.error(
-      `evaluate: could not read the held set for #${ctx.pr} — proceeding without excluding held items from recurrence evidence`,
-    );
-    heldByKey = new Map();
-    heldKeys = new Set();
-  } else {
-    heldByKey = new Map();
-    try {
-      const parsed = JSON.parse(heldRes.stdout) as unknown;
-      if (Array.isArray(parsed)) {
-        for (const entry of parsed) {
-          const rec = asCommentRecord(entry);
-          if (rec === null) continue;
-          const key = rec.key;
-          if (typeof key !== "string" || key === "") continue;
-          const commentUrl = rec.commentUrl;
-          heldByKey.set(
-            key,
-            typeof commentUrl === "string" ? commentUrl : undefined,
-          );
-        }
-      }
-    } catch {
-      console.error(
-        `evaluate: held state for #${ctx.pr} is not readable JSON — proceeding without excluding held items from recurrence evidence`,
-      );
-    }
-    heldKeys = new Set(heldByKey.keys());
-  }
+  const heldEvidence = await readHeldEvidence(
+    ctx.driveStateScript,
+    ctx.pr,
+    ctx.helperTimeoutSec,
+    report.reviewedSha === report.apiHead ? report.apiHead : "",
+  );
+  const heldByKey = new Map(
+    [...heldEvidence.byKey].map(([key, record]) => [
+      key,
+      typeof record.commentUrl === "string" ? record.commentUrl : undefined,
+    ]),
+  );
   // A thread hold's `commentUrl` is REQUIRED by every writer (`hold`,
   // `restore-held` — `schema.ts`'s own doc), so an entry with none is either
   // a `kind: finding` hold sharing no key space with a threadId, or an
@@ -1318,7 +1294,7 @@ async function evaluateFresh(
         .map((t) => (t as { path?: unknown }).path)
         .filter((p): p is string => typeof p === "string" && p.trim() !== ""),
       ...summaryLive
-        .filter((f) => !heldKeys.has(f.fingerprint))
+        .filter((f) => !isFindingHoldCurrent(heldEvidence, f.fingerprint))
         .map((f) => f.path)
         .filter(
           (p): p is string =>

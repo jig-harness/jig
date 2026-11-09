@@ -579,6 +579,12 @@ firing over a pass that *had* worked:
   URL, so replying while leaving a human thread open also resets the stall streak.
   Missing or truncated comment versions disable the fingerprint for that gate.
 
+Held summary findings stay out of recurrence evidence only in their own drive
+review round. A later reviewed head puts an unaddressed finding's path back in
+that evidence, including the first status read before the round is counted.
+Repeated reads or reviewer reruns on the same head do not advance this local
+round counter. An unreadable hold or round is counted conservatively.
+
 The counters below share that one bound, because neither covers the other's runaway
 and **both are durable**. `rounds` counts distinct reviewed heads, so it cannot
 see a pass that never pushes; `attempts` counts passes on the current head, and
