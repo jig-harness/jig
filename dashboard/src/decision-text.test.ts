@@ -8,10 +8,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DecisionText } from "./decision-text.tsx";
 
-function rendered(source: string) {
+function rendered(source: string, lines = false) {
   const window = new Window();
   window.document.body.innerHTML = renderToStaticMarkup(
-    createElement(DecisionText, { source }),
+    createElement(DecisionText, { source, lines }),
   );
   return window.document.body;
 }
@@ -142,5 +142,12 @@ describe("links in the text", () => {
     );
     expect(body.querySelectorAll("img").length).toBe(0);
     expect(body.textContent).toContain("a tracking pixel");
+  });
+
+  it("renders a log reason's emphasis and code, and keeps its line breaks readable", () => {
+    const body = rendered("stopped **8** (parked)\nwaiting on `PRRT_x1`", true);
+    expect(body.querySelector("strong")?.textContent).toBe("8");
+    expect(body.querySelector("code")?.textContent).toBe("PRRT_x1");
+    expect(body.querySelector(".quote")?.className).toContain("lines");
   });
 });

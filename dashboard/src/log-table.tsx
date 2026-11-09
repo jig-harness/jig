@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { LogRow } from "../../plugin/dispatch/lib/log.ts";
 import { askLineOf } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
+import { DecisionText } from "./decision-text.tsx";
 import { Evidence, StageHint } from "./fold.tsx";
 import { cardAttrs } from "./keys.ts";
 import {
@@ -91,7 +92,7 @@ function RowBody({ view }: { view: RowView }) {
   return (
     <div className="rowBody">
       <StageHint mark={view.mark} stage={view.stage} />
-      <div className="quote">{view.reason}</div>
+      <DecisionText source={view.reason} lines />
       <div className="copyRow">
         <CopyButton
           text={view.reason}
@@ -181,6 +182,7 @@ export function LogTable({
         key: `log ${row.id}`,
         target: row.original.target,
         url: row.original.url,
+        commandLabel: "jig ask line",
         command:
           row.original.target === ""
             ? null

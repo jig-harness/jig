@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { actionOf } from "./keys.ts";
+import { actionOf, hintsFor } from "./keys.ts";
 
 const press = (
   key: string,
@@ -61,5 +61,33 @@ describe("the key map", () => {
     expect(actionOf(press("c", { ctrlKey: true }), false)).toBeNull();
     expect(actionOf(press("j", { metaKey: true }), false)).toBeNull();
     expect(actionOf(press("p", { altKey: true }), false)).toBeNull();
+  });
+});
+
+describe("the keys a card tags", () => {
+  const withCommand = {
+    command: "jig ask drive@a/b#1",
+    commandLabel: "jig ask line",
+  };
+
+  it("names p for a pull request, i for an issue, and c for the command", () => {
+    expect(
+      hintsFor({ url: "https://github.com/a/b/pull/1", ...withCommand }),
+    ).toEqual([
+      { key: "o", does: "details" },
+      { key: "p", does: "pull request" },
+      { key: "c", does: "copy jig ask line" },
+    ]);
+    expect(
+      hintsFor({ url: "https://github.com/a/b/issues/2", ...withCommand }).map(
+        (h) => h.key,
+      ),
+    ).toEqual(["o", "i", "c"]);
+  });
+
+  it("leaves out what the card cannot do", () => {
+    expect(hintsFor({ url: null, command: null, commandLabel: "key" })).toEqual(
+      [{ key: "o", does: "details" }],
+    );
   });
 });

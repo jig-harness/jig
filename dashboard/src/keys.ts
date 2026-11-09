@@ -7,7 +7,7 @@
  * its issue and its primary command ride on it as data, so the keys need
  * nothing from the view that drew it. No key fires inside a text field.
  */
-import { type RefObject, useEffect, useRef } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { announce, copyText } from "./copy.tsx";
 import { VIEWS, type ViewId } from "./search.ts";
 
@@ -17,7 +17,10 @@ export const KEYS: ReadonlyArray<{ keys: string[]; does: string }> = [
     keys: ["⌘K", "Ctrl-K"],
     does: "open the palette: go to a view, jump to #N or an item, run a card's command",
   },
-  { keys: ["j", "k"], does: "next or previous card" },
+  {
+    keys: ["j", "k"],
+    does: "next or previous card; the card is tinted and a bar at the foot names what its keys do",
+  },
   { keys: ["Enter", "o"], does: "expand or collapse the card" },
   { keys: ["p"], does: "open the card's pull request" },
   { keys: ["i"], does: "open the card's issue" },
@@ -128,12 +131,41 @@ function isPullUrl(url: string): boolean {
   return /\/pull\/\d+/.test(url);
 }
 
+/** One key a focused card answers to, as the key bar names it. */
+export interface CardHint {
+  key: string;
+  does: string;
+}
+
+/**
+ * The keys a card answers to, for the bar shown while it is focused: only
+ * what the card can do, named by what it opens or copies.
+ */
+export function hintsFor(card: {
+  url: string | null;
+  command: string | null;
+  commandLabel: string;
+}): CardHint[] {
+  const hints: CardHint[] = [{ key: "o", does: "details" }];
+  if (card.url !== null)
+    hints.push(
+      isPullUrl(card.url)
+        ? { key: "p", does: "pull request" }
+        : { key: "i", does: "issue" },
+    );
+  if (card.command !== null)
+    hints.push({ key: "c", does: `copy ${card.commandLabel}` });
+  return hints;
+}
+
 /** The attributes that make an element a card the keys reach. */
 export function cardAttrs(card: {
   key: string;
   target: string;
   url: string | null;
   command: string | null;
+  /** What the command is, as the key bar names it. */
+  commandLabel?: string;
 }): Record<string, string> {
   // A card is a named group, so j announces what it is rather than a blob of text.
   const attrs: Record<string, string> = {
@@ -143,8 +175,56 @@ export function cardAttrs(card: {
   };
   if (card.url !== null)
     attrs[isPullUrl(card.url) ? "data-pr" : "data-issue"] = card.url;
-  if (card.command !== null) attrs["data-command"] = card.command;
+  if (card.command !== null) {
+    attrs["data-command"] = card.command;
+    attrs["data-command-label"] = card.commandLabel ?? "command";
+  }
   return attrs;
+}
+
+/** The card focus is on and the keys it answers to; `null` when focus is on none, or in a text field. */
+export interface FocusedCard {
+  target: string;
+  hints: CardHint[];
+}
+
+function focusedCardOf(): FocusedCard | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || isTextField(active)) return null;
+  const card = active.closest<HTMLElement>("[data-card]");
+  if (card === null) return null;
+  return {
+    target: card.getAttribute("aria-label") ?? "",
+    hints: hintsFor({
+      url: card.dataset.pr ?? card.dataset.issue ?? null,
+      command: card.dataset.command ?? null,
+      commandLabel: card.dataset.commandLabel ?? "command",
+    }),
+  };
+}
+
+/** The card focus is in, for the bar that tells what its keys do. */
+export function useFocusedCard(): FocusedCard | null {
+  const [card, setCard] = useState<FocusedCard | null>(null);
+  useEffect(() => {
+    const read = () => {
+      const next = focusedCardOf();
+      setCard((prev) =>
+        prev?.target === next?.target &&
+        prev?.hints.map((h) => h.does).join() ===
+          next?.hints.map((h) => h.does).join()
+          ? prev
+          : next,
+      );
+    };
+    document.addEventListener("focusin", read);
+    document.addEventListener("focusout", read);
+    return () => {
+      document.removeEventListener("focusin", read);
+      document.removeEventListener("focusout", read);
+    };
+  }, []);
+  return card;
 }
 
 /** The cards a person can see, in the page's order. */
