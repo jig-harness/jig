@@ -408,11 +408,28 @@ describe("Jira: changing a type and a size kept in Jira's own fields", () => {
 
   it("refuses to remove the label of the type the write sets", async () => {
     await expect(
-      change(issue({ key: "ENG-1", type: "Sub-task", labels: ["bug"] }), {
-        type: "bug",
-        removeLabels: ["bug"],
-      }),
+      change(
+        issue({
+          key: "ENG-1",
+          type: "Sub-task",
+          subtask: true,
+          labels: ["bug"],
+        }),
+        {
+          type: "bug",
+          removeLabels: ["bug"],
+        },
+      ),
     ).rejects.toThrow("the label 'bug' to remove is the type 'bug'");
+  });
+
+  it("lets a write remove a label the type it sets no longer needs", async () => {
+    const writes = await change(
+      issue({ key: "ENG-1", type: "Task", labels: ["bug"] }),
+      { type: "bug", removeLabels: ["bug"] },
+    );
+    expect(writes).toHaveLength(1);
+    expect(JSON.stringify(writes[0])).toContain('"remove":"bug"');
   });
 
   it("sets and clears the size field, its option checked against the edit screen", async () => {

@@ -310,6 +310,62 @@ function until<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+/**
+ * One read shared by its callers. It runs under a controller of its own, which
+ * aborts the read in flight once every caller holding a signal has given up
+ * (a caller with none keeps it running); a failed or abandoned read is
+ * forgotten, so the next caller starts afresh.
+ */
+function sharedRead<T>(run: (signal: AbortSignal) => Promise<T>) {
+  interface Op {
+    promise: Promise<T>;
+    control: AbortController;
+    waiters: number;
+    done: boolean;
+  }
+  let op: Op | undefined;
+  return (signal?: AbortSignal): Promise<T> => {
+    if (signal?.aborted === true) return Promise.reject(abortedError(signal));
+    if (op === undefined) {
+      const control = new AbortController();
+      const started: Op = {
+        promise: run(control.signal),
+        control,
+        waiters: 0,
+        done: false,
+      };
+      op = started;
+      started.promise.then(
+        () => {
+          started.done = true;
+        },
+        () => {
+          started.done = true;
+          if (op === started) op = undefined;
+        },
+      );
+    }
+    const current = op;
+    current.waiters++;
+    if (signal === undefined || current.done) return current.promise;
+    return new Promise<T>((resolve, reject) => {
+      const abort = () => {
+        current.waiters--;
+        if (current.waiters === 0 && !current.done) {
+          current.control.abort(signal.reason);
+          if (op === current) op = undefined;
+        }
+        reject(abortedError(signal));
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      current.promise
+        .then(resolve, reject)
+        .finally(() => signal.removeEventListener("abort", abort));
+      if (signal.aborted) abort();
+    });
+  };
+}
+
 export function jiraClient(opts: ClientOptions): Client {
   const { project, site, model, settings } = opts;
   const transport: JiraTransport = (request, signal) =>
@@ -325,11 +381,37 @@ export function jiraClient(opts: ClientOptions): Client {
     );
 
   let links: Promise<Record<LinkedRelation, LinkType>> | undefined;
-  let types: Promise<IssueTypeMeta[]> | undefined;
   let labelFields: Promise<FieldLabel[]> | undefined;
   let allFields: Promise<SiteField[]> | undefined;
   let storeFields: Promise<FacetField[]> | undefined;
-  const createScreens = new Map<string, Promise<FieldMeta>>();
+  const readTypes = sharedRead(async (own): Promise<IssueTypeMeta[]> => {
+    const values = await offsetPages(
+      transport,
+      { method: "GET", path: `issue/createmeta/${project}/issuetypes` },
+      {
+        items: "issueTypes",
+        idOf: (t) => t.id,
+        where: `issue types of ${project}`,
+        signal: own,
+      },
+    );
+    return values.map((t) => ({
+      id: String(t.id),
+      name: str(t.name, "issueType.name"),
+      subtask: t.subtask === true,
+      level:
+        typeof t.hierarchyLevel === "number"
+          ? t.hierarchyLevel
+          : t.subtask === true
+            ? -1
+            : 0,
+      levelKnown: typeof t.hierarchyLevel === "number" || t.subtask === true,
+    }));
+  });
+  const createScreens = new Map<
+    string,
+    (signal?: AbortSignal) => Promise<FieldMeta>
+  >();
   let zone: Promise<string> | undefined;
   let me: Promise<Record<string, unknown>> | undefined;
   const assignables = new Map<string, Promise<boolean>>();
@@ -582,35 +664,7 @@ export function jiraClient(opts: ClientOptions): Client {
     },
 
     issueTypes(signal) {
-      if (signal?.aborted === true) return Promise.reject(abortedError(signal));
-      types ??= (async () => {
-        const values = await offsetPages(
-          transport,
-          { method: "GET", path: `issue/createmeta/${project}/issuetypes` },
-          {
-            items: "issueTypes",
-            idOf: (t) => t.id,
-            where: `issue types of ${project}`,
-          },
-        );
-        return values.map((t) => ({
-          id: String(t.id),
-          name: str(t.name, "issueType.name"),
-          subtask: t.subtask === true,
-          level:
-            typeof t.hierarchyLevel === "number"
-              ? t.hierarchyLevel
-              : t.subtask === true
-                ? -1
-                : 0,
-          levelKnown:
-            typeof t.hierarchyLevel === "number" || t.subtask === true,
-        }));
-      })();
-      types.catch(() => {
-        types = undefined;
-      });
-      return signal === undefined ? types : until(types, signal);
+      return readTypes(signal);
     },
 
     fieldLabels(signal) {
@@ -659,11 +713,10 @@ export function jiraClient(opts: ClientOptions): Client {
     },
 
     createMeta(issueTypeId, signal) {
-      if (signal?.aborted === true) return Promise.reject(abortedError(signal));
-      let screen = createScreens.get(issueTypeId);
-      if (screen === undefined) {
+      let read = createScreens.get(issueTypeId);
+      if (read === undefined) {
         const where = `create screen of issue type ${issueTypeId} in ${project}`;
-        screen = (async () =>
+        read = sharedRead(async (own) =>
           metaOf(
             await offsetPages(
               transport,
@@ -675,14 +728,15 @@ export function jiraClient(opts: ClientOptions): Client {
                 items: "fields",
                 idOf: (f) => f.fieldId,
                 where,
+                signal: own,
               },
             ),
             where,
-          ))();
-        screen.catch(() => createScreens.delete(issueTypeId));
-        createScreens.set(issueTypeId, screen);
+          ),
+        );
+        createScreens.set(issueTypeId, read);
       }
-      return signal === undefined ? screen : until(screen, signal);
+      return read(signal);
     },
 
     async editMeta(key, signal) {

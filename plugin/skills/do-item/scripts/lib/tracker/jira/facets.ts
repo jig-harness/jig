@@ -239,6 +239,13 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     raw: string,
     numeric: boolean,
   ): string | null {
+    if (numeric && Number.isFinite(Number(raw)) && raw.trim() !== "") {
+      const n = Number(raw);
+      const hits = (s.map?.entries ?? []).filter(
+        ([, t]) => t.trim() !== "" && Number(t) === n,
+      );
+      if (hits.length > 1) return null;
+    }
     const exact = s.map?.fromTracker(raw) ?? null;
     if (
       exact !== null ||
@@ -424,6 +431,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
   async function typeChange(
     issue: JiraIssue,
     value: string | null,
+    signal?: AbortSignal,
   ): Promise<FacetWrite> {
     const slot = type as ResolvedFacet;
     const codec = fallback as LabelCodec;
@@ -440,7 +448,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     }
     if (t?.subtask === true)
       return { fields: {}, ...codec.change(carried, value) };
-    const typed = await issueTypeOf(value);
+    const typed = await issueTypeOf(value, signal);
     if (typed !== null)
       return {
         fields:
@@ -454,7 +462,7 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     return {
       fields: isFallback(t)
         ? {}
-        : { issuetype: { id: (await fallbackType()).id } },
+        : { issuetype: { id: (await fallbackType(signal)).id } },
       ...change,
     };
   }
@@ -527,20 +535,18 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     async update(issue, patch, signal) {
       const out: FacetWrite = { fields: {}, add: [], remove: [] };
       if (type !== null && patch.type !== undefined) {
-        const dropped =
-          patch.type === null
-            ? undefined
-            : (patch.removeLabels ?? []).find(
-                (l) =>
-                  (fallback as LabelCodec).owns(l) &&
-                  (fallback as LabelCodec).read([l]) === patch.type,
-              );
+        const change = await typeChange(issue, patch.type, signal);
+        const kept = [...issue.labels, ...change.add].filter(
+          (l) => !change.remove.some((r) => same(r, l)),
+        );
+        const dropped = (patch.removeLabels ?? []).find((l) =>
+          kept.some((k) => same(k, l) && fallback?.owns(k) === true),
+        );
         if (dropped !== undefined)
           throw new TrackerRequestError(
             "invalid",
             `the label '${dropped}' to remove is the type '${patch.type}' this write sets`,
           );
-        const change = await typeChange(issue, patch.type);
         Object.assign(out.fields, change.fields);
         out.add.push(...change.add);
         out.remove.push(...change.remove);
