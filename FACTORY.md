@@ -153,9 +153,10 @@ ended. How it ended is one class from a closed list: converged, merged, a
 usage limit, parked for a person, stalled, died, refused, or gates failed.
 The log records a stop no class fits as unknown, and never drops it.
 
-One dashboard opens on what needs a person, which account holds which session
-and what comes next, as the newest tick found them. Below that it filters the
-log by time, repository, stage, account and class, and counts each class. A
+One dashboard opens on the pull requests ready to merge, or on what needs a
+person when none are ready. Its other views show which account holds which
+session and what comes next, as the newest tick found them. A last view filters
+the log by time, repository, stage, account and class, and counts each class. A
 phone opens it as well as a desk. It writes nothing and makes no report files. A class that keeps coming back is a finding about
 the scaffolding, and [the learning loop](#the-loop-that-sharpens-it) is where
 a person approves the change.
