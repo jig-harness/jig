@@ -542,7 +542,8 @@ the closed list in
 sentence, then the recommended option with what it changes and what it
 costs. The other options, a park's steps for a person (as a checklist) and
 the evidence are folded under it. A full framed decision is never shown in
-place, since one park would fill a phone.
+place, since one park would fill a phone; a need with several decisions
+shows a short row for each, which folds the same way.
 
 **The keys.** Every view is driven from the keyboard, and the keys never
 fire inside a text field:
@@ -553,7 +554,8 @@ fire inside a text field:
 | j / k | the next or previous card (roving focus, so Tab still works) |
 | Enter or o | expand or collapse the card |
 | p / i | open its pull request or its issue |
-| c | copy its primary command: the pinned merge command, or the `answer <key>:` line |
+| 1 to 9, h, l, u, r | on a parked need, pick an option of the current decision, move between its decisions, clear a pick, or write a note or an answer ([structured-answers.md](structured-answers.md#picking-an-answer)) |
+| c | copy its primary command: the pinned merge command, or the need's answers as one comment (with no picks, as [picking an answer](structured-answers.md#picking-an-answer) says) |
 | g, then m, n, r, q or h | go to Merge, Needs you, Running, Queue or History |
 | / and ? | filter the view; list the keys |
 
