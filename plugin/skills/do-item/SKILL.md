@@ -162,6 +162,11 @@ use a label never triggers its rule.
 sized. `scripts/pr-plan.ts` applies the repository's policy (`pull_requests`
 and the facts derived from the repository) and prints what to do:
 
+The opening plan warns on foreign merges, listing the commits they bring in.
+With a change-area catalog, it adds the directly touched areas' tracker labels
+and flags to the fixed labels; implied areas add none. Unreadable history or
+catalog data stops planning.
+
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<issue title>"
 bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" [--stack-on <branch>] [--accept-oversize "<reason>"] [--json]

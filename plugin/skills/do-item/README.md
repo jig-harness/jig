@@ -36,6 +36,13 @@ contacting the tracker. A route without scouts is reported without an empty
 comment, and partial findings from a failed scout are reported without being
 published as reusable findings.
 
+Before opening, the pull-request planner warns about merge commits that bring
+in work outside the planned base, listing the foreign commits. When a
+change-area catalog is configured, it adds the directly touched areas' tracker
+labels and flags alongside the fixed `pull_requests.labels`; implied areas
+add none. Labels must already exist in the repository. An unreadable history
+or configured catalog stops planning.
+
 ## The item's spec
 
 Once it has the issue, it shows what the issue says must be built: the
@@ -124,6 +131,12 @@ is still pending. Automated component coverage does not establish that
 interactive flow.
 
 ## Arming the drive
+
+Before starting the drive, the skill detaches the implementer's isolated
+worktree after its branch is pushed, it is clean and no git operation remains.
+A tree with changes, unpushed commits or unreadable safety evidence stays
+attached; the report names it and gives inspection and release commands.
+The session's own tree stays attached.
 
 Once the pull request opens, the skill starts its
 [drive](../drive-pr/README.md), the unattended loop that works the review
