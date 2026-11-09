@@ -179,6 +179,24 @@ describe("what the repository configures or lacks", () => {
     ]);
   });
 
+  test("a configured promoted status is held to no review scars, the default is not", () => {
+    const files = {
+      "docs/active.md": doc(
+        { status: "active" },
+        "# A page\n\n- Addressed the comment.\n",
+      ),
+    };
+    const unset = repository(files);
+    expect(about(json(runDocs(unset, ["--json"]).stdout), "scars")).toEqual([]);
+    const promoted = repository({
+      ...files,
+      ".config/jig.yaml": "docs:\n  promoted_statuses: [approved, active]\n",
+    });
+    expect(about(json(runDocs(promoted, ["--json"]).stdout), "scars")).toEqual([
+      expect.objectContaining({ file: "docs/active.md" }),
+    ]);
+  });
+
   test("an unknown field or a missing configured path is refused with its source", () => {
     const unknown = repository({ ".config/jig.yaml": "docs:\n  folder: x\n" });
     const refused = runDocs(unknown);
