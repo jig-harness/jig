@@ -30,6 +30,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { main as withResourceLock } from "../plugin/shared/resource-lock.ts";
+import { withoutLeakyGitEnv } from "../plugin/shared/guarded-git-spawn.ts";
 import { checkTestsExecuted } from "../modules/M14-testing-strategy/reference/tests-executed/check-tests-executed.ts";
 
 /** The fixed `bun test` arguments; the caller's extra ones follow them. */
@@ -109,7 +110,9 @@ export function lockEnv(
   extra: readonly string[] = [],
 ): NodeJS.ProcessEnv {
   return {
-    ...env,
+    // Scrub before Bun starts: its implicit child environment retains
+    // startup values even after a test preload deletes process.env keys.
+    ...withoutLeakyGitEnv(env),
     LOCK_TIMEOUT: env.LOCK_TIMEOUT || DEFAULT_LOCK_TIMEOUT,
     LOCK_RUN_COST:
       env.LOCK_RUN_COST || String(effectiveWorkers(extra, platform)),
