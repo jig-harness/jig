@@ -1063,7 +1063,23 @@ implementation. Skip this check for issues about the repository's own code.
    run that flow as well: it would post a second comment and move the ticket
    twice.
 
-   **Arm the drive (terminal step, immediately after the PR opens):**
+   **Release the implementer's isolated worktree:** After the branch is
+   pushed and the PR is open, stop the delegate. When it used a separate
+   worktree, run from this session's tree:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/release-implementer-worktree.ts" --tree "<delegate path>" --branch "<PR head branch>" --remote "<remote>"
+   ```
+
+   Pass only the path returned by that delegate. The script verifies a linked
+   tree of this clone, the expected branch, clean status, no hidden index flags
+   or git operation, and HEAD ancestry on the live remote branch, then detaches
+   it. This session's tree stays attached. Include a `held` report's path,
+   reason and command argument arrays in the final report; settle the blocker
+   and rerun the safety check before using the detach command. Skip when no
+   isolated delegate tree was created.
+
+   **Arm the drive (terminal step, after releasing any delegate tree):**
 
    First capture the `pickupId` retained from Step 3.5 with the command
    there, and report any refusal. The driver keeps that pin on re-arm; it
