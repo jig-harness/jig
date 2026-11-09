@@ -186,4 +186,6 @@ cannot be read segment by segment (braces spanning a `/`) is counted in.
 - **Epics and issues with open children** are containers, not work a batch
   closes.
 - **One repository per batch** (`review.repo_label`), since a pull request
-  lands in one.
+  lands in one. Where the tracker is one GitHub repository's and the
+  taxonomy names no other repository, an issue need not carry the label: it
+  belongs to the repository by being in the tracker.

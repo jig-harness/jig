@@ -140,6 +140,11 @@ export interface BatchPolicy extends WorkBatchSettings {
   followupLabel: string;
   /** The repository label a batch item must carry; `null` = not checked. */
   repoLabel: string | null;
+  /**
+   * An issue need not carry `repoLabel`: the tracker is one GitHub repository's
+   * and the taxonomy names no other, so every issue in it belongs here.
+   */
+  repoLabelImplied: boolean;
   /** Every repository label; an issue may carry only one. */
   repoLabels: string[];
   /** The types an issue may have, one of which it must have (as labels, or type values where `facets`); `null` = not checked. */
@@ -496,6 +501,10 @@ export function batchPolicy(
     epicLabel: labels.epic,
     followupLabel: labels.followup,
     repoLabel,
+    repoLabelImplied:
+      repoLabel !== null &&
+      parseTrackerConfig(overlay).adapter === "github" &&
+      repos.every((r) => r === repoLabel),
     repoLabels: [...new Set([...repos, ...(repoLabel ? [repoLabel] : [])])],
     typeLabels: review.taxonomy?.types?.map(typeOf) ?? null,
     contextPrefixes: review.taxonomy?.context_prefixes ?? null,
