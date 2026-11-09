@@ -390,6 +390,14 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.185.3] - 2026-11-09
+
+### Changed
+
+- Decision sheets build on a shared option, call and source checker, with
+  one table for optional option details. Sheet validation and rendered output
+  stay the same.
+
 ## [0.185.2] - 2026-11-09
 
 ### Fixed
@@ -6509,7 +6517,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.185.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.185.3...HEAD
+[0.185.3]: https://github.com/jig-harness/jig/compare/v0.185.2...v0.185.3
 [0.185.2]: https://github.com/jig-harness/jig/compare/v0.185.1...v0.185.2
 [0.185.1]: https://github.com/jig-harness/jig/compare/v0.185.0...v0.185.1
 [0.185.0]: https://github.com/jig-harness/jig/compare/v0.184.1...v0.185.0
