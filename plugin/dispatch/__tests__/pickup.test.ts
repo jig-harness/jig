@@ -275,6 +275,26 @@ describe("jig dispatch --apply picks up assigned items", () => {
     expect(launches(again)).toHaveLength(1);
   });
 
+  it("remembers a claim seen while the pass runs, so the item's return releases the record", async () => {
+    const w = fixture();
+    const id = String(launches(await applyTick(w, false))[0]?.record);
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    // A tick sees the running pickup's claim.
+    w.setIssues([assignedIssue(12, "factory-bot", ["In Progress"])]);
+    await applyTick(w, false);
+    writeFileSync(
+      join(w.dir, "claude-said"),
+      "Question: which of the two schemas is meant?\n",
+    );
+    writeFileSync(join(w.dir, "claude-exit"), "1");
+    await waitFor("the exit", () => exitWritten(w, id));
+    // The operator settles the question and returns the item before the next tick.
+    w.setIssues([assignedIssue(12, "factory-bot", ["Todo"])]);
+    await applyTick(w, false);
+    const again = await applyTick(w, false);
+    expect(launches(again)).toHaveLength(1);
+  });
+
   it("records a pickup's opened pull request though the merged listing fails", async () => {
     const w = fixture();
     w.setConfig(`${CONFIG}  followup_command: /followup\n`);

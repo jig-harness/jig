@@ -144,20 +144,29 @@ export function releaseEnded(
   for (const r of records) {
     const { record } = r;
     if (record.action !== "pickup" || record.repo !== repo) continue;
-    if (record.released || holds(r.state)) continue;
+    if (record.released) continue;
     const item = record.item as string;
-    if (claimed.has(item)) {
-      noteClaim(record, root);
-      continue;
-    }
-    const stillWanted =
-      record.claimedSeen === true
-        ? !returned.has(item) && wanted.has(item)
-        : wanted.has(item);
-    if (stillWanted) continue;
+    // A claim seen while the pass still runs counts too: the item may be
+    // back among the dispatch states by the time the record ends.
+    const isClaimed = claimed.has(item);
+    if (isClaimed) noteClaim(record, root);
+    if (isClaimed || holds(r.state)) continue;
+    if (wantsRecord(record, item, wanted, returned)) continue;
     record.released = true;
     writeRecord(record, root);
   }
+}
+
+/** Whether the item still wants its ended record kept. */
+function wantsRecord(
+  record: LaunchRecord,
+  item: string,
+  wanted: ReadonlySet<string>,
+  returned: ReadonlySet<string>,
+): boolean {
+  if (record.claimedSeen === true)
+    return !returned.has(item) && wanted.has(item);
+  return wanted.has(item);
 }
 
 /** Remember that the record's item was seen claimed, once. */
