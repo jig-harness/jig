@@ -358,9 +358,12 @@ section splitter, kept free of the command code `framed-park.ts` imports.
   from the disappearance alone: a park can leave the ledger answered,
   withdrawn or corrected between two ticks, and the line before it may hold
   no answer at all. The re-arm writes the receipt when it unparks an item:
-  a stable identity (the park's key and digest), the consumed answer
-  snapshot, the outcome and the times, kept in the drive ledger beside the
-  park it resolved. The tick ingests every receipt whose identity its line
+  a stable identity of the park occurrence (the repository, the pull
+  request, the park's key, its digest and the time it was parked, which
+  `drive-state.ts park` assigns afresh each time the same item is parked
+  again, so a decision parked and answered twice with unchanged wording has
+  two identities), the consumed answer snapshot, the outcome and the times,
+  kept in the drive ledger beside the park it resolved. The tick ingests every receipt whose identity its line
   has not yet recorded as ingested, whether or not a previous line held the
   park, so a park raised and answered between two ticks is counted; the
   line keeps the identities it has ingested, and drops one once the ledger
