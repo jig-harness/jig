@@ -290,9 +290,11 @@ can tighten a repository declaration and cannot widen it.
 
 1. Copy [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md)
    into your docs tree and trim the footgun table and port ranges to your stack.
-2. Vendor [`reference/port-allocator/`](reference/port-allocator/) and
-   [`reference/resource-lock/`](reference/resource-lock/); wrap your heavy gate
-   commands with `with-resource-lock.ts` locally (CI is handled by the bypass).
+2. Vendor [`reference/port-allocator/`](reference/port-allocator/), and use
+   [`reference/resource-lock/`](reference/resource-lock/) from a pinned Jig
+   checkout that keeps `plugin/shared/` at its relative path (the lock imports
+   it); wrap your heavy gate commands with `with-resource-lock.ts` locally
+   (CI is handled by the bypass).
 3. Wire the create/remove hooks from
    [`templates/worktree-hooks.md`](templates/worktree-hooks.md) at your worktree
    manager's hook points (see [mappings.md](mappings.md)).
@@ -349,9 +351,10 @@ can tighten a repository declaration and cannot widen it.
 | [maturity criteria](../../plugin/skills/audit/criteria/M12-parallel-agent-ergonomics.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference utility is a Bun script with a self-test. The port allocator
-and the resource lock stand alone; the namespace scripts import helpers from
-the Jig repository's `lib/`, so run them from a pinned Jig checkout or vendor
-`lib/` at the same place relative to them
+stands alone; the resource lock imports the shared helpers under the Jig
+repository's `plugin/shared/`, and the namespace scripts import helpers from
+its `lib/`, so run them from a pinned Jig checkout or vendor those directories
+at the same place relative to them
 ([their README](reference/worktree-namespace/README.md)).
 
 ### Left out by design

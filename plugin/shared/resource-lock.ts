@@ -442,8 +442,6 @@ interface Publisher {
    */
   attempt(path: string, full: boolean): boolean;
   holders(paths: readonly string[]): SlotHolder[];
-  /** Remove the Windows source file once nothing more is published. */
-  close(): void;
 }
 function publisher(
   lock: string,
@@ -451,13 +449,22 @@ function publisher(
   deadline: number,
 ): Publisher {
   const owner = String(process.pid);
-  // Windows hard links need no symlink permission. The unique source file has
-  // its owner before publishing it atomically, avoiding a create-then-write gap.
-  const source = `${lock}.owner.${owner}.${crypto.randomUUID()}`;
-  if (fileOwners) writeFileSync(source, owner, { flag: "wx" });
+  // Windows hard links need no symlink permission. A unique source file has
+  // its owner before it is published atomically, avoiding a create-then-write
+  // gap; one per publication, so the published file's modification time is
+  // the moment of acquisition, not of a wait that came before it.
   const publish = (path: string) => {
-    if (fileOwners) linkSync(source, path);
-    else symlinkSync(owner, path);
+    if (!fileOwners) {
+      symlinkSync(owner, path);
+      return;
+    }
+    const source = `${lock}.owner.${owner}.${crypto.randomUUID()}`;
+    writeFileSync(source, owner, { flag: "wx" });
+    try {
+      linkSync(source, path);
+    } finally {
+      rmSync(source, { force: true });
+    }
   };
   const release = (path: string) => {
     if (holder(path, fileOwners) === owner) {
@@ -519,9 +526,6 @@ function publisher(
       reclaim(path);
       return take(path);
     },
-    close() {
-      if (fileOwners) rmSync(source, { force: true });
-    },
   };
 }
 /** What one acquisition works with. */
@@ -561,7 +565,17 @@ async function pause(a: Acquisition, ms: number): Promise<boolean> {
 // One mutex, as the lock has always been: poll the one name.
 async function takeSingle(a: Acquisition): Promise<void> {
   const lock = a.slot(0);
+  const announcement = `${lock}.exclusive`;
   for (;;) {
+    const announced = a.locks.holders([announcement]);
+    if (announced.length > 0) {
+      a.say(
+        keyOf("exclusive", announced),
+        `an exclusive holder takes every slot: ${describeHolders(announced)}`,
+      );
+      if (!(await pause(a, a.pollMs))) return;
+      continue;
+    }
     if (a.locks.take(lock)) {
       hold(a, lock);
       return;
@@ -618,6 +632,9 @@ function admitOneMore(
 // Under the admission lock: a slot beyond the first, if one more run fits.
 function admittedSlot(a: Acquisition, full: boolean): string | undefined {
   const ceiling = Array.from({ length: a.settings.slots }, (_, n) => a.slot(n));
+  // A full sweep judges identities first, so a slot whose pid was reused
+  // after its holder died neither counts as running nor blocks admission.
+  if (full) for (const path of ceiling) a.locks.reclaim(path);
   const holders = a.locks.holders(ceiling);
   const decision = admitOneMore(a, holders);
   if (!decision.admit) {
@@ -649,7 +666,8 @@ function sweepOnce(a: Acquisition, full: boolean): string | "busy" | undefined {
   }
   if (a.locks.attempt(a.slot(0), full)) return a.slot(0);
   const admission = `${a.slot(0)}.admission`;
-  if (!a.locks.attempt(admission, false)) return "busy";
+  if (!a.locks.attempt(admission, full)) return "busy";
+  recordHolder(admission);
   try {
     return admittedSlot(a, full);
   } finally {
@@ -734,13 +752,9 @@ export async function main(
   // Registered before the wait, so a signal releases a partial hold too.
   using release = registerCleanup(releaseAll);
   void release;
-  try {
-    if (exclusive) await takeEvery(a);
-    else if (settings.slots === 1) await takeSingle(a);
-    else await takeSlot(a);
-  } finally {
-    locks.close();
-  }
+  if (exclusive) await takeEvery(a);
+  else if (settings.slots === 1) await takeSingle(a);
+  else await takeSlot(a);
   if (a.taken.length === 0 || (exclusive && a.taken.length < MAX_SLOTS + 1)) {
     releaseAll();
     console.error(refusal(a, timeout, fileOwners, exclusive));

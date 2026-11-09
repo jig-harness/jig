@@ -69,6 +69,12 @@ test("one run's cost is the suite's worker count unless the caller sets it", () 
   expect(lockEnv({ LOCK_RUN_COST: "2" }, "linux").LOCK_RUN_COST).toBe("2");
 });
 
+test("the run cost follows a caller's own --parallel", () => {
+  expect(lockEnv({}, "linux", ["--parallel=16"]).LOCK_RUN_COST).toBe("16");
+  expect(lockEnv({}, "linux", ["--parallel", "8"]).LOCK_RUN_COST).toBe("8");
+  expect(lockEnv({}, "linux", ["./website/"]).LOCK_RUN_COST).toBe("4");
+});
+
 test("a run says who holds the lock, waits LOCK_TIMEOUT for a live holder and gives up with the lock's status", () => {
   const root = mkdtempSync(join(tmpdir(), "jig-test-lock-"));
   try {

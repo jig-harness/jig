@@ -49,7 +49,7 @@ export function readHostLoad(
     }
   if (availableBytes === null && platform !== "darwin") {
     const free = freemem();
-    availableBytes = Number.isFinite(free) && free > 0 ? free : null;
+    availableBytes = Number.isFinite(free) && free >= 0 ? free : null;
   }
   const load = loadavg()[0];
   return {

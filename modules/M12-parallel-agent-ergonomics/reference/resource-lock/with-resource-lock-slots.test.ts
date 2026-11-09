@@ -37,7 +37,12 @@ const probed = `import {main} from ${JSON.stringify(gate)};
 const probe = () => { if (process.env.PROBE === "throw") throw new Error("no reading"); return JSON.parse(process.env.PROBE); };
 try { process.exitCode = await main(process.argv.slice(2), process.env, process.platform, probe); }
 catch (error) { console.error("ERROR: " + error.message); process.exitCode = 2; }`;
-writeFileSync(wrapper, probed);
+// ERRLOG also gets every line the lock says, so a test can see a wait begin.
+const probedWithLog = probed.replace(
+  "const probe",
+  `if (process.env.ERRLOG) { const say = console.error; console.error = (...a) => { require("node:fs").appendFileSync(process.env.ERRLOG, a.join(" ") + "\\n"); say(...a); }; }\nconst probe`,
+);
+writeFileSync(wrapper, probedWithLog);
 const idle = JSON.stringify({ load1: 0, cores: 64, availableBytes: 2 ** 40 });
 const busy = JSON.stringify({ load1: 100, cores: 4, availableBytes: 2 ** 40 });
 const environment = (extra: Record<string, string>) => ({
@@ -49,6 +54,10 @@ const environment = (extra: Record<string, string>) => ({
   LOCK_POLL: "0.02",
   LOCK_SLOTS: "",
   LOCK_STATIC_SLOTS: "",
+  LOCK_RUN_COST: "",
+  LOCK_TARGET_UTIL: "",
+  LOCK_MIN_MEM_GB: "",
+  ERRLOG: "",
   PROBE: idle,
   ...extra,
 });
@@ -90,11 +99,9 @@ function widest(log: string): number {
   }
   return most;
 }
-// Inside the lock: log ENTER, wait (by a deadline poll) until `peers` runs
-// have entered, then log EXIT. A ceiling that admits fewer leaves the first
-// run waiting out its deadline, so the widest overlap shows it.
-const barrier = (peers: number) =>
-  `const fs=require('node:fs');fs.appendFileSync(process.env.LOG,'ENTER '+process.argv[1]+'\\n');const end=Date.now()+5000;while(Date.now()<end&&(fs.readFileSync(process.env.LOG,'utf8').match(/ENTER/g)||[]).length<${peers})await Bun.sleep(20);fs.appendFileSync(process.env.LOG,'EXIT '+process.argv[1]+'\\n');`;
+// Inside the lock: log ENTER, then stay until the GATE file exists, then log
+// EXIT. The test opens the gate once the contender it watches has waited.
+const barrier = `const fs=require('node:fs');fs.appendFileSync(process.env.LOG,'ENTER '+process.argv[1]+'\\n');const end=Date.now()+20000;while(Date.now()<end&&!fs.existsSync(process.env.GATE))await Bun.sleep(20);fs.appendFileSync(process.env.LOG,'EXIT '+process.argv[1]+'\\n');`;
 const logged = (sleepMs: number) =>
   `const fs=require('node:fs');fs.appendFileSync(process.env.LOG,'ENTER '+process.argv[1]+'\\n');await Bun.sleep(${sleepMs});fs.appendFileSync(process.env.LOG,'EXIT '+process.argv[1]+'\\n');`;
 /** Poll until `done` holds, failing past the deadline. */
@@ -107,16 +114,30 @@ async function until(done: () => boolean, what: string, ms = 10_000) {
 }
 
 test("runs up to the slot ceiling hold the lock at once, and one beyond waits for a free slot", async () => {
-  const log = join(scratch, "ceiling.log");
+  const log = join(scratch, "ceiling.log"),
+    gateFile = join(scratch, "ceiling.gate"),
+    waits = join(scratch, "ceiling.waits");
   appendFileSync(log, "");
-  const children = ["A", "B", "C"].map((id) =>
-    spawn([process.execPath, "-e", barrier(2), id], {
+  appendFileSync(waits, "");
+  const start = (id: string, extra: Record<string, string> = {}) =>
+    spawn([process.execPath, "-e", barrier, id], {
       LOCK_NAME: "ceiling",
       LOCK_SLOTS: "2",
       LOCK_STATIC_SLOTS: "1",
       LOG: log,
-    }),
+      GATE: gateFile,
+      ...extra,
+    });
+  const entered = () => readFileSync(log, "utf8").match(/ENTER/g)?.length ?? 0;
+  const children = [start("A"), start("B")];
+  await until(() => entered() === 2, "two runs inside the lock");
+  children.push(start("C", { ERRLOG: waits }));
+  await until(
+    () => readFileSync(waits, "utf8").includes("waiting for 'ceiling'"),
+    "the third run to wait",
   );
+  expect(entered()).toBe(2);
+  appendFileSync(gateFile, "");
   await Promise.all(
     children.map((c, i) => expectSpawnExited(c, 0, `child ${i}`)),
   );

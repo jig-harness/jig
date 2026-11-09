@@ -17,7 +17,7 @@
 // this suite's own: LOCK_TIMEOUT is an hour rather than the reference's
 // minute, because what a run waits for is another run of this suite, which
 // takes minutes; and LOCK_RUN_COST, the load one run adds, is the suite's
-// worker count. The lock is bypassed in CI (CI=1 or CI=true), where a runner
+// effective worker count. The lock is bypassed in CI (CI=1 or CI=true), where a runner
 // is already an isolated machine, and with RESOURCE_LOCK_BYPASS=1. Arguments
 // are passed on to `bun test` after the fixed ones, so `bun run test
 // ./website/` and the gate stage's `--path-ignore-patterns=…` work as they
@@ -36,6 +36,23 @@ export function workers(platform = process.platform): number {
   return platform === "win32" ? 1 : 4;
 }
 
+/** The worker count `bun test` ends up with: the caller's own `--parallel`, else the default. */
+export function effectiveWorkers(
+  extra: readonly string[],
+  platform = process.platform,
+): number {
+  let count = workers(platform);
+  extra.forEach((arg, i) => {
+    const given =
+      /^--parallel=(\d+)$/.exec(arg)?.[1] ??
+      (arg === "--parallel"
+        ? /^\d+$/.exec(extra[i + 1] ?? "")?.[0]
+        : undefined);
+    if (given !== undefined && Number(given) > 0) count = Number(given);
+  });
+  return count;
+}
+
 /** The command `bun run test [extra…]` runs under the lock. */
 export function testCommand(
   extra: readonly string[],
@@ -49,15 +66,21 @@ export function testCommand(
 export function lockEnv(
   env: NodeJS.ProcessEnv,
   platform = process.platform,
+  extra: readonly string[] = [],
 ): NodeJS.ProcessEnv {
   return {
     ...env,
     LOCK_TIMEOUT: env.LOCK_TIMEOUT || DEFAULT_LOCK_TIMEOUT,
-    LOCK_RUN_COST: env.LOCK_RUN_COST || String(workers(platform)),
+    LOCK_RUN_COST:
+      env.LOCK_RUN_COST || String(effectiveWorkers(extra, platform)),
   };
 }
 
 if (import.meta.main)
-  cli(async () =>
-    withResourceLock(testCommand(process.argv.slice(2)), lockEnv(process.env)),
-  );
+  cli(async () => {
+    const extra = process.argv.slice(2);
+    return withResourceLock(
+      testCommand(extra),
+      lockEnv(process.env, process.platform, extra),
+    );
+  });
