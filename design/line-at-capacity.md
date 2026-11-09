@@ -48,10 +48,10 @@ beside them, never a replacement.
 
 | Gauge | Read once per tick from | Line (default) |
 | --- | --- | --- |
-| Memory | `MemAvailable` in `/proc/meminfo` on Linux; `vm_stat` on macOS | 15% of the total kept free after the launch's reservation |
+| Memory | `MemAvailable` in `/proc/meminfo` on Linux, the free memory the platform reports on Windows; not read on macOS, whose free pages count reclaimable caches as used (the resource lock's reading, `plugin/shared/host-load.ts`) | 15% of the total kept free after the launch's reservation |
 | Processors | the 1-minute load average divided by the cores (`os.loadavg`, `os.availableParallelism`) | 0.9; not read on Windows, which has no load average |
-| Test lock | the holder of the machine-wide resource lock (`plugin/shared/resource-lock.ts`) and the processes waiting on it | 2 waiters: no new pickup or drive pass |
-| Disk | free space on the filesystem that holds the workspaces (`statfs`) | 10 GB |
+| Test lock | the holders of the machine-wide resource lock's slots (`plugin/shared/resource-lock.ts`) and the runs that announce beside it that they wait for one | 2 waiters: no new pickup or drive pass |
+| Disk | free space on the filesystems that hold the running workspaces and the repositories, the least of them (`statfs`) | 10 GB |
 | Forge budget | the rate limit the tick already reads at its start | the tenth of the core limit below which the tick already skips its optional reads |
 | Accounts | free slots and walls, as today | no free slot |
 
@@ -79,7 +79,8 @@ larger reservation of the drive and follow-up kinds, whether either is
 currently waiting or not. With the initial defaults, that reserve is
 1.5 GB. Other gauges must also permit one launch of either protected kind
 after the pickup; if a gauge cannot express that reservation, it must at
-least remain below its line. New work therefore
+least remain below its line. The accounts' gauge expresses it as a slot: a
+pickup leaves one account slot free. New work therefore
 cannot crowd out the drives and follow-ups that turn earlier work into
 merges. The gauges are read when the act phase builds its apply state,
 under the act lock, so two ticks never spend the same headroom.

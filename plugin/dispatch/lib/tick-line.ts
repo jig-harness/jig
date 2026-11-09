@@ -233,7 +233,14 @@ export function writeTickLine(
         previous.ok ? previous.value?.ticks : undefined,
         tickHealthOf(receipt, true),
       );
-      writeLine({ ...line, ticks }, JSON.stringify(receipt, null, 2));
+      writeLine(
+        {
+          ...line,
+          ticks,
+          ...(receipt.load === undefined ? {} : { load: receipt.load }),
+        },
+        JSON.stringify(receipt, null, 2),
+      );
     },
   );
   if (written.ok) return;

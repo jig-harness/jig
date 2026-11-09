@@ -10,7 +10,14 @@ import type {
   LineSnapshot,
 } from "../plugin/dispatch/lib/dashboard-contract.ts";
 import type { LogRow } from "../plugin/dispatch/lib/log.ts";
-import { drive, framedDecision, line, need, queued } from "./fixture-line.ts";
+import {
+  busyLoad,
+  drive,
+  framedDecision,
+  line,
+  need,
+  queued,
+} from "./fixture-line.ts";
 import { mergingReady, waitingReady } from "./fixture-ready.ts";
 import {
   API,
@@ -562,6 +569,7 @@ export function fixture(id: ScenarioId): Fixture {
           needs: loudNeeds(),
           queue: loudQueue(),
           ready: waitingReady(),
+          load: busyLoad(),
         }),
         rows: loudRows(),
       };
@@ -573,6 +581,7 @@ export function fixture(id: ScenarioId): Fixture {
           needs: loudNeeds(),
           queue: loudQueue(),
           ready: mergingReady(),
+          load: busyLoad(),
         }),
         rows: loudRows(),
       };

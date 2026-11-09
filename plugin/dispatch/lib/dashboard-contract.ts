@@ -309,6 +309,59 @@ export interface LineTick {
   defects: number;
 }
 
+/** The host's gauges the load factor reads (`load.ts`). */
+export type LoadGauge =
+  | "memory"
+  | "processors"
+  | "test-lock"
+  | "disk"
+  | "forge"
+  | "accounts";
+
+/** The kinds of launch, each with its own memory reservation. */
+export type LoadKind = "pickup" | "drive" | "followup" | "steward";
+
+/** One gauge as the tick read it, under the act lock. */
+export interface LineLoadGauge {
+  gauge: LoadGauge;
+  /** Its fill against its line: `1` at the line; `null` when the host cannot read it. */
+  fill: number | null;
+  /** What it read, for a person ("12.3 GiB available of 62.5 GiB"); why not, when it read nothing. */
+  reads: string;
+  /** Its line, for a person ("15% of memory kept free"). */
+  line: string;
+}
+
+/** A launch a gauge refused: held when enforcement is on, else started and reported as one it would hold. */
+export interface LineLoadHold {
+  repo: string;
+  target: string;
+  kind: LoadKind;
+  gauge: LoadGauge;
+  detail: string;
+  /** Whether it was held (`load.enforce: true`) rather than started. */
+  held: boolean;
+}
+
+/** What the load factor read and decided in a tick. */
+export interface LineLoad {
+  /** Whether it holds the launches a gauge refuses (`load.enforce`). */
+  enforce: boolean;
+  /** The fullest gauge's fill; `null` when no gauge read. */
+  factor: number | null;
+  /** The gauge whose fill is the factor. */
+  binds: LoadGauge | null;
+  gauges: LineLoadGauge[];
+  /** Each kind's reservation: its 90th percentile once it has five samples, else its default. */
+  reservations: Array<{
+    kind: LoadKind;
+    bytes: number;
+    samples: number;
+    measured: boolean;
+  }>;
+  holds: LineLoadHold[];
+}
+
 /** The line as one tick found it. */
 export interface LineSnapshot {
   version: 1;
@@ -340,6 +393,8 @@ export interface LineSnapshot {
   queue: LineQueued[];
   /** The converged pull requests the board read placed, Ready to merge first in its order; absent from a line written before the board read. */
   ready?: LineReady[];
+  /** The host's load as the tick read it, and what it held or would hold; absent from a line written before the load factor. */
+  load?: LineLoad;
   repos: LineRepo[];
 }
 

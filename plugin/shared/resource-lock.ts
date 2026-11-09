@@ -65,6 +65,12 @@
 // waits on and who holds the slots, again when that changes; a reclaim, and
 // a wait that runs out, say whose lock it was.
 //
+// A waiter announces itself beside the lock (`jig-lock.<name>.waiting.<pid>`)
+// from the moment it starts waiting until it holds a slot or gives up, so
+// another mechanism can count the runs that wait (`lockOccupancy`; the
+// dispatcher's load factor reads it). An announcement whose pid no longer
+// answers is not counted.
+//
 // CI bypass: on a CI runner each job already gets its own isolated machine, so
 // there is nothing to serialize and the wait is pure latency. If CI=1 (or
 // CI=true) or RESOURCE_LOCK_BYPASS=1, the command runs immediately, unlocked.
@@ -98,6 +104,7 @@ import {
   lstatSync,
   linkSync,
   readFileSync,
+  readdirSync,
   renameSync,
   statSync,
   writeFileSync,
@@ -309,7 +316,7 @@ function lockArguments(args: string[], env: NodeJS.ProcessEnv) {
   } = commandArguments(args, env.LOCK_NAME || "heavy");
   const timeout = env.LOCK_TIMEOUT || "60",
     poll = env.LOCK_POLL || "0.2",
-    root = env.LOCK_ROOT || env.TMPDIR || tmpdir();
+    root = lockPlace(env).root;
   const timeoutSeconds = waitSeconds(timeout),
     pollSeconds = pollingSeconds(poll);
   return {
@@ -371,6 +378,43 @@ function resourceLockSlotPath(
   slot: number,
 ): string {
   return resourceLockPath(root, slot === 0 ? name : `${name}-slot-${slot}`);
+}
+/** The lock's root and name as `env` sets them for a run: `LOCK_ROOT`, else the temporary directory; `LOCK_NAME`, else `heavy`. */
+export function lockPlace(env: NodeJS.ProcessEnv = process.env): {
+  root: string;
+  name: string;
+} {
+  return {
+    root: env.LOCK_ROOT || env.TMPDIR || tmpdir(),
+    name: env.LOCK_NAME || "heavy",
+  };
+}
+/**
+ * How many runs hold a slot of the lock `name` under `root`, and how many
+ * announce they wait for one; read without taking anything, so a reader
+ * never delays a run.
+ */
+export function lockOccupancy(
+  root: string,
+  name: string,
+  windows = process.platform === "win32",
+): { holders: number; waiters: number } {
+  const slots = Array.from({ length: MAX_SLOTS }, (_, n) =>
+    resourceLockSlotPath(root, name, n),
+  );
+  const prefix = `${basename(resourceLockPath(root, name))}.waiting.`;
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(root);
+  } catch (error) {
+    swallow(error, "no lock directory: nothing holds or waits");
+  }
+  const waiters = entries.filter((entry) => {
+    if (!entry.startsWith(prefix)) return false;
+    const pid = entry.slice(prefix.length);
+    return /^[1-9][0-9]*$/.test(pid) && answers(Number(pid));
+  }).length;
+  return { holders: slotHolders(slots, windows).length, waiters };
 }
 /** Whether a process with this pid answers a signal probe (one owned by another user does). */
 function answers(pid: number): boolean {
@@ -730,6 +774,12 @@ export async function main(
   const lock = resourceLockPath(root, name);
   const locks = publisher(lock, fileOwners, deadline);
   let said: string | undefined;
+  const waiting = `${lock}.waiting.${process.pid}`;
+  let announced = false;
+  const unannounce = () => {
+    if (announced) rmSync(waiting, { force: true });
+    announced = false;
+  };
   const a: Acquisition = {
     locks,
     name,
@@ -741,6 +791,13 @@ export async function main(
     remaining: () => deadline - performance.now(),
     say: (key, text) => {
       a.waitingOn = text;
+      if (!announced)
+        try {
+          writeFileSync(waiting, String(process.pid));
+          announced = true;
+        } catch (error) {
+          swallow(error, "the wait goes uncounted, not unserved");
+        }
       if (key === said) return;
       said = key;
       console.error(
@@ -755,11 +812,15 @@ export async function main(
     for (const path of a.taken.splice(0).reverse()) locks.release(path);
   };
   // Registered before the wait, so a signal releases a partial hold too.
-  using release = registerCleanup(releaseAll);
+  using release = registerCleanup(() => {
+    unannounce();
+    releaseAll();
+  });
   void release;
   if (exclusive) await takeEvery(a);
   else if (settings.slots === 1) await takeSingle(a);
   else await takeSlot(a);
+  unannounce();
   if (a.taken.length === 0 || (exclusive && a.taken.length < MAX_SLOTS + 1)) {
     releaseAll();
     console.error(refusal(a, timeout, fileOwners, exclusive));

@@ -159,6 +159,45 @@ const TICK_FIELDS: Fields = {
   defects: isNumber,
 };
 
+const LOAD_GAUGES = [
+  "memory",
+  "processors",
+  "test-lock",
+  "disk",
+  "forge",
+  "accounts",
+];
+const LOAD_KINDS = ["pickup", "drive", "followup", "steward"];
+const oneOf = (values: string[]) => (value: unknown) =>
+  typeof value === "string" && values.includes(value);
+
+/** The load factor's report (`LineLoad`). */
+const LOAD_FIELDS: Fields = {
+  enforce: (value) => typeof value === "boolean",
+  factor: nullOr(isNumber),
+  binds: nullOr(oneOf(LOAD_GAUGES)),
+  gauges: listOf({
+    gauge: oneOf(LOAD_GAUGES),
+    fill: nullOr(isNumber),
+    reads: isString,
+    line: isString,
+  }),
+  reservations: listOf({
+    kind: oneOf(LOAD_KINDS),
+    bytes: isNumber,
+    samples: isNumber,
+    measured: (value) => typeof value === "boolean",
+  }),
+  holds: listOf({
+    repo: isString,
+    target: isString,
+    kind: oneOf(LOAD_KINDS),
+    gauge: oneOf(LOAD_GAUGES),
+    detail: isString,
+    held: (value) => typeof value === "boolean",
+  }),
+};
+
 const LINE_FIELDS: Fields = {
   runId: isString,
   startedAt: isTime,
@@ -213,6 +252,7 @@ const LINE_FIELDS: Fields = {
         Array.isArray(v) && v.every((n) => Number.isSafeInteger(n) && n > 0),
       since: isString,
     })(value),
+  load: (value) => value === undefined || hasFields(value, LOAD_FIELDS),
   repos: listOf(ENTRY_FIELDS.repos),
 };
 

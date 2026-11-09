@@ -1365,6 +1365,18 @@ records:
   shared: forge                     # where another host reads this host's launches
 send: true                          # false refuses every jig send from this machine
 change_probe: true                  # false turns off the minute-by-minute change probe
+load:
+  enforce: false                    # true holds what a gauge refuses; false only reports it
+  memory_free: 0.15                 # share of the host's memory kept free after a launch
+  load_per_core: 0.9                # one-minute load per core
+  lock_waiters: 2                   # runs waiting on the test lock that stop pickups and drive passes
+  disk_free_gb: 10                  # free space kept on the workspaces' filesystem
+  forge_floor: 0.1                  # share of the forge's budget kept
+  reservations_gb:                  # each kind's memory until it has five samples of its own
+    pickup: 2
+    drive: 1.5
+    followup: 1
+    steward: 1
 ```
 
 | Setting | Default / meaning |
@@ -1390,6 +1402,13 @@ change_probe: true                  # false turns off the minute-by-minute chang
 | `records.shared` | `forge`, the only value; where this host publishes the records another host dispatching the same repository reads: a claim per drive launch on the pull request it concerns (its launch record, its host and, once it ended, its end), and the follow-up marker with the follow-up's answer. A value this version does not know is refused. The claims coordinate launches and never authorize anything a person does; the forge cannot create a comment only if none exists, so two hosts can each read themselves the holder of one launch, and the stage's own refusal (the drive's lock and ledger claim, `do-item`'s claim) is the backstop |
 | `send` | `true`; whether [`jig send`](README.md#telling-a-station-what-to-do) may write a request from this machine. `false` refuses every send, `--dry-run` included, so a machine whose sessions should only ask the line can say so once. Read by `jig send` alone; the dispatcher ignores it |
 | `change_probe` | `true`; whether the change probe runs: every minute, `jig dispatch probe --apply` (its own timer, which `jig install dispatch` writes beside the tick's) reads the forge once for the pull requests of every repository listed here with a stage, and wakes the tick of each repository where one was updated or its checks changed since the last probe. `false` makes a probe read and wake nothing, and the next `jig install dispatch --yes` removes its timer. Read by `jig dispatch probe` and the dispatcher's install |
+| `load.enforce` | `false`; whether the [load factor](../GLOSSARY.md) holds a launch one of the host's gauges refuses. Each tick reads the gauges once, under the act lock, when it builds what it launches against: memory (`MemAvailable` on Linux, the free memory the platform reports on Windows, not read on macOS), the one-minute load per core (not read on Windows), the test lock's holders and waiters, the least free space among the filesystems of the running workspaces and the repositories, the forge's budget the tick read at its start, and the accounts' free slots. Each gauge's fill against its line, and the fullest of them as the load factor with the gauge that binds ("82% · memory binds"), are on every receipt (`load`), the dashboard's line and the Running view; a gauge the host cannot read is left out and says why. A launch fits while every gauge stays under its line with its kind's memory reservation and every reservation the tick already admitted counted; the test lock's waiters stop only pickups and drive passes; and a pickup also keeps room for a drive or follow-up after it (the larger of their reservations above the memory floor, and one account slot free). With `false` a launch that does not fit still starts and the receipt lists it under `load.holds` as one the load factor would hold (`held: false`); with `true` it waits for a later tick, its launch naming the gauge, and is listed with `held: true`. Turning it on is a person's call, made after reading a week of those receipts |
+| `load.memory_free` | `0.15`; the share of the host's memory a launch must leave available after its reservation, above 0 and below 1 |
+| `load.load_per_core` | `0.9`; the one-minute load per core the processors stay under |
+| `load.lock_waiters` | `2`; the runs waiting on the machine-wide test lock (`LOCK_ROOT`, else the temporary directory; `LOCK_NAME`, else `heavy`, as the tick's environment sets them) at which no pickup or drive pass starts |
+| `load.disk_free_gb` | `10`; the free space, in GiB, kept on the filesystems of the workspaces and the repositories |
+| `load.forge_floor` | `0.1`; the share of the forge's core budget kept, the share below which the tick already skips its optional reads; above 0 and below 1 |
+| `load.reservations_gb.<kind>` | `pickup` 2, `drive` 1.5 (a re-arm, takeover or re-drive pass), `followup` 1, `steward` 1; each kind's memory reservation in GiB until it is measured. On Linux each `--apply` tick records, per running session, the memory of the processes whose working directory is in its workspace, and keeps each kind's newest 20 samples in the state database; once a kind has 5, its reservation is their 90th percentile. Elsewhere no process's working directory is shown, and the defaults stand |
 | `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
 | `dashboard.require_token` | `true`; whether a request needs the token the command prints. `false` serves the page with no token and is accepted only when `dashboard.listen` is a loopback address (`127.0.0.0/8`, `::1`), so the only way in from another machine is a front on the host (Tailscale Serve, a reverse proxy) that authenticates the person first. The page is read-only either way |
 | `dashboard.allowed_hosts` | None; the host names a front forwards requests under (the `Host` header), read only with `require_token: false`. A tokenless dashboard answers `localhost`, `127.0.0.0/8` and `::1` and these names, and refuses any other `Host` with 403, so a page on another origin cannot read it by pointing its own name at this address |

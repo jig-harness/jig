@@ -35,6 +35,8 @@
  *   shared: forge
  * send: true
  * change_probe: true
+ * load:
+ *   enforce: false          # the gauges' lines and reservations: load-config.ts
  * ```
  *
  * An unknown key anywhere is refused, so a misspelt dial never reads as its
@@ -48,6 +50,7 @@ import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { load } from "../../shared/yaml.ts";
 import { isLoopback, type Listen, parseListen } from "./listen.ts";
+import { type LoadSettings, loadSettings } from "./load-config.ts";
 
 /** The stages a machine file can enable. */
 const MACHINE_STAGES = [
@@ -123,6 +126,8 @@ export interface MachineConfig {
   send: boolean;
   /** Whether the change probe wakes the ticks of repositories that changed on the forge (`change_probe`); `true` unless the file says `false`. */
   changeProbe: boolean;
+  /** The host's gauges' lines, the kinds' default reservations and whether the load factor holds launches (`load`). */
+  load: LoadSettings;
 }
 
 const DEFAULTS = {
@@ -154,6 +159,7 @@ const TOP_KEYS = [
   "records",
   "send",
   "change_probe",
+  "load",
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts"];
 const RECORDS_KEYS = ["shared"];
@@ -498,12 +504,15 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!timing.ok) return timing;
   const shared = surfaces(top);
   if (!shared.ok) return shared;
+  const host = loadSettings(top.load);
+  if (!host.ok) return host;
   return ok({
     path: where,
     repositories: repos.value,
     accounts: accountList.value,
     ...timing.value,
     ...shared.value,
+    load: host.value,
   });
 }
 

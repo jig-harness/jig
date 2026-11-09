@@ -5,6 +5,7 @@
 import type {
   LineAccount,
   LineDecision,
+  LineLoad,
   LineNeed,
   LineQueued,
   LineReady,
@@ -320,6 +321,7 @@ export function line(o: {
   ready?: LineReady[];
   lastAccount?: string;
   longestTickMs?: number;
+  load?: LineLoad;
 }): LineSnapshot {
   const tick = o.tick ?? T(16, 45);
   const sessions = o.sessions ?? [];
@@ -341,6 +343,73 @@ export function line(o: {
     needs: o.needs ?? [],
     queue: o.queue ?? [],
     ready: o.ready ?? [],
+    ...(o.load === undefined ? {} : { load: o.load }),
     repos: REPOS,
+  };
+}
+
+const GIB = 1024 ** 3;
+
+/** A busy host's load: memory binds at 82% as the tick read it, and the pickup it would have held once the tick's re-arms had reserved their memory, reporting only. */
+export function busyLoad(): LineLoad {
+  return {
+    enforce: false,
+    factor: 0.82,
+    binds: "memory",
+    gauges: [
+      {
+        gauge: "memory",
+        fill: 0.82,
+        reads: "13.5 GiB available of 62.5 GiB",
+        line: "15% of memory kept free",
+      },
+      {
+        gauge: "processors",
+        fill: 0.61,
+        reads: "load 8.8 on 16 cores",
+        line: "0.9 per core",
+      },
+      {
+        gauge: "test-lock",
+        fill: 0.5,
+        reads: "2 holding, 1 waiting",
+        line: "2 waiting",
+      },
+      {
+        gauge: "disk",
+        fill: 0.44,
+        reads: "412.0 GiB free",
+        line: "10.0 GiB free",
+      },
+      {
+        gauge: "forge",
+        fill: 0.27,
+        reads: "3770 of 5000 left",
+        line: "10% of the budget kept",
+      },
+      {
+        gauge: "accounts",
+        fill: 0.4,
+        reads: "4 of 10 slots held",
+        line: "no free slot",
+      },
+    ],
+    reservations: [
+      { kind: "pickup", bytes: 2.6 * GIB, samples: 12, measured: true },
+      { kind: "drive", bytes: 1.4 * GIB, samples: 20, measured: true },
+      { kind: "followup", bytes: 1 * GIB, samples: 3, measured: false },
+      { kind: "steward", bytes: 1 * GIB, samples: 0, measured: false },
+    ],
+    holds: [
+      {
+        repo: WEB,
+        target: "#5521",
+        kind: "pickup",
+        gauge: "memory",
+        detail:
+          "memory binds: 3.1 GiB is left above the 9.4 GiB kept free, and the pickup reserves 2.6 GiB and keeps 1.4 GiB for a drive or follow-up",
+        held: false,
+      },
+    ],
   };
 }
