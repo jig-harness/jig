@@ -78,6 +78,14 @@ test("the run cost follows a caller's own --parallel", () => {
   expect(lockEnv({}, "linux", ["./website/"]).LOCK_RUN_COST).toBe("4");
 });
 
+test("the run cost ignores passthrough arguments and option values", () => {
+  const cost = (extra: string[]) => lockEnv({}, "linux", extra).LOCK_RUN_COST;
+  expect(cost(["--parallel=16", "--", "--parallel=1"])).toBe("16");
+  expect(cost(["--", "--parallel=1"])).toBe("4");
+  expect(cost(["-t", "--parallel=2"])).toBe("4");
+  expect(cost(["--parallel=2", "-t", "x"])).toBe("2");
+});
+
 test("a run says who holds the lock, waits LOCK_TIMEOUT for a live holder and gives up with the lock's status", () => {
   const root = mkdtempSync(join(tmpdir(), "jig-test-lock-"));
   try {

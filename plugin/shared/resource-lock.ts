@@ -680,7 +680,8 @@ function sweepOnce(a: Acquisition, full: boolean): string | "busy" | undefined {
 }
 // Sweep the slots: a free slot 0 at once, any other one when admitted.
 async function takeSlot(a: Acquisition): Promise<void> {
-  // Waiting for the admission lock is brief and does not count as a sweep.
+  // Every retry counts, busy ones too: the identity check on the admission
+  // lock must come round even while a crashed holder keeps it busy.
   let sweeps = 0;
   for (;;) {
     const got = sweepOnce(a, sweeps % FULL_CHECK_EVERY === 0);
@@ -688,7 +689,7 @@ async function takeSlot(a: Acquisition): Promise<void> {
       hold(a, got);
       return;
     }
-    if (got !== "busy") sweeps++;
+    sweeps++;
     const jitter = a.pollGiven
       ? a.pollMs * (1 + 1.5 * Math.random())
       : (2 + 3 * Math.random()) * 1000;

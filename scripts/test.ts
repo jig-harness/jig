@@ -37,13 +37,41 @@ export function workers(platform = process.platform): number {
   return platform === "win32" ? 1 : 4;
 }
 
+/** `bun test` options whose next argument is their value. */
+const VALUE_OPTIONS = new Set([
+  "-t",
+  "--test-name-pattern",
+  "--timeout",
+  "--rerun-each",
+  "--retry",
+  "--bail",
+  "--reporter",
+  "--reporter-outfile",
+  "--coverage-reporter",
+  "--coverage-dir",
+  "--path-ignore-patterns",
+  "--preload",
+  "--tsconfig-override",
+  "--define",
+  "--loader",
+  "--conditions",
+  "--max-concurrency",
+  "--shard",
+  "--seed",
+]);
+
 /** The worker count `bun test` ends up with: the caller's own `--parallel`, else the default. */
 export function effectiveWorkers(
   extra: readonly string[],
   platform = process.platform,
 ): number {
   let count = workers(platform);
-  extra.forEach((arg, i) => {
+  // Options after `--` are passthrough arguments, and the token after a
+  // value-taking option is its value, so neither is read as `--parallel`.
+  const end = extra.indexOf("--");
+  const options = end < 0 ? extra : extra.slice(0, end);
+  options.forEach((arg, i) => {
+    if (VALUE_OPTIONS.has(options[i - 1] ?? "")) return;
     // A bare `--parallel` asks for one worker per CPU core.
     const given =
       /^--parallel=(\d+)$/.exec(arg)?.[1] ??
