@@ -18,6 +18,11 @@ warnings go into the pull request body under Review Notes.
 
 ## Scouts before a pickup
 
+At pickup, a claim about a third-party tool is checked against the version in
+use or its documentation before implementation is delegated. The status names
+the claim, check, version and result. A false premise stops the pickup for the
+user to re-scope; issues about the repository's own code skip this check.
+
 Run `/jig:do-item scout <issue-key>` to gather context before deciding to
 start an issue, or `/jig:do-item scout --text <task>` for work outside the
 tracker. Both use the same configured scouts and agent routing as a pickup;

@@ -529,6 +529,13 @@ review rounds use the PR pin instead.
 findings against the issue. The status writes, scripts, templates and gate
 routing below remain **exact**.
 
+**Premise check.** When the problem rests on a third-party tool's behaviour,
+verify that claim against the installed version or its version-matched
+documentation before delegating. Report `Premise: <claim>; checked by
+<command or documentation>; version: <version>; result: <finding>`.
+If the premise is false, stop the pickup and re-scope it with the user before
+implementation. Skip this check for issues about the repository's own code.
+
 > **Batch check (issues carrying any label in the repository's
 > `batch_sizes` list, by default `xs`, `small` or `medium`).** Review cost is
 > largely per PR, so several small closures sharing one review cycle cost
