@@ -261,6 +261,12 @@ describe("jig dispatch --apply picks up assigned items", () => {
       }),
     );
     expect(launches(after)).toEqual([]);
+    // The record outlives the tick that reported it: the question is still a
+    // need on the next, since nobody answered it.
+    const later = await applyTick(w, false);
+    expect(later.repos[0]?.actions).toContainEqual(
+      expect.objectContaining({ target: "#12", cause: "pickup-question" }),
+    );
   });
 
   it("records a pickup's opened pull request though the merged listing fails", async () => {
