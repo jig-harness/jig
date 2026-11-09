@@ -479,8 +479,10 @@ goes, the current decision is the first one left with no pick.
   with the digest, because a number means nothing outside the order it was
   shown in.
 - **A pick belongs to one framing.** Picks are kept like the reply drafts
-  (`dashboard/src/replies.ts`), by repository, key and digest. When a
-  decision is framed again its pick is dropped and the row says so.
+  (`dashboard/src/replies.ts`), by repository, pull request, key, digest
+  and the time the item was parked (the park occurrence the receipt
+  names). When a decision is framed again, or the same wording is parked
+  again, its pick is dropped and the row says so.
 - **Notes and free answers are kept apart.** A note and a free answer are
   separate drafts, so clearing a pick never turns its note into an answer
   and a later pick never turns a draft into a note. Both are checked as an
@@ -490,13 +492,18 @@ goes, the current decision is the first one left with no pick.
   of the comment.
 - **A digit never commits, on any surface.** A pick is guarded when its
   class is one the acts table does not list as Decide by name, or its
-  option's `Reversible:` says `no`. Copying picks that include a guarded one
+  option's `Reversible:` says `no`. Committing picks that include a guarded one
   takes two steps, however it is started (the `c` key, the card's Copy
-  button or the palette): the first shows every guarded pick's Changes and
-  Costs, and the second copies. The first step's effect ends when any pick
-  changes, a digest changes or the card loses focus. With no picks, `c`
-  copies an `approve` line for a card of one decision whose class is listed
-  as Decide by name; for any other card it copies the `answer <key>:`
+  button, the palette or the panel's Send): the first shows every guarded
+  pick's Changes and Costs, and the second copies or sends. The first
+  step's effect ends when any pick changes, a digest changes or the card
+  loses focus. A free answer drafted for a decision is committed in its
+  words, as an `answer <key>:` line carrying the digest, and takes
+  precedence over the fallback below. With no pick and no free answer,
+  `c` copies an `approve` line for a card of one decision whose class is
+  listed as Decide by name and whose recommended option's `Reversible:`
+  is not `no` (a card whose recommendation is guarded needs a pick, and so
+  the two steps); for any other card it copies the `answer <key>:`
   starting line, as it does today.
 - **Every action has a target for a pointer and a screen reader.** On a
   phone an option's row is what is tapped, digits are not shown, and the
@@ -508,7 +515,7 @@ Each surface's commit:
 | Surface | Commit | Waits on |
 | --- | --- | --- |
 | Dashboard | `c` copies, `p` opens the pull request, the person pastes | nothing |
-| Orca panel | Send runs `jig send` for each pick | nothing |
+| Orca panel | Send runs `jig send` for each pick, and for each free answer with its words | nothing |
 | The hub | Commit, behind proof that a person is there | its third stage, item 40 |
 | Terminal | `jig ask --waiting` numbers the options; `jig send` names one | nothing |
 
@@ -696,8 +703,8 @@ and its pull request saying what changed in the audit.
 4. **Showing them.** `jig ask`'s question and answer fields, the
    dashboard's stale or disputed answers, and the outcome log's
    answered-park event. Done when
-   the panel, `jig ask` and the dashboard show the same options and the
-   same choice for one park.
+   `jig ask` and the dashboard show the same options and the same choice
+   for one park.
 5. **Recommendation acceptance.** The per-class report in `jig dispatch
    log`. Done when it reports, from the outcome log alone, each class's
    parks, approvals of the recommendation and median wait.
@@ -714,7 +721,9 @@ and its pull request saying what changed in the audit.
    1, 2 and 6, and only the panel's Send waits on step 3. Done when `j`, `1`, `c`
    on a card of one decision copies its recommended option with the digest,
    a card of two decisions copies one comment with both, a reframed
-   decision drops its pick, and every pick can be made by a pointer alone.
+   decision drops its pick, every pick can be made by a pointer alone, and
+   the panel shows the same options and choice as `jig ask` and the
+   dashboard for one park.
 8. **Attested classes**, with item 40's first proof, and
    `autonomy.attested_classes` in [CONFIGURATION.md](../plugin/CONFIGURATION.md).
 9. **Beyond the drive**: the follow-up's question, the loosened ratchet
