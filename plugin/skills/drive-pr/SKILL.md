@@ -1216,6 +1216,13 @@ background command, a remote test box above all; run every step the round
 depends on to completion **within the turn**, and do not stop until
 `finish-round.ts` returns.
 
+The driver sets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` for spawned passes.
+Claude Code removes background tool parameters and auto-backgrounding under
+this setting; other runtimes follow the foreground rule below. If a pass
+exits `0` with uncommitted edits and this tree's unverified holds from the
+current round, the driver stops as `WORKTREE_UNCLEAN` (exit `12`), naming the
+unfinished held fixes. This stop does not claim convergence.
+
 Never use the Bash tool's `run_in_background` in a driver pass — not for the
 commit, not for `finish-round.ts` (the one step that pushes), not for
 validation. Run each step in the foreground. The Bash tool's per-call ceiling
