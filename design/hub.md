@@ -179,7 +179,7 @@ the hub adds:
   resolution, so the split covers the board read's detail set only (about
   20 pull requests per repository), and the board read reads authors under
   a cap of its own per repository and tick, once the board keeps each
-  card's history (stage 1's step 7) only for a thread it has not seen
+  card's history (stage 1's step 8) only for a thread it has not seen
   before
   ([dispatch-board.md § The board read](dispatch-board.md#the-board-read)).
   A card outside the detail set, or with a thread whose author the cap or
@@ -676,18 +676,26 @@ the reader before the hub sees the request. Tailscale Serve is the first
 implementation; a reverse proxy with an identity provider is the browser
 path without Tailscale or Orca. Setup must:
 
-1. Install a resident dashboard reader through the existing job machinery,
-   restart it after failure and update, and check that it returns after
-   logout and host reboot. Before stage 2 this keeps the existing dashboard
-   command; stage 2's `jig install hub` keeps the same availability contract.
-   It does not install a second reader or change the dispatch timer.
+1. Complete Stage 1's resident-dashboard availability item before installing
+   the front: extend the existing dashboard job machinery to keep
+   `jig dispatch dashboard` running, restart it after failure and update,
+   and check that it returns after logout and host reboot. This item is a
+   prerequisite of phone availability and ships independently of Stage 2;
+   it does not introduce the hub's new `resident` job kind, install a second
+   reader, or change the dispatch timer. Stage 2's `jig install hub` later
+   takes over the same availability contract.
 2. Establish the private route and certificate, then check from another
    device that authentication is required, the intended repositories alone
    are visible, and a forged identity header cannot widen that scope.
    Before the hub's scoped socket front exists, a dashboard front is
    owner-only and authenticates the owner itself; its loopback upstream
    may use `dashboard.require_token: false`. It must not trust viewer
-   headers on that port or promise per-repository grants.
+   headers on that port or promise per-repository grants. When the front
+   preserves its public `Host` header, add that hostname to
+   `dashboard.allowed_hosts` as
+   [the dashboard configuration](../plugin/CONFIGURATION.md#dashboard) requires;
+   alternatively configure the upstream to send an allowed host. Do not
+   widen the allowlist beyond the front names in use.
 3. Print the token-free HTTPS address and a QR (quick response) code for
    that same address, with the address as text when scanning is unavailable.
    The code transfers an address, never grants access; no credential is
@@ -725,11 +733,12 @@ The initial page-size ceiling is 700 KiB (716,800 bytes), counting the
 uncompressed HTML, CSS and JavaScript needed for the read views, including
 inline assets. The current built dashboard document measured 676,191
 bytes on 2026-11-09; splitting it into files must not evade the total.
-Before stage 1's design round lands, also measure actual transfer bytes
+Before the first Stage 1 view implementation, measure actual transfer bytes
 and first paint at phone width, with a cold cache and a named network
-profile. That round sets the first-paint ceiling from those measurements
-and records it with its fixtures; stage 1's view implementation must fail
-its browser checks above either ceiling. No phone chat bundle is loaded.
+profile. Record the measurements and set the first-paint and transfer
+ceilings in an acceptance fixture before that implementation begins; every
+view implementation must fail its browser checks above the uncompressed
+page-size, transfer, or first-paint ceiling. No phone chat bundle is loaded.
 Data is budgeted separately:
 History reads at most 100 rows per page and decision details load on open.
 An unset ceiling is an unmet acceptance check, not an unlimited budget.
@@ -867,8 +876,9 @@ a test fails a view that answers slower than its target:
   [Phone acceptance](#phone-scope-and-access), at both phone widths.
 
 The outcome log's row count at a year is set from what stage 1 measures.
-The phone page's size and first-paint ceilings are fixed by stage 1's design
-round before its view implementation lands. The unhealthy
+The phone page's size, transfer and first-paint ceilings are fixed by stage
+1's measurement and acceptance fixture before its view implementation lands.
+The unhealthy
 values for memory, streams, reconnects and the write-ahead log are set by
 stage 2 from its server's own figures, and from then `jig doctor hub`
 fails past each. The operator's cost per turn and per day, and the
@@ -1122,8 +1132,9 @@ whatever the counts show.
 **Stage 1: the per-pull-request status, on the dashboard that exists.** It
 is most of what a person asks to see, every later stage needs it, and using
 it shows what the later stages must add. It adds no server, no write route
-and no chat. Steps 1, 2, 5 and 6 can start at once; 3 needs 1 and 2; 4
-needs 3; 7 needs 3, 5 and 6; 8 needs 7's fixtures; 9 needs 8.
+and no chat. Steps 1, 2, 6 and 7 can start at once; 3 needs 1 and 2; the
+phone measurement and acceptance fixture follows 3 and precedes 5; 5 needs
+that fixture; 8 needs 3, 6 and 7; 9 needs 8's fixtures; 10 needs 9.
 
 1. **Rounds and resolved parks in the drive ledger**, under its current
    version, the last 10 of each, cut first as the ledger nears its
@@ -1134,20 +1145,25 @@ needs 3; 7 needs 3, 5 and 6; 8 needs 7's fixtures; 9 needs 8.
 3. **The board read, with the marks**: item 36's step 2
    ([its build order](dispatch-board.md#build-order)) with the round, the
    threads by bot and not a bot, and the CI hold, which reads "held: not
-   built at this head" until step 7 keeps each card's history.
-4. **Ready to merge on today's dashboard**: item 36's step 3 with the marks,
+   built at this head" until step 8 keeps each card's history.
+4. **Phone measurement and acceptance fixture**: before any Stage 1 view
+   implementation, measure transfer bytes and first paint at both phone widths
+   with a cold cache and named network profile. Record the resulting transfer
+   and first-paint ceilings alongside the existing uncompressed page-size
+   ceiling; an unset ceiling fails acceptance.
+5. **Ready to merge on today's dashboard**: item 36's step 3 with the marks,
    its server opening every database read-only, so serving the page leaves
    a database one schema behind unchanged byte for byte.
-5. **The line refreshed from one repository's tick**, with `runId`,
+6. **The line refreshed from one repository's tick**, with `runId`,
    `readAt` and `minReader`, a stopped timer still shown overdue.
-6. **A pickup's progress before its pull request**: the record, its script
+7. **A pickup's progress before its pull request**: the record, its script
    and calls, its `jig gc` kind, and the tick's and `jig ask pickup@`'s
    reads of it.
-7. **Every card on the board**: item 36's step 4, with Picking up fed by
+8. **Every card on the board**: item 36's step 4, with Picking up fed by
    step 6 and the CI hold naming the last head a tick saw built.
-8. **The hub's design round**, in place of item 36's step 5: one brief from
+9. **The hub's design round**, in place of item 36's step 5: one brief from
    [`design-brief-builder`](../plugin/skills/design-brief-builder/SKILL.md),
-   from the fixtures of steps 3 to 7, for the whole hub with the chat,
+   from the fixtures of steps 3 to 8, for the whole hub with the chat,
    starting from item 44's five views and their keys
    ([§ A piece of work, and its views](#a-piece-of-work-and-its-views)): Merge,
    Needs you, Running, Queue and History, the Work page with its thread,
@@ -1163,7 +1179,7 @@ needs 3; 7 needs 3, 5 and 6; 8 needs 7's fixtures; 9 needs 8.
    write, so the cards that write are drawn as stage 3. The round itself is
    a person's; it lands under [`prototypes/`](prototypes/rubric.md) with
    its scorecard.
-9. **The Running, Queue and Work views** as the round designed them, item 36's step
+10. **The Running, Queue and Work views** as the round designed them, item 36's step
    6 among them, with the Help view explaining the columns, the Ready
    conditions, the marks and what `only_labeled` leaves out. This Work view
    is one pull request or one item: its rounds with their times, checks,
@@ -1171,8 +1187,9 @@ needs 3; 7 needs 3, 5 and 6; 8 needs 7's fixtures; 9 needs 8.
    ledger. The fold of a piece of work's addresses into one page and one
    thread arrives with stage 2's step 1.
 
-**Phone access alongside stage 1.** The supported view subset and phone
-budgets are part of steps 8 and 9. Once this design and its access probes
+**Phone access alongside stage 1.** The supported view subset is part of
+steps 9 and 10; its phone budgets are set by step 4 before implementation.
+Once this design and its access probes
 settle the contracts, file separate implementation items under the hub epic
 for URL/QR sharing, the resident dashboard install and secure-context front
 guidance. They must not wait on the decision to build stages 2 and 3; the
