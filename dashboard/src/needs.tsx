@@ -303,11 +303,11 @@ export function NeedsPanel({
       <div className="panelHead">
         <h2 id="h-needs">What needs you</h2>
         <PanelHelp panel="What needs you">
-          Stops only a person can settle, grouped by what you do: Decide among
-          framed options, Authorize what only a person may, Reply to a person or
-          a waiting session, Do a step outside the line, or Investigate what the
-          line could not recover. Oldest first in each. Answer on the pull
-          request; the next tick re-arms the drive.
+          Stops only a person can settle, grouped by what you do: Merge, Decide
+          among framed options, Authorize what only a person may, Reply to a
+          person or a waiting session, Do a step outside the line, or
+          Investigate what the line could not recover. Oldest first in each.
+          Answer on the pull request; the next tick re-arms the drive.
         </PanelHelp>
         {people.length === 0 ? null : (
           <label className="personFilter sm">

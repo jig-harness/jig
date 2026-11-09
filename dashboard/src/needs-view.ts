@@ -149,6 +149,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
   const recommendation = first?.recommendation ?? null;
   const decision = decisionText(n.decisions);
   const named = first?.decisionClass ?? null;
+  // The card leads with the oldest decision's options; the steps of every open decision go in its fold.
   const options = first?.options ?? [];
   const recommended = options.find((o) => o.recommended) ?? null;
   return {

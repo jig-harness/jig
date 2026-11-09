@@ -154,7 +154,7 @@ it("keeps a pending human decision visible even when the local hold diagnosis of
   const r = await w.ask([`drive@${REPO}#7`, "--json"]);
   expectSpawnExit(r, 0);
   const a = JSON.parse(r.stdout) as AskAnswer;
-  expect(a.waitsOn).toMatchObject({ person: "answer", act: "Decide" });
+  expect(a.waitsOn).toMatchObject({ person: "answer", needAct: "Decide" });
   expect(w.writes()).toEqual([]);
 });
 
@@ -194,7 +194,7 @@ it("names a park under release Authorize, as the dashboard's card does", async (
   const r = await w.ask([`drive@${REPO}#7`, "--json"]);
   expectSpawnExit(r, 0);
   const a = JSON.parse(r.stdout) as AskAnswer;
-  expect(a.waitsOn).toMatchObject({ person: "answer", act: "Authorize" });
+  expect(a.waitsOn).toMatchObject({ person: "answer", needAct: "Authorize" });
   const text = await w.ask([`drive@${REPO}#7`]);
   expect(text.stdout).toContain("person: answer · Authorize");
 });

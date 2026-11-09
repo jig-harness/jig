@@ -68,7 +68,7 @@ import {
   type ThreadEntry,
   type WaitsOn,
 } from "./answer.ts";
-import { answered, parkedWait } from "./park-wait.ts";
+import { answered, lineParkAct, parkedWait } from "./park-wait.ts";
 import {
   type CommentFields,
   commentFields,
@@ -323,7 +323,13 @@ function waitsOnOf(
     case "driven":
       return "none";
     case "parked":
-      return parkedWait(ledger.parked, r.comments, r.pull.author, placed.why);
+      return parkedWait(
+        ledger.parked,
+        r.comments,
+        r.pull.author,
+        placed.why,
+        lineParkAct(ctx, r.pull.number),
+      );
     case "re-armable":
       return rearm(placed.why);
     case "stale":

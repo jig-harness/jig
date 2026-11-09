@@ -238,6 +238,31 @@ describe("jig ask on a park", () => {
     ).toEqual(["Maintainer"]);
   });
 
+  it("names the act the newest tick's line names for the park, as the dashboard's card does", async () => {
+    const w = world();
+    w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
+    w.api(`repos/${REPO}/issues/7/comments`, [
+      comment(701, ledgerBody(parked(7))),
+    ]);
+    // The line counts a reply on a parked thread as its answer, which this read does not: its act stands.
+    writeLine(
+      {
+        ...LINE,
+        needs: LINE.needs.map((need, i) =>
+          i === 0 ? { ...need, act: "Authorize" as const } : need,
+        ),
+      },
+      "{}",
+      w.state,
+    );
+    const r = await w.ask([`drive@${REPO}#7`, "--json"]);
+    expectSpawnExit(r, 0);
+    expect((JSON.parse(r.stdout) as AskAnswer).waitsOn).toMatchObject({
+      person: "answer",
+      needAct: "Authorize",
+    });
+  });
+
   it("waits on a person's answer while a parked question is unanswered, and lists the commands", async () => {
     const w = world();
     w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
@@ -377,9 +402,9 @@ describe("jig ask --waiting", () => {
       runId: LINE.runId,
       finishedAt: LINE.finishedAt,
     });
-    expect(answer.waiting.map((e) => [e.address, e.act])).toEqual([
-      [`drive@${REPO}#7`, "answer"],
-      [`pickup@${REPO}#12`, "look at the stalled pickup"],
+    expect(answer.waiting.map((e) => [e.address, e.act, e.needAct])).toEqual([
+      [`drive@${REPO}#7`, "answer", "Decide"],
+      [`pickup@${REPO}#12`, "look at the stalled pickup", "Investigate"],
     ]);
     expect(w.calls()).toEqual([]);
     expect(answer.waiting.map((e) => e.questions)).toEqual([
@@ -389,6 +414,7 @@ describe("jig ask --waiting", () => {
     const text = await w.ask(["--waiting"], w.away);
     expectSpawnExit(text, 0);
     expect(text.stdout).toContain(`as the tick ${LINE.runId} found it`);
+    expect(text.stdout).toContain("look at the stalled pickup · Investigate");
     for (const question of [
       "Keep the old flag?",
       "Which format should remain?",

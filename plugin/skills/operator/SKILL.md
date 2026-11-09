@@ -174,7 +174,7 @@ earlier answer:
   settles by itself (say on what, such as the dispatcher's next tick); or
   `person`, with the act that settles it (answer, re-arm, merge, approve,
   request a review, update the branch, re-run the follow-up, …) and its
-  `act`, which leads the line (Decide, Authorize, Reply, Do, Investigate or
+  `needAct`, which leads the line (Decide, Authorize, Reply, Do, Investigate or
   Merge; the dashboard's card names the same one). A
   converged drive's answer names its lane of Ready to merge (merge now,
   approve first, update next) with the act and, in merge now, the merge

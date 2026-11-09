@@ -12,9 +12,9 @@ release: minor
   costs, and the person it waits on. The other options, the steps for a
   person (as a checklist) and the evidence are folded. Needs you groups its
   cards by act and filters them by the person they wait on.
-- `jig ask` names the same act: a `person` wait carries `act`, and each
-  `jig ask --waiting` entry carries `needAct`, so the answer and the card
-  never disagree.
+- `jig ask` names the same act as `needAct`, on a `person` wait and on each
+  `jig ask --waiting` entry. A parked drive takes the act the newest tick's
+  line names for it, so the answer and the card read one record.
 - The line the tick keeps for the dashboard carries each need's `act`, and
   each parked decision's `options` (with their changes and costs and which
   one is recommended) and `steps`.

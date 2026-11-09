@@ -55,7 +55,7 @@ function holderLines(holder: Holder | "none"): string[] {
 function waitsLine(w: WaitsOn): string {
   if (w === "none") return "none";
   if ("waiting" in w) return `waiting: ${w.waiting}`;
-  return `person: ${w.person} · ${w.act}${w.people?.length ? ` [${w.people.join(", ")}]` : ""} (${w.why})`;
+  return `person: ${w.person} · ${w.needAct}${w.people?.length ? ` [${w.people.join(", ")}]` : ""} (${w.why})`;
 }
 
 function lastLine(last: Last | null): string {

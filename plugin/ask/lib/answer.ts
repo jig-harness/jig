@@ -84,7 +84,13 @@ const ACT_OF_PERSON: Record<PersonAct, NeedAct> = {
 export type WaitsOn =
   | "none"
   | { waiting: string }
-  | { person: PersonAct; act: NeedAct; why: string; people?: string[] };
+  | {
+      person: PersonAct;
+      /** What the person does, as the dispatch dashboard's card names it (`shared/acts.ts`). */
+      needAct: NeedAct;
+      why: string;
+      people?: string[];
+    };
 
 /** A wait on a person's act, under the act a record names or else the person's act's own. */
 export function personWait(
@@ -94,7 +100,7 @@ export function personWait(
 ): WaitsOn {
   return {
     person,
-    act: more.act ?? ACT_OF_PERSON[person],
+    needAct: more.act ?? ACT_OF_PERSON[person],
     why,
     ...(more.people === undefined ? {} : { people: more.people }),
   };

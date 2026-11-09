@@ -93,6 +93,7 @@ const SAMPLE_FIELDS: Fields = {
 const ENTRY_FIELDS = {
   needs: {
     cause: isString,
+    // A closed list: an act a later version adds would make this reader refuse the line, so the list stays closed across versions.
     act: (value) =>
       value === undefined || (NEED_ACTS as readonly unknown[]).includes(value),
     repo: isString,
