@@ -4,4 +4,4 @@ release: patch
 
 ### Fixed
 
-- `report-bug` now files its reports with the `jig` repository label as well as `bug`, so `/jig:work-batch` accepts them without a person labelling them first.
+- `report-bug` now includes the `jig` repository label alongside `bug`, removing the repository-label blocker for `/jig:work-batch`; reports still need the other eligibility requirements set during triage.
