@@ -597,6 +597,9 @@ function planMerged(
       target,
       record: "forge",
       reason: `it carries ${trusted.length} trusted follow-up markers (comments ${trusted.map((m) => m.id).join(", ")}): two runs may have claimed it; the earliest, comment ${trusted[0]?.id}, holds it by the claim rule, and a person settles which run stands`,
+      ...(trusted.some((m) => m.run.kind === "unreadable")
+        ? { readFailed: true }
+        : {}),
     });
     return;
   }

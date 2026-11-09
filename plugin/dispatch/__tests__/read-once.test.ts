@@ -229,6 +229,23 @@ describe("a merge whose updatedAt has not moved", () => {
     );
   });
 
+  it("marks the pull request unreadable when one of two trusted markers does not read", async () => {
+    const w = fixture();
+    w.setPrs("merged", [mergedPr(9, "feature/9-done", "2026-10-31T12:00:00Z")]);
+    w.setComments(9, [
+      forgeComment(901, manualMarker(true, POST)),
+      forgeComment(902, manualMarker(false, POST).replace('"v":2', '"v":99')),
+    ]);
+    const got = await report(w, [], 1);
+    expect(got.repos[0]?.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "PR #9",
+        readFailed: true,
+        reason: expect.stringContaining("2 trusted follow-up markers"),
+      }),
+    );
+  });
+
   it("is read every tick when the listing gives no updatedAt", async () => {
     const w = fixture();
     w.setPrs("merged", [mergedPr(9, "feature/9-done", "2026-10-31T12:00:00Z")]);

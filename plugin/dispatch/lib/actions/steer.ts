@@ -379,6 +379,19 @@ async function sendOne(
   };
 }
 
+/** The nudge rows no longer planned go, where `steer` is not enabled and nothing is sent. */
+export function retireSteers(
+  report: RepoReport,
+  book: ActionBook | null,
+  observed: boolean,
+): void {
+  if (observed)
+    book?.wanted(
+      "nudge",
+      report.actions.filter((a) => a.stage === "steer").map(ledgerKey),
+    );
+}
+
 /** `--apply` for one repository's nudges, where the machine file enables `steer`. */
 export async function applySteers(
   state: ApplyState,

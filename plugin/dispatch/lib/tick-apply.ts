@@ -21,7 +21,7 @@ import {
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { applyPickups } from "./actions/pickup.ts";
-import { applySteers } from "./actions/steer.ts";
+import { applySteers, retireSteers } from "./actions/steer.ts";
 import { adoptionOf } from "./adopt.ts";
 import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
 import { readOutcomes } from "./followup-outcomes.ts";
@@ -308,15 +308,11 @@ async function applyStages(
   if (group !== "finish") return;
   // The nudges first: a nudge that went unanswered is notified in the same tick.
   await guard("steer", async () => {
+    // Which nudges are wanted is known only from a session listing that read.
+    const observed = inputs.sessions.ok && report.records.every((r) => r.ok);
     if (enabled.has("steer"))
-      await applySteers(
-        apply,
-        repo.slug,
-        report,
-        inputs.book,
-        // Which nudges are wanted is known only from a session listing that read.
-        inputs.sessions.ok && report.records.every((r) => r.ok),
-      );
+      await applySteers(apply, repo.slug, report, inputs.book, observed);
+    else retireSteers(report, inputs.book, observed);
   });
   if (project !== undefined) await guard("close", project, false);
   await guard("notify", async () => {
