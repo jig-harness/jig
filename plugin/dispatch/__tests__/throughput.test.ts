@@ -109,7 +109,7 @@ it.each([
   30_000,
 );
 
-it("starts an adoption within two ticks despite ten follow-ups, even with only one launch open per tick", async () => {
+it("starts an adoption in its first tick despite ten follow-ups, even with only one launch open per tick", async () => {
   const w = fixture();
   machineFile(
     w,
@@ -133,16 +133,12 @@ it("starts an adoption within two ticks despite ten follow-ups, even with only o
     },
   ]);
   w.setComments(99, []);
-  const receipts = [await tick(w), await tick(w)];
-  for (const r of receipts)
-    expect(
-      r.repos
-        .flatMap((repo) => repo.launches)
-        .filter((l) => l.outcome === "launched").length,
-    ).toBeLessThanOrEqual(1);
-  expect(
-    receipts
-      .flatMap((r) => r.repos.flatMap((repo) => repo.launches))
-      .some((l) => l.target === "PR #99" && l.outcome === "launched"),
-  ).toBe(true);
+  const receipt = await tick(w);
+  const started = receipt.repos
+    .flatMap((repo) => repo.launches)
+    .filter((l) => l.outcome === "launched");
+  // The follow-ups open from their own lane, so the one launch open is the drive's.
+  expect(started.filter((l) => l.action !== "followup")).toEqual([
+    expect.objectContaining({ target: "PR #99" }),
+  ]);
 }, 30_000);

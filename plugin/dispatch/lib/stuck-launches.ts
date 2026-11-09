@@ -59,7 +59,7 @@ function durationText(ms: number): string {
 }
 
 /** Whether a workspace is the record's own, or joined to its pull request or item. */
-function joinedTo(record: LaunchRecord): (w: Workspace) => boolean {
+export function joinedTo(record: LaunchRecord): (w: Workspace) => boolean {
   return (w) =>
     (record.workspace !== null &&
       (w.id === record.workspace.id || w.path === record.workspace.path)) ||

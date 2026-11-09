@@ -1,5 +1,6 @@
 /** Backward-compatible validation of optional launch-record fields. */
 import { isMapping } from "../../shared/config-layers.ts";
+import { isStandingAnswer } from "./routine-questions.ts";
 
 function optionalText(value: unknown): boolean {
   return value === undefined || value === null || typeof value === "string";
@@ -40,6 +41,11 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       typeof value.rearmConsumed === "boolean") &&
     (value.codexBypass === undefined ||
       typeof value.codexBypass === "boolean") &&
+    (value.routineTags === undefined ||
+      typeof value.routineTags === "boolean") &&
+    (value.standing === undefined ||
+      value.standing === null ||
+      isStandingAnswer(value.standing)) &&
     optionalTime(value.endedAt) &&
     optionalTime(value.cancelledAt) &&
     optionalTime(value.openedAt) &&

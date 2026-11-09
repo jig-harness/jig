@@ -149,10 +149,10 @@ bun modules/M0-instruction-architecture/reference/sync-skills-mirror.ts
 Jig's work is the repository's own
 [GitHub Issues](https://github.com/jig-harness/jig/issues), named in
 [`.config/jig.yaml`](.config/jig.yaml) (`issue_tracker.adapter: github`): an
-issue's open state is a `state:` label, its priority a `priority:` label,
-its type and its size labels of the [label taxonomy](label-taxonomy.yaml)
-at the root (the configuration names the label store for each of the
-three), and every other label comes from that taxonomy too. A roadmap item
+issue's open state is a `state:` label, its type is GitHub's native issue
+type, and its priority and size use GitHub's Priority and Effort fields
+(the configuration names each store). The [label taxonomy](label-taxonomy.yaml)
+at the root defines the type and size values and every other label. A roadmap item
 has an `epic` issue labelled `roadmap`; the item's steps are its
 sub-issues, and a pull request that builds one says `Part of #<epic>` or
 `Closes #<sub-issue>`.

@@ -18,6 +18,7 @@ import {
 } from "../../shared/records/shared.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import { settleNoCauseStops } from "./no-cause-stops.ts";
+import { releaseRoutineMarkers } from "./routine-reruns.ts";
 import {
   driveHold,
   settleConflictStops,
@@ -325,7 +326,7 @@ function markUnlaunched(
   });
 }
 
-/** With `--apply`: write the end of this host's own claims whose launch records ended, and report what could not be written. */
+/** With `--apply`: write the end of this host's own claims whose launch records ended, release the markers of follow-ups that owe a routine run again, and report what could not be done. */
 export async function endOwnClaims(
   ctx: SharedContext,
   report: RepoReport,
@@ -337,21 +338,32 @@ export async function endOwnClaims(
     nowMs: number;
   },
 ): Promise<void> {
-  const failures = await settleOwnClaims(
-    ctx,
-    inputs.claims,
-    inputs.forge.merged,
-    inputs.records.filter((r) => r.record.repo === ctx.slug),
-    inputs.outcomes,
-    new Date(inputs.nowMs).toISOString(),
-    inputs.forge.scoped
-      ? new Set(
-          [...inputs.forge.inScope].filter(
-            (pr) => !inputs.forge.disputed.has(pr),
-          ),
-        )
-      : undefined,
-  );
+  const scope = inputs.forge.scoped
+    ? new Set(
+        [...inputs.forge.inScope].filter(
+          (pr) => !inputs.forge.disputed.has(pr),
+        ),
+      )
+    : undefined;
+  const own = inputs.records.filter((r) => r.record.repo === ctx.slug);
+  const failures = [
+    ...(await settleOwnClaims(
+      ctx,
+      inputs.claims,
+      inputs.forge.merged,
+      own,
+      inputs.outcomes,
+      new Date(inputs.nowMs).toISOString(),
+      scope,
+    )),
+    ...(await releaseRoutineMarkers(
+      ctx,
+      inputs.forge.merged,
+      own,
+      inputs.outcomes,
+      scope,
+    )),
+  ];
   for (const reason of failures)
     report.unplaced.push({
       target: "the shared records",

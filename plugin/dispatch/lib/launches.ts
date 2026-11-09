@@ -66,6 +66,7 @@ import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
 import { cancelledBeforeExecution } from "./cancellation.ts";
+import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
@@ -161,6 +162,10 @@ export interface LaunchRecord {
   endedAt?: string;
   /** A reservation cancelled before runtime execution whose shared withdrawal needs retrying. */
   cancelledAt?: string;
+  /** For a follow-up: its prompt offered the routine question tags (`routine-questions.ts`), so its question's class is read from its tag. Absent on a record written before passes tagged their questions. */
+  routineTags?: boolean;
+  /** For a follow-up's routine run again: the question the earlier pass stopped on and the classes whose standing answers its prompt gives; absent on any other record. */
+  standing?: StandingAnswer | null;
 }
 
 /** A drive's unresolved review threads at one ledger round. */
