@@ -93,11 +93,10 @@ issue_tracker:
 do_item:
   agents:
     # The tracker's `area:` labels that name one catalog area, so
-    # `/jig:work-batch` can draw a batch from an area. A label whose subject
-    # has no area of its own in the catalog (the other skills, `area:tracker`,
-    # `area:dispatch`, `area:modules`, which spans the reference, templates and
-    # module pages) is left out: mapping it to one broader or narrower
-    # area would pool unrelated issues or miss related ones.
+    # `/jig:work-batch` can draw a batch from an area. `area:windows` is left
+    # out: it names a concern across every area, not a place in the code, and
+    # mapping it to one area would pool unrelated issues. An issue labelled
+    # with it alone is held back until it also carries a place.
     codearea_areas:
       "area:drive-pr": drive-pr
       "area:do-item": do-item
@@ -107,6 +106,20 @@ do_item:
       "area:gates": gates
       "area:tools": tools
       "area:website": website
+      "area:dispatch": dispatch
+      "area:gc": gc
+      "area:tracker": tracker
+      "area:audit": audit
+      "area:changelog": changelog
+      "area:code-stats": code-stats
+      "area:decide": decide
+      "area:explain": explain
+      "area:file-issue": file-issue
+      "area:reflect": reflect
+      "area:resolve-conflicts": resolve-conflicts
+      "area:review": review
+      "area:work-batch": work-batch
+      "area:modules": modules
 pull_requests:
   # One pull request per change against main; a person merges.
   stacking: none
