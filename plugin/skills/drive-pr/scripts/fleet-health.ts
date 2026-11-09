@@ -156,6 +156,18 @@ export interface RunDeps {
   signal?: AbortSignal;
 }
 
+function usableRearms(
+  rearms: string[] | string | null,
+  pr: number,
+  gaps: Map<number, string>,
+): string[] {
+  if (typeof rearms === "string") {
+    gaps.set(pr, rearms);
+    return [];
+  }
+  return rearms;
+}
+
 /** The run refused to start: its cost would not fit the shared GitHub budget. */
 export class BudgetError extends Error {}
 
@@ -283,8 +295,14 @@ export async function runFleetHealth(
           return null;
         }
         const rearms = await readRearmsWithReason(deps.driveRearms, l.number);
-        const driveRearms = typeof rearms === "string" ? [] : rearms;
-        if (typeof rearms === "string") rearmGaps.set(l.number, rearms);
+        const driveRearms = usableRearms(rearms, l.number, rearmGaps);
+        // The ledger read is another outbound operation. Do not retain or
+        // sample a PR after the collector deadline fired while it was pending.
+        if (deadlineFired()) {
+          aborted = true;
+          failed.push(l.number);
+          return null;
+        }
         if (heads !== null && heads <= cfg.ceremony.freeRounds) {
           // No rounds to charge and no carousel possible, so no sample. The listing
           // still decides whether the PR matters: merged in the window (progress,
@@ -383,13 +401,10 @@ export async function runFleetHealth(
       },
     )
   ).filter((f): f is PrFact => f !== null);
-  for (const f of facts) {
-    const gap = rearmGaps.get(f.number);
-    if (gap !== undefined)
-      gaps.push(
-        `#${f.number}: drive re-arms could not be read from the forge ledger (${gap})`,
-      );
-  }
+  for (const [pr, gap] of rearmGaps)
+    gaps.push(
+      `#${pr}: drive re-arms could not be read from the forge ledger (${gap})`,
+    );
   if (failed.length > 0) {
     const why = [
       ...(failureReasons.size > 0

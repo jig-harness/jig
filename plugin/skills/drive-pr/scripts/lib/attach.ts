@@ -251,7 +251,7 @@ export async function requireOrigin(
     urls.push(...r.stdout.split("\n").filter((u) => u !== ""));
   }
   for (const url of urls) {
-    const repo = await repoOfUrl(url, undefined, undefined, pr.url);
+    const repo = await repoOfUrl(url, undefined, undefined, pr.url, tree);
     if (repo.toLowerCase() !== pr.repo.toLowerCase())
       refuse(
         2,

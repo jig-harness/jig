@@ -381,6 +381,7 @@ async function main(): Promise<number> {
       undefined,
       undefined,
       typeof parsed?.url === "string" ? parsed.url : undefined,
+      process.cwd(),
     );
     if (pushRepo === "") {
       fail(

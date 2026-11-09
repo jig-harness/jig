@@ -1,4 +1,5 @@
 import { JigError } from "../../../../shared/errors.ts";
+import { existsSync } from "node:fs";
 import { gitCallTimeoutSeconds, run } from "./proc.ts";
 
 type SshResolver = (
@@ -58,10 +59,15 @@ function parseRemote(url: string): RemoteTransport | null {
   };
 }
 
+function existingCwd(cwd: string | undefined): { cwd: string } | object {
+  return cwd !== undefined && existsSync(cwd) ? { cwd } : {};
+}
+
 async function resolvedSshHost(
   remote: RemoteTransport,
   env: Record<string, string | undefined>,
   resolveSsh: SshResolver,
+  cwd?: string,
 ): Promise<string> {
   const { host, port, user } = remote;
   if (!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(host)) return "";
@@ -81,6 +87,10 @@ async function resolvedSshHost(
   const configured = await run(["git", "config", "--get", "core.sshCommand"], {
     timeoutSec: gitCallTimeoutSeconds(),
     env,
+    // The repository root is supplied by production callers. Test seams use
+    // synthetic roots, so preserve the previous ambient read for a path that
+    // does not exist rather than turning a mocked URL check into a spawn error.
+    ...existingCwd(cwd),
   });
   if (configured.code === 0 && configured.stdout.trim() !== "") {
     throw new JigError(
@@ -128,6 +138,7 @@ export async function repoOfUrl(
   env: Record<string, string | undefined> = process.env,
   resolveSsh: SshResolver = run,
   forgeUrl?: string,
+  cwd?: string,
 ): Promise<string> {
   const remote = parseRemote(url);
   if (!remote) return "";
@@ -139,7 +150,7 @@ export async function repoOfUrl(
       : forgeHost(env);
   if (!allowedHost) return "";
   const host = remote.ssh
-    ? await resolvedSshHost(remote, env, resolveSsh)
+    ? await resolvedSshHost(remote, env, resolveSsh, cwd)
     : remote.host;
   return host.toLowerCase() === allowedHost ? repo : "";
 }

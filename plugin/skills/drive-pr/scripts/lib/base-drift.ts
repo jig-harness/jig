@@ -267,7 +267,7 @@ export async function verifyRemoteIsPrRepo(
     return { ok: false, why: `no fetch URL for the remote '${remote}'` };
   }
   const url = urlRes.stdout.trim();
-  const actual = await repoOfUrl(url, env, undefined, forgeUrl);
+  const actual = await repoOfUrl(url, env, undefined, forgeUrl, root);
   // GitHub repository paths are case-insensitive (and ASCII-only, so a plain
   // `toLowerCase()` is length-preserving and safe here) — a remote whose
   // configured URL casing differs from `gh`'s canonical `owner/name` is the
