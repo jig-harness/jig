@@ -96,6 +96,8 @@ export function roundFingerprint(
   if (localSource !== "git") return null;
   const threadKeys = work?.unresolvedThreadKeys;
   const summaryKeys = work?.summaryUnaddressedKeys;
+  const threadVersions = work?.unresolvedThreadVersions;
+  if (!Array.isArray(threadVersions)) return null;
   if (!Array.isArray(threadKeys) || !Array.isArray(summaryKeys)) return null;
   const parkedKeys = work?.parkedKeys;
   // Required, not optional, same as threadKeys/summaryKeys above: parking is
@@ -113,6 +115,7 @@ export function roundFingerprint(
     local,
     localSource,
     threadKeys,
+    threadVersions,
     summaryKeys,
     parkedKeys,
     // The totals ride along as evidence for the printed report, and because a

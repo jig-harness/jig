@@ -28,6 +28,7 @@
  * Usage:
  *   drive-state.ts get          [PR]                 # whole state as JSON
  *   drive-state.ts rounds       [PR]                 # the PR's review round (lib/state/review-rounds.ts)
+ *   drive-state.ts prospective-round [PR] [--head SHA]  # that head (none: the current round)'s current or next review round
  *   drive-state.ts bump-round   [PR] --head SHA      # count a NEW head as the drive's round
  *   drive-state.ts count-round  [PR] --head SHA      # count a head for a hand-driven loop; unleased
  *   drive-state.ts open-rounds  [PR]                 # rounds since that loop last converged
@@ -289,6 +290,7 @@ import { openStore, type StateStore } from "./lib/state/store.ts";
 import {
   bumpDriveRound,
   clearReviewRounds,
+  prospectiveReviewRound,
   ROUND_VERBS,
   reviewRound,
 } from "./lib/state/review-rounds.ts";
@@ -1111,6 +1113,14 @@ async function main(): Promise<number> {
 
     case "rounds": {
       process.stdout.write(`${reviewRound(store, pr)}\n`);
+      return 0;
+    }
+
+    case "prospective-round": {
+      // No head: the reviewed head is unknown, so report the current round.
+      process.stdout.write(
+        `${a.sha === "" ? reviewRound(store, pr) : prospectiveReviewRound(store, pr, a.sha)}\n`,
+      );
       return 0;
     }
 
@@ -2371,7 +2381,13 @@ async function main(): Promise<number> {
         // Carrying the old stamp forward would let a re-hold inherit
         // provenance from a push that predates the promise it now
         // represents.
-        const { state } = store.read();
+        const { state: stored } = store.read();
+        // A hand-driven loop may have counted past the drive's own counter:
+        // stamp the review round the readers see, and carry the counter to it.
+        const state: DriveState = {
+          ...stored,
+          rounds: Math.max(stored.rounds, reviewRound(store, pr)),
+        };
         const next: DriveState = {
           ...state,
           held: [

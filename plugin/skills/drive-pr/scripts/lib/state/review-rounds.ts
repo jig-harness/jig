@@ -127,6 +127,26 @@ export function reviewRound(store: StateStore, pr: string): number {
 }
 
 /**
+ * The ordinal a reviewed head has now, or would receive if counted next.
+ *
+ * This is the read-only counterpart of `countHead`. Consumers that need to
+ * compare evidence before `bump-round` must use the head history, rather than
+ * inferring novelty from the mutable `lastCountedHead` pointer: a previously
+ * counted head can be revisited after another head without advancing rounds.
+ */
+export function prospectiveReviewRound(
+  store: StateStore,
+  pr: string,
+  head: string,
+): number {
+  const { state } = store.read();
+  const drive = driveDb(store.stateDir);
+  const top = Math.max(highest(drive, pr), state.rounds);
+  if (head === state.lastCountedHead && state.rounds > 0) return top;
+  return hasRow(drive, pr, head) ? top : top + 1;
+}
+
+/**
  * `bump-round`: count `head` as the drive's round, and set the drive state's
  * `rounds` and `lastCountedHead` from the record in the same transaction
  * and the same hold of the state lock. A head the state already counted is
