@@ -303,7 +303,7 @@ export async function observeRepo(
       const read = await pool.run(() =>
         readSessions(runtime, repo, join, reads.sessions),
       );
-      report.records.push(runtimeRead(runtime, repo, read, section));
+      report.records.push(runtimeRead(runtime, repo, read));
       return read;
     }),
   );
@@ -401,7 +401,6 @@ function runtimeRead(
   runtime: SessionRuntime,
   repo: RepoTarget,
   sessions: SessionsReport,
-  section: DispatchSection,
 ): RepoReport["records"][number] {
   return {
     record: "runtime",
@@ -411,19 +410,8 @@ function runtimeRead(
       sessions.ok
         ? `${sessions.workspaces.length} workspace(s) of ${repo.slug}`
         : sessions.reason
-    }${bindingNote(runtime, section)}`,
+    }`,
   };
-}
-
-/** Why the pickups this repository wants can only be reported, when the runtime cannot bind them. */
-function bindingNote(
-  runtime: SessionRuntime,
-  section: DispatchSection,
-): string {
-  const binding = runtime.interactiveBinding;
-  return binding.ok || section.identity === null
-    ? ""
-    : `; pickups are reported only: ${binding.reason}`;
 }
 
 /** Which workspace a session runtime joins to which item or pull request. */

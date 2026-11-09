@@ -10,8 +10,8 @@
  * would start, and why. With it, the re-arms and takeovers a repository's
  * machine-file entry enables are launched within each account's cap
  * (actions/drive.ts), its follow-ups as headless passes the same way
- * (actions/followup.ts), its pickups where the runtime binds an interactive
- * session to its account (actions/pickup.ts), its nudges are sent once per
+ * (actions/followup.ts) and its pickups as `do-item` passes
+ * (actions/pickup.ts), its nudges are sent once per
  * waiting episode (actions/steer.ts), and its notifications are sent once
  * per cause (actions/notify.ts); everything else is still reported.
  *

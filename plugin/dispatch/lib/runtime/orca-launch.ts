@@ -16,7 +16,7 @@
  * worktree ps` reports it under, the terminal's tab and pane
  * (`<tabId>:<leafId>`), read back with `orca terminal show`. Orca still
  * reports that it cannot bind an interactive session (`orca.ts` says why),
- * so the tick never asks for one.
+ * so the tick asks for none: a pickup runs as a headless pass.
  *
  * The tab is recorded as a run tab (`shared/orca-tabs.ts`), so the wrapper
  * closes it when its run ends with nothing for a person, and the launch

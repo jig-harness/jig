@@ -117,11 +117,11 @@ export function hostCodexOptIn(env: Env = process.env): CodexOptIn {
   }
 }
 
-/** What a launch starts, on a host's opt-in: a drive's headless pass under its deadline (seconds, `0` for none), or an interactive session. */
-export type LaunchKind = { codex: CodexOptIn } & (
-  | { kind: "pass"; deadlineSec: number }
-  | { kind: "interactive" }
-);
+/** What a launch starts, on a host's opt-in: a headless pass (a drive's, a follow-up's, a pickup's) under its deadline (seconds, `0` for none). */
+export type LaunchKind = { codex: CodexOptIn } & {
+  kind: "pass";
+  deadlineSec: number;
+};
 
 /**
  * Why an account of `vendor` is never admitted for `launch`, whatever its

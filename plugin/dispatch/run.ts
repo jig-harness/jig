@@ -46,9 +46,14 @@
  * else of it, on the exit of a pass that ended without recording `done`:
  * that is where a pass that needs a person states its question.
  *
- * A pickup's record starts its vendor's agent instead (Claude Code or
- * Codex), interactively, on `/jig:do-item <key>` with its route's model and
- * effort, bound to its account the same way.
+ * A pickup's record starts a headless pass the same way, on
+ * `/jig:do-item <key>` (`lib/session.ts`), under the pickup's own deadline
+ * the record names (`dispatch.pickup_deadline`), its last `Question:` line
+ * kept as a follow-up's is. The pass keeps the agent's own model and
+ * effort; `do-item` forwards the item's route to the implementer it
+ * delegates to. A pickup an earlier release recorded as an interactive
+ * session starts its vendor's agent interactively instead, on its route's
+ * model and effort.
  *
  * Whatever it starts runs with `JIG_LAUNCH` set to the launch record, so
  * `jig send` refuses that session a person's commands
@@ -71,8 +76,8 @@
  * run tab (`shared/orca-tabs.ts`); a park or a failure keeps the tab.
  *
  * Exit codes: the drive's own; 2 usage, a token that is not the record's,
- * a state database a newer plugin wrote, or a follow-up whose permission
- * settings do not read; 3 the record was already claimed, so nothing
+ * a state database a newer plugin wrote, or a follow-up or pickup whose
+ * permission settings do not read; 3 the record was already claimed, so nothing
  * started.
  */
 import { spawn, type ChildProcess } from "node:child_process";
@@ -99,6 +104,7 @@ import { passEnvironment } from "./lib/accounts.ts";
 import {
   claimRecord,
   isDrive,
+  isInteractive,
   type LaunchRecord,
   readEnded,
   readRecord,
@@ -109,6 +115,7 @@ import { probeWall } from "./lib/quota-probe.ts";
 import { settleAtExit } from "./lib/shared-launches.ts";
 import {
   followupPassArgv,
+  pickupPassArgv,
   QUESTION_PREFIX,
   sessionArgv,
 } from "./lib/session.ts";
@@ -422,22 +429,31 @@ async function tryWriteWall(
 }
 
 /**
- * What a record starts: a drive's pass, a follow-up's pass with the host's
- * `drive.pass_args` (read in the workspace, which is the working directory
- * by now), or a pickup's interactive session. Throws when the follow-up's
- * permission settings do not read.
+ * What a record starts: a drive's pass, a follow-up's or a pickup's pass
+ * with the host's `drive.pass_args` (read in the workspace, which is the
+ * working directory by now), or an interactive pickup an earlier release
+ * recorded. Throws when the pass's permission settings do not read.
  */
 function stageArgv(record: LaunchRecord): string[] {
   if (isDrive(record)) return driveCommand(record, driveScript());
   if (record.action === "followup")
     return followupPassArgv(record, configuredPassArgs().words);
+  if (!isInteractive(record))
+    return pickupPassArgv(record, configuredPassArgs().words);
   return sessionArgv(record);
 }
 
-/** How the wrapper runs a record's stage: a follow-up's pass under its own deadline, its last question kept; anything else as it is. */
+/** Whether the wrapper runs a record's stage as a pass of its own: a follow-up's or a pickup's, under its own deadline, its last question kept. */
+function ownPass(record: LaunchRecord): boolean {
+  return (
+    record.action === "followup" ||
+    (record.action === "pickup" && !isInteractive(record))
+  );
+}
+
+/** How the wrapper runs a record's stage: its own pass under its deadline, its last question kept; anything else as it is. */
 function runOptions(record: LaunchRecord): RunOptions {
-  if (record.action !== "followup")
-    return { keepOutput: false, deadlineSec: 0 };
+  if (!ownPass(record)) return { keepOutput: false, deadlineSec: 0 };
   const deadline = record.passTimeoutSec;
   return {
     keepOutput: true,
@@ -445,7 +461,7 @@ function runOptions(record: LaunchRecord): RunOptions {
   };
 }
 
-/** The end of a follow-up pass's output, kept on its exit when it ended without recording done. */
+/** The end of a follow-up's or a pickup's pass output, kept on its exit when it ended without recording done. */
 function saidOf(record: LaunchRecord, ran: Ran): { said?: string } {
   const said = ran.said?.trim() ?? "";
   if (said === "" || readResult(record.id) === "done") return {};
