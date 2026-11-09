@@ -3424,6 +3424,14 @@ async function main(): Promise<number> {
           return 9;
         }
 
+        if (claimIsLive(readyClaimRef(store.stateDir, pr))) {
+          console.error(
+            `drive-state.ts: refusing to reset PR #${pr} — a live Ready-mark lease may protect an in-flight or unconfirmed 'gh pr ready'.`,
+            `\n  Wait ${claimStaleMin()}m after its last renewal, or confirm the owning mark-ready process has ended, reconcile the remote outcome, and release it with 'drive-state.ts release-ready-mark ${pr}' before resetting.`,
+          );
+          return 9;
+        }
+
         removeStateKeepingLedgerGeneration(store, Number(pr));
         clearReviewRounds(store.stateDir, pr);
         clearPendingVerdicts(store.stateDir, pr);
