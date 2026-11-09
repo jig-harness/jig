@@ -389,6 +389,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.184.1] - 2026-11-09
+
+### Fixed
+
+- `report-bug` now includes the `jig` repository label alongside `bug`, removing the repository-label blocker for `/jig:work-batch`; reports still need the other eligibility requirements set during triage.
+
 ## [0.184.0] - 2026-11-09
 
 The dispatch dashboard shows which card the keyboard is on and what its keys do.
@@ -6443,7 +6449,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.184.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.184.1...HEAD
+[0.184.1]: https://github.com/jig-harness/jig/compare/v0.184.0...v0.184.1
 [0.184.0]: https://github.com/jig-harness/jig/compare/v0.183.2...v0.184.0
 [0.183.2]: https://github.com/jig-harness/jig/compare/v0.183.1...v0.183.2
 [0.183.1]: https://github.com/jig-harness/jig/compare/v0.183.0...v0.183.1
