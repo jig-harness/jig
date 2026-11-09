@@ -166,6 +166,21 @@ pick for a ruled call.
 
 ## Render and check
 
+To turn a sheet's call into a drive's JSON park, select the call by its id:
+
+```bash
+bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/decide/park.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" park .context/decide/<stem>/decision.json --call a
+```
+
+The command writes a checked `parked-decision/v1` document. It uses the call's
+question, or the sheet's question on one line ending with `?`, and keeps the
+sheet URL. Option references become words; scenario outcomes and the rest of
+the sheet stay on the sheet. The class defaults to `escalated`; `--class`
+selects another class. A missing call or recommendation is refused with exit
+`1`. Give that JSON to the drive's park operation as standard input, with the
+same class. The `parkFromSheet(source, callId, context)` API also accepts
+explicit steps, already-done text and a sheet URL in its optional context.
+
 ```bash
 bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" render .context/decide/<stem>/decision.json --require-fresh
 bun "<skill-dir>/scripts/ste-lint/ste-lint.ts" .context/decide/<stem>/<stem>-comment.md .context/decide/<stem>/<stem>-elaboration.md

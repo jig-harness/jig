@@ -1,3 +1,4 @@
+import { ledgerDriverRecord } from "./ledger-render-context.ts";
 /**
  * The drive ledger, written from the drive state on the path that
  * regenerates the handoff file: `drive-state.ts handoff` (which the driver
@@ -229,17 +230,7 @@ async function mirrorUnlocked(
     return ledgerFromState(state, {
       generation:
         Math.max(snapshot.maxGeneration, state.ledgerGeneration ?? 0) + 1,
-      driver: {
-        actor: driver.actor,
-        clone: driver.clone,
-        recoveryVersion: 1,
-        ...personStopFor(store.stateDir, pr, driver.started),
-        heartbeat: new Date().toISOString(),
-        state: driver.stopped === undefined ? "running" : "stopped",
-        ...(typeof driver.stopped === "number" ? { exit: driver.stopped } : {}),
-        ...(driver.started === undefined ? {} : { started: driver.started }),
-        ...(driver.floor === null ? {} : { position: driver.floor }),
-      },
+      driver: ledgerDriverRecord(driver, store.stateDir, pr),
       narrative,
       claims: effectiveClaims(
         driver.claim === null ||

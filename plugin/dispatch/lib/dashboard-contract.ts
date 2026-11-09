@@ -20,6 +20,7 @@ import type { NeedAct } from "../../shared/acts.ts";
 
 /** One option of a framed decision, as the drive recorded it. */
 export interface LineOption {
+  details?: import("../../shared/decisions/model.ts").OptionDetail[];
   name: string;
   /** Its `Changes:`; `null` when the record gives none. */
   changes: string | null;
@@ -31,6 +32,7 @@ export interface LineOption {
 
 /** One decision a parked drive waits on, as the drive framed it. */
 export interface LineDecision {
+  decision?: import("../../shared/decisions/park.ts").ParkedDecision;
   /** The named person; absent on older parks. Routing does not restrict answers. */
   person?: string;
   /** The thread or finding the answer goes to: `answer <key>: …`. */

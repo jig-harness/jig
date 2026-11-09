@@ -114,6 +114,7 @@ export type FollowupClass = "followup-done" | "followup-held";
 
 /** A parked decision still waiting on its answer, as the drive framed it. */
 export interface WaitingPark {
+  decision?: import("../../shared/decisions/park.ts").ParkedDecision;
   person?: string;
   key: string;
   kind: "thread" | "finding";

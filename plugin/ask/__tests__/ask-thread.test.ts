@@ -499,3 +499,83 @@ describe("jig ask --waiting", () => {
     expect(person.stdout).toContain("no line to read");
   });
 });
+
+it("shows typed decision option details in the waiting answer", async () => {
+  const w = world();
+  const line = structuredClone(LINE);
+  const need = line.needs[0];
+  const park = need?.decisions[0];
+  if (park === undefined) throw new Error("fixture has no park");
+  park.decision = {
+    schema: "parked-decision/v1",
+    class: "scope",
+    call: {
+      id: "a",
+      question: "Extend coverage?",
+      recommended: "a",
+      why: "It catches the failure",
+      options: [
+        {
+          id: "a",
+          name: "Extend",
+          summary: "Add coverage",
+          pay: ["More tests"],
+          obligation: "Review the examples",
+        },
+        {
+          id: "b",
+          name: "Keep",
+          summary: "Keep coverage",
+          pay: ["Less assurance"],
+        },
+      ],
+    },
+    steps: [],
+    alreadyDone: "Read coverage",
+  };
+  park.lines = ["Extend coverage?", "Obligation: Review the examples"];
+  writeLine(line, "{}", w.state);
+  const result = await w.ask(["--waiting"], w.away);
+  expectSpawnExit(result, 0);
+  expect(result.stdout).toContain("Obligation: Review the examples");
+});
+
+it("shows a typed park and its model-driven option details in the thread", async () => {
+  const w = world();
+  const ledger = parked(7);
+  const park = ledger.parked[0];
+  if (park === undefined) throw new Error("fixture has no park");
+  park.decision = {
+    schema: "parked-decision/v1",
+    class: "scope",
+    call: {
+      id: "a",
+      question: "Extend coverage?",
+      recommended: "a",
+      why: "It catches the failure",
+      options: [
+        {
+          id: "a",
+          name: "Extend",
+          summary: "Add coverage",
+          pay: ["More tests"],
+          obligation: "Review the examples",
+        },
+        {
+          id: "b",
+          name: "Keep",
+          summary: "Keep coverage",
+          pay: ["Less assurance"],
+        },
+      ],
+    },
+    steps: [],
+    alreadyDone: "Read coverage",
+  };
+  w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
+  w.api(`repos/${REPO}/issues/7/comments`, [comment(701, ledgerBody(ledger))]);
+  const answer = await thread(w, ["--thread"]);
+  const question = answer.thread?.find((e) => e.kind === "question");
+  expect(question?.text).toContain("Extend coverage?");
+  expect(question?.text).toContain("Obligation: Review the examples");
+});
