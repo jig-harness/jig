@@ -55,7 +55,8 @@ admitting it:
 - **No size, no type, no repository or context label, or only context or
   area labels the configuration does not know.** The issue carries no
   reliable classification, so it is held back with a reason naming the label
-  to add. A context label (one starting with a
+  to add. The repository label is not required where the tracker implies it
+  (see [One repository per batch](#state-and-ownership)). A context label (one starting with a
   `review.taxonomy.context_prefixes` prefix) is known when the configuration
   already names it: a key of `do_item.agents.codearea_areas` or
   `do_item.agents.labels`, or a catalog area's `labels` or `tracker.labels`.
