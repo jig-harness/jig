@@ -54,7 +54,8 @@ function harnessEnvironment(account: {
 
 /** The route for `issue`, derived in `workspace`, for the agent of `account`'s vendor. */
 export async function pickupRoute(
-  issue: Pick<PoolIssue, "title" | "labels">,
+  issue: Pick<PoolIssue, "title" | "labels"> &
+    Partial<Pick<PoolIssue, "type" | "size">>,
   workspace: string,
   timeoutSec: number,
   account: { vendor: AccountVendor; configDir: string },
@@ -69,7 +70,11 @@ export async function pickupRoute(
   ];
   const done = await run(argv, {
     cwd: workspace,
+    // The type and size facets the pool read, so the complexity tier is
+    // derived from them as do-item's own read would.
     stdin: JSON.stringify({
+      type: issue.type ?? null,
+      ...(issue.size === undefined ? {} : { size: issue.size }),
       title: issue.title,
       labels: issue.labels,
       nativeType: null,
@@ -101,7 +106,13 @@ export async function pickupRoute(
     return none(
       `the repository declares no routing: ${AGENT_NAME[account.vendor]}'s defaults`,
     );
-  const model = typeof route.model === "string" ? route.model : null;
+  // The model the runtime takes: Codex's model id for a family alias.
+  const model =
+    typeof route.runtime_model === "string"
+      ? route.runtime_model
+      : typeof route.model === "string"
+        ? route.model
+        : null;
   const effort =
     typeof route.runtime_effort === "string" ? route.runtime_effort : null;
   return {

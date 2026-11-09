@@ -15,8 +15,9 @@
  *                    10). A finding the agent cannot fix would otherwise
  *                    re-push forever.
  *   --pass-model M   the model each pass runs on, for this run: a model id,
- *                    a Claude Code alias (`sonnet`) or a routing tier
- *                    (`execution`, `strategic`). Default: the pass command's
+ *                    a Claude Code alias (`sonnet`) or a complexity tier
+ *                    (`simple`, `standard`, `complex`; `execution` and
+ *                    `strategic` read as the last two). Default: the pass command's
  *                    own `--model`, else `drive.pass_model`, else `sonnet`.
  *                    Applies to a `claude` pass only (`lib/pass-model.ts`);
  *                    the driver log and `drives.ts` name the model.

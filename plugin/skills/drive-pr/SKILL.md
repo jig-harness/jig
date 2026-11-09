@@ -388,16 +388,18 @@ Codex drive.
 driver decides: `--pass-model <model>` for this run, else the pass command's
 own `--model`, else `drive.pass_model`, else `sonnet` (Claude Code's alias
 for the latest Sonnet), added after `claude`. A model id, an alias or a
-routing tier (`execution`, `strategic`, resolved through
+complexity tier (`simple`, `standard`, `complex`, with `execution` and
+`strategic` read as `standard` and `complex`, resolved through
 `routing.models.claude-code`). The driver log's `pass model:` line names it
 and where it came from (an own `--model` the configuration resolves to is
 named as that setting's; one that names no model is reported as none), the
 `drives.ts` row names it, and every re-arm or takeover command the driver
 prints carries it. A Codex pass (`codex …`) runs on its own `-m`, else the
-execution tier of `routing.models.codex`, added after `exec`, else Codex's
-own configured model; `drive.pass_model` is Claude Code's and is not read for
-it. `--pass-model` overrides either vendor's model; a Codex tier resolves
-through `routing.models.codex`. Any other pass command chooses its own
+standard tier of `routing.models.codex` (by default `terra`), added after
+`exec` as the model the family names (`gpt-5.6-terra`); `drive.pass_model`
+is Claude Code's and is not read for it. `--pass-model` overrides either
+vendor's model; a Codex tier or family alias resolves through
+`routing.models.codex` to its model. Any other pass command chooses its own
 model and refuses `--pass-model` (exit `2`).
 
 **The pass arguments.** A Claude Code pass command can carry extra words
