@@ -135,7 +135,7 @@ export function diedWithoutResult(r: ReadRecord): boolean {
   return (code !== 0 || signal !== null) && questionOf(r.state) === null;
 }
 
-/** Whether a follow-up is itself the run again of one that died: a second death is a person's. */
+/** Whether a follow-up is itself a run again, of one that died or that stopped on a routine question: its failure is a person's. */
 export function isRerun(record: Pick<LaunchRecord, "facts">): boolean {
   return record.facts.startsWith(RECOVERY_FACTS);
 }

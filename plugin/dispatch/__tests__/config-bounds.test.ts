@@ -59,7 +59,8 @@ describe("the machine file's bounds", () => {
       "opens_per_tick: 8\nworkspace_timeout: 1h\nruntime_timeout: 1m\n",
     );
     expect(read.opensPerTick).toBe(8);
-    expect(tickBudgetMs(read)).toBe(8 * 3_600_000 + 8 * 60_000);
+    // The follow-ups' lane adds its two default opens.
+    expect(tickBudgetMs(read)).toBe((8 + 2) * 3_600_000 + 8 * 60_000);
     expect(tickDeadlineMs(read)).toBe(tickBudgetMs(read));
     expect(dispatchJobSpec(5, read).deadlineSec).toBe(
       Math.ceil(tickBudgetMs(read) / 1000),
@@ -77,6 +78,32 @@ describe("the machine file's bounds", () => {
     expect(config("opens_per_tick: 1000\nworkspace_timeout: 1h\n")).toEqual(
       invalid("longer than 24d"),
     );
+  });
+
+  it("reads the follow-ups' lane with its defaults, and counts its opens in the tick's budget", () => {
+    const defaults = machine("");
+    expect(defaults.followupOpensPerTick).toBe(2);
+    expect(defaults.followupConcurrency).toBe(2);
+    const read = machine(
+      "opens_per_tick: 4\nfollowup_opens_per_tick: 3\nfollowup_concurrency: 5\nworkspace_timeout: 1h\nruntime_timeout: 1m\n",
+    );
+    expect(read.followupOpensPerTick).toBe(3);
+    expect(read.followupConcurrency).toBe(5);
+    expect(tickBudgetMs(read)).toBe((4 + 3) * 3_600_000 + 8 * 60_000);
+    expect(tickDeadlineMs(read)).toBe(tickBudgetMs(read));
+  });
+
+  it("refuses an invalid lane value, and lane opens that push the tick past the timer, naming the field", () => {
+    for (const field of ["followup_opens_per_tick", "followup_concurrency"])
+      for (const value of ["0", "-1", "1.5", "many"])
+        expect(config(`${field}: ${value}\n`)).toEqual(
+          invalid(`${field} must be a positive whole number`),
+        );
+    // Four launch opens of an hour fit; six hundred more from the lane do not.
+    expect(machine("workspace_timeout: 1h\n")).not.toBeNull();
+    expect(
+      config("followup_opens_per_tick: 600\nworkspace_timeout: 1h\n"),
+    ).toEqual(invalid("followup_opens_per_tick 600 pushes a tick past 24d"));
   });
 
   it("refuses a duration past the supported range, however large", () => {

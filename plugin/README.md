@@ -422,7 +422,14 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 **Follow-ups** (the `followup` stage) start one headless pass per pull
 request merged since the stage was switched on (`followup_since`), running
 the repository's `dispatch.followup_command` on it (`/followup` in Jig) in
-the pull request's workspace. The pass runs as a drive's pass does: in a
+the pull request's workspace. Follow-ups open their workspaces in a lane of
+their own: at most `followup_opens_per_tick` a tick (2 by default), beside
+the drive launches' `opens_per_tick` and the notices workspace's reserved
+open, with at most `followup_concurrency` passes (2) running on the host at
+once, so a follow-up never waits for a drive's launch and a drive's launch
+never waits behind follow-ups. They share the accounts' slots. A follow-up
+that waits says on what: the lane's budget, the lane's cap or the accounts.
+The pass runs as a drive's pass does: in a
 terminal tab running the dispatcher's wrapper, as the account's vendor's
 non-interactive command (`claude -p`, `codex exec`), bound to the admitted
 account through its configuration directory, under the pass deadline, and
@@ -458,7 +465,19 @@ answered or not, and a later tick starts the follow-up again, within the pull
 request's recovery budget, while the death is under 6 hours old; a second
 death is notified. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
-that question, and the outcome log counts it as parked for a person.
+that question, and the outcome log counts it as parked for a person. A
+question that is only one of the dispatcher's fixed **routine question
+classes** carries the class's tag (`Question: [local-leftover] …`: a local
+branch or worktree the pass may not delete without asking), and such a
+follow-up is run again once, within the same budget, with the class's
+standing answer in its prompt (keep it, list it, finish the rest and record
+done); unlike a death's run again, it has no 6-hour age limit. A follow-up
+that failed before passes tagged their questions is run again once with
+every class's standing answer; an outcome whose retry evidence the dispatcher
+kept needs no launch record, while an older one needs its record still on the
+host, and is notified once the record is gone (past `receipts_days`). An untagged
+question, or a failure of the run again, is notified; a follow-up is never
+run again more than once by a death and a routine question together.
 
 A Claude follow-up that exits unsuccessfully within a minute without a
 result, a question or its own transcript is treated as unable to start.
