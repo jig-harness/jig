@@ -72,22 +72,33 @@ describe("the keys a card tags", () => {
 
   it("names p for a pull request, i for an issue, and c for the command", () => {
     expect(
-      hintsFor({ url: "https://github.com/a/b/pull/1", ...withCommand }),
+      hintsFor({
+        url: "https://github.com/a/b/pull/1",
+        details: true,
+        ...withCommand,
+      }),
     ).toEqual([
       { key: "o", does: "details" },
       { key: "p", does: "pull request" },
       { key: "c", does: "copy jig ask line" },
     ]);
     expect(
-      hintsFor({ url: "https://github.com/a/b/issues/2", ...withCommand }).map(
-        (h) => h.key,
-      ),
+      hintsFor({
+        url: "https://github.com/a/b/issues/2",
+        details: true,
+        ...withCommand,
+      }).map((h) => h.key),
     ).toEqual(["o", "i", "c"]);
   });
 
   it("leaves out what the card cannot do", () => {
-    expect(hintsFor({ url: null, command: null, commandLabel: "key" })).toEqual(
-      [{ key: "o", does: "details" }],
-    );
+    expect(
+      hintsFor({
+        url: null,
+        command: null,
+        commandLabel: "key",
+        details: false,
+      }),
+    ).toEqual([]);
   });
 });

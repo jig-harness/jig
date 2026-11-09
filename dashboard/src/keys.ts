@@ -145,8 +145,9 @@ export function hintsFor(card: {
   url: string | null;
   command: string | null;
   commandLabel: string;
+  details: boolean;
 }): CardHint[] {
-  const hints: CardHint[] = [{ key: "o", does: "details" }];
+  const hints: CardHint[] = card.details ? [{ key: "o", does: "details" }] : [];
   if (card.url !== null)
     hints.push(
       isPullUrl(card.url)
@@ -199,6 +200,7 @@ function focusedCardOf(): FocusedCard | null {
       url: card.dataset.pr ?? card.dataset.issue ?? null,
       command: card.dataset.command ?? null,
       commandLabel: card.dataset.commandLabel ?? "command",
+      details: !onControl(card, active) && toggleOf(card) !== null,
     }),
   };
 }
@@ -219,9 +221,22 @@ export function useFocusedCard(): FocusedCard | null {
     };
     document.addEventListener("focusin", read);
     document.addEventListener("focusout", read);
+    const observer = new MutationObserver(read);
+    observer.observe(document.body, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: [
+        "aria-label",
+        "data-pr",
+        "data-issue",
+        "data-command",
+        "data-command-label",
+      ],
+    });
     return () => {
       document.removeEventListener("focusin", read);
       document.removeEventListener("focusout", read);
+      observer.disconnect();
     };
   }, []);
   return card;

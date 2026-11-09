@@ -149,5 +149,8 @@ describe("links in the text", () => {
     expect(body.querySelector("strong")?.textContent).toBe("8");
     expect(body.querySelector("code")?.textContent).toBe("PRRT_x1");
     expect(body.querySelector(".quote")?.className).toContain("lines");
+    expect(body.textContent).toContain(
+      "stopped 8 (parked)\nwaiting on PRRT_x1",
+    );
   });
 });

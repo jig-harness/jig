@@ -410,6 +410,9 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .dd [data-card]:is(:focus-visible, :has(:focus-visible)) { --bleed: 8px; background: var(--focus-soft); box-shadow: calc(-1 * var(--bleed)) 0 0 var(--focus-soft), var(--bleed) 0 0 var(--focus-soft); }
 .dd [data-card]:is(:focus-visible, :has(:focus-visible))::before { content: ""; position: absolute; inset-block: 0; left: calc(-1 * var(--bleed)); width: 4px; border-radius: 2px; background: var(--focus); }
 .dd .slot:is(:focus-visible, :has(:focus-visible)) { --bleed: 0px; border-color: var(--focus); box-shadow: none; }
+@media (forced-colors: active) {
+  .dd [data-card]:is(:focus-visible, :has(:focus-visible)) { outline: 2px solid Highlight; outline-offset: 2px; }
+}
 .keyBar { display: none; }
 @media (hover: hover) and (pointer: fine) {
   .keyBar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; position: fixed; left: 16px; bottom: 16px; z-index: 10; max-width: min(640px, calc(100vw - 32px)); padding: 6px 12px; background: var(--card); color: var(--ink); border: 1px solid var(--focus); border-radius: var(--r); box-shadow: 0 2px 10px light-dark(rgba(37,30,24,.12), rgba(0,0,0,.45)); font: 400 13px/1.5 var(--sans); pointer-events: none; }
