@@ -442,13 +442,30 @@ async function freshAuthority(
   } else {
     if (issue.assignee !== null)
       return "the inherited item has acquired an assignee";
-    const root = await tracker.poolIssue(ancestor);
     const user = await tracker.user(identity);
-    if (
-      root?.assignee?.id !== user.id ||
-      !(await tracker.assignedBy(ancestor, identity)).trusted
-    )
-      return "the inherited assignment changed";
+    const seen = new Set<string>();
+    let current: PoolIssue | null = issue;
+    for (;;) {
+      if (current === null || current.truncated.length)
+        return "the inherited ancestry cannot be read completely";
+      if (seen.has(current.identifier) || seen.size >= 100)
+        return "the inherited ancestry is cyclic or too deep";
+      seen.add(current.identifier);
+      if (current.identifier === ancestor) {
+        if (
+          current.assignee?.id !== user.id ||
+          !(await tracker.assignedBy(ancestor, identity)).trusted
+        )
+          return "the inherited assignment changed";
+        return null;
+      }
+      if (current.assignee !== null)
+        return "the inherited ancestry assignment changed";
+      const full = await tracker.getIssue(current.identifier);
+      if (full === null || full.parent === null)
+        return "the inherited ancestor is no longer live";
+      current = await tracker.poolIssue(full.parent.identifier);
+    }
   }
   return null;
 }

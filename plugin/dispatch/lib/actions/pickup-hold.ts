@@ -188,7 +188,5 @@ function keepsWanted(
   wanted: ReadonlySet<string>,
   returned: ReadonlySet<string>,
 ): boolean {
-  if (record.batchItems !== undefined && members.some((key) => wanted.has(key)))
-    return true;
   return members.some((key) => wantsRecord(record, key, wanted, returned));
 }

@@ -84,7 +84,7 @@ it("refuses replay on a secondary competing session or a removed served person",
     "no longer served",
   );
 });
-it("retains an ended batch's secondary question after another member was claimed", () => {
+it("releases an ended batch when its returned member is ready to retry", () => {
   const w = world();
   try {
     const record = earlierRecord(w, {
@@ -116,8 +116,8 @@ it("retains an ended batch's secondary question after another member was claimed
       new Set(["#2"]),
       dispatchState(w),
     );
-    expect(record.released).toBe(false);
-    expect(pickupHold("#2", [read]).kind).toBe("ended");
+    expect(record.released).toBe(true);
+    expect(pickupHold("#2", [read]).kind).toBe("none");
   } finally {
     w.close();
   }

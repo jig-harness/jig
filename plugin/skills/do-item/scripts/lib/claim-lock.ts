@@ -9,10 +9,12 @@ export async function withClaimLock(
   key: string,
   body: () => Promise<ClaimResult>,
 ): Promise<ClaimResult> {
-  // All repository claims share a short lock. This avoids key aliases and
-  // differing worktree paths accidentally making two locks for one issue.
+  // Claims for one tracker issue share a short lock across worktrees. The
+  // caller supplies the canonical adapter/team/issue identity, so unrelated
+  // repositories do not serialize each other.
   const root = join(homedir(), ".local", "state", "jig", "tracker-claims");
-  const result = await withFileLock(join(root, "all-claims"), body, {
+  const safeKey = Buffer.from(key).toString("base64url");
+  const result = await withFileLock(join(root, safeKey), body, {
     root,
     name: "claim",
     waitMs: 5000,

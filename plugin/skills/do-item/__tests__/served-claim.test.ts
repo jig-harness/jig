@@ -237,6 +237,7 @@ test("claim CLI refuses incomplete and duplicate served options before tracker a
     ["--for=dana", "--for=other"],
     ["--for="],
   ]) {
+    expect(args.length).toBeGreaterThan(0);
     const child = Bun.spawn(
       [
         process.execPath,

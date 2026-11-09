@@ -339,30 +339,48 @@ const OPERATIONS: Record<string, Operation> = {
   claim: {
     arity: 1,
     takes: "one issue key",
-    run: ([key], flags) =>
-      withClaimLock(key as string, () => {
-        const person = [...flags].find((f) => f.startsWith("--for="))?.slice(6);
-        const ancestor = [...flags]
-          .find((f) => f.startsWith("--ancestor="))
-          ?.slice(11);
-        if (ancestor && !person)
-          throw new UsageError("--ancestor requires --for");
-        const tracker = openTracker();
-        const shape = issueKeysOf(ownTrackerConfig());
-        const normalized = shape?.normalize(key as string) ?? (key as string);
-        const ancestorKey = ancestor
-          ? (shape?.normalize(ancestor) ?? ancestor)
-          : undefined;
-        return person
-          ? claimServedIssue(tracker, normalized, {
-              person,
-              ...(ancestorKey ? { ancestor: ancestorKey } : {}),
-              epicLabel: ownTrackerConfig().labels.epic,
-              hitlLabel: ownTrackerConfig().labels.hitl,
-              manualOpsLabel: ownTrackerConfig().labels.manualOps,
-            })
-          : claimIssue(tracker, key as string);
-      }),
+    run: ([key], flags) => {
+      const forFlags = [...flags].filter((f) => f.startsWith("--for"));
+      const ancestorFlags = [...flags].filter((f) =>
+        f.startsWith("--ancestor"),
+      );
+      if (
+        forFlags.some((f) => !f.startsWith("--for=") || f.length === 6) ||
+        ancestorFlags.some(
+          (f) => !f.startsWith("--ancestor=") || f.length === 11,
+        ) ||
+        forFlags.length > 1 ||
+        ancestorFlags.length > 1
+      )
+        throw new UsageError(
+          "claim accepts one nonempty --for=PERSON and --ancestor=ISSUE",
+        );
+      const person = forFlags[0]?.slice(6);
+      const ancestor = ancestorFlags[0]?.slice(11);
+      if (ancestor && !person)
+        throw new UsageError("--ancestor requires --for");
+      const config = ownTrackerConfig();
+      const shape = issueKeysOf(config);
+      const normalized = shape?.normalize(key as string) ?? (key as string);
+      return withClaimLock(
+        `${config.adapter}:${config.team ?? "unknown"}:${normalized}`,
+        () => {
+          const tracker = openTracker();
+          const ancestorKey = ancestor
+            ? (shape?.normalize(ancestor) ?? ancestor)
+            : undefined;
+          return person
+            ? claimServedIssue(tracker, normalized, {
+                person,
+                ...(ancestorKey ? { ancestor: ancestorKey } : {}),
+                epicLabel: config.labels.epic,
+                hitlLabel: config.labels.hitl,
+                manualOpsLabel: config.labels.manualOps,
+              })
+            : claimIssue(tracker, key as string);
+        },
+      );
+    },
     exitOf: (out) => {
       const result = out as Awaited<ReturnType<typeof claimIssue>>;
       if (result.outcome !== "claimed") console.error(result.reason);

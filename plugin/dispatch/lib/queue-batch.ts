@@ -7,6 +7,11 @@ import {
 import { parseTrackerLabels } from "../../shared/tracker-labels.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { parseAgentRouting } from "../../skills/do-item/scripts/determine_agent.ts";
+import {
+  parseTrackerConfig,
+  facetsOf,
+} from "../../skills/do-item/scripts/lib/tracker/config.ts";
+import { facetValueOf } from "../../skills/do-item/scripts/lib/tracker/facets/config.ts";
 import type { Action, WantedItem } from "./types.ts";
 
 export interface BatchItem {
@@ -22,9 +27,12 @@ export function batchPickups(
   values: Record<string, unknown>,
 ): Action[] {
   const routing = parseAgentRouting(values);
+  const sizeOf = facetValueOf(facetsOf(parseTrackerConfig(values), null).size);
+  const labels = parseTrackerLabels(values);
   const policy = parseWorkBatchSection(
     values,
-    parseTrackerLabels(values).batchSizes,
+    labels.batchSizes.map(sizeOf),
+    sizeOf,
   );
   const groups = new Map<string, Action[]>();
   for (const action of actions) {
