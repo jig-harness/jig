@@ -293,6 +293,7 @@ export function facetInputs(config: TrackerConfig): FacetInputs {
       config.adapter === "github" ? config.github.priorityLabels : null,
     priorityLabelsDeclared: config.github.priorityLabelsDeclared,
     jiraPriorities: config.adapter === "jira" ? config.jira.priorities : null,
+    jiraFieldLabels: config.adapter === "jira" ? config.jira.fieldLabels : null,
     stateLabels:
       config.adapter === "github"
         ? gitHubModel(config.states, config.github).stateLabels
