@@ -196,7 +196,8 @@ The `work_batch` section, in [CONFIGURATION.md](../../CONFIGURATION.md#work_batc
 
 The rest comes from fields other skills read too: the batchable sizes
 (`issue_tracker.labels.batch_sizes`), the repository label a batch item must
-carry (`review.repo_label`, one of `review.taxonomy.repos`), the type labels
+carry (`review.repo_label`, one of `review.taxonomy.repos`; not required on a
+GitHub tracker whose taxonomy names no other repository), the type labels
 and context-label prefixes (`review.taxonomy`), the follow-up label, the
 line budget, and the catalog path. The audit skill's configuration check
 refuses `size_points` that do not price exactly the batchable sizes.

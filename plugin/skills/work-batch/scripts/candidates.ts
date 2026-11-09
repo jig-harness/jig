@@ -738,7 +738,7 @@ export function eligibilityReport(
       soloFlagPrefixes: policy.soloFlagPrefixes,
       epicLabel: policy.epicLabel,
       followupLabel: policy.followupLabel,
-      repoLabel: policy.repoLabel,
+      repoLabel: policy.repoLabelImplied ? null : policy.repoLabel,
       repoLabels: policy.repoLabels,
       typeLabels: policy.typeLabels,
       contextPrefixes: policy.contextPrefixes,

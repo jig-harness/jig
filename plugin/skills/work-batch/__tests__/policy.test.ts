@@ -13,6 +13,7 @@ import {
   DEFAULT_SIZE_POINTS,
   parseWorkBatchSection,
 } from "../scripts/lib/policy.ts";
+import { eligibilityReport } from "../scripts/candidates.ts";
 import { catalog, OVERLAY, policy } from "./helpers.ts";
 
 describe("defaults", () => {
@@ -42,6 +43,65 @@ describe("defaults", () => {
     expect(p.repoLabel).toBeNull();
     expect(p.typeLabels).toBeNull();
     expect(p.contextPrefixes).toBeNull();
+  });
+});
+
+describe("an implied repository label", () => {
+  const github = (repos: string[], repoLabel = "jig") => ({
+    issue_tracker: { adapter: "github" },
+    review: {
+      repo_label: repoLabel,
+      taxonomy: { repos, ownership_prefixes: ["area:"] },
+    },
+  });
+  const impliedBy = (overlay: Record<string, unknown>) =>
+    batchPolicy(overlay, null).repoLabelImplied;
+
+  it("is implied when a GitHub tracker names no other repository", () => {
+    expect(impliedBy(github(["jig"]))).toBe(true);
+    expect(
+      impliedBy({
+        issue_tracker: { adapter: "github" },
+        review: { repo_label: "jig" },
+      }),
+    ).toBe(true);
+    expect(
+      impliedBy({
+        review: {
+          repo_label: "jig",
+          taxonomy: { repos: ["jig"], ownership_prefixes: ["area:"] },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("is not implied when the taxonomy names another repository", () => {
+    expect(impliedBy(github(["jig", "web"]))).toBe(false);
+  });
+
+  it("is not implied for a tracker that holds other repositories' issues", () => {
+    for (const adapter of ["linear", "jira"])
+      expect(
+        impliedBy({
+          issue_tracker: { adapter },
+          review: {
+            repo_label: "jig",
+            taxonomy: { repos: ["jig"], ownership_prefixes: ["area:"] },
+          },
+        }),
+      ).toBe(false);
+  });
+
+  it("is reported as not checked in the eligibility policy", () => {
+    const own = batchPolicy(github(["jig"]), null);
+    expect(eligibilityReport([], own, new Set()).policy.repoLabel).toBeNull();
+    expect(eligibilityReport([], policy(), new Set()).policy.repoLabel).toBe(
+      "web",
+    );
+  });
+
+  it("is not implied where no repository label is checked at all", () => {
+    expect(impliedBy({})).toBe(false);
   });
 });
 
