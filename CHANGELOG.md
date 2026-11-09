@@ -389,6 +389,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.183.1] - 2026-11-09
+
+### Fixed
+
+- `/jig:work-batch` no longer holds back an issue for lacking the repository
+  label (`review.repo_label`) when the tracker is one GitHub repository's and
+  `review.taxonomy.repos` names no repository besides that label. Every issue
+  in such a tracker belongs to the repository, so a missing label said
+  nothing, and the filers that do not add it (issue forms, `/jig:file-issue`)
+  left their issues out of every batch. A tracker that holds several
+  repositories' issues, and the Linear and Jira adapters, keep the check. The
+  eligibility report's policy shows `repoLabel: null` (not checked) then.
+
 ## [0.183.0] - 2026-11-09
 
 ### Added
@@ -6405,7 +6418,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.183.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.183.1...HEAD
+[0.183.1]: https://github.com/jig-harness/jig/compare/v0.183.0...v0.183.1
 [0.183.0]: https://github.com/jig-harness/jig/compare/v0.182.0...v0.183.0
 [0.182.0]: https://github.com/jig-harness/jig/compare/v0.181.0...v0.182.0
 [0.181.0]: https://github.com/jig-harness/jig/compare/v0.180.0...v0.181.0
