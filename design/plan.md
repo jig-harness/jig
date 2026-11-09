@@ -386,8 +386,10 @@ visibility class, so a shared control plane can later serve the same feed;
 a host's hub read-only on loopback, answering only its own pages, a
 laptop's hub that serves any browser and reads each host over SSH (Secure
 Shell) with a key that runs the feed and nothing else, and Orca, where a
-person uses it, opening the hub in its own browser; an optional
-private-network front, Tailscale Serve first, that gives a phone an HTTPS
+person uses it, opening the hub in its own browser; required read-only phone access, with
+visible copy controls, forge and tracker links, continuous availability and
+phone acceptance budgets; a private-network front, Tailscale Serve first,
+that gives a phone an HTTPS
 name and the viewer's login, scopes what each person sees by the grants of
 the tailnet (Tailscale's private network), trusts that login only on a
 Unix socket only Tailscale's daemon reaches, and refuses Tailscale Funnel,
