@@ -206,12 +206,20 @@ function interrupts(line: string): boolean {
   );
 }
 
+/** Whether `line` starts a checkbox item, including an ordered sibling that cannot itself interrupt a paragraph. */
+const startsBoxItem = (line: string): boolean => {
+  const item = ITEM.exec(line);
+  return item !== null && BOX.test(item[2] ?? "");
+};
+
 /** A look through the paragraph after line `at`, stopping where a blank line, an item, a heading or a fence begins another block; nothing is copied, and no line is read unless asked. */
 function paragraphAfter(input: readonly string[], at: number): Lookahead {
   return (n) => {
     for (let j = at + 1; j < input.length; j++) {
       const line = input[j] ?? "";
-      if (interrupts(line)) return false;
+      // A checkbox begins a new step even where its ordered marker cannot
+      // interrupt an ordinary paragraph on its own.
+      if (interrupts(line) || startsBoxItem(line)) return false;
       if (findRun(line, 0, n) !== -1) return true;
     }
     return false;
@@ -235,7 +243,7 @@ function readLines(body: string): string[] {
   const fence: Fence = { marker: null, base: 0, itemBase: 0 };
   for (const [i, line] of input.entries()) {
     if (skippedByFence(line, fence, ctx)) continue;
-    if (interrupts(line)) ctx.span = null;
+    if (interrupts(line) || startsBoxItem(line)) ctx.span = null;
     if (!ctx.comment) fence.base = listColumn(line, fence.base);
     lines.push(uncommented(line, ctx, paragraphAfter(input, i)));
   }

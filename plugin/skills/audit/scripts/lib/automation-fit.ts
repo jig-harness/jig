@@ -174,6 +174,7 @@ function substitution(
 ): number {
   let depth = 0;
   let atWordStart = true;
+  const heredocs: Heredoc[] = [];
   for (let j = open; j < script.length; j++) {
     const c = script.charAt(j);
     if (isQuote(c)) {
@@ -182,8 +183,24 @@ function substitution(
       continue;
     }
     if (c === "\\") {
+      // A joined line is not a word character, so it preserves comment
+      // eligibility at the beginning of the continued line.
+      if (script.charAt(j + 1) !== "\n") atWordStart = false;
       j++;
-      atWordStart = false;
+      continue;
+    }
+    if (c === "<" && script.charAt(j + 1) === "<") {
+      const found = heredocAt(script, j);
+      if (found !== null) {
+        heredocs.push(found.heredoc);
+        j = found.end;
+        atWordStart = false;
+        continue;
+      }
+    }
+    if (c === "\n" && heredocs.length > 0) {
+      j = skipHeredocs({ heredocs } as Scan, script, j);
+      atWordStart = true;
       continue;
     }
     if (c === "#" && atWordStart) {

@@ -126,6 +126,16 @@ describe("shell redirections, empty here-document delimiters and quoted continua
         "gh pr create --body-file <(printf ') --label automation:x #') --fill",
       ),
     ).toEqual(["j › s"]);
+    expect(
+      runSteps(
+        "gh pr create --body-file <(cat <<'EOF'\n) --label automation:x #\nEOF\n) --fill",
+      ),
+    ).toEqual(["j › s"]);
+    expect(
+      runSteps(
+        "gh pr create --body-file <(printf body \\\n# ) --label automation:x\n) --fill",
+      ),
+    ).toEqual(["j › s"]);
   });
 
   it("reads a quoted empty delimiter as a delimiter", () => {

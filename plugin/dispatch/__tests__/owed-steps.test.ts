@@ -236,6 +236,27 @@ describe("Markdown the scan must read as the renderer does", () => {
     ).toEqual({ open: 1, done: 1 });
   });
 
+  it("ends a code span before every later list item", () => {
+    expect(
+      owedSteps(
+        body(
+          heading,
+          "1. [x] Document `literal",
+          "2. [ ] <!-- placeholder ` -->",
+        ),
+      ),
+    ).toEqual({ open: 0, done: 1 });
+    expect(
+      owedSteps(
+        body(
+          heading,
+          "- [x] Document `literal",
+          "  01. [ ] <!-- placeholder ` -->",
+        ),
+      ),
+    ).toEqual({ open: 0, done: 1 });
+  });
+
   it("reads a fence indented into a list item as code", () => {
     expect(
       owedSteps(
