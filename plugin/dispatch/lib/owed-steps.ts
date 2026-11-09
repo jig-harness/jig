@@ -262,9 +262,14 @@ function readLines(body: string): string[] {
     const item = ITEM.exec(line);
     if (item !== null) paragraphContainer = contentColumn(line);
     else if (interrupts(line)) paragraphContainer = null;
-    lines.push(
-      uncommented(line, ctx, paragraphAfter(input, i, paragraphContainer)),
+    // A line inside a code span that began above is paragraph text, never an item.
+    const continued = ctx.span !== null;
+    const text = uncommented(
+      line,
+      ctx,
+      paragraphAfter(input, i, paragraphContainer),
     );
+    lines.push(continued ? `\\${text}` : text);
   }
   return lines;
 }

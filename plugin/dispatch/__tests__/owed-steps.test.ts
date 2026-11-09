@@ -268,8 +268,8 @@ describe("Markdown the scan must read as the renderer does", () => {
           "  continued`.",
           "- [ ] Rotate the key",
         ),
-      ).open,
-    ).toBeGreaterThanOrEqual(1);
+      ),
+    ).toEqual({ open: 1, done: 1 });
     expect(
       owedSteps(
         body(
