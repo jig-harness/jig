@@ -21,24 +21,29 @@ export function rearmsFromSnapshot(
 
 export function forgeRearmReader(
   repo: string,
-): (pr: number) => Promise<string[] | string> {
+): (pr: number, signal?: AbortSignal) => Promise<string[] | string> {
   let login: Promise<string | null> | undefined;
-  return async (pr) => {
-    login ??= resolveLogin();
+  return async (pr, signal) => {
+    if (signal?.aborted) return "the collector deadline passed";
+    login ??= resolveLogin(undefined, signal);
+    const selfLogin = await login;
+    if (signal?.aborted) return "the collector deadline passed";
     return rearmsFromSnapshot(
-      await readLedgerSnapshot(String(pr), await login, repo),
+      await readLedgerSnapshot(String(pr), selfLogin, repo, signal),
     );
   };
 }
 
 /** Preserve an I/O dependency's diagnostic if it throws rather than returning one. */
 export async function readRearmsWithReason(
-  read: (pr: number) => Promise<string[] | string | null>,
+  read: (pr: number, signal?: AbortSignal) => Promise<string[] | string | null>,
   pr: number,
+  signal?: AbortSignal,
 ): Promise<string[] | string> {
   try {
     return (
-      (await read(pr)) ?? "the forge ledger history could not be established"
+      (await read(pr, signal)) ??
+      "the forge ledger history could not be established"
     );
   } catch (error) {
     return error instanceof Error ? error.message : String(error);

@@ -134,7 +134,10 @@ export interface RunDeps {
   prFiles(pr: number): Promise<PrFileStat[]>;
   prBody(pr: number): Promise<string | null>;
   /** A diagnostic string explains an unreadable ledger; `null` is a legacy reader refusal. */
-  driveRearms(pr: number): Promise<string[] | string | null>;
+  driveRearms(
+    pr: number,
+    signal?: AbortSignal,
+  ): Promise<string[] | string | null>;
   /** `null` + a reason when the catalog could not be loaded. */
   classifier: Classifier | null;
   classifierError: string | null;
@@ -157,7 +160,7 @@ export interface RunDeps {
 }
 
 function usableRearms(
-  rearms: string[] | string | null,
+  rearms: string[] | string,
   pr: number,
   gaps: Map<number, string>,
 ): string[] {
@@ -294,7 +297,11 @@ export async function runFleetHealth(
           failed.push(l.number);
           return null;
         }
-        const rearms = await readRearmsWithReason(deps.driveRearms, l.number);
+        const rearms = await readRearmsWithReason(
+          deps.driveRearms,
+          l.number,
+          deps.signal,
+        );
         const driveRearms = usableRearms(rearms, l.number, rearmGaps);
         // The ledger read is another outbound operation. Do not retain or
         // sample a PR after the collector deadline fired while it was pending.

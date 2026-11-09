@@ -2381,7 +2381,8 @@ describe("bounded reads must not read as complete", () => {
           capped: false,
         }),
         reviewedHeads: async () => ROUND_FREE + 5,
-        driveRearms: async () => {
+        driveRearms: async (_pr, signal) => {
+          expect(signal).toBe(ac.signal);
           ac.abort();
           return [];
         },
