@@ -1977,7 +1977,8 @@ Omitting the flag is the default (resolve now) — the same behavior as every
 other merit outcome, and what you want for a `moot` whose premise predates
 this round entirely. That default applies only to a **fresh** post: a `moot`
 found already on the thread (the reconciliation rule above) is always held
-(except on a code-scanning thread, above),
+(except on a code-scanning thread, above, or a reply carrying the durable
+leave-open marker that proves it was posted as a non-hold moot),
 whatever this invocation's own flag says — the flag names only this
 invocation's belief, and a reconciled reply may have been posted by an
 earlier, now-gone invocation whose belief this one has no way to see. A
@@ -1990,6 +1991,10 @@ releases regardless.
 A reply that is genuinely **not** a triage decision (a clarifying question,
 with nothing to hold or resolve) has no outcome for `triage-thread.ts` to
 dispatch on — use `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/reply-to-thread.ts" --no-outcome` directly for that case.
+
+A legacy marked moot on a bot-started thread resolves on both direct retry
+and automatic reconciliation. Its marker proves that no push was needed; it
+does not authorize leaving a bot thread open.
 
 **Leaving a human thread open.** A merit outcome (`rejected`/`wont-fix`/
 `deferred`/plain `moot`) is resolved automatically — pass `--leave-open` to

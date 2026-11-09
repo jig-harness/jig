@@ -526,6 +526,7 @@ async function main(): Promise<number> {
         outcome,
         thread.comments[0],
         thread.codeScanning,
+        qualifyingBody,
       );
 
       let action: string;
@@ -563,8 +564,9 @@ async function main(): Promise<number> {
           if (!cleanedUp) hadErrors = 1;
         }
       } else if (verdict !== null) {
-        // A merit outcome, or a code-scanning `moot`, which is never held:
-        // its alert's state, not a push, is its proof (`sweepVerdict`).
+        // A merit outcome includes a legacy marked moot: the marker proves
+        // it needed no push, independently of permission to leave it open.
+        // Code-scanning outcomes additionally require a settled alert.
         if (verdict.leftOpen !== undefined) {
           action = "left-open";
           leftOpen += 1;

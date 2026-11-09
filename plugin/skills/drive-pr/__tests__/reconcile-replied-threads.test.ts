@@ -631,36 +631,39 @@ describe("reconcile-replied-threads.ts", () => {
     expect(resolved).toBe("PRRT_rejected");
   });
 
-  it("settles a legacy leave-open marker on a bot merit reply", () => {
-    const { dir, stateDir } = writeFixture([
-      {
-        id: "PRRT_bot_marker",
-        comments: [
-          {
-            author: "review-bot",
-            authorAssociation: "NONE",
-            body: "finding",
-            bot: true,
-          },
-          {
-            author: "example-user",
-            authorAssociation: "MEMBER",
-            body: "**rejected** — already handled.\n\n<!-- triage-thread:leave-open -->",
-          },
-        ],
-      },
-    ]);
-    const result = run(["999", "--bots-only"], dir, stateDir);
-    expectSpawnExit(result, 0);
-    const { stdout } = result;
-    expect(lines(stdout)[0]).toMatchObject({
-      threadId: "PRRT_bot_marker",
-      action: "resolved",
-    });
-    expect(
-      readFileSync(join(dir, "resolved-threads.jsonl"), "utf8").trim(),
-    ).toBe("PRRT_bot_marker");
-  });
+  it.each(["rejected", "moot"])(
+    "settles a legacy leave-open marker on a bot %s reply",
+    (outcome) => {
+      const { dir, stateDir } = writeFixture([
+        {
+          id: "PRRT_bot_marker",
+          comments: [
+            {
+              author: "review-bot",
+              authorAssociation: "NONE",
+              body: "finding",
+              bot: true,
+            },
+            {
+              author: "example-user",
+              authorAssociation: "MEMBER",
+              body: `**${outcome}** — already handled.\n\n<!-- triage-thread:leave-open -->`,
+            },
+          ],
+        },
+      ]);
+      const result = run(["999", "--bots-only"], dir, stateDir);
+      expectSpawnExit(result, 0);
+      const { stdout } = result;
+      expect(lines(stdout)[0]).toMatchObject({
+        threadId: "PRRT_bot_marker",
+        action: "resolved",
+      });
+      expect(
+        readFileSync(join(dir, "resolved-threads.jsonl"), "utf8").trim(),
+      ).toBe("PRRT_bot_marker");
+    },
+  );
 
   it("refuses a marked reply when starter provenance is unknown", () => {
     const { dir, stateDir } = writeFixture([

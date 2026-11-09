@@ -893,33 +893,36 @@ describe("triage-thread.ts", () => {
     expect(resolvedCount(dir)).toBe(0);
   });
 
-  it("settles a bot's recovered invalid leave-open marker", () => {
-    const { dir, stateDir } = writeFixtureDir();
-    writeNode(dir, {
-      comments: [
-        {
-          author: "reviewer",
-          authorType: "Bot",
-          authorAssociation: "NONE",
-          body: "Finding",
-        },
-        {
-          author: "maintainer",
-          authorAssociation: "OWNER",
-          body: "**wont-fix** — declined.\n\n<!-- triage-thread:leave-open -->",
-        },
-      ],
-    });
-    const r = runTriage(
-      ["PRRT_invalid_marker", "999"],
-      "**wont-fix** — declined.",
-      dir,
-      stateDir,
-    );
-    expectSpawnExit(r, 0);
-    expect(postedCount(dir)).toBe(0);
-    expect(resolvedCount(dir)).toBe(1);
-  });
+  it.each(["wont-fix", "moot"])(
+    "settles a bot's recovered invalid leave-open marker for %s",
+    (outcome) => {
+      const { dir, stateDir } = writeFixtureDir();
+      writeNode(dir, {
+        comments: [
+          {
+            author: "reviewer",
+            authorType: "Bot",
+            authorAssociation: "NONE",
+            body: "Finding",
+          },
+          {
+            author: "maintainer",
+            authorAssociation: "OWNER",
+            body: `**${outcome}** — declined.\n\n<!-- triage-thread:leave-open -->`,
+          },
+        ],
+      });
+      const r = runTriage(
+        ["PRRT_invalid_marker", "999"],
+        `**${outcome}** — declined.`,
+        dir,
+        stateDir,
+      );
+      expectSpawnExit(r, 0);
+      expect(postedCount(dir)).toBe(0);
+      expect(resolvedCount(dir)).toBe(1);
+    },
+  );
 
   it("--leave-open refuses a bot-started thread before posting or resolving", () => {
     const { dir, stateDir } = writeFixtureDir();
