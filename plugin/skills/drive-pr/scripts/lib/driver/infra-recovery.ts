@@ -132,6 +132,13 @@ export function everyFailureInfrastructure(
   return missing ?? classifyRunLogs(runs, logs);
 }
 
+/** The text without its trailing full stops, for a sentence that adds its own. */
+function withoutTrailingDots(text: string): string {
+  let end = text.length;
+  while (end > 0 && text[end - 1] === ".") end--;
+  return text.slice(0, end);
+}
+
 /** Require a workflow identity for every failing check, including duplicate names. */
 function workflowCoverage(
   runs: readonly FailedRun[],
@@ -210,12 +217,12 @@ export async function recoverInfrastructureFailure(
   const reading = everyFailureInfrastructure(failing, logs);
   if (!reading.infrastructure) {
     console.error(
-      `  Not an infrastructure failure: ${reading.why.replace(/\.+$/u, "")}.`,
+      `  Not an infrastructure failure: ${withoutTrailingDots(reading.why)}.`,
     );
     return null;
   }
   console.error(
-    `review converged, but every failing check failed on the infrastructure: ${reading.why.replace(/\.+$/u, "")}.`,
+    `review converged, but every failing check failed on the infrastructure: ${withoutTrailingDots(reading.why)}.`,
   );
   console.error(
     "  Re-running instead of spending a CI-repair pass on a failure no code change fixes.",
