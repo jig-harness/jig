@@ -179,6 +179,7 @@ export function LogTable({
       key={row.id}
       {...cardAttrs({
         key: `log ${row.id}`,
+        target: row.original.target,
         url: row.original.url,
         command:
           row.original.target === ""

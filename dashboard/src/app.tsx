@@ -307,7 +307,8 @@ function Page({
     line: useCurrentLine(snapshot.line),
   };
   const { line, clock } = view;
-  const read = view.answer !== null || state.failure !== null;
+  // The opening view waits for the first answer: a failed first read must not settle it.
+  const read = view.answer !== null;
   const [tab, setTabNow] = useView(
     read ? openingView(mergeNowCount(line)) : null,
   );
@@ -396,8 +397,11 @@ function ViewTop({
         <MergeFlash
           flash={flash}
           href={mergeHref}
-          onGo={() => steer.go("merge")}
-          onDismiss={onDismiss}
+          onGo={() => steer.goAndFocus("merge")}
+          onDismiss={() => {
+            onDismiss();
+            steer.focusStart();
+          }}
         />
       )}
       {FILTERED_VIEWS.has(tab) && read ? (

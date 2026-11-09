@@ -188,6 +188,10 @@ describe("the keys on every view", () => {
           await page.reload();
           await shows(page, "main :is(h1, h2)");
           const issue = await jTo(page, "data-issue");
+          // Needs you and Queue hold tracker items in this scenario; the other views hold only pull requests.
+          expect(issue !== null).toBe(
+            view.id === "needs" || view.id === "queue",
+          );
           if (issue === null) return;
           await page.keyboard.press("i");
           await until("i opened the issue", async () =>
@@ -406,6 +410,98 @@ describe("the keys on every view", () => {
           "? came back to Help",
           async () => (await currentTab(page)) === "Help",
         );
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "a card's own keys wait until a card is chosen, and the palette copies with nothing focused",
+    async () => {
+      const { page, context } = await openOn("merge");
+      try {
+        await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+        await page.keyboard.press("p");
+        await until("p asked for a card first", async () =>
+          (await said(page)).includes("press j first"),
+        );
+        expect(await opened(page)).toEqual([]);
+        await page.keyboard.press("Control+k");
+        await page.keyboard.type("merge command #1199");
+        await page.keyboard.press("Enter");
+        await until("the palette copied the merge command", async () =>
+          (await said(page)).startsWith("Copied"),
+        );
+        expect(
+          await page.evaluate(() => navigator.clipboard.readText()),
+        ).toContain("gh pr merge 1199");
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "dismissing the flash or following it keeps focus on the page",
+    async () => {
+      const { page, context } = await openOn("running");
+      try {
+        await page.locator(".flashGo").focus();
+        await page.keyboard.press("Enter");
+        await until(
+          "the flash went to Merge",
+          async () => (await currentTab(page)) === "Merge",
+        );
+        await until("focus is on Merge's first card", async () =>
+          ((await focusedCard(page)) ?? "").startsWith("merge "),
+        );
+        await openView(page, "Queue");
+        await page.locator(".flashOff").click();
+        await until(
+          "the flash is gone",
+          async () => (await page.locator(".flash").count()) === 0,
+        );
+        expect(
+          await page.evaluate(() => document.activeElement?.tagName),
+        ).not.toBe("BODY");
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "a filter finds the cards a phone keeps behind Show all",
+    async () => {
+      const server = await served("merge");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        `${server.url}&view=needs`,
+        { width: 390, height: 844 },
+      );
+      try {
+        await shows(page, ".need");
+        const hidden = await page
+          .locator(".need.rest .tgt")
+          .first()
+          .textContent();
+        expect(hidden).not.toBeNull();
+        await page.locator("[data-view-filter]").fill(hidden ?? "");
+        await until(
+          "the hidden card shows",
+          async () => (await cardKeys(page)).length > 0,
+        );
+        expect(
+          await page
+            .locator("main [data-card]:visible .tgt")
+            .first()
+            .textContent(),
+        ).toBe(hidden);
       } finally {
         await context.close();
       }

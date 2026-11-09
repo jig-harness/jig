@@ -7,7 +7,7 @@ import { type RefObject, useCallback, useEffect, useState } from "react";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { allCards } from "./cards.ts";
 import { announce, copyText } from "./copy.tsx";
-import { cardsIn, focusCard, rove, useKeys } from "./keys.ts";
+import { cardsIn, focusCard, focusStart, rove, useKeys } from "./keys.ts";
 import {
   type PaletteEntry,
   type PaletteRun,
@@ -18,6 +18,9 @@ import type { Clock } from "./view.ts";
 
 /** Where `?` and the palette's Help land: the keys. */
 const KEYS_HEADING = "#h-keys";
+
+/** A pending focus that asks for where the new view starts. */
+const START = "start";
 
 /** The filter over a view's cards, which `/` focuses and Escape clears. */
 export function ViewFilter({
@@ -41,7 +44,8 @@ export function ViewFilter({
         onKeyDown={(event) => {
           if (event.key !== "Escape") return;
           setValue("");
-          event.currentTarget.blur();
+          const main = event.currentTarget.closest<HTMLElement>("main");
+          if (main !== null) focusStart(main);
         }}
       />
       {shown === null ? null : <span className="sm mut">{shown}</span>}
@@ -61,6 +65,8 @@ function applyFilter(element: HTMLElement, query: string): string | null {
     const hide = !words.every((w) => text.includes(w));
     if (card.hidden !== hide) card.hidden = hide;
   }
+  // While a query stands, the cards a phone keeps behind Show all are searched and shown too.
+  element.classList.toggle("filtering", words.length > 0);
   rove(element);
   if (words.length === 0) return null;
   return `${cards.filter((c) => !c.hidden).length} of ${cards.length} cards`;
@@ -87,10 +93,30 @@ function useCardFilter(
 /** The element a pending focus names: a card by its key, or a heading by its selector. */
 function pendingTarget(element: HTMLElement, key: string): HTMLElement | null {
   if (key.startsWith("#")) return element.querySelector<HTMLElement>(key);
-  return cardsIn(element).find((c) => c.dataset.card === key) ?? null;
+  return (
+    [...element.querySelectorAll<HTMLElement>("[data-card]")].find(
+      (c) => c.dataset.card === key,
+    ) ?? null
+  );
 }
 
-/** Focuses what a view change was for, once the view has drawn it. */
+/** Moves focus to what a pending request names, once; a card it cannot show is said, not kept for later. */
+function focusPending(element: HTMLElement, pending: string): void {
+  if (pending === START) {
+    focusStart(element);
+    return;
+  }
+  const target = pendingTarget(element, pending);
+  if (target === null) focusStart(element);
+  else if (target.dataset.card === undefined) target.focus();
+  else if (cardsIn(element).includes(target)) focusCard(element, target);
+  else {
+    focusStart(element);
+    announce("That card is behind Show all in this view");
+  }
+}
+
+/** Focuses what a view change was for, in the commit that drew the view, and then forgets it. */
 function useFocusAfterDraw(
   root: RefObject<HTMLElement | null>,
   pending: string | null,
@@ -99,12 +125,9 @@ function useFocusAfterDraw(
   useEffect(() => {
     const element = root.current;
     if (pending === null || element === null) return;
-    const target = pendingTarget(element, pending);
-    if (target === null) return;
     settle();
-    if (target.dataset.card === undefined) target.focus();
-    else focusCard(element, target);
-  });
+    focusPending(element, pending);
+  }, [root, pending, settle]);
 }
 
 function focusFilter(element: HTMLElement | null): void {
@@ -124,6 +147,10 @@ function activeElement(): HTMLElement | null {
 export interface Steering {
   /** Goes to a view, as a tab does: its filter cleared. */
   go: (view: ViewId) => void;
+  /** Goes to a view and puts focus where it starts, for a control that the change removes. */
+  goAndFocus: (view: ViewId) => void;
+  /** Puts focus where the view starts, for a control that removes itself. */
+  focusStart: () => void;
   cardQuery: string;
   setCardQuery: (query: string) => void;
   shown: string | null;
@@ -147,7 +174,8 @@ export function useSteering(
   const [cardQuery, setCardQuery] = useState("");
   const shown = useCardFilter(main, cardQuery);
   const [pending, setPending] = useState<string | null>(null);
-  useFocusAfterDraw(main, pending, () => setPending(null));
+  const settle = useCallback(() => setPending(null), []);
+  useFocusAfterDraw(main, pending, settle);
   // Read once as the palette opens, so a read while it is open does not move its list.
   const [entries, setEntries] = useState<PaletteEntry[] | null>(null);
   const [back, setBack] = useState<HTMLElement | null>(null);
@@ -158,12 +186,12 @@ export function useSteering(
     },
     [setView],
   );
-  const goFocused = (view: ViewId, focus: string | null) => {
+  const goFocused = (view: ViewId, focus: string) => {
     go(view);
     setPending(view === "help" ? KEYS_HEADING : focus);
   };
   useKeys(main, {
-    setView: (view) => goFocused(view, null),
+    setView: (view) => goFocused(view, START),
     openPalette: () => {
       setBack(activeElement());
       setEntries(paletteEntries(allCards(o.line, o.clock), o.counts));
@@ -175,7 +203,7 @@ export function useSteering(
     if (run.kind !== "copy") {
       goFocused(
         run.kind === "view" ? run.view : run.card.view,
-        run.kind === "card" ? run.card.key : null,
+        run.kind === "card" ? run.card.key : START,
       );
       return;
     }
@@ -190,6 +218,8 @@ export function useSteering(
   };
   return {
     go,
+    goAndFocus: (view) => goFocused(view, START),
+    focusStart: () => setPending(START),
     cardQuery,
     setCardQuery,
     shown,

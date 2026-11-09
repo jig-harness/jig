@@ -400,6 +400,8 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .dd kbd { display: inline-block; min-width: 1.4em; padding: 0 4px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: var(--r-tag); background: var(--sunk); color: var(--ink); font: 400 12px/1.5 var(--mono); text-align: center; }
 [data-card] { scroll-margin: 112px 0 24px; }
 .dd [data-card][hidden] { display: none !important; }
+.main.filtering .need.rest, .main.filtering .qItem.rest { display: flex; }
+.main.filtering .groupHead.rest { display: block; }
 .dd [data-card]:focus { outline: none; }
 .dd [data-card]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r); }
 .mTitle { display: block; }

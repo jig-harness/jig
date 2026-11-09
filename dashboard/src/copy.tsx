@@ -18,7 +18,10 @@ const hearers = new Set<(text: string) => void>();
  */
 function writeClip(text: string, back: HTMLElement): Promise<boolean> {
   const fallback = (): Promise<boolean> => {
-    const field = back.closest(".dd")?.querySelector("textarea.clip");
+    // `back` may be the body, outside the page's root, when nothing had focus.
+    const field = (back.closest(".dd") ?? document).querySelector(
+      ".dd textarea.clip",
+    );
     if (!(field instanceof HTMLTextAreaElement)) return Promise.resolve(false);
     field.value = text;
     field.focus();

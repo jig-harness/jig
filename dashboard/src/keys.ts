@@ -131,10 +131,16 @@ function isPullUrl(url: string): boolean {
 /** The attributes that make an element a card the keys reach. */
 export function cardAttrs(card: {
   key: string;
+  target: string;
   url: string | null;
   command: string | null;
 }): Record<string, string> {
-  const attrs: Record<string, string> = { "data-card": card.key };
+  // A card is a named group, so j announces what it is rather than a blob of text.
+  const attrs: Record<string, string> = {
+    "data-card": card.key,
+    role: "group",
+    "aria-label": card.target,
+  };
   if (card.url !== null)
     attrs[isPullUrl(card.url) ? "data-pr" : "data-issue"] = card.url;
   if (card.command !== null) attrs["data-command"] = card.command;
@@ -148,15 +154,37 @@ export function cardsIn(root: HTMLElement): HTMLElement[] {
   );
 }
 
-/** The card focus is in or on, else the one the roving focus rests on. */
-function currentCard(root: HTMLElement): HTMLElement | null {
+/** The card focus is in or on; `null` when focus is on none. */
+function focusedCard(root: HTMLElement): HTMLElement | null {
   const active = document.activeElement;
   const inside =
     active instanceof HTMLElement
       ? active.closest<HTMLElement>("[data-card]")
       : null;
-  if (inside !== null && root.contains(inside)) return inside;
-  return root.querySelector<HTMLElement>('[data-card][tabindex="0"]');
+  return inside !== null && root.contains(inside) ? inside : null;
+}
+
+/** The card focus is in or on, else the one the roving focus rests on. */
+function currentCard(root: HTMLElement): HTMLElement | null {
+  return (
+    focusedCard(root) ??
+    root.querySelector<HTMLElement>('[data-card][tabindex="0"]')
+  );
+}
+
+/** Puts focus where a view starts: the card Tab rests on, else the view's first heading. */
+export function focusStart(root: HTMLElement): void {
+  rove(root);
+  const card = root.querySelector<HTMLElement>('[data-card][tabindex="0"]');
+  if (card !== null && cardsIn(root).includes(card)) {
+    focusCard(root, card);
+    return;
+  }
+  // A view with no card starts at its heading, focused by script only.
+  const heading = root.querySelector<HTMLElement>("h1, h2");
+  if (heading === null) return;
+  if (!heading.hasAttribute("tabindex")) heading.tabIndex = -1;
+  heading.focus();
 }
 
 /** One card takes Tab, the rest only j and k: the card focus rests on, else the first. */
@@ -211,7 +239,9 @@ function onControl(card: HTMLElement, target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
     target !== card &&
-    target.closest("a, button, summary, [role='button']") !== null
+    target.closest(
+      "a, button, summary, input, select, [role='button'], [role='option']",
+    ) !== null
   );
 }
 
@@ -248,7 +278,8 @@ function onCard(
   action: KeyAction & { kind: "toggle" | "open" | "copy" },
   target: EventTarget | null,
 ): boolean {
-  const card = currentCard(root);
+  // A card's own keys act only on the card a person moved to, never on one focus merely rests on.
+  const card = focusedCard(root);
   if (card === null) {
     announce("No card is chosen: press j first");
     return action.kind !== "toggle";
@@ -269,7 +300,11 @@ function listening(
 ): boolean {
   if (element === null || h.paletteOpen() || event.defaultPrevented)
     return false;
-  return !isTextField(event.target instanceof Element ? event.target : null);
+  const target = event.target instanceof Element ? event.target : null;
+  // An open list, menu or dialog takes its own keys, such as a select's typeahead.
+  if (target?.closest("[role='listbox'], [role='menu'], [role='dialog']"))
+    return false;
+  return !isTextField(target);
 }
 
 /** Does what a key asks; whether the page took the key. */
