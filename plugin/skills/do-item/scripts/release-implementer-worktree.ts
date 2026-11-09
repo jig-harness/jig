@@ -3,10 +3,9 @@
  * Every uncertain safety check keeps the tree attached and reports why.
  * Exit 0 reports released/held; exit 2 means malformed arguments.
  */
-import { existsSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { devNull } from "node:os";
 import { fail, runMain } from "../../../shared/cli.ts";
-import { git, type RunResult } from "../../../shared/proc.ts";
+import { git, run, type RunResult } from "../../../shared/proc.ts";
 import { parseArgs } from "./lib/cli.ts";
 
 interface Request {
@@ -36,6 +35,33 @@ const OPERATIONS = [
 type Reader = (cwd: string, ...args: string[]) => Promise<string | null>;
 type Tree = { target: string; admin: string };
 
+const OPERATION_PROBE = `
+const { existsSync } = require("node:fs");
+const { join } = require("node:path");
+const [directory, ...names] = process.argv.slice(1);
+process.exit(names.some((name) => existsSync(join(directory, name))) ? 2 : 0);
+`;
+const REALPATH_PROBE = `
+const { realpathSync } = require("node:fs");
+try { process.stdout.write(realpathSync(process.argv[1])); } catch { process.exit(1); }
+`;
+
+/** Keep every inspection anchored to its explicit worktree, never a hook's git environment. */
+function inspectionEnv(): Record<string, string | undefined> {
+  const env = { ...process.env };
+  for (const key of Object.keys(env))
+    if (key.toUpperCase().startsWith("GIT_")) delete env[key];
+  return { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: devNull };
+}
+
+async function canonicalPath(path: string): Promise<string | null> {
+  const result = await run([process.execPath, "-e", REALPATH_PROBE, path], {
+    timeoutSec: 20,
+    env: inspectionEnv(),
+  });
+  return result.code === 0 && result.stdout !== "" ? result.stdout : null;
+}
+
 function gitFailure(command: string, result: RunResult): string {
   const detail = result.stderr.trim();
   return `git ${command}: exit ${result.code}${detail ? `: ${detail}` : ""}`;
@@ -44,7 +70,10 @@ function gitFailure(command: string, result: RunResult): string {
 function inspection() {
   let failure: string | null = null;
   const read: Reader = async (cwd, ...args) => {
-    const result = await git(["-C", cwd, ...args], { timeoutSec: 20 });
+    const result = await git(["-C", cwd, ...args], {
+      timeoutSec: 20,
+      env: inspectionEnv(),
+    });
     if (result.code !== 0) {
       failure = gitFailure(args[0] ?? "read", result);
       return null;
@@ -77,11 +106,22 @@ async function cloneIdentity(
   const admin = await read(target, "rev-parse", "--absolute-git-dir");
   if (common === null || ownCommon === null || admin === null)
     return "the delegate is not in this clone";
-  if (realpathSync(common) !== realpathSync(ownCommon))
+  const [canonicalCommon, canonicalOwnCommon, canonicalAdmin] =
+    await Promise.all([
+      canonicalPath(common),
+      canonicalPath(ownCommon),
+      canonicalPath(admin),
+    ]);
+  if (
+    canonicalCommon === null ||
+    canonicalOwnCommon === null ||
+    canonicalAdmin === null ||
+    canonicalCommon !== canonicalOwnCommon
+  )
     return "the delegate is not in this clone";
-  if (realpathSync(common) === realpathSync(admin))
+  if (canonicalCommon === canonicalAdmin)
     return "the delegate is the primary worktree";
-  return { admin };
+  return { admin: canonicalAdmin };
 }
 
 async function identifyTree(
@@ -89,18 +129,55 @@ async function identifyTree(
   sessionRoot: string,
   read: Reader,
 ): Promise<Tree | string> {
-  const target = realpathSync(tree);
   const session = await read(sessionRoot, "rev-parse", "--show-toplevel");
   if (session === null) return "cannot identify the session worktree";
-  if (target === realpathSync(session))
-    return "the delegate path is the session's own worktree";
-  const top = await read(target, "rev-parse", "--show-toplevel");
-  if (top === null || realpathSync(top) !== target)
+  const top = await read(tree, "rev-parse", "--show-toplevel");
+  if (top === null) return "the delegate path is not a worktree root";
+  const [target, canonicalSession, canonicalTop] = await Promise.all([
+    canonicalPath(tree),
+    canonicalPath(session),
+    canonicalPath(top),
+  ]);
+  if (
+    target === null ||
+    canonicalSession === null ||
+    canonicalTop === null ||
+    canonicalTop !== target
+  )
     return "the delegate path is not a worktree root";
-  const identity = await cloneIdentity(target, session, read);
+  if (canonicalTop === canonicalSession)
+    return "the delegate path is the session's own worktree";
+  const identity = await cloneIdentity(canonicalTop, canonicalSession, read);
   return typeof identity === "string"
     ? identity
-    : { target, admin: identity.admin };
+    : { target: canonicalTop, admin: identity.admin };
+}
+
+async function hasOperation(tree: Tree): Promise<boolean | null> {
+  const result = await run(
+    [process.execPath, "-e", OPERATION_PROBE, tree.admin, ...OPERATIONS],
+    {
+      timeoutSec: 20,
+      env: inspectionEnv(),
+    },
+  );
+  if (result.code === 0) return false;
+  if (result.code === 2) return true;
+  return null;
+}
+
+async function hasSubmoduleBlocker(target: string): Promise<boolean> {
+  const command = [
+    "status=$(git status --porcelain=v1 --untracked-files=all --ignore-submodules=none) || exit 1",
+    'test -z "$status" || exit 2',
+    'git ls-files -v | grep -q "^[a-zS] " && exit 3',
+    "exit 0",
+  ].join("; ");
+  const result = await git(
+    ["-C", target, "submodule", "foreach", "--quiet", "--recursive", command],
+    { timeoutSec: 20, env: inspectionEnv() },
+  );
+  return result.code !== 0;
 }
 
 async function localBlocker(
@@ -108,7 +185,7 @@ async function localBlocker(
   branch: string,
   read: Reader,
 ): Promise<string | null> {
-  const { target, admin } = tree;
+  const { target } = tree;
   if (
     (await read(target, "symbolic-ref", "--quiet", "HEAD")) !==
     `refs/heads/${branch}`
@@ -126,8 +203,12 @@ async function localBlocker(
   const index = await read(target, "ls-files", "-v");
   if (index === null || index.split("\n").some((line) => /^[a-zS] /.test(line)))
     return "index flags may hide local changes";
-  if (OPERATIONS.some((name) => existsSync(resolve(admin, name))))
-    return "an unfinished git operation or lock is present";
+  const operation = await hasOperation(tree);
+  if (operation === null)
+    return "an unfinished git operation or lock cannot be inspected";
+  if (operation) return "an unfinished git operation or lock is present";
+  if (await hasSubmoduleBlocker(target))
+    return "a submodule has local changes or index flags may hide them";
   return null;
 }
 
@@ -151,7 +232,7 @@ async function remoteBlocker(
     return "the remote branch cannot be verified";
   const contained = await git(
     ["-C", target, "merge-base", "--is-ancestor", head, remoteHead],
-    { timeoutSec: 20 },
+    { timeoutSec: 20, env: inspectionEnv() },
   );
   if (contained.code === 0) return null;
   if (contained.code === 1)
@@ -196,6 +277,7 @@ export async function releaseImplementerWorktree(
     if (remote !== null) return held(remote);
     const detached = await git(["-C", tree.target, "checkout", "--detach"], {
       timeoutSec: 20,
+      env: inspectionEnv(),
     });
     if (detached.code !== 0)
       return held(`git refused to detach; ${gitFailure("checkout", detached)}`);

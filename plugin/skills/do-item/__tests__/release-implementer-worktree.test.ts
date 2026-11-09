@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
@@ -13,7 +13,7 @@ afterEach(() => {
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
-function run(cwd: string, args: string[]) {
+function run(cwd: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}) {
   return Bun.spawnSync(args, {
     cwd,
     stdout: "pipe",
@@ -21,10 +21,12 @@ function run(cwd: string, args: string[]) {
     env: {
       ...process.env,
       GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: devNull,
       GIT_AUTHOR_NAME: "Test",
       GIT_AUTHOR_EMAIL: "test@example.invalid",
       GIT_COMMITTER_NAME: "Test",
       GIT_COMMITTER_EMAIL: "test@example.invalid",
+      ...extraEnv,
     },
   });
 }
@@ -49,17 +51,21 @@ function fixture() {
   git(tree, "push", "-u", "origin", "item");
   return { root, main, tree };
 }
-function release(main: string, tree: string) {
-  const result = run(main, [
-    process.execPath,
-    script,
-    "--tree",
-    tree,
-    "--branch",
-    "item",
-    "--remote",
-    "origin",
-  ]);
+function release(main: string, tree: string, extraEnv: NodeJS.ProcessEnv = {}) {
+  const result = run(
+    main,
+    [
+      process.execPath,
+      script,
+      "--tree",
+      tree,
+      "--branch",
+      "item",
+      "--remote",
+      "origin",
+    ],
+    extraEnv,
+  );
   expectSpawnExit(result, 0);
   return JSON.parse(result.stdout.toString());
 }
@@ -68,6 +74,16 @@ test("releases the clean pushed delegate branch so another worktree can take it"
   expect(release(main, tree).outcome).toBe("released");
   expect(git(tree, "rev-parse", "--abbrev-ref", "HEAD")).toBe("HEAD");
   git(main, "worktree", "add", join(root, "drive"), "item");
+});
+test("does not inherit git location overrides while inspecting a delegate", () => {
+  const { main, tree } = fixture();
+  const otherGitDir = git(main, "rev-parse", "--absolute-git-dir");
+  expect(
+    release(main, tree, {
+      GIT_DIR: otherGitDir,
+      GIT_INDEX_FILE: join(main, "wrong-index"),
+    }).outcome,
+  ).toBe("released");
 });
 test("keeps tracked and untracked local changes and names the release commands", () => {
   const { main, tree } = fixture();
@@ -146,6 +162,36 @@ test("keeps dirty submodules even when repository settings hide them", () => {
   expect(report.outcome).toBe("held");
   expect(report.reason).toContain("changes");
   expect(git(tree, "branch", "--show-current")).toBe("item");
+});
+
+test("keeps hidden changes inside initialized submodules", () => {
+  const { root, main, tree } = fixture();
+  const module = join(root, "module-source");
+  git(root, "init", module);
+  writeFileSync(join(module, "nested"), "initial\n");
+  git(module, "add", ".");
+  git(module, "commit", "-m", "initial");
+  git(
+    tree,
+    "-c",
+    "protocol.file.allow=always",
+    "submodule",
+    "add",
+    module,
+    "nested-module",
+  );
+  git(tree, "commit", "-am", "add module");
+  git(tree, "push", "origin", "item");
+  git(
+    join(tree, "nested-module"),
+    "update-index",
+    "--assume-unchanged",
+    "nested",
+  );
+  writeFileSync(join(tree, "nested-module", "nested"), "dirty\n");
+  const report = release(main, tree);
+  expect(report.outcome).toBe("held");
+  expect(report.reason).toContain("submodule");
 });
 
 test("includes the failed git read's exit and stderr in a held report", () => {
