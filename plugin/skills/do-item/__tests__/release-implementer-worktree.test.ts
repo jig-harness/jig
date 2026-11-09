@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { devNull, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 const roots: string[] = [];
@@ -224,7 +224,7 @@ test("holds the delegate when the submodule index matcher fails", () => {
   writeFileSync(matcher, "#!/bin/sh\nexit 2\n");
   chmodSync(matcher, 0o755);
   const report = release(main, tree, {
-    PATH: `${bin}:${process.env.PATH ?? ""}`,
+    PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
   });
   expect(report.outcome).toBe("held");
   expect(report.reason).toContain("submodule");
