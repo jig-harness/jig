@@ -569,6 +569,9 @@ firing over a pass that *had* worked:
   across a round that did real work. Parking has the same shape twice over —
   parking a summary-only finding posts no marker, so both summary counts stand,
   and one parked item traded for another leaves the parked count alone.
+  `work.unresolvedThreadVersions` pairs each open thread with its latest comment
+  URL, so replying while leaving a human thread open also resets the stall streak.
+  Missing or truncated comment versions disable the fingerprint for that gate.
 
 The counters below share that one bound, because neither covers the other's runaway
 and **both are durable**. `rounds` counts distinct reviewed heads, so it cannot
