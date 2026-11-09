@@ -64,13 +64,26 @@ function nextRelease(m: Machine, version: string, name: string): string {
   return directory;
 }
 
-/** Collection's machine policy with its weekday moved off today, so the job only reports. */
+/** Collection's machine policy keeps both schedule and disk pressure from selecting collection, so the job only reports. */
 function reportOnly(m: Machine): void {
+  // Bun's test clock can use a different time zone from spawned jobs.
+  const clock = Bun.spawnSync(
+    [process.execPath, "-e", "console.log(new Date().getDay())"],
+    {
+      cwd: m.home,
+      env: m.env,
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    },
+  );
+  expectSpawnExit(clock, 0);
   const path = join(m.home, ".jig", "jig.yaml");
   const values = load(readFileSync(path, "utf8")) as {
     gc: Record<string, unknown>;
   };
-  values.gc.collect_day = (new Date().getDay() + 1) % 7;
+  values.gc.collect_day = (Number(clock.stdout.toString().trim()) + 2) % 7;
+  values.gc.min_free_bytes = 0;
   writeFileSync(path, dump(values));
 }
 

@@ -503,9 +503,28 @@ age and whose claim it is, to mark done or delete.
 parked with a decision unanswered, carrying the drive's framed decision for
 each one; a drive stopped on an exit only a person settles, or with no exit;
 a failed follow-up, with the question its pass stopped on; a stalled pickup,
-a double claim, a session waiting past `dispatch.blocked_after`. Each message
+a double claim, a session waiting past `dispatch.blocked_after`; and a
+pull request that enters Ready to merge. Each message
 carries the cause or the question, the pull request's link and the handoff,
-and names the workspace the stage ran in. Follow-up passes leave routine
+and names the workspace the stage ran in.
+
+**Ready to merge.** Each tick places every converged pull request, through
+one predicate the merge-ready announcement and `jig ask` share, in a lane:
+**merge now**, with a merge command pinned to the head the drive verified;
+**approve first**, naming the reviewers asked, or that nobody is, and saying
+the repository's other protection rules are not read; or **update next**,
+one pull request per repository behind its base. Merge now never rests on
+the drive's ledger alone: the forge must witness a review of the head (the
+reviewer app's check run, `review.reviewer_app`, or a person's approval
+where no app is named), and a pull request from outside the repository
+needs a person's approval. One that fails a condition goes where its reason
+says, with the act that settles it. The facts come from a board read of its
+own in the tick's observe phase, under a 30-second deadline per repository
+and skipped while less than a fifth of the forge's hourly budget is left; a
+board read that fails marks the list not read and changes nothing the tick
+launches. A pull request entering merge now or approve first is notified
+once per head, with its repository, number and lane only. The tick's
+receipt (`board`) and the dashboard's line (`ready`) carry the lanes. Follow-up passes leave routine
 local branch, retired-workspace and scratch-note retention to periodic
 cleanup, including leftovers no collector covers yet. These do not require
 a question for a person or a failed result; evidence of unlanded work or an

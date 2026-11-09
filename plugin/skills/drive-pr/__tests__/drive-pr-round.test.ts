@@ -210,7 +210,8 @@ describe("announce-merge-ready.ts", () => {
         stderr: "pipe",
       },
     );
-    const [stderr, exitCode] = await Promise.all([
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
       proc.exited,
     ]);
@@ -218,7 +219,7 @@ describe("announce-merge-ready.ts", () => {
     const deleted = existsSync(join(dir, "deleted.jsonl"))
       ? readFileSync(join(dir, "deleted.jsonl"), "utf8").trim().split("\n")
       : [];
-    return { stderr, exitCode, posted, deleted };
+    return { stdout, stderr, exitCode, posted, deleted };
   }
 
   // announce-merge-ready.ts calls drive-status.ts with no --no-head-sync (it is
@@ -827,6 +828,25 @@ describe("announce-merge-ready.ts", () => {
       },
     );
     expect(r.exitCode).not.toBe(0);
+    expect(r.posted).toBe(true);
+    expect(r.deleted).toEqual(["9001"]);
+    expect(r.stderr).toContain("withdrawing this duplicate");
+    expect(r.stderr).toContain("uncommitted state");
+  });
+
+  it("re-checks cleanliness after reconciling the rival's standing wording", async () => {
+    const dirty = makeScratchRepo("scratch-announce-dirty-rival-wording");
+    const r = await announce(
+      { threads: [], reviewedSha: dirty.head, head: dirty.head },
+      false,
+      {
+        cwd: dirty.dir,
+        raceAfterPost: true,
+        postedIdBase: "9000",
+        dirtyAfterSweeps: 4,
+      },
+    );
+    expectSpawnExit(r, 1);
     expect(r.posted).toBe(true);
     expect(r.deleted).toEqual(["9001"]);
     expect(r.stderr).toContain("withdrawing this duplicate");

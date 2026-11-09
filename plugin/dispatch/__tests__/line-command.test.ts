@@ -350,3 +350,47 @@ describe("jig dispatch line --json", () => {
     });
   });
 });
+
+it("refuses malformed Ready cards from stored JSON", async () => {
+  const home = freshHome();
+  const root = stateRootOf(home);
+  const card = {
+    repo: "example-org/repo",
+    pr: 7,
+    url: "",
+    title: "change",
+    head: "a".repeat(40),
+    place: "ready",
+    lane: "merge-now",
+    says: "ready",
+    act: "merge",
+    waitingFor: null,
+    command: null,
+    withheld: null,
+    requested: [],
+    failing: [],
+    failingOmitted: 0,
+    conditions: [],
+    unblocks: [],
+    since: "2026-11-09T10:00:00Z",
+  };
+  for (const invalid of [
+    { lane: "typo" },
+    { act: "execute" },
+    { conditions: [null] },
+    { requested: [null] },
+    { failing: [1] },
+    { unblocks: ["7"] },
+    { title: undefined },
+    { waitingFor: undefined },
+    { withheld: undefined },
+    { since: undefined },
+  ]) {
+    writeLine(LINE, "{}", root);
+    stateDb(root)
+      .query("UPDATE tick_line SET line = ? WHERE id = 1")
+      .run(JSON.stringify({ ...LINE, ready: [{ ...card, ...invalid }] }));
+    const r = await line(home);
+    expectSpawnExit(r, 1);
+  }
+});
