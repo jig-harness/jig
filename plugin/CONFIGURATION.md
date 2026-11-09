@@ -274,8 +274,12 @@ issue on merge, merged by a human.
 | `pull_requests.branch_name` | pattern | `{key_lower}-{slug}` | Branch name for an issue. Placeholders: `{key}` (`ENG-12`), `{key_lower}` (`eng-12`), `{slug}` (the issue title in lowercase words joined by `-`, at most 40 characters). Must contain `{key}` or `{key_lower}`: the issue key in the branch name is what links the pull request to its issue. Placeholders must be separated by at least one character, the key must not have a digit beside it, and `{slug}` may appear once, or the key cannot be read back from a branch. Example: `feature/{key_lower}-{slug}`. `do-item` and `dispatch` both read it |
 | `pull_requests.issue_link` | `closes`, `refs`, `none` | `closes` | The line linking the pull request to its issue: `Closes ENG-12` (merging closes the issue), `Refs ENG-12` (linked, left open), or none |
 | `pull_requests.size_budget` | whole number ≥ 1 | no budget | Most changed lines (added plus deleted, against the pull request's base) one pull request may carry; the audit record `.config/jig-audit.yaml`, which every audit rewrites whole, is not counted, and `pr-plan.ts` names it beside the size. Over it, `pr-plan.ts` refuses: split the change (into a stack when stacking is allowed), or state why it cannot be split with `--accept-oversize <reason>` and put the reason in the body |
-| `pull_requests.labels` | list of label names | none | Labels added when the pull request opens, such as `agent-authored`. Each must already exist in the repository |
+| `pull_requests.labels` | list of label names | none | Fixed labels added when the pull request opens, such as `agent-authored`. With `drive.change_areas_catalog`, `pr-plan.ts` also adds `tracker.labels` and `tracker.flags` from the areas the diff directly touches (including generated sources), deduplicated with this list; implied areas add none. Each label must already exist in the repository |
 | `pull_requests.title_format` | `conventional`, `free` | Derived (see [above](#what-is-derived-not-declared)) | Whether titles follow Conventional Commits. With squash merges the title becomes the trunk commit, so it matters |
+
+Before opening, `pr-plan.ts` warns when a merge commit brings in commits from
+a parent outside the planned base, naming those commits. Merges of the base
+produce no warning. A failed history or configured catalog read stops planning.
 
 ### Stacking
 
@@ -592,9 +596,11 @@ unknown key is refused.
 ## `workspace_name`
 
 Names the workspace a skill runs in after the work it holds and the stage the
-work is at, in a runtime that can rename its workspaces (Orca today), for
+work is at, in a runtime that can rename its workspaces (Herdr or Orca), for
 example `#12 [D] Rename workspaces`. On by default; `template: ""` turns it
-off. A failed rename only warns.
+off. A failed rename only warns. Herdr sessions use `HERDR_ENV=1` and
+`HERDR_WORKSPACE_ID`; a missing workspace id warns without renaming anything.
+Herdr takes precedence when variables from both runtimes are present.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|

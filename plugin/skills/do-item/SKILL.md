@@ -692,9 +692,9 @@ implementation. Skip this check for issues about the repository's own code.
    bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-progress
    ```
 
-   Then name the workspace for the stage. With a runtime that can rename its workspaces (Orca), this renames it, for
+   Then name the workspace for the stage. With a runtime that can rename its workspaces (Herdr or Orca), this renames it, for
    example to `JIG-12 [I] Rename workspaces` (the default `workspace_name.template`);
-   with the template set to `""`, or anywhere else, it does nothing; a failed Orca rename only warns and exits `0`,
+   with the template set to `""`, or anywhere else, it does nothing; a failed rename only warns and exits `0`,
    while a malformed argument, an invalid `workspace_name` field or an unreadable title
    file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
    tracker text, so write it alone to `.context/workspace-title.md` with the
