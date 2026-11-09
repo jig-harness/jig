@@ -23,13 +23,26 @@ import {
   TrackerRequestError,
 } from "./port.ts";
 import type { CorePoolIssue, CoreTracker } from "./facets/tracker.ts";
+import { readEstimate, type WithEstimate } from "./linear-facets.ts";
+import {
+  labelPage,
+  optStr,
+  priorityOf,
+  record,
+  ShapeError,
+  str,
+  timestamp,
+} from "./linear-shapes.ts";
 
 /** An issue's assignment that cannot be traced to the user who made it. */
 class AssignmentError extends Error {}
 
-/** What a pool reads of each issue: its open children read one deep, as a flag. */
-const POOL_FIELDS = `
-  identifier title url priority createdAt
+/**
+ * What a pool reads of each issue: its open children read one deep, as a
+ * flag, and `extra` (the estimate, where size is kept in it).
+ */
+const poolFields = (extra: string) => `
+  identifier title url priority${extra} createdAt
   state { id name type }
   assignee { id name }
   labels(first: 100) { pageInfo { hasNextPage } nodes { name } }
@@ -39,26 +52,70 @@ const POOL_FIELDS = `
   }
 `;
 
-export const POOL_QUERY = `
+/** The pool reads: a filtered list, an issue's open children, and one issue. */
+export function poolQueries(extra = "") {
+  const fields = poolFields(extra);
+  return {
+    pool: `
 query TrackerPool($filter: IssueFilter!, $after: String) {
   issues(first: 100, after: $after, filter: $filter) {
     pageInfo { hasNextPage endCursor }
-    nodes { ${POOL_FIELDS} }
+    nodes { ${fields} }
   }
-}`;
-
-export const OPEN_CHILDREN_QUERY = `
+}`,
+    openChildren: `
 query TrackerOpenChildren($id: String!, $filter: IssueFilter!, $after: String) {
   issue(id: $id) {
     children(first: 100, after: $after, filter: $filter) {
       pageInfo { hasNextPage endCursor }
-      nodes { ${POOL_FIELDS} }
+      nodes { ${fields} }
     }
   }
-}`;
+}`,
+    poolIssue: `
+query TrackerPoolIssue($id: String!) { issue(id: $id) { ${fields} } }`,
+  };
+}
 
-export const POOL_ISSUE_QUERY = `
-query TrackerPoolIssue($id: String!) { issue(id: $id) { ${POOL_FIELDS} } }`;
+/** Parse one pool node; a truncated label page is recorded, not fatal. */
+export function parsePoolIssue(raw: unknown): WithEstimate<CorePoolIssue> {
+  const n = record(raw, "pool issue");
+  const where = `pool issue ${typeof n.identifier === "string" ? n.identifier : "?"}`;
+  const labels = labelPage(n.labels, where);
+  const children = record(n.children, `${where}.children`);
+  if (
+    !Array.isArray(children.nodes) ||
+    !isRecord(children.pageInfo) ||
+    typeof children.pageInfo.hasNextPage !== "boolean"
+  )
+    throw new ShapeError(`${where}.children: unreadable`);
+  const state = record(n.state, `${where}.state`);
+  const assignee =
+    n.assignee === null ? null : record(n.assignee, `${where}.assignee`);
+  return {
+    identifier: str(n.identifier, `${where}.identifier`),
+    title: str(n.title, `${where}.title`),
+    url: optStr(n.url, `${where}.url`),
+    priority: priorityOf(n.priority, where),
+    ...readEstimate(n, where),
+    createdAt: timestamp(n.createdAt, `${where}.createdAt`),
+    state: {
+      id: str(state.id, `${where}.state.id`),
+      name: str(state.name, `${where}.state.name`),
+      type: str(state.type, `${where}.state.type`),
+    },
+    assignee:
+      assignee === null
+        ? null
+        : {
+            id: str(assignee.id, `${where}.assignee.id`),
+            name: str(assignee.name, `${where}.assignee.name`),
+          },
+    labels: labels.names,
+    hasOpenChildren: children.nodes.length > 0 || children.pageInfo.hasNextPage,
+    truncated: labels.truncated ? ["labels"] : [],
+  };
+}
 
 /** The filter of an issue that is not finished. */
 export const OPEN = { state: { type: { nin: [...CLOSED_STATE_TYPES] } } };

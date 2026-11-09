@@ -659,7 +659,8 @@ order its build order gives: the drive ledger carries its rounds before
 step 2 shows them, and the line takes a tick for one repository before
 step 4.
 
-1. **Measure the waiting loss with what the log holds.** No code: on the
+1. **Measure the waiting loss with what the log holds** (built: the counts
+   are in plan item 36). No code: on the
    host that dispatches a working repository, `jig dispatch log --since
    <30 days ago> --jsonl` gives the re-drives of a stale converged pull
    request with their cause (the ended rows' reason names them), and, per
@@ -676,7 +677,11 @@ step 4.
    counts go into the plan item as a baseline, not a gate: every later
    step is built whatever they show, and steps 2 and 3 measure the loss
    from then on.
-2. **Ready to merge in the tick.** The predicate in `lib/merge-ready.ts`
+2. **Ready to merge in the tick** (built in part: the predicate, its use by
+   `announce-merge-ready.ts` and `jig ask`, the board read with its
+   deadline, budget floor and `UNKNOWN` re-read, the merge command's strict
+   forms, the `ready` notification and the line's lanes; the rest of the
+   step is open). The predicate in `lib/merge-ready.ts`
    with a test for each condition and each row of the placement table,
    `announce-merge-ready.ts` calling it, and `jig ask` calling it: a
    converged drive's `waitsOn` names the lane's act in place of saying the

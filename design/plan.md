@@ -212,6 +212,22 @@ person asked for. The design round covers the whole hub, its views, cards and ch
 the layout holds when the hub's writes arrive, and the board view comes
 with the hub's Work page.
 
+Built: the baseline (step 1) and, of step 2, the predicate the tick, the
+announcement and `jig ask` share, the board read in the tick's observe
+phase, the merge command's strict forms, the `ready` notification and the
+line's lanes; open in step 2: the status row's marks, the merge station,
+the overflow follow-up reads, the event rows, the receipt's figures and the
+report's merge queue.
+
+The baseline, measured on the dispatch host on 2026-11-08 over the six
+days its outcome log held (from 2026-11-02): in jig-harness/jig, 50 pull
+requests had a converged drive and all 50 merged, a median 1.3 hours after
+the first converged row and at most 12.3 hours. In that time 14 re-drives
+of a stale converged pull request ran on 11 pull requests: 12 because the
+branch then conflicted with its base, 2 because its head had moved past the
+verified head. A second repository waited a median 4.4 hours, at most
+11.3, with 5 conflict re-drives across 10 converged pull requests.
+
 Done when, on a host running Orca, a converged pull request whose review the
 forge witnesses and that the forge lets merge is in merge now with its
 pinned command within one interval and reaches a person's phone once, one
@@ -568,8 +584,8 @@ and each genre's contrast test holds its light and dark pairs.
 
 The [tracker interface](../GLOSSARY.md) carries an issue's type, priority
 and size as canonical values. Its callers read those values, and every
-filing through the interface checks them inside the write, warning when
-one is missing. A repository chooses where each is kept through
+filing through the interface checks them inside the write, refusing when
+a required value is missing (an epic needs no size). A repository chooses where each is kept through
 `issue_tracker.facets`: the tracker's own field, a named custom field or
 labels, with a documented default per adapter:
 
@@ -588,11 +604,11 @@ Jig names label stores for its facets. The issue forms and `report-bug.ts`,
 which file around the interface, set the type and leave priority and size
 to triage.
 
-What remains is the checked move between stores, the weekly sweep of issues
-missing a facet and the refusal of an incomplete filing, followed by Jira's
-issue-type and custom-field stores and Linear's estimate. The audit must
-name a repository that keeps facets and runs no sweep. Jig's own move to
-GitHub's fields belongs with the checked move. These are the remaining
+Jira's issue-type and custom-field stores and Linear's estimate store are
+built. What remains is their live runs. Jig's own move to GitHub's fields still needs the
+organization's default Task issue type retired, then the checked move,
+the configuration and issue forms switched, the source labels retired and
+the weekly workflow dispatched to verify its token's reads. These are the remaining
 steps of [the design's build order](tracker-facets.md#build-order).
 A store kept by the repository's own command waits until a repository names
 a facet that needs it.

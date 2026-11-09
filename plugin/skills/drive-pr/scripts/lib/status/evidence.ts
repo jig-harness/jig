@@ -15,6 +15,7 @@ import {
   reviewerExpected,
   stickyMarker,
 } from "../overlay.ts";
+import { checkPattern } from "../merge-ready.ts";
 import { ghCall, run, tsArgv } from "../proc.ts";
 import {
   type FailedRun,
@@ -55,16 +56,7 @@ import { type SkipNotice, skipNoticeIn } from "./skip-notice.ts";
 // matches the siblings it exists to exclude.
 const REVIEWER_CHECK_RAW = reviewerCheckPattern();
 
-/** POSIX character classes → JS, so an override written for the bash/jq
- * dialect (`[[:space:]]`) keeps matching under `RegExp`. */
-function posixToJs(pattern: string): string {
-  return pattern
-    .replaceAll("[[:space:]]", "\\s")
-    .replaceAll("[[:digit:]]", "\\d")
-    .replaceAll("[[:alpha:]]", "[A-Za-z]")
-    .replaceAll("[[:alnum:]]", "[A-Za-z0-9]");
-}
-export const REVIEWER_CHECK = new RegExp(posixToJs(REVIEWER_CHECK_RAW), "i");
+export const REVIEWER_CHECK = checkPattern(REVIEWER_CHECK_RAW);
 
 // The reviewer stamps the SHA it reviewed into its own sticky comment. That is
 // a second, independent witness to the check-run: measured live, the marker

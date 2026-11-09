@@ -53,6 +53,10 @@ repository's Jig configuration only where detection is wrong:
   `frontmatter-schema.yaml` (dotted or not, `.yaml` or `.yml`) under the docs
   tree. The repository's own schema is the one that applies: never check its
   documents against M4's template or rules of your own.
+- **Promoted documents**: the scar lint scans documents whose `status` is
+  `approved`, or the statuses `docs.promoted_statuses` lists instead (a corpus
+  whose lifecycle ends in `active` lists `[approved, active]`). A document with another status is not
+  scanned, and a named one is reported as such.
 - **Stale drafts**: a `status: draft` document whose `last_updated` is more
   than `docs.stale_after_days` days old (180).
 - **The base** for the `last_updated` check and for the documents the branch
@@ -119,5 +123,5 @@ give the CI and hook wiring:
 | Index and orphan report fresh | `scripts/index/generate-index.ts`, with `--check` |
 | `last_updated` advanced | `scripts/stale-last-updated/stale-last-updated.ts` |
 | Generator date stamping | `scripts/stamp/frontmatter-stamp.ts` (a library) |
-| No scars in approved docs | `scripts/scar-lint/check-descarring-scars.ts` |
+| No scars in promoted docs | `scripts/scar-lint/check-descarring-scars.ts` |
 | A deferral names a live item | `scripts/deferral-references/check-deferrals.ts` |

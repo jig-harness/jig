@@ -39,6 +39,7 @@
  * a takeover is admitted.
  */
 import { type DriveHold, driveHold, factsOf } from "./actions/drive-hold.ts";
+import { type BoardRead, readyActions } from "./board.ts";
 import { type Contention, heldReason } from "./contention.ts";
 import { holding, liveAgents } from "./holding.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
@@ -79,6 +80,8 @@ import type {
 export interface PlanInput {
   /** The repository's `owner/name`. */
   slug: string;
+  /** The board read: the converged pull requests it placed, notified as they enter Ready to merge. */
+  board?: BoardRead;
   section: DispatchSection;
   pickups: WantedItem[];
   /** The items the factory identity claimed; `null` when they could not be read. */
@@ -232,6 +235,7 @@ export function planTick(input: PlanInput): Plan {
   });
   plan.actions.push(...drift.actions);
   plan.running.push(...drift.running);
+  plan.actions.push(...readyActions(input.slug, input.board));
   // A pending record no tick launches again waits on a person.
   plan.actions.push(
     ...planStuck(input.slug, input.launches, {

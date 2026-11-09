@@ -99,3 +99,31 @@ it("stops Jira updates at each prerequisite request", async () => {
     expect(calls.every((c) => c.signal === controller.signal)).toBe(true);
   }
 });
+
+it("stops a Jira issue type read when its only caller gives up, and shares it while another waits", async () => {
+  const types = (startAt: number) => ({
+    issueTypes: [{ id: `t${startAt}`, name: `T${startAt}`, subtask: false }],
+    startAt,
+    maxResults: 1,
+    total: 3,
+  });
+  const run = async (second: boolean) => {
+    const first = new AbortController();
+    const other = new AbortController();
+    const { client, calls } = jira((_c, n) => {
+      if (n === 0) {
+        queueMicrotask(() => first.abort(new Error("gave up")));
+        return types(0);
+      }
+      return types(n);
+    });
+    const a = client.issueTypes(first.signal);
+    const b = second ? client.issueTypes(other.signal) : null;
+    await expect(a).rejects.toThrow("gave up");
+    if (b !== null) await b;
+    await new Promise((r) => setTimeout(r, 20));
+    return calls.length;
+  };
+  expect(await run(false)).toBe(1);
+  expect(await run(true)).toBe(3);
+});

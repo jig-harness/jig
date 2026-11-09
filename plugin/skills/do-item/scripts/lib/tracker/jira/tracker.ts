@@ -10,9 +10,10 @@
  *   whose target status has the state's name: the full workflow is readable
  *   only with administration rights, so no path is searched for;
  * - priority: the priority's name (`issue_tracker.jira.priorities`), or
- *   labels where `issue_tracker.facets.priority` names that store; type and
- *   size: labels (`../facets/`); a project: the first fix version; the
- *   native type: the issue type's name;
+ *   labels where `issue_tracker.facets.priority` names that store; type: the
+ *   issue type, a custom field or labels, and size a custom field or labels,
+ *   as `issue_tracker.facets` names them (`facets.ts`, `../facets/`); a
+ *   project: the first fix version; the native type: the issue type's name;
  * - parent and children: the `parent` field, for sub-tasks and an Epic's
  *   issues alike;
  * - relations: issue links of the configured types
@@ -20,7 +21,8 @@
  * - descriptions and comments: Markdown converted to and from ADF (`adf.ts`);
  * - labels: Jira labels, free text shared across the site, written as given
  *   when well-formed, and the values of the fields `field_labels` names,
- *   each behind its prefix, which are read and queried but never written;
+ *   each behind its prefix, which are read and queried but written only as
+ *   the facet such a field keeps;
  * - a trusted comment: one whose author is a licensed, non-guest Atlassian
  *   account that can be assigned issues in the project.
  *
@@ -51,6 +53,7 @@ import { markdownToAdf } from "./adf.ts";
 import { assignerOperations } from "./assigner.ts";
 import { claimOperations } from "./claim.ts";
 import type { Client, IssueTypeMeta } from "./client.ts";
+import { jiraFacetStores } from "./facets.ts";
 import { type JiraIssue, record, str } from "./read.ts";
 import { fieldOfLabel, inProject, OPEN, quote } from "./jql.ts";
 import { isResolvedState } from "./model.ts";
@@ -140,6 +143,7 @@ function onlyTransition(
 
 export function jiraTracker(client: Client): Tracker {
   const { model, project, settings, transport } = client;
+  const stores = jiraFacetStores(client);
   const path = (key: string) => `issue/${encodeURIComponent(key)}`;
 
   /** The issue type of a new issue under `parent` (or none). */
@@ -232,7 +236,10 @@ export function jiraTracker(client: Client): Tracker {
     );
   }
 
-  /** Refuse a label that is a field's value: the adapter reads those fields, never writes them. */
+  /**
+   * Refuse a label that is a field's value: the adapter writes such a field
+   * only as the facet it keeps, and reads the others but never writes them.
+   */
   async function refuseFieldLabels(
     labels: ReadonlyArray<string>,
     signal?: AbortSignal,
@@ -240,11 +247,16 @@ export function jiraTracker(client: Client): Tracker {
     const fields = await client.fieldLabels(signal);
     for (const l of labels) {
       const found = fieldOfLabel(l, fields);
-      if (found !== null)
-        throw new TrackerRequestError(
-          "invalid",
-          `label '${l}' is the value of the Jira field '${found.field.name}' (issue_tracker.jira.field_labels.${found.field.configured}), which the adapter reads but does not write; set the field in Jira`,
-        );
+      if (found === null) continue;
+      const facet = (await client.facetFields(signal)).find(
+        (f) => f.id === found.field.id,
+      )?.facet;
+      throw new TrackerRequestError(
+        "invalid",
+        facet === undefined
+          ? `label '${l}' is the value of the Jira field '${found.field.name}' (issue_tracker.jira.field_labels.${found.field.configured}), which the adapter reads but does not write; set the field in Jira`
+          : `label '${l}' is the value of the Jira field '${found.field.name}', which keeps the ${facet}; give it as the issue's ${facet}, not as a label`,
+      );
     }
   }
 
@@ -316,6 +328,7 @@ export function jiraTracker(client: Client): Tracker {
         state: model.read(issue).state,
         labels: issue.labels,
         priority: model.priorityOf(issue.priority),
+        ...facetValuesOf(issue),
         nativeType: issue.issueType?.name ?? null,
         parent:
           issue.parent === null
@@ -390,7 +403,7 @@ export function jiraTracker(client: Client): Tracker {
       );
     },
 
-    ...reportOperations(client),
+    ...reportOperations(client, stores),
     ...assignerOperations(client),
     ...claimOperations(client),
 
@@ -398,13 +411,19 @@ export function jiraTracker(client: Client): Tracker {
       requireTitle(issue.title);
       checkPriority(issue.priority);
       checkLabels(issue.labels);
+      stores.refuseLabels(issue.labels, "to file");
       await refuseFieldLabels(issue.labels);
       // Every name resolves before the write, so a typo files nothing.
       const parent =
         issue.parent === undefined
           ? null
           : await client.mustIssue(issue.parent);
-      const issueType = await issueTypeUnder(parent);
+      const facet = await stores.create(issue, {
+        issueType: await issueTypeUnder(parent),
+        top: parent === null,
+      });
+      checkLabels(facet.add);
+      const labels = [...new Set([...issue.labels, ...facet.add])];
       const priority = await priorityField(issue.priority ?? 0);
       const version =
         issue.project === undefined
@@ -421,13 +440,12 @@ export function jiraTracker(client: Client): Tracker {
               project: { key: project },
               summary: issue.title,
               description: markdownToAdf(issue.description),
-              issuetype: { name: issueType },
-              ...(issue.labels.length === 0
-                ? {}
-                : { labels: [...new Set(issue.labels)] }),
+              issuetype: { name: facet.issueType },
+              ...(labels.length === 0 ? {} : { labels }),
               ...(priority === null ? {} : { priority }),
               ...(parent === null ? {} : { parent: { key: parent.key } }),
               ...(version === null ? {} : { fixVersions: [{ id: version }] }),
+              ...facet.fields,
             },
           },
         }),
@@ -452,6 +470,7 @@ export function jiraTracker(client: Client): Tracker {
       ];
       const named = labels.map((l) => ("add" in l ? l.add : l.remove));
       checkLabels(named);
+      stores.refuseLabels(patch.addLabels ?? [], "to add");
       await refuseFieldLabels(named, signal);
       if (patch.priority === 0)
         throw new TrackerRequestError(
@@ -460,9 +479,20 @@ export function jiraTracker(client: Client): Tracker {
         );
       const issue = await client.mustIssue(key, signal);
       const fields = await patchFields(patch, signal);
+      const facet = await stores.update(issue, patch, signal);
+      Object.assign(fields, facet.fields);
+      checkLabels(facet.add);
+      labels.push(
+        ...facet.add.map((l) => ({ add: l })),
+        ...facet.remove
+          .filter((l) => !(patch.removeLabels ?? []).includes(l))
+          .map((l) => ({ remove: l })),
+      );
       const body: Record<string, unknown> = {};
       if (Object.keys(fields).length > 0) body.fields = fields;
       if (labels.length > 0) body.update = { labels };
+      // A facet already at its value is no change, and no request.
+      if (Object.keys(body).length === 0) return;
       signal?.throwIfAborted();
       await transport({ method: "PUT", path: path(issue.key), body }, signal);
     },
@@ -491,10 +521,12 @@ export function jiraTracker(client: Client): Tracker {
 
     relate: link,
   };
-  const native = client.facets.priority.store === "native";
-  return withFacets(
-    tracker,
-    client.facets,
-    new Set(native ? (["priority"] as const) : []),
-  );
+  tracker.facetReport = (options) => stores.report(options);
+  return withFacets(tracker, client.facets, stores.own);
+
+  /** The type and size the adapter keeps itself, read off an issue. */
+  function facetValuesOf(issue: JiraIssue) {
+    const { unmappedFacets: _, ...values } = stores.read(issue);
+    return values;
+  }
 }
