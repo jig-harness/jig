@@ -16,6 +16,18 @@ import type {
   Lane,
   Placement,
 } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
+import type { NeedAct } from "../../shared/acts.ts";
+
+/** One option of a framed decision, as the drive recorded it. */
+export interface LineOption {
+  name: string;
+  /** Its `Changes:`; `null` when the record gives none. */
+  changes: string | null;
+  /** Its `Costs:`; `null` when the record gives none. */
+  costs: string | null;
+  /** Whether the record's `## Recommended` names it. */
+  recommended: boolean;
+}
 
 /** One decision a parked drive waits on, as the drive framed it. */
 export interface LineDecision {
@@ -32,6 +44,10 @@ export interface LineDecision {
   recommendation: string | null;
   /** The class the drive filed it under (`scope`, `destructive`, …); `null` when it names none. */
   decisionClass: string | null;
+  /** Its options, in the record's order; empty for a park from before parks were framed. Absent from a line written before it was kept. */
+  options?: LineOption[];
+  /** The record's steps for a person, each a command or a named action; empty for `None.`. Absent from a line written before it was kept. */
+  steps?: string[];
 }
 
 /** How a cause's notification went, at the newest tick. */
@@ -50,6 +66,8 @@ export type NeedCause =
 /** One thing the line waits on a person for. */
 export interface LineNeed {
   cause: NeedCause;
+  /** What the person does about it (`shared/acts.ts`). Absent from a line written before it was kept; a reader then derives it the same way. */
+  act?: NeedAct;
   /** The stage it is about. */
   stage: LaunchAction | "steer";
   repo: string;

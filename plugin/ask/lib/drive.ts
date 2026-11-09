@@ -63,7 +63,14 @@ import {
   driverPresence,
 } from "../../dispatch/lib/sources/silent-driver.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
-import type { Holder, Last, ThreadEntry, WaitsOn } from "./answer.ts";
+import {
+  type Holder,
+  type Last,
+  personWait,
+  type ThreadEntry,
+  type WaitsOn,
+} from "./answer.ts";
+import { actOfClass } from "../../shared/acts.ts";
 import {
   type CommentFields,
   commentFields,
@@ -313,16 +320,13 @@ function waitsOnOf(
       Date.now(),
     )[0] ?? classification;
   const settled = conflictSettled(placed, ledger, r, ctx.host);
-  if (settled !== null) return { person: "re-arm", why: settled };
+  if (settled !== null) return personWait("re-arm", settled);
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.
   const dispatched = ctx.dispatches || current(r.claims) !== null;
   const rearm = (why: string): WaitsOn =>
     dispatched
       ? { waiting: why }
-      : {
-          person: "re-arm",
-          why: `${why}; no dispatcher is known to re-arm it`,
-        };
+      : personWait("re-arm", `${why}; no dispatcher is known to re-arm it`);
   // A launch that holds the drive says nothing of a park nobody answered or of a ledger gone silent.
   if (
     held &&
@@ -334,22 +338,22 @@ function waitsOnOf(
   switch (placed.class) {
     case "driven":
       return "none";
-    case "parked":
-      return {
-        person: "answer",
-        why: placed.why,
+    case "parked": {
+      const open = ledger.parked.filter(
+        (p) => r.comments === null || !answered(p.key, p.at, r.comments),
+      );
+      // The oldest open park's class names the act, as the dashboard's card does.
+      return personWait("answer", placed.why, {
+        act: actOfClass(open[0]?.class),
         people: uniqueLogins(
-          ledger.parked
-            .filter(
-              (p) => r.comments === null || !answered(p.key, p.at, r.comments),
-            )
-            .flatMap((p) =>
-              p.person === undefined
-                ? [r.pull.author].filter(Boolean)
-                : [p.person],
-            ),
+          open.flatMap((p) =>
+            p.person === undefined
+              ? [r.pull.author].filter(Boolean)
+              : [p.person],
+          ),
         ),
-      };
+      });
+    }
     case "re-armable":
       return rearm(placed.why);
     case "stale":
@@ -360,7 +364,7 @@ function waitsOnOf(
     case "done":
       return ledger.driver.exit === DRIVE_EXIT.CONVERGED ? merge : "none";
     default:
-      return { person: "re-arm", why: placed.why };
+      return personWait("re-arm", placed.why);
   }
 }
 
@@ -885,7 +889,7 @@ function driveWait(
       ? {
           waiting: `its heartbeat is past the lease window and this host shows its driver's run ended (${facts.presence.why}): a dispatcher may take it over, once per ledger state and within the pull request's recovery budget, and drive.ts --take-over decides`,
         }
-      : { person: "re-arm", why: spent };
+      : personWait("re-arm", spent);
   }
   const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
   if (diagnosis !== null) return diagnosis;
@@ -942,10 +946,10 @@ function holdWait(
     diagnosis.driver === "dead" &&
     diagnosis.review === "converged"
   )
-    return {
-      person: "release the CI hold",
-      why: `${reason}; recovery: ${diagnosis.recovery}; this starts full CI, whose success remains to be checked`,
-    };
+    return personWait(
+      "release the CI hold",
+      `${reason}; recovery: ${diagnosis.recovery}; this starts full CI, whose success remains to be checked`,
+    );
   const missing = [reason];
   if (!matched)
     missing.push(

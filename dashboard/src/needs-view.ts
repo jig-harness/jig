@@ -5,9 +5,16 @@
 import type {
   LineDecision,
   LineNeed,
+  LineOption,
   LineSession,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import {
+  actOfLineNeed,
+  NEED_ACTS,
+  type NeedAct,
+} from "../../plugin/shared/acts.ts";
+import { uniqueLogins } from "../../plugin/shared/forge-logins.ts";
 import { ago, clock, plural } from "./format.ts";
 import { ROLES, type Role, stageMark } from "./status.ts";
 import {
@@ -24,6 +31,16 @@ import {
 
 export interface NeedView {
   rowKey: string;
+  /** What the person does about it, which the card opens with. */
+  act: NeedAct;
+  /** The option the record recommends, with what it changes and costs; `null` when the record names none. */
+  recommended: LineOption | null;
+  /** The record's other options, for the fold. */
+  otherOptions: LineOption[];
+  /** The steps for a person, as a checklist in the fold. */
+  steps: string[];
+  /** Who it waits on, as the parks name them; empty when no record names anyone. */
+  people: string[];
   target: string;
   repo: string;
   stage: string;
@@ -47,12 +64,15 @@ export interface NeedView {
   evidence: EvidenceRow[];
 }
 
-/** The groups a person's list falls into, by what the person does. */
-const TO_DECIDE: ReadonlySet<string> = new Set([
-  "parked",
-  "needs-person",
-  "stopped-unknown",
-]);
+/** The act a need asks for, as `jig ask` names it. */
+export const needAct: (n: LineNeed) => NeedAct = actOfLineNeed;
+
+/** Who a need waits on: every person its parks name. */
+export function needPeople(n: LineNeed): string[] {
+  return uniqueLogins(
+    n.decisions.flatMap((d) => (d.person === undefined ? [] : [d.person])),
+  );
+}
 
 function recordedWord(n: LineNeed): string {
   if (n.cause === "stopped-unknown")
@@ -129,8 +149,15 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
   const recommendation = first?.recommendation ?? null;
   const decision = decisionText(n.decisions);
   const named = first?.decisionClass ?? null;
+  const options = first?.options ?? [];
+  const recommended = options.find((o) => o.recommended) ?? null;
   return {
     rowKey: `${n.repo} ${n.target} ${n.cause}`,
+    act: needAct(n),
+    recommended,
+    otherOptions: options.filter((o) => o !== recommended),
+    steps: n.decisions.flatMap((d) => d.steps ?? []),
+    people: needPeople(n),
     target: n.target,
     repo: n.repo,
     stage: n.stage,
@@ -143,8 +170,11 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
         ? ""
         : `${named === null ? "" : `, class ${named}`}, ${first.kind}`,
     question: question ?? n.reason,
+    // A record whose recommended option reads in full shows that option instead.
     recommendation:
-      recommendation === null ? null : `Recommended: ${recommendation}`,
+      recommendation === null || recommended !== null
+        ? null
+        : `Recommended: ${recommendation}`,
     decision,
     url: n.url,
     goLabel: n.url === null ? null : goLabelOf(n),
@@ -159,21 +189,28 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
   };
 }
 
-/** Whether a need is a decision: a stuck launch record is released on the host, so it is checked, not decided. */
-function toDecide(n: LineNeed): boolean {
-  return n.stuckRecord == null && TO_DECIDE.has(n.cause);
-}
-
 function byAge(a: LineNeed, b: LineNeed): number {
   return Date.parse(a.since) - Date.parse(b.since);
 }
 
-/** The needs in the order the page lists them: to decide before to check, oldest first in each. */
+/** The needs in the order the page lists them: by act, in the acts' order, oldest first in each. */
 export function orderedNeeds(needs: LineNeed[]): LineNeed[] {
-  return [
-    ...needs.filter((n) => toDecide(n)).sort(byAge),
-    ...needs.filter((n) => !toDecide(n)).sort(byAge),
-  ];
+  return NEED_ACTS.flatMap((act) =>
+    needs.filter((n) => needAct(n) === act).sort(byAge),
+  );
+}
+
+/** Everyone the needs wait on, for the filter, in the order first seen. */
+export function needPeopleOf(line: LineSnapshot | null): string[] {
+  return line === null ? [] : uniqueLogins(line.needs.flatMap(needPeople));
+}
+
+/** Whether a need waits on `person` (`null`: on anyone). */
+function waitsOn(n: LineNeed, person: string | null): boolean {
+  return (
+    person === null ||
+    needPeople(n).some((p) => p.toLowerCase() === person.toLowerCase())
+  );
 }
 
 /** The sessions under "Not moving": a stuck launch record already listed as a need is not listed again. */
@@ -191,24 +228,26 @@ export type NeedRow =
   | { type: "need"; need: NeedView }
   | { type: "stuck"; slot: SlotView };
 
-/** The rows of What needs you: to decide, to check, then the sessions not moving. */
-export function needRows(line: LineSnapshot, clockNow: Clock): NeedRow[] {
+/**
+ * The rows of Needs you: one group per act, in the acts' order, then the
+ * sessions not moving. Filtered to one person, only the needs that wait on
+ * them stay; a session not moving names nobody, so it goes too.
+ */
+export function needRows(
+  line: LineSnapshot,
+  clockNow: Clock,
+  person: string | null = null,
+): NeedRow[] {
   const rows: NeedRow[] = [];
-  const push = (list: LineNeed[], head: string) => {
-    if (list.length === 0) return;
-    rows.push({ type: "head", head });
+  const ordered = orderedNeeds(line.needs).filter((n) => waitsOn(n, person));
+  for (const act of NEED_ACTS) {
+    const list = ordered.filter((n) => needAct(n) === act);
+    if (list.length === 0) continue;
+    rows.push({ type: "head", head: act });
     for (const n of list)
       rows.push({ type: "need", need: needView(n, clockNow) });
-  };
-  const ordered = orderedNeeds(line.needs);
-  push(
-    ordered.filter((n) => toDecide(n)),
-    "To decide, on the pull request",
-  );
-  push(
-    ordered.filter((n) => !toDecide(n)),
-    "To check",
-  );
+  }
+  if (person !== null) return rows;
   const stuck = notMoving(line, clockNow.nowMs);
   if (stuck.length > 0) {
     rows.push({ type: "head", head: "Not moving" });

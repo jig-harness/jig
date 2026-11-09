@@ -92,6 +92,69 @@ describe("decisionOf", () => {
     expect(decision.lines).not.toContain(FRAMED[0]);
   });
 
+  it("keeps each option's changes and costs, the recommended one, and the steps for a person", () => {
+    const decision = decisionOf({
+      key: "PRRT_r1",
+      kind: "thread",
+      lines: [
+        "[thread] PRRT_r1 · class release · parked at round 2",
+        "  ## Question",
+        "",
+        "  Tag v0.159.0 from a bypass account?",
+        "",
+        "  ## Options",
+        "",
+        "  - **Tag it** Changes: the release is published. Costs: a person",
+        "    with bypass pushes one tag.",
+        "  - **Wait** Changes: nothing. Costs: the release stays unpublished.",
+        "",
+        "  ## Recommended",
+        "",
+        "  **Tag it**, because the release commit passed its gates.",
+        "",
+        "  ## Class",
+        "",
+        "  release",
+        "",
+        "  ## Steps for a person",
+        "",
+        "  - git tag v0.159.0 c618c8d",
+        "  - git push origin v0.159.0",
+        "",
+        "  ## Already done",
+        "",
+        "  The release App's push was refused.",
+      ],
+    });
+    expect(decision.options).toEqual([
+      {
+        name: "Tag it",
+        changes: "the release is published.",
+        costs: "a person with bypass pushes one tag.",
+        recommended: true,
+      },
+      {
+        name: "Wait",
+        changes: "nothing.",
+        costs: "the release stays unpublished.",
+        recommended: false,
+      },
+    ]);
+    expect(decision.steps).toEqual([
+      "git tag v0.159.0 c618c8d",
+      "git push origin v0.159.0",
+    ]);
+  });
+
+  it("keeps no steps for a record whose steps are None.", () => {
+    const decision = decisionOf({
+      key: "PRRT_x3",
+      kind: "thread",
+      lines: [...FRAMED, "", "  ## Steps for a person", "", "  None."],
+    });
+    expect(decision.steps).toEqual([]);
+  });
+
   it("names no question for a park from before parks were framed", () => {
     const decision = decisionOf({
       key: "PRRT_x2",
@@ -157,6 +220,8 @@ describe("buildLine", () => {
       workspace: "/srv/parked",
       notified: { workspace: "/srv/notices" },
     });
+    // The fixture's park is under `scope`: its act is Decide.
+    expect(line.needs[0]?.act).toBe("Decide");
   });
 
   it("leaves an unknown workspace null rather than using the notices destination", () => {

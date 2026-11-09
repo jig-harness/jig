@@ -7,6 +7,7 @@ import type { NextOwner } from "../../dispatch/lib/next-owner.ts";
  * an answer on to another machine leaves out.
  */
 import type { Station } from "../../shared/address.ts";
+import { type NeedAct } from "../../shared/acts.ts";
 
 /** The version `--json` prints as `v`. */
 export const ANSWER_VERSION = 1;
@@ -55,11 +56,54 @@ const PERSON_ACTS = [
 ] as const;
 export type PersonAct = (typeof PERSON_ACTS)[number];
 
+/**
+ * The act (`shared/acts.ts`) each of a person's acts is, which the dashboard
+ * groups its cards by. An answer to a park is its class's act instead, which
+ * only the park's record names (`personWait`'s `act`).
+ */
+const ACT_OF_PERSON: Record<PersonAct, NeedAct> = {
+  answer: "Decide",
+  "re-arm": "Investigate",
+  "release the CI hold": "Authorize",
+  merge: "Merge",
+  approve: "Authorize",
+  "request a review": "Do",
+  "update the branch": "Do",
+  "re-run a check": "Do",
+  "mark it ready": "Authorize",
+  "remove the label": "Authorize",
+  "open the pull request": "Do",
+  "re-run the follow-up": "Investigate",
+  "choose the session that keeps the item": "Investigate",
+  "look at the stalled pickup": "Investigate",
+  "answer the waiting session": "Reply",
+  "assign the item as someone who can write": "Do",
+};
+
+/** The act a person's act is, when no record names a more exact one. */
+export function actOfPerson(person: PersonAct): NeedAct {
+  return ACT_OF_PERSON[person];
+}
+
 /** What a station waits on: nothing, something that settles by itself, or a person's act. */
 export type WaitsOn =
   | "none"
   | { waiting: string }
-  | { person: PersonAct; why: string; people?: string[] };
+  | { person: PersonAct; act: NeedAct; why: string; people?: string[] };
+
+/** A wait on a person's act, under the act a record names or else the person's act's own. */
+export function personWait(
+  person: PersonAct,
+  why: string,
+  more: { act?: NeedAct; people?: string[] } = {},
+): WaitsOn {
+  return {
+    person,
+    act: more.act ?? actOfPerson(person),
+    why,
+    ...(more.people === undefined ? {} : { people: more.people }),
+  };
+}
 
 /** The last launch of the station that ended. */
 export interface Last {

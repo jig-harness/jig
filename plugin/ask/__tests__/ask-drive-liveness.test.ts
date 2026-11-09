@@ -154,7 +154,7 @@ it("keeps a pending human decision visible even when the local hold diagnosis of
   const r = await w.ask([`drive@${REPO}#7`, "--json"]);
   expectSpawnExit(r, 0);
   const a = JSON.parse(r.stdout) as AskAnswer;
-  expect(a.waitsOn).toMatchObject({ person: "answer" });
+  expect(a.waitsOn).toMatchObject({ person: "answer", act: "Decide" });
   expect(w.writes()).toEqual([]);
 });
 
@@ -168,4 +168,33 @@ it("withholds release and names missing ledger ownership when the comments canno
     waiting: expect.stringContaining("ownership remains unknown"),
   });
   expect(w.writes()).toEqual([]);
+});
+
+it("names a park under release Authorize, as the dashboard's card does", async () => {
+  const w = world(heldRow());
+  w.api(`repos/${REPO}/issues/7/comments`, [
+    comment(
+      701,
+      ledgerBody(
+        stoppedLedger(7, 8, {
+          parked: [
+            {
+              key: "PRRT_release",
+              kind: "thread",
+              reason: "Tag v0.159.0 from a bypass account?",
+              class: "release",
+              round: 2,
+              at: "2026-11-06T22:00:00Z",
+            },
+          ],
+        }),
+      ),
+    ),
+  ]);
+  const r = await w.ask([`drive@${REPO}#7`, "--json"]);
+  expectSpawnExit(r, 0);
+  const a = JSON.parse(r.stdout) as AskAnswer;
+  expect(a.waitsOn).toMatchObject({ person: "answer", act: "Authorize" });
+  const text = await w.ask([`drive@${REPO}#7`]);
+  expect(text.stdout).toContain("person: answer · Authorize");
 });
