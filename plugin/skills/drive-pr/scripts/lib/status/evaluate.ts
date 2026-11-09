@@ -1265,7 +1265,7 @@ async function evaluateFresh(
             );
           })
           .map((finding) => finding.fingerprint)
-          .sort();
+          .sort((a, b) => a.localeCompare(b));
   const heldByKey = new Map(
     [...heldEvidence.byKey].map(([key, record]) => [
       key,
