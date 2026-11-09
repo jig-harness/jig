@@ -296,15 +296,19 @@ function pickup(
   });
 }
 
+/** What `timings` reads: every field but the pickup's own, the rules and the deadline. */
+type Timings = Omit<
+  DispatchSection,
+  | "identity"
+  | "states"
+  | "followupCommand"
+  | "labels"
+  | "adopt"
+  | "pickupDeadlineMs"
+>;
+
 /** The section's waits and expectations, and where and how often notices go. */
-function timings(
-  section: Record<string, unknown>,
-): Checked<
-  Omit<
-    DispatchSection,
-    "identity" | "states" | "followupCommand" | "labels" | "adopt"
-  >
-> {
+function timings(section: Record<string, unknown>): Checked<Timings> {
   const stalledAfterMs = wait(section.stalled_after, "stalled_after");
   if (!stalledAfterMs.ok) return stalledAfterMs;
   const blockedAfterMs = wait(section.blocked_after, "blocked_after");
@@ -317,12 +321,6 @@ function timings(
     DEFAULT_PICKUP_WITHIN_MS,
   );
   if (!pickupWithinMs.ok) return pickupWithinMs;
-  const pickupDeadlineMs = wait(
-    section.pickup_deadline,
-    "pickup_deadline",
-    DEFAULT_PICKUP_DEADLINE_MS,
-  );
-  if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
   const followupWithinMs = wait(
     section.followup_within,
     "followup_within",
@@ -354,7 +352,6 @@ function timings(
     blockedAfterMs: blockedAfterMs.value,
     driveRoundsFlat: driveRoundsFlat.value,
     pickupWithinMs: pickupWithinMs.value,
-    pickupDeadlineMs: pickupDeadlineMs.value,
     followupWithinMs: followupWithinMs.value,
     followupStaleAfterMs: followupStaleAfterMs.value,
     noticesLingerMs: noticesLingerMs.value,
@@ -386,9 +383,16 @@ export function dispatchSection(
   if (!picked.ok) return picked;
   const waits = timings(section);
   if (!waits.ok) return waits;
+  const pickupDeadlineMs = wait(
+    section.pickup_deadline,
+    "pickup_deadline",
+    DEFAULT_PICKUP_DEADLINE_MS,
+  );
+  if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
   return ok({
     ...picked.value,
     ...waits.value,
+    pickupDeadlineMs: pickupDeadlineMs.value,
     labels: rules.value.labels,
     adopt: rules.value.adopt,
   });

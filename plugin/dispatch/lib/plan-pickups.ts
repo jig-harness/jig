@@ -174,17 +174,8 @@ export function planPickups(input: PickupInput): PickupPlan {
       });
       continue;
     }
-    const asked = questionAsked(input.slug, item, launches);
-    if (hold.kind === "ended" && asked !== null) {
-      plan.actions.push(asked);
-      continue;
-    }
     if (hold.kind === "ended") {
-      plan.quiet.push({
-        target: item.key,
-        class: "pickup-ended",
-        why: hold.why,
-      });
+      planEnded(input.slug, item, hold.why, launches, plan);
       continue;
     }
     plan.actions.push({
@@ -207,6 +198,19 @@ export function planPickups(input: PickupInput): PickupPlan {
     planClaimed(item, input, plan, joined(item.key));
   planWaiting(input, plan);
   return plan;
+}
+
+/** An item whose latest pickup ended without claiming it: a need when its pass stopped on a question, else quiet. */
+function planEnded(
+  slug: string,
+  item: WantedItem,
+  why: string,
+  launches: ReadRecord[],
+  plan: PickupPlan,
+): void {
+  const asked = questionAsked(slug, item, launches);
+  if (asked !== null) plan.actions.push(asked);
+  else plan.quiet.push({ target: item.key, class: "pickup-ended", why });
 }
 
 /** One claimed item: a double claim, running, idle, or stalled. */

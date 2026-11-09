@@ -70,7 +70,7 @@ function resultCommand(
  * The line a pickup's pass carries for `do-item`'s route: the rules decide,
  * and `do-item` forwards their model and effort to its implementer.
  */
-export const ROUTE_RULES_LINE = "route: rules";
+const ROUTE_RULES_LINE = "route: rules";
 
 /** The prompt an interactive pickup's session, which an earlier release started, began with. */
 function pickupPrompt(

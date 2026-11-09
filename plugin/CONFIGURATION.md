@@ -1444,6 +1444,7 @@ dispatch:
   blocked_after: 30m
   drive_rounds_flat: 3
   pickup_within: 2h
+  pickup_deadline: 3h
   followup_within: 1h
   followup_stale_after: 24h
   notices_linger: 1h
