@@ -373,9 +373,10 @@ and `choose <option>`, read wherever an answer is read today (an
 `answer <key>:` line or a reply on the item's thread) and only when they
 are the comment's whole answer, normalized so a phone's typography still
 matches; any other text a free answer, read as today; each person's latest
-answer theirs, and structured answers from two people that disagree
-leaving the item waiting; a decision digest of the record as the ledger
-publishes it, carried by every line Jig offers to copy, so an answer to an
+answer theirs (its time the comment's last edit), and two people's
+answers that are not the same option leaving the item disputed and
+waiting; a decision digest stored with each park and published in the
+ledger, carried by every line Jig offers to copy, so an answer to an
 earlier framing is stale and does not count; the pass handed the chosen
 option and the record; every reader of answers (the re-arm, the tick,
 `jig send`, `jig ask`) moved to one parser at once; `jig send … answer

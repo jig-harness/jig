@@ -1327,7 +1327,8 @@ make, use the entry's term instead.
   anything else, in the person's own words, which a pass interprets
   ([design](design/structured-answers.md)).
 - **Decision digest, stale answer** — a short hash of a *framed decision*'s
-  record as the ledger publishes it. An answer line may end with it, and
+  record, stored when the decision is parked and published in the drive
+  ledger. An answer line may end with it, and
   every line Jig offers to copy does; a structured answer naming a digest
   that is no longer the park's is a **stale answer** and does not count, so
   an approval of an earlier framing never settles the one that replaced it

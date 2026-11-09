@@ -3,9 +3,9 @@
 **What problem this solves.** When an unattended drive
 [parks](../GLOSSARY.md) a decision for a person, it frames it: the question,
 each option with what it changes and what it costs, and the option it
-recommends. Most of the time the person's answer is "yes, the recommended
+recommends: a [framed decision](../GLOSSARY.md). Most of the time the person's answer is "yes, the recommended
 one", or the name of another option. Today they still write it in their own
-words, and the next pass reads those words and works out which option they
+words, and the next [pass](../GLOSSARY.md) reads those words and works out which option they
 meant. "ok" answers nothing clearly, "go with the second" depends on an
 order the person may have read differently, and an answer that names an
 option the park never offered is handed on as if it were one. Nothing
@@ -44,8 +44,8 @@ framing it answers counts only while that framing stands.
 
 ### Today
 
-A drive parks an item with `drive-state.ts park --class <class>` and a
-decision record on stdin, whose sections the script checks: Question,
+A drive parks an item under its [decision class](../GLOSSARY.md) with
+`drive-state.ts park --class <class>` and a decision record on stdin, whose sections the script checks: Question,
 Options (two or more, each a `**name**` with `Changes:` and `Costs:`),
 Recommended (one option by its `**name**`, and why), Class, Steps for a
 person, Already done. The park stores the record and the time. The drive
@@ -81,10 +81,23 @@ lines and quoted lines (lines opening with `>`, which repeat someone
 else's words). The text is a structured answer only when nothing else is
 left in the comment: in a pull-request comment, every remaining line is an
 `answer <key>:` line, at most one for each key; in a thread reply, the one
-remaining line is the answer. Any other line in the comment makes each
-answer in it a free answer, so a condition written on the next line ("but
-only after the migration merges") always reaches the pass as the person's
-words.
+remaining line is the answer. Anything else left is another line: a line of
+prose, a fence marker and every line inside a fenced block (a suggestion
+included), an indented code line, HTML. Any other line makes each answer in
+the comment a free answer, so a condition written on the next line ("but
+only after the migration merges") or a suggested change always reaches the
+pass as the person's words. A comment that leaves no text at all is no
+answer, as today. The pass receives every answer's whole comment either
+way.
+
+An answer's time is when its comment was last edited, or posted when it
+never was: an answer counts only when that time is later than the park, and
+a person's latest answer is the one with the latest time. The forge gives
+both times (`lastEditedAt` and `updated_at`), which the readers fetch
+beside the posting time they read today. The re-arm keeps, with each
+answer it hands on, the hash of the body it read; an edit after that does
+not change the verdict already handed on, and `jig ask` shows the answer
+as edited since it was read.
 
 A text is then a structured answer when, after normalizing, it is exactly
 one of these forms:
@@ -98,11 +111,12 @@ Either form may end with the framing's decision digest in square brackets,
 `approve [3fa9c2d1e0b4]` (see [Binding an answer to its
 framing](#binding-an-answer-to-its-framing)).
 
-Normalizing applies Unicode compatibility normalization (NFKC), folds case,
+Normalizing applies Unicode's compatibility normalization, folds case,
 turns typographic quotes and dashes into their plain forms (a phone types
 `Don’t release` for `Don't release`), removes backticks and the record's
-bold marks, and reads every run of white space as one space. Option names
-are normalized the same way, and a park whose option names are the same
+bold marks, reads every run of white space as one space, and drops one
+full stop or exclamation mark at the end, which a phone's keyboard may add
+(`Approve.`). Option names are normalized the same way, and a park whose option names are the same
 once normalized is refused when it is parked, so no `choose` can name two
 options.
 
@@ -120,7 +134,8 @@ decision record for a class whose act is Authorize names the refusal as an
 option of its own (**Keep it off**, **Do not release**), so `choose` covers
 it. The writing rules for a decision record
 ([human-call elaboration](../plugin/skills/decide/references/human-call-elaboration.md))
-and the HITL registry template gain that sentence.
+and the human-in-the-loop ([HITL](../GLOSSARY.md)) registry template gain
+that sentence.
 
 ### Several answers to one item
 
@@ -131,16 +146,25 @@ their mind before the re-arm reads it simply answers again, and a later
 
 - When every person's latest answer is structured and all choose the same
   option, that option is chosen.
-- When any person's latest answer is free, the item is answered with every
-  person's latest answer handed on, the free ones as text and the structured
-  ones as the options they chose, and the pass interprets them, as today.
-- When the structured answers of two people choose different options, the
-  item is not answered. It waits, and the notification names both answers:
-  a disagreement between two people is theirs to settle.
+- When every person's latest answer is free, the item is answered and every
+  one of them is handed on for the pass to interpret, as today.
+- When two people's latest answers are not the same option (two structured
+  answers choosing different options, or a structured answer beside
+  another person's free one), the item is **disputed**. It is not answered:
+  it waits, and the notification names the answers. A disagreement between
+  two people is theirs to settle, and a free answer beside an approval may
+  well be one.
 
-An item with any trusted answer, a disputed one included, is never decided
-provisionally at the `wide` [autonomy level](../GLOSSARY.md): a provisional
-decision takes only an item nobody has answered.
+`parkAnswers`, which the re-arm and the tick share, returns disputed and
+stale items (see the next section) beside the answered and waiting ones,
+and the notice for a parked drive carries the disputing or stale comments
+in its key, so a dispute or a stale answer that arises after the first
+notice is sent at once rather than at the next repeat.
+
+An item with any answer from a trusted author after its park, whether it
+counts, is disputed or is stale, is never decided provisionally at the
+`wide` [autonomy level](../GLOSSARY.md): a [provisional
+decision](../GLOSSARY.md) takes only an item nobody has answered.
 
 Who may answer is unchanged: any trusted author, whoever the park names as
 the person it waits on.
@@ -157,27 +181,36 @@ say) and a pass parks the same item, which is rare; but a one-word
 `approve` would then approve a recommendation the person never read.
 
 So each framed park has a **decision digest**: the first 12 hexadecimal
-characters of the SHA-256 of its record as the ledger publishes it, that
-is, after redaction. Redaction gives the same text a second time, so the
-re-arm, reading the local record, and the tick, `jig ask` and `jig send`,
-reading the ledger, compute the same digest. It is computed when read and
-never stored. Every place that shows a person the options (the
-notification, `jig ask`, the dashboard, the Orca panel) gives the answer
-lines with the digest of the framing it read, and `jig send` writes the
-digest into the line and into the answer's record. A structured answer
-that names a digest counts only when the digest is the park's current one;
-one naming another digest is a **stale answer**: it does not count, the
-item stays waiting, and the next tick's notification says so at once (the
-stale answer's comment is part of the notice's key). A structured answer
-typed without a digest is bound by time alone; the notification says the
-digest-bearing line is the one to copy.
+characters of the SHA-256 of its record, computed once, when `drive-state.ts
+park` stores it, and stored on the parked item (`ParkedItem.digest`)
+beside the record. The [drive ledger](../GLOSSARY.md) publishes it with the
+park, so the re-arm, reading the local state, and the tick, `jig ask` and
+`jig send`, reading the ledger, compare against the same stored value; none
+of them hashes a record, so a ledger that lags the local state or a change
+in what the ledger redacts cannot make them disagree. A park from before
+digests has none, and its answers are bound by time alone.
+
+Every place that shows a person the options (the notification, `jig ask`,
+the dashboard, the Orca panel) gives the answer lines with the digest of the
+park it read, and `jig send` writes the digest into the line and into the
+answer's record. A structured answer that names a digest counts only when
+it is the park's current one; one naming another digest is a **stale
+answer**: it does not settle the item, which stays waiting, and the next
+tick's notification says so. A structured answer typed without a digest is
+bound by time alone; the notification says the line with the digest is the
+one to copy. A re-arm by a plugin older than this design reads the digest
+as part of a free answer, so the binding holds once every host that
+re-arms the repository's drives runs a plugin that reads it.
 
 ### What the drive does with a structured answer
 
-Each kept verdict (`PendingVerdict` in `state/pass-handoff.ts`) gains a
-`choice`: the option's name, whether it is the recommended one, the form,
-the digest of the framing it chose from, the person, the time and the
-comment's link. The notice to the pass then reads, for that item:
+Each kept answer (`PendingAnswer` in `state/pass-handoff.ts`) gains its
+`choice`, when it is structured: the option's name, whether it is the
+recommended one, the form and the digest it named. Each kept verdict
+(`PendingVerdict`) gains the park's `record` and digest, since the park and
+its record are gone once the re-arm unparks it, and the notice's length
+budget (`NOTICE_MAX`) covers the records with the answers. The notice to
+the pass then reads, for an item answered with one structured choice:
 
 > @person chose **Keep** (the recommended option) from framing
 > 3fa9c2d1e0b4. Apply this option as the decision record states it.
@@ -208,17 +241,23 @@ to read.
   version 1: a reader that does not know a payload field ignores it, while
   a newer version would make an older plugin refuse the comment as an
   answer. A person who already answered may answer again, which replaces
-  their earlier answer; the send shows the earlier one first. `--all
-  --approve` approves every open item of the pull request whose act is
-  Decide, one comment per item, after listing each; an item whose act is
-  Authorize is approved only by its own key.
+  their earlier answer; the send shows the earlier one first. `--approve`
+  is refused on a park whose record names no recommendation. `--all
+  --approve` approves, one comment per item and after listing each, every
+  open item of the pull request whose class the shared acts table
+  (`shared/acts.ts`) lists as Decide by name; a class the table does not
+  list (a repository's own class, which reads Decide only as a fallback)
+  and a class whose act is Authorize are approved only by their own key.
 - **The operator.** "approve 456's parked question" becomes that command,
   run with `--dry-run` first, as every send the operator makes is.
 - **The dashboard.** A parked need's card shows the recommended option
   first, as item 44 builds it, with a copy button beside each option for
-  its line, digest included. `c` copies the `approve` line of a Decide
-  need; an Authorize need's line is copied only from the button beside the
-  option's Changes and Costs. The page copies; it does not write
+  its line, digest included. `c` copies the `approve` line of a need that
+  holds one parked item, of a class the acts table lists as Decide by name;
+  any other item's line is copied only from the button beside the option's
+  Changes and Costs. The line the tick writes carries each waiting park's
+  digest and options, so the page reads them rather than parsing the
+  record. The page copies; it does not write
   ([#477](https://github.com/jig-harness/jig/issues/477) decides whether
   it ever will).
 - **The Orca panel.** Its answer box gains **Approve** and one button per
@@ -229,9 +268,11 @@ to read.
 - **The forge, by hand.** A person types `answer <key>: approve` in a
   pull-request comment, from the forge's site or its phone app, or replies
   `approve` on the item's review thread. On a forge that turns an email
-  reply into a comment by the person who sent it, replying to the
-  notification email works the same way. This path needs no Jig code, and
-  carries the digest only when the person copies it.
+  reply into a comment by the person who sent it, replying to the forge's
+  own notification email for the review thread works the same way, as long
+  as the forge strips the quoted email from the reply; a reply that keeps
+  it is a free answer. This path needs no Jig code, and carries the digest
+  only when the person copies it.
 - **The notification.** The message the tick writes for a parked drive
   lists, for each item, the lines that answer it, digest included:
   `answer <key>: approve [<digest>]` and one `choose` line per other
@@ -254,10 +295,14 @@ The reader lives beside the record that writes it, in
 whether an item is answered reads through it: the re-arm (`parkAnswers`),
 the tick's ledger source, `jig send`'s check, and `jig ask`'s drive,
 thread and waiting readers (`ask/lib/drive.ts`, `ask/lib/thread.ts`,
-`ask/lib/park-wait.ts`). They move together, so no two of them disagree on
-whether an item is answered. It takes the option names and the
-recommendation from the record through the helpers `state/park-frame.ts`
-exports.
+`ask/lib/waiting.ts`). Today `jig ask` and `jig send` read only the
+pull-request conversation and miss a reply on a parked thread, so moving
+them adds the thread reads the re-arm makes, with the same rule for a
+thread that cannot be read: the item is reported unread, never answered.
+They move in one pull request, so no two of them disagree on whether an
+item is answered. The reader takes the option names and the recommendation
+from the record through `state/park-frame.ts`, which gains the record's
+section splitter, kept free of the command code `framed-park.ts` imports.
 
 ### Showing what was decided
 
@@ -269,12 +314,14 @@ exports.
   thread.
 - **The line and the dashboard.** A parked need whose answers are stale or
   disputed keeps its act and says which, with the options.
-- **The [outcome log](../GLOSSARY.md).** When the tick of the host that
-  owns the repository reads a parked item gone from the ledger with the
-  answers it last read, it writes an event row: the class, whether the
-  choice was the recommended option, the form, and how long the item
-  waited. The ledger is on the pull request, so a re-arm on any host is
-  counted, as far as the owner's tick ran to see it.
+- **The [outcome log](../GLOSSARY.md).** The line each tick writes
+  (`dispatch/lib/line-store.ts`) keeps every waiting park with its class,
+  digest and the answers the tick read. When the tick of the host that owns
+  the repository finds a park its previous line held gone from the ledger,
+  it writes an event row from that line: the class, whether the choice was
+  the recommended option, the form, and how long the item waited. The
+  ledger is on the pull request, so a re-arm on any host is counted, as far
+  as the owner's tick ran to see it.
 - **Recommendation acceptance.** `jig dispatch log` reports, per class and
   repository, how many parks were answered, how many with the recommended
   option, and the median wait. That is evidence for a person deciding
@@ -291,15 +338,19 @@ from a pass that posts under the person's login
 ([item 40](plan.md#40-the-pass-trust-boundary-as-mechanisms)), and a pass
 that could post "yes, go ahead" can already settle a park today. A
 structured answer adds no authority, but it makes an approval cheaper to
-give, to copy and to forge, and harder to notice. So Authorize items are
+give, to copy and to forge, and harder to notice; and since an answer's
+time is its last edit, a token that can edit the person's comment can turn
+their words into an approval, as it can turn them into any other answer
+today. So Authorize items are
 left out of `--all` and of one-key copying, and the classes whose wrong
 answer cannot be undone wait on proof that a person answered:
 
 - **Attested classes.** `autonomy.attested_classes`, by default
   `destructive`, `release` and `legal`, lists the classes whose answers
-  count only with such proof. It is read as `autonomy.park_classes` is:
-  in a pass, from the repository's configuration at the base branch's
-  commit, so a pass cannot loosen it on its own branch. The setting
+  count only with such proof. Answers are read by the re-arm and the
+  tick, outside any pass, so each reads the setting itself from the
+  repository's configuration at the head of the base branch, never from
+  the pull request's own branch, which a pass could change. The setting
   arrives with the first proof item 40 builds, never before it: a setting
   with no proof to check would either do nothing or stop those classes
   being answered at all.
@@ -332,8 +383,9 @@ answer cannot be undone wait on proof that a person answered:
 
 ### Records
 
-The `drive-answer` row in [plugin/RECORDS.md](../plugin/RECORDS.md) gains
-the line's digest suffix and the payload fields `decision` (the digest)
+The drive ledger's row in [plugin/RECORDS.md](../plugin/RECORDS.md) gains
+each park's `digest`. The `drive-answer` row gains the line's digest
+suffix and the payload fields `decision` (the digest)
 and `choice` (the option's name and the form). Item 39's third stage adds
 the plan id, the dry run's digest and the kind of proof to the same record
 ([addresses.md](addresses.md)); both add payload fields under version 1, so
@@ -363,36 +415,46 @@ One pull request per step, each shippable alone, each with a change note
 and its pull request saying what changed in the audit.
 
 1. **The forms in the drive and its readers.** `answer-forms.ts` (the
-   forms, normalizing, the whole-comment rule, several answers, the digest
-   and the stale answer); every reader named in [Reading
-   answers](#reading-answers) moved to it at once; the park's refusal of
-   option names that collide; no provisional decision over an answered
-   item; the verdict's `choice` and the pass notice; the stale answer in
-   the notice's key; `drive-pr`'s SKILL.md and README, the decision
-   record's writing rules and the HITL registry template on an Authorize
-   refusal option, and the mechanism map's entry. Waits on the record
-   helpers [#674](https://github.com/jig-harness/jig/pull/674) exports.
-   Done when a park answered `approve` hands the pass the recommended
-   option, a `choose` naming no option reaches the pass as a free answer
-   and `jig ask` labels it free, a stale answer leaves the drive parked and
-   says why, and two people choosing different options leave the item
-   waiting.
-2. **Writing them.** `jig send … answer --approve | --choose | --all`, a
+   forms, normalizing, the whole-comment rule, edit times, several answers
+   and the disputed item); every reader named in [Reading
+   answers](#reading-answers) moved to it at once, `jig ask` and `jig send`
+   gaining the thread reads, and `jig ask` labelling an answer structured,
+   free or disputed in its text; the park's refusal of option names that
+   collide; no provisional decision over an answered item; the kept
+   answer's `choice`, the verdict's record and the pass notice; the
+   disputing comments in the notice's key; `drive-pr`'s SKILL.md and
+   README, the decision record's writing rules and the HITL registry
+   template on an Authorize refusal option, and the mechanism map's entry.
+   Waits on the record helpers
+   [#674](https://github.com/jig-harness/jig/pull/674) exports. Done when a
+   park answered `approve` hands the pass the recommended option, a
+   `choose` naming no option reaches the pass as a free answer and `jig ask`
+   labels it free, an approval beside another person's different answer
+   leaves the item waiting, and the re-arm, the tick and `jig ask` agree on
+   every item of a test pull request.
+2. **The decision digest.** `ParkedItem.digest` stored at the park and
+   published in the ledger, the digest suffix and the stale answer in
+   `answer-forms.ts`, the stale comments in the notice's key, and the
+   notification's answer lines with the digest. Done when a line copied
+   from a notification counts, and the same line after the item was framed
+   again leaves the drive parked and the next notification says why.
+3. **Writing them.** `jig send … answer --approve | --choose | --all`, a
    correcting answer, the record's payload fields and its RECORDS.md row,
-   the operator's verbs, and the notification's answer lines. Done when a
-   send naming no option is refused before it writes, and a sent answer
-   whose framing has since changed does not count.
-3. **Showing them.** `jig ask`'s question and answer fields, the
+   and the operator's verbs. Done when a send naming no option is refused
+   before it writes, `--all` leaves out every class the acts table does not
+   list as Decide, and a person's second send replaces their first.
+4. **Showing them.** `jig ask`'s question and answer fields, the
    dashboard's copy buttons and stale or disputed answers, the Orca
-   panel's buttons, and the outcome log's answered-park event. Done when
+   panel's buttons, the waiting parks' digests and options on the tick's
+   line, and the outcome log's answered-park event. Done when
    the panel, `jig ask` and the dashboard show the same options and the
    same choice for one park.
-4. **Recommendation acceptance.** The per-class report in `jig dispatch
+5. **Recommendation acceptance.** The per-class report in `jig dispatch
    log`. Done when it reports, from the outcome log alone, each class's
    parks, approvals of the recommendation and median wait.
-5. **Attested classes**, with item 40's first proof, and
+6. **Attested classes**, with item 40's first proof, and
    `autonomy.attested_classes` in [CONFIGURATION.md](../plugin/CONFIGURATION.md).
-6. **Beyond the drive**: the follow-up's question, the loosened ratchet
+7. **Beyond the drive**: the follow-up's question, the loosened ratchet
    and the pickup, one pull request each.
 
 ## Left out
@@ -405,7 +467,7 @@ and its pull request saying what changed in the audit.
   form is a free answer. Carrying a note that "never changes the choice"
   would ask a pass to ignore what a person wrote.
 - **Applying an option without a pass**, such as marking a pull request
-  ready on an approved `ready` park. Worth measuring first: step 4 shows
+  ready on an approved `ready` park. Worth measuring first: step 5 shows
   which classes are approved as recommended, and a step that skips the pass
   for one of them is a design change of its own.
 - **Writing from the dashboard.** The page copies lines; #477 and item 40
@@ -420,3 +482,10 @@ and its pull request saying what changed in the audit.
 - **Another tool as the store.** A review interface may produce answers
   through `jig send`; the record stays on the pull request, where the drive
   and every other reader already look.
+
+## Review
+
+Reviewed on 2026-11-09 by two fresh-context agent sessions acting as
+adversaries, before the first pull request that builds it: one read the
+first draft, the other the design at commit `b0171a9a`, each against the
+code it names and the designs and decision records it builds on.
