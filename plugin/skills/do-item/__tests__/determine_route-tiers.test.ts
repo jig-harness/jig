@@ -388,6 +388,44 @@ describe("a model id and its family alias", () => {
       expect(() => rules(config)).toThrow(/Scout family/);
     },
   );
+
+  it.each(["terra", "gpt-5.6-terra"])(
+    "reads a declaration keyed by the model id for the spelling %s",
+    (spelling) => {
+      const config = {
+        routing: {
+          models: {
+            codex: { simple: spelling, standard: spelling, complex: spelling },
+          },
+          family_tiers: {
+            codex: {
+              "gpt-5.6-terra": {
+                tier: "scout",
+                reason: "local classification",
+              },
+            },
+          },
+        },
+      };
+      expect(() => rules(config)).toThrow(/Scout family/);
+    },
+  );
+
+  it("refuses two spellings of one family that declare different tiers", () => {
+    const reason = "local classification";
+    expect(() =>
+      rules({
+        routing: {
+          family_tiers: {
+            codex: {
+              terra: { tier: "execution", reason },
+              "gpt-5.6-terra": { tier: "strategic", reason },
+            },
+          },
+        },
+      }),
+    ).toThrow(/one family, with different tiers/);
+  });
 });
 
 describe("the route never writes to the tracker", () => {

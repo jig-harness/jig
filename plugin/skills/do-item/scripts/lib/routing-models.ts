@@ -154,25 +154,44 @@ function modelRow(runtime: string, entry: unknown): ModelRow {
 const defaultsOf = (runtime: string): Partial<ModelRow> =>
   Object.hasOwn(DEFAULT_MODELS, runtime) ? { ...DEFAULT_MODELS[runtime] } : {};
 
-/** `runtime`'s declared M0 tier for the family `alias`, or `undefined`. */
+/** The alias a `family_tiers` key or a model name stands for: its family's, else itself. */
+const canonicalName = (runtime: string, name: string): string =>
+  (familyOf(runtime, name) ?? familyOfModel(runtime, name))?.alias ?? name;
+
+/**
+ * `runtime`'s declared M0 tier for the family `name` resolves to, or
+ * `undefined`. A declaration is read under any spelling of the family, its
+ * alias or a model id, and two spellings that declare different tiers are
+ * refused rather than one of them ignored.
+ */
 function declaredTier(
   familyTiers: FamilyTiers,
   runtime: string,
-  alias: string,
+  name: string,
+  field: string,
 ): M0Tier | undefined {
   const declared = Object.hasOwn(familyTiers, runtime)
     ? familyTiers[runtime]
     : undefined;
-  return declared !== undefined && Object.hasOwn(declared, alias)
-    ? declared[alias]?.tier
-    : undefined;
+  if (declared === undefined) return undefined;
+  const target = canonicalName(runtime, name);
+  const keys = Object.keys(declared).filter(
+    (key) => canonicalName(runtime, key) === target,
+  );
+  const tiers = new Set(keys.map((key) => declared[key]?.tier));
+  if (tiers.size > 1)
+    throw new RoutingError(
+      `${field}: routing.family_tiers.${runtime} declares ${keys.join(", ")}, which are one family, with different tiers; keep one`,
+    );
+  const [first] = keys;
+  return first === undefined ? undefined : declared[first]?.tier;
 }
 
 /**
  * The M0 tier the family at `field` runs, `undefined` where nothing names
  * one. The family is resolved once, from its alias or from the model id
- * it names today, and its declaration is read under its alias, so both
- * spellings get one tier. Refused: a family outside a runtime's known
+ * it names today, and its declaration is read under any spelling of it, so
+ * every spelling gets one tier. Refused: a family outside a runtime's known
  * families that `family_tiers` does not declare, a Scout family, however
  * declared, and a model id for a runtime that takes aliases, since its
  * release id would freeze the pin.
@@ -186,7 +205,7 @@ function familyTier(
   const known = familiesOf(runtime);
   const byAlias = familyOf(runtime, name);
   const family = byAlias ?? familyOfModel(runtime, name);
-  const own = declaredTier(familyTiers, runtime, family?.alias ?? name);
+  const own = declaredTier(familyTiers, runtime, name, field);
   if (known !== undefined && family === undefined && own === undefined)
     throw new RoutingError(
       `${field}: ${name} is not a model family ${runtime} knows (${known.families.map((f) => f.alias).join(", ")}); name one, or declare its tier in routing.family_tiers.${runtime}.${name}`,
