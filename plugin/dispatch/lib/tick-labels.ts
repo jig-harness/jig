@@ -11,6 +11,7 @@ import {
   type ProjectionInput,
   writeLabels,
 } from "./actions/labels.ts";
+import { adoptionOf, ownAuthors } from "./adopt.ts";
 import type { LabelConfig } from "./labels.ts";
 import { manualOpsLabel } from "./owed-steps.ts";
 import type { TickContext } from "./tick-context.ts";
@@ -34,7 +35,7 @@ export async function projectObserved(
       listed: opened.listed && ctx.owner,
       serialized,
     },
-    opened.values,
+    opened,
   );
 }
 
@@ -53,7 +54,7 @@ async function projectLabels(
     listed: boolean;
     serialized: NonNullable<ProjectionInput["serialized"]>;
   },
-  values: Record<string, unknown>,
+  { values, section }: Pick<RepoObservation["opened"], "values" | "section">,
 ): Promise<void> {
   if (labels === null || !forge.ok) return;
   const number = (target: string) => Number(target.replace(/^PR #/, ""));
@@ -67,6 +68,12 @@ async function projectLabels(
     report.actions
       .filter((a) => a.cause === "followup-failed")
       .map((a) => number(a.target)),
+  );
+  // A merge whose follow-up markers do not read: where its follow-up stands is not known this tick.
+  const followupUnplaced = new Set(
+    report.unplaced
+      .filter((u) => u.target.startsWith("PR #"))
+      .map((u) => number(u.target)),
   );
   const manualOps = manualOpsLabel(values);
   if (!manualOps.ok)
@@ -84,7 +91,9 @@ async function projectLabels(
     merged: forge.merged.filter((p) => !forge.disputed.has(p.number)),
     followedUp,
     followupFailed,
+    followupUnplaced,
     manualOps: manualOps.ok ? manualOps.value : null,
+    own: ownAuthors(adoptionOf(section, forge.login), forge.login),
     serialized: forge.serialized,
   });
   const apply = context.apply;

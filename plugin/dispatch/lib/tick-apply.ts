@@ -22,7 +22,7 @@ import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { applyPickups } from "./actions/pickup.ts";
 import { applySteers } from "./actions/steer.ts";
-import { adoptionOf } from "./adopt.ts";
+import { type Adoption, adoptionOf } from "./adopt.ts";
 import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
 import { readOutcomes } from "./followup-outcomes.ts";
 import { holderActions } from "./holder-notices.ts";
@@ -33,7 +33,7 @@ import {
   pullRequestLabels,
   unresolvedThreadCount,
 } from "./forge.ts";
-import { ok } from "../../shared/outcome.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { carriesSet, hasCommand } from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
 import type { ReadRecord } from "./launches.ts";
@@ -196,17 +196,22 @@ interface ApplyInputs {
 
 /**
  * An automation pull request read again, with the unresolved review threads
- * the adoption rule reads of it and the view does not carry; a count that
- * does not read leaves them unread, so they say nothing of its trouble.
+ * the adoption rule reads of it and the view does not carry; `unreadable`,
+ * with why, when the count does not read, so the launch is not acted on.
  */
 async function withThreads(
   slug: string,
   pr: ListedPr,
-  adopting: boolean,
-): Promise<ListedPr> {
-  if (!adopting || !isAutomation(pr)) return pr;
+  adoption: Adoption | null,
+): Promise<Outcome<ListedPr, "unreadable">> {
+  if (adoption === null || !isAutomation(pr, adoption.authors)) return ok(pr);
   const threads = await unresolvedThreadCount(slug, pr.number);
-  return threads.ok ? { ...pr, unresolvedThreads: threads.value } : pr;
+  if (!threads.ok)
+    return failed(
+      "unreadable",
+      `its unresolved review threads do not read: ${threads.failure.reason}`,
+    );
+  return ok({ ...pr, unresolvedThreads: threads.value });
 }
 
 /**
@@ -239,10 +244,12 @@ async function applyStages(
       )
         return ok(null);
       const adoption = adoptionOf(section, login);
+      const counted = await withThreads(repo.slug, listed, adoption);
+      if (!counted.ok) return counted;
       const [again] = await readDrives(
         repo.slug,
         login,
-        [await withThreads(repo.slug, listed, adoption !== null)],
+        [counted.value],
         Date.now(),
         labels,
         adoption,

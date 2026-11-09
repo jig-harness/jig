@@ -123,6 +123,28 @@ describe("the out-of-tree section", () => {
     ).toEqual({ open: 2, done: 0 });
   });
 
+  it("reads N/A as None, a thematic break as no step, and a setext heading as the section's", () => {
+    expect(owesSteps(body("## Out-of-tree follow-ups", "- N/A"))).toBe(false);
+    expect(
+      owedSteps(
+        body("## Out-of-tree follow-ups", "* * *", "- [ ] Rotate the key"),
+      ),
+    ).toEqual({ open: 1, done: 0 });
+    expect(
+      owedSteps(
+        body(
+          "Out-of-tree follow-ups",
+          "----------------------",
+          "- [ ] Rotate the key",
+          "",
+          "Test plan",
+          "---------",
+          "- [ ] not a step",
+        ),
+      ),
+    ).toEqual({ open: 1, done: 0 });
+  });
+
   it("says nothing of a description that was not read", () => {
     expect(owesSteps(undefined)).toBeNull();
   });

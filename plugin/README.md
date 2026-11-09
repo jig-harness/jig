@@ -659,9 +659,11 @@ repository's manual-operations label (`issue_tracker.labels.manual_ops`,
 `manual-ops` by default) on a pull request whose
 `## Out-of-tree follow-ups` section lists a step not yet checked off, set
 from the description at every run and kept after the merge until the
-follow-up is done; and `automation` on a pull request a bot opened that
-carries no label of the `automation:` family a repository's workflows
-apply (`automation:docs-sync`). The dispatcher never removes `automation`
+follow-up is done (a merged pull request is read only where
+`followup_command` is set); and `automation` on a pull request a bot opened
+that carries no label of the `automation:` family a repository's workflows
+apply (`automation:docs-sync`), unless the bot is one the adoption rule
+names, which is the host's own identity. The dispatcher never removes `automation`
 or an `automation:` label, and never puts either on a person's pull
 request. With `only_labeled`, the dispatcher reads only the pull requests
 that carry a label of the set. The labels must exist first: `jig install
@@ -679,10 +681,12 @@ default the login the dispatcher reads the forge as) and updated within
 its window (a week by default), draft or not, is armed as if it carried
 `jig:drive`, once per head commit. A bot's pull request is adopted only
 when the rule names the bot, and one carrying `jig:hold` never is. An
-automation pull request (a bot's, or one carrying `automation` or an
-`automation:` label) is adopted only while it needs work: a failing check,
-a conflict with its base, or an unresolved review thread. A healthy one is
-left for a person to merge; `jig:drive` still drives one on request. Each
+automation pull request (a bot's the rule does not name, or one carrying
+`automation` or an `automation:` label) is adopted, re-driven, taken over
+or re-armed of the dispatcher's own accord only while it needs work: a
+failed check (not a cancelled one or one waiting for approval), a conflict
+with its base, or an unresolved review thread. A healthy one is left for a
+person to merge; `jig:drive` or `jig:rearm` still drives one on request. Each
 run reports every pull request the rule adopted, with the reason.
 
 **Serialized areas.** Some pull requests conflict with each other whenever

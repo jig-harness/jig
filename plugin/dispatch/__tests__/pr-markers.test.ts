@@ -45,7 +45,9 @@ function plan(input: Partial<ProjectionInput>) {
     merged: [],
     followedUp: new Set(),
     followupFailed: new Set(),
+    followupUnplaced: new Set(),
     manualOps: "manual-ops",
+    own: ["drive-bot"],
     ...input,
   });
 }
@@ -97,6 +99,17 @@ describe("the owed-steps label", () => {
       ],
     );
   });
+
+  it("is left exactly as it is on a merged pull request whose follow-up this tick cannot place", () => {
+    const pr = merged(7, ["jig:followed-up"], OWES);
+    expect(
+      plan({ merged: [pr], followupUnplaced: new Set([7]) }).changes,
+    ).toEqual([]);
+    const carrying = merged(7, ["jig:followed-up", "manual-ops"], OWES);
+    expect(
+      plan({ merged: [carrying], followupUnplaced: new Set([7]) }).changes,
+    ).toEqual([]);
+  });
 });
 
 describe("the failed follow-up's state", () => {
@@ -143,14 +156,29 @@ describe("the automation label", () => {
     expect(changes).toEqual([{ pr: 1, add: ["automation"], remove: [] }]);
   });
 
+  it("never goes on a pull request of a bot that is one of the host's own authors", () => {
+    const { changes } = plan({
+      open: [{ number: 1, labels: [], author: BOT }],
+      own: ["regen-bot[bot]"],
+    });
+    expect(changes).toEqual([]);
+  });
+
+  it("is still written where the manual-operations label's name does not read", () => {
+    expect(
+      plan({
+        open: [{ number: 1, labels: [], author: BOT, body: OWES }],
+        manualOps: null,
+      }).changes,
+    ).toEqual([{ pr: 1, add: ["automation"], remove: [] }]);
+  });
+
   it("is not written on a merged pull request", () => {
     expect(
       markerChange(
-        "manual-ops",
+        { manualOps: "manual-ops", own: [] },
         { labels: [], author: BOT },
-        {
-          followedUp: false,
-        },
+        "not-done",
       ),
     ).toEqual({ add: [], remove: [] });
   });
@@ -176,16 +204,25 @@ describe("the automation label", () => {
 describe("an automation pull request", () => {
   it("is one by its automation labels or its bot author", () => {
     expect(
-      isAutomation({ labels: ["automation:docs-sync"], author: PERSON }),
+      isAutomation({ labels: ["automation:docs-sync"], author: PERSON }, []),
     ).toBe(true);
-    expect(isAutomation({ labels: ["automation"] })).toBe(true);
-    expect(isAutomation({ labels: [], author: BOT })).toBe(true);
-    expect(isAutomation({ labels: ["automationish"], author: PERSON })).toBe(
-      false,
-    );
-    expect(wantsAutomationLabel({ labels: ["automation"], author: BOT })).toBe(
-      false,
-    );
+    expect(isAutomation({ labels: ["automation"] }, [])).toBe(true);
+    expect(isAutomation({ labels: [], author: BOT }, [])).toBe(true);
+    expect(
+      isAutomation({ labels: ["automationish"], author: PERSON }, []),
+    ).toBe(false);
+    expect(
+      wantsAutomationLabel({ labels: ["automation"], author: BOT }, []),
+    ).toBe(false);
+  });
+
+  it("is not one by its author when the bot is one of the host's own, only by an automation label", () => {
+    const own = ["regen-bot[bot]"];
+    expect(isAutomation({ labels: [], author: BOT }, own)).toBe(false);
+    expect(wantsAutomationLabel({ labels: [], author: BOT }, own)).toBe(false);
+    expect(
+      isAutomation({ labels: ["automation:docs-sync"], author: BOT }, own),
+    ).toBe(true);
   });
 
   it("needs work when a check fails, it conflicts with its base or a thread is unresolved", () => {
@@ -204,7 +241,7 @@ describe("an automation pull request", () => {
     );
   });
 
-  it("reads a failed check from the listing's checks and from the query's rollup, and nothing from neither", () => {
+  it("reads a failed check from the forge's checks, not a cancelled one or one waiting for approval, and nothing from what does not read", () => {
     expect(
       checksFail([
         { __typename: "CheckRun", conclusion: "SUCCESS" },
@@ -220,8 +257,17 @@ describe("an automation pull request", () => {
         { __typename: "StatusContext", state: "PENDING" },
       ]),
     ).toBe(false);
-    expect(checksFail({ state: "FAILURE" })).toBe(true);
-    expect(checksFail({ state: "PENDING" })).toBe(false);
+    expect(
+      checksFail([
+        { __typename: "CheckRun", conclusion: "CANCELLED" },
+        { __typename: "CheckRun", conclusion: "ACTION_REQUIRED" },
+        { __typename: "StatusContext", state: "EXPECTED" },
+      ]),
+    ).toBe(false);
+    expect(
+      checksFail([{ __typename: "StatusContext", state: "FAILURE" }]),
+    ).toBe(true);
+    expect(checksFail({ state: "FAILURE" })).toBeUndefined();
     expect(checksFail(null)).toBeUndefined();
   });
 });

@@ -33,9 +33,12 @@ const HEADING_LINE = /^ {0,3}(#{1,6})(?:\s+(.*?))?\s*#*\s*$/;
 const ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
 const BOX = /^\[([ xX])\]\s*(.*)$/;
 
-/** Whether an item's text says there is nothing to do: "None", however emphasised. */
+const SETEXT = /^ {0,3}(=+|-+)\s*$/;
+const BREAK = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
+
+/** Whether an item's text says there is nothing to do: "None" or "N/A", however emphasised. */
 function saysNone(text: string): boolean {
-  return /^none\b/i.test(text.replace(/^[\s_*~]+/, ""));
+  return /^(?:none|n\/a)\b/i.test(text.replace(/^[\s_*~]+/, ""));
 }
 
 /** The description's lines outside fenced code and HTML comments. */
@@ -76,12 +79,31 @@ function headingOf(line: string): { level: number; text: string } | null {
   };
 }
 
+/** A setext heading's level and text, the line before its underline; `null` when `line` underlines nothing. */
+function setextOf(
+  line: string,
+  before: string | undefined,
+): { level: number; text: string } | null {
+  const underline = SETEXT.exec(line);
+  if (underline === null || before === undefined) return null;
+  if (before.trim() === "" || ITEM.test(before) || HEADING_LINE.test(before))
+    return null;
+  return {
+    level: underline[1]?.startsWith("=") ? 1 : 2,
+    text: before.trim().toLowerCase(),
+  };
+}
+
 /** The lines of each out-of-tree section of a description, read outside code and comments. */
 function sections(body: string): string[][] {
   const found: string[][] = [];
   let current: string[] | null = null;
-  for (const line of readLines(body)) {
-    const heading = headingOf(line);
+  const lines = readLines(body);
+  for (const [i, line] of lines.entries()) {
+    const setext = setextOf(line, lines[i - 1]);
+    // The underlined line was read as the section's text: it is the heading.
+    if (setext !== null) current?.pop();
+    const heading = setext ?? headingOf(line);
     if (heading === null) current?.push(line);
     else if (heading.level === 2 && heading.text === HEADING) {
       current = [];
@@ -96,7 +118,7 @@ function itemOf(
   line: string,
 ): { indent: number; kind: "open" | "done" | "plain" } | null {
   const item = ITEM.exec(line);
-  if (item === null) return null;
+  if (item === null || BREAK.test(line)) return null;
   const box = BOX.exec(item[2] ?? "");
   const text = (box === null ? item[2] : box[2])?.trim() ?? "";
   if (text === "" || saysNone(text)) return null;

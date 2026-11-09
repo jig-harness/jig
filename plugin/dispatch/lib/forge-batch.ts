@@ -36,6 +36,7 @@ import { isRecord } from "../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
+import { checksFail } from "./automation.ts";
 import type { RepoTarget } from "./types.ts";
 
 /** Pull requests per page: the forge charges two points for a page this size. */
@@ -68,7 +69,7 @@ const QUERY = `query ${QUERY_NAME}($owner: String!, $name: String!, $first: Int!
         number url title body headRefName createdAt headRefOid baseRefName mergeable isDraft updatedAt
         author { __typename login }
         labels(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { name } }
-        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+        headRef { target { ... on Commit { statusCheckRollup { contexts(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { __typename ... on CheckRun { conclusion } ... on StatusContext { state } } } } } } }
         reviewThreads(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { isResolved } }
         ${COMMENTS}
       }
@@ -181,15 +182,28 @@ function unresolvedOf(node: Record<string, unknown>): {
   return open === 0 && more !== false ? {} : { unresolvedThreads: open };
 }
 
-/** The rollup of the checks on a pull request's head commit, as the query gives it (`{ state }`); nothing when there is none. */
+/**
+ * The checks on a pull request's head commit in the listing's shape (each a
+ * run's `conclusion` or a status's `state`); nothing when they do not read,
+ * or when one page held no failure and there are more, so whether one
+ * failed would be a guess.
+ */
 function rollupOf(node: Record<string, unknown>): {
-  statusCheckRollup?: unknown;
+  statusCheckRollup?: unknown[];
 } {
-  const commits = field(node, "commits", "nodes");
-  const rollup = Array.isArray(commits)
-    ? field(commits[0], "commit", "statusCheckRollup")
-    : undefined;
-  return isRecord(rollup) ? { statusCheckRollup: rollup } : {};
+  const contexts = field(
+    node,
+    "headRef",
+    "target",
+    "statusCheckRollup",
+    "contexts",
+  );
+  const nodes = field(contexts, "nodes");
+  if (!Array.isArray(nodes)) return {};
+  const more = field(contexts, "pageInfo", "hasNextPage");
+  return more !== false && checksFail(nodes) !== true
+    ? {}
+    : { statusCheckRollup: nodes };
 }
 
 /** One open pull request of the query in the pull request listing's shape; `unreadable` when it or its labels read in part. */

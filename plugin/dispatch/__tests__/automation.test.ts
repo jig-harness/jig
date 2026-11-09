@@ -16,9 +16,11 @@ import type { TickReceipt } from "../receipts.ts";
 import {
   FAILING,
   labeled,
+  ledgerComment,
   mergedPr,
   openPr,
   SLUG,
+  stoppedLedger,
   type World,
   world,
 } from "./fixtures.ts";
@@ -41,7 +43,7 @@ ${dispatch}
 
 const LABELS = config("  labels: { enabled: true }");
 const ADOPT = config(
-  '  labels: { enabled: true }\n  adopt:\n    enabled: true\n    authors: [drive-bot, "regen-bot[bot]"]',
+  '  labels: { enabled: true }\n  adopt:\n    enabled: true\n    authors: [drive-bot, "ops-bot[bot]"]',
 );
 const FOLLOWUP = config(
   "  labels: { enabled: true }\n  followup_command: /followup",
@@ -161,26 +163,44 @@ describe("jig dispatch keeps the marker labels", () => {
 describe("jig dispatch drives an automation pull request only while it needs work", () => {
   it("adopts one whose check fails, which conflicts or which has an unresolved thread, and leaves a healthy one", async () => {
     const w = fixture(ADOPT);
+    const sync = (n: number, extra: object = {}) =>
+      labeled(by(n, "drive-bot", extra), "automation:docs-sync");
     w.setPrs("open", [
-      by(20, "app/regen-bot"),
-      by(21, "app/regen-bot", FAILING),
-      by(22, "app/regen-bot", { mergeable: "CONFLICTING" }),
-      labeled(by(23, "drive-bot"), "automation:docs-sync"),
-      labeled(by(24, "drive-bot"), "automation:docs-sync"),
-      labeled(by(25, "app/regen-bot"), "jig:drive"),
-      labeled(by(26, "app/regen-bot", FAILING), "jig:hold"),
-      by(27, "drive-bot"),
+      sync(20),
+      sync(21, FAILING),
+      sync(22, { mergeable: "CONFLICTING" }),
+      // A bot the rule names is the host's own identity: adopted as any own pull request.
+      by(23, "app/ops-bot"),
+      sync(24),
+      // A bot the rule does not name: only a person's drive label drives it.
+      by(25, "app/regen-bot", FAILING),
+      labeled(by(26, "app/regen-bot"), "jig:drive"),
+      labeled(sync(27, FAILING), "jig:hold"),
+      by(28, "drive-bot"),
+      labeled(by(29, "app/ops-bot"), "automation:docs-sync"),
+      // A run cancelled on a superseded head is no failure.
+      sync(30, {
+        statusCheckRollup: [
+          {
+            __typename: "CheckRun",
+            status: "COMPLETED",
+            conclusion: "CANCELLED",
+          },
+        ],
+      }),
     ]);
-    for (const n of [20, 21, 22, 23, 24, 25, 26, 27]) w.setComments(n, []);
+    const all = [20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30];
+    for (const n of all) w.setComments(n, []);
     writeFileSync(join(w.dir, "threads-24"), "2");
 
     const r = await tick(w);
     expect(rearms(r)).toEqual([
       "PR #21",
       "PR #22",
+      "PR #23",
       "PR #24",
-      "PR #25",
-      "PR #27",
+      "PR #26",
+      "PR #28",
     ]);
     const why = (n: number) =>
       String(
@@ -190,6 +210,56 @@ describe("jig dispatch drives an automation pull request only while it needs wor
     expect(why(21)).toContain("a check on its head fails");
     expect(why(22)).toContain("it conflicts with its base");
     expect(why(24)).toContain("2 review threads unresolved");
+  }, 60_000);
+
+  it("re-drives a converged automation pull request whose head moved only while it needs work, or on a person's rearm", async () => {
+    const w = fixture(LABELS);
+    const sync = (n: number, extra: object = {}) =>
+      labeled(by(n, "drive-bot", extra), "automation:docs-sync");
+    w.setPrs("open", [
+      sync(40),
+      sync(41, FAILING),
+      labeled(sync(42), "jig:rearm"),
+      by(43, "drive-bot"),
+    ]);
+    // Each converged at a head its pull request has since moved past.
+    for (const n of [40, 41, 42, 43])
+      w.setComments(n, [
+        ledgerComment(
+          n * 100 + 1,
+          stoppedLedger(n, 0, { verifiedSha: "b".repeat(40) }),
+        ),
+      ]);
+
+    const r = await tick(w);
+    expect(rearms(r)).toEqual(["PR #41", "PR #42", "PR #43"]);
+    expect(r.repos[0]?.quiet).toContainEqual(
+      expect.objectContaining({
+        target: "PR #40",
+        class: "stale",
+        why: expect.stringContaining(
+          "an automation pull request that needs no work",
+        ),
+      }),
+    );
+  }, 60_000);
+
+  it("launches nothing, and says why, when the fresh read cannot count the threads", async () => {
+    const w = fixture(ADOPT);
+    w.setPrs("open", [
+      labeled(by(24, "drive-bot", FAILING), "automation:docs-sync"),
+    ]);
+    w.setComments(24, []);
+    const ws = join(w.root, "ws-24");
+    mkdirSync(ws, { recursive: true });
+    w.setWorkspaces([{ branch: "feature/24", linkedPR: 24, path: ws }]);
+
+    const [held] = (await tick(w, ["--apply"])).repos[0]?.launches ?? [];
+    expect(held).toMatchObject({ action: "rearm", outcome: "waits" });
+    expect(held?.detail).toContain(
+      "its ledger cannot be read again: its unresolved review threads do not read",
+    );
+    expect(driveRuns(w)).toHaveLength(0);
   }, 60_000);
 
   it("launches the drive on an unresolved thread, which its fresh read finds again", async () => {

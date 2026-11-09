@@ -7,7 +7,7 @@
  * query shapes. `batch-comments-<pr>.json` stands in for a pull request's
  * comments in the query alone: a write landing between the query and a
  * later listing. A pull request's listed checks (`statusCheckRollup`) come
- * back as its head commit's rollup, and its unresolved review threads as
+ * back as its head commit's rollup contexts, and its unresolved review threads as
  * many as `threads-<pr>` says (none without it). The query fails while `prs-open-fail` or
  * `repository-query-fail` exists. The comments query over named pull
  * requests (`commentsQuery`) answers each from the same files, and fails
@@ -58,14 +58,17 @@ function queryComment(c: RestComment) {
   };
 }
 
-/** A listed pull request's checks as the query's rollup: failing when one listed check failed, none when it lists none. */
-function rollup(p: Listed): { state: string } | null {
+/** A listed pull request's head commit as the query gives it, its listed checks as the rollup's contexts; no rollup when it lists none. */
+function headRef(p: Listed) {
   const checks = p.statusCheckRollup;
-  if (!Array.isArray(checks) || checks.length === 0) return null;
-  const failed = checks.some(
-    (c) => c?.conclusion === "FAILURE" || c?.state === "FAILURE",
-  );
-  return { state: failed ? "FAILURE" : "SUCCESS" };
+  if (!Array.isArray(checks)) return { target: { statusCheckRollup: null } };
+  return {
+    target: {
+      statusCheckRollup: {
+        contexts: { pageInfo: { hasNextPage: false }, nodes: checks },
+      },
+    },
+  };
 }
 
 /** The files the fake forge keeps in `dir`: whether one exists, and one read as JSON. */
@@ -137,7 +140,7 @@ export function repositoryQuery(
               p.author.is_bot === true,
             ),
       labels: { pageInfo: { hasNextPage: false }, nodes: p.labels },
-      commits: { nodes: [{ commit: { statusCheckRollup: rollup(p) } }] },
+      headRef: headRef(p),
       reviewThreads: threads(p.number),
       comments: comments(p.number),
     };

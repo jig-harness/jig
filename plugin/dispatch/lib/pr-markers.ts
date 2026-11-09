@@ -12,10 +12,12 @@
  *   removed by hand is corrected. A merged pull request keeps it until every
  *   step is checked off or its follow-up is done, which reports each step
  *   done or filed; then `followed-up` stands alone. A description that did
- *   not read leaves it as it is.
+ *   not read, or a merged pull request whose follow-up this tick cannot
+ *   place, leaves it as it is.
  * - **Automation**: `automation` on an open pull request a bot opened that
- *   carries no `automation:` label (`automation.ts`). The tick adds it and
- *   never removes it, nor any label of the `automation:` family.
+ *   is not one of the host's own authors and carries no `automation:` label
+ *   (`automation.ts`). The tick adds it and never removes it, nor any label
+ *   of the `automation:` family.
  *
  * Nothing reads a marker to decide what to start, except that an
  * automation pull request is adopted only while it needs work (`adopt.ts`).
@@ -36,23 +38,33 @@ export interface MarkedLabels {
   author?: Author;
 }
 
-/** The marker labels to add and remove on one pull request: `merged` with whether its follow-up is done. */
+/** Where a pull request's follow-up stands: done, not done, or not known this tick. */
+export type FollowupState = "done" | "not-done" | "unknown";
+
+/** What the markers read of the repository: its manual-operations label (`null` when its name does not read, and that marker is left as it is) and the host's own authors. */
+export interface MarkerContext {
+  manualOps: string | null;
+  own: readonly string[];
+}
+
+/** The marker labels to add and remove on one pull request: `merged` with where its follow-up stands, `null` while it is open. */
 export function markerChange(
-  manualOps: string,
+  context: MarkerContext,
   pr: MarkedLabels,
-  merged: { followedUp: boolean } | null,
+  merged: FollowupState | null,
 ): { add: string[]; remove: string[] } {
-  const labels = pr.labels ?? [];
+  const { manualOps } = context;
   const add: string[] = [];
   const remove: string[] = [];
   const owes = owesSteps(pr.body);
-  if (owes !== null) {
-    const wanted = owes && merged?.followedUp !== true;
-    const has = labels.includes(manualOps);
+  if (manualOps !== null && owes !== null && merged !== "unknown") {
+    const wanted = owes && merged !== "done";
+    const has = (pr.labels ?? []).includes(manualOps);
     if (wanted && !has) add.push(manualOps);
     if (!wanted && has) remove.push(manualOps);
   }
-  if (merged === null && wantsAutomationLabel(pr)) add.push(AUTOMATION_LABEL);
+  if (merged === null && wantsAutomationLabel(pr, context.own))
+    add.push(AUTOMATION_LABEL);
   return { add, remove };
 }
 

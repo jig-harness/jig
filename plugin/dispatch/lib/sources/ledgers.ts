@@ -113,7 +113,8 @@ import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events
 import { ledgerTree } from "../stall-tree.ts";
 import { infraStopClass } from "../infra-backoff.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
-import { type Adoption, adopts, type Author } from "../adopt.ts";
+import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
+import { idleAutomation } from "../automation.ts";
 import { branchHead } from "../forge.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
 import type { Listing } from "../tick-comments.ts";
@@ -899,6 +900,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
       ...ledgerEvidence(ledger, nowMs, forge),
       ...request.evidence,
       ...(await presenceEvidence(pr.number, ledger, classified, r)),
+      ...idleAutomation(pr, ownAuthors(r.adoption, r.login)),
     },
     ...waitingOf(classified, park, pr.author?.login),
   };

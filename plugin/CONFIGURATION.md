@@ -1276,12 +1276,24 @@ neither puts a pull request in scope under `only_labeled`:
 
 | Label | Who writes it | Meaning |
 |-------|---------------|---------|
-| `manual-ops` (the repository's `issue_tracker.labels.manual_ops`) | the dispatcher | the pull request owes steps a person takes outside the code: its description's `## Out-of-tree follow-ups` section lists a step not yet checked off. Set from the description at every run, on open and merged pull requests: one that lists none, or only the explicit "None", loses it, so a label added or removed by hand is corrected. A merged pull request keeps it until every step is checked off or its follow-up is done, which reports each step done or filed |
-| `automation` | the dispatcher | a bot or a workflow opened the pull request. Put on a bot's pull request that carries no label of the `automation:` family, which a repository's workflows apply to say which job opened it (`automation:docs-sync`); never put on a person's, and never removed, nor is any `automation:` label |
+| `manual-ops` (the repository's `issue_tracker.labels.manual_ops`) | the dispatcher | the pull request owes steps a person takes outside the code: its description's `## Out-of-tree follow-ups` section lists a step not yet checked off. Set from the description at every run, on open pull requests and on the merged ones the run reads (those merged since the follow-up stage's start, read only where `followup_command` is set): one that lists none, or only the explicit "None", loses it, so a label added or removed by hand is corrected. A merged pull request keeps it until every step is checked off or its follow-up is done, which reports each step done or filed; one whose follow-up the run cannot place (its markers do not read) keeps the label exactly as it is |
+| `automation` | the dispatcher | a bot or a workflow opened the pull request. Put on a bot's pull request that carries no label of the `automation:` family, unless the bot is one of the host's own authors (below), which a repository's workflows apply to say which job opened it (`automation:docs-sync`); never put on a person's, and never removed, nor is any `automation:` label |
 
 A pull request that carries `automation` or an `automation:` label, or that
-a bot opened, is an **automation pull request**: the adoption rule (below)
-drives one only while it needs work.
+a bot opened, is an **automation pull request**, except a bot's that is one
+of the host's own authors (`dispatch.adopt.authors` where the adoption rule
+is on, else the login the dispatcher reads the forge as): that bot is the
+identity the host's own sessions work under, and its pull request is an
+automation pull request only when it carries an automation label. The
+dispatcher drives an automation pull request only while it needs work: a
+check on its head failed (`FAILURE`, `ERROR`, `TIMED_OUT` or a run that
+failed to start; a run cancelled on a superseded head or one waiting for a
+person's approval is no failure), it conflicts with its base, or a review
+thread is unresolved. That holds for its adoption (below) and for every
+re-drive, takeover and re-arm the dispatcher would start of itself, a
+converged drive whose head moved among them: a healthy one is reported and
+left for a person to merge. A person's `jig:drive` or `jig:rearm` still
+starts one.
 
 A serialized change area (`serialize: true` on an area of the
 [change-area catalog](#drive) that `drive.change_areas_catalog` names, read
@@ -1329,10 +1341,11 @@ open pull requests under) and it was updated within `adopt.within`. A
 draft is adopted like any other, since a drive marks its pull request
 ready. A bot's pull request (a dependency update, say) is adopted only
 when `authors` names the bot, and one carrying `jig:hold` never is. An
-automation pull request is adopted only while it needs work: a check on
-its head fails, it conflicts with its base, or a review thread is
-unresolved; a healthy one is left for a person to merge, and `jig:drive`
-still drives one on a person's word. A check that failed on the CI
+automation pull request (above) is adopted only while it needs work; a
+healthy one is left for a person to merge, and `jig:drive` still drives
+one on a person's word. A bot the rule names is the host's own identity, so
+its pull requests are adopted as any own pull request unless they carry an
+automation label. A check that failed on the CI
 service's infrastructure is re-run by the drive rather than repaired. From
 there the `drive` label's rules apply unchanged: armed once per head
 commit, on an admitted account, behind a serialized area's hold, and a

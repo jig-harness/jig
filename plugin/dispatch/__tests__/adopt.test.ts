@@ -218,16 +218,20 @@ describe("the default author", () => {
     adopt: { enabled: true, authors, withinMs: 168 * HOUR },
   });
 
-  it("never adopts a bot the dispatcher's own login makes the default, only one the rule names, and that only while it needs work", () => {
-    const conflicting = { ...pr, mergeable: "CONFLICTING" };
+  it("never adopts a bot the dispatcher's own login makes the default, and adopts one the rule names as the host's own, an automation-labelled one only while it needs work", () => {
     const implicit = adoptionOf(section(null), "drive-app[bot]");
-    expect(
-      adopts(conflicting, implicit as Adoption, null, Date.now()),
-    ).toBeNull();
+    expect(adopts(pr, implicit as Adoption, null, Date.now())).toBeNull();
     const named = adoptionOf(section(["drive-app[bot]"]), "drive-bot");
-    expect(adopts(conflicting, named as Adoption, null, Date.now())).toContain(
-      "it conflicts with its base",
-    );
-    expect(adopts(pr, named as Adoption, null, Date.now())).toBeNull();
+    expect(adopts(pr, named as Adoption, null, Date.now())).not.toBeNull();
+    const labelled = { ...pr, labels: ["automation:docs-sync"] };
+    expect(adopts(labelled, named as Adoption, null, Date.now())).toBeNull();
+    expect(
+      adopts(
+        { ...labelled, mergeable: "CONFLICTING" },
+        named as Adoption,
+        null,
+        Date.now(),
+      ),
+    ).toContain("it conflicts with its base");
   });
 });

@@ -497,10 +497,26 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   };
 }
 
+/** The classes the dispatcher starts a drive from of itself: a re-drive, a takeover, a re-arm. */
+const AUTOMATIC: ReadonlySet<LedgerClass> = new Set([
+  "stale",
+  "silent",
+  "re-armable",
+]);
+
+/** Why an automation pull request's drive is not started again of itself: it needs no work. `null` for any other drive, and for a person's rearm request. */
+function idleWhy(pr: DrivenPr): string | null {
+  if (pr.evidence.automationIdle !== true || pr.evidence.rearm === true)
+    return null;
+  if (!AUTOMATIC.has(pr.class)) return null;
+  return `${pr.why}; but it is an automation pull request that needs no work (no failing check, no conflict, no unresolved thread), so nothing is started of itself: a person merges it, or labels it rearm`;
+}
+
 /**
  * The drive as this host plans it, or `null` once it is reported quiet
  * because nothing is launched for it yet: its work is in a tree on another
- * host, or its re-drive waits out a backoff.
+ * host, its re-drive waits out a backoff, or it is an automation pull
+ * request that needs no work.
  */
 function plannable(
   input: PlanInput,
@@ -517,7 +533,7 @@ function plannable(
     });
     return null;
   }
-  const waiting = backingOff(pr, input.nowMs);
+  const waiting = backingOff(pr, input.nowMs) ?? idleWhy(pr);
   if (waiting === null) return pr;
   plan.quiet.push({ target, class: pr.class, why: waiting });
   return null;

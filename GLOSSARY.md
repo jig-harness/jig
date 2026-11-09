@@ -2214,10 +2214,11 @@ make, use the entry's term instead.
   (a regeneration, a sync, a dependency update) rather than a person: it
   carries a label of the `automation:` family, which the workflow applies
   to name its job (`automation:docs-sync`), or the generic `automation`
-  label, which the *dispatcher* puts on a bot's pull request that has none.
-  The *adoption rule* drives one only while it needs work (a failing check,
-  a conflict with its base, an unresolved review thread) and leaves a
-  healthy one for a person to merge.
+  label, which the *dispatcher* puts on a bot's pull request that has none
+  (a bot the *adoption rule* names is the host's own identity, not
+  automation). The dispatcher drives one, adopted or re-driven, only while
+  it needs work (a failed check, a conflict with its base, an unresolved
+  review thread) and leaves a healthy one for a person to merge.
 - **Owed-steps label** — the repository's manual-operations label
   (`issue_tracker.labels.manual_ops`, `manual-ops` by default) on a pull
   request: its description's `## Out-of-tree follow-ups` section lists a

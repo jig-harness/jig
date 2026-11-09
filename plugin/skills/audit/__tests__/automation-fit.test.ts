@@ -7,6 +7,10 @@ import {
   fileFindings,
   unlabelledSteps,
 } from "../scripts/lib/automation-fit.ts";
+import { load } from "../../../shared/yaml.ts";
+
+/** The unlabelled steps of one workflow's text. */
+const steps = (text: string) => unlabelledSteps(load(text));
 
 const scratch = mkdtempSync(join(tmpdir(), "automation-fit-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -44,26 +48,36 @@ const GH = (run: string) => `jobs:
 
 describe("the audit's automation label finding", () => {
   it("names each workflow step that opens a pull request with no automation: label", () => {
-    expect(unlabelledSteps(CREATE())).toEqual([
+    expect(steps(CREATE())).toEqual(["regen › Open the regeneration"]);
+    expect(steps(CREATE("docs, needs-review"))).toEqual([
       "regen › Open the regeneration",
     ]);
-    expect(unlabelledSteps(CREATE("docs, needs-review"))).toEqual([
-      "regen › Open the regeneration",
-    ]);
-    expect(unlabelledSteps(GH("gh pr create --fill --label docs"))).toEqual([
+    expect(steps(GH("gh pr create --fill --label docs"))).toEqual([
       "sync › step 1",
     ]);
+    expect(
+      steps(GH('gh pr create --fill --label "docs,automationish" -l x')),
+    ).toEqual(["sync › step 1"]);
   });
 
   it("says nothing of a step that applies an automation: label, or that opens no pull request", () => {
-    expect(unlabelledSteps(CREATE("docs, automation:docs-sync"))).toEqual([]);
+    expect(steps(CREATE("docs, automation:docs-sync"))).toEqual([]);
     expect(
-      unlabelledSteps(GH("gh pr create --fill --label automation:schema-sync")),
+      steps(GH("gh pr create --fill --label automation:docs-sync")),
+    ).toEqual([]);
+    expect(steps(GH('gh pr create --fill -l "automation:docs-sync"'))).toEqual(
+      [],
+    );
+    expect(
+      steps(GH('gh pr create --fill --label "docs,automation:docs-sync"')),
     ).toEqual([]);
     expect(
-      unlabelledSteps(GH('gh pr create --fill -l "automation:openapi-regen"')),
+      steps(GH("gh pr create --fill --label docs -l automation:docs-sync")),
     ).toEqual([]);
-    expect(unlabelledSteps(GH("gh pr list --state open"))).toEqual([]);
+    expect(
+      steps(GH("gh pr create --fill --label=docs,automation:docs-sync")),
+    ).toEqual([]);
+    expect(steps(GH("gh pr list --state open"))).toEqual([]);
   });
 
   it("reports a repository's unlabelled workflows once, as a suggestion, and none for a template or a workflow that does not parse", () => {

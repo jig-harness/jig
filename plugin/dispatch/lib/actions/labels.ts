@@ -30,7 +30,11 @@ import {
   type Projected,
   stateOf,
 } from "../labels.ts";
-import { type MarkedLabels, markerChange } from "../pr-markers.ts";
+import {
+  type FollowupState,
+  type MarkedLabels,
+  markerChange,
+} from "../pr-markers.ts";
 import { failureText } from "../text.ts";
 import type {
   DrivenPr,
@@ -52,8 +56,12 @@ export interface ProjectionInput {
   followedUp: ReadonlySet<number>;
   /** The merged pull requests whose follow-up failed and waits for a person. */
   followupFailed: ReadonlySet<number>;
+  /** The merged pull requests whose follow-up this tick cannot place (its markers do not read): their owed-steps marker is left as it is. */
+  followupUnplaced: ReadonlySet<number>;
   /** The repository's manual-operations label; `null` when its name does not read, and the owed-steps marker is left as it is. */
   manualOps: string | null;
+  /** The host's own authors, whose bot pull requests get no `automation` label (`automation.ts`). */
+  own: readonly string[];
   /** The pull requests serialization holds, or cannot place, this tick. */
   serialized?: Pick<Contention, "held" | "unplaced">;
 }
@@ -132,7 +140,7 @@ function project(
   pr: { number: number } & MarkedLabels,
   projected: Projected | null,
   consumeDrive: boolean,
-  merged: { followedUp: boolean } | null,
+  merged: FollowupState | null,
 ): void {
   const { number } = pr;
   if (projected !== null) {
@@ -150,8 +158,7 @@ function project(
     );
     if (state !== null) changes.push(state);
   }
-  if (input.manualOps === null) return;
-  const markers = markerChange(input.manualOps, pr, merged);
+  const markers = markerChange(input, pr, merged);
   if (markers.add.length > 0 || markers.remove.length > 0)
     changes.push({ pr: number, ...markers });
 }
@@ -187,7 +194,12 @@ function projectMerged(planning: Planning): void {
         ...commandsOf(input.config, pr.number, labels, undefined, false),
       );
     const state = managed ? mergedState(done, failed) : null;
-    project(planning, pr, state, false, { followedUp: done });
+    const followup: FollowupState = done
+      ? "done"
+      : input.followupUnplaced.has(pr.number)
+        ? "unknown"
+        : "not-done";
+    project(planning, pr, state, false, followup);
   }
 }
 

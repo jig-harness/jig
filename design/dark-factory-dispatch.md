@@ -256,7 +256,7 @@ of reads in flight. Each repository is read in one GraphQL query
 repository as its own view of the checkout does: the repository and its
 default branch, `.config/jig.yaml` on that branch, and its open pull
 requests, 50 to a page (two points of the forge's GraphQL budget each), each
-with its labels, description, head, mergeability, its head's checks rollup,
+with its labels, description, head, mergeability, its head's checks,
 its first 100 review threads and first 100 comments, in the shapes
 the pull request and comment listings give them. A pull request with more
 comments than that is listed on its own, in full. A query that fails or
@@ -916,10 +916,14 @@ with theirs; with them off, no label is read or written.
   derived from the description as a state is from its ledger, so a hand
   edit is corrected, and a merged pull request keeps it until every step
   is checked off or its follow-up is done, which reports each step done or
-  filed. The listings read each description with its labels. `automation`
+  filed; one whose follow-up the tick cannot place keeps it as it is. The
+  listings read each description with its labels, and merged pull
+  requests are listed only where `followup_command` is set. `automation`
   marks a pull request a bot opened that carries no label of the
   `automation:` family, which a repository's workflows apply to name their
-  job; the tick adds it and never removes it or a label of the family.
+  job, unless the bot is one of the host's own authors (the adoption
+  rule's, else the dispatcher's own login); the tick adds it and never
+  removes it or a label of the family.
 
 **Adoption** (optional). A pull request nobody armed is never driven
 otherwise: the drive label asks a person to notice each idle one, which is
@@ -937,13 +941,18 @@ the rule names that bot: driving dependency updates stays a choice the
 repository makes by name. A pull request a person's `hold` label is on is
 never adopted, and one a person stopped carries a ledger that records the
 stop, so adoption, which reads only pull requests with no ledger, never
-reaches it. An automation pull request (a bot's, or one carrying
-`automation` or an `automation:` label) is adopted only while it needs
-work: a check on its head fails, it conflicts with its base, or a review
-thread is unresolved. The repository's query reads each open pull
-request's checks rollup and its review threads with it, and the fresh read
-before a launch counts an automation pull request's threads again. A
-healthy one is left for a person to merge. Whether a failed check failed
+reaches it. An automation pull request (a bot's that is not one of the
+host's own authors, or one carrying `automation` or an `automation:`
+label) is adopted only while it needs work: a check on its head failed (a
+cancelled run or one waiting for approval did not), it conflicts with its
+base, or a review thread is unresolved. The same holds for the re-drives,
+takeovers and re-arms the plan would start of itself on one with a
+ledger: a healthy one is reported quiet, and only a person's `rearm`
+starts it again. The repository's query reads each open pull request's
+head checks and its review threads with it, and the fresh read before a
+launch counts an automation pull request's threads again, the launch
+waiting when that count does not read. A healthy one is left for a person
+to merge. Whether a failed check failed
 on the infrastructure is not told here: the drive re-runs such a check
 rather than repairing code. Everything after adoption is the `drive` command's: the plan
 arms it as a re-arm, once per head commit (its launch record's facts are
