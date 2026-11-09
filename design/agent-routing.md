@@ -77,10 +77,10 @@ complex tier to its Strategic tier. No tier maps the implementer to a
 family M0 places on its Scout tier (`haiku`, `luna`), by default or by
 configuration: M0 keeps that tier read-only, and the loader refuses such a
 mapping. Within an implementation, the implementer may still hand simple
-sub-steps to a Scout model, as a skill chooses its own scouts. No tier maps
-to a Judgment family (`fable`, `astra`) either: M0 admits Judgment per
-decision layer, never for a whole implementation, and the loader refuses
-such a mapping. The tier is never a model id: the translation table is the
+sub-steps to a Scout model, as a skill chooses its own scouts. No tier's
+default is a Judgment family (`fable`, `astra`); the loader accepts one
+where a repository configures it for a tier, and the audit reports each
+such mapping. The tier is never a model id: the translation table is the
 only place a model name appears, and it is configuration a check reads.
 
 ### Complexity tiers
@@ -402,17 +402,12 @@ is policy, not an override, and the reasons name the rule that fired.
   declares the family's tier in `routing.family_tiers.<runtime>.<family>`
   with a `reason`, which the loader reads in place of the list's tier for
   that family and refuses without the reason; the audit reports each one.
-  A runtime with no list declares each family's tier in
-  `routing.family_tiers.<runtime>.<family>` before the loader applies any
-  write-capable route to it; a model whose family is unclassified is
-  refused, so the Scout and Judgment refusals below always have a
-  classification to fire on.
+  A runtime with no list takes any name.
   Independently of ordering, the loader refuses any tier mapped to a
-  Scout family or to a Judgment family, and a `family_tiers` override
-  cannot move either out of its refusal. M0 admits Judgment per decision
-  layer, writing nothing, with a named Strategic baseline, so no
-  implementation route reaches it. The audit reports any attempted
-  mapping beside the model mapping.
+  Scout family, and a `family_tiers` override cannot move a Scout family
+  out of that refusal. A tier mapped to a Judgment family is accepted when
+  the repository configures it, never by default, and the audit reports
+  each one beside the model mapping.
 
 ### The audit
 
