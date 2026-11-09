@@ -671,8 +671,8 @@ describe("arm-drive.ts", () => {
       ["42", "--pass-model", "strategic"],
       {
         CODEX_HOME: "/unused/codex",
-        JIG__ROUTING__MODELS__CODEX__EXECUTION: "gpt-small",
-        JIG__ROUTING__MODELS__CODEX__STRATEGIC: "gpt-large",
+        JIG__ROUTING__MODELS__CODEX__EXECUTION: "terra",
+        JIG__ROUTING__MODELS__CODEX__STRATEGIC: "astra",
       },
     );
     expectSpawnExit(run, 0);
@@ -680,7 +680,7 @@ describe("arm-drive.ts", () => {
     expect(answer).toMatchObject({
       status: "spawn",
       way: "background",
-      model: "gpt-large",
+      model: "gpt-6-astra",
     });
     const separator = answer.argv.indexOf("--");
     expect(answer.argv.slice(5, separator)).toEqual([
@@ -692,19 +692,18 @@ describe("arm-drive.ts", () => {
       "codex",
       "exec",
       "-m",
-      "gpt-large",
+      "gpt-6-astra",
     ]);
   });
 
-  it("refuses a Codex tier without its routing row rather than using Claude's", async () => {
+  it("resolves a Codex tier through Codex's default row rather than Claude's", async () => {
     const run = await runArm(
       scratchTree(),
       ["42", "--pass-model", "strategic"],
       { CODEX_HOME: "/unused/codex" },
     );
-    expectSpawnExit(run, 1);
-    expect(report(run)).toMatchObject({ status: "failed", model: null });
-    expect(report(run).reason).toContain("no codex row");
+    expectSpawnExit(run, 0);
+    expect(report(run)).toMatchObject({ model: "gpt-6.1-sol" });
   });
 
   it("reads do_item.arm_drive and drive.pass_model from the configuration", async () => {

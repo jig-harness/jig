@@ -416,11 +416,19 @@ against the vendor's current lineup and pricing before relying on them.
 
 | Tier | Anthropic | OpenAI |
 |------|-----------|--------|
-| **Judgment** | Claude Fable-class | no separate counterpart named; the top reasoning tier of the flagship family is the nearest |
-| **Strategic** | Claude Opus-class | GPT-5-class flagship |
-| **Execution** | Claude Sonnet-class | mid-tier GPT |
-| **Scout** | Claude Haiku-class | `*-mini` models |
+| **Judgment** | Claude Fable (`fable`) | Astra (`astra`, `gpt-6-astra`) |
+| **Strategic** | Claude Opus (`opus`) | Sol (`sol`, `gpt-6.1-sol`) |
+| **Execution** | Claude Sonnet (`sonnet`) | Terra (`terra`, `gpt-5.6-terra`) |
+| **Scout** | Claude Haiku (`haiku`) | Luna (`luna`, `gpt-6-luna`) |
 | **Pin as** | a bare family alias ([below](#family-aliases-and-pins-in-claude-code)) | the undated model name, which points at the current snapshot, never a dated snapshot; where a runtime offers neither, one central name the repository maps to a release in a single place |
+
+The `jig` plugin keeps these families, each with the model it names today
+and its tier, in one list,
+[`plugin/shared/model-families.ts`](../../plugin/shared/model-families.ts),
+which a release updates. Its routing loader reads the list: no complexity
+tier of an implementer's route maps to a Scout family, and a Judgment
+family is no tier's default
+([CONFIGURATION.md § `routing`](../../plugin/CONFIGURATION.md#routing)).
 
 Long prompts can cost more than their length suggests: Anthropic's pricing
 has billed a request whose prompt passes a length threshold at a higher rate

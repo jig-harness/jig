@@ -1041,7 +1041,7 @@ routing below remain **exact**.
       spawn nothing. The pass command is the documented one of the agent
       tool this session runs in: Claude Code's (`claude --model <model> -p
       "..."`) or Codex's (`codex exec … "Use the jig:drive-pr skill: …"`,
-      on `routing.models.codex`, overridden by `--pass-model`, with its bypass
+      on the standard tier of `routing.models.codex`, overridden by `--pass-model`, with its bypass
       only on a host that set `drive.codex_bypass`). A Codex session
       that cannot open a tab gets `spawn`. In any other
       agent tool the script answers `print`. Do not guess one for another
@@ -1564,7 +1564,7 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 | `tracker.ts` | Tracker operations: `children`, `transition`, `comment`, and the configured `states` and `labels` | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
 | `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
 | `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
-| `determine_route.ts` | Derive the implementer's route: agent, model tier, effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, tier, effort, model, runtime_effort, runtime, declared, fields, reasons }` |
+| `determine_route.ts` | Derive the implementer's route: agent, complexity tier (from type, size and complex flags), effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, size, tier, effort, model, runtime_model, runtime_effort, runtime, declared, fields, reasons }` |
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
 | `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (`--input` or stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |

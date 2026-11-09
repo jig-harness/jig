@@ -257,8 +257,9 @@ write specs well are recommended beside the adapter that reads each.
 ### 31. Routing work to an agent, a model and an effort
 
 Delegation already picks an agent from the issue's change areas, labels and
-title, and `do-item` reports the model tier and effort the work's type, its
-size and flag labels and the change areas' mandatory reviews call for, by
+title, and `do-item` reports the complexity tier, the model and the effort
+the work's type, its size and flag labels and the change areas' mandatory
+reviews call for, with Claude's and OpenAI's model families known, by
 rules a repository declares with defaults it overrides. The agent still
 runs on whichever model and effort the session was started with, whatever
 the work. Routing will apply that route to the implementer, opt-in, with

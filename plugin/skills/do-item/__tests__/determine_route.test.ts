@@ -1,5 +1,6 @@
 /**
- * determine_route.ts: the route's base from the work type, each raise and
+ * determine_route.ts: the route's complexity tier from the type, the size
+ * and the complex flags, its base effort from the work type, each raise and
  * its order, the cap, the strictest row for `unknown`, the translation to a
  * runtime's names, and every configuration the loading rules refuse.
  */
@@ -19,7 +20,7 @@ import {
   type RouteFacts,
 } from "../scripts/determine_route.ts";
 import {
-  DEFAULT_ROUTE_ROWS,
+  DEFAULT_EFFORTS,
   parseRouting,
   RoutingError,
   undeclaredRaiseLabels,
@@ -67,12 +68,10 @@ const route = (
 ) => deriveRoute(facts(over), rules(config));
 
 describe("the base", () => {
-  it.each([...DEFAULT_TYPES])("takes %s's default row", (type) => {
+  it.each([...DEFAULT_TYPES])("takes %s's default effort", (type) => {
     const r = route({ type });
-    expect({ tier: r.tier, effort: r.effort }).toEqual(
-      DEFAULT_ROUTE_ROWS[type],
-    );
-    expect(r.reasons).toContain(`tier: ${r.tier} (type ${type})`);
+    expect(r.effort).toBe(DEFAULT_EFFORTS[type]);
+    expect(r.reasons).toContain(`effort: ${r.effort} (type ${type})`);
   });
 
   it("reads a type's row from routing.types, field by field", () => {
@@ -81,7 +80,7 @@ describe("the base", () => {
       { routing: { types: { task: { effort: "high" } } } },
     );
     expect({ tier: r.tier, effort: r.effort }).toEqual({
-      tier: "execution",
+      tier: "simple",
       effort: "high",
     });
   });
@@ -89,21 +88,21 @@ describe("the base", () => {
   it("gives unknown the highest tier and the highest effort any row names", () => {
     const r = route({ type: "unknown" });
     expect({ tier: r.tier, effort: r.effort }).toEqual({
-      tier: "strategic",
+      tier: "complex",
       effort: "high",
     });
     expect(r.reasons).toContain(
-      "tier: strategic (type unknown: the strictest row)",
+      "tier: complex (type unknown: the strictest row)",
     );
   });
 
   it("does not let an override that lowers a type lower unknown", () => {
     const r = route(
       { type: "unknown" },
-      { routing: { types: { spike: { tier: "execution", effort: "low" } } } },
+      { routing: { types: { spike: { tier: "simple", effort: "low" } } } },
     );
     expect({ tier: r.tier, effort: r.effort }).toEqual({
-      tier: "strategic",
+      tier: "complex",
       effort: "high",
     });
   });
@@ -119,9 +118,9 @@ describe("the base", () => {
   it("gives a type the repository added the strictest row while routing is undeclared", () => {
     const r = deriveRoute(facts({ type: "chore" }), rules(WITH_CHORE));
     expect(r.declared).toBe(false);
-    expect(r.tier).toBe("execution");
+    expect(r.tier).toBe("complex");
     expect(r.reasons).toContain(
-      "tier: execution (type chore has no routing row: the strictest row)",
+      "tier: complex (type chore has no routing row: the strictest row)",
     );
   });
 });
@@ -251,11 +250,11 @@ describe("the raises", () => {
   it("caps the effort at max and never moves the tier", () => {
     const r = route({
       type: "feature",
-      labels: ["hitl", "large", "security"],
-      catalog: { flags: ["security"], reviews: [] },
+      labels: ["hitl", "security"],
+      catalog: { flags: ["security"], reviews: [{ area: "a", skills: ["s"] }] },
     });
     expect(r.effort).toBe("max");
-    expect(r.tier).toBe("execution");
+    expect(r.tier).toBe("standard");
   });
 
   it("raises on flags and reviews alike when a declared catalog cannot be read", () => {
@@ -264,6 +263,270 @@ describe("the raises", () => {
     expect(r.reasons).toContain(
       "effort: high (the catalog cannot be read, so its flags are taken to apply raised medium)",
     );
+  });
+});
+
+describe("the complexity tiers", () => {
+  const SIZES = ["xs", "small", "medium", "large", "xl"];
+  const sized = (type: string, size: string | null) =>
+    route({ type, knownSizes: SIZES, sizes: size === null ? [] : [size] });
+
+  it.each([
+    ["bug", "xs", "standard"],
+    ["bug", "medium", "standard"],
+    ["bug", "large", "complex"],
+    ["improvement", "small", "standard"],
+    ["feature", "medium", "standard"],
+    ["feature", "xl", "complex"],
+    ["task", "xs", "simple"],
+    ["task", "large", "simple"],
+    ["task", "xl", "standard"],
+    ["spike", "xs", "complex"],
+  ])("routes a %s of size %s %s", (type, size, tier) => {
+    const r = sized(type, size);
+    expect<string>(r.tier).toBe(tier);
+  });
+
+  it("routes an S bug standard, and the same bug labelled has-migration complex", () => {
+    const plain = route({ type: "bug", labels: ["small"] });
+    expect(plain.tier).toBe("standard");
+    expect(plain.size).toBe("S");
+    expect(plain.reasons).toContain("tier: standard (type bug, size S)");
+    const flagged = route({ type: "bug", labels: ["small", "has-migration"] });
+    expect(flagged.tier).toBe("complex");
+    expect(flagged.reasons).toContain("tier: complex (flag has-migration)");
+  });
+
+  it("reads an unknown size as M", () => {
+    expect(sized("feature", null).reasons).toContain(
+      "tier: standard (type feature, no size, read as M)",
+    );
+    expect(sized("task", "huge").reasons).toContain(
+      "tier: simple (type task, size huge, not one the table knows, read as M)",
+    );
+  });
+
+  it("reads a size label kept under a prefix", () => {
+    expect(route({ type: "bug", labels: ["size:L"] }).tier).toBe("complex");
+  });
+
+  it("sets complex from a flag an area the item seeds declares", () => {
+    const r = route({
+      type: "task",
+      catalog: {
+        flags: ["api-change"],
+        reviews: [],
+        seededFlags: ["api-change"],
+      },
+    });
+    expect(r.tier).toBe("complex");
+    expect(r.reasons).toContain(
+      "tier: complex (flag api-change of an area it seeds)",
+    );
+  });
+
+  it("reads routing.complex_flags in place of the defaults", () => {
+    const config = { routing: { complex_flags: ["security"] } };
+    expect(route({ labels: ["security"] }, config).tier).toBe("complex");
+    expect(route({ labels: ["has-migration"] }, config).tier).toBe("standard");
+    expect(
+      route({ labels: ["has-migration"] }, { routing: { complex_flags: [] } })
+        .tier,
+    ).toBe("standard");
+  });
+
+  it("takes a type row's own tier over the table, a complex flag still setting complex", () => {
+    const config = { routing: { types: { bug: { tier: "simple" } } } };
+    const r = route({ type: "bug", labels: ["large"] }, config);
+    expect(r.tier).toBe("simple");
+    expect(r.reasons).toContain("tier: simple (routing.types.bug.tier)");
+    expect(route({ labels: ["api-change"] }, config).tier).toBe("complex");
+  });
+
+  it("reads the legacy tier names as standard and complex", () => {
+    const config = {
+      routing: {
+        types: { bug: { tier: "strategic", effort: "high" } },
+        models: { "claude-code": { execution: "sonnet", strategic: "opus" } },
+      },
+    };
+    const r = route({ type: "bug", labels: ["small"] }, config);
+    expect({ tier: r.tier, effort: r.effort, model: r.model }).toEqual({
+      tier: "complex",
+      effort: "high",
+      model: "opus",
+    });
+    expect(
+      route(
+        { type: "task" },
+        { routing: { types: { task: { tier: "execution" } } } },
+      ).tier,
+    ).toBe("standard");
+  });
+
+  it("never writes a model or a tier onto the issue: the route is printed, never a label", () => {
+    const r = route({ type: "bug", labels: ["has-migration"] });
+    expect(Object.keys(r).sort()).toEqual(
+      [
+        "agent",
+        "declared",
+        "effort",
+        "fields",
+        "model",
+        "reasons",
+        "runtime",
+        "runtime_effort",
+        "runtime_model",
+        "size",
+        "tier",
+        "type",
+      ].sort(),
+    );
+  });
+});
+
+describe("the models per tier", () => {
+  const models = (routing: Record<string, unknown>) =>
+    rules({ routing }).models;
+
+  it("defaults both Claude Code and Codex", () => {
+    expect(models({})).toEqual({
+      "claude-code": { simple: "sonnet", standard: "sonnet", complex: "opus" },
+      codex: { simple: "terra", standard: "terra", complex: "sol" },
+    });
+  });
+
+  it("keeps a small task on opus where the legacy row names opus for both tiers", () => {
+    const config = {
+      routing: {
+        models: { "claude-code": { execution: "opus", strategic: "opus" } },
+      },
+    };
+    expect(models(config.routing)["claude-code"]).toEqual({
+      simple: "opus",
+      standard: "opus",
+      complex: "opus",
+    });
+    expect(route({ type: "task", labels: ["xs"] }, config).model).toBe("opus");
+  });
+
+  it("keeps a custom runtime's legacy execution model for simple and standard", () => {
+    expect(
+      models({ models: { custom: { execution: "a", strategic: "b" } } }).custom,
+    ).toEqual({
+      simple: "a",
+      standard: "a",
+      complex: "b",
+    });
+  });
+
+  it("lets an explicit simple model replace the legacy fallback", () => {
+    expect(
+      models({
+        models: { custom: { simple: "z", execution: "a", strategic: "b" } },
+      }).custom,
+    ).toEqual({ simple: "z", standard: "a", complex: "b" });
+  });
+
+  it("fills a tier a row leaves out from the runtime's default", () => {
+    expect(models({ models: { codex: { complex: "astra" } } }).codex).toEqual({
+      simple: "terra",
+      standard: "terra",
+      complex: "astra",
+    });
+  });
+
+  it("coalesces a legacy and a new key naming the same model, and refuses two that differ", () => {
+    expect(
+      models({
+        models: { "claude-code": { execution: "sonnet", standard: "sonnet" } },
+      })["claude-code"]?.standard,
+    ).toBe("sonnet");
+    expect(() =>
+      models({
+        models: { "claude-code": { strategic: "opus", complex: "fable" } },
+      }),
+    ).toThrow(
+      "routing.models.claude-code.strategic (opus) and routing.models.claude-code.complex (fable) both name the complex tier's model",
+    );
+  });
+
+  it.each([
+    ["claude-code", "haiku"],
+    ["codex", "luna"],
+  ])("refuses a %s tier mapped to the Scout family %s", (runtime, scout) => {
+    for (const tier of ["simple", "standard", "complex", "execution"])
+      expect(() =>
+        models({ models: { [runtime]: { [tier]: scout } } }),
+      ).toThrow(`${scout} is a Scout family`);
+  });
+
+  it("refuses a Scout family whatever routing.family_tiers says", () => {
+    expect(() =>
+      models({
+        models: { "claude-code": { simple: "haiku" } },
+        family_tiers: {
+          "claude-code": {
+            haiku: { tier: "execution", reason: "ours is larger" },
+          },
+        },
+      }),
+    ).toThrow("no routing.family_tiers entry changes that");
+  });
+
+  it("runs a complex item on Fable where a repository configures it, and reports it", () => {
+    const config = {
+      routing: { models: { "claude-code": { complex: "fable" } } },
+    };
+    expect(route({ type: "spike" }, config).model).toBe("fable");
+    expect(rules(config).reported).toEqual([
+      "routing.models.claude-code.complex runs the complex tier on fable, a Judgment family no default names",
+    ]);
+    expect(rules({ routing: {} }).reported).toEqual([]);
+  });
+
+  it("refuses an alias outside a runtime's known families", () => {
+    expect(() =>
+      models({ models: { codex: { standard: "gpt-example" } } }),
+    ).toThrow(
+      "routing.models.codex.standard: gpt-example is not a model family codex knows (luna, terra, sol, astra)",
+    );
+  });
+
+  it("refuses a stricter tier on a family of a lower M0 tier", () => {
+    expect(() =>
+      models({
+        models: { "claude-code": { standard: "opus", complex: "sonnet" } },
+      }),
+    ).toThrow(
+      "routing.models.claude-code.complex: the complex tier runs on sonnet (M0 execution), a lower M0 tier than the standard tier's opus (M0 strategic)",
+    );
+  });
+
+  it("accepts a family a repository declares, with its reason, and reports it", () => {
+    const r = rules({
+      routing: {
+        models: { codex: { complex: "gpt-house" } },
+        family_tiers: {
+          codex: {
+            "gpt-house": {
+              tier: "strategic",
+              reason: "our gateway's flagship",
+            },
+          },
+        },
+      },
+    });
+    expect(r.models.codex?.complex).toBe("gpt-house");
+    expect(r.reported).toContain(
+      "routing.family_tiers.codex.gpt-house reads gpt-house as a strategic family: our gateway's flagship",
+    );
+  });
+
+  it("refuses a family_tiers entry with no reason", () => {
+    expect(() =>
+      models({ family_tiers: { codex: { terra: { tier: "strategic" } } } }),
+    ).toThrow("routing.family_tiers.codex.terra.reason must say why");
   });
 });
 
@@ -388,23 +651,40 @@ describe("the translation", () => {
     expect(route({ type: "bug" }).model).toBe("sonnet");
   });
 
+  it("runs Codex on Sol for a complex item and Terra for a standard one with no routing.models", () => {
+    const complex = route({ runtime: "codex", type: "spike" });
+    expect(complex.model).toBe("sol");
+    expect(complex.runtime_model).toBe("gpt-6.1-sol");
+    expect(complex.reasons).toContain(
+      "model: gpt-6.1-sol for codex (the model sol names)",
+    );
+    const standard = route({ runtime: "codex", type: "bug" });
+    expect(standard.model).toBe("terra");
+    expect(standard.runtime_model).toBe("gpt-5.6-terra");
+  });
+
+  it("gives Claude Code the family alias itself", () => {
+    const r = route({ type: "spike" });
+    expect(r.runtime_model).toBe("opus");
+  });
+
   it("reads a runtime's row from routing.models", () => {
     const config = {
       routing: {
-        models: { codex: { execution: "gpt-mini", strategic: "gpt" } },
+        models: { "my-agent": { simple: "a", standard: "b", complex: "c" } },
       },
     };
-    const r = route({ runtime: "codex" }, config);
-    expect(r.model).toBe("gpt-mini");
-    expect(r.reasons).toContain(
-      "model: gpt-mini (routing.models.codex.execution)",
-    );
+    const r = route({ runtime: "my-agent" }, config);
+    expect(r.model).toBe("b");
+    expect(r.runtime_model).toBe("b");
+    expect(r.reasons).toContain("model: b (routing.models.my-agent.standard)");
   });
 
   it("proposes no model for a runtime with no row, and says so", () => {
-    const r = route({ runtime: "codex" });
+    const r = route({ runtime: "other" });
     expect(r.model).toBeNull();
-    expect(r.reasons).toContain("model: none (no model for codex)");
+    expect(r.runtime_model).toBeNull();
+    expect(r.reasons).toContain("model: none (no model for other)");
   });
 
   it("proposes no model when no runtime is identified", () => {
@@ -446,14 +726,14 @@ describe("the loading rules", () => {
   it.each([
     [[], "routing must be a mapping"],
     [{ tiers: {} }, "routing.tiers is not a field of routing"],
-    [{ types: { unknown: { tier: "execution" } } }, "routing.types.unknown"],
+    [{ types: { unknown: { tier: "standard" } } }, "routing.types.unknown"],
     [
-      { types: { epic: { tier: "execution" } } },
+      { types: { epic: { tier: "standard" } } },
       "routing.types.epic: epic is not a type",
     ],
     [
       { types: { bug: { tier: "judgment" } } },
-      "routing.types.bug.tier must be one of execution, strategic",
+      "routing.types.bug.tier must be one of simple, standard, complex",
     ],
     [{ types: { bug: { tier: "scout" } } }, "routing.types.bug.tier"],
     [
@@ -474,23 +754,20 @@ describe("the loading rules", () => {
       "routing.raise.reviews must be true or false",
     ],
     [{ raise: { labels: [] } }, "routing.raise.labels is not a field"],
+    [{ models: { custom: { standard: "a" } } }, "missing: simple, complex"],
     [
-      { models: { "claude-code": { execution: "sonnet" } } },
-      "missing: strategic",
+      { models: { "claude-code": { standard: "sonnet 4" } } },
+      "routing.models.claude-code.standard must be a family alias",
+    ],
+    [{ models: { "claude-code": { complex: "a,b" } } }, "one word"],
+    [{ models: { Claude: { standard: "a" } } }, "a runtime name is lowercase"],
+    [
+      { models: { "claude-code": { tier3: "opus" } } },
+      "routing.models.claude-code.tier3 is not a field",
     ],
     [
-      {
-        models: { "claude-code": { execution: "sonnet 4", strategic: "opus" } },
-      },
-      "routing.models.claude-code.execution must be a family alias",
-    ],
-    [
-      { models: { "claude-code": { execution: "a,b", strategic: "opus" } } },
-      "one word",
-    ],
-    [
-      { models: { Claude: { execution: "a", strategic: "b" } } },
-      "a runtime name is lowercase",
+      { complex_flags: "has-migration" },
+      "routing.complex_flags must be a list",
     ],
     [
       { efforts: { codex: { extreme: "x" } } },
@@ -501,7 +778,7 @@ describe("the loading rules", () => {
 
   it("refuses a declared section that leaves an added type without a complete row", () => {
     refuses(
-      { types: { chore: { tier: "execution" } } },
+      { types: { chore: { tier: "standard" } } },
       "routing.types.chore: chore is not a default type",
       WITH_CHORE,
     );
@@ -510,9 +787,9 @@ describe("the loading rules", () => {
   it("accepts an added type with a complete row", () => {
     const r = rules({
       ...WITH_CHORE,
-      routing: { types: { chore: { tier: "execution", effort: "low" } } },
+      routing: { types: { chore: { tier: "simple", effort: "low" } } },
     });
-    expect(r.rows.chore).toEqual({ tier: "execution", effort: "low" });
+    expect(r.rows.chore).toEqual({ tier: "simple", effort: "low" });
   });
 
   it("throws a RoutingError", () => {
@@ -587,7 +864,7 @@ describe("determine_route.ts", () => {
   const issue = (labels: string[], title = "x") =>
     JSON.stringify({ type: "bug", labels, title, nativeType: null });
 
-  it("prints a flagged bug's route, raised by the catalog's flag", () => {
+  it("prints a flagged bug's route, complex by its flag and raised by the catalog's", () => {
     const r = run(
       {
         "jig.yaml": "routing: {}\ndrive:\n  change_areas_catalog: areas.yaml\n",
@@ -600,9 +877,9 @@ describe("determine_route.ts", () => {
     expect(JSON.parse(r.stdout)).toMatchObject({
       agent: "general-purpose",
       type: "bug",
-      tier: "execution",
+      tier: "complex",
       effort: "high",
-      model: "sonnet",
+      model: "opus",
       runtime: "claude-code",
       declared: true,
     });

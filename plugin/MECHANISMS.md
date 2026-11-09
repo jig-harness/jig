@@ -661,8 +661,9 @@ development and shipped as a version.
   concurrent claims by the same tracker identity can both return `claimed`.
   `work-batch` claims each issue of its
   batch with the same command. `skills/do-item/scripts/determine_route.ts`
-  derives the implementer's agent, model tier and effort from the item's
-  labels and the repository's `routing` rules, with the rule behind each
+  derives the implementer's agent, complexity tier, model and effort from
+  the item's type, size and labels and the repository's `routing` rules,
+  with the rule behind each
   part. `skills/do-item/scripts/pr-plan.ts` applies the repository's
   pull-request policy: the branch name, the base, the draft or ready state,
   the size budget. `skills/do-item/scripts/intent-chain.ts` writes the item's

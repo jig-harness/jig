@@ -374,7 +374,7 @@ dispatch:
   identity: factory-bot
 routing:
   models:
-    codex: { execution: gpt-example, strategic: gpt-example-large }
+    codex: { execution: terra, strategic: astra }
   efforts:
     codex: { max: xhigh }
 `;
@@ -439,16 +439,17 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
       action: "pickup",
       outcome: "launched",
       account: "c",
-      // An item of no known type takes the strictest row: the strategic tier, at high effort.
+      // An item of no known type takes the strictest row: the complex tier, at high effort,
+      // on the model the family names.
       detail: expect.stringContaining(
-        "route strategic for Codex, high, gpt-example-large",
+        "route complex for Codex, high, gpt-6-astra",
       ),
     });
     expect(readRecord(launchedRecord(receipt), dispatchState(w))).toMatchObject(
       {
         vendor: "codex",
         sessionId: null,
-        model: "gpt-example-large",
+        model: "gpt-6-astra",
         effort: "high",
       },
     );
@@ -458,7 +459,7 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
       {
         argv: [
           "-m",
-          "gpt-example-large",
+          "gpt-6-astra",
           "-c",
           'model_reasoning_effort="high"',
           expect.stringMatching(

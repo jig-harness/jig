@@ -134,9 +134,16 @@ export function skillValidation(
     if (tracker.adapter === "github") checkGitHubFacets(facets);
     if (tracker.adapter === "jira") checkJiraFacets(facets);
   });
-  attempt("do-item (routing)", () =>
-    parseRouting(config, parseWorkTypes(config)),
-  );
+  attempt("do-item (routing)", () => {
+    // Accepted, and reported beside the score: each tier on a Judgment
+    // family and each family whose tier the repository declares.
+    for (const note of parseRouting(config, parseWorkTypes(config)).reported)
+      findings.push({
+        id: "report:routing.models",
+        severity: "info",
+        message: note,
+      });
+  });
   attempt("do-item (spec resolver)", () =>
     parseSpecsConfig(
       config.specs,
