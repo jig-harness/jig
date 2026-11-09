@@ -99,6 +99,7 @@ function candidateFiles(sinceMs: number): CandidateScan {
   const out: string[] = [];
   let scanned = 0;
   let truncated = false;
+  let budgetExhausted = false;
   const deadlineAt = Date.now() + maxCandidateScanMs();
   // root/project/session/subagents/file is the deepest supported layout.
   // Every directory entry shares the aggregate count and time budgets.
@@ -114,6 +115,7 @@ function candidateFiles(sinceMs: number): CandidateScan {
         )
       ) {
         truncated = true;
+        budgetExhausted = true;
         return false;
       }
       scanned++;
@@ -129,7 +131,7 @@ function candidateFiles(sinceMs: number): CandidateScan {
           if (!isConfirmedAbsence(err)) truncated = true;
         }
       }
-      return !truncated;
+      return !budgetExhausted;
     });
     if (!complete) truncated = true;
   };

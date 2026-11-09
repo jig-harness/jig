@@ -119,3 +119,40 @@ it("shares the candidate entry cap across nested subagent directories", async ()
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+it("continues sibling enumeration after a transcript stat failure", async () => {
+  const root = mkdtempSync(join(tmpdir(), "quota-stat-failure-"));
+  const adapter = resolve("plugin/skills/drive-pr/scripts/lib/quota/claude.ts");
+  try {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        `
+      import {mkdirSync,writeFileSync,readdirSync,unlinkSync,symlinkSync} from 'node:fs';
+      import {join} from 'node:path';
+      import {claudeAdapter as a} from ${JSON.stringify(adapter)};
+      const dir=join(${JSON.stringify(root)},'project');
+      mkdirSync(dir);
+      for(const name of ['a.jsonl','b.jsonl'])writeFileSync(join(dir,name),'');
+      const [bad,good]=readdirSync(dir);
+      unlinkSync(join(dir,bad));
+      symlinkSync(bad,join(dir,bad));
+      const snapshot=a.snapshotSessions();
+      console.log(JSON.stringify({truncated:snapshot.truncated,found:snapshot.files.includes(join(dir,good))}));
+    `,
+      ],
+      {
+        env: { ...process.env, DRIVE_PR_CLAUDE_PROJECTS_DIR: root },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const stdout = await new Response(child.stdout).text();
+    const stderr = await new Response(child.stderr).text();
+    expectSpawnExit({ exitCode: await child.exited, stdout, stderr }, 0);
+    expect(JSON.parse(stdout)).toEqual({ truncated: true, found: true });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
