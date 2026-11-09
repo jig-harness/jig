@@ -132,6 +132,8 @@ describe("what the page was opened with", () => {
   it("reads its view, and none when it names none it knows", () => {
     expect(viewOf("?token=t&view=history")).toBe("history");
     expect(viewOf("?view=help")).toBe("help");
+    expect(viewOf("?view=constructor")).toBeNull();
+    expect(viewOf("?view=toString")).toBeNull();
     expect(viewOf("?view=merge")).toBe("merge");
     expect(viewOf("?view=other")).toBeNull();
     expect(viewOf("")).toBeNull();

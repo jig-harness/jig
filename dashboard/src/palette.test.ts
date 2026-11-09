@@ -60,3 +60,16 @@ describe("the palette", () => {
     expect(matching(entries(), "no-such-thing")).toEqual([]);
   });
 });
+
+describe("a need's answer line in the palette", () => {
+  it("carries the drafts the page holds, not blank answers", () => {
+    const needs = allCards(lineOf("merge"), CLOCK).filter((c) =>
+      c.command?.startsWith("answer "),
+    );
+    const drafted = allCards(lineOf("merge"), CLOCK, () => [
+      "go with B",
+    ]).filter((c) => c.command?.includes("go with B"));
+    expect(drafted.length).toBeGreaterThan(0);
+    expect(needs.length).toBe(drafted.length);
+  });
+});

@@ -14,7 +14,7 @@ import { browserSuite, LAPTOP, openView, TIMEOUT } from "./browser-suite.ts";
 
 const { browserIt, requireBrowser, served } = await browserSuite();
 
-/** The five card views by their tabs' labels, the letter after g that goes to each, and what a `?view=` names. */
+/** The card views by their tabs' labels, the letter after g that goes to each, and what a `?view=` names. */
 const VIEWS = [
   { label: "Merge", key: "m", id: "merge" },
   { label: "Needs you", key: "n", id: "needs" },

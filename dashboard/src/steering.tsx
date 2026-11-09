@@ -13,6 +13,7 @@ import {
   type PaletteRun,
   paletteEntries,
 } from "./palette.tsx";
+import { currentReplies } from "./replies.ts";
 import type { ViewId } from "./search.ts";
 import type { Clock } from "./view.ts";
 
@@ -100,6 +101,17 @@ function pendingTarget(element: HTMLElement, key: string): HTMLElement | null {
   );
 }
 
+/** Opens the view's Show all when it holds the card, which React draws before this returns; whether the card shows now. */
+function reveal(element: HTMLElement, target: HTMLElement): boolean {
+  if (target.closest(".rest") === null) return false;
+  const more = element.querySelector<HTMLButtonElement>(
+    ".moreBtn[aria-expanded='false']",
+  );
+  if (more === null) return false;
+  more.click();
+  return cardsIn(element).includes(target);
+}
+
 /** Moves focus to what a pending request names, once; a card it cannot show is said, not kept for later. */
 function focusPending(element: HTMLElement, pending: string): void {
   if (pending === START) {
@@ -109,7 +121,8 @@ function focusPending(element: HTMLElement, pending: string): void {
   const target = pendingTarget(element, pending);
   if (target === null) focusStart(element);
   else if (target.dataset.card === undefined) target.focus();
-  else if (cardsIn(element).includes(target)) focusCard(element, target);
+  else if (cardsIn(element).includes(target) || reveal(element, target))
+    focusCard(element, target);
   else {
     focusStart(element);
     announce("That card is behind Show all in this view");
@@ -194,7 +207,14 @@ export function useSteering(
     setView: (view) => goFocused(view, START),
     openPalette: () => {
       setBack(activeElement());
-      setEntries(paletteEntries(allCards(o.line, o.clock), o.counts));
+      setEntries(
+        paletteEntries(
+          allCards(o.line, o.clock, (need) =>
+            currentReplies(need.repo, need.answerKeys),
+          ),
+          o.counts,
+        ),
+      );
     },
     paletteOpen: () => entries !== null,
     focusFilter: () => focusFilter(main.current),

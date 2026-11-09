@@ -125,6 +125,9 @@ export function MergePanel({
 
 const DISMISSED = "merge-flash-dismissed";
 
+/** How many dismissed heads are kept, newest last; an older one shows its flash again. */
+const DISMISSED_KEPT = 200;
+
 function readDismissed(): Set<string> {
   const kept = readKept(DISMISSED);
   if (kept === null) return new Set();
@@ -150,8 +153,8 @@ export function useFlash(
   const flash = flashOf(line, dismissed);
   const dismiss = () => {
     if (flash === null) return;
-    // Only the heads in merge now are kept, so the list never outgrows it.
-    const next = new Set(flash.keys);
+    // Heads that left merge now stay dismissed while they come back unchanged, up to a bound.
+    const next = new Set([...dismissed, ...flash.keys].slice(-DISMISSED_KEPT));
     setDismissed(next);
     writeKept(DISMISSED, JSON.stringify([...next]));
   };

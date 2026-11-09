@@ -85,6 +85,11 @@ function readReplies(ids: string[]): string[] {
   });
 }
 
+/** The drafts now held for one need's decision keys, read once rather than followed. */
+export function currentReplies(repo: string, keys: string[]): string[] {
+  return readReplies(keys.map((key) => `${PREFIX}${repo} ${key}`));
+}
+
 /** The drafts for one need's decision keys, and how to change one. */
 export function useReplies(
   repo: string,

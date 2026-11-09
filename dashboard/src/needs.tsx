@@ -70,10 +70,11 @@ function Replies({ need }: { need: NeedView }) {
 }
 
 function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
+  const [replies] = useReplies(need.repo, need.answerKeys);
   return (
     <article
       className={rest ? "need rest" : "need"}
-      {...cardAttrs(needCard(need))}
+      {...cardAttrs(needCard(need, replies))}
     >
       <div className="rowTop">
         <Mark role={need.role} />

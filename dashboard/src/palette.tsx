@@ -149,6 +149,8 @@ export function Palette({
             setAt(0);
           }}
           onKeyDown={(event) => {
+            // Keys that confirm or move within an IME composition are the composition's.
+            if (event.nativeEvent.isComposing) return;
             if (event.key === "ArrowDown") {
               setAt(Math.min(chosen + 1, shown.length - 1));
               event.preventDefault();

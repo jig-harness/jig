@@ -41,7 +41,7 @@ export const FILTERED_VIEWS: ReadonlySet<ViewId> = new Set([
 ]);
 
 /** The view an address from before the five views names: Now became Needs you. */
-const RENAMED: Record<string, ViewId> = { now: "needs" };
+const RENAMED: ReadonlyMap<string, ViewId> = new Map([["now", "needs"]]);
 
 /** A named window, or `range` when `from` or `to` names one. */
 export type WindowChoice = Preset | "range";
@@ -161,7 +161,7 @@ export function tokenOf(search: string): string {
 export function viewOf(search: string): ViewId | null {
   const named = new URLSearchParams(search).get("view");
   if (named === null) return null;
-  return VIEWS.find((v) => v.id === named)?.id ?? RENAMED[named] ?? null;
+  return VIEWS.find((v) => v.id === named)?.id ?? RENAMED.get(named) ?? null;
 }
 
 /** The view a page opens on when its address names none: Merge while merge now holds anything, else Needs you. */

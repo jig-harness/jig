@@ -1,7 +1,7 @@
 /**
  * The page in a real browser, against the real server over each scenario: what
  * only a rendered page can show. Every scenario at a phone's width and a
- * laptop's, light and dark, in each of its five views, for overflow, one
+ * laptop's, light and dark, in each of its views, for overflow, one
  * column of cards, requests, errors and the strip's fact; then the layout, the
  * reads and the filters one scenario at a time. What a person opens and copies
  * is `browser-interactions.test.ts`; the keys are `browser-keys.test.ts`.
@@ -171,7 +171,7 @@ async function expectOneColumn(page: Page): Promise<void> {
   }
 }
 
-/** The five views every cell visits, by their tabs' labels, after the one the page opens on. */
+/** The views every cell visits, by their tabs' labels, after the one the page opens on. */
 const CARD_VIEWS = [
   "Merge",
   "Needs you",
@@ -371,7 +371,7 @@ describe("the tabs' counts", () => {
         await shows(page, ".pMerge");
         await until("the log's count is read", async () =>
           (await page.locator(".viewTab").allInnerTexts()).some((t) =>
-            t.startsWith("History"),
+            /^History\s*\d/.test(t),
           ),
         );
         const tabs = await page

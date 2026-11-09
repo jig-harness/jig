@@ -2213,6 +2213,14 @@ make, use the entry's term instead.
   and further requirements possible. Update next identifies the next branch
   to update, with any known approval need shown.
   Planned: [ROADMAP.md](ROADMAP.md) item 36.
+- **Command palette** — the search box a page opens over its content from a
+  key, where typing narrows a list of places to go and commands to copy and
+  Enter runs the chosen one. The *dispatcher*'s dashboard opens it on Ctrl-K (⌘K); it
+  lists the views, every card on them and each card's command.
+- **Roving focus** — keyboard focus kept on one item of a group at a time:
+  Tab enters the group at that item and leaves it at the next control, while
+  other keys (j and k on the dashboard) move the focus to a neighbour. The
+  *dispatcher*'s dashboard uses it over a view's cards.
 - **Ready episode** — one unbroken period a pull request spends in the
   *dispatch board*'s Ready to merge column at one verified head. A pull
   request that leaves (a check fails, a thread opens, a hold is added) and

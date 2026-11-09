@@ -49,11 +49,11 @@ export function mergeCard(card: MergeCardView): CardInfo {
   };
 }
 
-export function needCard(need: NeedView): CardInfo {
+export function needCard(need: NeedView, replies: string[]): CardInfo {
   const [first] = need.answerKeys;
   const command =
     first !== undefined
-      ? answerText(need.answerKeys, [])
+      ? answerText(need.answerKeys, replies)
       : (need.keyText ?? askLineOf(need.stage, need.repo, need.target));
   return {
     key: `need ${need.rowKey}`,
@@ -104,15 +104,19 @@ export function queueCard(item: QueueItemView): CardInfo {
   };
 }
 
-/** Every card on the card views, in each view's order. */
-export function allCards(line: LineSnapshot | null, clock: Clock): CardInfo[] {
+/** Every card on the card views, in each view's order; `repliesOf` reads the drafts a need's answer line carries. */
+export function allCards(
+  line: LineSnapshot | null,
+  clock: Clock,
+  repliesOf: (need: NeedView) => string[] = () => [],
+): CardInfo[] {
   if (line === null) return [];
   const merge = mergeLanes(line, clock.nowMs).flatMap((lane) =>
     lane.cards.map(mergeCard),
   );
   const needs = needRows(line, clock).flatMap((row) =>
     row.type === "need"
-      ? [needCard(row.need)]
+      ? [needCard(row.need, repliesOf(row.need))]
       : row.type === "stuck"
         ? [slotCard(row.slot, "needs")]
         : [],

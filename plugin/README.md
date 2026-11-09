@@ -765,9 +765,9 @@ nudge goes to the terminal whose tab and pane make the agent's id, through
 `orca terminal read --screen` and `orca terminal send --enter`; since Orca
 starts no interactive session yet, there is nothing to nudge until it does.
 
-**The dashboard.** One page that answers, in this order, what needs a person,
-what is running on which account, what is coming and how it went, served while
-the command runs:
+**The dashboard.** One page that answers, one view each, what is ready to
+merge, what needs a person, what is running on which account, what is coming
+and how it went, served while the command runs:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch dashboard [--port <n>]
