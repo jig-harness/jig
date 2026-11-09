@@ -26,6 +26,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
@@ -628,6 +629,63 @@ describe("reconcile-replied-threads.ts", () => {
       "utf8",
     ).trim();
     expect(resolved).toBe("PRRT_rejected");
+  });
+
+  it("settles a legacy leave-open marker on a bot merit reply", () => {
+    const { dir, stateDir } = writeFixture([
+      {
+        id: "PRRT_bot_marker",
+        comments: [
+          {
+            author: "review-bot",
+            authorAssociation: "NONE",
+            body: "finding",
+            bot: true,
+          },
+          {
+            author: "example-user",
+            authorAssociation: "MEMBER",
+            body: "**rejected** — already handled.\n\n<!-- triage-thread:leave-open -->",
+          },
+        ],
+      },
+    ]);
+    const result = run(["999", "--bots-only"], dir, stateDir);
+    expectSpawnExit(result, 0);
+    const { stdout } = result;
+    expect(lines(stdout)[0]).toMatchObject({
+      threadId: "PRRT_bot_marker",
+      action: "resolved",
+    });
+    expect(
+      readFileSync(join(dir, "resolved-threads.jsonl"), "utf8").trim(),
+    ).toBe("PRRT_bot_marker");
+  });
+
+  it("refuses a marked reply when starter provenance is unknown", () => {
+    const { dir, stateDir } = writeFixture([
+      {
+        id: "PRRT_unknown_marker",
+        comments: [
+          { author: "reviewer", authorAssociation: "MEMBER", body: "finding" },
+          {
+            author: "example-user",
+            authorAssociation: "MEMBER",
+            body: "**rejected** — already handled.\n\n<!-- triage-thread:leave-open -->",
+          },
+        ],
+      },
+    ]);
+    const payload = JSON.parse(readFileSync(join(dir, "threads.json"), "utf8"));
+    payload.data.repository.pullRequest.reviewThreads.nodes[0].comments.nodes[0].author =
+      null;
+    writeFileSync(join(dir, "threads.json"), JSON.stringify(payload));
+    const result = run(["999"], dir, stateDir);
+    expectSpawnExit(result, 1);
+    const { stdout } = result;
+    expect(lines(stdout)[0]).toMatchObject({ action: "needs-human" });
+    expect(existsSync(join(dir, "resolved-threads.jsonl"))).toBe(false);
+    expect(heldKeys(stateDir)).toBe("");
   });
 
   it("skips a merit reply carrying the --leave-open marker instead of resolving it — the other reader of the same durable choice", () => {

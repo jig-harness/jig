@@ -68,8 +68,8 @@
  *                                      qualifying reply carries
  *                                      `lib/outcome.ts`'s `LEAVE_OPEN_MARKER`
  *                                      (`triage-thread.ts --leave-open`,
- *                                      usually a human thread deliberately left
- *                                      open, see resolve-review-comments
+ *                                      on a confirmed human-started thread
+ *                                      deliberately left open, see resolve-review-comments
  *                                      § Human threads): skipped instead, action
  *                                      `left-open` — this sweep is the OTHER
  *                                      reader of that same durable choice, and
@@ -158,6 +158,8 @@ interface Thread {
   path: string | null;
   codeScanning: unknown;
   commentsTruncated: boolean;
+  confirmedHumanStarted: boolean;
+  startedByBot: boolean;
   comments: ThreadComment[];
 }
 
@@ -217,6 +219,8 @@ function parseThread(line: string): Thread | null {
     threadId: t.threadId,
     path: typeof t.path === "string" ? t.path : null,
     codeScanning: t.codeScanning,
+    confirmedHumanStarted: t.confirmedHumanStarted === true,
+    startedByBot: t.startedByBot === true,
     // Fail CLOSED, not open: a missing field, `null`, or a malformed string
     // must not read as "not truncated" — that would let the caller trust the
     // visible comments and resolve/hold a merit outcome from a record that
@@ -525,47 +529,33 @@ async function main(): Promise<number> {
       );
 
       let action: string;
-      // `triage-thread.ts --leave-open` embeds LEAVE_OPEN_MARKER on a
-      // deliberate choice not to resolve — usually a human thread, per
-      // `/jig:resolve-review-comments` § Human threads. This sweep is the OTHER reader of
-      // that same durable text (this file's own header: "the standalone-sweep
-      // COUNTERPART... free to process the identical unresolved thread
-      // later"), so without this check it would resolve a thread the other
-      // reader had just deliberately left open, on its very next run —
-      // reversing that choice regardless of `--bots-only` scope, since the
-      // marker can appear on a bot thread too.
-      //
-      // Checked on the marker PLUS an outcome the marker can actually mean
-      // something for — `MERIT_OUTCOMES.has(outcome) || outcome === 'moot'`
-      // — never the marker alone. `moot` needs its own explicit clause,
-      // outside `MERIT_OUTCOMES`, because this file has no
-      // `--moot-pending-push` equivalent: a `moot` reply's own outcome word
-      // never tells this sweep whether it was a held moot or a left-open
-      // plain one, and the producer side closes THAT gap instead —
-      // `triage-thread.ts` only ever appends the marker to a reply whose
-      // outcome is genuinely non-hold at post time (its own comment on
-      // `postBody`), so the marker's presence on a `moot` reply already
-      // proves "this was a merit reply left open" (a gate restricted to merit
-      // outcomes alone re-held a plain-moot-left-open reply instead of
-      // leaving it, since it never reached this branch for `moot` at all).
-      //
-      // But `accepted` gets NO such benefit of the doubt, and dropping the
-      // restriction entirely overshoots: the producer's "non-hold at post time"
-      // guarantee says nothing about a reply this script never produced. The
-      // documented supersession path lets a trusted author post ANY reply
-      // directly via `reply-to-thread.ts`, bypassing `triage-thread.ts`
-      // entirely — an `**accepted**` reply that happens to contain this exact
-      // marker text (typo, confusion, a quoted example) would otherwise be
-      // treated as `left-open` and its stale-hold cleanup could then DELETE the
-      // accepted hold for an unverified fix, the exact false-convergence class
-      // the `confirmedMeritSupersession` gate exists to prevent.
+      // A durable leave-open choice applies only to confirmed human starters.
+      // Legacy bot markers use normal settlement; unknown provenance cannot
+      // authorize either preserving the exemption or resolving the thread.
+      if (
+        markedLeftOpen(qualifyingBody, outcome) &&
+        !thread.confirmedHumanStarted &&
+        !thread.startedByBot
+      ) {
+        hadErrors = 1;
+        emit({
+          pr: Number.parseInt(pr, 10),
+          threadId: thread.threadId,
+          action: "needs-human",
+          reason: "leave-open marker has unknown starter provenance",
+        });
+        continue;
+      }
       if (isProvisionalReply(qualifyingBody)) {
         // A provisional reply (`provisional-reply.ts`) stands until a person
         // comments, and the round, not this sweep, reads that comment: a
         // thread a person unresolved without a word is left as they left it,
         // so the sweep never undoes a reversal.
         action = "provisional";
-      } else if (markedLeftOpen(qualifyingBody, outcome)) {
+      } else if (
+        thread.confirmedHumanStarted &&
+        markedLeftOpen(qualifyingBody, outcome)
+      ) {
         action = "left-open";
         leftOpen += 1;
         if (!dryRun) {
