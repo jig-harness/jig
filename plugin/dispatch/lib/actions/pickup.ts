@@ -146,7 +146,12 @@ async function launchOne(
   if (late !== null) return waits(action, late);
   const before = await changed(state, repo, ctx, action.target);
   if ("why" in before) return waits(action, before.why);
-  const admitted = await admitAccount(state, repo.slug, action, deadlineSec(ctx));
+  const admitted = await admitAccount(
+    state,
+    repo.slug,
+    action,
+    deadlineSec(ctx),
+  );
   if ("outcome" in admitted) return admitted.outcome;
   const slots = admitted.slots;
   const id = newRecordId(new Date());

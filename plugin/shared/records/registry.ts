@@ -265,6 +265,11 @@ const DISPATCHER: RecordKind[] = [
     "dispatch/lib/merge-reads.ts",
     "merge_reads",
   ),
+  dispatchTable(
+    "dispatch-load-sample",
+    "dispatch/lib/load-samples.ts",
+    "load_samples",
+  ),
   plain(
     "machine",
     "dispatch-receipt",
