@@ -385,9 +385,10 @@ correcting answer, the operator's verbs, the notification's answer lines,
 the dashboard's copy buttons and the Orca panel's buttons, all writing the
 same line; `jig ask`'s question and answer fields and an answered-park
 event in the outcome log, with a per-class report of how often the
-recommendation is approved; a closed, growable list of
-fields per option (what it keeps, when it is right, what it obliges,
-whether it can be undone) read through one shape; a card with a row per
+recommendation is approved; one decision model shared by a park
+and a `/jig:decide` decision sheet, moved out of `decide`, whose options can
+say what they keep, when they are right, what they oblige and whether they
+can be undone; a card with a row per
 decision, where `j`, `1`, `c` picks the recommendation and copies it, a
 pick staying local and undoable until it is committed; then, with item
 40's first proof that a person answered, the attested classes (`destructive`, `release`, `legal` by
@@ -402,8 +403,9 @@ exactly a form reaches the pass as a free answer and `jig ask` labels it
 free; an answer naming an earlier framing's digest leaves the drive parked
 and the next notification says why; two people choosing different options
 leave the item waiting; the panel, `jig ask` and the dashboard show the
-same options and choice for one park; a field added only to the option
-table shows on the card and in `jig ask`; a card of two decisions copies
+same options and choice for one park; a sheet and a park use the same
+option type, every existing sheet renders unchanged, and a field added to
+the model shows on the card and in `jig ask`; a card of two decisions copies
 one comment answering both; and `jig dispatch log` reports, per
 class, how many parks were approved as recommended and how long they
 waited.
