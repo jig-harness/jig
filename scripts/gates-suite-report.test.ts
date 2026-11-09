@@ -6,10 +6,18 @@ import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 const root = resolve(import.meta.dir, "..");
 
 function usesRawBunTest(command: string): boolean {
-  const normalized = command.replace(/\\\r?\n[ \t]*/g, " ");
-  return /\bbun(?:[ \t]+--\S+(?:[ \t]+(?!test\b)\S+)?)*[ \t]+test\b/.test(
-    normalized,
-  );
+  const tokens = command
+    .replace(/\\\r?\n[ \t]*/g, " ")
+    .trim()
+    .split(/\s+/);
+  const bun = tokens.indexOf("bun");
+  if (bun === -1) return false;
+  let next = bun + 1;
+  while (tokens[next]?.startsWith("--")) {
+    if (tokens[next] === "--cwd") next++;
+    next++;
+  }
+  return tokens[next] === "test";
 }
 
 test("every CI suite uses the reporting runner and its executed-test check", () => {
@@ -42,5 +50,10 @@ test("the suite-runner contract rejects raw Bun spellings", () => {
     ["bun", "test scripts/gates.test.ts"].join(" \\\n"),
   ])
     expect(usesRawBunTest(command)).toBeTrue();
-  expect(usesRawBunTest("bun run test scripts/gates.test.ts")).toBeFalse();
+  for (const command of [
+    "bun run test scripts/gates.test.ts",
+    "bun --no-env-file run test scripts/gates.test.ts",
+    "bun --cwd=. run test scripts/gates.test.ts",
+  ])
+    expect(usesRawBunTest(command)).toBeFalse();
 });
