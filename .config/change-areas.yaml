@@ -58,6 +58,142 @@ areas:
     impliedBy: [resolve-review-comments, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
 
+  # The areas below name the tracker's other `area:` labels, so
+  # `/jig:work-batch` can draw a batch from them (do_item.agents.codearea_areas
+  # in jig.yaml). They sit inside `plugin` and add no CI job: only `website`
+  # and `drive-pr` select one, and no edge below leads to either. Each lists
+  # the areas it imports from; an area the catalog does not name (`adr`,
+  # `docs`, `change-areas`) is reached through `plugin`.
+  dispatch:
+    title: "The dispatcher (jig dispatch) and its dashboard server"
+    category: skill
+    paths: ["plugin/dispatch/**"]
+    workspace: []
+    impliedBy: [drive-pr, do-item, reflect, plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  gc:
+    title: "Resource garbage collection (jig gc)"
+    category: skill
+    paths: ["plugin/gc/**"]
+    workspace: []
+    impliedBy: [reflect, plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  # The tracker also imports file-issue's helpers; that edge is left out
+  # because file-issue imports the tracker back and the catalog allows no
+  # cycle. file-issue lists do-item, which holds these paths too.
+  tracker:
+    title: "The tracker interface and its adapters"
+    category: library
+    paths: ["plugin/skills/do-item/scripts/lib/tracker/**"]
+    workspace: []
+    impliedBy: [drive-pr, plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  audit:
+    title: "audit skill"
+    category: skill
+    paths: ["plugin/skills/audit/**"]
+    workspace: []
+    impliedBy:
+      - decide
+      - do-item
+      - drive-pr
+      - file-issue
+      - changelog
+      - reflect
+      - review
+      - gc
+      - dispatch
+      - code-stats
+      - resolve-conflicts
+      - work-batch
+      - plugin-shared
+      - shared-lib
+      - toolchain
+    deployTier: plugin
+
+  changelog:
+    title: "changelog skill and releases"
+    category: skill
+    paths: ["plugin/skills/changelog/**"]
+    workspace: []
+    impliedBy: [drive-pr, plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  code-stats:
+    title: "code-stats skill"
+    category: skill
+    paths: ["plugin/skills/code-stats/**"]
+    workspace: []
+    impliedBy: [plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  decide:
+    title: "decide skill and its sheet"
+    category: skill
+    paths: ["plugin/skills/decide/**"]
+    workspace: []
+    impliedBy: [do-item, plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  explain:
+    title: "explain skill"
+    category: skill
+    paths: ["plugin/skills/explain/**"]
+    workspace: []
+    impliedBy: [decide, do-item, plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  file-issue:
+    title: "file-issue skill"
+    category: skill
+    paths: ["plugin/skills/file-issue/**"]
+    workspace: []
+    impliedBy: [do-item, plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  reflect:
+    title: "reflect and review-reflections skills"
+    category: skill
+    paths: ["plugin/skills/reflect/**", "plugin/skills/review-reflections/**"]
+    workspace: []
+    impliedBy: [do-item, resolve-conflicts, drive-pr, plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  resolve-conflicts:
+    title: "resolve-conflicts skill"
+    category: skill
+    paths: ["plugin/skills/resolve-conflicts/**"]
+    workspace: []
+    impliedBy: [drive-pr, do-item, changelog, plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  review:
+    title: "review skill and its lenses"
+    category: skill
+    paths: ["plugin/skills/review/**"]
+    workspace: []
+    impliedBy: [plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  work-batch:
+    title: "work-batch skill"
+    category: skill
+    paths: ["plugin/skills/work-batch/**"]
+    workspace: []
+    impliedBy: [do-item, drive-pr, plugin-shared, shared-lib, toolchain]
+    deployTier: plugin
+
+  modules:
+    title: "The practice modules: reference, templates and module pages"
+    category: docs
+    paths: ["modules/**"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+
   plugin:
     title: "The plugin: other skills, agents, manifests and documentation"
     category: skill
