@@ -604,8 +604,8 @@ Jig names label stores for its facets. The issue forms and `report-bug.ts`,
 which file around the interface, set the type and leave priority and size
 to triage.
 
-What remains is Jira's issue-type and custom-field stores, Linear's estimate
-and their live runs. Jig's own move to GitHub's fields still needs the
+Jira's issue-type and custom-field stores and Linear's estimate store are
+built. What remains is their live runs. Jig's own move to GitHub's fields still needs the
 organization's default Task issue type retired, then the checked move,
 the configuration and issue forms switched, the source labels retired and
 the weekly workflow dispatched to verify its token's reads. These are the remaining
