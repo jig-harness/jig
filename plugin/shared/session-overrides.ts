@@ -15,8 +15,7 @@ type Env = Record<string, string | undefined>;
  * from its host, which belong to that host and not to the session; then runs
  * the rest of the command line.
  */
-export const DROP_LOGIN_FIELDS =
-  'for n in $(env | sed -n \'s/^\\(JIG__[A-Za-z0-9_]*\\|ELECTRON_RUN_AS_NODE\\|ELECTRON_CRASH[A-Za-z0-9_]*\\|CHROME_CRASHPAD_PIPE_NAME\\)=.*/\\1/p\'); do unset "$n"; done; exec "$@"';
+export const DROP_LOGIN_FIELDS = String.raw`for n in $(env | sed -En 's/^(JIG__[A-Za-z0-9_]*|ELECTRON_RUN_AS_NODE|ELECTRON_CRASH[A-Za-z0-9_]*|CHROME_CRASHPAD_PIPE_NAME)=.*/\1/p'); do unset "$n"; done; exec "$@"`;
 
 /**
  * The session's configuration as the prefix of the tab's command, so the
