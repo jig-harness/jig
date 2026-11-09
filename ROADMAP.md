@@ -135,8 +135,9 @@ keeps and stores no copy of them. On a host, the hub only reads and accepts
 no commands. A laptop serves the page to any browser and reads each host
 over SSH (Secure Shell). Every view works without Orca. A team that uses
 Orca opens the hub in Orca's own browser. A phone reaches a host's page
-through an optional front on a private network. Tailscale Serve is the first
-such front. The front names who is looking and shows each person only their
+through a front on a private network. Phone access is required, with read-only
+views, visible copy controls and links to pull requests and issues. Tailscale
+Serve is the first such front. The front names who is looking and shows each person only their
 own repositories. A chat with the [operator](GLOSSARY.md), the agent a
 person asks about the line, explains why work is stuck and drafts what to
 do. A person confirms every action, and the words of an answer are always
