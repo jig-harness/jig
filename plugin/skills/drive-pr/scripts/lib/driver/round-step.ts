@@ -332,7 +332,7 @@ async function recoverBeforePass(
 ): Promise<number | "continue" | null> {
   if (
     context.dryRun ||
-    ![0, 3].includes(code) ||
+    ![0, 3, 8].includes(code) ||
     (code === 3 && String(status.ci ?? "").startsWith("failing:"))
   )
     return null;

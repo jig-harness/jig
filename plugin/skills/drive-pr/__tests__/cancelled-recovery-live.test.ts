@@ -37,14 +37,16 @@ function fixture() {
     const phase = existsSync(phasePath) ? readFileSync(phasePath, "utf8") : "held";
     const args = process.argv.slice(2);
     if (args[0] === "api" && args.at(-1).includes("check-runs")) {
-      console.log(JSON.stringify([{check_runs: [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)},
-        status: phase === "pending" ? "in_progress" : "completed", conclusion: phase === "pending" ? null : phase === "success" ? "success" : "cancelled", check_suite: {id: 1}}]}]));
+      const checks = phase === "external" ? [{id: 2, name: "reviewer", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 2}}] : [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)},
+        status: phase === "pending" ? "in_progress" : "completed", conclusion: phase === "pending" ? null : phase === "success" ? "success" : "cancelled", check_suite: {id: 1}}];
+      console.log(JSON.stringify([{check_runs: checks}]));
     } else if (args[0] === "api" && args.at(-1).includes("actions/runs")) {
-      console.log(JSON.stringify([{workflow_runs: [{id: 1, workflow_id: 10, check_suite_id: 1,
+      const runs = phase === "external" ? [] : [{id: 1, workflow_id: 10, check_suite_id: 1,
         status: phase === "pending" ? "in_progress" : "completed", conclusion: phase === "pending" ? null : "success",
-        created_at: "2026-01-01T00:00:00Z", run_attempt: 2}]}]));
+        created_at: "2026-01-01T00:00:00Z", run_attempt: 2}];
+      console.log(JSON.stringify([{workflow_runs: runs}]));
     } else if (args[0] === "pr" && args[1] === "view") {
-      console.log(JSON.stringify({state: "OPEN", headRefOid: ${JSON.stringify(HEAD)}, labels: [{name: "ci:hold"}]}));
+      console.log(JSON.stringify({state: "OPEN", headRefOid: ${JSON.stringify(HEAD)}, labels: phase === "external" ? [] : [{name: "ci:hold"}]}));
     } else { console.error("unexpected outbound call " + JSON.stringify(args)); process.exit(2); }
   `,
   );
@@ -105,6 +107,16 @@ describe("durable cancellation recovery boundary", () => {
       writeFileSync(join(f.dir, "phase"), "pending");
       expect(await f.run("live")).toBe("wait");
       writeFileSync(join(f.dir, "phase"), "success");
+      expect(await f.run("live")).toBe("none");
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("ignores a cancelled external check that no Actions workflow owns", async () => {
+    const f = fixture();
+    try {
+      writeFileSync(join(f.dir, "phase"), "external");
       expect(await f.run("live")).toBe("none");
     } finally {
       rmSync(f.dir, { recursive: true, force: true });

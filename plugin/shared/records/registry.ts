@@ -85,7 +85,7 @@ const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
 const DISPATCH_DB = 17;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 4;
+const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
 const REFLECT = "skills/reflect/scripts/";
 

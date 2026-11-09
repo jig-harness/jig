@@ -149,36 +149,53 @@ export async function recoverCancelledOnHead(
     console.error(
       "cancelled CI recovery: could not read exact-head workflow provenance",
     );
+  // Check runs include external apps, including the reviewer.  Only a job
+  // belonging to an Actions workflow can be recovered by `gh run rerun`.
+  // Filter after supersession so a newer reviewer/app result still retires
+  // its older check before we decide whether a workflow cancellation is
+  // orphaned.
   const relevant = withoutSuperseded(jobs, runs).filter(
-    (job) => required === undefined || required.includes(job.name),
+    (job) =>
+      (required === undefined || required.includes(job.name)) &&
+      (runs?.some((run) => run.checkSuiteId === job.suiteId) ?? false),
   );
-  const answer = await recoverCancelled(pr, head, relevant, runs, {
-    ...live,
-    async rerun(id) {
-      const context = alreadyFenced
+  if (relevant.length === 0) return await clearRecoveredPark(pr);
+  // The durable claim must not be spent until the mutation fence is held.
+  // Otherwise a rival can make this invocation unable to re-run after it has
+  // consumed the once-per-head recovery budget.
+  let lock = null;
+  try {
+    const context = alreadyFenced
+      ? null
+      : await resolveFenceContext("cancelled CI recovery");
+    lock =
+      context === null
         ? null
-        : await resolveFenceContext("cancelled CI recovery");
-      const lock =
-        context === null
-          ? null
-          : await assertRemoteMutationAllowed(
-              context,
-              pr,
-              "cancelled CI recovery",
-            );
-      try {
+        : await assertRemoteMutationAllowed(
+            context,
+            pr,
+            "cancelled CI recovery",
+          );
+  } catch (err) {
+    swallow(err, "the cancellation recovery mutation fence is unavailable");
+    return "unknown";
+  }
+  try {
+    const answer = await recoverCancelled(pr, head, relevant, runs, {
+      ...live,
+      async rerun(id) {
         if (!(await live.confirm(pr, head)))
           return {
             code: 1,
             stderr: "the pull request closed or its head changed",
           };
         return await live.rerun(id);
-      } finally {
-        lock?.dispose();
-      }
-    },
-  });
-  return answer === "none" ? await clearRecoveredPark(pr) : answer;
+      },
+    });
+    return answer === "none" ? await clearRecoveredPark(pr) : answer;
+  } finally {
+    lock?.dispose();
+  }
 }
 
 /** A re-run replaces cancelled jobs with pending ones before it supplies results. */
