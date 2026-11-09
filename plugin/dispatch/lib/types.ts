@@ -602,7 +602,13 @@ export interface LabelReport {
   states: Array<{ target: string; state: string | null }>;
   commands: LabelCommand[];
   /** The stages a `hold` label kept off. */
-  held: Array<{ target: string; stage: Stage; reason: string }>;
+  held: Array<{
+    target: string;
+    stage: Stage;
+    reason: string;
+    /** For a notification the hold kept off: its cause. */
+    cause?: NotifyCause;
+  }>;
   writes: LabelWrite[];
 }
 

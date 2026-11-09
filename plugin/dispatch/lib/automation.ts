@@ -24,6 +24,7 @@
  */
 import { isRecord } from "../../shared/guards.ts";
 import type { Author } from "./adopt.ts";
+import type { DrivenPr, LedgerClass } from "./types.ts";
 
 /** The generic label the dispatcher puts on a bot's pull request. */
 export const AUTOMATION_LABEL = "automation";
@@ -94,6 +95,11 @@ export interface TroubleFacts {
   unresolvedThreads?: number;
 }
 
+/** Whether both of a pull request's trouble facts were read: a count or a check list the forge cut short is unknown, which is not the same as healthy. */
+export function troubleKnown(pr: TroubleFacts): boolean {
+  return pr.failingChecks !== undefined && pr.unresolvedThreads !== undefined;
+}
+
 /** Why an open pull request needs work, in words for the report; `null` when nothing read says it does. */
 export function troubleOf(pr: TroubleFacts): string | null {
   const why: string[] = [];
@@ -131,7 +137,23 @@ export function idleAutomation(
   pr: TroubleFacts & { author?: Author; labels?: readonly string[] },
   own: readonly string[],
 ): { automationIdle?: true } {
-  return isAutomation(pr, own) && troubleOf(pr) === null
+  return isAutomation(pr, own) && troubleKnown(pr) && troubleOf(pr) === null
     ? { automationIdle: true }
     : {};
+}
+
+/** The classes the dispatcher starts a drive from of itself: a re-drive, a takeover, a re-arm. */
+const AUTOMATIC: ReadonlySet<LedgerClass> = new Set([
+  "stale",
+  "silent",
+  "re-armable",
+]);
+
+/** Whether a drive's pull request is an automation pull request that needs no work, so that no drive is started on it of itself; a person's rearm request still starts one. */
+export function idleBlocksStart(pr: DrivenPr): boolean {
+  return (
+    pr.evidence.automationIdle === true &&
+    pr.evidence.rearm !== true &&
+    AUTOMATIC.has(pr.class)
+  );
 }

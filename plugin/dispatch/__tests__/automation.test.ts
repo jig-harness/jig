@@ -52,6 +52,8 @@ const FOLLOWUP = config(
 const OWES = "## Out-of-tree follow-ups\n\n- [ ] Set the staging secret\n";
 const NONE =
   "## Out-of-tree follow-ups\n\n_None — merging this completes it._\n";
+/** Checks and review threads read in full, with nothing wrong. */
+const HEALTHY = { statusCheckRollup: [], unresolvedThreads: 0 };
 const recent = () => new Date(Date.now() - 3_600_000).toISOString();
 
 let current: World | null = null;
@@ -166,18 +168,18 @@ describe("jig dispatch drives an automation pull request only while it needs wor
     const sync = (n: number, extra: object = {}) =>
       labeled(by(n, "drive-bot", extra), "automation:docs-sync");
     w.setPrs("open", [
-      sync(20),
+      sync(20, HEALTHY),
       sync(21, FAILING),
       sync(22, { mergeable: "CONFLICTING" }),
       // A bot the rule names is the host's own identity: adopted as any own pull request.
       by(23, "app/ops-bot"),
-      sync(24),
+      sync(24, HEALTHY),
       // A bot the rule does not name: only a person's drive label drives it.
       by(25, "app/regen-bot", FAILING),
       labeled(by(26, "app/regen-bot"), "jig:drive"),
       labeled(sync(27, FAILING), "jig:hold"),
-      by(28, "drive-bot"),
-      labeled(by(29, "app/ops-bot"), "automation:docs-sync"),
+      by(28, "drive-bot", HEALTHY),
+      labeled(by(29, "app/ops-bot", HEALTHY), "automation:docs-sync"),
       // A run cancelled on a superseded head is no failure.
       sync(30, {
         statusCheckRollup: [
@@ -217,7 +219,7 @@ describe("jig dispatch drives an automation pull request only while it needs wor
     const sync = (n: number, extra: object = {}) =>
       labeled(by(n, "drive-bot", extra), "automation:docs-sync");
     w.setPrs("open", [
-      sync(40),
+      sync(40, HEALTHY),
       sync(41, FAILING),
       labeled(sync(42), "jig:rearm"),
       by(43, "drive-bot"),

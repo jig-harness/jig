@@ -22,7 +22,7 @@ import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { applyPickups } from "./actions/pickup.ts";
 import { applySteers } from "./actions/steer.ts";
-import { type Adoption, adoptionOf } from "./adopt.ts";
+import { adoptionOf, ownAuthors } from "./adopt.ts";
 import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
 import { readOutcomes } from "./followup-outcomes.ts";
 import { holderActions } from "./holder-notices.ts";
@@ -202,9 +202,9 @@ interface ApplyInputs {
 async function withThreads(
   slug: string,
   pr: ListedPr,
-  adoption: Adoption | null,
+  own: readonly string[],
 ): Promise<Outcome<ListedPr, "unreadable">> {
-  if (adoption === null || !isAutomation(pr, adoption.authors)) return ok(pr);
+  if (!isAutomation(pr, own)) return ok(pr);
   const threads = await unresolvedThreadCount(slug, pr.number);
   if (!threads.ok)
     return failed(
@@ -244,7 +244,11 @@ async function applyStages(
       )
         return ok(null);
       const adoption = adoptionOf(section, login);
-      const counted = await withThreads(repo.slug, listed, adoption);
+      const counted = await withThreads(
+        repo.slug,
+        listed,
+        ownAuthors(adoption, login),
+      );
       if (!counted.ok) return counted;
       const [again] = await readDrives(
         repo.slug,

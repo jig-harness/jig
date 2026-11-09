@@ -223,8 +223,18 @@ describe("the default author", () => {
     expect(adopts(pr, implicit as Adoption, null, Date.now())).toBeNull();
     const named = adoptionOf(section(["drive-app[bot]"]), "drive-bot");
     expect(adopts(pr, named as Adoption, null, Date.now())).not.toBeNull();
-    const labelled = { ...pr, labels: ["automation:docs-sync"] };
+    const labelled = {
+      ...pr,
+      labels: ["automation:docs-sync"],
+      failingChecks: false,
+      unresolvedThreads: 0,
+    };
     expect(adopts(labelled, named as Adoption, null, Date.now())).toBeNull();
+    // Facts the forge did not give in full are unknown, not healthy.
+    const { unresolvedThreads: _unread, ...unread } = labelled;
+    expect(adopts(unread, named as Adoption, null, Date.now())).toContain(
+      "not read in full",
+    );
     expect(
       adopts(
         { ...labelled, mergeable: "CONFLICTING" },

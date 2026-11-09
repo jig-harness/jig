@@ -29,6 +29,40 @@ function repo(files: Record<string, string>): {
   return { root, tracked: Object.keys(files) };
 }
 
+/** The unlabelled steps of a workflow with one `run` step holding `script`. */
+const runSteps = (script: string) =>
+  unlabelledSteps({
+    jobs: { j: { steps: [{ name: "s", run: script }] } },
+  });
+
+describe("gh pr create in a run script", () => {
+  it("reads only a command, not a quoted word or a comment", () => {
+    expect(runSteps('echo "gh pr create"')).toEqual([]);
+    expect(runSteps("# gh pr create --fill")).toEqual([]);
+  });
+
+  it("reads a command continued over lines", () => {
+    expect(runSteps("gh pr \\\n  create --fill")).toEqual(["j › s"]);
+  });
+
+  it("asks each creation for its own automation label", () => {
+    expect(runSteps("gh pr create --fill\n# --label automation:x")).toEqual([
+      "j › s",
+    ]);
+    expect(
+      runSteps("gh pr create --fill && gh issue edit 1 --label automation:x"),
+    ).toEqual(["j › s"]);
+    expect(
+      runSteps("gh pr create --label automation:x\ngh pr create --fill"),
+    ).toEqual(["j › s"]);
+    expect(
+      runSteps(
+        'gh pr create --label automation:x\ngh pr create -l "bug,automation:y"',
+      ),
+    ).toEqual([]);
+  });
+});
+
 const CREATE = (labels?: string) => `on: { schedule: [{ cron: "0 5 * * 1" }] }
 jobs:
   regen:

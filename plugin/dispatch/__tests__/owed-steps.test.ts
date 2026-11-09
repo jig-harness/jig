@@ -150,20 +150,60 @@ describe("the out-of-tree section", () => {
   });
 });
 
+describe("what the section says is no step", () => {
+  const section = (...items: string[]) =>
+    body("## Out-of-tree follow-ups", ...items);
+
+  it("reads a sentence that begins with None as a step", () => {
+    expect(
+      owedSteps(
+        section("- [ ] None of the old credentials may remain: revoke them"),
+      ).open,
+    ).toBe(1);
+    expect(owedSteps(section("- **None**", "- N/A: nothing to do")).open).toBe(
+      0,
+    );
+  });
+
+  it("ignores an HTML comment that never closes", () => {
+    expect(
+      owedSteps(body("<!--", "## Out-of-tree follow-ups", "- [ ] Placeholder")),
+    ).toEqual({ open: 0, done: 0 });
+  });
+});
+
 describe("the manual-operations label", () => {
   it("is manual-ops by default, the repository's own where it names one", () => {
-    expect(manualOpsLabel({})).toEqual({ ok: true, value: "manual-ops" });
+    expect(manualOpsLabel({}, "jig:")).toEqual({
+      ok: true,
+      value: "manual-ops",
+    });
     expect(
-      manualOpsLabel({ issue_tracker: { labels: { manual_ops: "ops-step" } } }),
+      manualOpsLabel(
+        { issue_tracker: { labels: { manual_ops: "ops-step" } } },
+        "jig:",
+      ),
     ).toEqual({ ok: true, value: "ops-step" });
   });
 
   it("is invalid, naming the field, where the tracker labels do not read", () => {
-    const read = manualOpsLabel({
-      issue_tracker: { labels: { manual_ops: 3 } },
-    });
+    const read = manualOpsLabel(
+      { issue_tracker: { labels: { manual_ops: 3 } } },
+      "jig:",
+    );
     expect(read.ok).toBe(false);
     if (!read.ok)
       expect(read.failure.reason).toContain("issue_tracker.labels.manual_ops");
   });
+
+  it.each(["ops,manual", "jig:hold", "automation", "automation:docs"])(
+    "is invalid where %s cannot be written as a label of its own",
+    (name) => {
+      const read = manualOpsLabel(
+        { issue_tracker: { labels: { manual_ops: name } } },
+        "jig:",
+      );
+      expect(read.ok).toBe(false);
+    },
+  );
 });

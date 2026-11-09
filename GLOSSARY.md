@@ -2198,7 +2198,7 @@ make, use the entry's term instead.
   request it manages (driving, converged, parked, stale, *held*,
   followed-up, followup-failed), derived from the drive ledger, the
   *serialized areas* and, after the merge, the follow-up's end at every
-  *tick*, and never read to decide what to start. Beside them it keeps two
+  *tick*, and never read to decide what to start. Beside them it keeps
   marker labels without the prefix: the *owed-steps label* and
   `automation` (*automation pull request*). A person adds the
   commands: `drive` asks the dispatcher to drive a pull request that has

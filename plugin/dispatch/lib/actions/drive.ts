@@ -32,6 +32,7 @@ import { worktreePathKey } from "../../../skills/drive-pr/scripts/lib/state/acto
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { git, gitIdentityEnv } from "../../../shared/proc.ts";
+import { idleBlocksStart } from "../automation.ts";
 import { cloneId } from "../../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { peekCloneKey } from "../../../skills/drive-pr/scripts/lib/state/clone-key.ts";
 import { consumeRearm, pendingRearm } from "./rearm-request.ts";
@@ -173,6 +174,9 @@ async function unclaimed(
   return { blocked, claim: null };
 }
 
+const IDLE =
+  "it is an automation pull request that needs no work now (no failing check, no conflict, no unresolved thread)";
+
 /** Why a pending record's launch must not be replayed now; `null` when it may. */
 async function retryBlocked(
   state: ApplyState,
@@ -222,6 +226,11 @@ async function retryBlocked(
  * only while this host still shows that driver's run ended.
  */
 function classBlocked(record: LaunchRecord, read: DrivenPr): string | null {
+  return idleBlocksStart(read) ? IDLE : classChanged(record, read);
+}
+
+/** Why a pending record's launch no longer acts on the class its ledger reads now, by the class alone. */
+function classChanged(record: LaunchRecord, read: DrivenPr): string | null {
   const takeover = record.action === "takeover";
   const want = wantedClass(takeover, record.redrive, record.facts);
   // A pending conflict repair still owns its launch when the park's answers
@@ -306,6 +315,7 @@ function stillWanted(
   const want = wantedClass(isTakeover(action), action.redrive, action.facts);
   if (fresh.class !== want)
     return `its ledger now reads ${fresh.class}: ${fresh.why}`;
+  if (idleBlocksStart(fresh)) return IDLE;
   if (action.takeoverGone !== undefined && fresh.evidence.driverGone !== true)
     return `this host no longer shows its driver's run ended: ${String(fresh.evidence.driverCheck)}`;
   return changedStale(action.redrive, fresh);

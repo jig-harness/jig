@@ -63,9 +63,9 @@ async function projectLabels(
       .filter((q) => q.class === "followup-done")
       .map((q) => number(q.target)),
   );
-  // A failed follow-up the tick will not start again: the plan notifies a person of it.
+  // A failed follow-up the tick will not start again: the plan notifies a person of it, or would, but for a hold label, which keeps the notification off and not the state.
   const followupFailed = new Set(
-    report.actions
+    [...report.actions, ...(report.labels?.held ?? [])]
       .filter((a) => a.cause === "followup-failed")
       .map((a) => number(a.target)),
   );
@@ -75,7 +75,7 @@ async function projectLabels(
       .filter((u) => u.target.startsWith("PR #"))
       .map((u) => number(u.target)),
   );
-  const manualOps = manualOpsLabel(values);
+  const manualOps = manualOpsLabel(values, labels.prefix);
   if (!manualOps.ok)
     report.records.push({
       record: "forge",

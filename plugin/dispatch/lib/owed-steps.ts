@@ -36,16 +36,32 @@ const BOX = /^\[([ xX])\]\s*(.*)$/;
 const SETEXT = /^ {0,3}(=+|-+)\s*$/;
 const BREAK = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
 
-/** Whether an item's text says there is nothing to do: "None" or "N/A", however emphasised. */
+/** Whether an item's text says there is nothing to do: "None" or "N/A", however emphasised, alone or with a colon or parenthesis after it; a sentence that begins with the word is a step. */
 function saysNone(text: string): boolean {
-  return /^(?:none|n\/a)\b/i.test(text.replace(/^[\s_*~]+/, ""));
+  return /^(?:none|n\/a)(?:\s*[:(–—].*)?$/i.test(
+    text.replace(/^[\s_*~]+/, "").replace(/[\s_*~.!]+$/, ""),
+  );
+}
+
+/** The body without its HTML comments; one that never closes runs to the end. */
+function withoutComments(body: string): string {
+  let rest = body;
+  let out = "";
+  for (;;) {
+    const open = rest.indexOf("<!--");
+    if (open === -1) return out + rest;
+    out += rest.slice(0, open);
+    const close = rest.indexOf("-->", open + 4);
+    if (close === -1) return out;
+    rest = rest.slice(close + 3);
+  }
 }
 
 /** The description's lines outside fenced code and HTML comments. */
 function readLines(body: string): string[] {
   const lines: string[] = [];
   let fence: string | null = null;
-  for (const line of body.replace(/<!--[\s\S]*?-->/g, "").split(/\r?\n/)) {
+  for (const line of withoutComments(body).split(/\r?\n/)) {
     const marker = FENCE.exec(line)?.[1];
     if (fence !== null) {
       if (
@@ -149,12 +165,34 @@ export function owesSteps(body: string | undefined): boolean | null {
   return body === undefined ? null : owedSteps(body).open > 0;
 }
 
-/** The repository's manual-operations label, from its configuration values; `invalid` when its tracker labels do not read. */
+/**
+ * The repository's manual-operations label, from its configuration values;
+ * `invalid` when its tracker labels do not read, or the name cannot be
+ * written as one label: it holds a comma (the forge's label flags split on
+ * it), or it is a label of the dispatcher's own (under the dispatch
+ * prefix, `automation` or of the `automation:` family).
+ */
 export function manualOpsLabel(
   values: Record<string, unknown>,
+  prefix: string,
 ): Outcome<string, "invalid"> {
   try {
-    return ok(parseTrackerLabels(values).manualOps);
+    const name = parseTrackerLabels(values).manualOps;
+    if (name.includes(","))
+      return failed(
+        "invalid",
+        `issue_tracker.labels.manual_ops '${name}' holds a comma, which splits it into two labels`,
+      );
+    if (
+      (prefix !== "" && name.startsWith(prefix)) ||
+      name === "automation" ||
+      name.startsWith("automation:")
+    )
+      return failed(
+        "invalid",
+        `issue_tracker.labels.manual_ops '${name}' is a label the dispatcher keeps itself (under '${prefix}', or automation)`,
+      );
+    return ok(name);
   } catch (error) {
     return failed("invalid", failureText(error), error);
   }

@@ -48,6 +48,7 @@ import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
+import { idleBlocksStart } from "./automation.ts";
 import { backingOff } from "./infra-backoff.ts";
 import { conflictNote } from "./sources/ledgers.ts";
 import { requestedTree, workspaceOfTree } from "./stall-tree.ts";
@@ -123,7 +124,12 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
   /** The claimed items whose clock is left as it is. */
   idleKeep: string[];
   /** The actions a `hold` label kept off. */
-  held: Array<{ target: string; stage: Stage; reason: string }>;
+  held: Array<{
+    target: string;
+    stage: Stage;
+    reason: string;
+    cause?: NotifyCause;
+  }>;
   /** The targets `only_labeled` withheld actions from: their notice records stand. */
   withheld: string[];
   /** The re-arms, takeovers and re-drives a serialized area's hold kept off. */
@@ -310,6 +316,7 @@ export function holdBack(
         target: action.target,
         stage: action.stage,
         reason: `a person's hold label stands the dispatcher down from it; without it the tick would ${action.stage}: ${action.reason}`,
+        ...(action.cause === undefined ? {} : { cause: action.cause }),
       });
       plan.withheld?.push(action.target);
     } else kept.push(action);
@@ -497,18 +504,9 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   };
 }
 
-/** The classes the dispatcher starts a drive from of itself: a re-drive, a takeover, a re-arm. */
-const AUTOMATIC: ReadonlySet<LedgerClass> = new Set([
-  "stale",
-  "silent",
-  "re-armable",
-]);
-
 /** Why an automation pull request's drive is not started again of itself: it needs no work. `null` for any other drive, and for a person's rearm request. */
 function idleWhy(pr: DrivenPr): string | null {
-  if (pr.evidence.automationIdle !== true || pr.evidence.rearm === true)
-    return null;
-  if (!AUTOMATIC.has(pr.class)) return null;
+  if (!idleBlocksStart(pr)) return null;
   return `${pr.why}; but it is an automation pull request that needs no work (no failing check, no conflict, no unresolved thread), so nothing is started of itself: a person merges it, or labels it rearm`;
 }
 

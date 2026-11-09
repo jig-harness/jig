@@ -72,7 +72,7 @@ async function repoLabels(path: string, confirm: boolean): Promise<boolean> {
     );
     return false;
   }
-  const manualOps = manualOpsLabel(read.value.values);
+  const manualOps = manualOpsLabel(read.value.values, config.prefix);
   if (!manualOps.ok) return unchecked(path, manualOps.failure.reason);
   const labels = await repositoryLabels(repo.slug);
   if (!labels.ok) return unchecked(path, labels.failure.reason);

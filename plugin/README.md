@@ -654,7 +654,7 @@ adds: `jig:drive` on a pull request with no drive ledger arms a drive on
 it (the `rearm` stage, once per head commit) and is replaced by the state
 label once the ledger exists. `jig:rearm` asks to restart a stopped drive in its existing branch tree, on an admitted account, and is consumed after launch; it never restarts a running drive or one a person stopped. `jig:hold` keeps every stage off the
 pull request while it is there, reported at every run and removed only by
-a person. Two marker labels without the prefix sit beside the set: the
+a person. Marker labels without the prefix sit beside the set: the
 repository's manual-operations label (`issue_tracker.labels.manual_ops`,
 `manual-ops` by default) on a pull request whose
 `## Out-of-tree follow-ups` section lists a step not yet checked off, set

@@ -23,7 +23,7 @@
  *   ticks without another launch, and while labels are disabled it stays
  *   pending untouched. `hold` is only ever removed by a person.
  *
- * Beside the set, the tick keeps two marker labels that carry no prefix
+ * Beside the set, the tick keeps marker labels that carry no prefix
  * (`pr-markers.ts`): the repository's manual-operations label on a pull
  * request that owes steps outside its code, and `automation` on a bot's.
  * They are not in the set: neither puts a pull request in scope.
