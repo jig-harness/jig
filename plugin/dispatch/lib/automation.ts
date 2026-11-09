@@ -132,12 +132,12 @@ export function checksFail(checks: unknown): boolean | undefined {
   );
 }
 
-/** A pull request a drive's ledger reads: whether it is an automation pull request with no trouble observed, which the dispatcher then starts no drive on of itself; a fact the forge did not give is no trouble observed. */
+/** A pull request a drive's ledger reads: whether it is an automation pull request that needs no work, which the dispatcher then starts no drive on of itself; a fact the forge did not give is unknown, not healthy, so it is idle only when every fact was read. */
 export function idleAutomation(
   pr: TroubleFacts & { author?: Author; labels?: readonly string[] },
   own: readonly string[],
 ): { automationIdle?: true } {
-  return isAutomation(pr, own) && troubleOf(pr) === null
+  return isAutomation(pr, own) && troubleKnown(pr) && troubleOf(pr) === null
     ? { automationIdle: true }
     : {};
 }

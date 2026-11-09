@@ -221,6 +221,44 @@ describe("what the section says is no step", () => {
   });
 });
 
+describe("Markdown the scan must read as the renderer does", () => {
+  const heading = "## Out-of-tree follow-ups";
+
+  it("reads a comment delimiter in an inline code span as text", () => {
+    expect(
+      owedSteps(
+        body(
+          heading,
+          "- [x] Document the `<!--` marker",
+          "- [ ] Rotate the key",
+        ),
+      ),
+    ).toEqual({ open: 1, done: 1 });
+  });
+
+  it("reads a fence indented into a list item as code", () => {
+    expect(
+      owedSteps(
+        body(
+          heading,
+          "- [x] Run the migration",
+          "    ```md",
+          "    - [ ] Example operation",
+          "    ```",
+        ),
+      ),
+    ).toEqual({ open: 0, done: 1 });
+  });
+
+  it.each([
+    "- **None**: nothing to do",
+    "- **N/A** - nothing to do",
+    "- None (nothing to do)",
+  ])("reads %s as no step", (item) => {
+    expect(owedSteps(body(heading, item))).toEqual({ open: 0, done: 0 });
+  });
+});
+
 describe("the manual-operations label", () => {
   it("is manual-ops by default, the repository's own where it names one", () => {
     expect(manualOpsLabel({}, "jig:")).toEqual({
@@ -245,14 +283,17 @@ describe("the manual-operations label", () => {
       expect(read.failure.reason).toContain("issue_tracker.labels.manual_ops");
   });
 
-  it.each(["ops,manual", "jig:hold", "automation", "automation:docs"])(
-    "is invalid where %s cannot be written as a label of its own",
-    (name) => {
-      const read = manualOpsLabel(
-        { issue_tracker: { labels: { manual_ops: name } } },
-        "jig:",
-      );
-      expect(read.ok).toBe(false);
-    },
-  );
+  it.each([
+    "ops,manual",
+    "jig:hold",
+    "automation",
+    "automation:docs",
+    "x".repeat(51),
+  ])("is invalid where %s cannot be written as a label of its own", (name) => {
+    const read = manualOpsLabel(
+      { issue_tracker: { labels: { manual_ops: name } } },
+      "jig:",
+    );
+    expect(read.ok).toBe(false);
+  });
 });

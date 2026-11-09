@@ -31,12 +31,20 @@ const CREATE_ACTION = /^peter-evans\/create-pull-request@/;
 const listsAutomation = (labels: string): boolean =>
   labels.split(/[,\n]/).some((l) => l.trim().startsWith("automation:"));
 
-/** Where a scan of a shell script stands: the words of the command being read, the word being read (`null` between words) and the quote open. */
+/** A here-document whose body begins after the current line: its delimiter, and whether `<<-` lets tabs indent the delimiter line. */
+interface Heredoc {
+  delimiter: string;
+  tabs: boolean;
+}
+
+/** Where a scan of a shell script stands: the words of the command being read, the word being read (`null` between words), the quote open, the here-documents awaiting their bodies and the groups open. */
 interface Scan {
   commands: string[][];
   words: string[];
   word: string | null;
   quote: string | null;
+  heredocs: Heredoc[];
+  groups: number;
 }
 
 const endWord = (scan: Scan): void => {
@@ -65,6 +73,86 @@ function inQuote(scan: Scan, script: string, i: number): number {
   return i;
 }
 
+/** The delimiter word of a here-document from `j`, quotes and backslashes removed, with the index after it. */
+function delimiterAt(script: string, j: number): { word: string; end: number } {
+  let word = "";
+  let quote: string | null = null;
+  for (; j < script.length; j++) {
+    const c = script.charAt(j);
+    if (quote !== null) {
+      if (c === quote) quote = null;
+      else word += c;
+    } else if (c === "'" || c === '"') quote = c;
+    else if (/[\s;&|<>()]/.test(c)) break;
+    else if (c !== "\\") word += c;
+  }
+  return { word, end: j };
+}
+
+/** The here-document an operator `<<` at `i` opens, with the index of the last character of its delimiter; `null` for `<<<` or a missing delimiter. */
+function heredocAt(
+  script: string,
+  i: number,
+): { heredoc: Heredoc; end: number } | null {
+  if (script.charAt(i + 2) === "<") return null;
+  let j = i + 2;
+  const tabs = script.charAt(j) === "-";
+  if (tabs) j++;
+  while (script.charAt(j) === " " || script.charAt(j) === "\t") j++;
+  const { word, end } = delimiterAt(script, j);
+  return word === ""
+    ? null
+    : { heredoc: { delimiter: word, tabs }, end: end - 1 };
+}
+
+/** The index of the last character of the here-document bodies that begin after the newline at `i`. */
+function skipHeredocs(scan: Scan, script: string, i: number): number {
+  let at = i + 1;
+  for (const { delimiter, tabs } of scan.heredocs.splice(0)) {
+    while (at < script.length) {
+      const eol = script.indexOf("\n", at);
+      const line = script.slice(at, eol === -1 ? script.length : eol);
+      at = eol === -1 ? script.length : eol + 1;
+      if ((tabs ? line.replace(/^\t+/, "") : line) === delimiter) break;
+    }
+  }
+  return at - 1;
+}
+
+/** Open a here-document at the `<<` at `i`; the index of the last character used. */
+function openHeredoc(scan: Scan, script: string, i: number): number {
+  const found = heredocAt(script, i);
+  if (found === null) return i + 1;
+  endWord(scan);
+  scan.heredocs.push(found.heredoc);
+  return found.end;
+}
+
+/** Read a `(` at a word's start, which begins a command of its own as a control keyword does, or a `)` closing such a group; whether `c` was one. */
+function group(scan: Scan, c: string): boolean {
+  if (c === "(" && scan.word === null) scan.groups++;
+  else if (c === ")" && scan.groups > 0) scan.groups--;
+  else return false;
+  endCommand(scan);
+  return true;
+}
+
+/** Read one character that is no quote, escape or comment; the index of the last one used. */
+function operator(scan: Scan, script: string, i: number): number {
+  const c = script.charAt(i);
+  if (c === "<" && script.charAt(i + 1) === "<")
+    return openHeredoc(scan, script, i);
+  if (c === "\n") {
+    endCommand(scan);
+    return scan.heredocs.length > 0 ? skipHeredocs(scan, script, i) : i;
+  }
+  if (group(scan, c)) return i;
+  if (/[;&|]/.test(c)) endCommand(scan);
+  else if (/\s/.test(c)) endWord(scan);
+  else append(scan, c);
+  return i;
+}
+
 /** Read one character outside quotes; the index of the last one used. */
 function outside(scan: Scan, script: string, i: number): number {
   const c = script.charAt(i);
@@ -78,20 +166,26 @@ function outside(scan: Scan, script: string, i: number): number {
   } else if (c === "#" && scan.word === null) {
     const end = script.indexOf("\n", i);
     return end === -1 ? script.length : end - 1;
-  } else if (/[\n;&|]/.test(c)) endCommand(scan);
-  else if (/\s/.test(c)) endWord(scan);
-  else append(scan, c);
+  } else return operator(scan, script, i);
   return i;
 }
 
 /**
  * The simple commands of a shell script as lists of words: split at
  * newlines, `;`, `&` and `|` outside quotes, a backslash-newline joined, a
- * `#` comment at a word's start dropped, quotes removed. Command
- * substitutions, here-documents and functions are not followed.
+ * `#` comment at a word's start dropped, quotes removed, the bodies of
+ * here-documents skipped and a `(` at a word's start a command boundary.
+ * Command substitutions and functions are not followed.
  */
 export function shellCommands(script: string): string[][] {
-  const scan: Scan = { commands: [], words: [], word: null, quote: null };
+  const scan: Scan = {
+    commands: [],
+    words: [],
+    word: null,
+    quote: null,
+    heredocs: [],
+    groups: 0,
+  };
   for (let i = 0; i < script.length; i++)
     i = (scan.quote === null ? outside : inQuote)(scan, script, i);
   endCommand(scan);

@@ -246,11 +246,23 @@ describe("jig dispatch drives an automation pull request only while it needs wor
     );
   }, 60_000);
 
-  it("launches nothing, and says why, when the fresh read cannot count the threads", async () => {
+  it("launches on observed trouble without a thread count", async () => {
     const w = fixture(ADOPT);
     w.setPrs("open", [
       labeled(by(24, "drive-bot", FAILING), "automation:docs-sync"),
     ]);
+    w.setComments(24, []);
+    const ws = join(w.root, "ws-24");
+    mkdirSync(ws, { recursive: true });
+    w.setWorkspaces([{ branch: "feature/24", linkedPR: 24, path: ws }]);
+
+    const [launched] = (await tick(w, ["--apply"])).repos[0]?.launches ?? [];
+    expect(launched).toMatchObject({ action: "rearm", outcome: "launched" });
+  }, 60_000);
+
+  it("launches nothing, and says why, when the fresh read cannot count the threads", async () => {
+    const w = fixture(ADOPT);
+    w.setPrs("open", [labeled(by(24, "drive-bot"), "automation:docs-sync")]);
     w.setComments(24, []);
     const ws = join(w.root, "ws-24");
     mkdirSync(ws, { recursive: true });
@@ -280,14 +292,23 @@ describe("jig dispatch drives an automation pull request only while it needs wor
   }, 90_000);
 });
 
-describe("an automation pull request with no trouble observed", () => {
+describe("an automation pull request that needs no work", () => {
   const bot = { login: "renovate[bot]", bot: true };
 
-  it("is idle when a fact was not read, since only observed trouble admits a launch", async () => {
+  it("is idle only when every fact was read", async () => {
     const { idleAutomation } = await import("../lib/automation.ts");
-    expect(idleAutomation({ author: bot, unresolvedThreads: 0 }, [])).toEqual({
-      automationIdle: true,
-    });
+    expect(
+      idleAutomation(
+        { author: bot, failingChecks: false, unresolvedThreads: 0 },
+        [],
+      ),
+    ).toEqual({ automationIdle: true });
+    expect(idleAutomation({ author: bot, unresolvedThreads: 0 }, [])).toEqual(
+      {},
+    );
+    expect(idleAutomation({ author: bot, failingChecks: false }, [])).toEqual(
+      {},
+    );
     expect(idleAutomation({ author: bot, failingChecks: true }, [])).toEqual(
       {},
     );

@@ -110,6 +110,9 @@ const STATE_COLORS: Partial<Record<StateName, string>> = {
   "followup-failed": PARKED_COLOR,
 };
 
+/** The longest label name the forge takes, in characters. */
+export const MAX_LABEL = 50;
+
 /** The longest name the prefix goes before: a prefix leaves room for it within the forge's 50 characters. */
 export const LONGEST_NAME = Math.max(
   ...[...PROJECTED_STATES, ...COMMANDS].map((n) => n.length),

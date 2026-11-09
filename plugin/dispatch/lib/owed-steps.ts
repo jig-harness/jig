@@ -17,6 +17,7 @@
  */
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { parseTrackerLabels } from "../../shared/tracker-labels.ts";
+import { MAX_LABEL } from "./labels.ts";
 import { failureText } from "./text.ts";
 
 /** The section's heading text, compared without case. */
@@ -28,7 +29,7 @@ export interface OwedSteps {
   done: number;
 }
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+const FENCE = /^( *)(`{3,}|~{3,})/;
 const HEADING_LINE = /^ {0,3}(#{1,6})(?:\s+(.*?))?\s*#*\s*$/;
 const ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
 const BOX = /^\[([ xX])\]\s*(.*)$/;
@@ -38,20 +39,58 @@ const BREAK = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
 
 /** Whether an item's text says there is nothing to do: "None" or "N/A", however emphasised, alone or with a colon or parenthesis after it; a sentence that begins with the word is a step. */
 function saysNone(text: string): boolean {
-  return /^(?:none|n\/a)(?:\s*[:(–—].*)?$/i.test(
+  return /^(?:none|n\/a)(?:[_*~]*(?:\s*[:(–—]|\s+-\s).*)?$/i.test(
     text.replace(/^[\s_*~]+/, "").replace(/[\s_*~.!]+$/, ""),
   );
 }
 
+/** The fence marker a line opens or closes, at most three spaces in from `base`, the column of the list item that holds it (0 outside a list); `undefined` for another line. */
+function fenceOf(line: string, base: number): string | undefined {
+  const found = FENCE.exec(line.replace(/\t/g, "    "));
+  return found !== null && (found[1]?.length ?? 0) <= base + 3
+    ? found[2]
+    : undefined;
+}
+
 /** Whether `line` closes the open fence `fence`: its own marker, as long, and nothing after it. */
-function closesFence(line: string, fence: string): boolean {
-  const marker = FENCE.exec(line)?.[1];
+function closesFence(line: string, fence: string, base: number): boolean {
+  const marker = fenceOf(line, base);
   return (
     marker !== undefined &&
     marker[0] === fence[0] &&
     marker.length >= fence.length &&
     line.slice(line.indexOf(marker) + marker.length).trim() === ""
   );
+}
+
+/** The column where the text of the list item on `line` begins; 0 for a line that is no item. */
+function contentColumn(line: string): number {
+  const item = /^(\s*)(?:[-*+]|\d+[.)])\s+/.exec(line.replace(/\t/g, "    "));
+  return item?.[0].length ?? 0;
+}
+
+/** The column of the list item holding the line after `line`, given `base` before it: an item sets its own, an unindented paragraph ends the list, any other line keeps it. */
+function listColumn(line: string, base: number): number {
+  if (line.trim() === "") return base;
+  const column = contentColumn(line);
+  if (column > 0) return column;
+  return /^\s/.test(line) ? base : 0;
+}
+
+/** The code spans of `line` as start and end offsets: a run of backticks and the next run of the same length, whose text Markdown renders literally. */
+function codeSpans(line: string): [number, number][] {
+  const spans: [number, number][] = [];
+  const runs = [...line.matchAll(/`+/g)];
+  for (let i = 0; i < runs.length; i++) {
+    const open = runs[i];
+    const close = runs
+      .slice(i + 1)
+      .find((r) => r[0].length === open?.[0].length);
+    if (open === undefined || close === undefined) continue;
+    spans.push([open.index, close.index + close[0].length]);
+    i = runs.indexOf(close);
+  }
+  return spans;
 }
 
 /** What is left of `line` outside HTML comments, and whether a comment is open at its end; `open` says whether one was open at its start. */
@@ -69,7 +108,10 @@ function uncommented(
       rest = rest.slice(close + 3);
       inside = false;
     }
-    const start = rest.indexOf("<!--");
+    const spans = codeSpans(rest);
+    let start = rest.indexOf("<!--");
+    while (start !== -1 && spans.some(([a, b]) => start >= a && start < b))
+      start = rest.indexOf("<!--", start + 1);
     if (start === -1) return { text: text + rest, open: false };
     text += rest.slice(0, start);
     rest = rest.slice(start + 4);
@@ -80,23 +122,27 @@ function uncommented(
 /**
  * The description's lines outside fenced code and HTML comments, read in one
  * pass so that each hides the other's delimiters: a comment opener inside a
- * fence is code, and a fence inside a comment is comment. A comment that never
+ * fence or a code span is code, and a fence inside a comment is comment. A
+ * fence may be indented into the list item that holds it. A comment that never
  * closes runs to the end; a fence closes only on a line of its own marker.
  */
 function readLines(body: string): string[] {
   const lines: string[] = [];
   let fence: string | null = null;
   let comment = false;
+  // The column of the list item holding the line, which a fence in it is indented from.
+  let base = 0;
   for (const line of body.split(/\r?\n/)) {
     if (fence !== null) {
-      if (closesFence(line, fence)) fence = null;
+      if (closesFence(line, fence, base)) fence = null;
       continue;
     }
-    const marker = comment ? undefined : FENCE.exec(line)?.[1];
+    const marker = comment ? undefined : fenceOf(line, base);
     if (marker !== undefined) {
       fence = marker;
       continue;
     }
+    if (!comment) base = listColumn(line, base);
     const read = uncommented(line, comment);
     comment = read.open;
     lines.push(read.text);
@@ -190,7 +236,7 @@ export function owesSteps(body: string | undefined): boolean | null {
  * The repository's manual-operations label, from its configuration values;
  * `invalid` when its tracker labels do not read, or the name cannot be
  * written as one label: it holds a comma (the forge's label flags split on
- * it), or it is a label of the dispatcher's own (under the dispatch
+ * it), is longer than the forge takes, or it is a label of the dispatcher's own (under the dispatch
  * prefix, `automation` or of the `automation:` family).
  */
 export function manualOpsLabel(
@@ -203,6 +249,11 @@ export function manualOpsLabel(
       return failed(
         "invalid",
         `issue_tracker.labels.manual_ops '${name}' holds a comma, which splits it into two labels`,
+      );
+    if (name.length > MAX_LABEL)
+      return failed(
+        "invalid",
+        `issue_tracker.labels.manual_ops '${name}' is longer than the forge's ${MAX_LABEL} characters for a label`,
       );
     if (
       (prefix !== "" && name.startsWith(prefix)) ||

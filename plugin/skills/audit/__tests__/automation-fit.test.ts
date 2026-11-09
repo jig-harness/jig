@@ -41,6 +41,24 @@ describe("gh pr create in a run script", () => {
     expect(runSteps("# gh pr create --fill")).toEqual([]);
   });
 
+  it("skips here-document bodies, which print text", () => {
+    expect(runSteps("cat <<'EOF'\ngh pr create --fill\nEOF")).toEqual([]);
+    expect(runSteps("cat <<-EOF\n\tgh pr create\n\tEOF\ngh pr create")).toEqual(
+      ["j › s"],
+    );
+    expect(runSteps("cat <<EOF | gh pr create --fill\ntext\nEOF")).toEqual([
+      "j › s",
+    ]);
+  });
+
+  it("reads a command in a subshell", () => {
+    expect(runSteps("(gh pr create --fill)")).toEqual(["j › s"]);
+    expect(runSteps("if true; then (gh pr create --fill); fi")).toEqual([
+      "j › s",
+    ]);
+    expect(runSteps("(gh pr create --label automation:x)")).toEqual([]);
+  });
+
   it("reads a command continued over lines", () => {
     expect(runSteps("gh pr \\\n  create --fill")).toEqual(["j › s"]);
   });

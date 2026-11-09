@@ -198,8 +198,9 @@ interface ApplyInputs {
  * An automation pull request read again, with the unresolved review threads
  * the adoption rule reads of it and the view does not carry; `unreadable`,
  * with why, when the count does not read, so the launch is not acted on. A
- * pull request a person's `drive` or `rearm` label asks for needs no count:
- * the request does not wait on it.
+ * pull request a person's `drive` or `rearm` label asks for, or one already
+ * failing a check or conflicting, needs no count: the request or the trouble
+ * does not wait on it.
  */
 async function withThreads(
   slug: string,
@@ -208,6 +209,9 @@ async function withThreads(
   asked: boolean,
 ): Promise<Outcome<ListedPr, "unreadable">> {
   if (asked || !isAutomation(pr, own)) return ok(pr);
+  // Trouble already observed admits the launch; the thread count is only needed to find trouble.
+  if (pr.failingChecks === true || pr.mergeable === "CONFLICTING")
+    return ok(pr);
   const threads = await unresolvedThreadCount(slug, pr.number);
   if (!threads.ok)
     return failed(
