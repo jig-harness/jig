@@ -244,7 +244,19 @@ describe("the disclosures", () => {
         expect(await page.locator(".quote.md h2").first().innerText()).toBe(
           "Question",
         );
-        expect(await page.locator(".quote.md li").count()).toBe(2);
+        // Two options and the step for a person.
+        expect(await page.locator(".quote.md li").count()).toBe(3);
+        expect(
+          await page.evaluate(() => {
+            const lines = document.createElement("div");
+            lines.className = "quote md lines";
+            lines.textContent = "first line\nsecond line";
+            document.body.append(lines);
+            const whiteSpace = getComputedStyle(lines).whiteSpace;
+            lines.remove();
+            return whiteSpace;
+          }),
+        ).toBe("pre-line");
       } finally {
         await context.close();
       }

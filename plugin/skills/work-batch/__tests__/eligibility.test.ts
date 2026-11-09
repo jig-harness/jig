@@ -153,6 +153,31 @@ describe("repository, type and context", () => {
     });
   });
 
+  it("admits an issue with no repository label where the tracker is one GitHub repository's", () => {
+    const own = policy({
+      issue_tracker: { adapter: "github" },
+      review: {
+        repo_label: "web",
+        taxonomy: {
+          repos: ["web"],
+          types: ["bug", "feature", "chore"],
+          context_prefixes: ["area:", "domain:", "agent:"],
+          ownership_prefixes: ["team:"],
+        },
+      },
+      work_batch: { sizes: ["xs", "small", "medium", "large", "xl"] },
+    });
+    const labels = relabel(base, ["web"]);
+    expect(excludeReason(issue("ENG-1", { labels }), own, none)).toBeNull();
+    // The repository label is still accepted, and still counted once.
+    expect(excludeReason(issue("ENG-1"), own, none)).toBeNull();
+    // The same issue stays held back on a tracker that holds other repositories.
+    expect(excludeReason(issue("ENG-1", { labels }), P, none)).toEqual({
+      kind: "wrong-repo",
+      repo: null,
+    });
+  });
+
   it("holds back no type and two types", () => {
     const of = (labels: string[]) =>
       excludeReason(issue("ENG-1", { labels }), P, none);

@@ -14,6 +14,11 @@ import type {
 } from "../plugin/dispatch/lib/dashboard-contract.ts";
 import { API, DOC, INF, iso, MOB, pad, prUrl, T, WEB } from "./fixture-rows.ts";
 import { recentTicks } from "./fixture-ticks.ts";
+import { actOfNeed } from "../plugin/shared/acts.ts";
+import {
+  recordOptions,
+  recordSteps,
+} from "../plugin/skills/drive-pr/scripts/lib/state/park-frame.ts";
 
 const INTERVAL_MS = 5 * 60_000;
 const LONGEST_TICK_MS = 2 * 60_000;
@@ -194,9 +199,12 @@ export function framedDecision(
   recommendation: string,
   answer: string,
   done: string,
+  person?: string,
 ): LineDecision {
+  const steps = [`- Comment \`answer ${key}: ${answer}\` on the pull request.`];
   return {
     key,
+    ...(person === undefined ? {} : { person }),
     kind: "thread",
     lines: [
       "## Question",
@@ -212,7 +220,7 @@ export function framedDecision(
       decisionClass,
       "",
       "## Steps for a person",
-      `Comment \`answer ${key}: ${answer}\` on the pull request.`,
+      ...steps,
       "",
       "## Already done",
       done,
@@ -220,6 +228,8 @@ export function framedDecision(
     question,
     recommendation,
     decisionClass,
+    options: recordOptions(options.join("\n"), recommendation),
+    steps: recordSteps(steps.join("\n")),
   };
 }
 
@@ -240,6 +250,10 @@ export function need(o: {
   const pr = o.pr ?? null;
   return {
     cause: o.cause,
+    act: actOfNeed({
+      cause: o.cause,
+      decisionClass: o.decisions?.[0]?.decisionClass ?? null,
+    }),
     stage: o.stage,
     repo: o.repo,
     target: pr === null ? (o.item ?? "") : `PR #${pr}`,

@@ -59,6 +59,7 @@ const parked = (pr: number) =>
         person: "maintainer",
         kind: "thread",
         reason: "Keep the old flag for one release?",
+        class: "scope",
         round: 2,
         at: PARKED_AT,
       },
@@ -238,6 +239,58 @@ describe("jig ask on a park", () => {
     ).toEqual(["Maintainer"]);
   });
 
+  type LineNeed = (typeof LINE.needs)[number];
+
+  /** Parks thread 7, writes a tick line whose first need is `patch`ed, and returns what `jig ask` says the drive waits on. */
+  async function waitsOnWithLineNeed(patch: (need: LineNeed) => LineNeed) {
+    const w = world();
+    w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
+    w.api(`repos/${REPO}/issues/7/comments`, [
+      comment(701, ledgerBody(parked(7))),
+    ]);
+    writeLine(
+      {
+        ...LINE,
+        needs: LINE.needs.map((need, i) => (i === 0 ? patch(need) : need)),
+      },
+      "{}",
+      w.state,
+    );
+    const r = await w.ask([`drive@${REPO}#7`, "--json"]);
+    expectSpawnExit(r, 0);
+    return (JSON.parse(r.stdout) as AskAnswer).waitsOn;
+  }
+
+  it("names the act the newest tick's line names for the park, as the dashboard's card does", async () => {
+    // The line counts a reply on a parked thread as its answer, which this read does not: its act stands.
+    const waitsOn = await waitsOnWithLineNeed((need) => ({
+      ...need,
+      act: "Authorize" as const,
+    }));
+    expect(waitsOn).toMatchObject({ person: "answer", needAct: "Authorize" });
+  });
+
+  it("takes the class's act when the line's decision is not one of the open parks", async () => {
+    const waitsOn = await waitsOnWithLineNeed((need) => ({
+      ...need,
+      act: "Authorize" as const,
+      decisions: need.decisions.map((d) => ({ ...d, key: "PRRT_obsolete" })),
+    }));
+    expect(waitsOn).toMatchObject({ person: "answer", needAct: "Decide" });
+  });
+
+  it("takes the class's act when the key was re-parked under another class after the line's tick", async () => {
+    const waitsOn = await waitsOnWithLineNeed((need) => ({
+      ...need,
+      act: "Authorize" as const,
+      decisions: need.decisions.map((d) => ({
+        ...d,
+        decisionClass: "release",
+      })),
+    }));
+    expect(waitsOn).toMatchObject({ person: "answer", needAct: "Decide" });
+  });
+
   it("waits on a person's answer while a parked question is unanswered, and lists the commands", async () => {
     const w = world();
     w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
@@ -377,9 +430,9 @@ describe("jig ask --waiting", () => {
       runId: LINE.runId,
       finishedAt: LINE.finishedAt,
     });
-    expect(answer.waiting.map((e) => [e.address, e.act])).toEqual([
-      [`drive@${REPO}#7`, "answer"],
-      [`pickup@${REPO}#12`, "look at the stalled pickup"],
+    expect(answer.waiting.map((e) => [e.address, e.act, e.needAct])).toEqual([
+      [`drive@${REPO}#7`, "answer", "Decide"],
+      [`pickup@${REPO}#12`, "look at the stalled pickup", "Investigate"],
     ]);
     expect(w.calls()).toEqual([]);
     expect(answer.waiting.map((e) => e.questions)).toEqual([
@@ -389,6 +442,7 @@ describe("jig ask --waiting", () => {
     const text = await w.ask(["--waiting"], w.away);
     expectSpawnExit(text, 0);
     expect(text.stdout).toContain(`as the tick ${LINE.runId} found it`);
+    expect(text.stdout).toContain("look at the stalled pickup · Investigate");
     for (const question of [
       "Keep the old flag?",
       "Which format should remain?",

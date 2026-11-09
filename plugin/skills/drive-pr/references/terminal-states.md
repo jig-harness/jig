@@ -94,6 +94,12 @@ zero, an `AWAITING_REVIEWER` report would read `unresolvedThreads: 0` while
 threads are live. A consumer that treats `null` as `0` reintroduces exactly
 that.
 
+`HEAD_LAG` keeps exit `4` for each head mismatch. Its reason distinguishes a
+local head ahead without a push witness (run `guarded-push.ts`), a pushed head
+whose API snapshot still lags (wait), a local head behind (update the tree),
+and diverged history (inspect and reconcile). An unreadable ancestry or push
+probe is reported as unknown rather than asserted as lag.
+
 ## Repair rounds
 
 These stops name work the loop can do itself, so `drive.ts` spends a bounded
@@ -569,6 +575,15 @@ firing over a pass that *had* worked:
   across a round that did real work. Parking has the same shape twice over —
   parking a summary-only finding posts no marker, so both summary counts stand,
   and one parked item traded for another leaves the parked count alone.
+  `work.unresolvedThreadVersions` pairs each open thread with its latest comment
+  URL, so replying while leaving a human thread open also resets the stall streak.
+  Missing or truncated comment versions disable the fingerprint for that gate.
+
+Held summary findings stay out of recurrence evidence only in their own drive
+review round. A later reviewed head puts an unaddressed finding's path back in
+that evidence, including the first status read before the round is counted.
+Repeated reads or reviewer reruns on the same head do not advance this local
+round counter. An unreadable hold or round is counted conservatively.
 
 The counters below share that one bound, because neither covers the other's runaway
 and **both are durable**. `rounds` counts distinct reviewed heads, so it cannot

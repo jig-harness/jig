@@ -88,6 +88,7 @@ describe("drive-status.ts --inherited-head", () => {
     const lag = await gate(repo.dir, fixture, []);
     expectSpawnExit(lag, 4);
     expect(lag.state).toBe("HEAD_LAG");
+    expect(lag.reason).toContain("guarded-push.ts");
     const r = await gate(repo.dir, fixture, ["--inherited-head", inherited]);
     expectSpawnExit(r, 0);
     expect(r.state).toBe("ROUND_READY");
@@ -129,6 +130,30 @@ describe("drive-status.ts --inherited-head", () => {
     ]);
     expectSpawnExit(r, 4);
     expect(r.state).toBe("HEAD_LAG");
+    expect(r.reason).toContain("diverged");
+  });
+
+  it("identifies a pushed local head whose API snapshot still lags", async () => {
+    const repo = makeScratchRepo("lag-pushed");
+    const local = commit(repo.dir, "pushed.txt");
+    git(
+      repo.dir,
+      "update-ref",
+      "refs/remotes/origin/feature/ENG-9999-probe",
+      local,
+    );
+    const r = await gate(repo.dir, { ...work, head: repo.head }, []);
+    expectSpawnExit(r, 4);
+    expect(r.reason).toContain("API has not caught up");
+  });
+
+  it("preserves git probe diagnostics when the API commit is unavailable locally", async () => {
+    const repo = makeScratchRepo("lag-unreadable-ancestry");
+    const r = await gate(repo.dir, { ...work, head: "f".repeat(40) }, []);
+    expectSpawnExit(r, 4);
+    expect(r.reason).toContain("ancestry could not be read");
+    expect(r.stderr).toContain("head mismatch ancestry probe failed");
+    expect(r.stderr).toContain("exit 128");
   });
 
   it("refuses a value that is not a full commit SHA", async () => {

@@ -13,7 +13,12 @@
 import { consumerRoot, remoteName } from "../../../../../shared/consumer.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { fail } from "../cli.ts";
-import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "../proc.ts";
+import {
+  git,
+  gitCallTimeoutSeconds,
+  gitIdentityEnv,
+  type RunResult,
+} from "../proc.ts";
 
 /** A full object name: SHA-1 or SHA-256. */
 const FULL_SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
@@ -98,6 +103,7 @@ async function pushedTo(
     ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
     treeOpts(),
   );
+  noteProbeFailure("head mismatch remote-ref", exists);
   if (exists.code === 1) return false;
   if (exists.code !== 0) return null;
   // Exit 1 is git's "not an ancestor"; anything else is a probe that failed.
@@ -105,7 +111,57 @@ async function pushedTo(
     ["merge-base", "--is-ancestor", sha, ref],
     treeOpts(),
   );
+  noteProbeFailure("head mismatch remote ancestry", contains);
   return contains.code === 0 ? true : contains.code === 1 ? false : null;
+}
+
+/** Exit 1 is a normal negative; preserve the cause of an unreadable probe. */
+function noteProbeFailure(label: string, result: RunResult): void {
+  if (result.code === 0 || result.code === 1) return;
+  console.error(
+    `${label} probe failed (exit ${result.code}, timedOut=${result.timedOut}): ${result.stderrTail.slice(-1200)}`,
+  );
+}
+
+/** Explain a mismatch from ancestry and the drive's remote push witness. */
+export async function headMismatchReason(
+  apiHead: string,
+  localHead: string,
+  headBranch: string,
+): Promise<string> {
+  const prefix = `API head ${apiHead} != local HEAD ${localHead} — `;
+  const ahead = await git(
+    ["merge-base", "--is-ancestor", apiHead, localHead],
+    treeOpts(),
+  );
+  noteProbeFailure("head mismatch ancestry", ahead);
+  if (ahead.code === 0) {
+    const pushed = await pushedTo(localHead, headBranch);
+    if (pushed === false)
+      return (
+        prefix +
+        "local HEAD is ahead and has no push witness on the drive remote; run guarded-push.ts to publish it"
+      );
+    if (pushed === true)
+      return `${prefix}the API has not caught up with the push yet`;
+    return (
+      prefix +
+      "local HEAD is ahead, but its pushed state could not be read; verify the remote before pushing or waiting"
+    );
+  }
+  const behind = await git(
+    ["merge-base", "--is-ancestor", localHead, apiHead],
+    treeOpts(),
+  );
+  noteProbeFailure("head mismatch reverse ancestry", behind);
+  if (behind.code === 0)
+    return `${prefix}local HEAD is behind the API head; update the driven tree`;
+  return (
+    prefix +
+    (ahead.code === 1 && behind.code === 1
+      ? "the histories have diverged; inspect both heads before reconciling them"
+      : "ancestry could not be read; inspect both heads before retrying")
+  );
 }
 
 /** The drive's remote for the driven tree; `null` when its setting cannot be used. */

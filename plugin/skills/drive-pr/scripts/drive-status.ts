@@ -940,7 +940,9 @@ async function main(): Promise<number> {
             // thread replaced by a new one from a round that did nothing
             // Sorted, so equality is set equality.
             unresolvedThreadKeys: report.openThreadKeys,
+            unresolvedThreadVersions: report.openThreadVersions,
             summaryUnaddressedKeys: report.summaryUnaddressedKeys,
+            summaryHeldUndispatchedKeys: report.summaryHeldUndispatchedKeys,
             parkedKeys: report.parkedItemKeys,
             // The evidence `structuralEscalationDue` above is derived from —
             // published for visibility, the same reason the key sets beside
