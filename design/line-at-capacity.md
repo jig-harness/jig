@@ -7,12 +7,12 @@ account [slots](../GLOSSARY.md) alone, two per account by default, and
 nothing measures the host: memory, the processors, the disk, and the
 machine-wide test lock every `bun run gates` queues on. A host with room to
 spare idles, and a host near its limit takes one more session and slows
-every drive on it. Pickups start only for a repository's
-[factory identity](../GLOSSARY.md), so the items a team assigns to its own
-people wait for someone to open a session. Pickups do not start at all on
-Orca, which cannot bind an interactive session to an account. And the
-stops that reach a person mix real decisions with stops an agent could
-have recovered: a second stop at the same change, a spent
+every drive on it. Pickups serve a repository's
+[factory identity](../GLOSSARY.md) and the people the host is configured to
+serve. On Orca, account-bound headless passes start those pickups without an
+interactive session. And the stops that reach a person mix real decisions
+with stops an agent could have recovered: a second stop at the same change,
+a spent
 [recovery budget](../GLOSSARY.md), an exit no rule re-drives. With this
 built, each tick measures the host and starts work while every gauge stays
 under its line, picks up the work assigned to the people the host serves
@@ -303,21 +303,27 @@ flowchart TD
   T7 --> T8[8 Steward]
 ```
 
-5. **The load factor** ([#636](https://github.com/jig-harness/jig/issues/636)):
-   the gauges, the measured reservations, the admission rule and the
-   would-hold report, with the gauge at the top of Running. Done when every
-   receipt carries each gauge, the load factor and the gauge that binds,
-   and a launch a gauge would refuse still starts while `load.enforce` is
-   `false`.
-7. **Served pickups** ([#638](https://github.com/jig-harness/jig/issues/638)):
-   `serve:`, the served reads, the ranking, `claim --for` and the Queue
-   view. Done when an item a writer assigns to a served person starts
-   within one interval when there is headroom, and the served person is
-   still its only assignee after the claim.
-8. **The steward** ([#639](https://github.com/jig-harness/jig/issues/639)):
-   the skill, its digest and records, the tick's stage and the once-only
-   resume. Done when no steward pass starts while nothing changed, and no
-   steward record re-arms a drive a person stopped.
+#### 5. The load factor
+
+([#636](https://github.com/jig-harness/jig/issues/636)): the gauges, the
+measured reservations, the admission rule and the would-hold report, with the
+gauge at the top of Running. Done when every receipt carries each gauge, the
+load factor and the gauge that binds, and a launch a gauge would refuse still
+starts while `load.enforce` is `false`.
+
+#### 7. Served pickups
+
+([#638](https://github.com/jig-harness/jig/issues/638)): `serve:`, the served
+reads, the ranking, `claim --for` and the Queue view. Done when an item a
+writer assigns to a served person starts within one interval when there is
+headroom, and the served person is still its only assignee after the claim.
+
+#### 8. The steward
+
+([#639](https://github.com/jig-harness/jig/issues/639)): the skill, its digest
+and records, the tick's stage and the once-only resume. Done when no steward
+pass starts while nothing changed, and no steward record re-arms a drive a
+person stopped.
 
 ## Left out
 
