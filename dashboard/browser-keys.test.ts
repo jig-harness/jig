@@ -135,6 +135,52 @@ describe("the keys on every view", () => {
     );
 
     browserIt(
+      `${view.label}: the focused card is marked, and a bar tells the keys it answers to`,
+      async () => {
+        const { page, context } = await openOn(view.id);
+        try {
+          const first = page.locator("main [data-card]:visible").nth(0);
+          const second = page.locator("main [data-card]:visible").nth(1);
+          const bar = page.locator(".keyBar");
+          expect(await bar.count()).toBe(0);
+          await page.keyboard.press("j");
+          await until("the bar shows", async () => bar.isVisible());
+          expect((await bar.textContent()) ?? "").toContain("details");
+          expect((await bar.textContent()) ?? "").toContain(
+            (await first.getAttribute("aria-label")) ?? "",
+          );
+          // The bar names p for a pull request and i for an issue, c for a command, only where the card has one.
+          const keys = await bar.locator("kbd").allTextContents();
+          expect(keys.includes("p")).toBe(
+            (await first.getAttribute("data-pr")) !== null,
+          );
+          expect(keys.includes("i")).toBe(
+            (await first.getAttribute("data-issue")) !== null,
+          );
+          expect(keys.includes("c")).toBe(
+            (await first.getAttribute("data-command")) !== null,
+          );
+          // The mark is a fill, not the browser's outline.
+          expect(
+            await first.evaluate((el) => getComputedStyle(el).outlineStyle),
+          ).toBe("none");
+          const fill = (card: typeof first) =>
+            card.evaluate((el) => getComputedStyle(el).backgroundColor);
+          expect(await fill(first)).not.toBe(await fill(second));
+          await page.keyboard.press("j");
+          await until("the bar follows focus", async () =>
+            ((await bar.textContent()) ?? "").includes(
+              (await second.getAttribute("aria-label")) ?? "",
+            ),
+          );
+        } finally {
+          await context.close();
+        }
+      },
+      TIMEOUT,
+    );
+
+    browserIt(
       `${view.label}: Enter and o expand and collapse the card`,
       async () => {
         const { page, context } = await openOn(view.id);

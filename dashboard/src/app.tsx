@@ -16,6 +16,7 @@ import { receiptUrl } from "./api.ts";
 import { PanelBoundary } from "./boundary.tsx";
 import { tabCounts } from "./cards.ts";
 import { ClipParts, CopyButton, KeyToast } from "./copy.tsx";
+import { KeyBar } from "./key-bar.tsx";
 import { Fold, Hint, PopupRoot } from "./fold.tsx";
 import { hostDay } from "./format.ts";
 import { HelpView } from "./help.tsx";
@@ -367,6 +368,7 @@ function Page({
               onClose={steer.closePalette}
             />
           )}
+          <KeyBar />
           <KeyToast />
           <ClipParts />
         </StandingSource.Provider>
