@@ -83,6 +83,8 @@ test("the run cost ignores passthrough arguments and option values", () => {
   expect(cost(["--parallel=16", "--", "--parallel=1"])).toBe("16");
   expect(cost(["--", "--parallel=1"])).toBe("4");
   expect(cost(["-t", "--parallel=2"])).toBe("4");
+  expect(cost(["--bail", "--parallel=16"])).toBe("16");
+  expect(cost(["--bail=2", "--parallel=16"])).toBe("16");
   expect(cost(["--parallel=2", "-t", "x"])).toBe("2");
 });
 

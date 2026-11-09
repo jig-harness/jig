@@ -37,14 +37,17 @@ export function workers(platform = process.platform): number {
   return platform === "win32" ? 1 : 4;
 }
 
-/** `bun test` options whose next argument is their value. */
+/**
+ * `bun test` options whose next argument is their value. Options with an
+ * optional value (`--bail[=n]`, `--parallel[=n]`) are absent: their value is
+ * only ever attached with `=`, so the next argument is a separate option.
+ */
 const VALUE_OPTIONS = new Set([
   "-t",
   "--test-name-pattern",
   "--timeout",
   "--rerun-each",
   "--retry",
-  "--bail",
   "--reporter",
   "--reporter-outfile",
   "--coverage-reporter",
