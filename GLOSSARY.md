@@ -880,6 +880,15 @@ make, use the entry's term instead.
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a
   workspace is what a *workspace provider* opens around a worktree.
+- **Load admission** — letting one more heavy run start on a machine only
+  while it has room for it: the predicted load (the recent load average plus
+  the cost of runs started too recently to show in it) stays under a share
+  of the cores and the available memory above a floor, and the first run is
+  always admitted. M12's resource lock admits runs into its *slots* this way
+  ([M12](modules/M12-parallel-agent-ergonomics/README.md)).
+- **Slot** (of a resource lock) — one of the numbered locks a run may hold
+  for a named resource lock; the first is the lock's own name. A run holds
+  one; an *exclusive* holder holds all of them.
 - **Worktree namespace** — the data namespace (a database schema, a
   database, a key prefix) a *worktree* derives from its own identity, so
   worktrees sharing one database server never share tables. Created with an

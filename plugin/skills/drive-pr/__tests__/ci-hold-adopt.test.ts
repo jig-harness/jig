@@ -266,13 +266,26 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
   });
 
   /** Runs `ci-hold.ts release` over a fixture whose only label event is a human's add. */
-  const runRelease = async (checkRuns?: unknown) => {
+  const runRelease = async (
+    checkRuns?: unknown,
+    expectedTransition?: string,
+    absent = false,
+  ) => {
     const repo = scratchWithOrigin();
     const { dir, stateDir } = writeFixture(
       { threads: [], ciHeld: true, head: repo.head },
       repo.dir,
     );
     writeTimeline(dir, [labeled("LE_1", "human-user", "2026-09-10T09:59:00Z")]);
+    if (absent) {
+      const view = readJson<Record<string, unknown>>(join(dir, "pr-view.json"));
+      view.labels = [];
+      writeFileSync(join(dir, "pr-view.json"), JSON.stringify(view));
+      writeTimeline(dir, [
+        labeled("LE_1", "human-user", "2026-09-10T09:59:00Z"),
+        unlabeled("LE_2", "human-user", "2026-09-10T10:00:00Z"),
+      ]);
+    }
     if (checkRuns !== undefined) {
       writeFileSync(join(dir, "check-runs.json"), JSON.stringify(checkRuns));
     }
@@ -283,6 +296,9 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
         "999",
         "--expect-head",
         repo.head,
+        ...(expectedTransition === undefined
+          ? []
+          : ["--expect-transition", expectedTransition]),
       ),
       {
         cwd: repo.dir,
@@ -316,6 +332,27 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
       eventId: "LE_2",
       source: "drive",
     });
+  });
+
+  it("strict recovery refuses a replacement transition without adopting or removing it", async () => {
+    const r = await runRelease(undefined, "LE_diagnosed");
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain("diagnosed CI hold transition changed");
+    expect(readJson<unknown[]>(join(r.dir, "timeline.json"))).toHaveLength(1);
+    expect(ciHoldOf(r.stateDir)).toBeUndefined();
+  });
+
+  it("strict recovery refuses a hold removed after diagnosis", async () => {
+    const r = await runRelease(undefined, "LE_1", true);
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain("diagnosed CI hold transition changed");
+    expect(readJson<unknown[]>(join(r.dir, "timeline.json"))).toHaveLength(2);
+  });
+
+  it("strict recovery releases the exact diagnosed transition", async () => {
+    const r = await runRelease(undefined, "LE_1");
+    expectSpawnExit(r, 0);
+    expect(r.stdout.trim()).toBe("removed");
   });
 
   it("release waits, leaving the adopted label, while no check run is registered yet", async () => {

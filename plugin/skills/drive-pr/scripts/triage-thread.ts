@@ -66,9 +66,7 @@
  *                       Preserves the human-thread exception (SKILL.md's
  *                       "Leaving a human thread open"): a human thread you
  *                       replied to but chose not to close on the author's
- *                       behalf — the old two-command flow honored it simply by
- *                       never calling `resolve-thread.ts`, a choice point this
- *                       one-call command otherwise removes. No effect on
+ *                       behalf. No effect on
  *                       `accepted` or a HELD `moot` (`--moot-pending-push` on a
  *                       fresh post, or reconciled — always held) — neither is
  *                       ever resolved by this script regardless (released by
@@ -102,8 +100,9 @@
  *                       a human thread open" section has the full argument and
  *                       the one human-attended exception; not repeated here to
  *                       avoid a second copy that can drift). Never use this
- *                       path — or `--leave-open` itself — on a BOT-started
- *                       thread: see `LEAVE_OPEN_MARKER`'s own header in
+ *                       fallback path on a BOT-started thread; the explicit
+ *                       `--leave-open` flag refuses one with exit 2 before any
+ *                       post, hold or resolve: see `LEAVE_OPEN_MARKER`'s own header in
  *                       `lib/outcome.ts` for the accepted provenance residual
  *                       this flag lives inside of. That fallback still owes ONE
  *                       follow-up call — `--cleanup-only` below — since
@@ -371,6 +370,8 @@ interface ThreadComment {
 
 interface ThreadState {
   isResolved: boolean;
+  startedByBot: boolean;
+  confirmedHumanStarted: boolean;
   commentsTruncated: boolean;
   comments: ThreadComment[];
 }
@@ -425,6 +426,8 @@ query($id:ID!){
     return null;
   return {
     isResolved: n.isResolved,
+    startedByBot: c.nodes[0]?.author?.__typename === "Bot",
+    confirmedHumanStarted: c.nodes[0]?.author?.__typename === "User",
     // Fail CLOSED, not open, same as list-unresolved-threads.ts's own
     // `commentsTruncated` field: only an explicit `false` clears it.
     commentsTruncated: c.pageInfo?.hasNextPage !== false,
@@ -639,22 +642,18 @@ async function main(): Promise<number> {
     );
   }
 
-  // `commentsTruncated` refuses the reconciliation scan outright — SKILL.md §
-  // 3's own rule: a reply past the 100-comment cap could supersede what is
-  // visible. `isResolved` is a top-level thread field, unaffected by the
-  // comment-window cap, so it is still trustworthy under truncation — but
-  // whether a stale hold is safe to release (below) is NOT, since that depends
-  // on reading the LAST qualifying reply, which truncation makes unreliable. So
-  // a truncated-and-resolved thread SKIPS the cleanup rather than guessing at
-  // it from a partial view — but does not report success over that skip either
-  // (`return 1`, not `0`): a merit dispatch interrupted between resolving the
-  // thread and releasing its prior hold, retried once the thread has passed the
-  // truncation cap, would otherwise exit 0 having never even checked whether
-  // that hold remains — and a resolved thread is never re-enumerated, so the
-  // stale hold would be permanently stranded with no other path back to this
-  // script. `--cleanup-only` needs the identical caution regardless of
-  // `isResolved` — it has no OTHER outcome to fall back on posting/resolving,
-  // so a truncated thread always refuses (exit 1) rather than guessing.
+  if (leaveOpen && !thread.confirmedHumanStarted) {
+    fail(
+      2,
+      thread.startedByBot
+        ? "triage-thread.ts: --leave-open refuses a bot-started thread; settle its outcome without the human-thread exception."
+        : "triage-thread.ts: --leave-open requires a confirmed human starter; refusing unknown provenance.",
+    );
+  }
+
+  // A partial comment window cannot prove that no later reply superseded the
+  // visible one. Resolved threads still need a complete view to clear a stale
+  // hold; refuse rather than leave that cleanup permanently stranded.
   if (thread.commentsTruncated) {
     if (cleanupOnly || thread.isResolved) {
       console.error(
@@ -699,6 +698,16 @@ async function main(): Promise<number> {
     existingAuthor = c.author;
     existingBody = c.body ?? "";
     break;
+  }
+  if (
+    hasLeaveOpenMarker(existingBody ?? "") &&
+    !thread.confirmedHumanStarted &&
+    !thread.startedByBot
+  ) {
+    fail(
+      2,
+      "triage-thread.ts: recovered leave-open marker requires known starter provenance; refusing unknown provenance.",
+    );
   }
   refuseProvisional(threadId, thread.comments, existingUrl);
 
@@ -999,27 +1008,16 @@ async function main(): Promise<number> {
     sourcedFromReconciliation = false;
   }
 
-  // On RECONCILIATION, a MISSING `--leave-open` is not evidence of anything —
-  // a retrying agent has no reason to have set it, since it has no memory of
-  // an earlier interrupted (or simply prior-round) invocation's choice — so
-  // the marker recovers that case, per LEAVE_OPEN_MARKER's own header.
+  // Recover a prior leave-open choice only with affirmative human provenance.
+  // Invalid bot markers fall back to normal settlement; unknown starters refuse.
   const effectiveLeaveOpen =
     leaveOpen ||
-    (sourcedFromReconciliation && hasLeaveOpenMarker(existingBody ?? ""));
+    (thread.confirmedHumanStarted &&
+      sourcedFromReconciliation &&
+      hasLeaveOpenMarker(existingBody ?? ""));
 
-  // But a PRESENT `--leave-open` on a RECONCILING call whose existing reply
-  // carries NO marker cannot be made durable at all: this call posts nothing
-  // (the whole point of reconciliation), so there is no comment to append a
-  // marker to, and the existing one was written by whatever posted it directly
-  // — an OR-combine that honors the flag anyway skips the resolve THIS
-  // invocation, but the choice evaporates the moment this process exits: the
-  // next `triage-thread.ts` retry, or `reconcile-replied-threads.ts`'s
-  // standalone sweep, sees an unmarked merit reply and resolves it anyway —
-  // reversing a choice that read as honored. Fail closed instead of silently
-  // proceeding on an unpersistable promise: the documented alternative for a
-  // directly-posted reply meant to stay open is the one the old two-command
-  // flow always had — stop after `reply-to-thread.ts`'s own post and never
-  // invoke this script's resolve step at all.
+  // A flag cannot persist a leave-open choice on an unmarked existing reply.
+  // Refuse rather than promise a choice the next reconciliation would reverse.
   if (
     sourcedFromReconciliation &&
     leaveOpen &&

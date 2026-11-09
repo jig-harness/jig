@@ -23,6 +23,7 @@ export interface CiHoldEvidence
   extends Omit<CiHoldDiagnosis, "reason" | "recovery"> {
   worktreeSafe: boolean;
   ownership: boolean;
+  transitionId?: string | null;
   parked: number | null;
   pr: string;
   releaseScript: string;
@@ -43,12 +44,11 @@ export function diagnoseCiHold(e: CiHoldEvidence): CiHoldDiagnosis {
     missing.push("review convergence on the current head is not established");
   if (e.parked === null || e.parked > 0)
     missing.push("human decisions remain or could not be read");
+  if (!e.transitionId)
+    missing.push("the diagnosed CI hold transition is unavailable");
   if (!e.ownership) missing.push("CI hold ownership is not established");
-  if (!e.worktreeSafe || e.worktree === null)
-    missing.push(
-      e.worktreeReason ??
-        "a clean worktree on the expected PR head is not established",
-    );
+  const unsafeWorktree = worktreeFailure(e);
+  if (unsafeWorktree !== null) missing.push(unsafeWorktree);
   if (e.head === null) missing.push("the expected head could not be read");
   const {
     worktreeSafe: _safe,
@@ -56,6 +56,7 @@ export function diagnoseCiHold(e: CiHoldEvidence): CiHoldDiagnosis {
     parked: _parked,
     pr: _pr,
     releaseScript: _script,
+    transitionId: _transition,
     ...visible
   } = e;
   return {
@@ -68,7 +69,15 @@ export function diagnoseCiHold(e: CiHoldEvidence): CiHoldDiagnosis {
   };
 }
 
+function worktreeFailure(e: CiHoldEvidence): string | null {
+  if (e.worktreeSafe && e.worktree !== null) return null;
+  return (
+    e.worktreeReason ??
+    "a clean worktree on the expected PR head is not established"
+  );
+}
+
 function releaseCommand(e: CiHoldEvidence, blocked: boolean): string | null {
   if (blocked || e.worktree === null || e.head === null) return null;
-  return `cd ${shellQuote(e.worktree)} && bun ${shellQuote(e.releaseScript)} release ${shellQuote(e.pr)} --expect-head ${shellQuote(e.head)}`;
+  return `cd ${shellQuote(e.worktree)} && bun ${shellQuote(e.releaseScript)} release ${shellQuote(e.pr)} --expect-head ${shellQuote(e.head)} --expect-transition ${shellQuote(e.transitionId ?? "")}`;
 }

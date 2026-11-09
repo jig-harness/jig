@@ -170,20 +170,22 @@ export function threadAwaitsAlert(t: {
 }
 
 /**
- * What the replied-thread sweep does with a reply of `outcome` that carries
- * no LEAVE_OPEN_MARKER: `null` to hold it for a push (`accepted`, or a `moot`
- * on a thread GitHub's code scanning account did not open); else resolve it
- * now, unless `leftOpen` names the alert state that is not yet confirmed.
+ * What the replied-thread sweep does with a reply of `outcome`: `null` to
+ * hold it for a push (`accepted`, or a `moot` without merit evidence); else
+ * resolve it now, unless `leftOpen` names an unsettled alert. A legacy marker
+ * proves a moot needed no push; starter provenance separately determines
+ * whether the thread may stay open.
  */
 export function sweepVerdict(
   outcome: string,
   opening: { author: string | null } | undefined,
   alert: unknown,
+  body: string | null = null,
 ): { leftOpen?: string } | null {
   const scanning = openedByCodeScanning(opening);
   const kind = DECLINED_OUTCOMES.has(outcome)
     ? "declined"
-    : outcome === "moot" && scanning
+    : outcome === "moot" && !mootHeld(opening, false, outcome, body)
       ? "moot"
       : null;
   if (kind === null) return null;

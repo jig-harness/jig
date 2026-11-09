@@ -44,20 +44,22 @@ Give related services separate ranges (app on `PORT_BASE=20000`, database on
 well above your worktree count. Full caveats: the
 [port allocator's README](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/reference/port-allocator/README.md).
 
-### 2. A cross-worktree mutex for heavy runs
+### 2. A cross-worktree lock for heavy runs
 
-Wrap heavy build/test commands so only one runs machine-wide at a time; the rest
-wait their turn instead of thrashing:
+Wrap heavy build/test commands so only as many run machine-wide as the machine
+can carry; the rest wait their turn instead of thrashing it:
 
 ```sh
 bun with-resource-lock.ts --lock build -- pnpm build
 bun with-resource-lock.ts --lock test  -- pnpm test
 ```
 
-The lock is an atomic process-id symlink lock at a machine-global path (so it spans
-worktrees) with a wait timeout and dead-holder reclaim. It **bypasses in CI**
-(`CI=1`): a CI runner is already an isolated machine, so serializing there is
-pure latency. Mechanism + caveats: `reference/resource-lock/README.md`.
+The lock is a set of slots, each an atomic process-id symlink lock at a
+machine-global path (so it spans worktrees) with a wait timeout and dead-holder
+reclaim. A run beyond the first starts only while the machine's predicted load
+and its available memory leave room for one more; `LOCK_SLOTS=1` makes it one
+run at a time. It **bypasses in CI** (`CI=1`): a CI runner is already an
+isolated machine, so waiting there is pure latency. Mechanism + caveats: `reference/resource-lock/README.md`.
 
 ### 3. Branch reuse before create
 
