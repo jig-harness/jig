@@ -102,6 +102,21 @@ and checks first that the station can take it. The operator skill,
 those commands. Nothing new is stored, and no agent has to keep running for an
 address to answer.
 
+### 46. Structured answers: approving or choosing a parked decision in a word
+
+When a drive stops for a person, it frames the decision with its options
+and the one it recommends. A person will answer `approve` to take the
+recommended option, or `choose` and an option's name to take another. They
+can answer from a terminal, the dashboard, the Orca panel or the forge on a
+phone. The next pass gets the chosen option itself, not words to
+interpret, and an answer in a person's own words still works as before.
+Every answer line Jig offers carries a short code for the version of the
+decision it answers, so an approval of an older version does not count.
+Jig also reports how often each kind of decision follows the
+recommendation, so a team can see which decisions still need a person.
+Later, decisions that cannot be undone, such as a release, will need proof
+that a person answered.
+
 ### 42. The hub: one place to watch and steer the line
 
 One page shows a person every piece of work in flight, across the machines

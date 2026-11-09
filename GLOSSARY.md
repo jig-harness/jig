@@ -1319,6 +1319,22 @@ make, use the entry's term instead.
   `autonomy.park_classes`, and a *PR drive loop* may park only under one of
   them (for a review thread, the class the review arbiter ruled for it)
   ([configuration](plugin/CONFIGURATION.md#autonomy)).
+- **Structured answer, free answer** — the two forms of a person's answer
+  to a *framed decision*. A **structured answer** is a comment whose whole
+  answer is `approve`, which chooses the recommended option, or
+  `choose <option>`, which chooses the option by its name; the pass is
+  handed that option as the decision record states it. A **free answer** is
+  anything else, in the person's own words, which a pass interprets
+  ([design](design/structured-answers.md)).
+- **Decision digest, stale answer** — a short hash of a *framed decision*'s
+  record as the ledger publishes it. An answer line may end with it, and
+  every line Jig offers to copy does; a structured answer naming a digest
+  that is no longer the park's is a **stale answer** and does not count, so
+  an approval of an earlier framing never settles the one that replaced it
+  ([design](design/structured-answers.md#binding-an-answer-to-its-framing)).
+- **Attested class** — a *decision class* whose answers count only with
+  proof that a person, not a pass posting under their login, gave them
+  ([design](design/structured-answers.md#who-may-answer)).
 - **Autonomy level** — how far an agent may decide without asking a person:
   `attended`, the default, `unattended`, or `wide`, which also takes
   *provisional decisions*. A repository sets it and caps it with its

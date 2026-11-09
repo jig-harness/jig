@@ -75,6 +75,7 @@ with the review.
 | [Distribution channels](distribution.md) | 45 |
 | [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | 41; Later: the command store |
 | [The line at capacity: the host's load factor, served pickups and the steward](line-at-capacity.md) | 44 |
+| [Structured answers, approving or choosing a parked decision in a word](structured-answers.md) | 46 |
 
 ## Starting a design
 
