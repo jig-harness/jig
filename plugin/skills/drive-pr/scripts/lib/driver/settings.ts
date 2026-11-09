@@ -282,6 +282,9 @@ export const TAKEN_OVER_EXIT = driverOnlyExitCode("TAKEN_OVER");
 /** The converged head's CI still fails once the CI-repair passes are spent. */
 export const CI_REPAIR_SPENT_EXIT = driverOnlyExitCode("CI_REPAIR_SPENT");
 
+/** Every failing check failed on the infrastructure, and its re-runs and head moves are spent. */
+export const CI_INFRA_PERSISTED_EXIT = driverOnlyExitCode("CI_INFRA_PERSISTED");
+
 /**
  * The result of one `runRepairPass` call, kept apart from a raw process exit
  * code: the spawned command is caller-supplied and its exit space is its

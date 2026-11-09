@@ -195,7 +195,12 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
   the adapter `issue_tracker.adapter: linear` selects. It reads `LINEAR_API_KEY` or
   `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client.
   Keys are `<TEAM>-<n>`, with the team from `issue_tracker.team`. Priority
-  is Linear's priority field; type and size are labels.
+  is Linear's priority field; type is labels; size is labels, or the
+  issue's estimate where `issue_tracker.facets.size` names the native store,
+  the sizes mapped onto the team's estimate scale
+  ([`linear-facets.ts`](skills/do-item/scripts/lib/tracker/linear-facets.ts)),
+  read once with the first read that needs it and refused where estimates
+  are off or the scale has fewer points than the sizes.
 
 - **Jira Cloud** ([`jira/`](skills/do-item/scripts/lib/tracker/jira/tracker.ts)),
   the adapter `issue_tracker.adapter: jira` selects: the issues of one
@@ -219,7 +224,16 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     take, and a resolution field on the Done transition's screen;
   - priority is a Jira priority (`issue_tracker.jira.priorities`); a Jira
     issue always has one, so moving an issue to no priority is refused, and
-    one with another priority reads as none; type and size are labels;
+    one with another priority reads as none;
+  - type is labels, the issue type, or a custom field, and size labels or a
+    custom field, as `issue_tracker.facets` names them
+    ([`jira/facets.ts`](skills/do-item/scripts/lib/tracker/jira/facets.ts)):
+    a custom field, named by its name or its id, is read in the request that
+    reads the issue and written in the one that files or changes it, an
+    option checked against the create or edit screen first; with the issue
+    type as the store, a type with no standard issue type of its name, an
+    issue under an Epic and a sub-task keep the type in its label, which
+    wins over that fallback issue type when the issue is read;
   - the issue type is the tracker's own type, so an issue of type Bug or
     Task is typed without a label; a new issue gets
     `issue_tracker.jira.issue_type`, or under a standard issue the sub-task
@@ -239,7 +253,9 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     a facet, an owning repository) reads as labels through
     `issue_tracker.jira.field_labels`: each value behind the field's
     prefix, selected in JQL by the field itself (a single-line text field
-    only reads, since JQL matches it by words), and never written;
+    only reads, since JQL matches it by words); an entry whose labels are a
+    facet's values is that facet's field store, written as the facet, and
+    the adapter writes no other entry's field;
   - a comment, or an assignment, is trusted when a person's Atlassian
     account made it, not a guest, that can be assigned issues in the
     project; an app's account, Jira Automation's own included, never is.

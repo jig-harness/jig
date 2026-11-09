@@ -29,8 +29,8 @@
  *   --max-rounds, --keep-draft, --handoff-at  forwarded to `drive.ts`
  *
  * The pass command is the session's own agent tool's (`lib/arm.ts`): in a
- * Codex session it is Codex's, on the execution tier of
- * `routing.models.codex` (else Codex's own configured model), and
+ * Codex session it is Codex's, on the standard tier of
+ * `routing.models.codex` (by default `terra`, as `gpt-5.6-terra`), and
  * `--pass-model` overrides it, resolving tiers through the Codex row. It
  * carries `--dangerously-bypass-approvals-and-sandbox` only on a host that set
  * `drive.codex_bypass`, and Codex's own configuration decides otherwise.

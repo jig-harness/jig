@@ -64,7 +64,7 @@ describe("the pass model", () => {
     const r = await dryRun([], { JIG__DRIVE__PASS_MODEL: "strategic" });
     expect(wouldRun(r.stderr)).toStartWith("claude --model opus -p");
     expect(r.stderr).toContain(
-      "pass model: opus (drive.pass_model: the strategic tier, routing.models.claude-code.strategic)",
+      "pass model: opus (drive.pass_model: the complex tier (strategic), routing.models.claude-code.complex)",
     );
   });
 
@@ -116,14 +116,14 @@ describe("the pass model", () => {
       JIG__DRIVE__PASS_MODEL: "strategic",
     });
     expect(setting.stderr).toContain(
-      "pass model: opus (drive.pass_model: the strategic tier, routing.models.claude-code.strategic, as the pass command's --model)",
+      "pass model: opus (drive.pass_model: the complex tier (strategic), routing.models.claude-code.complex, as the pass command's --model)",
     );
-    const flag = await armed(["--pass-model", "strategic"], "opus");
+    const flag = await armed(["--pass-model", "complex"], "opus");
     expect(wouldRun(flag.stderr)).toBe(
       "claude --model opus -p /jig:drive-pr 999",
     );
     expect(flag.stderr).toContain(
-      "pass model: opus (--pass-model: the strategic tier, routing.models.claude-code.strategic)",
+      "pass model: opus (--pass-model: the complex tier, routing.models.claude-code.complex)",
     );
   });
 

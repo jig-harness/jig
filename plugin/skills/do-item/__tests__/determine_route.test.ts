@@ -1,7 +1,9 @@
 /**
- * determine_route.ts: the route's base from the work type, each raise and
- * its order, the cap, the strictest row for `unknown`, the translation to a
- * runtime's names, and every configuration the loading rules refuse.
+ * determine_route.ts: the route's base effort from the work type, each
+ * raise and its order, the cap, the strictest row for `unknown`, the
+ * translation to a runtime's names, and every configuration the loading
+ * rules refuse. The complexity tiers and the models per tier are in
+ * determine_route-tiers.test.ts.
  */
 
 import { afterAll, describe, expect, it } from "bun:test";
@@ -19,7 +21,7 @@ import {
   type RouteFacts,
 } from "../scripts/determine_route.ts";
 import {
-  DEFAULT_ROUTE_ROWS,
+  DEFAULT_EFFORTS,
   parseRouting,
   RoutingError,
   undeclaredRaiseLabels,
@@ -67,12 +69,10 @@ const route = (
 ) => deriveRoute(facts(over), rules(config));
 
 describe("the base", () => {
-  it.each([...DEFAULT_TYPES])("takes %s's default row", (type) => {
+  it.each([...DEFAULT_TYPES])("takes %s's default effort", (type) => {
     const r = route({ type });
-    expect({ tier: r.tier, effort: r.effort }).toEqual(
-      DEFAULT_ROUTE_ROWS[type],
-    );
-    expect(r.reasons).toContain(`tier: ${r.tier} (type ${type})`);
+    expect(r.effort).toBe(DEFAULT_EFFORTS[type]);
+    expect(r.reasons).toContain(`effort: ${r.effort} (type ${type})`);
   });
 
   it("reads a type's row from routing.types, field by field", () => {
@@ -81,7 +81,7 @@ describe("the base", () => {
       { routing: { types: { task: { effort: "high" } } } },
     );
     expect({ tier: r.tier, effort: r.effort }).toEqual({
-      tier: "execution",
+      tier: "simple",
       effort: "high",
     });
   });
@@ -89,21 +89,21 @@ describe("the base", () => {
   it("gives unknown the highest tier and the highest effort any row names", () => {
     const r = route({ type: "unknown" });
     expect({ tier: r.tier, effort: r.effort }).toEqual({
-      tier: "strategic",
+      tier: "complex",
       effort: "high",
     });
     expect(r.reasons).toContain(
-      "tier: strategic (type unknown: the strictest row)",
+      "tier: complex (type unknown: the strictest row)",
     );
   });
 
   it("does not let an override that lowers a type lower unknown", () => {
     const r = route(
       { type: "unknown" },
-      { routing: { types: { spike: { tier: "execution", effort: "low" } } } },
+      { routing: { types: { spike: { tier: "simple", effort: "low" } } } },
     );
     expect({ tier: r.tier, effort: r.effort }).toEqual({
-      tier: "strategic",
+      tier: "complex",
       effort: "high",
     });
   });
@@ -119,9 +119,9 @@ describe("the base", () => {
   it("gives a type the repository added the strictest row while routing is undeclared", () => {
     const r = deriveRoute(facts({ type: "chore" }), rules(WITH_CHORE));
     expect(r.declared).toBe(false);
-    expect(r.tier).toBe("execution");
+    expect(r.tier).toBe("complex");
     expect(r.reasons).toContain(
-      "tier: execution (type chore has no routing row: the strictest row)",
+      "tier: complex (type chore has no routing row: the strictest row)",
     );
   });
 });
@@ -251,11 +251,11 @@ describe("the raises", () => {
   it("caps the effort at max and never moves the tier", () => {
     const r = route({
       type: "feature",
-      labels: ["hitl", "large", "security"],
-      catalog: { flags: ["security"], reviews: [] },
+      labels: ["hitl", "security"],
+      catalog: { flags: ["security"], reviews: [{ area: "a", skills: ["s"] }] },
     });
     expect(r.effort).toBe("max");
-    expect(r.tier).toBe("execution");
+    expect(r.tier).toBe("standard");
   });
 
   it("raises on flags and reviews alike when a declared catalog cannot be read", () => {
@@ -388,23 +388,40 @@ describe("the translation", () => {
     expect(route({ type: "bug" }).model).toBe("sonnet");
   });
 
+  it("runs Codex on Sol for a complex item and Terra for a standard one with no routing.models", () => {
+    const complex = route({ runtime: "codex", type: "spike" });
+    expect(complex.model).toBe("sol");
+    expect(complex.runtime_model).toBe("gpt-6.1-sol");
+    expect(complex.reasons).toContain(
+      "model: gpt-6.1-sol for codex (the model sol names)",
+    );
+    const standard = route({ runtime: "codex", type: "bug" });
+    expect(standard.model).toBe("terra");
+    expect(standard.runtime_model).toBe("gpt-5.6-terra");
+  });
+
+  it("gives Claude Code the family alias itself", () => {
+    const r = route({ type: "spike" });
+    expect(r.runtime_model).toBe("opus");
+  });
+
   it("reads a runtime's row from routing.models", () => {
     const config = {
       routing: {
-        models: { codex: { execution: "gpt-mini", strategic: "gpt" } },
+        models: { "my-agent": { simple: "a", standard: "b", complex: "c" } },
       },
     };
-    const r = route({ runtime: "codex" }, config);
-    expect(r.model).toBe("gpt-mini");
-    expect(r.reasons).toContain(
-      "model: gpt-mini (routing.models.codex.execution)",
-    );
+    const r = route({ runtime: "my-agent" }, config);
+    expect(r.model).toBe("b");
+    expect(r.runtime_model).toBe("b");
+    expect(r.reasons).toContain("model: b (routing.models.my-agent.standard)");
   });
 
   it("proposes no model for a runtime with no row, and says so", () => {
-    const r = route({ runtime: "codex" });
+    const r = route({ runtime: "other" });
     expect(r.model).toBeNull();
-    expect(r.reasons).toContain("model: none (no model for codex)");
+    expect(r.runtime_model).toBeNull();
+    expect(r.reasons).toContain("model: none (no model for other)");
   });
 
   it("proposes no model when no runtime is identified", () => {
@@ -446,14 +463,14 @@ describe("the loading rules", () => {
   it.each([
     [[], "routing must be a mapping"],
     [{ tiers: {} }, "routing.tiers is not a field of routing"],
-    [{ types: { unknown: { tier: "execution" } } }, "routing.types.unknown"],
+    [{ types: { unknown: { tier: "standard" } } }, "routing.types.unknown"],
     [
-      { types: { epic: { tier: "execution" } } },
+      { types: { epic: { tier: "standard" } } },
       "routing.types.epic: epic is not a type",
     ],
     [
       { types: { bug: { tier: "judgment" } } },
-      "routing.types.bug.tier must be one of execution, strategic",
+      "routing.types.bug.tier must be one of simple, standard, complex",
     ],
     [{ types: { bug: { tier: "scout" } } }, "routing.types.bug.tier"],
     [
@@ -474,23 +491,20 @@ describe("the loading rules", () => {
       "routing.raise.reviews must be true or false",
     ],
     [{ raise: { labels: [] } }, "routing.raise.labels is not a field"],
+    [{ models: { custom: { standard: "a" } } }, "missing: simple, complex"],
     [
-      { models: { "claude-code": { execution: "sonnet" } } },
-      "missing: strategic",
+      { models: { "claude-code": { standard: "sonnet 4" } } },
+      "routing.models.claude-code.standard must be a family alias",
+    ],
+    [{ models: { "claude-code": { complex: "a,b" } } }, "one word"],
+    [{ models: { Claude: { standard: "a" } } }, "a runtime name is lowercase"],
+    [
+      { models: { "claude-code": { tier3: "opus" } } },
+      "routing.models.claude-code.tier3 is not a field",
     ],
     [
-      {
-        models: { "claude-code": { execution: "sonnet 4", strategic: "opus" } },
-      },
-      "routing.models.claude-code.execution must be a family alias",
-    ],
-    [
-      { models: { "claude-code": { execution: "a,b", strategic: "opus" } } },
-      "one word",
-    ],
-    [
-      { models: { Claude: { execution: "a", strategic: "b" } } },
-      "a runtime name is lowercase",
+      { complex_flags: "has-migration" },
+      "routing.complex_flags must be a list",
     ],
     [
       { efforts: { codex: { extreme: "x" } } },
@@ -501,7 +515,7 @@ describe("the loading rules", () => {
 
   it("refuses a declared section that leaves an added type without a complete row", () => {
     refuses(
-      { types: { chore: { tier: "execution" } } },
+      { types: { chore: { tier: "standard" } } },
       "routing.types.chore: chore is not a default type",
       WITH_CHORE,
     );
@@ -510,9 +524,9 @@ describe("the loading rules", () => {
   it("accepts an added type with a complete row", () => {
     const r = rules({
       ...WITH_CHORE,
-      routing: { types: { chore: { tier: "execution", effort: "low" } } },
+      routing: { types: { chore: { tier: "simple", effort: "low" } } },
     });
-    expect(r.rows.chore).toEqual({ tier: "execution", effort: "low" });
+    expect(r.rows.chore).toEqual({ tier: "simple", effort: "low" });
   });
 
   it("throws a RoutingError", () => {
@@ -587,7 +601,7 @@ describe("determine_route.ts", () => {
   const issue = (labels: string[], title = "x") =>
     JSON.stringify({ type: "bug", labels, title, nativeType: null });
 
-  it("prints a flagged bug's route, raised by the catalog's flag", () => {
+  it("prints a flagged bug's route, complex by its flag and raised by the catalog's", () => {
     const r = run(
       {
         "jig.yaml": "routing: {}\ndrive:\n  change_areas_catalog: areas.yaml\n",
@@ -600,9 +614,9 @@ describe("determine_route.ts", () => {
     expect(JSON.parse(r.stdout)).toMatchObject({
       agent: "general-purpose",
       type: "bug",
-      tier: "execution",
+      tier: "complex",
       effort: "high",
-      model: "sonnet",
+      model: "opus",
       runtime: "claude-code",
       declared: true,
     });

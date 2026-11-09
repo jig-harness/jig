@@ -51,7 +51,8 @@ Find these once, at the start:
   file names another. The commands below write `docs`; substitute.
 - **Promoted status**: `approved` in M4's schema. The repository's
   frontmatter schema may name more (a corpus where `active` is the promoted
-  status, say); use all of them.
+  status, say); use all of them, and list them in `docs.promoted_statuses` so
+  the docs skill's scar lint scans them too.
 - **Scar lint**: read `descar.lint_command` from the repository's Jig
   configuration with
   `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" descar.lint_command`
@@ -124,9 +125,10 @@ default branch (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh repo vi
 
 A lint only partly covers S1, S2 and S3 (the "Detectable" column of the scar
 classes). Read the lint to see which shapes it matches. M4's reference lint,
-for example, matches strikethrough, and resolution phrasing or a reviewer
-label only where it opens a list or quote item; it does not see a bare
-*"addressed"* in ordinary prose, an unstruck *"Corrected \<date\>"*
+for example, matches strikethrough, resolution phrasing that opens a list or
+quote item, a reviewer label in a list or quote item, a table's first cell or
+the opening of a plain paragraph, and a review bot's account name anywhere in
+the body; it does not see a bare *"addressed"* in ordinary prose, an unstruck *"Corrected \<date\>"*
 paragraph, or a plain `- [x]`, *"N/A"*, *"Superseded"* or *"Covered by …"*
 row. Read the document by hand for those shapes: the lint's silence on them is
 not evidence they are absent.

@@ -7,6 +7,7 @@ import type {
   LineDecision,
   LineNeed,
   LineQueued,
+  LineReady,
   LineRepo,
   LineSession,
   LineSnapshot,
@@ -302,6 +303,7 @@ export function line(o: {
   walls?: Record<string, { resetAt: number; source: string }>;
   needs?: LineNeed[];
   queue?: LineQueued[];
+  ready?: LineReady[];
   lastAccount?: string;
   longestTickMs?: number;
 }): LineSnapshot {
@@ -324,6 +326,7 @@ export function line(o: {
     sessions,
     needs: o.needs ?? [],
     queue: o.queue ?? [],
+    ready: o.ready ?? [],
     repos: REPOS,
   };
 }

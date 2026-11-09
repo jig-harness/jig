@@ -170,6 +170,12 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.117.0
+  dispatch.pickup_deadline:
+    type: string
+    pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.182.0
   dispatch.followup_within:
     type: string
     pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
@@ -777,6 +783,12 @@ fields:
     read_by: [work-batch]
     since: 0.57.0
 
+  routing.complex_flags:
+    type: list
+    items: string
+    distinct: true
+    read_by: [do-item]
+    since: 0.179.0
   routing.types:
     type: map
     values_type: { type: map, values_type: string }
@@ -802,6 +814,11 @@ fields:
     values_type: { type: map, values_type: string }
     read_by: [do-item, drive-pr, dispatch]
     since: 0.92.0
+  routing.family_tiers:
+    type: map
+    values_type: { type: map, values_type: { type: map } }
+    read_by: [do-item, drive-pr, dispatch]
+    since: 0.179.0
   routing.efforts:
     type: map
     values_type: { type: map, values_type: string }
@@ -874,6 +891,16 @@ fields:
     default: 180
     read_by: [docs]
     since: 0.95.0
+  docs.promoted_statuses:
+    type: list
+    items:
+      type: string
+      pattern: '^\S+$'
+    distinct: true
+    nonempty: true
+    read_by: [docs]
+    default: [approved]
+    since: 0.175.0
   promote_memory.lint_command:
     type: command
     read_by: [promote-memory]

@@ -39,7 +39,7 @@ import {
   forEachDirEntry,
   isConfirmedAbsence,
   MAX_CANDIDATE_FILES_SCANNED,
-  MAX_CLOCK_SKEW_MS,
+  detectionTimeBounds,
   maxCandidateScanMs,
   type QuotaAdapter,
   type QuotaBlock,
@@ -304,14 +304,7 @@ export const codexAdapter: QuotaAdapter = {
   // until then this vendor relies on
   // `DetectOpts.preexistingSessions`.
   detect(opts: DetectOpts): QuotaBlock | null {
-    const sinceMs = opts.since.getTime();
-    // Floored to the second — same defensive symmetry as the Claude adapter's
-    // identical comparison: `since` is millisecond-precise, and neither a
-    // rollout's own `timestamp` field nor its filesystem mtime is guaranteed
-    // to be. A genuine event in the same second the pass started must not be
-    // rejected as "older than the pass" over sub-second precision alone.
-    const sinceFloorMs = Math.floor(sinceMs / 1000) * 1000;
-    const untilMs = opts.now.getTime() + MAX_CLOCK_SKEW_MS;
+    const { sinceFloorMs, untilMs } = detectionTimeBounds(opts);
     let best: QuotaBlock | null = null;
     // The newest record CONSIDERED, hit or not — deliberately not "the newest
     // record that produced a block". A `token_count` event is written every
@@ -336,7 +329,7 @@ export const codexAdapter: QuotaAdapter = {
     let discardedByTruncatedSnapshot = 0;
 
     // This is a SEPARATE walk from `snapshotSessions()` above — taken now,
-    // at detection time, over files touched since `sinceMs` rather than
+    // at detection time, over files touched since `sinceFloorMs` rather than
     // every file that exists — so it can truncate independently of the
     // pre-spawn snapshot even below `MAX_CANDIDATE_FILES_SCANNED`, the same
     // wall-clock-cap divergence `preexistingSessionsTruncated`'s own doc

@@ -143,11 +143,12 @@ criteria:
     level: strict
     requires: mechanical
     statement: >-
-      A scar lint prevents a doc from reaching status approved while carrying
+      A scar lint prevents a doc from reaching a promoted status (approved,
+      or the statuses the repository configures as promoted) while carrying
       review scars (strikethroughs, resolution phrasing, reviewer dialogue),
       with a self-test proving the lint still catches scars.
     observe:
-      - "a scar lint scans approved docs and fails on scar markers"
+      - "a scar lint scans docs of every promoted status the repository uses and fails on scar markers"
       - "a blocking self-test proves the lint catches known scars"
 
   - id: stale-doc-gate

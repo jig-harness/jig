@@ -27,6 +27,11 @@ import { failedRunsToTell } from "./failed-runs.ts";
 import { runRepairPass } from "./repair.ts";
 import { announcePolicyBase } from "./policy-base.ts";
 
+import {
+  type FailingChecks,
+  recoverInfrastructureFailure,
+} from "./infra-recovery.ts";
+
 import { driverRuntime } from "./runtime.ts";
 
 export async function releaseAndReadFinalCi(
@@ -576,7 +581,7 @@ export async function evaluateFinalCi(
   finalCiSignals: Awaited<
     ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
   >,
-  failingRuns: unknown,
+  failing: FailingChecks,
 ): Promise<number | "continue" | null> {
   if (finalVerdict.startsWith("cancelled:"))
     return await waitForReplacement(
@@ -590,12 +595,24 @@ export async function evaluateFinalCi(
   // did not parse) are absences of evidence, not evidence of failure,
   // and a `/fix-ci` pass handed neither a run nor a check name has
   // nothing to work from. Those keep today's stop verbatim, below.
+  //
+  // A failure every one of whose checks failed on the infrastructure is
+  // re-run first, whatever the repair budget: no code change fixes it, so it
+  // spends no repair pass (`infra-recovery.ts`).
+  if (finalVerdict.startsWith("failing:") && !staleRequiredFailure) {
+    const infra = await recoverInfrastructureFailure(
+      context,
+      reviewedHead,
+      failing,
+    );
+    if (infra !== null) return infra;
+  }
   if (
     finalVerdict.startsWith("failing:") &&
     !staleRequiredFailure &&
     context.ciRepairs < context.ciRepairBudget
   ) {
-    return await repairConvergedCi(finalVerdict, context, failingRuns);
+    return await repairConvergedCi(finalVerdict, context, failing.runs);
   }
   // A `pending:` verdict is never a stop condition: it reaches here
   // only when `finalCi.code === 4` (the branch above let it through

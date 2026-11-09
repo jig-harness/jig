@@ -52,9 +52,19 @@ path that produces the exit, not because none of them name one.
 | `16` | `QUOTA_PARKED` | **yes** | `drive.ts` only: the pass died on a subscription usage wall that will not reopen within the sleep bound. **Not a failure of the drive loop or of `drive.ts` itself** — nothing about the PR or the mechanism needs fixing, and reporting it as `1` would send an operator to read a pass that did nothing wrong. That does not mean the *working tree* is necessarily clean, though: the pass could have modified or committed locally before it hit the wall. **Recovery: read what the stop lists the pass left before re-arming.** The stop prints the uncommitted paths and the commits on top of the head branch's remote ref, or says there are none; so do the exit `6` stop of a quota wall met on the last round and the exit `5` stop of a pass that found the PR closed. A pass can end anywhere in the fix→gates→commit→push sequence. Detected by `lib/quota/`, one adapter per vendor, from the vendor's own durable record rather than from the pass's stdout (which `drive.ts` deliberately does not capture): for Claude Code an `{"error":"rate_limit","apiErrorStatus":429}` transcript entry reading `You've hit your session limit · resets <clock> (<zone>)`; for Codex a `token_count` event carrying `used_percent`, `window_minutes` and an absolute `resets_at`. A **short** window whose reset resolves inside `$DRIVE_PR_QUOTA_MAX_SLEEP_SEC` (default 6h) never reaches this code at all — the driver sleeps through it, locks held and refreshing, and resumes. This code is every other case: a weekly window, an unclassifiable one, a reset that could not be resolved, or one beyond the bound. A reset already in the past is deliberately NOT one of them: `planFor()` clamps it to `sleep(0)` and the driver retries immediately, since the window is open right now, not merely likely to be. The asymmetry is deliberate — sleeping when it should have stopped strands a drive and its locks for days; stopping when it could have slept costs a re-arm — so every uncertainty resolves here. **Do not dispatch a successor session on the same account in this state**: one on the same subscription is behind the same wall, so a handoff converts one parked drive into two. The park records the wall's account (hashed, `accountHash`), the exit names it and prints the re-arm command, and `drive.ts` admits a re-arm while the wall is in effect only for a pass that bills a different, known account; it refuses (exit `16`) when either side is unknown or both are equal. After the reset any account may re-arm; `--window-reopened` is a person's statement that an unresolved window is open again (§ Picking up a stopped drive). The `.context/pr-drive-<PR>.md` trail is unaffected and stays current — it is written at the top of every round, and it is what makes that re-arm cheap. The round it consumed is not refunded, because unwinding a durable counter from a failure path would mutate the state the loop's own bounds are read from |
 | `18` | `MAILBOX_STOPPED` | **yes** | `drive.ts` only: a mailbox `stop` for this driver was observed at a round boundary: one naming this driver's generation, or one naming none. A pass already running finishes and completes its post-round bookkeeping before the stop takes effect; no new pass starts. The driver appends an `ack` of the stop to the outbox, and normal exit releases the drive locks. A stop naming a generation ends that driver alone and needs nothing before a re-arm; a stop naming none stops every later driver too, so resume it before re-arming |
 | `19` | `MAILBOX_PAUSE_TIMEOUT` | **yes** | `drive.ts` only: a mailbox `pause` stayed active for `$DRIVE_PR_PAUSE_MAX_SEC` (default 1800 seconds). The driver acknowledged the pause in the outbox when it started holding, held and refreshed its locks during the wait, then exited and released them. A pause names no driver generation and holds every later driver too: resume the pause directive and re-arm. An unreadable mailbox instead fails closed with exit `1`; `stop` takes precedence over pause |
-| `21` | `CI_REPAIR_SPENT` | **yes** | `drive.ts` only: the review converged and the required checks ran, but the fresh exact-head CI verdict still names failing checks (`failing: …`) and the `DRIVE_PR_CI_REPAIR_ROUNDS` CI-repair passes are spent; the stop names how many ran. Its own code, apart from `1`, because its next step is mechanical: a CI repair, which a re-armed drive starts with a fresh budget, where `1` names a crash or an unreadable state a person reads. With repair disabled (`0`), a repair pass that itself failed, or a verdict that names no failing check, the stop stays `1`. Under `jig dispatch` the dispatcher re-drives it once per head commit, and tells a person when the same head stops `21` again |
+| `21` | `CI_REPAIR_SPENT` | **yes** | `drive.ts` only: the review converged and the required checks ran, but the fresh exact-head CI verdict still names failing checks (`failing: …`) and the `DRIVE_PR_CI_REPAIR_ROUNDS` CI-repair passes are spent; the stop names how many ran. Its own code, apart from `1`, because its next step is mechanical: a CI repair, which a re-armed drive starts with a fresh budget, where `1` names a crash or an unreadable state a person reads. With repair disabled (`0`), a repair pass that itself failed, or a verdict that names no failing check, the stop stays `1`. Under `jig dispatch` the dispatcher re-drives it once per head commit, and tells a person when the same head stops `21` again. A converged head whose failing checks all failed on the infrastructure never reaches this code: it is re-run first, and stops `23` past its own bounds |
+| `23` | `CI_INFRA_PERSISTED` | **yes** | `drive.ts` only: the review converged, and every failing check on the head failed on the infrastructure, by the rule `fix-ci` shares (`shared/ci-infra.ts`): its runner was lost, or every failed step was a setup step that failed on the network (an HTTP 5xx, a timeout, a reset or refused connection), and its log printed no code diagnostic. The driver re-ran the run's failed jobs up to `DRIVE_PR_CI_INFRA_RERUNS` (default 2) times per head, never a run created under the CI hold's label, and where the forge refused a re-run (it does for a default-setup code scan) or the re-runs were spent, moved the head (merged the base when the branch was behind it, else pushed the empty commit `ci: re-run checks after an infrastructure failure`) up to `DRIVE_PR_CI_INFRA_HEAD_MOVES` (default 2) times per drive; this exit is the failure persisting past both. No CI-repair pass was spent. Its own code, apart from `21`, because nothing in the code needs repair: the forge's service must recover. Under `jig dispatch` the dispatcher re-drives it once per stop, after a backoff from the stop that doubles with each consecutive `23` (15 minutes up to 4 hours), and tells a person once 6 consecutive re-drives have stopped `23` |
 | `20` | `TAKEN_OVER` | **yes** | `drive.ts` only: another clone took the drive over. At a round boundary, before spawning a pass, or after renewing its ledger heartbeat through a quota sleep or a mailbox pause, the driver read a takeover claim in force on the PR, from another clone, newer than its own position (its own claim, or the position its clone's ledger records), and stopped without another pass, so it never replies beside its successor; it writes no further ledger. A `--take-over` whose own claim lost to a rival's earlier claim on the same ledger generation stops with it too. Nothing to recover here: that clone drives now. Re-arming beside it is refused with exit `13` while the ledger names it running (§ Picking up a stopped drive) |
 | `2` | `UNSUPPORTED_CLI` | **yes** | A `gh` that cannot report every required PR field, including draft state and mergeability. Reported through the JSON contract; an argument error, which precedes any PR to describe, exits without one |
+
+Infrastructure retry budgets accept integers from 0 through 100; invalid or
+excessive values use the default. A base-sync refusal or unreadable report
+stops recovery without an empty commit. A successful local base merge is
+handed to the next review round, which runs the configured validation plan
+before pushing it through `finish-round.ts`. Log classification keeps each
+failed job tied to its workflow run and rejects unplaced negative evidence.
+An empty recovery commit must retain the reviewed parent and tree; a changed
+head or tree stops its direct push and needs a validated review round.
 
 The JSON report (`--json`) carries `state`, `exit`, `reason`, the head pair, the
 `base` block (`refName`, `oid`, `drift`), the `merge` pair (`mergeable`,
@@ -86,14 +96,17 @@ that.
 
 ## Repair rounds
 
-Two stops name work the loop can do itself, so `drive.ts` spends a bounded
-budget of **repair passes** on each before taking the stop. Neither changes what `drive-status.ts` returns or what
+These stops name work the loop can do itself, so `drive.ts` spends a bounded
+budget on each before taking the stop: **repair passes** for a red CI verdict and
+a conflict, re-runs and head moves for checks that failed on the
+infrastructure. None changes what `drive-status.ts` returns or what
 any code *means* — this is entirely about whether `drive.ts` hands a given answer
 to a human or to a pass.
 
 | Trigger | Pass | Budget (env, `0` disables) | Falls back to |
 |---|---|---|---|
 | Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `DRIVE_PR_CI_REPAIR_ROUNDS`, default 2 | exit `21` (`CI_REPAIR_SPENT`), handing the red CI back for repair; exit `1` when the budget is `0` |
+| The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | exit `23` (`CI_INFRA_PERSISTED`) |
 | `PR_CONFLICTING` with no workable finding | `conflict-resolve` (`base-sync.ts`, then resolve the conflict) | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1 | exit `9`, with its `Fix:` command |
 
 The task reaches the pass in its **environment** (`DRIVE_PR_ROUND_TASK`,
@@ -1219,6 +1232,15 @@ one call — a refusal whose documented remedy left the tree still locked would
 not be a remedy at all.
 
 ### PR-wide admission across working trees
+
+The `admit` command of `drive-state.ts` is a read-only preflight: exit `0` means this
+working tree may act, and `13` means another tree is driving the PR. A
+nonempty `$DRIVE_PR_SESSION` that is not a usable process id, or names a
+process that is no longer running, exits `2` before admission. The caller
+must treat that as an unconfirmed admission: `drive-status.ts` skips its
+replied-thread reconciliation sweep rather than performing GitHub mutations
+under an invalid session identity. This check takes no lease and changes no
+state.
 
 The lease above is scoped to *(working tree, PR)*, which left the cross-tree
 case open: nothing stopped two linked worktrees enumerating the same

@@ -39,6 +39,7 @@
  * a takeover is admitted.
  */
 import { type DriveHold, driveHold, factsOf } from "./actions/drive-hold.ts";
+import { type BoardRead, readyActions } from "./board.ts";
 import { type Contention, heldReason } from "./contention.ts";
 import { holding, liveAgents } from "./holding.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
@@ -47,6 +48,7 @@ import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
+import { backingOff } from "./infra-backoff.ts";
 import { conflictNote } from "./sources/ledgers.ts";
 import { requestedTree, workspaceOfTree } from "./stall-tree.ts";
 import { planFollowups } from "./plan-followups.ts";
@@ -79,6 +81,8 @@ import type {
 export interface PlanInput {
   /** The repository's `owner/name`. */
   slug: string;
+  /** The board read: the converged pull requests it placed, notified as they enter Ready to merge. */
+  board?: BoardRead;
   section: DispatchSection;
   pickups: WantedItem[];
   /** The items the factory identity claimed; `null` when they could not be read. */
@@ -232,6 +236,7 @@ export function planTick(input: PlanInput): Plan {
   });
   plan.actions.push(...drift.actions);
   plan.running.push(...drift.running);
+  plan.actions.push(...readyActions(input.slug, input.board));
   // A pending record no tick launches again waits on a person.
   plan.actions.push(
     ...planStuck(input.slug, input.launches, {
@@ -492,6 +497,32 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   };
 }
 
+/**
+ * The drive as this host plans it, or `null` once it is reported quiet
+ * because nothing is launched for it yet: its work is in a tree on another
+ * host, or its re-drive waits out a backoff.
+ */
+function plannable(
+  input: PlanInput,
+  read: DrivenPr,
+  plan: Plan,
+): DrivenPr | null {
+  const target = `PR #${read.number}`;
+  const pr = treeBound(read, input.sessions);
+  if (pr === null) {
+    plan.quiet.push({
+      target,
+      class: read.class,
+      why: `${read.why}; that tree is on another host, whose dispatcher re-drives it there`,
+    });
+    return null;
+  }
+  const waiting = backingOff(pr, input.nowMs);
+  if (waiting === null) return pr;
+  plan.quiet.push({ target, class: pr.class, why: waiting });
+  return null;
+}
+
 /** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
 function planDrive(
   input: PlanInput,
@@ -501,15 +532,8 @@ function planDrive(
 ): void {
   const { slug, launches } = input;
   const target = `PR #${read.number}`;
-  const pr = treeBound(read, input.sessions);
-  if (pr === null) {
-    plan.quiet.push({
-      target,
-      class: read.class,
-      why: `${read.why}; that tree is on another host, whose dispatcher re-drives it there`,
-    });
-    return;
-  }
+  const pr = plannable(input, read, plan);
+  if (pr === null) return;
   const hold = driveHold(pr, launches);
   if (
     !(

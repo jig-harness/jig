@@ -386,6 +386,240 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+- M0's skill-invocation fallback gate recognizes generated-file exemption banners
+  within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.182.0] - 2026-11-09
+
+### Added
+
+- `dispatch.pickup_deadline` (3 hours by default): the deadline a pickup's
+  pass runs under. The wrapper stops the pass when it runs past it.
+- A pickup pass that cannot finish without a person does the work that
+  does not depend on the answer, then stops on a `Question:` line. The
+  tick notifies that question as a need (`pickup-question`) on the line,
+  in `jig ask --waiting` and on the dashboard. It does not start the item
+  again until the item leaves the dispatch states and comes back.
+  `do-item`'s `SKILL.md` describes this unattended path under
+  "Dispatched passes".
+
+### Changed
+
+- `jig dispatch --apply` now starts a pickup on Orca. Each item it picks
+  up runs as a headless `do-item` pass, started by the same wrapper as a
+  follow-up's pass and bound to an admitted account through that account's
+  configuration directory. The identity is checked before the pass starts.
+  The pass keeps the agent's own model and effort. Its prompt carries the
+  line `route: rules`, on which `do-item` forwards the item's route to the
+  implementer it delegates to, where the repository declares `routing`. On
+  a Codex account a pickup starts only on a host that set
+  `drive.codex_bypass`. Orca still cannot bind an interactive session to
+  an account, so that refusal now covers interactive launches only, and
+  none is started.
+
+## [0.181.0] - 2026-11-09
+
+### Added
+
+- A drive whose converged head's failing checks all failed on the CI
+  service's infrastructure (a lost runner, or a setup step's network failure
+  such as a tool download answering 504, with no code error in the log) no
+  longer spends its CI-repair passes on them. It re-runs the failed jobs
+  (`gh run rerun <run> --failed`, `DRIVE_PR_CI_INFRA_RERUNS` per head, default
+  2). Where a run cannot be re-run, as with a default-setup code scan, or
+  the re-runs are spent, it moves the head: it merges the base when the branch
+  is behind it, and otherwise pushes the empty commit `ci: re-run checks after
+  an infrastructure failure` (`DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive,
+  default 2). Past both bounds it stops with the new exit `23`
+  (`CI_INFRA_PERSISTED`).
+- `jig dispatch` re-drives a drive stopped `23` once per stop, after a backoff
+  that starts at 15 minutes and doubles with each such stop in a row, up to 4
+  hours. It tells a person only once 7 such stops stand in a row. A tick inside
+  the backoff launches nothing.
+- `fix-ci`'s `parse-ci-log.ts` prints an `infrastructure` reading beside the
+  errors: whether every failed job failed on the infrastructure, and why. It
+  is the same rule the drive applies, from `shared/ci-infra.ts`.
+
+### Fixed
+
+- A drive no longer stops `21` (`CI_REPAIR_SPENT`) over checks no code change
+  could fix. Before, the dispatcher left such a stop for a person once its
+  head had been re-driven, and the head moved only when a person moved it.
+- Recovery preserves each failing job's workflow-run identity and rejects
+  missing provenance, mixed code failures and unreadable base-sync reports.
+  Base merges pass through a validated review round before their push;
+  retry budgets reject unsafe or excessive numeric values.
+- Pytest collection errors remain code failures even when the runner also
+  shuts down. Empty recovery commits verify their reviewed parent and tree
+  under the worktree fence, and only that certified commit can be pushed.
+
+## [0.180.0] - 2026-11-09
+
+### Added
+
+- Keys on the dispatch dashboard: j and k move between cards, Enter or o
+  opens one, p and i open its pull request or issue, c copies its command,
+  g then m, n, r, q or h goes to a view, / filters the view and ? lists the
+  keys. ⌘K or Ctrl-K opens a palette that goes to a view, jumps to `#N` or
+  an item, or copies a card's command. No key fires while you type in a
+  field, and Tab still reaches every control.
+
+### Changed
+
+- The dispatch dashboard (`jig dispatch dashboard`) has one view per
+  question, each a single column of cards with its count on its tab:
+  **Merge**, **Needs you**, **Running**, **Queue** and **History**, then
+  Help. Merge shows Ready to merge's three lanes (merge now, approve first,
+  update next), each merge now card with its merge command pinned to the
+  head the drive verified. The page opens on Merge while merge now holds a
+  pull request, else on Needs you, and while merge now holds one every
+  other view says so at its top until it is dismissed, which lasts until a
+  pull request reaches merge now at a new head. An address that names the
+  old Now view opens Needs you.
+
+## [0.179.0] - 2026-11-09
+
+### Added
+
+- An implementer's route now has a complexity tier, `simple`,
+  `standard` or `complex`, derived from the issue's type and size facets:
+  bugs, improvements and features are standard up to M and complex from L,
+  tasks are simple up to L and standard at XL, a spike is complex, and an
+  unknown size reads as M. A label in the new `routing.complex_flags`
+  (by default `has-migration`, `api-change` and `dpa-relevant`), on the
+  issue or declared by an area it seeds, makes an item complex at any size.
+  `determine_route.ts` prints the tier, what decided it and, as
+  `runtime_model`, the model the runtime is given
+  ([CONFIGURATION.md § `routing`](plugin/CONFIGURATION.md#routing)).
+- Claude's and OpenAI's model families are known out of the box, in one
+  list a release updates (`plugin/shared/model-families.ts`): `haiku`,
+  `sonnet`, `opus`, `fable`, and `luna` (`gpt-6-luna`), `terra`
+  (`gpt-5.6-terra`), `sol` (`gpt-6.1-sol`), `astra` (`gpt-6-astra`).
+  `routing.models` defaults both runtimes: simple and standard on `sonnet`
+  or `terra`, complex on `opus` or `sol`, and a cell a row leaves out
+  keeps its default. Codex is given the model id the family names.
+- `routing.family_tiers` declares a family's M0 tier where a repository's
+  differs, with a reason. The audit reports each entry, and each tier a
+  repository maps to a Judgment family (`fable`, `astra`).
+
+### Changed
+
+- **Breaking:** the routing loader refuses a tier mapped to a Scout family
+  (`haiku`, `luna`), which no `family_tiers` entry waives; an alias outside
+  a runtime's known families; and a row whose stricter tier runs on a
+  cheaper family than a lighter one. A repository whose
+  `routing.models.codex` names a model id outside the list (`gpt-…`)
+  names its family alias instead (`terra`, `sol`), or declares the model in
+  `routing.family_tiers.codex` with its tier and a reason.
+- A Codex drive pass with no model of its own runs on the standard tier's
+  Codex model, `gpt-5.6-terra` by default, rather than Codex's own default.
+- The tier names `execution` and `strategic` keep working as `standard`
+  and `complex`, in `routing.types`, `routing.models` and
+  `drive.pass_model`; a legacy `execution` model also serves the simple
+  tier unless the row names `simple`, and a row that names a legacy key
+  and its new key with different models is refused.
+
+## [0.178.0] - 2026-11-09
+
+### Added
+
+- `plugin/shared/host-load.ts`: one reading of the host's load, cores and
+  available memory, and the rule that says whether one more run fits, for
+  every Jig mechanism that asks.
+
+### Changed
+
+- The machine-wide resource lock (M12's `with-resource-lock.ts`, which
+  `jig gc --collect` and Jig's own suite run under) now admits runs into
+  slots by the machine's load instead of one run per machine. Slot 0 is the
+  lock's own name, so an earlier version still excludes and queues with it;
+  slots 1 and up are `<name>-slot-<n>`. A free slot 0 is taken at once; any
+  other slot only while the predicted load (the one-minute load average plus
+  one run's cost for each run started in the last minute) leaves room for one
+  more run under the cores times a target, and the available memory stays
+  above a floor. The first run is always admitted, and a reading of the host
+  that fails admits, so the slot ceiling decides. On Windows, which keeps no
+  load average, memory and the ceiling decide. New settings beside
+  `LOCK_NAME` and `LOCK_TIMEOUT`: `LOCK_SLOTS` (the ceiling, default 64),
+  `LOCK_STATIC_SLOTS=1` (a static count, default 8), `LOCK_TARGET_UTIL`
+  (0.85), `LOCK_RUN_COST` (4) and `LOCK_MIN_MEM_GB` (8). A waiting run says
+  what it waits on (every slot held, the load, the memory, an exclusive
+  holder) and who holds the slots. **Breaking** for a lock that guards a
+  resource only one user may have at a time (a fixed port, a shared
+  database): set `LOCK_SLOTS=1` for it, which restores the single mutex
+  exactly.
+- `jig gc --collect` takes the heavy-run lock exclusively (the new
+  `--exclusive`): it announces itself so no new heavy run starts, waits for
+  every slot in a fixed order, and holds them all while it collects. It no
+  longer runs beside heavy runs held in slots other than the first.
+
+### Fixed
+
+- Drive reports check the local driver's process before calling a recent ledger running, and the CI-hold doctor's recovery refuses a hold transition that changed after diagnosis.
+- Admission documents and tests invalid session errors, and thread triage requires a confirmed human starter to leave a review thread open and settles old bot-thread markers, including non-hold `moot` replies, on retry and during automatic reconciliation.
+- Usage-limit detection includes bounded subagent transcript searches and continues sibling scans after recoverable I/O failures. On Linux, pass detection reads actual argument boundaries to distinguish helpers from passes in checkouts with ambiguous names.
+
+## [0.177.0] - 2026-11-09
+
+Jira and Linear repositories can keep an issue's type and size in their trackers' own fields: Jira's issue types and custom fields, and Linear's estimate. A repository that names no store files and reads exactly as before.
+
+### Added
+
+- Jira's issue types as the type's store (`issue_tracker.facets.type: { store: native }`, with `values` where names differ, such as `feature: Story`): a new issue is filed as the standard issue type of its type's name. A type with no such issue type, an issue created under an Epic, and a sub-task keep the type in its label beside `issue_tracker.jira.issue_type` or the sub-task type; a type label wins over that fallback issue type, and any other two different values read as no type, which the weekly sweep reports. A change of type changes the issue type in the same write and takes the type's labels off ([CONFIGURATION.md](plugin/CONFIGURATION.md#issue_tracker)).
+- A Jira custom field as the store of a type or a size (`{ store: field, field: Size }`, by its name or its id, `customfield_10016`): read in the request that reads the issue, written in the one that files or changes it, a select field's option checked against the create or edit screen's options before anything is written. A name several fields of the site share is refused, naming each one's id.
+- Linear's estimate as the size's store (`issue_tracker.facets.size: { store: native }`): the sizes map in order onto the team's estimate scale, or onto the points `values` names; a team with estimates off, or a scale with fewer points than the sizes, is refused before anything is written. `tracker.ts facet-stores` reports each of these stores' health.
+- Shell and PowerShell bootstrap entry points from a reviewed source checkout preview prerequisites and marketplace installation, require explicit opt-in for provisioning and plugin writes, check authentication and source selection, and keep plugin updates with the agent marketplace. Authenticated validation across macOS, Linux and Windows remains open.
+
+### Changed
+
+- On Jira, an `issue_tracker.jira.field_labels` entry whose labels are a facet's values (a `Size` field behind `size:` where the label taxonomy's sizes are `size:S`, `size:M`, `size:L`) is now that facet's field store: filing or changing the size writes the field, where the previous release refused it, and its values still show as labels. A label behind such a prefix among the labels of a filing is refused, pointing at the facet.
+- `check-fields.ts move` refuses to move Jira's type from its labels into the issue types, since the issue types keep a sub-task's type, and a type with no issue type of its own, in those labels; naming the store needs no move, since a type label wins over the fallback issue type.
+
+## [0.176.0] - 2026-11-09
+
+### Added
+
+- `jig dispatch` places every converged pull request in **Ready to merge**
+  at each tick: **merge now**, with a `gh pr merge` command pinned to the
+  head the drive verified and built only from values of a strict form;
+  **approve first**, naming the reviewers asked, or that nobody is, and
+  saying the repository's other protection rules are not read; or **update
+  next**, one pull request per repository behind its base. One that fails a
+  condition is placed where its reason says, with the act that settles it.
+  Merge now never rests on the drive's ledger alone: the forge must witness
+  a review of the head (the `review.reviewer_app` check run, or a person's
+  approval where no app is named), and a pull request from outside the
+  repository needs a person's approval. The facts come from a board read of
+  its own in the tick's observe phase, under a 30-second deadline and a
+  floor on the forge's budget; a board read that fails changes nothing the
+  tick launches. The receipt carries it as `board`, the dashboard's line as
+  `ready`, and a pull request entering merge now or approve first is
+  notified once per head (cause `ready`).
+
+### Changed
+
+- `announce-merge-ready.ts` asks the same predicate on top of its own gates:
+  it refuses a head the forge does not witness a review of, and words
+  approve first as "an approval is still required", updating that warning
+  when a standing announcement's lane changes at the same head.
+- `jig ask` names a converged drive's lane and act (merge now with its
+  pinned command, approve first, update next, or what settles it) in place
+  of saying the approval and the branch were not read. It reads the review
+  rules and enabled hold labels from the default branch, including away
+  from a checkout, and reports when the repository's update order cannot
+  be read. Bounded line lists include counts of omitted cards and checks.
+
+## [0.175.0] - 2026-11-09
+
+### Added
+
+- **`docs.promoted_statuses`**: the `docs` skill's scar lint scans documents whose `status` is `approved`, or any of the statuses the repository lists here (list `approved` too when both are in use), so a corpus whose lifecycle ends in another status (`active`, say) can use the lint as its gate. It is read from the configuration by the lint itself, by `/jig:docs`, and, for one run, from the `PROMOTED_STATUSES` environment variable. A repository that sets nothing scans `approved` alone, and the `OK` and `NOT SCANNED` lines read as before ([configuration](plugin/CONFIGURATION.md#procedure-skills)).
+- **Two more scar shapes**: a reviewer attribution in a table's first cell (`| Reviewer: … |`) or opening a plain paragraph (`Reviewer: …`), and a review bot's account name (`coderabbitai[bot]`, or any `…review…[bot]`). A bold tool name that heads a line (`**CodeRabbit**: …`), a reviewer named without a colon, and anything in frontmatter are not scars.
+
+### Changed
+
+- The lint's reports name the promoted statuses (`OK — no scars in approved or active docs`); with only `approved` they are unchanged. The scar lint's README now says why an allowlist entry matches a fragment of a path: `docs/review/` exempts the whole folder.
+- Resolution phrasing is matched at the opening of a list or quote item (`- Addressed: …`), with word boundaries, so prose such as `- Requests to unaddressed hosts fail.` is no longer a scar. A promoted status carries no surrounding space, and a `docs` section that is not a mapping is refused by the standalone lint too.
 
 ## [0.174.0] - 2026-11-08
 
@@ -6150,7 +6384,15 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.174.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.182.0...HEAD
+[0.182.0]: https://github.com/jig-harness/jig/compare/v0.181.0...v0.182.0
+[0.181.0]: https://github.com/jig-harness/jig/compare/v0.180.0...v0.181.0
+[0.180.0]: https://github.com/jig-harness/jig/compare/v0.179.0...v0.180.0
+[0.179.0]: https://github.com/jig-harness/jig/compare/v0.178.0...v0.179.0
+[0.178.0]: https://github.com/jig-harness/jig/compare/v0.177.0...v0.178.0
+[0.177.0]: https://github.com/jig-harness/jig/compare/v0.176.0...v0.177.0
+[0.176.0]: https://github.com/jig-harness/jig/compare/v0.175.0...v0.176.0
+[0.175.0]: https://github.com/jig-harness/jig/compare/v0.174.0...v0.175.0
 [0.174.0]: https://github.com/jig-harness/jig/compare/v0.173.0...v0.174.0
 [0.173.0]: https://github.com/jig-harness/jig/compare/v0.172.0...v0.173.0
 [0.172.0]: https://github.com/jig-harness/jig/compare/v0.171.0...v0.172.0

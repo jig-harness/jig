@@ -237,6 +237,21 @@ export interface PreparedSpawn {
 export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 /**
+ * Match whole-second transcript timestamps and filesystem mtimes without
+ * rejecting a record written in the pass's first millisecond-precise second.
+ * The upper bound permits only the shared, bounded amount of clock skew.
+ */
+export function detectionTimeBounds(opts: Pick<DetectOpts, "since" | "now">): {
+  sinceFloorMs: number;
+  untilMs: number;
+} {
+  return {
+    sinceFloorMs: Math.floor(opts.since.getTime() / 1000) * 1000,
+    untilMs: opts.now.getTime() + MAX_CLOCK_SKEW_MS,
+  };
+}
+
+/**
  * Whether a record's `cwd` places it in the worktree this drive is running
  * in. Shared by the adapters — a pass wrapper that `cd`s into a subdirectory
  * before starting either vendor's CLI writes evidence at that deeper path,
@@ -309,11 +324,8 @@ export const MAX_TRANSCRIPT_READ_BYTES = 8 * 1024 * 1024;
  * assumes Codex's Y/M/D directories are visited in any particular order
  * either), so there is no way to guarantee "stop after the newest N" short
  * of stat-ing everything first — the exact cost this bound exists to cap.
- * Hitting it on a real machine would mean a tree many orders of magnitude
- * larger than anything measured so far; the honest residual is that a tree
- * THAT large could have its newest file skipped if the walk reaches the cap
- * before reaching it, which is a materially better failure mode than the
- * previously fully-unbounded scan.
+ * A large tree can have its newest file skipped if the walk reaches the cap
+ * before reaching it. The truncated flag records that the read is incomplete.
  *
  * A SECOND residual appears once `snapshotSessions` shares this walk:
  * the snapshot and the later detection scan are two separate
@@ -324,8 +336,8 @@ export const MAX_TRANSCRIPT_READ_BYTES = 8 * 1024 * 1024;
  * calls do not share, so it can diverge the two walks even while both stay
  * under this entry count. Below both caps the two
  * walks enumerate the same set and the divergence cannot occur at all; the
- * measured tree on the machine this was written for scans ~7,400 entries,
- * well under the count cap. Once either walk truncates, `CandidateScan.truncated`
+ * count includes directories and subagent transcript entries, not only
+ * top-level transcripts. Once either walk truncates, `CandidateScan.truncated`
  * says so and `DetectOpts.preexistingSessionsTruncated` carries it to
  * `detect`, which is what stops the missed file from being silently read as
  * new — see that field's own doc comment for the (adapter-scoped) residual

@@ -23,6 +23,7 @@ import {
 } from "../../../design-brief-builder/scripts/contracts.ts";
 import { parseDocsSettings } from "../../../docs/scripts/lib/settings.ts";
 import { checkGitHubFacets } from "../../../do-item/scripts/lib/tracker/github/facets.ts";
+import { checkJiraFacets } from "../../../do-item/scripts/lib/tracker/jira/facets.ts";
 import { checkLinearFacets } from "../../../do-item/scripts/lib/tracker/linear-facets.ts";
 import { parseRouting } from "../../../do-item/scripts/lib/routing.ts";
 import {
@@ -131,10 +132,18 @@ export function skillValidation(
     // The adapters' own offline checks, so --offline refuses what they refuse.
     if (tracker.adapter === "linear") checkLinearFacets(facets);
     if (tracker.adapter === "github") checkGitHubFacets(facets);
+    if (tracker.adapter === "jira") checkJiraFacets(facets);
   });
-  attempt("do-item (routing)", () =>
-    parseRouting(config, parseWorkTypes(config)),
-  );
+  attempt("do-item (routing)", () => {
+    // Accepted, and reported beside the score: each tier on a Judgment
+    // family and each family whose tier the repository declares.
+    for (const note of parseRouting(config, parseWorkTypes(config)).reported)
+      findings.push({
+        id: "report:routing.models",
+        severity: "info",
+        message: note,
+      });
+  });
   attempt("do-item (spec resolver)", () =>
     parseSpecsConfig(
       config.specs,

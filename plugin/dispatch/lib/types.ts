@@ -8,6 +8,7 @@ import type {
   FacetStoreReport,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
+import type { BoardRead } from "./board.ts";
 import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
@@ -37,6 +38,8 @@ export interface DispatchSection {
   driveRoundsFlat: number;
   /** How long a pickup may run before it has opened a pull request. */
   pickupWithinMs: number;
+  /** The deadline a pickup's headless pass runs under (`pickup_deadline`), after which its wrapper stops it. */
+  pickupDeadlineMs: number;
   /** How long a follow-up may run before it has ended. */
   followupWithinMs: number;
   /** How old a follow-up claim with no done mark and no session joined to it may grow before the tick releases it, once (`followup_stale_after`). */
@@ -139,11 +142,15 @@ export interface StaleCause {
   uncleanTree?: true;
   /**
    * The drive stopped on a cause its own next step settles: a stall (`14`),
-   * a spent CI-repair budget (`21`) or a pass deadline with its restarts
-   * spent (`15`). Re-driven once per head commit; a re-drive that leaves the
-   * same stop at the same head is a person's.
+   * a spent CI-repair budget (`21`), a pass deadline with its restarts
+   * spent (`15`), or checks still failing on the infrastructure through
+   * their re-runs (`23`, `ci-infra`). Re-driven once per head commit, a
+   * `ci-infra` stop once per stop after its backoff; a re-drive that leaves
+   * the same stop standing is a person's.
    */
-  mechanicalStop?: "stall" | "ci-repair" | "deadline";
+  mechanicalStop?: "stall" | "ci-repair" | "deadline" | "ci-infra";
+  /** When the re-drive may start: a `ci-infra` stop's backoff end (`infra-backoff.ts`). */
+  notBefore?: string;
   /**
    * The re-drive draws on the pull request's recovery budget, which the
    * re-arms of stops with no recorded cause share (`no-cause-stops.ts`): a
@@ -254,7 +261,9 @@ export type NotifyCause =
   | "followup-failed"
   | "followup-stale"
   | "drifting"
-  | "nudge-unanswered";
+  | "nudge-unanswered"
+  | "pickup-question"
+  | "ready";
 
 /** A follow-up claim past `followup_stale_after` with no done mark and no session joined to it: the marker the tick releases, and whose claim it was. */
 export interface StaleClaim {
@@ -476,6 +485,7 @@ export type RepoPhase =
   | "claims"
   | "runtime"
   | "observe"
+  | "board"
   | "plan"
   | "log"
   | "apply"
@@ -547,6 +557,8 @@ export interface RepoReport {
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */
   serialized?: SerialReport;
+  /** The board read's part: its converged pull requests placed in Ready to merge or wherever their reason says, or why it did not read; absent when it did not run. */
+  board?: BoardRead;
   /** The shared records' part: which host owns the repository, and each read and write this tick made. */
   shared?: SharedReport;
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */

@@ -37,6 +37,7 @@ import {
 } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { heldPullRequests } from "./actions/labels.ts";
+import { type BoardRead, convergedDrives, observeBoard } from "./board.ts";
 import type { Contention } from "./contention.ts";
 import {
   observeOpened,
@@ -143,6 +144,8 @@ export interface RepoObservation {
   held: Set<number>;
   /** Each pull request's lock holder as this clone's drive doctor reads it, read when a drive fell silent. */
   holders?: HolderReadings;
+  /** The board read: the converged pull requests placed in Ready to merge, or why they were not. */
+  board?: BoardRead;
 }
 
 /** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
@@ -300,7 +303,7 @@ export async function observeRepo(
       const read = await pool.run(() =>
         readSessions(runtime, repo, join, reads.sessions),
       );
-      report.records.push(runtimeRead(runtime, repo, read, section));
+      report.records.push(runtimeRead(runtime, repo, read));
       return read;
     }),
   );
@@ -339,6 +342,22 @@ export async function observeRepo(
       );
     }),
   );
+  // The board read, a query of its own whose failure touches nothing planned.
+  const board = await timer.time("board", () =>
+    pool.run(() =>
+      observeBoard({
+        slug: repo.slug,
+        values,
+        drives: forge.drives,
+        open: forge.open,
+        held,
+        serialized,
+        budget: reads.budget,
+      }),
+    ),
+  );
+  if (board.ok || convergedDrives(forge.drives).length > 0)
+    report.board = board;
   // A silent drive's holder, read only when one fell silent.
   const holders = forge.drives.some((d) => d.class === "silent")
     ? await timer.time("observe", () =>
@@ -364,6 +383,7 @@ export async function observeRepo(
     sessions,
     serialized,
     held,
+    board,
     ...(holders === undefined ? {} : { holders }),
   };
 }
@@ -381,7 +401,6 @@ function runtimeRead(
   runtime: SessionRuntime,
   repo: RepoTarget,
   sessions: SessionsReport,
-  section: DispatchSection,
 ): RepoReport["records"][number] {
   return {
     record: "runtime",
@@ -391,19 +410,8 @@ function runtimeRead(
       sessions.ok
         ? `${sessions.workspaces.length} workspace(s) of ${repo.slug}`
         : sessions.reason
-    }${bindingNote(runtime, section)}`,
+    }`,
   };
-}
-
-/** Why the pickups this repository wants can only be reported, when the runtime cannot bind them. */
-function bindingNote(
-  runtime: SessionRuntime,
-  section: DispatchSection,
-): string {
-  const binding = runtime.interactiveBinding;
-  return binding.ok || section.identity === null
-    ? ""
-    : `; pickups are reported only: ${binding.reason}`;
 }
 
 /** Which workspace a session runtime joins to which item or pull request. */

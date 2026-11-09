@@ -52,8 +52,13 @@ test.each([
   ],
   [
     "a runtime model row missing a tier",
-    "routing:\n  models:\n    claude-code: {execution: sonnet}\n",
-    "routing.models.claude-code",
+    "routing:\n  models:\n    custom: {standard: a}\n",
+    "routing.models.custom",
+  ],
+  [
+    "a tier mapped to a Scout family",
+    "routing:\n  models:\n    codex: {simple: luna}\n",
+    "routing.models.codex.simple: luna is a Scout family",
   ],
 ])("%s is refused as do-item refuses it", (_, config, field) => {
   expect(rejection(findings(config))).toContain(field);
@@ -145,4 +150,21 @@ test("flags: catalog names no label to check", () => {
   const found = findings("routing:\n  raise:\n    flags: catalog\n");
   expect(found.some((f) => f.id.startsWith("taxonomy:routing"))).toBe(false);
   expect(rejection(found)).toBeUndefined();
+});
+
+test("a tier on a Judgment family is accepted and reported", () => {
+  const found = findings(
+    "routing:\n  models:\n    claude-code: {complex: fable}\n",
+  );
+  expect(rejection(found)).toBeUndefined();
+  expect(
+    found.filter((f) => f.id === "report:routing.models").map((f) => f.message),
+  ).toEqual([
+    "routing.models.claude-code.complex runs the complex tier on fable, a Judgment family no default names",
+  ]);
+});
+
+test("routing with no Judgment mapping and no family tiers reports nothing", () => {
+  const found = findings("routing: {}\n");
+  expect(found.some((f) => f.id === "report:routing.models")).toBe(false);
 });

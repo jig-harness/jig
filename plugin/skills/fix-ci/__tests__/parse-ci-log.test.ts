@@ -39,6 +39,24 @@ describe("pinned outputs", () => {
 });
 
 describe("categories", () => {
+  it("preserves long paths and padded separators in file diagnostics", () => {
+    const base = `src/${"nested/".repeat(80)}cart`;
+    const gap = " ".repeat(40);
+    for (const [file, diagnostic] of [
+      [`${base}.ts`, `(3,7):${gap}error${gap}TS2322:${gap}wrong type`],
+      [
+        `${base}.ts`,
+        `${gap}lint/suspicious/noExplicitAny${gap}Unexpected any.`,
+      ],
+      [`${base}.ts`, `:3:7${gap}error${gap}wrong type`],
+      [`${base}.test.ts`, `${gap}>${gap}suite > test`],
+    ] as const) {
+      const result = parseCiErrors(gh(`${file}${diagnostic}`));
+      expect(result.errors_found).toBe(1);
+      expect(result.files_affected).toEqual([file]);
+    }
+  });
+
   it("typescript: file, position, code and message", () => {
     expect(
       only(
@@ -481,7 +499,29 @@ describe("run resolution", () => {
       "ci.log": fixture("mixed.log"),
     });
     expect(calls).toEqual([]);
-    expect(r.out.trimEnd()).toBe(fixture("mixed.expected.json").trimEnd());
+    const { infrastructure, ...parsed } = JSON.parse(r.out) as {
+      infrastructure: { infrastructure: boolean };
+    };
+    expect(parsed).toEqual(JSON.parse(fixture("mixed.expected.json")));
+    expect(infrastructure.infrastructure).toBe(false);
+  });
+
+  it("reads a run whose only failure is a setup step's 504 as infrastructure", async () => {
+    // The rule is the shared one (`shared/ci-infra.ts`), which drive-pr reads
+    // before it spends a CI-repair pass; this pins that fix-ci prints it.
+    const log = readFileSync(
+      join(
+        import.meta.dir,
+        "../../../shared/__tests__/fixtures/ci-infra/tool-download-504.log",
+      ),
+      "utf8",
+    );
+    const { runner } = fakeRunner({});
+    const r = await capture(["--log", "ci.log"], runner, { "ci.log": log });
+    const out = JSON.parse(r.out) as {
+      infrastructure: { infrastructure: boolean };
+    };
+    expect(out.infrastructure.infrastructure).toBe(true);
   });
 
   it("--log on a missing file exits 1", async () => {

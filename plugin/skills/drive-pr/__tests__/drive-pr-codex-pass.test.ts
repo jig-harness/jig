@@ -1,6 +1,6 @@
 /**
  * drive-pr suite: the documented Codex pass command. `drive.ts` runs it on
- * the execution tier of `routing.models.codex` (else Codex's own
+ * the standard tier of `routing.models.codex` (else Codex's own
  * configuration), accepts `--pass-model` overrides, and kills a
  * Codex pass that outruns the pass deadline. The turn-budget hook counts
  * Codex responses and warns, but imposes no runtime turn cap.
@@ -98,37 +98,36 @@ describe("the documented Codex pass command", () => {
       },
     );
     expect(wouldRun(r.stderr)).toBe(
-      "codex exec Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999",
+      "codex exec -m gpt-5.6-terra Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999",
     );
     expect(r.stderr).toContain(
       "permission mode: inherited (the pass command sets no --sandbox; Codex's configuration decides)",
     );
   });
 
-  it("runs on the execution tier of routing.models.codex, added after exec", async () => {
+  it("runs on the standard tier of routing.models.codex, added after exec as the model its family names", async () => {
     const r = await dryRun([], {
-      JIG__ROUTING__MODELS__CODEX__EXECUTION: "gpt-example",
-      JIG__ROUTING__MODELS__CODEX__STRATEGIC: "gpt-example-large",
+      JIG__ROUTING__MODELS__CODEX__STANDARD: "sol",
     });
     expect(wouldRun(r.stderr)).toStartWith(
-      "codex exec -m gpt-example --dangerously-bypass-approvals-and-sandbox",
+      "codex exec -m gpt-6.1-sol --dangerously-bypass-approvals-and-sandbox",
     );
     expect(r.stderr).toContain(
-      "pass model: gpt-example (routing.models.codex.execution)",
+      "pass model: gpt-6.1-sol (routing.models.codex.standard (sol))",
     );
     expect(r.stderr).toContain(
       "permission mode: no sandbox, no approvals (the pass command's --dangerously-bypass-approvals-and-sandbox)",
     );
   });
 
-  it("leaves the model to Codex's own configuration when routing.models.codex names none, and ignores drive.pass_model", async () => {
+  it("runs the standard tier's default Codex model when routing.models.codex names none, and ignores drive.pass_model", async () => {
     const r = await dryRun([], { JIG__DRIVE__PASS_MODEL: "opus" });
     expect(wouldRun(r.stderr)).toStartWith(
-      "codex exec --dangerously-bypass-approvals-and-sandbox",
+      "codex exec -m gpt-5.6-terra --dangerously-bypass-approvals-and-sandbox",
     );
     expect(wouldRun(r.stderr)).not.toContain("opus");
     expect(r.stderr).toContain(
-      "pass model: Codex's own configuration; routing.models.codex names no execution model",
+      "pass model: gpt-5.6-terra (routing.models.codex.standard (terra))",
     );
   });
 

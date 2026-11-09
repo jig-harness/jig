@@ -21,6 +21,7 @@ import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
 import type { Client } from "./client.ts";
+import type { JiraFacetStores } from "./facets.ts";
 import { type JiraIssue, record } from "./read.ts";
 import {
   fieldOfLabel,
@@ -72,7 +73,10 @@ function missingKeys(err: unknown, asked: ReadonlyArray<string>): string[] {
   return asked.filter((k) => new RegExp(`'${k}'`).test(said));
 }
 
-export function reportOperations(client: Client): ReportOps {
+export function reportOperations(
+  client: Client,
+  stores: Pick<JiraFacetStores, "read">,
+): ReportOps {
   const { model, project } = client;
   const ownKey = new RegExp(`^${project}-\\d+$`);
 
@@ -233,6 +237,7 @@ export function reportOperations(client: Client): ReportOps {
               },
         labels: issue.labels,
         hasOpenChildren: parents.has(issue.key),
+        ...stores.read(issue),
         truncated: [],
       };
     });

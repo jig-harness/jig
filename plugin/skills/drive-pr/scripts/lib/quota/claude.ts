@@ -38,7 +38,7 @@ import {
   forEachDirEntry,
   isConfirmedAbsence,
   MAX_CANDIDATE_FILES_SCANNED,
-  MAX_CLOCK_SKEW_MS,
+  detectionTimeBounds,
   maxCandidateScanMs,
   type PreparedSpawn,
   type QuotaAdapter,
@@ -99,40 +99,13 @@ function candidateFiles(sinceMs: number): CandidateScan {
   const out: string[] = [];
   let scanned = 0;
   let truncated = false;
-  // Wall-clock half of the same circuit breaker as the entry count below —
-  // see `maxCandidateScanMs()`'s own doc comment for why a count alone
-  // cannot bound how long a degraded filesystem keeps this walk running.
+  let budgetExhausted = false;
   const deadlineAt = Date.now() + maxCandidateScanMs();
-  // Walked entry-by-entry via `forEachDirEntry`, never `readdirSync`: an
-  // eager `readdirSync` materializes the WHOLE listing before the
-  // `scanned` budget below gets to check even once, so a root (or a single
-  // project directory) with far more entries than the cap still pays the
-  // full enumeration cost upfront — the exact failure the cap exists to
-  // prevent.
-  const rootComplete = forEachDirEntry(root, (rootEntry) => {
-    if (
-      scanBudgetExceeded(
-        scanned,
-        MAX_CANDIDATE_FILES_SCANNED,
-        deadlineAt,
-        Date.now(),
-      )
-    ) {
-      truncated = true;
-      return false;
-    }
-    scanned++;
-    if (!rootEntry.isDirectory()) return true;
-    const dirPath = join(root, rootEntry.name);
-    // `forEachDirEntry`'s own return distinguishes an I/O failure (EACCES, a
-    // vanished mount, ...) from a clean walk — an outcome the budget check
-    // above cannot see, since it never runs when the directory could not be
-    // read at all.
-    const dirComplete = forEachDirEntry(dirPath, (fileEntry) => {
-      // A circuit breaker on the AGGREGATE enumeration/stat cost across
-      // every project directory, not on how many turn out relevant — see
-      // MAX_CANDIDATE_FILES_SCANNED's own doc comment for the residual gap
-      // this accepts.
+  // root/project/session/subagents/file is the deepest supported layout.
+  // Every directory entry shares the aggregate count and time budgets.
+  const MAX_DIRECTORY_DEPTH = 3;
+  const walk = (dir: string, depth: number): void => {
+    const complete = forEachDirEntry(dir, (entry) => {
       if (
         scanBudgetExceeded(
           scanned,
@@ -142,37 +115,27 @@ function candidateFiles(sinceMs: number): CandidateScan {
         )
       ) {
         truncated = true;
+        budgetExhausted = true;
         return false;
       }
       scanned++;
-      if (fileEntry.name.endsWith(".jsonl")) {
-        const path = join(dirPath, fileEntry.name);
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < MAX_DIRECTORY_DEPTH) walk(path, depth + 1);
+      } else if (depth > 0 && entry.name.endsWith(".jsonl")) {
         try {
           if (statSync(path).mtimeMs >= sinceMs) out.push(path);
         } catch (err) {
-          // A confirmed disappearance (ENOENT: rotated or removed mid-scan) is
-          // not evidence and not truncation — the file genuinely does not exist
-          // right now. Any OTHER stat failure (EACCES, a stalled or degraded
-          // mount, ...) is NOT confirmed absence: if it is transient and clears
-          // before detect()'s own separate walk moments later, that walk would
-          // find the file, it would be missing from `preexistingSessions`
-          // purely because THIS walk's stat failed, and detect() would
-          // misattribute a pre-existing transcript to this pass — the same
-          // misattribution MAX_CANDIDATE_FILES_SCANNED and maxCandidateScanMs()
-          // already close, through a different door. Mark the walk truncated so
-          // the caller degrades exactly as it does for those circuit breakers,
-          // rather than trusting this file's absence.
-          if (!isConfirmedAbsence(err)) {
-            truncated = true;
-          }
+          // A vanished file is absent; any other failure makes the snapshot
+          // incomplete, so detection must not mistake the missed file for new.
+          if (!isConfirmedAbsence(err)) truncated = true;
         }
       }
-      return true;
+      return !budgetExhausted;
     });
-    if (!dirComplete) truncated = true;
-    return true;
-  });
-  if (!rootComplete) truncated = true;
+    if (!complete) truncated = true;
+  };
+  walk(root, 0);
   return { files: out, truncated };
 }
 
@@ -520,15 +483,7 @@ export const claudeAdapter: QuotaAdapter = {
     };
   },
   detect(opts: DetectOpts): QuotaBlock | null {
-    const sinceMs = opts.since.getTime();
-    // Floored to the second: the measured record shape's `timestamp` field and
-    // some runner filesystems' transcript mtimes have whole-second precision,
-    // while `since` (`passStartedAt` in drive.ts) is millisecond-precise.
-    // Comparing either directly rejects a genuine wall recorded in the SAME
-    // second the pass started as "older than the pass", turning correct quota
-    // handling into a generic exit-1 failure.
-    const sinceFloorMs = Math.floor(sinceMs / 1000) * 1000;
-    const untilMs = opts.now.getTime() + MAX_CLOCK_SKEW_MS;
+    const { sinceFloorMs, untilMs } = detectionTimeBounds(opts);
     let best: QuotaBlock | null = null;
     let bestAt = -1;
     let bestPath = "";
@@ -561,7 +516,7 @@ export const claudeAdapter: QuotaAdapter = {
     let discardedByTruncatedSnapshot = 0;
 
     // A SEPARATE walk from `snapshotSessions()` above — taken now, at
-    // detection time, over files touched since `sinceMs` rather than every
+    // detection time, over files touched since `sinceFloorMs` rather than every
     // file that exists — so it can truncate independently of the pre-spawn
     // snapshot even below `MAX_CANDIDATE_FILES_SCANNED`, the same wall-clock
     // divergence `preexistingSessionsTruncated`'s own doc comment describes

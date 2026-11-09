@@ -1,16 +1,19 @@
 /**
- * What a dispatched session runs. A pickup is an interactive session: the
- * agent of the account's vendor (Claude Code, Codex) started on
- * `/jig:do-item <key>`, with the model and effort of the item's route for
- * that agent. A merge's follow-up is a headless pass: the vendor's
- * non-interactive command (`claude -p`, `codex exec`) on the repository's
- * follow-up command and the pull request, with the host's permission
- * settings and none the launcher adds. Codex runs a skill the prompt
- * names, so its prompt names the skill before the same invocation
- * (`skillPrompt`). The prompt ends by asking the session to record how it
- * ended through `jig dispatch result`, under its launch record's token; it
- * names no agent. The token binds the session to its record; it does not
- * guard the state directory against another process of the same user.
+ * What a dispatched session runs. A pickup is a headless pass: the
+ * account's vendor's non-interactive command (`claude -p`, `codex exec`) on
+ * `/jig:do-item <key>`, with the host's permission settings and none the
+ * launcher adds. The pass keeps the agent's own model and effort; its
+ * prompt's `route: rules` line has `do-item` forward the item's route to
+ * the implementer it delegates to. A pickup an earlier release started as
+ * an interactive session ran the agent itself on the route
+ * (`sessionArgv`). A merge's follow-up is a headless pass the same way, on
+ * the repository's follow-up command and the pull request. Codex runs a
+ * skill the prompt names, so its prompt names the skill before the same
+ * invocation (`skillPrompt`). The prompt ends by asking the session to
+ * record how it ended through `jig dispatch result`, under its launch
+ * record's token; it names no agent. The token binds the session to its
+ * record; it does not guard the state directory against another process of
+ * the same user.
  */
 import { resolve } from "node:path";
 import { shellQuote } from "../../shared/cli.ts";
@@ -25,7 +28,7 @@ import { ROUTINE_QUESTIONS, routineQuestion } from "./routine-questions.ts";
 /** The skill a pickup starts. */
 export const PICKUP_SKILL = "/jig:do-item";
 
-/** What starts the line a follow-up pass that needs a person ends its output with, before its question. */
+/** What starts the line a headless pass (a follow-up's, a pickup's) that needs a person ends its output with, before its question. */
 export const QUESTION_PREFIX = "Question:";
 
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
@@ -63,7 +66,13 @@ function resultCommand(
   return jigCommand(["result", record.id, record.token, result]);
 }
 
-/** The prompt a pickup's session starts with. */
+/**
+ * The line a pickup's pass carries for `do-item`'s route: the rules decide,
+ * and `do-item` forwards their model and effort to its implementer.
+ */
+const ROUTE_RULES_LINE = "route: rules";
+
+/** The prompt an interactive pickup's session, which an earlier release started, began with. */
 function pickupPrompt(
   record: Pick<LaunchRecord, "id" | "token" | "item" | "vendor">,
 ): string {
@@ -71,10 +80,33 @@ function pickupPrompt(
     skillPrompt(record.vendor, `${PICKUP_SKILL} ${record.item}`),
     "",
     "jig dispatch started this session for an item assigned to the factory identity; nobody is at the keyboard.",
+    ...pickupResultLines(record),
+  ].join("\n");
+}
+
+/** How a pickup records its end, once. */
+function pickupResultLines(
+  record: Pick<LaunchRecord, "id" | "token">,
+): string[] {
+  return [
     "When you stop, record how the pickup ended, once:",
     `- its pull request is open and its drive armed: ${resultCommand(record, "done")} --pr <the pull request number>`,
     `- no pull request was needed (a duplicate or work already made): ${resultCommand(record, "done")} --none "<why>"`,
     `- you stopped short of that (a refusal, a question, a failure): ${resultCommand(record, "failed")}`,
+  ];
+}
+
+/** The prompt a pickup's headless pass starts with. */
+function pickupPassPrompt(
+  record: Pick<LaunchRecord, "id" | "token" | "item" | "vendor">,
+): string {
+  return [
+    skillPrompt(record.vendor, `${PICKUP_SKILL} ${record.item}`),
+    ROUTE_RULES_LINE,
+    "",
+    "jig dispatch started this headless pass for an item assigned to the factory identity; nobody is at the keyboard, and nobody can answer a question while it runs.",
+    `Where a step needs a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
+    ...pickupResultLines(record),
   ].join("\n");
 }
 
@@ -169,7 +201,8 @@ function sessionArgs(record: LaunchRecord): string[] {
 }
 
 /**
- * A pickup session's command line, for the account's vendor: Claude Code
+ * An interactive pickup session's command line, for the account's vendor,
+ * as an earlier release started it: Claude Code
  * with the vendor session id the tick minted, the route's model and
  * effort, on the prompt; Codex with the route's model (`-m`) and effort
  * (its `model_reasoning_effort` setting), on the prompt.
@@ -192,19 +225,29 @@ export function followupPassArgv(
   record: LaunchRecord,
   passArgs: readonly string[],
 ): string[] {
-  const prompt = followupPrompt(record);
+  return headlessArgv(record, passArgs, followupPrompt(record), true);
+}
+
+/** A headless pass's command line on `prompt`, with the record's route words only when `routed`. */
+function headlessArgv(
+  record: LaunchRecord,
+  passArgs: readonly string[],
+  prompt: string,
+  routed: boolean,
+): string[] {
+  const route = routed ? routeArgs(record) : [];
   if (record.vendor === "codex")
     return [
       "codex",
       "exec",
       ...(record.codexBypass === true ? [CODEX_BYPASS] : []),
-      ...routeArgs(record),
+      ...route,
       prompt,
     ];
   return [
     "claude",
     ...sessionArgs(record),
-    ...routeArgs(record),
+    ...route,
     ...passArgs,
     "-p",
     prompt,
@@ -212,7 +255,20 @@ export function followupPassArgv(
 }
 
 /**
- * The question a follow-up pass stopped on: the last line of the output its
+ * A pickup pass's command line, for the account's vendor, built as a
+ * follow-up's pass is (`followupPassArgv`) on the pickup's prompt, with no
+ * model or effort: the pass keeps the agent's own, and only the
+ * implementer `do-item` delegates to takes the route.
+ */
+export function pickupPassArgv(
+  record: LaunchRecord,
+  passArgs: readonly string[],
+): string[] {
+  return headlessArgv(record, passArgs, pickupPassPrompt(record), false);
+}
+
+/**
+ * The question a headless pass stopped on: the last line of the output its
  * exit kept that starts with `QUESTION_PREFIX`, without it; `null` when the
  * record has not ended or the pass stated none.
  */

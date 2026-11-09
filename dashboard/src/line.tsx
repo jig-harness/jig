@@ -16,6 +16,8 @@ import {
   StageHint,
   Term,
 } from "./fold.tsx";
+import { slotCard } from "./cards.ts";
+import { cardAttrs } from "./keys.ts";
 import { Mark } from "./marks.tsx";
 import { ROLES, TERMS } from "./status.ts";
 import {
@@ -30,7 +32,7 @@ import {
 
 function Slot({ slot }: { slot: SlotView }) {
   return (
-    <div className="slot">
+    <div className="slot" {...cardAttrs(slotCard(slot, "running"))}>
       <div className="rowTop">
         <Mark role={slot.role} />
         <Pr repo={slot.repo} target={slot.target} url={slot.url} />

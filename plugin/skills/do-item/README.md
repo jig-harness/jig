@@ -44,19 +44,22 @@ fault, since the route below reads it too.
 
 ## The implementer's route
 
-Before it delegates, the skill also says which
-[model tier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) and
-which effort the implementing agent should run on, and why: the item's
-[route](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). The type
-gives a base (a task runs on the Execution tier at low effort, a spike on
-the Strategic tier at high effort), and a flag label, an area with a
-mandatory review, a size too large to batch and the human-in-the-loop label
-each move the effort up one step. The rules are data in the repository's
-`routing` section, with defaults
-([configuration reference](../../CONFIGURATION.md#routing)). In this version
-the route is reported and the implementer runs on the model it ran on
-before. A `routing` section the rules refuse stops the pickup, naming the
-field at fault, until the repository corrects it.
+Before it delegates, the skill also says which complexity tier (simple,
+standard or complex) and which effort the implementing agent should run on,
+and why: the item's
+[route](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). The
+tier comes from the item's type and size (a bug, improvement or feature is
+standard up to M and complex from L, a task is simple up to L and standard
+at XL, a spike is complex at any size, and an unknown size reads as M),
+and a complex flag label, on the item or declared by an area it seeds, makes
+it complex at any size. The effort starts from the type's base, and a flag
+label, an area with a mandatory review, a size too large to batch and the
+human-in-the-loop label each move it up one step. The tier maps to a model
+per vendor. The rules are data in the repository's `routing` section, with
+defaults ([configuration reference](../../CONFIGURATION.md#routing)). In
+this version the route is reported and the implementer runs on the model it
+ran on before. A `routing` section the rules refuse stops the pickup,
+naming the field at fault, until the repository corrects it.
 
 ## The claim
 
@@ -114,11 +117,11 @@ A Claude Code round uses `drive.pass_model`
 ([configuration](../../CONFIGURATION.md#drive)), defaulting to `sonnet`,
 and the extra arguments in `drive.pass_args` (none unless this host's
 [user file](../../CONFIGURATION.md#a-hosts-opt-in-to-bypass) sets them).
-A Codex round uses `routing.models.codex.execution`, or Codex's own
-configured model when that routing row is absent, and carries its bypass only
+A Codex round uses `routing.models.codex.standard` (by default `terra`,
+given as `gpt-5.6-terra`), and carries its bypass only
 on a host that set `drive.codex_bypass`; it does not read
 `drive.pass_model` or `drive.pass_args`. For either runtime, `--pass-model`
-overrides the model for one drive, resolving a routing tier through that
+overrides the model for one drive, resolving a complexity tier through that
 runtime's row of `routing.models` (see [drive-pr](../drive-pr/README.md)).
 The skill reports
 the command, the model, the permission mode, the driver log and the
