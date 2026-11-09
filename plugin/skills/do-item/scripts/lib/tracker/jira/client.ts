@@ -17,6 +17,12 @@ import { defaultFacets, type Facets } from "../facets/config.ts";
 import { TrackerRequestError } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
 import {
+  type FacetField,
+  facetFieldStores,
+  resolveFacetFields,
+  type SiteField,
+} from "./facets.ts";
+import {
   FIELDS,
   type FieldLabel,
   iso,
@@ -106,7 +112,7 @@ export interface Client {
   /** The configured link types, each resolved to exactly one. */
   linkTypes(): Promise<Record<LinkedRelation, LinkType>>;
   /** The project's issue types, with their hierarchy level. */
-  issueTypes(): Promise<IssueTypeMeta[]>;
+  issueTypes(signal?: AbortSignal): Promise<IssueTypeMeta[]>;
   /**
    * The fields `issue_tracker.jira.field_labels` names, each resolved to
    * exactly one field of the site; read once, and without a request when
@@ -114,6 +120,20 @@ export interface Client {
    * read other callers may be waiting on.
    */
   fieldLabels(signal?: AbortSignal): Promise<FieldLabel[]>;
+  /**
+   * The custom fields `issue_tracker.facets` keeps a facet in, each resolved
+   * to exactly one field of the site; read once, and without a request when
+   * no facet is kept in one.
+   */
+  facetFields(signal?: AbortSignal): Promise<FacetField[]>;
+  /**
+   * The fields on the create screen of an issue type of the project, each
+   * with the values it allows (`null` where it lists none); read once per
+   * issue type.
+   */
+  createMeta(issueTypeId: string, signal?: AbortSignal): Promise<FieldMeta>;
+  /** The fields an issue's edit screen has, each with the values it allows. */
+  editMeta(key: string, signal?: AbortSignal): Promise<FieldMeta>;
   /**
    * The account id an identity (account id, email or display name) names.
    * An aborted `signal` ends the request in flight and the pages not yet read.
@@ -125,6 +145,18 @@ export interface Client {
   trusted(user: Record<string, unknown> | null): Promise<boolean>;
   /** The credential's profile time zone, read once. */
   timeZone(): Promise<string>;
+}
+
+/** A screen's fields by id, each with the values it allows (`null`: no list). */
+export type FieldMeta = ReadonlyMap<string, string[] | null>;
+
+/** The allowed values of one field's metadata, by their names. */
+function allowedOf(meta: unknown): string[] | null {
+  if (!isRecord(meta) || !Array.isArray(meta.allowedValues)) return null;
+  return meta.allowedValues.flatMap((v) => {
+    const name = isRecord(v) ? (v.value ?? v.name) : v;
+    return typeof name === "string" ? [name] : [];
+  });
 }
 
 /** An Atlassian account id: the 24-hex form or the `<n>:<uuid>` form. */
@@ -278,6 +310,62 @@ function until<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+/**
+ * One read shared by its callers. It runs under a controller of its own, which
+ * aborts the read in flight once every caller holding a signal has given up
+ * (a caller with none keeps it running); a failed or abandoned read is
+ * forgotten, so the next caller starts afresh.
+ */
+function sharedRead<T>(run: (signal: AbortSignal) => Promise<T>) {
+  interface Op {
+    promise: Promise<T>;
+    control: AbortController;
+    waiters: number;
+    done: boolean;
+  }
+  let op: Op | undefined;
+  return (signal?: AbortSignal): Promise<T> => {
+    if (signal?.aborted === true) return Promise.reject(abortedError(signal));
+    if (op === undefined) {
+      const control = new AbortController();
+      const started: Op = {
+        promise: run(control.signal),
+        control,
+        waiters: 0,
+        done: false,
+      };
+      op = started;
+      started.promise.then(
+        () => {
+          started.done = true;
+        },
+        () => {
+          started.done = true;
+          if (op === started) op = undefined;
+        },
+      );
+    }
+    const current = op;
+    current.waiters++;
+    if (signal === undefined || current.done) return current.promise;
+    return new Promise<T>((resolve, reject) => {
+      const abort = () => {
+        current.waiters--;
+        if (current.waiters === 0 && !current.done) {
+          current.control.abort(signal.reason);
+          if (op === current) op = undefined;
+        }
+        reject(abortedError(signal));
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      current.promise
+        .then(resolve, reject)
+        .finally(() => signal.removeEventListener("abort", abort));
+      if (signal.aborted) abort();
+    });
+  };
+}
+
 export function jiraClient(opts: ClientOptions): Client {
   const { project, site, model, settings } = opts;
   const transport: JiraTransport = (request, signal) =>
@@ -293,8 +381,37 @@ export function jiraClient(opts: ClientOptions): Client {
     );
 
   let links: Promise<Record<LinkedRelation, LinkType>> | undefined;
-  let types: Promise<IssueTypeMeta[]> | undefined;
   let labelFields: Promise<FieldLabel[]> | undefined;
+  let allFields: Promise<SiteField[]> | undefined;
+  let storeFields: Promise<FacetField[]> | undefined;
+  const readTypes = sharedRead(async (own): Promise<IssueTypeMeta[]> => {
+    const values = await offsetPages(
+      transport,
+      { method: "GET", path: `issue/createmeta/${project}/issuetypes` },
+      {
+        items: "issueTypes",
+        idOf: (t) => t.id,
+        where: `issue types of ${project}`,
+        signal: own,
+      },
+    );
+    return values.map((t) => ({
+      id: String(t.id),
+      name: str(t.name, "issueType.name"),
+      subtask: t.subtask === true,
+      level:
+        typeof t.hierarchyLevel === "number"
+          ? t.hierarchyLevel
+          : t.subtask === true
+            ? -1
+            : 0,
+      levelKnown: typeof t.hierarchyLevel === "number" || t.subtask === true,
+    }));
+  });
+  const createScreens = new Map<
+    string,
+    (signal?: AbortSignal) => Promise<FieldMeta>
+  >();
   let zone: Promise<string> | undefined;
   let me: Promise<Record<string, unknown>> | undefined;
   const assignables = new Map<string, Promise<boolean>>();
@@ -323,9 +440,51 @@ export function jiraClient(opts: ClientOptions): Client {
     return matches[0] as T;
   }
 
-  /** The fields every issue read asks for, with those read as labels. */
+  /** The fields every issue read asks for, with those read as labels or as a facet. */
   async function fieldsToRead(signal?: AbortSignal): Promise<string[]> {
-    return [...FIELDS, ...(await client.fieldLabels(signal)).map((f) => f.id)];
+    const extra = [
+      ...(await client.fieldLabels(signal)).map((f) => f.id),
+      ...(await client.facetFields(signal)).map((f) => f.id),
+    ];
+    return [...FIELDS, ...new Set(extra)];
+  }
+
+  /** The site's fields, read once for every resolver that needs them. */
+  function siteFields(): Promise<SiteField[]> {
+    allFields ??= (async () => {
+      const raw = await get("field");
+      if (!Array.isArray(raw))
+        throw new JiraApiError("fields of the site: expected a list");
+      return raw.map((f, i) => {
+        const r = record(f, `fields[${i}]`);
+        return {
+          id: str(r.id, `fields[${i}].id`),
+          name: str(r.name, `fields[${i}].name`),
+          schema: r.schema,
+        };
+      });
+    })();
+    allFields.catch(() => {
+      allFields = undefined;
+    });
+    return allFields;
+  }
+
+  /** One screen's fields from a metadata answer: a list of fields, or a map by id. */
+  function metaOf(fields: unknown, where: string): FieldMeta {
+    const out = new Map<string, string[] | null>();
+    if (Array.isArray(fields))
+      for (const [i, f] of fields.entries()) {
+        const r = record(f, `${where}[${i}]`);
+        out.set(
+          str(r.fieldId ?? r.key, `${where}[${i}].fieldId`),
+          allowedOf(r),
+        );
+      }
+    else
+      for (const [id, f] of Object.entries(record(fields, where)))
+        out.set(id, allowedOf(f));
+    return out;
   }
 
   const client: Client = {
@@ -354,7 +513,12 @@ export function jiraClient(opts: ClientOptions): Client {
         if (err instanceof JiraApiError && err.notFound) return null;
         throw err;
       }
-      return parseIssue(raw, site, await client.fieldLabels(signal));
+      return parseIssue(
+        raw,
+        site,
+        await client.fieldLabels(signal),
+        await client.facetFields(signal),
+      );
     },
 
     async mustIssue(key, signal) {
@@ -369,9 +533,10 @@ export function jiraClient(opts: ClientOptions): Client {
 
     async search(jql, where, signal, fields) {
       const extra = await client.fieldLabels(signal);
+      const facet = await client.facetFields(signal);
       const read = fields ?? (await fieldsToRead(signal));
       return (await searchPages(transport, jql, read, where, signal)).map((i) =>
-        parseIssue(i, site, extra),
+        parseIssue(i, site, extra, facet),
       );
     },
 
@@ -498,35 +663,8 @@ export function jiraClient(opts: ClientOptions): Client {
       return links;
     },
 
-    issueTypes() {
-      types ??= (async () => {
-        const values = await offsetPages(
-          transport,
-          { method: "GET", path: `issue/createmeta/${project}/issuetypes` },
-          {
-            items: "issueTypes",
-            idOf: (t) => t.id,
-            where: `issue types of ${project}`,
-          },
-        );
-        return values.map((t) => ({
-          id: String(t.id),
-          name: str(t.name, "issueType.name"),
-          subtask: t.subtask === true,
-          level:
-            typeof t.hierarchyLevel === "number"
-              ? t.hierarchyLevel
-              : t.subtask === true
-                ? -1
-                : 0,
-          levelKnown:
-            typeof t.hierarchyLevel === "number" || t.subtask === true,
-        }));
-      })();
-      types.catch(() => {
-        types = undefined;
-      });
-      return types;
+    issueTypes(signal) {
+      return readTypes(signal);
     },
 
     fieldLabels(signal) {
@@ -534,17 +672,7 @@ export function jiraClient(opts: ClientOptions): Client {
       if (configured.length === 0) return Promise.resolve([]);
       if (signal?.aborted === true) return Promise.reject(abortedError(signal));
       labelFields ??= (async () => {
-        const raw = await get("field");
-        if (!Array.isArray(raw))
-          throw new JiraApiError("fields of the site: expected a list");
-        const all = raw.map((f, i) => {
-          const r = record(f, `fields[${i}]`);
-          return {
-            id: str(r.id, `fields[${i}].id`),
-            name: str(r.name, `fields[${i}].name`),
-            schema: r.schema,
-          };
-        });
+        const all = await siteFields();
         return configured.map(([name, prefix]) => {
           const at = `issue_tracker.jira.field_labels.${name}`;
           const byId = all.filter((f) => f.id === name);
@@ -570,6 +698,57 @@ export function jiraClient(opts: ClientOptions): Client {
         labelFields = undefined;
       });
       return signal === undefined ? labelFields : until(labelFields, signal);
+    },
+
+    facetFields(signal) {
+      const stores = facetFieldStores(client.facets);
+      if (stores.length === 0) return Promise.resolve([]);
+      if (signal?.aborted === true) return Promise.reject(abortedError(signal));
+      storeFields ??= (async () =>
+        resolveFacetFields(stores, await siteFields()))();
+      storeFields.catch(() => {
+        storeFields = undefined;
+      });
+      return signal === undefined ? storeFields : until(storeFields, signal);
+    },
+
+    createMeta(issueTypeId, signal) {
+      let read = createScreens.get(issueTypeId);
+      if (read === undefined) {
+        const where = `create screen of issue type ${issueTypeId} in ${project}`;
+        read = sharedRead(async (own) =>
+          metaOf(
+            await offsetPages(
+              transport,
+              {
+                method: "GET",
+                path: `issue/createmeta/${project}/issuetypes/${encodeURIComponent(issueTypeId)}`,
+              },
+              {
+                items: "fields",
+                idOf: (f) => f.fieldId,
+                where,
+                signal: own,
+              },
+            ),
+            where,
+          ),
+        );
+        createScreens.set(issueTypeId, read);
+      }
+      return read(signal);
+    },
+
+    async editMeta(key, signal) {
+      const raw = record(
+        await get(
+          `issue/${encodeURIComponent(key)}/editmeta`,
+          undefined,
+          signal,
+        ),
+        `edit screen of ${key}`,
+      );
+      return metaOf(raw.fields, `edit screen of ${key}.fields`);
     },
 
     accountId(identity, signal) {

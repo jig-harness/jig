@@ -266,7 +266,12 @@ function gates(
           name: "scars",
           script: "scar-lint/check-descarring-scars.ts",
           args: [],
-          env: { DOCS_DIR: root },
+          env: {
+            DOCS_DIR: root,
+            PROMOTED_STATUSES:
+              process.env.PROMOTED_STATUSES ||
+              settings.promotedStatuses.join(" "),
+          },
           read: readScarOutput,
         },
     existsSync(join(repo, DEFERRAL_CONFIG))

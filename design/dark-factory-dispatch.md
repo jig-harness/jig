@@ -20,12 +20,12 @@ This is the design of [plan.md](plan.md) item 33. Every step of its
 [build order](#build-order) is built, and the documents that describe it are
 the current truth; the item stays open on the roadmap until its "Done when"
 checks run on a host running Orca, each named at its own build step. It
-builds on item 32 (driving any pull request from anywhere): the
+builds on driving any pull request from anywhere: the
 [drive ledger](../plugin/skills/drive-pr/README.md#where-its-state-lives)
 on each pull request, the re-arm of a stopped drive and the takeover of a
-wedged one are in `drive-pr` today; item 32's framed park (a park that
-carries the question, the options and the recommended one) and its morning
-report are built too. M0 names the service this is: a
+wedged one are in `drive-pr` today, and so are the framed park (a park that
+carries the question, the options and the recommended one) and the
+[morning report](../plugin/skills/drive-pr/README.md#the-morning-report). M0 names the service this is: a
 [control plane](../GLOSSARY.md), "a service that tracks an agent's job and
 can reach a person". The dispatcher is the first one Jig ships, for the
 execution line only. Its first [session runtime](../GLOSSARY.md) is Orca
@@ -1508,7 +1508,7 @@ waits on the authenticated Windows smoke.
 
 A notification goes out for each cause, its launch record or receipt
 naming what was sent: a drive parked with an item unanswered, carrying the
-parked questions (item 32's framed decision, built, or the stored
+parked questions (the park's framed decision, or the stored
 reason for a park with no decision record); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
@@ -2197,7 +2197,7 @@ One pull request each, in this order; each is usable on its own.
    person runs it by hand and marks that marker done when it succeeds
    (Jig's `/followup` first); the notifications above
    through `notify`. The park's
-   notification carries item 32's framed decision, or its stored reason
+   notification carries its framed decision, or its stored reason
    when it has no decision record, and
    the receipts join its morning report; a consumer repository's
    follow-up waits on its own post-merge command (item 17).

@@ -160,6 +160,7 @@ describe("the detected settings", () => {
       root: "doc",
       schema: null,
       staleAfterDays: 180,
+      promotedStatuses: ["approved"],
       detected: { root: true, schema: true },
     });
   });
@@ -252,5 +253,35 @@ describe("the detected settings", () => {
       expect(() =>
         parseDocsSettings({ stale_after_days: bad }, temporary()),
       ).toThrow("docs.stale_after_days must be a whole number");
+  });
+
+  test("the promoted statuses are the configured list", () => {
+    expect(
+      parseDocsSettings(
+        { promoted_statuses: ["approved", "active"] },
+        temporary(),
+      ).promotedStatuses,
+    ).toEqual(["approved", "active"]);
+  });
+
+  test("a promoted status with surrounding space, or a repeat after trimming, is refused", () => {
+    for (const bad of [[" active "], ["active\n"], ["active", "active "]])
+      expect(() =>
+        parseDocsSettings({ promoted_statuses: bad }, temporary()),
+      ).toThrow("docs.promoted_statuses must be a list of distinct statuses");
+  });
+
+  test("a promoted-statuses list that is empty, repeats or holds anything but one-word text is refused", () => {
+    for (const bad of [
+      "approved",
+      [],
+      ["approved", "approved"],
+      [""],
+      ["two words"],
+      [3],
+    ])
+      expect(() =>
+        parseDocsSettings({ promoted_statuses: bad }, temporary()),
+      ).toThrow("docs.promoted_statuses must be a list of distinct statuses");
   });
 });

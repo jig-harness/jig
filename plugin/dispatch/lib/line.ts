@@ -21,6 +21,7 @@ import type {
 import type { LaunchAction, ReadRecord } from "./launches.ts";
 import { pullUrl } from "./forge.ts";
 import { holds, targetOf } from "./launches.ts";
+import { boardUnread, readyOf } from "./line-ready.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
@@ -181,7 +182,8 @@ function isNeed(action: Action): action is Action & { cause: NeedCause } {
     action.stage === "notify" &&
     action.cause !== undefined &&
     action.cause !== "waiting" &&
-    action.cause !== "drifting"
+    action.cause !== "drifting" &&
+    action.cause !== "ready"
   );
 }
 
@@ -517,6 +519,7 @@ function repoOf(report: RepoReport, machine: MachineConfig): LineRepo {
     notes: report.records
       .filter((r) => r.ok && r.record === "tracker")
       .map((r) => r.detail),
+    ...boardUnread(report),
   };
 }
 
@@ -690,6 +693,7 @@ export function buildLine(input: LineInput): LineSnapshot {
       needsOf(v, input.finishedAt, input.previousNeeds ?? []),
     ),
     queue: views.flatMap(queueOf),
+    ready: readyOf(input.reports),
     repos: input.reports.map((r) => repoOf(r, input.machine)),
   };
 }

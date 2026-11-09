@@ -389,6 +389,68 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.177.0] - 2026-11-09
+
+Jira and Linear repositories can keep an issue's type and size in their trackers' own fields: Jira's issue types and custom fields, and Linear's estimate. A repository that names no store files and reads exactly as before.
+
+### Added
+
+- Jira's issue types as the type's store (`issue_tracker.facets.type: { store: native }`, with `values` where names differ, such as `feature: Story`): a new issue is filed as the standard issue type of its type's name. A type with no such issue type, an issue created under an Epic, and a sub-task keep the type in its label beside `issue_tracker.jira.issue_type` or the sub-task type; a type label wins over that fallback issue type, and any other two different values read as no type, which the weekly sweep reports. A change of type changes the issue type in the same write and takes the type's labels off ([CONFIGURATION.md](plugin/CONFIGURATION.md#issue_tracker)).
+- A Jira custom field as the store of a type or a size (`{ store: field, field: Size }`, by its name or its id, `customfield_10016`): read in the request that reads the issue, written in the one that files or changes it, a select field's option checked against the create or edit screen's options before anything is written. A name several fields of the site share is refused, naming each one's id.
+- Linear's estimate as the size's store (`issue_tracker.facets.size: { store: native }`): the sizes map in order onto the team's estimate scale, or onto the points `values` names; a team with estimates off, or a scale with fewer points than the sizes, is refused before anything is written. `tracker.ts facet-stores` reports each of these stores' health.
+- Shell and PowerShell bootstrap entry points from a reviewed source checkout preview prerequisites and marketplace installation, require explicit opt-in for provisioning and plugin writes, check authentication and source selection, and keep plugin updates with the agent marketplace. Authenticated validation across macOS, Linux and Windows remains open.
+
+### Changed
+
+- On Jira, an `issue_tracker.jira.field_labels` entry whose labels are a facet's values (a `Size` field behind `size:` where the label taxonomy's sizes are `size:S`, `size:M`, `size:L`) is now that facet's field store: filing or changing the size writes the field, where the previous release refused it, and its values still show as labels. A label behind such a prefix among the labels of a filing is refused, pointing at the facet.
+- `check-fields.ts move` refuses to move Jira's type from its labels into the issue types, since the issue types keep a sub-task's type, and a type with no issue type of its own, in those labels; naming the store needs no move, since a type label wins over the fallback issue type.
+
+## [0.176.0] - 2026-11-09
+
+### Added
+
+- `jig dispatch` places every converged pull request in **Ready to merge**
+  at each tick: **merge now**, with a `gh pr merge` command pinned to the
+  head the drive verified and built only from values of a strict form;
+  **approve first**, naming the reviewers asked, or that nobody is, and
+  saying the repository's other protection rules are not read; or **update
+  next**, one pull request per repository behind its base. One that fails a
+  condition is placed where its reason says, with the act that settles it.
+  Merge now never rests on the drive's ledger alone: the forge must witness
+  a review of the head (the `review.reviewer_app` check run, or a person's
+  approval where no app is named), and a pull request from outside the
+  repository needs a person's approval. The facts come from a board read of
+  its own in the tick's observe phase, under a 30-second deadline and a
+  floor on the forge's budget; a board read that fails changes nothing the
+  tick launches. The receipt carries it as `board`, the dashboard's line as
+  `ready`, and a pull request entering merge now or approve first is
+  notified once per head (cause `ready`).
+
+### Changed
+
+- `announce-merge-ready.ts` asks the same predicate on top of its own gates:
+  it refuses a head the forge does not witness a review of, and words
+  approve first as "an approval is still required", updating that warning
+  when a standing announcement's lane changes at the same head.
+- `jig ask` names a converged drive's lane and act (merge now with its
+  pinned command, approve first, update next, or what settles it) in place
+  of saying the approval and the branch were not read. It reads the review
+  rules and enabled hold labels from the default branch, including away
+  from a checkout, and reports when the repository's update order cannot
+  be read. Bounded line lists include counts of omitted cards and checks.
+
+## [0.175.0] - 2026-11-09
+
+### Added
+
+- **`docs.promoted_statuses`**: the `docs` skill's scar lint scans documents whose `status` is `approved`, or any of the statuses the repository lists here (list `approved` too when both are in use), so a corpus whose lifecycle ends in another status (`active`, say) can use the lint as its gate. It is read from the configuration by the lint itself, by `/jig:docs`, and, for one run, from the `PROMOTED_STATUSES` environment variable. A repository that sets nothing scans `approved` alone, and the `OK` and `NOT SCANNED` lines read as before ([configuration](plugin/CONFIGURATION.md#procedure-skills)).
+- **Two more scar shapes**: a reviewer attribution in a table's first cell (`| Reviewer: … |`) or opening a plain paragraph (`Reviewer: …`), and a review bot's account name (`coderabbitai[bot]`, or any `…review…[bot]`). A bold tool name that heads a line (`**CodeRabbit**: …`), a reviewer named without a colon, and anything in frontmatter are not scars.
+
+### Changed
+
+- The lint's reports name the promoted statuses (`OK — no scars in approved or active docs`); with only `approved` they are unchanged. The scar lint's README now says why an allowlist entry matches a fragment of a path: `docs/review/` exempts the whole folder.
+- Resolution phrasing is matched at the opening of a list or quote item (`- Addressed: …`), with word boundaries, so prose such as `- Requests to unaddressed hosts fail.` is no longer a scar. A promoted status carries no surrounding space, and a `docs` section that is not a mapping is refused by the standalone lint too.
+
 ## [0.174.0] - 2026-11-08
 
 ### Added
@@ -6152,7 +6214,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.174.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.177.0...HEAD
+[0.177.0]: https://github.com/jig-harness/jig/compare/v0.176.0...v0.177.0
+[0.176.0]: https://github.com/jig-harness/jig/compare/v0.175.0...v0.176.0
+[0.175.0]: https://github.com/jig-harness/jig/compare/v0.174.0...v0.175.0
 [0.174.0]: https://github.com/jig-harness/jig/compare/v0.173.0...v0.174.0
 [0.173.0]: https://github.com/jig-harness/jig/compare/v0.172.0...v0.173.0
 [0.172.0]: https://github.com/jig-harness/jig/compare/v0.171.0...v0.172.0

@@ -28,6 +28,7 @@
  * their eyes.
  */
 
+import { checkWorktreeClean } from "./lib/announce-clean.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -42,6 +43,12 @@ import {
   unreadableNote,
   withdrawAnnouncement,
 } from "./lib/announce.ts";
+import { APPROVAL_WARNING } from "./lib/announce-wording.ts";
+import {
+  laneHolds,
+  readyOrWithdraw,
+  reconcileStanding,
+} from "./lib/announce-ready.ts";
 import { parsePrSnapshot } from "./lib/ci-hold.ts";
 import { ciHoldLabelSetting } from "./lib/overlay.ts";
 
@@ -53,12 +60,10 @@ import {
   ciHoldTimeoutSeconds,
   ghCall,
   git,
-  gitCallTimeoutSeconds,
   readTimeoutEnv,
   resolvePr,
   run,
   tsArgv,
-  unconcludedGitOpMarker,
 } from "./lib/proc.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -95,156 +100,6 @@ async function readLiveness(pr: string): Promise<Liveness | null> {
   } catch {
     return null;
   }
-}
-
-/**
- * Is the worktree clean, right now? Called at the up-front pass and again at
- * the last possible point before every success path this script can take —
- * never trusted from an earlier call, since real work (a comment sweep, a
- * liveness re-read, an API round-trip) sits between each of those points and
- * an edit can land in that window. `0` means confirmed clean; `1` means dirty
- * or unreadable, with the reason already on stderr — the caller returns it
- * verbatim.
- */
-async function checkWorktreeClean(reviewedHead: string): Promise<number> {
-  // Every check below answers "is the tree clean", never "is this the commit
-  // that was reviewed" — and those are different questions. If another
-  // process (a concurrent pane, a stray `git commit`) commits a new local
-  // change while this script is mid-run — there are several API round-trips
-  // between calls, and `drive.ts` similarly runs its handoff helper first —
-  // `git status` reads EMPTY (nothing uncommitted) and no unconcluded-op
-  // marker is present, so every check below would pass over local HEAD
-  // having silently moved from the reviewed commit to an unreviewed one that
-  // was never pushed.
-  // Checked first, since a HEAD mismatch makes every check below beside the
-  // point regardless of what they would have found.
-  const headTimeoutSec = gitCallTimeoutSeconds();
-  const localHeadRes = await git(["rev-parse", "HEAD"], {
-    stderr: "ignore",
-    timeoutSec: headTimeoutSec,
-  });
-  if (localHeadRes.code !== 0) {
-    console.error(
-      "announce-merge-ready: cannot read the working tree — refusing to announce",
-    );
-    console.error("without confirming nothing here is still uncommitted.");
-    return 1;
-  }
-  const localHead = localHeadRes.stdout.trim();
-  if (localHead !== reviewedHead) {
-    console.error(
-      `announce-merge-ready: local HEAD is ${localHead}, but the reviewed head is`,
-    );
-    console.error(
-      `${reviewedHead} — a commit landed here that was never pushed or reviewed.`,
-    );
-    console.error(
-      "Refusing to announce. Push it, or reset to the reviewed head, then re-run.",
-    );
-    return 1;
-  }
-
-  // A `git status --porcelain` predicate — however hardened — answers "is
-  // anything uncommitted", not "is a git operation still open": resolving a
-  // conflict back to a tree that matches what was already committed leaves
-  // `MERGE_HEAD` behind while porcelain status reports empty. Checked next,
-  // before the status call below, because a marker present makes the status
-  // answer beside the point either way.
-  const opTimeoutSec = gitCallTimeoutSeconds();
-  const op = await unconcludedGitOpMarker(opTimeoutSec);
-  if (!op.ok) {
-    console.error(
-      "announce-merge-ready: cannot read the working tree — refusing to announce",
-    );
-    console.error("without confirming nothing here is still uncommitted.");
-    return 1;
-  }
-  if (op.marker !== null) {
-    console.error(
-      `announce-merge-ready: an unconcluded git operation is present (${op.marker}) —`,
-    );
-    console.error(
-      "refusing to announce. Resolve or abort it (git merge/cherry-pick/revert --abort),",
-    );
-    console.error("then re-run.");
-    return 1;
-  }
-
-  // `--untracked-files=normal` is explicit, not decorative: `--porcelain` alone
-  // inherits `status.showUntrackedFiles` from repo or user config, and `=no`
-  // there makes a plain `git status --porcelain` report an untracked scratch
-  // file as a clean tree — silently certifying a leftover as shipped. An
-  // explicit mode overrides whatever the config says, the same way
-  // `--porcelain`'s own stable machine format is chosen over the human one
-  // regardless of `status.short`. `--ignore-submodules=none` closes the same
-  // class of bypass one level down: `submodule.<name>.ignore`/`.gitmodules` can
-  // set `ignore = all` on a tracked submodule, which makes a plain `git status`
-  // hide modifications inside it regardless of the untracked-files mode.
-  const dirtyRes = await git(
-    [
-      "status",
-      "--porcelain",
-      "--untracked-files=normal",
-      "--ignore-submodules=none",
-    ],
-    {
-      stderr: "ignore",
-      timeoutSec: gitCallTimeoutSeconds(),
-    },
-  );
-  if (dirtyRes.code !== 0) {
-    console.error(
-      "announce-merge-ready: cannot read the working tree — refusing to announce",
-    );
-    console.error("without confirming nothing here is still uncommitted.");
-    return 1;
-  }
-  if (dirtyRes.stdout !== "") {
-    console.error(
-      "announce-merge-ready: review converged, but this worktree still has uncommitted state:",
-    );
-    process.stderr.write(dirtyRes.stdout);
-    console.error(
-      "These edits shipped in no round — commit or discard them, then re-run.",
-    );
-    return 1;
-  }
-
-  // Re-read local HEAD once more, immediately before reporting clean. The check
-  // at the top of this function narrows the window a commit can land in
-  // undetected; it cannot close it, because the operation-marker and status
-  // probes above are themselves further elapsed time after that read — a commit
-  // landing in that gap leaves `git status` reporting a clean H2 while this
-  // function was about to vouch for reviewed H1. This is the same "narrows,
-  // does not close, so re-check at the latest possible point" treatment
-  // `retractStale`'s own comment describes for the analogous PR head race —
-  // applied here to the LOCAL head instead.
-  const finalHeadRes = await git(["rev-parse", "HEAD"], {
-    stderr: "ignore",
-    timeoutSec: headTimeoutSec,
-  });
-  if (finalHeadRes.code !== 0) {
-    console.error(
-      "announce-merge-ready: cannot read the working tree — refusing to announce",
-    );
-    console.error("without confirming nothing here is still uncommitted.");
-    return 1;
-  }
-  const finalHead = finalHeadRes.stdout.trim();
-  if (finalHead !== reviewedHead) {
-    console.error(
-      `announce-merge-ready: local HEAD is ${finalHead}, but the reviewed head is`,
-    );
-    console.error(
-      `${reviewedHead} — a commit landed here during this check that was never pushed`,
-    );
-    console.error(
-      "or reviewed. Refusing to announce. Push it, or reset to the reviewed head,",
-    );
-    console.error("then re-run.");
-    return 1;
-  }
-  return 0;
 }
 
 /** Stop over trusted announcements that name no head: none can be told from a standing one, so none is guessed at. */
@@ -663,24 +518,10 @@ async function main(): Promise<number> {
     return rc === 5 ? 5 : rc === 0 ? 0 : 1;
   }
 
-  // CONVERGED is a claim about the posting reviewer, which reviews drafts — it
-  // says nothing about CodeRabbit, which refuses one outright (§ Drafts are
-  // driven, SKILL.md). A still-draft PR reaching here is exactly the false
-  // terminal `drive.ts` itself now refuses to report as exit 0 (the same gap
-  // one script over): announcing "safe to merge" about a PR CodeRabbit has
-  // never seen, and by repo policy never will until a human or a drive marks it
-  // Ready, is the claim this script exists to avoid overstating.
-  //
-  // Handled by `checkLiveState()` below, not a bespoke up-front check here —
-  // there used to be one, keyed on `status.draft` from the `drive-status.ts`
-  // read at the top of this function. Moving it after `existingIds` fixed the
-  // missing withdrawal but not the deeper problem: `status` is
-  // captured before the comment sweep and worktree checks that follow it, all
-  // real elapsed time, so a human marking the PR Ready in that exact window
-  // left `status.draft` stale — true when the announcement it was about to
-  // delete had already become valid again. `checkLiveState()` is the fresh read
-  // this needs, and it already runs next — folding this case into it rather
-  // than keeping a second, worse copy of the same question.
+  // CONVERGED is a claim about the posting reviewer, which reviews drafts; a
+  // reviewer that skips drafts has not seen one, so a draft is refused here.
+  // `checkLiveState()` re-reads `isDraft` each time it runs, since a person
+  // can mark the PR Ready or draft again while the checks below run.
   //
   // Re-read the head + mergeability now, BEFORE deciding "nothing to do" — not
   // just before posting. The CONVERGED gate above is a mergeability gate too
@@ -916,6 +757,9 @@ async function main(): Promise<number> {
   if (liveRc !== 0) {
     return await withdrawIfConfirmedStale(liveRc);
   }
+  // The Ready predicate adds the forge's protection and review requirements.
+  const forge = await readyOrWithdraw(pr, head, dryRun ? [] : existingIds);
+  if (forge.rc !== 0) return forge.rc;
 
   if (existingIds.length > 0) {
     // Re-confirm at the LAST moment before reporting success — with
@@ -943,6 +787,10 @@ async function main(): Promise<number> {
     const lateFinalCiRc = await confirmFinalCi(existingIds);
     if (lateFinalCiRc !== 0) return lateFinalCiRc;
 
+    const wordingRc = await reconcileStanding(pr, head, existingIds, dryRun);
+    if (wordingRc !== 0) return wordingRc;
+    const reconciledCleanRc = await checkWorktreeClean(head);
+    if (reconciledCleanRc !== 0) return reconciledCleanRc;
     console.error(
       `announce-merge-ready: already announced for ${head} — nothing to do`,
     );
@@ -992,7 +840,7 @@ ${reviewerEvidence}
 The reasoning for every answer is in its own outcome comment on this PR; that is
 the artefact to read back if a finding matters.
 
-Merging it remains a human decision — unless the repository marks Ready
+${forge.lane === "approve-first" ? APPROVAL_WARNING : ""}Merging it remains a human decision — unless the repository marks Ready
 never, the driver marks a converged PR Ready for review itself (after the
 round the repository declares, or here if it converged before reaching it),
 so this is the driver reporting that it has nothing left to do, not an
@@ -1020,12 +868,17 @@ ${marker}`;
     rc: number;
     failed: "state" | "tree" | "ci" | null;
   }> {
-    const liveRc = await checkLiveState();
-    if (liveRc !== 0) return { rc: liveRc, failed: "state" };
-    const cleanRc = await checkWorktreeClean(head);
-    if (cleanRc !== 0) return { rc: cleanRc, failed: "tree" };
-    const ciRc = await confirmFinalCi();
-    return { rc: ciRc, failed: ciRc === 0 ? null : "ci" };
+    const checks = [
+      ["state", checkLiveState],
+      ["state", () => laneHolds(pr, head, forge.lane)],
+      ["tree", () => checkWorktreeClean(head)],
+      ["ci", () => confirmFinalCi()],
+    ] as const;
+    for (const [failed, check] of checks) {
+      const rc = await check();
+      if (rc !== 0) return { rc, failed };
+    }
+    return { rc: 0, failed: null };
   }
 
   if (dryRun) {
@@ -1184,7 +1037,9 @@ ${marker}`;
     if (raceCleanRc !== 0) return raceCleanRc;
     const raceFinalCiRc = await confirmFinalCi([lowest]);
     if (raceFinalCiRc !== 0) return raceFinalCiRc;
-    return 0;
+    const raceWordingRc = await reconcileStanding(pr, head, [lowest], false);
+    if (raceWordingRc !== 0) return raceWordingRc;
+    return await checkWorktreeClean(head);
   }
   if (!back.ok) {
     console.error(

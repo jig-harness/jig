@@ -8,6 +8,7 @@ import type {
   FacetStoreReport,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
+import type { BoardRead } from "./board.ts";
 import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
@@ -254,7 +255,8 @@ export type NotifyCause =
   | "followup-failed"
   | "followup-stale"
   | "drifting"
-  | "nudge-unanswered";
+  | "nudge-unanswered"
+  | "ready";
 
 /** A follow-up claim past `followup_stale_after` with no done mark and no session joined to it: the marker the tick releases, and whose claim it was. */
 export interface StaleClaim {
@@ -476,6 +478,7 @@ export type RepoPhase =
   | "claims"
   | "runtime"
   | "observe"
+  | "board"
   | "plan"
   | "log"
   | "apply"
@@ -547,6 +550,8 @@ export interface RepoReport {
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */
   serialized?: SerialReport;
+  /** The board read's part: its converged pull requests placed in Ready to merge or wherever their reason says, or why it did not read; absent when it did not run. */
+  board?: BoardRead;
   /** The shared records' part: which host owns the repository, and each read and write this tick made. */
   shared?: SharedReport;
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */
