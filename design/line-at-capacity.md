@@ -57,7 +57,7 @@ beside them, never a replacement.
 | Memory       | `MemAvailable` in `/proc/meminfo` on Linux, the free memory the platform reports on Windows; not read on macOS, whose free pages count reclaimable caches as used (the resource lock's reading, `plugin/shared/host-load.ts`) | 15% of the total kept free after the launch's reservation                         |
 | Processors   | the 1-minute load average divided by the cores (`os.loadavg`, `os.availableParallelism`)                                                                                                                                      | `load_per_core`: 0.9; not read on Windows, which has no load average              |
 | Test lock    | the holders of the machine-wide resource lock's slots (`plugin/shared/resource-lock.ts`) and the runs that announce beside it that they wait for one                                                                          | `lock_waiters`: 2 waiters; no new pickup or drive pass                            |
-| Disk         | free space on the filesystems that hold the running workspaces and the repositories, the least of them (`statfs`)                                                                                                             | `disk_free_gb`: 10 GB                                                             |
+| Disk         | free space on the filesystems that hold the running workspaces and the repositories, the least of them (`statfs`)                                                                                                             | `disk_free_gb`: 10 GiB                                                            |
 | Forge budget | the rate limit the tick already reads at its start                                                                                                                                                                            | the tenth of the core limit below which the tick already skips its optional reads |
 | Accounts     | free slots and walls, as today                                                                                                                                                                                                | no free slot                                                                      |
 
@@ -71,7 +71,7 @@ each of its sessions' workspaces (Linux shows a process's working directory
 under `/proc`; elsewhere the defaults stand), and records one sample per
 running workspace per tick and kind. A kind's reservation becomes the 90th percentile
 of its recent samples once it has enough. Until then the defaults hold: a
-pickup 2 GB, a drive pass 1.5 GB, a follow-up or a steward pass 1 GB. The
+pickup 2 GiB, a drive pass 1.5 GiB, a follow-up or a steward pass 1 GiB. The
 samples are the one thing the load factor keeps between ticks, in the
 dispatcher's state database beside its launch records.
 
@@ -83,7 +83,7 @@ one rule: **a new pickup keeps room for a drive or follow-up.** After a
 pickup, the remaining memory above the free-memory floor must fit the
 larger reservation of the drive and follow-up kinds, whether either is
 currently waiting or not. With the initial defaults, that reserve is
-1.5 GB. Other gauges must also permit one launch of either protected kind
+1.5 GiB. Other gauges must also permit one launch of either protected kind
 after the pickup; if a gauge cannot express that reservation, it must at
 least remain below its line. The accounts' gauge expresses it as a slot: a
 pickup leaves one account slot free. New work therefore
@@ -288,7 +288,7 @@ tier.
 | Field                                                                              | Where        | Default                                                            |
 | ---------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------ |
 | `load.enforce`                                                                     | machine file | `false`: the tick reports what it would hold and holds nothing     |
-| `load.memory_free`, `load.load_per_core`, `load.lock_waiters`, `load.disk_free_gb` | machine file | 15%, 0.9, 2, 10 GB                                                 |
+| `load.memory_free`, `load.load_per_core`, `load.lock_waiters`, `load.disk_free_gb` | machine file | 15%, 0.9, 2, 10 GiB                                                |
 | `serve[]`                                                                          | machine file | none: only the factory identity's items are picked up              |
 | `steward.enabled`, `steward.every`                                                 | machine file | off; `20m`                                                         |
 | `dispatch.pickup_deadline`                                                         | repository   | `3h`                                                               |
