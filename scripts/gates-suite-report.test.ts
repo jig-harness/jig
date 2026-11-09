@@ -5,6 +5,10 @@ import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 
 const root = resolve(import.meta.dir, "..");
 
+function usesRawBunTest(command: string): boolean {
+  return /\bbun(?:\s+--\S+)*\s+test\b/.test(command);
+}
+
 test("every CI suite uses the reporting runner and its executed-test check", () => {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   expect(pkg.scripts.test).toBe("bun scripts/test.ts");
@@ -18,10 +22,20 @@ test("every CI suite uses the reporting runner and its executed-test check", () 
     ) as {
       jobs: Record<string, { steps?: { run?: string }[] }>;
     };
-    // `bun test` bypasses both the fresh report and the tripwire. The suite
-    // contracts in gates.test.ts pin selections and complete shard sets.
+    // Direct Bun test commands bypass the fresh report and the tripwire. The
+    // suite contracts in gates.test.ts pin selections and complete shard sets.
     for (const job of Object.values(workflow.jobs))
       for (const step of job.steps ?? [])
-        expect(step.run ?? "").not.toMatch(/\bbun test\b/);
+        expect(usesRawBunTest(step.run ?? "")).toBeFalse();
   }
+});
+
+test("the suite-runner contract rejects raw Bun spellings", () => {
+  for (const command of [
+    "bun test scripts/gates.test.ts",
+    "bun  test scripts/gates.test.ts",
+    "bun --no-env-file test scripts/gates.test.ts",
+  ])
+    expect(usesRawBunTest(command)).toBeTrue();
+  expect(usesRawBunTest("bun run test scripts/gates.test.ts")).toBeFalse();
 });
