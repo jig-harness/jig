@@ -249,10 +249,10 @@ to waiting.
 The dispatcher admits work by account slots alone, so a host with room to
 spare idles and one near its limit takes one more session; nothing measures
 memory, the processors, the disk or the machine-wide test lock every gate
-run queues on. Pickups serve the factory identity and the people a host is
-configured to serve, including on Orca through account-bound headless passes.
-The stops that reach a person mix real decisions with stops an agent could
-recover.
+run queues on. Pickups currently serve only the factory identity, including
+on Orca through account-bound headless passes; serving people a host is
+configured to serve remains step 7. The stops that reach a person mix real
+decisions with stops an agent could recover.
 [design/line-at-capacity.md](line-at-capacity.md) has how it works: each
 tick reads the host's gauges and computes the **load factor**, the fullest
 gauge's fill, starting a launch only while every gauge stays under its line

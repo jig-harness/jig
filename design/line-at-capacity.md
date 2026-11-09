@@ -7,12 +7,12 @@ account [slots](../GLOSSARY.md) alone, two per account by default, and
 nothing measures the host: memory, the processors, the disk, and the
 machine-wide test lock every `bun run gates` queues on. A host with room to
 spare idles, and a host near its limit takes one more session and slows
-every drive on it. Pickups serve a repository's
-[factory identity](../GLOSSARY.md) and the people the host is configured to
-serve. On Orca, account-bound headless passes start those pickups without an
-interactive session. And the stops that reach a person mix real decisions
-with stops an agent could have recovered: a second stop at the same change,
-a spent
+every drive on it. Pickups currently serve only a repository's
+[factory identity](../GLOSSARY.md). On Orca, account-bound headless passes
+start those pickups without an interactive session; serving people the host
+is configured to serve remains step 7 below. And the stops that reach a
+person mix real decisions with stops an agent could have recovered: a second
+stop at the same change, a spent
 [recovery budget](../GLOSSARY.md), an exit no rule re-drives. With this
 built, each tick measures the host and starts work while every gauge stays
 under its line, picks up the work assigned to the people the host serves
