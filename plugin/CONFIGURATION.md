@@ -1516,6 +1516,7 @@ review:
     - login: example-linter[bot]
       shape: badge                       # bold-token | badge | html-badge | pipe-fields | icon-fields
       severities: { Sev1: blocker, Sev2: high, Sev3: medium, Sev4: low }
+  code_scanning_severities: { critical: blocker, high: high, medium: medium, low: low, error: high, warning: medium, note: low }
   lenses:
     dir: .config/review-lenses           # the repository's own lens files
     off: [LENS-004]                      # lenses not to run

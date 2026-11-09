@@ -118,6 +118,8 @@ out() { if [ -n "$filter" ]; then printf '%s' "$1" | jq -r "$filter"; else print
 tid=""
 for a in "$@"; do case "$a" in threadId=*) tid="\${a#threadId=}" ;; esac; done
 case "$*" in
+  *'viewer { login }'*'comments(first:100'*)
+    out "{\\"data\\":{\\"viewer\\":{\\"login\\":\\"example-user\\"},\\"node\\":{\\"id\\":\\"$tid\\",\\"comments\\":{\\"nodes\\":[{\\"author\\":{\\"login\\":\\"reviewer\\"},\\"createdAt\\":\\"2026-01-01T00:00:00Z\\"},{\\"author\\":{\\"login\\":\\"example-user\\"},\\"createdAt\\":\\"2026-01-01T00:01:00Z\\"}],\\"pageInfo\\":{\\"hasNextPage\\":false,\\"endCursor\\":null}}}}}"; exit 0 ;;
   *resolveReviewThread*)
     printf '%s\\n' "$tid" >> "$F/resolved.txt"
     out '{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}'; exit 0 ;;

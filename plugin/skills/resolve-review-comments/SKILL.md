@@ -673,6 +673,13 @@ bun "${CLAUDE_SKILL_DIR}/scripts/resolve-thread.ts" <thread-node-id>
 ```
 
 An accepted fix that fails formatting, types, tests, or build is not a fix yet.
+`resolve-thread.ts` exits `6` (`REPLY_REQUIRED`) unless the resolving login
+posted a reply after the last substantive reviewer comment. With `drive-pr`
+installed, the canonical transparent bot confirmation or chat acknowledgement
+after that reply does not require another answer; without it, every later
+reviewer comment requires a fresh reply. Unreadable reply evidence exits
+`1`; neither exit resolves the thread. This checks the script's caller only:
+direct forge mutations remain outside this guard.
 Resolving its thread here closes the one place the finding was tracked, and a
 converged-looking PR can then carry broken code. The same risk applies to a
 `moot` thread whose only reason is an unpushed sibling fix in this round: if

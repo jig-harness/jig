@@ -1878,17 +1878,17 @@ case "\${1:-}" in
   *) echo "gh-stub: unhandled command $*" >&2; exit 1 ;;
 esac
 
-# The resolveReviewThread mutation, discriminated from an ordinary thread-list
-# graphql query by name (it appears in the \`-f query=...\` string). Answered
-# with a REAL success shape rather than falling through to threads.json (whose
-# \`.data.resolveReviewThread...\` path is simply absent) so a probe can assert
-# the wrapper's \`exec\` handoff actually reached the mutation, and WHICH thread
-# id it carried — recorded to \`resolved-threads.jsonl\` for exactly that.
-#
-# $F/resolve-thread-fails models the mutation itself failing (a stalled
-# connection, a transient GraphQL error) AFTER resolve-held-thread.ts has
-# already atomically claimed the held item — the one failure mode that needs a
-# restore, since every check ahead of the claim is read-only.
+# Resolution probes start after a reply was posted by the resolving login.
+# Keep that prerequisite separate from node-read race counters below.
+if [[ "$query" == *"viewer { login }"* ]]; then
+  tid=""
+  for a in "$@"; do case "$a" in threadId=*) tid="\${a#threadId=}" ;; esac; done
+  printf '{"data":{"viewer":{"login":"example-user-2"},"node":{"id":"%s","comments":{"nodes":[{"author":{"login":"example-review[bot]"},"createdAt":"2026-09-10T10:00:00Z"},{"author":{"login":"example-user-2"},"createdAt":"2026-09-10T10:01:00Z"}],"pageInfo":{"hasNextPage":false}}}}}' "$tid"
+  exit 0
+fi
+
+# Record real resolve mutations; resolve-thread-fails models failure after
+# the held item was claimed, when restore is required.
 # The review skill reads the owning PR's liveness immediately before every
 # thread mutation. Answered from the same pr-view.json fixture the PR reads use.
 for a in "$@"; do

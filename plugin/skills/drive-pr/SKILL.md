@@ -1885,8 +1885,8 @@ declines the finding.
 bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts" --severity <blocker|high|medium|low|unknown> --tier <tier> --category <token|unknown> --self-inflicted <true|false|unknown> --pr <PR> --key <threadId|fingerprint> [--obligatory]
 ```
 
-The command records its verdict in the drive state. `drive-state.ts hold`
-refuses an accepted hold without that key's accepting verdict for the current
+The command records its verdict in the drive state. The `hold` operation of
+`drive-state.ts` refuses an accepted hold without that key's accepting verdict for the current
 round (exit 2). A `--round` calculation records nothing. Crash recovery may
 record an existing reply with `--unconfirmed` at round -1; it cannot be
 stamped or released until a live re-hold passes the ladder check.

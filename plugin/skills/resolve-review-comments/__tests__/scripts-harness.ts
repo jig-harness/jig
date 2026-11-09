@@ -325,6 +325,10 @@ case "$1 $2" in
     esac ;;
   "api graphql")
     case "$*" in
+      *'viewer { login }'*'comments(first:100'*)
+        if [[ "$*" == *'cursor=next'* ]] && [ -f "$FIX/reply-evidence-next.json" ]; then cat "$FIX/reply-evidence-next.json"
+        elif [ -f "$FIX/reply-evidence.json" ]; then cat "$FIX/reply-evidence.json"
+        else echo '{"data":{"viewer":{"login":"operator"},"node":{"id":"PRRT_x","comments":{"nodes":[{"author":{"login":"review-bot[bot]"},"createdAt":"2026-01-01T00:00:00Z"},{"author":{"login":"operator"},"createdAt":"2026-01-01T00:01:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}'; fi ;;
       *"query=query("*"threadId:ID!)"*)
         echo liveness >> "$FIX/thread-events.log"
         echo "$*" >> "$FIX/liveness-calls.log"

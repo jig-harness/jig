@@ -1,4 +1,6 @@
+import { scopedStateDir } from "./scoped-state-dir.ts";
 import { createThreadWorktree } from "./thread-worktree-fixture.ts";
+import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 /**
  * reconcile-replied-threads.test.ts
  *
@@ -161,6 +163,11 @@ emit() {
 
 for a in "$@"; do
   case "$a" in
+    *'viewer { login }'*'comments(first:100'*)
+      tid=""
+      for b in "$@"; do case "$b" in threadId=*) tid="\${b#threadId=}" ;; esac; done
+      printf '{"data":{"viewer":{"login":"operator"},"node":{"id":"%s","comments":{"nodes":[{"author":{"login":"reviewer"},"createdAt":"2026-01-01T00:00:00Z"},{"author":{"login":"operator"},"createdAt":"2026-01-01T00:01:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}' "$tid"
+      exit 0 ;;
     *"pullRequest { number state }"*)
       # The review skill reads the owning PR's liveness immediately before
       # every thread mutation; every fixture PR here is open.
@@ -407,6 +414,32 @@ function writeMutationWrapper(dir: string, deleteAssociation: string): string {
     ].join("\n"),
   );
   return wrapperPath;
+}
+
+/** Seed completed triage and require the accepted-hold setup to succeed. */
+function holdAccepted(stateDir: string, key: string, commentUrl: string): void {
+  seedAcceptedLadder(scopedStateDir(stateDir, scratchWorktree), key);
+  const seeded = Bun.spawnSync(
+    [
+      process.execPath,
+      DRIVE_STATE,
+      "hold",
+      "999",
+      "--key",
+      key,
+      "--kind",
+      "thread",
+      "--outcome",
+      "accepted",
+      "--comment-url",
+      commentUrl,
+    ],
+    {
+      cwd: scratchWorktree,
+      env: { ...scrubbedGitEnv(), DRIVE_PR_STATE_DIR: stateDir },
+    },
+  );
+  expectSpawnExit(seeded, 0);
 }
 
 function heldKeys(stateDir: string): string {
@@ -745,26 +778,7 @@ describe("reconcile-replied-threads.ts", () => {
     ]);
     const existingUrl =
       "https://example.invalid/PRRT_accepted_with_marker_text/comment-0";
-    Bun.spawnSync(
-      [
-        process.execPath,
-        DRIVE_STATE,
-        "hold",
-        "999",
-        "--key",
-        "PRRT_accepted_with_marker_text",
-        "--kind",
-        "thread",
-        "--outcome",
-        "accepted",
-        "--comment-url",
-        existingUrl,
-      ],
-      {
-        cwd: scratchWorktree,
-        env: { ...scrubbedGitEnv(), DRIVE_PR_STATE_DIR: stateDir },
-      },
-    );
+    holdAccepted(stateDir, "PRRT_accepted_with_marker_text", existingUrl);
     expect(heldKeys(stateDir)).toBe("PRRT_accepted_with_marker_text");
 
     const { stdout, exitCode } = run(["999"], dir, stateDir);
@@ -799,25 +813,10 @@ describe("reconcile-replied-threads.ts", () => {
         ],
       },
     ]);
-    Bun.spawnSync(
-      [
-        process.execPath,
-        DRIVE_STATE,
-        "hold",
-        "999",
-        "--key",
-        "PRRT_leaveopen_stale_hold",
-        "--kind",
-        "thread",
-        "--outcome",
-        "accepted",
-        "--comment-url",
-        "https://example.invalid/PRRT_leaveopen_stale_hold/comment-0",
-      ],
-      {
-        cwd: scratchWorktree,
-        env: { ...scrubbedGitEnv(), DRIVE_PR_STATE_DIR: stateDir },
-      },
+    holdAccepted(
+      stateDir,
+      "PRRT_leaveopen_stale_hold",
+      "https://example.invalid/PRRT_leaveopen_stale_hold/comment-0",
     );
     expect(heldKeys(stateDir)).toBe("PRRT_leaveopen_stale_hold");
 
@@ -1128,29 +1127,10 @@ describe("reconcile-replied-threads.ts", () => {
     // matches the fixture's own generated url for comment index 0 (the
     // accepted reply above) — the exact identity this pass's cleanup must
     // recognise as accounted-for.
-    Bun.spawnSync(
-      [
-        process.execPath,
-        DRIVE_STATE,
-        "hold",
-        "999",
-        "--key",
-        "PRRT_flip_to_rejected",
-        "--kind",
-        "thread",
-        "--outcome",
-        "accepted",
-        "--comment-url",
-        "https://example.invalid/PRRT_flip_to_rejected/comment-0",
-      ],
-      // Same scratch cwd as every other spawn here: the hold's recorded
-      // actor derives from the git worktree it runs in, and a hold taken
-      // from a DIFFERENT worktree than the reconcile pass would (correctly)
-      // not be this pass's to release — which is not what this test models.
-      {
-        cwd: scratchWorktree,
-        env: { ...scrubbedGitEnv(), DRIVE_PR_STATE_DIR: stateDir },
-      },
+    holdAccepted(
+      stateDir,
+      "PRRT_flip_to_rejected",
+      "https://example.invalid/PRRT_flip_to_rejected/comment-0",
     );
     expect(heldKeys(stateDir)).toBe("PRRT_flip_to_rejected");
 
@@ -1184,27 +1164,10 @@ describe("reconcile-replied-threads.ts", () => {
         ],
       },
     ]);
-    Bun.spawnSync(
-      [
-        process.execPath,
-        DRIVE_STATE,
-        "hold",
-        "999",
-        "--key",
-        "PRRT_unaccounted_hold",
-        "--kind",
-        "thread",
-        "--outcome",
-        "accepted",
-        "--comment-url",
-        "https://example.invalid/a-reply-this-pass-never-saw",
-      ],
-      // Scratch cwd for actor-identity consistency — see the flip-to-rejected
-      // test above. This test's point is URL identity, not actor identity.
-      {
-        cwd: scratchWorktree,
-        env: { ...scrubbedGitEnv(), DRIVE_PR_STATE_DIR: stateDir },
-      },
+    holdAccepted(
+      stateDir,
+      "PRRT_unaccounted_hold",
+      "https://example.invalid/a-reply-this-pass-never-saw",
     );
     expect(heldKeys(stateDir)).toBe("PRRT_unaccounted_hold");
 

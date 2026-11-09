@@ -26,6 +26,17 @@ state, including in standalone installs. This is a check immediately before a
 write, not atomic protection: a merge between the read and mutation remains
 possible. The caller performing a push owns its separate liveness check.
 
+Thread resolution also requires a reply from the resolving login after the
+latest substantive reviewer comment. When `drive-pr` is installed, its canonical
+transparent bot confirmations and acknowledgements after that reply do not
+require another answer; a standalone install treats every later reviewer post
+as substantive. `resolve-thread.ts` refuses with exit `6`
+(`REPLY_REQUIRED`) when that reply is missing, and exit `1` when its evidence
+cannot be read. A direct forge mutation remains outside this script's guard.
+
+With a configured reviewer, the review loop waits for its successful check
+and reviewed-commit marker on the current head before reporting convergence.
+
 ## Outcomes
 
 Every thread ends with exactly one of the outcomes below, and the reply that

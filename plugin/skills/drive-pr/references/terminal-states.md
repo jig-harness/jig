@@ -7,6 +7,13 @@ count alone — which measured failure each guard exists to prevent.
 
 ## Exit codes
 
+The thread-resolution helper has a separate refusal: `resolve-thread.ts`
+exits `6` (`REPLY_REQUIRED`) when the resolving login has no reply after the
+last substantive reviewer comment, and `1` when that evidence cannot be read.
+With the sibling drive installed, its canonical transparent bot follow-ups
+after that reply require no further answer; standalone installs stay strict. Neither
+resolves the thread. These helper exits are not drive terminal states.
+
 `drive-status.ts` and `drive.ts` share one numbering, so a caller never parses
 prose to know what happened. `drive.ts` maps a converged drive to `0` (a
 successful run) — after certifying its own working tree is clean, since exit

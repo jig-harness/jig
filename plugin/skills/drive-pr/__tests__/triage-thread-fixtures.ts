@@ -72,6 +72,11 @@ set -euo pipefail
 ) || exit $?
 F="\${TRT_FIXTURES:?fixture dir not set}"
 case "$*" in
+  *'viewer { login }'*'comments(first:100'*)
+    tid=""
+    for b in "$@"; do case "$b" in threadId=*) tid="\${b#threadId=}" ;; esac; done
+    printf '{"data":{"viewer":{"login":"operator"},"node":{"id":"%s","comments":{"nodes":[{"author":{"login":"reviewer"},"createdAt":"2026-01-01T00:00:00Z"},{"author":{"login":"operator"},"createdAt":"2026-01-01T00:01:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}' "$tid"
+    exit 0 ;;
   *"pullRequest { number state }"*)
     # The review skill reads the owning PR's liveness immediately before
     # every thread mutation; the fixture PR is open.
