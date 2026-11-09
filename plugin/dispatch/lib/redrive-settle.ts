@@ -1,7 +1,8 @@
 /**
  * The stale ledgers a re-drive settles once per change, after which a
  * person does: a stop on a conflict, an unclean tree, a stall, a spent CI-repair budget, a
- * pass deadline, a failure on a conflicting pull request. This machine's
+ * pass deadline, a failure on a conflicting pull request, and, once per stop
+ * after its backoff, an infrastructure failure that persisted. This machine's
  * launch records settle them in `actions/drive-hold.ts`, another host's
  * launch claims in `shared-launches.ts`, both in these words.
  */
@@ -11,7 +12,8 @@ import type { DrivenPr, StaleCause } from "./types.ts";
 /**
  * Whether a stale ledger is re-driven once per change and then a person's:
  * a stop on a conflict, an unclean tree, a stall, a spent CI-repair budget, a pass deadline,
- * a failure on a conflicting pull request. A converged one is only reported
+ * an infrastructure failure that persisted, a failure on a conflicting pull
+ * request. A converged one is only reported
  * once re-driven.
  */
 export function settlesWithPerson(stale: StaleCause | undefined): boolean {
