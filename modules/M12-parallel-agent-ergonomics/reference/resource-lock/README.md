@@ -1,22 +1,26 @@
 # Resource lock
 
-Serialize a heavy command across [worktrees](../../../../GLOSSARY.md) so several
-agents on one machine don't run full build-and-test passes at the same time and
-thrash the machine. `with-resource-lock.ts` runs your command under a named,
-machine-wide lock: one holder runs, the rest wait their turn.
+Bound a heavy command across [worktrees](../../../../GLOSSARY.md) so several
+agents on one machine don't run more full build-and-test passes at once than
+the machine can carry. `with-resource-lock.ts` runs your command under a named,
+machine-wide lock: as many holders run as the machine has room for, the rest
+wait their turn.
 
-Without it, three agents each launching `test` at once triple the load; every
+Without it, ten agents each launching `test` at once multiply the load; every
 run slows down, caches fight, and flaky timeouts appear that no single change
-explains. With it, the runs queue and each gets a clean machine.
+explains. A lock that lets one run at a time fixes that, but on a large machine
+it leaves most of the cores idle while every other run queues behind one. With
+[load admission](../../../../GLOSSARY.md), a run starts while the machine has room
+for one more and waits otherwise.
 
 ## Why ownership is recorded atomically
 
 The lock is a **symlink whose target is the holder's process id**. Creating a
 symlink is **atomic** on [POSIX](../../../../GLOSSARY.md) and fails if the name
 already exists: if two processes race, exactly one atomic symlink creation
-succeeds. Crucially, because the target *is* the pid, the lock and its owner-identity are recorded in
+succeeds. Crucially, because the target _is_ the pid, the lock and its owner-identity are recorded in
 the **same atomic step** — there is no "won the lock but hasn't written its owner
-yet" window. (A `mkdir` directory plus a separate pid file *does* have that
+yet" window. (A `mkdir` directory plus a separate pid file _does_ have that
 window: a holder paused between the two leaves an ownerless lock another process
 could steal, breaking mutual exclusion.) If a holder crashes, the next contender
 reads the symlink target, sees that pid is gone from the process table, and
@@ -35,21 +39,74 @@ as a native local Windows filesystem does.
 ```sh
 bun with-resource-lock.ts pnpm test                 # lock "heavy" (default)
 LOCK_NAME=build bun with-resource-lock.ts make build
-bun with-resource-lock.ts --lock e2e -- ./run-e2e.sh
+LOCK_SLOTS=1 bun with-resource-lock.ts --lock e2e -- ./run-e2e.sh   # one at a time: a shared test database
 ```
 
-| Setting | Via | Default | Meaning |
-|---------|-----|---------|---------|
-| lock name | `LOCK_NAME` or `--lock NAME` | `heavy` | which lock to contend on; distinct names run concurrently |
-| `LOCK_TIMEOUT` | env | `60` | whole seconds to wait for the lock before giving up (0 to 604800) |
-| `LOCK_POLL` | env | `0.2` | poll interval while waiting, in seconds (0.001 to 3600; anything else is rejected). The last sleep is shortened so the wait never exceeds `LOCK_TIMEOUT` |
-| `LOCK_ROOT` | env | `${TMPDIR:-/tmp}` | where the lock lives; a machine-global path is what makes it cross-worktree |
+| Setting             | Via                          | Default                                 | Meaning                                                                                                                                                                                                                                                   |
+| ------------------- | ---------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| lock name           | `LOCK_NAME` or `--lock NAME` | `heavy`                                 | which lock to contend on; distinct names run concurrently                                                                                                                                                                                                 |
+| `LOCK_TIMEOUT`      | env                          | `60`                                    | whole seconds to wait for the lock before giving up (0 to 604800)                                                                                                                                                                                         |
+| `LOCK_POLL`         | env                          | `0.2`                                   | poll interval while waiting, in seconds (0.001 to 3600; anything else is rejected). With several slots it is the shortest pause between sweeps, which otherwise last 2 to 5 seconds. The last sleep is shortened so the wait never exceeds `LOCK_TIMEOUT` |
+| `LOCK_ROOT`         | env                          | `${TMPDIR:-/tmp}`                       | where the lock lives; a machine-global path is what makes it cross-worktree                                                                                                                                                                               |
+| `LOCK_SLOTS`        | env                          | `64`, or `8` with `LOCK_STATIC_SLOTS=1` | the most runs that may hold the lock at once (1 to 64). `1` makes it a plain mutex, as it was before slots                                                                                                                                                |
+| `LOCK_STATIC_SLOTS` | env                          | `0`                                     | `1` admits up to `LOCK_SLOTS` runs whatever the load                                                                                                                                                                                                      |
+| `LOCK_TARGET_UTIL`  | env                          | `0.85`                                  | the share of the cores the predicted load must stay under (above 0, at most 4)                                                                                                                                                                            |
+| `LOCK_RUN_COST`     | env                          | `4`                                     | the load one run adds; set it to the command's parallelism (above 0)                                                                                                                                                                                      |
+| `LOCK_MIN_MEM_GB`   | env                          | `8`                                     | the available memory, in gigabytes (1024³ bytes), that must remain for one more run to start                                                                                                                                                              |
+| exclusive           | `--exclusive`                | off                                     | wait for every slot, hold them all, and hold back new runs meanwhile                                                                                                                                                                                      |
 
-Behaviour: acquire the lock (waiting up to `LOCK_TIMEOUT`), run the command,
-release the lock on exit; interrupt and termination signals are forwarded to
+Behaviour: acquire a slot of the lock (waiting up to `LOCK_TIMEOUT`), run the
+command, release the slot on exit; a run that waits says what it waits on and
+who holds the slots, again when that changes, and how long it waited once it
+starts; interrupt and termination signals are forwarded to
 the child, and a crashed holder is reclaimed on the next acquisition. Exit
 codes: the **command's own** exit code on success; `2` on a usage error; `3` if
 the lock couldn't be acquired in time.
+
+## Slots and load admission
+
+Slot 0 is the lock's own name, `jig-lock.<name>`: an earlier version of this
+script knows only that name, so it still excludes and queues with this one.
+Slots 1 and up are `jig-lock.<name>-slot-<n>`, each the same atomic
+process-id lock. A waiter takes a free slot 0 at once. For any other slot it
+first asks whether the machine has room for one more run:
+
+- the **predicted load**, the one-minute load average plus `LOCK_RUN_COST`
+  for each run that took its slot in the last minute (the average has not
+  caught up with those yet), plus one more run's cost, must stay under the
+  cores times `LOCK_TARGET_UTIL`;
+- the **available memory** must stay above `LOCK_MIN_MEM_GB`;
+- the **first run** is always admitted, so the queue always moves.
+
+The check and the sweep that follows it run under a short admission lock
+(`jig-lock.<name>.admission`), so each new holder is counted before the next
+waiter decides. A waiter sweeps the slots without blocking and takes the first
+free one, with a jittered pause of 2 to 5 seconds between sweeps so waiters do
+not move in step. A slot whose holder's process id answers is skipped without
+the identity check, and a slot whose holder's process id is gone is reclaimed
+at once; every tenth sweep also judges each answering holder by its identity,
+which catches a process id the system has since given to another process.
+
+Only an explicit denial keeps a waiter waiting. A reading of the host that
+fails admits, and `LOCK_SLOTS` then bounds the runs, so a broken reading never
+wedges the queue. Waiting sweeps rather than queues, so waiters are not
+admitted in arrival order. The admission lock makes each check and the take
+after it one step, so only a free slot 0, which needs no check, can start a
+run the load would have refused; counting the runs of the last minute at their
+full cost keeps the next check from repeating it. The host reading and the admission
+rule are `plugin/shared/host-load.ts`, which every Jig mechanism that asks
+whether the host can take one more run reads.
+
+**Exclusive holders.** A holder that needs the machine to itself runs with
+`--exclusive`. It announces itself (`jig-lock.<name>.exclusive`), which stops
+new runs from taking any slot, then takes every slot the lock can have, 0 to
+63, in that order, waiting for each run that holds one to finish. It holds them
+all while its command runs. Exclusive holders queue on the announcement, so two
+never deadlock on the slots. One that cannot take every slot within
+`LOCK_TIMEOUT` releases what it took and exits `3`. While it waits, every
+new run on the machine waits too, so a run that hangs in any slot holds back
+the machine until the exclusive holder's `LOCK_TIMEOUT` runs out: give an
+exclusive holder a wait no longer than the runs behind it can afford.
 
 ## CI bypass
 
@@ -77,7 +134,7 @@ reclaimer, so a crash can never wedge recovery.
 
 - **Dead holder** — the holder died; the next contender reads the recorded
   owner, sees that pid is gone from the process table, and reclaims. Because
-  owner-identity is atomic with acquisition, an existing lock *always* names a
+  owner-identity is atomic with acquisition, an existing lock _always_ names a
   real (once-live) holder — there is no ownerless state to mis-handle.
 - **Foreign leftover** — a directory, or a file that does not carry a live
   Windows owner, left at the lock path by a different or older tool would
@@ -109,11 +166,12 @@ tears down a lock a live holder still owns.
 
 ## Files
 
-| File | Role |
-|------|------|
-| `with-resource-lock.ts` | the mutex wrapper; lock via `LOCK_NAME`/`--lock`, waits + bypass via env |
-| `with-resource-lock.test.ts` | paired self-test (mutual exclusion, bypass, stale reclaim, a reused process id, exit codes) |
+| File                               | Role                                                                                                                                          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `with-resource-lock.ts`            | the lock wrapper; lock via `LOCK_NAME`/`--lock`, waits, slots, admission and bypass via env, `--exclusive`                                    |
+| `with-resource-lock.test.ts`       | paired self-test of a single slot (mutual exclusion, bypass, stale reclaim, a reused process id, exit codes)                                  |
+| `with-resource-lock-slots.test.ts` | paired self-test of slots (the ceiling, load admission, a failing reading, dead holders' slots, an earlier version's lock, exclusive holders) |
 
-Run the self-test with `bun test ./with-resource-lock.test.ts`. It scrubs `CI`
+Run the self-tests with `bun test ./with-resource-lock.test.ts ./with-resource-lock-slots.test.ts`. It scrubs `CI`
 from its own environment first, so the locking assertions still lock when the test itself
 runs in CI.

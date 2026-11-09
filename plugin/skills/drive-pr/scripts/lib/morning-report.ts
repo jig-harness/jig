@@ -2,28 +2,11 @@
  * `drives.ts --report`: the morning report, the one thing a person reads
  * after an unattended night.
  *
- * Its population is every pull request this clone's state knows that has
- * something to say since the report's time (a state written since, a park,
- * a quota wall, a provisional decision still standing, a live driver), and
- * every open pull request the signed-in account authored or drove, found
- * through the forge's search for the drive ledger (`listLedgerPullRequests`)
- * and narrowed to those whose author, or whose ledger's writer, is that
- * account. For each it says the terminal state and what it means for the
- * person; the provisional decisions, first; the takeovers and re-arms; the
- * parked decisions in their framed form; the issues filed and the deferred
- * entries not yet filed. Every other open pull request the account authored
- * is listed too, for its deferred entries. Then what the dispatcher (`jig
- * dispatch`) did on this machine since the same time, from its receipts:
- * its launches, refusals and notifications (`morning-report-dispatch.ts`);
- * and the workspaces it launched into, found by the dispatched mark on
- * their launch records, each with the name it carries now, read from the
- * session runtime under its deadline (`dispatch/lib/dispatched.ts`); and the
- * plugin upgrades the timers ran since then, each that moved the plugin or
- * failed, from the jobs' receipts (`morning-report-upgrades.ts`).
- * Of a clone's own state and the
- * ledger, the newer speaks for a pull request both describe: the ledger
- * when another clone wrote a later generation of it, else the state, which
- * is written every round and after the ledger's last write.
+ * It reports this clone's recent state and the account's forge ledgers,
+ * decisions, parks and deferred work, then the dispatcher's launches and
+ * upgrades. The newer ledger generation wins over local state; otherwise
+ * the state supplies the latest round. Matching local process evidence
+ * overrides a ledger heartbeat that still says a stopped driver runs.
  *
  * The time defaults to the last report's, remembered in the state directory
  * (`drives-report.json`); with no report remembered, the last day
@@ -41,6 +24,11 @@ import { swallow } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { deferredEntries } from "../../../resolve-review-comments/scripts/lib/deferred-section.ts";
 import { fail } from "./cli.ts";
+import {
+  type LedgerDriverEvidence,
+  readLedgerDriver,
+} from "./ci-hold-doctor.ts";
+import { cloneId } from "./state/ledger-mirror.ts";
 import { stallThresholdMs } from "./doctor.ts";
 import {
   type DispatchEntry,
@@ -72,10 +60,8 @@ import {
 import type { TakeoverRecord } from "./state/takeover.ts";
 import { TERMINAL_STATES } from "./status/terminal-states.ts";
 
-/** How far back a first report reaches, with no earlier report remembered. */
 export const FIRST_REPORT_HOURS = 24;
 
-/** Where the last report's time is remembered, in the state directory. */
 export const REPORT_MEMORY = "drives-report.json";
 
 export interface ReportProvisional {
@@ -86,7 +72,6 @@ export interface ReportProvisional {
   outcome: string | null;
   level: string;
   record: string;
-  /** `standing`, `reversed` (with by and url), or `unread` when the forge could not say. */
   status: "standing" | "reversed" | "unread";
   reversedBy?: string;
   reversedUrl?: string;
@@ -98,7 +83,6 @@ export interface ReportPullRequest {
   title: string;
   /** The forge's state, `OPEN`, `MERGED` or `CLOSED`; `''` when unread. */
   prState: string;
-  /** Where the drive's record came from. */
   source: "state" | "ledger";
   terminal: { name: string; exit: number | null; meaning: string };
   provisional: ReportProvisional[];
@@ -111,7 +95,6 @@ export interface ReportPullRequest {
 
 export interface MorningReport {
   now: string;
-  /** The report's lower bound. */
   since: string;
   sinceSource: "flag" | "last report" | "first report";
   pullRequests: ReportPullRequest[];
@@ -123,7 +106,6 @@ export interface MorningReport {
   dispatchedWorkspaces: DispatchedWorkspace[];
   /** The plugin upgrades the timers ran on this machine since the report's time that moved the plugin or failed. */
   upgrades: UpgradeEntry[];
-  /** What could not be read, each a sentence. */
   unread: string[];
 }
 
@@ -226,11 +208,7 @@ function fromState(s: DriveState): DriveRecord {
   };
 }
 
-/**
- * A running ledger's last stop, only when it came at or after the start of
- * the run the ledger names: an earlier stop ended an earlier run, and the
- * run since has recorded none, whether or not its heartbeat has lapsed.
- */
+/** A stop settles only the run that began before it. */
 function exitOfRunningLedger(l: Ledger): number | null {
   const exit = settledExit(l.events ?? []);
   const started = l.driver.started;
@@ -244,7 +222,11 @@ function exitOfRunningLedger(l: Ledger): number | null {
   return stoppedAt < startedAt ? null : exit;
 }
 
-function fromLedger(l: Ledger, nowMs: number): DriveRecord {
+function fromLedger(
+  l: Ledger,
+  nowMs: number,
+  localStopped = false,
+): DriveRecord {
   return {
     source: "ledger",
     decisions: l.decisions,
@@ -256,9 +238,10 @@ function fromLedger(l: Ledger, nowMs: number): DriveRecord {
       l.driver.state === "stopped"
         ? (l.driver.exit ?? settledExit(l.events ?? []))
         : exitOfRunningLedger(l),
-    // A driver that stopped after its last ledger write still reads
-    // "running"; past the lease window its heartbeat no longer says it is.
+    // Foreign or uncorrelated drivers use the heartbeat window. A matching
+    // local process that exited overrides even a fresh ledger heartbeat.
     runningElsewhere:
+      !localStopped &&
       l.driver.state === "running" &&
       nowMs - Date.parse(l.driver.heartbeat) <= stallThresholdMs(),
   };
@@ -420,7 +403,6 @@ export function rememberReport(stateDir: string, at: string): void {
   );
 }
 
-/** A pull request the forge names for the report, with its ledger; `null` for an authored one without one. */
 interface ForgeEntry {
   url: string;
   title: string;
@@ -562,32 +544,28 @@ const NO_RECORD: DriveRecord = {
   runningElsewhere: false,
 };
 
-/**
- * The drive's record for a pull request: whichever of this clone's state and
- * the ledger is newer, by the ledger generation the state last wrote or
- * seeded. A ledger of a later generation was written by another clone since
- * (a takeover), so it speaks whole; otherwise this clone's state, written
- * every round and after the ledger's last write, does, and the ledger adds
- * only that another clone runs the drive now.
- */
+/** Prefer a newer ledger generation; otherwise use local state and ledger liveness. */
 function recordOf(
   own: { state: DriveState } | undefined,
   remote: { ledger: Ledger | null } | undefined,
   nowMs: number,
+  localStopped = false,
 ): DriveRecord {
   const ledger = remote?.ledger ?? null;
   if (own === undefined)
-    return ledger === null ? NO_RECORD : fromLedger(ledger, nowMs);
+    return ledger === null
+      ? NO_RECORD
+      : fromLedger(ledger, nowMs, localStopped);
   const local = fromState(own.state);
   if (ledger === null) return local;
   if (ledger.generation > (own.state.ledgerGeneration ?? 0))
-    return fromLedger(ledger, nowMs);
+    return fromLedger(ledger, nowMs, localStopped);
   return {
     ...local,
     // A stop recorded before the run the ledger says is running began ended
     // an earlier run: it says nothing of how this one ended.
     exit: stopEndsRun(own.state, ledger) ? local.exit : null,
-    runningElsewhere: fromLedger(ledger, nowMs).runningElsewhere,
+    runningElsewhere: fromLedger(ledger, nowMs, localStopped).runningElsewhere,
   };
 }
 
@@ -597,6 +575,32 @@ function stopEndsRun(s: DriveState, ledger: Ledger): boolean {
   if (ledger.driver.state !== "running" || started === undefined) return true;
   const stop = (s.events ?? []).findLast((e) => e.kind === "stop");
   return stop === undefined || Date.parse(stop.at) >= Date.parse(started);
+}
+
+/** Reuse the doctor's ledger/process correlation, rather than infer local life from a heartbeat. */
+async function localDriverStopped(
+  stateDir: string,
+  pr: string,
+  ledger: Ledger | null | undefined,
+  unread: string[],
+): Promise<boolean> {
+  if (
+    ledger?.driver.state !== "running" ||
+    ledger.driver.clone !== cloneId(stateDir)
+  )
+    return false;
+  const evidence: LedgerDriverEvidence = {
+    driver: "unknown",
+    driverReason: "no matching local process",
+    worktree: null,
+    pr,
+  };
+  await readLedgerDriver(evidence, stateDir, "empty", ledger);
+  if (evidence.driver === "unknown")
+    unread.push(
+      `#${pr}: local driver liveness is unknown: ${evidence.driverReason}`,
+    );
+  return evidence.driver === "dead";
 }
 
 /** Gather the report. `live` holds the pull requests a live driver holds in this clone. */
@@ -620,7 +624,12 @@ export async function gatherMorningReport(opts: {
     pullRequests.push(
       await reportOne(
         pr,
-        recordOf(local.get(pr), remote, opts.now.getTime()),
+        recordOf(
+          local.get(pr),
+          remote,
+          opts.now.getTime(),
+          await localDriverStopped(opts.stateDir, pr, remote?.ledger, unread),
+        ),
         since,
         opts.live.has(pr),
         { url: remote?.url ?? "", title: remote?.title ?? "" },
@@ -647,7 +656,6 @@ export async function gatherMorningReport(opts: {
   };
 }
 
-/** The pull requests a live driver holds, from `drives.ts`'s lock rows. */
 export function liveDrives(
   rows: ReadonlyArray<{ kind: string; state: string; key: string }>,
 ): Set<string> {
@@ -656,7 +664,6 @@ export function liveDrives(
   );
 }
 
-/** Remove `--since <time>` from `argv` and return the time (`''` when absent). */
 function takeSince(argv: string[]): string {
   const at = argv.indexOf("--since");
   if (at < 0) return "";
@@ -665,11 +672,7 @@ function takeSince(argv: string[]): string {
   return value;
 }
 
-/**
- * `drives.ts --report [--since <time>] [--json]`, and nothing else beside
- * it; `live` reads the pull requests a live driver holds in the state
- * directory.
- */
+/** Parse report flags and collect the local live drives. */
 export async function reportMain(
   argv: string[],
   live: (stateDir: string) => Promise<ReadonlySet<string>>,
@@ -703,10 +706,7 @@ export function parseSince(text: string, now: Date): string | null {
   return Number.isFinite(instant.getTime()) ? instant.toISOString() : null;
 }
 
-/**
- * `drives.ts --report [--since <time>] [--json]`: gather, print, and
- * remember this report's time as the next one's default.
- */
+/** Gather and print the report, remembering its time for the next full report. */
 export async function morningReportCommand(opts: {
   stateDir: string;
   live: ReadonlySet<string>;

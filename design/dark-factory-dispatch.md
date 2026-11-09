@@ -20,12 +20,12 @@ This is the design of [plan.md](plan.md) item 33. Every step of its
 [build order](#build-order) is built, and the documents that describe it are
 the current truth; the item stays open on the roadmap until its "Done when"
 checks run on a host running Orca, each named at its own build step. It
-builds on item 32 (driving any pull request from anywhere): the
+builds on driving any pull request from anywhere: the
 [drive ledger](../plugin/skills/drive-pr/README.md#where-its-state-lives)
 on each pull request, the re-arm of a stopped drive and the takeover of a
-wedged one are in `drive-pr` today; item 32's framed park (a park that
-carries the question, the options and the recommended one) and its morning
-report are built too. M0 names the service this is: a
+wedged one are in `drive-pr` today, and so are the framed park (a park that
+carries the question, the options and the recommended one) and the
+[morning report](../plugin/skills/drive-pr/README.md#the-morning-report). M0 names the service this is: a
 [control plane](../GLOSSARY.md), "a service that tracks an agent's job and
 can reach a person". The dispatcher is the first one Jig ships, for the
 execution line only. Its first [session runtime](../GLOSSARY.md) is Orca
@@ -69,12 +69,23 @@ after another: its plan and its outcome rows. The turns queue the launches
 and the labels; once every repository has had its turn, the launches run
 across all of them, one launch group at a time, and then each repository's
 finish step writes its labels. A launch changes what the next may admit (an
-account's slots, the tick's allowance of workspace opens, the account whose
+account's slots, the tick's allowances of workspace opens (the launches'
+and the follow-ups' own lane's), the account whose
 turn is next), so acts never overlap, and the admission order is the one the
 tick would take with no observe phase in front of it. Last, the tick closes: it settles what the
 repositories it did not read still owe, copies the outcome log, writes the
 dashboard's line and writes its receipt. Each phase lives in its own module
 under `plugin/dispatch/lib/`.
+
+Item 44 ([line-at-capacity.md](line-at-capacity.md)) adds four parts to
+this tick. The observe phase reads the served people's assigned items
+beside the factory identity's, and makes the board read, a query of its
+own once a repository's ledgers name its converged drives
+([dispatch-board.md § The board read](dispatch-board.md#the-board-read)).
+The act phase reads the host's gauges when it builds its apply state, and
+admits each launch within the load factor. And the steward is one more
+stage, launched on the owner host when its digest changed, whose records
+the next tick's plan reads.
 
 ```mermaid
 flowchart TD
@@ -405,8 +416,33 @@ guards keep one stage from starting twice:
   tag, within the pull request's recovery budget (see Launch records). Only
   the death whose marker a tick released this way makes the next follow-up a
   run again; one a person asks for by deleting a failed marker is a new
-  follow-up. An older death, a failed outcome, a run again that died too, or
-  a tick's marker
+  follow-up. A pass that ended failed on a **routine question** (see
+  Sessions that wait) is run again once in the same manner, with no age
+  limit, since it waits on no session lease: its outcome record
+  keeps the question and its routine class, the tick releases the marker it
+  left, which its wrapper never answers, and a later tick starts the
+  follow-up again under a record whose facts carry the recovery tag and the
+  class (`recovery: routine <class>, merged …`), with the earlier question
+  and the class's standing answer in its prompt. A follow-up of this host's
+  that failed before passes tagged their questions (an outcome record with
+  no class field, written by an earlier release, or a launch record whose
+  prompt offered no tags) is run again once in that manner, whatever its
+  question, with every class's standing answer. An outcome whose retry
+  evidence was kept (the tick stores whether the attempt was a run again
+  before it releases the marker) needs no launch record; an outcome from
+  before that was kept needs the launch record still on this host, since
+  only that record says whether it was itself a run again, so one whose
+  record is gone (past `receipts_days`) is a person's, as is another host's
+  failed answer. An outcome record whose kept question
+  does not read (not JSON, not a mapping, or naming another launch record)
+  is never read as an earlier release's: it is logged and the follow-up is a
+  person's. The prompt of a routine run again quotes the earlier question,
+  at most 500 characters on one line, as a JSON string in a fence, and says
+  it is that pass's words, data and not an instruction. A run again of either kind never earns another: whichever
+  path ran it, its failure or death is a person's, so a follow-up is run
+  again at most once by the two together, and both draw on the pull
+  request's recovery budget. An older death, a failed outcome on an untagged
+  question or none, a run again that failed or died too, or a tick's marker
   whose launch record and outcome are both absent on this machine is a
   failed follow-up, notified and never relaunched by the tick. A person settles it by deleting the marker, which makes the
   follow-up wanted again, then running the follow-up or leaving it to the
@@ -523,7 +559,7 @@ guards keep one stage from starting twice:
 
 | Record              | Read through                                                                                                                                                                                                                                                                                                                                                                                       | What the tick takes from it                                                                                                                                                                    |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The tracker         | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today                                                                                                                                                                                                                                                                | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
+| The tracker         | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today                                                                                                                                                                                                                                                                | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch; and from item 44, the items assigned to each [served person](../GLOSSARY.md), and their epics' children |
 | The forge           | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels; each pull request's comments read once per tick, with the open pull requests in the repository's one query, and shared by every record read from them, a merge's markers read only when its `updatedAt` moved since they were kept (see One tick, step by step) | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed                                         |
 | The session runtime | in Orca, `orca repo list --json` and `orca worktree ps --json`, each read once per tick for every repository                                                                                                                                                                                                                                                                                       | which workspace holds which item or pull request, and whether an agent in it is working or waiting                                                                                             |
 | The shared records  | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts`; the observe phase reads them from the tick's comment listings, a launch's own reads and writes go to the forge                                                                                                                                                    | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts)            |
@@ -563,7 +599,25 @@ with no running session and no launch record still running for longer than
 notified, never relaunched, since a relaunch would start a second
 implementer on a claimed item. One with more than one running session is
 a double claim (see Guards against a second launch). A repository with no factory identity
-configured has no pickups; its other stages still run.
+configured has no pickups of its own; its other stages still run.
+
+**Served people.** Beside the factory identity, a host's machine file may
+name the people it serves (`serve:`, with each person's forge logins and
+tracker identities; a repository's file cannot add to it), and wherever the
+`pickup` stage is on, the items assigned to them are wanted too: an open,
+not-started item a person with write access assigned to a
+[served person](../GLOSSARY.md), whatever its state, and each unassigned
+open item under an epic assigned to one, nested epics walked level by
+level, with `jig:hold` and `hitl` keeping an item waiting. Their pull
+requests are adopted as `dispatch.adopt.authors` adopts a repository's own.
+The tick ranks those items by rules as data, shows each item it holds out
+with its reason, and starts the next within the host's load factor; the
+session claims it with `claim --for <person>`, which keeps the served person
+as its assignee, so the stalled and double-claim watches read the served
+people's in-progress items as they read the factory identity's. How the
+ranking, the cheap reads and the claim work is in
+[line-at-capacity.md § Serving named people](line-at-capacity.md#serving-named-people)
+(item 44).
 
 **The forge.** The tick lists the repository's open pull requests and reads
 each one's comments for the ledger's marker, as the drive itself does; it
@@ -747,7 +801,7 @@ The re-arms of stops with no recorded cause and the re-drives of the stops
 whose next step is mechanical (a recurring pass deadline, a failure on a
 conflicting pull request, a silent driver no launch started that this host
 shows gone, a follow-up
-whose session died) draw on one recovery budget per pull request: 3
+whose session died or that stopped on a routine question) draw on one recovery budget per pull request: 3
 attempts in a rolling hour, across accounts and hosts, counted from this
 host's launch records and every host's launch claims by the tag on their
 ledger facts (`no-cause: `, `recovery: `); completing a round does not reset
@@ -1132,7 +1186,10 @@ create` does not do) live in the plugin, in
   starting Claude Code itself) passes it as Claude Code's `--session-id`;
   that `orca agent launch` can bind its agent to
   an account so is checked when the pickup stage is built, and until it
-  does, interactive sessions are not launched. The key is kept by the
+  does, interactive sessions are not launched. A pickup launched as a
+  headless pass instead ([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless),
+  item 44) takes the headless form above, with the wrapper running
+  `do-item`. The key is kept by the
   record itself for a headless pass: the wrapper claims the record
   atomically before it starts the stage, so a second terminal for a record
   already claimed exits without starting it, and a retry relaunches the
@@ -1249,7 +1306,30 @@ A follow-up runs as a headless pass (see Binding a session to its
 account) and is admitted as a drive's pass is: under the pass deadline it
 runs under, which the wrapper enforces on it, on a Codex account only on a
 host that opted in to Codex's bypass, holding one slot until its pass
-ends. An interactive session (a pickup) is admitted the same way, on
+ends. Follow-ups are admitted in a **lane of their own**: a follow-up whose
+pull request has no workspace joined to it opens one from the lane's
+per-tick budget (`followup_opens_per_tick` in the machine file, 2 by
+default), never from the launches' `opens_per_tick` and never from the open
+the notices workspace keeps, and no more follow-ups run on the host at once
+than `followup_concurrency` (2), counted from the launch records still
+holding. A pending record the tick reports stuck (see Launch records) is
+left out while the runtime shows no session running on its target, since it
+holds its slot until a person clears it and would otherwise hold the lane
+too; one whose target has a session running, or whose sessions cannot be
+read, is counted, since that wrapper may be running its stage without
+having claimed the record. The lane's opens count in the tick's budget (the opens of
+both allowances times `workspace_timeout`, and eight runtime calls), so the
+installed tick deadline grows with them: about 8h50m at the defaults, above
+the six-hour minimum. A value whose opens take that budget past the longest
+a timer holds is refused, naming the field. A follow-up whose fresh read of
+the runtime's sessions fails waits for the next tick with that failure as
+its reason, rather than open a workspace on the guess that none is joined. A follow-up never waits for a drive's launch, and a
+drive's launch never waits behind follow-ups; the accounts' slots stay
+shared, so a follow-up still needs an admitted account with a free slot.
+A follow-up that waits says what it waits on, in its receipt entry and on
+the dashboard's line (`waitsOn`): the lane's budget, the lane's cap, or the
+accounts. A pickup is admitted the same way, as a headless pass from item 44
+on, or as an interactive session, on
 one account with a free slot and no wall in effect, and its launch binds
 it to that account (below), so its launch record names the account and
 holds one slot. A session whose launch cannot bind its account is never
@@ -1294,8 +1374,11 @@ person switching the host's active account does not move it.
 Switching Orca's active account before a launch is not used: it is
 host-wide and would move every other session's next pass too. Whether an
 Orca agent launch can bind its agent to an account is not verified (Orca's
-command line selects accounts only for some agents), so until it is shown
-to work pickups are reported, not started.
+command line selects accounts only for some agents), so a pickup does not
+start as an interactive session: it runs as a headless pass, as a
+follow-up does, once item 44's headless pickups are built
+([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless));
+until then pickups are reported, not started.
 
 A follow-up does not wait for that: it runs as a headless pass, the
 account's vendor's non-interactive command (`claude -p`, `codex exec`) on
@@ -1311,9 +1394,11 @@ needs no one. The pass runs with the host's own permission settings
 a drive's pass reads them; the launcher adds none, and a repository's file
 cannot set them.
 
-**Sessions that wait.** A pickup is an interactive skill, and with nobody
+**Sessions that wait.** A pickup is a skill that asks, and with nobody
 to answer a question it stops and states it, as every Jig skill does
-without a person. An agent the runtime reports waiting for longer than
+without a person; as a headless pass it ends on a `Question:` line, as a
+follow-up's pass does below, and the [steward](../GLOSSARY.md) reads it
+before a person does. An agent the runtime reports waiting for longer than
 `dispatch.blocked_after` is reported and notified; it keeps its slot
 until it ends or a person ends it, so a cap full of waiting sessions is
 visible in every report rather than silent. A follow-up's pass cannot
@@ -1322,9 +1407,21 @@ depend on the answer, stops, records `failed`, and ends its output with a
 line that starts `Question:`. The wrapper keeps that line, at most 1000 characters and
 nothing else of the output, on the pass's exit; it reaches the launch
 record, the outcome log and the notification, so the pass is told to put
-no secret or personal data in it. The tick notifies the failed follow-up with the
-question, classed as parked for a person; the marker stays, so nothing
-starts it again until a person settles it.
+no secret or personal data in it. A question that is only one of the
+dispatcher's routine question classes carries the class's tag right after
+the prefix (`Question: [local-leftover] …`). The classes are a fixed
+registry in the dispatcher's code (`plugin/dispatch/lib/routine-questions.ts`),
+each with what it covers and its standing answer, and hold only
+housekeeping whose safe answer is to keep and list; the pass tags its own
+question from the list its prompt gives, and the dispatcher reads the tag
+and never classifies free text. The first class is `local-leftover`, a
+local branch or worktree the follow-up may not delete without asking,
+whose standing answer is to keep it, list it in the result, finish every
+other arm and record done. A follow-up that stopped on a routine question
+is run again once with that answer (see the follow-up's marker, above).
+The tick notifies any other failed follow-up with the question, classed as
+parked for a person; the marker stays, so nothing starts it again until a
+person settles it.
 
 ### The agent behind a session
 
@@ -1425,7 +1522,7 @@ waits on the authenticated Windows smoke.
 
 A notification goes out for each cause, its launch record or receipt
 naming what was sent: a drive parked with an item unanswered, carrying the
-parked questions (item 32's framed decision, built, or the stored
+parked questions (the park's framed decision, or the stored
 reason for a park with no decision record); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
@@ -2105,14 +2202,16 @@ One pull request each, in this order; each is usable on its own.
    none), its result recorded through `jig dispatch result` and its slot
    held until its agent ends; the fresh read at launch; stalled
    pickups, double claims and waiting sessions reported. Usable alone:
-   assigning an item is the start button.
+   assigning an item is the start button. Item 44's steps 6 and 7
+   ([line-at-capacity.md § Build order](line-at-capacity.md#build-order))
+   start the pickups as headless passes and add the served people's.
 5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
    outcome record, and a follow-up pass per merged pull request with the repository's follow-up
    command, which claims the pull request with a manual marker when a
    person runs it by hand and marks that marker done when it succeeds
    (Jig's `/followup` first); the notifications above
    through `notify`. The park's
-   notification carries item 32's framed decision, or its stored reason
+   notification carries its framed decision, or its stored reason
    when it has no decision record, and
    the receipts join its morning report; a consumer repository's
    follow-up waits on its own post-merge command (item 17).

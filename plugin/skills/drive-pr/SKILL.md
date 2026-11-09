@@ -928,7 +928,8 @@ request. Before the mode table below, read the README section
 Re-read `jig ask drive <PR>` or the drive doctor and establish stopped local
 ownership, review convergence on the current head, no human decisions and a
 clean matching worktree. Run the printed CI-hold release command only
-for that explicit request, from that worktree and with its expected head;
+for that explicit request, from that worktree with its expected head and
+diagnosed label transition (`--expect-transition`);
 relay any refusal without bypassing it. Observe label removal and fresh CI
 on that head, report those separately from CI success, and stop without
 arming a driver. A status question does not authorize recovery.
@@ -2008,7 +2009,8 @@ Omitting the flag is the default (resolve now) — the same behavior as every
 other merit outcome, and what you want for a `moot` whose premise predates
 this round entirely. That default applies only to a **fresh** post: a `moot`
 found already on the thread (the reconciliation rule above) is always held
-(except on a code-scanning thread, above),
+(except on a code-scanning thread, above, or a reply carrying the durable
+leave-open marker that proves it was posted as a non-hold moot),
 whatever this invocation's own flag says — the flag names only this
 invocation's belief, and a reconciled reply may have been posted by an
 earlier, now-gone invocation whose belief this one has no way to see. A
@@ -2021,6 +2023,11 @@ releases regardless.
 A reply that is genuinely **not** a triage decision (a clarifying question,
 with nothing to hold or resolve) has no outcome for `triage-thread.ts` to
 dispatch on — use `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/reply-to-thread.ts" --no-outcome` directly for that case.
+
+A legacy marked moot on a bot-started thread resolves on both direct retry
+and automatic reconciliation once any code-scanning alert is confirmed fixed,
+closed or dismissed. Its marker proves that no push was needed; it does not
+bypass the alert check or authorize leaving another bot thread open.
 
 **Leaving a human thread open.** A merit outcome (`rejected`/`wont-fix`/
 `deferred`/plain `moot`) is resolved automatically — pass `--leave-open` to
@@ -2055,7 +2062,8 @@ threads from the sweep's input entirely (`historyOnly`) — so no unattended
 run can see that reply, let alone resolve it. It is reversible only by a
 human deliberately running `reconcile-replied-threads.ts` unscoped, which is
 the one mode a human is present to make that call in. Do **not** use this
-path on a bot-started thread: `--leave-open` has no legitimate use there —
+path on a bot-started thread. `--leave-open` refuses a bot-started thread
+with exit `2` before posting, holding or resolving; it has no legitimate use there —
 there is no author to defer to, and a marked-left-open bot thread is counted
 as live work forever (never resolved, and nothing parks it automatically),
 permanently blocking convergence rather than merely surviving one sweep.
@@ -3413,10 +3421,11 @@ telemetry could clear the failed pass's real wall. So `drive.ts` binds the
 evidence immediately before the spawn:
 
 - `snapshotQuotaSessions()` records every session file its walk reaches — the
-  Claude adapter's `candidateFiles()` scans the projects root and one
-  directory level beneath it, which does not include a **subagent**
-  transcript nested a level deeper (`<project>/<session-id>/subagents/
-  agent-*.jsonl`); widening that walk is deferred. Both vendors
+  Claude adapter's `candidateFiles()` walks through
+  `<project>/<session-id>/subagents/agent-*.jsonl`, with a directory-depth
+  bound and one aggregate entry and time budget for the whole tree. The
+  snapshot and detection share that walk. Subagent records carry the parent
+  session id and use the same exact-id correlation below. Both vendors
   create a session's file when the session starts, so anything
   appearing afterwards is a session started during the pass — and, absent the
   exact-id correlation below, anything in the snapshot is treated as somebody
@@ -3560,6 +3569,15 @@ trains readers to skip the block where the non-empty case needs their eyes.
 
 The wording is "safe to merge from the driver's perspective". Marking a PR ready
 and merging it stay human steps.
+
+On top of those gates it asks the Ready predicate (`scripts/lib/merge-ready.ts`,
+the one the dispatcher's tick and `jig ask` place the pull request with) about
+the live head: the forge must witness a review of it (the reviewer app's check
+run, or a person's approval where no app is named), an outside author's pull
+request needs a person's approval, and branch protection must let it merge. It
+posts only in merge now or approve first, the second worded "an approval is
+still required", and otherwise refuses with the predicate's reason (exit `4`,
+or `1` when the forge's facts did not read).
 
 **judgment** — After `announce-merge-ready.ts` exits `0`, whether it posted the
 announcement or found one already posted, name the workspace for the ready stage

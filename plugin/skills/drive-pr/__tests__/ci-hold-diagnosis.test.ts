@@ -14,6 +14,7 @@ const good: CiHoldEvidence = {
   worktree: "/tmp/drive",
   worktreeSafe: true,
   ownership: true,
+  transitionId: "LE_42",
   parked: 0,
   pr: "123",
   releaseScript: "/plugin/ci-hold.ts",
@@ -23,6 +24,7 @@ describe("stranded CI hold diagnosis", () => {
   it("offers the direct guarded release for a stopped, reviewed current head", () => {
     const diagnosis = diagnoseCiHold(good);
     expect(diagnosis.recovery).toContain("release 123 --expect-head");
+    expect(diagnosis.recovery).toContain("--expect-transition LE_42");
     expect(diagnosis.reason).toContain("start full CI");
     expect(diagnosis.driver).toBe("dead");
   });
@@ -33,6 +35,7 @@ describe("stranded CI hold diagnosis", () => {
     ["failed read", { held: null }, "label"],
     ["human decision", { parked: 1 }, "decision"],
     ["unknown owner", { ownership: false }, "ownership"],
+    ["missing transition", { transitionId: null }, "transition"],
     ["dirty worktree", { worktreeSafe: false }, "worktree"],
   ] as const) {
     it(`withholds release for ${name}`, () => {

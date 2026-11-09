@@ -11,6 +11,11 @@
 import type { LaunchAction, ThreadSample } from "./launches.ts";
 import type { LogRow } from "./log.ts";
 import type { LaunchOutcome, NotifyCause, NotifyOutcome } from "./types.ts";
+import type {
+  Act,
+  Lane,
+  Placement,
+} from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
 
 /** One decision a parked drive waits on, as the drive framed it. */
 export interface LineDecision {
@@ -39,7 +44,7 @@ export interface LineNotified {
 
 /** Causes that wait on a person and on nothing else: what the tick notifies, and an item assigned by someone who cannot write, which it only reports. */
 export type NeedCause =
-  | Exclude<NotifyCause, "waiting" | "drifting">
+  | Exclude<NotifyCause, "waiting" | "drifting" | "ready">
   | "assigner-cannot-write";
 
 /** One thing the line waits on a person for. */
@@ -185,8 +190,12 @@ export interface LineQueued {
   assignedBy: string | null;
   /** For a pull request held behind a serialized leader. */
   hold: { leader: number; area: string; since: string } | null;
-  /** What the newest tick's launch of it did; `null` when it did not try. */
-  launch: { outcome: LaunchOutcome["outcome"]; detail: string } | null;
+  /** What the newest tick's launch of it did, and, for a follow-up that waits for its lane, what it waits on; `null` when it did not try. */
+  launch: {
+    outcome: LaunchOutcome["outcome"];
+    detail: string;
+    waitsOn?: LaunchOutcome["waitsOn"];
+  } | null;
 }
 
 /** One repository the machine file lists. */
@@ -202,6 +211,50 @@ export interface LineRepo {
   failedReads: Array<{ record: string; source: string; detail: string }>;
   /** What each record's read said about what this repository has, such as no pickups. */
   notes: string[];
+  /** Why the board read did not place its converged pull requests at the newest tick; `null` when it did, absent when it did not run. */
+  boardUnread?: string | null;
+  /** Cards beyond the line's per-repository bound; absent before Ready was read. */
+  readyOmitted?: number;
+}
+
+/**
+ * One converged pull request as the tick's board read placed it: in a lane
+ * of Ready to merge (merge now, approve first, update next), or wherever its
+ * reason says, with the act that settles it or what it waits for.
+ */
+export interface LineReady {
+  repo: string;
+  pr: number;
+  url: string;
+  /** Its title: text the pull request's author wrote, shown as quoted text. */
+  title: string;
+  /** The head the drive verified. */
+  head: string;
+  place: Placement;
+  /** Its lane, for a pull request in Ready to merge; `null` elsewhere. */
+  lane: Lane | null;
+  /** What the card says, in the board's own words. */
+  says: string;
+  /** The person's act that settles it, or `null` when it settles by waiting. */
+  act: Act | null;
+  /** What it waits for, when it settles by waiting; `null` when it waits on a person. */
+  waitingFor: string | null;
+  /** For merge now: the merge command pinned to the verified head; `null` when withheld or not in merge now. */
+  command: string | null;
+  /** Which value withheld the command; `null` when none did. */
+  withheld: string | null;
+  /** The reviewers or teams a review is requested from, as requested: logins the forge gives. */
+  requested: string[];
+  /** The checks failing on its head, by name: text the checks' apps wrote, at most `MAX_FAILING`. */
+  failing: string[];
+  /** Failing check names beyond this card's bound. */
+  failingOmitted: number;
+  /** The Ready conditions, each met (`true`), not (`false`) or not read (`null`). */
+  conditions: Array<{ name: string; met: boolean | null; fact: string }>;
+  /** The pull requests that wait behind it in a serialized area. */
+  unblocks: number[];
+  /** When it converged, as its ledger last wrote. */
+  since: string;
 }
 
 /** One repository's turn in a recent tick. */
@@ -267,6 +320,8 @@ export interface LineSnapshot {
   sessions: LineSession[];
   needs: LineNeed[];
   queue: LineQueued[];
+  /** The converged pull requests the board read placed, Ready to merge first in its order; absent from a line written before the board read. */
+  ready?: LineReady[];
   repos: LineRepo[];
 }
 

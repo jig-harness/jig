@@ -5,7 +5,7 @@ marketplace address and arrange Bun, git and the GitHub command-line tool.
 A common setup script, or bootstrap, will check the machine and guide those
 steps before installing through the agent tool's marketplace.
 
-This is the design of [plan.md](plan.md) item 44, tracked by
+This is the design of [plan.md](plan.md) item 45, tracked by
 [the distribution roadmap issue](https://github.com/jig-harness/jig/issues/625).
 The maintainer chose bootstrap first on 2026-11-08. An own Homebrew tap will be considered after
 the bootstrap has been validated; it is not adopted by this design.

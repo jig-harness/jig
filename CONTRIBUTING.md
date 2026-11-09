@@ -55,16 +55,20 @@ so moves that are harmless alone collide here.
 - **Install only with `bun install`**: another package manager writes its own
   lockfile beside `bun.lock` and installs versions the gates and CI do not
   test.
-- **One suite run per machine**: `bun run test`, and so `bun run gates`, runs
-  the suite under the machine-wide resource lock
+- **Suite runs admitted by the machine's load**: `bun run test`, and so
+  `bun run gates`, runs the suite under the machine-wide resource lock
   ([M12](modules/M12-parallel-agent-ergonomics/README.md)'s
   `with-resource-lock.ts`), because the suite spawns process trees by the
-  hundred and two runs at once make both slower than the two in sequence.
-  Native Windows uses one worker because concurrent process startups and
-  process-table queries exceed the tests' budgets; other platforms use four. A
-  run that finds the lock held says whose it is and waits, up to an hour by
-  default (`LOCK_TIMEOUT`); CI and `RESOURCE_LOCK_BYPASS=1` skip the lock. A
-  single file run with `bun test <file>` takes no lock. After the last test,
+  hundred and more runs than the machine can carry make each slower than
+  the runs in sequence. A run starts while the machine has room for one more
+  (its [load admission](GLOSSARY.md), with one run's cost the suite's worker
+  count) and otherwise waits, saying what it waits on and who holds the
+  lock, up to an hour by default (`LOCK_TIMEOUT`). `LOCK_SLOTS=1` makes it
+  one run per machine; `jig gc --collect` waits for every run and holds back
+  new ones while it collects. Native Windows uses one worker because
+  concurrent process startups and process-table queries exceed the tests'
+  budgets; other platforms use four. CI and `RESOURCE_LOCK_BYPASS=1` skip
+  the lock. A single file run with `bun test <file>` takes no lock. After the last test,
   a test process kills every descendant a test left running whose identity
   it can read, and reports on stderr what it killed and what it had to leave
   (`lib/test-reap-children-bun-preload.ts`): a reported leak is a fixture

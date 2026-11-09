@@ -119,9 +119,12 @@ export function reviewerCheckPattern(): string {
   return (
     nonEmptyEnv("DRIVE_PR_REVIEWER_CHECK") ??
     optionalString("review", "reviewer_check_pattern") ??
-    "^ai[ _-]?review(\\s*\\(.+\\))?$"
+    DEFAULT_REVIEWER_CHECK
   );
 }
+
+/** The posting reviewer's check-run name where the repository names no pattern. */
+export const DEFAULT_REVIEWER_CHECK = "^ai[ _-]?review(\\s*\\(.+\\))?$";
 
 /**
  * The marker that identifies the reviewer's sticky summary comment:

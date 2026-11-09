@@ -8,8 +8,10 @@ import type {
   FacetStoreReport,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
+import type { BoardRead } from "./board.ts";
 import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
+import type { StandingAnswer } from "./routine-questions.ts";
 
 /** The records a tick reads, by who owns them. */
 export type RecordName = "tracker" | "forge" | "runtime";
@@ -257,7 +259,8 @@ export type NotifyCause =
   | "followup-failed"
   | "followup-stale"
   | "drifting"
-  | "nudge-unanswered";
+  | "nudge-unanswered"
+  | "ready";
 
 /** A follow-up claim past `followup_stale_after` with no done mark and no session joined to it: the marker the tick releases, and whose claim it was. */
 export interface StaleClaim {
@@ -314,6 +317,8 @@ export interface Action {
   nudge?: { record: string; agent: string; episode: string; account: string };
   /** For a follow-up: the stale claim the tick releases, rather than a launch. */
   release?: StaleClaim;
+  /** For a follow-up's routine run again: the earlier question and the classes whose standing answers its prompt gives. */
+  standing?: StandingAnswer;
 }
 
 /** What `--apply` did with one stale follow-up claim. */
@@ -357,9 +362,19 @@ export interface LaunchOutcome {
   account: string | null;
   record: string | null;
   detail: string;
+  /**
+   * For a follow-up that waits for its lane: what it waits on. `lane-budget`:
+   * the tick spent `followup_opens_per_tick`; `lane-cap`: the host runs
+   * `followup_concurrency` follow-ups already; `accounts`: no admitted
+   * account has a free slot.
+   */
+  waitsOn?: LaneWait;
   /** For a launch refused because a busy checkout the runtime does not list holds its branch: that checkout, which the tick notifies a person of. */
   holder?: BusyHolder;
 }
+
+/** What a follow-up that waits for its lane waits on. */
+export type LaneWait = "lane-budget" | "lane-cap" | "accounts";
 
 /** What `--apply` did with one notification. */
 export interface NotifyOutcome {
@@ -467,6 +482,7 @@ export type RepoPhase =
   | "claims"
   | "runtime"
   | "observe"
+  | "board"
   | "plan"
   | "log"
   | "apply"
@@ -538,6 +554,8 @@ export interface RepoReport {
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */
   serialized?: SerialReport;
+  /** The board read's part: its converged pull requests placed in Ready to merge or wherever their reason says, or why it did not read; absent when it did not run. */
+  board?: BoardRead;
   /** The shared records' part: which host owns the repository, and each read and write this tick made. */
   shared?: SharedReport;
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */

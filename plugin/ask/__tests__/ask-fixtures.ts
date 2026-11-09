@@ -46,6 +46,12 @@ if (args[0] === "api" && args[1] === "-i") {
   process.stdout.write("HTTP/2.0 200 OK\\r\\nEtag: \\"x\\"\\r\\n\\r\\n" + JSON.stringify(body));
   process.exit(0);
 }
+// The Ready predicate's board query: board.json's answer, failing when no test wrote one.
+if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchBoard"))) {
+  if (!fs.existsSync(F + "/board.json")) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  process.stdout.write(fs.readFileSync(F + "/board.json", "utf8"));
+  process.exit(0);
+}
 // The writes jig send makes: a label edit, and a comment posted.
 if (args[0] === "pr" && args[1] === "edit") {
   fs.appendFileSync(F + "/gh-writes.log", JSON.stringify(args) + "\\n");
@@ -219,4 +225,42 @@ export function comment(
     updated_at: createdAt,
     html_url: `https://github.com/${REPO}/pull/1#issuecomment-${id}`,
   };
+}
+
+/** The board query's answer for PR `number` at `head`: mergeable and clean, a member's approval of the head, no configuration on the default branch. */
+export function boardAnswer(number: number, head: string): string {
+  const none = { pageInfo: { hasNextPage: false }, nodes: [] };
+  return JSON.stringify({
+    data: {
+      repository: {
+        squashMergeAllowed: true,
+        defaultBranchRef: { target: { file: null } },
+        [`pr${number}`]: {
+          number,
+          headRefOid: head,
+          isDraft: false,
+          mergeable: "MERGEABLE",
+          mergeStateStatus: "CLEAN",
+          authorAssociation: "MEMBER",
+          labels: none,
+          reviewThreads: none,
+          reviewRequests: none,
+          latestReviews: {
+            pageInfo: { hasNextPage: false },
+            nodes: [
+              {
+                state: "APPROVED",
+                authorAssociation: "MEMBER",
+                author: { __typename: "User", login: "maintainer" },
+                commit: { oid: head },
+              },
+            ],
+          },
+          commits: {
+            nodes: [{ commit: { oid: head, statusCheckRollup: null } }],
+          },
+        },
+      },
+    },
+  });
 }

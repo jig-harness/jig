@@ -31,10 +31,9 @@ import { pager, postGraphQL, runClient } from "./graphql.ts";
 import {
   assignedOperations,
   OPEN,
-  OPEN_CHILDREN_QUERY,
-  POOL_ISSUE_QUERY,
-  POOL_QUERY,
+  parsePoolIssue,
   poolFilter,
+  poolQueries,
 } from "./linear-pool.ts";
 import * as lf from "./linear-facets.ts";
 import {
@@ -269,10 +268,10 @@ export const pageAll = pager({
 const NESTED = 250;
 const LABELS = "labels(first: 100) { pageInfo { hasNextPage } nodes { name } }";
 
-const ISSUE_QUERY = `
+const issueQuery = (extra: string) => `
 query TrackerIssue($id: String!) {
   issue(id: $id) {
-    id identifier title description url updatedAt priority
+    id identifier title description url updatedAt priority${extra}
     state { name type }
     ${LABELS}
     parent { identifier title }
@@ -297,8 +296,8 @@ function summaryOf(v: unknown, where: string): IssueSummary {
   };
 }
 
-/** Parse one `issue` node of `ISSUE_QUERY`. */
-export function parseIssue(v: unknown): lf.CoreIssue {
+/** Parse one `issue` node of `issueQuery`. */
+export function parseIssue(v: unknown): lf.WithEstimate<lf.CoreIssue> {
   const n = record(v, "issue");
   const where = `issue ${typeof n.identifier === "string" ? n.identifier : "?"}`;
   const children = record(n.children, `${where}.children`);
@@ -324,6 +323,7 @@ export function parseIssue(v: unknown): lf.CoreIssue {
     state: stateOf(n.state, `${where}.state`),
     labels: labelNames(n.labels, where),
     priority: priorityOf(n.priority, where),
+    ...lf.readEstimate(n, where),
     nativeType: null, // Linear has no issue types of its own
     parent:
       parent === null
@@ -689,46 +689,6 @@ export function parseLabelledNode(
 
 // ── Candidate pools ────────────────────────────────────────────────────────
 
-/** Parse one pool node; a truncated label page is recorded, not fatal. */
-export function parsePoolIssue(raw: unknown): lf.CorePoolIssue {
-  const n = record(raw, "pool issue");
-  const where = `pool issue ${typeof n.identifier === "string" ? n.identifier : "?"}`;
-  const labels = labelPage(n.labels, where);
-  const children = record(n.children, `${where}.children`);
-  if (
-    !Array.isArray(children.nodes) ||
-    !isRecord(children.pageInfo) ||
-    typeof children.pageInfo.hasNextPage !== "boolean"
-  )
-    throw new ShapeError(`${where}.children: unreadable`);
-  const priority = priorityOf(n.priority, where);
-  const state = record(n.state, `${where}.state`);
-  const assignee =
-    n.assignee === null ? null : record(n.assignee, `${where}.assignee`);
-  return {
-    identifier: str(n.identifier, `${where}.identifier`),
-    title: str(n.title, `${where}.title`),
-    url: optStr(n.url, `${where}.url`),
-    priority,
-    createdAt: timestamp(n.createdAt, `${where}.createdAt`),
-    state: {
-      id: str(state.id, `${where}.state.id`),
-      name: str(state.name, `${where}.state.name`),
-      type: str(state.type, `${where}.state.type`),
-    },
-    assignee:
-      assignee === null
-        ? null
-        : {
-            id: str(assignee.id, `${where}.assignee.id`),
-            name: str(assignee.name, `${where}.assignee.name`),
-          },
-    labels: labels.names,
-    hasOpenChildren: children.nodes.length > 0 || children.pageInfo.hasNextPage,
-    truncated: labels.truncated ? ["labels"] : [],
-  };
-}
-
 // ── Filing and planning ────────────────────────────────────────────────────
 
 const TEAM_QUERY = `
@@ -907,6 +867,8 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
   const { team, states } = opts;
   const transport: LinearTransport = (query, variables, signal) =>
     cancellableRequest(signal, () => opts.transport(query, variables, signal));
+  const estimates = lf.estimateStore(opts.facets, transport, team);
+  const pools = poolQueries(estimates.fields);
   const keyRe = new RegExp(
     `^(${team.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})-(\\d+)$`,
   );
@@ -1014,7 +976,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     async getIssue(key) {
       let data: unknown;
       try {
-        data = await transport(ISSUE_QUERY, { id: key });
+        data = await transport(issueQuery(estimates.fields), { id: key });
       } catch (err) {
         if (err instanceof LinearApiError && err.notFound) return null;
         throw err;
@@ -1343,7 +1305,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     async openIssues(query) {
       const nodes = await pageAll(
         transport,
-        POOL_QUERY,
+        pools.pool,
         { filter: poolFilter(team, query) },
         (d) => d.issues,
         "open issues of the pool",
@@ -1356,7 +1318,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
         throw new Error(`not a ${team} issue id: ${key}`);
       const nodes = await pageAll(
         transport,
-        OPEN_CHILDREN_QUERY,
+        pools.openChildren,
         { id: key, filter: { and: [{ team: { key: { eq: team } } }, OPEN] } },
         (d) => record(d.issue, `issue ${key}`).children,
         `open children of ${key}`,
@@ -1367,7 +1329,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     async poolIssue(key, signal) {
       let data: unknown;
       try {
-        data = await transport(POOL_ISSUE_QUERY, { id: key }, signal);
+        data = await transport(pools.poolIssue, { id: key }, signal);
       } catch (err) {
         if (err instanceof LinearApiError && err.notFound) return null;
         throw err;
@@ -1378,7 +1340,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     ...assignedOperations({
       ...opts,
       pageAll,
-      poolQuery: POOL_QUERY,
+      poolQuery: pools.pool,
       parsePool: parsePoolIssue,
     }),
 
@@ -1393,6 +1355,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       const ids = await labelIds(issue.labels);
       if (ids.size > 0) input.labelIds = [...new Set(ids.values())];
       if (issue.priority !== undefined) input.priority = issue.priority;
+      Object.assign(input, await estimates.input(issue.size));
       if (issue.parent !== undefined)
         input.parentId = (await issueIdAndTeam(issue.parent)).id;
       if (issue.project !== undefined)
@@ -1415,6 +1378,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       const add = patch.addLabels ?? [];
       const remove = patch.removeLabels ?? [];
       const input = plainFields(patch);
+      Object.assign(input, await estimates.input(patch.size, signal));
       if (patch.parent !== undefined)
         input.parentId =
           patch.parent === null
@@ -1521,5 +1485,5 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       );
     },
   };
-  return lf.linearFacets(tracker, opts.facets);
+  return lf.linearFacets(tracker, opts.facets, estimates);
 }

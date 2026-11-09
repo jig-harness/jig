@@ -668,6 +668,9 @@ each it gives the terminal state and what it means for you, the provisional
 decisions first (and whether someone reversed them), the takeovers and
 re-arms, the parked decisions in full, the issues filed and the deferred
 findings not yet filed, with the `file-deferred.ts` command that files them.
+A local process identity matching the ledger's actor and start time that
+has exited overrides its fresh `running` heartbeat. Foreign or uncorrelated
+drivers still use the heartbeat window; their local liveness is not known.
 Where the [dispatcher](../../README.md#the-dispatcher) runs on the machine,
 it then lists what the dispatcher did over the same time, from its tick
 receipts: the sessions it launched, the launches it refused, and the
@@ -707,7 +710,7 @@ bun "<skill-dir>/scripts/drives.ts" --report --since <opened-at> --json
 
 | Exit | State | What you do |
 |------|-------|-------------|
-| `0` | **`CONVERGED`** | The exact head is reviewer-clean, the worktree is clean, the CI hold label (if the repository has one) is absent, and full non-reviewer CI is green with a fresh exact-head witness from the required checks. The merge decision is yours. **One caveat that is not optional:** if this drive marked the PR Ready, convergence is against the draft-reviewing AI reviewer **only** — marking Ready is what summons the reviewers that skip drafts, so anything they post lands *after* the drive ends. The drive says so on stderr; re-run it once they settle. `drive.ts` does **not** post the merge-ready announcement itself. Run `bun "<skill-dir>/scripts/workspace-pr-link.ts" <PR>` first, from the worktree that drove the PR (skip it from any other), so the Orca workspace points at the PR; then run `bun "<skill-dir>/scripts/announce-merge-ready.ts" <PR>` if you want one on the PR. It re-checks convergence, non-reviewer CI, the absent hold, and a clean worktree before posting. `--dry-run` never invokes a pass, so a `0` from it is either this same convergence (the gate reached it first) or simply the command it *would* have run — the printed output says which. |
+| `0` | **`CONVERGED`** | The exact head is reviewer-clean, the worktree is clean, the CI hold label (if the repository has one) is absent, and full non-reviewer CI is green with a fresh exact-head witness from the required checks. The merge decision is yours. **One caveat that is not optional:** if this drive marked the PR Ready, convergence is against the draft-reviewing AI reviewer **only** — marking Ready is what summons the reviewers that skip drafts, so anything they post lands *after* the drive ends. The drive says so on stderr; re-run it once they settle. `drive.ts` does **not** post the merge-ready announcement itself. Run `bun "<skill-dir>/scripts/workspace-pr-link.ts" <PR>` first, from the worktree that drove the PR (skip it from any other), so the Orca workspace points at the PR; then run `bun "<skill-dir>/scripts/announce-merge-ready.ts" <PR>` if you want one on the PR. It re-checks convergence, non-reviewer CI, the absent hold, and a clean worktree before posting, and asks the Ready predicate the dispatcher shares: it posts only when the forge witnesses a review of the head and lets it merge, or says an approval is still required. `--dry-run` never invokes a pass, so a `0` from it is either this same convergence (the gate reached it first) or simply the command it *would* have run — the printed output says which. |
 | `5` | **PR not open** (`PR_NOT_OPEN`) | The PR merged or closed while driving. Usually nothing to do — but if it happened *mid-round*, `guarded-push.ts` refused the push and **this round's commits are still local**, deliberately, so the work stays visible instead of landing on an orphaned branch. Check `bun "<skill-dir>/../../shared/command.ts" -- git log '<remote>/<branch>..HEAD'` (`<remote>` is `repository.remote`, else `origin`) and either port those commits somewhere that will merge or discard them on purpose. |
 | `8` | **HITL-parked** (`HITL_PARKED`) | Everything left needs a human call — each parked under a registry class with its decision framed, printed in full by the stop, after the drive worked everything else to its end. Read the stop, the round report or the `.context/pr-drive-<PR>.md` handoff, then answer each parked item on its thread or in a PR comment with a line `answer <key>: …`. Once every one is answered, re-run the command the stop prints: the re-arm unparks them and hands your answers to its passes until one completes ([picking up](#picking-up-a-stopped-drive)). It does not wake itself up. Under `jig dispatch` a parked pull request that comes to conflict with its base is re-driven, once for each pair of its head and its base branch's head: the re-arm's first gate reports the conflict before the park, the drive attempts to merge the base, then parks on unanswered questions if repair succeeds; a remaining conflict stops `9` (`PR_CONFLICTING`) and needs resolution |
 | `9` | **Conflicting, nothing to work, and the repair budget is spent** (`PR_CONFLICTING`) | Either the drive spent the conflict-repair budget (`DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1) trying to resolve it and could not, or no repair pass ran at all — the budget is `0`/disabled, or the PR's base ref could not be read. Either way, merge the PR's **own base** in — not necessarily the default branch, since a release or stacked PR has a different one. The drive prints the exact command (`bun "<skill-dir>/../../shared/command.ts" -- git fetch <remote>`, followed on success by `bun "<skill-dir>/../../shared/command.ts" -- git merge <remote>/<base>`, naming the remote `repository.remote` sets) rather than guessing; use that. Then resolve, run the emitted validation plan, push, re-run. (A conflicting PR gets zero `pull_request` CI until you do.) A merge the repair pass did not conclude is aborted before this stop, except a merge that was already open when the pass began, which is kept, and one whose abort failed: when the stop reports a merge left open, finish or abort it before running the printed command, which fails in an unconcluded merge. Under `jig dispatch` nothing is owed yet: the dispatcher re-drives the stop once for each pair of the pull request's head and its base branch's head, and tells you when that re-drive stops here again |
@@ -755,21 +758,20 @@ is unavailable, say what is missing and establish it before proceeding. A live o
 
 On an explicit request to release that CI hold, re-read the diagnosis, then
 run its guarded recovery command from the worktree it names, with the
-expected head it verified:
+expected head and label transition it verified:
 
 ```sh
-bun "<skill-dir>/scripts/ci-hold.ts" release <PR> --expect-head <SHA>
+bun "<skill-dir>/scripts/ci-hold.ts" release <PR> --expect-head <SHA> --expect-transition <ID>
 ```
 
 Use the authenticated forge identity for the intended repository. The
-existing release checks the expected PR head before removing the label. When
-the label's newest transition is not the one the drive recorded, it adopts that
-transition and releases it, so it does not refuse a hold someone removed and
-re-applied on the same head after the diagnosis. Run the release right after
-the diagnosis, and if the label's timeline may have changed since, diagnose
-again first. Relay a refusal; do not bypass it with a raw
-label edit or restart the driver. The dispatcher’s `release` verb releases a dispatcher
-hold and has no effect on this CI hold.
+recovery command checks the expected PR head and newest label transition
+before removing the label. If someone removes and re-applies the hold, the
+transition id changes and recovery refuses with exit 4. Diagnose again to
+review the new hold. Ordinary drive release, without `--expect-transition`,
+continues to adopt a label it does not own. Relay a refusal; do not bypass
+it with a raw label edit or restart the driver. The dispatcher's `release`
+verb releases a dispatcher hold and has no effect on this CI hold.
 
 Observe label removal and a fresh required-check run on that expected head.
 `bun "<skill-dir>/scripts/ci-hold.ts" final-ready <PR> --expect-head <SHA>` checks the full-CI witness;
@@ -877,6 +879,8 @@ A machine-wide export reaches every clone on that machine equally, and that is s
 - **Resume:** run the same command again. The durable state means it continues rather than restarts, and threads already answered are reconciled rather than re-answered (`reconcile-replied-threads.ts` runs from the gate). A retry against an unchanged head is not a new *reviewed-head* round, but it does spend one of the durable **attempts**; within one uninterrupted drive, consecutive observable no-op passes (default 2) earn one extra round with the stall diagnostics and then trip exit `14`, while retries spread across driver restarts reset that in-memory stall streak and can still exhaust `--max-rounds` with exit `6`.
 
   The sweep and `triage-thread.ts` leave a declined code-scanning thread open until its alert is confirmed dismissed, and a `moot` one until its alert is fixed, closed or dismissed, including when the alert cannot be read or identified. A code-scanning `moot` is never held for a push: once its alert settles, the next retry resolves it.
+  A legacy marked `moot` reply proves that no push was needed. Both direct retry and automatic reconciliation resolve it on a bot-started thread once any code-scanning alert is confirmed fixed, closed or dismissed; apart from that alert check, only a confirmed human starter permits leaving it open.
+  The `--leave-open` option of `triage-thread.ts` is reserved for human-started threads and refuses a bot-started thread with exit `2` before posting or changing its disposition.
 - **Inspect without touching:** `bun "<skill-dir>/scripts/drive-status.ts" <PR> --json --once --no-count` answers "what would the drive do now" without doing it. `--no-count` is what makes that true — without it the probe *counts* its own evaluation as a round on this head, moving the durable counter that a later drive's `--max-rounds` bound and reflection nudge both read.
 
 If a drive died mid-round hours ago, just re-arm — recovery is the designed path, not an exception.

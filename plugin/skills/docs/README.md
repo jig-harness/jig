@@ -25,7 +25,7 @@ Run it from the repository's root. It runs, in order:
 | `frontmatter` | each document whose frontmatter breaks the schema, with a "did you mean" hint; a document the branch adds is also held to the schema's `required_new` fields | the tree has a frontmatter schema |
 | `index` | a committed `INDEX.md` or `.orphans.md` that no longer matches the tree, and the orphan count as a warning | the tree has a generated `INDEX.md` |
 | `last_updated` | a document under the tree whose body the branch changed without advancing its date | a base branch resolves |
-| `scars` | review scars in approved documents | always |
+| `scars` | review scars in promoted documents (`approved`, or the statuses `docs.promoted_statuses` lists) | always |
 | `deferrals` | a deferral that names no tracker item, over every document | the repository has `.config/deferral-references.yaml` |
 | `stale drafts` | a `status: draft` document not updated for longer than the threshold, as a warning | always |
 
@@ -55,6 +55,7 @@ docs:
   root: handbook                         # default: the first of docs/, doc/, documentation/
   schema: handbook/meta/schema.yaml      # default: the shallowest frontmatter-schema.yaml under the root
   stale_after_days: 90                   # default: 180, M4's six months
+  promoted_statuses: [approved, active]  # statuses the scar lint scans; default: [approved]
 ```
 
 The `last_updated` check compares with `--base <ref>`, else

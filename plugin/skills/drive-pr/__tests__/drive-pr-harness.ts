@@ -1064,7 +1064,7 @@ for a in "$@"; do
     -f|-F)
       if [[ "$a" == query=* ]]; then
         query="\${a#query=}"
-        printf '%s' "$query" > "$F/last-graphql-query.txt"
+        [[ "$query" == *"query DispatchBoard"* ]] || printf '%s' "$query" > "$F/last-graphql-query.txt"
       fi
       ;;
   esac
@@ -1074,6 +1074,11 @@ for a in "$@"; do
 done
 has_input=0
 for a in "$@"; do [ "$a" = "--input" ] && has_input=1; done
+
+# The board query (merge-facts.ts), no head read: board.json, else fixtures/board-answer.jq.
+if [[ "$query" == *"query DispatchBoard"* ]]; then
+  if [ -f "$F/board.json" ]; then cat "$F/board.json"; else jq -c -f ${JSON.stringify(join(import.meta.dir, "fixtures", "board-answer.jq"))} "$F/pr-view.json"; fi; exit 0
+fi
 
 # Stall mode, for probing a deadline. \`$DRIVE_PR_STUB_HANG\` is the duration;
 # \`$DRIVE_PR_STUB_HANG_ON\` narrows it to calls whose argv contains that
@@ -1334,6 +1339,17 @@ swept() {
   emit "$F/swept-comments.json"
 }
 
+# A standing announcement body, read to reconcile its live approval warning.
+for a in "$@"; do
+  case "$a" in
+    */issues/comments/*)
+      source="$F/issue-comments.json"
+      [ -f "$F/raced-comments.json" ] && source="$F/raced-comments.json"
+      jq -c --argjson id "\${a##*/}" 'first(.[] | select(.id == $id))' "$source"
+      exit 0 ;;
+  esac
+done
+
 # Model the residue of an INTERRUPTED earlier run: a real announcement, from a
 # trusted author, whose marker names a head the PR has since moved past. Present
 # in every sweep from the start — unlike the race fixture below, nothing this run
@@ -1570,15 +1586,9 @@ fi
 # which would double-count the opening snapshot and shift every existing
 # head-moved window by one.
 #
-# …and it is additionally gated on there being NO \`-q\` filter, because a second
-# caller now issues \`--json state\` too: the reconcile sweep's liveness probe,
-# which asks \`--json state -q .state\`. That one is not a head read at all — it
-# decides whether the sweep may run — so counting it advanced every
-# \`headMovesAfter\` window by one the moment the sweep became the harness
-# default, breaking every head-race probe at once. \`closedSinceOpen\` passes no
-# \`-q\`; the sweep's probe always does. Distinguishing on that keeps both
-# fixtures honest without either production read changing shape to suit the
-# stub.
+# …and only with NO \`-q\` filter: the sweep's liveness probe (\`--json state
+# -q .state\`) is no head read, and counting it would shift every
+# \`headMovesAfter\` window by one; \`closedSinceOpen\` passes no \`-q\`.
 if [ -f "$F/head-moves-after" ]; then
   wants_head=0
   for a in "$@"; do
