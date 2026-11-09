@@ -22,9 +22,15 @@
 // are passed on to `bun test` after the fixed ones, so `bun run test
 // ./website/` and the gate stage's `--path-ignore-patterns=…` work as they
 // did.
+// Every invocation writes a fresh JUnit report and runs M14's executed-test
+// check, so every suite job and shard refuses a successful all-skipped run.
 import { availableParallelism } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { main as withResourceLock } from "../plugin/shared/resource-lock.ts";
+import { checkTestsExecuted } from "../modules/M14-testing-strategy/reference/tests-executed/check-tests-executed.ts";
 
 /** The fixed `bun test` arguments; the caller's extra ones follow them. */
 export const TEST_ARGS = ["test", "--timeout", "30000"];
@@ -113,8 +119,27 @@ export function lockEnv(
 if (import.meta.main)
   cli(async () => {
     const extra = process.argv.slice(2);
-    return withResourceLock(
-      testCommand(extra),
-      lockEnv(process.env, process.platform, extra),
-    );
+    // A fresh report per invocation cannot borrow another shard's results.
+    // Keep it outside discovery and remove it even when the suite fails.
+    const work = mkdtempSync(join(tmpdir(), "jig-test-report-"));
+    const report = join(work, "junit.xml");
+    try {
+      const split = extra.indexOf("--");
+      const options = split < 0 ? extra : extra.slice(0, split);
+      const passthrough = split < 0 ? [] : extra.slice(split);
+      const status = await withResourceLock(
+        testCommand([
+          ...options,
+          "--reporter=junit",
+          `--reporter-outfile=${report}`,
+          ...passthrough,
+        ]),
+        lockEnv(process.env, process.platform, extra),
+      );
+      // A failed suite or lock admission must keep its own status. A suite
+      // that exits successfully still has to show that it executed a test.
+      return status || checkTestsExecuted([report]);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
   });
