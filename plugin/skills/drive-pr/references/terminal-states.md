@@ -1220,6 +1220,15 @@ not be a remedy at all.
 
 ### PR-wide admission across working trees
 
+The `admit` command of `drive-state.ts` is a read-only preflight: exit `0` means this
+working tree may act, and `13` means another tree is driving the PR. A
+nonempty `$DRIVE_PR_SESSION` that is not a usable process id, or names a
+process that is no longer running, exits `2` before admission. The caller
+must treat that as an unconfirmed admission: `drive-status.ts` skips its
+replied-thread reconciliation sweep rather than performing GitHub mutations
+under an invalid session identity. This check takes no lease and changes no
+state.
+
 The lease above is scoped to *(working tree, PR)*, which left the cross-tree
 case open: nothing stopped two linked worktrees enumerating the same
 unresolved threads and each replying with its own outcome — the same doubled

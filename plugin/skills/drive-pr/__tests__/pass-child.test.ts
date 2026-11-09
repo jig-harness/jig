@@ -36,6 +36,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  readProcessArgv,
   findPassChild,
   hasPassChild,
   type ProcRow,
@@ -630,5 +631,75 @@ describe("Windows helper command lines", () => {
         },
       ]),
     ).toBe(true);
+  });
+});
+
+describe("argv boundaries", () => {
+  const helper =
+    "/repo/pass.ts repo/.claude/skills/drive-pr/scripts/drive-state.ts";
+  const args = `node ${helper}`;
+  it("excludes a helper whose checkout name ends in .ts followed by a space", () => {
+    expect(
+      findPassChild(100, [
+        { pid: 101, ppid: 100, args, argv: ["node", helper] },
+      ]),
+    ).toBe(false);
+  });
+  it("keeps a pass whose argument merely mentions the helper, with identical display text", () => {
+    expect(
+      findPassChild(100, [
+        {
+          pid: 101,
+          ppid: 100,
+          args,
+          argv: [
+            "node",
+            "/repo/pass.ts",
+            "repo/.claude/skills/drive-pr/scripts/drive-state.ts",
+          ],
+        },
+      ]),
+    ).toBe(true);
+  });
+  it("excludes a directly executed helper using its complete argv path", () => {
+    expect(
+      findPassChild(100, [
+        { pid: 101, ppid: 100, args: helper, argv: [helper] },
+      ]),
+    ).toBe(false);
+  });
+  it("uses the conservative display heuristic when argv is unreadable", () => {
+    expect(findPassChild(100, [{ pid: 101, ppid: 100, args }])).toBe(true);
+  });
+});
+
+describe("Linux process argv reads", () => {
+  it("preserves path spaces and drops only the trailing NUL", () => {
+    expect(
+      readProcessArgv(123, "linux", (path) => {
+        expect(path).toBe("/proc/123/cmdline");
+        return "node\0/repo/pass.ts repo/.claude/skills/drive-pr/scripts/helper.ts\0\0";
+      }),
+    ).toEqual([
+      "node",
+      "/repo/pass.ts repo/.claude/skills/drive-pr/scripts/helper.ts",
+      "",
+    ]);
+  });
+  it("falls back after an unavailable or malformed Linux record", () => {
+    expect(
+      readProcessArgv(123, "linux", () => {
+        throw new Error("unreadable");
+      }),
+    ).toBeUndefined();
+    expect(readProcessArgv(123, "linux", () => "")).toBeUndefined();
+    expect(readProcessArgv(123, "linux", () => "node")).toBeUndefined();
+  });
+  it("does not attempt /proc on macOS", () => {
+    expect(
+      readProcessArgv(123, "darwin", () => {
+        throw new Error("must not read");
+      }),
+    ).toBeUndefined();
   });
 });

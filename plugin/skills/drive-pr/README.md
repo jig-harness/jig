@@ -666,6 +666,9 @@ each it gives the terminal state and what it means for you, the provisional
 decisions first (and whether someone reversed them), the takeovers and
 re-arms, the parked decisions in full, the issues filed and the deferred
 findings not yet filed, with the `file-deferred.ts` command that files them.
+A local process identity matching the ledger's actor and start time that
+has exited overrides its fresh `running` heartbeat. Foreign or uncorrelated
+drivers still use the heartbeat window; their local liveness is not known.
 Where the [dispatcher](../../README.md#the-dispatcher) runs on the machine,
 it then lists what the dispatcher did over the same time, from its tick
 receipts: the sessions it launched, the launches it refused, and the
@@ -743,21 +746,20 @@ is unavailable, say what is missing and establish it before proceeding. A live o
 
 On an explicit request to release that CI hold, re-read the diagnosis, then
 run its guarded recovery command from the worktree it names, with the
-expected head it verified:
+expected head and label transition it verified:
 
 ```sh
-bun "<skill-dir>/scripts/ci-hold.ts" release <PR> --expect-head <SHA>
+bun "<skill-dir>/scripts/ci-hold.ts" release <PR> --expect-head <SHA> --expect-transition <ID>
 ```
 
 Use the authenticated forge identity for the intended repository. The
-existing release checks the expected PR head before removing the label. When
-the label's newest transition is not the one the drive recorded, it adopts that
-transition and releases it, so it does not refuse a hold someone removed and
-re-applied on the same head after the diagnosis. Run the release right after
-the diagnosis, and if the label's timeline may have changed since, diagnose
-again first. Relay a refusal; do not bypass it with a raw
-label edit or restart the driver. The dispatcher’s `release` verb releases a dispatcher
-hold and has no effect on this CI hold.
+recovery command checks the expected PR head and newest label transition
+before removing the label. If someone removes and re-applies the hold, the
+transition id changes and recovery refuses with exit 4. Diagnose again to
+review the new hold. Ordinary drive release, without `--expect-transition`,
+continues to adopt a label it does not own. Relay a refusal; do not bypass
+it with a raw label edit or restart the driver. The dispatcher's `release`
+verb releases a dispatcher hold and has no effect on this CI hold.
 
 Observe label removal and a fresh required-check run on that expected head.
 `bun "<skill-dir>/scripts/ci-hold.ts" final-ready <PR> --expect-head <SHA>` checks the full-CI witness;
@@ -865,6 +867,8 @@ A machine-wide export reaches every clone on that machine equally, and that is s
 - **Resume:** run the same command again. The durable state means it continues rather than restarts, and threads already answered are reconciled rather than re-answered (`reconcile-replied-threads.ts` runs from the gate). A retry against an unchanged head is not a new *reviewed-head* round, but it does spend one of the durable **attempts**; within one uninterrupted drive, consecutive observable no-op passes (default 2) earn one extra round with the stall diagnostics and then trip exit `14`, while retries spread across driver restarts reset that in-memory stall streak and can still exhaust `--max-rounds` with exit `6`.
 
   The sweep and `triage-thread.ts` leave a declined code-scanning thread open until its alert is confirmed dismissed, and a `moot` one until its alert is fixed, closed or dismissed, including when the alert cannot be read or identified. A code-scanning `moot` is never held for a push: once its alert settles, the next retry resolves it.
+  A legacy marked `moot` reply proves that no push was needed. Both direct retry and automatic reconciliation resolve it on a bot-started thread once any code-scanning alert is confirmed fixed, closed or dismissed; apart from that alert check, only a confirmed human starter permits leaving it open.
+  The `--leave-open` option of `triage-thread.ts` is reserved for human-started threads and refuses a bot-started thread with exit `2` before posting or changing its disposition.
 - **Inspect without touching:** `bun "<skill-dir>/scripts/drive-status.ts" <PR> --json --once --no-count` answers "what would the drive do now" without doing it. `--no-count` is what makes that true — without it the probe *counts* its own evaluation as a round on this head, moving the durable counter that a later drive's `--max-rounds` bound and reflection nudge both read.
 
 If a drive died mid-round hours ago, just re-arm — recovery is the designed path, not an exception.

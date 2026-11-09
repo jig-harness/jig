@@ -136,7 +136,7 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   shape of gap as the accepted/moot one, just on the other side of the
   fork. Both rules have exceptions, where a merit reply (or an unmarked
   moot) legitimately stays unresolved with no hold. The LEAVE_OPEN marker
-  is one — `bun "<skill-dir>/scripts/triage-thread.ts"
+  on a confirmed human-started thread is one — `bun "<skill-dir>/scripts/triage-thread.ts"
   --leave-open` works identically across every non-hold outcome (its own
   header), not only `moot`, so this check does too. A thread GitHub's code
   scanning account opened is another (`awaitsAlert` in
