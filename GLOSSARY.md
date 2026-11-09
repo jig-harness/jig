@@ -2113,7 +2113,19 @@ make, use the entry's term instead.
   item is one, and so is an item with no pull request yet. Each of its
   stations has an *address*. See
   [design/hub.md](design/hub.md#a-piece-of-work-and-its-views).
-- **Private-network front** — an optional layer that publishes a
+- **QR code** (quick response code) — a square barcode a phone camera can
+  scan to open an address. The *hub*'s planned sharing path encodes its
+  private, token-free address; scanning transfers the address and does not
+  authenticate the reader.
+- **Secure context** — a page environment the browser considers trustworthy,
+  normally because it was delivered over an encrypted web connection or
+  from the browser's own loopback address. Browser APIs such as the
+  clipboard require it, and may also require permission. An unencrypted web connection to another
+  machine's private address does not qualify just because the network is
+  encrypted. A phone reads
+  the *hub* through its encrypted private-network front for this reason. See
+  [MDN's secure-context definition](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts).
+- **Private-network front** — a layer that publishes a
   machine's *hub* from its loopback address to a private network, with a
   certificate and the viewer's identity, so a phone can open the page;
   called a front for short. Tailscale Serve is its first implementation: it

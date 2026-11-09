@@ -19,6 +19,15 @@ nothing on the page tells work that settles by itself (a drive running,
 checks running) from work that waits until a person acts (an approval
 nobody gave, a park): left alone, the second kind waits forever.
 
+**Phone access is a first-class requirement of the board.** Merge, Needs
+you, Running, Queue and History, opened work and decisions must be readable
+in any phone browser, with visible controls to copy commands and answer
+lines and open pull requests or issues. The phone stays read-only and
+needs neither Orca nor keyboard shortcuts. The hub's
+[phone scope and access contract](hub.md#phone-scope-and-access) defines
+the exclusions, supported setup, availability and phone acceptance checks.
+They apply to the board as it ships in stage 1.
+
 How much ready work waits, and how much of it is lost to a conflict, is
 measured first, as a baseline ([Build order](#build-order)): the outcome log
 already holds the re-drives of converged pull requests that went stale, with
@@ -582,9 +591,11 @@ The page that grows from the dashboard is the [hub](hub.md), which serves
 the board beside its other views and is reached in other ways: a host's
 hub listens on loopback with no token and only answers reads, a laptop's
 hub reads each host over SSH (Secure Shell), and a phone reaches a host's hub through an
-optional front on a private network that names the viewer and scopes what
+recommended HTTPS front on a private network that names the viewer and scopes what
 each person sees ([hub.md § Where it runs](hub.md#where-it-runs)). Until
-the hub serves it, the board is read as above.
+the hub serves it, the board is read as above, with the hub design's
+explicit private-HTTP fallback for phones. Responsive layout alone does
+not complete the access requirement.
 
 The [Jig panel in Orca](orca-integration.md#the-jig-plugin-for-orca) is a
 second reader. It reads the same line through the plugin's worker, which
