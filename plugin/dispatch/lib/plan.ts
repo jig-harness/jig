@@ -48,6 +48,7 @@ import { planDrift } from "./expectations.ts";
 import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
+import { backingOff } from "./infra-backoff.ts";
 import { conflictNote } from "./sources/ledgers.ts";
 import { requestedTree, workspaceOfTree } from "./stall-tree.ts";
 import { planFollowups } from "./plan-followups.ts";
@@ -496,6 +497,32 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   };
 }
 
+/**
+ * The drive as this host plans it, or `null` once it is reported quiet
+ * because nothing is launched for it yet: its work is in a tree on another
+ * host, or its re-drive waits out a backoff.
+ */
+function plannable(
+  input: PlanInput,
+  read: DrivenPr,
+  plan: Plan,
+): DrivenPr | null {
+  const target = `PR #${read.number}`;
+  const pr = treeBound(read, input.sessions);
+  if (pr === null) {
+    plan.quiet.push({
+      target,
+      class: read.class,
+      why: `${read.why}; that tree is on another host, whose dispatcher re-drives it there`,
+    });
+    return null;
+  }
+  const waiting = backingOff(pr, input.nowMs);
+  if (waiting === null) return pr;
+  plan.quiet.push({ target, class: pr.class, why: waiting });
+  return null;
+}
+
 /** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
 function planDrive(
   input: PlanInput,
@@ -505,15 +532,8 @@ function planDrive(
 ): void {
   const { slug, launches } = input;
   const target = `PR #${read.number}`;
-  const pr = treeBound(read, input.sessions);
-  if (pr === null) {
-    plan.quiet.push({
-      target,
-      class: read.class,
-      why: `${read.why}; that tree is on another host, whose dispatcher re-drives it there`,
-    });
-    return;
-  }
+  const pr = plannable(input, read, plan);
+  if (pr === null) return;
   const hold = driveHold(pr, launches);
   if (
     !(

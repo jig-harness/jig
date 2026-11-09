@@ -1,0 +1,38 @@
+Analyze (python)	Initialize CodeQL	﻿2026-11-08T10:11:04.0194947Z ##[group]Run github/codeql-action/init@v4
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:04.0266731Z ##[endgroup]
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:05.9251480Z ##[group]Setup CodeQL tools
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:06.4746996Z Did not find CodeQL tools version 2.27.4 in the toolcache.
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:06.4754601Z Using CodeQL CLI version 2.27.4 sourced from https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.27.4/codeql-bundle-linux64.tar.zst .
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:08.2105501Z Downloading CodeQL tools from https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.27.4/codeql-bundle-linux64.tar.zst . This may take a while.
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:08.2106779Z Streaming the extraction of the CodeQL bundle.
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:19.5568925Z ##[warning]Failed to download and extract CodeQL bundle using streaming with error: Failed to download CodeQL bundle from https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.27.4/codeql-bundle-linux64.tar.zst. HTTP status code: 504.
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:19.5579669Z ##[warning]Falling back to downloading the bundle before extracting.
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:30.8886775Z Unexpected HTTP response: 504
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:30.8887187Z Waiting 10 seconds before trying again
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:52.1724957Z Unexpected HTTP response: 504
+Analyze (python)	Initialize CodeQL	2026-11-08T10:11:52.1725439Z Waiting 16 seconds before trying again
+Analyze (python)	Initialize CodeQL	2026-11-08T10:12:19.4445232Z ##[error]Unable to download and extract CodeQL CLI: Unexpected HTTP response: 504
+Analyze (python)	Initialize CodeQL	Details: Error: Unexpected HTTP response: 504
+Analyze (python)	Initialize CodeQL	    at /home/runner/work/_actions/github/codeql-action/v4/lib/entry-points.js:114414:23
+Analyze (python)	Initialize CodeQL	    at Generator.next (<anonymous>)
+Analyze (python)	Initialize CodeQL	    at fulfilled (/home/runner/work/_actions/github/codeql-action/v4/lib/entry-points.js:114317:28)
+Analyze (python)	Initialize CodeQL	    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+Analyze (actions)	Initialize CodeQL	﻿2026-11-08T10:11:03.8436591Z ##[group]Run github/codeql-action/init@v4
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:11:03.8452321Z ##[endgroup]
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:11:05.4655139Z ##[group]Setup CodeQL tools
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:11:05.6726655Z Did not find CodeQL tools version 2.27.4 in the toolcache.
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:11:05.6732869Z Using CodeQL CLI version 2.27.4 sourced from https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.27.4/codeql-bundle-linux64.tar.zst .
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:11:08.8842522Z Downloading CodeQL tools from https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.27.4/codeql-bundle-linux64.tar.zst . This may take a while.
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:11:08.8843283Z Streaming the extraction of the CodeQL bundle.
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:11:20.1291968Z ##[warning]Failed to download and extract CodeQL bundle using streaming with error: Failed to download CodeQL bundle from https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.27.4/codeql-bundle-linux64.tar.zst. HTTP status code: 504.
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:11:20.1302883Z ##[warning]Falling back to downloading the bundle before extracting.
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:11:31.4027166Z Unexpected HTTP response: 504
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:11:31.4027577Z Waiting 20 seconds before trying again
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:12:02.6842037Z Unexpected HTTP response: 504
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:12:02.6842352Z Waiting 15 seconds before trying again
+Analyze (actions)	Initialize CodeQL	2026-11-08T10:12:29.0034481Z ##[error]Unable to download and extract CodeQL CLI: Unexpected HTTP response: 504
+Analyze (actions)	Initialize CodeQL	Details: Error: Unexpected HTTP response: 504
+Analyze (actions)	Initialize CodeQL	    at /home/runner/work/_actions/github/codeql-action/v4/lib/entry-points.js:114414:23
+Analyze (actions)	Initialize CodeQL	    at Generator.next (<anonymous>)
+Analyze (actions)	Initialize CodeQL	    at fulfilled (/home/runner/work/_actions/github/codeql-action/v4/lib/entry-points.js:114317:28)
+Analyze (actions)	Initialize CodeQL	    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)

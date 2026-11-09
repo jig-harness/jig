@@ -56,6 +56,8 @@ export interface JobEvidence {
  * hold's label was on when it was created, which a re-run would replay.
  */
 export interface FailedRun {
+  /** Failing job names belonging to this run, linked through its check suite. */
+  jobNames?: string[];
   id: number;
   createdAt: string;
 }
@@ -314,5 +316,11 @@ export function failedRunsOf(
   return workflowRuns
     .filter((run) => suites.has(run.checkSuiteId))
     .sort((a, b) => a.id - b.id)
-    .map((run) => ({ id: run.id, createdAt: run.createdAt }));
+    .map((run) => ({
+      id: run.id,
+      createdAt: run.createdAt,
+      jobNames: jobs
+        .filter((job) => job.suiteId === run.checkSuiteId)
+        .map((job) => job.name ?? ""),
+    }));
 }
