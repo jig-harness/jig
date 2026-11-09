@@ -106,6 +106,8 @@ export interface ForgeFacts {
   /** Its author's association with the repository. */
   authorAssociation: string;
   labels: string[];
+  /** A truncated label connection cannot prove a pull request is outside the dispatch scope. */
+  labelsPartial?: boolean;
   unresolvedThreads: number;
   checks: HeadCheck[];
   reviews: HeadReview[];

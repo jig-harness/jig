@@ -789,6 +789,8 @@ async function main(): Promise<number> {
 
     const wordingRc = await reconcileStanding(pr, head, existingIds, dryRun);
     if (wordingRc !== 0) return wordingRc;
+    const reconciledCleanRc = await checkWorktreeClean(head);
+    if (reconciledCleanRc !== 0) return reconciledCleanRc;
     console.error(
       `announce-merge-ready: already announced for ${head} — nothing to do`,
     );
@@ -1035,7 +1037,9 @@ ${marker}`;
     if (raceCleanRc !== 0) return raceCleanRc;
     const raceFinalCiRc = await confirmFinalCi([lowest]);
     if (raceFinalCiRc !== 0) return raceFinalCiRc;
-    return await reconcileStanding(pr, head, [lowest], false);
+    const raceWordingRc = await reconcileStanding(pr, head, [lowest], false);
+    if (raceWordingRc !== 0) return raceWordingRc;
+    return await checkWorktreeClean(head);
   }
   if (!back.ok) {
     console.error(

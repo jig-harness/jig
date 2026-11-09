@@ -156,6 +156,7 @@ export function parsePull(
     labels: nodes(at(node, "labels"))
       .map((l) => str(at(l, "name")))
       .filter((l) => l !== ""),
+    labelsPartial: more(at(node, "labels")),
     unresolvedThreads: nodes(threads).filter(
       (t) => at(t, "isResolved") !== true,
     ).length,

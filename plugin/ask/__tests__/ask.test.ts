@@ -574,8 +574,12 @@ it("excludes unlabelled peers from a labelled-only update queue", async () => {
   const w = world();
   const head = "a".repeat(40);
   w.api(`repos/${REPO}/pulls/9`, pullDoc(9));
-  w.api(`repos/${REPO}/pulls`, [{ number: 8 }, { number: 9 }]);
-  for (const n of [8, 9])
+  w.api(`repos/${REPO}/pulls`, [
+    { number: 8, labels: [] },
+    { number: 9, labels: [{ name: "team:converged" }] },
+  ]);
+  // No comments endpoint for #8: its ledger must never be read.
+  for (const n of [9])
     w.api(`repos/${REPO}/issues/${n}/comments`, [
       comment(900 + n, ledgerBody(stoppedLedger(n, 0, { verifiedSha: head }))),
     ]);
@@ -588,6 +592,10 @@ it("excludes unlabelled peers from a labelled-only update queue", async () => {
   };
   board.data.repository.pr9.mergeStateStatus = "BEHIND";
   board.data.repository.pr8 = { ...board.data.repository.pr9, number: 8 };
+  board.data.repository.pr8.reviewThreads = {
+    nodes: [],
+    pageInfo: { hasNextPage: true },
+  };
   board.data.repository.pr9.labels = {
     nodes: [{ name: "team:converged" }],
     pageInfo: { hasNextPage: false },
@@ -596,4 +604,30 @@ it("excludes unlabelled peers from a labelled-only update queue", async () => {
   const { r, answer } = await askJson(w, [`drive@${REPO}#9`]);
   expectSpawnExit(r, 0);
   expect(answer.waitsOn).toMatchObject({ person: "update the branch" });
+  // A peer may leave the label set between the listing and the facts query.
+  // Its unrelated partial connections must not poison the remaining queue.
+  w.api(`repos/${REPO}/pulls`, [
+    { number: 8, labels: [{ name: "team:converged" }] },
+    { number: 9, labels: [{ name: "team:converged" }] },
+  ]);
+  w.api(`repos/${REPO}/issues/8/comments`, [
+    comment(908, ledgerBody(stoppedLedger(8, 0, { verifiedSha: head }))),
+  ]);
+  const changed = await askJson(w, [`drive@${REPO}#9`]);
+  expectSpawnExit(changed.r, 0);
+  expect(changed.answer.waitsOn).toMatchObject({ person: "update the branch" });
+  board.data.repository.pr8.labels.pageInfo.hasNextPage = true;
+  writeFileSync(join(w.dir, "board.json"), JSON.stringify(board));
+  const incompleteLabels = await askJson(w, [`drive@${REPO}#9`]);
+  expectSpawnExit(incompleteLabels.r, 0);
+  expect(incompleteLabels.answer.waitsOn).toMatchObject({
+    waiting: expect.stringContaining("facts are partial"),
+  });
+  // Unknown label scope cannot certify that a peer is outside the queue.
+  w.api(`repos/${REPO}/pulls`, [{ number: 8 }, { number: 9 }]);
+  const unread = await askJson(w, [`drive@${REPO}#9`]);
+  expectSpawnExit(unread.r, 0);
+  expect(unread.answer.waitsOn).toMatchObject({
+    waiting: expect.stringContaining("label scope did not read"),
+  });
 });

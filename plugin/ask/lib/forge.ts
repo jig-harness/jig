@@ -235,11 +235,16 @@ export function commentFields(c: unknown): CommentFields | null {
   };
 }
 
-/** Open pull request numbers, fully paged within the answer's deadline. */
+/** Open pull requests and their label scope, fully paged within the answer's deadline. */
 export async function readOpenPulls(
   reading: Reading,
   repo: string,
-): Promise<Outcome<number[], "absent" | "unreadable">> {
+): Promise<
+  Outcome<
+    Array<{ number: number; labels: string[] | null }>,
+    "absent" | "unreadable"
+  >
+> {
   const read = await pages(reading, `repos/${repo}/pulls?state=open`);
   if (!read.ok) return read;
   const numbers = read.value.map((v) => (isRecord(v) ? v.number : undefined));
@@ -253,5 +258,16 @@ export async function readOpenPulls(
       "unreadable",
       "the open pull request listing has invalid numbers",
     );
-  return ok(numbers);
+  return ok(
+    numbers.map((number, i) => {
+      const v = read.value[i];
+      const labels = isRecord(v) && Array.isArray(v.labels) ? v.labels : null;
+      return {
+        number,
+        labels: labels?.every((l) => isRecord(l) && typeof l.name === "string")
+          ? labels.map((l) => (l as { name: string }).name)
+          : null,
+      };
+    }),
+  );
 }

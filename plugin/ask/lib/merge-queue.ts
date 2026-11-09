@@ -18,17 +18,41 @@ import { commentFields, readComments, readOpenPulls } from "./forge.ts";
 import type { AskContext } from "./station.ts";
 import type { WaitsOn } from "./answer.ts";
 
+/** Apply the dispatch label boundary before reading any peer's records. */
+async function scopedOpenPulls(
+  ctx: AskContext,
+  number: number,
+  prefix: string | null,
+  onlyLabeled: boolean,
+): Promise<Outcome<number[], "unreadable">> {
+  const open = await readOpenPulls(ctx.reading, ctx.address.repo);
+  if (!open.ok) return failed("unreadable", open.failure.reason);
+  const numbers: number[] = [];
+  for (const { number: n, labels } of open.value) {
+    if (n === number) continue;
+    if (onlyLabeled && prefix !== null) {
+      if (labels === null)
+        return failed("unreadable", `PR #${n}'s label scope did not read`);
+      if (!carriesSet({ enabled: true, prefix, onlyLabeled: true }, labels))
+        continue;
+    }
+    numbers.push(n);
+  }
+  return ok(numbers);
+}
+
 /** Read the converged peers from their trusted drive ledgers. */
 async function peerLedgers(
   ctx: AskContext,
   number: number,
   ledger: Ledger,
+  prefix: string | null,
+  onlyLabeled: boolean,
 ): Promise<Outcome<Map<number, Ledger>, "unreadable">> {
-  const open = await readOpenPulls(ctx.reading, ctx.address.repo);
+  const open = await scopedOpenPulls(ctx, number, prefix, onlyLabeled);
   if (!open.ok) return failed("unreadable", open.failure.reason);
   const ledgers = new Map<number, Ledger>([[number, ledger]]);
   for (const n of open.value) {
-    if (n === number) continue;
     const comments = await readComments(ctx.reading, ctx.address.repo, n);
     if (!comments.ok) return failed("unreadable", comments.failure.reason);
     const snapshot = snapshotFrom(
@@ -67,14 +91,15 @@ function peerCards(
     const f = pulls.get(n);
     if (f === undefined)
       return failed("unreadable", `PR #${n}'s facts did not read`);
-    if (f.partial !== null)
-      return failed("unreadable", `PR #${n}'s facts are partial: ${f.partial}`);
     if (
       onlyLabeled &&
       prefix !== null &&
+      f.labelsPartial !== true &&
       !carriesSet({ enabled: true, prefix, onlyLabeled: true }, f.labels)
     )
       continue;
+    if (f.partial !== null)
+      return failed("unreadable", `PR #${n}'s facts are partial: ${f.partial}`);
     const r = readiness(
       {
         ...f,
@@ -117,7 +142,13 @@ export async function updateQueueWait(
       waiting: `the repository's update next order did not read: ${why}`,
     };
   };
-  const peers = await peerLedgers(ctx, facts.number, ledger);
+  const peers = await peerLedgers(
+    ctx,
+    facts.number,
+    ledger,
+    prefix,
+    onlyLabeled,
+  );
   if (!peers.ok) return unknown(peers.failure.reason);
   const ledgers = peers.value;
   const sec = ctx.reading.sourceSec();
