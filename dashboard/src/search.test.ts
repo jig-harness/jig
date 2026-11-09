@@ -7,6 +7,8 @@ import {
   rowsQuery,
   tokenOf,
   viewOf,
+  openingView,
+  VIEWS,
   viewQuery,
   withParam,
 } from "./search.ts";
@@ -127,11 +129,27 @@ describe("what the page was opened with", () => {
     expect(tokenOf("")).toBe("");
   });
 
-  it("reads its view, Now when it names none it knows", () => {
+  it("reads its view, and none when it names none it knows", () => {
     expect(viewOf("?token=t&view=history")).toBe("history");
     expect(viewOf("?view=help")).toBe("help");
-    expect(viewOf("?view=other")).toBe("now");
-    expect(viewOf("")).toBe("now");
+    expect(viewOf("?view=merge")).toBe("merge");
+    expect(viewOf("?view=other")).toBeNull();
+    expect(viewOf("")).toBeNull();
+  });
+
+  it("reads the old Now as Needs you", () => {
+    expect(viewOf("?view=now")).toBe("needs");
+  });
+
+  it("opens on Merge while merge now holds anything, else on Needs you", () => {
+    expect(openingView(2)).toBe("merge");
+    expect(openingView(0)).toBe("needs");
+  });
+
+  it("gives every view but Help a key after g, each its own", () => {
+    const keys = VIEWS.flatMap((v) => (v.key === null ? [] : [v.key]));
+    expect(keys).toEqual(["m", "n", "r", "q", "h"]);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });
 

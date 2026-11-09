@@ -782,10 +782,17 @@ open the URL on the phone, and stop it with Ctrl-C.
 The page reads two things, every minute and when it comes back into focus, and
 writes nothing to the host:
 
-- **What the newest tick found**, on the Now view: the parks, stops and stalled
-  pickups waiting on a person, with the question and the recommendation in
-  place and the whole decision one tap away; each account's slots and the
-  sessions in them, with their evidence; what comes next and why. Each tick that
+- **What the newest tick found**, one question to a view, each tab with its
+  count: **Merge**, the converged pull requests in Ready to merge's lanes
+  (merge now, approve first, update next), each merge now card with its
+  merge command pinned to the verified head; **Needs you**, the parks, stops
+  and stalled pickups waiting on a person, with the question and the
+  recommendation in place and the whole decision one tap away; **Running**,
+  each account's slots and the sessions in them, with their evidence; and
+  **Queue**, what comes next and why. The page opens on Merge while merge now
+  holds a pull request, else on Needs you, and while it holds one every other
+  view says so at its top until dismissed, which lasts until a pull request
+  reaches merge now at a new head. Each tick that
   reads every repository the machine file lists writes it to the state database
   beside its receipt (the `tick_line` record). So the strip says how old that
   tick is, a stopped timer shows as one, and a host may serve the page from a
@@ -809,7 +816,14 @@ writes nothing to the host:
   yesterday is the Yesterday filter, and the view and the filter are the
   page's address, so a view on a phone is a link a laptop opens.
 
-The Help view says what the page's words, stages and marks mean; a chip, a
+Keys reach every card: j and k move between the cards, Enter or o opens
+one, p and i open its pull request or issue, c copies its command (the merge
+command, the answer line or its `jig ask` line), g then m, n, r, q or h goes
+to a view, / filters, ? lists the keys, and ⌘K or Ctrl-K opens a palette that
+goes to a view, jumps to `#N` or an item, or copies a card's command. No key
+fires while a person types in a field.
+
+The Help view lists the keys and says what the page's words, stages and marks mean; a chip, a
 dotted word or the `?` beside a heading says it in place, on hover, tap or
 focus. The theme follows the device until the switch in the strip picks light
 or dark.

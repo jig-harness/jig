@@ -1,8 +1,8 @@
 /**
  * Draws the dispatch dashboard's screenshots (public/shots/dashboard-*.webp):
- * the real page, served by the real server over the dashboard's `loud`
- * fixture with its clock held still, so the shots show what the plugin
- * serves and never a person's own data.
+ * the real page on its Needs you view, served by the real server over the
+ * dashboard's `loud` fixture with its clock held still, so the shots show
+ * what the plugin serves and never a person's own data.
  *
  *   bun scripts/dashboard-shots.ts
  *
@@ -100,7 +100,7 @@ try {
           colorScheme: scheme,
         });
         const page = await context.newPage();
-        await page.goto(url, { waitUntil: "networkidle" });
+        await page.goto(`${url}&view=needs`, { waitUntil: "networkidle" });
         await page
           .locator(".pNeeds")
           .waitFor({ state: "visible", timeout: DEADLINE_MS });

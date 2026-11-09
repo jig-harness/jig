@@ -1,10 +1,10 @@
 /**
  * The page in a real browser, against the real server over each scenario: what
  * only a rendered page can show. Every scenario at a phone's width and a
- * laptop's, light and dark, in its Now and History views, for overflow,
- * requests, errors and the strip's fact; then the layout, the reads and the
- * filters one scenario at a time. What a person opens and copies is
- * `browser-interactions.test.ts`.
+ * laptop's, light and dark, in each of its five views, for overflow, one
+ * column of cards, requests, errors and the strip's fact; then the layout, the
+ * reads and the filters one scenario at a time. What a person opens and copies
+ * is `browser-interactions.test.ts`; the keys are `browser-keys.test.ts`.
  *
  * It drives Chromium through `playwright-core`, from `JIG_CHROMIUM`, `JIG_TEST_CHROMIUM` or the
  * Playwright cache. Where none is found the checks cannot run and are skipped
@@ -56,6 +56,7 @@ function addressOf(server: Served, scenario: ScenarioId): string {
 const TICK_FACT: Record<ScenarioId, RegExp> = {
   quiet: /^Updated 2 min ago$/,
   loud: /^Updated 2 min ago$/,
+  merge: /^Updated 2 min ago$/,
   hung: /^Updated 2 min ago$/,
   queue: /^Updated 2 min ago$/,
   stopped: /^Updated 47 min ago · overdue$/,
@@ -69,6 +70,7 @@ const TICK_FACT: Record<ScenarioId, RegExp> = {
 const ANSWER: Partial<Record<ScenarioId, RegExp>> = {
   quiet: /Nothing needs a person\./,
   loud: /8 need a person\..*First: PR #456, parked for a person\./s,
+  merge: /8 need a person\..*First: PR #456, parked for a person\./s,
   hung: /1 needs a person\..*First: PR #472, nudge-unanswered\./s,
   queue: /1 needs a person\..*First: #231, assigner cannot write\./s,
   stopped: /Nothing needed a person at the 16:00 tick\./,
@@ -125,8 +127,7 @@ async function cellSettled(page: Page, scenario: ScenarioId): Promise<void> {
       ((await page.locator(".tick").innerText()) ?? "").trim(),
     ),
   );
-  if (ANSWER[scenario] !== undefined) await shows(page, ".answer");
-  if (scenario !== "token") await shows(page, ".pLine h2");
+  if (scenario !== "token") await shows(page, "main :is(h1, h2)");
   await settled(page);
 }
 
@@ -153,6 +154,31 @@ async function expectFrame(
   expect(await page.locator(".tick").isVisible()).toBe(true);
   expect(await bottomOf(page, ".tick")).toBeLessThan(viewport.height);
 }
+
+/** No two cards side by side: every card the view shows starts at one left edge, each below the one before. */
+async function expectOneColumn(page: Page): Promise<void> {
+  const boxes = await page.locator("[data-card]:visible").evaluateAll((cards) =>
+    cards.map((c) => {
+      const r = c.getBoundingClientRect();
+      return { left: Math.round(r.left), top: r.top, bottom: r.bottom };
+    }),
+  );
+  for (const [i, box] of boxes.entries()) {
+    const before = boxes[i - 1];
+    if (before === undefined) continue;
+    expect(box.left).toBe(boxes[0]?.left ?? box.left);
+    expect(box.top).toBeGreaterThanOrEqual(before.bottom - 1);
+  }
+}
+
+/** The five views every cell visits, by their tabs' labels, after the one the page opens on. */
+const CARD_VIEWS = [
+  "Merge",
+  "Needs you",
+  "Running",
+  "Queue",
+  "History",
+] as const;
 
 /** What a phone also shows: every control tall enough, and the answer above the fold. */
 async function expectPhone(
@@ -183,25 +209,31 @@ describe("every scenario, at each width and in each theme", () => {
             try {
               if (scenario === "gone") await loseServer(page, server);
               await cellSettled(page, scenario);
-              await shoot(page, `${scenario}-${viewport.width}-${theme}`);
-              const answer = ANSWER[scenario];
-              if (answer !== undefined)
-                expect(await page.locator(".answer").innerText()).toMatch(
-                  answer,
-                );
-              await expectFrame(page, viewport, theme);
-              if (name === "phone") await expectPhone(page, viewport, scenario);
-              if (scenario !== "token") {
-                await openView(page, "History");
-                await shows(page, "#history h2");
-                await settled(page);
-                await shoot(
-                  page,
-                  `${scenario}-${viewport.width}-${theme}-history`,
-                );
+              if (scenario !== "token")
+                for (const label of CARD_VIEWS) {
+                  await openView(page, label);
+                  await shows(page, "main :is(h1, h2)");
+                  await settled(page);
+                  await shoot(
+                    page,
+                    `${scenario}-${viewport.width}-${theme}-${label.split(" ")[0]?.toLowerCase()}`,
+                  );
+                  await expectFrame(page, viewport, theme);
+                  await expectOneColumn(page);
+                  if (label === "Needs you") {
+                    const answer = ANSWER[scenario];
+                    if (answer !== undefined)
+                      expect(await page.locator(".answer").innerText()).toMatch(
+                        answer,
+                      );
+                    if (name === "phone")
+                      await expectPhone(page, viewport, scenario);
+                  } else if (name === "phone")
+                    expect(await shortControls(page)).toEqual([]);
+                }
+              else {
+                await shoot(page, `${scenario}-${viewport.width}-${theme}`);
                 await expectFrame(page, viewport, theme);
-                if (name === "phone")
-                  expect(await shortControls(page)).toEqual([]);
               }
               expect(watched.otherOrigins).toEqual([]);
               expect(watched.problems).toEqual([]);
@@ -214,85 +246,15 @@ describe("every scenario, at each width and in each theme", () => {
         );
 });
 
-function rectOf(page: Page, selector: string) {
-  return page
-    .locator(selector)
-    .first()
-    .evaluate((e) => e.getBoundingClientRect());
+/** The label of the tab the page is on, without its count. */
+async function currentTab(page: Page): Promise<string> {
+  const tab = page.locator('.viewTab[aria-current="page"]');
+  return (await tab.evaluate((a) => a.firstChild?.textContent ?? "")).trim();
 }
 
-async function leftOf(page: Page, selector: string): Promise<number> {
-  return (await rectOf(page, selector)).left;
-}
-
-async function lefts(page: Page, selectors: string[]): Promise<number[]> {
-  return Promise.all(selectors.map((s) => leftOf(page, s)));
-}
-
-async function topsOf(page: Page, selectors: string[]): Promise<number[]> {
-  return Promise.all(selectors.map(async (s) => (await rectOf(page, s)).top));
-}
-
-describe("the desktop fold", () => {
+describe("the view a page opens on", () => {
   browserIt(
-    "loud at 1440: What needs you opens the first screen, and the panels stack below it",
-    async () => {
-      const server = await served("loud");
-      const { page, context } = await open(
-        requireBrowser(),
-        server.origin,
-        server.url,
-        LAPTOP,
-      );
-      try {
-        await shows(page, ".pQueue");
-        await settled(page);
-        // What needs you runs past the fold by design: its heading and first rows must stand above it.
-        expect(await bottomOf(page, ".pNeeds .need")).toBeLessThanOrEqual(900);
-        expect(await page.locator(".pNeeds .need").count()).toBeGreaterThan(5);
-        const [needs, line, queue] = await topsOf(page, [
-          ".pNeeds",
-          ".pLine",
-          ".pQueue",
-        ]);
-        expect(needs).toBeLessThan(line ?? 0);
-        expect(line).toBeLessThan(queue ?? 0);
-      } finally {
-        await context.close();
-      }
-    },
-    TIMEOUT,
-  );
-});
-
-describe("the reshaped page", () => {
-  browserIt(
-    "with no needs the answer is a plain line and the panels stack in one column",
-    async () => {
-      const server = await served("quiet");
-      const { page, context } = await open(
-        requireBrowser(),
-        server.origin,
-        server.url,
-        LAPTOP,
-      );
-      try {
-        await shows(page, ".pLine");
-        expect(await page.locator(".answer.loud").count()).toBe(0);
-        expect(await page.locator(".pNeeds").count()).toBe(0);
-        const left = await leftOf(page, ".pLine");
-        expect(await lefts(page, [".pLine", ".pQueue"])).toEqual([left, left]);
-        const [line, queue] = await topsOf(page, [".pLine", ".pQueue"]);
-        expect(line).toBeLessThan(queue ?? 0);
-      } finally {
-        await context.close();
-      }
-    },
-    TIMEOUT,
-  );
-
-  browserIt(
-    "with needs a filled band appears and every panel stacks below What needs you, never beside it",
+    "loud at 1440 opens on Needs you, its first cards above the fold, with no flash",
     async () => {
       const server = await served("loud");
       const { page, context } = await open(
@@ -303,16 +265,232 @@ describe("the reshaped page", () => {
       );
       try {
         await shows(page, ".pNeeds");
+        await settled(page);
+        expect(await currentTab(page)).toBe("Needs you");
+        // What needs you runs past the fold by design: its heading and first rows must stand above it.
+        expect(await bottomOf(page, ".pNeeds .need")).toBeLessThanOrEqual(900);
+        expect(await page.locator(".pNeeds .need").count()).toBeGreaterThan(5);
         expect(await page.locator(".answer.loud").count()).toBe(1);
-        const left = await leftOf(page, ".pNeeds");
-        expect(await lefts(page, [".pLine", ".pQueue"])).toEqual([left, left]);
-        const [needs, line, queue] = await topsOf(page, [
-          ".pNeeds",
-          ".pLine",
-          ".pQueue",
+        expect(await page.locator(".flash").count()).toBe(0);
+        expect(await page.locator(".pLine, .pQueue, .pMerge").count()).toBe(0);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "quiet opens on Needs you, its answer a plain line and no list",
+    async () => {
+      const server = await served("quiet");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        server.url,
+        LAPTOP,
+      );
+      try {
+        await shows(page, ".answer");
+        expect(await currentTab(page)).toBe("Needs you");
+        expect(await page.locator(".answer.loud").count()).toBe(0);
+        expect(await page.locator(".pNeeds").count()).toBe(0);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "with merge now holding pull requests it opens on Merge, merge now first",
+    async () => {
+      const server = await served("merge");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        server.url,
+        LAPTOP,
+      );
+      try {
+        await shows(page, ".pMerge .mCard");
+        expect(await currentTab(page)).toBe("Merge");
+        expect(
+          await page.locator(".pMerge .groupHead").allInnerTexts(),
+        ).toEqual(["Merge now · 2", "Approve first · 1", "Update next · 1"]);
+        expect(
+          await page
+            .locator(".pMerge .mCard")
+            .first()
+            .getAttribute("data-command"),
+        ).toContain("--match-head-commit 3f2a91c");
+        expect(await page.locator(".flash").count()).toBe(0);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "an address that names a view opens on it, and the old Now opens Needs you",
+    async () => {
+      const server = await served("merge");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        `${server.url}&view=queue`,
+        LAPTOP,
+      );
+      try {
+        await shows(page, ".pQueue");
+        expect(await currentTab(page)).toBe("Queue");
+        await page.goto(`${server.url}&view=now`);
+        await shows(page, ".pNeeds");
+        expect(await currentTab(page)).toBe("Needs you");
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+});
+
+describe("the tabs' counts", () => {
+  browserIt(
+    "every tab but Help carries its count",
+    async () => {
+      const server = await served("merge");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        server.url,
+        LAPTOP,
+      );
+      try {
+        await shows(page, ".pMerge");
+        await until("the log's count is read", async () =>
+          (await page.locator(".viewTab").allInnerTexts()).some((t) =>
+            t.startsWith("History"),
+          ),
+        );
+        const tabs = await page
+          .locator(".viewTab")
+          .evaluateAll((all) =>
+            all.map((a) => a.textContent?.replace(/\s+/g, " ").trim()),
+          );
+        expect(tabs).toEqual([
+          "Merge4, 4 ready to merge",
+          "Needs you8, 8 need you",
+          "Running4, 4 sessions",
+          "Queue4, 4 coming",
+          "History8, 8 rows in the window",
+          "Help",
         ]);
-        expect(needs).toBeLessThan(line ?? 0);
-        expect(line).toBeLessThan(queue ?? 0);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+});
+
+describe("the merge flash", () => {
+  browserIt(
+    "shows on every view but Merge while merge now holds a pull request, and never otherwise",
+    async () => {
+      for (const [scenario, flashes] of [
+        ["merge", true],
+        ["loud", false],
+        ["quiet", false],
+      ] as const) {
+        const server = await served(scenario);
+        const { page, context } = await open(
+          requireBrowser(),
+          server.origin,
+          server.url,
+          LAPTOP,
+        );
+        try {
+          await shows(page, "main :is(h1, h2)");
+          for (const label of [...CARD_VIEWS, "Help"]) {
+            await openView(page, label);
+            await shows(page, "main :is(h1, h2)");
+            expect({
+              scenario,
+              label,
+              flash: await page.locator(".flash").count(),
+            }).toEqual({
+              scenario,
+              label,
+              flash: flashes && label !== "Merge" ? 1 : 0,
+            });
+          }
+          if (flashes)
+            expect(await page.locator(".flash").innerText()).toContain(
+              "2 pull requests are safe to merge: #461, #1199",
+            );
+        } finally {
+          await context.close();
+        }
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "dismissed, it stays hidden until a pull request reaches merge now at a new head",
+    async () => {
+      const server = await served("merge");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        `${server.url}&view=needs`,
+        LAPTOP,
+      );
+      try {
+        await shows(page, ".flash");
+        await page.locator(".flashOff").click();
+        await until(
+          "the flash is gone",
+          async () => (await page.locator(".flash").count()) === 0,
+        );
+        await page.reload();
+        await shows(page, ".pNeeds");
+        expect(await page.locator(".flash").count()).toBe(0);
+
+        await page.route("**/state*", async (route) => {
+          const response = await route.fetch();
+          const body = await response.json();
+          body.value.line.ready[1].head =
+            "0123456789abcdef0123456789abcdef01234567";
+          await route.fulfill({ response, json: body });
+        });
+        await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+        await shows(page, ".flash");
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "its link goes to Merge",
+    async () => {
+      const server = await served("merge");
+      const { page, context } = await open(
+        requireBrowser(),
+        server.origin,
+        `${server.url}&view=running`,
+        LAPTOP,
+      );
+      try {
+        await shows(page, ".flash");
+        await page.locator(".flashGo").click();
+        await shows(page, ".pMerge");
+        expect(await currentTab(page)).toBe("Merge");
+        expect(page.url()).toContain("view=merge");
       } finally {
         await context.close();
       }
@@ -367,7 +545,7 @@ describe("the server gone", () => {
             expect(await controls.nth(i).isDisabled()).toBe(true);
         }
 
-        await openView(page, "Now");
+        await openView(page, "Needs you");
         await shows(page, ".pNeeds");
         expect(await page.locator(".pNeeds .need").count()).toBeGreaterThan(5);
         expect(await page.locator(".answer h1").innerText()).toBe(
@@ -435,7 +613,7 @@ describe("a wrong token", () => {
         [REFUSAL_LOAD],
       );
       try {
-        await shows(page, ".pLine");
+        await shows(page, ".answer");
         await page.route("**/state*", (route) =>
           route.fulfill({
             status: 403,
@@ -450,7 +628,7 @@ describe("a wrong token", () => {
         );
         await page.evaluate(() => window.dispatchEvent(new Event("focus")));
         await shows(page, "#h-ref");
-        expect(await page.locator(".pLine").count()).toBe(0);
+        expect(await page.locator(".answer").count()).toBe(0);
         expect(await page.locator("body").innerText()).not.toContain(
           "example-org",
         );
@@ -728,7 +906,7 @@ describe("what fails", () => {
         await route.fulfill({ response, json: body });
       });
       try {
-        await page.goto(server.url);
+        await page.goto(`${server.url}&view=running`);
         await shows(page, ".defect");
         const panels = await page.locator(".defect").count();
         expect(panels).toBe(1);
@@ -737,8 +915,10 @@ describe("what fails", () => {
         );
         expect(await page.locator(".defect .copy").count()).toBe(1);
         expect(await page.locator(".defect").innerText()).not.toContain(" at ");
-        expect(await page.locator(".pQueue").count()).toBe(1);
-        await shows(page, ".answer");
+        await openView(page, "Queue");
+        await shows(page, ".pQueue");
+        expect(await page.locator(".defect").count()).toBe(0);
+        await openView(page, "Running");
 
         await page.unroute("**/state*");
         await page.evaluate(() => window.dispatchEvent(new Event("focus")));

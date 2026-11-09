@@ -16,14 +16,32 @@ export const PRESETS = [
 
 export type Preset = (typeof PRESETS)[number]["id"];
 
-/** The page's views: what is happening now, how it went, and how to read it. */
+/**
+ * The page's views, one per question, each with the key that goes to it after
+ * `g`: what is safe to merge, what needs a person, what is running, what is
+ * coming, how it went, and how to read the page.
+ */
 export const VIEWS = [
-  { id: "now", label: "Now" },
-  { id: "history", label: "History" },
-  { id: "help", label: "Help" },
+  { id: "merge", label: "Merge", key: "m" },
+  { id: "needs", label: "Needs you", key: "n" },
+  { id: "running", label: "Running", key: "r" },
+  { id: "queue", label: "Queue", key: "q" },
+  { id: "history", label: "History", key: "h" },
+  { id: "help", label: "Help", key: null },
 ] as const;
 
 export type ViewId = (typeof VIEWS)[number]["id"];
+
+/** The views whose cards the view's own filter narrows; History's log has its own filters. */
+export const FILTERED_VIEWS: ReadonlySet<ViewId> = new Set([
+  "merge",
+  "needs",
+  "running",
+  "queue",
+]);
+
+/** The view an address from before the five views names: Now became Needs you. */
+const RENAMED: Record<string, ViewId> = { now: "needs" };
 
 /** A named window, or `range` when `from` or `to` names one. */
 export type WindowChoice = Preset | "range";
@@ -139,10 +157,16 @@ export function tokenOf(search: string): string {
   return new URLSearchParams(search).get("token") ?? "";
 }
 
-/** The view the address names; what it leaves out is Now. */
-export function viewOf(search: string): ViewId {
+/** The view the address names; `null` when it names none, and the page picks one from the line. */
+export function viewOf(search: string): ViewId | null {
   const named = new URLSearchParams(search).get("view");
-  return VIEWS.find((v) => v.id === named)?.id ?? "now";
+  if (named === null) return null;
+  return VIEWS.find((v) => v.id === named)?.id ?? RENAMED[named] ?? null;
+}
+
+/** The view a page opens on when its address names none: Merge while merge now holds anything, else Needs you. */
+export function openingView(mergeNow: number): ViewId {
+  return mergeNow > 0 ? "merge" : "needs";
 }
 
 /**
@@ -171,15 +195,24 @@ export function replaceParam(name: string, value: string | null): void {
   );
 }
 
-/** The view in the address, and how to change it. */
-export function useView(): [ViewId, (view: ViewId) => void] {
-  const [view, setView] = useState(() => viewOf(location.search));
+/**
+ * The view in the address, and how to change it. An address that names none
+ * opens on the view `opening` gives once the first line is read, and stays
+ * there as later reads arrive: a page never moves under a person.
+ */
+export function useView(
+  opening: ViewId | null,
+): [ViewId, (view: ViewId) => void] {
+  const [named, setNamed] = useState(() => viewOf(location.search));
+  const [settled, setSettled] = useState<ViewId | null>(null);
+  if (named === null && settled === null && opening !== null)
+    setSettled(opening);
   const change = useCallback((next: ViewId) => {
-    setView(next);
-    replaceParam("view", next === "now" ? null : next);
+    setNamed(next);
+    replaceParam("view", next);
     window.scrollTo({ top: 0 });
   }, []);
-  return [view, change];
+  return [named ?? settled ?? "needs", change];
 }
 
 /** The filter in the address, and how to change it. */

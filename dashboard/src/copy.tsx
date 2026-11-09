@@ -16,9 +16,9 @@ const hearers = new Set<(text: string) => void>();
  * exist there. The fallback selects the text in a hidden field and asks the
  * browser to copy it.
  */
-function writeClip(text: string, button: HTMLButtonElement): Promise<boolean> {
+function writeClip(text: string, back: HTMLElement): Promise<boolean> {
   const fallback = (): Promise<boolean> => {
-    const field = button.closest(".dd")?.querySelector("textarea.clip");
+    const field = back.closest(".dd")?.querySelector("textarea.clip");
     if (!(field instanceof HTMLTextAreaElement)) return Promise.resolve(false);
     field.value = text;
     field.focus();
@@ -31,11 +31,57 @@ function writeClip(text: string, button: HTMLButtonElement): Promise<boolean> {
         (copied) => copied,
         () => false,
       )
-      .finally(() => button.focus());
+      .finally(() => back.focus());
   };
   if (window.isSecureContext && navigator.clipboard !== undefined)
     return navigator.clipboard.writeText(text).then(() => true, fallback);
   return fallback();
+}
+
+/** Whoever shows what a key did, for a moment. */
+const showers = new Set<(text: string) => void>();
+
+/**
+ * Says what a key did: politely, where Copy says what it did, and for a
+ * moment in sight, since a key has no button to change.
+ */
+export function announce(text: string): void {
+  for (const hear of hearers) hear(text);
+  for (const show of showers) show(text);
+}
+
+/** What a key did, shown for a moment at the foot of the screen; the polite announcement is `ClipParts`' own. */
+export function KeyToast() {
+  const [said, setSaid] = useState("");
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const show = (text: string) => {
+      setSaid(text);
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => setSaid(""), SHOWN_MS);
+    };
+    showers.add(show);
+    return () => {
+      showers.delete(show);
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, []);
+  return said === "" ? null : (
+    <div className="keyToast m sm" aria-hidden="true">
+      {said}
+    </div>
+  );
+}
+
+/**
+ * Copies `text` from a key rather than a button, and says what it did; focus
+ * comes back to `back`, the card the key was pressed on.
+ */
+export function copyText(text: string, back: HTMLElement): Promise<boolean> {
+  return writeClip(text, back).then((copied) => {
+    announce(copied ? `Copied: ${text}` : "Copy failed");
+    return copied;
+  });
 }
 
 export function CopyButton({

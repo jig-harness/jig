@@ -6,7 +6,9 @@ import { Pr, RepoLink } from "./pr.tsx";
  * running stays one scroll away; the rest wait behind Show all.
  */
 import { useId, useState } from "react";
+import { needCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
+import { cardAttrs } from "./keys.ts";
 import { DecisionText } from "./decision-text.tsx";
 import { Evidence, Fold, PanelHelp, StageHint } from "./fold.tsx";
 import { Mark } from "./marks.tsx";
@@ -69,7 +71,10 @@ function Replies({ need }: { need: NeedView }) {
 
 function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
   return (
-    <article className={rest ? "need rest" : "need"}>
+    <article
+      className={rest ? "need rest" : "need"}
+      {...cardAttrs(needCard(need))}
+    >
       <div className="rowTop">
         <Mark role={need.role} />
         <Pr repo={need.repo} target={need.target} url={need.url} />
@@ -129,7 +134,10 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
 
 function StuckItem({ slot, rest }: { slot: SlotView; rest: boolean }) {
   return (
-    <article className={rest ? "need rest" : "need"}>
+    <article
+      className={rest ? "need rest" : "need"}
+      {...cardAttrs(slotCard(slot, "needs"))}
+    >
       <div className="rowTop">
         <Mark role={slot.role} />
         <Pr repo={slot.repo} target={slot.target} url={slot.url} />

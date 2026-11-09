@@ -11,6 +11,7 @@ import type {
 } from "../plugin/dispatch/lib/dashboard-contract.ts";
 import type { LogRow } from "../plugin/dispatch/lib/log.ts";
 import { drive, framedDecision, line, need, queued } from "./fixture-line.ts";
+import { mergingReady, waitingReady } from "./fixture-ready.ts";
 import {
   API,
   generated,
@@ -28,6 +29,7 @@ import {
 export const SCENARIOS = [
   "quiet",
   "loud",
+  "merge",
   "hung",
   "queue",
   "stopped",
@@ -557,6 +559,18 @@ export function fixture(id: ScenarioId): Fixture {
           sessions: loudSessions(),
           needs: loudNeeds(),
           queue: loudQueue(),
+          ready: waitingReady(),
+        }),
+        rows: loudRows(),
+      };
+    case "merge":
+      return {
+        now,
+        line: line({
+          sessions: loudSessions(),
+          needs: loudNeeds(),
+          queue: loudQueue(),
+          ready: mergingReady(),
         }),
         rows: loudRows(),
       };
@@ -584,6 +598,7 @@ export function fixture(id: ScenarioId): Fixture {
           sessions: loudSessions(),
           needs: loudNeeds(),
           queue: loudQueue(),
+          ready: waitingReady(),
           longestTickMs: 3 * 60_000,
         }),
         rows: loudRows(),
