@@ -552,14 +552,17 @@ describe("drive-status.ts --bump-attempt", () => {
       const r = await probeIn(dir, stateDir, HEAD, ["--bump-attempt"], on);
       expect(r.exitCode).toBe(0);
       expect(r.json.reflectDue).toBe(false);
+      expect(r.stderr).not.toContain("[REFLECT DUE]");
     }
     // Pass 4 crosses the threshold, and this SAME call's own report already
     // says so — not a call later, which is the off-by-one this flag closes.
     const r = await probeIn(dir, stateDir, HEAD, ["--bump-attempt"], on);
     expect(r.json.reflectDue).toBe(true);
+    expect(r.stderr).toMatch(/^\[REFLECT DUE\] ROUND_READY:/m);
     // With reflection off, the same depth asks for nothing.
     const off = await probeIn(dir, stateDir, HEAD, ["--bump-attempt"]);
     expect(off.json.reflectDue).toBe(false);
+    expect(off.stderr).not.toContain("[REFLECT DUE]");
 
     const s = JSON.parse((await driveState(stateDir, ["get", "999"])).stdout);
     expect(s.rounds).toBe(1);

@@ -2110,7 +2110,7 @@ Then move on to the next thread. This is the
 extra check. For a summary-only finding the same split is mechanical rather
 than remembered — see below.
 
-**If step 1's report says `reflectDue: true`, reflect before triaging — and
+**If step 1's report says `reflectDue: true` (the summary shows `[REFLECT DUE]`), reflect before triaging — and
 record it with `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" set-reflected [PR]` once it completes.**
 Reflecting means stepping back from the findings to ask what their repetition
 says about the repository's scaffolding or the reviewer's configuration, and

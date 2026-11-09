@@ -933,3 +933,6 @@ before 2.45 leaves ancestry unknown rather than risk a fetch. The fleet-health f
 whole-cohort bounds must agree too. Missing heads, rewritten branches and
 resolutions in other clones limit coverage. A capped forge cohort has no
 verdict. The report includes coverage and bounds in JSON and terminal output.
+
+When reflection is due, the `drive-status.ts` summary starts with
+`[REFLECT DUE]`; reflect before triaging the round.
