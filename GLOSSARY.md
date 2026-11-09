@@ -1330,7 +1330,7 @@ make, use the entry's term instead.
   ([design](design/structured-answers.md)).
 - **Decision model** — the shape of a decision for a person that a *park*
   and a decision sheet share: a **call** is one question with options that
-  exclude each other. A park is one call; a sheet is several, with their
+  exclude each other. A park is one call; a sheet is one or more calls, with their
   context ([design](design/structured-answers.md#one-decision-model)).
 - **Pick (of an option)** — the choice of an option on a card, made with a
   key or a tap, kept in the browser and undoable. Nothing reads a pick until

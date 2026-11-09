@@ -120,7 +120,7 @@ interface ParkedDecision {
 }
 ```
 
-A decision sheet keeps `decision-sheet/v1`: several calls and the wider
+A decision sheet keeps `decision-sheet/v1`: one or more calls and the wider
 context around them (current behaviour, hidden branches, the outcome
 matrix). The same words mean the same thing in both. A structured answer
 plays the part a sheet's ruling plays, and is kept as its `choice` and its
