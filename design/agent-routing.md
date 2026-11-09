@@ -456,7 +456,11 @@ neither silently wins. Before filling runtime defaults, the loader uses a
 legacy `execution` model as the fallback for both `simple` and `standard`;
 an explicit `simple` model replaces only that fallback. A legacy model that
 names a Scout family is refused like any other Scout mapping. This applies to
-custom runtimes too, even when they have no built-in defaults. Without a
+custom runtimes too, even when they have no built-in defaults. A custom
+runtime has no known-families list, so its legacy model keys keep their
+models but load only once the repository adds a `routing.family_tiers`
+entry for each model's family; until then the loader refuses with the
+missing entry named, and adding it is the migration. Without a
 legacy `execution` key, an omitted `simple` uses its runtime default.
 This preserves an existing `bug: {tier: strategic, effort: high}`
 as complex/high even for a small bug. The route records the explicit
@@ -497,10 +501,13 @@ refused `do_item` section does today; it is never read as absent.
    labelled `has-migration` complex, a Codex account runs a complex item
    on `sol` and a standard one on `terra` with no `routing.models` set,
    and a repository that still names `execution` and `strategic` routes
-   as before. Migration fixtures cover a small task with
+   as before, a custom runtime once it classifies its families. Migration
+   fixtures cover a small task with
    `claude-code: {execution: opus, strategic: opus}` retaining `opus` as
-   simple, a custom runtime with only legacy model keys retaining its
-   execution model for simple and standard, an explicit simple model
+   simple, a custom runtime with only legacy model keys and explicit
+   `routing.family_tiers` entries retaining its
+   execution model for simple and standard, the same runtime without the
+   entries refused naming each missing family, an explicit simple model
    overriding the compatibility fallback, and conflicting legacy/new
    keys being refused.
 3. **The record.** `plugin/shared/route.ts` writes and parses the `## Route`
