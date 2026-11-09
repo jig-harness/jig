@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
 import { DEFAULT_LOCK_TIMEOUT, lockEnv, testCommand } from "./test.ts";
@@ -72,6 +72,9 @@ test("one run's cost is the suite's worker count unless the caller sets it", () 
 test("the run cost follows a caller's own --parallel", () => {
   expect(lockEnv({}, "linux", ["--parallel=16"]).LOCK_RUN_COST).toBe("16");
   expect(lockEnv({}, "linux", ["--parallel", "8"]).LOCK_RUN_COST).toBe("8");
+  expect(lockEnv({}, "linux", ["--parallel"]).LOCK_RUN_COST).toBe(
+    String(availableParallelism()),
+  );
   expect(lockEnv({}, "linux", ["./website/"]).LOCK_RUN_COST).toBe("4");
 });
 

@@ -22,6 +22,7 @@
 // are passed on to `bun test` after the fixed ones, so `bun run test
 // ./website/` and the gate stage's `--path-ignore-patterns=…` work as they
 // did.
+import { availableParallelism } from "node:os";
 import { cli } from "../lib/cli.ts";
 import { main as withResourceLock } from "../plugin/shared/resource-lock.ts";
 
@@ -43,10 +44,12 @@ export function effectiveWorkers(
 ): number {
   let count = workers(platform);
   extra.forEach((arg, i) => {
+    // A bare `--parallel` asks for one worker per CPU core.
     const given =
       /^--parallel=(\d+)$/.exec(arg)?.[1] ??
       (arg === "--parallel"
-        ? /^\d+$/.exec(extra[i + 1] ?? "")?.[0]
+        ? (/^\d+$/.exec(extra[i + 1] ?? "")?.[0] ??
+          String(availableParallelism()))
         : undefined);
     if (given !== undefined && Number(given) > 0) count = Number(given);
   });

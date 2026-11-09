@@ -567,8 +567,11 @@ async function takeSingle(a: Acquisition): Promise<void> {
   const lock = a.slot(0);
   const announcement = `${lock}.exclusive`;
   for (;;) {
+    // An announcement whose holder died, or whose pid was reused, is not a wait.
+    a.locks.reclaim(announcement);
     const announced = a.locks.holders([announcement]);
     if (announced.length > 0) {
+      a.blocker = announcement;
       a.say(
         keyOf("exclusive", announced),
         `an exclusive holder takes every slot: ${describeHolders(announced)}`,
@@ -576,6 +579,7 @@ async function takeSingle(a: Acquisition): Promise<void> {
       if (!(await pause(a, a.pollMs))) return;
       continue;
     }
+    a.blocker = lock;
     if (a.locks.take(lock)) {
       hold(a, lock);
       return;
