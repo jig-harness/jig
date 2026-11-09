@@ -56,19 +56,18 @@ export const PRIORITY: Record<Category, number> = {
  * The `s` flag lets `.` match any character except the line break the log is
  * split on, and `u` gives case-insensitive matching Unicode case folding.
  */
+// File patterns start at a token boundary: a failed match must not retry at
+// each suffix of a long path. Tokens and separators keep their full length.
 const PATTERNS: [RegExp, Category][] = [
   // TypeScript compiler: file(line,col): error TSxxxx: message
-  [
-    /(\S{1,500})\((\d+),(\d+)\):\s{1,20}error\s{1,20}(TS\d+):\s{1,20}(.+)/su,
-    "typescript",
-  ],
+  [/(?<!\S)(\S+)\((\d+),(\d+)\):\s+error\s+(TS\d+):\s+(.+)/su, "typescript"],
   // Biome lint: path/file.ts lint/category/rule  message
-  [/(\S{1,500}\.tsx?)\s{1,20}(lint\/\S{1,500})\s{1,20}(.+)/su, "biome_lint"],
+  [/(?<!\S)(\S+\.tsx?)\s+(lint\/\S+)\s+(.+)/su, "biome_lint"],
   // Biome diagnostic with a cross marker. The two characters before `error`
   // are the cross (U+00D7) as it reads when its UTF-8 bytes were decoded as
   // Latin-1, the form it takes in some captured logs.
   [
-    /(\S{1,500}\.tsx?):(\d+):(\d+)\s.*(?:\xc3\x97|error)\s{1,20}(.+)/su,
+    /(?<!\S)(\S+\.tsx?):(\d+):(\d+)\s.*(?:\xc3\x97|error)\s+(.+)/su,
     "biome_lint",
   ],
   // Test runner: FAIL path/to/file.spec.ts
@@ -85,7 +84,7 @@ const PATTERNS: [RegExp, Category][] = [
   [/^npm\s+(?:ERR!|error)\s+code\s+(.+)/isu, "gate_failure"],
   // Test assertion: file > suite > ... > test, split on the `>` delimiters in
   // `entryFor` so the message keeps the whole path.
-  [/(\S{1,500}\.(?:spec|test)\.tsx?)\s{1,20}>\s{1,20}(.+)/su, "test_failure"],
+  [/(?<!\S)(\S+\.(?:spec|test)\.tsx?)\s+>\s+(.+)/su, "test_failure"],
   [/Cannot find module '([^']+)'/su, "build_error"],
   [/Module not found/su, "build_error"],
   // Database schema drift (an ORM schema or a schema dump checked against

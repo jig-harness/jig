@@ -39,6 +39,24 @@ describe("pinned outputs", () => {
 });
 
 describe("categories", () => {
+  it("preserves long paths and padded separators in file diagnostics", () => {
+    const base = `src/${"nested/".repeat(80)}cart`;
+    const gap = " ".repeat(40);
+    for (const [file, diagnostic] of [
+      [`${base}.ts`, `(3,7):${gap}error${gap}TS2322:${gap}wrong type`],
+      [
+        `${base}.ts`,
+        `${gap}lint/suspicious/noExplicitAny${gap}Unexpected any.`,
+      ],
+      [`${base}.ts`, `:3:7${gap}error${gap}wrong type`],
+      [`${base}.test.ts`, `${gap}>${gap}suite > test`],
+    ] as const) {
+      const result = parseCiErrors(gh(`${file}${diagnostic}`));
+      expect(result.errors_found).toBe(1);
+      expect(result.files_affected).toEqual([file]);
+    }
+  });
+
   it("typescript: file, position, code and message", () => {
     expect(
       only(

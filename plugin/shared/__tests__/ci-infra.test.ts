@@ -25,6 +25,28 @@ const step = (job: string, name: string, ...texts: string[]): string =>
 const EXIT = "##[error]Process completed with exit code 1.";
 
 describe("readInfrastructure", () => {
+  it("keeps padded code diagnostics beside a runner shutdown out of recovery", () => {
+    const gap = " ".repeat(40);
+    for (const diagnostic of [
+      `src/a.ts(3,7):${gap}error${gap}TS2322:${gap}wrong type`,
+      `src/a.ts${gap}lint/suspicious/noExplicitAny${gap}Unexpected any.`,
+      `src/a.ts:3:7${gap}error${gap}wrong type`,
+      `src/a.test.ts${gap}>${gap}suite > test`,
+    ]) {
+      expect(
+        readInfrastructure(
+          step(
+            "build",
+            "Run tests",
+            diagnostic,
+            "##[error]The runner has received a shutdown signal.",
+            EXIT,
+          ),
+        ).infrastructure,
+      ).toBe(false);
+    }
+  });
+
   it("reads a tool download that answered 504 in a setup step as infrastructure", () => {
     const r = readInfrastructure(DOWNLOAD_504);
     expect(r.infrastructure).toBe(true);
