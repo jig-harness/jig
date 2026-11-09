@@ -239,95 +239,56 @@ describe("jig ask on a park", () => {
     ).toEqual(["Maintainer"]);
   });
 
-  it("names the act the newest tick's line names for the park, as the dashboard's card does", async () => {
+  type LineNeed = (typeof LINE.needs)[number];
+
+  /** Parks thread 7, writes a tick line whose first need is `patch`ed, and returns what `jig ask` says the drive waits on. */
+  async function waitsOnWithLineNeed(patch: (need: LineNeed) => LineNeed) {
     const w = world();
     w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
     w.api(`repos/${REPO}/issues/7/comments`, [
       comment(701, ledgerBody(parked(7))),
     ]);
-    // The line counts a reply on a parked thread as its answer, which this read does not: its act stands.
     writeLine(
       {
         ...LINE,
-        needs: LINE.needs.map((need, i) =>
-          i === 0 ? { ...need, act: "Authorize" as const } : need,
-        ),
+        needs: LINE.needs.map((need, i) => (i === 0 ? patch(need) : need)),
       },
       "{}",
       w.state,
     );
     const r = await w.ask([`drive@${REPO}#7`, "--json"]);
     expectSpawnExit(r, 0);
-    expect((JSON.parse(r.stdout) as AskAnswer).waitsOn).toMatchObject({
-      person: "answer",
-      needAct: "Authorize",
-    });
+    return (JSON.parse(r.stdout) as AskAnswer).waitsOn;
+  }
+
+  it("names the act the newest tick's line names for the park, as the dashboard's card does", async () => {
+    // The line counts a reply on a parked thread as its answer, which this read does not: its act stands.
+    const waitsOn = await waitsOnWithLineNeed((need) => ({
+      ...need,
+      act: "Authorize" as const,
+    }));
+    expect(waitsOn).toMatchObject({ person: "answer", needAct: "Authorize" });
   });
 
   it("takes the class's act when the line's decision is not one of the open parks", async () => {
-    const w = world();
-    w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
-    w.api(`repos/${REPO}/issues/7/comments`, [
-      comment(701, ledgerBody(parked(7))),
-    ]);
-    writeLine(
-      {
-        ...LINE,
-        needs: LINE.needs.map((need, i) =>
-          i === 0
-            ? {
-                ...need,
-                act: "Authorize" as const,
-                decisions: need.decisions.map((d) => ({
-                  ...d,
-                  key: "PRRT_obsolete",
-                })),
-              }
-            : need,
-        ),
-      },
-      "{}",
-      w.state,
-    );
-    const r = await w.ask([`drive@${REPO}#7`, "--json"]);
-    expectSpawnExit(r, 0);
-    expect((JSON.parse(r.stdout) as AskAnswer).waitsOn).toMatchObject({
-      person: "answer",
-      needAct: "Decide",
-    });
+    const waitsOn = await waitsOnWithLineNeed((need) => ({
+      ...need,
+      act: "Authorize" as const,
+      decisions: need.decisions.map((d) => ({ ...d, key: "PRRT_obsolete" })),
+    }));
+    expect(waitsOn).toMatchObject({ person: "answer", needAct: "Decide" });
   });
 
   it("takes the class's act when the key was re-parked under another class after the line's tick", async () => {
-    const w = world();
-    w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
-    w.api(`repos/${REPO}/issues/7/comments`, [
-      comment(701, ledgerBody(parked(7))),
-    ]);
-    writeLine(
-      {
-        ...LINE,
-        needs: LINE.needs.map((need, i) =>
-          i === 0
-            ? {
-                ...need,
-                act: "Authorize" as const,
-                decisions: need.decisions.map((d) => ({
-                  ...d,
-                  decisionClass: "release",
-                })),
-              }
-            : need,
-        ),
-      },
-      "{}",
-      w.state,
-    );
-    const r = await w.ask([`drive@${REPO}#7`, "--json"]);
-    expectSpawnExit(r, 0);
-    expect((JSON.parse(r.stdout) as AskAnswer).waitsOn).toMatchObject({
-      person: "answer",
-      needAct: "Decide",
-    });
+    const waitsOn = await waitsOnWithLineNeed((need) => ({
+      ...need,
+      act: "Authorize" as const,
+      decisions: need.decisions.map((d) => ({
+        ...d,
+        decisionClass: "release",
+      })),
+    }));
+    expect(waitsOn).toMatchObject({ person: "answer", needAct: "Decide" });
   });
 
   it("waits on a person's answer while a parked question is unanswered, and lists the commands", async () => {
