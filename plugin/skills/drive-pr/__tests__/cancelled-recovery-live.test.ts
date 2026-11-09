@@ -41,12 +41,13 @@ function fixture() {
         status: phase === "pending" ? "in_progress" : "completed", conclusion: phase === "pending" ? null : phase === "success" ? "success" : "cancelled", check_suite: {id: 1}}];
       console.log(JSON.stringify([{check_runs: checks}]));
     } else if (args[0] === "api" && args.at(-1).includes("actions/runs")) {
+      if (phase === "unreadable") process.exit(1);
       const runs = phase === "external" ? [] : [{id: 1, workflow_id: 10, check_suite_id: 1,
         status: phase === "pending" ? "in_progress" : "completed", conclusion: phase === "pending" ? null : "success",
         created_at: "2026-01-01T00:00:00Z", run_attempt: 2}];
       console.log(JSON.stringify([{workflow_runs: runs}]));
     } else if (args[0] === "pr" && args[1] === "view") {
-      console.log(JSON.stringify({state: "OPEN", headRefOid: ${JSON.stringify(HEAD)}, labels: phase === "external" ? [] : [{name: "ci:hold"}]}));
+      console.log(JSON.stringify({state: "OPEN", headRefOid: ${JSON.stringify(HEAD)}, labels: ["external", "unreadable"].includes(phase) ? [] : [{name: "ci:hold"}]}));
     } else { console.error("unexpected outbound call " + JSON.stringify(args)); process.exit(2); }
   `,
   );
@@ -108,6 +109,16 @@ describe("durable cancellation recovery boundary", () => {
       expect(await f.run("live")).toBe("wait");
       writeFileSync(join(f.dir, "phase"), "success");
       expect(await f.run("live")).toBe("none");
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps cancellation recovery unknown when workflow provenance cannot be read", async () => {
+    const f = fixture();
+    try {
+      writeFileSync(join(f.dir, "phase"), "unreadable");
+      expect(await f.run("live")).toBe("unknown");
     } finally {
       rmSync(f.dir, { recursive: true, force: true });
     }

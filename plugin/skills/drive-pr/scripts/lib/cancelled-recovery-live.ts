@@ -145,10 +145,12 @@ export async function recoverCancelledOnHead(
     return "unknown";
   }
   const runs = await workflowRunsFor("{owner}", "{repo}", head);
-  if (runs === null)
+  if (runs === null) {
     console.error(
       "cancelled CI recovery: could not read exact-head workflow provenance",
     );
+    return "unknown";
+  }
   // Check runs include external apps, including the reviewer.  Only a job
   // belonging to an Actions workflow can be recovered by `gh run rerun`.
   // Filter after supersession so a newer reviewer/app result still retires
@@ -157,7 +159,7 @@ export async function recoverCancelledOnHead(
   const relevant = withoutSuperseded(jobs, runs).filter(
     (job) =>
       (required === undefined || required.includes(job.name)) &&
-      (runs?.some((run) => run.checkSuiteId === job.suiteId) ?? false),
+      runs.some((run) => run.checkSuiteId === job.suiteId),
   );
   if (relevant.length === 0) return await clearRecoveredPark(pr);
   // The durable claim must not be spent until the mutation fence is held.
@@ -192,7 +194,7 @@ export async function recoverCancelledOnHead(
         return await live.rerun(id);
       },
     });
-    return answer === "none" ? await clearRecoveredPark(pr) : answer;
+    return answer === "none" ? await waitForRequestedRun(pr, head) : answer;
   } finally {
     lock?.dispose();
   }
