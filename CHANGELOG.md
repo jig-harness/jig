@@ -389,6 +389,16 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.184.0] - 2026-11-09
+
+The dispatch dashboard shows which card the keyboard is on and what its keys do.
+
+### Changed
+
+- The card j and k rest on is tinted with an accent bar at its edge, in place of the browser's outline.
+- A bar at the foot of the screen names the focused card and lists only the keys it answers to: o for its details, p for its pull request or i for its issue, c for its command (named, such as the merge command or the answer line), and j and k to move. It shows with a mouse or trackpad and stays away on touch screens.
+- The whole reason of a History row is rendered as Markdown, as a decision already was, instead of one block of monospaced text; supported web and mail links open in another tab, while images stay inert.
+
 ## [0.183.2] - 2026-11-09
 
 ### Fixed
@@ -6433,7 +6443,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.183.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.184.0...HEAD
+[0.184.0]: https://github.com/jig-harness/jig/compare/v0.183.2...v0.184.0
 [0.183.2]: https://github.com/jig-harness/jig/compare/v0.183.1...v0.183.2
 [0.183.1]: https://github.com/jig-harness/jig/compare/v0.183.0...v0.183.1
 [0.183.0]: https://github.com/jig-harness/jig/compare/v0.182.0...v0.183.0
