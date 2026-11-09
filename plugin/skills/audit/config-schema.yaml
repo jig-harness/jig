@@ -874,6 +874,16 @@ fields:
     default: 180
     read_by: [docs]
     since: 0.95.0
+  docs.promoted_statuses:
+    type: list
+    items:
+      type: string
+      pattern: '^\S+$'
+    distinct: true
+    nonempty: true
+    read_by: [docs]
+    default: [approved]
+    since: next
   promote_memory.lint_command:
     type: command
     read_by: [promote-memory]
