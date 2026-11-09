@@ -534,6 +534,15 @@ async function actAndClose(
 }
 
 export async function runTick(options: TickOptions): Promise<TickResult> {
+  // A plugin host may run inside Electron. Its Node mode and crash reporter
+  // belong to that host, not to programs this tick starts.
+  for (const key of Object.keys(process.env))
+    if (
+      key === "ELECTRON_RUN_AS_NODE" ||
+      key.startsWith("ELECTRON_CRASH") ||
+      key === "CHROME_CRASHPAD_PIPE_NAME"
+    )
+      delete process.env[key];
   const timer = new PhaseTimer<TickPhase>();
   const started = await timer.time("start", () => startTick(options));
   const locks = new Map<string, Held>();
