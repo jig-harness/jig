@@ -26,7 +26,7 @@ function refused(name: string, enabled: boolean): boolean {
     "config-fit",
   );
   const { findings } = JSON.parse(run.out) as { findings: { id: string }[] };
-  return findings.some((f) => f.id === "rejected:dispatch");
+  return findings.some((f) => f.id === "invalid:manual-ops-label");
 }
 
 test("a manual_ops label the forge cannot take is refused where dispatch labels are on", () => {

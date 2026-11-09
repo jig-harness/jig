@@ -44,6 +44,10 @@ function saysNone(text: string): boolean {
   );
 }
 
+/** A line's indent, a tab counted as four spaces. */
+const indentOf = (line: string): number =>
+  /^\s*/.exec(line.replace(/\t/g, "    "))?.[0].length ?? 0;
+
 /** The fence marker a line opens or closes, at most three spaces in from `base`, the column of the list item that holds it (0 outside a list); `undefined` for another line. */
 function fenceOf(line: string, base: number): string | undefined {
   const found = FENCE.exec(line.replace(/\t/g, "    "));
@@ -90,17 +94,19 @@ interface Context {
   span: number | null;
 }
 
+/** Whether a run of exactly `n` backticks closes a code span on a later line of the paragraph. */
+type Lookahead = (n: number) => boolean;
+
 /** Where the backtick run of `n` at `at` leaves the reading: past its closing run on `line`, to the line's end with the span open (`open` is its backtick count) when a later line of the paragraph closes it, or past the run alone when nothing does. */
 function codeSpanAt(
   line: string,
   at: number,
   n: number,
-  ahead: readonly string[],
+  ahead: Lookahead,
 ): { end: number; open: number | null } {
   const end = findRun(line, at + n, n);
   if (end !== -1) return { end, open: null };
-  if (ahead.some((l) => findRun(l, 0, n) !== -1))
-    return { end: line.length, open: n };
+  if (ahead(n)) return { end: line.length, open: n };
   return { end: at + n, open: null };
 }
 
@@ -122,12 +128,8 @@ function inside(
   return { to: end, kept: line.slice(at, end) };
 }
 
-/** What is left of `line` outside HTML comments; `ahead` are the later lines of its paragraph, where an open code span may close. */
-function uncommented(
-  line: string,
-  ctx: Context,
-  ahead: readonly string[],
-): string {
+/** What is left of `line` outside HTML comments; `ahead` looks through the later lines of its paragraph, where an open code span may close. */
+function uncommented(line: string, ctx: Context, ahead: Lookahead): string {
   let text = "";
   let i = 0;
   while (i < line.length) {
@@ -161,13 +163,15 @@ function fenceOpener(
   base: number,
 ): { marker: string; base: number } | undefined {
   const column = contentColumn(line);
+  // A fence indented less than the item's text is outside the item, however recent the item.
+  const held = indentOf(line) >= base ? base : 0;
   const marker =
     column > 0
       ? fenceOf(line.replace(/\t/g, "    ").slice(column), 0)
-      : fenceOf(line, base);
+      : fenceOf(line, held);
   return marker === undefined
     ? undefined
-    : { marker, base: column > 0 ? column : base };
+    : { marker, base: column > 0 ? column : held };
 }
 
 /** Whether an open fence ends at `line`: its closing marker, or, in a list item, a line less indented than the item's text. */
@@ -178,15 +182,30 @@ function fenceEnds(
   fenceBase: number,
 ): "closed" | "dedented" | "open" {
   if (closesFence(line, fence, base)) return "closed";
-  const indent = /^\s*/.exec(line.replace(/\t/g, "    "))?.[0].length ?? 0;
-  return line.trim() !== "" && indent < fenceBase ? "dedented" : "open";
+  return line.trim() !== "" && indentOf(line) < fenceBase ? "dedented" : "open";
 }
 
-/** The lines of the paragraph after line `at`: those up to the next blank line. */
-function paragraphAfter(input: readonly string[], at: number): string[] {
-  const rest = input.slice(at + 1);
-  const end = rest.findIndex((l) => l.trim() === "");
-  return end === -1 ? rest : rest.slice(0, end);
+/** Whether a line cannot continue the paragraph above it: it is blank, or an item, a heading or a fence of its own. */
+function interrupts(line: string): boolean {
+  return (
+    line.trim() === "" ||
+    ITEM.test(line) ||
+    HEADING_LINE.test(line) ||
+    BREAK.test(line) ||
+    fenceOf(line, 0) !== undefined
+  );
+}
+
+/** A look through the paragraph after line `at`, stopping where a blank line, an item, a heading or a fence begins another block; nothing is copied, and no line is read unless asked. */
+function paragraphAfter(input: readonly string[], at: number): Lookahead {
+  return (n) => {
+    for (let j = at + 1; j < input.length; j++) {
+      const line = input[j] ?? "";
+      if (interrupts(line)) return false;
+      if (findRun(line, 0, n) !== -1) return true;
+    }
+    return false;
+  };
 }
 
 /**
@@ -206,7 +225,7 @@ function readLines(body: string): string[] {
   const fence: Fence = { marker: null, base: 0, itemBase: 0 };
   for (const [i, line] of input.entries()) {
     if (skippedByFence(line, fence, ctx)) continue;
-    if (line.trim() === "") ctx.span = null;
+    if (interrupts(line)) ctx.span = null;
     if (!ctx.comment) fence.base = listColumn(line, fence.base);
     lines.push(uncommented(line, ctx, paragraphAfter(input, i)));
   }
@@ -233,10 +252,6 @@ function skippedByFence(line: string, fence: Fence, ctx: Context): boolean {
   fence.base = fence.itemBase = opener.base;
   return true;
 }
-
-/** A list line's indent, a tab counted as four spaces. */
-const indentOf = (line: string): number =>
-  (ITEM.exec(line)?.[1] ?? "").replace(/\t/g, "    ").length;
 
 /** A heading's level and text, without case; `null` for a line that is no heading. */
 function headingOf(line: string): { level: number; text: string } | null {

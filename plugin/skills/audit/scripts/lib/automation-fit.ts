@@ -150,13 +150,33 @@ function group(scan: Scan, c: string): boolean {
   return true;
 }
 
+/** Read the process substitution whose `(` is at `open` as one word of the command, its nested command unread; the index of its closing `)`, or of the script's last character when it never closes. */
+function substitution(
+  scan: Scan,
+  script: string,
+  start: number,
+  open: number,
+): number {
+  let depth = 0;
+  for (let j = open; j < script.length; j++) {
+    const c = script.charAt(j);
+    if (c === "(") depth++;
+    else if (c === ")" && --depth === 0) {
+      scan.word = script.slice(start, j + 1);
+      return j;
+    }
+  }
+  scan.word = script.slice(start);
+  return script.length - 1;
+}
+
 /** Read a redirection operator at `i`: it and its target are no arguments of the command. An all-digit word just before it is the descriptor it redirects. Returns the index of the last character used. */
 function redirection(scan: Scan, script: string, i: number): number {
   if (scan.word !== null && /^\d+$/.test(scan.word)) scan.word = null;
   else endWord(scan);
   let j = i + 1;
   while (/[<>&|]/.test(script.charAt(j))) j++;
-  if (script.charAt(j) === "(") return i;
+  if (script.charAt(j) === "(") return substitution(scan, script, i, j);
   scan.redirect = true;
   return j - 1;
 }

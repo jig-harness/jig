@@ -180,7 +180,12 @@ export function skillValidation(
   if (!dispatch.ok) refuse("dispatch", dispatch.failure.reason);
   else if (dispatch.value.labels.enabled) {
     const manualOps = manualOpsLabel(config, dispatch.value.labels.prefix);
-    if (!manualOps.ok) refuse("dispatch", manualOps.failure.reason);
+    if (!manualOps.ok)
+      findings.push({
+        id: "invalid:manual-ops-label",
+        severity: "error",
+        message: `dispatch cannot mark pull requests that owe steps: ${manualOps.failure.reason}; its other labels are unaffected`,
+      });
   }
   attempt("docs", () => parseDocsSettings(config.docs, root));
   attempt("design-brief-builder (handback)", () => {

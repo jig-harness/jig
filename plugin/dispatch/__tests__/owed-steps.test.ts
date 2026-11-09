@@ -341,3 +341,38 @@ describe("fences and code spans inside list items", () => {
     });
   });
 });
+
+describe("blocks end what they hold", () => {
+  it("opens a top-level fence outside the list before it", () => {
+    expect(
+      owedSteps(
+        body(
+          "## Out-of-tree follow-ups",
+          "- [x] Done",
+          "",
+          "```md",
+          "- [ ] Example only",
+          "```",
+        ),
+      ),
+    ).toEqual({ open: 0, done: 1 });
+  });
+
+  it("does not let a code span close in another list item", () => {
+    expect(
+      owedSteps(
+        body(
+          "## Out-of-tree follow-ups",
+          "- [x] Document `literal",
+          "- [ ] <!-- placeholder ` -->",
+        ),
+      ),
+    ).toEqual({ open: 0, done: 1 });
+  });
+
+  it("reads a long description in time", () => {
+    const started = performance.now();
+    owedSteps(`## Out-of-tree follow-ups\n${"a\n".repeat(24000)}`);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+});

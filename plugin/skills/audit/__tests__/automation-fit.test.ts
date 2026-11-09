@@ -114,6 +114,15 @@ describe("shell redirections, empty here-document delimiters and quoted continua
     );
   });
 
+  it("keeps a process substitution as one argument of its command", () => {
+    expect(
+      runSteps("gh pr create --body-file <(printf body) --label automation:x"),
+    ).toEqual([]);
+    expect(
+      runSteps("gh pr create --body-file <(printf 'a)' ; echo (x)) --fill"),
+    ).toEqual(["j › s"]);
+  });
+
   it("reads a quoted empty delimiter as a delimiter", () => {
     expect(runSteps("cat <<''\ngh pr create --fill\n\necho done")).toEqual([]);
   });
