@@ -1,4 +1,5 @@
 /** Resolve update next from the repository's converged pull requests, as the board does. */
+import { carriesSet } from "../../dispatch/lib/labels.ts";
 import { oneUpdateNext, type BoardCard } from "../../dispatch/lib/board.ts";
 import {
   snapshotFrom,
@@ -59,6 +60,7 @@ function peerCards(
   pulls: Map<number, ForgeFacts>,
   rules: ReadyRules,
   prefix: string | null,
+  onlyLabeled: boolean,
 ): Outcome<BoardCard[], "unreadable"> {
   const cards: BoardCard[] = [];
   for (const [n, l] of ledgers) {
@@ -67,6 +69,12 @@ function peerCards(
       return failed("unreadable", `PR #${n}'s facts did not read`);
     if (f.partial !== null)
       return failed("unreadable", `PR #${n}'s facts are partial: ${f.partial}`);
+    if (
+      onlyLabeled &&
+      prefix !== null &&
+      !carriesSet({ enabled: true, prefix, onlyLabeled: true }, f.labels)
+    )
+      continue;
     const r = readiness(
       {
         ...f,
@@ -101,6 +109,7 @@ export async function updateQueueWait(
   prefix: string | null,
   answer: Readiness,
   catalogConfigured: boolean,
+  onlyLabeled = false,
 ): Promise<WaitsOn> {
   const unknown = (why: string): WaitsOn => {
     ctx.reading.note({ record: "update next order", read: false, detail: why });
@@ -116,7 +125,14 @@ export async function updateQueueWait(
   ctx.reading.forgeCall();
   const read = await readMergeFacts(ctx.address.repo, [...ledgers.keys()], sec);
   if (!read.ok) return unknown(read.failure.reason);
-  const placedPeers = peerCards(ctx, ledgers, read.value.pulls, rules, prefix);
+  const placedPeers = peerCards(
+    ctx,
+    ledgers,
+    read.value.pulls,
+    rules,
+    prefix,
+    onlyLabeled,
+  );
   if (!placedPeers.ok) return unknown(placedPeers.failure.reason);
   const cards = placedPeers.value;
   // A configured catalog may put a card that unblocks other work first.

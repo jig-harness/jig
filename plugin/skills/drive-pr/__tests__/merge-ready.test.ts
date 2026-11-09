@@ -600,3 +600,23 @@ describe("required checks and reviewer attempts", () => {
     expect(readiness(f, RULES).place).toBe("needs-you");
   });
 });
+
+it("requires every distinct reviewer check and reduces retries within each name", () => {
+  for (const state of ["failure", "pending", "skipped"] as const) {
+    const f = facts();
+    const base = facts().checks.find((c) => c.app === "example-review");
+    if (base === undefined) throw new Error("fixture has no reviewer check");
+    f.checks = [
+      { ...base, name: "AI review (security)", id: 10, state },
+      { ...base, name: "AI review (correctness)", id: 11 },
+    ];
+    expect(readiness(f, RULES).lane).not.toBe("merge-now");
+    f.checks.push({ ...base, name: "AI review (security)", id: 12 });
+    expect(readiness(f, RULES).lane).toBe("merge-now");
+  }
+  const f = facts();
+  const base = f.checks.find((c) => c.app === "example-review");
+  if (base === undefined) throw new Error("fixture has no reviewer check");
+  f.checks.push({ ...base, name: "AI review (security)" });
+  expect(readiness(f, RULES).lane).toBe("merge-now");
+});

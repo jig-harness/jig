@@ -19,6 +19,7 @@ import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { updateQueueWait } from "./merge-queue.ts";
 import { rulesOf } from "../../dispatch/lib/board.ts";
+import { isRecord } from "../../shared/guards.ts";
 import { parseConfigText } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type { PersonAct, WaitsOn } from "./answer.ts";
@@ -110,6 +111,20 @@ function whyUnread(
     : "the forge did not give this pull request";
 }
 
+/** The enabled label scope from the same default-branch facts as the Ready rules. */
+function dispatchLabels(values: Record<string, unknown>): {
+  prefix: string | null;
+  onlyLabeled: boolean;
+} {
+  const labels = isRecord(values.dispatch) ? values.dispatch.labels : null;
+  if (!isRecord(labels) || labels.enabled !== true)
+    return { prefix: null, onlyLabeled: false };
+  return {
+    prefix: typeof labels.prefix === "string" ? labels.prefix : "jig:",
+    onlyLabeled: labels.only_labeled === true,
+  };
+}
+
 /** Whether the ledger stopped converged on an open pull request. */
 function convergedOpen(ledger: Ledger | null, doc: PullDoc): ledger is Ledger {
   return (
@@ -133,20 +148,7 @@ export async function convergedWait(
   const read = await readFor(ctx, doc.number);
   if (!read.ok)
     return { waiting: `the merge facts did not read: ${read.failure.reason}` };
-  const dispatch = read.value.values.dispatch;
-  const labels =
-    typeof dispatch === "object" && dispatch !== null && "labels" in dispatch
-      ? dispatch.labels
-      : null;
-  const prefix =
-    typeof labels === "object" &&
-    labels !== null &&
-    "enabled" in labels &&
-    labels.enabled === true
-      ? "prefix" in labels && typeof labels.prefix === "string"
-        ? labels.prefix
-        : "jig:"
-      : null;
+  const { prefix, onlyLabeled } = dispatchLabels(read.value.values);
   const answer = readiness(
     {
       ...read.value.facts,
@@ -169,6 +171,7 @@ export async function convergedWait(
       typeof read.value.values.drive === "object" &&
         read.value.values.drive !== null &&
         "change_areas_catalog" in read.value.values.drive,
+      onlyLabeled,
     );
   const lane = answer.lane === null ? "" : `${answer.lane}: `;
   const command = answer.command === null ? "" : `; ${answer.command}`;

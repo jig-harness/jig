@@ -103,3 +103,36 @@ it("stops paging once the shared merge-facts deadline is spent", async () => {
   });
   expect(r.calls.trim().split("\n")).toHaveLength(2);
 });
+
+it("withdraws standing wording when the final readiness read changes", async () => {
+  for (const changed of ["approval", "thread", "hold"]) {
+    const r = await run(
+      `
+      process.env.JIG__review__reviewer_app = "example-review";
+      process.env.JIG__dispatch__labels__enabled = "true";
+      import { laneHolds } from ${JSON.stringify(join(LIB, "announce-ready.ts"))};
+      console.log(await laneHolds("7", "${"a".repeat(40)}", "merge-now", [1]));
+      `,
+      `#!/usr/bin/env bun
+      import { appendFileSync } from "node:fs";
+      const args = process.argv.slice(2);
+      appendFileSync(process.env.MERGE_FIXTURE + "/calls", JSON.stringify(args) + "\\n");
+      if (args.includes("DELETE")) { console.log("{}"); process.exit(0); }
+      const none = { nodes: [], pageInfo: { hasNextPage: false } };
+      const head = "${"a".repeat(40)}";
+      console.log(JSON.stringify({ data: { repository: { squashMergeAllowed: true, pr7: {
+        number: 7, headRefOid: head, isDraft: false, mergeable: "MERGEABLE", mergeStateStatus: ${JSON.stringify(changed === "approval" ? "BLOCKED" : "CLEAN")},
+        reviewDecision: ${JSON.stringify(changed === "approval" ? "REVIEW_REQUIRED" : "APPROVED")}, authorAssociation: "MEMBER", isMergeQueueEnabled: false,
+        labels: { ...none, nodes: ${JSON.stringify(changed === "hold" ? [{ name: "jig:hold" }] : [])} },
+        reviewThreads: { ...none, nodes: ${JSON.stringify(changed === "thread" ? [{ isResolved: false }] : [])} },
+        reviewRequests: none,
+        latestReviews: { ...none, nodes: [{ state: "APPROVED", authorAssociation: "MEMBER", author: { __typename: "User", login: "maintainer" }, commit: { oid: head } }] },
+        commits: { nodes: [{ commit: { oid: head, statusCheckRollup: { contexts: { ...none, nodes: [{ __typename: "CheckRun", name: "AI review", status: "COMPLETED", conclusion: "SUCCESS", checkSuite: { app: { slug: "example-review" } } }] } } } }] }
+      } } } }));
+      `,
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout.trim()).toBe("4");
+    expect(r.calls).toContain("DELETE");
+  }
+});

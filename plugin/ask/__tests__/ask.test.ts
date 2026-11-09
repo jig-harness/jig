@@ -569,3 +569,31 @@ it("waits behind the repository's first update-next pull request", async () => {
     waiting: expect.stringContaining("after #8"),
   });
 });
+
+it("excludes unlabelled peers from a labelled-only update queue", async () => {
+  const w = world();
+  const head = "a".repeat(40);
+  w.api(`repos/${REPO}/pulls/9`, pullDoc(9));
+  w.api(`repos/${REPO}/pulls`, [{ number: 8 }, { number: 9 }]);
+  for (const n of [8, 9])
+    w.api(`repos/${REPO}/issues/${n}/comments`, [
+      comment(900 + n, ledgerBody(stoppedLedger(n, 0, { verifiedSha: head }))),
+    ]);
+  const board = JSON.parse(boardAnswer(9, head));
+  board.data.repository.defaultBranchRef.target.file = {
+    object: {
+      text: "dispatch:\n  labels:\n    enabled: true\n    only_labeled: true\n    prefix: 'team:'\n",
+      isTruncated: false,
+    },
+  };
+  board.data.repository.pr9.mergeStateStatus = "BEHIND";
+  board.data.repository.pr8 = { ...board.data.repository.pr9, number: 8 };
+  board.data.repository.pr9.labels = {
+    nodes: [{ name: "team:converged" }],
+    pageInfo: { hasNextPage: false },
+  };
+  writeFileSync(join(w.dir, "board.json"), JSON.stringify(board));
+  const { r, answer } = await askJson(w, [`drive@${REPO}#9`]);
+  expectSpawnExit(r, 0);
+  expect(answer.waitsOn).toMatchObject({ person: "update the branch" });
+});

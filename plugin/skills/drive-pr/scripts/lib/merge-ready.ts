@@ -188,16 +188,26 @@ const OWN = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 /** Merge states under which branch protection lets it merge now. */
 const MERGES_NOW = new Set(["CLEAN", "HAS_HOOKS"]);
 
-/** The newest run of each reviewer check that matches, or `null` when the head has none. */
-function reviewerRun(facts: ForgeFacts, rules: ReadyRules): HeadCheck | null {
-  const app = rules.reviewerApp;
-  if (app === null) return null;
-  const runs = facts.checks
-    .filter((c) => c.app === app && rules.reviewerCheck.test(c.name))
-    .sort((a, b) => (b.id ?? -1) - (a.id ?? -1));
-  // Multiple attempts with unread ids cannot establish which review stands.
-  if (runs.length > 1 && runs.some((r) => r.id == null)) return null;
-  return runs[0] ?? null;
+/** The latest attempt per reviewer check name; unread attempt order withholds the witness. */
+function reviewerRuns(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
+  const grouped = new Map<string, HeadCheck[]>();
+  for (const check of facts.checks) {
+    if (
+      check.app !== rules.reviewerApp ||
+      !rules.reviewerCheck.test(check.name)
+    )
+      continue;
+    const attempts = grouped.get(check.name) ?? [];
+    attempts.push(check);
+    grouped.set(check.name, attempts);
+  }
+  const latest: HeadCheck[] = [];
+  for (const attempts of grouped.values()) {
+    if (attempts.length > 1 && attempts.some((r) => r.id == null)) return [];
+    attempts.sort((a, b) => (b.id ?? -1) - (a.id ?? -1));
+    latest.push(...attempts.slice(0, 1));
+  }
+  return latest;
 }
 
 /** Whether a person of the repository's own approved the head: an approval from any other account is no witness. */
@@ -224,17 +234,24 @@ function witness(
           fact: "no reviewer app is named and no person approved this head",
           byApp: false,
         };
-  const run = reviewerRun(facts, rules);
-  if (run === null)
+  const runs = reviewerRuns(facts, rules);
+  if (runs.length === 0)
     return {
       met: false,
       fact: `${rules.reviewerApp} posted no review check on this head`,
       byApp: true,
     };
-  const met = run.state === "success" || run.state === "neutral";
+  const met = runs.every(
+    (run) => run.state === "success" || run.state === "neutral",
+  );
   return {
     met,
-    fact: `${rules.reviewerApp}'s review check on this head is ${run.state}`,
+    fact: runs
+      .map(
+        (run) =>
+          `${rules.reviewerApp}'s ${run.name} check on this head is ${run.state}`,
+      )
+      .join("; "),
     byApp: true,
   };
 }

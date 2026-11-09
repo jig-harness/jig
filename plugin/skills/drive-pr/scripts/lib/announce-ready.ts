@@ -9,6 +9,7 @@
  * witness is the reviewer app and check the drive's convergence matched.
  */
 import { isRecord } from "../../../../shared/guards.ts";
+import { reconcileWording } from "./announce-wording.ts";
 import { withdrawAnnouncement } from "./announce.ts";
 import { readMergeFacts } from "./merge-facts.ts";
 import {
@@ -93,10 +94,14 @@ export async function laneHolds(
   pr: string,
   head: string,
   lane: Lane | null,
+  standingIds: readonly number[] = [],
 ): Promise<number> {
-  const now = await announceReady(pr, head);
+  const now = await readyOrWithdraw(pr, head, standingIds);
   if (now.rc !== 0) return now.rc;
-  return now.lane === lane ? 0 : 4;
+  if (now.lane === lane) return 0;
+  // The surviving wording is for another lane; remove it rather than leave
+  // a claim whose warning the final read no longer supports.
+  return (await withdrawAll(pr, standingIds)) ? 4 : 1;
 }
 
 /** The dispatch `hold` label's name, where the repository turns dispatch labels on; a name no label has where it does not. */
@@ -146,4 +151,19 @@ export async function readyOrWithdraw(
   console.error(`announce-merge-ready: ${answer.says} — refusing to announce`);
   const withdrawn = answer.rc !== 4 || (await withdrawAll(pr, ids));
   return withdrawn ? answer : { ...answer, rc: 1 };
+}
+
+/** Reconcile every surviving announcement through one live read, wording update and final withdrawal check. */
+export async function reconcileStanding(
+  pr: string,
+  head: string,
+  ids: readonly number[],
+  dryRun: boolean,
+): Promise<number> {
+  const standing = dryRun ? [] : ids;
+  const current = await readyOrWithdraw(pr, head, standing);
+  if (current.rc !== 0) return current.rc;
+  const wording = await reconcileWording(pr, ids, head, current.lane, dryRun);
+  if (wording !== 0) return wording;
+  return await laneHolds(pr, head, current.lane, standing);
 }

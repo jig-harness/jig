@@ -43,8 +43,12 @@ import {
   unreadableNote,
   withdrawAnnouncement,
 } from "./lib/announce.ts";
-import { APPROVAL_WARNING, reconcileWording } from "./lib/announce-wording.ts";
-import { laneHolds, readyOrWithdraw } from "./lib/announce-ready.ts";
+import { APPROVAL_WARNING } from "./lib/announce-wording.ts";
+import {
+  laneHolds,
+  readyOrWithdraw,
+  reconcileStanding,
+} from "./lib/announce-ready.ts";
 import { parsePrSnapshot } from "./lib/ci-hold.ts";
 import { ciHoldLabelSetting } from "./lib/overlay.ts";
 
@@ -783,18 +787,8 @@ async function main(): Promise<number> {
     const lateFinalCiRc = await confirmFinalCi(existingIds);
     if (lateFinalCiRc !== 0) return lateFinalCiRc;
 
-    const current = await readyOrWithdraw(pr, head, dryRun ? [] : existingIds);
-    if (current.rc !== 0) return current.rc;
-    const wordingRc = await reconcileWording(
-      pr,
-      existingIds,
-      head,
-      current.lane,
-      dryRun,
-    );
+    const wordingRc = await reconcileStanding(pr, head, existingIds, dryRun);
     if (wordingRc !== 0) return wordingRc;
-    const laneRc = await laneHolds(pr, head, current.lane);
-    if (laneRc !== 0) return laneRc;
     console.error(
       `announce-merge-ready: already announced for ${head} — nothing to do`,
     );
@@ -1041,17 +1035,7 @@ ${marker}`;
     if (raceCleanRc !== 0) return raceCleanRc;
     const raceFinalCiRc = await confirmFinalCi([lowest]);
     if (raceFinalCiRc !== 0) return raceFinalCiRc;
-    const raceReady = await readyOrWithdraw(pr, head, [lowest]);
-    if (raceReady.rc !== 0) return raceReady.rc;
-    const wordingRc = await reconcileWording(
-      pr,
-      [lowest],
-      head,
-      raceReady.lane,
-      dryRun,
-    );
-    if (wordingRc !== 0) return wordingRc;
-    return await laneHolds(pr, head, raceReady.lane);
+    return await reconcileStanding(pr, head, [lowest], false);
   }
   if (!back.ok) {
     console.error(
