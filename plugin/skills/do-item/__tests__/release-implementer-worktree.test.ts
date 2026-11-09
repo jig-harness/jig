@@ -75,6 +75,25 @@ function release(main: string, tree: string, extraEnv: NodeJS.ProcessEnv = {}) {
   expectSpawnExit(result, 0);
   return JSON.parse(result.stdout.toString());
 }
+function addSubmodule(root: string, tree: string) {
+  const module = join(root, "module-source");
+  git(root, "init", module);
+  writeFileSync(join(module, "nested"), "initial\n");
+  git(module, "add", ".");
+  git(module, "commit", "-m", "initial");
+  git(
+    tree,
+    "-c",
+    "protocol.file.allow=always",
+    "submodule",
+    "add",
+    module,
+    "nested-module",
+  );
+  git(tree, "commit", "-am", "add module");
+  git(tree, "push", "origin", "item");
+  return join(tree, "nested-module");
+}
 test("releases the clean pushed delegate branch so another worktree can take it", () => {
   const { main, tree, root } = fixture();
   expect(release(main, tree).outcome).toBe("released");
@@ -145,24 +164,9 @@ test("releases a delegate behind its remote and keeps one with hidden index chan
 
 test("keeps dirty submodules even when repository settings hide them", () => {
   const { root, main, tree } = fixture();
-  const module = join(root, "module-source");
-  git(root, "init", module);
-  writeFileSync(join(module, "nested"), "initial\n");
-  git(module, "add", ".");
-  git(module, "commit", "-m", "module");
-  git(
-    tree,
-    "-c",
-    "protocol.file.allow=always",
-    "submodule",
-    "add",
-    module,
-    "nested-module",
-  );
-  git(tree, "commit", "-am", "add module");
-  git(tree, "push", "origin", "item");
+  const submodule = addSubmodule(root, tree);
   git(tree, "config", "diff.ignoreSubmodules", "all");
-  writeFileSync(join(tree, "nested-module", "nested"), "dirty\n");
+  writeFileSync(join(submodule, "nested"), "dirty\n");
   expect(git(tree, "status", "--porcelain=v1")).toBe("");
   const report = release(main, tree);
   expect(report.outcome).toBe("held");
@@ -172,28 +176,8 @@ test("keeps dirty submodules even when repository settings hide them", () => {
 
 test("keeps hidden changes inside initialized submodules", () => {
   const { root, main, tree } = fixture();
-  const module = join(root, "module-source");
-  git(root, "init", module);
-  writeFileSync(join(module, "nested"), "initial\n");
-  git(module, "add", ".");
-  git(module, "commit", "-m", "initial");
-  git(
-    tree,
-    "-c",
-    "protocol.file.allow=always",
-    "submodule",
-    "add",
-    module,
-    "nested-module",
-  );
-  git(tree, "commit", "-am", "add module");
-  git(tree, "push", "origin", "item");
-  git(
-    join(tree, "nested-module"),
-    "update-index",
-    "--assume-unchanged",
-    "nested",
-  );
+  const submodule = addSubmodule(root, tree);
+  git(submodule, "update-index", "--assume-unchanged", "nested");
   writeFileSync(join(tree, "nested-module", "nested"), "dirty\n");
   const report = release(main, tree);
   expect(report.outcome).toBe("held");
@@ -202,23 +186,8 @@ test("keeps hidden changes inside initialized submodules", () => {
 
 test("holds the delegate when the submodule index matcher fails", () => {
   const { root, main, tree } = fixture();
-  const module = join(root, "module-source");
   const bin = join(root, "bin");
-  git(root, "init", module);
-  writeFileSync(join(module, "nested"), "initial\n");
-  git(module, "add", ".");
-  git(module, "commit", "-m", "initial");
-  git(
-    tree,
-    "-c",
-    "protocol.file.allow=always",
-    "submodule",
-    "add",
-    module,
-    "nested-module",
-  );
-  git(tree, "commit", "-am", "add module");
-  git(tree, "push", "origin", "item");
+  addSubmodule(root, tree);
   mkdirSync(bin);
   const matcher = join(bin, "grep");
   writeFileSync(matcher, "#!/bin/sh\nexit 2\n");
