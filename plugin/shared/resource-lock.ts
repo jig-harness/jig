@@ -107,7 +107,7 @@ import {
   symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { swallow } from "./errors.ts";
 import {
   readHostLoad,
@@ -541,6 +541,14 @@ interface Acquisition {
   /** The paths taken, in order; on a wait that ran out, what blocked it. */
   taken: string[];
   blocker: string;
+  /** What the wait was last on, for the message of a wait that runs out. */
+  waitingOn: string;
+}
+// Keep `path`: released with the rest, and its holder's identity recorded
+// beside it at once, so a reused pid never keeps a partial hold alive.
+function hold(a: Acquisition, path: string): void {
+  a.taken.push(path);
+  recordHolder(path);
 }
 const keyOf = (kind: string, holders: readonly SlotHolder[]) =>
   `${kind} ${holders.map((h) => h.pid).join(",")}`;
@@ -555,7 +563,7 @@ async function takeSingle(a: Acquisition): Promise<void> {
   const lock = a.slot(0);
   for (;;) {
     if (a.locks.take(lock)) {
-      a.taken.push(lock);
+      hold(a, lock);
       return;
     }
     a.locks.reclaim(lock);
@@ -583,7 +591,7 @@ async function takeEvery(a: Acquisition): Promise<void> {
       );
       if (!(await pause(a, a.pollMs))) return;
     }
-    a.taken.push(path);
+    hold(a, path);
   }
 }
 // Whether the machine has room for one more run; a reading that fails admits.
@@ -650,14 +658,15 @@ function sweepOnce(a: Acquisition, full: boolean): string | "busy" | undefined {
 }
 // Sweep the slots: a free slot 0 at once, any other one when admitted.
 async function takeSlot(a: Acquisition): Promise<void> {
-  for (let round = 0; ; round++) {
-    const got = sweepOnce(a, round % FULL_CHECK_EVERY === 0);
+  // Waiting for the admission lock is brief and does not count as a sweep.
+  let sweeps = 0;
+  for (;;) {
+    const got = sweepOnce(a, sweeps % FULL_CHECK_EVERY === 0);
     if (got !== undefined && got !== "busy") {
-      a.taken.push(got);
+      hold(a, got);
       return;
     }
-    // Waiting for the admission lock is brief and does not age the sweep count.
-    if (got === "busy") round--;
+    if (got !== "busy") sweeps++;
     const jitter = a.pollGiven
       ? a.pollMs * (1 + 1.5 * Math.random())
       : (2 + 3 * Math.random()) * 1000;
@@ -708,6 +717,7 @@ export async function main(
     pollGiven,
     remaining: () => deadline - performance.now(),
     say: (key, text) => {
+      a.waitingOn = text;
       if (key === said) return;
       said = key;
       console.error(
@@ -716,46 +726,47 @@ export async function main(
     },
     taken: [],
     blocker: lock,
+    waitingOn: "",
   };
   const releaseAll = () => {
-    for (const path of [...a.taken].reverse()) locks.release(path);
+    for (const path of a.taken.splice(0).reverse()) locks.release(path);
   };
+  // Registered before the wait, so a signal releases a partial hold too.
+  using release = registerCleanup(releaseAll);
+  void release;
   try {
     if (exclusive) await takeEvery(a);
     else if (settings.slots === 1) await takeSingle(a);
     else await takeSlot(a);
-  } catch (error) {
-    releaseAll();
-    throw error;
   } finally {
     locks.close();
   }
   if (a.taken.length === 0 || (exclusive && a.taken.length < MAX_SLOTS + 1)) {
     releaseAll();
     const holders = locks.holders([a.blocker]);
+    const why =
+      settings.slots === 1 || exclusive || a.waitingOn === ""
+        ? ""
+        : `; last waiting on: ${a.waitingOn}`;
     console.error(
-      `ERROR: could not acquire lock '${name}' within ${timeout}s (held by ${holders.length ? describeHolders(holders) : heldBy(a.blocker, fileOwners)})`,
+      `ERROR: could not acquire lock '${name}' within ${timeout}s (held by ${holders.length ? describeHolders(holders) : heldBy(a.blocker, fileOwners)}${why})`,
     );
     return 3;
   }
-  if (said !== undefined) reportTaken(a, exclusive, root, started);
-  for (const path of a.taken) recordHolder(path);
-  using release = registerCleanup(releaseAll);
-  void release;
+  if (said !== undefined) reportTaken(a, exclusive, started);
   return await run();
 }
 // After a wait: which slot was taken, and how long the wait was.
 function reportTaken(
   a: Acquisition,
   exclusive: boolean,
-  root: string,
   started: number,
 ): void {
   const what = exclusive
     ? " with every slot"
     : a.taken[0] === a.slot(0)
       ? ""
-      : ` (${a.taken[0]?.slice(root.length + 1)})`;
+      : ` (${basename(a.taken[0] ?? "")})`;
   console.error(
     `resource lock: took '${a.name}'${what} after ${duration((performance.now() - started) / 1000)}`,
   );

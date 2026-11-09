@@ -279,7 +279,9 @@ Bun or an agent tool. `jig doctor gc` says when either is needed. A failed insta
 runs hold
 the same heavy-run lock as local gates, exclusively: a collection waits until
 no heavy run holds any of the lock's slots, holds them all while it
-collects, and new heavy runs wait behind it. The design's later container, branch
+collects, and new heavy runs wait behind it. A heavy run that hangs therefore
+holds back every new run on the machine until the collection's lock wait
+(`LOCK_TIMEOUT`) runs out; set a shorter one for the job where that is too long. The design's later container, branch
 and process kinds wait for the first-stage rollout to run in a working
 repository; scratch remains report-only until the process stage.
 

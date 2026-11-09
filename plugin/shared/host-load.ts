@@ -6,9 +6,10 @@
 // The reading is the one-minute load average, the core count and the memory
 // a new process can have without swapping. A platform with no load average
 // (Windows reports zeros) gives no load, and the rule then decides by memory
-// alone. Memory is Linux's `MemAvailable`; elsewhere the free memory the
-// platform reports, which counts reclaimable caches as used and so errs
-// toward refusing.
+// alone. Memory is Linux's `MemAvailable`, and on Windows the free memory
+// the platform reports. macOS reports only its free pages, counting
+// reclaimable caches as used, which would refuse runs on a machine with
+// plenty of memory, so there the reading gives no memory and load decides.
 import { readFileSync } from "node:fs";
 import { availableParallelism, freemem, loadavg } from "node:os";
 import { swallow } from "./errors.ts";
@@ -46,7 +47,7 @@ export function readHostLoad(
         "no /proc/meminfo; the free memory the platform reports stands in",
       );
     }
-  if (availableBytes === null) {
+  if (availableBytes === null && platform !== "darwin") {
     const free = freemem();
     availableBytes = Number.isFinite(free) && free > 0 ? free : null;
   }

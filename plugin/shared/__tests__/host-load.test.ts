@@ -78,7 +78,7 @@ test("with no load average, memory alone decides", () => {
   ).toBe(false);
 });
 
-test("Linux reads MemAvailable; Windows reports no load average", () => {
+test("Linux reads MemAvailable; Windows reports no load average; macOS no memory", () => {
   expect(memAvailable("MemTotal:  1000 kB\nMemAvailable:    2048 kB\n")).toBe(
     2048 * 1024,
   );
@@ -91,6 +91,7 @@ test("Linux reads MemAvailable; Windows reports no load average", () => {
     const windows = readHostLoad("win32", meminfo);
     expect(windows.load1).toBeNull();
     expect(windows.cores).toBeGreaterThanOrEqual(1);
+    expect(readHostLoad("darwin", meminfo).availableBytes).toBeNull();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -90,6 +90,11 @@ function widest(log: string): number {
   }
   return most;
 }
+// Inside the lock: log ENTER, wait (by a deadline poll) until `peers` runs
+// have entered, then log EXIT. A ceiling that admits fewer leaves the first
+// run waiting out its deadline, so the widest overlap shows it.
+const barrier = (peers: number) =>
+  `const fs=require('node:fs');fs.appendFileSync(process.env.LOG,'ENTER '+process.argv[1]+'\\n');const end=Date.now()+5000;while(Date.now()<end&&(fs.readFileSync(process.env.LOG,'utf8').match(/ENTER/g)||[]).length<${peers})await Bun.sleep(20);fs.appendFileSync(process.env.LOG,'EXIT '+process.argv[1]+'\\n');`;
 const logged = (sleepMs: number) =>
   `const fs=require('node:fs');fs.appendFileSync(process.env.LOG,'ENTER '+process.argv[1]+'\\n');await Bun.sleep(${sleepMs});fs.appendFileSync(process.env.LOG,'EXIT '+process.argv[1]+'\\n');`;
 /** Poll until `done` holds, failing past the deadline. */
@@ -105,7 +110,7 @@ test("runs up to the slot ceiling hold the lock at once, and one beyond waits fo
   const log = join(scratch, "ceiling.log");
   appendFileSync(log, "");
   const children = ["A", "B", "C"].map((id) =>
-    spawn([process.execPath, "-e", logged(600), id], {
+    spawn([process.execPath, "-e", barrier(2), id], {
       LOCK_NAME: "ceiling",
       LOCK_SLOTS: "2",
       LOCK_STATIC_SLOTS: "1",
@@ -195,6 +200,38 @@ test("a lock an earlier version took under the lock's own name keeps slot 0, and
   }
 });
 
+test("a dead holder of a slot, of the admission lock or of an exclusive announcement is reclaimed, never wedging the queue", async () => {
+  const dead = Bun.spawn([process.execPath, "-e", ""], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  await dead.exited;
+  hold(lockFile("stale"));
+  const leftover = (path: string) =>
+    process.platform === "win32"
+      ? writeFileSync(path, String(dead.pid))
+      : symlinkSync(String(dead.pid), path);
+  try {
+    for (const file of ["stale.exclusive", "stale.admission", "stale-slot-1"])
+      leftover(lockFile(file));
+    const r = await run(
+      [
+        process.execPath,
+        "-e",
+        `require('node:fs').lstatSync(${JSON.stringify(lockFile("stale-slot-1"))});console.log('slot 1 held')`,
+      ],
+      { LOCK_NAME: "stale", LOCK_SLOTS: "2", LOCK_TIMEOUT: "5" },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout.trim()).toBe("slot 1 held");
+    expect(leftovers("stale")).toEqual(["jig-lock.stale"]);
+  } finally {
+    rmSync(lockFile("stale"));
+    for (const file of ["stale.exclusive", "stale.admission", "stale-slot-1"])
+      rmSync(lockFile(file), { force: true });
+  }
+});
+
 test("an exclusive holder waits for every slot and, given up on, leaves none taken", async () => {
   hold(lockFile("gc-slot-3"));
   try {
@@ -222,7 +259,7 @@ test("an exclusive holder holds every slot while it runs, and a run started mean
       "--",
       process.execPath,
       "-e",
-      `const fs=require('node:fs');fs.appendFileSync(process.env.LOG,'ENTER X\\n');fs.writeFileSync(${JSON.stringify(inside)},['x','x-slot-63','x.exclusive'].map(n=>{try{fs.lstatSync(${JSON.stringify(scratch)}+'/jig-lock.'+n);return n}catch{return '-'}}).join(' '));await Bun.sleep(800);fs.appendFileSync(process.env.LOG,'EXIT X\\n');`,
+      `const fs=require('node:fs');fs.appendFileSync(process.env.LOG,'ENTER X\\n');fs.writeFileSync(${JSON.stringify(inside)}+'.part',['x','x-slot-63','x.exclusive'].map(n=>{try{fs.lstatSync(${JSON.stringify(scratch)}+'/jig-lock.'+n);return n}catch{return '-'}}).join(' '));fs.renameSync(${JSON.stringify(inside)}+'.part',${JSON.stringify(inside)});await Bun.sleep(800);fs.appendFileSync(process.env.LOG,'EXIT X\\n');`,
     ],
     { LOCK_NAME: "x", LOG: log },
   );

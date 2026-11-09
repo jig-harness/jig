@@ -74,7 +74,7 @@ one more. What the reading rests on differs by platform:
 | Platform | Load | Available memory | Effect |
 |----------|------|------------------|--------|
 | Linux | the one-minute load average | `MemAvailable` from `/proc/meminfo` | load and memory both decide |
-| macOS | the one-minute load average | the free memory the system reports, which counts reclaimable caches as used | load decides; the memory floor refuses early, so lower `LOCK_MIN_MEM_GB` on a small machine |
+| macOS | the one-minute load average | none: the system reports only its free pages, which count reclaimable caches as used | load and the slot ceiling decide |
 | Windows | none (the platform keeps no load average) | the free memory the system reports | memory and the slot ceiling decide |
 
 Set `LOCK_RUN_COST` to the parallelism of the command the lock guards (a test
