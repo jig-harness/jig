@@ -67,6 +67,7 @@ describe("dispatch.labels", () => {
     );
     refusal({ enabled: true, prefix: "a,b" }, "no comma");
     refusal({ enabled: true, prefix: "x".repeat(36) }, "at most 35 characters");
+    refusal({ enabled: true, prefix: "automation:x-" }, "automation:");
     refusal({ enabled: "yes" }, "must be true or false");
     refusal(
       { only_labeled: true },

@@ -34,7 +34,7 @@ import {
   unresolvedThreadCount,
 } from "./forge.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { carriesSet, hasCommand } from "./labels.ts";
+import { carriesSet, hasCommand, type LabelConfig } from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
 import type { ReadRecord } from "./launches.ts";
 import type {
@@ -197,14 +197,17 @@ interface ApplyInputs {
 /**
  * An automation pull request read again, with the unresolved review threads
  * the adoption rule reads of it and the view does not carry; `unreadable`,
- * with why, when the count does not read, so the launch is not acted on.
+ * with why, when the count does not read, so the launch is not acted on. A
+ * pull request a person's `drive` or `rearm` label asks for needs no count:
+ * the request does not wait on it.
  */
 async function withThreads(
   slug: string,
   pr: ListedPr,
   own: readonly string[],
+  asked: boolean,
 ): Promise<Outcome<ListedPr, "unreadable">> {
-  if (!isAutomation(pr, own)) return ok(pr);
+  if (asked || !isAutomation(pr, own)) return ok(pr);
   const threads = await unresolvedThreadCount(slug, pr.number);
   if (!threads.ok)
     return failed(
@@ -212,6 +215,15 @@ async function withThreads(
       `its unresolved review threads do not read: ${threads.failure.reason}`,
     );
   return ok({ ...pr, unresolvedThreads: threads.value });
+}
+
+/** Whether a person's `drive` or `rearm` label is on the pull request. */
+function asksForDrive(labels: LabelConfig | null, pr: ListedPr): boolean {
+  return (
+    labels !== null &&
+    (hasCommand(labels, pr.labels, "drive") ||
+      hasCommand(labels, pr.labels, "rearm"))
+  );
 }
 
 /**
@@ -248,6 +260,7 @@ async function applyStages(
         repo.slug,
         listed,
         ownAuthors(adoption, login),
+        asksForDrive(labels, listed),
       );
       if (!counted.ok) return counted;
       const [again] = await readDrives(

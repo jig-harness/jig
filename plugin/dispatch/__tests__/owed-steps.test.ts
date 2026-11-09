@@ -8,6 +8,55 @@ import { manualOpsLabel, owedSteps, owesSteps } from "../lib/owed-steps.ts";
 
 const body = (...lines: string[]) => lines.join("\n");
 
+describe("code and comments together", () => {
+  it("lets neither hide the other's delimiters", () => {
+    expect(
+      owedSteps(
+        body(
+          "```html",
+          "<!-- an example that never closes",
+          "```",
+          "## Out-of-tree follow-ups",
+          "- [ ] Run the migration",
+        ),
+      ),
+    ).toEqual({ open: 1, done: 0 });
+    expect(
+      owedSteps(
+        body(
+          "<!--",
+          "```",
+          "-->",
+          "## Out-of-tree follow-ups",
+          "- [ ] Run the migration",
+        ),
+      ),
+    ).toEqual({ open: 1, done: 0 });
+  });
+
+  it("closes a fence only on a line of its own marker", () => {
+    expect(
+      owedSteps(
+        body(
+          "## Out-of-tree follow-ups",
+          "```md",
+          "```example",
+          "- [ ] an example",
+          "```",
+        ),
+      ),
+    ).toEqual({ open: 0, done: 0 });
+  });
+
+  it("takes the steps' indent from a step, not a thematic break", () => {
+    expect(
+      owedSteps(
+        body("## Out-of-tree follow-ups", "* * *", "  - Run the migration"),
+      ),
+    ).toEqual({ open: 1, done: 0 });
+  });
+});
+
 describe("the out-of-tree section", () => {
   it("counts each listed step, a plain item or an unchecked box, as owed", () => {
     expect(

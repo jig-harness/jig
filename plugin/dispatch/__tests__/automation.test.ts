@@ -279,3 +279,17 @@ describe("jig dispatch drives an automation pull request only while it needs wor
     expect(driveRuns(w)).toHaveLength(1);
   }, 90_000);
 });
+
+describe("an automation pull request with no trouble observed", () => {
+  const bot = { login: "renovate[bot]", bot: true };
+
+  it("is idle when a fact was not read, since only observed trouble admits a launch", async () => {
+    const { idleAutomation } = await import("../lib/automation.ts");
+    expect(idleAutomation({ author: bot, unresolvedThreads: 0 }, [])).toEqual({
+      automationIdle: true,
+    });
+    expect(idleAutomation({ author: bot, failingChecks: true }, [])).toEqual(
+      {},
+    );
+  });
+});

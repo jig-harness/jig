@@ -43,40 +43,63 @@ function saysNone(text: string): boolean {
   );
 }
 
-/** The body without its HTML comments; one that never closes runs to the end. */
-function withoutComments(body: string): string {
-  let rest = body;
-  let out = "";
+/** Whether `line` closes the open fence `fence`: its own marker, as long, and nothing after it. */
+function closesFence(line: string, fence: string): boolean {
+  const marker = FENCE.exec(line)?.[1];
+  return (
+    marker !== undefined &&
+    marker[0] === fence[0] &&
+    marker.length >= fence.length &&
+    line.slice(line.indexOf(marker) + marker.length).trim() === ""
+  );
+}
+
+/** What is left of `line` outside HTML comments, and whether a comment is open at its end; `open` says whether one was open at its start. */
+function uncommented(
+  line: string,
+  open: boolean,
+): { text: string; open: boolean } {
+  let rest = line;
+  let text = "";
+  let inside = open;
   for (;;) {
-    const open = rest.indexOf("<!--");
-    if (open === -1) return out + rest;
-    out += rest.slice(0, open);
-    const close = rest.indexOf("-->", open + 4);
-    if (close === -1) return out;
-    rest = rest.slice(close + 3);
+    if (inside) {
+      const close = rest.indexOf("-->");
+      if (close === -1) return { text, open: true };
+      rest = rest.slice(close + 3);
+      inside = false;
+    }
+    const start = rest.indexOf("<!--");
+    if (start === -1) return { text: text + rest, open: false };
+    text += rest.slice(0, start);
+    rest = rest.slice(start + 4);
+    inside = true;
   }
 }
 
-/** The description's lines outside fenced code and HTML comments. */
+/**
+ * The description's lines outside fenced code and HTML comments, read in one
+ * pass so that each hides the other's delimiters: a comment opener inside a
+ * fence is code, and a fence inside a comment is comment. A comment that never
+ * closes runs to the end; a fence closes only on a line of its own marker.
+ */
 function readLines(body: string): string[] {
   const lines: string[] = [];
   let fence: string | null = null;
-  for (const line of withoutComments(body).split(/\r?\n/)) {
-    const marker = FENCE.exec(line)?.[1];
+  let comment = false;
+  for (const line of body.split(/\r?\n/)) {
     if (fence !== null) {
-      if (
-        marker !== undefined &&
-        marker[0] === fence[0] &&
-        marker.length >= fence.length
-      )
-        fence = null;
+      if (closesFence(line, fence)) fence = null;
       continue;
     }
+    const marker = comment ? undefined : FENCE.exec(line)?.[1];
     if (marker !== undefined) {
       fence = marker;
       continue;
     }
-    lines.push(line);
+    const read = uncommented(line, comment);
+    comment = read.open;
+    lines.push(read.text);
   }
   return lines;
 }
@@ -147,12 +170,10 @@ function itemOf(
 export function owedSteps(body: string): OwedSteps {
   const steps: OwedSteps = { open: 0, done: 0 };
   for (const lines of sections(body)) {
-    // The first list line's indent is the steps' own; a plain item deeper than it is a step's detail.
-    const first = lines.find((l) => ITEM.test(l));
-    const top = first === undefined ? 0 : indentOf(first);
-    for (const line of lines) {
-      const item = itemOf(line);
-      if (item === null) continue;
+    // The first step's indent is the steps' own; a plain item deeper than it is a step's detail.
+    const items = lines.flatMap((l) => itemOf(l) ?? []);
+    const top = items[0]?.indent ?? 0;
+    for (const item of items) {
       if (item.kind === "done") steps.done += 1;
       else if (item.kind === "open" || item.indent <= top) steps.open += 1;
     }

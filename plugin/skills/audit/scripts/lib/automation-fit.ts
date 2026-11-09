@@ -98,26 +98,86 @@ export function shellCommands(script: string): string[][] {
   return scan.commands;
 }
 
-/** Whether a command is `gh pr create` (after any leading `VAR=value` words). */
-function createsPr(words: readonly string[]): boolean {
-  const at = words.findIndex((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
-  return (
-    at !== -1 &&
-    words[at] === "gh" &&
-    words[at + 1] === "pr" &&
-    words[at + 2] === "create"
+/** The shell words that begin a command without being its executable: a control keyword, a negation or a group's opener. */
+const CONTROL = new Set([
+  "if",
+  "then",
+  "else",
+  "elif",
+  "while",
+  "until",
+  "do",
+  "time",
+  "!",
+  "{",
+  "(",
+]);
+
+/** The words of a command after its leading `VAR=value` words and control keywords. */
+function commandWords(words: readonly string[]): readonly string[] {
+  const at = words.findIndex(
+    (w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w) && !CONTROL.has(w),
   );
+  return at === -1 ? [] : words.slice(at);
 }
 
-/** Whether a `gh pr create` command applies an `automation:` label through any of its label flags. */
+/** Whether a command is `gh pr create` (after any leading `VAR=value` words and control keywords). */
+function createsPr(words: readonly string[]): boolean {
+  const [gh, pr, create] = commandWords(words);
+  return gh === "gh" && pr === "pr" && create === "create";
+}
+
+/** The `gh pr create` options that take a value of their own, which may itself read as a flag. */
+const VALUED = new Set([
+  "--assignee",
+  "-a",
+  "--base",
+  "-B",
+  "--body",
+  "-b",
+  "--body-file",
+  "-F",
+  "--head",
+  "-H",
+  "--milestone",
+  "-m",
+  "--project",
+  "-p",
+  "--recover",
+  "--reviewer",
+  "-r",
+  "--template",
+  "-T",
+  "--title",
+  "-t",
+  "--repo",
+  "-R",
+]);
+
+/** The label list a label flag at `args[i]` gives, with the index of the last word used; `null` for another word. */
+function labelFlag(
+  args: readonly string[],
+  i: number,
+): { value: string; last: number } | null {
+  const w = args[i] ?? "";
+  const eq = /^(?:--label|-l)=(.*)$/.exec(w);
+  if (eq !== null) return { value: eq[1] ?? "", last: i };
+  if (w === "--label" || w === "-l")
+    return { value: args[i + 1] ?? "", last: i + 1 };
+  return null;
+}
+
+/** Whether a `gh pr create` command applies an `automation:` label through a label flag: an option's value is read as its value, not as another flag. */
 function labelled(words: readonly string[]): boolean {
-  return words.some((w, i) => {
-    const eq = /^(?:--label|-l)=(.*)$/.exec(w);
-    if (eq !== null) return listsAutomation(eq[1] ?? "");
-    return (
-      (w === "--label" || w === "-l") && listsAutomation(words[i + 1] ?? "")
-    );
-  });
+  const args = commandWords(words).slice(3);
+  for (let i = 0; i < args.length; i++) {
+    const flag = labelFlag(args, i);
+    if (flag !== null) {
+      if (listsAutomation(flag.value)) return true;
+      i = flag.last;
+    } else if (VALUED.has(args[i] ?? "")) i++;
+  }
+  return false;
 }
 
 /** Whether every `gh pr create` of a script labels its pull request as automation; `null` when it runs none. */

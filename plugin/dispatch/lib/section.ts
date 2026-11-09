@@ -184,6 +184,11 @@ function prefix(value: unknown): Checked<string> {
     return invalid(
       `dispatch.labels.prefix must be a nonempty string of at most ${MAX_PREFIX} characters, with no comma and no space at either end`,
     );
+  // The `automation:` family names the jobs that open pull requests, not dispatch state.
+  if (value.startsWith("automation:"))
+    return invalid(
+      "dispatch.labels.prefix must not start with 'automation:', the family workflows label their pull requests with",
+    );
   return ok(value);
 }
 

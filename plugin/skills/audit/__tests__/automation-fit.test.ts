@@ -63,6 +63,28 @@ describe("gh pr create in a run script", () => {
   });
 });
 
+describe("gh pr create command position and option values", () => {
+  it("reads a creation after a control keyword", () => {
+    expect(runSteps("if gh pr create --fill; then echo opened; fi")).toEqual([
+      "j › s",
+    ]);
+    expect(runSteps("if true; then\n  gh pr create --fill\nfi")).toEqual([
+      "j › s",
+    ]);
+    expect(runSteps("then gh pr create --label automation:x")).toEqual([]);
+  });
+
+  it("does not read another option's value as a label flag", () => {
+    expect(
+      runSteps("gh pr create --fill --body '--label=automation:x'"),
+    ).toEqual(["j › s"]);
+    expect(runSteps("gh pr create --title -l automation:x")).toEqual(["j › s"]);
+    expect(runSteps("gh pr create --body text --label automation:x")).toEqual(
+      [],
+    );
+  });
+});
+
 const CREATE = (labels?: string) => `on: { schedule: [{ cron: "0 5 * * 1" }] }
 jobs:
   regen:

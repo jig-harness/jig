@@ -871,8 +871,9 @@ with theirs; with them off, no label is read or written.
   failed and is not started again, so a person acts; a later follow-up
   that is done replaces it with `followed-up`). A merged pull request's
   state comes from its follow-up's end, as the plan reads it from the
-  follow-up's outcome record and markers, whether or not it carries a
-  label of the set. The ledger is the truth: after the
+  follow-up's outcome record and markers: a failed follow-up is labelled
+  whether or not the pull request carries a label of the set, a done one
+  only when it does. The ledger is the truth: after the
   plan, each managed pull request's state is derived from its ledger
   again and set as its one state label, in one forge call per pull
   request whose labels disagree and none where they agree. A label a
