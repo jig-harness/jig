@@ -57,7 +57,7 @@ export interface MergeLaneView {
 }
 
 /** The `jig ask` line for a pull request's drive (design/addresses.md). */
-export function askLine(repo: string, pr: number): string {
+function askLine(repo: string, pr: number): string {
   return `jig ask drive@${repo}#${pr}`;
 }
 

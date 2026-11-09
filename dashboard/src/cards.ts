@@ -5,8 +5,8 @@
  * card the view drew.
  */
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { mergeLanes, type MergeCardView } from "./merge-view.ts";
-import { type NeedView, needRows } from "./needs-view.ts";
+import { mergeCount, mergeLanes, type MergeCardView } from "./merge-view.ts";
+import { type NeedView, needCount, needRows } from "./needs-view.ts";
 import { queueGroups, type QueueItemView } from "./queue-view.ts";
 import { answerText } from "./replies.ts";
 import type { ViewId } from "./search.ts";
@@ -122,4 +122,23 @@ export function allCards(line: LineSnapshot | null, clock: Clock): CardInfo[] {
   );
   const queue = queueGroups(line, clock).flatMap((g) => g.items.map(queueCard));
   return [...merge, ...needs, ...running, ...queue];
+}
+
+/** Each view's count, which its tab carries: History's once the log is read. */
+export function tabCounts(
+  line: LineSnapshot | null,
+  clock: Clock,
+  logTotal: number | null,
+): Partial<Record<ViewId, number>> {
+  const queue =
+    line === null
+      ? 0
+      : queueGroups(line, clock).reduce((n, g) => n + g.items.length, 0);
+  return {
+    merge: mergeCount(line),
+    needs: needCount(line, clock.nowMs),
+    running: line?.sessions.length ?? 0,
+    queue,
+    ...(logTotal === null ? {} : { history: logTotal }),
+  };
 }

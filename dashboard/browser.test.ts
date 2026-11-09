@@ -427,7 +427,7 @@ describe("the merge flash", () => {
             });
           }
           if (flashes)
-            expect(await page.locator(".flash").innerText()).toContain(
+            expect(await page.locator(".flash").textContent()).toContain(
               "2 pull requests are safe to merge: #461, #1199",
             );
         } finally {

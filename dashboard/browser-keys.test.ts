@@ -75,7 +75,10 @@ function opened(page: Page): Promise<string[]> {
 
 /** What the page last said about a key, out loud and in sight. */
 function said(page: Page): Promise<string> {
-  return page.locator(".say").innerText();
+  return page
+    .locator(".say")
+    .textContent()
+    .then((t) => t ?? "");
 }
 
 /** Presses j until focus rests on the first card that carries `attribute`; its value, or `null` when no card does. */
@@ -259,8 +262,8 @@ describe("the keys on every view", () => {
             const target = await page
               .locator("main [data-card]:visible .tgt")
               .first()
-              .innerText();
-            await page.keyboard.type(target);
+              .textContent();
+            await page.keyboard.type(target ?? "");
             await until("the filter narrowed the cards", async () => {
               const now = (await cardKeys(page)).length;
               return now > 0 && now < before;

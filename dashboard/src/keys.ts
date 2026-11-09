@@ -37,7 +37,7 @@ export const KEYS: ReadonlyArray<{ keys: string[]; does: string }> = [
 const CHORD_MS = 1500;
 
 /** What a key asks for, before the page knows which card it lands on. */
-export type KeyAction =
+type KeyAction =
   | { kind: "palette" }
   | { kind: "move"; by: 1 | -1 }
   | { kind: "toggle" }
@@ -48,7 +48,7 @@ export type KeyAction =
   | { kind: "filter" }
   | { kind: "help" };
 
-export interface KeyPress {
+interface KeyPress {
   key: string;
   metaKey: boolean;
   ctrlKey: boolean;
@@ -115,7 +115,7 @@ const NOT_TYPED = new Set([
 ]);
 
 /** Whether an element takes typing, where every key is the person's text. */
-export function isTextField(element: Element | null): boolean {
+function isTextField(element: Element | null): boolean {
   if (element === null) return false;
   if (element instanceof HTMLTextAreaElement) return true;
   if (element instanceof HTMLSelectElement) return true;
@@ -206,6 +206,43 @@ function toggleOf(card: HTMLElement): HTMLElement | null {
   );
 }
 
+/** Whether Enter landed on a control inside the card, which is that control's own. */
+function onControl(card: HTMLElement, target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    target !== card &&
+    target.closest("a, button, summary, [role='button']") !== null
+  );
+}
+
+function toggleCard(card: HTMLElement): void {
+  const toggle = toggleOf(card);
+  if (toggle === null) {
+    announce("This card has nothing more to show");
+    return;
+  }
+  toggle.click();
+  card.focus();
+}
+
+const NO_LINK = {
+  pr: "This card has no pull request",
+  issue: "This card has no issue",
+} as const;
+
+function openFrom(card: HTMLElement, what: "pr" | "issue"): void {
+  const url = card.dataset[what];
+  if (url === undefined) announce(NO_LINK[what]);
+  else window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function copyFrom(card: HTMLElement): void {
+  const command = card.dataset.command;
+  if (command === undefined) announce("This card has no command to copy");
+  else void copyText(command, card);
+}
+
+/** Runs a card's key on the card focus is on; whether the page took the key. */
 function onCard(
   root: HTMLElement,
   action: KeyAction & { kind: "toggle" | "open" | "copy" },
@@ -217,36 +254,52 @@ function onCard(
     return action.kind !== "toggle";
   }
   if (action.kind === "toggle") {
-    // Enter on a control inside the card is that control's own.
-    if (
-      target instanceof HTMLElement &&
-      target !== card &&
-      target.closest("a, button, summary, [role='button']")
-    )
-      return false;
-    const toggle = toggleOf(card);
-    if (toggle === null) announce("This card has nothing more to show");
-    else {
-      toggle.click();
-      card.focus();
-    }
-    return true;
-  }
-  if (action.kind === "open") {
-    const url = action.what === "pr" ? card.dataset.pr : card.dataset.issue;
-    if (url === undefined)
-      announce(
-        action.what === "pr"
-          ? "This card has no pull request"
-          : "This card has no issue",
-      );
-    else window.open(url, "_blank", "noopener,noreferrer");
-    return true;
-  }
-  const command = card.dataset.command;
-  if (command === undefined) announce("This card has no command to copy");
-  else void copyText(command, card);
+    if (onControl(card, target)) return false;
+    toggleCard(card);
+  } else if (action.kind === "open") openFrom(card, action.what);
+  else copyFrom(card);
   return true;
+}
+
+/** Whether the page reads this key at all: not inside a text field, nor while its palette has the keys. */
+function listening(
+  element: HTMLElement | null,
+  h: KeyHandlers,
+  event: KeyboardEvent,
+): boolean {
+  if (element === null || h.paletteOpen() || event.defaultPrevented)
+    return false;
+  return !isTextField(event.target instanceof Element ? event.target : null);
+}
+
+/** Does what a key asks; whether the page took the key. */
+function run(
+  action: KeyAction,
+  element: HTMLElement,
+  h: KeyHandlers,
+  target: EventTarget | null,
+): boolean {
+  switch (action.kind) {
+    case "palette":
+      h.openPalette();
+      return true;
+    case "move":
+      move(element, action.by);
+      return true;
+    case "chord":
+      return true;
+    case "view":
+      h.setView(action.view);
+      return true;
+    case "filter":
+      h.focusFilter();
+      return true;
+    case "help":
+      h.setView("help");
+      return true;
+    default:
+      return onCard(element, action, target);
+  }
 }
 
 export interface KeyHandlers {
@@ -269,37 +322,13 @@ export function useKeys(
     const listen = (event: KeyboardEvent) => {
       const element = root.current;
       const h = latest.current;
-      if (element === null || h.paletteOpen() || event.defaultPrevented) return;
-      if (isTextField(event.target instanceof Element ? event.target : null))
-        return;
+      if (!listening(element, h, event) || element === null) return;
       const chord = performance.now() - chordAt < CHORD_MS;
       chordAt = Number.NEGATIVE_INFINITY;
       const action = actionOf(event, chord);
       if (action === null) return;
-      let handled = true;
-      switch (action.kind) {
-        case "palette":
-          h.openPalette();
-          break;
-        case "move":
-          move(element, action.by);
-          break;
-        case "chord":
-          chordAt = performance.now();
-          break;
-        case "view":
-          h.setView(action.view);
-          break;
-        case "filter":
-          h.focusFilter();
-          break;
-        case "help":
-          h.setView("help");
-          break;
-        default:
-          handled = onCard(element, action, event.target);
-      }
-      if (handled) event.preventDefault();
+      if (action.kind === "chord") chordAt = performance.now();
+      if (run(action, element, h, event.target)) event.preventDefault();
     };
     document.addEventListener("keydown", listen);
     return () => document.removeEventListener("keydown", listen);
