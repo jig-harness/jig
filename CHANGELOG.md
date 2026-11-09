@@ -364,6 +364,7 @@ changes are marked **Breaking** and say what a consumer changes.
   that build software with AI coding agents, the rules, skills and checks it
   gives a repository, and the line that carries each change to merge. What
   goes wrong without it follows as its own section on the home page.
+- The planned hub and dispatch board treat phone access as a required read-only surface, with an explicit scope, private HTTPS setup, availability requirements and phone acceptance budgets.
 
 ### Fixed
 
@@ -388,6 +389,44 @@ changes are marked **Breaking** and say what a consumer changes.
   under it.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.185.0] - 2026-11-09
+
+### Added
+
+- The dispatcher measures its host each tick and reports its load factor.
+  Under the act lock it reads the host's gauges: memory, the one-minute load per
+  core, the test lock's holders and waiters, free disk on the workspaces'
+  filesystems, the forge's budget and the accounts' free slots. Every
+  receipt, the dashboard's line and the top of the Running view carry each
+  gauge, the load factor as the fullest gauge's fill against its line
+  ("82% · memory binds") and the launches the load factor would hold. A
+  launch fits while every gauge stays under its line with its kind's memory
+  reservation counted, and a pickup also keeps room for a drive or
+  follow-up after it. On Linux each kind's reservation becomes the 90th
+  percentile of its last 20 measured sessions once it has 5. The
+  `load:` section of `~/.jig/dispatch.yaml` sets the lines and default
+  reservations ([CONFIGURATION.md](plugin/CONFIGURATION.md)). It ships
+  with `load.enforce: false`, so a launch a gauge refuses still starts and
+  is reported; a person turns enforcement on after a week of receipts.
+- A run waiting on the machine-wide resource lock announces itself beside
+  the lock until it holds a slot or gives up, so another mechanism can count
+  the waiters ([M12](modules/M12-parallel-agent-ergonomics/README.md)).
+- `do-item scout <issue-key>` runs the configured scouts before a pickup and
+  records findings in the format a later pickup reuses. `do-item scout --text
+  <task>` gathers and prints context without contacting the tracker.
+- The pull-request planner warns about merges that bring in commits outside the base and adds the changed areas' tracker labels and flags alongside fixed labels, without labels from implied areas.
+
+### Changed
+
+- Issue pickup verifies claims about third-party tools against the version in
+  use before delegating, and stops for re-scoping when a claim is false.
+
+### Fixed
+
+- Workspace names follow pickup and drive stages in Herdr using the session's
+  workspace id. A failed rename or missing id warns without blocking work.
+- `do-item` releases a clean, pushed implementer's isolated worktree before arming the drive, so its branch is available to the pull request's workspace. Dirty trees, unpushed commits and unfinished git operations stay attached and are reported with inspection and release commands.
 
 ## [0.184.1] - 2026-11-09
 
@@ -6449,7 +6488,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.184.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.185.0...HEAD
+[0.185.0]: https://github.com/jig-harness/jig/compare/v0.184.1...v0.185.0
 [0.184.1]: https://github.com/jig-harness/jig/compare/v0.184.0...v0.184.1
 [0.184.0]: https://github.com/jig-harness/jig/compare/v0.183.2...v0.184.0
 [0.183.2]: https://github.com/jig-harness/jig/compare/v0.183.1...v0.183.2
