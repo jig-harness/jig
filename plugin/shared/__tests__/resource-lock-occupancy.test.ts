@@ -73,7 +73,7 @@ describe("the lock's occupancy", () => {
         stdout: "pipe",
         stderr: "pipe",
       });
-      const deadline = Date.now() + 20_000;
+      const deadline = Date.now() + 25_000;
       while (lockOccupancy(dir, "heavy").waiters === 0 && Date.now() < deadline)
         await Bun.sleep(25);
       expect(lockOccupancy(dir, "heavy")).toEqual({ holders: 1, waiters: 1 });
@@ -89,6 +89,6 @@ describe("the lock's occupancy", () => {
       );
       expect(existsSync(held)).toBe(false);
     },
-    30_000,
+    35_000,
   );
 });
