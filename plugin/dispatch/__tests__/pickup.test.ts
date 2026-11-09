@@ -267,6 +267,12 @@ describe("jig dispatch --apply picks up assigned items", () => {
     expect(later.repos[0]?.actions).toContainEqual(
       expect.objectContaining({ target: "#12", cause: "pickup-question" }),
     );
+    // Settling the question and returning the item to the dispatch states
+    // releases the record, so the item is picked up again.
+    w.setIssues([assignedIssue(12, "factory-bot", ["Todo"])]);
+    await applyTick(w, false);
+    const again = await applyTick(w, false);
+    expect(launches(again)).toHaveLength(1);
   });
 
   it("records a pickup's opened pull request though the merged listing fails", async () => {

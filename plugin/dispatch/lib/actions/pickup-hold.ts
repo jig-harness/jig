@@ -11,11 +11,12 @@
  * - the item's latest record that ended, and has not been released, holds
  *   it too: a session that stopped without claiming the item (a refusal, a
  *   crash, a question) is not launched again until the item leaves the
- *   dispatch states (`releaseEnded`) and comes back.
+ *   dispatch states (`releaseEnded`) and comes back; an item claimed meanwhile is released when it returns.
  */
 import {
   holds,
   isInteractive,
+  type LaunchRecord,
   type LaunchState,
   type ReadRecord,
   writeRecord,
@@ -126,19 +127,42 @@ export function holdingRecords(
  * Release every ended pickup record of `repo` whose item is no longer
  * wanted, so a later assignment of that item is a pickup again. Called only
  * after a whole read of the tracker.
+ *
+ * An item that is claimed (in progress) keeps its record, so the question its
+ * pass stopped on stays a need; the record notes the claim, and releases once
+ * the item is back among `returned` (the dispatch states), which is how a
+ * person settles that question.
  */
 export function releaseEnded(
   records: ReadRecord[],
   repo: string,
   wanted: ReadonlySet<string>,
+  claimed: ReadonlySet<string> = new Set(),
+  returned: ReadonlySet<string> = new Set(),
   root?: string,
 ): void {
   for (const r of records) {
     const { record } = r;
     if (record.action !== "pickup" || record.repo !== repo) continue;
     if (record.released || holds(r.state)) continue;
-    if (wanted.has(record.item as string)) continue;
+    const item = record.item as string;
+    if (claimed.has(item)) {
+      noteClaim(record, root);
+      continue;
+    }
+    const stillWanted =
+      record.claimedSeen === true
+        ? !returned.has(item) && wanted.has(item)
+        : wanted.has(item);
+    if (stillWanted) continue;
     record.released = true;
     writeRecord(record, root);
   }
+}
+
+/** Remember that the record's item was seen claimed, once. */
+function noteClaim(record: LaunchRecord, root?: string): void {
+  if (record.claimedSeen === true) return;
+  record.claimedSeen = true;
+  writeRecord(record, root);
 }
