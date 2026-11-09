@@ -85,8 +85,7 @@ stays its assignee. Every 20 minutes an agent, the
 [steward](GLOSSARY.md), reads what is stopped and waiting. It has the
 dispatcher restart a drive that stopped for a passing reason, and fills in
 a missing priority or size. It frames what still needs a person. It never
-merges, settles what only a person may decide, or writes code. The dashboard
-opens on what is safe to merge. Every item there starts with the one act it
+merges, settles what only a person may decide, or writes code. Every dashboard item starts with the one act it
 asks of a person: merge, decide, authorize, reply, do or investigate.
 
 ### 39. Addresses: asking and telling the stations of the line
