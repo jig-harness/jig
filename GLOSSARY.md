@@ -1333,6 +1333,11 @@ make, use the entry's term instead.
   that is no longer the park's is a **stale answer** and does not count, so
   an approval of an earlier framing never settles the one that replaced it
   ([design](design/structured-answers.md#binding-an-answer-to-its-framing)).
+- **Resolution receipt** — the record a re-arm writes into the *drive
+  ledger* when it unparks an item: the park's key and digest, the answer it
+  consumed, the outcome and the times. The dispatcher's tick counts a park
+  as answered from its receipt, and a park that left the ledger with none as
+  removed ([design](design/structured-answers.md#showing-what-was-decided)).
 - **Disputed answer** — a parked item whose people's latest answers are not
   all the same option (two different choices, or a choice beside another
   person's free answer). It is not answered and waits, which sets it apart

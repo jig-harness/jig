@@ -207,9 +207,10 @@ Option identity gets the same care. The ledger redacts email addresses and
 account identifiers in a park's record, so two options that differ only
 there (`Notify alice@example.test`, `Notify bob@example.test`) would read as
 one option to the tick, `jig ask` and `jig send`, and as two to the re-arm.
-`drive-state.ts park` therefore refuses a record whose option names are the
-same once redacted as well as once normalized, so the names every reader
-sees are the names the person types.
+`drive-state.ts park` therefore refuses a record with an option name that
+redaction changes (an email address or an account identifier in a name),
+and one whose names are the same once normalized, so the names every
+reader sees are the names the person types and copies.
 
 Every place that shows a person the options (the notification, `jig ask`,
 the dashboard, the Orca panel) gives the answer lines with the digest of the
@@ -271,6 +272,13 @@ to read.
   answer. A person who already answered may answer again, which replaces
   their earlier answer; the send shows the earlier one first. `--approve`
   is refused on a park whose record names no recommendation. `--all
+  --approve` takes no single digest: its `--dry-run` lists each eligible
+  item with its digest and prints one set token (the hash of the sorted
+  key and digest pairs), and the real send names that token
+  (`--decision-set <token>`). It re-fetches the open items, and refuses,
+  writing nothing, when the eligible set or any item's digest differs from
+  the listed one, so no item is approved on a framing the person did not
+  see and a park added or reframed since is never swept in. `--all
   --approve` approves, one comment per item and after listing each, every
   open item of the pull request whose class the shared acts table
   (`shared/acts.ts`) lists as Decide by name; a class the table does not
@@ -346,16 +354,21 @@ section splitter, kept free of the command code `framed-park.ts` imports.
   (`dispatch/lib/line-store.ts`) keeps every waiting park with its class,
   digest and the answers the tick read. When the tick of the host that owns
   the repository finds a park its previous line held gone from the ledger,
-  it writes an event row from a **resolution receipt**, not from the
-  disappearance alone: a park can leave the ledger answered, withdrawn or
-  corrected between two ticks, and the line before it may hold no answer at
-  all. The re-arm writes the receipt when it unparks an item: the consumed
-  answer snapshot, the outcome and the times, kept in the drive ledger
-  beside the park it resolved. The event row carries the class, whether the
+  it writes an event row from a [resolution receipt](../GLOSSARY.md), not
+  from the disappearance alone: a park can leave the ledger answered,
+  withdrawn or corrected between two ticks, and the line before it may hold
+  no answer at all. The re-arm writes the receipt when it unparks an item:
+  a stable identity (the park's key and digest), the consumed answer
+  snapshot, the outcome and the times, kept in the drive ledger beside the
+  park it resolved. The tick ingests every receipt whose identity its line
+  has not yet recorded as ingested, whether or not a previous line held the
+  park, so a park raised and answered between two ticks is counted; the
+  line keeps the identities it has ingested, and drops one once the ledger
+  no longer lists its receipt. The event row carries the class, whether the
   choice was the recommended option, the form, and how long the item
-  waited; a park that left with no receipt is counted as removed, not
-  answered. The ledger is on the pull request, so a re-arm on any host is
-  counted, as far as the owner's tick ran to see it.
+  waited; a park the previous line held that left with no receipt is
+  counted as removed, not answered. The ledger is on the pull request, so a
+  re-arm on any host is counted, as far as the owner's tick ran to see it.
 - **Recommendation acceptance.** `jig dispatch log` reports, per class and
   repository, how many parks were answered, how many with the recommended
   option, and the median wait. That is evidence for a person deciding
