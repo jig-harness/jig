@@ -252,9 +252,10 @@ describe("Markdown the scan must read as the renderer does", () => {
           heading,
           "- [x] Document `literal",
           "  01. [ ] <!-- placeholder ` -->",
+          "- [ ] Rotate the key",
         ),
       ),
-    ).toEqual({ open: 0, done: 1 });
+    ).toEqual({ open: 2, done: 1 });
   });
 
   it("reads a fence indented into a list item as code", () => {

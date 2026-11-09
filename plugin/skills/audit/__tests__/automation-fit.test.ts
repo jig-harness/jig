@@ -133,6 +133,16 @@ describe("shell redirections, empty here-document delimiters and quoted continua
     ).toEqual(["j › s"]);
     expect(
       runSteps(
+        "gh pr create --body-file <(cat <<'EOF' # explanation\n) --label automation:x #\nEOF\n) --fill",
+      ),
+    ).toEqual(["j › s"]);
+    expect(
+      runSteps(
+        'gh pr create --label automation:x --body-file <(cat <<<"body"\n)\ngh pr create --fill',
+      ),
+    ).toEqual(["j › s"]);
+    expect(
+      runSteps(
         "gh pr create --body-file <(printf body \\\n# ) --label automation:x\n) --fill",
       ),
     ).toEqual(["j › s"]);

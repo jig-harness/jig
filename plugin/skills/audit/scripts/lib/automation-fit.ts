@@ -190,6 +190,11 @@ function substitution(
       continue;
     }
     if (c === "<" && script.charAt(j + 1) === "<") {
+      if (script.charAt(j + 2) === "<") {
+        j += 2;
+        atWordStart = false;
+        continue;
+      }
       const found = heredocAt(script, j);
       if (found !== null) {
         heredocs.push(found.heredoc);
@@ -205,7 +210,8 @@ function substitution(
     }
     if (c === "#" && atWordStart) {
       const end = script.indexOf("\n", j);
-      j = end === -1 ? script.length : end;
+      // Leave the newline for the heredoc branch on the next iteration.
+      j = end === -1 ? script.length : end - 1;
       atWordStart = true;
       continue;
     }

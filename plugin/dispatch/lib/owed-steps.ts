@@ -206,10 +206,10 @@ function interrupts(line: string): boolean {
   );
 }
 
-/** Whether `line` starts a checkbox item, including an ordered sibling that cannot itself interrupt a paragraph. */
+/** Whether `line` starts a top-level checkbox item, including an ordered sibling that cannot itself interrupt a paragraph. */
 const startsBoxItem = (line: string): boolean => {
   const item = ITEM.exec(line);
-  return item !== null && BOX.test(item[2] ?? "");
+  return item !== null && (item[1] ?? "") === "" && BOX.test(item[2] ?? "");
 };
 
 /** A look through the paragraph after line `at`, stopping where a blank line, an item, a heading or a fence begins another block; nothing is copied, and no line is read unless asked. */
