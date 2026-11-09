@@ -213,6 +213,8 @@ export interface LineRepo {
   notes: string[];
   /** Why the board read did not place its converged pull requests at the newest tick; `null` when it did, absent when it did not run. */
   boardUnread?: string | null;
+  /** Cards beyond the line's per-repository bound; absent before Ready was read. */
+  readyOmitted?: number;
 }
 
 /**
@@ -245,6 +247,8 @@ export interface LineReady {
   requested: string[];
   /** The checks failing on its head, by name: text the checks' apps wrote, at most `MAX_FAILING`. */
   failing: string[];
+  /** Failing check names beyond this card's bound. */
+  failingOmitted: number;
   /** The Ready conditions, each met (`true`), not (`false`) or not read (`null`). */
   conditions: Array<{ name: string; met: boolean | null; fact: string }>;
   /** The pull requests that wait behind it in a serialized area. */

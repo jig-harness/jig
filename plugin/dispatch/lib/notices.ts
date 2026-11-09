@@ -168,7 +168,7 @@ export function readyNotice(
 ): Notice {
   const line =
     card.lane === "merge-now"
-      ? `Ready to merge in ${slug}: PR #${card.number}. Its merge command, pinned to the verified head, is on the dashboard and in \`jig ask drive@${slug}#${card.number}\`.`
+      ? `Ready to merge in ${slug}: PR #${card.number}. Its merge command, pinned to the verified head, is in \`jig ask drive@${slug}#${card.number}\`.`
       : `Ready to merge in ${slug} once approved: PR #${card.number}. An approval is still required${card.requested.length === 0 ? ", and nobody is asked" : ""}; the repository's other protection rules are not read.`;
   return notice(
     `${slug} PR #${card.number} ready at ${card.head}`,

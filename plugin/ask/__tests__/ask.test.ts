@@ -527,3 +527,45 @@ describe("jig ask", () => {
     );
   });
 });
+
+it("honours a live dispatch hold from default-branch configuration away from a checkout", async () => {
+  const w = world();
+  const head = "a".repeat(40);
+  w.api(`repos/${REPO}/pulls/9`, pullDoc(9));
+  w.api(`repos/${REPO}/issues/9/comments`, [
+    comment(901, ledgerBody(stoppedLedger(9, 0, { verifiedSha: head }))),
+  ]);
+  const board = JSON.parse(boardAnswer(9, head));
+  board.data.repository.defaultBranchRef.target.file = {
+    object: {
+      text: "dispatch:\n  labels:\n    enabled: true\n",
+      isTruncated: false,
+    },
+  };
+  board.data.repository.pr9.labels.nodes = [{ name: "jig:hold" }];
+  writeFileSync(join(w.dir, "board.json"), JSON.stringify(board));
+  const r = await w.ask([`drive@${REPO}#9`, "--json"], w.away);
+  expectSpawnExit(r, 0);
+  const answer = JSON.parse(r.stdout);
+  expect(answer.waitsOn.person).toBe("remove the label");
+});
+
+it("waits behind the repository's first update-next pull request", async () => {
+  const w = world();
+  const head = "a".repeat(40);
+  w.api(`repos/${REPO}/pulls/9`, pullDoc(9));
+  w.api(`repos/${REPO}/pulls`, [{ number: 8 }, { number: 9 }]);
+  for (const n of [8, 9])
+    w.api(`repos/${REPO}/issues/${n}/comments`, [
+      comment(900 + n, ledgerBody(stoppedLedger(n, 0, { verifiedSha: head }))),
+    ]);
+  const board = JSON.parse(boardAnswer(9, head));
+  board.data.repository.pr9.mergeStateStatus = "BEHIND";
+  board.data.repository.pr8 = { ...board.data.repository.pr9, number: 8 };
+  writeFileSync(join(w.dir, "board.json"), JSON.stringify(board));
+  const { r, answer } = await askJson(w, [`drive@${REPO}#9`]);
+  expectSpawnExit(r, 0);
+  expect(answer.waitsOn).toMatchObject({
+    waiting: expect.stringContaining("after #8"),
+  });
+});

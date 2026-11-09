@@ -1421,6 +1421,17 @@ swept() {
   emit "$F/swept-comments.json"
 }
 
+# A standing announcement body, read to reconcile its live approval warning.
+for a in "$@"; do
+  case "$a" in
+    */issues/comments/*)
+      source="$F/issue-comments.json"
+      [ -f "$F/raced-comments.json" ] && source="$F/raced-comments.json"
+      jq -c --argjson id "\${a##*/}" 'first(.[] | select(.id == $id))' "$source"
+      exit 0 ;;
+  esac
+done
+
 # Model the residue of an INTERRUPTED earlier run: a real announcement, from a
 # trusted author, whose marker names a head the PR has since moved past. Present
 # in every sweep from the start — unlike the race fixture below, nothing this run

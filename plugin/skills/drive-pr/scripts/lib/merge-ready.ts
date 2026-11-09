@@ -72,7 +72,9 @@ export interface HeadCheck {
   app: string | null;
   required: boolean;
   state: "pending" | "success" | "neutral" | "skipped" | "failure";
-  /** When the run started, for picking the newest run of a name; `null` when not known. */
+  /** Monotonic check-run attempt id; absent for commit statuses or unread ids. */
+  id?: number | null;
+  /** When the run started; never used to order attempts. */
   startedAt: string | null;
 }
 
@@ -192,10 +194,9 @@ function reviewerRun(facts: ForgeFacts, rules: ReadyRules): HeadCheck | null {
   if (app === null) return null;
   const runs = facts.checks
     .filter((c) => c.app === app && rules.reviewerCheck.test(c.name))
-    .sort((a, b) =>
-      // A run not started yet is the newest of its name.
-      (b.startedAt ?? "\uffff").localeCompare(a.startedAt ?? "\uffff"),
-    );
+    .sort((a, b) => (b.id ?? -1) - (a.id ?? -1));
+  // Multiple attempts with unread ids cannot establish which review stands.
+  if (runs.length > 1 && runs.some((r) => r.id == null)) return null;
   return runs[0] ?? null;
 }
 
@@ -483,9 +484,8 @@ const BLOCKERS: Array<(r: Read) => Row | null> = [
           "a check failed after the drive converged: re-run it, or re-arm the drive",
         ]
       : null,
-  ({ facts, state }) =>
-    (state === "BLOCKED" || state === "UNSTABLE") &&
-    facts.checks.some((c) => c.state === "pending")
+  ({ facts }) =>
+    facts.checks.some((c) => c.required && c.state === "pending")
       ? ["stay", waiting("the checks running"), "the checks are still running"]
       : null,
   ({ facts, state }) =>

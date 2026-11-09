@@ -234,3 +234,24 @@ export function commentFields(c: unknown): CommentFields | null {
     body: text(c.body),
   };
 }
+
+/** Open pull request numbers, fully paged within the answer's deadline. */
+export async function readOpenPulls(
+  reading: Reading,
+  repo: string,
+): Promise<Outcome<number[], "absent" | "unreadable">> {
+  const read = await pages(reading, `repos/${repo}/pulls?state=open`);
+  if (!read.ok) return read;
+  const numbers = read.value.map((v) => (isRecord(v) ? v.number : undefined));
+  if (
+    !numbers.every(
+      (n): n is number =>
+        typeof n === "number" && Number.isSafeInteger(n) && n > 0,
+    )
+  )
+    return failed(
+      "unreadable",
+      "the open pull request listing has invalid numbers",
+    );
+  return ok(numbers);
+}

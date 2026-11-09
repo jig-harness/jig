@@ -9,6 +9,7 @@
  * dashboard's `GET /state` and `jig dispatch line --json` both answer with it,
  * so the two never say different things about one database.
  */
+import { ACTS } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -108,6 +109,9 @@ const ENTRY_FIELDS = {
   },
   queue: { repo: isString, target: isString, why: isString },
   repos: {
+    readyOmitted: (v) =>
+      v === undefined || (Number.isSafeInteger(v) && Number(v) >= 0),
+    boardUnread: (v) => v === undefined || v === null || isString(v),
     path: isString,
     stages: Array.isArray,
     failedReads: Array.isArray,
@@ -164,18 +168,36 @@ const LINE_FIELDS: Fields = {
     value === undefined ||
     listOf({
       repo: isString,
-      pr: isNumber,
+      pr: (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0,
       url: isString,
       head: isString,
-      place: isString,
-      lane: nullOr(isString),
+      title: isString,
+      place: (v) =>
+        typeof v === "string" &&
+        ["ready", "needs-you", "coming", "stay"].includes(v),
+      lane: nullOr(
+        (v) =>
+          typeof v === "string" &&
+          ["merge-now", "approve-first", "update-next"].includes(v),
+      ),
       says: isString,
-      act: nullOr(isString),
+      act: nullOr(
+        (v) => typeof v === "string" && (ACTS as readonly string[]).includes(v),
+      ),
+      waitingFor: nullOr(isString),
       command: nullOr(isString),
-      requested: Array.isArray,
-      failing: Array.isArray,
-      conditions: Array.isArray,
-      unblocks: Array.isArray,
+      withheld: nullOr(isString),
+      requested: (v) => Array.isArray(v) && v.every(isString),
+      failing: (v) => Array.isArray(v) && v.every(isString),
+      failingOmitted: (v) => Number.isSafeInteger(v) && Number(v) >= 0,
+      conditions: listOf({
+        name: isString,
+        met: nullOr((v) => typeof v === "boolean"),
+        fact: isString,
+      }),
+      unblocks: (v) =>
+        Array.isArray(v) && v.every((n) => Number.isSafeInteger(n) && n > 0),
+      since: isString,
     })(value),
   repos: listOf(ENTRY_FIELDS.repos),
 };

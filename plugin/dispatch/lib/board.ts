@@ -42,7 +42,7 @@ import { DEFAULT_REVIEWER_CHECK } from "../../skills/drive-pr/scripts/lib/overla
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { isRecord } from "../../shared/guards.ts";
 import type { Contention } from "./contention.ts";
-import type { Outcome } from "../../shared/outcome.ts";
+import { attempt, type Outcome } from "../../shared/outcome.ts";
 import type { TickBudget } from "./tick-reads.ts";
 import { readyNotice } from "./notices.ts";
 import type { Action, DrivenPr } from "./types.ts";
@@ -182,6 +182,7 @@ async function readFacts(
   numbers: number[],
   io: BoardIo,
   startedMs: number,
+  retryUnread: Map<number, string>,
 ): Promise<Outcome<FactsRead, "unreadable">> {
   const left = () => BOARD_DEADLINE_MS - (io.now() - startedMs);
   const seconds = () => Math.max(1, Math.floor(left() / 1000));
@@ -201,8 +202,13 @@ async function readFacts(
     await io.wait(UNKNOWN_WAIT_MS);
   }
   // A second read that fails leaves the first: its moved heads unplaced, its unknown mergeability where it was.
-  const reread = await io.read(input.slug, retry, seconds());
-  if (!reread.ok) return read;
+  if (left() <= 0) return read;
+  const reread = await io.read(input.slug, retry, left() / 1000);
+  if (!reread.ok) {
+    for (const n of retry)
+      retryUnread.set(n, `the board retry failed: ${reread.failure.reason}`);
+    return read;
+  }
   const second = reread.value;
   for (const [n, f] of second.pulls) first.pulls.set(n, f);
   first.cost += second.cost;
@@ -231,7 +237,8 @@ export async function readBoard(
   const floor = budgetFloor(input.budget);
   if (floor !== null) return notRead(floor, numbers);
   const startedMs = io.now();
-  const facts = await readFacts(input, numbers, io, startedMs);
+  const retryUnread = new Map<number, string>();
+  const facts = await readFacts(input, numbers, io, startedMs, retryUnread);
   if (!facts.ok)
     return notRead(
       `the board read failed: ${facts.failure.reason}`,
@@ -246,10 +253,22 @@ export async function readBoard(
       numbers,
       ms,
     );
-  const rules = rulesOf(input.values);
+  const checkedRules = attempt(
+    "unreadable",
+    "the board review rules are invalid",
+    () => rulesOf(input.values),
+  );
+  if (!checkedRules.ok)
+    return notRead(checkedRules.failure.reason, numbers, ms);
+  const rules = checkedRules.value;
   const cards: BoardCard[] = [];
   const unread: BoardRead["unread"] = [];
   for (const drive of converged) {
+    const retryFailure = retryUnread.get(drive.number);
+    if (retryFailure !== undefined) {
+      unread.push({ number: drive.number, reason: retryFailure });
+      continue;
+    }
     const facts = read.pulls.get(drive.number);
     const listed = input.heads.get(drive.number);
     if (facts === undefined) {
@@ -314,7 +333,7 @@ export async function readBoard(
 }
 
 /** Ready to merge in its order, with one pull request in update next and every other one behind its base in Coming. */
-function oneUpdateNext(cards: BoardCard[]): BoardCard[] {
+export function oneUpdateNext(cards: BoardCard[]): BoardCard[] {
   const ready = readyOrder(
     cards.flatMap((c) => (c.lane === null ? [] : [{ ...c, lane: c.lane }])),
   );

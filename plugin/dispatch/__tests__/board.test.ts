@@ -217,6 +217,7 @@ describe("the board read", () => {
     ]);
     const read = await readBoard(input([converged(7)]), forgeIo);
     expect([read.ok, read.cards, read.pending]).toEqual([true, [], [7]]);
+    expect(read.unread[0]?.reason).toContain("HTTP 502");
   });
 
   it("does not place a pull request whose head moved between the tick's reads, after reading it once more", async () => {
@@ -374,4 +375,16 @@ describe("telling a person", () => {
       await lane({ mergeState: "BLOCKED", reviewDecision: "REVIEW_REQUIRED" }),
     );
   });
+});
+
+it("reports an invalid optional board pattern without throwing", async () => {
+  const f = io([new Map([[7, forge(7)]])]);
+  const r = await readBoard(
+    input([converged(7)], {
+      values: { review: { reviewer_check_pattern: "[" } },
+    }),
+    f,
+  );
+  expect(r.ok).toBe(false);
+  expect(r.reason).toContain("review");
 });

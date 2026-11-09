@@ -36,6 +36,7 @@ export function readyOf(reports: readonly RepoReport[]): LineReady[] {
         withheld: card.withheld,
         requested: card.requested,
         failing: card.failing.slice(0, MAX_FAILING),
+        failingOmitted: Math.max(0, card.failing.length - MAX_FAILING),
         conditions: card.conditions,
         unblocks: card.unblocks,
         since: card.since,
@@ -47,8 +48,16 @@ export function readyOf(reports: readonly RepoReport[]): LineReady[] {
 /** The line's word on a repository's board read: why it did not place its pull requests, `null` when it did; nothing when it did not run. */
 export function boardUnread(report: RepoReport): {
   boardUnread?: string | null;
+  readyOmitted?: number;
 } {
   const board = report.board;
   if (board === undefined) return {};
-  return { boardUnread: board.ok ? null : (board.reason ?? "not read") };
+  return {
+    boardUnread: board.ok
+      ? board.unread.length === 0
+        ? null
+        : board.unread.map((u) => `#${u.number}: ${u.reason}`).join("; ")
+      : (board.reason ?? "not read"),
+    readyOmitted: Math.max(0, board.cards.length - MAX_READY),
+  };
 }

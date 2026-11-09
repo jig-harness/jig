@@ -17,6 +17,7 @@ import {
 } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { updateQueueWait } from "./merge-queue.ts";
 import { rulesOf } from "../../dispatch/lib/board.ts";
 import { parseConfigText } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
@@ -59,7 +60,12 @@ function rulesFrom(
 async function readFor(
   ctx: AskContext,
   number: number,
-): Promise<Outcome<{ facts: ForgeFacts; rules: ReadyRules }, "unreadable">> {
+): Promise<
+  Outcome<
+    { facts: ForgeFacts; rules: ReadyRules; values: Record<string, unknown> },
+    "unreadable"
+  >
+> {
   ctx.reading.forgeCall();
   const bounded = await within(ctx.reading.sourceSec(), () =>
     readMergeFacts(ctx.address.repo, [number], ctx.reading.sourceSec()),
@@ -69,14 +75,28 @@ async function readFor(
     failed("unreadable", "the forge did not give them in time");
   const facts = read.ok ? read.value.pulls.get(number) : undefined;
   const rules = read.ok ? rulesFrom(read.value.config, ctx.address.repo) : null;
-  const found = facts !== undefined && rules !== null;
+  const parsed = read.ok
+    ? attempt(
+        "unreadable",
+        "the default branch configuration did not read",
+        () =>
+          read.value.config == null
+            ? {}
+            : parseConfigText(
+                read.value.config,
+                `${ctx.address.repo}:.config/jig.yaml`,
+              ),
+      )
+    : null;
+  const values = parsed?.ok ? parsed.value : null;
+  const found = facts !== undefined && rules !== null && values !== null;
   const why = whyUnread(read, facts !== undefined);
   ctx.reading.note({
     record: "merge facts",
     read: found,
     ...(found ? {} : { detail: why }),
   });
-  return found ? ok({ facts, rules }) : failed("unreadable", why);
+  return found ? ok({ facts, rules, values }) : failed("unreadable", why);
 }
 
 /** Why the facts or rules did not read. */
@@ -113,17 +133,43 @@ export async function convergedWait(
   const read = await readFor(ctx, doc.number);
   if (!read.ok)
     return { waiting: `the merge facts did not read: ${read.failure.reason}` };
-  const prefix = ctx.labelPrefix;
+  const dispatch = read.value.values.dispatch;
+  const labels =
+    typeof dispatch === "object" && dispatch !== null && "labels" in dispatch
+      ? dispatch.labels
+      : null;
+  const prefix =
+    typeof labels === "object" &&
+    labels !== null &&
+    "enabled" in labels &&
+    labels.enabled === true
+      ? "prefix" in labels && typeof labels.prefix === "string"
+        ? labels.prefix
+        : "jig:"
+      : null;
   const answer = readiness(
     {
       ...read.value.facts,
       slug: ctx.address.repo,
       converged: true,
       verifiedSha: ledger.verifiedSha,
-      held: prefix !== null && doc.labels.includes(`${prefix}hold`),
+      held:
+        prefix !== null && read.value.facts.labels.includes(`${prefix}hold`),
     },
     read.value.rules,
   );
+  if (answer.lane === "update-next")
+    return await updateQueueWait(
+      ctx,
+      ledger,
+      read.value.facts,
+      read.value.rules,
+      prefix,
+      answer,
+      typeof read.value.values.drive === "object" &&
+        read.value.values.drive !== null &&
+        "change_areas_catalog" in read.value.values.drive,
+    );
   const lane = answer.lane === null ? "" : `${answer.lane}: `;
   const command = answer.command === null ? "" : `; ${answer.command}`;
   const why = `${lane}${answer.says}${command}`;

@@ -549,3 +549,54 @@ describe("the forge's facts", () => {
     ]);
   });
 });
+
+describe("required checks and reviewer attempts", () => {
+  it("waits on required queue checks, even when approval is owed", () => {
+    for (const reviewDecision of [null, "REVIEW_REQUIRED"]) {
+      const f = facts({
+        mergeQueue: true,
+        mergeState: "BLOCKED",
+        reviewDecision,
+      });
+      f.checks = f.checks.map((c, i) =>
+        i === 1 ? { ...c, state: "pending" } : c,
+      );
+      expect(readiness(f, RULES).place).toBe("stay");
+    }
+  });
+  it("does not let an optional pending check hide an approval request", () => {
+    const f = facts({
+      mergeState: "BLOCKED",
+      reviewDecision: "REVIEW_REQUIRED",
+    });
+    f.checks = f.checks.map((c, i) =>
+      i === 1 ? { ...c, state: "pending" } : c,
+    );
+    f.checks = f.checks.map((c, i) =>
+      i === 1 ? { ...c, required: false } : c,
+    );
+    expect(readiness(f, RULES).lane).toBe("approve-first");
+  });
+  it("takes the newest attempt id regardless of its start time", () => {
+    const f = facts();
+    f.checks = [
+      {
+        name: "AI review",
+        app: "example-review",
+        required: false,
+        id: 12,
+        state: "failure",
+        startedAt: "2026-11-08T10:00:00Z",
+      },
+      {
+        name: "AI review",
+        app: "example-review",
+        required: false,
+        id: 11,
+        state: "success",
+        startedAt: "2026-11-09T10:00:00Z",
+      },
+    ];
+    expect(readiness(f, RULES).place).toBe("needs-you");
+  });
+});

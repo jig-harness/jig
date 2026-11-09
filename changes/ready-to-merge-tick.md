@@ -25,8 +25,11 @@ release: minor
 
 - `announce-merge-ready.ts` asks the same predicate on top of its own gates:
   it refuses a head the forge does not witness a review of, and words
-  approve first as "an approval is still required".
+  approve first as "an approval is still required", updating that warning
+  when a standing announcement's lane changes at the same head.
 - `jig ask` names a converged drive's lane and act (merge now with its
   pinned command, approve first, update next, or what settles it) in place
-  of saying the approval and the branch were not read, where a checkout here
-  names the repository's review rules.
+  of saying the approval and the branch were not read. It reads the review
+  rules and enabled hold labels from the default branch, including away
+  from a checkout, and reports when the repository's update order cannot
+  be read. Bounded line lists include counts of omitted cards and checks.

@@ -46,7 +46,7 @@ function pullFields(n: number): string {
       latestReviews(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { state authorAssociation author { __typename login } commit { oid } } }
       commits(last: 1) { nodes { commit { oid statusCheckRollup { contexts(first: ${CHECKS}) { pageInfo { hasNextPage } nodes {
         __typename
-        ... on CheckRun { name status conclusion startedAt isRequired(pullRequestNumber: ${n}) checkSuite { app { slug } } }
+        ... on CheckRun { databaseId name status conclusion startedAt isRequired(pullRequestNumber: ${n}) checkSuite { app { slug } } }
         ... on StatusContext { context state isRequired(pullRequestNumber: ${n}) }
       } } } } } }
     }`;
@@ -110,6 +110,11 @@ function checkOf(node: unknown): HeadCheck | null {
   return {
     name,
     app,
+    id:
+      typeof node.databaseId === "number" &&
+      Number.isSafeInteger(node.databaseId)
+        ? node.databaseId
+        : null,
     required: node.isRequired === true,
     state: checkState(node),
     startedAt: str(node.startedAt) || null,
@@ -307,7 +312,7 @@ function addPart(read: FactsRead, part: FactsRead): void {
 
 /**
  * The facts of `numbers` in `slug`, `FACTS_PAGE` to a query, each under
- * `timeoutSec`, or why a query did not read (ADR-0012). With `slug`
+ * one shared `timeoutSec` deadline, or why a query did not read (ADR-0012). With `slug`
  * `null` the repository is the one the forge client's own view of the
  * working directory names (its `{owner}` and `{repo}` placeholders).
  */
@@ -324,11 +329,15 @@ export async function readMergeFacts(
     remaining: null,
     limit: null,
   };
+  const deadline = Date.now() + timeoutSec * 1000;
   for (let i = 0; i < numbers.length; i += FACTS_PAGE) {
+    const leftSec = (deadline - Date.now()) / 1000;
+    if (leftSec <= 0)
+      return failed("unreadable", "the merge facts deadline expired");
     const part = await queryOnce(
       slug,
       numbers.slice(i, i + FACTS_PAGE),
-      timeoutSec,
+      leftSec,
     );
     if (!part.ok) return part;
     addPart(read, part.value);
