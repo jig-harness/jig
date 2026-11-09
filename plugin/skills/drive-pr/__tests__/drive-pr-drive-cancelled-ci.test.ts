@@ -1,14 +1,14 @@
 /**
  * drive-pr suite: drive.ts on a converged head whose final CI carries cancelled
- * checks. A cancelled check is waited for, bounded, and spends no CI-repair
- * pass; with nothing to replace it the drive ends not-judgeable, never
- * converged; a true failure beside it is repaired, naming the run that failed.
+ * checks. A cancelled check spends no CI-repair pass; after its durable
+ * recovery budget is spent, the drive parks, never reports convergence; a true failure beside it is repaired, naming the run that failed.
  * Shared fixtures live in drive-pr-harness.ts and drive-loop-harness.ts.
  */
 
 import { describe, expect, it } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   expectSpawnExit,
@@ -105,6 +105,8 @@ function noHoldOverlay(dir: string): string {
       "review:",
       '  bots: ["review-bot[bot]"]',
       "  reviewer_app: example-review",
+      "dispatch:",
+      "  person: drive-user",
       "ci:",
       "  required_checks: [code-quality-and-build, tests, Schema gate]",
       "",
@@ -118,6 +120,7 @@ async function driveConverged(
   checkRuns: CheckRunFixture[],
   workflowRuns: Array<Record<string, unknown>>,
   env: Record<string, string> = {},
+  spentRecovery = false,
 ) {
   const { dir, stateDir } = writeFixture({
     threads: [],
@@ -126,12 +129,37 @@ async function driveConverged(
     checkRuns: [REVIEWER_RUN, DORMANT_ARM, ...checkRuns],
     workflowRuns,
   });
+  if (spentRecovery) await seedRecovery(dir, stateDir, true);
   return runDriveIn(
     dir,
     stateDir,
     ["--keep-draft", "--no-head-sync", "--", ...PASS_RUNS],
     undefined,
     { env: { JIG_OVERLAY: noHoldOverlay(dir), ...env } },
+  );
+}
+
+/** Seed elapsed recovery time in a subprocess, without waiting on the wall clock. */
+async function seedRecovery(dir: string, stateDir: string, spent: boolean) {
+  const script = join(dir, "seed-recovery.ts");
+  writeFileSync(
+    script,
+    `
+    const { driveDb } = await import(${JSON.stringify(pathToFileURL(join(SCRIPTS, "lib/state/db.ts")).href)});
+    const { resolveStateDir } = await import(${JSON.stringify(pathToFileURL(join(SCRIPTS, "lib/state/store.ts")).href)});
+    const drive = driveDb(await resolveStateDir());
+    drive.db.run("INSERT OR REPLACE INTO cancelled_ci (clone, pr, head, first_seen, requested_at) VALUES (?, ?, ?, ?, ?)",
+      [drive.clone, "999", ${JSON.stringify(scratchClean.head)}, Date.now() - 120000, ${spent ? "Date.now() - 120000" : "null"}]);
+  `,
+  );
+  await expectSpawnExited(
+    Bun.spawn([process.execPath, script], {
+      cwd: scratchClean.dir,
+      env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: stateDir },
+      stdout: "pipe",
+      stderr: "pipe",
+    }),
+    0,
   );
 }
 
@@ -143,26 +171,64 @@ function expectNoRepairPass(stderr: string): void {
 }
 
 describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
-  it("ends not-judgeable on a required check cancelled with no successor", async () => {
-    // The fixture's `tests` is green underneath: the older pass must not stand
-    // in for the cancelled run, which is how a CI hold's held run reads. Without
-    // a hold, final-ready counts the cancelled check as complete and exits 0, so
-    // this also pins the bound: a loop that restarted it on that 0 never ends.
+  it("parks when a required cancellation persists after its recovery was spent", async () => {
+    // A previous driver requested recovery on this head. Re-arming must
+    // preserve that budget and park instead of waiting for another dispatcher tick.
     const r = await driveConverged(
       [check("tests", "cancelled", 40)],
       [workflowRun(40, "cancelled")],
-      { DRIVE_PR_FINAL_CI_WITNESS_POLLS: "2" },
+      {},
+      true,
     );
-    exits(r, 4);
-    expect(r.stderr).toContain(
-      "waiting for a run to replace the cancelled check(s)",
-    );
-    expect(r.stderr).toContain("the verdict has stayed 'cancelled: tests'");
-    expect(r.stderr).toContain("not a failure to repair, and not a pass");
+    exits(r, 8);
+    expect(r.stderr).toContain("once-per-head re-run was already requested");
+    expect(r.stderr).toContain("gh run rerun 40");
     expectNoRepairPass(r.stderr);
     // Never reached a certified, green end.
     expect(r.stderr).not.toContain("merge-ready");
   });
+
+  for (const pending of [true, false]) {
+    it(`recovers initial cancellation before an authoring pass even with unrelated ${pending ? "pending" : "failing"} CI`, async () => {
+      const { dir, stateDir } = writeFixture({
+        threads: [
+          { id: "PRRT_cancelled_initial", path: "probe.ts", bot: true },
+        ],
+        head: scratchClean.head,
+        reviewedSha: scratchClean.head,
+        checkRuns: [
+          REVIEWER_RUN,
+          DORMANT_ARM,
+          check("tests", "cancelled", 40),
+          {
+            ...check("unrelated", pending ? "success" : "failure", 41),
+            status: pending ? "in_progress" : "completed",
+            conclusion: pending ? null : "failure",
+          },
+        ],
+        workflowRuns: [
+          workflowRun(40, "cancelled"),
+          {
+            ...workflowRun(41, "success"),
+            workflow_id: 8,
+            status: pending ? "in_progress" : "completed",
+            conclusion: pending ? null : "failure",
+          },
+        ],
+      });
+      await seedRecovery(dir, stateDir, true);
+      const r = await runDriveIn(
+        dir,
+        stateDir,
+        ["--keep-draft", "--no-head-sync", "--", ...PASS_RUNS],
+        undefined,
+        { env: { JIG_OVERLAY: noHoldOverlay(dir) } },
+      );
+      exits(r, 8);
+      expect(r.stderr).toContain("once-per-head re-run was already requested");
+      expectNoRepairPass(r.stderr);
+    });
+  }
 
   it("converges once a sibling run has replaced the cancelled one", async () => {
     // The measured shape: same head, same second, a matrix never expanded, and
@@ -333,7 +399,7 @@ describe("the proof announce-merge-ready relies on", () => {
 });
 
 describe.skipIf(skipLongDriveFixture)("the CI hold", () => {
-  it("ends not-judgeable on a held run that cancelled itself, with nothing to replace it", async () => {
+  it("parks after release rather than replaying a run created under the hold", async () => {
     // The drive owns the hold and releases it, and no run answers the release:
     // the cancelled required check stays the newest for its name beside the
     // green under it. That must end neither converged nor in a repair.
@@ -343,7 +409,9 @@ describe.skipIf(skipLongDriveFixture)("the CI hold", () => {
       reviewedSha: scratchClean.head,
       ciHeld: true,
       checkRuns: [REVIEWER_RUN, DORMANT_ARM, check("tests", "cancelled", 40)],
-      workflowRuns: [workflowRun(40, "cancelled")],
+      workflowRuns: [
+        workflowRun(40, "cancelled", "pull_request", "2026-09-10T09:59:30Z"),
+      ],
     });
     writeFileSync(
       join(dir, "timeline.json"),
@@ -382,16 +450,22 @@ describe.skipIf(skipLongDriveFixture)("the CI hold", () => {
       recursive: true,
       force: true,
     });
+    await seedRecovery(dir, stateDir, false);
     const r = await runDriveIn(
       dir,
       stateDir,
       ["--keep-draft", "--no-head-sync", "--", ...PASS_RUNS],
       undefined,
-      { env: { DRIVE_PR_FINAL_CI_WITNESS_POLLS: "1" } },
+      {
+        env: {
+          DRIVE_PR_FINAL_CI_WITNESS_POLLS: "1",
+          JIG__dispatch__person: "drive-user",
+        },
+      },
     );
-    exits(r, 4);
+    exits(r, 8);
     expect(r.stderr).toContain("CI hold label removed");
-    expect(r.stderr).toContain("the verdict has stayed 'cancelled: tests'");
+    expect(r.stderr).toContain("created under the CI hold");
     expectNoRepairPass(r.stderr);
   });
 

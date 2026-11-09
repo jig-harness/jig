@@ -1,5 +1,6 @@
 /** Order one round boundary, status gate, pass and Ready transition without bypassing admission checks. */
 import type { DriveRoundContext } from "./round-context.ts";
+import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
 
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 
@@ -198,6 +199,8 @@ export async function runRoundIteration(
   );
   if (typeof readRoundStatusResult !== "object") return readRoundStatusResult;
   const { code, status, reasonLine } = readRoundStatusResult;
+  const cancellation = await recoverBeforePass(context, code, status);
+  if (cancellation !== null) return cancellation;
   {
     const stage = await gateRoundStatus(context, code, status, reasonLine);
     if (stage !== null) return stage;
@@ -319,4 +322,32 @@ export async function runRoundIteration(
   }
 
   return null;
+}
+
+/** Recover initial cancellation before spending a pass that cannot push; clear resolved parks before convergence. */
+async function recoverBeforePass(
+  context: DriveRoundContext,
+  code: number,
+  status: Record<string, unknown>,
+): Promise<number | "continue" | null> {
+  if (
+    context.dryRun ||
+    ![0, 3].includes(code) ||
+    (code === 3 && String(status.ci ?? "").startsWith("failing:"))
+  )
+    return null;
+  const head = String((status.head as { api?: string } | undefined)?.api ?? "");
+  if (head === "") return null;
+  const recovery = await recoverCancelledOnHead(context.pr, head);
+  switch (recovery) {
+    case "parked":
+      return 8;
+    case "unknown":
+      return 1;
+    case "wait":
+      await sleep(FINAL_CI_POLL_SECONDS);
+      return "continue";
+    default:
+      return null;
+  }
 }

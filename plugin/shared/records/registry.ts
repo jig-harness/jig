@@ -167,6 +167,11 @@ const DRIVE_STATE: RecordKind[] = [
   driveTable("drive-state-import", `${STATE}import.ts`, "imports"),
   driveTable("drive-counter", `${STATE}db.ts`, "counters"),
   driveTable(
+    "drive-cancelled-ci",
+    `${DRIVE}lib/cancelled-recovery-state.ts`,
+    "cancelled_ci",
+  ),
+  driveTable(
     "review-round-counter",
     `${STATE}review-rounds.ts`,
     "review_rounds",
