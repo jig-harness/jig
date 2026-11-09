@@ -64,7 +64,7 @@
 // census found but the measurement missed, a duplicate skill name, or a
 // skills directory with no skill; 2 usage error or an unreadable directory.
 import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { parseArgs } from "node:util";
 import { cli } from "../../../../lib/cli.ts";
 import { readRegularFile } from "../../../../lib/files.ts";
@@ -316,6 +316,10 @@ class Corpus {
   }
 
   private addEntry(kind: Item["kind"], entry: Found, namespace?: string) {
+    // A shadowed command is omitted before resolving or deduplicating its
+    // definition. It may be a dangling link, and must not consume the
+    // physical file's measurement slot when an unshadowed alias reaches it.
+    if (kind === "command" && this.skillNames.has(entry.fallbackName)) return;
     const physical = physicalPath(entry.file);
     if (physical === undefined) {
       this.seen.add(entry.file);
@@ -324,7 +328,6 @@ class Corpus {
     }
     if (this.seen.has(physical)) return;
     this.seen.add(physical);
-    if (kind === "command" && this.skillNames.has(entry.fallbackName)) return;
     try {
       const item = measure(kind, entry, namespace);
       this.items.push(item);
@@ -346,11 +349,16 @@ class Corpus {
         : kind === "command"
           ? [(name: string) => /\.md$/i.test(name), "<dir>/**/*.md"]
           : [isAgentFile, "<dir>/*.md"];
-    for (const file of census(dir, matches))
+    for (const file of census(dir, matches)) {
+      const commandName = relative(dir, file)
+        .replace(/[\\\\/]/g, ":")
+        .replace(/\.md$/i, "");
+      if (kind === "command" && this.skillNames.has(commandName)) continue;
       if (!this.seen.has(physicalPath(file) ?? file))
         this.errors.push(
           `${file}: ${kind} definition never reached by the measurement (only ${shape} is measured)`,
         );
+    }
   }
 
   checkDuplicates() {

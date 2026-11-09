@@ -111,6 +111,26 @@ test("skills shadow commands by directory and frontmatter names", () => {
   expect(result.output).not.toContain("command alias:");
 });
 
+test("shadowed command aliases do not consume an unshadowed file's measurement", () => {
+  const root = fixture({ "b.md": definition("D") });
+  symlinkSync(join(root, "b.md"), join(root, "a.md"));
+  const skills = fixture({ "a/SKILL.md": definition("D") });
+  const result = run(root, "--bare-skills", skills);
+  expectSpawnExit(result, 0);
+  expect(result.output).toContain("command b:");
+  expect(result.output).not.toContain("command a:");
+});
+
+test("a shadowed dangling command is omitted before its definition is read", () => {
+  const root = fixture({ "b.md": definition("D") });
+  symlinkSync(join(root, "absent"), join(root, "a.md"));
+  const skills = fixture({ "a/SKILL.md": definition("D") });
+  const result = run(root, "--bare-skills", skills);
+  expectSpawnExit(result, 0);
+  expect(result.output).toContain("command b:");
+  expect(result.output).not.toContain("a.md: unreadable");
+});
+
 test("a plugin skill shadows only its namespaced command name", () => {
   const root = fixture({
     "p/a.md": definition("Hidden"),
@@ -148,6 +168,7 @@ test.skipIf(
 )(
   "command links deduplicate, nested directory links work, and unreadable files fail",
   () => {
+    expect.hasAssertions();
     const root = fixture({ "a.md": definition("D") });
     symlinkSync(join(root, "a.md"), join(root, "alias.md"));
     const nested = fixture({ "b.md": definition("D") });
