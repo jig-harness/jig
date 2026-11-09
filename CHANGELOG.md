@@ -389,6 +389,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.183.2] - 2026-11-09
+
+### Fixed
+
+- A reply left on an open human review thread now counts as progress for the
+  drive’s stall check.
+- Head mismatches now distinguish an unpushed local head, delayed API data,
+  and diverged history, with the action each needs.
+- A held summary finding re-emitted in a later drive review round now
+  contributes to the repeated-file escalation signal.
+- Held findings now retain their review-round currency when a previously
+  reviewed head is revisited.
+- Status now identifies unaddressed summary findings held without a push stamp
+  and names the steps to verify and dispatch their answers.
+
 ## [0.183.1] - 2026-11-09
 
 ### Fixed
@@ -6418,7 +6433,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.183.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.183.2...HEAD
+[0.183.2]: https://github.com/jig-harness/jig/compare/v0.183.1...v0.183.2
 [0.183.1]: https://github.com/jig-harness/jig/compare/v0.183.0...v0.183.1
 [0.183.0]: https://github.com/jig-harness/jig/compare/v0.182.0...v0.183.0
 [0.182.0]: https://github.com/jig-harness/jig/compare/v0.181.0...v0.182.0
