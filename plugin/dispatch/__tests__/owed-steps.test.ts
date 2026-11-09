@@ -255,7 +255,7 @@ describe("Markdown the scan must read as the renderer does", () => {
           "- [ ] Rotate the key",
         ),
       ),
-    ).toEqual({ open: 2, done: 1 });
+    ).toEqual({ open: 1, done: 1 });
   });
 
   it("reads a fence indented into a list item as code", () => {

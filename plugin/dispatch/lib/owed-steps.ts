@@ -206,20 +206,33 @@ function interrupts(line: string): boolean {
   );
 }
 
-/** Whether `line` starts a top-level checkbox item, including an ordered sibling that cannot itself interrupt a paragraph. */
-const startsBoxItem = (line: string): boolean => {
+/** The indentation of the checkbox item `line` starts, including an ordered item that cannot interrupt an ordinary paragraph; `null` when it starts none. */
+const boxItemIndent = (line: string): number | null => {
   const item = ITEM.exec(line);
-  return item !== null && (item[1] ?? "") === "" && BOX.test(item[2] ?? "");
+  return item !== null && BOX.test(item[2] ?? "")
+    ? indentOf(item[1] ?? "")
+    : null;
 };
 
+/** Whether `line` ends a paragraph in the list container at `container`, if any. A checkbox-shaped ordered item that cannot interrupt a plain paragraph is nevertheless a new block when it is a sibling in that container. */
+function endsParagraph(line: string, container: number | null): boolean {
+  if (interrupts(line)) return true;
+  const indent = boxItemIndent(line);
+  return (
+    indent !== null && (container === null ? indent === 0 : indent >= container)
+  );
+}
+
 /** A look through the paragraph after line `at`, stopping where a blank line, an item, a heading or a fence begins another block; nothing is copied, and no line is read unless asked. */
-function paragraphAfter(input: readonly string[], at: number): Lookahead {
+function paragraphAfter(
+  input: readonly string[],
+  at: number,
+  container: number | null,
+): Lookahead {
   return (n) => {
     for (let j = at + 1; j < input.length; j++) {
       const line = input[j] ?? "";
-      // A checkbox begins a new step even where its ordered marker cannot
-      // interrupt an ordinary paragraph on its own.
-      if (interrupts(line) || startsBoxItem(line)) return false;
+      if (endsParagraph(line, container)) return false;
       if (findRun(line, 0, n) !== -1) return true;
     }
     return false;
@@ -241,11 +254,17 @@ function readLines(body: string): string[] {
   const input = body.split(/\r?\n/);
   const ctx: Context = { comment: false, span: null };
   const fence: Fence = { marker: null, base: 0, itemBase: 0 };
+  let paragraphContainer: number | null = null;
   for (const [i, line] of input.entries()) {
     if (skippedByFence(line, fence, ctx)) continue;
-    if (interrupts(line) || startsBoxItem(line)) ctx.span = null;
+    if (endsParagraph(line, paragraphContainer)) ctx.span = null;
     if (!ctx.comment) fence.base = listColumn(line, fence.base);
-    lines.push(uncommented(line, ctx, paragraphAfter(input, i)));
+    const item = ITEM.exec(line);
+    if (item !== null) paragraphContainer = indentOf(item[1] ?? "");
+    else if (interrupts(line)) paragraphContainer = null;
+    lines.push(
+      uncommented(line, ctx, paragraphAfter(input, i, paragraphContainer)),
+    );
   }
   return lines;
 }
