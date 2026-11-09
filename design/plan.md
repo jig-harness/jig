@@ -276,7 +276,7 @@ registry-class park, re-arms a drive a person stopped or sends a session
 free text. Every need opens with one act (Merge, Decide, Authorize, Reply,
 Do, Investigate), and the dashboard becomes five views of one column each
 ([dispatch-board.md](dispatch-board.md#five-views-one-column-of-cards)).
-The route's tiers become item 31's three complexity tiers. Built in the
+The route's tiers become item 31's complexity tiers. Built in the
 design's order, one pull request per step, under the item 44 epic.
 
 Done when, on a host running Orca, a converged pull request whose review
@@ -793,7 +793,7 @@ has how it works, decided in
 route (agent, complexity tier, effort) for the implementer, derived from
 the work type (item 27), the size and flag labels and the catalog's flags and
 mandatory reviews, by rules as data with defaults a repository overrides;
-three complexity tiers, simple, standard and complex, from the type, the
+complexity tiers, simple, standard and complex, from the type, the
 size and the flags a repository marks complex at any size
 (`routing.complex_flags`), each mapped to a model per vendor with Claude's
 and OpenAI's defaults (simple and standard on `sonnet` or `terra`, complex
@@ -804,20 +804,18 @@ whether it was applied on the pull request, where the drive's loop-cost
 report joins them to the outcome; a person's choice always winning; opt-in
 until a repository declares its rules; no model asked to route, and no
 model or tier written on an issue. The design
-is written and decided, and its first step is built: `determine_route.ts`
-derives the route from the `routing` section and its defaults, on the
-tiers `execution` and `strategic`, and
-`do-item` prints it and forwards nothing. What stays open is the rest of
-the build, its own epic, one pull request per step:
+is written and decided, and its first two steps are built:
+`determine_route.ts` derives the route from the `routing` section and its
+defaults, on the complexity tiers with Claude's and OpenAI's families
+known (`plugin/shared/model-families.ts`, which the loader checks every
+`routing.models` row against), and `do-item` prints it and forwards
+nothing. What stays open is the rest of the build, its own epic, one pull
+request per step:
 
-- **The complexity tiers** ([#640](https://github.com/jig-harness/jig/issues/640),
-  item 44's step 9): the tier table, `routing.complex_flags`,
-  `routing.models.<runtime>.<tier>` with the `claude-code` and `codex`
-  defaults, and the old tier names read as the new ones.
 - **The record**: the `## Route` section written and parsed from
   `plugin/shared/`, and the loop-cost report reading it.
-- **M0's declaration point**: the policy, the criterion and the loader's
-  families check.
+- **M0's declaration point**: the policy's invariant and table, and the
+  criterion's statement.
 - **`do-item` forwards**, behind a declared `routing` section: the model
   and effort to the subagent tool, the launcher's `route:` prompt line
   honoured, the pinned agent kept.

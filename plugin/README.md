@@ -353,7 +353,7 @@ variable (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)
 are removed, so a drive stopped on a Claude Code account's usage limit is
 re-armed on a Codex account at the next run. A repository never names an
 agent: it names a model per runtime in `routing.models`, which a pass reads
-for its vendor (the execution tier of `routing.models.codex` for a Codex
+for its vendor (the standard tier of `routing.models.codex` for a Codex
 pass, `drive.pass_model` for Claude Code's) and a pickup reads through its
 route. Every drive runs under the pass deadline the run read
 (`DRIVE_PR_PASS_TIMEOUT` in its environment, else the drive's 90 minutes),
@@ -1690,9 +1690,9 @@ them together.
   a drive armed from a Codex session runs, and the one the dispatcher runs on a
   Codex account
   ([start command](skills/drive-pr/README.md#how-to-start-it)). A Codex
-  pass runs on the execution tier of `routing.models.codex`, else Codex's
-  own configured model; `--pass-model` overrides it with a model or a tier
-  from `routing.models.codex`. `drive.pass_model` is Claude Code's. Both
+  pass runs on the standard tier of `routing.models.codex`, by default
+  `terra` (given as `gpt-5.6-terra`); `--pass-model` overrides it with a
+  model, a family alias or a tier from `routing.models.codex`. `drive.pass_model` is Claude Code's. Both
   skills arm Codex through a terminal tab or its managed background command
   tool; where the host ends children with the session, keep it alive until
   the drive ends or use an external terminal. The turn-budget hook warns

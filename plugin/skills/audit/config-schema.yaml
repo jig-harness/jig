@@ -777,6 +777,12 @@ fields:
     read_by: [work-batch]
     since: 0.57.0
 
+  routing.complex_flags:
+    type: list
+    items: string
+    distinct: true
+    read_by: [do-item]
+    since: next
   routing.types:
     type: map
     values_type: { type: map, values_type: string }
@@ -802,6 +808,11 @@ fields:
     values_type: { type: map, values_type: string }
     read_by: [do-item, drive-pr, dispatch]
     since: 0.92.0
+  routing.family_tiers:
+    type: map
+    values_type: { type: map, values_type: { type: map } }
+    read_by: [do-item, drive-pr, dispatch]
+    since: next
   routing.efforts:
     type: map
     values_type: { type: map, values_type: string }

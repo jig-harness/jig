@@ -336,7 +336,7 @@ not resolve it either.
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
 | `drive.pass_deadline_retries` | whole number ≥ 0 | `2` | drive-pr | How many passes killed at their deadline one drive restarts from, counted in the drive state across re-arms and takeovers until the drive converges or the pull request closes: the driver reports what the killed pass left in the tree, leaves it there and starts the next round. Past this many it stops with exit `15` and says the budget is spent; `0` stops at the first. A value that is not a whole number of at least 0 stops the drive |
-| `drive.pass_model` | one word: a model id, a Claude Code alias, or a routing tier (`execution`, `strategic`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. The setting is Claude Code's; `--pass-model` also overrides a Codex pass and resolves tiers through `routing.models.codex`. Without that flag, a Codex pass runs on its own `-m`, else the execution tier of `routing.models.codex`, else Codex's own configured model, and any other pass command chooses its own model. A value that is not one word stops the drive |
+| `drive.pass_model` | one word: a model id, a Claude Code alias, or a complexity tier (`simple`, `standard`, `complex`; `execution` and `strategic` read as `standard` and `complex`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. The setting is Claude Code's; `--pass-model` also overrides a Codex pass and resolves tiers through `routing.models.codex`. Without that flag, a Codex pass runs on its own `-m`, else the standard tier of `routing.models.codex` (by default `terra`, given as `gpt-5.6-terra`), and any other pass command chooses its own model. A value that is not one word stops the drive |
 | `drive.pass_args` | list of words, each a string without spaces, such as `[--permission-mode, bypassPermissions]`. Only the host's user file or one run's environment sets it | `[]`: the pass command carries no extra arguments | drive-pr, do-item, dispatch | Extra arguments for a Claude Code pass command on this host: the arm command both skills build carries them before `-p` (`claude --model <model> <words> -p …`), and `drive.ts` adds them before `-p` to a pass command that carries no arguments of its own, as the dispatcher's wrapper does to a follow-up's headless pass. A command that carries its own (the arm command, or a re-arm or takeover command a stopped drive printed) is kept as written. The `--pass-args "<words>"` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive: one value, split on spaces, and empty for none. The driver log and the `drives.ts` listing name the [permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) each pass runs in (`inherited` when the command sets none: Claude Code's own settings decide). A headless Claude pass can commit only where its approval source allows it: a permission mode `drive.pass_args` names, or an allow rule of Claude Code's own settings (`--allowedTools`, `permissions.allow`). Where nothing allows the commit, a conflict re-drive stops `9` again at the same change and the dispatcher notifies a person. A repository's file that sets it, an empty list included, stops the drive with an error naming the field; [a host's opt-in](#a-hosts-opt-in-to-bypass) says why, and what the setting risks. It cannot hold `--model` (set `drive.pass_model`) or `-p`/`--print` (the drive writes the prompt), and it cannot end in an option that needs a value, such as `--permission-mode`, since the drive's `-p` would be read as that value; `--pass-args` follows the same rules. A pass command that is not Claude Code's ignores the field and the driver log says so. A value that is not a list of words stops the drive with a message naming the field |
 | `drive.codex_bypass` | `true`, `false`. Only the host's user file or one run's environment sets it | `false`: a Codex pass carries no bypass, and Codex's own configuration decides | drive-pr, do-item, dispatch | Whether a Codex pass on this host runs with `--dangerously-bypass-approvals-and-sandbox`, which means no sandbox and no approvals. An arm from a Codex session writes it into the pass command. The dispatcher admits a Codex account only where it is `true`, for any launch, and says why on every run where it is not ([the machine's dispatch file](#the-machines-dispatch-file)); the launch record keeps what the run judged, so the launched pass does what was admitted. `drive.ts` runs a Codex pass command as given, so one armed without the setting still starts and its driver log says `inherited`. A repository's file that sets it stops the drive with an error naming the field ([a host's opt-in](#a-hosts-opt-in-to-bypass)). A value that is neither `true` nor `false` fails an arm from a Codex session and keeps the dispatcher from admitting a Codex account, naming the field |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
@@ -657,46 +657,83 @@ ranking and the solo-only flags.
 
 ## `routing`
 
-Which [model tier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
-and which effort the agent that implements an item runs on: its
+Which [complexity tier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+which model and which effort the agent that implements an item runs on: its
 [route](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), derived
-from the item's work type, its labels and the change-area catalog by rules
-kept here as data. Routing is opt-in: without a `routing` section, do-item
-derives and prints each route and applies none, so a repository sees what
-the rules would choose before it turns them on. `routing: {}` declares the
-section and accepts every default; a `routing` key left empty (YAML's null)
-reads as absent. In this version do-item prints the route and forwards
-nothing yet
+from the item's work type, its size, its labels and the change-area catalog
+by rules kept here as data. Routing is opt-in: without a `routing` section,
+do-item derives and prints each route and applies none, so a repository sees
+what the rules would choose before it turns them on. `routing: {}` declares
+the section and accepts every default; a `routing` key left empty (YAML's
+null) reads as absent. No route writes a model or a tier onto the issue. In
+this version do-item prints the route and forwards nothing yet
 ([design](https://github.com/jig-harness/jig/blob/main/design/agent-routing.md)).
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `routing.types` | map from a work type to `{tier, effort}` | The table below | do-item | Each type's base tier (`execution` or `strategic`) and effort (`low`, `medium`, `high`, `max`). An entry overrides single fields and keeps the rest of the row; a type outside the default list must set both. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, and a value outside the lists. Only these two tiers can be routed to: an implementer writes, which the Scout tier may not, and the Judgment tier is admitted per decision layer, never for every item of a type |
+| `routing.complex_flags` | list of labels | `[has-migration, api-change, dpa-relevant]`, the sensitivity names `decide` uses | do-item | Labels that make an item `complex` at any type and size: one the item carries, or one an area it seeds (through `do_item.agents.codearea_areas`, and their `impliedBy` closure) declares under `tracker.flags`. `[]` turns the rule off. A catalog that is declared and cannot be read is taken to carry one |
+| `routing.types` | map from a work type to `{tier, effort}` | The table below | do-item | Each type's effort (`low`, `medium`, `high`, `max`), and a tier (`simple`, `standard`, `complex`) that replaces the [complexity table](#the-complexity-table)'s for that type; a complex flag still sets `complex`. An entry overrides single fields and keeps the rest of the row; a type outside the default list must set both. `execution` and `strategic`, the tier names of earlier releases, read as `standard` and `complex`. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, and a value outside the lists |
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare under `tracker.flags` | do-item | Flag labels that move the effort up one step |
 | `routing.raise.sizes` | list of sizes | The known sizes (the size facet's values where the label taxonomy has a size group, with `work_batch.sizes`, else `issue_tracker.labels.batch_sizes`, and `review.taxonomy.sizes`) outside `issue_tracker.labels.batch_sizes`; `[large]` where that leaves none | do-item | Sizes that move the effort up one step. Each entry, like each entry of the size lists it is derived from, is read as a size value or as the label of one, and matched against the item's size facet where the repository has one, else against its labels. A batchable size never raises by default |
 | `routing.raise.reviews` | `true` or `false` | `true` | do-item | Whether an area with a mandatory review (`review.skills` naming a skill) among the areas the item's labels reach through `do_item.agents.codearea_areas`, and every area their `impliedBy` closure adds, moves the effort up one step |
-| `routing.models` | map from a runtime (`claude-code`, `codex`) to `{execution, strategic}`, each the runtime's [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) | `claude-code: {execution: sonnet, strategic: opus}` | do-item, drive-pr, dispatch | Where a routing tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). A Codex pass of a drive runs on the `codex` row's `execution` model. The dispatcher reads the row of the agent a session runs in, which the account's vendor picks: a repository names a model per runtime here, never an agent. A declared runtime row names both tiers and replaces that runtime's default; a runtime with no row gets no model, and its routes are recorded and not applied |
+| `routing.models` | map from a runtime (`claude-code`, `codex`) to `{simple, standard, complex}`, each the runtime's [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) | `claude-code: {simple: sonnet, standard: sonnet, complex: opus}`, `codex: {simple: terra, standard: terra, complex: sol}` | do-item, drive-pr, dispatch | Where a complexity tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). The dispatcher reads the row of the agent a session runs in, which the account's vendor picks: a repository names a model per runtime here, never an agent. A cell a row leaves out keeps its runtime's default; a runtime with no defaults names every tier, and a runtime with no row gets no model, its routes recorded and not applied. Claude Code is given the alias; Codex is given the model the family names today (`terra` runs as `gpt-5.6-terra`), from the plugin's one list of families (`plugin/shared/model-families.ts`). A Codex pass of a drive with no model of its own runs on the `codex` row's `standard` model. The legacy keys `execution` and `strategic` read as `standard` and `complex`, and an `execution` model is also `simple`'s unless the row names `simple`; a row naming a legacy key and its new key with different models is refused |
+| `routing.family_tiers` | map from a runtime to a map from a family alias to `{tier, reason}`, the tier one of M0's `scout`, `execution`, `strategic`, `judgment` | Each family's tier from the plugin's list | do-item, drive-pr, dispatch | A family whose M0 tier differs in this repository (a provider whose alias names another family), or a model outside the list the repository names in `routing.models`. Refused without a `reason`. The audit reports each entry |
 | `routing.efforts` | map from a runtime to a map from an effort to the runtime's name for it | Each effort as written | do-item, dispatch | Where a runtime spells an effort differently. A dispatched Codex session takes its effort as Codex's `model_reasoning_effort` |
 
-Refused besides: an unknown field in `routing` or `routing.raise`, a name
-that is more than one word (it would not read back from the route record),
-and, where the repository has a [label taxonomy](#issue_tracker) its label
-lint accepts, a declared raise list naming a label the taxonomy does not
-declare. A default list is
-never refused: a default label no item carries raises nothing. A refused
+The families each runtime knows, with the tier
+[M0's mappings](https://github.com/jig-harness/jig/blob/main/modules/M0-instruction-architecture/mappings.md)
+give them:
+
+| M0 tier | `claude-code` | `codex` |
+|---------|---------------|---------|
+| Scout | `haiku` | `luna` (`gpt-6-luna`) |
+| Execution | `sonnet` | `terra` (`gpt-5.6-terra`) |
+| Strategic | `opus` | `sol` (`gpt-6.1-sol`) |
+| Judgment | `fable` | `astra` (`gpt-6-astra`) |
+
+Loading `routing.models` refuses, for a runtime with a list: an alias
+outside its families unless `routing.family_tiers` declares it; any tier
+mapped to a Scout family (`haiku`, `luna`), by default or by configuration,
+which no `routing.family_tiers` entry waives, since M0 keeps that tier
+read-only (an implementer may still hand it simple sub-steps); and a row in
+which a stricter complexity tier runs on a family of a lower M0 tier than a
+lighter one. A Judgment family (`fable`, `astra`) is no tier's default and
+is accepted where a repository configures it; the audit reports each such
+mapping.
+
+Refused besides: an unknown field in `routing`, `routing.raise` or a
+`routing.models` row, a name that is more than one word (it would not read
+back from the route record), and, where the repository has a
+[label taxonomy](#issue_tracker) its label lint accepts, a declared raise
+list naming a label the taxonomy does not declare. A default list is never
+refused: a default label no item carries raises nothing. A refused
 `routing` section stops do-item and says why; it is never read as absent.
 
-### The routing table
+### The complexity table
+
+| The item | Tier |
+|----------|------|
+| a `spike`, or any item carrying one of `routing.complex_flags` | `complex`, at any size |
+| a `bug`, an `improvement` or a `feature` | `standard` up to M, `complex` from L |
+| a `task`, the mechanical type | `simple` up to L, `standard` at XL |
+| an `unknown` type | `complex` |
+
+The type and the size are the issue's
+[facets](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). A size
+reads as its step whatever its spelling (`xs`, `s` or `small`, `m` or
+`medium`, `l` or `large`, `xl`), a `size:` prefix included; an item with no
+size, or one the table does not know, reads as M.
+
+### The effort table
 
 | Field | `bug` | `feature` | `improvement` | `task` | `spike` |
 |-------|-------|-----------|---------------|--------|---------|
-| `tier` | `execution` | `execution` | `execution` | `execution` | `strategic` |
 | `effort` | `medium` | `high` | `medium` | `low` | `high` |
 
 An item whose type is `unknown`, or whose type has no row while `routing`
-is undeclared, takes the highest tier and the highest effort any row names,
-each default type's default row included, so an override that lowers one
-type cannot lower it.
+is undeclared, takes the `complex` tier and the highest effort any row
+names, each default type's default row included, so an override that
+lowers one type cannot lower it.
 
 The raises, each class moving the effort up one step at most once however
 many labels of the class the item carries, in this order: a flag label, a
@@ -705,9 +742,9 @@ mandatory review, a size label, and the human-in-the-loop label
 the catalog also lists it as a flag. A catalog that is declared and cannot
 be read is taken to flag the item where `routing.raise.flags` is `catalog`,
 and to hold a mandatory review where `routing.raise.reviews` is on. The
-effort stops at `max`, and a raise never moves the tier: an Execution type
-that keeps needing `max` is a row a person moves to `strategic`, with the
-route records showing it.
+effort stops at `max`, and a raise never moves the tier: a type that keeps
+needing `max` is a row a person moves to a stricter tier, or a flag a
+person adds to `routing.complex_flags`, with the route records showing it.
 
 ## `fleet_health`
 
@@ -1570,6 +1607,7 @@ work_batch:
     provenance: 3
     shared_area_label: 1
 routing:                                 # absent: routes derived and printed, none applied
+  complex_flags: [has-migration, api-change, dpa-relevant]
   types:
     feature: { effort: max }
   raise:
@@ -1577,7 +1615,10 @@ routing:                                 # absent: routes derived and printed, n
     sizes: [large, xl]
     reviews: true
   models:
-    claude-code: { execution: sonnet, strategic: opus }
+    claude-code: { simple: sonnet, standard: sonnet, complex: opus }
+    codex: { complex: astra }
+  family_tiers:
+    codex: { terra: { tier: execution, reason: "the provider serves Terra as listed" } }
   efforts:
     codex: { max: xhigh }
 fleet_health:
