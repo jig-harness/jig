@@ -37,6 +37,9 @@ const environment = (extra: Record<string, string> = {}) => ({
   LOCK_ROOT: scratch,
   LOCK_TIMEOUT: "5",
   LOCK_POLL: "0.02",
+  // One slot: the lock as a single mutex, which these tests pin.
+  LOCK_SLOTS: "1",
+  LOCK_STATIC_SLOTS: "",
   ...extra,
 });
 const spawn = (args: string[], env: Record<string, string> = {}) =>

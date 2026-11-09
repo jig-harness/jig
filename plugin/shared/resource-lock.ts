@@ -1,14 +1,36 @@
 #!/usr/bin/env bun
-// Cross-worktree mutex: run a heavy command under a machine-wide lock.
+// Cross-worktree limit on heavy commands: run a command under a machine-wide
+// lock that admits as many runs as the machine can carry.
 //
 // Several agents on one machine each kicking off a full build-and-test run at
 // once thrash the CPU, the disk, and shared caches — every run gets slower and
-// some fall over. This wrapper serializes such runs: only one holder of a named
-// lock runs its command at a time; the others WAIT (up to a timeout) and then
-// proceed. It coordinates ACROSS worktrees because the lock lives at a
-// machine-global path (TMPDIR), not inside any one worktree.
+// some fall over. This wrapper bounds such runs: a holder of a named lock runs
+// its command; the others WAIT (up to a timeout) and then proceed. It
+// coordinates ACROSS worktrees because the lock lives at a machine-global path
+// (TMPDIR), not inside any one worktree.
 //
-// On POSIX the lock is a SYMLINK whose target is the holder's PID. Creating a symlink is
+// A lock has SLOTS. Slot 0 is the lock's own name (`jig-lock.<name>`), so an
+// earlier version of this script, which knows only that name, still excludes
+// and queues with it; slots 1 and up are `<name>-slot-<n>`. A free slot 0 is
+// taken at once. Any other slot is taken only when the machine has room for
+// one more run (`host-load.ts`: the predicted load under the cores times a
+// target, the available memory above a floor; the first run always fits), and
+// only while no exclusive holder is announced. A waiter sweeps the slots
+// without blocking, with a jittered pause between sweeps; a slot whose pid
+// answers is skipped cheaply, and every tenth sweep judges each holder fully.
+// The check and the sweep run under a short admission lock
+// (`jig-lock.<name>.admission`), so each new holder is counted before the
+// next waiter decides. Only the check's explicit denial keeps a waiter
+// waiting: a reading that fails admits, and the slot ceiling decides. With a
+// ceiling of one slot the lock is the single mutex it has always been.
+//
+// An EXCLUSIVE holder (--exclusive; `jig gc --collect` is one) announces
+// itself (`jig-lock.<name>.exclusive`), which stops new runs from taking any
+// slot, then takes every slot the lock can have, in order, and holds them all
+// while its command runs. Exclusive holders queue on the announcement, so two
+// never deadlock on the slots.
+//
+// On POSIX each lock file is a SYMLINK whose target is the holder's PID. Creating a symlink is
 // ATOMIC on POSIX and fails if the name already exists, so exactly one racer
 // wins — and because the target IS the PID, ownership and owner-identity are
 // established in the SAME atomic step. There is no "won the lock but has not
@@ -39,18 +61,27 @@
 // trusted only when it names the lock's pid and was written no earlier than
 // the lock, so a leftover never judges a later holder; then a pid now held by
 // a process that started at another time no longer keeps a crashed holder's
-// lock. Without one, the pid alone decides, as before. A reclaim, and a wait
-// that runs out, say whose lock it was.
+// lock. Without one, the pid alone decides, as before. A wait says what it
+// waits on and who holds the slots, again when that changes; a reclaim, and
+// a wait that runs out, say whose lock it was.
 //
 // CI bypass: on a CI runner each job already gets its own isolated machine, so
 // there is nothing to serialize and the wait is pure latency. If CI=1 (or
 // CI=true) or RESOURCE_LOCK_BYPASS=1, the command runs immediately, unlocked.
 //
 // Config via env (or --lock for the name):
-//     LOCK_NAME     the lock to contend on (default "heavy"); --lock NAME wins
-//     LOCK_TIMEOUT  seconds to wait for the lock before giving up (default 60)
-//     LOCK_POLL     poll interval while waiting, seconds (default 0.2)
-//     LOCK_ROOT     directory the lock lives under (default ${TMPDIR:-/tmp})
+//     LOCK_NAME          the lock to contend on (default "heavy"); --lock NAME wins
+//     LOCK_TIMEOUT       seconds to wait for the lock before giving up (default 60)
+//     LOCK_POLL          poll interval while waiting, seconds (default 0.2); with
+//                        several slots, the shortest pause between sweeps
+//                        (default: a pause of 2 to 5 seconds)
+//     LOCK_ROOT          directory the lock lives under (default ${TMPDIR:-/tmp})
+//     LOCK_SLOTS         the most runs that may hold the lock at once, 1 to 64
+//                        (default 64, so load decides; 8 with LOCK_STATIC_SLOTS)
+//     LOCK_STATIC_SLOTS  1 admits up to LOCK_SLOTS runs whatever the load
+//     LOCK_TARGET_UTIL   the share of the cores predicted load stays under (0.85)
+//     LOCK_RUN_COST      the load one run adds (default 4)
+//     LOCK_MIN_MEM_GB    the available memory, in GiB, that must remain (8)
 //
 // Exit codes: the command's own exit code on success; 2 on a usage error;
 //             3 if the lock could not be acquired within LOCK_TIMEOUT.
@@ -59,6 +90,7 @@
 //   with-resource-lock.ts pnpm test            # LOCK_NAME defaults to "heavy"
 //   LOCK_NAME=build with-resource-lock.ts make build
 //   with-resource-lock.ts --lock e2e -- ./run-e2e.ts   # -- ends option parsing
+//   with-resource-lock.ts --exclusive -- ./collect.ts  # the machine to itself
 import { registerCleanup, registerSignalHandler } from "./cleanup.ts";
 import {
   accessSync,
@@ -78,6 +110,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { swallow } from "./errors.ts";
 import {
+  readHostLoad,
+  roomForOneMore,
+  type Admission,
+  type AdmissionPolicy,
+  type HostLoad,
+} from "./host-load.ts";
+import {
   decodeIdentity,
   describeIdentity,
   encodeIdentity,
@@ -88,6 +127,15 @@ import {
 } from "./liveness.ts";
 /** The longest `LOCK_TIMEOUT` the lock accepts, in seconds. */
 export const MAX_TIMEOUT_SECONDS = 604800;
+/** The most slots a lock has, and so the slots an exclusive holder takes. */
+const MAX_SLOTS = 64;
+/** The slot ceiling when the count is static rather than decided by load. */
+const STATIC_SLOTS = 8;
+/** How long a run counts as just started, before the load average shows it, in seconds. */
+const FRESH_SECONDS = 60;
+/** Every how many sweeps each holder is judged by its identity, not by its pid alone. */
+const FULL_CHECK_EVERY = 10;
+const GIB = 1024 ** 3;
 const MIN_POLL_SECONDS = 0.001,
   MAX_POLL_SECONDS = 3600;
 const errorCode = (error: unknown) => (error as NodeJS.ErrnoException).code;
@@ -165,30 +213,31 @@ function recordHolder(lock: string): void {
     rmSync(staged, { force: true });
   }
 }
+/** Refuse a setting or an argument: the entry point reports it and exits 2. */
+function refuse(message: string): never {
+  throw new Error(message);
+}
 function commandArguments(
   args: string[],
   name: string,
-): { args: string[]; name: string } {
+): { args: string[]; name: string; exclusive: boolean } {
   args = [...args];
-  while (args.length) {
-    const arg = args[0] ?? "";
-    if (arg === "-l" || arg === "--lock") {
-      if (!args[1]) throw new Error("--lock needs a name");
-      name = args[1];
-      args.splice(0, 2);
-    } else if (arg === "--") {
-      args.shift();
-      break;
-    } else if (arg.startsWith("-")) throw new Error(`unknown option: ${arg}`);
-    else break;
+  let exclusive = false;
+  for (let arg = args[0]; arg?.startsWith("-"); arg = args[0]) {
+    args.shift();
+    if (arg === "--") break;
+    if (arg === "--exclusive") exclusive = true;
+    else if (arg === "-l" || arg === "--lock")
+      name = args.shift() || refuse("--lock needs a name");
+    else refuse(`unknown option: ${arg}`);
   }
-  if (!args.length) throw new Error("no command given to run under the lock");
-  return { args, name };
+  if (!args.length) refuse("no command given to run under the lock");
+  return { args, name, exclusive };
 }
 function waitSeconds(timeout: string): number {
   const timeoutSeconds = Number(timeout);
   if (!/^[0-9]+$/.test(timeout) || !(timeoutSeconds <= MAX_TIMEOUT_SECONDS))
-    throw new Error(
+    refuse(
       `LOCK_TIMEOUT must be a whole number of seconds from 0 to ${MAX_TIMEOUT_SECONDS}: ${timeout}`,
     );
   return timeoutSeconds;
@@ -199,22 +248,81 @@ function pollingSeconds(poll: string): number {
     !/^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(poll) ||
     !(pollSeconds >= MIN_POLL_SECONDS && pollSeconds <= MAX_POLL_SECONDS)
   )
-    throw new Error(
+    refuse(
       `LOCK_POLL must be a number of seconds from ${MIN_POLL_SECONDS} to ${MAX_POLL_SECONDS}: ${poll}`,
     );
   return pollSeconds;
 }
+// A decimal setting from `min` (exclusive when `open`) to `max`, or `fallback` when unset.
+function decimal(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+  [min, max]: [number, number],
+  open = true,
+): number {
+  const raw = env[name];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (
+    !/^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(raw) ||
+    !(open ? value > min : value >= min) ||
+    !(value <= max)
+  )
+    refuse(
+      `${name} must be a number ${open ? "above" : "from"} ${min} ${open ? "and at most" : "to"} ${max}: ${raw}`,
+    );
+  return value;
+}
+/** How many runs a lock admits and by what rule. */
+interface SlotSettings {
+  slots: number;
+  /** Whether load and memory decide, below the ceiling. */
+  adaptive: boolean;
+  policy: AdmissionPolicy;
+}
+/** The slot settings in `env`; a malformed one is a usage error. */
+function slotSettings(env: NodeJS.ProcessEnv): SlotSettings {
+  const switched = env.LOCK_STATIC_SLOTS || "0";
+  if (switched !== "0" && switched !== "1")
+    refuse(`LOCK_STATIC_SLOTS must be 0 or 1: ${switched}`);
+  const adaptive = switched === "0";
+  const raw = env.LOCK_SLOTS || String(adaptive ? MAX_SLOTS : STATIC_SLOTS);
+  if (!/^[0-9]{1,3}$/.test(raw) || Number(raw) < 1 || Number(raw) > MAX_SLOTS)
+    refuse(`LOCK_SLOTS must be a whole number from 1 to ${MAX_SLOTS}: ${raw}`);
+  return {
+    slots: Number(raw),
+    adaptive,
+    policy: {
+      targetUtilization: decimal(env, "LOCK_TARGET_UTIL", 0.85, [0, 4]),
+      runCost: decimal(env, "LOCK_RUN_COST", 4, [0, 4096]),
+      minAvailableBytes:
+        decimal(env, "LOCK_MIN_MEM_GB", 8, [0, 65536], false) * GIB,
+    },
+  };
+}
 function lockArguments(args: string[], env: NodeJS.ProcessEnv) {
-  const { args: command, name } = commandArguments(
-    args,
-    env.LOCK_NAME || "heavy",
-  );
+  const {
+    args: command,
+    name,
+    exclusive,
+  } = commandArguments(args, env.LOCK_NAME || "heavy");
   const timeout = env.LOCK_TIMEOUT || "60",
     poll = env.LOCK_POLL || "0.2",
     root = env.LOCK_ROOT || env.TMPDIR || tmpdir();
   const timeoutSeconds = waitSeconds(timeout),
     pollSeconds = pollingSeconds(poll);
-  return { args: command, name, timeout, root, timeoutSeconds, pollSeconds };
+  return {
+    args: command,
+    name,
+    exclusive,
+    timeout,
+    root,
+    timeoutSeconds,
+    pollSeconds,
+    pollGiven: Boolean(env.LOCK_POLL),
+    settings: slotSettings(env),
+  };
 }
 async function runLockedCommand(
   args: string[],
@@ -248,7 +356,7 @@ async function runLockedCommand(
   void cancellation;
   return await child.exited;
 }
-export function resourceLockPath(root: string, name: string): string {
+function resourceLockPath(root: string, name: string): string {
   const safe = Array.from(new TextEncoder().encode(name), (b) =>
     /[A-Za-z0-9._-]/.test(String.fromCharCode(b))
       ? String.fromCharCode(b)
@@ -256,32 +364,93 @@ export function resourceLockPath(root: string, name: string): string {
   ).join("");
   return join(root, `jig-lock.${safe}`);
 }
-export async function main(
-  args = process.argv.slice(2),
-  env = process.env,
-  platform = process.platform,
-): Promise<number> {
-  const {
-    args: command,
-    name,
-    root,
-    timeout,
-    timeoutSeconds,
-    pollSeconds,
-  } = lockArguments(args, env);
-  const run = () => runLockedCommand(command, env);
-  if (env.CI === "1" || env.CI === "true" || env.RESOURCE_LOCK_BYPASS === "1")
-    return run();
+/** Slot `slot` of the lock `name`: slot 0 is the lock's own name, the others `<name>-slot-<n>`. */
+function resourceLockSlotPath(
+  root: string,
+  name: string,
+  slot: number,
+): string {
+  return resourceLockPath(root, slot === 0 ? name : `${name}-slot-${slot}`);
+}
+/** Whether a process with this pid answers a signal probe (one owned by another user does). */
+function answers(pid: number): boolean {
   try {
-    mkdirSync(root, { recursive: true });
-    accessSync(root, constants.W_OK);
-    if (!lstatSync(root).isDirectory()) throw new Error("not a directory");
-  } catch {
-    throw new Error(`LOCK_ROOT is not a writable directory: ${root}`);
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return errorCode(error) === "EPERM";
   }
-  const lock = resourceLockPath(root, name),
-    owner = String(process.pid);
-  const fileOwners = platform === "win32";
+}
+/** A live holder of a slot, as a wait reports it and admission counts it. */
+interface SlotHolder {
+  path: string;
+  pid: number;
+  /** Seconds since the holder took the slot. */
+  ageSeconds: number;
+}
+/** The slots among `paths` whose recorded pid answers: a cheap read, no identity check. */
+function slotHolders(
+  paths: readonly string[],
+  windows = process.platform === "win32",
+  now = Date.now(),
+): SlotHolder[] {
+  return paths.flatMap((path) => {
+    const seen = holder(path, windows);
+    if (seen === undefined || !/^[1-9][0-9]*$/.test(seen)) return [];
+    const pid = Number(seen);
+    if (!answers(pid)) return [];
+    try {
+      const ageSeconds = Math.max(0, (now - lstatSync(path).mtimeMs) / 1000);
+      return [{ path, pid, ageSeconds }];
+    } catch (error) {
+      swallow(error, "the slot was released while it was read");
+      return [];
+    }
+  });
+}
+function duration(seconds: number): string {
+  const s = Math.round(seconds);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${s % 60}s`;
+}
+/** The holders as a person reads them: each pid, the directory it runs in where readable, and how long it has held. */
+function describeHolders(holders: readonly SlotHolder[]): string {
+  if (holders.length === 0) return "no live holder";
+  return holders
+    .map(({ pid, ageSeconds }) => {
+      let where = "";
+      try {
+        where = ` in ${readlinkSync(`/proc/${pid}/cwd`)}`;
+      } catch (error) {
+        swallow(error, "the holder's directory is not readable here");
+      }
+      return `pid ${pid}${where}, for ${duration(ageSeconds)}`;
+    })
+    .join("; ");
+}
+/** Publishing, releasing and reclaiming one process's lock files. */
+interface Publisher {
+  /** Publish `path` if nothing holds it; false when something already does. */
+  take(path: string): boolean;
+  /** Remove `path` if this process holds it. */
+  release(path: string): void;
+  /** Remove `path` if its owner is dead, or it names none. */
+  reclaim(path: string): void;
+  /**
+   * Take `path` unless a live holder keeps it. A holder whose pid answers is
+   * skipped without the identity check unless `full`; one that does not is
+   * judged, and reclaimed when it is dead.
+   */
+  attempt(path: string, full: boolean): boolean;
+  holders(paths: readonly string[]): SlotHolder[];
+  /** Remove the Windows source file once nothing more is published. */
+  close(): void;
+}
+function publisher(
+  lock: string,
+  fileOwners: boolean,
+  deadline: number,
+): Publisher {
+  const owner = String(process.pid);
   // Windows hard links need no symlink permission. The unique source file has
   // its owner before publishing it atomically, avoiding a create-then-write gap.
   const source = `${lock}.owner.${owner}.${crypto.randomUUID()}`;
@@ -290,12 +459,21 @@ export async function main(
     if (fileOwners) linkSync(source, path);
     else symlinkSync(owner, path);
   };
-  const unpublish = (path: string) => {
+  const release = (path: string) => {
     if (holder(path, fileOwners) === owner) {
       try {
         rmSync(holderFile(path), { force: true });
         rmSync(path);
       } catch {}
+    }
+  };
+  const take = (path: string): boolean => {
+    try {
+      publish(path);
+      return true;
+    } catch (error) {
+      if (errorCode(error) !== "EEXIST") throw error;
+      return false;
     }
   };
   // Remove `path` if its owner is dead (or it carries no owner at all), holding
@@ -324,36 +502,261 @@ export async function main(
       }
     } catch {
     } finally {
-      unpublish(claim);
+      release(claim);
     }
   };
-  const deadline = performance.now() + timeoutSeconds * 1000;
-  let acquired = false;
-  try {
-    for (;;) {
-      try {
-        publish(lock);
-        acquired = true;
-        break;
-      } catch (error) {
-        if (errorCode(error) !== "EEXIST") throw error;
-      }
-      reclaim(lock);
-      const remaining = deadline - performance.now();
-      if (remaining <= 0) break;
-      await Bun.sleep(Math.min(pollSeconds * 1000, remaining));
+  const holders = (paths: readonly string[]) => slotHolders(paths, fileOwners);
+  return {
+    take,
+    release,
+    reclaim,
+    holders,
+    attempt(path, full) {
+      if (full) reclaim(path);
+      else if (holders([path]).length > 0) return false;
+      if (take(path)) return true;
+      if (full) return false;
+      reclaim(path);
+      return take(path);
+    },
+    close() {
+      if (fileOwners) rmSync(source, { force: true });
+    },
+  };
+}
+/** What one acquisition works with. */
+interface Acquisition {
+  locks: Publisher;
+  name: string;
+  /** The path of each slot. */
+  slot: (n: number) => string;
+  settings: SlotSettings;
+  probe: () => HostLoad;
+  pollMs: number;
+  /** Explicit `LOCK_POLL`, which also sets the pause between sweeps. */
+  pollGiven: boolean;
+  remaining: () => number;
+  /** Say what the wait is on, when `key` changes. */
+  say: (key: string, text: string) => void;
+  /** The paths taken, in order; on a wait that ran out, what blocked it. */
+  taken: string[];
+  blocker: string;
+}
+const keyOf = (kind: string, holders: readonly SlotHolder[]) =>
+  `${kind} ${holders.map((h) => h.pid).join(",")}`;
+// Sleep `ms`, never past the deadline; false once the wait is spent.
+async function pause(a: Acquisition, ms: number): Promise<boolean> {
+  if (a.remaining() <= 0) return false;
+  await Bun.sleep(Math.min(ms, a.remaining()));
+  return true;
+}
+// One mutex, as the lock has always been: poll the one name.
+async function takeSingle(a: Acquisition): Promise<void> {
+  const lock = a.slot(0);
+  for (;;) {
+    if (a.locks.take(lock)) {
+      a.taken.push(lock);
+      return;
     }
-  } finally {
-    if (fileOwners) rmSync(source, { force: true });
+    a.locks.reclaim(lock);
+    const holders = a.locks.holders([lock]);
+    a.say(keyOf("held", holders), `held by ${describeHolders(holders)}`);
+    if (!(await pause(a, a.pollMs))) return;
   }
-  if (!acquired) {
+}
+// Every slot the lock can have, in order, after announcing the hold.
+async function takeEvery(a: Acquisition): Promise<void> {
+  const ceiling = Array.from({ length: a.settings.slots }, (_, n) => a.slot(n));
+  const order = [
+    `${a.slot(0)}.exclusive`,
+    ...Array.from({ length: MAX_SLOTS }, (_, n) => a.slot(n)),
+  ];
+  for (const [index, path] of order.entries()) {
+    a.blocker = path;
+    while (!a.locks.attempt(path, true)) {
+      const holders = a.locks.holders(index === 0 ? [path] : ceiling);
+      a.say(
+        keyOf(path, holders),
+        index === 0
+          ? `another exclusive holder: ${describeHolders(holders)}`
+          : `exclusive: every slot, held by ${describeHolders(holders)}`,
+      );
+      if (!(await pause(a, a.pollMs))) return;
+    }
+    a.taken.push(path);
+  }
+}
+// Whether the machine has room for one more run; a reading that fails admits.
+function admitOneMore(
+  a: Acquisition,
+  holders: readonly SlotHolder[],
+): Admission {
+  if (!a.settings.adaptive)
+    return { admit: true, reason: "the slot count is static" };
+  try {
+    return roomForOneMore(
+      a.probe(),
+      {
+        count: holders.length,
+        fresh: holders.filter((h) => h.ageSeconds < FRESH_SECONDS).length,
+      },
+      a.settings.policy,
+    );
+  } catch (error) {
+    swallow(error, "the host's load could not be read; the ceiling decides");
+    return { admit: true, reason: "the host's load could not be read" };
+  }
+}
+// Under the admission lock: a slot beyond the first, if one more run fits.
+function admittedSlot(a: Acquisition, full: boolean): string | undefined {
+  const ceiling = Array.from({ length: a.settings.slots }, (_, n) => a.slot(n));
+  const holders = a.locks.holders(ceiling);
+  const decision = admitOneMore(a, holders);
+  if (!decision.admit) {
+    a.say(
+      keyOf(decision.binds, holders),
+      `${decision.reason}; ${holders.length} running: ${describeHolders(holders)}`,
+    );
+    return undefined;
+  }
+  const free = ceiling.slice(1).find((path) => a.locks.attempt(path, full));
+  if (free === undefined)
+    a.say(
+      keyOf("full", holders),
+      `all ${a.settings.slots} slots held: ${describeHolders(holders)}`,
+    );
+  return free;
+}
+// One sweep: the slot it took, "busy" when the admission lock was, or nothing.
+function sweepOnce(a: Acquisition, full: boolean): string | "busy" | undefined {
+  const announcement = `${a.slot(0)}.exclusive`;
+  if (full) a.locks.reclaim(announcement);
+  const announced = a.locks.holders([announcement]);
+  if (announced.length > 0) {
+    a.say(
+      keyOf("exclusive", announced),
+      `an exclusive holder takes every slot: ${describeHolders(announced)}`,
+    );
+    return undefined;
+  }
+  if (a.locks.attempt(a.slot(0), full)) return a.slot(0);
+  const admission = `${a.slot(0)}.admission`;
+  if (!a.locks.attempt(admission, false)) return "busy";
+  try {
+    return admittedSlot(a, full);
+  } finally {
+    a.locks.release(admission);
+  }
+}
+// Sweep the slots: a free slot 0 at once, any other one when admitted.
+async function takeSlot(a: Acquisition): Promise<void> {
+  for (let round = 0; ; round++) {
+    const got = sweepOnce(a, round % FULL_CHECK_EVERY === 0);
+    if (got !== undefined && got !== "busy") {
+      a.taken.push(got);
+      return;
+    }
+    // Waiting for the admission lock is brief and does not age the sweep count.
+    if (got === "busy") round--;
+    const jitter = a.pollGiven
+      ? a.pollMs * (1 + 1.5 * Math.random())
+      : (2 + 3 * Math.random()) * 1000;
+    if (!(await pause(a, got === "busy" ? Math.min(jitter, 300) : jitter)))
+      return;
+  }
+}
+export async function main(
+  args = process.argv.slice(2),
+  env = process.env,
+  platform = process.platform,
+  probe: () => HostLoad = readHostLoad,
+): Promise<number> {
+  const {
+    args: command,
+    name,
+    exclusive,
+    root,
+    timeout,
+    timeoutSeconds,
+    pollSeconds,
+    pollGiven,
+    settings,
+  } = lockArguments(args, env);
+  const run = () => runLockedCommand(command, env);
+  if (env.CI === "1" || env.CI === "true" || env.RESOURCE_LOCK_BYPASS === "1")
+    return run();
+  try {
+    mkdirSync(root, { recursive: true });
+    accessSync(root, constants.W_OK);
+    if (!lstatSync(root).isDirectory()) refuse("not a directory");
+  } catch {
+    refuse(`LOCK_ROOT is not a writable directory: ${root}`);
+  }
+  const fileOwners = platform === "win32";
+  const started = performance.now();
+  const deadline = started + timeoutSeconds * 1000;
+  const lock = resourceLockPath(root, name);
+  const locks = publisher(lock, fileOwners, deadline);
+  let said: string | undefined;
+  const a: Acquisition = {
+    locks,
+    name,
+    slot: (n) => resourceLockSlotPath(root, name, n),
+    settings,
+    probe,
+    pollMs: pollSeconds * 1000,
+    pollGiven,
+    remaining: () => deadline - performance.now(),
+    say: (key, text) => {
+      if (key === said) return;
+      said = key;
+      console.error(
+        `resource lock: waiting for '${name}' (${text}); up to ${timeout}s`,
+      );
+    },
+    taken: [],
+    blocker: lock,
+  };
+  const releaseAll = () => {
+    for (const path of [...a.taken].reverse()) locks.release(path);
+  };
+  try {
+    if (exclusive) await takeEvery(a);
+    else if (settings.slots === 1) await takeSingle(a);
+    else await takeSlot(a);
+  } catch (error) {
+    releaseAll();
+    throw error;
+  } finally {
+    locks.close();
+  }
+  if (a.taken.length === 0 || (exclusive && a.taken.length < MAX_SLOTS + 1)) {
+    releaseAll();
+    const holders = locks.holders([a.blocker]);
     console.error(
-      `ERROR: could not acquire lock '${name}' within ${timeout}s (held by ${heldBy(lock, fileOwners)})`,
+      `ERROR: could not acquire lock '${name}' within ${timeout}s (held by ${holders.length ? describeHolders(holders) : heldBy(a.blocker, fileOwners)})`,
     );
     return 3;
   }
-  recordHolder(lock);
-  using release = registerCleanup(() => unpublish(lock));
+  if (said !== undefined) reportTaken(a, exclusive, root, started);
+  for (const path of a.taken) recordHolder(path);
+  using release = registerCleanup(releaseAll);
   void release;
   return await run();
+}
+// After a wait: which slot was taken, and how long the wait was.
+function reportTaken(
+  a: Acquisition,
+  exclusive: boolean,
+  root: string,
+  started: number,
+): void {
+  const what = exclusive
+    ? " with every slot"
+    : a.taken[0] === a.slot(0)
+      ? ""
+      : ` (${a.taken[0]?.slice(root.length + 1)})`;
+  console.error(
+    `resource lock: took '${a.name}'${what} after ${duration((performance.now() - started) / 1000)}`,
+  );
 }

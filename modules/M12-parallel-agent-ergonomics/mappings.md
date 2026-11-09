@@ -1,7 +1,7 @@
 # M12 mappings — per-ecosystem implementations
 
 The module [invariant](README.md) — deterministic per-worktree ports, a
-cross-worktree heavy-run mutex with a CI bypass, branch reuse-before-create,
+cross-worktree heavy-run lock admitted by load, with a CI bypass, branch reuse-before-create,
 change records of their own assembled after the merge, banned shared-state
 footguns, gate output shaped for an agent, and a control channel into an
 unattended agent, and measuring merge-conflict hotspots — is tool-independent. This file maps its mechanisms
@@ -21,7 +21,7 @@ repository as the working directory.
 | Utility | Runs where | Signal it reads |
 |---------|-----------|-----------------|
 | `reference/port-allocator/allocate-port.ts` | worktree-create hook and/or the dev script | worktree id (arg or `WORKTREE_ID`), range via `PORT_BASE`/`PORT_SPAN` |
-| `reference/resource-lock/with-resource-lock.ts` | around heavy local gate commands (build, test, e2e) | lock via `LOCK_NAME`/`--lock`; bypass via `CI`/`RESOURCE_LOCK_BYPASS` |
+| `reference/resource-lock/with-resource-lock.ts` | around heavy local gate commands (build, test, e2e) | lock via `LOCK_NAME`/`--lock`; slots and admission via `LOCK_SLOTS`, `LOCK_STATIC_SLOTS`, `LOCK_TARGET_UTIL`, `LOCK_RUN_COST`, `LOCK_MIN_MEM_GB`; the machine to itself via `--exclusive`; bypass via `CI`/`RESOURCE_LOCK_BYPASS` |
 | [`changelog/scripts/release.ts`](../../plugin/skills/changelog/scripts/release.ts) | on the integration branch after every merge, one run at a time | the repository's `changelog:` configuration (notes directory, changelog, version files) |
 | [`changelog/scripts/check.ts`](../../plugin/skills/changelog/scripts/check.ts) | in the branch gates | the base's `changelog:` configuration, plus `--base` |
 | `reference/quiet-run/quiet-run.ts` | around each gate command an agent runs (a `test:quiet` script, or a runtime hook) | `--name` per part, `--tail` for the lines a green run shows |
@@ -66,10 +66,27 @@ the lockfile present) and reject the others.
 The general rule: **derive the package manager from the repo (don't declare it)**
 and treat any other manager's root install as the banned action.
 
-## CI providers — why (and how) the mutex bypasses
+## Reading the host's load, per platform
+
+The lock admits a run beyond the first only while the machine has room for
+one more. What the reading rests on differs by platform:
+
+| Platform | Load | Available memory | Effect |
+|----------|------|------------------|--------|
+| Linux | the one-minute load average | `MemAvailable` from `/proc/meminfo` | load and memory both decide |
+| macOS | the one-minute load average | the free memory the system reports, which counts reclaimable caches as used | load decides; the memory floor refuses early, so lower `LOCK_MIN_MEM_GB` on a small machine |
+| Windows | none (the platform keeps no load average) | the free memory the system reports | memory and the slot ceiling decide |
+
+Set `LOCK_RUN_COST` to the parallelism of the command the lock guards (a test
+runner's worker count, a build's job count), so a run just started counts at
+what it will add. A lock that guards a resource only one user may have at a
+time (a fixed port, a shared database), rather than the machine's capacity,
+keeps `LOCK_SLOTS=1`: a plain mutex.
+
+## CI providers — why (and how) the lock bypasses
 
 A CI runner already gives each job its own isolated machine, so the
-cross-worktree mutex has nothing to serialize there and the wait would be pure
+cross-worktree lock has nothing to bound there and the wait would be pure
 added latency. `with-resource-lock.ts` therefore runs the command unlocked when
 it sees a CI signal. Most providers set `CI=true` automatically, so the bypass is
 usually zero-config; the column below is the signal to rely on (or set
@@ -85,7 +102,7 @@ usually zero-config; the column below is the signal to rely on (or set
 Locally, leave heavy commands wrapped:
 
 ```sh
-bun with-resource-lock.ts --lock test -- pnpm test     # serialized across worktrees
+LOCK_RUN_COST=4 bun with-resource-lock.ts --lock test -- pnpm test   # admitted by the machine's load
 ```
 
 In CI, run them unwrapped or wrapped — either way the bypass makes them run
@@ -96,9 +113,9 @@ immediately:
 - run: pnpm test
 ```
 
-The mutex is the **same mechanism** [M1](../M1-gates-enforcement-ladder/) points
+The lock is the **same mechanism** [M1](../M1-gates-enforcement-ladder/) points
 to for heavy pre-push gates; a repo that adopts both wraps its heavy gate once
-and gets the cross-worktree serialization locally and the isolation-based bypass
+and gets the cross-worktree bound locally and the isolation-based bypass
 in CI for free.
 
 ## Per-worktree data namespaces

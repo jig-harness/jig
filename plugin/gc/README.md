@@ -277,7 +277,9 @@ release's and rewrites the job in that release's form, keeping what the job
 records; run `jig install gc --repo <repository> --yes` again after moving
 Bun or an agent tool. `jig doctor gc` says when either is needed. A failed install puts back the previous job's files, launcher and activation. Collecting
 runs hold
-the same heavy-run lock as local gates. The design's later container, branch
+the same heavy-run lock as local gates, exclusively: a collection waits until
+no heavy run holds any of the lock's slots, holds them all while it
+collects, and new heavy runs wait behind it. The design's later container, branch
 and process kinds wait for the first-stage rollout to run in a working
 repository; scratch remains report-only until the process stage.
 

@@ -3,13 +3,7 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
-import {
-  DEFAULT_LOCK_TIMEOUT,
-  lockBypassed,
-  lockEnv,
-  lockHolder,
-  testCommand,
-} from "./test.ts";
+import { DEFAULT_LOCK_TIMEOUT, lockEnv, testCommand } from "./test.ts";
 
 const SCRIPT = join(import.meta.dir, "test.ts");
 
@@ -18,8 +12,7 @@ function contended(extra: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
-    if (/^(CI|RESOURCE_LOCK_BYPASS|LOCK_(NAME|ROOT|TIMEOUT|POLL))$/.test(name))
-      continue;
+    if (/^(CI|RESOURCE_LOCK_BYPASS|LOCK_[A-Z_]+)$/.test(name)) continue;
     env[name] = value;
   }
   return { ...env, ...extra };
@@ -70,23 +63,10 @@ test("the wait defaults to an hour and yields to the caller's LOCK_TIMEOUT", () 
   expect(lockEnv({ LOCK_TIMEOUT: "" }).LOCK_TIMEOUT).toBe(DEFAULT_LOCK_TIMEOUT);
 });
 
-test("CI and the bypass skip the lock, as the reference script does; anything else contends", () => {
-  expect(lockBypassed({ CI: "1" })).toBe(true);
-  expect(lockBypassed({ CI: "true" })).toBe(true);
-  expect(lockBypassed({ RESOURCE_LOCK_BYPASS: "1" })).toBe(true);
-  expect(lockBypassed({ CI: "0" })).toBe(false);
-  expect(lockBypassed({})).toBe(false);
-});
-
-test("a free lock has no holder; a held one names the holder's pid", () => {
-  const root = mkdtempSync(join(tmpdir(), "jig-test-lock-"));
-  try {
-    expect(lockHolder({ LOCK_ROOT: root })).toBeNull();
-    holdLock(root);
-    expect(lockHolder({ LOCK_ROOT: root })).toBe(String(process.pid));
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+test("one run's cost is the suite's worker count unless the caller sets it", () => {
+  expect(lockEnv({}, "linux").LOCK_RUN_COST).toBe("4");
+  expect(lockEnv({}, "win32").LOCK_RUN_COST).toBe("1");
+  expect(lockEnv({ LOCK_RUN_COST: "2" }, "linux").LOCK_RUN_COST).toBe("2");
 });
 
 test("a run says who holds the lock, waits LOCK_TIMEOUT for a live holder and gives up with the lock's status", () => {
@@ -94,14 +74,14 @@ test("a run says who holds the lock, waits LOCK_TIMEOUT for a live holder and gi
   try {
     holdLock(root);
     const result = Bun.spawnSync([process.execPath, SCRIPT], {
-      env: contended({ LOCK_ROOT: root, LOCK_TIMEOUT: "0" }),
+      env: contended({ LOCK_ROOT: root, LOCK_TIMEOUT: "0", LOCK_SLOTS: "1" }),
       stdout: "pipe",
       stderr: "pipe",
     });
     expectSpawnExit(result, 3);
     const stderr = result.stderr.toString();
     expect(stderr).toContain(
-      `test: another run holds the 'heavy' lock (pid ${process.pid}); waiting up to 0s`,
+      `resource lock: waiting for 'heavy' (held by pid ${process.pid}`,
     );
     expect(stderr).toContain("could not acquire lock 'heavy' within 0s");
   } finally {
