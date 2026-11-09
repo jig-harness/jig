@@ -289,56 +289,35 @@ test("fresh shorthand checks and installs the remote despite a regular file coll
   }
 });
 
-test("registered Git shorthand is stable despite a local directory collision", () => {
-  const f = fixture();
-  try {
-    f.setState("example-org/example-repo", "v1.2.3");
-    mkdirSync(join(f.root, "example-org/example-repo"), { recursive: true });
-    const result = f.run([
-      "--apply",
-      "--source",
-      "https://github.com/example-org/example-repo",
-    ]);
-    expectSpawnExit(result, 0);
-    expect(result.calls).toContainEqual([
-      "codex",
-      "plugin",
-      "marketplace",
-      "upgrade",
-      "jig",
-    ]);
-  } finally {
-    f.close();
-  }
-});
-
-test("pinned shorthand requests stay remote despite an unpinned directory collision", () => {
-  const f = fixture();
-  try {
-    f.setState("example-org/example-repo", "v1.2.3");
-    mkdirSync(join(f.root, "example-org/example-repo"), { recursive: true });
-    const result = f.run([
-      "--apply",
-      "--source",
-      "example-org/example-repo#v1.2.3",
-    ]);
-    expectSpawnExit(result, 0);
-    expect(result.calls).toContainEqual([
-      "codex",
-      "plugin",
-      "marketplace",
-      "upgrade",
-      "jig",
-    ]);
-    expect(
-      result.calls.some((call) =>
-        call.includes("repos/example-org/example-repo"),
-      ),
-    ).toBe(true);
-  } finally {
-    f.close();
-  }
-});
+test.each([
+  "https://github.com/example-org/example-repo",
+  "example-org/example-repo#v1.2.3",
+])(
+  "registered shorthand stays remote despite a directory collision: %s",
+  (source) => {
+    const f = fixture();
+    try {
+      f.setState("example-org/example-repo", "v1.2.3");
+      mkdirSync(join(f.root, "example-org/example-repo"), { recursive: true });
+      const result = f.run(["--apply", "--source", source]);
+      expectSpawnExit(result, 0);
+      expect(result.calls).toContainEqual([
+        "codex",
+        "plugin",
+        "marketplace",
+        "upgrade",
+        "jig",
+      ]);
+      expect(
+        result.calls.some((call) =>
+          call.includes("repos/example-org/example-repo"),
+        ),
+      ).toBe(true);
+    } finally {
+      f.close();
+    }
+  },
+);
 
 test("unpinned Git registrations still require remote access when a directory collides", () => {
   const f = fixture();
