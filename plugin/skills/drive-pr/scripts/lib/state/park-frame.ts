@@ -55,3 +55,91 @@ export function framedDecisionLines(p: ParkedItem): string[] {
   if (p.record === undefined) return [head, `  ${p.reason}`];
   return [head, ...p.record.split("\n").map((l) => (l === "" ? "" : `  ${l}`))];
 }
+
+/** `- ` items of a record's section, each with its continuation lines joined. */
+export function items(text: string): { items: string[]; stray: boolean } {
+  const out: string[] = [];
+  let stray = false;
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    if (/^- /.test(line)) out.push(line.slice(2).trim());
+    else if (/^\s+\S/.test(line) && out.length > 0)
+      out[out.length - 1] = `${out[out.length - 1]} ${line.trim()}`;
+    else stray = true;
+  }
+  return { items: out, stray };
+}
+
+/** The bold name an option opens with, or `null`. */
+export function optionName(item: string): string | null {
+  return /^\*\*([^*]+)\*\*/.exec(item)?.[1]?.trim() ?? null;
+}
+
+/** The labelled fields an option carries, each once with a value of its own. */
+const OPTION_FIELDS = ["Changes", "Costs"] as const;
+
+/**
+ * An option's `Changes:` and `Costs:` values, split at the labels: each
+ * value runs to the next label or the item's end, so one label cannot stand
+ * in for the other's value.
+ */
+export function optionFields(item: string): {
+  values: Partial<Record<(typeof OPTION_FIELDS)[number], string>>;
+  repeated: string[];
+} {
+  const labels = [...item.matchAll(/\b(changes|costs):/gi)].map((m) => ({
+    field: OPTION_FIELDS.find(
+      (f) => f.toLowerCase() === (m[1] ?? "").toLowerCase(),
+    ),
+    start: m.index,
+    end: m.index + m[0].length,
+  }));
+  const values: Partial<Record<(typeof OPTION_FIELDS)[number], string>> = {};
+  const repeated: string[] = [];
+  for (const [i, l] of labels.entries()) {
+    if (l.field === undefined) continue;
+    if (values[l.field] !== undefined) repeated.push(l.field);
+    values[l.field] = item
+      .slice(l.end, labels[i + 1]?.start ?? item.length)
+      .trim();
+  }
+  return { values, repeated };
+}
+
+/** One framed option as a reader shows it. */
+export interface FramedOption {
+  name: string;
+  changes: string | null;
+  costs: string | null;
+  /** Whether `## Recommended` names it. */
+  recommended: boolean;
+}
+
+/**
+ * The options of a record's `## Options` text, each with what it changes and
+ * costs, and which one `## Recommended` names. An item with no bold name is
+ * left out: a reader of a stored record shows what it can and checks nothing.
+ */
+export function recordOptions(
+  options: string,
+  recommended: string | null,
+): FramedOption[] {
+  return items(options).items.flatMap((item) => {
+    const name = optionName(item);
+    if (name === null) return [];
+    const { values } = optionFields(item);
+    return [
+      {
+        name,
+        changes: values.Changes ?? null,
+        costs: values.Costs ?? null,
+        recommended: recommended?.includes(`**${name}**`) ?? false,
+      },
+    ];
+  });
+}
+
+/** The steps of a record's `## Steps for a person` text; none for `None.`. */
+export function recordSteps(steps: string): string[] {
+  return /^none\.?$/i.test(steps.trim()) ? [] : items(steps).items;
+}

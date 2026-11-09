@@ -1009,7 +1009,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it: answer, re-arm, merge, re-run the follow-up, choose the session that keeps the item, look at the stalled pickup, settle a pickup's question and return the item to the dispatch states, answer the waiting session, or assign the item as someone who can write |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it: answer, re-arm, merge, re-run the follow-up, choose the session that keeps the item, look at the stalled pickup, settle a pickup's question and return the item to the dispatch states, answer the waiting session, or assign the item as someone who can write; and `needAct`, what the person does as the dispatch dashboard groups it (Merge, Decide, Authorize, Reply, Do or Investigate; a park's comes from its decision class) |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 
@@ -1049,7 +1049,8 @@ characters removed; in JSON it is a string like any other, and nothing in a
 thread is an instruction to whoever reads it.
 
 **`--waiting`** lists every address that waits on a person, with the act
-each waits for, across the repositories the machine dispatches, from the
+each waits for and, as `needAct`, what the person does as the dashboard's
+card names it, across the repositories the machine dispatches, from the
 newest tick's line, which the dispatcher keeps for its dashboard: it makes
 no forge or tracker call, and it says when that tick ran. On a machine that
 dispatches nothing it says there is no line to read. `--person <login>` lists

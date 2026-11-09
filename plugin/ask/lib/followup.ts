@@ -16,7 +16,7 @@ import {
 } from "../../shared/records/shared.ts";
 import { lastEnded, type LogRow } from "../../dispatch/lib/log.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
-import type { Holder, Last, WaitsOn } from "./answer.ts";
+import { type Holder, type Last, personWait, type WaitsOn } from "./answer.ts";
 import { readComments } from "./forge.ts";
 import {
   type AskContext,
@@ -79,8 +79,7 @@ function stateOf(
 }
 
 function waitsOnOf(state: string, detail: string, ctx: AskContext): WaitsOn {
-  if (state === "failed")
-    return { person: "re-run the follow-up", why: detail };
+  if (state === "failed") return personWait("re-run the follow-up", detail);
   if (state === "not claimed" && ctx.dispatches)
     return {
       waiting: "the dispatcher's next tick, which starts the follow-up",

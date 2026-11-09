@@ -26,7 +26,12 @@ import { lastEnded } from "../../dispatch/lib/log.ts";
 import { readLine } from "../../dispatch/lib/line-store.ts";
 import type { LineNeed } from "../../dispatch/lib/dashboard-contract.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
-import type { Holder, ThreadEntry, WaitsOn } from "./answer.ts";
+import {
+  type Holder,
+  personWait,
+  type ThreadEntry,
+  type WaitsOn,
+} from "./answer.ts";
 import { PAST_DEADLINE, within } from "./reading.ts";
 import {
   type AskContext,
@@ -39,6 +44,7 @@ import {
 } from "./station.ts";
 import { localLaunchEntries, logEntries } from "./thread.ts";
 import { personAct } from "./waiting.ts";
+import { actOfLineNeed } from "../../shared/acts.ts";
 
 /** A repository's tracker, from the configuration of its checkout at `root`. */
 export interface RepoTracker {
@@ -171,7 +177,9 @@ function waitsOnOf(
   // The tick's own need comes first: a session that runs may be the one waiting on a person.
   const need = needs[0];
   if (need !== undefined)
-    return { person: personAct(need.cause), why: need.reason };
+    return personWait(personAct(need.cause), need.reason, {
+      act: actOfLineNeed(need),
+    });
   if (held) return "none";
   if (state === "assigned" && ctx.dispatches)
     return { waiting: "the dispatcher's next tick, which starts the pick-up" };
