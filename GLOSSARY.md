@@ -1328,11 +1328,10 @@ make, use the entry's term instead.
   line, which binds the pass. A **free answer** is
   anything else, in the person's own words, which a pass interprets
   ([design](design/structured-answers.md)).
-- **Decision model** — the one shape of a person's decision that a *park*
+- **Decision model** — the shape of a decision for a person that a *park*
   and a decision sheet share: a **call** is one question with options that
-  exclude each other, and a **ruling** is the option a person chose. A park
-  is one call; a sheet is several, with their context
-  ([design](design/structured-answers.md#one-decision-model)).
+  exclude each other. A park is one call; a sheet is several, with their
+  context ([design](design/structured-answers.md#one-decision-model)).
 - **Pick (of an option)** — the choice of an option on a card, made with a
   key or a tap, kept in the browser and undoable. Nothing reads a pick until
   the person commits it as an answer

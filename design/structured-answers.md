@@ -71,13 +71,14 @@ whether a question is answered.
 
 A [drive](../GLOSSARY.md)'s park and a `/jig:decide` [decision
 sheet](../plugin/skills/decide/references/decision-sheet.md) ask a person
-the same kind of thing, so they share one model. It is the model `decide`
-already has, moved to `shared/decisions/` so that both read it. A park
-becomes one **call** of that model, with the few things only a park has:
+the same kind of thing, so they share one model: the option and the call
+`decide` already defines, moved to `shared/decisions/`. Each builds on
+that base with what only it needs:
 
 ```ts
+// shared/decisions/model.ts
 interface Option {
-  id: string;
+  id: string;           // 1 to 8 letters or digits, as on a sheet
   name: string;
   tag?: string;
   summary: string;      // what choosing it changes
@@ -85,79 +86,97 @@ interface Option {
   keep?: string[];      // what stays as it is, or what is gained
   rightWhen?: string;   // the condition under which it is the right call
   obligation?: string;  // what a person must do after choosing it
-  reversible?: boolean; // left out when it says nothing
-  outcomes?: Record<string, Outcome>;
 }
 
-interface Call {
+interface Call<O extends Option = Option> {
   id: string;
   question?: string;
-  options: Option[];
+  options: O[];
   recommended?: string; // an option's id
   why?: string;
-  facts?: SourcedClaim[];
-  scenarios?: Scenario[];
-  ruling?: Ruling;
-  // and the sheet's other optional fields
 }
 
-interface Ruling {
-  option: string;       // an option's id
-  recordUrl: string;    // the comment or record that holds it
-  ruledAt: string;
-  by?: string;
-  digest?: string;
-  form?: "approve" | "choose";
-  note?: string;
+// decide: as today, on the shared base
+interface SheetOption extends Option {
+  keep: string[];
+  rightWhen: string;
+  outcomes?: Record<string, ScenarioOutcome>;
 }
+interface SheetCall extends Call<SheetOption> { /* facts, scenarios, ruling and the rest */ }
 
+// the park
+interface ParkedOption extends Option {
+  reversible?: boolean; // left out when it says nothing
+}
 interface ParkedDecision {
   schema: "parked-decision/v1";
-  call: Call;
   class: string;
-  steps: string[];      // what a person must do, whichever option is chosen
+  call: Call<ParkedOption>; // id "a"; question, recommended and why required
+  steps: string[];          // what a person must do whichever option is chosen; empty for none
   alreadyDone: string;
+  facts?: SourcedClaim[];
   interplay?: Interplay[];
-  sheet?: string;       // the link to a sheet, when the call has one
+  sheet?: string;           // the link to a sheet, when the call has one
 }
 ```
 
 A decision sheet keeps `decision-sheet/v1`: several calls and the wider
 context around them (current behaviour, hidden branches, the outcome
-matrix), as it has today. The same words mean the same thing in both, and a
-sheet's call can be parked as it stands.
+matrix). The same words mean the same thing in both. A structured answer
+plays the part a sheet's ruling plays, and is kept as its `choice` and its
+resolution receipt ([What the drive does](#what-the-drive-does-with-a-structured-answer)).
 
-**How much a decision must say depends on its depth.** The model has one
-shape and two checks:
+**A park's check keeps today's rules.** A pass gives `drive-state.ts park
+--class <class>` the `ParkedDecision` as JSON on stdin. The check, in a new
+module beside the park, refuses:
 
-| Field | A park | A sheet |
-| --- | --- | --- |
-| option's `name`, `summary`, `pay` | required | required |
-| option's `keep`, `rightWhen` | optional | required, as today |
-| call's `question`, `recommended`, `why` | required | as today |
+- an unknown field, named, so a misspelt field never drops a claim, and any
+  field a park does not show (a sheet's `ruling` or `outcomes`, say);
+- a question that is not one line ending with `?`;
+- fewer than two options, two options with one name or id, or a name on more
+  than one line;
+- a `recommended` that names no option, or a `why` of under three words;
+- a `class` other than `--class`, and an empty `alreadyDone`.
 
-**Written strictly, read tolerantly.** A pass gives `drive-state.ts park` the
-`ParkedDecision` as JSON on stdin, and an unknown field is refused and named,
-as a sheet's is, so a misspelt field never drops a claim. A reader takes the
-fields it knows and passes over the rest, so a plugin older than a new field
-still reads the decision.
+A reader takes the fields it knows and passes over the rest, so a plugin
+older than a new field still reads the decision.
 
-**Markdown is only an output.** The park stores the JSON in place of the
-Markdown it stores today, so the ledger holds one copy. One function
-writes an option and its recommendation as text, for the park's rendered
-decision and for a sheet's elaboration, and each keeps its own layout. A
-sheet's rendered output stays as it is.
+**Parking a sheet's call is a conversion.** A sheet's call may have no
+question of its own, may have no recommendation, and holds `{opt:…}`
+references that mean something only inside its sheet. So
+`parkFromSheet(source, callId)` fills the question, writes each reference
+out in words and refuses a call with no recommendation, and the rest stays
+on the sheet behind `sheet`.
+
+**What a park stores.** A new field, `ParkedItem.decision`, holds the
+JSON. `record` is absent and `reason` keeps the question, so the ledger
+holds one copy and every field an older plugin checks still reads: such a
+plugin shows the question alone, and answers in words still work. The ledger
+redacts each string in the decision, never the JSON text as a whole. A
+decision parked before this keeps its Markdown and is read through today's
+parser until it leaves the ledger.
+
+**Every reader and writer moves.** The tick today re-parses the lines a
+drive prints (`decisionOf` in `dispatch/lib/line.ts`); its parks carry the
+decision instead, and the printed form is written from it for the
+notification and the handoff. `LineOption.changes` and `costs` are filled
+from `summary` and from `pay` joined, so the card keeps reading what it
+reads. The other writers of a park change with it: the provisional sweep's
+reversal, and the instructions in `triage-thread.ts`, `finish-round.ts`,
+`rearm-provisional.ts` and `decide`'s SKILL.md.
 
 **A reader never lays out a field by name.** One table in the model turns
 an option's optional fields into `details: [{ label, text }]`, and the
 tick's line carries them. The card and `jig ask` show each as its label and
-text, so adding a field is one change to the model and that table.
+text, so adding a field is one change to the model and that table. That
+table is the only rendering the two share: a sheet and a park each keep
+their own layout, and a sheet's rendered output stays as it is.
 
-**A decision that arrives by the old form** (one parked before this)
-keeps its Markdown and is read through today's parser until it leaves the
-ledger. Its options and recommendation read as they do now, with no
-`details`, and a plugin older than the model shows such a decision's
-question alone.
+**The model stays portable.** `shared/decisions/` holds no `node:` import, so
+the dashboard can bundle it. The core of the source checker moves there;
+`sheet-kit` builds on it and keeps what reads files and repositories.
+`Outcome` becomes `ScenarioOutcome`, since `shared/outcome.ts` holds the
+failure type of that name.
 
 **A decision has a size limit.** The drive ledger is one comment of at most
 65,536 bytes, shared by every parked decision on the pull request, and the
@@ -242,7 +261,7 @@ options.
 
 Everything else is a free answer: `approve, but keep the old flag`,
 `choose Keep, but rename it`, `choose whichever is cheaper`, a `choose`
-that names no option of the decision, and `approve` on a park whose record
+that names no option of the decision, and `approve` on a park that
 names no recommended option (one parked before parks were framed). The pass
 reads a free answer as it does today, and `jig ask` and the dashboard
 label it free, so a person who meant a structured answer sees it was not
@@ -322,12 +341,13 @@ say) and a pass parks the same item, which is rare; but a one-word
 `approve` would then approve a recommendation the person never read.
 
 So each framed park has a **decision digest**: the first 12 hexadecimal
-characters of the SHA-256 of its stored decision in canonical JSON, computed once, when `drive-state.ts
+characters of the SHA-256 of its decision as stored, in canonical JSON (a
+helper of `shared/decisions/`), computed once, when `drive-state.ts
 park` stores it, and stored on the parked item (`ParkedItem.digest`)
 beside the decision. The [drive ledger](../GLOSSARY.md) publishes it with the
 park, so the re-arm, reading the local state, and the tick, `jig ask` and
 `jig send`, reading the ledger, compare against the same stored value; none
-of them hashes a record, so a change in what the ledger redacts cannot make
+of them hashes a decision, so a change in what the ledger redacts cannot make
 them disagree about the digest. Storing it settles redaction, not
 freshness: after a reframe the local state can hold digest B while the
 ledger still holds A, and an answer naming A is stale to the re-arm and
@@ -339,10 +359,10 @@ caught up, and the driver's next write publishes the park again. A park
 from before digests has none, and its answers are bound by time alone.
 
 Option identity gets the same care. The ledger redacts email addresses and
-account identifiers in a park's record, so two options that differ only
+account identifiers in a park's decision, so two options that differ only
 there (`Notify alice@example.test`, `Notify bob@example.test`) would read as
 one option to the tick, `jig ask` and `jig send`, and as two to the re-arm.
-`drive-state.ts park` therefore refuses a record with an option name that
+`drive-state.ts park` therefore refuses a decision with an option name that
 redaction changes (an email address or an account identifier in a name),
 and one whose names are the same once normalized, so the names every
 reader sees are the names the person types and copies.
@@ -369,7 +389,7 @@ Each kept answer (`PendingAnswer` in `state/pass-handoff.ts`) gains its
 recommended one, the form, the digest it named and the note. Each kept verdict
 (`PendingVerdict`) gains the park's decision and digest, since the park and
 its decision are gone once the re-arm unparks it, and the notice's length
-budget (`NOTICE_MAX`) covers the records with the answers. The notice to
+budget (`NOTICE_MAX`) covers the decisions with the answers. The notice to
 the pass then reads, for an item answered with one structured choice:
 
 > @person chose **Keep** (the recommended option) from framing
@@ -379,7 +399,7 @@ with the person's note, when there is one, and the instruction to apply
 the option as the note narrows it, followed by the framed decision, so
 the pass has what the option changes and costs in front of it. When the
 notice runs out of room it never cuts a chosen option or a note: the
-records share what is left, and each that is cut names the kept file that
+decisions share what is left, and each that is cut names the kept file that
 holds it whole. The pass records the item's outcome as it does today,
 and its reply names the option and who chose it. Once the ledger keeps
 resolved parks (the hub's first stage,
@@ -410,7 +430,7 @@ to read.
   a newer version would make an older plugin refuse the comment as an
   answer. A person who already answered may answer again, which replaces
   their earlier answer; the send shows the earlier one first. `--approve`
-  is refused on a park whose record names no recommendation. `--all
+  is refused on a park that names no recommendation. `--all
   --approve` takes no single digest: its `--dry-run` lists each eligible
   item with its digest and prints one set token (the hash of the sorted
   key and digest pairs), and the real send names that token
@@ -720,26 +740,30 @@ own once the drive's answers work:
 One pull request per step, each shippable alone, each with a change note
 and its pull request saying what changed in the audit.
 
-1. **One decision model.** `shared/decisions/` with the model, its two
-   checks and the `details` table, moved from `decide`, whose sheets keep
-   their schema and their output; the park taking a `ParkedDecision` as JSON
-   and storing it; the ledger, the tick's line, the card's fold and `jig ask`
-   reading it, today's parser kept for a decision parked in the old form;
-   the size limit; `drive-pr`'s record format and `decide`'s instructions for
-   parking an escalation, which then passes its call as it stands. Done when
-   a sheet and a park use the same option type, every existing sheet
-   fixture renders unchanged, a park with a misspelt field is refused and
-   named, a field added to the model and its table shows on the card and in
-   `jig ask`, an over-large decision is refused, and a park written before
-   the change still reads.
-2. **The forms in the drive and its readers.** `answer-forms.ts` (the
+1. **The shared model.** `shared/decisions/` with the option and call, the
+   core of the checker and the `details` table, moved from `decide`, whose
+   sheets keep their schema. Only `decide` and the skills that use its
+   checker change. Done when a sheet builds on the shared option type and
+   every existing sheet fixture renders unchanged.
+2. **A park on the model.** The `ParkedDecision` and its check in a new
+   module, `ParkedItem.decision` and its redaction, the ledger, the tick's
+   parks and line, the card's fold and `jig ask`, every writer named in [One
+   decision model](#one-decision-model), `parkFromSheet`, today's parser kept
+   for a decision parked in the old form, the size limit, `drive-pr`'s and
+   `decide`'s instructions and the `drive-ledger` row of
+   [RECORDS.md](../plugin/RECORDS.md). Done when a park with a misspelt
+   field is refused and named, a field added to the model and its table
+   shows on the card and in `jig ask`, an over-large decision is refused, a
+   sheet's call parks through the conversion, and a park written before the
+   change still reads.
+3. **The forms in the drive and its readers.** `answer-forms.ts` (the
    forms, normalizing, the whole-comment rule, edit times, several answers
    and the disputed item); every reader named in [Reading
    answers](#reading-answers) moved to it at once, `jig ask` and `jig send`
    gaining the thread reads, and `jig ask` labelling an answer structured,
    free or disputed in its text; the park's refusal of option names that
    collide; no provisional decision over an answered item; the kept
-   answer's `choice`, the verdict's record and the pass notice; the
+   answer's `choice`, the verdict's decision and the pass notice; the
    disputing comments in the notice's key; `drive-pr`'s SKILL.md and
    README, the framed decision's writing rules and the HITL registry
    template on an Authorize refusal option, and the mechanism map's entry.
@@ -749,38 +773,38 @@ and its pull request saying what changed in the audit.
    labels it free, an approval beside another person's different answer
    leaves the item waiting, and the re-arm, the tick and `jig ask` agree on
    every item of a test pull request.
-3. **The decision digest.** `ParkedItem.digest` stored at the park and
+4. **The decision digest.** `ParkedItem.digest` stored at the park and
    published in the ledger and on the tick's line, the digest suffix and the
    stale answer in `answer-forms.ts`, the stale comments in the notice's
    key, and the notification's answer lines with the digest. Done when a line copied
    from a notification counts, and the same line after the item was framed
    again leaves the drive parked and the next notification says why.
-4. **Writing them.** `jig send … answer --approve | --choose | --all`,
+5. **Writing them.** `jig send … answer --approve | --choose | --all`,
    `--note`, a correcting answer, the record's payload fields and its RECORDS.md row,
    and the operator's verbs. Done when a send naming no option is refused
    before it writes, `--all` leaves out every class the acts table does not
    list as Decide, and a person's second send replaces their first.
-5. **Showing them.** `jig ask`'s question and answer fields, the
+6. **Showing them.** `jig ask`'s question and answer fields, the
    dashboard's stale or disputed answers, and the outcome log's
    answered-park event. Done when
    `jig ask` and the dashboard show the same options and the same choice
    for one park.
-6. **Recommendation acceptance.** The per-class report in `jig dispatch
+7. **Recommendation acceptance.** The per-class report in `jig dispatch
    log`. Done when it reports, from the outcome log alone, each class's
    parks, approvals of the recommendation and median wait.
-7. **The picking card.** A row per decision, `interplay` beside its
+8. **The picking card.** A row per decision, `interplay` beside its
    decisions, the numbering function, the keys, kept picks, the second `c`,
    the phone's rows, and the Orca panel's picks and Send, with
    [dispatch-board.md](dispatch-board.md) updated. This step needs steps 1 to
-   3 and may come before steps 4 to 6; only the panel's Send waits on step 4. Done when `j`, `1`, `c`
+   4 and may come before steps 5 to 7; only the panel's Send waits on step 5. Done when `j`, `1`, `c`
    on a card of one decision copies its recommended option with the digest,
    a card of two decisions copies one comment with both, a reframed
    decision drops its pick, every pick can be made by a pointer alone, and
    the panel shows the same options and choice as `jig ask` and the
    dashboard for one park.
-8. **Attested classes**, with item 40's first proof, and
+9. **Attested classes**, with item 40's first proof, and
    `autonomy.attested_classes` in [CONFIGURATION.md](../plugin/CONFIGURATION.md).
-9. **Beyond the drive**: the follow-up's question, the loosened ratchet
+10. **Beyond the drive**: the follow-up's question, the loosened ratchet
    and the pickup, one pull request each.
 
 ## Left out
@@ -801,7 +825,7 @@ and its pull request saying what changed in the audit.
 - **A digit that commits.** One keystroke on a decision that cannot be
   undone is too little, and a pick costs nothing to confirm.
 - **Applying an option without a pass**, such as marking a pull request
-  ready on an approved `ready` park. Worth measuring first: step 6 shows
+  ready on an approved `ready` park. Worth measuring first: step 7 shows
   which classes are approved as recommended, and a step that skips the pass
   for one of them is a design change of its own.
 - **Writing from the dashboard.** The page copies lines; #477 and item 40

@@ -394,8 +394,8 @@ pick staying local and undoable until it is committed; then, with item
 40's first proof that a person answered, the attested classes (`destructive`, `release`, `legal` by
 default), and the same forms for a follow-up's question, a loosened
 ratchet's evidence and a pickup only a person may start. One pull request
-per step, in the design's order; the first waits on the record helpers of
-item 44's need acts.
+per step, in the design's order; the first moves the shared
+model.
 
 Done when a park answered `approve` hands its pass the recommended option
 and a park answered `choose <option>` that option; an answer that is not
