@@ -3,12 +3,13 @@
  * `gh` command-line client and under its deadline: which repository a
  * checkout is, the repository's `.config/jig.yaml` and change-area catalog
  * on its default branch, its open pull requests (each with its head commit,
- * its base branch and its mergeability with that base, read with it) and the
+ * its base branch, its mergeability with that base and whether a check on its
+ * head fails, read with it) and the
  * files each one changes, the head of a base branch, the pull requests merged
  * since a date, and, for Control and
  * serialization, a pull request's unresolved review threads and whether a
  * closed one merged. Where the repository turns dispatch labels on, each listing
- * and view carries the pull requests' labels too, and a pull request's
+ * and view carries the pull requests' labels and descriptions too, and a pull request's
  * labels are changed with one `gh pr edit` call; with them off, no label
  * is used or written. A tick reads most of this for each repository in one
  * query (`forge-batch.ts`): which repository the checkout is, its
@@ -33,6 +34,7 @@ import { isRecord } from "../../shared/guards.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { checksFail } from "./automation.ts";
 import type { MergedPr, RepoTarget } from "./types.ts";
 
 /** The most pull requests one listing reads; a full page means a partial read. */
@@ -222,9 +224,15 @@ export interface ListedPr {
   isDraft?: boolean;
   /** When an open pull request was last updated. */
   updatedAt?: string;
+  /** Its description, when the read asked for it with the labels. */
+  body?: string;
+  /** Whether a check on an open pull request's head fails; absent when its checks do not read. */
+  failingChecks?: boolean;
+  /** An open pull request's unresolved review threads, where the repository's query read them. */
+  unresolvedThreads?: number;
 }
 
-/** Whether a read carries the pull requests' labels: only where the repository turns dispatch labels on. */
+/** Whether a read carries the pull requests' labels, and their descriptions with them: only where the repository turns dispatch labels on. */
 interface LabelRead {
   labels: boolean;
 }
@@ -234,7 +242,7 @@ const NO_LABELS: LabelRead = { labels: false };
 /** The fields every listing reads. */
 const LISTED = ["number", "url", "title", "headRefName", "createdAt"];
 
-/** What an open pull request adds: its head commit, its base branch, its mergeability, and what the adoption rule reads (its author, whether it is a draft, its last update). */
+/** What an open pull request adds: its head commit, its base branch, its mergeability, and what the adoption rule reads (its author, whether it is a draft, its last update, its checks). */
 const OPEN_FIELDS = [
   "headRefOid",
   "baseRefName",
@@ -242,6 +250,7 @@ const OPEN_FIELDS = [
   "author",
   "isDraft",
   "updatedAt",
+  "statusCheckRollup",
 ];
 
 /** A pull request's author as the listing gives it (`{ login, is_bot }`); nothing when it does not read. */
@@ -251,6 +260,18 @@ function authorOf(value: unknown): {
   if (!isRecord(value) || typeof value.login !== "string" || value.login === "")
     return {};
   return { author: { login: value.login, bot: value.is_bot === true } };
+}
+
+/** What says an open pull request needs work, where the read gave it: whether a check fails, and its unresolved review threads. */
+function troubleFacts(
+  p: Record<string, unknown>,
+): Pick<ListedPr, "failingChecks" | "unresolvedThreads"> {
+  const failing = checksFail(p.statusCheckRollup);
+  const threads = p.unresolvedThreads;
+  return {
+    ...(failing === undefined ? {} : { failingChecks: failing }),
+    ...(typeof threads === "number" ? { unresolvedThreads: threads } : {}),
+  };
 }
 
 /** A pull request's label names, or why they do not read. */
@@ -293,6 +314,8 @@ function listedPr(
     ...text("baseRefName"),
     ...text("mergeable"),
     ...text("updatedAt"),
+    ...(read.labels ? text("body") : {}),
+    ...troubleFacts(p),
     ...authorOf(p.author),
     ...(typeof p.isDraft === "boolean" ? { isDraft: p.isDraft } : {}),
     ...(labels === null ? {} : { labels: labels.value }),
@@ -307,7 +330,7 @@ async function listPrs(
   const fields = [...LISTED];
   if (extra.includes("merged")) fields.push("mergedAt", "updatedAt");
   if (extra.includes("open")) fields.push(...OPEN_FIELDS);
-  if (read.labels) fields.push("labels");
+  if (read.labels) fields.push("labels", "body");
   const listing = await ghJson(
     [
       "pr",
@@ -393,7 +416,7 @@ export async function openPullRequest(
         ...LISTED,
         ...OPEN_FIELDS,
         "state",
-        ...(read.labels ? ["labels"] : []),
+        ...(read.labels ? ["labels", "body"] : []),
       ].join(","),
     ],
     "the pull request view",
@@ -469,6 +492,7 @@ export async function mergedSince(
       ...(p.createdAt === undefined ? {} : { createdAt: p.createdAt }),
       ...(p.updatedAt === undefined ? {} : { updatedAt: p.updatedAt }),
       ...(p.labels === undefined ? {} : { labels: p.labels }),
+      ...(p.body === undefined ? {} : { body: p.body }),
     }))
     .sort((a, b) => a.number - b.number);
   return ok(merged);

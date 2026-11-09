@@ -1,8 +1,9 @@
 /**
  * One repository's forge state in one query: which repository a checkout
  * is and its default branch, the dispatch configuration on that branch, and
- * every open pull request with its labels, its head, its mergeability and
- * its comments. A tick reads it once per repository (`tick-reads.ts`), in
+ * every open pull request with its labels, its description, its head, its
+ * mergeability, its checks' rollup, its unresolved review threads and its
+ * comments. A tick reads it once per repository (`tick-reads.ts`), in
  * place of a repository view, a file read, a pull request listing and one
  * comment listing per pull request.
  *
@@ -37,10 +38,10 @@ import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import type { RepoTarget } from "./types.ts";
 
-/** Pull requests per page: the forge charges one point for a page this size. */
+/** Pull requests per page: the forge charges two points for a page this size. */
 const PAGE = 50;
 
-/** Comments, and labels, read with each pull request: a pull request with more comments is listed on its own. */
+/** Comments, labels and review threads read with each pull request: a pull request with more comments is listed on its own. */
 const ITEMS = 100;
 
 /** The most open pull requests the read takes, as the pull request listing does. */
@@ -64,9 +65,11 @@ const QUERY = `query ${QUERY_NAME}($owner: String!, $name: String!, $first: Int!
     pullRequests(states: OPEN, first: $first, after: $after, orderBy: {field: CREATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number url title headRefName createdAt headRefOid baseRefName mergeable isDraft updatedAt
+        number url title body headRefName createdAt headRefOid baseRefName mergeable isDraft updatedAt
         author { __typename login }
         labels(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { name } }
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+        reviewThreads(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { isResolved } }
         ${COMMENTS}
       }
     }
@@ -163,6 +166,32 @@ function listedAuthor(
   return { login: bot ? `app/${author.login}` : author.login, is_bot: bot };
 }
 
+/**
+ * How many of a pull request's review threads the query read are
+ * unresolved; nothing when they do not read, or when one page held none
+ * unresolved and there are more, so the count would be a guess.
+ */
+function unresolvedOf(node: Record<string, unknown>): {
+  unresolvedThreads?: number;
+} {
+  const nodes = field(node, "reviewThreads", "nodes");
+  if (!Array.isArray(nodes)) return {};
+  const open = nodes.filter((n) => field(n, "isResolved") === false).length;
+  const more = field(node, "reviewThreads", "pageInfo", "hasNextPage");
+  return open === 0 && more !== false ? {} : { unresolvedThreads: open };
+}
+
+/** The rollup of the checks on a pull request's head commit, as the query gives it (`{ state }`); nothing when there is none. */
+function rollupOf(node: Record<string, unknown>): {
+  statusCheckRollup?: unknown;
+} {
+  const commits = field(node, "commits", "nodes");
+  const rollup = Array.isArray(commits)
+    ? field(commits[0], "commit", "statusCheckRollup")
+    : undefined;
+  return isRecord(rollup) ? { statusCheckRollup: rollup } : {};
+}
+
 /** One open pull request of the query in the pull request listing's shape; `unreadable` when it or its labels read in part. */
 export function listedPullRequest(
   node: unknown,
@@ -190,6 +219,7 @@ export function listedPullRequest(
       [
         "url",
         "title",
+        "body",
         "headRefName",
         "createdAt",
         "headRefOid",
@@ -200,6 +230,8 @@ export function listedPullRequest(
     ),
     ...(typeof node.isDraft === "boolean" ? { isDraft: node.isDraft } : {}),
     ...(author === null ? {} : { author }),
+    ...rollupOf(node),
+    ...unresolvedOf(node),
     labels,
   });
 }

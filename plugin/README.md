@@ -643,8 +643,10 @@ A drive stopped with exit 12 gets one recovery pass per head commit in its exist
 dispatcher's state visible on each pull request, from any forge client,
 and let a person steer it the same way. Each `--apply` run sets each
 managed pull request's state label (`jig:driving`, `jig:converged`,
-`jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up` under the
-default prefix) from its drive ledger and the serialized areas below, writing only where the labels disagree, so a label
+`jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up`,
+`jig:followup-failed` under the default prefix) from its drive ledger and
+the serialized areas below, a merged one's from its follow-up's end
+(`jig:followup-failed` while a failed follow-up waits for a person), writing only where the labels disagree, so a label
 changed by hand, or left behind by a drive that was killed, is corrected
 at the next run; no state label is ever read to decide what to start. The command
 labels are a person's commands, which the dispatcher reads and never
@@ -652,9 +654,19 @@ adds: `jig:drive` on a pull request with no drive ledger arms a drive on
 it (the `rearm` stage, once per head commit) and is replaced by the state
 label once the ledger exists. `jig:rearm` asks to restart a stopped drive in its existing branch tree, on an admitted account, and is consumed after launch; it never restarts a running drive or one a person stopped. `jig:hold` keeps every stage off the
 pull request while it is there, reported at every run and removed only by
-a person. With `only_labeled`, the dispatcher reads only the pull requests
+a person. Two marker labels without the prefix sit beside the set: the
+repository's manual-operations label (`issue_tracker.labels.manual_ops`,
+`manual-ops` by default) on a pull request whose
+`## Out-of-tree follow-ups` section lists a step not yet checked off, set
+from the description at every run and kept after the merge until the
+follow-up is done; and `automation` on a pull request a bot opened that
+carries no label of the `automation:` family a repository's workflows
+apply (`automation:docs-sync`). The dispatcher never removes `automation`
+or an `automation:` label, and never puts either on a person's pull
+request. With `only_labeled`, the dispatcher reads only the pull requests
 that carry a label of the set. The labels must exist first: `jig install
-dispatch --repo <path>` lists the missing ones beside the timer, and with
+dispatch --repo <path>` lists the missing ones, the marker labels with
+them, beside the timer, and with
 `--yes` creates them where the signed-in account may and lists the rest
 with the command a person runs. A label write the forge refuses is reported in the receipt,
 and the run does not fail.
@@ -666,7 +678,11 @@ request with no drive ledger, opened by one of the rule's authors (by
 default the login the dispatcher reads the forge as) and updated within
 its window (a week by default), draft or not, is armed as if it carried
 `jig:drive`, once per head commit. A bot's pull request is adopted only
-when the rule names the bot, and one carrying `jig:hold` never is. Each
+when the rule names the bot, and one carrying `jig:hold` never is. An
+automation pull request (a bot's, or one carrying `automation` or an
+`automation:` label) is adopted only while it needs work: a failing check,
+a conflict with its base, or an unresolved review thread. A healthy one is
+left for a person to merge; `jig:drive` still drives one on request. Each
 run reports every pull request the rule adopted, with the reason.
 
 **Serialized areas.** Some pull requests conflict with each other whenever

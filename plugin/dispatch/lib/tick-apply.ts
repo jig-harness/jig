@@ -26,7 +26,13 @@ import { adoptionOf } from "./adopt.ts";
 import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
 import { readOutcomes } from "./followup-outcomes.ts";
 import { holderActions } from "./holder-notices.ts";
-import { openPullRequest, pullRequestLabels } from "./forge.ts";
+import { isAutomation } from "./automation.ts";
+import {
+  type ListedPr,
+  openPullRequest,
+  pullRequestLabels,
+  unresolvedThreadCount,
+} from "./forge.ts";
 import { ok } from "../../shared/outcome.ts";
 import { carriesSet, hasCommand } from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
@@ -189,6 +195,21 @@ interface ApplyInputs {
 }
 
 /**
+ * An automation pull request read again, with the unresolved review threads
+ * the adoption rule reads of it and the view does not carry; a count that
+ * does not read leaves them unread, so they say nothing of its trouble.
+ */
+async function withThreads(
+  slug: string,
+  pr: ListedPr,
+  adopting: boolean,
+): Promise<ListedPr> {
+  if (!adopting || !isAutomation(pr)) return pr;
+  const threads = await unresolvedThreadCount(slug, pr.number);
+  return threads.ok ? { ...pr, unresolvedThreads: threads.value } : pr;
+}
+
+/**
  * `--apply` for one repository: the launch stages its machine-file entry
  * enables, in this tick's turn, then its nudges and notifications, which
  * open no session and so share no turn; each inside `guard`.
@@ -217,13 +238,14 @@ async function applyStages(
         !carriesSet(labels, listed.labels ?? [])
       )
         return ok(null);
+      const adoption = adoptionOf(section, login);
       const [again] = await readDrives(
         repo.slug,
         login,
-        [listed],
+        [await withThreads(repo.slug, listed, adoption !== null)],
         Date.now(),
         labels,
-        adoptionOf(section, login),
+        adoption,
       );
       return ok(again ?? null);
     },

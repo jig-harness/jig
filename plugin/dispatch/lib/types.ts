@@ -204,6 +204,8 @@ export interface MergedPr {
   updatedAt?: string;
   /** Its labels, read only where the repository turns dispatch labels on. */
   labels?: string[];
+  /** Its description, read with its labels. */
+  body?: string;
 }
 
 /** A follow-up marker comment on a merged pull request, as the tick reads it. */

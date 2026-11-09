@@ -209,7 +209,7 @@ fields:
   dispatch.labels.prefix:
     type: string
     default: "jig:"
-    pattern: "^(?=.{1,39}$)[^,\\s](?:[^,]*[^,\\s])?$"
+    pattern: "^(?=.{1,35}$)[^,\\s](?:[^,]*[^,\\s])?$"
     read_by: [dispatch]
     repository_only: true
     since: 0.122.0
@@ -603,7 +603,7 @@ fields:
     read_by: [do-item, decide, work-batch]
   issue_tracker.labels.manual_ops:
     type: string
-    read_by: [do-item, work-batch]
+    read_by: [do-item, work-batch, dispatch]
   issue_tracker.labels.followup:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch]

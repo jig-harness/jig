@@ -54,6 +54,8 @@ describe("planLabels", () => {
       drives: [],
       merged: [pr],
       followedUp: new Set(),
+      followupFailed: new Set(),
+      manualOps: "manual-ops",
     } as never);
     expect(report.states.filter((s) => s.target === "PR #5")).toEqual([
       { target: "PR #5", state: "unknown" },

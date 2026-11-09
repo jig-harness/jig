@@ -9,7 +9,11 @@
  * - it was updated within the rule's window (`within`, a week by default);
  * - a bot opened it only where the rule names that bot, never through the
  *   default author;
- * - a person's `hold` label is not on it.
+ * - a person's `hold` label is not on it;
+ * - an automation pull request (`automation.ts`: a bot's, or one carrying
+ *   `automation` or an `automation:` label) needs work: a check fails, it
+ *   conflicts with its base, or a review thread is unresolved. Being recent
+ *   is not enough for one, so a healthy one is left for a person to merge.
  *
  * A draft is adopted like any other, since a pull request opens as a draft
  * and its drive marks it ready. Adoption reads only a pull request with no
@@ -17,6 +21,12 @@
  * never adopted again. Everything after it is a labelled arm's: once per
  * head commit, on an admitted account, behind a serialized area's hold.
  */
+import {
+  isAutomation,
+  isBot,
+  type TroubleFacts,
+  troubleOf,
+} from "./automation.ts";
 import { hasCommand, type LabelConfig } from "./labels.ts";
 import type { DispatchSection } from "./types.ts";
 
@@ -35,7 +45,7 @@ export interface Author {
 }
 
 /** What the rule reads of an open pull request. */
-export interface Adoptable {
+export interface Adoptable extends TroubleFacts {
   author?: Author;
   updatedAt?: string;
   labels?: string[];
@@ -73,12 +83,6 @@ function normalLogin(login: string): string {
   return folded.startsWith("app/") ? `${folded.slice(4)}[bot]` : folded;
 }
 
-/** Whether an author is a bot: the forge says so, or its login is an app's. */
-function isBot(author: Author): boolean {
-  const login = author.login.toLowerCase();
-  return author.bot || login.endsWith("[bot]") || login.startsWith("app/");
-}
-
 /** A window in the duration grammar the section takes (`168h`, `90m`, `30s`). */
 function shownWindow(ms: number): string {
   if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
@@ -107,5 +111,10 @@ export function adopts(
   const updated = Date.parse(pr.updatedAt ?? "");
   if (!Number.isFinite(updated) || nowMs - updated > adoption.withinMs)
     return null;
-  return `dispatch.adopt: by ${author.login}${isBot(author) ? " (a bot the rule names)" : ""}, updated ${pr.updatedAt}, within its ${shownWindow(adoption.withinMs)} window`;
+  const adopted = `dispatch.adopt: by ${author.login}${isBot(author) ? " (a bot the rule names)" : ""}, updated ${pr.updatedAt}, within its ${shownWindow(adoption.withinMs)} window`;
+  if (!isAutomation(pr)) return adopted;
+  const trouble = troubleOf(pr);
+  return trouble === null
+    ? null
+    : `${adopted}; an automation pull request that needs work: ${trouble}`;
 }

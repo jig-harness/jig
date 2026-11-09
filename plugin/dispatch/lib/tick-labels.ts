@@ -1,6 +1,7 @@
 /**
  * The label projection, last in a repository's turn: each managed pull
- * request's state label set from its ledger (actions/labels.ts). The labels
+ * request's state label set from its ledger, and each pull request's marker
+ * labels from its description and author (actions/labels.ts). The labels
  * are the owner's to write, as its board, notifications and history rows
  * are, and only with `--apply` for a repository the machine file lists.
  */
@@ -11,6 +12,7 @@ import {
   writeLabels,
 } from "./actions/labels.ts";
 import type { LabelConfig } from "./labels.ts";
+import { manualOpsLabel } from "./owed-steps.ts";
 import type { TickContext } from "./tick-context.ts";
 import type { ForgeRead } from "./tick-forge.ts";
 import type { RepoObservation } from "./tick-observe.ts";
@@ -22,11 +24,18 @@ export async function projectObserved(
   observation: RepoObservation,
 ): Promise<void> {
   const { opened, labels, forge, ctx, serialized } = observation;
-  await projectLabels(context, opened.repo.slug, opened.report, labels, {
-    ...forge,
-    listed: opened.listed && ctx.owner,
-    serialized,
-  });
+  await projectLabels(
+    context,
+    opened.repo.slug,
+    opened.report,
+    labels,
+    {
+      ...forge,
+      listed: opened.listed && ctx.owner,
+      serialized,
+    },
+    opened.values,
+  );
 }
 
 /**
@@ -44,13 +53,29 @@ async function projectLabels(
     listed: boolean;
     serialized: NonNullable<ProjectionInput["serialized"]>;
   },
+  values: Record<string, unknown>,
 ): Promise<void> {
   if (labels === null || !forge.ok) return;
+  const number = (target: string) => Number(target.replace(/^PR #/, ""));
   const followedUp = new Set(
     report.quiet
       .filter((q) => q.class === "followup-done")
-      .map((q) => Number(q.target.replace(/^PR #/, ""))),
+      .map((q) => number(q.target)),
   );
+  // A failed follow-up the tick will not start again: the plan notifies a person of it.
+  const followupFailed = new Set(
+    report.actions
+      .filter((a) => a.cause === "followup-failed")
+      .map((a) => number(a.target)),
+  );
+  const manualOps = manualOpsLabel(values);
+  if (!manualOps.ok)
+    report.records.push({
+      record: "forge",
+      source: "issue_tracker.labels.manual_ops",
+      ok: false,
+      detail: `the manual-operations label's name does not read, so no pull request's owed-steps label is written: ${manualOps.failure.reason}`,
+    });
   const planned = planLabels({
     config: labels,
     open: forge.open.filter((p) => !forge.disputed.has(p.number)),
@@ -58,6 +83,8 @@ async function projectLabels(
     drives: forge.drives,
     merged: forge.merged.filter((p) => !forge.disputed.has(p.number)),
     followedUp,
+    followupFailed,
+    manualOps: manualOps.ok ? manualOps.value : null,
     serialized: forge.serialized,
   });
   const apply = context.apply;

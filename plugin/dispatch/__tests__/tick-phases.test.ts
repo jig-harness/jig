@@ -324,8 +324,11 @@ describe("a low budget", () => {
     return w;
   }
 
+  /** The `gh` calls beside the repository's own query, which reads every open pull request's threads with it whatever the budget. */
   const calls = (w: World) =>
-    readFileSync(join(w.dir, "gh-calls.log"), "utf8").split("\n");
+    readFileSync(join(w.dir, "gh-calls.log"), "utf8")
+      .split("\n")
+      .filter((c) => !c.includes("query DispatchRepository"));
 
   it("reads serialization's files and threads while the budget is not low", async () => {
     const w = serialized();

@@ -661,6 +661,9 @@ export interface OpenPr {
   author?: Author;
   isDraft?: boolean;
   updatedAt?: string;
+  /** Whether a check on its head fails, and its unresolved review threads: what says an automation pull request needs work. */
+  failingChecks?: boolean;
+  unresolvedThreads?: number;
 }
 
 /** Why a snapshot holds no ledger this reader can classify; `null` when it holds one, `""` when it holds none. */
