@@ -95,11 +95,6 @@ export interface TroubleFacts {
   unresolvedThreads?: number;
 }
 
-/** Whether both of a pull request's trouble facts were read: a count or a check list the forge cut short is unknown, which is not the same as healthy. */
-export function troubleKnown(pr: TroubleFacts): boolean {
-  return pr.failingChecks !== undefined && pr.unresolvedThreads !== undefined;
-}
-
 /** Why an open pull request needs work, in words for the report; `null` when nothing read says it does. */
 export function troubleOf(pr: TroubleFacts): string | null {
   const why: string[] = [];
@@ -132,12 +127,12 @@ export function checksFail(checks: unknown): boolean | undefined {
   );
 }
 
-/** A pull request a drive's ledger reads: whether it is an automation pull request that needs no work, which the dispatcher then starts no drive on of itself; a fact the forge did not give is unknown, not healthy, so it is idle only when every fact was read. */
+/** A pull request a drive's ledger reads: whether it is an automation pull request with no trouble observed, which the dispatcher then starts no drive on of itself; a fact the forge did not give is no trouble observed. */
 export function idleAutomation(
   pr: TroubleFacts & { author?: Author; labels?: readonly string[] },
   own: readonly string[],
 ): { automationIdle?: true } {
-  return isAutomation(pr, own) && troubleKnown(pr) && troubleOf(pr) === null
+  return isAutomation(pr, own) && troubleOf(pr) === null
     ? { automationIdle: true }
     : {};
 }

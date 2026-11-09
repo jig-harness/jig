@@ -297,3 +297,47 @@ describe("the manual-operations label", () => {
     expect(read.ok).toBe(false);
   });
 });
+
+describe("fences and code spans inside list items", () => {
+  const owed = (...lines: string[]) =>
+    owedSteps(body("## Out-of-tree follow-ups", ...lines));
+
+  it("ends a fence with the list item that holds it", () => {
+    expect(
+      owed(
+        "- [x] Document example",
+        "  ```",
+        "  example",
+        "- [ ] Rotate the key",
+      ),
+    ).toEqual({ open: 1, done: 1 });
+  });
+
+  it("reads a fence opened on the item's own line", () => {
+    expect(
+      owed(
+        "- [x] Document example",
+        "  - ```md",
+        "    - [ ] Example only",
+        "    ```",
+      ),
+    ).toEqual({ open: 0, done: 1 });
+  });
+
+  it("keeps a code span open across the lines of its paragraph", () => {
+    expect(
+      owed(
+        "- [x] Document `the",
+        "  marker <!-- in text`.",
+        "- [ ] Rotate the key",
+      ),
+    ).toEqual({ open: 1, done: 1 });
+  });
+
+  it("treats a backtick run with no closing run as text", () => {
+    expect(owed("- [ ] a ` b <!-- c", "- [ ] hidden -->")).toEqual({
+      open: 1,
+      done: 0,
+    });
+  });
+});

@@ -45,15 +45,19 @@ interface Scan {
   quote: string | null;
   heredocs: Heredoc[];
   groups: number;
+  /** A redirection operator was read: the next word is its target, not an argument. */
+  redirect: boolean;
 }
 
 const endWord = (scan: Scan): void => {
-  if (scan.word !== null) scan.words.push(scan.word);
+  if (scan.word !== null && !scan.redirect) scan.words.push(scan.word);
+  if (scan.word !== null) scan.redirect = false;
   scan.word = null;
 };
 
 const endCommand = (scan: Scan): void => {
   endWord(scan);
+  scan.redirect = false;
   if (scan.words.length > 0) scan.commands.push(scan.words);
   scan.words = [];
 };
@@ -67,14 +71,24 @@ function inQuote(scan: Scan, script: string, i: number): number {
   const c = script.charAt(i);
   if (c === scan.quote) scan.quote = null;
   else if (c === "\\" && scan.quote === '"' && i + 1 < script.length) {
-    append(scan, script.charAt(i + 1));
-    return i + 1;
+    // In double quotes a backslash escapes only these; before a newline both vanish.
+    const next = script.charAt(i + 1);
+    if (next === "\n") return i + 1;
+    if (/[$`"\\]/.test(next)) {
+      append(scan, next);
+      return i + 1;
+    }
+    append(scan, c);
   } else append(scan, c);
   return i;
 }
 
 /** The delimiter word of a here-document from `j`, quotes and backslashes removed, with the index after it. */
-function delimiterAt(script: string, j: number): { word: string; end: number } {
+function delimiterAt(
+  script: string,
+  j: number,
+): { word: string; end: number; present: boolean } {
+  const start = j;
   let word = "";
   let quote: string | null = null;
   for (; j < script.length; j++) {
@@ -86,7 +100,8 @@ function delimiterAt(script: string, j: number): { word: string; end: number } {
     else if (/[\s;&|<>()]/.test(c)) break;
     else if (c !== "\\") word += c;
   }
-  return { word, end: j };
+  // A quoted empty delimiter is a delimiter: `end` moved past the quotes.
+  return { word, end: j, present: j > start };
 }
 
 /** The here-document an operator `<<` at `i` opens, with the index of the last character of its delimiter; `null` for `<<<` or a missing delimiter. */
@@ -99,10 +114,8 @@ function heredocAt(
   const tabs = script.charAt(j) === "-";
   if (tabs) j++;
   while (script.charAt(j) === " " || script.charAt(j) === "\t") j++;
-  const { word, end } = delimiterAt(script, j);
-  return word === ""
-    ? null
-    : { heredoc: { delimiter: word, tabs }, end: end - 1 };
+  const { word, end, present } = delimiterAt(script, j);
+  return !present ? null : { heredoc: { delimiter: word, tabs }, end: end - 1 };
 }
 
 /** The index of the last character of the here-document bodies that begin after the newline at `i`. */
@@ -137,6 +150,24 @@ function group(scan: Scan, c: string): boolean {
   return true;
 }
 
+/** Read a redirection operator at `i`: it and its target are no arguments of the command. An all-digit word just before it is the descriptor it redirects. Returns the index of the last character used. */
+function redirection(scan: Scan, script: string, i: number): number {
+  if (scan.word !== null && /^\d+$/.test(scan.word)) scan.word = null;
+  else endWord(scan);
+  let j = i + 1;
+  while (/[<>&|]/.test(script.charAt(j))) j++;
+  if (script.charAt(j) === "(") return i;
+  scan.redirect = true;
+  return j - 1;
+}
+
+/** Read one character that ends a word or a command, or belongs to the word. */
+function separator(scan: Scan, c: string): void {
+  if (/[;&|]/.test(c)) endCommand(scan);
+  else if (/\s/.test(c)) endWord(scan);
+  else append(scan, c);
+}
+
 /** Read one character that is no quote, escape or comment; the index of the last one used. */
 function operator(scan: Scan, script: string, i: number): number {
   const c = script.charAt(i);
@@ -146,10 +177,8 @@ function operator(scan: Scan, script: string, i: number): number {
     endCommand(scan);
     return scan.heredocs.length > 0 ? skipHeredocs(scan, script, i) : i;
   }
-  if (group(scan, c)) return i;
-  if (/[;&|]/.test(c)) endCommand(scan);
-  else if (/\s/.test(c)) endWord(scan);
-  else append(scan, c);
+  if (c === "<" || c === ">") return redirection(scan, script, i);
+  if (!group(scan, c)) separator(scan, c);
   return i;
 }
 
@@ -185,6 +214,7 @@ export function shellCommands(script: string): string[][] {
     quote: null,
     heredocs: [],
     groups: 0,
+    redirect: false,
   };
   for (let i = 0; i < script.length; i++)
     i = (scan.quote === null ? outside : inQuote)(scan, script, i);

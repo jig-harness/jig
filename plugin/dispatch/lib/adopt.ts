@@ -27,7 +27,6 @@ import {
   isBot,
   normalLogin,
   type TroubleFacts,
-  troubleKnown,
   troubleOf,
 } from "./automation.ts";
 import { hasCommand, type LabelConfig } from "./labels.ts";
@@ -122,8 +121,6 @@ export function adopts(
   const trouble = troubleOf(pr);
   if (trouble !== null)
     return `${adopted}; an automation pull request that needs work: ${trouble}`;
-  // Facts the forge did not give in full are unknown, not healthy: the drive's fresh read settles them.
-  return troubleKnown(pr)
-    ? null
-    : `${adopted}; an automation pull request whose checks or review threads were not read in full`;
+  // Only trouble observed admits an automation pull request: a fact the forge did not give in full is unknown, not trouble.
+  return null;
 }

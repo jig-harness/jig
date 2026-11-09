@@ -77,77 +77,161 @@ function listColumn(line: string, base: number): number {
   return /^\s/.test(line) ? base : 0;
 }
 
-/** The code spans of `line` as start and end offsets: a run of backticks and the next run of the same length, whose text Markdown renders literally. */
-function codeSpans(line: string): [number, number][] {
-  const spans: [number, number][] = [];
-  const runs = [...line.matchAll(/`+/g)];
-  for (let i = 0; i < runs.length; i++) {
-    const open = runs[i];
-    const close = runs
-      .slice(i + 1)
-      .find((r) => r[0].length === open?.[0].length);
-    if (open === undefined || close === undefined) continue;
-    spans.push([open.index, close.index + close[0].length]);
-    i = runs.indexOf(close);
-  }
-  return spans;
+/** The end of the first run of exactly `n` backticks in `s` at or after `from`; -1 when there is none. */
+function findRun(s: string, from: number, n: number): number {
+  for (const m of s.matchAll(/`+/g))
+    if (m.index >= from && m[0].length === n) return m.index + n;
+  return -1;
 }
 
-/** What is left of `line` outside HTML comments, and whether a comment is open at its end; `open` says whether one was open at its start. */
+/** What the reading of one line carries to the next: an HTML comment open, or a code span open (its backtick count) that a later line of the paragraph closes. */
+interface Context {
+  comment: boolean;
+  span: number | null;
+}
+
+/** Where the backtick run of `n` at `at` leaves the reading: past its closing run on `line`, to the line's end with the span open (`open` is its backtick count) when a later line of the paragraph closes it, or past the run alone when nothing does. */
+function codeSpanAt(
+  line: string,
+  at: number,
+  n: number,
+  ahead: readonly string[],
+): { end: number; open: number | null } {
+  const end = findRun(line, at + n, n);
+  if (end !== -1) return { end, open: null };
+  if (ahead.some((l) => findRun(l, 0, n) !== -1))
+    return { end: line.length, open: n };
+  return { end: at + n, open: null };
+}
+
+/** Where the reading of `line` goes on from `at` inside an open comment or code span, closing it when `line` does; `line.length` and the context unchanged when it runs on, and the kept text of the span. */
+function inside(
+  line: string,
+  at: number,
+  ctx: Context,
+): { to: number; kept: string } {
+  if (ctx.comment) {
+    const close = line.indexOf("-->", at);
+    if (close === -1) return { to: line.length, kept: "" };
+    ctx.comment = false;
+    return { to: close + 3, kept: "" };
+  }
+  const end = findRun(line, at, ctx.span ?? 0);
+  if (end === -1) return { to: line.length, kept: line.slice(at) };
+  ctx.span = null;
+  return { to: end, kept: line.slice(at, end) };
+}
+
+/** What is left of `line` outside HTML comments; `ahead` are the later lines of its paragraph, where an open code span may close. */
 function uncommented(
   line: string,
-  open: boolean,
-): { text: string; open: boolean } {
-  let rest = line;
+  ctx: Context,
+  ahead: readonly string[],
+): string {
   let text = "";
-  let inside = open;
-  for (;;) {
-    if (inside) {
-      const close = rest.indexOf("-->");
-      if (close === -1) return { text, open: true };
-      rest = rest.slice(close + 3);
-      inside = false;
+  let i = 0;
+  while (i < line.length) {
+    if (ctx.comment || ctx.span !== null) {
+      const read = inside(line, i, ctx);
+      text += read.kept;
+      i = read.to;
+      continue;
     }
-    const spans = codeSpans(rest);
-    let start = rest.indexOf("<!--");
-    while (start !== -1 && spans.some(([a, b]) => start >= a && start < b))
-      start = rest.indexOf("<!--", start + 1);
-    if (start === -1) return { text: text + rest, open: false };
-    text += rest.slice(0, start);
-    rest = rest.slice(start + 4);
-    inside = true;
+    const re = /`+|<!--/g;
+    re.lastIndex = i;
+    const m = re.exec(line);
+    if (m === null) return text + line.slice(i);
+    text += line.slice(i, m.index);
+    if (m[0] === "<!--") {
+      ctx.comment = true;
+      i = m.index + 4;
+      continue;
+    }
+    const run = codeSpanAt(line, m.index, m[0].length, ahead);
+    text += line.slice(m.index, run.end);
+    i = run.end;
+    ctx.span = run.open;
   }
+  return text;
+}
+
+/** The fence a line opens and the column of the list item holding it: the item's own when the fence follows its marker, else `base`; `undefined` for another line. */
+function fenceOpener(
+  line: string,
+  base: number,
+): { marker: string; base: number } | undefined {
+  const column = contentColumn(line);
+  const marker =
+    column > 0
+      ? fenceOf(line.replace(/\t/g, "    ").slice(column), 0)
+      : fenceOf(line, base);
+  return marker === undefined
+    ? undefined
+    : { marker, base: column > 0 ? column : base };
+}
+
+/** Whether an open fence ends at `line`: its closing marker, or, in a list item, a line less indented than the item's text. */
+function fenceEnds(
+  line: string,
+  fence: string,
+  base: number,
+  fenceBase: number,
+): "closed" | "dedented" | "open" {
+  if (closesFence(line, fence, base)) return "closed";
+  const indent = /^\s*/.exec(line.replace(/\t/g, "    "))?.[0].length ?? 0;
+  return line.trim() !== "" && indent < fenceBase ? "dedented" : "open";
+}
+
+/** The lines of the paragraph after line `at`: those up to the next blank line. */
+function paragraphAfter(input: readonly string[], at: number): string[] {
+  const rest = input.slice(at + 1);
+  const end = rest.findIndex((l) => l.trim() === "");
+  return end === -1 ? rest : rest.slice(0, end);
 }
 
 /**
  * The description's lines outside fenced code and HTML comments, read in one
  * pass so that each hides the other's delimiters: a comment opener inside a
  * fence or a code span is code, and a fence inside a comment is comment. A
- * fence may be indented into the list item that holds it. A comment that never
- * closes runs to the end; a fence closes only on a line of its own marker.
+ * fence may be indented into the list item that holds it, or open on the
+ * item's own line; a fence in an item ends with the item, at the first line
+ * indented less than the item's text. A code span may run over the lines of
+ * its paragraph. A comment that never closes runs to the end; a fence closes
+ * only on a line of its own marker.
  */
 function readLines(body: string): string[] {
   const lines: string[] = [];
-  let fence: string | null = null;
-  let comment = false;
-  // The column of the list item holding the line, which a fence in it is indented from.
-  let base = 0;
-  for (const line of body.split(/\r?\n/)) {
-    if (fence !== null) {
-      if (closesFence(line, fence, base)) fence = null;
-      continue;
-    }
-    const marker = comment ? undefined : fenceOf(line, base);
-    if (marker !== undefined) {
-      fence = marker;
-      continue;
-    }
-    if (!comment) base = listColumn(line, base);
-    const read = uncommented(line, comment);
-    comment = read.open;
-    lines.push(read.text);
+  const input = body.split(/\r?\n/);
+  const ctx: Context = { comment: false, span: null };
+  const fence: Fence = { marker: null, base: 0, itemBase: 0 };
+  for (const [i, line] of input.entries()) {
+    if (skippedByFence(line, fence, ctx)) continue;
+    if (line.trim() === "") ctx.span = null;
+    if (!ctx.comment) fence.base = listColumn(line, fence.base);
+    lines.push(uncommented(line, ctx, paragraphAfter(input, i)));
   }
   return lines;
+}
+
+/** The fence being read: its marker (`null` outside one), the column of the list item holding the line, and the column of the item holding the fence, which a less indented line ends the fence with. */
+interface Fence {
+  marker: string | null;
+  base: number;
+  itemBase: number;
+}
+
+/** Whether `line` is fenced code or a fence's own line, updating `fence` as the line opens or closes one; a line that ends the fence by dedent is read as any other. */
+function skippedByFence(line: string, fence: Fence, ctx: Context): boolean {
+  if (fence.marker !== null) {
+    const ends = fenceEnds(line, fence.marker, fence.base, fence.itemBase);
+    if (ends !== "open") fence.marker = null;
+    if (ends !== "dedented") return true;
+  }
+  const opener = ctx.comment ? undefined : fenceOpener(line, fence.base);
+  if (opener === undefined) return false;
+  fence.marker = opener.marker;
+  fence.base = fence.itemBase = opener.base;
+  return true;
 }
 
 /** A list line's indent, a tab counted as four spaces. */
@@ -198,18 +282,27 @@ function sections(body: string): string[][] {
   return found;
 }
 
+/** The text of a list item without its checkbox, and whether the box is open, checked or absent; `null` for a line that is no item or a thematic break. */
+function itemText(
+  line: string,
+): { text: string; kind: "open" | "done" | "plain" } | null {
+  const item = ITEM.exec(line);
+  if (item === null || BREAK.test(line)) return null;
+  const box = BOX.exec(item[2] ?? "");
+  if (box === null) return { text: (item[2] ?? "").trim(), kind: "plain" };
+  return {
+    text: (box[2] ?? "").trim(),
+    kind: box[1] === " " ? "open" : "done",
+  };
+}
+
 /** One list item of a section: its indent, and whether it is an open box, a checked one or a plain item; `null` for a line that is no step. */
 function itemOf(
   line: string,
 ): { indent: number; kind: "open" | "done" | "plain" } | null {
-  const item = ITEM.exec(line);
-  if (item === null || BREAK.test(line)) return null;
-  const box = BOX.exec(item[2] ?? "");
-  const text = (box === null ? item[2] : box[2])?.trim() ?? "";
-  if (text === "" || saysNone(text)) return null;
-  const indent = indentOf(line);
-  if (box === null) return { indent, kind: "plain" };
-  return { indent, kind: box[1] === " " ? "open" : "done" };
+  const item = itemText(line);
+  if (item === null || item.text === "" || saysNone(item.text)) return null;
+  return { indent: indentOf(line), kind: item.kind };
 }
 
 /** The steps a description's out-of-tree section lists; none when it has no such section. */

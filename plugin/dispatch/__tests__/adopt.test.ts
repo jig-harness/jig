@@ -230,11 +230,9 @@ describe("the default author", () => {
       unresolvedThreads: 0,
     };
     expect(adopts(labelled, named as Adoption, null, Date.now())).toBeNull();
-    // Facts the forge did not give in full are unknown, not healthy.
+    // Only observed trouble adopts: a fact the forge did not give in full is not trouble.
     const { unresolvedThreads: _unread, ...unread } = labelled;
-    expect(adopts(unread, named as Adoption, null, Date.now())).toContain(
-      "not read in full",
-    );
+    expect(adopts(unread, named as Adoption, null, Date.now())).toBeNull();
     expect(
       adopts(
         { ...labelled, mergeable: "CONFLICTING" },

@@ -103,6 +103,26 @@ describe("gh pr create command position and option values", () => {
   });
 });
 
+describe("shell redirections, empty here-document delimiters and quoted continuations", () => {
+  it("drops a redirection and its target from the command's words", () => {
+    expect(runSteps("gh pr create --fill > --label=automation:x")).toEqual([
+      "j › s",
+    ]);
+    expect(runSteps(">out gh pr create --fill")).toEqual(["j › s"]);
+    expect(runSteps("gh pr create --fill 2>&1 --label automation:x")).toEqual(
+      [],
+    );
+  });
+
+  it("reads a quoted empty delimiter as a delimiter", () => {
+    expect(runSteps("cat <<''\ngh pr create --fill\n\necho done")).toEqual([]);
+  });
+
+  it("joins a backslash-newline inside double quotes", () => {
+    expect(runSteps('gh pr create --label "auto\\\nmation:x"')).toEqual([]);
+  });
+});
+
 const CREATE = (labels?: string) => `on: { schedule: [{ cron: "0 5 * * 1" }] }
 jobs:
   regen:
