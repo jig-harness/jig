@@ -258,6 +258,29 @@ describe("Markdown the scan must read as the renderer does", () => {
     ).toEqual({ open: 1, done: 1 });
   });
 
+  it("reads a deeper ordered marker above 1 as paragraph text and a shallower one as a sibling", () => {
+    expect(
+      owedSteps(
+        body(
+          heading,
+          "- [x] Document `literal",
+          "  2. [ ] <!-- marker",
+          "  continued`.",
+          "- [ ] Rotate the key",
+        ),
+      ).open,
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      owedSteps(
+        body(
+          heading,
+          "  1. [x] Document `literal",
+          "2. [ ] <!-- placeholder ` -->",
+        ),
+      ),
+    ).toEqual({ open: 0, done: 1 });
+  });
+
   it("reads a fence indented into a list item as code", () => {
     expect(
       owedSteps(

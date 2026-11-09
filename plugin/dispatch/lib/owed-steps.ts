@@ -191,7 +191,7 @@ function interruptsParagraph(line: string): boolean {
   if (item === null) return false;
   const marker = line.slice((item[1] ?? "").length).match(/^(?:[-*+]|\d+[.)])/);
   return (
-    marker !== null && (!/^\d/.test(marker[0]) || /^1[.)]$/.test(marker[0]))
+    marker !== null && (!/^\d/.test(marker[0]) || /^0*1[.)]$/.test(marker[0]))
   );
 }
 
@@ -214,12 +214,12 @@ const boxItemIndent = (line: string): number | null => {
     : null;
 };
 
-/** Whether `line` ends a paragraph in the list container at `container`, if any. A checkbox-shaped ordered item that cannot interrupt a plain paragraph is nevertheless a new block when it is a sibling in that container. */
+/** Whether `line` ends a paragraph whose text starts at column `container` of its list item, if any. A checkbox-shaped ordered item that cannot interrupt a plain paragraph is nevertheless a new block when it lies left of that text: it belongs to the list holding the item, not to the item's paragraph. */
 function endsParagraph(line: string, container: number | null): boolean {
   if (interrupts(line)) return true;
   const indent = boxItemIndent(line);
   return (
-    indent !== null && (container === null ? indent === 0 : indent >= container)
+    indent !== null && (container === null ? indent === 0 : indent < container)
   );
 }
 
@@ -260,7 +260,7 @@ function readLines(body: string): string[] {
     if (endsParagraph(line, paragraphContainer)) ctx.span = null;
     if (!ctx.comment) fence.base = listColumn(line, fence.base);
     const item = ITEM.exec(line);
-    if (item !== null) paragraphContainer = indentOf(item[1] ?? "");
+    if (item !== null) paragraphContainer = contentColumn(line);
     else if (interrupts(line)) paragraphContainer = null;
     lines.push(
       uncommented(line, ctx, paragraphAfter(input, i, paragraphContainer)),
