@@ -62,9 +62,11 @@ describe("the lock's occupancy", () => {
       const dir = root();
       const held = join(dir, "jig-lock.heavy");
       symlinkSync(String(process.pid), held);
+      // A CI runner sets CI, which makes the lock run its command unlocked.
+      const { CI: _ci, RESOURCE_LOCK_BYPASS: _bypass, ...env } = process.env;
       const child = Bun.spawn([process.execPath, "-e", RUN], {
         env: {
-          ...process.env,
+          ...env,
           LOCK_ROOT: dir,
           LOCK_SLOTS: "1",
           LOCK_TIMEOUT: "30",
@@ -73,7 +75,7 @@ describe("the lock's occupancy", () => {
         stdout: "pipe",
         stderr: "pipe",
       });
-      const deadline = Date.now() + 25_000;
+      const deadline = Date.now() + 20_000;
       while (lockOccupancy(dir, "heavy").waiters === 0 && Date.now() < deadline)
         await Bun.sleep(25);
       expect(lockOccupancy(dir, "heavy")).toEqual({ holders: 1, waiters: 1 });
@@ -89,6 +91,6 @@ describe("the lock's occupancy", () => {
       );
       expect(existsSync(held)).toBe(false);
     },
-    35_000,
+    30_000,
   );
 });
