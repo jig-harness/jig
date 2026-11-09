@@ -2,10 +2,11 @@
 
 **What problem this solves.** The [dispatcher](../GLOSSARY.md) keeps the
 execution line moving, but it runs well below what its host can carry and
-asks a person for more than only a person can settle. It admits work by
-account [slots](../GLOSSARY.md) alone, two per account by default, and
-nothing measures the host: memory, the processors, the disk, and the
-machine-wide test lock every `bun run gates` queues on. A host with room to
+asks a person for more than only a person can settle. Each tick measures
+the host (memory, the processors, the disk, and the machine-wide test lock
+every `bun run gates` queues on) and reports what a launch would cost, but
+it still admits work by account [slots](../GLOSSARY.md) alone, two per
+account by default, until a person sets `load.enforce`. A host with room to
 spare idles, and a host near its limit takes one more session and slows
 every drive on it. Pickups currently serve only a repository's
 [factory identity](../GLOSSARY.md). On Orca, account-bound headless passes
@@ -24,7 +25,8 @@ person opens with the one act it asks of them.
 This is the design of [plan.md](plan.md) item 44. The dashboard groups needs
 by the person's act, shows the recommended option's changes and costs and
 filters by person; `jig ask` names the same act. Ready to merge, the
-keyboard-driven views, headless pickups and complexity tiers are built.
+keyboard-driven views, headless pickups, complexity tiers and the load
+factor, reporting only, are built.
 The remaining work is in the build order below.
 It changes the following designs, each of which says in its own text what this one
 changes: [the dispatcher](dark-factory-dispatch.md) (item 33), whose tick
@@ -300,17 +302,8 @@ their original numbers; each waits on the steps whose files it shares.
 
 ```mermaid
 flowchart TD
-  T5[5 Load factor] --> T7[7 Served pickups]
-  T7 --> T8[8 Steward]
+  T7[7 Served pickups] --> T8[8 Steward]
 ```
-
-#### 5. The load factor
-
-([#636](https://github.com/jig-harness/jig/issues/636)): the gauges, the
-measured reservations, the admission rule and the would-hold report, with the
-gauge at the top of Running. Done when every receipt carries each gauge, the
-load factor and the gauge that binds, and a launch a gauge would refuse still
-starts while `load.enforce` is `false`.
 
 #### 7. Served pickups
 
