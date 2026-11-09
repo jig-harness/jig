@@ -54,7 +54,9 @@ export function parkFromSheet(
     );
   const question = (call.question ?? sheet.question ?? sheet.title)
     .trim()
-    .replace(/\s+/g, " ")
+    .split(/\s/)
+    .filter((part) => part !== "")
+    .join(" ")
     .replace(/[.!]+$/, "");
   const decision: ParkedDecision = {
     schema: "parked-decision/v1",

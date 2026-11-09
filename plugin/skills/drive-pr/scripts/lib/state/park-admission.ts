@@ -15,11 +15,14 @@ import {
   renderLedger,
 } from "./ledger.ts";
 import { ledgerDriverFromEnv } from "./ledger-mirror.ts";
+import { handoffPath, narrativeOf } from "./handoff.ts";
 import { localWriter } from "../../../../../shared/records/writer.ts";
 
 export interface ParkAdmissionContext {
   generation: number;
   claims: LedgerClaimRef[];
+  /** The notes that the mirror will read when it publishes this state. */
+  narrative: string[];
   stateDir?: string;
 }
 
@@ -33,6 +36,7 @@ export async function parkAdmissionContext(
   const snapshot = await readLedgerSnapshot(pr, driver.login);
   if (typeof snapshot === "string")
     fail(2, `park: cannot verify ledger capacity: ${snapshot}`);
+  const narrative = narrativeOf(await handoffPath(pr));
   const claims =
     driver.claim === null ||
     snapshot.claims.some((c) => c.id === driver.claim?.id)
@@ -41,6 +45,7 @@ export async function parkAdmissionContext(
   return {
     ...(stateDir === undefined ? {} : { stateDir }),
     generation: snapshot.maxGeneration,
+    narrative,
     claims: effectiveClaims(claims).map((c) => ({
       id: c.id,
       clone: c.claim.clone,
@@ -58,11 +63,21 @@ export function parkAdmissionProblem(
   if (size > DECISION_BYTE_LIMIT)
     return `decision is ${size} bytes; limit is ${DECISION_BYTE_LIMIT} bytes`;
   const driver = ledgerDriverFromEnv();
+  // Parking ends this drive with HITL_PARKED. Reserve the stopped form now:
+  // a running ledger can fit while the final status line with its exit does not.
+  const projectedDriver =
+    context === undefined || driver === null
+      ? driver
+      : { ...driver, stopped: driver.stopped ?? 8 };
   const ledger = ledgerFromState(state, {
     generation:
       Math.max(state.ledgerGeneration ?? 0, context?.generation ?? 0) + 1,
-    driver: ledgerDriverRecord(driver, context?.stateDir, String(state.pr)),
-    narrative: [],
+    driver: ledgerDriverRecord(
+      projectedDriver,
+      context?.stateDir,
+      String(state.pr),
+    ),
+    narrative: context?.narrative ?? [],
     claims:
       context?.claims ??
       (driver?.claim == null

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { parkAdmissionProblem } from "../scripts/lib/state/park-admission.ts";
 import { freshState, isUsableState } from "../scripts/lib/state/schema.ts";
 import { redactStrings } from "../scripts/lib/state/ledger.ts";
+import { ledgerDriverRecord } from "../scripts/lib/state/ledger-render-context.ts";
 import type { ParkedDecision } from "../../../shared/decisions/park.ts";
 import { parkRecord } from "./park-record-fixture.ts";
 
@@ -88,6 +89,7 @@ test("foreign effective claims participate in near-limit admission", () => {
   expect(
     parkAdmissionProblem(state, decision, {
       generation: 99,
+      narrative: [],
       claims: Array.from({ length: 10 }, (_, i) => ({
         id: i + 1,
         clone: "clone-0123456789abcdef",
@@ -95,4 +97,48 @@ test("foreign effective claims participate in near-limit admission", () => {
       })),
     }),
   ).toContain("65536");
+});
+
+test("admission reserves the narrative cut marker and final stopped status", () => {
+  const decision = JSON.parse(parkRecord("Keep it?")) as ParkedDecision;
+  const state = freshState(999);
+  const park = {
+    key: "a",
+    kind: "finding" as const,
+    reason: "Question?",
+    class: decision.class,
+    decision,
+    round: 0,
+  };
+  state.parked = [park];
+  const empty = { generation: 0, claims: [], narrative: [] };
+  let fits = 0;
+  let refuses = 65536;
+  while (refuses - fits > 1) {
+    const size = Math.floor((fits + refuses) / 2);
+    park.reason = "x ".repeat(size);
+    if (parkAdmissionProblem(state, decision, empty) === null) fits = size;
+    else refuses = size;
+  }
+  park.reason = "x ".repeat(fits);
+  expect(parkAdmissionProblem(state, decision, empty)).toBeNull();
+  // The same notes the mirror will read are part of the projection. They may
+  // be cut, but their cut marker must be rendered before capacity is accepted.
+  expect(
+    parkAdmissionProblem(state, decision, {
+      ...empty,
+      narrative: ["a note that makes the renderer cut the narrative"],
+    }),
+  ).toBeNull();
+
+  const driver = {
+    actor: "driver",
+    clone: "clone",
+    login: null,
+    floor: null,
+    claim: null,
+  };
+  expect(
+    ledgerDriverRecord({ ...driver, stopped: 8 }, undefined, "999"),
+  ).toMatchObject({ state: "stopped", exit: 8 });
 });
