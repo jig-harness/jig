@@ -11,3 +11,5 @@ release: patch
   head repository and commit, refusing mismatched remotes and stale checkouts
   before repository setup hooks run. Merged follow-ups can still recreate a
   deleted branch from the base.
+- Dispatcher-launched drives preserve the tick's configuration layers across
+  fresh terminal shells, including a custom or relative `JIG_HOME`.

@@ -198,7 +198,11 @@ if (args[0] === "terminal" && args[1] === "create") {
     const log = fs.openSync(F + "/terminal.log", "a");
     // With orca-terminal-shell, a shell that outlives its command as a login shell does, named by its PID as Orca names it.
     const shell = fs.existsSync(F + "/orca-terminal-shell");
-    const child = spawn("sh", ["-c", shell ? command + "; exec sleep 60" : command], { detached: true, stdio: ["ignore", log, log], env: process.env });
+    const envFile = F + "/orca-terminal-env.json";
+    const env = fs.existsSync(envFile) ? JSON.parse(fs.readFileSync(envFile, "utf8")) : process.env;
+    const cwdFile = F + "/orca-terminal-cwd";
+    const cwd = fs.existsSync(cwdFile) ? fs.readFileSync(cwdFile, "utf8") : process.cwd();
+    const child = spawn("sh", ["-c", shell ? command + "; exec sleep 60" : command], { detached: true, stdio: ["ignore", log, log], env, cwd });
     child.unref();
     if (shell) answer({ terminal: { handle: "term-1", tabId: "tab-1", processId: child.pid } });
   }

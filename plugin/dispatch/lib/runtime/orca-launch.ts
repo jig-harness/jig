@@ -24,6 +24,7 @@
  * workspace. Neither holds a launch back: the receipt says what happened.
  */
 import { resolve } from "node:path";
+import { sessionOverrides } from "../../../shared/session-overrides.ts";
 import { shellQuote } from "../../../shared/cli.ts";
 import { orcaCommandOrInstalled, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
@@ -48,7 +49,7 @@ const BUNFIG = resolve(import.meta.dir, "../../bunfig.toml");
  */
 function wrapperCommand(record: string, token: string, until: number): string {
   return [
-    "env",
+    ...sessionOverrides(process.env),
     ...runTabEnv(process.env, until),
     process.execPath,
     "--no-env-file",
