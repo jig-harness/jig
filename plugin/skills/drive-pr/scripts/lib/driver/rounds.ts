@@ -16,6 +16,8 @@ import {
 
 import { FinalCiWait } from "./../final-ci-wait.ts";
 
+import { infraRecoveryBudget } from "./infra-recovery.ts";
+
 import { waitAtMailboxCheckpoint } from "./mailbox.ts";
 
 import { driverRuntime } from "./runtime.ts";
@@ -134,6 +136,7 @@ export async function runDriverRounds({
   // iteration and compared against its counter in the same expression.)
   const ciRepairBudget = ciRepairRounds();
   const ciRepairs = 0;
+  const ciInfra = infraRecoveryBudget();
   const conflictRepairs = 0;
   // Consecutive "converged, nothing failing, but no fresh required-check
   // witness" polls — bounded for the reason that branch documents. `0`
@@ -203,6 +206,7 @@ export async function runDriverRounds({
     witnessWaits,
     ciRepairs,
     ciRepairBudget,
+    ciInfra,
     dryRun,
     agent,
     passIdentity: null,

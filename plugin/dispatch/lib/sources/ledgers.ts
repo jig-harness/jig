@@ -13,6 +13,7 @@
  * | stopped `CONVERGED` (`0`), the pull request conflicting or its head past the verified head | stale |
  * | stopped `PR_CONFLICTING` (`9`) | stale |
  * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` (`21`), `PASS_DEADLINE` (`15`) | stale, once per head commit |
+ * | stopped `CI_INFRA_PERSISTED` (`23`) | stale, once per stop after a backoff (`infra-backoff.ts`); needs-person past its re-drives |
  * | stopped `INDETERMINATE` (`1`), the pull request conflicting with its base | stale, once per head and base head |
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
  * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
@@ -110,6 +111,7 @@ import {
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events.ts";
 import { ledgerTree } from "../stall-tree.ts";
+import { infraStopClass } from "../infra-backoff.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
 import { type Adoption, adopts, type Author } from "../adopt.ts";
 import { branchHead } from "../forge.ts";
@@ -340,6 +342,13 @@ const MECHANICAL_STOPS: ReadonlyMap<
       recovery: true,
     },
   ],
+  [
+    DRIVE_EXIT.CI_INFRA_PERSISTED,
+    {
+      kind: "ci-infra",
+      words: "CI still failing on the infrastructure through its re-runs",
+    },
+  ],
 ]);
 
 /** What a needs-person reason adds when the pull request conflicts with its base. */
@@ -373,6 +382,8 @@ function mechanicalStopClass(
       class: "unplaced",
       why: `stopped ${exit} (${stop.words}), and the forge reports no head commit for it, so the once-per-head re-drive cannot be kept`,
     };
+  if (stop.kind === "ci-infra")
+    return infraStopClass(ledger, exit, head, stop.words);
   const last = lastStopEvent(ledger.events ?? []);
   const tree = boundToTree(stop.kind, exit, last) ? ledgerTree(ledger) : null;
   return {

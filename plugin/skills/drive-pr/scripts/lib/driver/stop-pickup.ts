@@ -1,9 +1,11 @@
 /**
  * A drive armed after a stop whose next step is the drive's own: a stall
  * (`STALLED`, exit `14`), CI still red with its repair passes spent
- * (`CI_REPAIR_SPENT`, exit `21`) or a pass deadline the driver did not
+ * (`CI_REPAIR_SPENT`, exit `21`), checks still failing on the infrastructure
+ * after their re-runs (`CI_INFRA_PERSISTED`, exit `23`) or a pass deadline the driver did not
  * restart from (`PASS_DEADLINE`, exit `15`). The dispatcher re-drives each once per head
- * commit, and a person may re-arm any. The stop is the drive state's last
+ * commit (the infrastructure stop once per stop, after a backoff), and a person
+ * may re-arm any. The stop is the drive state's last
  * `stop` event, which the ledger carries to another clone, so the new drive
  * reads it wherever it runs.
  *
@@ -22,6 +24,7 @@ import { hostLabel } from "./../state/ledger-mirror.ts";
 import type { DriveState } from "./../state/schema.ts";
 import { recordedDecisions } from "./restart.ts";
 import {
+  CI_INFRA_PERSISTED_EXIT,
   CI_REPAIR_SPENT_EXIT,
   PASS_DEADLINE_EXIT,
   STALLED_EXIT,
@@ -34,6 +37,24 @@ export interface StopPickup {
   inheritsEdits: boolean;
 }
 
+/** The notices of a stop on a converged head's CI, by exit, given its round: the CI is the driver's to settle again, and the tree hands on nothing. */
+const CI_STOPS: ReadonlyMap<number, (round: string) => string[]> = new Map([
+  [
+    CI_REPAIR_SPENT_EXIT,
+    (round: string) => [
+      `RE-ARMED AFTER THE CI-REPAIR BUDGET WAS SPENT: the drive before this one stopped with exit ${CI_REPAIR_SPENT_EXIT} (CI_REPAIR_SPENT) at round ${round}: the review had converged, and CI on its head still failed after its CI-repair passes.`,
+      "This drive has its own CI-repair passes: work the round as usual, and the driver dispatches the repair once the review converges again.",
+    ],
+  ],
+  [
+    CI_INFRA_PERSISTED_EXIT,
+    (round: string) => [
+      `RE-ARMED AFTER AN INFRASTRUCTURE FAILURE PERSISTED: the drive before this one stopped with exit ${CI_INFRA_PERSISTED_EXIT} (CI_INFRA_PERSISTED) at round ${round}: the review had converged, and every failing check had failed on the infrastructure through its re-runs and head moves.`,
+      "Nothing in the code needs repair for it: work the round as usual, and the driver re-runs the checks once the review converges again.",
+    ],
+  ],
+]);
+
 /** What a drive armed after `state`'s last stop hands its first pass. */
 export async function stopPickup(
   pr: string,
@@ -41,12 +62,10 @@ export async function stopPickup(
 ): Promise<StopPickup> {
   const stop = lastStopEvent(state.events ?? []);
   const code = stop === undefined ? null : Number(stop.cause);
-  if (code === CI_REPAIR_SPENT_EXIT)
+  const ciStop = code === null ? undefined : CI_STOPS.get(code);
+  if (ciStop !== undefined)
     return {
-      notice: [
-        `RE-ARMED AFTER THE CI-REPAIR BUDGET WAS SPENT: the drive before this one stopped with exit ${CI_REPAIR_SPENT_EXIT} (CI_REPAIR_SPENT) at round ${stop?.round ?? "?"}: the review had converged, and CI on its head still failed after its CI-repair passes.`,
-        "This drive has its own CI-repair passes: work the round as usual, and the driver dispatches the repair once the review converges again.",
-      ].join("\n"),
+      notice: ciStop(String(stop?.round ?? "?")).join("\n"),
       inheritsEdits: false,
     };
   if (code !== STALLED_EXIT && code !== PASS_DEADLINE_EXIT)

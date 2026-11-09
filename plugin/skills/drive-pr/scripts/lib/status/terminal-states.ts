@@ -43,12 +43,12 @@
  * 'driver-only' entry (`MAX_ROUNDS`, `SINGLE_INSTANCE_LOCK`,
  * `WORKTREE_UNCLEAN`, `STALLED`, `PASS_DEADLINE`, `QUOTA_PARKED`,
  * `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT`, `TAKEN_OVER`,
- * `CI_REPAIR_SPENT`) is bound
+ * `CI_REPAIR_SPENT`, `CI_INFRA_PERSISTED`) is bound
  * the OTHER direction: `drive.ts` exports a named constant for
  * each — `MAX_ROUNDS_EXIT`, `SINGLE_INSTANCE_LOCK_EXIT`,
  * `WORKTREE_UNCLEAN_EXIT`, `STALLED_EXIT`, `PASS_DEADLINE_EXIT`,
  * `QUOTA_PARKED_EXIT`, `MAILBOX_STOPPED_EXIT`, `MAILBOX_PAUSE_TIMEOUT_EXIT`,
- * `TAKEN_OVER_EXIT`, `CI_REPAIR_SPENT_EXIT` — each read via `driverOnlyExitCode` below (e.g.
+ * `TAKEN_OVER_EXIT`, `CI_REPAIR_SPENT_EXIT`, `CI_INFRA_PERSISTED_EXIT` — each read via `driverOnlyExitCode` below (e.g.
  * `export const MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS')`), the
  * `DriverOnlyStateName`-typed sibling of `terminal`'s own
  * `EvaluateStateName` lookup, and every one of `drive.ts`'s own `return`
@@ -379,6 +379,16 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: "drive.ts only (CI_REPAIR_SPENT_EXIT)",
   },
+  // drive.ts's converged-CI check, once every failing check failed on the
+  // infrastructure (`shared/ci-infra.ts`) and its re-runs and head moves are
+  // spent. `drive.ts` exports
+  // `CI_INFRA_PERSISTED_EXIT = driverOnlyExitCode('CI_INFRA_PERSISTED')`.
+  CI_INFRA_PERSISTED: {
+    exitCode: 23,
+    category: "driver-only",
+    terminal: true,
+    emittedBy: "drive.ts only (CI_INFRA_PERSISTED_EXIT)",
+  },
   // A takeover claim from another clone, newer than this driver's own, found
   // on the pull request at a round boundary, or a claim this driver posted
   // that a rival's earlier claim beat (`lib/driver/ledger.ts`). `drive.ts`
@@ -452,7 +462,8 @@ export type DriverOnlyStateName =
   | "MAILBOX_STOPPED"
   | "MAILBOX_PAUSE_TIMEOUT"
   | "TAKEN_OVER"
-  | "CI_REPAIR_SPENT";
+  | "CI_REPAIR_SPENT"
+  | "CI_INFRA_PERSISTED";
 
 /**
  * `TERMINAL_STATES[name].exitCode` for a `DriverOnlyStateName`, throwing —
@@ -566,7 +577,8 @@ export type DriveExitName =
   | "MAILBOX_STOPPED"
   | "MAILBOX_PAUSE_TIMEOUT"
   | "TAKEN_OVER"
-  | "CI_REPAIR_SPENT";
+  | "CI_REPAIR_SPENT"
+  | "CI_INFRA_PERSISTED";
 
 const DRIVE_EXIT_NAMES: readonly DriveExitName[] = [
   "CONVERGED",
@@ -589,6 +601,7 @@ const DRIVE_EXIT_NAMES: readonly DriveExitName[] = [
   "MAILBOX_PAUSE_TIMEOUT",
   "TAKEN_OVER",
   "CI_REPAIR_SPENT",
+  "CI_INFRA_PERSISTED",
 ];
 
 /**
@@ -645,13 +658,15 @@ export const PERSON_STOP_EXITS: ReadonlySet<number> = new Set([
 /**
  * The exits that leave nothing for a person in the drive's terminal tab:
  * converged, merged or closed, re-armable (a usage-limit wall, a pull request
- * not judgeable yet), a person's stop, or a refusal of a second driver.
+ * not judgeable yet, an infrastructure failure the dispatcher re-drives), a
+ * person's stop, or a refusal of a second driver.
  */
 const TAB_CLOSING_EXITS: ReadonlySet<number> = new Set([
   DRIVE_EXIT.CONVERGED,
   DRIVE_EXIT.PR_NOT_OPEN,
   DRIVE_EXIT.QUOTA_PARKED,
   DRIVE_EXIT.NOT_SETTLED,
+  DRIVE_EXIT.CI_INFRA_PERSISTED,
   ...PERSON_STOP_EXITS,
   ...DRIVER_REFUSAL_EXITS,
 ]);

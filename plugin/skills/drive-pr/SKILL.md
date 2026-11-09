@@ -151,7 +151,7 @@ its `--json` report; the canonical (exit, state) pairing is code, not this
 table — [`terminal-states.ts`](scripts/lib/status/terminal-states.ts),
 checked against this and the other prose restatements by
 [`__tests__/terminal-states-consistency.ts`](https://github.com/jig-harness/jig/blob/main/plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts).
-`PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT`, `TAKEN_OVER` and `CI_REPAIR_SPENT` are the
+`PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT`, `TAKEN_OVER`, `CI_REPAIR_SPENT` and `CI_INFRA_PERSISTED` are the
 exception: named exits `drive.ts` returns directly, never through this report — a
 consumer polling `--json` for one of these states will never see it there.
 
@@ -167,6 +167,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 | `CI_REPAIR_SPENT` | 21 | The review converged, the fresh exact-head CI verdict still names failing checks, and the CI-repair passes (`DRIVE_PR_CI_REPAIR_ROUNDS`) are spent. A CI repair, not a person's decision: repair it with [`/jig:fix-ci`](../fix-ci/SKILL.md), or re-arm, which starts with a fresh budget. Under `jig dispatch` the dispatcher re-drives it once per head commit. With repair disabled (`0`), or a verdict that names no failing check, the stop stays `1` |
+| `CI_INFRA_PERSISTED` | 23 | The review converged, and every failing check on the head failed on the infrastructure (a lost runner, or a setup step's network failure, with no code diagnostic) through the drive's re-runs and head moves (`DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each). No CI-repair pass was spent and nothing in the code needs repair. Under `jig dispatch` the dispatcher re-drives it after a backoff that doubles with each consecutive such stop, and tells a person once the stops outlast its re-drives |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
 In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
@@ -296,6 +297,34 @@ unreadable report are absences of evidence, not evidence of failure, and a
 CI-repair pass handed neither a run nor a check name has nothing to work from.
 Once the budget is spent — or on the first red if it is `0` — the drive takes
 the original exit-`1` stop and hands the red CI back for repair.
+
+**A failure of the infrastructure is re-run, not repaired.** Before it spends a
+repair pass, the driver reads each failed run's failed-step log against the
+rule `fix-ci` shares
+(`shared/ci-infra.ts`): a job failed on the infrastructure when its runner was
+lost, or every failed step is a setup step (the job's set-up, a checkout, a
+tool download or install, a cache restore, a tool's initialisation) that failed
+on the network (an HTTP 5xx, a timeout, a reset or refused connection), and its
+log prints no code diagnostic. Anything ambiguous is the code's. When every
+failing check reads that way, the driver re-runs the run's failed jobs, at most `DRIVE_PR_CI_INFRA_RERUNS` (default 2) times per head
+and never a run created under the CI hold's label; when the forge refuses the
+re-run (it does for a default-setup code scan) or the re-runs are spent, it
+moves the head: it merges the base when the branch is behind it, and otherwise
+pushes an empty commit, `ci: re-run checks after an infrastructure failure`, at
+most `DRIVE_PR_CI_INFRA_HEAD_MOVES` (default 2) times per drive. It re-gates;
+a local base merge goes through a validated review round before its push,
+then the driver waits for checks as usual. The CI-repair budget does not move. Past both bounds it stops `23` (`CI_INFRA_PERSISTED`). A commit status, a
+check no failed-run log names, or a log that cannot be read is left to the
+repair path.
+
+Infrastructure retry budgets accept integers from 0 through 100; invalid or
+excessive values use the default. A base-sync refusal or unreadable report
+stops recovery without an empty commit. A successful local base merge is
+handed to the next review round, which runs the configured validation plan
+before pushing it through `finish-round.ts`. Log classification keeps each
+failed job tied to its workflow run and rejects unplaced negative evidence.
+An empty recovery commit must retain the reviewed parent and tree; a changed
+head or tree stops its direct push and needs a validated review round.
 
 **A cancelled check is waited for, never repaired and never passed.** It says
 nothing about the code, so the verdict reads `cancelled: …`. That covers only a
@@ -1266,6 +1295,7 @@ state directory holding all of it: read that file before acting.
 | `RE-ARMED AFTER A STALL` | The drive before this one stopped with exit `14`; the notice carries what its passes recorded last, and says when it left work in this tree, which this drive then takes as its own to finish | Finish what the tree holds first (§ 5, **A tree the round inherits**), find why those passes did not act and act on it; if a step refuses and you stop, record it (§ 8) |
 | `RE-ARMED AFTER A PASS DEADLINE` | The drive before this one stopped with exit `15`: its passes reached their deadline and the driver did not restart them again; the notice says when they left work in this tree, which this drive then takes as its own to finish | Finish what the tree holds first (§ 5, **A tree the round inherits**), in steps small enough to end inside the deadline |
 | `RE-ARMED AFTER THE CI-REPAIR BUDGET WAS SPENT` | The drive before this one stopped with exit `21`: CI still failed on its converged head after its repair passes | Work the round as usual; this drive has its own CI-repair passes, which the driver dispatches once the review converges again |
+| `RE-ARMED AFTER AN INFRASTRUCTURE FAILURE PERSISTED` | The drive before this one stopped with exit `23`: every failing check had failed on the infrastructure through its re-runs and head moves | Work the round as usual; nothing in the code needs repair for it, and the driver re-runs the checks once the review converges again |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
 | `RE-ARMED TO DECIDE PROVISIONALLY` | At the `wide` level, parked items of the class `escalated` that nobody answered are unparked, one `[kind] key` line each | Check each again first: the level read afresh (an off-hours window may have closed), and `decide`'s `wide` conditions (no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence; for a thread, a recorded `escalate` ruling of the class `escalated`). Where one fails, park the item again under its class (§ 4). Otherwise decide it this round, provisionally and with a reply outcome only: a thread with `provisional-reply.ts`, a finding with `decide`'s ruling recorded as `decide-provisional` (§ 8) |
@@ -1447,7 +1477,9 @@ The budgets are `DRIVE_PR_CI_REPAIR_ROUNDS` (default 2) and
 `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1), both in-memory per driver
 process and both disabled by `0`, which stops on the first red CI or
 conflict without a repair pass. A spent CI-repair budget stops with exit
-`21` (`CI_REPAIR_SPENT`). See § Terminal states.
+`21` (`CI_REPAIR_SPENT`). A failure of the infrastructure spends neither: it is
+re-run, and stops `23` (`CI_INFRA_PERSISTED`) past its own bounds. See
+§ Terminal states.
 
 ### 1. Gate
 
