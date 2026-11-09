@@ -1,23 +1,27 @@
 /**
- * `--apply` for pickups: start a `do-item` session for each item the plan
- * wants picked up, once. A pickup starts only on a runtime that binds an
- * interactive session to the account it bills (`interactiveBinding`); on
- * any other, every pickup is reported with the runtime's reason and nothing
- * is opened, written or launched. Otherwise, for each one:
+ * `--apply` for pickups: start a headless `do-item` pass for each item the
+ * plan wants picked up, once. The pass runs through the wrapper a
+ * follow-up's pass runs through (`run.ts`), bound to the admitted account
+ * by its configuration directory, so it needs no runtime that binds an
+ * interactive session. For each one:
  *
  * 1. the fresh read: the item still assigned to the factory identity in a
  *    dispatch state, no running session joined to it, no launch record
  *    holding it;
- * 2. admit an account with a free slot and no wall, and check that the
- *    wrapper's environment resolves to that account's identity;
+ * 2. admit an account with a free slot and no wall, as a headless pass
+ *    under the pickup's own deadline (`dispatch.pickup_deadline`), and
+ *    check that the wrapper's environment resolves to that account's
+ *    identity; a Codex account only on a host opted in to its bypass;
  * 3. the item's workspace: the one joined to it, else a new branch named
  *    by the repository's branch rule with the issue linked, the workspace
  *    named for the pickup and the item (`dispatched` in `runtime/port.ts`)
  *    under the launch record's id minted here;
  * 4. the fresh read again, now that the workspace is open, and the route's
- *    model and effort;
- * 5. write the launch record, then `launch` the session under the record's
- *    token; the record gains the agent's id from the launch's receipt.
+ *    model and effort, which the record keeps for the report and the
+ *    line: the pass itself keeps the agent's own, and `do-item` forwards
+ *    the route to its implementer (`session.ts`);
+ * 5. write the launch record, then `launch` the pass under the record's
+ *    token.
  *
  * Before any of that, a pending pickup whose launch got no answer is
  * retried once, under its own record and token, never as a fresh launch.
@@ -57,7 +61,6 @@ import {
   openWithinBudget,
   outOfTime,
   replay,
-  reportedUnbound,
   rotated,
   replayable,
   startRecord,
@@ -143,7 +146,7 @@ async function launchOne(
   if (late !== null) return waits(action, late);
   const before = await changed(state, repo, ctx, action.target);
   if ("why" in before) return waits(action, before.why);
-  const admitted = await admitAccount(state, action);
+  const admitted = await admitAccount(state, action, deadlineSec(ctx));
   if ("outcome" in admitted) return admitted.outcome;
   const slots = admitted.slots;
   const id = newRecordId(new Date());
@@ -185,6 +188,9 @@ async function launchOne(
     vendor,
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
+    passTimeoutSec: deadlineSec(ctx),
+    codexBypass: state.codexOptIn.on,
+    headless: true,
     replaces: null,
     facts: `state ${after.issue.state.name}, assignee ${after.issue.assignee?.name ?? "nobody"}`,
     createdAt: new Date().toISOString(),
@@ -199,8 +205,24 @@ async function launchOne(
     sessionId: sessionIdFor(vendor),
     mark: named.mark,
   };
-  const launched = await startRecord(state, record, slots);
+  const launched = headless(await startRecord(state, record, slots), record);
   return { ...launched, detail: `${launched.detail}; ${route.detail}` };
+}
+
+/** The pickup's own deadline, in whole seconds. */
+function deadlineSec(ctx: PickupContext): number {
+  return Math.ceil(ctx.section.pickupDeadlineMs / 1000);
+}
+
+/** A launch's outcome, saying what started: a headless pass, and the account and directory it is bound to. */
+function headless(outcome: LaunchOutcome, record: LaunchRecord): LaunchOutcome {
+  const started =
+    outcome.outcome === "launched" || outcome.outcome === "retried";
+  if (!started || record.headless !== true) return outcome;
+  return {
+    ...outcome,
+    detail: `a headless do-item pass bound to account ${record.account} (${record.configDir}) under its ${record.passTimeoutSec}s deadline: ${outcome.detail}`,
+  };
 }
 
 /**
@@ -253,7 +275,9 @@ async function retryPending(
         : ((await competing(state, repo, ctx, record)) ??
           (await accountBlocked(state, record)));
     const action = { target: item, stage: "pickup" } as Action;
-    report.launches.push(await replay(state, record, action, blocked));
+    report.launches.push(
+      headless(await replay(state, record, action, blocked), record),
+    );
   }
 }
 
@@ -265,7 +289,6 @@ export async function applyPickups(
   ctx: PickupContext,
 ): Promise<void> {
   const wanted = report.actions.filter((a) => a.stage === "pickup");
-  if (reportedUnbound(state, wanted, report)) return;
   await retryPending(state, repo, report, ctx);
   for (const action of rotated(state, wanted, "targets"))
     report.launches.push(await launchOne(state, repo, action, ctx));
