@@ -77,14 +77,41 @@ function Replies({ need }: { need: NeedView }) {
   );
 }
 
+/** A clause without the full stop or semicolon the record ends it with, so two can share one sentence. */
+function clause(text: string): string {
+  return text.replace(/[.;]\s*$/, "");
+}
+
 /** An option as the card reads it: its name in bold, then what it changes and costs. */
 function OptionText({ option }: { option: LineOption }) {
   return (
     <>
       <strong>{option.name}</strong>
-      {option.changes === null ? null : <> — changes: {option.changes}</>}
-      {option.costs === null ? null : <>; costs: {option.costs}</>}
+      {option.changes === null ? null : (
+        <> — changes: {clause(option.changes)}</>
+      )}
+      {option.costs === null ? null : <>; costs: {clause(option.costs)}</>}
     </>
+  );
+}
+
+/** A step's text with its `code` spans set as code; nothing else in it is read as Markdown. */
+function StepText({ text }: { text: string }) {
+  const parts = text.split("`");
+  // An unpaired backtick is text.
+  if (parts.length % 2 === 0) return <span>{text}</span>;
+  return (
+    <span>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <code className="m" key={`code ${part}`}>
+            {part}
+          </code>
+        ) : (
+          part
+        ),
+      )}
+    </span>
   );
 }
 
@@ -101,7 +128,7 @@ function Steps({ steps, target }: { steps: string[]; target: string }) {
                 type="checkbox"
                 aria-label={`Step ${i + 1} for ${target}: ${step}`}
               />{" "}
-              <span>{step}</span>
+              <StepText text={step} />
             </label>
           </li>
         ))}

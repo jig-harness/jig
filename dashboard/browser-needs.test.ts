@@ -36,7 +36,7 @@ describe("Needs you", () => {
           "A: retry 5xx only",
         );
         expect(await card.locator(".rec").textContent()).toContain(
-          "changes: the retry helper.; costs: leaves 429 unhandled.",
+          "changes: the retry helper; costs: leaves 429 unhandled",
         );
         expect(await card.locator(".waitsOn").textContent()).toBe(
           "Waits on maintainer-a",
