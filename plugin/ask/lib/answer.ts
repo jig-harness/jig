@@ -51,6 +51,7 @@ const PERSON_ACTS = [
   "re-run the follow-up",
   "choose the session that keeps the item",
   "look at the stalled pickup",
+  "settle the pickup's question, then return the item to the dispatch states",
   "answer the waiting session",
   "assign the item as someone who can write",
 ] as const;
@@ -76,6 +77,7 @@ const ACT_OF_PERSON: Record<PersonAct, NeedAct> = {
   "re-run the follow-up": "Investigate",
   "choose the session that keeps the item": "Investigate",
   "look at the stalled pickup": "Investigate",
+  "settle the pickup's question, then return the item to the dispatch states": "Decide",
   "answer the waiting session": "Reply",
   "assign the item as someone who can write": "Do",
 };
