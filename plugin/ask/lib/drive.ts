@@ -68,7 +68,7 @@ import {
   type ThreadEntry,
   type WaitsOn,
 } from "./answer.ts";
-import { answered, lineParkAct, parkedWait } from "./park-wait.ts";
+import { answered, lineParkOf, parkedWait } from "./park-wait.ts";
 import {
   type CommentFields,
   commentFields,
@@ -328,7 +328,7 @@ function waitsOnOf(
         r.comments,
         r.pull.author,
         placed.why,
-        lineParkAct(ctx, r.pull.number),
+        lineParkOf(ctx, r.pull.number),
       );
     case "re-armable":
       return rearm(placed.why);

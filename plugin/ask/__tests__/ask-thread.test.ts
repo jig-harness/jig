@@ -263,6 +263,39 @@ describe("jig ask on a park", () => {
     });
   });
 
+  it("takes the class's act when the line's decision is not one of the open parks", async () => {
+    const w = world();
+    w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
+    w.api(`repos/${REPO}/issues/7/comments`, [
+      comment(701, ledgerBody(parked(7))),
+    ]);
+    writeLine(
+      {
+        ...LINE,
+        needs: LINE.needs.map((need, i) =>
+          i === 0
+            ? {
+                ...need,
+                act: "Authorize" as const,
+                decisions: need.decisions.map((d) => ({
+                  ...d,
+                  key: "PRRT_obsolete",
+                })),
+              }
+            : need,
+        ),
+      },
+      "{}",
+      w.state,
+    );
+    const r = await w.ask([`drive@${REPO}#7`, "--json"]);
+    expectSpawnExit(r, 0);
+    expect((JSON.parse(r.stdout) as AskAnswer).waitsOn).toMatchObject({
+      person: "answer",
+      needAct: "Decide",
+    });
+  });
+
   it("waits on a person's answer while a parked question is unanswered, and lists the commands", async () => {
     const w = world();
     w.api(`repos/${REPO}/pulls/7`, pullDoc(7));

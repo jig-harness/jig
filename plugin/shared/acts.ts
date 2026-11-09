@@ -19,6 +19,14 @@ export const NEED_ACTS = [
 ] as const;
 export type NeedAct = (typeof NEED_ACTS)[number];
 
+/** An act the table holds under its own key; `constructor` and the other inherited names have none. */
+function ownAct(
+  table: Readonly<Record<string, NeedAct>>,
+  key: string,
+): NeedAct | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
 /** The act a park under each registry class asks for. */
 const CLASS_ACTS: Readonly<Record<string, NeedAct>> = {
   scope: "Decide",
@@ -45,7 +53,8 @@ const CLASS_ACTS: Readonly<Record<string, NeedAct>> = {
  */
 export function actOfClass(decisionClass: string | null | undefined): NeedAct {
   return (
-    (decisionClass == null ? undefined : CLASS_ACTS[decisionClass]) ?? "Decide"
+    (decisionClass == null ? undefined : ownAct(CLASS_ACTS, decisionClass)) ??
+    "Decide"
   );
 }
 
@@ -73,7 +82,7 @@ export function actOfNeed(need: {
 }): NeedAct {
   if (need.stuck === true) return "Investigate";
   if (need.cause === "parked") return actOfClass(need.decisionClass);
-  return CAUSE_ACTS[need.cause] ?? "Decide";
+  return ownAct(CAUSE_ACTS, need.cause) ?? "Decide";
 }
 
 /** The act a need on the dashboard's line asks for: the one the line kept, or, on a line written before it kept one, derived as the tick derives it. */

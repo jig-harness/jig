@@ -38,6 +38,12 @@ describe("actOfClass", () => {
     expect(actOfClass(undefined)).toBe("Decide");
   });
 
+  it("reads a name every object inherits as a class of a repository's own", () => {
+    expect(actOfClass("constructor")).toBe("Decide");
+    expect(actOfClass("toString")).toBe("Decide");
+    expect(actOfNeed({ cause: "constructor" })).toBe("Decide");
+  });
+
   it("names an act from the closed list for every class", () => {
     for (const c of ["release", "pricing", "human-thread"])
       expect(NEED_ACTS).toContain(actOfClass(c));
