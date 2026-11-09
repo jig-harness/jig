@@ -154,7 +154,7 @@ function modelRow(runtime: string, entry: unknown): ModelRow {
 const defaultsOf = (runtime: string): Partial<ModelRow> =>
   Object.hasOwn(DEFAULT_MODELS, runtime) ? { ...DEFAULT_MODELS[runtime] } : {};
 
-/** `runtime`'s declared M0 tier for `alias`, or `undefined`. */
+/** `runtime`'s declared M0 tier for the family `alias`, or `undefined`. */
 function declaredTier(
   familyTiers: FamilyTiers,
   runtime: string,
@@ -170,28 +170,40 @@ function declaredTier(
 
 /**
  * The M0 tier the family at `field` runs, `undefined` where nothing names
- * one. Refused: an alias outside a runtime's known families that
- * `family_tiers` does not declare, and a Scout family, however declared.
+ * one. The family is resolved once, from its alias or from the model id
+ * it names today, and its declaration is read under its alias, so both
+ * spellings get one tier. Refused: a family outside a runtime's known
+ * families that `family_tiers` does not declare, a Scout family, however
+ * declared, and a model id for a runtime that takes aliases, since its
+ * release id would freeze the pin.
  */
 function familyTier(
   runtime: string,
-  alias: string,
+  name: string,
   field: string,
   familyTiers: FamilyTiers,
 ): M0Tier | undefined {
   const known = familiesOf(runtime);
-  const listed = (familyOf(runtime, alias) ?? familyOfModel(runtime, alias))
-    ?.tier;
-  const own = declaredTier(familyTiers, runtime, alias);
-  if (known !== undefined && listed === undefined && own === undefined)
+  const byAlias = familyOf(runtime, name);
+  const family = byAlias ?? familyOfModel(runtime, name);
+  const own = declaredTier(familyTiers, runtime, family?.alias ?? name);
+  if (known !== undefined && family === undefined && own === undefined)
     throw new RoutingError(
-      `${field}: ${alias} is not a model family ${runtime} knows (${known.families.map((f) => f.alias).join(", ")}); name one, or declare its tier in routing.family_tiers.${runtime}.${alias}`,
+      `${field}: ${name} is not a model family ${runtime} knows (${known.families.map((f) => f.alias).join(", ")}); name one, or declare its tier in routing.family_tiers.${runtime}.${name}`,
     );
-  if (listed === "scout" || own === "scout")
+  if (family?.tier === "scout" || own === "scout")
     throw new RoutingError(
-      `${field}: ${alias} is a Scout family, which M0 keeps read-only, so it is never a pickup's route and no routing.family_tiers entry changes that (ADR-0009); an implementer may still hand it simple sub-steps`,
+      `${field}: ${name} is a Scout family, which M0 keeps read-only, so it is never a pickup's route and no routing.family_tiers entry changes that (ADR-0009); an implementer may still hand it simple sub-steps`,
     );
-  return own ?? listed;
+  if (
+    known?.takesAlias === true &&
+    family !== undefined &&
+    byAlias === undefined
+  )
+    throw new RoutingError(
+      `${field}: ${name} is a model id, and ${runtime} takes the family alias ${family.alias}; a release id would keep the pin on a superseded model`,
+    );
+  return own ?? family?.tier;
 }
 
 /** Refuse a stricter complexity tier on a family of a lower M0 tier than a lighter one. */

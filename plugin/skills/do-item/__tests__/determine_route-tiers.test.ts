@@ -347,6 +347,49 @@ describe("size and model resolution", () => {
   );
 });
 
+describe("a model id and its family alias", () => {
+  const codexRow = {
+    routing: {
+      models: {
+        codex: {
+          simple: "gpt-5.6-terra",
+          standard: "gpt-5.6-terra",
+          complex: "gpt-5.6-terra",
+        },
+      },
+    },
+  };
+
+  it("refuses a Claude release id, which would freeze the pin", () => {
+    expect(() =>
+      rules({
+        routing: { models: { "claude-code": { complex: "claude-opus-5-5" } } },
+      }),
+    ).toThrow(/takes the family alias opus/);
+  });
+
+  it("reads a Codex model id as the family it names", () => {
+    expect(() => rules(codexRow)).not.toThrow();
+  });
+
+  it.each(["terra", "gpt-5.6-terra"])(
+    "applies a family declaration to the spelling %s alike",
+    (spelling) => {
+      const config = {
+        routing: {
+          models: {
+            codex: { simple: spelling, standard: spelling, complex: spelling },
+          },
+          family_tiers: {
+            codex: { terra: { tier: "scout", reason: "local classification" } },
+          },
+        },
+      };
+      expect(() => rules(config)).toThrow(/Scout family/);
+    },
+  );
+});
+
 describe("the route never writes to the tracker", () => {
   const dirs: string[] = [];
   afterAll(() => {
