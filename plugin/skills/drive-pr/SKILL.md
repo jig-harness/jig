@@ -334,8 +334,16 @@ earlier, has completed with a result, the cancelled run's checks no longer
 count, under whatever name they carry, except that an unsuccessful check stays
 when the replacing runs report its name only as skipped. The event that started
 either run does not matter. A failure beside a cancelled check is still a failure, and
-reads `failing: …`. Until something replaces it the drive waits, on the bound
-below, and if nothing does it exits `4`: not judgeable, and retry-safe. An older
+reads `failing: …`. With no active run of the same workflow on this head,
+the drive observes a 30-second grace period, then requests one re-run per
+head. Its SQLite claim survives re-arms and is recorded before the request.
+The drive keeps polling during the grace period and re-run; unrelated pending
+workflows do not hide a cancellation. It never replays an event created under
+the CI hold. A refused or unconfirmed request, or cancellation still unreplaced
+60 seconds after the request with no active replacement, parks `cancelled-ci`
+with a framed decision and exits `8`. The doctor names the run and recovery.
+A successful replacement clears that operational park. Intentional held-run
+cancellations are left for the hold release at convergence. An older
 passing run never answers a cancelled check, which is what keeps a held run
 that cancels itself blocking the merge.
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import type { ItemResult, Report } from "./lib/finish-round-report.ts";
 import { retryAttempts } from "../../../shared/retry.ts";
 /**
  * Finish one drive-pr round: take a validated commit that exists locally all
@@ -219,47 +220,6 @@ interface HeldRecord {
   actor: string;
   verifiedSha?: string;
   commentUrl?: string;
-}
-
-type ItemAction = "resolved" | "left-open" | "answered" | "refused";
-
-interface ItemResult {
-  key: string;
-  kind: string;
-  action: ItemAction;
-  /** The refusing script's exit code; 0 on success. */
-  code: number;
-  /**
-   * That script's own stderr, verbatim — never re-worded here. The one
-   * exception: an item that exhausted the retry/read bounds without ever
-   * being dispatched has no script's stderr to carry, so its diagnostic is
-   * synthesized instead (see the post-drain verification block).
-   */
-  diagnostic?: string;
-}
-
-interface Report {
-  pr: number;
-  head: string;
-  state:
-    | "FINISHED"
-    | "REFUSED_UNCLEAN"
-    | "REFUSED_UNTRIAGED"
-    | "TRIAGE_CHECK_FAILED"
-    | "PR_NOT_OPEN"
-    | "PUSH_FAILED"
-    | "CI_HOLD_WAIT"
-    | "CI_HOLD_FAILED"
-    | "STAMP_FAILED"
-    | "HEAD_NOT_SYNCED"
-    | "BATCH_UNREADABLE"
-    | "PARTIAL"
-    | "LEASE_HELD";
-  reason: string;
-  pushed: boolean;
-  stamped: boolean;
-  headSynced: boolean;
-  items: ItemResult[];
 }
 
 function emit(report: Report, asJson: boolean): void {
@@ -1329,6 +1289,13 @@ async function main(): Promise<number> {
       5,
       "PR_NOT_OPEN",
       `PR #${pr} is no longer open — nothing was pushed`,
+    );
+  }
+  if (holdRes.code === 8) {
+    return done(
+      8,
+      "HITL_PARKED",
+      "cancelled CI needs a person; see the cancelled-ci parked finding for the run and recovery",
     );
   }
   if (holdRes.code === 4) {

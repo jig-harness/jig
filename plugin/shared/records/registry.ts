@@ -85,7 +85,7 @@ const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
 const DISPATCH_DB = 17;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 4;
+const DRIVE_DB = 5;
 const RRC = "skills/resolve-review-comments/scripts/";
 const REFLECT = "skills/reflect/scripts/";
 
@@ -166,6 +166,11 @@ const DRIVE_STATE: RecordKind[] = [
   },
   driveTable("drive-state-import", `${STATE}import.ts`, "imports"),
   driveTable("drive-counter", `${STATE}db.ts`, "counters"),
+  driveTable(
+    "drive-cancelled-ci",
+    `${DRIVE}lib/cancelled-recovery-state.ts`,
+    "cancelled_ci",
+  ),
   driveTable(
     "review-round-counter",
     `${STATE}review-rounds.ts`,

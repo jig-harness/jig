@@ -98,6 +98,7 @@ describe("the records registry", () => {
     );
     expect(tables.map((k) => k.table).sort()).toEqual(
       [
+        "cancelled_ci",
         "claims",
         "counters",
         "driver_records",
