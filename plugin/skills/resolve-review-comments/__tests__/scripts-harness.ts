@@ -258,7 +258,10 @@ case "$1 $2" in
     printf 'HTTP/2.0 200 OK\r\nContent-Type: application/json\r\nEtag: %s\r\n\r\n' "$etag"
     printf '%s' "$body" ;;
   "repo view")
-    echo "acme widgets" ;;
+    case "$*" in
+      *'.owner.login + "/" + .name'*) echo "acme/widgets" ;;
+      *) echo "acme widgets" ;;
+    esac ;;
   "api -X")
     # dismiss-alert.ts's PATCH of a code scanning alert: every argument is
     # logged, one per line, so a probe reads off exactly what was sent.

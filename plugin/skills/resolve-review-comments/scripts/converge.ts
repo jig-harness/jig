@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { argumentValue } from "./lib/argv.ts";
 import { siblingSkill } from "../../../shared/consumer.ts";
 /**
  * Drive resolve-review-comments passes until the PR converges — from ANY agent
@@ -262,10 +263,7 @@ async function main(): Promise<number> {
   }
 
   const argv = process.argv.slice(2);
-  const take = (flag: string, i: number): string => {
-    if (i + 1 >= argv.length) fail(2, `${flag} requires a value`);
-    return argv[i + 1] ?? "";
-  };
+
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] ?? "";
     if (sawDdash) {
@@ -277,7 +275,7 @@ async function main(): Promise<number> {
         sawDdash = true;
         break;
       case "--max-rounds":
-        maxRounds = take(a, i++);
+        maxRounds = argumentValue(argv, a, i++);
         break;
       case "--dry-run":
         dryRun = true;
@@ -292,7 +290,7 @@ async function main(): Promise<number> {
       case "--job-pattern":
       case "--timeout":
       case "--interval":
-        forward.push(a, take(a, i++));
+        forward.push(a, argumentValue(argv, a, i++));
         break;
       default:
         if (a.startsWith("--")) fail(2, `unknown flag: ${a}`);

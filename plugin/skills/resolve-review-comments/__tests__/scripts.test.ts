@@ -574,6 +574,10 @@ describe.skipIf(process.platform === "win32")(
         if (sibling.kind === "script") {
           mkdirSync(join(dp, "scripts"), { recursive: true });
           writeFileSync(
+            join(dp, "scripts", "review-head.ts"),
+            "process.exit(0);",
+          );
+          writeFileSync(
             join(dp, "scripts", "summary-findings.ts"),
             sibling.source,
           );
@@ -1632,6 +1636,7 @@ function runWithSibling(
   if (Object.keys(siblingScripts).length) {
     const sibling = join(skills, "drive-pr", "scripts");
     mkdirSync(sibling, { recursive: true });
+    writeFileSync(join(sibling, "review-head.ts"), "process.exit(0);");
     for (const [name, source] of Object.entries(siblingScripts)) {
       writeFileSync(join(sibling, name), source);
     }

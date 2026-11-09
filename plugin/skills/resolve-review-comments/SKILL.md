@@ -878,6 +878,11 @@ contract:
 | `5` | the PR is no longer open — abandon the loop |
 | `7` | a reviewer check did not pass, so it may never have reported |
 | `8` | zero unresolved threads, but the reviewer has summary-only findings no one has answered — they never became threads |
+When a reviewer is configured, convergence also requires its successful check
+on the current head and its summary's reviewed-commit marker naming that head.
+A stale or missing marker waits (`4` under `--once`); unreadable evidence exits
+`1`. A standalone install without `drive-pr` retains the documented residual.
+
 | `1` | the check state could not be read — never reported as settled |
 | `2` | usage or configuration error (bad interval, invalid or undeclared reviewer coverage) |
 
