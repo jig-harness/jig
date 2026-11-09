@@ -3259,7 +3259,8 @@ clones are coverage limits, never evidence that a PR was clean.
 The scoreboard above asks whether the process as a whole is bending the
 curves. The fleet-health sensor asks a narrower, *per-epic* question
 on a rolling window: are coordination acts (review rounds beyond the configured `free_rounds`,
-`pr-followup` issues minted, process-domain issues opened) outgrowing product
+`pr-followup` issues minted, process-domain issues opened, re-arms recorded in
+the forge ledger) outgrowing product
 progress (merged PRs touching a product change area, issues completed, epics
 accepted)?
 

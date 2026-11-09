@@ -936,3 +936,7 @@ verdict. The report includes coverage and bounds in JSON and terminal output.
 
 When reflection is due, the `drive-status.ts` summary starts with
 `[REFLECT DUE]`; reflect before triaging the round.
+
+Fleet health counts re-arms recorded in the pull request’s drive ledger as
+ceremony, weighted by `ceremony.weights.drive_rearms` (default `1`). Handoffs
+remain unmeasured because their narratives carry no dated history.
