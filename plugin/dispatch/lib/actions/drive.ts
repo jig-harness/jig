@@ -451,7 +451,7 @@ async function launchOne(
   if (late !== null) return waits(action, late);
   const changed = stillWanted(action, fresh, drive.held);
   if (changed !== null) return waits(action, changed);
-  const admitted = await admitAccount(state, action);
+  const admitted = await admitAccount(state, repo.slug, action);
   if ("outcome" in admitted) return admitted.outcome;
   const slots = admitted.slots;
   const pr = fresh as DrivenPr;

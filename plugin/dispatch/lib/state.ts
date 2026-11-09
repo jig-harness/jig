@@ -19,6 +19,7 @@
  * | `log` | outcome row | each row once: it is written in the same transaction as what it records; its `target` column, the piece of work, is indexed with the repository |
  * | `tick_line` | the newest tick from the machine file | one row, replaced by each such tick: the line as it found it and its receipt, which `jig dispatch dashboard` reads |
  * | `reflection_findings` | finding the reflection route made of a recurring class | its id, derived from the repository, stage, class and week: the event as every append sends it, pending until the store reports it stored |
+ * | `load_samples` | kind of launch and sample | the memory one running session of that kind used at one tick; only each kind's newest samples are kept (`load-samples.ts`) |
  * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then and as the forge login that read them; replaced by each read, removed by a write the tick makes on it |
  *
  * The receipts, the account walls (which the drive's quota adapters write
@@ -289,6 +290,19 @@ const MIGRATIONS: readonly Migration[] = [
     // What a follow-up's question was and its routine class (`followup-outcomes.ts`), as JSON naming the record it is of. A row an earlier release wrote has none.
     additive: true,
     sql: "ALTER TABLE followup_outcomes ADD COLUMN asked TEXT;",
+  },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE load_samples (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    record TEXT NOT NULL,
+    at_ms INTEGER NOT NULL,
+    bytes INTEGER NOT NULL
+  );
+  CREATE INDEX load_samples_kind ON load_samples (kind, seq);
+  `,
   },
 ];
 

@@ -54,6 +54,7 @@ import {
 import type { LastRun } from "../runtime/component.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
 import type { NotAdmitted } from "./lib/accounts.ts";
+import type { LineLoad } from "./lib/dashboard-contract.ts";
 import type { ReflectionReport } from "./lib/reflection-route.ts";
 import { failureText } from "./lib/text.ts";
 import type { Defect, RepoReport } from "./lib/types.ts";
@@ -86,6 +87,10 @@ export interface TickReceipt {
   busy?: { path: string; heldBy: string }[];
   /** The forge's budget as the tick started, when it was low enough that the optional reads (thread samples, serialization's reads) were skipped. */
   lowBudget?: { remaining: number; limit: number; skipped: string[] };
+  /** The host's gauges as the act phase read them, the load factor, each kind's reservation and the launches the load factor held or would hold (`lib/load.ts`); absent from a tick with no machine file. */
+  load?: LineLoad;
+  /** Why the host's load was not read: the tick admitted its launches by accounts alone. */
+  loadUnread?: string;
   /** Milliseconds the tick spent in each of its phases; absent from a receipt written before phases were timed. */
   phasesMs?: Partial<Record<TickPhase, number>>;
   /** The defect that stopped the tick's closing steps; a receipt with one is not completed. */
