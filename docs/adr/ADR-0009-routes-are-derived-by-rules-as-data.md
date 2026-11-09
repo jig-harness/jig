@@ -45,7 +45,11 @@ repository marks complex at any size (`routing.complex_flags`): a
 configured flag sets the tier to complex. Each tier maps to a model per
 runtime, the account's vendor choosing the runtime, with Claude's and
 OpenAI's families built in (simple and standard on `sonnet` or `terra`,
-complex on `opus` or `sol`) and every cell a repository setting. One row
+complex on `opus` or `sol`) and every cell a repository setting. No
+complexity tier maps the implementer to a Scout family (`haiku`, `luna`),
+by default or by configuration. A repository may map a complexity tier to
+a Judgment family (`fable`, `astra`); no default does, and the loader
+accepts it as it accepts any configured model. One row
 per work type gives the base effort, a closed list of raises moves the
 effort up and never the tier, the strictest value wins on every conflict,
 an underivable type takes the strictest row, an agent whose definition pins a

@@ -80,7 +80,8 @@ mapping. Within an implementation, the implementer may still hand simple
 sub-steps to a Scout model, as a skill chooses its own scouts. No tier's
 default is a Judgment family (`fable`, `astra`); the loader accepts one
 where a repository configures it for a tier, and the audit reports each
-such mapping. The tier is never a model id: the translation table is the
+such mapping
+([ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md)). The tier is never a model id: the translation table is the
 only place a model name appears, and it is configuration a check reads.
 
 ### Complexity tiers
