@@ -1333,6 +1333,12 @@ make, use the entry's term instead.
   that is no longer the park's is a **stale answer** and does not count, so
   an approval of an earlier framing never settles the one that replaced it
   ([design](design/structured-answers.md#binding-an-answer-to-its-framing)).
+- **Disputed answer** — a parked item whose people's latest answers are not
+  all the same option (two different choices, or a choice beside another
+  person's free answer). It is not answered and waits, which sets it apart
+  from a *stale answer* (naming an earlier framing) and from an item merely
+  waiting for its first answer
+  ([design](design/structured-answers.md#several-answers-to-one-item)).
 - **Attested class** — a *decision class* whose answers count only with
   proof that a person, not a pass posting under their login, gave them
   ([design](design/structured-answers.md#who-may-answer)).

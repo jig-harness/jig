@@ -544,7 +544,7 @@ fire inside a text field:
 | j / k | the next or previous card (roving focus, so Tab still works) |
 | Enter or o | expand or collapse the card |
 | p / i | open its pull request or its issue |
-| c | copy its primary command: the pinned merge command, or the `answer <key>:` line (for a Decide need, its `approve` line with the decision digest, [structured-answers.md](structured-answers.md#writing-an-answer)) |
+| c | copy its primary command: the pinned merge command, or the `answer <key>:` line (for a need holding one parked item of a class the acts table lists as Decide by name, its `approve` line with the decision digest; any other need, a class that only falls back to Decide included, copies the line beside the option, [structured-answers.md](structured-answers.md#writing-an-answer)) |
 | g, then m, n, r, q or h | go to Merge, Needs you, Running, Queue or History |
 | / and ? | filter the view; list the keys |
 

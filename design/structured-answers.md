@@ -77,8 +77,11 @@ park:
   `<text>`.
 
 Before matching, the reader removes `jig send`'s answer record, blank
-lines and quoted lines (lines opening with `>`, which repeat someone
-else's words). The text is a structured answer only when nothing else is
+lines and the quoted lines that repeat the notification (lines opening
+with `>` whose text is a line of the notification the reader can
+identify). Any other quoted line is a line of the comment: a person may
+quote a condition of their own, and an unexplained quote makes the answers
+free. The text is a structured answer only when nothing else is
 left in the comment: in a pull-request comment, every remaining line is an
 `answer <key>:` line, at most one for each key; in a thread reply, the one
 remaining line is the answer. Anything else left is another line: a line of
@@ -109,7 +112,10 @@ one of these forms:
 
 Either form may end with the framing's decision digest in square brackets,
 `approve [3fa9c2d1e0b4]` (see [Binding an answer to its
-framing](#binding-an-answer-to-its-framing)).
+framing](#binding-an-answer-to-its-framing)). The reader takes a trailing
+digest off the line first, before it looks up an option or classifies the
+comment, and keeps the text for display; a digest that is not the park's
+current one makes the answer stale whatever else the comment holds.
 
 Normalizing applies Unicode's compatibility normalization, folds case,
 turns typographic quotes and dashes into their plain forms (a phone types
@@ -186,9 +192,24 @@ park` stores it, and stored on the parked item (`ParkedItem.digest`)
 beside the record. The [drive ledger](../GLOSSARY.md) publishes it with the
 park, so the re-arm, reading the local state, and the tick, `jig ask` and
 `jig send`, reading the ledger, compare against the same stored value; none
-of them hashes a record, so a ledger that lags the local state or a change
-in what the ledger redacts cannot make them disagree. A park from before
-digests has none, and its answers are bound by time alone.
+of them hashes a record, so a change in what the ledger redacts cannot make
+them disagree about the digest. Storing it settles redaction, not
+freshness: after a reframe the local state can hold digest B while the
+ledger still holds A, and an answer naming A is stale to the re-arm and
+current to the tick. The re-arm therefore compares an answer's digest with
+the ledger's too, when it can read the ledger, and an answer whose digest
+matches the local state but not the ledger (or the reverse) is reported as
+a lagging publication, not answered: the notice says the ledger has not yet
+caught up, and the driver's next write publishes the park again. A park
+from before digests has none, and its answers are bound by time alone.
+
+Option identity gets the same care. The ledger redacts email addresses and
+account identifiers in a park's record, so two options that differ only
+there (`Notify alice@example.test`, `Notify bob@example.test`) would read as
+one option to the tick, `jig ask` and `jig send`, and as two to the re-arm.
+`drive-state.ts park` therefore refuses a record whose option names are the
+same once redacted as well as once normalized, so the names every reader
+sees are the names the person types.
 
 Every place that shows a person the options (the notification, `jig ask`,
 the dashboard, the Orca panel) gives the answer lines with the digest of the
@@ -196,7 +217,10 @@ park it read, and `jig send` writes the digest into the line and into the
 answer's record. A structured answer that names a digest counts only when
 it is the park's current one; one naming another digest is a **stale
 answer**: it does not settle the item, which stays waiting, and the next
-tick's notification says so. A structured answer typed without a digest is
+tick's notification says so. The digest is read before anything else on the
+line (see [The forms](#the-forms)), so `choose Removed option [old-digest]`
+and `approve [old-digest]` followed by `Thanks` are stale, not free, and
+never settle an item under the all-free rule. A structured answer typed without a digest is
 bound by time alone; the notification says the line with the digest is the
 one to copy. A re-arm by a plugin older than this design reads the digest
 as part of a free answer, so the binding holds once every host that
@@ -233,7 +257,11 @@ Every way of answering writes the same line, so the readers have one form
 to read.
 
 - **`jig send`.** `jig send drive@<repo>#<PR> answer <key> --approve`, or
-  `--choose '<option>'`, beside the existing free text. The send refuses an
+  `--choose '<option>'`, beside the existing free text. The command takes
+  the digest the person read (`--decision <digest>`, which every copied
+  command carries) and refuses, writing nothing, when the park it fetches
+  has another: the person read framing A, and a send never approves B. A
+  `--dry-run` prints that digest, and the real send must name it. The send refuses an
   option the park does not offer before it writes, shows the option it will
   choose in full (its Changes and Costs) with `--dry-run`, and writes the
   line with the digest and, beside the envelope, the digest and the choice
@@ -318,10 +346,16 @@ section splitter, kept free of the command code `framed-park.ts` imports.
   (`dispatch/lib/line-store.ts`) keeps every waiting park with its class,
   digest and the answers the tick read. When the tick of the host that owns
   the repository finds a park its previous line held gone from the ledger,
-  it writes an event row from that line: the class, whether the choice was
-  the recommended option, the form, and how long the item waited. The
-  ledger is on the pull request, so a re-arm on any host is counted, as far
-  as the owner's tick ran to see it.
+  it writes an event row from a **resolution receipt**, not from the
+  disappearance alone: a park can leave the ledger answered, withdrawn or
+  corrected between two ticks, and the line before it may hold no answer at
+  all. The re-arm writes the receipt when it unparks an item: the consumed
+  answer snapshot, the outcome and the times, kept in the drive ledger
+  beside the park it resolved. The event row carries the class, whether the
+  choice was the recommended option, the form, and how long the item
+  waited; a park that left with no receipt is counted as removed, not
+  answered. The ledger is on the pull request, so a re-arm on any host is
+  counted, as far as the owner's tick ran to see it.
 - **Recommendation acceptance.** `jig dispatch log` reports, per class and
   repository, how many parks were answered, how many with the recommended
   option, and the median wait. That is evidence for a person deciding
@@ -360,10 +394,15 @@ answer cannot be undone wait on proof that a person answered:
     identity, so the person's login is the person. This settles every class
     at once and is item 40's first candidate.
   - **A signature with a hardware-held key.** `jig send` signs the answer's
-    fields (the pull request, the key, the digest, the choice, the time)
+    fields (the pull request, the key, the digest, the choice, the time, and
+    the answer's whole text or its hash with its structured or free
+    classification, since a free answer has no choice to bind)
     with `ssh-keygen -Y sign` under a namespace of its own, with a key held
     by a security key that needs a touch, or by the operating system's key
-    store. A key in a file does not count, even with a passphrase or a
+    store configured to require a person's presence for each signature
+    (on macOS an access control with `userPresence`, say); a store that lets
+    a process of the same user sign without that interaction does not
+    count. A key in a file does not count, even with a passphrase or a
     confirming agent: a pass running as the same user can read the file.
     The reader checks the signature against signers the repository's
     configuration lists at its base branch, not against the keys the forge
@@ -384,9 +423,9 @@ answer cannot be undone wait on proof that a person answered:
 ### Records
 
 The drive ledger's row in [plugin/RECORDS.md](../plugin/RECORDS.md) gains
-each park's `digest`. The `drive-answer` row gains the line's digest
+each park's `digest` and the resolution receipt of each park a re-arm unparked. The `drive-answer` row gains the line's digest
 suffix and the payload fields `decision` (the digest)
-and `choice` (the option's name and the form). Item 39's third stage adds
+and `choice` (the option's name and the form). The hub's third stage ([hub.md § Build order](hub.md#build-order)) adds
 the plan id, the dry run's digest and the kind of proof to the same record
 ([addresses.md](addresses.md)); both add payload fields under version 1, so
 neither waits on the other.
