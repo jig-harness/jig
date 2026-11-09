@@ -185,6 +185,8 @@ holds real files rather than the symlink mirror) and add
 lists its skills as `<plugin>:<skill>`. A repository that measures its own
 plugin and also has skills of its own names those with `--bare-skills <dir>`:
 both appear in the same session's listing, so they share one allowance.
+When a repository has legacy commands, also pass `--commands .claude/commands`
+to the discovery check: commands share the aggregate listing with skills.
 
 ## The universal-file + delta pattern
 
