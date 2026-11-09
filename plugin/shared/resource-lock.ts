@@ -743,18 +743,28 @@ export async function main(
   }
   if (a.taken.length === 0 || (exclusive && a.taken.length < MAX_SLOTS + 1)) {
     releaseAll();
-    const holders = locks.holders([a.blocker]);
-    const why =
-      settings.slots === 1 || exclusive || a.waitingOn === ""
-        ? ""
-        : `; last waiting on: ${a.waitingOn}`;
-    console.error(
-      `ERROR: could not acquire lock '${name}' within ${timeout}s (held by ${holders.length ? describeHolders(holders) : heldBy(a.blocker, fileOwners)}${why})`,
-    );
+    console.error(refusal(a, timeout, fileOwners, exclusive));
     return 3;
   }
   if (said !== undefined) reportTaken(a, exclusive, started);
   return await run();
+}
+// Why a wait ran out: who holds what blocked it, and what admission last said.
+function refusal(
+  a: Acquisition,
+  timeout: string,
+  fileOwners: boolean,
+  exclusive: boolean,
+): string {
+  const holders = a.locks.holders([a.blocker]);
+  const who = holders.length
+    ? describeHolders(holders)
+    : heldBy(a.blocker, fileOwners);
+  const why =
+    a.settings.slots === 1 || exclusive || a.waitingOn === ""
+      ? ""
+      : `; last waiting on: ${a.waitingOn}`;
+  return `ERROR: could not acquire lock '${a.name}' within ${timeout}s (held by ${who}${why})`;
 }
 // After a wait: which slot was taken, and how long the wait was.
 function reportTaken(
