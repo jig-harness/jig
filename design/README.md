@@ -70,11 +70,12 @@ with the review.
 | [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 38; Later: a repository's theme |
 | [The dispatch board, what is driven and what is ready to merge](dispatch-board.md) | 36 |
 | [Addresses: asking and telling the stations of the line](addresses.md) | 39 |
-| [The hub, one place to watch and steer the line](hub.md) | 42; Later: a control-plane service for the shared records |
+| [The hub, including required phone access](hub.md) | 42; Later: a control-plane service for the shared records |
 | [Consumer actions, which Jig changes a repository must act on](consumer-actions.md) | 43 |
 | [Distribution channels](distribution.md) | 45 |
 | [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | 41; Later: the command store |
 | [The line at capacity: the host's load factor, served pickups and the steward](line-at-capacity.md) | 44 |
+| [Structured answers, approving or choosing a parked decision in a word](structured-answers.md) | 46 |
 
 ## Starting a design
 

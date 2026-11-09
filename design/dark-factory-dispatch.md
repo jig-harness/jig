@@ -1939,7 +1939,7 @@ The first is the **line**, one row of the state database (`tick_line`): the
 needs, the accounts with their slots and walls, the sessions, the queue and the
 repositories as a tick found them, with that tick's receipt. A tick that read
 every repository the machine file lists replaces it at its end. A tick for one
-repository leaves it, until the hub's first stage (its step 5) lets that tick
+repository leaves it, until the hub's first stage (its step 6) lets that tick
 replace only that repository's part (its needs, sessions and queue, and its
 entry among the repositories, stamped with that tick's run and read time) and
 leave the rest to the full ticks: the line's own times, the accounts and the

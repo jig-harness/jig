@@ -486,7 +486,10 @@ ledger in its stage 1, and the entry ids, the question's and the answer's
 fields, the fold by aliases and the list of threads in its stage 2. Its
 stage 3 adds to the `drive-answer` record `jig send` writes, beside the
 envelope, the plan id, the dry run's digest and the kind of proof that a
-person is present, with `via: hub`.
+person is present, with `via: hub`. Item 46 adds, as payload fields of the
+same version, the decision digest and the option a structured answer
+chose, and the question's options and the answer's choice to the thread
+([structured-answers.md](structured-answers.md)).
 
 ## Left out
 

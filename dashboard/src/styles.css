@@ -205,6 +205,11 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .kv dd { margin: 0; overflow-wrap: anywhere; }
 .kv dd.prose { font-family: var(--sans); }
 .wallLine { font-size: var(--small); }
+.load { display: flex; flex-direction: column; gap: 4px; padding: 0 0 10px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+.loadHead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.loadBar { flex: 1 1 120px; min-width: 120px; height: 8px; background: var(--sunk); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.loadBar i { display: block; height: 100%; background: var(--accent); }
+.loadBar i.over { background: var(--bad); }
 
 /* queue */
 .qGroup { padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--line); }

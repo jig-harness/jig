@@ -360,6 +360,56 @@ thread with its answer and status; and a pick-up, the drive of the pull
 request it opened and that pull request's follow-up read as one thread,
 which leaves the thread list once nothing in it waits on a person.
 
+### 46. Structured answers: approving or choosing a parked decision in a word
+
+A parked decision is framed with its options and a recommended one, but a
+person answers it in their own words and the next pass works out which
+option they meant: no reader can tell which option was chosen, nothing ties
+an answer to the framing it answers, and nobody can see how often a kind of
+decision just follows the recommendation.
+[design/structured-answers.md](structured-answers.md) has how it works.
+What it will build: two answer forms, `approve` (the recommended option)
+and `choose <option>`, read wherever an answer is read today (an
+`answer <key>:` line or a reply on the item's thread) and only when they
+are the comment's whole answer, normalized so a phone's typography still
+matches; any other text a free answer, read as today; each person's latest
+answer theirs (its time the comment's last edit), and two people's
+answers that are not the same option leaving the item disputed and
+waiting; a decision digest stored with each park and published in the
+ledger, carried by every line Jig offers to copy, so an answer to an
+earlier framing is stale and does not count; the pass handed the chosen
+option, the record and any note the person added; every reader of answers (the re-arm, the tick,
+`jig send`, `jig ask`) moved to one parser at once; `jig send … answer
+--approve | --choose | --all` (Decide items only for `--all`), a
+correcting answer, the operator's verbs, the notification's answer lines,
+the dashboard's copy buttons and the Orca panel's buttons, all writing the
+same line; `jig ask`'s question and answer fields and an answered-park
+event in the outcome log, with a per-class report of how often the
+recommendation is approved; one decision model shared by a park
+and a `/jig:decide` decision sheet, moved out of `decide`, whose options can
+say what they keep, when they are right, what they oblige and whether they
+can be undone; a card with a row per
+decision, where `j`, `1`, `c` picks the recommendation and copies it, a
+pick staying local and undoable until it is committed; then, with item
+40's first proof that a person answered, the attested classes (`destructive`, `release`, `legal` by
+default), and the same forms for a follow-up's question, a loosened
+ratchet's evidence and a pickup only a person may start. One pull request
+per step, in the design's order; the first moves the shared
+model.
+
+Done when a park answered `approve` hands its pass the recommended option
+and a park answered `choose <option>` that option; an answer that is not
+exactly a form reaches the pass as a free answer and `jig ask` labels it
+free; an answer naming an earlier framing's digest leaves the drive parked
+and the next notification says why; two people choosing different options
+leave the item waiting; the panel, `jig ask` and the dashboard show the
+same options and choice for one park; a sheet and a park use the same
+option type, every existing sheet renders unchanged, and a field added to
+the model shows on the card and in `jig ask`; a card of two decisions copies
+one comment answering both; and `jig dispatch log` reports, per
+class, how many parks were approved as recommended and how long they
+waited.
+
 ### 42. The hub: one place to watch and steer the line
 
 Where a piece of work stands is spread over machines and tools: the

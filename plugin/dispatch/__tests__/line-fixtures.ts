@@ -1,6 +1,7 @@
 /** Shared inputs for the line's tests: a repository's report, a tick's input and a launch record. */
 import type { ReadRecord } from "../lib/launches.ts";
 import type { LineInput, RepoStored } from "../lib/line.ts";
+import { LOAD_DEFAULTS } from "../lib/load-config.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
 import type { RepoReport } from "../lib/types.ts";
 
@@ -52,6 +53,7 @@ const MACHINE: MachineConfig = {
   sharedRecords: "forge",
   changeProbe: true,
   send: true,
+  load: LOAD_DEFAULTS,
 };
 
 export const NOTHING_STORED: RepoStored = {

@@ -78,7 +78,9 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    collection of stale resources, say) takes every slot in a fixed order and
    holds back new runs while it waits. A waiting run says what it waits on
    (every slot held, the load, the memory, an exclusive holder) and who
-   holds the slots:
+   holds the slots, and announces itself beside the lock while it waits, so
+   another mechanism (a scheduler deciding whether to start one more agent)
+   can count the runs that hold a slot and the runs waiting for one:
    [`reference/resource-lock/`](reference/resource-lock/) (`with-resource-lock.ts`
    + self-tests). It **bypasses under [CI](../../GLOSSARY.md)** because a CI runner
    is an already-isolated machine — waiting there would be pure latency. This

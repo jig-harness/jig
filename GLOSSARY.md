@@ -1319,6 +1319,46 @@ make, use the entry's term instead.
   `autonomy.park_classes`, and a *PR drive loop* may park only under one of
   them (for a review thread, the class the review arbiter ruled for it)
   ([configuration](plugin/CONFIGURATION.md#autonomy)).
+- **Structured answer, free answer** — the two forms of a person's answer
+  to a *framed decision*. A **structured answer** is a comment whose whole
+  answer is `approve`, which chooses the recommended option, or
+  `choose <option>`, which chooses
+  the option by its name; the pass is handed that option as the decision
+  record states it, with any **note** the person added on a `note <key>:`
+  line, which binds the pass. A **free answer** is
+  anything else, in the person's own words, which a pass interprets
+  ([design](design/structured-answers.md)).
+- **Decision model** — the shape of a decision for a person that a *park*
+  and a decision sheet share: a **call** is one question with options that
+  exclude each other. A park is one call; a sheet is one or more calls, with their
+  context ([design](design/structured-answers.md#one-decision-model)).
+- **Pick (of an option)** — the choice of an option on a card, made with a
+  key or a tap, kept in the browser and undoable. Nothing reads a pick until
+  the person commits it as an answer
+  ([design](design/structured-answers.md#picking-an-answer)).
+- **Decision digest, stale answer** — a short hash of a *framed decision*,
+  stored when the decision is parked and published in the drive
+  ledger. An answer line may end with it, and
+  every line Jig offers to copy does; a structured answer naming a digest
+  that is no longer the park's is a **stale answer** and does not count, so
+  an approval of an earlier framing never settles the one that replaced it
+  ([design](design/structured-answers.md#binding-an-answer-to-its-framing)).
+- **Resolution receipt** — the record a re-arm writes into the *drive
+  ledger* when it unparks an item: the park's key and digest, the answer it
+  consumed, the outcome and the times. The dispatcher's tick counts a park
+  as answered from its receipt, and a park that left the ledger with none as
+  removed ([design](design/structured-answers.md#showing-what-was-decided)).
+- **Disputed answer** — a parked item whose people's latest answers are not
+  all the same option with the same notes (two different choices, the same
+  choice with differing notes, or a choice beside another person's free
+  answer; answers that are all free are not disputed, the item is answered
+  and they are handed to the pass). It is not answered and waits, which sets it apart
+  from a *stale answer* (naming an earlier framing) and from an item merely
+  waiting for its first answer
+  ([design](design/structured-answers.md#several-answers-to-one-item)).
+- **Attested class** — a *decision class* whose answers count only with
+  proof that a person, not a pass posting under their login, gave them
+  ([design](design/structured-answers.md#who-may-answer)).
 - **Autonomy level** — how far an agent may decide without asking a person:
   `attended`, the default, `unattended`, or `wide`, which also takes
   *provisional decisions*. A repository sets it and caps it with its
@@ -2113,7 +2153,19 @@ make, use the entry's term instead.
   item is one, and so is an item with no pull request yet. Each of its
   stations has an *address*. See
   [design/hub.md](design/hub.md#a-piece-of-work-and-its-views).
-- **Private-network front** — an optional layer that publishes a
+- **QR code** (quick response code) — a square barcode a phone camera can
+  scan to open an address. The *hub*'s planned sharing path encodes its
+  private, token-free address; scanning transfers the address and does not
+  authenticate the reader.
+- **Secure context** — a page environment the browser considers trustworthy,
+  normally because it was delivered over an encrypted web connection or
+  from the browser's own loopback address. Browser APIs such as the
+  clipboard require it, and may also require permission. An unencrypted web connection to another
+  machine's private address does not qualify just because the network is
+  encrypted. A phone reads
+  the *hub* through its encrypted private-network front for this reason. See
+  [MDN's secure-context definition](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts).
+- **Private-network front** — a layer that publishes a
   machine's *hub* from its loopback address to a private network, with a
   certificate and the viewer's identity, so a phone can open the page;
   called a front for short. Tailscale Serve is its first implementation: it

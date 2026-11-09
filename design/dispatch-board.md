@@ -19,6 +19,15 @@ nothing on the page tells work that settles by itself (a drive running,
 checks running) from work that waits until a person acts (an approval
 nobody gave, a park): left alone, the second kind waits forever.
 
+**Phone access is a first-class requirement of the board.** Merge, Needs
+you, Running, Queue and History, opened work and decisions must be readable
+in any phone browser, with visible controls to copy commands and answer
+lines and open pull requests or issues. The phone stays read-only and
+needs neither Orca nor keyboard shortcuts. The hub's
+[phone scope and access contract](hub.md#phone-scope-and-access) defines
+the exclusions, supported setup, availability and phone acceptance checks.
+They apply to the board as it ships in stage 1.
+
 How much ready work waits, and how much of it is lost to a conflict, is
 measured first, as a baseline ([Build order](#build-order)): the outcome log
 already holds the re-drives of converged pull requests that went stale, with
@@ -533,7 +542,8 @@ the closed list in
 sentence, then the recommended option with what it changes and what it
 costs. The other options, a park's steps for a person (as a checklist) and
 the evidence are folded under it. A full framed decision is never shown in
-place, since one park would fill a phone.
+place, since one park would fill a phone; a need with several decisions
+shows a short row for each, which folds the same way.
 
 **The keys.** Every view is driven from the keyboard, and the keys never
 fire inside a text field:
@@ -544,7 +554,8 @@ fire inside a text field:
 | j / k | the next or previous card (roving focus, so Tab still works) |
 | Enter or o | expand or collapse the card |
 | p / i | open its pull request or its issue |
-| c | copy its primary command: the pinned merge command, or the `answer <key>:` line |
+| 1 to 9, h, l, u, r | on a parked need, pick an option of the current decision, move between its decisions, clear a pick, or write a note or an answer ([structured-answers.md](structured-answers.md#picking-an-answer)) |
+| c | copy its primary command: the pinned merge command, or the need's answers as one comment (with no picks, as [picking an answer](structured-answers.md#picking-an-answer) says) |
 | g, then m, n, r, q or h | go to Merge, Needs you, Running, Queue or History |
 | / and ? | filter the view; list the keys |
 
@@ -582,9 +593,11 @@ The page that grows from the dashboard is the [hub](hub.md), which serves
 the board beside its other views and is reached in other ways: a host's
 hub listens on loopback with no token and only answers reads, a laptop's
 hub reads each host over SSH (Secure Shell), and a phone reaches a host's hub through an
-optional front on a private network that names the viewer and scopes what
+recommended HTTPS front on a private network that names the viewer and scopes what
 each person sees ([hub.md § Where it runs](hub.md#where-it-runs)). Until
-the hub serves it, the board is read as above.
+the hub serves it, the board is read as above, with the hub design's
+explicit private-HTTP fallback for phones. Responsive layout alone does
+not complete the access requirement.
 
 The [Jig panel in Orca](orca-integration.md#the-jig-plugin-for-orca) is a
 second reader. It reads the same line through the plugin's worker, which
