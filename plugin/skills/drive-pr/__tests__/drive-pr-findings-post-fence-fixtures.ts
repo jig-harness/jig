@@ -19,7 +19,12 @@ import {
 } from "../scripts/lib/state/lease";
 import { putLease } from "./state-rows.ts";
 
-import { SCRIPTS, ACTOR, gitCleanEnv } from "./drive-pr-harness.ts";
+import {
+  SCRIPTS,
+  ACTOR,
+  gitCleanEnv,
+  makeScratchRepo,
+} from "./drive-pr-harness.ts";
 
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
@@ -124,6 +129,7 @@ export function createFindingsPostFenceFixtures() {
    * this helper exists to exercise the first.
    */
   async function fenceNoOverride(args: string[]) {
+    const repo = makeScratchRepo("fence-no-override");
     // The real state root is never touched: the child's home is a scratch
     // one, so the database it resolves is a fresh one there.
     const env: Record<string, string> = {
@@ -138,10 +144,8 @@ export function createFindingsPostFenceFixtures() {
       scriptArgv(join(SCRIPTS, "assert-post-allowed.ts"), ...args),
       {
         env,
-        // The repo root, so the non-override path resolves a REAL git common
-        // dir — the whole point of this helper is to exercise that resolution
-        // rather than an injected one.
-        cwd: join(import.meta.dir, "..", "..", "..", ".."),
+        // Resolve a real git common directory without reading this worktree’s leases.
+        cwd: repo.dir,
         stdout: "pipe",
         stderr: "pipe",
       },

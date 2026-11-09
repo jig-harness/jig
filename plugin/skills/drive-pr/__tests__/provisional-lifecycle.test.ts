@@ -266,6 +266,7 @@ describe("the recoveries the drive records", () => {
         unresolvedThreads: 1,
         summaryUnaddressed: 0,
         unresolvedThreadKeys: ["PRRT_x"],
+        unresolvedThreadVersions: [["PRRT_x", "c1"]],
         summaryUnaddressedKeys: [],
         parkedKeys: [],
       },

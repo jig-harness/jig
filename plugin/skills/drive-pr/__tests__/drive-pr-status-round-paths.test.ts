@@ -13,6 +13,7 @@ import {
 // Imported, never restated: every fixture age below is derived from the
 // production floor, so raising it cannot silently leave a probe sitting
 // underneath it and passing vacuously.
+import { isFindingHoldCurrent } from "../scripts/lib/status/held-evidence.ts";
 import { isLeftOpenThread } from "../scripts/lib/status/evaluate";
 
 import {
@@ -434,8 +435,9 @@ describe("drive-status.ts structuralEscalationDue", () => {
   // anchor `AGENTS.md` (see `backlogJson` above), so both are held here —
   // otherwise the sibling, still-unaddressed finding on the same path would
   // keep it in the list and the assertion would prove nothing about the fix.
-  it("a held summary finding’s path never feeds the recurrence signal", async () => {
+  it("a held summary finding stays excluded until a later drive review round", async () => {
     const round1 = writeFixture({ backlog: true });
+    await probeIn(round1.dir, round1.stateDir, HEAD);
     await hold(round1.stateDir, "b9a7a18089043564", "finding");
     await hold(round1.stateDir, "c773d9fdb7974e6d", "finding");
     const r1 = await probeIn(round1.dir, round1.stateDir, HEAD, [
@@ -449,6 +451,37 @@ describe("drive-status.ts structuralEscalationDue", () => {
     expect((r1.json.work as Record<string, unknown>).summaryUnaddressed).toBe(
       2,
     );
+  });
+
+  it("counts held paths conservatively when currency is unreadable or unconfirmed", () => {
+    for (const [round, reviewRound] of [
+      [1, null],
+      [-1, 1],
+      [undefined, 1],
+      [1, 2],
+    ] as const) {
+      expect(
+        isFindingHoldCurrent(
+          {
+            byKey: new Map([["key", { kind: "finding", round }]]),
+            reviewRound,
+          },
+          "key",
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("counts a held summary finding re-emitted on a later reviewed head, even with --once", async () => {
+    const first = writeFixture({ backlog: true });
+    await probeIn(first.dir, first.stateDir, HEAD);
+    for (const key of ["b9a7a18089043564", "c773d9fdb7974e6d"])
+      await hold(first.stateDir, key, "finding");
+    const next = writeFixture({ backlog: true, head: PREV });
+    const r = await probeIn(next.dir, first.stateDir, PREV);
+    expect(
+      (r.json.work as Record<string, unknown>).unresolvedThreadPaths,
+    ).toEqual(["AGENTS.md"]);
   });
 
   // A trusted `--no-outcome` clarification reply is a settled ask-and-wait, not

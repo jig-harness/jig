@@ -164,8 +164,8 @@ function stallDiagnostics(
     `  head ${apiHeadShort} unmoved, ${count(work.unresolvedThreads)} unresolved thread(s) and`,
     `  ${count(work.summaryUnaddressed)} unaddressed summary finding(s), with ${count(work.parkedThreads)} thread(s)`,
     `  and ${count(work.parkedSummaryFindings)} summary finding(s) parked — identical before and after.`,
-    "  The SAME thread ids and finding fingerprints, not merely the same totals —",
-    "  nothing was resolved, addressed, parked or replaced, and local HEAD did not",
+    "  The SAME thread ids, comment versions and finding fingerprints, not merely the same totals —",
+    "  nothing was replied to, resolved, addressed, parked or replaced, and local HEAD did not",
     "  move. A pass that exits 0 without acting — e.g. one that stood down after",
     "  mistaking its own parent driver for a competing drive — looks exactly like this.",
   ];

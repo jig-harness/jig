@@ -44,17 +44,12 @@
  * unattended loop.
  */
 
-// `TRUSTED_ASSOCIATIONS` lives on the CLI module, not `lib/`, the same import
-// `reconcile-replied-threads.ts` already makes for the identical reason: one
-// set, so this reader and that one cannot disagree about who counts as
-// trusted.
-import { TRUSTED_ASSOCIATIONS } from "../../summary-findings.ts";
-import { isTransparentFollowUp } from "../bot-confirmation.ts";
 import {
-  hasLeaveOpenMarker,
-  hasNoOutcomeMarker,
-  qualifyingOutcome,
-} from "../outcome.ts";
+  isLeftOpenThread,
+  latestCommentUrl,
+  openThreadVersions,
+} from "./thread-evidence.ts";
+export { isLeftOpenThread } from "./thread-evidence.ts";
 import { readPrState } from "../pr-state.ts";
 import {
   readParkedSets,
@@ -77,10 +72,12 @@ import {
 } from "./evidence.ts";
 import {
   headSyncState,
+  headMismatchReason,
   inheritedReason,
   mayEndWithoutWork,
 } from "./inherited-head.ts";
 import { resolveMarkerSha, reviewedShaGate, skipNote } from "./reviewed-sha.ts";
+import { readHeldEvidence, isFindingHoldCurrent } from "./held-evidence.ts";
 import { terminal } from "./terminal-states.ts";
 import type { WaitingEvaluationCache } from "./waiting-cache.ts";
 
@@ -137,7 +134,11 @@ export interface StatusReport extends CiReport {
    * `null` carries the same meaning as the counts beside them: not measured.
    */
   openThreadKeys: string[] | null;
+  /** Latest comment per open thread; null when a version could not be read. */
+  openThreadVersions: [string, string][] | null;
   summaryUnaddressedKeys: string[] | null;
+  /** Unaddressed finding holds whose promised fix has no recorded push stamp. */
+  summaryHeldUndispatchedKeys: string[] | null;
   parkedItemKeys: string[] | null;
   /**
    * WHICH FILES this round's open findings anchor to — threads AND
@@ -208,7 +209,9 @@ export function emptyReport(): StatusReport {
     summaryUnaddressed: null,
     summaryParked: null,
     openThreadKeys: null,
+    openThreadVersions: null,
     summaryUnaddressedKeys: null,
+    summaryHeldUndispatchedKeys: null,
     parkedItemKeys: null,
     openThreadPaths: null,
     ci: "",
@@ -265,184 +268,6 @@ async function tryPrViewFields(
 function str(obj: Record<string, unknown>, field: string): string {
   const v = obj[field];
   return v == null ? "" : String(v);
-}
-
-/**
- * Is this thread a SETTLED decision left open on purpose, rather than live
- * work? `triage-thread.ts --leave-open` posts a qualifying trusted-author reply
- * and deliberately does not resolve the thread (SKILL.md's "Leaving a human
- * thread open" — usually a human thread the driver chose not to close on the
- * author's behalf), so it stays in `list-unresolved-threads.ts`'s output
- * forever by design. On an interactive run without `--bots-only`, such a thread
- * would otherwise re-contribute the same path to `openThreadPaths` every round
- * for as long as the PR stays open, arming `structuralEscalationDue` against a
- * file nothing new landed on — the signal's whole premise is "a finding LANDED
- * again," not "an old, already- triaged thread is still sitting unresolved"
- * (the identical rationale already applied to `parkedKeys` just below this
- * function's call site).
- *
- * The predicate is `reconcile-replied-threads.ts`'s own left-open check,
- * reused rather than re-derived: `hasLeaveOpenMarker` plus a qualifying
- * outcome that is not `accepted` (the marker never legitimately appears on
- * an accepted reply — see that script's own comment) from a
- * `TRUSTED_ASSOCIATIONS` author, scanning comments most-recent-first so a
- * later non-qualifying reply cannot hide an earlier qualifying one.
- *
- * A thread whose comments are truncated (past GitHub's 100-comment cap) is
- * never treated as left-open: a hidden later comment could be the qualifying
- * one, and guessing "not left-open" is the safe direction — it leaves a rare
- * truncated thread counted as live evidence rather than silently discarding
- * evidence on a guess (unreadable input fails closed).
- *
- * A second, narrower case is folded in here rather than left to
- * `structuralEscalationDue`'s `--no-outcome` clarification gap: a trusted
- * author's outcome-less last comment counts as an ask-and-wait clarification
- * ONLY when it carries `NO_OUTCOME_MARKER` (`lib/outcome.ts`), which
- * `reply-to-thread.ts` appends itself whenever `--no-outcome` is passed.
- * `qualifyingOutcome(body) === null` alone is NOT sufficient — that is also
- * true of a trusted OWNER/MEMBER/COLLABORATOR posting arbitrary prose straight
- * on GitHub ("I agree, please fix this"), which never passes through
- * `reply-to-thread.ts` and so can never carry the marker; treating that as a
- * settled clarification silently dropped a genuine finding recurrence from the
- * advisory signal (the original "no other way to reach this outcome-less"
- * premise this comment used to state was itself the bug). When the marker IS
- * present and it is also the thread's MOST RECENT comment, nothing has landed
- * since we asked, so this is an ask-and-wait, not a live finding still open —
- * counting its path would arm `structuralEscalationDue` against a file the fix
- * never touched twice. Checked against the last comment ONLY, never via the
- * backward scan below: the moment anyone replies after it, the thread is live
- * again and must count, which the backward scan's "find the most recent
- * QUALIFYING reply" search does not naturally stop for.
- *
- * A thread's FIRST comment is the finding that OPENED it, never a reply — the
- * outcome-token grammar `reply-to-thread.ts` enforces on a trusted author's
- * comment applies to replies posted after triage, not to the opening comment
- * (see two paragraphs up). A single-comment thread is therefore always an
- * opening finding, whatever its shape: reading it as a left-open marker
- * candidate misclassifies a fresh, live human finding — one an interactive
- * run's OWNER/MEMBER/COLLABORATOR author can post directly, with no reply
- * preceding it — as an already-settled clarification the instant it happens to
- * come from a trusted association, which permanently blinds
- * `structuralEscalationDue` to every fresh human finding on that file.
- * `comments.length < 2` is therefore refused before either check below ever
- * reads `comments[0]` as a candidate.
- *
- * Two adjacent classes are deliberately NOT chased, both already arbitrated: a
- * trusted author hand-typing `NO_OUTCOME_MARKER`'s exact text into a direct
- * post (accident-class only — same principal, same credential as the legitimate
- * producer; `wont-fix`, see `lib/outcome.ts`'s own marker); and reactivating an
- * already-answered merit-outcome `--leave-open` thread on a later rebuttal
- * (`rejected` — see two paragraphs up). This feeds an advisory signal only and
- * fails toward counting a thread as live, never toward silently excluding one.
- */
-/**
- * A comment array element is untrusted input (parsed JSON off an external
- * enumerator) and must be shape- checked before any property read — a
- * `null`/non-object element would otherwise throw reading `.authorAssociation`
- * below and take the whole evaluation down with it. ONE guard, used at both
- * read sites in this function, rather than a per-call-site check that only one
- * of them remembers to make.
- */
-function asCommentRecord(v: unknown): Record<string, unknown> | null {
-  return typeof v === "object" && v !== null
-    ? (v as Record<string, unknown>)
-    : null;
-}
-
-// Exported for direct unit testing, the same reason self-inflicted.ts's
-// `labelRecord` is: a comment-array shape guard is fixture-testable as a pure
-// function, and the real thread producer sanitizes/crashes on a malformed
-// comment node before evaluate.ts would ever see one through the full CLI
-// pipeline — so only a direct call can exercise this function's own defense
-// against one.
-export function isLeftOpenThread(t: UnresolvedThread): boolean {
-  if ((t as { commentsTruncated?: unknown }).commentsTruncated === true)
-    return false;
-  const comments = (t as { comments?: unknown }).comments;
-  if (!Array.isArray(comments) || comments.length < 2) return false;
-  const last = asCommentRecord(comments[comments.length - 1]);
-  if (last !== null) {
-    const lastAssoc = last.authorAssociation;
-    const lastBody = typeof last.body === "string" ? last.body : "";
-    if (
-      typeof lastAssoc === "string" &&
-      TRUSTED_ASSOCIATIONS.has(lastAssoc) &&
-      hasNoOutcomeMarker(lastBody) &&
-      qualifyingOutcome(lastBody) === null &&
-      // Same requirement as the leave-open branch below, and for the identical
-      // reason: a trusted human's clarifying question PAUSES this thread's
-      // escalation signal, but it does not make the underlying finding stop
-      // needing resolution — a bot-started thread awaiting an answer still must
-      // not silently drop out of the live-thread count this function feeds, or
-      // convergence could finish while it sits unresolved.
-      // `confirmedHumanStarted` fails CLOSED (counts as live) on anything that
-      // isn't an explicit `true`.
-      t.confirmedHumanStarted === true
-    ) {
-      return true;
-    }
-  }
-  // `i >= 1`, never `0`: index 0 is always the opening comment (see header),
-  // so it can never legitimately be the qualifying REPLY this scan looks for.
-  for (let i = comments.length - 1; i >= 1; i--) {
-    const c = asCommentRecord(comments[i]);
-    if (c === null) continue;
-    const assoc = c.authorAssociation;
-    if (typeof assoc !== "string" || !TRUSTED_ASSOCIATIONS.has(assoc)) continue;
-    const body = typeof c.body === "string" ? c.body : "";
-    const candidate = qualifyingOutcome(body);
-    if (candidate === null) continue;
-    // The leave-open marker is human-thread-only by design (SKILL.md's "Leaving
-    // a human thread open", `triage-thread.ts --leave-open`'s own documented
-    // prohibition) — a bot-started thread must always eventually resolve, so
-    // trusting the marker unconditionally here let a mistaken `--leave-open` on
-    // a bot thread read as legitimately settled for convergence purposes too
-    // (finish-round.ts has the sibling of this exact gap).
-    // `confirmedHumanStarted` must be explicitly `true` to grant the exemption
-    // — fails CLOSED (counts the thread as live) on anything else, including a
-    // missing/malformed field from an enumerator this function does not
-    // control. Deliberately not the field's own natural-seeming inverse: a
-    // field computed as `__typename !== 'Bot'` would resolve an absent comment,
-    // a `null` author, or a missing `__typename` to "not bot" — read here as
-    // "confirmed human" when it is actually unreadable. The producer
-    // (list-unresolved-threads.ts) computes this field the other way for
-    // exactly that reason; see its own header.
-    return (
-      candidate.outcome !== "accepted" &&
-      hasLeaveOpenMarker(body) &&
-      t.confirmedHumanStarted === true
-    );
-  }
-  return false;
-}
-
-/**
- * The url of this thread's most recent comment that is not a transparent
- * follow-up (`lib/bot-confirmation.ts`: a listed bot's confirmation or
- * finding-free chat acknowledgement), from anyone: what a thread hold's own
- * `commentUrl` is compared against below. A reviewer's new finding in the
- * same thread carries no outcome token, so comparing against the last
- * qualifying reply would miss it; any other comment after the held one moves
- * this url off the held value, so the hold no longer describes the thread.
- *
- * `null` on a truncated thread or an empty or unreadable comment array: NOT
- * MEASURED, which the caller never reads as a thread it may exclude.
- */
-function latestCommentUrl(t: UnresolvedThread): string | null {
-  if ((t as { commentsTruncated?: unknown }).commentsTruncated === true)
-    return null;
-  const comments = (t as { comments?: unknown }).comments;
-  if (!Array.isArray(comments) || comments.length === 0) return null;
-  for (const raw of [...comments].reverse()) {
-    const c = asCommentRecord(raw);
-    if (c === null) return null;
-    const author = typeof c.author === "string" ? c.author : null;
-    const body = typeof c.body === "string" ? c.body : null;
-    if (isTransparentFollowUp({ authorLogin: author, body }, qualifyingOutcome))
-      continue;
-    return typeof c.url === "string" && c.url !== "" ? c.url : null;
-  }
-  return null;
 }
 
 /**
@@ -889,7 +714,11 @@ async function evaluateFresh(
     return terminal(
       report,
       "HEAD_LAG",
-      `API head ${report.apiHead} != local HEAD ${ctx.localHead} — the API has not caught up with the push yet`,
+      await headMismatchReason(
+        report.apiHead,
+        ctx.localHead,
+        str(prJson, "headRefName"),
+      ),
     );
   }
 
@@ -1326,6 +1155,7 @@ async function evaluateFresh(
   }
   report.threadsOpen = threads.length;
   report.openThreadKeys = threads.map((t) => String(t.threadId)).sort();
+  report.openThreadVersions = openThreadVersions(threads);
 
   const summary = await summaryFindings(
     ctx.summaryScript,
@@ -1417,42 +1247,31 @@ async function evaluateFresh(
   // ROUND_READY/HITL_PARKED/CONVERGED/PR_CONFLICTING verdict below) are
   // untouched, because a held item is still live work for the round it belongs
   // to — only its RECURRENCE evidence is stale.
-  const heldRes = await run(tsArgv(ctx.driveStateScript, ["held", ctx.pr]), {
-    stderr: "inherit",
-    timeoutSec: ctx.helperTimeoutSec,
-  });
-  let heldByKey: Map<string, string | undefined>;
-  let heldKeys: Set<string>;
-  if (heldRes.code !== 0) {
-    console.error(
-      `evaluate: could not read the held set for #${ctx.pr} — proceeding without excluding held items from recurrence evidence`,
-    );
-    heldByKey = new Map();
-    heldKeys = new Set();
-  } else {
-    heldByKey = new Map();
-    try {
-      const parsed = JSON.parse(heldRes.stdout) as unknown;
-      if (Array.isArray(parsed)) {
-        for (const entry of parsed) {
-          const rec = asCommentRecord(entry);
-          if (rec === null) continue;
-          const key = rec.key;
-          if (typeof key !== "string" || key === "") continue;
-          const commentUrl = rec.commentUrl;
-          heldByKey.set(
-            key,
-            typeof commentUrl === "string" ? commentUrl : undefined,
-          );
-        }
-      }
-    } catch {
-      console.error(
-        `evaluate: held state for #${ctx.pr} is not readable JSON — proceeding without excluding held items from recurrence evidence`,
-      );
-    }
-    heldKeys = new Set(heldByKey.keys());
-  }
+  const heldEvidence = await readHeldEvidence(
+    ctx.driveStateScript,
+    ctx.pr,
+    ctx.helperTimeoutSec,
+    report.reviewedSha === report.apiHead ? report.apiHead : "",
+  );
+  report.summaryHeldUndispatchedKeys =
+    heldEvidence.reviewRound === null
+      ? null
+      : summary.unaddressed
+          .filter((finding) => {
+            const held = heldEvidence.byKey.get(finding.fingerprint);
+            return (
+              held?.kind === "finding" &&
+              (typeof held.verifiedSha !== "string" || held.verifiedSha === "")
+            );
+          })
+          .map((finding) => finding.fingerprint)
+          .sort((a, b) => a.localeCompare(b));
+  const heldByKey = new Map(
+    [...heldEvidence.byKey].map(([key, record]) => [
+      key,
+      typeof record.commentUrl === "string" ? record.commentUrl : undefined,
+    ]),
+  );
   // A thread hold's `commentUrl` is REQUIRED by every writer (`hold`,
   // `restore-held` — `schema.ts`'s own doc), so an entry with none is either
   // a `kind: finding` hold sharing no key space with a threadId, or an
@@ -1491,7 +1310,7 @@ async function evaluateFresh(
         .map((t) => (t as { path?: unknown }).path)
         .filter((p): p is string => typeof p === "string" && p.trim() !== ""),
       ...summaryLive
-        .filter((f) => !heldKeys.has(f.fingerprint))
+        .filter((f) => !isFindingHoldCurrent(heldEvidence, f.fingerprint))
         .map((f) => f.path)
         .filter(
           (p): p is string =>
@@ -1567,6 +1386,8 @@ async function evaluateFresh(
   // real and the fixes land — so the round is handed out, with the conflict
   // named so the pass knows CI will not run on what it pushes.
   let roundReadyReason = `${liveThreads} unresolved thread(s) and ${liveSummary} unaddressed summary finding(s) on ${report.apiHead}`;
+  if (report.summaryHeldUndispatchedKeys?.length)
+    roundReadyReason += ` — held but not dispatched: re-hold to dispatch (${report.summaryHeldUndispatchedKeys.join(", ")}); verify the promised fix, then push and finish the round`;
   if (stalledCheckRunNote !== "")
     roundReadyReason += ` — ${stalledCheckRunNote}`;
   roundReadyReason += inheritedReason(sync, ctx.localHead, ctx.inheritedHead);
