@@ -421,7 +421,7 @@ private-network front guidance filed as items that do not wait on the later
 stages ([hub.md § Phone scope and access](hub.md#phone-scope-and-access)); then each piece of work across machines (item 39's thread
 additions, `jig send --json` with `--expect`, the `jig hub` server, its
 Needs you across every source, Hosts and History views and its install,
-the Orca plugin's "Open the hub" command and its install from a catalog);
+the private-network front, the Orca plugin's "Open the hub" command and its install from a catalog);
 then the chat, and writes once item 40 settles. Stages 2 and 3 are
 planned in detail once stage 1 has been in use for four weeks, and the
 person who asked for the hub decides whether each is built, from the
