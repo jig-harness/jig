@@ -386,6 +386,20 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+- M0's skill-invocation fallback gate recognizes generated-file exemption banners
+  within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.175.0] - 2026-11-09
+
+### Added
+
+- **`docs.promoted_statuses`**: the `docs` skill's scar lint scans documents whose `status` is `approved`, or any of the statuses the repository lists here (list `approved` too when both are in use), so a corpus whose lifecycle ends in another status (`active`, say) can use the lint as its gate. It is read from the configuration by the lint itself, by `/jig:docs`, and, for one run, from the `PROMOTED_STATUSES` environment variable. A repository that sets nothing scans `approved` alone, and the `OK` and `NOT SCANNED` lines read as before ([configuration](plugin/CONFIGURATION.md#procedure-skills)).
+- **Two more scar shapes**: a reviewer attribution in a table's first cell (`| Reviewer: … |`) or opening a plain paragraph (`Reviewer: …`), and a review bot's account name (`coderabbitai[bot]`, or any `…review…[bot]`). A bold tool name that heads a line (`**CodeRabbit**: …`), a reviewer named without a colon, and anything in frontmatter are not scars.
+
+### Changed
+
+- The lint's reports name the promoted statuses (`OK — no scars in approved or active docs`); with only `approved` they are unchanged. The scar lint's README now says why an allowlist entry matches a fragment of a path: `docs/review/` exempts the whole folder.
+- Resolution phrasing is matched at the opening of a list or quote item (`- Addressed: …`), with word boundaries, so prose such as `- Requests to unaddressed hosts fail.` is no longer a scar. A promoted status carries no surrounding space, and a `docs` section that is not a mapping is refused by the standalone lint too.
 
 ## [0.174.0] - 2026-11-08
 
@@ -6150,7 +6164,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.174.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.175.0...HEAD
+[0.175.0]: https://github.com/jig-harness/jig/compare/v0.174.0...v0.175.0
 [0.174.0]: https://github.com/jig-harness/jig/compare/v0.173.0...v0.174.0
 [0.173.0]: https://github.com/jig-harness/jig/compare/v0.172.0...v0.173.0
 [0.172.0]: https://github.com/jig-harness/jig/compare/v0.171.0...v0.172.0
