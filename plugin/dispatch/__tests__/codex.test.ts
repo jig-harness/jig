@@ -7,8 +7,9 @@
  * Codex account is reported and never launched for a drive's pass while the
  * pass deadline is `0`, since nothing else would bound the pass, or for any
  * launch on a host that has not opted in with `drive.codex_bypass`; and a
- * pickup on a Codex account starts Codex on the route's Codex model and
- * effort.
+ * pickup on a Codex account starts a headless `codex exec` pass with the
+ * bypass, on Codex's own model, its record keeping the route's Codex model
+ * and effort for the implementer.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import {
@@ -408,7 +409,7 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
     withOrigin(w);
     machineFile(w, [codexAccount(w, "c", "codex-account-c")], {}, ["pickup"]);
 
-    const receipt = await applyTick(w, true);
+    const receipt = await applyTick(w, false);
     expect(launches(receipt)[0]).toMatchObject({
       action: "pickup",
       outcome: "waits",
@@ -418,7 +419,7 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
     expect(recordIds(w)).toEqual([]);
   });
 
-  it("starts Codex on the route's Codex model and effort, bound through CODEX_HOME", async () => {
+  it("starts a headless Codex pass with the bypass, bound through CODEX_HOME, and keeps the route for the implementer", async () => {
     const w = world();
     current = w;
     w.setConfig(PICKUP_CONFIG);
@@ -434,7 +435,8 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
     inheritOtherAccounts(w);
     hostOptsIn(w);
 
-    const receipt = await applyTick(w, true);
+    // Orca's own answer: a headless pass needs no interactive binding.
+    const receipt = await applyTick(w, false);
     expect(launches(receipt)[0]).toMatchObject({
       action: "pickup",
       outcome: "launched",
@@ -449,6 +451,8 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
       {
         vendor: "codex",
         sessionId: null,
+        headless: true,
+        codexBypass: true,
         model: "gpt-6-astra",
         effort: "high",
       },
@@ -458,12 +462,10 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
     expect(codexRuns(w)).toEqual([
       {
         argv: [
-          "-m",
-          "gpt-6-astra",
-          "-c",
-          'model_reasoning_effort="high"',
+          "exec",
+          "--dangerously-bypass-approvals-and-sandbox",
           expect.stringMatching(
-            /^Use the jig:do-item skill: \/jig:do-item #12\n/,
+            /^Use the jig:do-item skill: \/jig:do-item #12\nroute: rules\n/,
           ),
         ],
         cwd: expect.any(String),

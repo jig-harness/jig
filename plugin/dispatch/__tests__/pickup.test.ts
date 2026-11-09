@@ -1,15 +1,18 @@
 /**
  * dispatch --apply: pickups. An item assigned to the factory identity gets
- * one workspace and one `do-item` session, once, where the runtime binds an
- * interactive session to its account (`bound-tick.ts` fakes Orca's answer
- * true); with Orca's real answer, the pickup is reported and nothing starts.
- * Stalled pickups and double claims are reported, never launched.
+ * one workspace and one headless `do-item` pass, once, on Orca's own answer
+ * that it cannot bind an interactive session: the wrapper binds the pass.
+ * The pass keeps the agent's own model, runs under the pickup's deadline,
+ * and a pass that stops on a question is notified with it. Stalled pickups
+ * and double claims are reported, never launched.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { readEnded, readRecord, readResult } from "../lib/launches.ts";
+import type { LineSnapshot } from "../lib/dashboard-contract.ts";
+import { existingStateDb } from "../lib/state.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { readRows } from "../lib/log.ts";
 import { updateIdle } from "../lib/idle.ts";
@@ -72,7 +75,7 @@ function branchOf(path: string): string {
 describe("jig dispatch --apply picks up assigned items", () => {
   it("names the item's new workspace and its tab as dispatched, and keeps the mark on its record", async () => {
     const w = fixture();
-    const id = String(launches(await applyTick(w, true))[0]?.record);
+    const id = String(launches(await applyTick(w, false))[0]?.record);
     const mark = `⚙ dispatched · pickup #12 · launch ${id}`;
     const [create] = orcaCalls(w, "worktree", "create");
     expect(create?.[create.indexOf("--name") + 1]).toBe(
@@ -89,41 +92,59 @@ describe("jig dispatch --apply picks up assigned items", () => {
     expect(orcaCalls(w, "worktree", "set")).toEqual([]);
   });
 
-  it("gives an assigned todo item exactly one workspace and one session across three ticks", async () => {
+  it("gives an assigned todo item exactly one headless do-item pass across three ticks, on Orca's own answer", async () => {
     const w = fixture();
     w.env.CLAUDE_CODE_OAUTH_TOKEN = "a-token-for-another-account";
 
-    const first = await applyTick(w, true);
+    const first = await applyTick(w, false);
     const [launched] = launches(first);
     expect(launched).toMatchObject({
       action: "pickup",
       target: "#12",
       outcome: "launched",
       account: "a",
+      detail: expect.stringContaining(
+        "a headless do-item pass bound to account a",
+      ),
     });
     const id = String(launched?.record);
     const record = readRecord(id, dispatchState(w));
-    expect(record?.agentId).toBe("tab-1:leaf-1");
-    expect(record?.item).toBe("#12");
+    expect(record).toMatchObject({
+      item: "#12",
+      headless: true,
+      passTimeoutSec: 3 * 3600,
+      codexBypass: false,
+      agentId: null,
+    });
     const [create] = orcaCalls(w, "worktree", "create");
     expect(create).toContain("--issue");
     expect(create?.[create.indexOf("--issue") + 1]).toBe("12");
     expect(branchOf(record?.workspace?.path ?? "")).toBe("12-issue-12");
 
-    await waitFor("the session", () => claudeRuns(w).length === 1);
-    const [session] = claudeRuns(w);
-    expect(session?.configDir).toBe(join(w.root, "config-a"));
-    expect(session?.token).toBeNull();
-    const prompt = session?.argv.at(-1) ?? "";
-    expect(prompt.startsWith("/jig:do-item #12\n")).toBe(true);
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    const [pass] = claudeRuns(w);
+    // Bound through the account's directory, with the other account's token gone.
+    expect(pass?.configDir).toBe(join(w.root, "config-a"));
+    expect(pass?.token).toBeNull();
+    const argv = pass?.argv ?? [];
+    expect(argv.at(-2)).toBe("-p");
+    // The pass keeps the agent's own model and effort.
+    expect(argv).not.toContain("--model");
+    expect(argv).not.toContain("--effort");
+    const prompt = argv.at(-1) ?? "";
+    expect(prompt.startsWith("/jig:do-item #12\nroute: rules\n")).toBe(true);
+    expect(prompt).toContain("nobody can answer a question while it runs");
+    expect(prompt).toContain(
+      'end your output with one line that starts "Question:"',
+    );
     expect(prompt).toContain(`dispatch result ${id} ${record?.token} done`);
 
-    // The session is starting: its wrapper runs, Orca does not report its agent yet.
-    const second = await applyTick(w, true);
+    // The pass runs: its wrapper holds the item and its slot.
+    const second = await applyTick(w, false);
     expect(launches(second)).toEqual([]);
     expect(second.repos[0]?.running.map((r) => r.target)).toEqual(["#12"]);
 
-    // Orca reports the agent working in the item's workspace.
+    // Orca reports the wrapper's terminal working in the item's workspace.
     w.setWorkspaces([
       {
         branch: "12-issue-12",
@@ -131,9 +152,9 @@ describe("jig dispatch --apply picks up assigned items", () => {
         agents: [{ state: "working", paneKey: "tab-1:leaf-1" }],
       },
     ]);
-    const third = await applyTick(w, true);
+    const third = await applyTick(w, false);
     expect(launches(third)).toEqual([]);
-    expect(third.repos[0]?.running[0]?.reason).toContain(`launch record ${id}`);
+    expect(third.repos[0]?.running.map((r) => r.target)).toEqual(["#12"]);
 
     expect(orcaCalls(w, "worktree", "create")).toHaveLength(1);
     expect(orcaCalls(w, "terminal", "create")).toHaveLength(1);
@@ -141,10 +162,143 @@ describe("jig dispatch --apply picks up assigned items", () => {
     expect(recordIds(w)).toEqual([id]);
   });
 
+  it("keeps the route on the record for the implementer, and runs the pass without it", async () => {
+    const w = fixture();
+    const routed = `${CONFIG}routing: {}\n`;
+    w.setConfig(routed);
+    // The configuration the route is derived from in the item's workspace.
+    const overlay = join(w.root, "routing.yaml");
+    writeFileSync(overlay, routed);
+    w.env.JIG_OVERLAY = overlay;
+    const [launched] = launches(await applyTick(w, false));
+    // An item of no known type takes the strictest row: the complex tier.
+    expect(String(launched?.detail)).toContain("route complex for Claude Code");
+    const id = String(launched?.record);
+    expect(readRecord(id, dispatchState(w))).toMatchObject({
+      model: "opus",
+      effort: "high",
+    });
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    const argv = claudeRuns(w)[0]?.argv ?? [];
+    expect(argv).not.toContain("--model");
+    expect(argv).not.toContain("opus");
+    expect(argv.at(-1)?.split("\n")[1]).toBe("route: rules");
+  });
+
+  it("runs the pass under dispatch.pickup_deadline", async () => {
+    const w = fixture();
+    w.setConfig(`${CONFIG}  pickup_deadline: 2s\n`);
+    writeFileSync(join(w.dir, "claude-stubborn"), "");
+    const id = String(launches(await applyTick(w, false))[0]?.record);
+    expect(readRecord(id, dispatchState(w))?.passTimeoutSec).toBe(2);
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    await waitFor("the exit", () => exitWritten(w, id), 40_000);
+    const row = existingStateDb(dispatchState(w))
+      ?.query("SELECT exit FROM launches WHERE id = ?")
+      .get(id) as { exit: string };
+    expect(JSON.parse(row.exit)).toMatchObject({ signal: "SIGKILL" });
+  }, 60_000);
+
+  it("notifies a pass that stopped on a question, with the question, as a need, and starts nothing again", async () => {
+    const w = fixture();
+    const id = String(launches(await applyTick(w, false))[0]?.record);
+    const path = readRecord(id, dispatchState(w))?.workspace?.path ?? "";
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    writeFileSync(
+      join(w.dir, "claude-said"),
+      "The scouts are done.\nQuestion: should the export keep the old column?\n",
+    );
+    writeFileSync(join(w.dir, "claude-exit"), "1");
+    await waitFor("the exit", () => exitWritten(w, id));
+
+    const after = await applyTick(w, false);
+    expect(launches(after)).toEqual([]);
+    const question = "should the export keep the old column?";
+    const asked = (after.repos[0]?.actions ?? []).find(
+      (a) => a.cause === "pickup-question",
+    );
+    expect(asked).toMatchObject({
+      stage: "notify",
+      target: "#12",
+      evidence: { record: id, stage: "pickup", question },
+      workspace: path,
+    });
+    expect(asked?.notice?.text).toContain(question);
+    const answer = await w.dispatch(["line", "--json"]);
+    expectSpawnExit(answer, 0);
+    const parsed = JSON.parse(answer.stdout) as {
+      value: { line: LineSnapshot };
+    };
+    expect(parsed.value.line.needs).toContainEqual(
+      expect.objectContaining({
+        target: "#12",
+        cause: "pickup-question",
+        stage: "pickup",
+      }),
+    );
+    expect(claudeRuns(w)).toHaveLength(1);
+    expect(orcaCalls(w, "terminal", "create")).toHaveLength(1);
+  });
+
+  it("notifies the question of a pass that claimed the item before it stopped", async () => {
+    const w = fixture();
+    const id = String(launches(await applyTick(w, false))[0]?.record);
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    writeFileSync(
+      join(w.dir, "claude-said"),
+      "Question: which of the two schemas is meant?\n",
+    );
+    writeFileSync(join(w.dir, "claude-exit"), "1");
+    await waitFor("the exit", () => exitWritten(w, id));
+    // do-item's claim moved the item to in progress.
+    w.setIssues([assignedIssue(12, "factory-bot", ["In Progress"])]);
+    const after = await applyTick(w, false);
+    expect(after.repos[0]?.actions).toContainEqual(
+      expect.objectContaining({
+        target: "#12",
+        cause: "pickup-question",
+        reason: expect.stringContaining("which of the two schemas is meant?"),
+      }),
+    );
+    expect(launches(after)).toEqual([]);
+    // The record outlives the tick that reported it: the question is still a
+    // need on the next, since nobody answered it.
+    const later = await applyTick(w, false);
+    expect(later.repos[0]?.actions).toContainEqual(
+      expect.objectContaining({ target: "#12", cause: "pickup-question" }),
+    );
+    // Settling the question and returning the item to the dispatch states
+    // releases the record, so the item is picked up again.
+    w.setIssues([assignedIssue(12, "factory-bot", ["Todo"])]);
+    await applyTick(w, false);
+    const again = await applyTick(w, false);
+    expect(launches(again)).toHaveLength(1);
+  });
+
+  it("remembers a claim seen while the pass runs, so the item's return releases the record", async () => {
+    const w = fixture();
+    const id = String(launches(await applyTick(w, false))[0]?.record);
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    // A tick sees the running pickup's claim.
+    w.setIssues([assignedIssue(12, "factory-bot", ["In Progress"])]);
+    await applyTick(w, false);
+    writeFileSync(
+      join(w.dir, "claude-said"),
+      "Question: which of the two schemas is meant?\n",
+    );
+    writeFileSync(join(w.dir, "claude-exit"), "1");
+    await waitFor("the exit", () => exitWritten(w, id));
+    // The operator settles the question and returns the item before the next tick.
+    w.setIssues([assignedIssue(12, "factory-bot", ["Todo"])]);
+    await applyTick(w, false);
+    const again = await applyTick(w, false);
+    expect(launches(again)).toHaveLength(1);
+  });
+
   it("records a pickup's opened pull request though the merged listing fails", async () => {
     const w = fixture();
     w.setConfig(`${CONFIG}  followup_command: /followup\n`);
-    const id = String(launches(await applyTick(w, true))[0]?.record);
+    const id = String(launches(await applyTick(w, false))[0]?.record);
     const path = readRecord(id, dispatchState(w))?.workspace?.path ?? "";
     w.setPrs("open", [
       {
@@ -162,7 +316,7 @@ describe("jig dispatch --apply picks up assigned items", () => {
     ]);
     writeFileSync(join(w.dir, "prs-merged-fail"), "");
     await waitFor("the wrapper", () => claudeRuns(w).length === 1);
-    const r = await w.dispatch([], join(w.root, "bound-tick.ts"));
+    const r = await w.dispatch(["--apply", "--json"]);
     expectSpawnExit(r, 1);
     const receipt = JSON.parse(r.stdout) as TickReceipt;
     expect(receipt.repos[0]?.records).toContainEqual(
@@ -184,20 +338,13 @@ describe("jig dispatch --apply picks up assigned items", () => {
     expect(text.stdout).toContain("--apply withheld, nothing was started");
   });
 
-  it("does not pick an item up again once its session ended without claiming it", async () => {
+  it("does not pick an item up again once its pass ended without claiming it", async () => {
     const w = fixture();
-    const id = String(launches(await applyTick(w, true))[0]?.record);
-    const path = readRecord(id, dispatchState(w))?.workspace?.path ?? "";
-    // The wrapper claims its record before it starts the session.
-    await waitFor("the session", () => claudeRuns(w).length === 1);
-    w.setWorkspaces([
-      {
-        branch: "12-issue-12",
-        path,
-        agents: [{ state: "done", paneKey: "tab-1:leaf-1" }],
-      },
-    ]);
-    const later = await applyTick(w, true);
+    const id = String(launches(await applyTick(w, false))[0]?.record);
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    writeFileSync(join(w.dir, "claude-exit"), "1");
+    await waitFor("the exit", () => exitWritten(w, id));
+    const later = await applyTick(w, false);
     expect(launches(later)).toEqual([]);
     expect(later.repos[0]?.quiet).toContainEqual(
       expect.objectContaining({ target: "#12", class: "pickup-ended" }),
@@ -209,7 +356,7 @@ describe("jig dispatch --apply picks up assigned items", () => {
     const w = fixture();
     // The plan's two listings (dispatch states, then in progress) see it; the fresh read does not.
     w.setIssuesAfter(2, []);
-    const [waiting] = launches(await applyTick(w, true));
+    const [waiting] = launches(await applyTick(w, false));
     expect(waiting).toMatchObject({
       action: "pickup",
       outcome: "waits",
@@ -223,7 +370,7 @@ describe("jig dispatch --apply picks up assigned items", () => {
   it("launches nothing for an item moved back to the backlog before the launch", async () => {
     const w = fixture();
     w.setIssuesAfter(2, [assignedIssue(12, "factory-bot", ["Backlog"])]);
-    expect(launches(await applyTick(w, true))[0]).toMatchObject({
+    expect(launches(await applyTick(w, false))[0]).toMatchObject({
       outcome: "waits",
       detail: "it is no longer assigned to factory-bot in todo",
     });
@@ -236,7 +383,7 @@ describe("jig dispatch --apply picks up assigned items", () => {
     w.setIssues([assignedIssue(12, "factory-bot", ["In Progress"])]);
     // Idle since an hour ago: past the 30-minute default.
     updateIdle(SLUG, ["#12"], Date.now() - 3_600_000, dispatchState(w));
-    const receipt = await applyTick(w, true);
+    const receipt = await applyTick(w, false);
     const [stalled] = receipt.repos[0]?.actions ?? [];
     expect(stalled).toMatchObject({
       stage: "notify",
@@ -251,7 +398,7 @@ describe("jig dispatch --apply picks up assigned items", () => {
   it("starts the stall clock the first time a claimed item is idle", async () => {
     const w = fixture();
     w.setIssues([assignedIssue(12, "factory-bot", ["In Progress"])]);
-    const receipt = await applyTick(w, true);
+    const receipt = await applyTick(w, false);
     expect(receipt.repos[0]?.actions).toEqual([]);
     expect(receipt.repos[0]?.quiet).toContainEqual(
       expect.objectContaining({ target: "#12", class: "claimed-idle" }),
@@ -264,7 +411,7 @@ describe("jig dispatch --apply picks up assigned items", () => {
       { branch: "12-issue-12", agents: [{ state: "working" }] },
       { branch: "12-another-try", agents: [{ state: "waiting" }] },
     ]);
-    const receipt = await applyTick(w, true);
+    const receipt = await applyTick(w, false);
     expect(receipt.repos[0]?.actions).toEqual([
       expect.objectContaining({
         stage: "notify",
@@ -274,49 +421,12 @@ describe("jig dispatch --apply picks up assigned items", () => {
     ]);
     expect(launches(receipt)).toEqual([]);
   });
-
-  it("reports a session waiting past blocked_after, which keeps its slot", async () => {
-    const w = fixture();
-    const id = String(launches(await applyTick(w, true))[0]?.record);
-    const path = readRecord(id, dispatchState(w))?.workspace?.path ?? "";
-    await waitFor("the session", () => claudeRuns(w).length === 1);
-    w.setWorkspaces([
-      {
-        branch: "12-issue-12",
-        path,
-        agents: [
-          {
-            state: "blocked",
-            paneKey: "tab-1:leaf-1",
-            since: Date.now() - 3_600_000,
-          },
-        ],
-      },
-    ]);
-    const receipt = await applyTick(w, true);
-    expect(receipt.repos[0]?.actions).toContainEqual(
-      expect.objectContaining({ target: "#12", cause: "waiting" }),
-    );
-    expect(receipt.repos[0]?.running.map((r) => r.target)).toEqual(["#12"]);
-  });
-
-  it("with Orca's own answer, reports the pickup with the reason and starts nothing", async () => {
-    const w = fixture();
-    const [reported] = launches(await applyTick(w, false));
-    expect(reported).toMatchObject({ action: "pickup", outcome: "reported" });
-    expect(String(reported?.detail)).toContain(
-      "cannot bind its session to a chosen account",
-    );
-    expect(orcaCalls(w, "worktree", "create")).toEqual([]);
-    expect(orcaCalls(w, "terminal", "create")).toEqual([]);
-    expect(recordIds(w)).toEqual([]);
-  });
 });
 
 describe("jig dispatch result", () => {
   it("requires a nonempty no-PR reason and rejects contradictory or invalid handoffs", async () => {
     const w = fixture();
-    const id = String(launches(await applyTick(w, true))[0]?.record);
+    const id = String(launches(await applyTick(w, false))[0]?.record);
     const token = readRecord(id, dispatchState(w))?.token ?? "";
     for (const args of [
       ["--none", " "],
@@ -347,7 +457,7 @@ describe("jig dispatch result", () => {
   });
   it("records a session's answer once, under its own record's token only", async () => {
     const w = fixture();
-    const id = String(launches(await applyTick(w, true))[0]?.record);
+    const id = String(launches(await applyTick(w, false))[0]?.record);
     const token = readRecord(id, dispatchState(w))?.token ?? "";
 
     const foreign = await w.dispatch(["result", id, "not-its-token", "done"]);
@@ -371,7 +481,7 @@ describe("jig dispatch result", () => {
     expect(readEnded(id, dispatchState(w))?.next).toEqual({
       address: `drive@${SLUG}#42`,
     });
-    await applyTick(w, true);
+    await applyTick(w, false);
     expect(readRows(undefined, undefined, dispatchState(w))).toContainEqual(
       expect.objectContaining({
         kind: "ended",

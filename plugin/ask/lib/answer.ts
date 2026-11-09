@@ -50,6 +50,7 @@ const PERSON_ACTS = [
   "re-run the follow-up",
   "choose the session that keeps the item",
   "look at the stalled pickup",
+  "settle the pickup's question, then return the item to the dispatch states",
   "answer the waiting session",
   "assign the item as someone who can write",
 ] as const;

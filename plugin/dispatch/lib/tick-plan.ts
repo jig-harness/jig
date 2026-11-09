@@ -161,7 +161,8 @@ function planRepo(
   updateIdle(repo, plan.idleNow, nowMs, undefined, plan.idleKeep);
   // An item the read left out (who assigned it could not be read, or not by a
   // person with write access) is still assigned: only leaving the dispatch
-  // states releases its record.
+  // states releases its record. A claimed item whose pass stopped on a
+  // question keeps it until the item returns to the dispatch states.
   releaseEnded(
     records,
     repo,
@@ -169,6 +170,8 @@ function planRepo(
       ...input.pickups.map((p) => p.key),
       ...report.unplaced.map((u) => u.target),
     ]),
+    new Set(input.claimed.map((c) => c.key)),
+    new Set(input.pickups.map((p) => p.key)),
   );
 }
 
