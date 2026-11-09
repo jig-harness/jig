@@ -75,10 +75,11 @@ criteria:
     level: standard
     requires: mechanical
     statement: >-
-      Heavy build/test runs pass through a scripted cross-worktree mutex that
-      serializes them on one machine and bypasses under CI.
+      Heavy build/test runs pass through a scripted cross-worktree lock that
+      bounds them on one machine (one at a time, or as many as the machine's
+      load admits) and bypasses under CI.
     observe:
-      - "a lock wrapper (atomic mkdir-style) guards heavy commands across worktrees"
+      - "a lock wrapper (atomic mkdir-style) guards heavy commands across worktrees, as a single mutex or as slots admitted by load"
       - "it runs the command immediately when a CI signal is set (CI / an explicit bypass)"
 
   - id: worktree-hooks-wired
