@@ -378,15 +378,19 @@ answers that are not the same option leaving the item disputed and
 waiting; a decision digest stored with each park and published in the
 ledger, carried by every line Jig offers to copy, so an answer to an
 earlier framing is stale and does not count; the pass handed the chosen
-option and the record; every reader of answers (the re-arm, the tick,
+option, the record and any note the person added; every reader of answers (the re-arm, the tick,
 `jig send`, `jig ask`) moved to one parser at once; `jig send … answer
 --approve | --choose | --all` (Decide items only for `--all`), a
 correcting answer, the operator's verbs, the notification's answer lines,
 the dashboard's copy buttons and the Orca panel's buttons, all writing the
 same line; `jig ask`'s question and answer fields and an answered-park
 event in the outcome log, with a per-class report of how often the
-recommendation is approved; then, with item 40's first proof that a person
-answered, the attested classes (`destructive`, `release`, `legal` by
+recommendation is approved; a closed, growable list of
+fields per option (what it keeps, when it is right, what it obliges,
+whether it can be undone) read through one shape; a card with a row per
+decision, where `j`, `1`, `c` picks the recommendation and copies it, a
+pick staying local and undoable until it is committed; then, with item
+40's first proof that a person answered, the attested classes (`destructive`, `release`, `legal` by
 default), and the same forms for a follow-up's question, a loosened
 ratchet's evidence and a pickup only a person may start. One pull request
 per step, in the design's order; the first waits on the record helpers of
@@ -398,7 +402,9 @@ exactly a form reaches the pass as a free answer and `jig ask` labels it
 free; an answer naming an earlier framing's digest leaves the drive parked
 and the next notification says why; two people choosing different options
 leave the item waiting; the panel, `jig ask` and the dashboard show the
-same options and choice for one park; and `jig dispatch log` reports, per
+same options and choice for one park; a field added only to the option
+table shows on the card and in `jig ask`; a card of two decisions copies
+one comment answering both; and `jig dispatch log` reports, per
 class, how many parks were approved as recommended and how long they
 waited.
 

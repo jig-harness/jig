@@ -65,6 +65,70 @@ completes). The [tick](../GLOSSARY.md) reads the same answers to decide
 whether a parked drive can be re-armed, and `jig ask` reads them to show
 whether a question is answered.
 
+### What a framed decision holds
+
+A decision record will need to say more than it does today, and every
+reader of it (the card, `jig ask`, the notification, the pass) should gain
+from that without changing. So the record grows by one rule.
+
+**One source, read through one shape.** The record stays the Markdown a
+pass writes, stored once, so that no second copy can drift from it. Every
+reader takes an option through `recordOptions` in `state/park-frame.ts`, in
+one shape:
+
+```ts
+{ name, recommended, changes, costs, details: [{ label, text }] }
+```
+
+`details` holds the option's optional fields in the table's order. A reader
+that does not know a label still shows it, as the label and its text, so a
+new field reaches the card and `jig ask` with no change to either.
+
+**The option's fields are a closed list in one table**
+(`OPTION_FIELDS`). Each is a label in the option's `- ` item, usually on an
+indented line of its own:
+
+| Label | Says | Required |
+| --- | --- | --- |
+| `Changes:` | what choosing it changes | yes |
+| `Costs:` | what it costs, named as concretely as what it changes | yes |
+| `Keeps:` | what stays as it is, or what is gained | no |
+| `Right when:` | the condition under which this is the right call | no |
+| `Obligation:` | what a person must do after choosing it, left out when nothing | no |
+| `Reversible:` | `yes` or `no`, then how, if the words help | no |
+
+Together these are the pros and cons of an option, each said as what
+happens. A new field is one row here and its check. A plugin older than the
+field reads its text as part of the field before it, and shows it there.
+
+**The decision's own optional sections** follow the required ones, each
+once: `## Related` (see [Several decisions on one
+card](#several-decisions-on-one-card)), `## Evidence` (links and the facts
+they show) and `## Sheet` (the link to a [decision
+sheet](../plugin/skills/decide/references/decision-sheet.md), when the call
+has one). The park refuses any other heading, as it does today. Readers
+stop a section at the next heading, so an older plugin passes over these.
+
+**A record has a size limit.** The drive ledger is one comment of at most
+65,536 bytes, shared by every parked decision on the pull request, and the
+ledger is not written when the parks alone exceed it. So the park refuses
+a record over 8 KiB and names its size.
+
+**What this leaves room for**, none of it built here:
+
+- **A decision parked from a decision sheet.** A sheet's option fields map
+  onto these labels (`keep` to `Keeps:`, `pay` to `Costs:`, `rightWhen` to
+  `Right when:`, `obligation` to `Obligation:`), so a `decide` escalation
+  can become a park without losing them. A sheet's outcome matrix stays on
+  the sheet, reached through `## Sheet`.
+- **Responses that choose no option.** "Tell me more" and "not now" are
+  common answers. `ask` and `defer` are reserved as forms, so that adding
+  them later changes no answer already written; until then each is a free
+  answer.
+- **A decision with no option worth recommending.** The park requires one
+  recommendation today, and a decision with none would need its own rule
+  for what `approve` means.
+
 ### The forms
 
 An answer's text is read from a comment by a trusted author, later than the
@@ -83,8 +147,10 @@ identify). Any other quoted line is a line of the comment: a person may
 quote a condition of their own, and an unexplained quote makes the answers
 free. The text is a structured answer only when nothing else is
 left in the comment: in a pull-request comment, every remaining line is an
-`answer <key>:` line, at most one for each key; in a thread reply, the one
-remaining line is the answer. Anything else left is another line: a line of
+`answer <key>:` line or a `note <key>:` line, at most one of each for a key
+and a note only beside its key's answer; in a thread reply, the one
+remaining line is the answer, or an `answer <key>:` line and its note.
+Anything else left is another line: a line of
 prose, a fence marker and every line inside a fenced block (a suggestion
 included), an indented code line, HTML. Any other line makes each answer in
 the comment a free answer, so a condition written on the next line ("but
@@ -134,6 +200,20 @@ reads a free answer as it does today, and `jig ask` and the dashboard
 label it free, so a person who meant a structured answer sees it was not
 read as one.
 
+A person may add words of their own to a structured answer, as one line
+`note <key>: <text>` beside it, checked as an answer's text is (one line, of
+at most 500 characters):
+
+```text
+answer PRRT_abc: choose Keep [3fa9c2d1e0b4]
+note PRRT_abc: only after the migration merges
+```
+
+The option chosen is still known without reading the note. The note binds
+the pass all the same: it applies the option as the note qualifies it, and
+parks the item again, quoting the note, when it cannot do both. A person
+whose answer is really something other than an option writes a free answer.
+
 There is no `decline` form. Every framed decision offers at least two
 options, and refusing what one option allows is choosing another. A
 decision record for a class whose act is Authorize names the refusal as an
@@ -151,7 +231,7 @@ their mind before the re-arm reads it simply answers again, and a later
 "wait, don't" replaces their earlier `approve`. Across people:
 
 - When every person's latest answer is structured and all choose the same
-  option, that option is chosen.
+  option, that option is chosen, and every note is handed on.
 - When every person's latest answer is free, the item is answered and every
   one of them is handed on for the pass to interpret, as today.
 - When two people's latest answers are not the same option (two structured
@@ -231,7 +311,7 @@ re-arms the repository's drives runs a plugin that reads it.
 
 Each kept answer (`PendingAnswer` in `state/pass-handoff.ts`) gains its
 `choice`, when it is structured: the option's name, whether it is the
-recommended one, the form and the digest it named. Each kept verdict
+recommended one, the form, the digest it named and the note. Each kept verdict
 (`PendingVerdict`) gains the park's `record` and digest, since the park and
 its record are gone once the re-arm unparks it, and the notice's length
 budget (`NOTICE_MAX`) covers the records with the answers. The notice to
@@ -240,8 +320,9 @@ the pass then reads, for an item answered with one structured choice:
 > @person chose **Keep** (the recommended option) from framing
 > 3fa9c2d1e0b4. Apply this option as the decision record states it.
 
-followed by the decision record, so the pass has the option's Changes and
-Costs in front of it. The pass records the item's outcome as it does today,
+with the person's note, when there is one, and the instruction to apply
+the option as the note qualifies it, followed by the decision record, so
+the pass has the option's Changes and Costs in front of it. The pass records the item's outcome as it does today,
 and its reply names the option and who chose it. Once the ledger keeps
 resolved parks (the hub's first stage,
 [hub.md § Build order](hub.md#build-order)), each keeps its choice beside
@@ -265,8 +346,8 @@ to read.
   `--dry-run` prints that digest, and the real send must name it. The send refuses an
   option the park does not offer before it writes, shows the option it will
   choose in full (its Changes and Costs) with `--dry-run`, and writes the
-  line with the digest and, beside the envelope, the digest and the choice
-  as payload fields of the `drive-answer` record. The record stays at
+  line with the digest, the `--note` line when one is given and, beside the
+  envelope, the digest and the choice as payload fields of the `drive-answer` record. The record stays at
   version 1: a reader that does not know a payload field ignores it, while
   a newer version would make an older plugin refuse the comment as an
   answer. A person who already answered may answer again, which replaces
@@ -286,21 +367,13 @@ to read.
   and a class whose act is Authorize are approved only by their own key.
 - **The operator.** "approve 456's parked question" becomes that command,
   run with `--dry-run` first, as every send the operator makes is.
-- **The dashboard.** A parked need's card shows the recommended option
-  first, as item 44 builds it, with a copy button beside each option for
-  its line, digest included. `c` copies the `approve` line of a need that
-  holds one parked item, of a class the acts table lists as Decide by name;
-  any other item's line is copied only from the button beside the option's
-  Changes and Costs. The line the tick writes carries each waiting park's
-  digest and options, so the page reads them rather than parsing the
-  record. The page copies; it does not write
-  ([#477](https://github.com/jig-harness/jig/issues/477) decides whether
-  it ever will).
-- **The Orca panel.** Its answer box gains **Approve** and one button per
-  option, which run the same `jig send` as the person
-  ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)); an
-  Authorize need's button shows the option's Changes and Costs and asks
-  once more before it sends.
+- **The dashboard and the Orca panel** pick and commit as [Picking an
+  answer](#picking-an-answer) describes. The tick's line carries each
+  waiting park's digest and options, so neither parses the record. The
+  dashboard's page copies and does not write
+  ([#477](https://github.com/jig-harness/jig/issues/477) decides whether it
+  ever will); the panel's Send runs the same `jig send` as the person
+  ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)).
 - **The forge, by hand.** A person types `answer <key>: approve` in a
   pull-request comment, from the forge's site or its phone app, or replies
   `approve` on the item's review thread. On a forge that turns an email
@@ -316,6 +389,94 @@ to read.
 - **Other review tools.** A tool that collects a person's verdict (a local
   review interface's "finish" hook, say) answers by running `jig send`. It
   never writes the comment itself and never holds the answer.
+
+### Several decisions on one card
+
+One card with several decisions is the normal shape, and it is already what
+the line holds: a need is one parked drive, its `decisions` are every park
+still unanswered, oldest first, and the re-arm waits for all of them. What
+is missing is showing them, since a card opens with the oldest decision's
+ask and folds the rest.
+
+- **Each decision is a row of its own**, with its question, its act, its
+  options and its pick. The card keeps the act of its oldest decision for
+  the group it sits in; a row whose act differs shows its own, so a decision
+  that asks for authorization is never read as a choice because of its
+  neighbour.
+- **A decision is one call.** It has one key, one question and options that
+  exclude each other, and it takes one answer. A piece of work with several
+  calls parks several decisions. Two calls that affect each other say so
+  under `## Related`, naming the other's key and how one shrinks or sharpens
+  the other; the card shows that beside both. Every item must be answered
+  before the re-arm, so one pass reads all the answers together.
+- **No choice of several options at once.** Options a person may combine are
+  separate decisions.
+- **Part of a card can be answered.** Each decision counts by itself, the
+  card says how many are picked, and the drive stays parked until every one
+  is answered.
+- **One comment can answer the whole card**, one `answer` line for each
+  decision, as a comment can today. A card's answers do not cross pull
+  requests: each pull request's comment is its own record.
+
+### Picking an answer
+
+Answering has two steps, and only the second depends on where the person
+is. **Picking** chooses an option. It takes one key or one tap, is kept in
+the browser and can be undone, and nothing reads it. **Committing** writes
+the picks where the line reads them. So a surface that gains the right to
+write changes its commit and keeps its picking.
+
+```text
+Needs you · Decide                       PR #456 · waits on ana · 2h
+2 decisions · 1 picked
+  1 of 2  Keep the old flag for one release?                    scope
+    [1] ● Keep (recommended)   changes …   costs …
+    [2] ○ Remove               changes …   costs …
+▸ 2 of 2  Drop the unused table now?                      destructive
+    [1] ○ Do not drop (recommended)   changes …   costs …
+    [2] ○ Drop                        changes …   costs …
+1 2 pick   [ ] decision   u undo   r own words   c copy   p open PR
+```
+
+On the focused card (`j` and `k` move between cards, as they do today):
+
+| Key | Does |
+| --- | --- |
+| `1` to `9` | picks that option of the current decision, then moves to the next decision with no pick |
+| `[` and `]` | the previous or next decision on the card |
+| `u` | clears the current decision's pick |
+| `r` | opens the current decision's text field: a note beside a pick, or a free answer without one |
+| `c` | copies the card's picks as one comment, each with its digest and note |
+
+- **An option's number is its place on the card.** The recommended option
+  is always 1, the others follow in the record's order, and one function
+  (`shared/decision-card.ts`) numbers them for the card and for `jig ask`.
+  So `j`, `1` means "the recommendation" on every card. A number never
+  reaches the record: a pick is written as `approve` or `choose <option>`
+  with the digest, because a number means nothing outside the order it was
+  shown in.
+- **A pick belongs to one framing.** Picks are kept like the reply drafts
+  (`dashboard/src/replies.ts`), by repository, key and digest. When a
+  decision is framed again its pick is dropped and the row says so.
+- **A digit never commits, on any surface.** Where a pick is of a class the
+  acts table does not list as Decide by name, or of an option whose
+  `Reversible:` says `no`, the first `c` opens that option's Changes and
+  Costs and says what the pick allows, and the second copies. With no picks,
+  `c` copies what it copies today, and an `approve` line only for a card of
+  one decision whose class is listed as Decide by name.
+- **Every action has a target for a pointer and a screen reader.** On a
+  phone an option's row is what is tapped, digits are not shown, and the
+  pick is announced. Keys fire only on the focused card and never inside a
+  text field.
+
+Each surface's commit:
+
+| Surface | Commit | Waits on |
+| --- | --- | --- |
+| Dashboard | `c` copies, `p` opens the pull request, the person pastes | nothing |
+| Orca panel | Send runs `jig send` for each pick | nothing |
+| The hub | Commit, behind proof that a person is there | its third stage, item 40 |
+| Terminal | `jig ask --waiting` numbers the options; `jig send` names one | nothing |
 
 ### Reading answers
 
@@ -343,8 +504,9 @@ section splitter, kept free of the command code `framed-park.ts` imports.
 ### Showing what was decided
 
 - **`jig ask --thread`.** A question entry carries its options (each name,
-  and whether recommended) and its digest. An answer entry carries its
-  `choice`, or `free: true`, or `stale` with the digest it named. These
+  number, whether recommended, and its details) and its digest. An answer
+  entry carries its `choice` and note, or `free: true`, or `stale` with the
+  digest it named. These
   are added fields under `ask`'s version 1, as
   [addresses.md](addresses.md#what-the-thread-gains-for-the-hub) grows the
   thread.
@@ -374,7 +536,7 @@ section splitter, kept free of the command code `framed-park.ts` imports.
   re-arm on any host is counted, as far as the owner's tick ran to see it.
 - **Recommendation acceptance.** `jig dispatch log` reports, per class and
   repository, how many parks were answered, how many with the recommended
-  option, and the median wait. That is evidence for a person deciding
+  option and no note, and the median wait. That is evidence for a person deciding
   whether a class should stay a park
   ([ADR-0010](../docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)):
   a class approved as recommended almost every time costs a person's
@@ -480,8 +642,7 @@ and its pull request saying what changed in the audit.
    disputing comments in the notice's key; `drive-pr`'s SKILL.md and
    README, the decision record's writing rules and the HITL registry
    template on an Authorize refusal option, and the mechanism map's entry.
-   Waits on the record helpers
-   [#674](https://github.com/jig-harness/jig/pull/674) exports. Done when a
+   The note line is read here too. Done when a
    park answered `approve` hands the pass the recommended option, a
    `choose` naming no option reaches the pass as a free answer and `jig ask`
    labels it free, an approval beside another person's different answer
@@ -499,17 +660,29 @@ and its pull request saying what changed in the audit.
    before it writes, `--all` leaves out every class the acts table does not
    list as Decide, and a person's second send replaces their first.
 4. **Showing them.** `jig ask`'s question and answer fields, the
-   dashboard's copy buttons and stale or disputed answers, the Orca
-   panel's buttons, the waiting parks' digests and options on the tick's
-   line, and the outcome log's answered-park event. Done when
+   dashboard's stale or disputed answers, the waiting parks' digests and
+   options on the tick's line, and the outcome log's answered-park event. Done when
    the panel, `jig ask` and the dashboard show the same options and the
    same choice for one park.
 5. **Recommendation acceptance.** The per-class report in `jig dispatch
    log`. Done when it reports, from the outcome log alone, each class's
    parks, approvals of the recommendation and median wait.
-6. **Attested classes**, with item 40's first proof, and
+6. **What a decision holds.** `OPTION_FIELDS` and the optional fields,
+   `details` on `recordOptions` and the tick's line, the optional sections,
+   the record's size limit, the card's fold and `jig ask` showing details,
+   and the writing rules. Done when a field added only to the table shows
+   on the card and in `jig ask`, and an over-large record is refused.
+7. **The picking card.** A row per decision, `## Related` beside its
+   decisions, the numbering function, the keys, kept picks, the second `c`,
+   the phone's rows, and the Orca panel's picks and Send, with
+   [dispatch-board.md](dispatch-board.md) updated. Steps 6 and 7 need only
+   steps 1 and 2, and may come before steps 3 to 5. Done when `j`, `1`, `c`
+   on a card of one decision copies its recommended option with the digest,
+   a card of two decisions copies one comment with both, a reframed
+   decision drops its pick, and every pick can be made by a pointer alone.
+8. **Attested classes**, with item 40's first proof, and
    `autonomy.attested_classes` in [CONFIGURATION.md](../plugin/CONFIGURATION.md).
-7. **Beyond the drive**: the follow-up's question, the loosened ratchet
+9. **Beyond the drive**: the follow-up's question, the loosened ratchet
    and the pickup, one pull request each.
 
 ## Left out
@@ -518,9 +691,17 @@ and its pull request saying what changed in the audit.
   is answered by its own line, so each approval names the decision it
   approves; `jig send --all` writes those lines for a person, for Decide
   items only.
-- **Words beside a structured answer.** A comment that says more than the
-  form is a free answer. Carrying a note that "never changes the choice"
-  would ask a pass to ignore what a person wrote.
+- **Words beside a structured answer other than a note.** A comment with
+  any other line is a free answer, so a person's words are never read as
+  something that does not change the choice.
+- **A number as the answer** (`choose 2`). It depends on the order the
+  person saw, the ambiguity the forms exist to remove. Numbers stay on the
+  card and in `jig ask`.
+- **One decision holding several calls.** A key names one call, and an
+  answer names one option; related calls are separate decisions that say
+  how they interact.
+- **A digit that commits.** One keystroke on a decision that cannot be
+  undone is too little, and a pick costs nothing to confirm.
 - **Applying an option without a pass**, such as marking a pull request
   ready on an approved `ready` park. Worth measuring first: step 5 shows
   which classes are approved as recommended, and a step that skips the pass

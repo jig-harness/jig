@@ -1322,10 +1322,16 @@ make, use the entry's term instead.
 - **Structured answer, free answer** — the two forms of a person's answer
   to a *framed decision*. A **structured answer** is a comment whose whole
   answer is `approve`, which chooses the recommended option, or
-  `choose <option>`, which chooses the option by its name; the pass is
-  handed that option as the decision record states it. A **free answer** is
+  `choose <option>`, which chooses
+  the option by its name; the pass is handed that option as the decision
+  record states it, with any **note** the person added on a `note <key>:`
+  line, which binds the pass. A **free answer** is
   anything else, in the person's own words, which a pass interprets
   ([design](design/structured-answers.md)).
+- **Pick (of an option)** — the choice of an option on a card, made with a
+  key or a tap, kept in the browser and undoable. Nothing reads a pick until
+  the person commits it as an answer
+  ([design](design/structured-answers.md#picking-an-answer)).
 - **Decision digest, stale answer** — a short hash of a *framed decision*'s
   record, stored when the decision is parked and published in the drive
   ledger. An answer line may end with it, and

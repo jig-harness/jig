@@ -112,6 +112,9 @@ phone. The next pass gets the chosen option itself, not words to
 interpret, and an answer in a person's own words still works as before.
 Every answer line Jig offers carries a short code for the version of the
 decision it answers, so an approval of an older version does not count.
+On the dashboard a person moves to a decision with `j` and `k` and
+presses `1` to pick the recommendation. A pick stays on the page and can be
+undone, and one comment can answer all of a pull request's decisions.
 Jig also reports how often each kind of decision follows the
 recommendation, so a team can see which decisions still need a person.
 Later, decisions that cannot be undone, such as a release, will need proof
