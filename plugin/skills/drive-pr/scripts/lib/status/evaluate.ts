@@ -137,6 +137,8 @@ export interface StatusReport extends CiReport {
   /** Latest comment per open thread; null when a version could not be read. */
   openThreadVersions: [string, string][] | null;
   summaryUnaddressedKeys: string[] | null;
+  /** Unaddressed finding holds whose promised fix has no recorded push stamp. */
+  summaryHeldUndispatchedKeys: string[] | null;
   parkedItemKeys: string[] | null;
   /**
    * WHICH FILES this round's open findings anchor to — threads AND
@@ -209,6 +211,7 @@ export function emptyReport(): StatusReport {
     openThreadKeys: null,
     openThreadVersions: null,
     summaryUnaddressedKeys: null,
+    summaryHeldUndispatchedKeys: null,
     parkedItemKeys: null,
     openThreadPaths: null,
     ci: "",
@@ -1250,6 +1253,19 @@ async function evaluateFresh(
     ctx.helperTimeoutSec,
     report.reviewedSha === report.apiHead ? report.apiHead : "",
   );
+  report.summaryHeldUndispatchedKeys =
+    heldEvidence.reviewRound === null
+      ? null
+      : summary.unaddressed
+          .filter((finding) => {
+            const held = heldEvidence.byKey.get(finding.fingerprint);
+            return (
+              held?.kind === "finding" &&
+              (typeof held.verifiedSha !== "string" || held.verifiedSha === "")
+            );
+          })
+          .map((finding) => finding.fingerprint)
+          .sort();
   const heldByKey = new Map(
     [...heldEvidence.byKey].map(([key, record]) => [
       key,
@@ -1370,6 +1386,8 @@ async function evaluateFresh(
   // real and the fixes land — so the round is handed out, with the conflict
   // named so the pass knows CI will not run on what it pushes.
   let roundReadyReason = `${liveThreads} unresolved thread(s) and ${liveSummary} unaddressed summary finding(s) on ${report.apiHead}`;
+  if (report.summaryHeldUndispatchedKeys?.length)
+    roundReadyReason += ` — held but not dispatched: re-hold to dispatch (${report.summaryHeldUndispatchedKeys.join(", ")}); verify the promised fix, then push and finish the round`;
   if (stalledCheckRunNote !== "")
     roundReadyReason += ` — ${stalledCheckRunNote}`;
   roundReadyReason += inheritedReason(sync, ctx.localHead, ctx.inheritedHead);

@@ -523,6 +523,7 @@ describe("drive-status.ts reports counts it never measured as null", () => {
       unresolvedThreadKeys: null,
       unresolvedThreadVersions: null,
       summaryUnaddressedKeys: null,
+      summaryHeldUndispatchedKeys: null,
       parkedKeys: null,
       // The anchor PATHS the same way — `[]` here would be the
       // positive claim "no file drew a finding this round", which is exactly

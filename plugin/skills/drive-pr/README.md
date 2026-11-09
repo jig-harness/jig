@@ -390,6 +390,12 @@ Both variables are read when a session starts, so a drive already running
 keeps its old limit, and a harness other than Claude Code has its own. Claude
 Code needs version 2.1.285 or later for them to take effect.
 
+When a summary finding stays unaddressed and its hold has no push stamp,
+`drive-status.ts` reports it separately in `work.summaryHeldUndispatchedKeys`
+and names the recovery: verify the promised fix, re-hold it, push and finish
+the round to post its answer. This reports missing dispatch evidence; it does
+not infer whether the code has already been fixed.
+
 ## When to reach for it
 
 - **A PR exists and you want the review loop run to completion** → this skill. Normally you don't even start it by hand: a `/jig:do-item` run arms the drive when it opens the draft PR. Typing `/jig:drive-pr [PR]` in a session does the same thing: the agent starts the driver below (in a terminal tab of its own in Orca, in the background elsewhere; see [Arming from a session](#arming-from-a-session)), reports its log path, and stops — it does not work a round itself.
