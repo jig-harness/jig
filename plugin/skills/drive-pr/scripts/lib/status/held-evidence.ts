@@ -20,9 +20,13 @@ export async function readHeldEvidence(
   });
   if (response.code === 0) {
     try {
+      const prospective = await run(
+        tsArgv(script, ["prospective-round", pr, "--head", reviewedHead]),
+        { stderr: "inherit", timeoutSec },
+      );
       const evidence = heldEvidenceFromState(
         JSON.parse(response.stdout),
-        reviewedHead,
+        prospective,
       );
       if (evidence !== null) return evidence;
     } catch {
@@ -38,7 +42,7 @@ export async function readHeldEvidence(
 /** Narrow the persisted fields before deriving the current local round. */
 function heldEvidenceFromState(
   value: unknown,
-  reviewedHead: string,
+  prospective: { code: number; stdout: string },
 ): HeldEvidence | null {
   const state = asCommentRecord(value);
   if (
@@ -47,14 +51,12 @@ function heldEvidenceFromState(
     typeof state.rounds !== "number" ||
     !Number.isInteger(state.rounds) ||
     state.rounds < 0 ||
-    typeof state.lastCountedHead !== "string"
+    typeof state.lastCountedHead !== "string" ||
+    prospective.code !== 0
   )
     return null;
-  // evaluate runs before bump-round, so a newly completed reviewed head
-  // already belongs to the next local round. Re-reading a head adds none.
-  const reviewRound =
-    state.rounds +
-    (reviewedHead !== "" && reviewedHead !== state.lastCountedHead ? 1 : 0);
+  const reviewRound = Number(prospective.stdout.trim());
+  if (!Number.isInteger(reviewRound) || reviewRound < 0) return null;
   return { byKey: heldRecordsByKey(state.held), reviewRound };
 }
 

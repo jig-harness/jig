@@ -28,6 +28,7 @@
  * Usage:
  *   drive-state.ts get          [PR]                 # whole state as JSON
  *   drive-state.ts rounds       [PR]                 # the PR's review round (lib/state/review-rounds.ts)
+ *   drive-state.ts prospective-round [PR] --head SHA  # that head's current or next review round
  *   drive-state.ts bump-round   [PR] --head SHA      # count a NEW head as the drive's round
  *   drive-state.ts count-round  [PR] --head SHA      # count a head for a hand-driven loop; unleased
  *   drive-state.ts open-rounds  [PR]                 # rounds since that loop last converged
@@ -289,6 +290,7 @@ import { openStore, type StateStore } from "./lib/state/store.ts";
 import {
   bumpDriveRound,
   clearReviewRounds,
+  prospectiveReviewRound,
   ROUND_VERBS,
   reviewRound,
 } from "./lib/state/review-rounds.ts";
@@ -1111,6 +1113,12 @@ async function main(): Promise<number> {
 
     case "rounds": {
       process.stdout.write(`${reviewRound(store, pr)}\n`);
+      return 0;
+    }
+
+    case "prospective-round": {
+      if (a.sha === "") fail(2, "prospective-round requires --head SHA");
+      process.stdout.write(`${prospectiveReviewRound(store, pr, a.sha)}\n`);
       return 0;
     }
 

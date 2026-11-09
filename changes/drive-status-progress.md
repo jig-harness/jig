@@ -10,5 +10,7 @@ release: patch
   and diverged history, with the action each needs.
 - A held summary finding re-emitted in a later drive review round now
   contributes to the repeated-file escalation signal.
+- Held findings now retain their review-round currency when a previously
+  reviewed head is revisited.
 - Status now identifies unaddressed summary findings held without a push stamp
   and names the steps to verify and dispatch their answers.

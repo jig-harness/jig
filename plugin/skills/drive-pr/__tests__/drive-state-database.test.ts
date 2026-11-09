@@ -151,6 +151,25 @@ describe("a drive killed inside its locked section", () => {
 });
 
 describe("two drive-state.ts commands at once", () => {
+  it("uses the canonical head history when prospecting a round", () => {
+    const dir = stateDir();
+    expectSpawnExit(run(dir, ["bump-round", "999", "--head", HEAD_A]), 0);
+    expectSpawnExit(run(dir, ["bump-round", "999", "--head", HEAD_B]), 0);
+
+    const revisited = run(dir, ["prospective-round", "999", "--head", HEAD_A]);
+    expectSpawnExit(revisited, 0);
+    expect(revisited.stdout.toString().trim()).toBe("2");
+
+    const next = run(dir, [
+      "prospective-round",
+      "999",
+      "--head",
+      "c".repeat(40),
+    ]);
+    expectSpawnExit(next, 0);
+    expect(next.stdout.toString().trim()).toBe("3");
+  });
+
   it("serialize on the database and leave no file behind", async () => {
     const dir = stateDir();
     const root = dirname(dir);

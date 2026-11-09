@@ -668,10 +668,26 @@ describe("roundFingerprint — what counts as evidence of sameness", () => {
     });
     const first = roundFingerprint(measured(before));
     expect(first).not.toBeNull();
-    expect(roundFingerprint(measured(after))).not.toBe(first);
-    expect(roundFingerprint(measured(after))).toBe(
-      roundFingerprint(measured(after)),
-    );
+    const replied = roundFingerprint(measured(after));
+    expect(replied).not.toBeNull();
+    expect(replied).not.toBe(first);
+    const unchanged = await probe({
+      threads: [
+        {
+          id: "PRRT_human",
+          bot: false,
+          comments: [
+            { authorAssociation: "NONE", body: "Please explain" },
+            {
+              author: "example-user-2",
+              authorAssociation: "OWNER",
+              body: "Here is why",
+            },
+          ],
+        },
+      ],
+    });
+    expect(roundFingerprint(measured(unchanged))).toBe(replied);
   });
 
   it("distinguishes a SUBSTITUTION from a no-op at equal cardinality", () => {
