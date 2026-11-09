@@ -1,14 +1,15 @@
 /**
- * The one nudge through real ticks, with Orca faked to bind interactive
- * sessions (`pickup-fixtures.ts`): a pickup session launched with its
- * vendor session id, which the runtime reports waiting after its account's
- * wall reset, gets exactly one continue nudge across three ticks; a session
- * still waiting after it is notified, never nudged again.
+ * The one nudge through real ticks: an interactive pickup session an
+ * earlier release recorded, with its vendor session id and its agent's id,
+ * which the runtime reports waiting after its account's wall reset, gets
+ * exactly one continue nudge across three ticks; a session still waiting
+ * after it is notified, never nudged again. A pickup this release starts
+ * is a headless pass, so the test turns its record into such a session's.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { readRecord } from "../lib/launches.ts";
+import { readRecord, writeRecord } from "../lib/launches.ts";
 import { readRows } from "../lib/log.ts";
 import { NUDGES } from "../lib/runtime/port.ts";
 import { assignedIssue, SLUG, type World, world } from "./fixtures.ts";
@@ -81,10 +82,15 @@ describe("the continue nudge", () => {
     w.env.JIG_DISPATCH_QUOTA_PROBE = join(w.root, "fake-probe.js");
 
     // The pickup starts, with the session id the tick minted.
-    const first = await applyTick(w, true);
+    const first = await applyTick(w, false);
     const id = String(first.repos[0]?.launches[0]?.record);
-    const record = readRecord(id, dispatchState(w));
-    const session = record?.sessionId ?? "";
+    const started = readRecord(id, dispatchState(w));
+    if (started === null) throw new Error(`no launch record ${id}`);
+    // The record an earlier release wrote for an interactive pickup: no headless mark, its agent's id kept.
+    const { headless: _headless, ...interactive } = started;
+    const record = { ...interactive, agentId: "tab-1:leaf-1" };
+    writeRecord(record, dispatchState(w));
+    const session = record.sessionId ?? "";
     expect(session).toMatch(/^[0-9a-f-]{36}$/);
     await waitFor("the session", () => claudeRuns(w).length === 1);
     const argv = claudeRuns(w)[0]?.argv ?? [];
@@ -96,7 +102,7 @@ describe("the continue nudge", () => {
     ).toEqual(["--session-id", session]);
 
     // Its agent waits at an empty prompt; its record says the wall it met has reset.
-    const workspace = record?.workspace?.path ?? "";
+    const workspace = record.workspace?.path ?? "";
     agentIn(w, workspace, "tab-1:leaf-1", "waiting");
     writeFileSync(
       join(w.dir, "orca-terminals.json"),
@@ -134,9 +140,9 @@ describe("the continue nudge", () => {
     );
 
     const ticks = [
-      await applyTick(w, true),
-      await applyTick(w, true),
-      await applyTick(w, true),
+      await applyTick(w, false),
+      await applyTick(w, false),
+      await applyTick(w, false),
     ];
 
     const sends = lines<{ terminal: string; text: string; enter: boolean }>(

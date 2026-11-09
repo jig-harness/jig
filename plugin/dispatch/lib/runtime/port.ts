@@ -5,7 +5,8 @@
  * of these methods, with nothing in the tick changed.
  *
  * An interactive launch runs only on a runtime that reports it can bind
- * the session to its account (`interactiveBinding`). Every method runs
+ * the session to its account (`interactiveBinding`); a headless pass binds
+ * itself through the wrapper, on any runtime. Every method runs
  * under a deadline, and an answer past it counts as lost.
  *
  * What the dispatcher starts is named by one convention, kept here, which
@@ -131,7 +132,8 @@ export type LaunchStage =
   /** A headless pass: the wrapper (`run.ts`) under its launch record, in a terminal titled `title`. */
   | { kind: "headless"; title: string; mark: string; record: string }
   /**
-   * An interactive session (a pickup's `do-item`):
+   * An interactive session (a pickup's `do-item`, as an earlier release
+   * recorded one):
    * `skill` on `target`, with the route's model and effort, under its
    * launch record. Its receipt names the agent by the id `sessions` reports
    * it under.
@@ -189,7 +191,8 @@ export interface SessionRuntime {
   /**
    * Whether an interactive launch binds its session to the account it is
    * billed to, whatever account the host has active. A session whose launch
-   * cannot bind its account is never started: its pickups are reported.
+   * cannot bind its account is never started interactively; a pickup runs
+   * as a headless pass.
    */
   readonly interactiveBinding: Binding;
   /**

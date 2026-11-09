@@ -35,6 +35,7 @@ import type { DriveState, ParkedItem } from "./schema.ts";
 import { parkRefusal } from "./rulings.ts";
 import type { StateStore } from "./store.ts";
 import { resolveParkPerson } from "./park-person.ts";
+import { items, optionFields, optionName } from "./park-frame.ts";
 
 /** The record's headings, in the order it must carry them. */
 export const RECORD_SECTIONS = [
@@ -49,25 +50,6 @@ type Section = (typeof RECORD_SECTIONS)[number];
 
 /** The record's sections, by heading, each its trimmed text. */
 export type DecisionRecord = Record<Section, string>;
-
-/** `- ` items of a section, each with its continuation lines joined. */
-function items(text: string): { items: string[]; stray: boolean } {
-  const out: string[] = [];
-  let stray = false;
-  for (const line of text.split("\n")) {
-    if (line.trim() === "") continue;
-    if (/^- /.test(line)) out.push(line.slice(2).trim());
-    else if (/^\s+\S/.test(line) && out.length > 0)
-      out[out.length - 1] = `${out[out.length - 1]} ${line.trim()}`;
-    else stray = true;
-  }
-  return { items: out, stray };
-}
-
-/** The bold name an option opens with, or `null`. */
-function optionName(item: string): string | null {
-  return /^\*\*([^*]+)\*\*/.exec(item)?.[1]?.trim() ?? null;
-}
 
 /** Split `text` at its `## ` headings; problems name what is wrong. */
 function sections(text: string): {
@@ -123,37 +105,6 @@ function checkQuestion(q: string, problems: string[]): void {
   // rules' to judge, since an abbreviation such as "e.g." is punctuation too.
   if (q.includes("\n")) problems.push("Question must be one line");
   else if (!q.endsWith("?")) problems.push("Question must end with '?'");
-}
-
-/** The labelled fields an option carries, each once with a value of its own. */
-const OPTION_FIELDS = ["Changes", "Costs"] as const;
-
-/**
- * An option's `Changes:` and `Costs:` values, split at the labels: each
- * value runs to the next label or the item's end, so one label cannot stand
- * in for the other's value.
- */
-function optionFields(item: string): {
-  values: Partial<Record<(typeof OPTION_FIELDS)[number], string>>;
-  repeated: string[];
-} {
-  const labels = [...item.matchAll(/\b(changes|costs):/gi)].map((m) => ({
-    field: OPTION_FIELDS.find(
-      (f) => f.toLowerCase() === (m[1] ?? "").toLowerCase(),
-    ),
-    start: m.index,
-    end: m.index + m[0].length,
-  }));
-  const values: Partial<Record<(typeof OPTION_FIELDS)[number], string>> = {};
-  const repeated: string[] = [];
-  for (const [i, l] of labels.entries()) {
-    if (l.field === undefined) continue;
-    if (values[l.field] !== undefined) repeated.push(l.field);
-    values[l.field] = item
-      .slice(l.end, labels[i + 1]?.start ?? item.length)
-      .trim();
-  }
-  return { values, repeated };
 }
 
 function checkOptions(text: string, problems: string[]): string[] {

@@ -674,6 +674,7 @@ describe("Jira adapter: assignments", () => {
       blockedAfterMs: 1_800_000,
       driveRoundsFlat: 3,
       pickupWithinMs: 7_200_000,
+      pickupDeadlineMs: 10_800_000,
       followupWithinMs: 3_600_000,
       followupStaleAfterMs: 86_400_000,
       noticesLingerMs: 3_600_000,

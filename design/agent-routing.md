@@ -279,6 +279,15 @@ the agent definition's pin, then the rules.
   `source: settings` for it; a field the settings leave out is derived by
   the rules. A setting that names only the agent chooses nothing about the
   model or the effort, and the rules apply to both.
+- **A dispatched pickup.** The headless `do-item` pass `jig dispatch`
+  starts carries the line `route: rules`: the session keeps the agent's
+  own model and effort, and `do-item` forwards the rules' model and effort
+  to its implementer explicitly, recording `source: rules` for each, where
+  the repository declares `routing`
+  ([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless)).
+  It is the forwarding [Build order](#build-order) step 5 brings to every
+  run, here ahead of it for the dispatched pass, whose session nobody
+  chose.
 - **Nobody there and no line.** The rules decide, and an unattended run
   never stops to ask for a route: the strictest value is always a safe
   answer for the work, if not the cheapest.

@@ -22,6 +22,8 @@ const DEFAULT_WAIT_MS = 30 * 60_000;
 const DEFAULT_ROUNDS_FLAT = 3;
 const DEFAULT_PICKUP_WITHIN_MS = 2 * 3_600_000;
 const DEFAULT_FOLLOWUP_WITHIN_MS = 3_600_000;
+/** `pickup_deadline`'s default: an implementation outruns a review pass's deadline. */
+const DEFAULT_PICKUP_DEADLINE_MS = 3 * 3_600_000;
 /** `notices_linger`'s default. */
 const DEFAULT_NOTICES_LINGER_MS = 3_600_000;
 /** `renotify_after`'s default: a day. */
@@ -37,6 +39,7 @@ const KEYS = [
   "blocked_after",
   "drive_rounds_flat",
   "pickup_within",
+  "pickup_deadline",
   "followup_within",
   "followup_stale_after",
   "notices_linger",
@@ -293,15 +296,19 @@ function pickup(
   });
 }
 
+/** What `timings` reads: every field but the pickup's own, the rules and the deadline. */
+type Timings = Omit<
+  DispatchSection,
+  | "identity"
+  | "states"
+  | "followupCommand"
+  | "labels"
+  | "adopt"
+  | "pickupDeadlineMs"
+>;
+
 /** The section's waits and expectations, and where and how often notices go. */
-function timings(
-  section: Record<string, unknown>,
-): Checked<
-  Omit<
-    DispatchSection,
-    "identity" | "states" | "followupCommand" | "labels" | "adopt"
-  >
-> {
+function timings(section: Record<string, unknown>): Checked<Timings> {
   const stalledAfterMs = wait(section.stalled_after, "stalled_after");
   if (!stalledAfterMs.ok) return stalledAfterMs;
   const blockedAfterMs = wait(section.blocked_after, "blocked_after");
@@ -376,9 +383,16 @@ export function dispatchSection(
   if (!picked.ok) return picked;
   const waits = timings(section);
   if (!waits.ok) return waits;
+  const pickupDeadlineMs = wait(
+    section.pickup_deadline,
+    "pickup_deadline",
+    DEFAULT_PICKUP_DEADLINE_MS,
+  );
+  if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
   return ok({
     ...picked.value,
     ...waits.value,
+    pickupDeadlineMs: pickupDeadlineMs.value,
     labels: rules.value.labels,
     adopt: rules.value.adopt,
   });

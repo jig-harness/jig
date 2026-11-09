@@ -13,6 +13,7 @@ import type {
 } from "../../dispatch/lib/dashboard-contract.ts";
 import { readLine } from "../../dispatch/lib/line-store.ts";
 import { ANSWER_VERSION, type PersonAct } from "./answer.ts";
+import { actOfLineNeed, type NeedAct } from "../../shared/acts.ts";
 
 /** The act that settles each cause the tick finds waiting on a person. */
 const ACTS: Record<NeedCause, PersonAct> = {
@@ -24,6 +25,8 @@ const ACTS: Record<NeedCause, PersonAct> = {
   "double-claim": "choose the session that keeps the item",
   stalled: "look at the stalled pickup",
   "nudge-unanswered": "answer the waiting session",
+  "pickup-question":
+    "settle the pickup's question, then return the item to the dispatch states",
   "assigner-cannot-write": "assign the item as someone who can write",
 };
 
@@ -36,6 +39,8 @@ export interface WaitingEntry {
   people: string[];
   address: string;
   act: PersonAct;
+  /** What the person does about it, as the dashboard's card names it (`shared/acts.ts`). */
+  needAct: NeedAct;
   /** When the cause began, as far as the records say. */
   since: string;
   /** The tick's reason, verbatim. */
@@ -80,6 +85,7 @@ function entryOf(need: LineNeed): WaitingEntry | null {
       need.decisions.flatMap((d) => (d.person === undefined ? [] : [d.person])),
     ),
     act: personAct(need.cause),
+    needAct: actOfLineNeed(need),
     since: need.since,
     reason: need.reason,
     url: need.url,

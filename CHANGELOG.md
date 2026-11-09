@@ -389,6 +389,55 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.183.0] - 2026-11-09
+
+### Added
+
+- Every need on the dispatch dashboard's Needs you view opens with what the
+  person does: one act from a closed list, **Merge**, **Decide**,
+  **Authorize**, **Reply**, **Do** or **Investigate**, taken from the park's
+  decision class (a class with no act of its own reads Decide), then the ask
+  in one sentence, the recommended option in bold with what it changes and
+  costs, and the person it waits on. The other options, the steps for a
+  person (as a checklist) and the evidence are folded. Needs you groups its
+  cards by act and filters them by the person they wait on.
+- `jig ask` names the same act as `needAct`, on a `person` wait and on each
+  `jig ask --waiting` entry. A parked drive takes the act the newest tick's
+  line names for it, so the answer and the card read one record.
+- The line the tick keeps for the dashboard carries each need's `act`, and
+  each parked decision's `options` (with their changes and costs and which
+  one is recommended) and `steps`.
+- The HITL registry template in M7 gains an Act column naming each class's
+  act.
+
+## [0.182.0] - 2026-11-09
+
+### Added
+
+- `dispatch.pickup_deadline` (3 hours by default): the deadline a pickup's
+  pass runs under. The wrapper stops the pass when it runs past it.
+- A pickup pass that cannot finish without a person does the work that
+  does not depend on the answer, then stops on a `Question:` line. The
+  tick notifies that question as a need (`pickup-question`) on the line,
+  in `jig ask --waiting` and on the dashboard. It does not start the item
+  again until the item leaves the dispatch states and comes back.
+  `do-item`'s `SKILL.md` describes this unattended path under
+  "Dispatched passes".
+
+### Changed
+
+- `jig dispatch --apply` now starts a pickup on Orca. Each item it picks
+  up runs as a headless `do-item` pass, started by the same wrapper as a
+  follow-up's pass and bound to an admitted account through that account's
+  configuration directory. The identity is checked before the pass starts.
+  The pass keeps the agent's own model and effort. Its prompt carries the
+  line `route: rules`, on which `do-item` forwards the item's route to the
+  implementer it delegates to, where the repository declares `routing`. On
+  a Codex account a pickup starts only on a host that set
+  `drive.codex_bypass`. Orca still cannot bind an interactive session to
+  an account, so that refusal now covers interactive launches only, and
+  none is started.
+
 ## [0.181.0] - 2026-11-09
 
 ### Added
@@ -6356,7 +6405,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.181.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.183.0...HEAD
+[0.183.0]: https://github.com/jig-harness/jig/compare/v0.182.0...v0.183.0
+[0.182.0]: https://github.com/jig-harness/jig/compare/v0.181.0...v0.182.0
 [0.181.0]: https://github.com/jig-harness/jig/compare/v0.180.0...v0.181.0
 [0.180.0]: https://github.com/jig-harness/jig/compare/v0.179.0...v0.180.0
 [0.179.0]: https://github.com/jig-harness/jig/compare/v0.178.0...v0.179.0

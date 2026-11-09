@@ -10,6 +10,7 @@
  * so the two never say different things about one database.
  */
 import { ACTS } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
+import { NEED_ACTS } from "../../shared/acts.ts";
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -69,6 +70,16 @@ const DECISION_FIELDS: Fields = {
   question: nullOr(isString),
   recommendation: nullOr(isString),
   decisionClass: nullOr(isString),
+  options: (value) =>
+    value === undefined ||
+    listOf({
+      name: isString,
+      changes: nullOr(isString),
+      costs: nullOr(isString),
+      recommended: (v) => typeof v === "boolean",
+    })(value),
+  steps: (value) =>
+    value === undefined || (Array.isArray(value) && value.every(isString)),
 };
 
 /** What the sessions view reads of each thread sample. */
@@ -82,6 +93,9 @@ const SAMPLE_FIELDS: Fields = {
 const ENTRY_FIELDS = {
   needs: {
     cause: isString,
+    // A closed list: an act a later version adds would make this reader refuse the line, so the list stays closed across versions.
+    act: (value) =>
+      value === undefined || (NEED_ACTS as readonly unknown[]).includes(value),
     repo: isString,
     target: isString,
     since: isTime,

@@ -1209,7 +1209,7 @@ create` does not do) live in the plugin, in
   uses). One that is in use refuses the open, and the launch's refusal
   names it, for the notice below;
 - `launch` for a **headless pass** (a drive re-arm or takeover, a
-  follow-up) as
+  follow-up, a pickup) as
   `orca terminal create --worktree <selector> --title <tab title> --command
 <wrapper>` (the title as Naming what it starts gives it), the account's configuration directory set in the command's
   environment (below); for an **interactive session** (a pickup) as
@@ -1222,9 +1222,9 @@ create` does not do) live in the plugin, in
   starting Claude Code itself) passes it as Claude Code's `--session-id`;
   that `orca agent launch` can bind its agent to
   an account so is checked when the pickup stage is built, and until it
-  does, interactive sessions are not launched. A pickup launched as a
-  headless pass instead ([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless),
-  item 44) takes the headless form above, with the wrapper running
+  does, interactive sessions are not launched. A pickup is launched as a
+  headless pass instead ([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless))
+  and takes the headless form above, with the wrapper running
   `do-item`. The key is kept by the
   record itself for a headless pass: the wrapper claims the record
   atomically before it starts the stage, so a second terminal for a record
@@ -1412,9 +1412,8 @@ host-wide and would move every other session's next pass too. Whether an
 Orca agent launch can bind its agent to an account is not verified (Orca's
 command line selects accounts only for some agents), so a pickup does not
 start as an interactive session: it runs as a headless pass, as a
-follow-up does, once item 44's headless pickups are built
-([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless));
-until then pickups are reported, not started.
+follow-up does
+([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless)).
 
 A follow-up does not wait for that: it runs as a headless pass, the
 account's vendor's non-interactive command (`claude -p`, `codex exec`) on
@@ -2379,8 +2378,8 @@ One pull request each, in this order; each is usable on its own.
   spreading load before a wall is reached needs usage telemetry Jig does
   not read yet.
 - **Interactive pickups**, until an Orca agent launch that binds its agent
-  to an account is shown to work; drives and follow-ups run as headless
-  passes meanwhile.
+  to an account is shown to work; drives, follow-ups and pickups run as
+  headless passes meanwhile.
 - **Further nudges.** A nudge joins the closed set only when the outcome
   log's waiting-episode rows show a mechanical cause that recurs, with a
   target the tick can identify and a screen state it can check, as

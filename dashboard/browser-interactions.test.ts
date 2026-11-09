@@ -244,7 +244,8 @@ describe("the disclosures", () => {
         expect(await page.locator(".quote.md h2").first().innerText()).toBe(
           "Question",
         );
-        expect(await page.locator(".quote.md li").count()).toBe(2);
+        // Two options and the step for a person.
+        expect(await page.locator(".quote.md li").count()).toBe(3);
       } finally {
         await context.close();
       }
