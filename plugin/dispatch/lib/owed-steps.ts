@@ -185,11 +185,21 @@ function fenceEnds(
   return line.trim() !== "" && indentOf(line) < fenceBase ? "dedented" : "open";
 }
 
-/** Whether a line cannot continue the paragraph above it: it is blank, or an item, a heading or a fence of its own. */
+/** Whether an item can interrupt a paragraph. An ordered list can do so only when it starts at 1. */
+function interruptsParagraph(line: string): boolean {
+  const item = ITEM.exec(line);
+  if (item === null) return false;
+  const marker = line.slice((item[1] ?? "").length).match(/^(?:[-*+]|\d+[.)])/);
+  return (
+    marker !== null && (!/^\d/.test(marker[0]) || /^1[.)]$/.test(marker[0]))
+  );
+}
+
+/** Whether a line cannot continue the paragraph above it: it is blank, an interrupting list item, a heading or a fence of its own. */
 function interrupts(line: string): boolean {
   return (
     line.trim() === "" ||
-    ITEM.test(line) ||
+    interruptsParagraph(line) ||
     HEADING_LINE.test(line) ||
     BREAK.test(line) ||
     fenceOf(line, 0) !== undefined

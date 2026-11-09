@@ -150,7 +150,22 @@ function group(scan: Scan, c: string): boolean {
   return true;
 }
 
-/** Read the process substitution whose `(` is at `open` as one word of the command, its nested command unread; the index of its closing `)`, or of the script's last character when it never closes. */
+/** The end of the quote beginning at `at`, respecting double-quote escapes; the end of the script when it never closes. */
+function quotedEnd(script: string, at: number): number {
+  const quote = script.charAt(at);
+  for (let i = at + 1; i < script.length; i++) {
+    if (script.charAt(i) === quote) return i;
+    if (quote === '"' && script.charAt(i) === "\\") i++;
+  }
+  return script.length - 1;
+}
+
+const isQuote = (c: string): boolean => c === "'" || c === '"';
+
+const closesSubstitution = (c: string, depth: number): boolean =>
+  c === ")" && depth === 1;
+
+/** Read the process substitution whose `(` is at `open` as one word of the command, its nested command unread; the index of its closing `)`, or of the script's last character when it never closes. Quoted, escaped and commented parentheses are text, not delimiters. */
 function substitution(
   scan: Scan,
   script: string,
@@ -158,13 +173,36 @@ function substitution(
   open: number,
 ): number {
   let depth = 0;
+  let atWordStart = true;
   for (let j = open; j < script.length; j++) {
     const c = script.charAt(j);
-    if (c === "(") depth++;
-    else if (c === ")" && --depth === 0) {
+    if (isQuote(c)) {
+      j = quotedEnd(script, j);
+      atWordStart = false;
+      continue;
+    }
+    if (c === "\\") {
+      j++;
+      atWordStart = false;
+      continue;
+    }
+    if (c === "#" && atWordStart) {
+      const end = script.indexOf("\n", j);
+      j = end === -1 ? script.length : end;
+      atWordStart = true;
+      continue;
+    }
+    if (c === "(") {
+      depth++;
+      atWordStart = true;
+      continue;
+    }
+    if (closesSubstitution(c, depth)) {
       scan.word = script.slice(start, j + 1);
       return j;
     }
+    if (c === ")") depth--;
+    atWordStart = /[\s;&|]/.test(c);
   }
   scan.word = script.slice(start);
   return script.length - 1;

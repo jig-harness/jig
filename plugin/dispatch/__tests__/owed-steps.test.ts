@@ -334,6 +334,17 @@ describe("fences and code spans inside list items", () => {
     ).toEqual({ open: 1, done: 1 });
   });
 
+  it("keeps a code span open through an ordered list that cannot interrupt its paragraph", () => {
+    expect(
+      owed(
+        "- [x] Document `literal",
+        "  2. <!-- marker",
+        "  continued`.",
+        "- [ ] Rotate the key",
+      ),
+    ).toEqual({ open: 1, done: 1 });
+  });
+
   it("treats a backtick run with no closing run as text", () => {
     expect(owed("- [ ] a ` b <!-- c", "- [ ] hidden -->")).toEqual({
       open: 1,
