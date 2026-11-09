@@ -16,6 +16,21 @@ base snapshot of its own: each lens the diff triggers runs with fresh
 context, the gate's summary says why it skipped the others, and the lenses'
 warnings go into the pull request body under Review Notes.
 
+## Scouts before a pickup
+
+Run `/jig:do-item scout <issue-key>` to gather context before deciding to
+start an issue, or `/jig:do-item scout --text <task>` for work outside the
+tracker. Both use the same configured scouts and agent routing as a pickup;
+free text uses title keywords or the default agent because it has no labels.
+Neither claims or implements the work.
+
+The issue form posts completed findings with the `## Scout Findings (<hash>)`
+heading a pickup reads, so a later pickup reuses them while their hash matches
+or they are under 24 hours old. The text form prints its findings without
+contacting the tracker. A route without scouts is reported without an empty
+comment, and partial findings from a failed scout are reported without being
+published as reusable findings.
+
 ## The item's spec
 
 Once it has the issue, it shows what the issue says must be built: the

@@ -1,7 +1,7 @@
 ---
 name: do-item
-description: "Pick up one work item from the tracker and carry it to a driven pull request: scout, delegate, review, open the PR, arm the drive."
-argument-hint: "[issue-key]"
+description: "Pick up one tracker item through a driven pull request, or run its configured scouts before pickup for an issue key or free-text task."
+argument-hint: "[issue-key] | scout <issue-key> | scout --text <task>"
 allowed-tools: "Read Grep Glob Task Bash(bun *) Bash(git *) Bash(gh *) WebFetch AskUserQuestion"
 ---
 
@@ -48,6 +48,51 @@ the same way, e.g. `${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts`.
 Run every command from the root of the repository the issue belongs to. Never
 `cd` into the skill directory: the scripts find the repository and its
 configuration from the working directory.
+
+### Scout before a pickup
+
+`/jig:do-item scout <issue-key>` runs the configured context-gathering scouts
+without starting the item. `/jig:do-item scout --text <task>` does the same
+for free text. Handle these forms here and stop after reporting findings;
+do not enter the pickup steps, claim an issue, write an intent chain,
+implement, open a pull request or arm a drive.
+
+1. For an issue key, fetch the issue with `scripts/get_issue.ts` as in
+   [Step 1](#step-1-fetch-the-issue), and write the returned JSON to
+   `.context/scout-input.json`. Stop if the fetch fails. For `--text`, write
+   JSON with the task verbatim as `title` and `description`, and `labels: []`,
+   to that file; do not read or write the tracker. Free text routes through
+   the configured title keywords or default agent, since it has no labels.
+2. Run the same routing used by a pickup:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/determine_agent.ts" .context/scout-input.json
+   ```
+
+   Report the recommended agent and scouts. Stop on a non-zero exit. If the
+   scout list is empty, say no scouts are configured for that route and
+   stop without posting an empty findings comment.
+3. Run each scout named in the result with the task or full issue, the
+   repository instructions and the relevant context. Use the harness's
+   subagent tool with that scout's definition; when it is unavailable, read
+   the definition and perform its checks in this session. The scouts gather
+   context only. Collect their findings, evidence paths and unresolved
+   questions. If a scout fails, report the partial findings and the failure;
+   do not publish a reusable findings comment.
+4. After all scouts finish, read the repository hash:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --short HEAD
+   ```
+
+   Write `.context/scout-findings.md` with the first line exactly
+   `## Scout Findings (<hash>)`, substituting that hash, followed by the
+   collected findings. Print the complete findings for both forms. For an
+   issue key, also post that file through the tracker comment operation as in
+   [Step 4a item 3](#step-4a-standard-start-no-sub-issues). Report a failed
+   post and retain the file. For free text, the printed findings are the
+   result; no tracker comment is posted. A later pickup's Step 2 selects an
+   issue's comment under the existing hash and freshness rules.
 
 ### How to read the step markers
 
