@@ -208,7 +208,8 @@ Where this skill says "ask the user", use `AskUserQuestion` under Claude Code
 where the session can use it; in any interactive harness where it cannot
 (another harness, or a permission mode that denies the tool), ask a
 plain-text numbered question and end the turn; under a [headless runner](#headless-runners), raise it through the
-runner. With nobody to answer and no runner, stop and state the question.
+runner. With nobody to answer and no runner, stop and state the question,
+as a [dispatched pass](#dispatched-passes) does.
 Never pick on the user's behalf.
 
 ## In the delivery loop
@@ -587,8 +588,16 @@ routing below remain **exact**.
    Put the tier, the effort, the model and the effort's reasons (its base
    row and every raise in `reasons`) in the status message, e.g.
    `Route: execution, high, sonnet (type bug: medium; flag has-migration raised medium)`.
-   The route is not forwarded: the delegation below runs on the model and
-   effort it would run on without one, whatever `declared` says. Exit `1` is a
+   The route is forwarded only in a [dispatched pass](#dispatched-passes),
+   whose first prompt carries the line `route: rules`, and only when
+   `declared` is `true`: item 4's delegation then passes `runtime_model` as
+   the subagent's model and `runtime_effort` as its effort, field by field
+   where the harness's subagent tool takes it, and the fix loop after the
+   review delegates with the same values; a field the tool does not take is
+   not forwarded, and the status message says so. This session keeps its
+   own model and effort. Anywhere else the route is not forwarded: the
+   delegation below runs on the model and effort it would run on without
+   one, whatever `declared` says. Exit `1` is a
    configuration the loading rules refuse: stop the pickup and report its
    message, which names the field at fault. A refused `routing` section is
    never read as absent; the repository corrects it before the item is
@@ -1546,6 +1555,32 @@ report the milestones the skill already passes (issue fetched, plan ready,
 delegated, pre-PR review, PR opened). Payloads sent to a runner carry
 references (paths, commit hashes, PR and issue links), never file contents.
 Without such a runner, ask as in [Asking the user](#asking-the-user).
+
+## Dispatched passes
+
+`jig dispatch` starts this skill as a headless pass for an item assigned to
+the factory identity: `/jig:do-item <KEY>` followed by the line
+`route: rules`, with nobody at the keyboard and nobody to answer while it
+runs. Its prompt says so, and names the `jig dispatch result` commands that
+record how it ended. In such a pass:
+
+- **The route reaches the implementer, not this session**: forward it as
+  [Step 4a item 1](#step-4a-standard-start-no-sub-issues) says.
+- **Every point that asks the user stops instead.** The Step 4b choice, an
+  ambiguous requirement, a `hitl` clarification and the pre-push "cannot
+  tell" branch each need a person. Carry out every step that does not
+  depend on the answer (scouts, findings, the tracker comment a `hitl` item
+  gets), then stop: record `failed` with the command the prompt names, and
+  end the output with one line that starts `Question:` and states what the
+  person must decide, with no secret or personal data in it. The
+  dispatcher keeps that line and notifies it as a need; it does not start
+  the item again until the item leaves the dispatch states and comes back.
+- **Never pick on the person's behalf** to finish unattended: a question
+  the pass cannot settle from the repository's rules is the person's.
+- **The pass has a deadline** (`dispatch.pickup_deadline`, 3 hours by
+  default), after which the wrapper stops it: open the pull request and arm
+  its drive as soon as the work allows, and record the result before
+  anything long-running that follows.
 
 ## Error handling
 

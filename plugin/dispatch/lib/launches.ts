@@ -77,9 +77,15 @@ export function isDrive(record: Pick<LaunchRecord, "action">): boolean {
   return record.action === "rearm" || record.action === "takeover";
 }
 
-/** Whether a record starts an interactive session (a pickup's), whose agent ends it. A follow-up is a headless pass, which its exit ends. */
-export function isInteractive(record: Pick<LaunchRecord, "action">): boolean {
-  return record.action === "pickup";
+/**
+ * Whether a record starts an interactive session, whose agent ends it: a
+ * pickup an earlier release started that way. A pickup this release starts
+ * is a headless pass (`headless`), as a follow-up is, which its exit ends.
+ */
+export function isInteractive(
+  record: Pick<LaunchRecord, "action" | "headless">,
+): boolean {
+  return record.action === "pickup" && record.headless !== true;
 }
 
 /** A pickup's session's or a follow-up pass's own answer, recorded through `jig dispatch result`. */
@@ -111,9 +117,11 @@ export interface LaunchRecord {
   configDir: string;
   /** The machine file's `wall_backoff` when the record was written, for a wall with no known reset. */
   wallBackoffMs: number;
-  /** For a drive or a follow-up pass: the pass deadline, in seconds (`0` for none), it was admitted under and runs under (`drive.ts --pass-timeout`, or the wrapper's own deadline on a follow-up pass); absent on a record written before it was kept. */
+  /** For a headless pass (a drive's, a follow-up's, a pickup's): the pass deadline, in seconds (`0` for none), it was admitted under and runs under (`drive.ts --pass-timeout`, or the wrapper's own deadline on a follow-up's or a pickup's pass, which for a pickup is `dispatch.pickup_deadline`); absent on a record written before it was kept. */
   passTimeoutSec?: number | null;
-  /** For a drive or a follow-up pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
+  /** For a pickup: it runs as a headless pass of `do-item` through the wrapper. Absent on an interactive pickup an earlier release started. */
+  headless?: boolean;
+  /** For a headless pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
@@ -124,7 +132,7 @@ export interface LaunchRecord {
   attempts: LaunchAttempt[];
   /** An interactive session's agent, by the id the runtime reports it under, from the launch's receipt. */
   agentId: string | null;
-  /** The model and effort a pickup was launched with; `null` when the route named none. */
+  /** A pickup's route: the model and effort its implementer delegate is to run on (an interactive pickup's session itself ran on them); `null` when the route named none. */
   model: string | null;
   effort: string | null;
   /** A pickup's ended record no longer holds its item: the item left the dispatch states since. */

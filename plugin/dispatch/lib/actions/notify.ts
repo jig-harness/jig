@@ -617,7 +617,11 @@ function stageOf(cause: Cause): string {
   if (typeof cause.evidence.stage === "string") return cause.evidence.stage;
   if (cause.cause === "followup-failed" || cause.cause === "followup-stale")
     return "followup";
-  if (cause.cause === "stalled" || cause.cause === "double-claim")
+  if (
+    cause.cause === "stalled" ||
+    cause.cause === "double-claim" ||
+    cause.cause === "pickup-question"
+  )
     return "pickup";
   return "rearm";
 }
@@ -631,6 +635,7 @@ function classOf(cause: Cause): OutcomeClass | null {
     case "followup-stale":
       return "stalled";
     case "parked":
+    case "pickup-question":
       return "parked for a person";
     case "followup-failed":
       // A pass that stopped on a question waits on a person, as a parked drive does.

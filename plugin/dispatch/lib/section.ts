@@ -22,6 +22,8 @@ const DEFAULT_WAIT_MS = 30 * 60_000;
 const DEFAULT_ROUNDS_FLAT = 3;
 const DEFAULT_PICKUP_WITHIN_MS = 2 * 3_600_000;
 const DEFAULT_FOLLOWUP_WITHIN_MS = 3_600_000;
+/** `pickup_deadline`'s default: an implementation outruns a review pass's deadline. */
+const DEFAULT_PICKUP_DEADLINE_MS = 3 * 3_600_000;
 /** `notices_linger`'s default. */
 const DEFAULT_NOTICES_LINGER_MS = 3_600_000;
 /** `renotify_after`'s default: a day. */
@@ -37,6 +39,7 @@ const KEYS = [
   "blocked_after",
   "drive_rounds_flat",
   "pickup_within",
+  "pickup_deadline",
   "followup_within",
   "followup_stale_after",
   "notices_linger",
@@ -314,6 +317,12 @@ function timings(
     DEFAULT_PICKUP_WITHIN_MS,
   );
   if (!pickupWithinMs.ok) return pickupWithinMs;
+  const pickupDeadlineMs = wait(
+    section.pickup_deadline,
+    "pickup_deadline",
+    DEFAULT_PICKUP_DEADLINE_MS,
+  );
+  if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
   const followupWithinMs = wait(
     section.followup_within,
     "followup_within",
@@ -345,6 +354,7 @@ function timings(
     blockedAfterMs: blockedAfterMs.value,
     driveRoundsFlat: driveRoundsFlat.value,
     pickupWithinMs: pickupWithinMs.value,
+    pickupDeadlineMs: pickupDeadlineMs.value,
     followupWithinMs: followupWithinMs.value,
     followupStaleAfterMs: followupStaleAfterMs.value,
     noticesLingerMs: noticesLingerMs.value,

@@ -41,6 +41,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       typeof value.rearmConsumed === "boolean") &&
     (value.codexBypass === undefined ||
       typeof value.codexBypass === "boolean") &&
+    (value.headless === undefined || typeof value.headless === "boolean") &&
     (value.routineTags === undefined ||
       typeof value.routineTags === "boolean") &&
     (value.standing === undefined ||

@@ -77,15 +77,16 @@ describe("a Codex account on a host's opt-in", () => {
   const table = () =>
     slotTable([codex], [], Date.now(), "/nonexistent-state-root");
 
-  it("is refused for a pass and for an interactive session, saying why, and admitted once the host opted in", () => {
+  it("is refused for a drive's pass and for a pickup's longer pass, saying why, and admitted once the host opted in", () => {
+    const pickup = { kind: "pass", deadlineSec: 10_800 } as const;
     for (const launch of [
       { kind: "pass", deadlineSec: 5400, codex: OFF },
-      { kind: "interactive", codex: OFF },
+      { ...pickup, codex: OFF },
     ] as const)
       expect(admitRearm(table(), null, launch)).toEqual({
         waits: expect.stringContaining("the host's reason: not admitted"),
       });
-    for (const launch of [PASS, { kind: "interactive", codex: ON }] as const)
+    for (const launch of [PASS, { ...pickup, codex: ON }] as const)
       expect(admitRearm(table(), null, launch)).toMatchObject({
         admitted: { account: { name: "c" } },
       });

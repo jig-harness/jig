@@ -38,6 +38,8 @@ export interface DispatchSection {
   driveRoundsFlat: number;
   /** How long a pickup may run before it has opened a pull request. */
   pickupWithinMs: number;
+  /** The deadline a pickup's headless pass runs under (`pickup_deadline`), after which its wrapper stops it. */
+  pickupDeadlineMs: number;
   /** How long a follow-up may run before it has ended. */
   followupWithinMs: number;
   /** How old a follow-up claim with no done mark and no session joined to it may grow before the tick releases it, once (`followup_stale_after`). */
@@ -256,6 +258,7 @@ export type NotifyCause =
   | "followup-stale"
   | "drifting"
   | "nudge-unanswered"
+  | "pickup-question"
   | "ready";
 
 /** A follow-up claim past `followup_stale_after` with no done mark and no session joined to it: the marker the tick releases, and whose claim it was. */

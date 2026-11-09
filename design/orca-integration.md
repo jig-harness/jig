@@ -318,7 +318,7 @@ for Codex) and consumes the announcement. That the added variable wins
 over Orca's own account selection is unproven, and the hook can add
 variables but not remove an inherited credential that would bill another
 account. A spike settles both for Claude Code and for Codex; until it
-does, the binding stays off and pickups are reported, not started.
+does, the binding stays off and pickups run as headless passes instead.
 
 **The status bar.** A status bar item shows the newest tick's counts of
 pull requests ready to merge and of needs waiting on a person, and flags

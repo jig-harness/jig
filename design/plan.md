@@ -136,9 +136,9 @@ vendor choosing the agent a session runs in, then the pull requests that
 touch a change area the catalog marks `serialize: true` driven one at a
 time, the one closest to merge first and the rest held, with the conflict
 history report proposing which areas to mark; the re-arm step waits on the drive
-running in a session of its own, and the pickups are reported, not
-started, until item 44 ([line-at-capacity.md](line-at-capacity.md)) starts
-them as headless passes and adds the pickups of the people a host serves. A park's notification carries the park's framed
+running in a session of its own, and the pickups start as headless
+`do-item` passes; item 44 ([line-at-capacity.md](line-at-capacity.md)) adds
+the pickups of the people a host serves. A park's notification carries the park's framed
 decision.
 
 What is open is checking it on a live host. Done when, on a host running
