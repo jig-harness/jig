@@ -37,6 +37,9 @@ const environment = (extra: Record<string, string> = {}) => ({
   LOCK_ROOT: scratch,
   LOCK_TIMEOUT: "5",
   LOCK_POLL: "0.02",
+  // One slot: the lock as a single mutex, which these tests pin.
+  LOCK_SLOTS: "1",
+  LOCK_STATIC_SLOTS: "",
   ...extra,
 });
 const spawn = (args: string[], env: Record<string, string> = {}) =>
@@ -182,6 +185,46 @@ test.skipIf(process.platform === "win32")(
     );
     expect(existsSync(lock)).toBe(false);
     expect(existsSync(`${lock}.holder`)).toBe(false);
+  },
+);
+test.skipIf(process.platform === "win32")(
+  "a single-slot run reclaims an exclusive announcement whose pid now belongs to a newer process",
+  async () => {
+    const announcement = join(scratch, "jig-lock.recycled-exclusive.exclusive");
+    symlinkSync(String(process.pid), announcement);
+    writeFileSync(
+      `${announcement}.holder`,
+      JSON.stringify({
+        hostId: "",
+        host: "",
+        bootId: "",
+        pid: process.pid,
+        start: "Thu Jan  1 00:00:00 1970",
+      }),
+    );
+    const r = await run([process.execPath, "-e", "console.log('ran')"], {
+      LOCK_NAME: "recycled-exclusive",
+    });
+    expectRunExit(r, 0);
+    expect(r.out.trim()).toBe("ran");
+    expect(existsSync(announcement)).toBe(false);
+  },
+);
+test.skipIf(process.platform === "win32")(
+  "a single-slot run that times out behind an exclusive announcement names its holder",
+  async () => {
+    const announcement = join(scratch, "jig-lock.announced.exclusive");
+    symlinkSync(String(process.pid), announcement);
+    try {
+      const r = await run([process.execPath, "-e", ""], {
+        LOCK_NAME: "announced",
+        LOCK_TIMEOUT: "1",
+      });
+      expectRunExit(r, 3);
+      expect(r.error).toContain(`held by pid ${process.pid}`);
+    } finally {
+      rmSync(announcement, { force: true });
+    }
   },
 );
 test("a recorded holder written before the lock it stands beside judges nothing", async () => {

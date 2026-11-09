@@ -482,7 +482,7 @@ const MACHINE: RecordKind[] = [
     "machine",
     "resource-lock",
     "shared/resource-lock.ts",
-    "<tmp>/jig-lock.<name>",
+    "<tmp>/jig-lock.<name>, its slots <tmp>/jig-lock.<name>-slot-<n>, and <tmp>/jig-lock.<name>.admission and .exclusive",
     0,
   ),
   plain(

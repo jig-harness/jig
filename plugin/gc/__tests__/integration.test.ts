@@ -152,6 +152,30 @@ test.each([
   const receipt = JSON.parse(result.stdout.toString()) as Receipt;
   expect(receipt.collect).toBe(collects);
 });
+test.skipIf(process.platform === "win32")(
+  "a collection waits for a heavy run in any slot of the lock, not only the lock's own name",
+  () => {
+    const f = setup();
+    const root = join(f.root, "locks");
+    mkdirSync(root);
+    // A live heavy run in slot 3: this test's own process holds it.
+    symlinkSync(String(process.pid), join(root, "jig-lock.heavy-slot-3"));
+    f.env.RESOURCE_LOCK_BYPASS = undefined;
+    f.env.CI = undefined;
+    f.env.LOCK_ROOT = root;
+    f.env.LOCK_TIMEOUT = "0";
+    const result = run(f, ["--collect", "--repo", f.repo, "--json"]);
+    expectSpawnExit(result, 1);
+    const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+    expect(receipt.resources[0]).toMatchObject({
+      outcome: "unverified",
+      reason: expect.stringContaining("machine heavy-run lock"),
+    });
+    expect(result.stderr.toString()).toContain(
+      `could not acquire lock 'heavy' within 0s (held by pid ${process.pid}`,
+    );
+  },
+);
 test("uninstalled repositories refuse collection and persist the refusal", () => {
   const f = setup();
   writeFileSync(f.homeFile, "{}\n");
