@@ -3,9 +3,13 @@
  * Every uncertain safety check keeps the tree attached and reports why.
  * Exit 0 reports released/held; exit 2 means malformed arguments.
  */
-import { devNull } from "node:os";
 import { fail, runMain } from "../../../shared/cli.ts";
-import { git, run, type RunResult } from "../../../shared/proc.ts";
+import {
+  git,
+  gitIdentityEnv,
+  run,
+  type RunResult,
+} from "../../../shared/proc.ts";
 import { parseArgs } from "./lib/cli.ts";
 
 interface Request {
@@ -48,10 +52,7 @@ try { process.stdout.write(realpathSync(process.argv[1])); } catch { process.exi
 
 /** Keep every inspection anchored to its explicit worktree, never a hook's git environment. */
 function inspectionEnv(): Record<string, string | undefined> {
-  const env = { ...process.env };
-  for (const key of Object.keys(env))
-    if (key.toUpperCase().startsWith("GIT_")) delete env[key];
-  return { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: devNull };
+  return gitIdentityEnv();
 }
 
 async function canonicalPath(path: string): Promise<string | null> {
@@ -170,7 +171,8 @@ async function hasSubmoduleBlocker(target: string): Promise<boolean> {
   const command = [
     "status=$(git status --porcelain=v1 --untracked-files=all --ignore-submodules=none) || exit 1",
     'test -z "$status" || exit 2',
-    'git ls-files -v | grep -q "^[a-zS] " && exit 3',
+    "index=$(git ls-files -v) || exit 1",
+    'grep -q "^[a-zS] " <<EOF\n$index\nEOF\ncase $? in 0) exit 3 ;; 1) ;; *) exit 1 ;; esac',
     "exit 0",
   ].join("; ");
   const result = await git(

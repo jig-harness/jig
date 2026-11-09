@@ -1,5 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { devNull, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -190,6 +196,36 @@ test("keeps hidden changes inside initialized submodules", () => {
   );
   writeFileSync(join(tree, "nested-module", "nested"), "dirty\n");
   const report = release(main, tree);
+  expect(report.outcome).toBe("held");
+  expect(report.reason).toContain("submodule");
+});
+
+test("holds the delegate when the submodule index matcher fails", () => {
+  const { root, main, tree } = fixture();
+  const module = join(root, "module-source");
+  const bin = join(root, "bin");
+  git(root, "init", module);
+  writeFileSync(join(module, "nested"), "initial\n");
+  git(module, "add", ".");
+  git(module, "commit", "-m", "initial");
+  git(
+    tree,
+    "-c",
+    "protocol.file.allow=always",
+    "submodule",
+    "add",
+    module,
+    "nested-module",
+  );
+  git(tree, "commit", "-am", "add module");
+  git(tree, "push", "origin", "item");
+  mkdirSync(bin);
+  const matcher = join(bin, "grep");
+  writeFileSync(matcher, "#!/bin/sh\nexit 2\n");
+  chmodSync(matcher, 0o755);
+  const report = release(main, tree, {
+    PATH: `${bin}:${process.env.PATH ?? ""}`,
+  });
   expect(report.outcome).toBe("held");
   expect(report.reason).toContain("submodule");
 });
