@@ -109,6 +109,7 @@ areas:
       - code-stats
       - resolve-conflicts
       - work-batch
+      - plugin
       - plugin-shared
       - shared-lib
       - toolchain
