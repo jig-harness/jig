@@ -224,6 +224,7 @@ export function useFocusedCard(): FocusedCard | null {
     const observer = new MutationObserver(read);
     observer.observe(document.body, {
       subtree: true,
+      childList: true,
       attributes: true,
       attributeFilter: [
         "aria-label",
