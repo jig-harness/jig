@@ -14,6 +14,7 @@ import {
   runTriage,
   writeFixtureDir,
   writeNode,
+  writeHumanFinding,
 } from "./triage-thread-fixtures.ts";
 
 describe("triage-thread.ts", () => {
@@ -188,15 +189,7 @@ describe("triage-thread.ts", () => {
 
   it("EXCEPT a RECONCILED moot carrying the --leave-open marker: trusted as the merit outcome it was, not force-held", () => {
     const { dir, stateDir } = writeFixtureDir();
-    writeNode(dir, {
-      comments: [
-        {
-          author: "reviewer",
-          authorAssociation: "MEMBER",
-          body: "Please check this finding.",
-        },
-      ],
-    });
+    writeHumanFinding(dir);
     // First invocation: fresh **moot** + --leave-open, no --moot-pending-push
     // — the marker is embedded because this outcome is genuinely non-hold.
     const r1 = runTriage(
@@ -347,15 +340,7 @@ describe("triage-thread.ts", () => {
 
   it("an explicit --leave-open on a RECONCILING call whose existing reply has no marker FAILS CLOSED — the choice cannot be made durable, since reconciliation posts nothing to persist it onto", () => {
     const { dir, stateDir } = writeFixtureDir();
-    writeNode(dir, {
-      comments: [
-        {
-          author: "reviewer",
-          authorAssociation: "MEMBER",
-          body: "Please check this finding.",
-        },
-      ],
-    });
+    writeHumanFinding(dir);
     // Posted DIRECTLY via reply-to-thread.ts, exactly as the deliberate-
     // supersession path documents — never through triage-thread.ts, so no
     // LEAVE_OPEN_MARKER was ever appended.
@@ -544,15 +529,7 @@ describe("triage-thread.ts", () => {
 
   it("--cleanup-only refuses (exit 2) combined with --leave-open or --moot-pending-push — it posts nothing, so flags governing HOW a reply posts do not apply", () => {
     const { dir, stateDir } = writeFixtureDir();
-    writeNode(dir, {
-      comments: [
-        {
-          author: "reviewer",
-          authorAssociation: "MEMBER",
-          body: "Please check this finding.",
-        },
-      ],
-    });
+    writeHumanFinding(dir);
 
     const r1 = runTriage(
       ["PRRT_x", "999", "--cleanup-only", "--leave-open"],
@@ -951,15 +928,7 @@ describe("triage-thread.ts", () => {
 
   it("--leave-open posts a merit reply but does not resolve — the human-thread exception", () => {
     const { dir, stateDir } = writeFixtureDir();
-    writeNode(dir, {
-      comments: [
-        {
-          author: "reviewer",
-          authorAssociation: "MEMBER",
-          body: "Please check this finding.",
-        },
-      ],
-    });
+    writeHumanFinding(dir);
 
     const r = runTriage(
       ["PRRT_leaveopen", "999", "--leave-open"],
@@ -978,15 +947,7 @@ describe("triage-thread.ts", () => {
 
   it("a RECONCILED --leave-open reply stays open even when the retry omits the flag — recovered from the durable marker, not this invocation's own argv", () => {
     const { dir, stateDir } = writeFixtureDir();
-    writeNode(dir, {
-      comments: [
-        {
-          author: "reviewer",
-          authorAssociation: "MEMBER",
-          body: "Please check this finding.",
-        },
-      ],
-    });
+    writeHumanFinding(dir);
     const body =
       "**wont-fix** — valid but declined; leaving this human thread for its author to close.";
 
@@ -1028,15 +989,7 @@ describe("triage-thread.ts", () => {
 
   it("--leave-open has no effect on an accepted (hold) outcome", () => {
     const { dir, stateDir } = writeFixtureDir();
-    writeNode(dir, {
-      comments: [
-        {
-          author: "reviewer",
-          authorAssociation: "MEMBER",
-          body: "Please check this finding.",
-        },
-      ],
-    });
+    writeHumanFinding(dir);
 
     const r = runTriage(
       ["PRRT_leaveopen_hold", "999", "--leave-open"],
@@ -1050,15 +1003,7 @@ describe("triage-thread.ts", () => {
 
   it('--leave-open has no effect on a HELD moot (--moot-pending-push) outcome, and does NOT mark the reply — the marker means "left open", which a held reply is not', () => {
     const { dir, stateDir } = writeFixtureDir();
-    writeNode(dir, {
-      comments: [
-        {
-          author: "reviewer",
-          authorAssociation: "MEMBER",
-          body: "Please check this finding.",
-        },
-      ],
-    });
+    writeHumanFinding(dir);
 
     const r = runTriage(
       ["PRRT_leaveopen_heldmoot", "999", "--moot-pending-push", "--leave-open"],
@@ -1094,15 +1039,7 @@ describe("triage-thread.ts", () => {
 
   it("--leave-open DOES apply to a fresh PLAIN moot (no --moot-pending-push) — it is a merit outcome, and DOES mark the reply", () => {
     const { dir, stateDir } = writeFixtureDir();
-    writeNode(dir, {
-      comments: [
-        {
-          author: "reviewer",
-          authorAssociation: "MEMBER",
-          body: "Please check this finding.",
-        },
-      ],
-    });
+    writeHumanFinding(dir);
 
     const r = runTriage(
       ["PRRT_leaveopen_plainmoot", "999", "--leave-open"],
@@ -1119,15 +1056,7 @@ describe("triage-thread.ts", () => {
 
   it("refuses (exit 2) a fresh merit body whose own trailing line already matches LEAVE_OPEN_MARKER without --leave-open — posting it unchanged would be indistinguishable from a deliberate leave-open", () => {
     const { dir, stateDir } = writeFixtureDir();
-    writeNode(dir, {
-      comments: [
-        {
-          author: "reviewer",
-          authorAssociation: "MEMBER",
-          body: "Please check this finding.",
-        },
-      ],
-    });
+    writeHumanFinding(dir);
 
     const r = runTriage(
       ["PRRT_selfmarked", "999"],
@@ -1143,15 +1072,7 @@ describe("triage-thread.ts", () => {
 
   it("the same self-marked body posts fine WITH --leave-open — the flag is what makes the marker legitimate", () => {
     const { dir, stateDir } = writeFixtureDir();
-    writeNode(dir, {
-      comments: [
-        {
-          author: "reviewer",
-          authorAssociation: "MEMBER",
-          body: "Please check this finding.",
-        },
-      ],
-    });
+    writeHumanFinding(dir);
 
     const r = runTriage(
       ["PRRT_selfmarked_flagged", "999", "--leave-open"],

@@ -1,3 +1,4 @@
+import { createThreadWorktree } from "./thread-worktree-fixture.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 /** Integration tests for reply disposition and crash recovery against a fake forge. */
@@ -7,13 +8,11 @@ import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
@@ -45,29 +44,12 @@ function scrubbedGitEnv(): Record<string, string> {
 }
 
 beforeAll(() => {
-  tmpRoot = mkdtempSync(join(tmpdir(), "triage-thread-"));
-  binDir = join(tmpRoot, "bin");
-  mkdirSync(binDir, { recursive: true });
+  ({ tmpRoot, binDir, scratchWorktree } = createThreadWorktree(
+    "triage-thread-",
+    scrubbedGitEnv(),
+  ));
 
-  scratchWorktree = join(tmpRoot, "worktree");
-  mkdirSync(scratchWorktree, { recursive: true });
-  const init = Bun.spawnSync(["git", "init", "-q"], {
-    cwd: scratchWorktree,
-    env: scrubbedGitEnv(),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (init.exitCode !== 0) {
-    throw new Error(`git init failed: ${init.stderr.toString()}`);
-  }
-
-  // A `gh` stub serving fixtures from $TRT_FIXTURES. These shapes reach it:
-  //   - reply-to-thread.ts's addPullRequestReviewThreadReply, via `--input -`
-  //   - resolve-thread.ts's resolveReviewThread mutation
-  //   - triage-thread.ts's own single-thread `node(id:...)` read
-  // matched the same way reconcile-replied-threads.test.ts's stub already
-  // discriminates a mutation from an ordinary query: by literal substring in
-  // the joined argv, since both arrive as `gh api graphql ...`.
+  // A fake forge serving the thread read and mutation fixtures.
   const stub = `#!/usr/bin/env bash
 set -euo pipefail
 (
@@ -332,4 +314,17 @@ export function holdDirectly(
       `holdDirectly failed (${proc.exitCode}): ${proc.stderr.toString()}`,
     );
   }
+}
+
+/** Seed the human starter used by leave-open disposition cases. */
+export function writeHumanFinding(dir: string): void {
+  writeNode(dir, {
+    comments: [
+      {
+        author: "reviewer",
+        authorAssociation: "MEMBER",
+        body: "Please check this finding.",
+      },
+    ],
+  });
 }

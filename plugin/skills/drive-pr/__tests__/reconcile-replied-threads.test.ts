@@ -1,3 +1,4 @@
+import { createThreadWorktree } from "./thread-worktree-fixture.ts";
 /**
  * reconcile-replied-threads.test.ts
  *
@@ -19,12 +20,10 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
@@ -67,32 +66,10 @@ function scrubbedGitEnv(): Record<string, string> {
 }
 
 beforeAll(() => {
-  tmpRoot = mkdtempSync(join(tmpdir(), "reconcile-replied-"));
-  binDir = join(tmpRoot, "bin");
-  mkdirSync(binDir, { recursive: true });
-
-  // The scripts under test resolve their actor identity from the git
-  // worktree they are spawned in (lib/state/actor.ts, `git rev-parse
-  // --show-toplevel`). Spawning them in this test process's own cwd would make
-  // that an ambient dependency on the ENCLOSING checkout being a git
-  // worktree — false on the remote gates host and on a Blacksmith Testbox,
-  // where the synced checkout has no `.git` at all. A bare
-  // `git init` scratch dir is all identity resolution needs (no history is
-  // read); the git-repo-location env vars are scrubbed so a hook-inherited
-  // GIT_DIR cannot repoint the init at a real repo (the hook-env-leak
-  // class). `scrubbedGitEnv()` is used at EVERY spawn below,
-  // not just this one — see its own comment.
-  scratchWorktree = join(tmpRoot, "worktree");
-  mkdirSync(scratchWorktree, { recursive: true });
-  const init = Bun.spawnSync(["git", "init", "-q"], {
-    cwd: scratchWorktree,
-    env: scrubbedGitEnv(),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (init.exitCode !== 0) {
-    throw new Error(`git init failed: ${init.stderr.toString()}`);
-  }
+  ({ tmpRoot, binDir, scratchWorktree } = createThreadWorktree(
+    "reconcile-replied-",
+    scrubbedGitEnv(),
+  ));
 
   // A `gh` stub that serves fixture files from $RRT_FIXTURES. Honours the one
   // `-q`/`--jq` filter form the scripts under test actually use, and detects
