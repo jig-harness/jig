@@ -97,6 +97,24 @@ describe("ordinary check attempts on the head", () => {
     expect(result.waitsOn).toEqual({ kind: "person", act: "re-run-check" });
   });
 
+  it("keeps pending and failed evidence when a later attempt was skipped", () => {
+    const skippedAfter = (conclusion: string) => [
+      run(conclusion, EARLY, conclusion === "PENDING" ? null : EARLY),
+      run("SKIPPED", LATE),
+    ];
+
+    const pending = place(skippedAfter("PENDING"), "CLEAN");
+    expect(pending.place).toBe("stay");
+    expect(pending.waitsOn).toEqual({
+      kind: "waiting",
+      for: "the checks running",
+    });
+
+    const failed = place(skippedAfter("FAILURE"), "CLEAN");
+    expect(failed.failing).toEqual(["gates"]);
+    expect(failed.waitsOn).toEqual({ kind: "person", act: "re-run-check" });
+  });
+
   it("ignores an older pending attempt after success", () => {
     expect(
       place([run("PENDING", EARLY, null), run("SUCCESS", LATE)]).lane,

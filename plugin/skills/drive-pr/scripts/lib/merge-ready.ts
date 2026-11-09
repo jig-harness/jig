@@ -217,6 +217,9 @@ function latestChecks(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
       (other) =>
         other.name === check.name &&
         other.app === check.app &&
+        // A skipped workflow job did not execute, so it cannot establish that
+        // it replaced an earlier pending or failed attempt.
+        other.state !== "skipped" &&
         supersedes(other, check),
     );
   });
