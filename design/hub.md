@@ -1160,7 +1160,7 @@ that fixture; 8 needs 3, 6 and 7; 9 needs 8's fixtures; 10 needs 9.
    and calls, its `jig gc` kind, and the tick's and `jig ask pickup@`'s
    reads of it.
 8. **Every card on the board**: item 36's step 4, with Picking up fed by
-   step 6 and the CI hold naming the last head a tick saw built.
+   step 7 and the CI hold naming the last head a tick saw built.
 9. **The hub's design round**, in place of item 36's step 5: one brief from
    [`design-brief-builder`](../plugin/skills/design-brief-builder/SKILL.md),
    from the fixtures of steps 3 to 8, for the whole hub with the chat,
