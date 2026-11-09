@@ -782,7 +782,7 @@ fields:
     items: string
     distinct: true
     read_by: [do-item]
-    since: next
+    since: 0.179.0
   routing.types:
     type: map
     values_type: { type: map, values_type: string }
@@ -812,7 +812,7 @@ fields:
     type: map
     values_type: { type: map, values_type: { type: map } }
     read_by: [do-item, drive-pr, dispatch]
-    since: next
+    since: 0.179.0
   routing.efforts:
     type: map
     values_type: { type: map, values_type: string }
