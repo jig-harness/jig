@@ -21,7 +21,11 @@ minutes a [steward](../GLOSSARY.md) pass reads what is stopped and waiting
 and proposes what the next tick should do about it. What still reaches a
 person opens with the one act it asks of them.
 
-This is the design of [plan.md](plan.md) item 44. Nothing of it is built.
+This is the design of [plan.md](plan.md) item 44. The dashboard groups needs
+by the person's act, shows the recommended option's changes and costs and
+filters by person; `jig ask` names the same act. Ready to merge, the
+keyboard-driven views, headless pickups and complexity tiers are built.
+The remaining work is in the build order below.
 It changes the following designs, each of which says in its own text what this one
 changes: [the dispatcher](dark-factory-dispatch.md) (item 33), whose tick
 gains the load factor, headless pickups, served people and the steward;
@@ -290,53 +294,21 @@ tier.
 ## Build order
 
 One pull request per step, each shippable alone, filed under the item 44
-epic with its order recorded as blocking relations. Step 1 is this design.
-Ready to merge (step 2) is already designed and starts beside it; every
-other step waits on this design where it builds a new part, and on the
-steps whose files it shares.
+epic with its order recorded as blocking relations. The open steps retain
+their original numbers; each waits on the steps whose files it shares.
 
 ```mermaid
 flowchart TD
-  T9[9 Complexity tiers] --> T5[5 Load factor]
-  T9 --> T6[6 Headless pickups]
-  T2[2 Ready to merge] --> T3[3 Five views and keys]
-  T3 --> T4[4 Acts on needs]
-  T4 --> T5
-  T5 --> T7[7 Served pickups]
-  T6 --> T7
+  T5[5 Load factor] --> T7[7 Served pickups]
   T7 --> T8[8 Steward]
 ```
 
-2. **Ready to merge in the tick and on the line**
-   ([#633](https://github.com/jig-harness/jig/issues/633)), item 36's step
-   2 as [dispatch-board.md](dispatch-board.md#build-order) designs it, with
-   the board read in the observe phase. Done when a converged pull request
-   whose review the forge witnesses and that can merge is in merge now with
-   a command pinned to its head within one interval, and a failing board
-   read leaves the tick's launches as they were.
-3. **Keyboard-driven views**
-   ([#634](https://github.com/jig-harness/jig/issues/634)): Merge, Needs
-   you, Running, Queue and History, one column of cards each, the counts on
-   every tab, the merge flash on every other view, the keys and the palette. Done
-   when no two cards sit side by side on any view at 1440 px, and every key
-   works on every view and never inside a text field.
-4. **Acts on needs** ([#635](https://github.com/jig-harness/jig/issues/635)):
-   `plugin/shared/acts.ts`, the registry's Act column, the framed park's
-   options, costs and steps on the line, and Needs you grouped by act with
-   the person each need waits on. Done when a `release` park reads
-   Authorize with its recommended option's cost, and `jig ask` and the card
-   name the same act.
 5. **The load factor** ([#636](https://github.com/jig-harness/jig/issues/636)):
    the gauges, the measured reservations, the admission rule and the
    would-hold report, with the gauge at the top of Running. Done when every
    receipt carries each gauge, the load factor and the gauge that binds,
    and a launch a gauge would refuse still starts while `load.enforce` is
    `false`.
-6. **Headless pickups** ([#637](https://github.com/jig-harness/jig/issues/637)):
-   the pickup through the wrapper, with the implementer on its route's model, its deadline
-   and its `Question:` line. Done when an item assigned to the factory
-   identity gets one headless `do-item` pass on an admitted account within
-   one interval.
 7. **Served pickups** ([#638](https://github.com/jig-harness/jig/issues/638)):
    `serve:`, the served reads, the ranking, `claim --for` and the Queue
    view. Done when an item a writer assigns to a served person starts
@@ -346,11 +318,6 @@ flowchart TD
    the skill, its digest and records, the tick's stage and the once-only
    resume. Done when no steward pass starts while nothing changed, and no
    steward record re-arms a drive a person stopped.
-9. **Complexity tiers** ([#640](https://github.com/jig-harness/jig/issues/640)),
-   under item 31's epic: the three tiers, the complex flags and the models
-   per tier per runtime (`claude-code` or `codex`). Done when an S bug routes standard, the same bug
-   labelled `has-migration` routes complex, and a Codex account runs a
-   complex item on Sol with no `routing.models` set.
 
 ## Left out
 
