@@ -74,6 +74,9 @@ export const JIG_REPOSITORY = "jig-harness/jig";
 /** The label the bug form applies. */
 export const BUG_LABEL = "bug";
 
+/** The repository label (`review.repo_label`) the bug form applies. */
+export const REPO_LABEL = "jig";
+
 /** The issue type the bug form applies. */
 export const BUG_TYPE = "Bug";
 
@@ -420,7 +423,7 @@ export function draft(
   return {
     repository: JIG_REPOSITORY,
     title,
-    labels: [BUG_LABEL],
+    labels: [BUG_LABEL, REPO_LABEL],
     body: body(fields),
     url: form.url,
     urlComplete: form.complete,

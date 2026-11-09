@@ -389,6 +389,50 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.184.1] - 2026-11-09
+
+### Fixed
+
+- `report-bug` now includes the `jig` repository label alongside `bug`, removing the repository-label blocker for `/jig:work-batch`; reports still need the other eligibility requirements set during triage.
+
+## [0.184.0] - 2026-11-09
+
+The dispatch dashboard shows which card the keyboard is on and what its keys do.
+
+### Changed
+
+- The card j and k rest on is tinted with an accent bar at its edge, in place of the browser's outline.
+- A bar at the foot of the screen names the focused card and lists only the keys it answers to: o for its details, p for its pull request or i for its issue, c for its command (named, such as the merge command or the answer line), and j and k to move. It shows with a mouse or trackpad and stays away on touch screens.
+- The whole reason of a History row is rendered as Markdown, as a decision already was, instead of one block of monospaced text; supported web and mail links open in another tab, while images stay inert.
+
+## [0.183.2] - 2026-11-09
+
+### Fixed
+
+- A reply left on an open human review thread now counts as progress for the
+  drive’s stall check.
+- Head mismatches now distinguish an unpushed local head, delayed API data,
+  and diverged history, with the action each needs.
+- A held summary finding re-emitted in a later drive review round now
+  contributes to the repeated-file escalation signal.
+- Held findings now retain their review-round currency when a previously
+  reviewed head is revisited.
+- Status now identifies unaddressed summary findings held without a push stamp
+  and names the steps to verify and dispatch their answers.
+
+## [0.183.1] - 2026-11-09
+
+### Fixed
+
+- `/jig:work-batch` no longer holds back an issue for lacking the repository
+  label (`review.repo_label`) when the tracker is one GitHub repository's and
+  `review.taxonomy.repos` names no repository besides that label. Every issue
+  in such a tracker belongs to the repository, so a missing label said
+  nothing, and the filers that do not add it (issue forms, `/jig:file-issue`)
+  left their issues out of every batch. A tracker that holds several
+  repositories' issues, and the Linear and Jira adapters, keep the check. The
+  eligibility report's policy shows `repoLabel: null` (not checked) then.
+
 ## [0.183.0] - 2026-11-09
 
 ### Added
@@ -6405,7 +6449,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.183.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.184.1...HEAD
+[0.184.1]: https://github.com/jig-harness/jig/compare/v0.184.0...v0.184.1
+[0.184.0]: https://github.com/jig-harness/jig/compare/v0.183.2...v0.184.0
+[0.183.2]: https://github.com/jig-harness/jig/compare/v0.183.1...v0.183.2
+[0.183.1]: https://github.com/jig-harness/jig/compare/v0.183.0...v0.183.1
 [0.183.0]: https://github.com/jig-harness/jig/compare/v0.182.0...v0.183.0
 [0.182.0]: https://github.com/jig-harness/jig/compare/v0.181.0...v0.182.0
 [0.181.0]: https://github.com/jig-harness/jig/compare/v0.180.0...v0.181.0

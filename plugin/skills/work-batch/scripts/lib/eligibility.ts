@@ -193,13 +193,15 @@ const sizeReason: Check = (issue, policy) => {
 
 // One repository per batch, since a pull request lands in one. An issue
 // carrying two repository labels would be closed by a batch that does only
-// one repository's half of the work.
+// one repository's half of the work. Where the tracker is one GitHub
+// repository's and no other repository is named, a missing label says nothing
+// about which repository the issue belongs to.
 const repoReason: Check = (issue, policy) => {
   if (policy.repoLabel === null) return null;
   const repos = issue.labels.filter((l) => policy.repoLabels.includes(l));
   if (repos.length > 1)
     return { kind: "conflicting-repo-labels", repos: [...repos].sort() };
-  if (!issue.labels.includes(policy.repoLabel))
+  if (!policy.repoLabelImplied && !issue.labels.includes(policy.repoLabel))
     return { kind: "wrong-repo", repo: repos[0] ?? null };
   return null;
 };

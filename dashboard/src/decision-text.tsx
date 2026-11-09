@@ -27,9 +27,16 @@ function DecisionImage({ alt }: MarkdownComponentProps<"img">) {
 
 const COMPONENTS = { a: DecisionLink, img: DecisionImage };
 
-export function DecisionText({ source }: { source: string }) {
+export function DecisionText({
+  source,
+  lines = false,
+}: {
+  source: string;
+  /** Whether a line break in the text stays one, for text a person did not write as Markdown. */
+  lines?: boolean;
+}) {
   return (
-    <div className="quote md">
+    <div className={lines ? "quote md lines" : "quote md"}>
       <Markdown components={COMPONENTS}>{source}</Markdown>
     </div>
   );
