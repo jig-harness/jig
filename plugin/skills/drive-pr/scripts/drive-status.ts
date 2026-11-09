@@ -552,15 +552,15 @@ async function main(): Promise<number> {
 
   const repoRes = await cachedRepoView([
     "--json",
-    "owner,name",
+    "owner,name,url",
     "-q",
-    '.owner.login + " " + .name',
+    '.owner.login + " " + .name + " " + .url',
   ]);
   if (repoRes.code !== 0) {
     if (repoRes.stderr) process.stderr.write(repoRes.stderr);
     fail(2, "could not resolve the repository");
   }
-  const [owner, repo] = repoRes.stdout.trim().split(" ");
+  const [owner, repo, repoUrl] = repoRes.stdout.trim().split(" ");
   // Exit 0 with empty or single-token stdout leaves these undefined, and every
   // later call then asks for `repos/undefined/undefined/...`, 404s, and reports
   // INDETERMINATE three times over — naming the check-run read as the fault
@@ -825,6 +825,7 @@ async function main(): Promise<number> {
       `${owner}/${repo}`,
       identityEnv,
       remote.remote,
+      repoUrl,
     );
     if (!remoteCheck.ok) return driftMemo;
     // The remote being the right REPOSITORY does not prove this WORKTREE is

@@ -257,6 +257,7 @@ export async function verifyRemoteIsPrRepo(
   expectedRepo: string,
   env?: Record<string, string | undefined>,
   remote: string = remoteName(consumerRoot(root)),
+  forgeUrl?: string,
 ): Promise<{ ok: true } | { ok: false; why: string }> {
   const urlRes = await git(["-C", root, "remote", "get-url", remote], {
     timeoutSec: gitCallTimeoutSeconds(),
@@ -266,7 +267,7 @@ export async function verifyRemoteIsPrRepo(
     return { ok: false, why: `no fetch URL for the remote '${remote}'` };
   }
   const url = urlRes.stdout.trim();
-  const actual = repoOfUrl(url);
+  const actual = await repoOfUrl(url, env, undefined, forgeUrl);
   // GitHub repository paths are case-insensitive (and ASCII-only, so a plain
   // `toLowerCase()` is length-preserving and safe here) — a remote whose
   // configured URL casing differs from `gh`'s canonical `owner/name` is the
@@ -276,7 +277,7 @@ export async function verifyRemoteIsPrRepo(
       ok: false,
       why:
         actual === ""
-          ? `cannot parse an owner/name out of ${remote}'s fetch URL (${url})`
+          ? `cannot resolve a forge host and owner/name out of ${remote}'s fetch URL (${url})`
           : `'${remote}' fetches ${actual} (${url}), not this PR's own repository ${expectedRepo} — refusing to fetch or measure its base branch from the wrong history`,
     };
   }

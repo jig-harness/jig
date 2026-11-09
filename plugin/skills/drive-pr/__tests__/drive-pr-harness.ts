@@ -1002,13 +1002,13 @@ export DRIVE_PR_STUB_GH_NESTED=1
   [[ "$needs_value" -eq 0 ]] || { echo 'gh: missing flag value' >&2; exit 2; }
   if [[ "$requires_json" -eq 1 ]]; then
     case "$command:$json_fields" in
-      'pr checks:name,bucket,state'|'repo view:owner,name'|\
+      'pr checks:name,bucket,state'|'repo view:owner,name'|'repo view:owner,name,url'|\
       'pr view:number'|'pr view:state'|'pr view:headRefOid'|'pr view:mergeable'|\
       'pr view:baseRefName'|'pr view:baseRefName,url'|'pr view:state,isDraft'|\
       'pr view:state,headRefOid,labels'|\
       'pr view:state,headRefOid,baseRefOid'|\
       'pr view:state,baseRefName,headRefName,headRefOid'|\
-      'pr view:state,headRefName,headRepositoryOwner,headRepository'|\
+      'pr view:state,headRefName,headRepositoryOwner,headRepository'|'pr view:state,headRefName,headRepositoryOwner,headRepository,url'|\
       'pr view:state,headRefName,title,body'|\
       'pr view:state,headRefOid,mergeable,mergeStateStatus,isDraft,labels'|\
       'pr view:state,isDraft,headRefOid,mergeable,mergeStateStatus,baseRefName,headRefName,baseRefOid') ;;
@@ -1034,7 +1034,7 @@ export DRIVE_PR_STUB_GH_NESTED=1
   fi
   if [[ "\${is_api:-0}" -eq 0 ]]; then
     case "$command:$json_fields" in
-      'pr view:number'|'repo view:owner,name')
+      'pr view:number'|'repo view:owner,name'|'repo view:owner,name,url')
         [[ "$has_positional" -eq 0 ]] || { echo "gh: unexpected selector: $selector" >&2; exit 2; } ;;
       'run view:'|'run rerun:')
         [[ "$has_positional" -eq 1 && "$selector" =~ ^[0-9]+$ ]] || { echo "gh: expected a run id, got: $selector" >&2; exit 2; } ;;

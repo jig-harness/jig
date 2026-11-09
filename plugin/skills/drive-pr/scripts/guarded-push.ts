@@ -267,7 +267,7 @@ async function main(): Promise<number> {
       "view",
       pr,
       "--json",
-      "state,headRefName,headRepositoryOwner,headRepository",
+      "state,headRefName,headRepositoryOwner,headRepository,url",
     ],
     { stderr: "ignore" },
   );
@@ -376,11 +376,16 @@ async function main(): Promise<number> {
   // push URLs from this script's point of view, so "most of them are right" is
   // not a state it can act on.
   for (const pushUrl of pushUrls) {
-    const pushRepo = repoOfUrl(pushUrl);
+    const pushRepo = await repoOfUrl(
+      pushUrl,
+      undefined,
+      undefined,
+      typeof parsed?.url === "string" ? parsed.url : undefined,
+    );
     if (pushRepo === "") {
       fail(
         1,
-        `guarded-push: cannot parse an owner/name out of ${remote}'s push URL`,
+        `guarded-push: cannot resolve a forge host and owner/name out of ${remote}'s push URL`,
         `(${pushUrl}) — refusing to push to a destination this script cannot name.`,
       );
     }
