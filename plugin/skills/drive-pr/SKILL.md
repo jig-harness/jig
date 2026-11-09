@@ -3140,6 +3140,12 @@ What is load-bearing about the numbers:
   `scripts/lib/severity-formats.ts` deliberately with fixtures from the reviewer's
   real comments. Or ask the reviewer to keep the old one.
 
+  Code-scanning threads use their linked alert's rule severity instead of a
+  comment token. `review.code_scanning_severities` overrides individual alert
+  levels for both triage and metrics; an unreadable alert stays `unknown`.
+  Their outage warning directs you to alert access and that mapping, since
+  adding a comment format cannot recover a severity the comment never states.
+
   The per-author line itself carries a lifetime figure and a current-round
   one — `1/5 lifetime (20.0%) · 1/1 this round (100.0%)` — because the
   lifetime figure alone cannot see the jump it exists to catch. On a

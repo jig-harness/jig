@@ -28,6 +28,7 @@ import {
 } from "../summary-findings.ts";
 import { fail } from "./cli.ts";
 import { cachedRepoView } from "./gh-conditional.ts";
+import { sampleCodeScanningSeverity } from "./sample-code-scanning.ts";
 import { type Outcome, qualifyingOutcome } from "./outcome.ts";
 import { ghCall } from "./proc.ts";
 import { type ThreadAutonomy, threadAutonomy } from "./metrics-autonomy.ts";
@@ -528,6 +529,27 @@ query($reviewId:ID!,$endCursor:String){
 
 type CommentNode = Record<string, unknown>;
 
+/** Parse all comment pages together: an unreadable page invalidates the top-up. */
+function commentPages(stdout: string): CommentNode[] | null {
+  let pages: unknown;
+  try {
+    pages = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  const comments: CommentNode[] = [];
+  for (const page of Array.isArray(pages) ? pages : [pages]) {
+    const nodes = (
+      page as {
+        data?: { node?: { comments?: { nodes?: unknown[] } | null } | null };
+      }
+    )?.data?.node?.comments?.nodes;
+    if (!Array.isArray(nodes)) return null;
+    comments.push(...(nodes as CommentNode[]));
+  }
+  return comments;
+}
+
 /**
  * Every comment on one thread, or `null` when they could not all be read.
  *
@@ -554,26 +576,8 @@ async function allCommentsOf(threadId: string): Promise<CommentNode[] | null> {
     { stderr: "ignore" },
   );
   if (r.code !== 0) return null;
-  let pages: unknown;
-  try {
-    pages = JSON.parse(r.stdout);
-  } catch {
-    return null;
-  }
-  const out: CommentNode[] = [];
-  for (const page of Array.isArray(pages) ? pages : [pages]) {
-    const nodes = (
-      page as {
-        data?: { node?: { comments?: { nodes?: unknown[] } | null } | null };
-      }
-    )?.data?.node?.comments?.nodes;
-    // Fail CLOSED on a shape this does not recognise: a page silently read as
-    // zero comments would DROP replies the prefix already had, turning a
-    // partial answer into a wrong one.
-    if (!Array.isArray(nodes)) return null;
-    out.push(...(nodes as CommentNode[]));
-  }
-  return out.length === 0 ? null : out;
+  const out = commentPages(r.stdout);
+  return out === null || out.length === 0 ? null : out;
 }
 
 /**
@@ -623,28 +627,8 @@ async function reviewHasNonReply(reviewId: string): Promise<boolean | null> {
     { stderr: "ignore" },
   );
   if (r.code !== 0) return null;
-  let pages: unknown;
-  try {
-    pages = JSON.parse(r.stdout);
-  } catch {
-    return null;
-  }
-  let found = false;
-  for (const page of Array.isArray(pages) ? pages : [pages]) {
-    const nodes = (
-      page as {
-        data?: { node?: { comments?: { nodes?: unknown[] } | null } | null };
-      }
-    )?.data?.node?.comments?.nodes;
-    // Fail CLOSED on an unrecognised shape, exactly as `allCommentsOf` does: a
-    // page read as zero comments would answer "no non-reply" from a page that
-    // was never read, which is the wrong answer stated confidently.
-    if (!Array.isArray(nodes)) return null;
-    for (const c of nodes as Array<{ replyTo?: unknown }>) {
-      if (c.replyTo == null) found = true;
-    }
-  }
-  return found;
+  const comments = commentPages(r.stdout);
+  return comments === null ? null : comments.some((c) => c.replyTo == null);
 }
 
 /**
@@ -831,15 +815,7 @@ export function threadFrom(
       )
         ? "unknown"
         : categoryOf(typeof first?.body === "string" ? first.body : ""),
-    // Same guard, same expression, same reason as `category` directly above:
-    // a raising comment edited after the cutoff has no recoverable as-of body,
-    // so its severity is withheld rather than read at the current version.
-    //
-    // `firstAuthor?.login` is threaded through so `severityOf`'s CodeRabbit
-    // path only ever fires on a comment CodeRabbit actually posted — a
-    // shape-only match is defeated by any reviewer's prose that happens to
-    // land on the same three-field pipe-delimited form (see `severityOf`'s
-    // own doc).
+    // An edited raising comment has no recoverable severity at the cutoff.
     severity:
       asOf !== undefined &&
       first !== undefined &&
@@ -1002,7 +978,14 @@ export async function samplePr(
           truncated = false;
         }
       }
-      threads.push(threadFrom(t, commentNodes, truncated, opts.asOf));
+      const sampled = threadFrom(t, commentNodes, truncated, opts.asOf);
+      if (opts.asOf === undefined)
+        await sampleCodeScanningSeverity(
+          sampled,
+          String(commentNodes[0]?.body ?? ""),
+          repo,
+        );
+      threads.push(sampled);
     }
   }
 

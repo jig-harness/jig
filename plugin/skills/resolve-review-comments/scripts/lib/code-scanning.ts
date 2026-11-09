@@ -18,6 +18,7 @@
  */
 import { ghCall, type RunResult } from "../../../../shared/proc.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { codeScanningSeverities } from "./code-scanning-severity.ts";
 
 /** The account GitHub posts code scanning alerts from (GraphQL login). */
 export const CODE_SCANNING_LOGIN = "github-advanced-security";
@@ -70,24 +71,6 @@ export function alertNumberOf(
 
 type JigSeverity = "blocker" | "high" | "medium" | "low";
 
-/**
- * Jig's severity for an alert's rule. A security rule's
- * `security_severity_level` decides where present; otherwise the rule's own
- * level, with `error` taken as high because it fails GitHub's code scanning
- * check by default, as `high` and `critical` do.
- */
-const SECURITY_LEVELS: Readonly<Record<string, JigSeverity>> = {
-  critical: "blocker",
-  high: "high",
-  medium: "medium",
-  low: "low",
-};
-const RULE_LEVELS: Readonly<Record<string, JigSeverity>> = {
-  error: "high",
-  warning: "medium",
-  note: "low",
-};
-
 /** What a code-scanning thread record carries about its alert. */
 export interface AlertSummary {
   number: number;
@@ -128,13 +111,14 @@ export function summarizeAlert(number: number, raw: unknown): AlertSummary {
     : {};
   const securityLevel = str(rule.security_severity_level)?.toLowerCase();
   const ruleLevel = str(rule.severity)?.toLowerCase();
+  const mapping = codeScanningSeverities();
   const isSecurity =
     securityLevel !== undefined &&
-    Object.hasOwn(SECURITY_LEVELS, securityLevel);
+    ["critical", "high", "medium", "low"].includes(securityLevel);
   const severity =
-    (isSecurity ? SECURITY_LEVELS[securityLevel] : undefined) ??
-    (ruleLevel !== undefined && Object.hasOwn(RULE_LEVELS, ruleLevel)
-      ? RULE_LEVELS[ruleLevel]
+    (isSecurity ? mapping[securityLevel] : undefined) ??
+    (ruleLevel !== undefined && ["error", "warning", "note"].includes(ruleLevel)
+      ? mapping[ruleLevel]
       : undefined) ??
     "unknown";
   return {

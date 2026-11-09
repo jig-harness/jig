@@ -61,6 +61,7 @@
  * `postReviewShare` as a cost-of-review figure in the meantime.
  */
 
+import { isCodeScanningLogin } from "../../../resolve-review-comments/scripts/lib/code-scanning.ts";
 import type { Outcome } from "./outcome.ts";
 import { OUTCOMES } from "./outcome.ts";
 import type { CommitSample, PrSample, ReviewSample } from "./sample.ts";
@@ -637,6 +638,12 @@ export function isSeverityOutage(bucket: SeverityBucket): boolean {
  * loop-economy report: bot inline threads only, current round when known, and
  * a lifetime fallback only when that round cannot be attributed.
  */
+function severityAdvice(author: string): string {
+  return isCodeScanningLogin(author)
+    ? "its code-scanning alert severity could not be read (check alert access and review.code_scanning_severities)"
+    : "this reviewer's severity format is not recognized (add it in review.severity_formats)";
+}
+
 export function renderSeverityOutageWarnings(m: LoopMetrics): string {
   const flagged = Object.entries(m.severityByAuthor)
     .filter(([, bucket]) => isSeverityOutage(bucket))
@@ -650,7 +657,7 @@ export function renderSeverityOutageWarnings(m: LoopMetrics): string {
       const span = bucket.recentRoundKnown
         ? "EVERY finding this round"
         : "EVERY attributable finding over the PR lifetime";
-      return `  ⚠ ${span} — ${author}: ${scope} has an unreadable severity; this reviewer's severity format is not recognized (add it in review.severity_formats), and its ladder is fully inert`;
+      return `  ⚠ ${span} — ${author}: ${scope} has an unreadable severity; ${severityAdvice(author)}, and its ladder is fully inert`;
     })
     .join("\n");
 }
@@ -755,7 +762,7 @@ export function renderLoopMetrics(m: LoopMetrics): string {
       ? "EVERY finding this round"
       : "EVERY attributable finding over the PR lifetime";
     lines.push(
-      `             ${a}: ${b.unknown}/${b.total} lifetime (${pct(b.unknownShare)})${recent}${outage ? ` ⚠ ${outageSpan} — this reviewer's severity format is not recognized (add it in review.severity_formats), and its ladder is fully inert` : ""}`,
+      `             ${a}: ${b.unknown}/${b.total} lifetime (${pct(b.unknownShare)})${recent}${outage ? ` ⚠ ${outageSpan} — ${severityAdvice(a)}, and its ladder is fully inert` : ""}`,
     );
   }
 
