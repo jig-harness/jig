@@ -22,7 +22,7 @@ import { rulesOf } from "../../dispatch/lib/board.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { parseConfigText } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
-import type { PersonAct, WaitsOn } from "./answer.ts";
+import { type PersonAct, personWait, type WaitsOn } from "./answer.ts";
 import type { PullDoc } from "./forge.ts";
 import { within } from "./reading.ts";
 import type { AskContext } from "./station.ts";
@@ -144,7 +144,7 @@ export async function convergedWait(
   doc: PullDoc,
 ): Promise<WaitsOn> {
   if (!convergedOpen(ledger, doc))
-    return { person: "merge", why: "its drive has not converged" };
+    return personWait("merge", "its drive has not converged");
   const read = await readFor(ctx, doc.number);
   if (!read.ok)
     return { waiting: `the merge facts did not read: ${read.failure.reason}` };
@@ -178,5 +178,5 @@ export async function convergedWait(
   const why = `${lane}${answer.says}${command}`;
   return answer.waitsOn.kind === "waiting"
     ? { waiting: why }
-    : { person: PERSON[answer.waitsOn.act], why };
+    : personWait(PERSON[answer.waitsOn.act], why);
 }
