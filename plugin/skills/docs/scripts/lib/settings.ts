@@ -1,17 +1,26 @@
 /**
  * The `docs` section of the repository's configuration, with every value
  * detected from the tree when it is not set: the docs tree's root, the
- * frontmatter schema, and the age at which a draft counts as stale.
+ * frontmatter schema, the age at which a draft counts as stale, and the
+ * statuses the scar lint treats as promoted.
  */
 import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, posix, relative, sep } from "node:path";
 import { readConfig, withSource } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 
-export const FIELDS = ["root", "schema", "stale_after_days"] as const;
+export const FIELDS = [
+  "root",
+  "schema",
+  "stale_after_days",
+  "promoted_statuses",
+] as const;
 
 /** M4's wiki-lint table: content older than six months is stale. */
 export const DEFAULT_STALE_AFTER_DAYS = 180;
+
+/** The one status M4's lifecycle promotes a document to. */
+export const DEFAULT_PROMOTED_STATUSES = ["approved"];
 
 /** Where a docs tree usually lives, in the order they are tried. */
 export const ROOT_CANDIDATES = ["docs", "doc", "documentation"];
@@ -35,6 +44,8 @@ export interface DocsSettings {
   /** The frontmatter schema, relative to the repository root; null when there is none. */
   schema: string | null;
   staleAfterDays: number;
+  /** The `status` values of documents the scar lint holds to no review scars. */
+  promotedStatuses: string[];
   /** Which values were detected rather than configured. */
   detected: { root: boolean; schema: boolean };
 }
@@ -108,6 +119,30 @@ function staleAfter(section: Record<string, unknown>): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
     throw new SettingsError(
       "docs.stale_after_days must be a whole number of days, 1 or more",
+    );
+  return value;
+}
+
+/**
+ * The statuses the scar lint treats as promoted: a nonempty list of distinct
+ * status values. Read on its own by the lint, which runs without the rest of
+ * the section.
+ */
+export function promotedStatuses(section: unknown): string[] {
+  if (section !== undefined && section !== null && !isRecord(section))
+    throw new SettingsError("docs must be a mapping");
+  const value = isRecord(section) ? section.promoted_statuses : undefined;
+  if (value === undefined || value === null) return DEFAULT_PROMOTED_STATUSES;
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some(
+      (status) => typeof status !== "string" || !/^\S+$/.test(status),
+    ) ||
+    new Set(value).size !== value.length
+  )
+    throw new SettingsError(
+      "docs.promoted_statuses must be a list of distinct statuses, each one word",
     );
   return value;
 }
@@ -186,6 +221,7 @@ export function parseDocsSettings(
     root,
     schema,
     staleAfterDays: staleAfter(value),
+    promotedStatuses: promotedStatuses(value),
     detected: {
       root: configuredRoot === undefined,
       schema: configuredSchema === undefined,
@@ -198,6 +234,21 @@ export function loadDocsSettings(repo: string): DocsSettings {
   const values = readConfig();
   try {
     return parseDocsSettings(values.docs, repo);
+  } catch (error) {
+    throw new SettingsError(withSource(values, "docs", error).message, {
+      cause: error,
+    });
+  }
+}
+
+/**
+ * The statuses the scar lint treats as promoted, from every configuration
+ * layer, an error naming its source.
+ */
+export function loadPromotedStatuses(): string[] {
+  const values = readConfig();
+  try {
+    return promotedStatuses(values.docs);
   } catch (error) {
     throw new SettingsError(withSource(values, "docs", error).message, {
       cause: error,
