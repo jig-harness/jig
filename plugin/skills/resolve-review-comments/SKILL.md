@@ -277,10 +277,14 @@ accept bar, and one that does not becomes `wont-fix` (or `deferred`, when the
 work is obligatory) with the ladder's own reply. The bar is read mechanically —
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/triage-ladder.ts" --severity <sev> --tier <tier> --category <cat|unknown> --self-inflicted <true|false|unknown> [--pr N] [--obligatory]
+bun "${CLAUDE_SKILL_DIR}/scripts/triage-ladder.ts" --severity <sev> --tier <tier> --category <cat|unknown> --self-inflicted <true|false|unknown> --pr N --key <threadId|fingerprint> [--obligatory]
 ```
 
-— run from the repository root with Bun available.
+— run from the repository root with Bun available. The finding key records
+its verdict for this review round; an accepted hold without a matching
+accepting verdict is refused (exit 2). In a standalone installation without
+`drive-pr`, omit `--key`: the ladder still computes its answer, and no drive
+hold exists to record or release.
 `--tier` is the finding's rank in the rubric's
 [Priorities](references/triage-rubric.md#priorities): 1 CI pipelines and
 quality gates, 2 production code, 3 docs, 4 tests (a vacuous test ranks 1).
@@ -870,6 +874,11 @@ can be exactly this no-op.
 `scripts/await-round.ts` owns the wait/stop decision and exits with the loop
 contract:
 
+When a reviewer is configured, convergence also requires its successful check
+on the current head and its summary's reviewed-commit marker naming that head.
+A stale or missing marker waits (`4` under `--once`); unreadable evidence exits
+`1`. A standalone install without `drive-pr` retains the documented residual.
+
 | Exit | Meaning |
 |------|---------|
 | `0` | a round is ready — reviewers settled, unresolved threads exist |
@@ -878,11 +887,6 @@ contract:
 | `5` | the PR is no longer open — abandon the loop |
 | `7` | a reviewer check did not pass, so it may never have reported |
 | `8` | zero unresolved threads, but the reviewer has summary-only findings no one has answered — they never became threads |
-When a reviewer is configured, convergence also requires its successful check
-on the current head and its summary's reviewed-commit marker naming that head.
-A stale or missing marker waits (`4` under `--once`); unreadable evidence exits
-`1`. A standalone install without `drive-pr` retains the documented residual.
-
 | `1` | the check state could not be read — never reported as settled |
 | `2` | usage or configuration error (bad interval, invalid or undeclared reviewer coverage) |
 

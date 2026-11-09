@@ -1,3 +1,4 @@
+import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import {
   scopedStateDir,
@@ -2620,10 +2621,8 @@ export async function park(
 }
 
 /**
- * Hold an `accepted`/`moot` item before probing, to model a triaged-but-
- * not-yet-pushed fix-dependent disposition (`triage-thread.ts` step 3 /
- * `drive-state.ts hold`). A `thread` needs `--comment-url`; a `finding` reads
- * its reason from stdin — same asymmetry `hold`'s own CLI enforces.
+ * Model completed ladder triage and an accepted disposition waiting for a
+ * push. Thread holds name their reply; findings read their reason on stdin.
  */
 export async function hold(
   stateDir: string,
@@ -2631,6 +2630,7 @@ export async function hold(
   kind: "thread" | "finding",
   commentUrl = "https://github.com/o/r/pull/999#discussion_r1",
 ) {
+  seedAcceptedLadder(stateDir, key);
   const proc = Bun.spawn(
     scriptArgv(
       join(SCRIPTS, "drive-state.ts"),

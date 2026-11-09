@@ -1,3 +1,4 @@
+import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 /**
  * A declined code-scanning finding closes only over a dismissed alert, on
  * every path that resolves a merit reply: the replied-thread sweep and
@@ -288,6 +289,7 @@ function heldKeys(dir: string, stateDir: string): string {
 }
 
 function holdAccepted(dir: string, stateDir: string, key: string, url: string) {
+  seedAcceptedLadder(stateDir, key);
   const r = run(
     DRIVE_STATE,
     [

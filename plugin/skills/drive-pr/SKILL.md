@@ -1726,6 +1726,10 @@ it exempt.
 
 ### 2. Enumerate — threads **and** summary-only findings
 
+Before reading code for a fix, classify each finding and run step 3's decline
+ladder with `--pr <PR> --key <threadId|fingerprint>`. An accepted hold requires
+that key's accepting verdict in the current review round.
+
 **exact** — Run both enumerations and preserve enumeration failures and measurement semantics.
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
@@ -1878,8 +1882,14 @@ declines the finding.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts" --severity <blocker|high|medium|low|unknown> --tier <tier> --category <token|unknown> --self-inflicted <true|false|unknown> [--pr <PR>] [--obligatory]
+bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts" --severity <blocker|high|medium|low|unknown> --tier <tier> --category <token|unknown> --self-inflicted <true|false|unknown> --pr <PR> --key <threadId|fingerprint> [--obligatory]
 ```
+
+The command records its verdict in the drive state. `drive-state.ts hold`
+refuses an accepted hold without that key's accepting verdict for the current
+round (exit 2). A `--round` calculation records nothing. Crash recovery may
+record an existing reply with `--unconfirmed` at round -1; it cannot be
+stamped or released until a live re-hold passes the ladder check.
 
 `--tier` is the finding's rank in the rubric's
 [Priorities](../resolve-review-comments/references/triage-rubric.md#priorities):

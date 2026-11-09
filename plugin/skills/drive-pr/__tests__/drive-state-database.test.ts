@@ -1,3 +1,4 @@
+import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 /**
  * The drive's database (`scripts/lib/state/db.ts`) through the real
  * `drive-state.ts`: a command killed inside its locked section leaves the
@@ -183,6 +184,7 @@ describe("two drive-state.ts commands at once", () => {
     const dir = stateDir();
     expectSpawnExit(run(dir, ["bump-round", "999", "--head", HEAD_A]), 0);
     expectSpawnExit(run(dir, ["count-round", "999", "--head", HEAD_B]), 0);
+    seedAcceptedLadder(dir, "PRRT_x");
     const hold = run(dir, [
       "hold",
       "999",

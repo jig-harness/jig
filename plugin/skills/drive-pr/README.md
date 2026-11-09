@@ -33,6 +33,11 @@ authenticated GitHub CLI (`gh`) are also required, and each round runs the
 sibling [`resolve-review-comments`](../resolve-review-comments/README.md)
 skill's scripts from the same plugin.
 
+Before fixing a finding, the pass records its decline-ladder verdict for the
+thread or summary fingerprint and the current review round. Accepted holds
+without a matching accepting verdict are refused, so a pass cannot record a
+fix promise before completing triage.
+
 Commands on this page write the skill's directory as `<skill-dir>`: the
 `plugin/skills/drive-pr` directory inside the installed plugin (Claude Code
 substitutes it as `${CLAUDE_SKILL_DIR}` in the skill itself). Run every

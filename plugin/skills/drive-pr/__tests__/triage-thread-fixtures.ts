@@ -1,3 +1,4 @@
+import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 import { createThreadWorktree } from "./thread-worktree-fixture.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
@@ -189,6 +190,9 @@ export function runTriage(
   fixtureDir: string,
   stateDir: string,
 ): { stdout: string; stderr: string; exitCode: number } {
+  // This fixture models triage already completed before posting accepted replies.
+  if (body.startsWith("**accepted**"))
+    seedAcceptedLadder(stateDir, args[0] ?? "");
   const proc = spawnSync(process.execPath, [SCRIPT, ...args], {
     cwd: scratchWorktree,
     env: withStateDirIdentity({
@@ -289,6 +293,7 @@ export function holdDirectly(
   outcome: string,
   commentUrl: string,
 ): void {
+  if (outcome === "accepted") seedAcceptedLadder(stateDir, key);
   const proc = Bun.spawnSync(
     [
       process.execPath,
