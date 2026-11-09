@@ -150,9 +150,19 @@ export function bootstrap(argv: string[]) {
     `GitHub identity: ${run("gh", ["api", "--hostname", "github.com", "user", "--jq", ".login"])}`,
   );
   const request = parse(setup);
-  const plans = prepareHarnesses(request);
-  for (const plan of plans) {
+  const plans = prepareHarnesses(request).map((plan) => {
     const repository = githubRepository(plan.source, plan.registered?.git);
+    // Capture the checked address once so apply cannot classify it differently.
+    const source = plan.registered
+      ? request.source
+      : repository !== null &&
+          /^[\w.-]+\/[\w.-]+(?:#[^\s]+)?$/.test(plan.source)
+        ? `https://github.com/${plan.source}`
+        : plan.source;
+    return { ...plan, repository, source };
+  });
+  for (const plan of plans) {
+    const repository = plan.repository;
     if (repository)
       run("gh", [
         "api",
@@ -178,15 +188,14 @@ export function bootstrap(argv: string[]) {
     return 0;
   }
   const status = harnessesExit(
-    plans.flatMap((plan) => {
-      const source =
-        !plan.registered &&
-        !existsSync(request.source) &&
-        /^[\w.-]+\/[\w.-]+(?:#[^\s]+)?$/.test(request.source)
-          ? `https://github.com/${request.source}`
-          : request.source;
-      return upgradeHarnesses({ ...request, source, only: plan.harness });
-    }),
+    plans.flatMap((plan) =>
+      upgradeHarnesses({
+        ...request,
+        source: plan.source,
+        defaulted: plan.registered ? request.defaulted : false,
+        only: plan.harness,
+      }),
+    ),
   );
   console.log(
     "Schedulers remain explicit: inspect jig doctor, then use jig install only for jobs you want.",

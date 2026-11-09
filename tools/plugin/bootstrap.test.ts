@@ -176,6 +176,9 @@ test("fresh apply uses stable fallback and reports the installed plugin", () => 
     const result = f.run(["--apply"], { NO_STABLE: "1" });
     expectSpawnExit(result, 0);
     expect(result.stdout).toContain("0.169.0 enabled");
+    expect(result.calls.filter((call) => call[1] === "ls-remote")).toHaveLength(
+      1,
+    );
     expect(result.calls).toContainEqual([
       "codex",
       "plugin",
@@ -257,6 +260,30 @@ test("explicit shorthand reruns preserve the existing registration and pin", () 
           call[3] === "add",
       ),
     ).toBe(false);
+  } finally {
+    f.close();
+  }
+});
+
+test("fresh shorthand checks and installs the remote despite a regular file collision", () => {
+  const f = fixture();
+  try {
+    mkdirSync(join(f.root, "example-org"));
+    writeFileSync(join(f.root, "example-org/example-repo"), "local file");
+    const result = f.run(["--apply", "--source", "example-org/example-repo"]);
+    expectSpawnExit(result, 0);
+    expect(
+      result.calls.some((call) =>
+        call.includes("repos/example-org/example-repo"),
+      ),
+    ).toBe(true);
+    expect(result.calls).toContainEqual([
+      "codex",
+      "plugin",
+      "marketplace",
+      "add",
+      "https://github.com/example-org/example-repo",
+    ]);
   } finally {
     f.close();
   }
