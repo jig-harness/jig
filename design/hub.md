@@ -22,6 +22,15 @@ to its own hub through one protocol, and hubs read each other through a
 second, which a shared control plane can later serve without the page
 changing.
 
+**Phone access is a first-class requirement.** A person away from a
+computer must be able to open the dashboard in a phone browser, see what
+waits for them and read enough to decide their next act. The phone has a
+deliberate read-only subset, with visible touch controls and a supported
+way in that stays available after a terminal closes. It requires neither
+Orca nor a keyboard. [Phone scope and access](#phone-scope-and-access)
+defines that subset and its acceptance checks; a desktop layout that
+merely fits a narrow screen does not satisfy it.
+
 This is the design of [plan.md](plan.md) item 42. Nothing of it is built.
 It serves the setup the dispatcher is built for: a host that dispatches
 while people start and steer work from their own machines. Its first stage
@@ -69,7 +78,7 @@ for the conversation record.
 flowchart LR
   LB[any browser on the laptop,<br/>Orca's included] --> LH[jig hub on the laptop:<br/>loopback]
   OB[Orca's browser in a<br/>host workspace, optional] -.->|loopback, through the paired host| HH[jig hub on the host:<br/>loopback, read-only]
-  PH[a phone's browser] -.->|optional front:<br/>HTTPS, read-only| HH
+  PH[a phone's browser] -->|private-network front:<br/>HTTPS, read-only| HH
   LH -->|source feed over SSH:<br/>jig hub rpc| HH
   HH --> HR[(host records:<br/>line, log, drives)]
   LH --> LR[(laptop records,<br/>conversations)]
@@ -585,7 +594,7 @@ which a shared control plane later serves over connections the hosts open.
 | Host | `jig hub rpc`, which SSH starts for each laptop's connection; `jig hub` resident only where Orca's browser or a front reaches the host's page; every database opened read-only | a laptop's hub over `ssh <host> jig hub rpc`; Orca's browser in a workspace on the host; a phone through a front | none |
 | Laptop | `jig hub`, on demand or installed, reading its own records and each host over SSH | any browser on the laptop, Orca's included | from stage 3, commits as the person |
 | Orca, optional | the plugin's inbox panel and status bar, and an "Open the hub" command | the person's Orca app | the panel's answer box and merge button, as the person |
-| Phone | a browser through a front, or Orca's phone app on a host workspace | | none |
+| Phone | any browser through a private-network front; private HTTP fallback during stage 1; Orca's paired-host path only once verified | the printed address, with a QR code when sharing is built | read-only, including after desktop writes arrive |
 
 **A host's hub** puts no token in its page's address: every way in from
 another machine (SSH, Orca's paired host, a front) authenticates the person
@@ -612,8 +621,10 @@ worker reads it through `jig ask --waiting --json`, which runs the same
 fold, so a rule is changed and tested in one place. Notifications stay
 Orca's notices, each linking to its Needs you card.
 
-**What a team runs, stage by stage.** Stage 1 adds nothing to run:
-`jig dispatch dashboard` as today. From stage 2 a laptop runs `jig hub` by
+**What a team runs, stage by stage.** Stage 1 uses
+`jig dispatch dashboard`; today a person starts it in a terminal. Phone
+access needs the setup and availability work below, independent of whether
+the later hub stages are built. From stage 2 a laptop runs `jig hub` by
 hand when the person wants the page, or installs it, and a host needs
 nothing resident for a laptop to read it: SSH starts `jig hub rpc` for each
 connection, and it exits with the connection. Only a host whose page Orca's
@@ -623,21 +634,132 @@ command, both run by a person with root. A hub that fails costs only the
 page: the line does not depend on it, its job restarts it, and
 `jig hub status` and `jig doctor hub` say what is wrong.
 
-Not tried yet: whether Orca's phone app opens a loopback page through the
-paired host, and whether `orca terminal switch` run on a host reveals the
-tab in a paired laptop's window. Before stage 2 is planned, both are tried
-with a throwaway page on loopback, and the front's socket and headers with
-them. If Orca's phone app cannot open the page, a phone reaches the hub
-through a front only; if Serve cannot reach the socket, the front waits,
-and a phone reads stage 1's page as it does today.
+### Phone scope and access
+
+This is the phone contract for stage 1 and the later hub. A view becomes
+available when its underlying stage ships; phone support is part of that
+view's acceptance, not a later polish step. The same records, readiness
+rules, timestamps and failure states serve desktop and phone.
+
+| On the phone | Scope and reason |
+| --- | --- |
+| Merge, Needs you, Running, Queue and History | Read the next act, progress and recent outcomes while away. Repository selection and History's time window are the basic filters; pagination keeps long lists bounded. |
+| An opened Work card and its decisions | Read the status, ask, recommended option, costs, alternatives and evidence. Stage 1 shows one item or pull request; stage 2 adds the joined thread. Expand details with a visible control. |
+| Copy the pinned merge command or an answer line | Carry the proposed act to the person's terminal without executing it. Copy success must be confirmed; when browser clipboard access fails, select the complete text for manual copying. |
+| Open the pull request or issue | Follow an explicit link to the forge or tracker, which owns its login and any action there. The dashboard itself remains read-only. |
+| A failed or stale read | Show the last successful read and its age while the page is open; after a reconnect, read again before displaying readiness as current. A failed connection never means the queue is empty. |
+
+The phone excludes operator chat, command palettes and advanced filter
+composition: reading and deciding have priority over composing and
+investigating on a small screen. It excludes session chat and steering,
+which need the workspace and its context. It offers no hub merge, answer,
+request or other write, even when desktop writes arrive: those need a
+separate phone design and proof of presence. Before #399, no surface gains
+a write by this work. Copying text is not sending it. All supported acts
+have visible buttons or links; no hover or keyboard shortcut is required.
+
+**First run, using today's dashboard.** On the host, start
+`jig dispatch dashboard` with `dashboard.listen` set to its private address
+literal in the dispatch file, and leave token checking on. Join the same
+private network on the phone, transfer the printed token-bearing URL by a
+private channel, and open it in any browser. Treat that address as a
+credential: it can remain in browser history, synced history and
+screenshots; restarting the dashboard invalidates it. It exposes every
+repository in that dashboard's state root, as
+[the board's reader boundary](dispatch-board.md#who-reads-it) describes.
+Closing the terminal stops availability today. This is the interim
+fallback, not completion of the phone requirement.
+
+**Recommended setup to build: private HTTPS.** A private-network front
+provides an HTTPS (HTTP with transport encryption) address and authenticates
+the reader before the hub sees the request. Tailscale Serve is the first
+implementation; a reverse proxy with an identity provider is the browser
+path without Tailscale or Orca. Setup must:
+
+1. Install a resident dashboard reader through the existing job machinery,
+   restart it after failure and update, and check that it returns after
+   logout and host reboot. Before stage 2 this keeps the existing dashboard
+   command; stage 2's `jig install hub` keeps the same availability contract.
+   It does not install a second reader or change the dispatch timer.
+2. Establish the private route and certificate, then check from another
+   device that authentication is required, the intended repositories alone
+   are visible, and a forged identity header cannot widen that scope.
+   Before the hub's scoped socket front exists, a dashboard front is
+   owner-only and authenticates the owner itself; its loopback upstream
+   may use `dashboard.require_token: false`. It must not trust viewer
+   headers on that port or promise per-repository grants.
+3. Print the token-free HTTPS address and a QR (quick response) code for
+   that same address, with the address as text when scanning is unavailable.
+   The code transfers an address, never grants access; no credential is
+   embedded in it. A new share flag is not required by this design.
+4. Open it on the phone in an ordinary browser, verify the host and read
+   time, open a decision, copy its answer line and follow its issue link.
+   Bookmark the address. Home-screen installation, where the browser
+   supports it, is a convenience, not the access path.
+
+The HTTPS page is a [secure context](../GLOSSARY.md), enabling the browser's
+clipboard API where permission allows. It is also a prerequisite for a
+service worker and later web push, neither of which this design ships.
+A plain HTTP private-network address still supports reading, links and
+manual copying; it loses secure-context APIs and cannot promise app
+installation or push. An encrypted private network alone does not give
+the browser a secure context. SSH forwarding to a browser's own loopback
+address remains an alternative for a person with an SSH client; phone
+access must work without one.
+
+A resident reader cannot make an off host reachable. A phone connected to
+that host's front gets a connection error; an already open page marks its
+facts stale and offers Retry. It cannot notify while closed. A watcher
+outside the host remains ADR-0013's reopening condition, not a hidden
+requirement of the install.
+
+**Phone acceptance.** At 390 × 844 and 320 × 568 CSS pixels, every supported
+view and an opened decision work without horizontal page scrolling. Touch
+targets are at least 44 × 44 CSS pixels; long commands wrap or scroll within
+their copy field. Browser suites use touch input with hover absent and
+cover navigation, folded alternatives, links, successful and refused
+clipboard access, stale reads, a failed host and reconnecting after the
+phone resumes. The key bar is absent and no action depends on it.
+
+The initial page-size ceiling is 700 KiB (716,800 bytes), counting the
+uncompressed HTML, CSS and JavaScript needed for the read views, including
+inline assets. The current built dashboard document measured 676,191
+bytes on 2026-11-09; splitting it into files must not evade the total.
+Before stage 1's design round lands, also measure actual transfer bytes
+and first paint at phone width, with a cold cache and a named network
+profile. That round sets the first-paint ceiling from those measurements
+and records it with its fixtures; stage 1's view implementation must fail
+its browser checks above either ceiling. No phone chat bundle is loaded.
+Data is budgeted separately:
+History reads at most 100 rows per page and decision details load on open.
+An unset ceiling is an unmet acceptance check, not an unlimited budget.
+
+**Access probes, before stage 2 is planned.** A throwaway loopback page
+must open in Orca's phone app through a paired host, with its origin and
+copy behavior recorded; `orca terminal switch` must also be checked from
+the host to the paired laptop. Separately, Serve must reach the protected
+Unix socket and supply the identity and capability headers while removing
+client-supplied copies. Record denied readers as well as the owner case.
+Neither path is needed to use the ordinary browser fallback.
+
+Probe status on 2026-11-09: the installed Serve CLI advertises Unix socket
+upstreams and `--accept-app-caps`; this establishes CLI support only. The
+host already has active Serve routes, so no route was changed for this
+check. End-to-end socket/header behavior and the paired-phone and terminal
+checks remain unverified. Stage 2 planning waits on those results under
+[the phone-access issue](https://github.com/jig-harness/jig/issues/688).
+A failed paired-phone probe leaves the ordinary browser path required; a
+failed socket probe requires a revised front design before stage 2, rather
+than silently making phone support optional.
 
 ### A front on a private network
 
-A *front* ([private-network front](../GLOSSARY.md)) is an optional layer
+A *front* ([private-network front](../GLOSSARY.md)) is the recommended layer
 that publishes the loopback hub to a private network, with a certificate
 and the viewer's identity. Tailscale Serve is its first implementation; a
 reverse proxy with an identity provider, or an SSH tunnel, does the job
-without Tailscale, and the hub needs no front at all. This is checked
+without Tailscale. Local browser and SSH readers need no front; phone
+access has the explicit fallback above. This is checked
 against
 [Tailscale's Serve documentation](https://tailscale.com/kb/1312/serve) and
 its 1.104 command line, not yet with the hub.
@@ -648,7 +770,8 @@ its 1.104 command line, not yet with the hub.
   tailnet (the private network Tailscale runs), with a certificate
   Tailscale obtains.
   The page is then a secure context, one a browser trusts with passkeys,
-  the clipboard, installing the page on a phone and later web push, which
+  the clipboard and, with the required browser support and page assets,
+  installing the page on a phone and later web push, which
   a plain tailnet address over HTTP is not. The tailnet decides who
   reaches the hub, so no Jig token is needed. The machine's name lands in
   public certificate logs.
@@ -708,8 +831,8 @@ its 1.104 command line, not yet with the hub.
   ([The source feed](#the-source-feed-from-a-host-to-a-hub)) stays the
   default.
 - **It does not unblock writes.** Tailscale says who is looking, not whose
-  forge login writes. It makes a proof-of-presence prompt possible on the
-  phone; writes still wait for item 40.
+  forge login writes. Phone access remains read-only; desktop
+  writes still wait for item 40.
 - **Derived, not declared.** `jig doctor hub` reads `tailscale serve status
   --json` and fails on Tailscale Funnel, which publishes to the open
   internet; on `--tcp` mode, which passes the encrypted connection through
@@ -739,13 +862,13 @@ a test fails a view that answers slower than its target:
   dashboard's default one, through the log's indexes by time and by
   repository and target, so a filtered read stays under a second at a year
   of rows.
-- **The page a phone loads** is the read views alone, the chat's bundle
-  being fetched only when a chat opens, and the browser suites record its
-  size and its first paint at phone width, so growth is seen from one build
-  to the next.
+- **The page a phone loads** is the read views alone, with no chat bundle.
+  Its transfer bytes and first paint must meet the measured ceilings in
+  [Phone acceptance](#phone-scope-and-access), at both phone widths.
 
-The outcome log's row count at a year and the phone page's size and
-first-paint targets are set from what stage 1 measures. The unhealthy
+The outcome log's row count at a year is set from what stage 1 measures.
+The phone page's size and first-paint ceilings are fixed by stage 1's design
+round before its view implementation lands. The unhealthy
 values for memory, streams, reconnects and the write-ahead log are set by
 stage 2 from its server's own figures, and from then `jig doctor hub`
 fails past each. The operator's cost per turn and per day, and the
@@ -1034,8 +1157,8 @@ needs 3; 7 needs 3, 5 and 6; 8 needs 7's fixtures; 9 needs 8.
    broken build, a batch of five items mid-pickup, an unreachable host and
    a laptop with two sources. It draws stage 3's cards and the chat now,
    because one round is one person's session and the layout (where the
-   chat and the cards sit at phone width) is what a second round would
-   redo; if item 40 changes what a write asks for, a card is redrawn inside
+   cards sit at phone width and chat sits on desktop) is what a second
+   round would redo; if item 40 changes what a write asks for, a card is redrawn inside
    that layout. The earlier round forbade any control that looks like a
    write, so the cards that write are drawn as stage 3. The round itself is
    a person's; it lands under [`prototypes/`](prototypes/rubric.md) with
@@ -1048,9 +1171,17 @@ needs 3; 7 needs 3, 5 and 6; 8 needs 7's fixtures; 9 needs 8.
    ledger. The fold of a piece of work's addresses into one page and one
    thread arrives with stage 2's step 1.
 
-**Stage 2: each piece of work across machines.** Before it is planned, a
-throwaway page tries Orca's phone app and the front
-([Where it runs](#where-it-runs)).
+**Phone access alongside stage 1.** The supported view subset and phone
+budgets are part of steps 8 and 9. Once this design and its access probes
+settle the contracts, file separate implementation items under the hub epic
+for URL/QR sharing, the resident dashboard install and secure-context front
+guidance. They must not wait on the decision to build stages 2 and 3; the
+existing owner-only dashboard can support them without the hub protocol.
+
+**Stage 2: each piece of work across machines.** Before it is planned, the
+[access probes](#phone-scope-and-access) have recorded results. The paired
+Orca path is an added convenience; the ordinary phone browser path remains
+a requirement whatever that result.
 
 1. `jig ask`'s thread additions, the fold by aliases with its rule for
    joins, and the thread list.
