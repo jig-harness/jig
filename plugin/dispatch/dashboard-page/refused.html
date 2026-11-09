@@ -28,6 +28,7 @@ body { margin: 0; }
   --hl: light-dark(#f7e8af, #4e3e09);
   --hl-line: light-dark(#815b1f, #ddc276);
   --focus: light-dark(#0267c7, #7dbaff);
+  --focus-soft: light-dark(#e3eefb, #1b2a3c);
   --bad: light-dark(#a8201a, #ff9e94);
   --wait: light-dark(#6a3a9e, #cdb4f5);
   --small: 14px;
@@ -168,6 +169,7 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 /* the whole decision: Markdown a drive wrote, so its text is shown and nothing in it runs */
 .quote.md { font-family: var(--sans); white-space: normal; }
 .quote.md h1, .quote.md h2, .quote.md h3, .quote.md h4, .quote.md h5, .quote.md h6 { margin: 8px 0 2px; font: 600 14px/1.3 var(--sans); }
+.quote.md.lines { white-space: pre-line; }
 .quote.md > :first-child { margin-top: 0; }
 .quote.md p { margin: 0 0 4px; }
 .quote.md ul, .quote.md ol { margin: 0 0 4px; padding-inline-start: 20px; }
@@ -419,12 +421,24 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .viewFilter { display: flex; align-items: center; gap: 10px; }
 .viewFilter input { flex: 1 1 auto; max-width: 420px; min-height: 44px; padding: 4px 10px; background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px var(--sans); }
 .dd kbd { display: inline-block; min-width: 1.4em; padding: 0 4px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: var(--r-tag); background: var(--sunk); color: var(--ink); font: 400 12px/1.5 var(--mono); text-align: center; }
-[data-card] { scroll-margin: 112px 0 24px; }
+[data-card] { scroll-margin: 112px 0 72px; }
 .dd [data-card][hidden] { display: none !important; }
 .main.filtering .need.rest, .main.filtering .qItem.rest { display: flex; }
 .main.filtering .groupHead.rest { display: block; }
+/* the card j and k rest on: a tinted fill reaching into the gutter, an accent bar, and the bar that names its keys */
+:where([data-card]) { position: relative; }
 .dd [data-card]:focus { outline: none; }
-.dd [data-card]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r); }
+.dd [data-card]:is(:focus-visible, :has(:focus-visible)) { --bleed: 8px; background: var(--focus-soft); box-shadow: calc(-1 * var(--bleed)) 0 0 var(--focus-soft), var(--bleed) 0 0 var(--focus-soft); }
+.dd [data-card]:is(:focus-visible, :has(:focus-visible))::before { content: ""; position: absolute; inset-block: 0; left: calc(-1 * var(--bleed)); width: 4px; border-radius: 2px; background: var(--focus); }
+.dd .slot:is(:focus-visible, :has(:focus-visible)) { --bleed: 0px; border-color: var(--focus); box-shadow: none; }
+@media (forced-colors: active) {
+  .dd [data-card]:is(:focus-visible, :has(:focus-visible)) { outline: 2px solid Highlight; outline-offset: 2px; }
+}
+.keyBar { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .keyBar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; position: fixed; left: 16px; bottom: 16px; z-index: 10; max-width: min(640px, calc(100vw - 32px)); padding: 6px 12px; background: var(--card); color: var(--ink); border: 1px solid var(--focus); border-radius: var(--r); box-shadow: 0 2px 10px light-dark(rgba(37,30,24,.12), rgba(0,0,0,.45)); font: 400 13px/1.5 var(--sans); pointer-events: none; }
+  .barTarget { font-weight: 600; }
+}
 .mTitle { display: block; }
 .mCommand { overflow-wrap: anywhere; user-select: all; }
 .mConds { margin: 4px 0 6px; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
