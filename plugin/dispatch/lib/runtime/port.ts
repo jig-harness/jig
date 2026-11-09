@@ -164,6 +164,8 @@ export interface ItemTarget {
 export interface PullRequestTarget {
   pr: number;
   head: string;
+  /** A merged PR follow-up may recreate a deleted branch from the base. */
+  purpose?: "followup";
   dispatched: Dispatched;
 }
 

@@ -33,6 +33,7 @@ import {
   withLimit,
 } from "../../../shared/orca-workspace/runner.ts";
 import { treeDrivers } from "../../../skills/drive-pr/scripts/lib/state/tree-drivers.ts";
+import { resolvePullRequestHead } from "./orca-pr-head.ts";
 import { failureText } from "../text.ts";
 import { call } from "./orca-comment.ts";
 import type {
@@ -75,6 +76,7 @@ export function openPullRequestWorkspace(
       branch: target.head,
       dispatched: target.dispatched,
       createFlags: ["--pr", String(target.pr)],
+      ...(target.purpose === "followup" ? {} : { pr: target.pr }),
     },
     timeoutMs,
   );
@@ -162,6 +164,7 @@ async function open(
     dispatched: Dispatched;
     createFlags: string[];
     createHook?: boolean;
+    pr?: number;
   },
   timeoutMs: number,
 ): Promise<RuntimeReceipt & { reattached?: boolean }> {
@@ -172,12 +175,19 @@ async function open(
   );
   const started = Date.now();
   try {
+    const resolved =
+      options.pr === undefined
+        ? null
+        : resolvePullRequestHead(ctx, repo.path, options.pr, options.branch);
+    if (resolved !== null && !resolved.ok)
+      return { ok: false, detail: resolved.failure.reason };
     const opened = openBranch(portOn(ctx), {
       repo,
       branch: options.branch,
       name: options.dispatched.name,
       comment: options.dispatched.mark,
       createFlags: options.createFlags,
+      ...(resolved?.ok ? { expectedHead: resolved.value } : {}),
       ...(options.createHook === undefined
         ? {}
         : { createHook: options.createHook }),

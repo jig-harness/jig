@@ -80,6 +80,11 @@ if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headR
   // One open pull request read again, as prs-open.json lists it.
   const listed = JSON.parse(fs.readFileSync(F + "/prs-open.json", "utf8")).find((p) => p.number === Number(args[2]));
   if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }
+  if (args.some((a) => a.includes("isCrossRepository"))) {
+    const head = Bun.spawnSync(["git", "rev-parse", "--verify", "refs/heads/" + listed.headRefName]);
+    out({ ...listed, state: "OPEN", headRefOid: head.exitCode === 0 ? head.stdout.toString().trim() : listed.headRefOid,
+      isCrossRepository: false, headRepositoryOwner: { login: "example-org" }, headRepository: { name: "example-repo" } });
+  }
   out({ ...listed, state: "OPEN" });
 }
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("reviewThreads"))) {
