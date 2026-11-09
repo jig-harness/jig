@@ -252,8 +252,7 @@ memory, the processors, the disk or the machine-wide test lock every gate
 run queues on. Pickups start only for a factory identity, which Jig's own
 repository does not set, and on Orca not at all, since an interactive
 launch cannot be bound to an account. The stops that reach a person mix
-real decisions with stops an agent could recover, and nothing on the page
-says what is safe to merge.
+real decisions with stops an agent could recover.
 [design/line-at-capacity.md](line-at-capacity.md) has how it works: each
 tick reads the host's gauges and computes the **load factor**, the fullest
 gauge's fill, starting a launch only while every gauge stays under its line
@@ -274,16 +273,14 @@ re-arm once on the recovery budget, an act and ask for each need that stays
 a person's, a missing facet, the queue's order; it never merges, answers a
 registry-class park, re-arms a drive a person stopped or sends a session
 free text. Every need opens with one act (Merge, Decide, Authorize, Reply,
-Do, Investigate), and the dashboard becomes five views of one column each
-([dispatch-board.md](dispatch-board.md#five-views-one-column-of-cards)).
+Do, Investigate) on the dashboard's
+[views](dispatch-board.md#five-views-one-column-of-cards).
 The route's tiers become item 31's complexity tiers. Built in the
 design's order, one pull request per step, under the item 44 epic.
 
 Done when, on a host running Orca, a converged pull request whose review
 the forge witnesses and that can merge is in merge now with a command
-pinned to its head within one interval; no two cards sit side by side on
-any view at 1440 px, and every view but Merge flashes while merge now
-holds a pull request; a park under `release` reads Authorize with its recommended
+pinned to its head within one interval; a park under `release` reads Authorize with its recommended
 option's cost, the same act in `jig ask`; every receipt carries each gauge,
 the load factor and the gauge that binds, and with enforcement off a launch
 a gauge would refuse still starts and is reported as would-hold; an item
