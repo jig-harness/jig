@@ -24,7 +24,8 @@ const ACTS: Record<NeedCause, PersonAct> = {
   "double-claim": "choose the session that keeps the item",
   stalled: "look at the stalled pickup",
   "nudge-unanswered": "answer the waiting session",
-  "pickup-question": "answer",
+  "pickup-question":
+    "settle the pickup's question, then return the item to the dispatch states",
   "assigner-cannot-write": "assign the item as someone who can write",
 };
 

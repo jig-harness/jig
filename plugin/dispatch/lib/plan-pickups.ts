@@ -293,7 +293,12 @@ function questionAsked(
   launches: ReadRecord[],
 ): Action | null {
   const latest = launches
-    .filter((r) => r.record.action === "pickup" && r.record.item === item.key)
+    .filter(
+      (r) =>
+        r.record.action === "pickup" &&
+        r.record.item === item.key &&
+        !r.record.released,
+    )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
   if (latest === undefined || latest.result === "done") return null;

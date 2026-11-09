@@ -594,7 +594,12 @@ routing below remain **exact**.
    the subagent's model and `runtime_effort` as its effort, field by field
    where the harness's subagent tool takes it, and the fix loop after the
    review delegates with the same values; a field the tool does not take is
-   not forwarded, and the status message says so. This session keeps its
+   not forwarded, and the status message says so. Before forwarding, resolve
+   the delegated agent's definition: a model or effort it pins is kept, and
+   only the fields it leaves open are forwarded; when no single effective
+   definition can be found, or a scope that might hold one cannot be read,
+   forward neither (`tier: pin unknown`, [agent
+   routing](https://github.com/jig-harness/jig/blob/main/design/agent-routing.md) § Derivation, item 5). This session keeps its
    own model and effort. Anywhere else the route is not forwarded: the
    delegation below runs on the model and effort it would run on without
    one, whatever `declared` says. Exit `1` is a
