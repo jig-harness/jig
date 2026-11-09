@@ -60,17 +60,22 @@ export function followsMain(ref: string | undefined): boolean {
  * match the registered one; a request without a ref accepts any registered
  * ref, so an existing pin is kept unless the caller asks for another.
  */
-export function sameSource(registered: string, requested: string): boolean {
-  const norm = (value: string) => {
+export function sameSource(
+  registered: string,
+  requested: string,
+  registeredGit?: boolean,
+): boolean {
+  const norm = (value: string, git?: boolean) => {
     const [base = "", ref] = value.split("#");
     const address = base.replace(/\/+$/, "").replace(/\.git$/, "");
     const canonical =
-      /^[\w.-]+\/[\w.-]+$/.test(address) && !existsSync(base)
+      /^[\w.-]+\/[\w.-]+$/.test(address) &&
+      (git === true || (git !== false && !existsSync(base)))
         ? `https://github.com/${address}`
         : address;
     return { base: canonical, ref };
   };
-  const a = norm(registered);
+  const a = norm(registered, registeredGit);
   const b = norm(requested);
   return a.base === b.base && (b.ref === undefined || a.ref === b.ref);
 }

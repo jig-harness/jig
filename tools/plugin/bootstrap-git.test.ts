@@ -56,9 +56,28 @@ test.skipIf(
       const revision = git(["rev-parse", "HEAD"]);
       git(["clone", "--local", root, join(root, "clean")]);
       writeFileSync(join(root, "tools/plugin/bootstrap.ts"), "// modified\n");
-      for (const override of ["count", "parameters", "local"]) {
+      for (const override of [
+        "count",
+        "parameters",
+        "local",
+        "assume",
+        "skip",
+      ]) {
         if (override === "local")
           git(["config", "core.worktree", join(root, "clean")]);
+        git([
+          "update-index",
+          "--no-assume-unchanged",
+          "--no-skip-worktree",
+          "tools/plugin/bootstrap.ts",
+        ]);
+        if (override === "assume" || override === "skip") {
+          git([
+            "update-index",
+            override === "assume" ? "--assume-unchanged" : "--skip-worktree",
+            "tools/plugin/bootstrap.ts",
+          ]);
+        }
         const result = Bun.spawnSync(
           [
             "/bin/bash",
@@ -90,7 +109,9 @@ test.skipIf(
         );
         expectSpawnExit(result, 1);
         expect(result.stderr.toString()).toContain(
-          "Tracked source has local changes",
+          override === "assume" || override === "skip"
+            ? "Index flags hide possible source changes"
+            : "Tracked source has local changes",
         );
       }
     } finally {

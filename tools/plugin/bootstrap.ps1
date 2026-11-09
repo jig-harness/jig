@@ -74,6 +74,9 @@ if ($availableAgents.Count -eq 0) { throw 'Install a supported agent CLI explici
 function Assert-Source {
     $head = & git -C $root rev-parse HEAD
     if ($LASTEXITCODE -ne 0 -or $head -ne $Revision) { throw 'Checkout does not match reviewed revision' }
+    $flags = & git -C $root ls-files -v
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect source index flags' }
+    if (@($flags | Where-Object { $_ -cmatch '^[a-zS] ' }).Count) { throw 'Index flags hide possible source changes; clear assume-unchanged and skip-worktree first' }
     $dirty = & git -C $root "--work-tree=$root" status --porcelain --untracked-files=no
     if ($LASTEXITCODE -ne 0 -or $dirty) { throw 'Tracked source has local changes; review a clean checkout first' }
     & git -C $root ls-files --error-unmatch -- tools/plugin/bootstrap.ps1 tools/plugin/bootstrap.ts | Out-Null

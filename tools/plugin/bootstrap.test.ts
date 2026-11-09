@@ -53,7 +53,13 @@ test("repository access checks cannot be redirected to another API host", () => 
   ).toThrow("GitHub HTTPS");
 });
 
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, delimiter, join } from "node:path";
 import { writeFakeProgram } from "../../lib/test-helpers/fake-program.ts";
@@ -114,6 +120,7 @@ writeFileSync(file,JSON.stringify(state));`,
           ...args,
         ],
         {
+          cwd: root,
           env: {
             ...process.env,
             ...extra,
@@ -250,6 +257,29 @@ test("explicit shorthand reruns preserve the existing registration and pin", () 
           call[3] === "add",
       ),
     ).toBe(false);
+  } finally {
+    f.close();
+  }
+});
+
+test("registered Git shorthand is stable despite a local directory collision", () => {
+  const f = fixture();
+  try {
+    f.setState("example-org/example-repo", "v1.2.3");
+    mkdirSync(join(f.root, "example-org/example-repo"), { recursive: true });
+    const result = f.run([
+      "--apply",
+      "--source",
+      "https://github.com/example-org/example-repo",
+    ]);
+    expectSpawnExit(result, 0);
+    expect(result.calls).toContainEqual([
+      "codex",
+      "plugin",
+      "marketplace",
+      "upgrade",
+      "jig",
+    ]);
   } finally {
     f.close();
   }

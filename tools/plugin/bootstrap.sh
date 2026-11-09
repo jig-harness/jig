@@ -45,9 +45,15 @@ done
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || { echo 'Pass --revision with the full reviewed source commit.' >&2; exit 2; }
 root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 verify_source() {
-  local head dirty
+  local head dirty flags entry
   head=$(git -C "$root" rev-parse HEAD) || return 1
   [[ "$head" == "$revision" ]] || { echo 'Checkout does not match reviewed revision' >&2; return 1; }
+  flags=$(git -C "$root" ls-files -v) || return 1
+  while IFS= read -r entry; do
+    case "$entry" in
+      [a-zS]' '*) echo 'Index flags hide possible source changes; clear assume-unchanged and skip-worktree first' >&2; return 1 ;;
+    esac
+  done <<< "$flags"
   dirty=$(git -C "$root" --work-tree="$root" status --porcelain --untracked-files=no) || return 1
   [[ -z "$dirty" ]] || { echo 'Tracked source has local changes; review a clean checkout first' >&2; return 1; }
   git -C "$root" ls-files --error-unmatch -- tools/plugin/bootstrap.sh tools/plugin/bootstrap.ts >/dev/null

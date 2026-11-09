@@ -294,7 +294,8 @@ function refuseOtherSource(
   requested: string,
   explicit: boolean,
 ): void {
-  if (!explicit || sameSource(registered.location, requested)) return;
+  if (!explicit || sameSource(registered.location, requested, registered.git))
+    return;
   const remove =
     harness === "claude"
       ? `claude plugin marketplace remove ${MARKETPLACE} --scope user`
