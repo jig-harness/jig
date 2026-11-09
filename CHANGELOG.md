@@ -390,6 +390,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.185.1] - 2026-11-09
+
+### Fixed
+
+- The review drive recovers a cancelled workflow with no active replacement
+  after a short grace period, requesting one re-run per head with a durable
+  budget shared across re-arms. An unsafe or refused request, or another
+  cancellation, parks with the run and recovery steps for a person instead of
+  repeating the initial CI wait. The doctor names that recovery. A completed
+  later attempt also replaces an old cancelled matrix template whose expanded
+  jobs have different names.
+
 ## [0.185.0] - 2026-11-09
 
 ### Added
@@ -6488,7 +6500,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.185.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.185.1...HEAD
+[0.185.1]: https://github.com/jig-harness/jig/compare/v0.185.0...v0.185.1
 [0.185.0]: https://github.com/jig-harness/jig/compare/v0.184.1...v0.185.0
 [0.184.1]: https://github.com/jig-harness/jig/compare/v0.184.0...v0.184.1
 [0.184.0]: https://github.com/jig-harness/jig/compare/v0.183.2...v0.184.0

@@ -400,8 +400,10 @@ visibility class, so a shared control plane can later serve the same feed;
 a host's hub read-only on loopback, answering only its own pages, a
 laptop's hub that serves any browser and reads each host over SSH (Secure
 Shell) with a key that runs the feed and nothing else, and Orca, where a
-person uses it, opening the hub in its own browser; an optional
-private-network front, Tailscale Serve first, that gives a phone an HTTPS
+person uses it, opening the hub in its own browser; required read-only phone access, with
+visible copy controls, forge and tracker links, continuous availability and
+phone acceptance budgets; a private-network front, Tailscale Serve first,
+that gives a phone an HTTPS
 name and the viewer's login, scopes what each person sees by the grants of
 the tailnet (Tailscale's private network), trusts that login only on a
 Unix socket only Tailscale's daemon reaches, and refuses Tailscale Funnel,
@@ -424,13 +426,16 @@ item 40 settles how a comment a pass posts under the person's login is
 told from the person's own; each commit then asks for proof that a person
 is present. Nothing of it is built. Built in stages, one pull request per
 step: the per-pull-request status on the dashboard that exists (rounds and
-resolved parks in the drive ledger, item 36's board read, Ready to merge
-and placement with the marks, a line one repository's tick refreshes,
-pickup progress, then one design round for the whole hub and the Running,
-Queue and Work views); then each piece of work across machines (item 39's thread
+resolved parks in the drive ledger, item 36's board read, the phone
+measurement fixture, Ready to merge and placement with the marks, a line one
+repository's tick refreshes, pickup progress, then one design round for the
+whole hub and the Running, Queue and Work views), with phone support part of
+each view's acceptance and the resident dashboard install, URL sharing and
+private-network front guidance filed as items that do not wait on the later
+stages ([hub.md § Phone scope and access](hub.md#phone-scope-and-access)); then each piece of work across machines (item 39's thread
 additions, `jig send --json` with `--expect`, the `jig hub` server, its
-Needs you across every source, Hosts and History views and its install, the private-network front,
-the Orca plugin's "Open the hub" command and its install from a catalog);
+Needs you across every source, Hosts and History views and its install,
+the private-network front, the Orca plugin's "Open the hub" command and its install from a catalog);
 then the chat, and writes once item 40 settles. Stages 2 and 3 are
 planned in detail once stage 1 has been in use for four weeks, and the
 person who asked for the hub decides whether each is built, from the
