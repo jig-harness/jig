@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { fixture } from "../fixtures.ts";
 import {
+  DISMISSED_KEPT,
   flashOf,
+  keepDismissed,
   mergeCount,
   mergeLanes,
   mergeNowCount,
@@ -80,5 +82,26 @@ describe("the merge flash", () => {
       ),
     };
     expect(flashOf(moved, dismissed)?.text).toContain("#1199");
+  });
+});
+
+describe("the dismissed set's bound", () => {
+  it("keeps the newest earlier heads that still fit beside the current ones", () => {
+    const old = Array.from({ length: DISMISSED_KEPT }, (_, i) => `old${i}`);
+    const kept = [...keepDismissed(new Set(old), ["a", "b"])];
+    expect(kept.length).toBe(DISMISSED_KEPT);
+    expect(kept).toContain("a");
+    expect(kept).not.toContain("old0");
+    expect(kept).toContain(`old${DISMISSED_KEPT - 1}`);
+  });
+
+  it("keeps every current head and no earlier one when they fill the bound", () => {
+    const current = Array.from(
+      { length: DISMISSED_KEPT + 5 },
+      (_, i) => `c${i}`,
+    );
+    const kept = keepDismissed(new Set(["old"]), current);
+    expect(kept.size).toBe(DISMISSED_KEPT + 5);
+    expect(kept.has("old")).toBe(false);
   });
 });

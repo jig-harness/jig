@@ -151,3 +151,17 @@ export function boardNotes(line: LineSnapshot | null): string[] {
     return notes;
   });
 }
+
+/** How many dismissed heads are kept, newest last; an older one shows its flash again. */
+export const DISMISSED_KEPT = 200;
+
+/** The dismissed set after dismissing `keys`: every current key, plus the newest earlier ones that still fit the bound. */
+export function keepDismissed(
+  dismissed: ReadonlySet<string>,
+  keys: readonly string[],
+): Set<string> {
+  const current = new Set(keys);
+  const gone = [...dismissed].filter((k) => !current.has(k));
+  const room = Math.max(0, DISMISSED_KEPT - current.size);
+  return new Set([...(room === 0 ? [] : gone.slice(-room)), ...current]);
+}

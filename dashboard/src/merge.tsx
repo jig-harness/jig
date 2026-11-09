@@ -14,6 +14,7 @@ import {
   boardNotes,
   type FlashView,
   flashOf,
+  keepDismissed,
   type MergeCardView,
   mergeLanes,
 } from "./merge-view.ts";
@@ -125,9 +126,6 @@ export function MergePanel({
 
 const DISMISSED = "merge-flash-dismissed";
 
-/** How many dismissed heads are kept, newest last; an older one shows its flash again. */
-const DISMISSED_KEPT = 200;
-
 function readDismissed(): Set<string> {
   const kept = readKept(DISMISSED);
   if (kept === null) return new Set();
@@ -155,12 +153,7 @@ export function useFlash(
     if (flash === null) return;
     // Heads that left merge now stay dismissed while they come back unchanged, up to a bound;
     // the bound trims only heads no longer in merge now, so every current head is dismissed.
-    const current = new Set(flash.keys);
-    const gone = [...dismissed].filter((k) => !current.has(k));
-    const next = new Set([
-      ...gone.slice(-Math.max(0, DISMISSED_KEPT - current.size)),
-      ...current,
-    ]);
+    const next = keepDismissed(dismissed, flash.keys);
     setDismissed(next);
     writeKept(DISMISSED, JSON.stringify([...next]));
   };
