@@ -21,7 +21,7 @@ import type { MachineConfig } from "./machine-config.ts";
 import type { TickBudget } from "./tick-reads.ts";
 
 /** The kind of launch a record is: a re-arm or takeover is a drive pass. */
-export function kindOfRecord(record: LaunchRecord): LoadKind {
+function kindOfRecord(record: LaunchRecord): LoadKind {
   return record.action === "pickup" || record.action === "followup"
     ? record.action
     : "drive";

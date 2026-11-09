@@ -70,7 +70,7 @@ describe("the machine file's load section", () => {
 
   it("refuses an unknown key, a share out of range and an unknown kind", () => {
     for (const [body, reason] of [
-      ["load:\n  enforced: true\n", "load has unknown key(s): enforced"],
+      ["load:\n  enforced: true\n", "load has an unknown key: enforced"],
       [
         "load:\n  memory_free: 1.5\n",
         "load.memory_free must be a number above 0 and below 1",

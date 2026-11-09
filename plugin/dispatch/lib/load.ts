@@ -57,7 +57,7 @@ export interface LoadState {
 }
 
 /** Each kind's reservation from its samples, newest first: the 90th percentile once it has `MEASURED_AFTER`, else its default. */
-export function reservationsOf(
+function reservationsOf(
   settings: LoadSettings,
   samples: ReadonlyMap<LoadKind, number[]>,
 ): LineLoad["reservations"] {
@@ -115,7 +115,7 @@ export function loadState(
 }
 
 /** A kind's reservation in bytes. */
-export function reservation(state: LoadState, kind: LoadKind): number {
+function reservation(state: LoadState, kind: LoadKind): number {
   return (
     state.reservations.find((r) => r.kind === kind)?.bytes ??
     state.settings.reservations[kind]
@@ -144,100 +144,125 @@ function aboveFloor(free: number, total: number, floor: number): number {
   return (total - free) / Math.max(total - floor, 1);
 }
 
-/** Each gauge as the tick read it, with the launches it admitted counted. */
-export function gauges(state: LoadState): LineLoadGauge[] {
-  const { settings, reading, accounts } = state;
-  const out: LineLoadGauge[] = [];
+/** A gauge's reading, or one the host gave none of. */
+function gauge(
+  name: LoadGauge,
+  line: string,
+  read: { fill: number; reads: string } | { unread: string },
+): LineLoadGauge {
+  return "unread" in read
+    ? { gauge: name, fill: null, reads: read.unread, line }
+    : { gauge: name, fill: read.fill, reads: read.reads, line };
+}
+
+function memoryGauge(state: LoadState): LineLoadGauge {
+  const { settings, reading } = state;
   const mem = memory(state);
-  out.push({
-    gauge: "memory",
-    fill: mem === null ? null : mem.used / mem.usable,
-    reads:
-      mem === null
-        ? reading.platform === "darwin"
-          ? "memory not read on macOS, which reports no reclaimable memory"
-          : "memory not read"
-        : `${gib(mem.available)} available of ${gib(reading.totalBytes)}`,
-    line: `${pct(settings.memoryFree)} of memory kept free`,
-  });
-  const { load1, cores } = reading.host;
-  out.push({
-    gauge: "processors",
-    fill: load1 === null ? null : load1 / cores / settings.loadPerCore,
-    reads:
-      load1 === null
-        ? `processors not read on ${reading.platform === "win32" ? "Windows, which has no load average" : reading.platform}`
-        : `load ${load1.toFixed(1)} on ${cores} cores`,
-    line: `${settings.loadPerCore} per core`,
-  });
-  out.push(
-    "unread" in reading.lock
-      ? {
-          gauge: "test-lock",
-          fill: null,
-          reads: reading.lock.unread,
-          line: `${settings.lockWaiters} waiting`,
-        }
+  const unread =
+    reading.platform === "darwin"
+      ? "memory not read on macOS, which reports no reclaimable memory"
+      : "memory not read";
+  return gauge(
+    "memory",
+    `${pct(settings.memoryFree)} of memory kept free`,
+    mem === null
+      ? { unread }
       : {
-          gauge: "test-lock",
-          fill: reading.lock.waiters / settings.lockWaiters,
-          reads: `${reading.lock.holders} holding, ${reading.lock.waiters} waiting`,
-          line: `${settings.lockWaiters} waiting`,
+          fill: mem.used / mem.usable,
+          reads: `${gib(mem.available)} available of ${gib(reading.totalBytes)}`,
         },
   );
-  out.push(
-    "unread" in reading.disk
-      ? {
-          gauge: "disk",
-          fill: null,
-          reads: reading.disk.unread,
-          line: `${gib(settings.diskFreeBytes)} free`,
-        }
+}
+
+function processorsGauge({ settings, reading }: LoadState): LineLoadGauge {
+  const { load1, cores } = reading.host;
+  const where =
+    reading.platform === "win32"
+      ? "Windows, which has no load average"
+      : reading.platform;
+  return gauge(
+    "processors",
+    `${settings.loadPerCore} per core`,
+    load1 === null
+      ? { unread: `processors not read on ${where}` }
       : {
-          gauge: "disk",
+          fill: load1 / cores / settings.loadPerCore,
+          reads: `load ${load1.toFixed(1)} on ${cores} cores`,
+        },
+  );
+}
+
+function lockGauge({ settings, reading }: LoadState): LineLoadGauge {
+  const lock = reading.lock;
+  return gauge(
+    "test-lock",
+    `${settings.lockWaiters} waiting`,
+    "unread" in lock
+      ? lock
+      : {
+          fill: lock.waiters / settings.lockWaiters,
+          reads: `${lock.holders} holding, ${lock.waiters} waiting`,
+        },
+  );
+}
+
+function diskGauge({ settings, reading }: LoadState): LineLoadGauge {
+  const disk = reading.disk;
+  return gauge(
+    "disk",
+    `${gib(settings.diskFreeBytes)} free`,
+    "unread" in disk
+      ? disk
+      : {
           fill: aboveFloor(
-            reading.disk.freeBytes,
-            reading.disk.totalBytes,
+            disk.freeBytes,
+            disk.totalBytes,
             settings.diskFreeBytes,
           ),
-          reads: `${gib(reading.disk.freeBytes)} free`,
-          line: `${gib(settings.diskFreeBytes)} free`,
+          reads: `${gib(disk.freeBytes)} free`,
         },
   );
-  out.push(
-    "unread" in reading.forge || !(reading.forge.limit > 0)
-      ? {
-          gauge: "forge",
-          fill: null,
-          reads:
-            "unread" in reading.forge
-              ? reading.forge.unread
-              : "the forge's budget has no limit",
-          line: `${pct(settings.forgeFloor)} of the budget kept`,
-        }
-      : {
-          gauge: "forge",
-          fill: aboveFloor(
-            reading.forge.remaining,
-            reading.forge.limit,
-            reading.forge.limit * settings.forgeFloor,
-          ),
-          reads: `${reading.forge.remaining} of ${reading.forge.limit} left`,
-          line: `${pct(settings.forgeFloor)} of the budget kept`,
-        },
-  );
-  const held = accounts.held + state.spentSlots;
-  out.push({
-    gauge: "accounts",
-    fill: accounts.capacity === 0 ? 1 : held / accounts.capacity,
-    reads: `${held} of ${accounts.capacity} slots held`,
-    line: "no free slot",
+}
+
+function forgeGauge({ settings, reading }: LoadState): LineLoadGauge {
+  const forge = reading.forge;
+  const line = `${pct(settings.forgeFloor)} of the budget kept`;
+  if ("unread" in forge) return gauge("forge", line, forge);
+  if (!(forge.limit > 0))
+    return gauge("forge", line, { unread: "the forge's budget has no limit" });
+  return gauge("forge", line, {
+    fill: aboveFloor(
+      forge.remaining,
+      forge.limit,
+      forge.limit * settings.forgeFloor,
+    ),
+    reads: `${forge.remaining} of ${forge.limit} left`,
   });
-  return out;
+}
+
+function accountsGauge(state: LoadState): LineLoadGauge {
+  const { capacity } = state.accounts;
+  const held = state.accounts.held + state.spentSlots;
+  return gauge("accounts", "no free slot", {
+    fill: capacity === 0 ? 1 : held / capacity,
+    reads: `${held} of ${capacity} slots held`,
+  });
+}
+
+/** Each gauge as the tick read it, with the launches it admitted counted. */
+function gauges(state: LoadState): LineLoadGauge[] {
+  return [
+    memoryGauge(state),
+    processorsGauge(state),
+    lockGauge(state),
+    diskGauge(state),
+    forgeGauge(state),
+    accountsGauge(state),
+  ];
 }
 
 /** The fullest gauge and its fill; `null` when none reads. */
-export function factorOf(
+function factorOf(
   all: readonly LineLoadGauge[],
 ): { factor: number; binds: LoadGauge } | null {
   let top: { factor: number; binds: LoadGauge } | null = null;
@@ -254,42 +279,59 @@ export function factorText(load: Pick<LineLoad, "factor" | "binds">): string {
     : `${Math.round(load.factor * 100)}% · ${load.binds} binds`;
 }
 
-/** Why a launch of `kind` does not fit now, naming the gauge; `null` when it fits. */
-export function refusal(
-  state: LoadState,
-  kind: LoadKind,
-): { gauge: LoadGauge; detail: string } | null {
+type Refusal = { gauge: LoadGauge; detail: string };
+
+/** Why the memory gauge refuses a launch of `kind`: its reservation, and for a pickup the reserve it keeps, past the floor. */
+function memoryRefusal(state: LoadState, kind: LoadKind): Refusal | null {
   const own = reservation(state, kind);
   const reserve =
     kind === "pickup"
       ? Math.max(reservation(state, "drive"), reservation(state, "followup"))
       : 0;
   const mem = memory(state, own + reserve);
-  if (mem !== null && mem.used > mem.usable)
-    return {
-      gauge: "memory",
-      detail: `memory binds: ${gib(Math.max(0, mem.available - mem.floor))} is left above the ${gib(mem.floor)} kept free, and the ${kind} reserves ${gib(own)}${reserve > 0 ? ` and keeps ${gib(reserve)} for a drive or follow-up` : ""}`,
-    };
-  const all = gauges(state);
-  for (const g of all) {
-    if (g.fill === null || g.gauge === "memory") continue;
-    if (g.gauge === "accounts") {
-      // Account admission decides every launch; a pickup alone must also leave a slot free.
-      if (kind !== "pickup") continue;
-      const { held, capacity } = state.accounts;
-      if (held + state.spentSlots + 1 < capacity) continue;
-      return {
-        gauge: "accounts",
-        detail: `accounts bind: the pickup would take the last free slot (${g.reads}), which a drive or follow-up keeps`,
-      };
-    }
-    if (g.gauge === "test-lock" && kind !== "pickup" && kind !== "drive")
-      continue;
-    if (g.fill >= 1)
-      return {
+  if (mem === null || mem.used <= mem.usable) return null;
+  const keeps =
+    reserve > 0 ? ` and keeps ${gib(reserve)} for a drive or follow-up` : "";
+  return {
+    gauge: "memory",
+    detail: `memory binds: ${gib(Math.max(0, mem.available - mem.floor))} is left above the ${gib(mem.floor)} kept free, and the ${kind} reserves ${gib(own)}${keeps}`,
+  };
+}
+
+/** Why one of the other gauges refuses a launch of `kind`; `null` when it does not. */
+function gaugeRefusal(
+  state: LoadState,
+  kind: LoadKind,
+  g: LineLoadGauge,
+): Refusal | null {
+  if (g.fill === null || g.gauge === "memory") return null;
+  if (g.gauge === "accounts") {
+    // Account admission decides every launch; a pickup alone must also leave a slot free.
+    const { held, capacity } = state.accounts;
+    return kind === "pickup" && held + state.spentSlots + 1 >= capacity
+      ? {
+          gauge: "accounts",
+          detail: `accounts bind: the pickup would take the last free slot (${g.reads}), which a drive or follow-up keeps`,
+        }
+      : null;
+  }
+  const lockExempt =
+    g.gauge === "test-lock" && kind !== "pickup" && kind !== "drive";
+  return !lockExempt && g.fill >= 1
+    ? {
         gauge: g.gauge,
         detail: `${g.gauge} binds: ${g.reads}, at its line of ${g.line}`,
-      };
+      }
+    : null;
+}
+
+/** Why a launch of `kind` does not fit now, naming the gauge; `null` when it fits. */
+function refusal(state: LoadState, kind: LoadKind): Refusal | null {
+  const mem = memoryRefusal(state, kind);
+  if (mem !== null) return mem;
+  for (const g of gauges(state)) {
+    const refused = gaugeRefusal(state, kind, g);
+    if (refused !== null) return refused;
   }
   return null;
 }

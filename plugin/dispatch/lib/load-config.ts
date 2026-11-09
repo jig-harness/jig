@@ -118,10 +118,10 @@ function reservations(value: unknown): Checked<Record<LoadKind, number>> {
 export function loadSettings(value: unknown): Checked<LoadSettings> {
   if (value === undefined || value === null) return ok(LOAD_DEFAULTS);
   if (!isMapping(value)) return invalid("load must be a mapping");
-  const unknown = Object.keys(value).filter((k) => !KEYS.includes(k));
-  if (unknown.length > 0)
+  const stray = Object.keys(value).find((key) => !KEYS.includes(key));
+  if (stray !== undefined)
     return invalid(
-      `load has unknown key(s): ${unknown.join(", ")} (known: ${KEYS.join(", ")})`,
+      `load has an unknown key: ${stray} (known: ${KEYS.join(", ")})`,
     );
   const enforce = value.enforce ?? LOAD_DEFAULTS.enforce;
   if (typeof enforce !== "boolean")

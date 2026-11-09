@@ -637,6 +637,20 @@ function loadKindOf(action: Action): LoadKind {
   return "drive";
 }
 
+/** The admitted account, unless the host's load holds the launch. */
+function byLoad(
+  state: ApplyState,
+  repo: string,
+  action: Action,
+  slots: Slots,
+): { slots: Slots } | { outcome: LaunchOutcome } {
+  if (state.load === undefined) return { slots };
+  const held = judge(state.load, loadKindOf(action), repo, action.target);
+  return held === null
+    ? { slots }
+    : { outcome: waits(action, held, slots.account.name) };
+}
+
 /**
  * The account a launch bills, admitted afresh against the walls and the
  * identity check, then against the host's load (`load.ts`): under
@@ -669,15 +683,7 @@ export async function admitAccount(
     const identity = await identityOf(state, slots);
     if ("waits" in identity)
       return { outcome: waits(action, identity.waits, slots.account.name) };
-    if (identity.ok) {
-      const load =
-        state.load === undefined
-          ? null
-          : judge(state.load, loadKindOf(action), repo, action.target);
-      return load === null
-        ? { slots }
-        : { outcome: waits(action, load, slots.account.name) };
-    }
+    if (identity.ok) return byLoad(state, repo, action, slots);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
     if (action.takeover !== undefined) return { outcome: refusal };
