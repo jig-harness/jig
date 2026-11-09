@@ -10,6 +10,7 @@ import {
   hasNeedRows,
   needRows,
   needCount,
+  needPeopleOf,
   needView,
   orderedNeeds,
 } from "./needs-view.ts";
@@ -56,6 +57,84 @@ const FRAMED = {
   recommendation: "A, it is smaller",
   decisionClass: "scope",
 };
+
+const RELEASE = {
+  key: "PRRT_r1",
+  kind: "thread" as const,
+  person: "maintainer-a",
+  lines: ["## Question", "Tag v0.159.0 from a bypass account?"],
+  question: "Tag v0.159.0 from a bypass account?",
+  recommendation: "**Tag it**, because the release commit passed its gates.",
+  decisionClass: "release",
+  options: [
+    {
+      name: "Tag it",
+      changes: "the release is published.",
+      costs: "a person with bypass pushes one tag.",
+      recommended: true,
+    },
+    {
+      name: "Wait",
+      changes: "nothing.",
+      costs: "the release stays unpublished.",
+      recommended: false,
+    },
+  ],
+  steps: ["git tag v0.159.0 c618c8d", "git push origin v0.159.0"],
+};
+
+describe("what each need asks of a person", () => {
+  const release: LineNeed = {
+    ...NEED,
+    cause: "parked",
+    decisions: [RELEASE],
+  };
+
+  it("reads a park under release as Authorize, its ask, and the recommended option with what it changes and costs", () => {
+    const view = needView(release, CLOCK);
+    expect(view.act).toBe("Authorize");
+    expect(view.question).toBe("Tag v0.159.0 from a bypass account?");
+    expect(view.recommended).toEqual(RELEASE.options[0] ?? null);
+    // The option reads in full, so the bare recommendation line is not repeated.
+    expect(view.recommendation).toBeNull();
+  });
+
+  it("folds the other options and the steps for a person", () => {
+    const view = needView(release, CLOCK);
+    expect(view.otherOptions.map((o) => o.name)).toEqual(["Wait"]);
+    expect(view.steps).toEqual([
+      "git tag v0.159.0 c618c8d",
+      "git push origin v0.159.0",
+    ]);
+  });
+
+  it("takes the act the line kept over the one it would derive", () => {
+    expect(needView({ ...release, act: "Do" }, CLOCK).act).toBe("Do");
+  });
+
+  it("names the person a need waits on, and filtering to one person leaves only theirs", () => {
+    const theirs: LineNeed = { ...release, target: "PR #8", pr: 8 };
+    const others: LineNeed = {
+      ...release,
+      target: "PR #9",
+      pr: 9,
+      decisions: [{ ...RELEASE, key: "PRRT_r2", person: "maintainer-b" }],
+    };
+    const line: LineSnapshot = {
+      ...lineOf("quiet"),
+      sessions: [],
+      needs: [theirs, others, NEED],
+    };
+    expect(needView(theirs, CLOCK).people).toEqual(["maintainer-a"]);
+    expect(needPeopleOf(line)).toEqual(["maintainer-a", "maintainer-b"]);
+    const targets = (person: string | null) =>
+      needRows(line, CLOCK, person).flatMap((r) =>
+        r.type === "need" ? [r.need.target] : [],
+      );
+    expect(targets(null)).toEqual(["PR #8", "PR #9", "PR #7"]);
+    expect(targets("Maintainer-A")).toEqual(["PR #8"]);
+  });
+});
 
 describe("a park", () => {
   const park: LineNeed = { ...NEED, cause: "parked", decisions: [FRAMED] };
@@ -257,29 +336,29 @@ describe("the person's list", () => {
     expect(view.goLabel).toBe("Open the pull request");
   });
 
-  it("puts what to decide before what to check, oldest first in each", () => {
+  it("lists the needs by act, in the acts' order, oldest first in each", () => {
     expect(orderedNeeds(lineOf("loud").needs).map((n) => n.target)).toEqual([
       "PR #456",
-      "PR #1210",
-      "PR #479",
       "PR #475",
       "PR #95",
+      "PR #1210",
+      "PR #479",
       "API-77",
       "PR #461",
       "WEB-418",
     ]);
   });
 
-  it("files each cause under its heading", () => {
+  it("files each cause under its act", () => {
     const heads: Array<[LineNeed["cause"], string]> = [
-      ["parked", "To decide, on the pull request"],
-      ["needs-person", "To decide, on the pull request"],
-      ["stopped-unknown", "To decide, on the pull request"],
-      ["stalled", "To check"],
-      ["double-claim", "To check"],
-      ["followup-failed", "To check"],
-      ["nudge-unanswered", "To check"],
-      ["assigner-cannot-write", "To check"],
+      ["parked", "Decide"],
+      ["needs-person", "Investigate"],
+      ["stopped-unknown", "Investigate"],
+      ["stalled", "Investigate"],
+      ["double-claim", "Investigate"],
+      ["followup-failed", "Investigate"],
+      ["nudge-unanswered", "Reply"],
+      ["assigner-cannot-write", "Do"],
     ];
     for (const [cause, head] of heads) {
       const [first] = needRows(
@@ -293,7 +372,7 @@ describe("the person's list", () => {
   it("adds the sessions not moving under their own heading", () => {
     const rows = needRows(lineOf("hung"), CLOCK);
     expect(rows.filter((r) => r.type === "head")).toEqual([
-      { type: "head", head: "To check" },
+      { type: "head", head: "Reply" },
       { type: "head", head: "Not moving" },
     ]);
     expect(rows.filter((r) => r.type === "stuck").length).toBe(4);
@@ -341,7 +420,7 @@ describe("whether What needs you exists", () => {
     );
     expect(needCount({ ...both, needs: [] }, NOW)).toBe(1);
   });
-  it("lists a stuck launch record under To check, not To decide", () => {
+  it("lists a stuck launch record under Investigate", () => {
     const line: LineSnapshot = {
       ...lineOf("quiet"),
       needs: [{ ...NEED, stuckRecord: "launch-9" }],
@@ -350,7 +429,7 @@ describe("whether What needs you exists", () => {
       needRows(line, CLOCK)
         .filter((r) => r.type === "head")
         .map((r) => (r as { head: string }).head),
-    ).toEqual(["To check"]);
+    ).toEqual(["Investigate"]);
   });
   it("does with a need, or with a session not moving", () => {
     expect(hasNeedRows(lineOf("loud"), NOW)).toBe(true);

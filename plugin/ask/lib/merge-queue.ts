@@ -16,7 +16,7 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { commentFields, readComments, readOpenPulls } from "./forge.ts";
 import type { AskContext } from "./station.ts";
-import type { WaitsOn } from "./answer.ts";
+import { personWait, type WaitsOn } from "./answer.ts";
 
 /** Apply the dispatch label boundary before reading any peer's records. */
 async function scopedOpenPulls(
@@ -183,5 +183,5 @@ export async function updateQueueWait(
   if (placed.waitsOn.kind === "waiting") return { waiting: placed.says };
   if (placed.lane !== "update-next")
     return unknown("its lane changed while reading the order");
-  return { person: "update the branch", why: `update-next: ${answer.says}` };
+  return personWait("update the branch", `update-next: ${answer.says}`);
 }
