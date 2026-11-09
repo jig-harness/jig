@@ -200,14 +200,17 @@ Guidelines' minimum contrast, in both modes.
 
 ### 41. Configurable issue attributes: type, priority and size
 
-Every issue records its type, priority and size, so a team can sort and
-filter its tracker by them. A team chooses where its tracker keeps each one:
-the tracker's own field, a custom field or labels. Each tracker Jig
-supports has a documented default. On GitHub Issues that is the issue type
-and the organization's own issue fields, for a repository that does not
-already keep them in labels. No repository's store moves unless it asks. Every way Jig's tools file
-an issue through the tracker sets all three and checks them. The issue forms set the type and leave priority and size to
-triage. A weekly check reports any issue that lacks one.
+Every issue records its type, priority and size (an epic needs no size), so a
+team can sort and filter its tracker by them. A team chooses where its
+tracker keeps each one: the tracker's own field, a custom field or labels.
+Each tracker Jig supports has a documented default. On GitHub Issues that is
+the issue type and the organization's own issue fields, for a repository that
+does not already keep them in labels. No repository's store moves unless it
+asks. Every way Jig's tools file an issue through the tracker sets all three
+(an epic needs no size) and checks them. The issue forms set the type and
+leave priority and size to triage. The weekly check can move an issue missing an attribute back to
+triage while it has not been started. Still to come are Jira's issue-type
+and custom-field stores, Linear's estimate, and live checks of those stores.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 

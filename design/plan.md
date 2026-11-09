@@ -622,8 +622,8 @@ and each genre's contrast test holds its light and dark pairs.
 
 The [tracker interface](../GLOSSARY.md) carries an issue's type, priority
 and size as canonical values. Its callers read those values, and every
-filing through the interface checks them inside the write, warning when
-one is missing. A repository chooses where each is kept through
+filing through the interface checks them inside the write, refusing when
+a required value is missing (an epic needs no size). A repository chooses where each is kept through
 `issue_tracker.facets`: the tracker's own field, a named custom field or
 labels, with a documented default per adapter:
 
@@ -642,11 +642,11 @@ Jig names label stores for its facets. The issue forms and `report-bug.ts`,
 which file around the interface, set the type and leave priority and size
 to triage.
 
-What remains is the checked move between stores, the weekly sweep of issues
-missing a facet and the refusal of an incomplete filing, followed by Jira's
-issue-type and custom-field stores and Linear's estimate. The audit must
-name a repository that keeps facets and runs no sweep. Jig's own move to
-GitHub's fields belongs with the checked move. These are the remaining
+What remains is Jira's issue-type and custom-field stores, Linear's estimate
+and their live runs. Jig's own move to GitHub's fields still needs the
+organization's default Task issue type retired, then the checked move,
+the configuration and issue forms switched, the source labels retired and
+the weekly workflow dispatched to verify its token's reads. These are the remaining
 steps of [the design's build order](tracker-facets.md#build-order).
 A store kept by the repository's own command waits until a repository names
 a facet that needs it.
