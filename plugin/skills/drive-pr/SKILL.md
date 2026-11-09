@@ -1525,6 +1525,12 @@ PR-global claim about what it closed, verbatim, if one was recorded
 armed signal obliges, and what to do with its echoed claim, is in § 3; all
 three fields are advisory and none changes an exit code.
 
+`work.summaryHeldUndispatchedKeys` lists unaddressed summary findings whose
+holds carry no `verifiedSha` push stamp (`null` when not measured or unreadable).
+The reason names these as "held but not dispatched: re-hold to dispatch".
+Verify the promised fix before re-holding, then push and finish the round so
+the answer is posted. The diagnostic does not certify that the code is fixed.
+
 Run this command as shown even inside a pass `drive.ts` spawned — always pass
 `--bump-attempt`, never conditionally. `drive.ts` already recorded this exact
 pass's attempt itself, before spawning you, and the script detects that case
