@@ -53,6 +53,7 @@ export function cleanEnv(
       !isCommandScopeConfig(key.toUpperCase()) &&
       !key.startsWith("JIG__") &&
       key !== "JIG_OVERLAY" &&
+      key !== "PROMOTED_STATUSES" &&
       key !== "JIG_CONSUMER_ROOT" &&
       key !== "LAST_UPDATED_TODAY" &&
       !INDEX_OUTPUT_ENV.includes(key) &&
