@@ -2216,7 +2216,8 @@ make, use the entry's term instead.
 - **Command palette** — the search box a page opens over its content from a
   key, where typing narrows a list of places to go and commands to copy and
   Enter runs the chosen one. The *dispatcher*'s dashboard opens it on Ctrl-K (⌘K); it
-  lists the views, every card on them and each card's command.
+  lists the views and the cards and commands on Merge, Needs you, Running and
+  Queue.
 - **Roving focus** — keyboard focus kept on one item of a group at a time:
   Tab enters the group at that item and leaves it at the next control, while
   other keys (j and k on the dashboard) move the focus to a neighbour. The

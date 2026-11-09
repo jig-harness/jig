@@ -101,7 +101,7 @@ function pendingTarget(element: HTMLElement, key: string): HTMLElement | null {
   );
 }
 
-/** Opens the view's Show all when it holds the card, which React draws before this returns; whether the card shows now. */
+/** Opens the view's Show all when it holds the card; whether it was opened, for the commit it schedules to draw the card. */
 function reveal(element: HTMLElement, target: HTMLElement): boolean {
   if (target.closest(".rest") === null) return false;
   const more = element.querySelector<HTMLButtonElement>(
@@ -109,7 +109,22 @@ function reveal(element: HTMLElement, target: HTMLElement): boolean {
   );
   if (more === null) return false;
   more.click();
-  return cardsIn(element).includes(target);
+  return true;
+}
+
+const BEHIND_SHOW_ALL = "That card is behind Show all in this view";
+
+/** Focuses a card once Show all has drawn it, in the frame after the click; a card still hidden is said. */
+function focusRevealed(element: HTMLElement, key: string): void {
+  requestAnimationFrame(() => {
+    const target = pendingTarget(element, key);
+    if (target !== null && cardsIn(element).includes(target))
+      focusCard(element, target);
+    else {
+      focusStart(element);
+      announce(BEHIND_SHOW_ALL);
+    }
+  });
 }
 
 /** Moves focus to what a pending request names, once; a card it cannot show is said, not kept for later. */
@@ -121,11 +136,11 @@ function focusPending(element: HTMLElement, pending: string): void {
   const target = pendingTarget(element, pending);
   if (target === null) focusStart(element);
   else if (target.dataset.card === undefined) target.focus();
-  else if (cardsIn(element).includes(target) || reveal(element, target))
-    focusCard(element, target);
+  else if (cardsIn(element).includes(target)) focusCard(element, target);
+  else if (reveal(element, target)) focusRevealed(element, pending);
   else {
     focusStart(element);
-    announce("That card is behind Show all in this view");
+    announce(BEHIND_SHOW_ALL);
   }
 }
 

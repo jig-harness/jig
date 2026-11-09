@@ -153,8 +153,14 @@ export function useFlash(
   const flash = flashOf(line, dismissed);
   const dismiss = () => {
     if (flash === null) return;
-    // Heads that left merge now stay dismissed while they come back unchanged, up to a bound.
-    const next = new Set([...dismissed, ...flash.keys].slice(-DISMISSED_KEPT));
+    // Heads that left merge now stay dismissed while they come back unchanged, up to a bound;
+    // the bound trims only heads no longer in merge now, so every current head is dismissed.
+    const current = new Set(flash.keys);
+    const gone = [...dismissed].filter((k) => !current.has(k));
+    const next = new Set([
+      ...gone.slice(-Math.max(0, DISMISSED_KEPT - current.size)),
+      ...current,
+    ]);
     setDismissed(next);
     writeKept(DISMISSED, JSON.stringify([...next]));
   };
