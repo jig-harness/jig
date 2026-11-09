@@ -246,10 +246,11 @@ to waiting.
 
 ### 44. The line at capacity: the host's load factor, served pickups and the steward
 
-The dispatcher admits work by account slots alone, so a host with room to
-spare idles and one near its limit takes one more session; nothing measures
-memory, the processors, the disk or the machine-wide test lock every gate
-run queues on. Pickups currently serve only the factory identity, including
+Each tick measures the host's memory, processors, disk and the machine-wide
+test lock every gate run queues on, and reports the launches its load factor
+would hold; it still admits work by account slots alone until a person sets
+`load.enforce`, so a host with room to spare idles and one near its limit
+takes one more session. Pickups currently serve only the factory identity, including
 on Orca through account-bound headless passes; serving people a host is
 configured to serve remains step 7. The stops that reach a person mix real
 decisions with stops an agent could recover.
