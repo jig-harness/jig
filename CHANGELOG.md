@@ -389,6 +389,30 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.180.0] - 2026-11-09
+
+### Added
+
+- Keys on the dispatch dashboard: j and k move between cards, Enter or o
+  opens one, p and i open its pull request or issue, c copies its command,
+  g then m, n, r, q or h goes to a view, / filters the view and ? lists the
+  keys. ⌘K or Ctrl-K opens a palette that goes to a view, jumps to `#N` or
+  an item, or copies a card's command. No key fires while you type in a
+  field, and Tab still reaches every control.
+
+### Changed
+
+- The dispatch dashboard (`jig dispatch dashboard`) has one view per
+  question, each a single column of cards with its count on its tab:
+  **Merge**, **Needs you**, **Running**, **Queue** and **History**, then
+  Help. Merge shows Ready to merge's three lanes (merge now, approve first,
+  update next), each merge now card with its merge command pinned to the
+  head the drive verified. The page opens on Merge while merge now holds a
+  pull request, else on Needs you, and while merge now holds one every
+  other view says so at its top until it is dismissed, which lasts until a
+  pull request reaches merge now at a new head. An address that names the
+  old Now view opens Needs you.
+
 ## [0.179.0] - 2026-11-09
 
 ### Added
@@ -6296,7 +6320,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.179.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.180.0...HEAD
+[0.180.0]: https://github.com/jig-harness/jig/compare/v0.179.0...v0.180.0
 [0.179.0]: https://github.com/jig-harness/jig/compare/v0.178.0...v0.179.0
 [0.178.0]: https://github.com/jig-harness/jig/compare/v0.177.0...v0.178.0
 [0.177.0]: https://github.com/jig-harness/jig/compare/v0.176.0...v0.177.0
