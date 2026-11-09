@@ -883,7 +883,7 @@ fields:
     nonempty: true
     read_by: [docs]
     default: [approved]
-    since: next
+    since: 0.175.0
   promote_memory.lint_command:
     type: command
     read_by: [promote-memory]
