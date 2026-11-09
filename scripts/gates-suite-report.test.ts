@@ -6,18 +6,20 @@ import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 const root = resolve(import.meta.dir, "..");
 
 function usesRawBunTest(command: string): boolean {
-  const tokens = command
+  const commands = command
     .replace(/\\\r?\n[ \t]*/g, " ")
-    .trim()
-    .split(/\s+/);
-  const bun = tokens.indexOf("bun");
-  if (bun === -1) return false;
-  let next = bun + 1;
-  while (tokens[next]?.startsWith("--")) {
-    if (tokens[next] === "--cwd") next++;
-    next++;
-  }
-  return tokens[next] === "test";
+    .split(/(?:^|[;&]\s*|\n)\s*/)
+    .filter((line) => !line.startsWith("#"));
+  return commands.some((line) => {
+    const tokens = line.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+    if (tokens[0] !== "bun") return false;
+    let next = 1;
+    while (tokens[next]?.startsWith("--")) {
+      if (tokens[next] === "--cwd") next++;
+      next++;
+    }
+    return tokens[next] === "test";
+  });
 }
 
 test("every CI suite uses the reporting runner and its executed-test check", () => {
@@ -47,13 +49,16 @@ test("the suite-runner contract rejects raw Bun spellings", () => {
     "bun  test scripts/gates.test.ts",
     "bun --no-env-file test scripts/gates.test.ts",
     "bun --cwd . test scripts/gates.test.ts",
+    'bun --cwd "my repo" test scripts/gates.test.ts',
     ["bun", "test scripts/gates.test.ts"].join(" \\\n"),
+    "bun run check\nbun test scripts/gates.test.ts",
   ])
     expect(usesRawBunTest(command)).toBeTrue();
   for (const command of [
     "bun run test scripts/gates.test.ts",
     "bun --no-env-file run test scripts/gates.test.ts",
     "bun --cwd=. run test scripts/gates.test.ts",
+    "# bun run test scripts/gates.test.ts\nbun run check",
   ])
     expect(usesRawBunTest(command)).toBeFalse();
 });
