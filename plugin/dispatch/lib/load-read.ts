@@ -84,7 +84,9 @@ export function workspaceMemory(
       swallow(error, "a process of another user, or one that ended");
       continue;
     }
-    const owner = paths.find((p) => cwd === p || cwd.startsWith(p + sep));
+    const owner = paths
+      .filter((p) => cwd === p || cwd.startsWith(p + sep))
+      .sort((a, b) => b.length - a.length)[0];
     const bytes = owner === undefined ? null : residentBytes(status);
     if (owner !== undefined && bytes !== null)
       out.set(owner, (out.get(owner) ?? 0) + bytes);
@@ -111,14 +113,9 @@ function readDisk(paths: readonly string[]): LoadReading["disk"] {
       failures.push(`${path}: ${failureText(error)}`);
     }
   }
-  return (
-    least ?? {
-      unread:
-        failures.length > 0
-          ? `free space not read (${failures.join("; ")})`
-          : "no workspace to read free space at",
-    }
-  );
+  if (failures.length > 0)
+    return { unread: `free space not read (${failures.join("; ")})` };
+  return least ?? { unread: "no workspace to read free space at" };
 }
 
 function readLock(env: NodeJS.ProcessEnv): LoadReading["lock"] {

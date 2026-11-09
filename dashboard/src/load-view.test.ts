@@ -10,8 +10,7 @@ describe("the load gauge's view", () => {
       width: 82,
       over: false,
       binds: "memory binds",
-      summary:
-        "Reporting only: 1 launch would have been held this tick, and started.",
+      summary: "Reporting only: 1 launch would have been held this tick.",
     });
     expect(view.gauges[0]).toEqual({
       name: "Memory",

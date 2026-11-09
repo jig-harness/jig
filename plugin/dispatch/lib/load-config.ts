@@ -84,7 +84,11 @@ function positive(
   fallback: number,
   below?: number,
 ): Checked<number> {
-  if (value === undefined || value === null) return ok(fallback);
+  if (value === undefined) return ok(fallback);
+  if (value === null)
+    return invalid(
+      `${where} must be a number above 0${below === undefined ? "" : ` and below ${below}`}`,
+    );
   if (
     typeof value !== "number" ||
     !Number.isFinite(value) ||
@@ -109,7 +113,10 @@ function reservations(value: unknown): Checked<Record<LoadKind, number>> {
       );
     const read = positive(gb, `load.reservations_gb.${kind}`, 0);
     if (!read.ok) return read;
-    out[kind as LoadKind] = read.value * GIB;
+    const bytes = read.value * GIB;
+    if (!Number.isFinite(bytes))
+      return invalid(`load.reservations_gb.${kind} must fit in bytes`);
+    out[kind as LoadKind] = bytes;
   }
   return ok(out);
 }
@@ -162,12 +169,15 @@ export function loadSettings(value: unknown): Checked<LoadSettings> {
   if (!forgeFloor.ok) return forgeFloor;
   const reserved = reservations(value.reservations_gb);
   if (!reserved.ok) return reserved;
+  const diskFreeBytes = diskFreeGb.value * GIB;
+  if (!Number.isFinite(diskFreeBytes))
+    return invalid("load.disk_free_gb must fit in bytes");
   return ok({
     enforce,
     memoryFree: memoryFree.value,
     loadPerCore: loadPerCore.value,
     lockWaiters: lockWaiters.value,
-    diskFreeBytes: diskFreeGb.value * GIB,
+    diskFreeBytes,
     forgeFloor: forgeFloor.value,
     reservations: reserved.value,
   });

@@ -407,12 +407,24 @@ export function lockOccupancy(
   try {
     entries = readdirSync(root);
   } catch (error) {
-    swallow(error, "no lock directory: nothing holds or waits");
+    if (errorCode(error) === "ENOENT") return { holders: 0, waiters: 0 };
+    throw error;
   }
   const waiters = entries.filter((entry) => {
     if (!entry.startsWith(prefix)) return false;
     const pid = entry.slice(prefix.length);
-    return /^[1-9][0-9]*$/.test(pid) && answers(Number(pid));
+    if (!/^[1-9][0-9]*$/.test(pid)) return false;
+    try {
+      const announced = decodeIdentity(readFileSync(join(root, entry), "utf8"));
+      if (announced !== null) {
+        const verdict = isAliveSync(announced);
+        return verdict.ok && verdict.value.state === "alive";
+      }
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") return false;
+      throw error;
+    }
+    return answers(Number(pid));
   }).length;
   return { holders: slotHolders(slots, windows).length, waiters };
 }
@@ -793,7 +805,9 @@ export async function main(
       a.waitingOn = text;
       if (!announced)
         try {
-          writeFileSync(waiting, String(process.pid));
+          // The predictable name is in a shared temporary directory: never
+          // follow a pre-existing entry while publishing this announcement.
+          writeFileSync(waiting, encodeIdentity(ownIdentity()), { flag: "wx" });
           announced = true;
         } catch (error) {
           swallow(error, "the wait goes uncounted, not unserved");

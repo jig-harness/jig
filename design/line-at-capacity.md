@@ -46,14 +46,14 @@ shown with the gauge that binds: "82% · memory binds". Account slots and
 walls still apply as they do today; the load factor is one more limit
 beside them, never a replacement.
 
-| Gauge | Read once per tick from | Line (default) |
-| --- | --- | --- |
-| Memory | `MemAvailable` in `/proc/meminfo` on Linux, the free memory the platform reports on Windows; not read on macOS, whose free pages count reclaimable caches as used (the resource lock's reading, `plugin/shared/host-load.ts`) | 15% of the total kept free after the launch's reservation |
-| Processors | the 1-minute load average divided by the cores (`os.loadavg`, `os.availableParallelism`) | 0.9; not read on Windows, which has no load average |
-| Test lock | the holders of the machine-wide resource lock's slots (`plugin/shared/resource-lock.ts`) and the runs that announce beside it that they wait for one | 2 waiters: no new pickup or drive pass |
-| Disk | free space on the filesystems that hold the running workspaces and the repositories, the least of them (`statfs`) | 10 GB |
-| Forge budget | the rate limit the tick already reads at its start | the tenth of the core limit below which the tick already skips its optional reads |
-| Accounts | free slots and walls, as today | no free slot |
+| Gauge        | Read once per tick from                                                                                                                                                                                                       | Line (default)                                                                    |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Memory       | `MemAvailable` in `/proc/meminfo` on Linux, the free memory the platform reports on Windows; not read on macOS, whose free pages count reclaimable caches as used (the resource lock's reading, `plugin/shared/host-load.ts`) | 15% of the total kept free after the launch's reservation                         |
+| Processors   | the 1-minute load average divided by the cores (`os.loadavg`, `os.availableParallelism`)                                                                                                                                      | `load_per_core`: 0.9; not read on Windows, which has no load average              |
+| Test lock    | the holders of the machine-wide resource lock's slots (`plugin/shared/resource-lock.ts`) and the runs that announce beside it that they wait for one                                                                          | `lock_waiters`: 2 waiters; no new pickup or drive pass                            |
+| Disk         | free space on the filesystems that hold the running workspaces and the repositories, the least of them (`statfs`)                                                                                                             | `disk_free_gb`: 10 GB                                                             |
+| Forge budget | the rate limit the tick already reads at its start                                                                                                                                                                            | the tenth of the core limit below which the tick already skips its optional reads |
+| Accounts     | free slots and walls, as today                                                                                                                                                                                                | no free slot                                                                      |
 
 A gauge the host cannot read is left out of the load factor and named on
 the receipt ("processors not read on Windows"); it never reads as empty.
@@ -63,8 +63,8 @@ by its kind's **reservation**, the memory a session of that kind is
 expected to take. Each tick sums the memory of the processes running in
 each of its sessions' workspaces (Linux shows a process's working directory
 under `/proc`; elsewhere the defaults stand), and records one sample per
-running session and kind. A kind's reservation becomes the 90th percentile
-of its last 20 samples once it has 5. Until then the defaults hold: a
+running workspace per tick and kind. A kind's reservation becomes the 90th percentile
+of its recent samples once it has enough. Until then the defaults hold: a
 pickup 2 GB, a drive pass 1.5 GB, a follow-up or a steward pass 1 GB. The
 samples are the one thing the load factor keeps between ticks, in the
 dispatcher's state database beside its launch records.
@@ -87,7 +87,7 @@ under the act lock, so two ticks never spend the same headroom.
 
 **It reports before it holds.** The load factor ships with
 `load.enforce: false`. Every tick then reports, on its receipt and the
-line, what it *would* have held and which gauge would have held it, and
+line, what it _would_ have held and which gauge would have held it, and
 starts what it starts today. Turning enforcement on is a person's call,
 made after a week of receipts, like every setting that ships off and
 changes what the line starts.
@@ -155,9 +155,9 @@ gating the factory identity's pickups only.
 `plugin/dispatch/lib/queue-rank.ts`, and each item the ranking holds out of
 the queue is shown with its reason:
 
-| Held out | Shown as |
-| --- | --- |
-| an open `blocked_by` relation | "waiting on #N" |
+| Held out                                             | Shown as                                                                 |
+| ---------------------------------------------------- | ------------------------------------------------------------------------ |
+| an open `blocked_by` relation                        | "waiting on #N"                                                          |
 | `hitl`, a `hitl:*` facet, `manual-ops` or `jig:hold` | "needs a person to start" (`do-item` would only scout and wait on these) |
 
 The rest are ordered by priority (urgent first, then high, medium, low, and
@@ -252,14 +252,14 @@ column so a repository's own classes name theirs. A class with no act reads
 Decide, never hidden. The options, costs and steps are already in the
 framed park; the line carries them through to the card.
 
-| Act | The person | From |
-| --- | --- | --- |
-| Merge | merges what the forge and its reviewer witness as ready | Ready to merge's merge now, on a view of its own; a `merge` park |
-| Decide | chooses among framed options | `scope`, `next-item`, `reopen-or-waive`, `escalated`, `human-decision`, `hitl` |
-| Authorize | allows what only a person may | `ready`, `release`, `destructive`, `legal`, `copy`, `dark-dial`, `rules`, `reviewer-posture`; Ready to merge's approve first |
-| Reply | answers a person's thread or a waiting session | `human-thread`; a session's question |
-| Do | performs steps outside the line | a park's steps for a person; an assignment only a writer can make |
-| Investigate | looks at what the line and the steward could not recover | a stalled pickup, a double claim, a spent recovery budget, a stuck launch |
+| Act         | The person                                               | From                                                                                                                         |
+| ----------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Merge       | merges what the forge and its reviewer witness as ready  | Ready to merge's merge now, on a view of its own; a `merge` park                                                             |
+| Decide      | chooses among framed options                             | `scope`, `next-item`, `reopen-or-waive`, `escalated`, `human-decision`, `hitl`                                               |
+| Authorize   | allows what only a person may                            | `ready`, `release`, `destructive`, `legal`, `copy`, `dark-dial`, `rules`, `reviewer-posture`; Ready to merge's approve first |
+| Reply       | answers a person's thread or a waiting session           | `human-thread`; a session's question                                                                                         |
+| Do          | performs steps outside the line                          | a park's steps for a person; an assignment only a writer can make                                                            |
+| Investigate | looks at what the line and the steward could not recover | a stalled pickup, a double claim, a spent recovery budget, a stuck launch                                                    |
 
 `jig ask` and the card name the same act for the same need, and the card
 names the person the need waits on.
@@ -279,14 +279,14 @@ tier.
 
 ### Configuration
 
-| Field | Where | Default |
-| --- | --- | --- |
-| `load.enforce` | machine file | `false`: the tick reports what it would hold and holds nothing |
-| `load.memory_free`, `load.cpu`, `load.test_waiters`, `load.disk_free` | machine file | 15%, 0.9, 2, 10 GB |
-| `serve[]` | machine file | none: only the factory identity's items are picked up |
-| `steward.enabled`, `steward.every` | machine file | off; `20m` |
-| `dispatch.pickup_deadline` | repository | `3h` |
-| `routing.complex_flags`, `routing.models.<runtime>.<tier>` | repository | [agent-routing.md § Configuration](agent-routing.md#configuration) |
+| Field                                                                 | Where        | Default                                                            |
+| --------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------ |
+| `load.enforce`                                                        | machine file | `false`: the tick reports what it would hold and holds nothing     |
+| `load.memory_free`, `load.cpu`, `load.test_waiters`, `load.disk_free` | machine file | 15%, 0.9, 2, 10 GB                                                 |
+| `serve[]`                                                             | machine file | none: only the factory identity's items are picked up              |
+| `steward.enabled`, `steward.every`                                    | machine file | off; `20m`                                                         |
+| `dispatch.pickup_deadline`                                            | repository   | `3h`                                                               |
+| `routing.complex_flags`, `routing.models.<runtime>.<tier>`            | repository   | [agent-routing.md § Configuration](agent-routing.md#configuration) |
 
 ## Build order
 

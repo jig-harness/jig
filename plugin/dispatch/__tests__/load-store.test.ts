@@ -80,6 +80,11 @@ describe("the machine file's load section", () => {
         "load.reservations_gb has an unknown kind: review",
       ],
       ["load:\n  enforce: yes please\n", "load.enforce must be true or false"],
+      [
+        "load:\n  reservations_gb:\n    pickup:\n",
+        "load.reservations_gb.pickup must be a number above 0",
+      ],
+      ["load:\n  disk_free_gb: 1e308\n", "load.disk_free_gb must fit in bytes"],
     ]) {
       const read = config(body as string);
       expect(read).toMatchObject({

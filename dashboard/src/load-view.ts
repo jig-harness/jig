@@ -42,7 +42,7 @@ function summaryOf(load: LineLoad): string {
       : `Enforced: ${launches} held this tick.`;
   return n === 0
     ? "Reporting only: no launch would have been held this tick."
-    : `Reporting only: ${launches} would have been held this tick, and started.`;
+    : `Reporting only: ${launches} would have been held this tick.`;
 }
 
 export function loadView(load: LineLoad): LoadView {

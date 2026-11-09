@@ -5,7 +5,7 @@ release: minor
 ### Added
 
 - The dispatcher measures its host each tick and reports its load factor.
-  Under the act lock it reads six gauges: memory, the one-minute load per
+  Under the act lock it reads the host's gauges: memory, the one-minute load per
   core, the test lock's holders and waiters, free disk on the workspaces'
   filesystems, the forge's budget and the accounts' free slots. Every
   receipt, the dashboard's line and the top of the Running view carry each
