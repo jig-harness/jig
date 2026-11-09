@@ -84,7 +84,7 @@ describe("retained page choices", () => {
           );
           await openView(page, "History");
           await openView(page, "Help");
-          await openView(page, "Now");
+          await openView(page, "Needs you");
           await shows(page, ".need textarea");
           expect(await need.locator("textarea").inputValue()).toBe(
             "A, keep it small",
@@ -121,7 +121,7 @@ describe("retained page choices", () => {
           async () => (await need.locator("textarea").inputValue()) === "",
         );
         await openView(page, "Help");
-        await openView(page, "Now");
+        await openView(page, "Needs you");
         expect(
           await need
             .getByRole("button", { name: "Copy the answer line for PR #456" })
