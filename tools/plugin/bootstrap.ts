@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /** Read-only setup preflight shared by the shell and PowerShell entry points. */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { cli } from "../../lib/cli.ts";
@@ -12,6 +12,7 @@ import {
   upgradeHarnesses,
 } from "../../plugin/runtime/harness.ts";
 import { parse } from "./setup.ts";
+import { isLocalSource } from "../../plugin/runtime/harness-source.ts";
 
 class BootstrapError extends Error {}
 
@@ -57,8 +58,8 @@ export function requireVersion(tool: string, text: string, minimum: string) {
   console.log(`${tool}: ${found}`);
 }
 
-export function githubRepository(source: string): string | null {
-  if (existsSync(source) && statSync(source).isDirectory()) return null;
+export function githubRepository(source: string, git?: boolean): string | null {
+  if (isLocalSource(source, git)) return null;
   if (/^[\w.-]+\/[\w.-]+(?:#[^\s]+)?$/.test(source)) {
     return source.split("#")[0] ?? null;
   }
@@ -151,7 +152,7 @@ export function bootstrap(argv: string[]) {
   const request = parse(setup);
   const plans = prepareHarnesses(request);
   for (const plan of plans) {
-    const repository = githubRepository(plan.source);
+    const repository = githubRepository(plan.source, plan.registered?.git);
     if (repository)
       run("gh", [
         "api",

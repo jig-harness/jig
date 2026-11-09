@@ -285,6 +285,57 @@ test("registered Git shorthand is stable despite a local directory collision", (
   }
 });
 
+test("pinned shorthand requests stay remote despite an unpinned directory collision", () => {
+  const f = fixture();
+  try {
+    f.setState("example-org/example-repo", "v1.2.3");
+    mkdirSync(join(f.root, "example-org/example-repo"), { recursive: true });
+    const result = f.run([
+      "--apply",
+      "--source",
+      "example-org/example-repo#v1.2.3",
+    ]);
+    expectSpawnExit(result, 0);
+    expect(result.calls).toContainEqual([
+      "codex",
+      "plugin",
+      "marketplace",
+      "upgrade",
+      "jig",
+    ]);
+    expect(
+      result.calls.some((call) =>
+        call.includes("repos/example-org/example-repo"),
+      ),
+    ).toBe(true);
+  } finally {
+    f.close();
+  }
+});
+
+test("unpinned Git registrations still require remote access when a directory collides", () => {
+  const f = fixture();
+  try {
+    f.setState("example-org/example-repo", "main");
+    // No ref in either the registration address or its config.
+    writeFileSync(join(f.root, "config.toml"), "");
+    mkdirSync(join(f.root, "example-org/example-repo"), { recursive: true });
+    const result = f.run([
+      "--apply",
+      "--source",
+      "https://github.com/example-org/example-repo",
+    ]);
+    expectSpawnExit(result, 0);
+    expect(
+      result.calls.some((call) =>
+        call.includes("repos/example-org/example-repo"),
+      ),
+    ).toBe(true);
+  } finally {
+    f.close();
+  }
+});
+
 test("fresh shorthand sources register the same HTTPS repository checked for access", () => {
   const f = fixture();
   try {

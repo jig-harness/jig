@@ -32,6 +32,7 @@ function entry(
   program(
     "git",
     `if [ "$RESPONSE" = git-env ] && [ -n "$GIT_DIR$GIT_WORK_TREE$GIT_INDEX_FILE$GIT_COMMON_DIR$GIT_OBJECT_DIRECTORY$GIT_ALTERNATE_OBJECT_DIRECTORIES$GIT_CONFIG$GIT_CONFIG_COUNT$GIT_CONFIG_PARAMETERS$GIT_CONFIG_KEY_0$GIT_CONFIG_VALUE_0" ]; then exit 128; fi
+if [ "$1" = -c ]; then test "$2" = core.fsmonitor=false || exit 129; shift 2; fi
 case "$1" in rev-parse) echo '${revision}';; esac\ncase "$4" in status) if [ "$RESPONSE" = git-failed ]; then exit 128; fi;; esac
 case "$3" in rev-parse) if [ "$RESPONSE" = wrong-revision ]; then echo wrong; else echo '${revision}'; fi;; status) if [ "$RESPONSE" = git-failed ]; then exit 128; fi;; esac`,
   );

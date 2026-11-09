@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  existsSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,11 +23,14 @@ test.skipIf(
     for (const key of Object.keys(env))
       if (key.startsWith("GIT_")) delete env[key];
     const git = (args: string[]) => {
-      const result = Bun.spawnSync(["git", ...args], {
-        cwd: root,
-        env,
-        timeout: 10_000,
-      });
+      const result = Bun.spawnSync(
+        ["git", "-c", "core.fsmonitor=false", ...args],
+        {
+          cwd: root,
+          env,
+          timeout: 10_000,
+        },
+      );
       expectSpawnExit(result, 0);
       return result.stdout.toString().trim();
     };
@@ -56,13 +60,27 @@ test.skipIf(
       const revision = git(["rev-parse", "HEAD"]);
       git(["clone", "--local", root, join(root, "clean")]);
       writeFileSync(join(root, "tools/plugin/bootstrap.ts"), "// modified\n");
+      const monitor = join(root, "monitor-hook");
+      const marker = join(root, "monitor-called");
+      writeFileSync(
+        monitor,
+        `#!/bin/sh\nprintf called > '${marker}'\nprintf 'token\\0'\n`,
+        { mode: 0o755 },
+      );
       for (const override of [
+        "fsmonitor",
         "count",
         "parameters",
         "local",
         "assume",
         "skip",
       ]) {
+        git([
+          "config",
+          "--local",
+          "core.fsmonitor",
+          override === "fsmonitor" ? monitor : "false",
+        ]);
         if (override === "local")
           git(["config", "core.worktree", join(root, "clean")]);
         git([
@@ -107,6 +125,7 @@ test.skipIf(
             timeout: 10_000,
           },
         );
+        expect(existsSync(marker)).toBe(false);
         expectSpawnExit(result, 1);
         expect(result.stderr.toString()).toContain(
           override === "assume" || override === "skip"

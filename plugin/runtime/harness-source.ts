@@ -1,5 +1,5 @@
 /** Source addresses, pins and release channels for agent marketplaces. */
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 /** The release channels, each a branch of the repository (plugin/README.md). */
 export const CHANNELS = ["latest", "stable"] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -19,6 +19,11 @@ export function splitSource(source: string): { base: string; ref?: string } {
 /** Whether a source is a Git address rather than a directory. */
 export function isGitAddress(source: string): boolean {
   return /^(https?:\/\/|ssh:\/\/|git@|git:\/\/)/.test(source);
+}
+
+/** A recorded Git source stays remote even when a same-named directory exists. */
+export function isLocalSource(source: string, git?: boolean): boolean {
+  return git !== true && existsSync(source) && statSync(source).isDirectory();
 }
 
 /**
@@ -67,10 +72,12 @@ export function sameSource(
 ): boolean {
   const norm = (value: string, git?: boolean) => {
     const [base = "", ref] = value.split("#");
-    const address = base.replace(/\/+$/, "").replace(/\.git$/, "");
+    let address = base;
+    while (address.endsWith("/")) address = address.slice(0, -1);
+    address = address.replace(/\.git$/, "");
     const canonical =
       /^[\w.-]+\/[\w.-]+$/.test(address) &&
-      (git === true || (git !== false && !existsSync(base)))
+      (git === true || (git !== false && !isLocalSource(value)))
         ? `https://github.com/${address}`
         : address;
     return { base: canonical, ref };
