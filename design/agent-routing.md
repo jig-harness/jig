@@ -453,8 +453,12 @@ loader normalizes legacy tier
 values and legacy model keys (`execution` to `standard`, `strategic` to
 `complex`). If a runtime row declares both an old and new key, identical
 values coalesce and different values are refused with both field paths;
-neither silently wins. Simple uses its runtime default unless explicitly
-set. This preserves an existing `bug: {tier: strategic, effort: high}`
+neither silently wins. Before filling runtime defaults, the loader uses a
+legacy `execution` model as the fallback for both `simple` and `standard`;
+an explicit `simple` model replaces only that fallback. This applies to
+custom runtimes too, even when they have no built-in defaults. Without a
+legacy `execution` key, an omitted `simple` uses its runtime default.
+This preserves an existing `bug: {tier: strategic, effort: high}`
 as complex/high even for a small bug. The route records the explicit
 override as its reason.
 
@@ -493,7 +497,12 @@ refused `do_item` section does today; it is never read as absent.
    labelled `has-migration` complex, a Codex account runs a complex item
    on `sol` and a standard one on `terra` with no `routing.models` set,
    and a repository that still names `execution` and `strategic` routes
-   as before.
+   as before. Migration fixtures cover a small task with
+   `claude-code: {execution: opus, strategic: opus}` retaining `opus` as
+   simple, a custom runtime with only legacy model keys retaining its
+   execution model for simple and standard, an explicit simple model
+   overriding the compatibility fallback, and conflicting legacy/new
+   keys being refused.
 3. **The record.** `plugin/shared/route.ts` writes and parses the `## Route`
    section, proposed, requested and effective values apart; `do-item` writes it with
    `applied: no`; the loop-cost report reads the description and prints
