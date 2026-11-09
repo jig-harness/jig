@@ -89,9 +89,29 @@ export function parseFamilyTiers(raw: unknown): FamilyTiers {
         );
       row[family] = { tier, reason: fields.reason.trim() };
     }
+    refuseConflictingSpellings(runtime, row);
     out[runtime] = row;
   }
   return out;
+}
+
+/** Refuse a runtime's declarations where two spellings of one family name different tiers. */
+function refuseConflictingSpellings(
+  runtime: string,
+  declared: Record<string, FamilyTier>,
+): void {
+  const groups = new Map<string, string[]>();
+  for (const key of Object.keys(declared)) {
+    const name = canonicalName(runtime, key);
+    groups.set(name, [...(groups.get(name) ?? []), key]);
+  }
+  for (const keys of groups.values()) {
+    const tiers = new Set(keys.map((key) => declared[key]?.tier));
+    if (tiers.size > 1)
+      throw new RoutingError(
+        `routing.family_tiers.${formatField([runtime])} declares ${keys.join(", ")}, which are one family, with different tiers; keep one`,
+      );
+  }
 }
 
 /** The tier both a key of this release and its legacy name set, refused where they differ. */
@@ -161,30 +181,23 @@ const canonicalName = (runtime: string, name: string): string =>
 /**
  * `runtime`'s declared M0 tier for the family `name` resolves to, or
  * `undefined`. A declaration is read under any spelling of the family, its
- * alias or a model id, and two spellings that declare different tiers are
- * refused rather than one of them ignored.
+ * alias or a model id; `parseFamilyTiers` has refused spellings that
+ * disagree, so the first one found speaks for all.
  */
 function declaredTier(
   familyTiers: FamilyTiers,
   runtime: string,
   name: string,
-  field: string,
 ): M0Tier | undefined {
   const declared = Object.hasOwn(familyTiers, runtime)
     ? familyTiers[runtime]
     : undefined;
   if (declared === undefined) return undefined;
   const target = canonicalName(runtime, name);
-  const keys = Object.keys(declared).filter(
-    (key) => canonicalName(runtime, key) === target,
+  const key = Object.keys(declared).find(
+    (k) => canonicalName(runtime, k) === target,
   );
-  const tiers = new Set(keys.map((key) => declared[key]?.tier));
-  if (tiers.size > 1)
-    throw new RoutingError(
-      `${field}: routing.family_tiers.${runtime} declares ${keys.join(", ")}, which are one family, with different tiers; keep one`,
-    );
-  const [first] = keys;
-  return first === undefined ? undefined : declared[first]?.tier;
+  return key === undefined ? undefined : declared[key]?.tier;
 }
 
 /**
@@ -205,7 +218,7 @@ function familyTier(
   const known = familiesOf(runtime);
   const byAlias = familyOf(runtime, name);
   const family = byAlias ?? familyOfModel(runtime, name);
-  const own = declaredTier(familyTiers, runtime, name, field);
+  const own = declaredTier(familyTiers, runtime, name);
   if (known !== undefined && family === undefined && own === undefined)
     throw new RoutingError(
       `${field}: ${name} is not a model family ${runtime} knows (${known.families.map((f) => f.alias).join(", ")}); name one, or declare its tier in routing.family_tiers.${runtime}.${name}`,

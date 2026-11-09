@@ -426,6 +426,22 @@ describe("a model id and its family alias", () => {
       }),
     ).toThrow(/one family, with different tiers/);
   });
+
+  it("refuses conflicting spellings of a family no model row uses", () => {
+    const reason = "local classification";
+    expect(() =>
+      rules({
+        routing: {
+          family_tiers: {
+            codex: {
+              astra: { tier: "strategic", reason },
+              "gpt-6-astra": { tier: "judgment", reason },
+            },
+          },
+        },
+      }),
+    ).toThrow(/one family, with different tiers/);
+  });
 });
 
 describe("the route never writes to the tracker", () => {
