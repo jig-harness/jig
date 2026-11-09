@@ -33,7 +33,7 @@ export interface RuntimeFamilies {
   families: readonly ModelFamily[];
 }
 
-export const MODEL_FAMILIES: Readonly<Record<string, RuntimeFamilies>> = {
+const MODEL_FAMILIES: Readonly<Record<string, RuntimeFamilies>> = {
   "claude-code": {
     takesAlias: true,
     families: [

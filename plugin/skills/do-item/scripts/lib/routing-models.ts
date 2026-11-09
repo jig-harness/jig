@@ -111,6 +111,14 @@ function coalesced(
   return now ?? old;
 }
 
+/** The family aliases a row names, each checked as one word. */
+function namedAliases(row: Record<string, unknown>, at: string) {
+  const named: Record<string, string> = Object.create(null);
+  for (const [key, value] of Object.entries(row))
+    named[key] = token(value, `${at}.${key}`, "a family alias");
+  return named;
+}
+
 /**
  * One runtime's row: legacy keys read as the tiers they became, a legacy
  * `execution` model the fallback of `simple` as of `standard`, then the
@@ -124,24 +132,83 @@ function modelRow(runtime: string, entry: unknown): ModelRow {
     `map each tier (${TIERS.join(", ")}) to a family alias`,
   );
   refuseUnknownKeys(row, MODEL_KEYS, at);
-  const named: Record<string, string> = Object.create(null);
-  for (const [key, value] of Object.entries(row))
-    named[key] = token(value, `${at}.${key}`, "a family alias");
-  const defaults = Object.hasOwn(DEFAULT_MODELS, runtime)
-    ? DEFAULT_MODELS[runtime]
-    : undefined;
-  const standard = coalesced(named, "standard", at);
-  const given: Record<Tier, string | undefined> = {
-    simple: named.simple ?? named.execution ?? defaults?.simple,
-    standard: standard ?? defaults?.standard,
-    complex: coalesced(named, "complex", at) ?? defaults?.complex,
-  };
+  const named = namedAliases(row, at);
+  const own: Partial<Record<Tier, string>> = Object.create(null);
+  const simple = named.simple ?? named.execution;
+  if (simple !== undefined) own.simple = simple;
+  for (const tier of ["standard", "complex"] as const) {
+    const alias = coalesced(named, tier, at);
+    if (alias !== undefined) own[tier] = alias;
+  }
+  const given = { ...defaultsOf(runtime), ...own };
   const missing = TIERS.filter((t) => given[t] === undefined);
   if (missing.length > 0)
     throw new RoutingError(
       `${at} must name a family alias for every tier (missing: ${missing.join(", ")})`,
     );
   return given as ModelRow;
+}
+
+/** `runtime`'s default row, or none. */
+const defaultsOf = (runtime: string): Partial<ModelRow> =>
+  Object.hasOwn(DEFAULT_MODELS, runtime) ? { ...DEFAULT_MODELS[runtime] } : {};
+
+/** `runtime`'s declared M0 tier for `alias`, or `undefined`. */
+function declaredTier(
+  familyTiers: FamilyTiers,
+  runtime: string,
+  alias: string,
+): M0Tier | undefined {
+  const declared = Object.hasOwn(familyTiers, runtime)
+    ? familyTiers[runtime]
+    : undefined;
+  return declared !== undefined && Object.hasOwn(declared, alias)
+    ? declared[alias]?.tier
+    : undefined;
+}
+
+/**
+ * The M0 tier the family at `field` runs, `undefined` where nothing names
+ * one. Refused: an alias outside a runtime's known families that
+ * `family_tiers` does not declare, and a Scout family, however declared.
+ */
+function familyTier(
+  runtime: string,
+  alias: string,
+  field: string,
+  familyTiers: FamilyTiers,
+): M0Tier | undefined {
+  const known = familiesOf(runtime);
+  const listed = familyOf(runtime, alias)?.tier;
+  const own = declaredTier(familyTiers, runtime, alias);
+  if (known !== undefined && listed === undefined && own === undefined)
+    throw new RoutingError(
+      `${field}: ${alias} is not a model family ${runtime} knows (${known.families.map((f) => f.alias).join(", ")}); name one, or declare its tier in routing.family_tiers.${runtime}.${alias}`,
+    );
+  if (listed === "scout" || own === "scout")
+    throw new RoutingError(
+      `${field}: ${alias} is a Scout family, which M0 keeps read-only, so it is never a pickup's route and no routing.family_tiers entry changes that (ADR-0009); an implementer may still hand it simple sub-steps`,
+    );
+  return own ?? listed;
+}
+
+/** Refuse a stricter complexity tier on a family of a lower M0 tier than a lighter one. */
+function refuseCheaperStricter(
+  row: ModelRow,
+  m0: ReadonlyArray<M0Tier | undefined>,
+  at: (tier: Tier) => string,
+): void {
+  TIERS.forEach((stricter, j) => {
+    const high = m0[j];
+    TIERS.slice(0, j).forEach((lighter, i) => {
+      const low = m0[i];
+      if (low === undefined || high === undefined) return;
+      if (M0_TIERS.indexOf(high) < M0_TIERS.indexOf(low))
+        throw new RoutingError(
+          `${at(stricter)}: the ${stricter} tier runs on ${row[stricter]} (M0 ${high}), a lower M0 tier than the ${lighter} tier's ${row[lighter]} (M0 ${low}); a stricter complexity tier never runs on a cheaper family`,
+        );
+    });
+  });
 }
 
 /**
@@ -153,47 +220,15 @@ function checkRow(
   row: ModelRow,
   familyTiers: FamilyTiers,
 ): string[] {
-  const known = familiesOf(runtime);
-  const declared = Object.hasOwn(familyTiers, runtime)
-    ? familyTiers[runtime]
-    : undefined;
-  const declaredTier = (alias: string) =>
-    declared !== undefined && Object.hasOwn(declared, alias)
-      ? declared[alias]?.tier
-      : undefined;
   const at = (tier: Tier) => `routing.models.${formatField([runtime])}.${tier}`;
-  const reported: string[] = [];
-  const m0: Array<M0Tier | undefined> = [];
-  for (const tier of TIERS) {
-    const alias = row[tier];
-    const listed = familyOf(runtime, alias)?.tier;
-    const own = declaredTier(alias);
-    if (known !== undefined && listed === undefined && own === undefined)
-      throw new RoutingError(
-        `${at(tier)}: ${alias} is not a model family ${runtime} knows (${known.families.map((f) => f.alias).join(", ")}); name one, or declare its tier in routing.family_tiers.${runtime}.${alias}`,
-      );
-    if (listed === "scout" || own === "scout")
-      throw new RoutingError(
-        `${at(tier)}: ${alias} is a Scout family, which M0 keeps read-only, so it is never a pickup's route and no routing.family_tiers entry changes that (ADR-0009); an implementer may still hand it simple sub-steps`,
-      );
-    const effective = own ?? listed;
-    if (effective === "judgment")
-      reported.push(
-        `${at(tier)} runs the ${tier} tier on ${alias}, a Judgment family no default names`,
-      );
-    m0.push(effective);
-  }
-  for (let j = 1; j < TIERS.length; j++)
-    for (let i = 0; i < j; i++) {
-      const lighter = m0[i];
-      const stricter = m0[j];
-      if (lighter === undefined || stricter === undefined) continue;
-      if (M0_TIERS.indexOf(stricter) < M0_TIERS.indexOf(lighter))
-        throw new RoutingError(
-          `${at(TIERS[j] as Tier)}: the ${TIERS[j]} tier runs on ${row[TIERS[j] as Tier]} (M0 ${stricter}), a lower M0 tier than the ${TIERS[i]} tier's ${row[TIERS[i] as Tier]} (M0 ${lighter}); a stricter complexity tier never runs on a cheaper family`,
-        );
-    }
-  return reported;
+  const m0 = TIERS.map((tier) =>
+    familyTier(runtime, row[tier], at(tier), familyTiers),
+  );
+  refuseCheaperStricter(row, m0, at);
+  return TIERS.filter((_, i) => m0[i] === "judgment").map(
+    (tier) =>
+      `${at(tier)} runs the ${tier} tier on ${row[tier]}, a Judgment family no default names`,
+  );
 }
 
 /** The parsed table: each runtime's row, and what the audit reports of it. */

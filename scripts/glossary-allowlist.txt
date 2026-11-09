@@ -85,7 +85,6 @@ LICENSE
 ISC
 # vendor/product names
 PyYAML
-GPT
 MySQL
 MariaDB
 PostgreSQL
