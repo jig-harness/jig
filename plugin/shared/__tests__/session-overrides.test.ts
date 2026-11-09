@@ -82,4 +82,33 @@ describe("the configuration the tab reads", () => {
       expect(done.stdout.toString().trim()).toBe("kept||[]|[]");
     });
   });
+
+  it("removes the Electron controls a terminal's own environment carries", () => {
+    const argv = [
+      ...sessionOverrides({ HOME: "/h" }, "/w"),
+      "sh",
+      "-c",
+      'echo "[$ELECTRON_RUN_AS_NODE][$ELECTRON_CRASH_REPORTER][$CHROME_CRASHPAD_PIPE_NAME][$KEEP]"',
+    ];
+    exceptOnWindows("the tab's shell is POSIX", () => {
+      const line = argv.map(shellQuote).join(" ");
+      const done = Bun.spawnSync(["sh", "-c", line], {
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          PATH: process.env.PATH ?? "",
+          ELECTRON_RUN_AS_NODE: "1",
+          ELECTRON_CRASH_REPORTER: "x",
+          CHROME_CRASHPAD_PIPE_NAME: "pipe",
+          KEEP: "yes",
+        },
+      });
+      expectSpawnExit(
+        { exitCode: done.exitCode, stdout: done.stdout, stderr: done.stderr },
+        0,
+        "sh",
+      );
+      expect(done.stdout.toString().trim()).toBe("[][][][yes]");
+    });
+  });
 });

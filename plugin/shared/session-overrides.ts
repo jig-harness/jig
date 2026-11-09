@@ -10,11 +10,13 @@ type Env = Record<string, string | undefined>;
 
 /**
  * What the tab's login shell runs first: it drops every `JIG__` field the
- * shell's own profile exported, so only the session's reach the drive, then
- * runs the rest of the command line.
+ * shell's own profile exported, so only the session's reach the drive, and
+ * the Electron execution and crash controls an Orca terminal can inherit
+ * from its host, which belong to that host and not to the session; then runs
+ * the rest of the command line.
  */
 export const DROP_LOGIN_FIELDS =
-  'for n in $(env | sed -n \'s/^\\(JIG__[A-Za-z0-9_]*\\)=.*/\\1/p\'); do unset "$n"; done; exec "$@"';
+  'for n in $(env | sed -n \'s/^\\(JIG__[A-Za-z0-9_]*\\|ELECTRON_RUN_AS_NODE\\|ELECTRON_CRASH[A-Za-z0-9_]*\\|CHROME_CRASHPAD_PIPE_NAME\\)=.*/\\1/p\'); do unset "$n"; done; exec "$@"';
 
 /**
  * The session's configuration as the prefix of the tab's command, so the
