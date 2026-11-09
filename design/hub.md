@@ -188,7 +188,7 @@ the hub adds:
 - **CI hold.** Under the [CI hold](../GLOSSARY.md) label, required checks
   fail on purpose, so a held card says "held", never "failing", and is
   never in merge now. Once the board keeps each card's history (stage 1's
-  step 7), the mark names the last head a tick saw built, "held: not built
+  step 8), the mark names the last head a tick saw built, "held: not built
   since `a1b2c3d`"; before that, and wherever no tick saw one, it says
   "held: not built at this head". A failing check that is not required
   still reads failing.
@@ -1113,8 +1113,8 @@ list of steps.
 **What decides stages 2 and 3.** This design commits to stage 1. Stages 2
 and 3 are planned in detail, and built or not, by the person who asked for
 the hub, after stage 1 has been in use for four weeks. That person decides
-from the waiting loss measured since stage 1 shipped (its steps 3 and 4
-record it) against item 36's baseline, and from a list of what they still
+from the waiting loss measured since stage 1 shipped (its step 3 records it)
+against item 36's baseline, and from a list of what they still
 pieced together outside the page in those weeks, from terminals and the
 forge. The call and its reason are recorded in the plan item, and the parts
 of this design for a stage not built are dropped. No figure of the loss
@@ -1188,7 +1188,7 @@ that fixture; 8 needs 3, 6 and 7; 9 needs 8's fixtures; 10 needs 9.
    thread arrives with stage 2's step 1.
 
 **Phone access alongside stage 1.** The supported view subset is part of
-steps 9 and 10; its phone budgets are set by step 4 before implementation.
+steps 5, 9 and 10; its phone budgets are set by step 4 before implementation.
 Once this design and its access probes
 settle the contracts, file separate implementation items under the hub epic
 for URL/QR sharing, the resident dashboard install and secure-context front
