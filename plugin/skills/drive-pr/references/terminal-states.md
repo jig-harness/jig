@@ -94,6 +94,12 @@ zero, an `AWAITING_REVIEWER` report would read `unresolvedThreads: 0` while
 threads are live. A consumer that treats `null` as `0` reintroduces exactly
 that.
 
+`HEAD_LAG` keeps exit `4` for each head mismatch. Its reason distinguishes a
+local head ahead without a push witness (run `guarded-push.ts`), a pushed head
+whose API snapshot still lags (wait), a local head behind (update the tree),
+and diverged history (inspect and reconcile). An unreadable ancestry or push
+probe is reported as unknown rather than asserted as lag.
+
 ## Repair rounds
 
 These stops name work the loop can do itself, so `drive.ts` spends a bounded

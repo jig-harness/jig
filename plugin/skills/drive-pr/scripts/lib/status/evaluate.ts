@@ -73,6 +73,7 @@ import {
 } from "./evidence.ts";
 import {
   headSyncState,
+  headMismatchReason,
   inheritedReason,
   mayEndWithoutWork,
 } from "./inherited-head.ts";
@@ -710,7 +711,11 @@ async function evaluateFresh(
     return terminal(
       report,
       "HEAD_LAG",
-      `API head ${report.apiHead} != local HEAD ${ctx.localHead} — the API has not caught up with the push yet`,
+      await headMismatchReason(
+        report.apiHead,
+        ctx.localHead,
+        str(prJson, "headRefName"),
+      ),
     );
   }
 
