@@ -23,6 +23,7 @@ import { formatField } from "../../../../shared/config-layers.ts";
 import {
   familiesOf,
   familyOf,
+  familyOfModel,
   M0_TIERS,
   type M0Tier,
 } from "../../../../shared/model-families.ts";
@@ -179,7 +180,8 @@ function familyTier(
   familyTiers: FamilyTiers,
 ): M0Tier | undefined {
   const known = familiesOf(runtime);
-  const listed = familyOf(runtime, alias)?.tier;
+  const listed = (familyOf(runtime, alias) ?? familyOfModel(runtime, alias))
+    ?.tier;
   const own = declaredTier(familyTiers, runtime, alias);
   if (known !== undefined && listed === undefined && own === undefined)
     throw new RoutingError(

@@ -87,6 +87,7 @@ import {
   parseRouting,
   RoutingError,
   type RoutingRules,
+  SIZE_STEPS,
   type SizeStep,
   sizeStep,
   TIER_TABLE,
@@ -241,12 +242,23 @@ function raises(facts: RouteFacts, rules: RoutingRules): string[] {
   ].filter((r): r is string => r !== null);
 }
 
-/** The item's size step, from its size facet or a size label, and the reason. */
+/**
+ * The item's size step, from its size facet or its size labels, and the
+ * reason. Where several sizes are recognised the largest wins, so the
+ * order of the labels never changes the route.
+ */
 function sizeOf(facts: RouteFacts): { step: SizeStep; why: string } {
+  let largest: SizeStep | null = null;
   for (const name of facts.sizes ?? facts.labels) {
     const step = sizeStep(name);
-    if (step !== null) return { step, why: `size ${step}` };
+    if (
+      step !== null &&
+      (largest === null ||
+        SIZE_STEPS.indexOf(step) > SIZE_STEPS.indexOf(largest))
+    )
+      largest = step;
   }
+  if (largest !== null) return { step: largest, why: `size ${largest}` };
   const named = facts.sizes?.[0];
   return {
     step: "M",

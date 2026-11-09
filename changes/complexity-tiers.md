@@ -4,8 +4,8 @@ release: minor
 
 ### Added
 
-- An implementer's route now has one of three complexity tiers, `simple`,
-  `standard` and `complex`, derived from the issue's type and size facets:
+- An implementer's route now has a complexity tier, `simple`,
+  `standard` or `complex`, derived from the issue's type and size facets:
   bugs, improvements and features are standard up to M and complex from L,
   tasks are simple up to L and standard at XL, a spike is complex, and an
   unknown size reads as M. A label in the new `routing.complex_flags`

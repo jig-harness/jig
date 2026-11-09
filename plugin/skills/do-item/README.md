@@ -44,19 +44,22 @@ fault, since the route below reads it too.
 
 ## The implementer's route
 
-Before it delegates, the skill also says which
-[model tier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) and
-which effort the implementing agent should run on, and why: the item's
-[route](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). The type
-gives a base (a task runs on the Execution tier at low effort, a spike on
-the Strategic tier at high effort), and a flag label, an area with a
-mandatory review, a size too large to batch and the human-in-the-loop label
-each move the effort up one step. The rules are data in the repository's
-`routing` section, with defaults
-([configuration reference](../../CONFIGURATION.md#routing)). In this version
-the route is reported and the implementer runs on the model it ran on
-before. A `routing` section the rules refuse stops the pickup, naming the
-field at fault, until the repository corrects it.
+Before it delegates, the skill also says which complexity tier (simple,
+standard or complex) and which effort the implementing agent should run on,
+and why: the item's
+[route](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). The
+tier comes from the item's type and size (a bug, improvement or feature is
+standard up to M and complex from L, a task is simple up to L and standard
+at XL, a spike is complex at any size, and an unknown size reads as M),
+and a complex flag label, on the item or declared by an area it seeds, makes
+it complex at any size. The effort starts from the type's base, and a flag
+label, an area with a mandatory review, a size too large to batch and the
+human-in-the-loop label each move it up one step. The tier maps to a model
+per vendor. The rules are data in the repository's `routing` section, with
+defaults ([configuration reference](../../CONFIGURATION.md#routing)). In
+this version the route is reported and the implementer runs on the model it
+ran on before. A `routing` section the rules refuse stops the pickup,
+naming the field at fault, until the repository corrects it.
 
 ## The claim
 

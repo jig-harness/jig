@@ -276,7 +276,7 @@ registry-class park, re-arms a drive a person stopped or sends a session
 free text. Every need opens with one act (Merge, Decide, Authorize, Reply,
 Do, Investigate), and the dashboard becomes five views of one column each
 ([dispatch-board.md](dispatch-board.md#five-views-one-column-of-cards)).
-The route's tiers become item 31's three complexity tiers. Built in the
+The route's tiers become item 31's complexity tiers. Built in the
 design's order, one pull request per step, under the item 44 epic.
 
 Done when, on a host running Orca, a converged pull request whose review
@@ -793,7 +793,7 @@ has how it works, decided in
 route (agent, complexity tier, effort) for the implementer, derived from
 the work type (item 27), the size and flag labels and the catalog's flags and
 mandatory reviews, by rules as data with defaults a repository overrides;
-three complexity tiers, simple, standard and complex, from the type, the
+complexity tiers, simple, standard and complex, from the type, the
 size and the flags a repository marks complex at any size
 (`routing.complex_flags`), each mapped to a model per vendor with Claude's
 and OpenAI's defaults (simple and standard on `sonnet` or `terra`, complex
@@ -806,7 +806,7 @@ until a repository declares its rules; no model asked to route, and no
 model or tier written on an issue. The design
 is written and decided, and its first two steps are built:
 `determine_route.ts` derives the route from the `routing` section and its
-defaults, on the three complexity tiers with Claude's and OpenAI's families
+defaults, on the complexity tiers with Claude's and OpenAI's families
 known (`plugin/shared/model-families.ts`, which the loader checks every
 `routing.models` row against), and `do-item` prints it and forwards
 nothing. What stays open is the rest of the build, its own epic, one pull

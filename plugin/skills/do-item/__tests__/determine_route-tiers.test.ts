@@ -4,7 +4,19 @@
  * loader's checks against the known families.
  */
 
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { deriveRoute, type RouteFacts } from "../scripts/determine_route.ts";
 import { parseRouting } from "../scripts/lib/routing.ts";
 import { parseWorkTypes } from "../scripts/lib/work-types.ts";
@@ -127,7 +139,7 @@ describe("the complexity tiers", () => {
     ).toBe("standard");
   });
 
-  it("never writes a model or a tier onto the issue: the route is printed, never a label", () => {
+  it("has the shape of a route: a model and a tier are printed, never a label", () => {
     const r = route({ type: "bug", labels: ["has-migration"] });
     expect(Object.keys(r).sort()).toEqual(
       [
@@ -290,5 +302,92 @@ describe("the models per tier", () => {
     expect(() =>
       models({ family_tiers: { codex: { terra: { tier: "strategic" } } } }),
     ).toThrow("routing.family_tiers.codex.terra.reason must say why");
+  });
+});
+
+describe("size and model resolution", () => {
+  const SIZES = ["xs", "small", "medium", "large", "xl"];
+
+  it("reads the largest of several sizes, whatever their order", () => {
+    const tier = (labels: string[]) =>
+      route({ type: "bug", knownSizes: SIZES, labels }).tier;
+    expect(tier(["small", "large"])).toBe("complex");
+    expect(tier(["large", "small"])).toBe("complex");
+  });
+
+  it("reads only a size: prefix off a label, never another namespace", () => {
+    const r = route({
+      type: "bug",
+      knownSizes: SIZES,
+      labels: ["area:large", "component/xl"],
+    });
+    expect(r.tier).toBe("standard");
+    expect(r.size).toBe("M");
+    expect(
+      route({ type: "bug", knownSizes: SIZES, labels: ["size:large"] }).tier,
+    ).toBe("complex");
+  });
+
+  it.each([
+    ["claude-code", "claude-haiku-5-5"],
+    ["codex", "gpt-6-luna"],
+  ])(
+    "refuses the Scout family's model id %s %s, declared or not",
+    (runtime, id) => {
+      const config = {
+        routing: {
+          models: { [runtime]: { simple: id } },
+          family_tiers: {
+            [runtime]: { [id]: { tier: "execution", reason: "example" } },
+          },
+        },
+      };
+      expect(() => rules(config)).toThrow(/Scout family/);
+    },
+  );
+});
+
+describe("the route never writes to the tracker", () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+
+  it("calls no tracker command and prints a route with no write", () => {
+    const dir = mkdtempSync(join(tmpdir(), "route-no-writes-"));
+    dirs.push(dir);
+    const bin = join(dir, "bin");
+    const log = join(dir, "calls.log");
+    mkdirSync(bin);
+    for (const name of ["gh", "linear", "jira", "acli"]) {
+      const shim = join(bin, name);
+      writeFileSync(shim, `#!/bin/sh\necho "${name} $*" >> "${log}"\nexit 1\n`);
+      chmodSync(shim, 0o755);
+    }
+    writeFileSync(join(dir, "jig.yaml"), "routing: {}\n");
+    const r = spawnSync(
+      process.execPath,
+      [join(import.meta.dir, "../scripts/determine_route.ts"), "-"],
+      {
+        cwd: dir,
+        input: JSON.stringify({
+          type: "bug",
+          labels: ["bug", "has-migration"],
+          title: "x",
+          nativeType: null,
+        }),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CLAUDECODE: "1",
+          PATH: `${bin}:${process.env.PATH ?? ""}`,
+          JIG_OVERLAY: join(dir, "jig.yaml"),
+          JIG_CONSUMER_ROOT: dir,
+        },
+      },
+    );
+    expectSpawnExit({ ...r, exitCode: r.status }, 0);
+    expect(JSON.parse(r.stdout).tier).toBe("complex");
+    expect(existsSync(log)).toBe(false);
   });
 });

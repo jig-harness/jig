@@ -115,7 +115,7 @@ export function sizeStep(name: string): SizeStep | null {
   const bare = name
     .trim()
     .toLowerCase()
-    .replace(/^.*[:/]/, "");
+    .replace(/^size[:/]/, "");
   return Object.hasOwn(SIZE_NAMES, bare) ? (SIZE_NAMES[bare] ?? null) : null;
 }
 

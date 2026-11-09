@@ -69,6 +69,14 @@ export function familyOf(
   return familiesOf(runtime)?.families.find((f) => f.alias === alias);
 }
 
+/** The family whose model id is `model` for `runtime`, or `undefined`. */
+export function familyOfModel(
+  runtime: string,
+  model: string,
+): ModelFamily | undefined {
+  return familiesOf(runtime)?.families.find((f) => f.model === model);
+}
+
 /**
  * The model `runtime` is given for `alias`: the alias itself where the
  * runtime takes aliases or has no list, else the model the alias names
