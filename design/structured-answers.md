@@ -478,14 +478,18 @@ goes, the current decision is the first one left with no pick.
   reaches the record: a pick is written as `approve` or `choose <option>`
   with the digest, because a number means nothing outside the order it was
   shown in.
-- **A pick belongs to one framing.** Picks are kept like the reply drafts
-  (`dashboard/src/replies.ts`), by repository, pull request, key, digest
-  and the time the item was parked (the park occurrence the receipt
-  names). When a decision is framed again, or the same wording is parked
-  again, its pick is dropped and the row says so.
+- **A pick, a note and a free answer belong to one framing.** Each is kept
+  like the reply drafts (`dashboard/src/replies.ts`), by repository, pull
+  request, key, digest and the time the item was parked (the park
+  occurrence the receipt names). When a decision is framed again, or the
+  same wording is parked again, all of them are dropped and the row says
+  so; none is carried to the new framing or sent with its digest.
 - **Notes and free answers are kept apart.** A note and a free answer are
   separate drafts, so clearing a pick never turns its note into an answer
-  and a later pick never turns a draft into a note. Both are checked as an
+  and a later pick never turns a draft into a note. A decision has one
+  active answer, the pick or the free answer, whichever was made last; the
+  other stays as a draft, is left out of the comment and of every send, and
+  the row says which one counts. Both are checked as an
   answer's text is, by a check that moves from `answer-comment.ts` to
   `shared/` so the page can run it, and a row that fails holds the copy
   back and says why. A row with neither a pick nor a free answer is left out
@@ -497,7 +501,7 @@ goes, the current decision is the first one left with no pick.
   button, the palette or the panel's Send): the first shows every guarded
   pick's Changes and Costs, and the second copies or sends. The first
   step's effect ends when any pick changes, a digest changes or the card
-  loses focus. A free answer drafted for a decision is committed in its
+  loses focus. A decision whose active answer is a free answer is committed in its
   words, as an `answer <key>:` line carrying the digest, and takes
   precedence over the fallback below. With no pick and no free answer,
   `c` copies an `approve` line for a card of one decision whose class is
@@ -515,7 +519,7 @@ Each surface's commit:
 | Surface | Commit | Waits on |
 | --- | --- | --- |
 | Dashboard | `c` copies, `p` opens the pull request, the person pastes | nothing |
-| Orca panel | Send runs `jig send` for each pick, and for each free answer with its words | nothing |
+| Orca panel | Send runs `jig send` once for each decision's active answer, a free answer with its words | nothing |
 | The hub | Commit, behind proof that a person is there | its third stage, item 40 |
 | Terminal | `jig ask --waiting` numbers the options; `jig send` names one | nothing |
 

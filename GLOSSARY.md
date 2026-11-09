@@ -1347,7 +1347,8 @@ make, use the entry's term instead.
 - **Disputed answer** — a parked item whose people's latest answers are not
   all the same option with the same notes (two different choices, the same
   choice with differing notes, or a choice beside another person's free
-  answer). It is not answered and waits, which sets it apart
+  answer; answers that are all free are not disputed, the item is answered
+  and they are handed to the pass). It is not answered and waits, which sets it apart
   from a *stale answer* (naming an earlier framing) and from an item merely
   waiting for its first answer
   ([design](design/structured-answers.md#several-answers-to-one-item)).
