@@ -58,58 +58,53 @@ describe("readInfrastructure", () => {
     expect(r.jobs[0]?.why).toContain("504");
   });
 
-  it("reads the same 504 in a step that runs the repository's commands as the code's", () => {
-    const r = readInfrastructure(
-      step(
-        "test",
-        "Run tests",
+  it.each([
+    {
+      name: "a 504 in a step that runs the repository's commands",
+      job: "test",
+      stepName: "Run tests",
+      messages: [
         "Unexpected HTTP response: 504",
         "##[error]Unable to fetch fixture: Unexpected HTTP response: 504",
         EXIT,
-      ),
-    );
-    expect(r.infrastructure).toBe(false);
-    expect(r.why).toContain("'Run tests', which is not a setup step");
-  });
-
-  it("reads a code diagnostic beside a network failure as the code's", () => {
-    const r = readInfrastructure(
-      step(
-        "build",
-        "Install dependencies",
+      ],
+      reason: "'Run tests', which is not a setup step",
+    },
+    {
+      name: "a code diagnostic beside a network failure",
+      job: "build",
+      stepName: "Install dependencies",
+      messages: [
         "error: GET https://registry.example/pkg - HTTP status code 503",
         "src/cart.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.",
         EXIT,
-      ),
-    );
-    expect(r.infrastructure).toBe(false);
-    expect(r.why).toContain("typescript");
-  });
-
-  it("reads an error annotation that names no infrastructure failure as the code's", () => {
-    const r = readInfrastructure(
-      step(
-        "build",
-        "Set up job",
+      ],
+      reason: "typescript",
+    },
+    {
+      name: "an error annotation that names no infrastructure failure",
+      job: "build",
+      stepName: "Set up job",
+      messages: [
         "Connection timed out while resolving an action; retrying",
         "##[error]Unable to resolve action `example/setup-tool@v9`, unable to find version `v9`",
-      ),
-    );
-    expect(r.infrastructure).toBe(false);
-    expect(r.why).toContain("names no infrastructure failure");
-  });
-
-  it("reads a 4xx answer in a checkout as the code's", () => {
-    const r = readInfrastructure(
-      step(
-        "build",
-        "Checkout repository",
+      ],
+      reason: "names no infrastructure failure",
+    },
+    {
+      name: "a 4xx answer in a checkout",
+      job: "build",
+      stepName: "Checkout repository",
+      messages: [
         "fatal: unable to access 'https://forge.example/repo/': The requested URL returned error: 403",
         EXIT,
-      ),
-    );
+      ],
+      reason: "permanent HTTP failure",
+    },
+  ])("reads $name as the code's", ({ job, stepName, messages, reason }) => {
+    const r = readInfrastructure(step(job, stepName, ...messages));
     expect(r.infrastructure).toBe(false);
-    expect(r.why).toContain("permanent HTTP failure");
+    expect(r.why).toContain(reason);
   });
 
   it("reads a lost runner as infrastructure in any step", () => {
