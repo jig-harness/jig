@@ -49,7 +49,7 @@ export async function failedRunsToTell(
 }
 
 /** `runsOutsideHold` over the pull request's own label history. */
-async function rerunnableRuns(
+export async function rerunnableRuns(
   pr: string,
   failed: readonly FailedRun[],
 ): Promise<number[]> {
