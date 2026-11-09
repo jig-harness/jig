@@ -147,7 +147,7 @@ directory.
 | `gh-cache` | `~/.cache/jig/gh-cache/<hash>.json` | JSON, `v: 1` | `shared/gh-cache-storage.ts` | renamed into place; best effort, pruned |
 | `db-meta` | every component's database, table `db_meta` | one row: the database's instance id, the schema version it was written for and its minimum reader | `shared/records/db.ts` | written in the migration's transaction |
 | `process-registry` | `<tmp>/jig-processes-<id>/`; a driver's on Windows, `<state dir>/pr-drive-<PR>.processes.<token>/` | JSON per process | `shared/process-registry.ts` | renamed into place; a completion is published once |
-| `resource-lock` | `<tmp>/jig-lock.<name>` | a link naming the holder's process | `shared/resource-lock.ts` | created atomically; a dead holder is reclaimed through a claim file |
+| `resource-lock` | `<tmp>/jig-lock.<name>`, its slots `<tmp>/jig-lock.<name>-slot-<n>`, and `<tmp>/jig-lock.<name>.admission` and `.exclusive` | a link naming the holder's process | `shared/resource-lock.ts` | created atomically; a dead holder is reclaimed through a claim file |
 | `turn-budget-state` | `<tmp>/jig-turn-budget/<session>/state.json` | JSON | `hooks/turn-budget-guard.ts` | renamed into place |
 | `reflection-pending` | `~/.jig/pending/<repo>-<hash>/<time>-<16 hex>.jsonl` | JSONL, `v: 1` | `skills/reflect/scripts/lib/journal.ts`, also when `jig gc` removes a worktree | written whole and renamed; adopted by renaming a claim |
 | `reflection-file-store` | `~/.jig/reflections/<year>-<month>/` | JSONL, `v: 1` | `skills/reflect/scripts/filesystem-store.ts` | linked into place; never replaced or edited |

@@ -12,6 +12,8 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { withDeferredEntry } from "../../resolve-review-comments/scripts/lib/deferred-section.ts";
+import { putLease } from "./state-rows.ts";
+import { cloneId } from "../scripts/lib/state/ledger-mirror.ts";
 import { REPORT_MEMORY } from "../scripts/lib/morning-report.ts";
 import { driveDb } from "../scripts/lib/state/db.ts";
 import { ledgerFromState, renderLedger } from "../scripts/lib/state/ledger.ts";
@@ -413,6 +415,52 @@ describe("drives.ts --report", () => {
       source: "ledger",
       terminal: { name: "CONVERGED", exit: 0 },
     });
+  });
+
+  it("a recent local ledger cannot keep an exited matching driver running", async () => {
+    const forge = setUp();
+    const started = ago(1);
+    const actor = "wt-cccccccccccccccc";
+    putLease(
+      { stateDir: forge.stateDir, pr: "20", actor },
+      {
+        pid: 2147483647,
+        actor,
+        sessionStarted: started,
+      },
+    );
+    const rendered = renderLedger(
+      ledgerFromState(freshState(20), {
+        generation: 3,
+        driver: {
+          actor,
+          clone: cloneId(forge.stateDir),
+          started,
+          heartbeat: ago(0),
+          state: "running",
+        },
+        narrative: [],
+        claims: [],
+      }),
+    );
+    if ("error" in rendered) throw new Error(rendered.error);
+    forge.write("comments-20.json", [
+      {
+        id: 200,
+        body: rendered.body,
+        user: { login: "drive-bot" },
+        author_association: "NONE",
+        updated_at: ago(0),
+        created_at: ago(1),
+        html_url: "https://example.invalid/comment-200",
+      },
+    ]);
+    const r = await report(forge, ["--json"]);
+    expectSpawnExit(r, 0);
+    const entry = JSON.parse(r.stdout).pullRequests.find(
+      (p: { number: number }) => p.number === 20,
+    );
+    expect(entry.terminal.name).toBe("stopped");
   });
 
   it("a running ledger whose heartbeat is past the lease window is not a running drive", async () => {

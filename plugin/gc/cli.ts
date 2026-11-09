@@ -276,8 +276,11 @@ async function runUnderHeavyLock(
   options: Options,
   script: string,
 ): Promise<number> {
+  // Exclusive: every slot of the lock, so no heavy run holds any while it collects.
   const status = await withResourceLock(
     [
+      "--exclusive",
+      "--",
       process.execPath,
       "--no-env-file",
       `--config=${join(dirname(script), "gc", "bunfig.toml")}`,
