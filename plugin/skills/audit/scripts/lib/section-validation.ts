@@ -23,6 +23,7 @@ import {
 } from "../../../design-brief-builder/scripts/contracts.ts";
 import { parseDocsSettings } from "../../../docs/scripts/lib/settings.ts";
 import { checkGitHubFacets } from "../../../do-item/scripts/lib/tracker/github/facets.ts";
+import { checkJiraFacets } from "../../../do-item/scripts/lib/tracker/jira/facets.ts";
 import { checkLinearFacets } from "../../../do-item/scripts/lib/tracker/linear-facets.ts";
 import { parseRouting } from "../../../do-item/scripts/lib/routing.ts";
 import {
@@ -131,6 +132,7 @@ export function skillValidation(
     // The adapters' own offline checks, so --offline refuses what they refuse.
     if (tracker.adapter === "linear") checkLinearFacets(facets);
     if (tracker.adapter === "github") checkGitHubFacets(facets);
+    if (tracker.adapter === "jira") checkJiraFacets(facets);
   });
   attempt("do-item (routing)", () =>
     parseRouting(config, parseWorkTypes(config)),
