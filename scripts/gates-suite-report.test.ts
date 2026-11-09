@@ -6,7 +6,10 @@ import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
 const root = resolve(import.meta.dir, "..");
 
 function usesRawBunTest(command: string): boolean {
-  return /\bbun(?:\s+--\S+)*\s+test\b/.test(command);
+  const normalized = command.replace(/\\\r?\n[ \t]*/g, " ");
+  return /\bbun(?:[ \t]+--\S+(?:[ \t]+(?!test\b)\S+)?)*[ \t]+test\b/.test(
+    normalized,
+  );
 }
 
 test("every CI suite uses the reporting runner and its executed-test check", () => {
@@ -35,6 +38,8 @@ test("the suite-runner contract rejects raw Bun spellings", () => {
     "bun test scripts/gates.test.ts",
     "bun  test scripts/gates.test.ts",
     "bun --no-env-file test scripts/gates.test.ts",
+    "bun --cwd . test scripts/gates.test.ts",
+    ["bun", "test scripts/gates.test.ts"].join(" \\\n"),
   ])
     expect(usesRawBunTest(command)).toBeTrue();
   expect(usesRawBunTest("bun run test scripts/gates.test.ts")).toBeFalse();
