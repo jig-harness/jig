@@ -279,14 +279,14 @@ tier.
 
 ### Configuration
 
-| Field                                                                 | Where        | Default                                                            |
-| --------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------ |
-| `load.enforce`                                                        | machine file | `false`: the tick reports what it would hold and holds nothing     |
-| `load.memory_free`, `load.cpu`, `load.test_waiters`, `load.disk_free` | machine file | 15%, 0.9, 2, 10 GB                                                 |
-| `serve[]`                                                             | machine file | none: only the factory identity's items are picked up              |
-| `steward.enabled`, `steward.every`                                    | machine file | off; `20m`                                                         |
-| `dispatch.pickup_deadline`                                            | repository   | `3h`                                                               |
-| `routing.complex_flags`, `routing.models.<runtime>.<tier>`            | repository   | [agent-routing.md § Configuration](agent-routing.md#configuration) |
+| Field                                                                              | Where        | Default                                                            |
+| ---------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------ |
+| `load.enforce`                                                                     | machine file | `false`: the tick reports what it would hold and holds nothing     |
+| `load.memory_free`, `load.load_per_core`, `load.lock_waiters`, `load.disk_free_gb` | machine file | 15%, 0.9, 2, 10 GB                                                 |
+| `serve[]`                                                                          | machine file | none: only the factory identity's items are picked up              |
+| `steward.enabled`, `steward.every`                                                 | machine file | off; `20m`                                                         |
+| `dispatch.pickup_deadline`                                                         | repository   | `3h`                                                               |
+| `routing.complex_flags`, `routing.models.<runtime>.<tier>`                         | repository   | [agent-routing.md § Configuration](agent-routing.md#configuration) |
 
 ## Build order
 

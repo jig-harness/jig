@@ -113,6 +113,17 @@ describe("admission by the host's load", () => {
     expect(judge(load, "drive", "o/r", "PR #8")).toContain("memory binds");
   });
 
+  it("keeps an unrepresented launch reservation across ticks", () => {
+    const load = loadState(
+      { ...LOAD_DEFAULTS, enforce: true },
+      reading(headroom(2 * GIB)),
+      { held: 1, capacity: 8 },
+      new Map(),
+      1.5 * GIB,
+    );
+    expect(judge(load, "drive", "o/r", "PR #8")).toContain("memory binds");
+  });
+
   it("without enforcement starts what a gauge refuses and reports it as one it would hold", () => {
     const load = state(headroom(0.5 * GIB));
     expect(judge(load, "drive", "o/r", "PR #7")).toBeNull();

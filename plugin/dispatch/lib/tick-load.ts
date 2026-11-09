@@ -38,6 +38,24 @@ function running(
   );
 }
 
+/** Reservations whose sessions the host reading does not represent yet. */
+function outstandingReservations(
+  records: readonly ReadRecord[],
+  reading: ReturnType<typeof readLoad>,
+  machine: MachineConfig,
+): number {
+  return records.reduce((total, { record, state }) => {
+    if (!holds(state)) return total;
+    const represented =
+      record.workspace !== null &&
+      reading.sessions !== null &&
+      (reading.sessions.get(record.workspace.path) ?? 0) > 0;
+    if (represented) return total;
+    const kind = kindOfRecord(record);
+    return total + machine.load.reservations[kind];
+  }, 0);
+}
+
 /**
  * Read the host's gauges for this tick and build the load state; with
  * `sample`, the `--apply` tick's, first record each running session's
@@ -80,6 +98,7 @@ export function readTickLoad(input: {
       reading,
       accountsReading(table, refused),
       readSamples(),
+      outstandingReservations(records, reading, machine),
     );
   });
 }

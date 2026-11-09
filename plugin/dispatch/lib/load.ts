@@ -102,13 +102,18 @@ export function loadState(
   reading: LoadReading,
   accounts: AccountsReading,
   samples: ReadonlyMap<LoadKind, number[]>,
+  outstandingBytes = 0,
 ): LoadState {
   return {
     settings,
     reading,
     accounts,
     reservations: reservationsOf(settings, samples),
-    spentBytes: 0,
+    // A record can hold a launch between ticks before its process has made
+    // the host reading reflect its reservation.  Keep that reservation in
+    // the next tick's admission state rather than spending the same headroom
+    // again.
+    spentBytes: outstandingBytes,
     spentSlots: 0,
     holds: [],
   };
