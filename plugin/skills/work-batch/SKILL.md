@@ -196,13 +196,14 @@ the release in step 4 restores them. Then, for each:
    not perform its guards. Never retry a refusal without those options.
 
    On exit `3` (someone already holds it) or `4` (another claim landed
-   first), drop the issue from the batch as a changed line is dropped.
+   first), stop the batch and report the refused claim. A fixed served batch
+   cannot safely continue after one of its members changes.
 
    (**judgment** — native: read the issue and stop on the same refusals,
    save its state and assignee through the harness's tracker tool (the
-   mapped state name, assignee "me"), then read it again and drop the
-   issue when it shows another assignee, or is gone or no longer in the
-   mapped state.)
+   mapped state name, assignee "me"), then read it again and stop the batch
+   when it shows another assignee, or is gone or no longer in the mapped
+   state.)
 
 2. Comment on it, naming the anchor and every other issue in the batch, so a
    second agent sees it is spoken for and by which batch

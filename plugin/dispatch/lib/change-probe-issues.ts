@@ -15,8 +15,12 @@ export function readIssuePages(
   let pages: unknown;
   try {
     pages = JSON.parse(stdout);
-  } catch {
-    return failed("unreadable", `the updated issues of ${slug} are not JSON`);
+  } catch (error) {
+    return failed(
+      "unreadable",
+      `the updated issues of ${slug} are not JSON: ${error instanceof Error ? error.message : String(error)}`,
+      error,
+    );
   }
   if (!Array.isArray(pages) || !pages.every(Array.isArray))
     return failed(

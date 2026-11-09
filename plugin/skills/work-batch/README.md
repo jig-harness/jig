@@ -24,7 +24,7 @@ five closures cost about what one costs.
 A dispatcher can launch a batch from a served person's queue. Its named
 items are the maximum scope, and each claim preserves that person as
 assignee. The claim checks inherited assignment and writer provenance live;
-a refused item leaves the batch. A question needing a person stops the
+a refused item stops the batch. A question needing a person stops the
 headless pass and is recorded with the launch result.
 
 Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·

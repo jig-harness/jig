@@ -36,7 +36,7 @@ export function batchPickups(
       item.batchAllowed === false ||
       issue === undefined ||
       issue.priority === 1 ||
-      !["xs", "small", "s"].includes(issue.size?.toLowerCase() ?? "")
+      !Object.hasOwn(policy.sizePoints, issue.size?.toLowerCase() ?? "")
     )
       continue;
     if (

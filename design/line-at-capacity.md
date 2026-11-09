@@ -8,8 +8,8 @@ every `bun run gates` queues on) and reports what a launch would cost, but
 it still admits work by account [slots](../GLOSSARY.md) alone, two per
 account by default, until a person sets `load.enforce`. A host with room to
 spare idles, and a host near its limit takes one more session and slows
-every drive on it. Pickups currently serve only a repository's
-[factory identity](../GLOSSARY.md). On Orca, account-bound headless passes
+every drive on it. Pickups serve a repository's [factory identity](../GLOSSARY.md)
+and the people the host serves. On Orca, account-bound headless passes
 start those pickups without an interactive session; served assignments and epic descendants join a ranked queue. And the stops that reach a
 person mix real decisions with stops an agent could have recovered: a second
 stop at the same change, a spent
