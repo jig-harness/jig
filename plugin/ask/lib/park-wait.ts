@@ -31,6 +31,8 @@ export interface LinePark {
   act: NeedAct;
   /** The key of the oldest decision the park waits on; `null` when it lists none. */
   key: string | null;
+  /** The class that decision was parked under; `null` when it names none. */
+  decisionClass: string | null;
 }
 
 /**
@@ -58,7 +60,11 @@ export function lineParkOf(ctx: AskContext, pr: number): LinePark | null {
   );
   return need === undefined
     ? null
-    : { act: actOfLineNeed(need), key: need.decisions[0]?.key ?? null };
+    : {
+        act: actOfLineNeed(need),
+        key: need.decisions[0]?.key ?? null,
+        decisionClass: need.decisions[0]?.decisionClass ?? null,
+      };
 }
 
 /**
@@ -67,8 +73,9 @@ export function lineParkOf(ctx: AskContext, pr: number): LinePark | null {
  * oldest open park's class's. The line also counts a reply on a parked
  * thread as its answer, which this read of the conversation does not, so
  * its open parks are a subset of ours and its act is the one the card
- * shows, provided the decision it derives from is still open here: a line
- * older than an answer or a newer park names a decision that is not, and
+ * shows, provided the decision it derives from is still open here under the class
+ * the line read: a line older than an answer, a newer park or a re-park of the
+ * same key under another class names a decision that is not, and
  * the act then comes from the open parks' class.
  */
 export function parkedWait(
@@ -82,7 +89,11 @@ export function parkedWait(
     (p) => comments === null || !answered(p.key, p.at, comments),
   );
   const current =
-    linePark !== null && open.some((p) => p.key === linePark.key)
+    linePark !== null &&
+    open.some(
+      (p) =>
+        p.key === linePark.key && (p.class ?? null) === linePark.decisionClass,
+    )
       ? linePark.act
       : null;
   return personWait("answer", why, {
