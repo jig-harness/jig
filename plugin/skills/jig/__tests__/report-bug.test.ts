@@ -346,6 +346,8 @@ test("the draft is titled by skill and symptom, with the form's channel answer",
     "drive-pr: parks in <repository-name>",
     "--label",
     "bug",
+    "--label",
+    "jig",
     "--body-file",
     "-",
   ]);
