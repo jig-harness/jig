@@ -73,19 +73,15 @@ they have today ([Left out](#left-out)).
 
 A complexity tier says how hard the item is, not which model runs it. By
 default the simple and standard tiers map to M0's Execution tier and the
-complex tier to its Strategic tier. A repository may map the simple tier
-to a family M0 places on its Scout tier (`routing.models.claude-code.simple:
-haiku`) only with M0's measured exception for that named implementer or
-skill: comparable tasks, billed cost and quality results accompany the
-configuration change. Without that admitted exception Scout stays
-read-only and the loader refuses a write-capable route to it. Gates and
-an audit report do not replace this measurement. The
-Judgment tier is admitted per decision layer with a named baseline, never
-by a rule that fires on every item of a type, so no complexity tier maps
-to it, including through configuration overrides. The tier is never a
-model id: the translation table is the only place a model name appears,
-and it is configuration a check
-reads.
+complex tier to its Strategic tier. No tier maps the implementer to a
+family M0 places on its Scout tier (`haiku`, `luna`), by default or by
+configuration: M0 keeps that tier read-only, and the loader refuses such a
+mapping. Within an implementation, the implementer may still hand simple
+sub-steps to a Scout model, as a skill chooses its own scouts. No tier's
+default is a Judgment family (`fable`, `astra`); the loader accepts one
+where a repository configures it for a tier, and the audit reports each
+such mapping. The tier is never a model id: the translation table is the
+only place a model name appears, and it is configuration a check reads.
 
 ### Complexity tiers
 
@@ -121,7 +117,8 @@ runtime, with Claude's and OpenAI's families known out of the box:
 A repository overrides any cell in `routing.models.<runtime>.<tier>`. The
 family aliases and the model each names today are kept in one place,
 `plugin/shared/model-families.ts`, which a release updates: Claude's
-`haiku`, `sonnet`, `opus` and `fable`; OpenAI's `luna`, `terra` and `sol`.
+`haiku`, `sonnet`, `opus` and `fable`; OpenAI's `luna`, `terra`, `sol`
+and `astra` (`gpt-6-astra`).
 A Codex pass with no model of its own runs the standard tier's Codex model
 rather than Codex's own default.
 
@@ -394,8 +391,8 @@ is policy, not an override, and the reasons name the rule that fired.
   `plugin/shared/` (`model-families.ts`), which M0's mappings link,
   records the tier M0's mappings give each family (for Claude Code:
   `haiku` scout, `sonnet` execution, `opus` strategic, `fable` judgment; for
-  Codex: `luna` scout, `terra` execution, `sol` strategic, rows M0's
-  mappings gain at step 4). The loader
+  Codex: `luna` scout, `terra` execution, `sol` strategic, `astra`
+  judgment, rows M0's mappings gain at step 4). The loader
   refuses an alias outside the list, and a `routing.models` row in which a
   stricter complexity tier maps to a family of a lower M0 tier than a
   lighter one: `complex: sonnet` with `standard: opus` would make the
@@ -406,14 +403,11 @@ is policy, not an override, and the reasons name the rule that fired.
   with a `reason`, which the loader reads in place of the list's tier for
   that family and refuses without the reason; the audit reports each one.
   A runtime with no list takes any name.
-  Independently of ordering, the loader refuses every implementation
-  mapping to Judgment, including a row whose tiers all name `fable`.
-  A Scout mapping requires the measured exception for the named skill
-  described above; a `family_tiers` override cannot waive either admission
-  rule. For an unknown runtime, the family classification and any Scout
-  admission evidence must be declared before a write-capable route can
-  be applied. The audit checks the exception's scope and evidence beside
-  the model mapping.
+  Independently of ordering, the loader refuses any tier mapped to a
+  Scout family, and a `family_tiers` override cannot move a Scout family
+  out of that refusal. A tier mapped to a Judgment family is accepted when
+  the repository configures it, never by default, and the audit reports
+  each one beside the model mapping.
 
 ### The audit
 
@@ -455,7 +449,8 @@ values and legacy model keys (`execution` to `standard`, `strategic` to
 values coalesce and different values are refused with both field paths;
 neither silently wins. Before filling runtime defaults, the loader uses a
 legacy `execution` model as the fallback for both `simple` and `standard`;
-an explicit `simple` model replaces only that fallback. This applies to
+an explicit `simple` model replaces only that fallback. A legacy model that
+names a Scout family is refused like any other Scout mapping. This applies to
 custom runtimes too, even when they have no built-in defaults. Without a
 legacy `execution` key, an omitted `simple` uses its runtime default.
 This preserves an existing `bug: {tier: strategic, effort: high}`
