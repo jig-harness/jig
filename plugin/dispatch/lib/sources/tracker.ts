@@ -57,6 +57,7 @@ async function readClaimed(
     return issues.map((i) => ({
       key: i.identifier,
       title: i.title,
+      url: i.url,
       state: i.state.name,
     }));
   } catch (error) {
@@ -97,6 +98,8 @@ async function byTrustedAssigner(
     } catch (error) {
       unplaced.push({
         target: issue.identifier,
+        title: issue.title,
+        url: issue.url,
         record: "tracker",
         reason: `who assigned it cannot be read: ${failureText(error)}`,
       });
@@ -105,6 +108,8 @@ async function byTrustedAssigner(
     if (!by.trusted) {
       unplaced.push({
         target: issue.identifier,
+        title: issue.title,
+        url: issue.url,
         record: "tracker",
         reason: `assigned to ${identity} by ${by.name}, who cannot write to ${tracker.team}; only a person with write access starts a pickup`,
         cause: "assigner-cannot-write",

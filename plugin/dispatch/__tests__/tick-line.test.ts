@@ -1,12 +1,14 @@
 /**
  * The line a tick from the machine file leaves in the state database, over the
  * fake forge and a fake `orca`: what the dashboard shows comes from a real
- * tick's reads. A tick for one repository leaves the whole line as it was, and
- * a tick whose line cannot be written still launches, and says so on its receipt.
+ * tick's reads. A tick for some of the machine file's repositories replaces
+ * their part of the line, one for a repository it does not list leaves the
+ * line as it was, and a tick whose line cannot be written still launches, and
+ * says so on its receipt.
  */
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { hostname } from "node:os";
 import { scopedStateDir } from "../../skills/drive-pr/__tests__/scoped-state-dir.ts";
@@ -20,8 +22,9 @@ import {
   readTreeLease,
 } from "../../skills/drive-pr/scripts/lib/state/lease.ts";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { dump, load } from "../../shared/yaml.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
-import type { TickReceipt } from "../receipts.ts";
+import { takeObserveLock, type TickReceipt } from "../receipts.ts";
 import {
   ledgerComment,
   openPr,
@@ -337,6 +340,73 @@ describe("the line a tick leaves", () => {
     expect(stored?.line.runId).toBe(first.runId);
     expect(stored?.receipt.runId).toBe(first.runId);
     expect(stored?.line.recentTicksMs).toHaveLength(1);
+    expect(
+      stored?.line.ticks?.map((t) => ({ runId: t.runId, sweep: t.sweep })),
+    ).toEqual([
+      { runId: first.runId, sweep: true },
+      { runId: second.runId, sweep: false },
+    ]);
+  });
+
+  /** A fixture whose machine file lists a second repository, one the forge does not know, so each tick that reads it refuses it and ends 1. */
+  function twoRepositories(): { w: World; other: string } {
+    const w = fixture();
+    const other = join(w.root, "another");
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    const file = join(w.home, ".jig", "dispatch.yaml");
+    const machine = load(readFileSync(file, "utf8")) as {
+      repositories: Array<Record<string, unknown>>;
+    };
+    machine.repositories.push({ path: other, stages: ["rearm"] });
+    writeFileSync(file, dump(machine));
+    return { w, other };
+  }
+
+  it("replaces a busy repository's neighbour's part on a timer's tick and keeps the busy one's, marked with the tick that last read it", async () => {
+    const { w, other } = twoRepositories();
+    const first = await tick(w, 1);
+    expect(storedLine(w)?.line.runId).toBe(first.runId);
+    const held = takeObserveLock(w.repo, dispatchState(w));
+    if ("heldBy" in held) throw new Error(`the lock is held: ${held.heldBy}`);
+    let second: TickReceipt;
+    try {
+      second = await tick(w, 1);
+    } finally {
+      held.release();
+    }
+    expect(second.busy?.map((b) => b.path)).toEqual([w.repo]);
+    const stored = storedLine(w);
+    expect(stored?.line.runId).toBe(second.runId);
+    expect(stored?.receipt.runId).toBe(second.runId);
+    expect(
+      stored?.line.repos.map((repo) => [repo.path, repo.runId, repo.readAt]),
+    ).toEqual([
+      [w.repo, first.runId, first.startedAt],
+      [other, second.runId, second.startedAt],
+    ]);
+    expect(
+      stored?.line.ticks?.map((t) => ({ runId: t.runId, busy: t.busy })),
+    ).toEqual([
+      { runId: first.runId, busy: [] },
+      { runId: second.runId, busy: [w.repo] },
+    ]);
+  });
+
+  it("replaces the part of the repository a wake-up read and leaves the machine's part to the timer's ticks", async () => {
+    const { w, other } = twoRepositories();
+    const first = await tick(w, 1);
+    const r = await w.dispatch(["--repo", w.repo, "--json"]);
+    expectSpawnExit(r, 0);
+    const second = JSON.parse(r.stdout) as TickReceipt;
+    const stored = storedLine(w);
+    expect(stored?.line.runId).toBe(first.runId);
+    expect(stored?.receipt.runId).toBe(first.runId);
+    expect(
+      stored?.line.repos.map((repo) => [repo.path, repo.runId, repo.readAt]),
+    ).toEqual([
+      [w.repo, second.runId, second.startedAt],
+      [other, first.runId, first.startedAt],
+    ]);
     expect(
       stored?.line.ticks?.map((t) => ({ runId: t.runId, sweep: t.sweep })),
     ).toEqual([

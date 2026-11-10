@@ -481,6 +481,7 @@ async function closeTick(
   receipt.phasesMs = { ...timer.ms };
   writeTickLine(receipt, {
     machine,
+    asked: context.options.repos,
     repos: readRepos(receipt, context),
     records: allRecords(context),
     inputs: context.lineInputs,
@@ -490,9 +491,7 @@ async function closeTick(
   finalizeTickFailure(receipt, context);
 }
 
-/**
- * The repositories this tick read: one another tick held was not, and the line is written only by a tick that read every one.
- */
+/** The repositories this tick read: one another tick held was not. */
 function readRepos(receipt: TickReceipt, context: TickContext): string[] {
   const busy = new Set((receipt.busy ?? []).map((b) => b.path));
   return context.options.repos.filter((path) => !busy.has(path));

@@ -56,6 +56,7 @@ import { noticeComment } from "../runtime/notice-comment.ts";
 import { stateRoot } from "../../receipts.ts";
 import {
   driveClass,
+  aboutFields,
   insertRow,
   type LogRow,
   type OutcomeClass,
@@ -690,8 +691,14 @@ function classOf(cause: Cause): OutcomeClass | null {
 }
 
 /** The event row for a cause timed at `at`. */
-function eventRow(repo: string, cause: Cause, at: string): LogRow {
+function eventRow(
+  repo: string,
+  cause: Cause,
+  at: string,
+  about: NoticeSettings["about"],
+): LogRow {
   return {
+    ...(about === undefined ? {} : aboutFields(about(cause.target))),
     kind: "event",
     key: `event ${cause.notice.key}`,
     at,
@@ -718,6 +725,8 @@ export interface NoticeSettings {
   branch: string | null;
   /** The failure ledger's book of the repository's actions, with `--apply`. */
   book?: ActionBook | null;
+  /** A target's title and link as this tick's reads gave them, which a cause's outcome-log row carries. */
+  about?: (target: string) => { title: string | null; url: string | null };
 }
 
 /** The failure ledger's key and kind of a cause's delivery. */
@@ -932,7 +941,7 @@ async function sendNotices(
             (c.cause === "stopped-unknown" && c.evidence.noCause === true),
         },
         // A cause about a stage this machine launched has its ended row instead.
-        c.launched === true ? null : eventRow(repo.slug, c, at),
+        c.launched === true ? null : eventRow(repo.slug, c, at, settings.about),
         root,
         c.repeat === true,
       );

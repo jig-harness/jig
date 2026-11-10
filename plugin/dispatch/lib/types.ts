@@ -86,6 +86,8 @@ export interface RepoTarget {
 export interface ClaimedItem {
   key: string;
   title: string;
+  /** Its link as the tracker listing gave it; absent where a reader gives none. */
+  url?: string | null;
   state: string;
 }
 
@@ -266,6 +268,9 @@ export interface Unplaced {
   target: string;
   record: RecordName;
   reason: string;
+  /** For an item the tracker listing returned: its title and link, which the line and the outcome log show beside its key. */
+  title?: string;
+  url?: string | null;
   /** Set for an item assigned by someone who cannot write: only a person can settle it. */
   cause?: "assigner-cannot-write";
   /** Set when reading the record failed (a comment listing, an unreadable ledger), as against a state the record legitimately leaves unplaced. */

@@ -703,8 +703,9 @@ repository's part of the line and leaves the rest as the last tick wrote
 it. The part of one repository is its entries in `sessions`, `needs`,
 `queue` and `board`, each of which names its repository, and its entry in
 `repos`, which carries the `runId` and `readAt` of the tick that last read
-it. The rest belongs to the whole machine, and only a tick that read every
-repository the machine file lists writes it: the line's own `version`,
+it. The rest belongs to the whole machine, and only a tick the timer asked
+for every repository the machine file lists writes it, whether or not
+another tick held some of them busy: the line's own `version`,
 `runId`, `startedAt`, `finishedAt` and `exitStatus`, `apply` and
 `applyWithheld`, `intervalMs`, `longestTickMs` and `recentTicksMs`,
 `plugin`, `timeZone`, `minReader`, the accounts with their slots and

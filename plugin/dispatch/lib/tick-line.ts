@@ -23,6 +23,7 @@ import {
   type RepoStored,
 } from "./line.ts";
 import { readLine, readLineReceipt, writeLine } from "./line-store.ts";
+import { mergeLine, readBy } from "./line-merge.ts";
 import { hostTimeZone } from "./host-time.ts";
 import { exportLog } from "./log-export.ts";
 import type { MachineConfig } from "./machine-config.ts";
@@ -71,7 +72,7 @@ export function lineInputOf(
       ...(tracked.claimed ?? []).map((c) => ({
         target: c.key,
         title: c.title,
-        url: null,
+        url: c.url ?? null,
       })),
     ],
     sessions,
@@ -125,10 +126,11 @@ function accountsOf(
   }));
 }
 
-/** Whether a tick read every repository the machine file lists, and only those: a tick for one repository would replace the whole line with that one. */
+/** Whether `repos` are every repository the machine file lists, and only those. */
 function readsTheMachine(machine: MachineConfig, repos: string[]): boolean {
   const listed = new Set(machine.repositories.map((r) => r.path));
-  return repos.length === listed.size && repos.every((r) => listed.has(r));
+  const named = new Set(repos);
+  return named.size === listed.size && [...named].every((r) => listed.has(r));
 }
 
 /** Add health to the previous snapshot without replacing its state or receipt. */
@@ -182,16 +184,24 @@ export function recordTickHealth(
 }
 
 /**
- * Write the line of a finished tick from the machine file; a tick that read
- * only some of its repositories adds itself to the line's recent ticks and
- * leaves the rest. The tick's own work is done and depends on none of this,
- * so what throws here, a bug included, becomes the reason on the receipt
- * rather than a stop.
+ * Write the line of a finished tick from the machine file. A tick that read
+ * every repository replaces the line. One that read only some replaces their
+ * part of the line and keeps every other repository's from the line before
+ * (`line-merge.ts`); it also writes the machine's part (the accounts, the
+ * line's own tick, the receipt beside it) when the timer asked it for every
+ * repository and another tick held the rest, and leaves that part as it was
+ * when a wake-up asked it for a few. One that read none of them adds itself
+ * to the line's recent ticks and leaves the rest. The tick's own work is done
+ * and depends on none of this, so what throws here, a bug included, becomes
+ * the reason on the receipt rather than a stop.
  */
 export function writeTickLine(
   receipt: TickReceipt,
   tick: {
     machine: MachineConfig | null;
+    /** The repositories the tick was asked for. */
+    asked: string[];
+    /** Those it read: the asked ones another tick did not hold. */
     repos: string[];
     records: ReadRecord[];
     inputs: Map<string, RepoLineInput>;
@@ -201,50 +211,101 @@ export function writeTickLine(
 ): void {
   const { machine, records } = tick;
   if (machine === null) return;
-  if (!readsTheMachine(machine, tick.repos)) {
+  const listed = new Set(machine.repositories.map((r) => r.path));
+  const reports = receipt.repos.filter((r) => listed.has(r.path));
+  const whole = readsTheMachine(machine, tick.repos);
+  if (!whole && reports.length === 0) {
     recordTickHealth(receipt, machine);
     return;
   }
+  const kept = keptMachine(
+    whole,
+    whole || readsTheMachine(machine, tick.asked),
+  );
+  if (!kept.ok) {
+    receipt.lineFailed = kept.failure.reason;
+    receipt.exitStatus = 1;
+    return;
+  }
+  const { before, receiptText } = kept.value;
   const written = attempt(
     "line-unwritten",
     "the dashboard's line was not written, so it keeps showing the tick before",
     () => {
-      const previous = readLine();
-      const line = buildLine({
-        runId: receipt.runId,
-        startedAt: receipt.startedAt,
-        finishedAt: receipt.finishedAt,
-        exitStatus: receipt.exitStatus,
-        apply: receipt.apply,
-        applyWithheld: receipt.applyWithheld ?? null,
-        plugin: pluginVersion(),
-        timeZone: hostTimeZone(),
-        machine,
-        reports: receipt.repos,
-        inputs: tick.inputs,
-        stored: storedFor,
-        records,
-        accounts: accountsOf(
+      const fresh = readBy(
+        buildLine({
+          runId: receipt.runId,
+          startedAt: receipt.startedAt,
+          finishedAt: receipt.finishedAt,
+          exitStatus: receipt.exitStatus,
+          apply: receipt.apply,
+          applyWithheld: receipt.applyWithheld ?? null,
+          plugin: pluginVersion(),
+          timeZone: hostTimeZone(),
           machine,
+          reports,
+          inputs: tick.inputs,
+          stored: storedFor,
           records,
-          Date.parse(receipt.finishedAt),
-          tick.codexOptIn,
-        ),
-        lastAccount: lastAccount(records),
-        previousNeeds: previous.ok ? (previous.value?.needs ?? []) : [],
-        recentTicksMs: previous.ok ? (previous.value?.recentTicksMs ?? []) : [],
-      });
-      const ticks = withTick(
-        previous.ok ? previous.value?.ticks : undefined,
-        tickHealthOf(receipt, true),
+          accounts: accountsOf(
+            machine,
+            records,
+            Date.parse(receipt.finishedAt),
+            tick.codexOptIn,
+          ),
+          lastAccount: lastAccount(records),
+          previousNeeds: before?.needs ?? [],
+          recentTicksMs: before?.recentTicksMs ?? [],
+        }),
+        receipt.runId,
+        receipt.startedAt,
       );
+      const line =
+        whole || before === null
+          ? fresh
+          : mergeLine(
+              before,
+              fresh,
+              machine.repositories,
+              receiptText === null ? "fresh" : "kept",
+            );
+      const ticks = withTick(before?.ticks, tickHealthOf(receipt, whole));
       writeLine(
         withLoad({ ...line, ticks }, receipt),
-        JSON.stringify(receipt, null, 2),
+        receiptText ?? JSON.stringify(receipt, null, 2),
       );
     },
   );
   if (written.ok) return;
   receipt.lineFailed = written.failure.reason;
   receipt.exitStatus = 1;
+}
+
+/**
+ * The line before this tick's, and, when this tick does not write the
+ * machine's part (`writes` false), the receipt kept beside that line, which
+ * the line keeps too. A tick that read only some repositories (`whole`
+ * false) needs the line before to keep the others' parts, so one that does
+ * not read fails it.
+ */
+function keptMachine(
+  whole: boolean,
+  writes: boolean,
+): Outcome<{ before: LineSnapshot | null; receiptText: string | null }> {
+  const previous = readLine();
+  if (!previous.ok)
+    return whole ? ok({ before: null, receiptText: null }) : previous;
+  const before = previous.value;
+  if (writes || before === null) return ok({ before, receiptText: null });
+  const stored = readLineReceipt();
+  if (!stored.ok) return stored;
+  if (stored.value?.runId !== before.runId)
+    return {
+      ok: false,
+      failure: {
+        code: "line-unreadable",
+        reason: "the dashboard's line changed while its receipt was read",
+      },
+    };
+  return ok({ before, receiptText: stored.value.receipt });
 }
