@@ -57,6 +57,12 @@ repository's Jig configuration only where detection is wrong:
   `approved`, or the statuses `docs.promoted_statuses` lists instead (a corpus
   whose lifecycle ends in `active` lists `[approved, active]`). A document with another status is not
   scanned, and a named one is reported as such.
+- **The index layout**: `docs.index` (`preamble`, `descriptions`,
+  `descriptions_from_readme`, `order`, `frontmatter`) adds a "start here"
+  section, a line per category, a category order and frontmatter to the
+  generated `INDEX.md`; unset, the index is the bare listing. The generator
+  and its `--check` read it themselves, so regenerate rather than edit.
+  An index with `docs.index.frontmatter` is held to the schema like any page.
 - **Stale drafts**: a `status: draft` document whose `last_updated` is more
   than `docs.stale_after_days` days old (180).
 - **The base** for the `last_updated` check and for the documents the branch

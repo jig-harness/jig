@@ -25,8 +25,15 @@ import {
   GENERATED_INDEX as GENERATED,
   generatedIndexPath,
   markdownFiles,
+  isPlainWritable,
   readDocument,
 } from "../lib/docs.ts";
+import { consumerRoot } from "../../../../shared/consumer.ts";
+import {
+  DEFAULT_INDEX_SETTINGS,
+  type IndexSettings,
+  loadIndexSettings,
+} from "../lib/settings.ts";
 import {
   stampLastUpdated,
   stickyDate,
@@ -49,7 +56,85 @@ function documents(directory: string, exclude: string[]): string[] {
 const cell = (text: string) =>
   text.replace(/\s+/g, " ").trim().replace(/\|/g, "\\|");
 
-export function generateIndex(directory: string, exclude: string[]): string {
+/** What the generated index carries beyond the listing; none of it is set by default. */
+export interface IndexOptions extends Partial<IndexSettings> {
+  /** The preamble's text, kept verbatim above the listing. */
+  preambleText?: string | null;
+  /** The index already on disk (null when there is none), for the sticky date. */
+  existing?: string | null;
+  /** The date a changed index carries. */
+  today?: string;
+}
+
+/** The categories in the order the index lists them. */
+function categoryOrder(
+  rows: string[][],
+  order: IndexSettings["order"],
+): string[] {
+  const counts = new Map<string, number>();
+  for (const row of rows)
+    counts.set(row[0] ?? "", (counts.get(row[0] ?? "") ?? 0) + 1);
+  const byName = [...counts.keys()].sort((a, b) =>
+    Buffer.compare(Buffer.from(a), Buffer.from(b)),
+  );
+  if (order === "name") return byName;
+  if (order === "count")
+    return byName.sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0));
+  const listed = order.filter((name) => counts.has(name));
+  return [...listed, ...byName.filter((name) => !listed.includes(name))];
+}
+
+/** A category's one-line description: configured, else its README's. */
+function describeCategory(
+  directory: string,
+  category: string,
+  options: IndexOptions,
+): string {
+  const configured =
+    options.descriptions && Object.hasOwn(options.descriptions, category)
+      ? options.descriptions[category]
+      : undefined;
+  if (configured !== undefined) return configured;
+  if (!options.descriptionsFromReadme || category === "(root)") return "";
+  const readme = join(directory, category, "README.md");
+  if (!existsSync(readme)) return "";
+  return frontmatterValue(
+    readDocument(readme),
+    "description",
+    `${category}/README.md`,
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * A value written so the document reader reads it back unchanged: plain when
+ * it can be, else in the quote that does not occur in it (the reader strips
+ * quotes and never decodes escapes).
+ */
+function yamlScalar(value: string): string {
+  if (isPlainWritable(value)) return value;
+  if (!/["\\]/.test(value)) return `"${value}"`;
+  return `'${value}'`;
+}
+
+/** The frontmatter block of the index, its date still today's. */
+function indexFrontmatterBlock(
+  fields: Record<string, string | string[]>,
+  today: string,
+): string {
+  const lines = Object.entries(fields).map(
+    ([key, value]) =>
+      `${key}: ${Array.isArray(value) ? `[${value.map(yamlScalar).join(", ")}]` : yamlScalar(value)}`,
+  );
+  return `---\n${[...lines, `last_updated: ${today}`].join("\n")}\n---\n\n`;
+}
+
+export function generateIndex(
+  directory: string,
+  exclude: string[],
+  options: IndexOptions = DEFAULT_INDEX_SETTINGS,
+): string {
   const rows = documents(directory, exclude)
     .map((relativePath) => {
       const category = relativePath.includes("/")
@@ -75,13 +160,22 @@ export function generateIndex(directory: string, exclude: string[]): string {
       Buffer.compare(Buffer.from(a.join("\t")), Buffer.from(b.join("\t"))),
     );
   let result = `${GENERATED}\n\n# Documentation index\n\n`;
-  for (const category of new Set(rows.map((row) => row[0]))) {
-    result += `## ${category}\n\n| Doc | Title | Description |\n|-----|-------|-------------|\n`;
+  if (options.preambleText)
+    result += `${options.preambleText.replace(/\n*$/, "")}\n\n`;
+  for (const category of categoryOrder(rows, options.order ?? "name")) {
+    const description = describeCategory(directory, category, options);
+    result += `## ${category}\n\n${description ? `${description}\n\n` : ""}| Doc | Title | Description |\n|-----|-------|-------------|\n`;
     for (const row of rows.filter((row) => row[0] === category))
       result += `| [${row[1]}](${row[1]}) | ${row[2]} | ${row[3]} |\n`;
     result += "\n";
   }
-  return result;
+  if (!options.frontmatter) return result;
+  const today = options.today ?? utcToday();
+  const draft = `${indexFrontmatterBlock(options.frontmatter, today)}${result}`;
+  return stampLastUpdated(
+    draft,
+    stickyDate(options.existing ?? null, draft, today),
+  );
 }
 
 /** The repository root: the nearest ancestor of `directory` holding `.git`, else the working directory. */
@@ -308,9 +402,27 @@ function checkMode(args: string[]): boolean {
   return args.length > 0;
 }
 
+/** The index's options: the settings, with the preamble file read. */
+function indexOptions(
+  settings: IndexSettings,
+  repo: string,
+  existing: string | null,
+): IndexOptions {
+  return {
+    ...settings,
+    preambleText:
+      settings.preamble === null
+        ? null
+        : readDocument(join(repo, settings.preamble)),
+    existing,
+  };
+}
+
 export function runIndex(
   args = process.argv.slice(2),
   env = process.env,
+  repo = consumerRoot(),
+  settings = loadIndexSettings(repo),
 ): number {
   const checking = checkMode(args);
   const { directory, output, report } = outputs(env);
@@ -325,7 +437,18 @@ export function runIndex(
       `WARN — ${orphans.count} orphaned doc(s), listed in ${report} (a warning, not a failure)`,
     );
   const files: [string, string][] = [
-    [output, generateIndex(directory, exclude)],
+    [
+      output,
+      generateIndex(
+        directory,
+        exclude,
+        indexOptions(
+          settings,
+          repo,
+          existsSync(output) ? readFileSync(output, "utf8") : null,
+        ),
+      ),
+    ],
     [report, orphans.content],
   ];
   if (checking) return check(files);
