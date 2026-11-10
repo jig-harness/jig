@@ -44,4 +44,14 @@ describe("label-fit", () => {
       },
     ]);
   });
+
+  test("matches labels in any case, as the planner does", () => {
+    expect(
+      missingLabelFindings(
+        [["Needs-Review", "pull_requests.labels_from_issue"]],
+        new Set(["needs-review"]),
+        "acme/app",
+      ),
+    ).toEqual([]);
+  });
 });

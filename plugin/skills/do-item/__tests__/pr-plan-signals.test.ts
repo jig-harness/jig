@@ -279,4 +279,14 @@ describe("pr-plan.ts open: labels and reviewers from the issue", () => {
     expectSpawnExit(r, 2);
     expect(r.stderr).toContain("is ENG-2, not ENG-1");
   });
+
+  it("refuses JSON that names no identifier when --issue is given", () => {
+    overlay(POLICY);
+    commit("a.txt");
+    const file = join(dir, "bare.json");
+    writeFileSync(file, JSON.stringify({ labels: ["kind:db-migration"] }));
+    const r = plan("--issue", "ENG-1", "--issue-json", file);
+    expectSpawnExit(r, 2);
+    expect(r.stderr).toContain("`identifier` must be the issue's key (ENG-1)");
+  });
 });

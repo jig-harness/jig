@@ -152,6 +152,20 @@ describe("the areas", () => {
     ]);
   });
 
+  test("an implementation or pr block with nothing in it is refused", () => {
+    expect(
+      problems({
+        a: area({ implementation: { skills: [] }, pr: { labels: [] } }),
+        b: area({ implementation: { notes: "" }, pr: { reviewers: [] } }),
+      }),
+    ).toEqual([
+      "a: `implementation` must give skills or notes",
+      "a: `pr` must give labels or reviewers",
+      "b: `implementation` must give skills or notes",
+      "b: `pr` must give labels or reviewers",
+    ]);
+  });
+
   test("tracker and its older spelling linear are one block: not both", () => {
     expect(problems({ a: area({ linear: { labels: ["x"] } }) })).toEqual([]);
     expect(

@@ -369,6 +369,37 @@ function draftReviewersWarning(
     );
 }
 
+/** How the pull request opens: draft or not, and the `gh pr create` arguments for its base, labels and reviewers. */
+async function planOpening(
+  opts: {
+    root: string;
+    policy: PrPolicy;
+    base: string;
+    issueLabels: string[] | null;
+  },
+  context: Awaited<ReturnType<typeof prDiffContext>>,
+  warnings: string[],
+) {
+  const { root, policy, base } = opts;
+  const openAs = resolveOpenAs(policy, reviewsDrafts());
+  const { signals, labels, reviewers } = await planSignals(
+    root,
+    policy,
+    opts.issueLabels,
+    context,
+    warnings,
+  );
+  const createArgs = ["--base", base];
+  if (openAs.value === "draft") createArgs.push("--draft");
+  createArgs.push(
+    ...labels.flatMap((label) => ["--label", label]),
+    ...reviewers.flatMap((reviewer) => ["--reviewer", reviewer]),
+  );
+  if (openAs.value === "draft")
+    draftReviewersWarning(policy, reviewers, warnings);
+  return { openAs, signals, labels, createArgs };
+}
+
 async function buildOpenPlan(opts: {
   root: string;
   policy: PrPolicy;
@@ -531,22 +562,11 @@ async function buildOpenPlan(opts: {
   // --- Opening ------------------------------------------------------------
   const context = await prDiffContext(root, baseRef, policy.labels);
   warnings.push(...context.warnings);
-  const openAs = resolveOpenAs(policy, reviewsDrafts());
-  const { signals, labels, reviewers } = await planSignals(
-    root,
-    policy,
-    opts.issueLabels,
+  const { openAs, signals, labels, createArgs } = await planOpening(
+    { root, policy, base, issueLabels: opts.issueLabels },
     context,
     warnings,
   );
-  const createArgs = ["--base", base];
-  if (openAs.value === "draft") createArgs.push("--draft");
-  createArgs.push(
-    ...labels.flatMap((label) => ["--label", label]),
-    ...reviewers.flatMap((reviewer) => ["--reviewer", reviewer]),
-  );
-  if (openAs.value === "draft")
-    draftReviewersWarning(policy, reviewers, warnings);
 
   const title = await detectTitleFormat(root, policy, `${remote}/${trunk}`);
   if (labels.length > 0)
@@ -748,15 +768,18 @@ function issueLabelsOf(
       2,
       `--issue-json ${file}: \`labels\` must be an array of strings`,
     );
-  if (
-    issue !== null &&
-    typeof data.identifier === "string" &&
-    data.identifier !== issue
-  )
-    throw new CliExit(
-      2,
-      `--issue-json ${file} is ${data.identifier}, not ${issue}`,
-    );
+  if (issue !== null) {
+    if (typeof data.identifier !== "string")
+      throw new CliExit(
+        2,
+        `--issue-json ${file}: \`identifier\` must be the issue's key (${issue})`,
+      );
+    if (data.identifier !== issue)
+      throw new CliExit(
+        2,
+        `--issue-json ${file} is ${data.identifier}, not ${issue}`,
+      );
+  }
   return labels as string[];
 }
 

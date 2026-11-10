@@ -219,6 +219,7 @@ const isTextList = (v: unknown): v is string[] =>
 const when = (ok: boolean, problem: string) => (ok ? [] : [problem]);
 
 const anything: Check = () => [];
+const hasItems = (v: unknown): boolean => Array.isArray(v) && v.length > 0;
 const text: Check = (v, f) => when(isText(v), `\`${f}\` is not text`);
 const filled: Check = (v, f) =>
   when(isFilled(v), `\`${f}\` must be non-empty text`);
@@ -429,7 +430,7 @@ function areaSpec(doc: Record<string, unknown>, fields: FieldExtensions): Spec {
             notes: { check: text },
           })(v, f),
           ...when(
-            !isRecord(v) || v.skills !== undefined || v.notes !== undefined,
+            !isRecord(v) || hasItems(v.skills) || isFilled(v.notes),
             `\`${f}\` must give skills or notes`,
           ),
         ],
@@ -441,7 +442,7 @@ function areaSpec(doc: Record<string, unknown>, fields: FieldExtensions): Spec {
             reviewers: { check: reviewers },
           })(v, f),
           ...when(
-            !isRecord(v) || v.labels !== undefined || v.reviewers !== undefined,
+            !isRecord(v) || hasItems(v.labels) || hasItems(v.reviewers),
             `\`${f}\` must give labels or reviewers`,
           ),
         ],

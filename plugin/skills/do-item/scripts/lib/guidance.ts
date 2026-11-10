@@ -17,8 +17,8 @@
  * order.
  *
  * Paths are known before the change exists only when the caller passes the
- * files it plans to touch. Without them, an entry that has paths and no
- * matching label is printed apart (`byPath`), for the orchestrator to apply
+ * files it plans to touch. Without them, an entry or an area that has paths
+ * and no matching label is printed apart (`byPath`), for the orchestrator to apply
  * when the change plausibly touches those paths, as it does a gate.
  */
 import { formatField } from "../../../../shared/config-layers.ts";
@@ -206,6 +206,66 @@ export function matchedAreas(
   return out;
 }
 
+/** What an area brings: its implementation skills and notes, and its own notes. */
+function areaGuidance(
+  key: string,
+  catalog: ChangeAreaCatalog | null,
+): { skills: string[]; notes: string[] } {
+  const fields = catalog?.get(key)?.fields ?? {};
+  const impl = areaImplementation(key, fields);
+  const own =
+    typeof fields.notes === "string" && fields.notes.trim() !== ""
+      ? [fields.notes]
+      : [];
+  return {
+    skills: impl?.skills ?? [],
+    notes: [...(impl?.notes == null ? [] : [impl.notes]), ...own],
+  };
+}
+
+/** Add `entry` to `sources` when it matches, or to `byPath` when only its paths could and none are known. */
+function matchEntry(
+  entry: GuidanceEntry,
+  from: string,
+  lower: ReadonlySet<string>,
+  paths: readonly string[] | null,
+  sources: GuidanceSource[],
+  byPath: Guidance["byPath"],
+): void {
+  const notes = entry.notes === null ? [] : [entry.notes];
+  const label = entry.labels.find((l) => lower.has(l));
+  if (label !== undefined) {
+    sources.push({ from, by: `label ${label}`, skills: entry.skills, notes });
+    return;
+  }
+  if (entry.paths.length === 0) return;
+  if (paths === null) {
+    byPath.push({ from, paths: entry.paths, skills: entry.skills, notes });
+    return;
+  }
+  const path = paths.find((p) => entry.paths.some((g) => matchesGlob(p, g)));
+  if (path !== undefined)
+    sources.push({ from, by: `path ${path}`, skills: entry.skills, notes });
+}
+
+const hasGuidance = (g: { skills: string[]; notes: string[] }): boolean =>
+  g.skills.length > 0 || g.notes.length > 0;
+
+/** The areas no label reached that bring guidance, for when the planned paths are not known. */
+function unreachedAreas(
+  catalog: ChangeAreaCatalog | null,
+  areas: readonly MatchedArea[],
+): Guidance["byPath"] {
+  const reached = new Set(areas.map((a) => a.key));
+  const out: Guidance["byPath"] = [];
+  for (const [key, area] of catalog ?? []) {
+    const g = areaGuidance(key, catalog);
+    if (!reached.has(key) && area.globs.length > 0 && hasGuidance(g))
+      out.push({ from: `area ${key}`, paths: area.globs, ...g });
+  }
+  return out;
+}
+
 /** The guidance for an item with `labels`, planned `paths` (`null`: not known yet) and the areas it reaches. */
 export function resolveGuidance(
   entries: readonly GuidanceEntry[],
@@ -217,38 +277,14 @@ export function resolveGuidance(
   const lower = new Set(labels.map((l) => l.toLowerCase()));
   const sources: GuidanceSource[] = [];
   const byPath: Guidance["byPath"] = [];
-  entries.forEach((entry, i) => {
-    const from = `do_item.guidance[${i}]`;
-    const notes = entry.notes === null ? [] : [entry.notes];
-    const label = entry.labels.find((l) => lower.has(l));
-    if (label !== undefined) {
-      sources.push({ from, by: `label ${label}`, skills: entry.skills, notes });
-      return;
-    }
-    if (entry.paths.length === 0) return;
-    if (paths === null) {
-      byPath.push({ from, paths: entry.paths, skills: entry.skills, notes });
-      return;
-    }
-    const path = paths.find((p) => entry.paths.some((g) => matchesGlob(p, g)));
-    if (path !== undefined)
-      sources.push({ from, by: `path ${path}`, skills: entry.skills, notes });
-  });
+  entries.forEach((entry, i) =>
+    matchEntry(entry, `do_item.guidance[${i}]`, lower, paths, sources, byPath),
+  );
   for (const { key, by } of areas) {
-    const fields = catalog?.get(key)?.fields ?? {};
-    const impl = areaImplementation(key, fields);
-    const own =
-      typeof fields.notes === "string" && fields.notes.trim() !== ""
-        ? [fields.notes]
-        : [];
-    const notes = [
-      ...(impl?.notes === null || impl === null ? [] : [impl.notes]),
-      ...own,
-    ];
-    const skills = impl?.skills ?? [];
-    if (skills.length === 0 && notes.length === 0) continue;
-    sources.push({ from: `area ${key}`, by, skills, notes });
+    const g = areaGuidance(key, catalog);
+    if (hasGuidance(g)) sources.push({ from: `area ${key}`, by, ...g });
   }
+  if (paths === null) byPath.push(...unreachedAreas(catalog, areas));
   return {
     skills: [...new Set(sources.flatMap((s) => s.skills))],
     notes: sources.flatMap((s) =>

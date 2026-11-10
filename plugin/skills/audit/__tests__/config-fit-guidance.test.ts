@@ -71,13 +71,30 @@ describe("guidanceFindings", () => {
     ]);
   });
 
-  test("leaves a malformed list to do-item's own refusal", () => {
-    expect(
-      guidanceFindings(
-        { do_item: { guidance: [{ labels: ["x"] }] } },
-        root,
-        env,
-      ),
-    ).toEqual([]);
+  test("reports a malformed list, and checks every area after a malformed one", () => {
+    writeFileSync(
+      join(root, "bad-areas.yaml"),
+      `areas:
+  first:
+    paths: ['a/**']
+    implementation: { skills: [] }
+  second:
+    paths: ['b/**']
+    implementation: { skills: [nowhere-skill] }
+`,
+    );
+    const ids = guidanceFindings(
+      {
+        do_item: { guidance: [{ labels: ["x"] }] },
+        drive: { change_areas_catalog: "bad-areas.yaml" },
+      },
+      root,
+      env,
+    ).map((f) => f.id);
+    expect(ids).toEqual([
+      "derivation:do_item.guidance:invalid",
+      "derivation:area.first.implementation:invalid",
+      "derivation:do_item.guidance.skills:nowhere-skill",
+    ]);
   });
 });

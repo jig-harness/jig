@@ -24,14 +24,15 @@ export function policyLabels(config: Config): Array<[string, string]> {
   ];
 }
 
-/** The policy's labels missing from `names`, each an error. */
+/** The policy's labels missing from `names` (labels match in any case, as the planner matches them), each an error. */
 export function missingLabelFindings(
   labels: ReadonlyArray<[string, string]>,
   names: ReadonlySet<string>,
   slug: string,
 ): Finding[] {
+  const have = new Set([...names].map((n) => n.toLowerCase()));
   return labels
-    .filter(([label]) => !names.has(label))
+    .filter(([label]) => !have.has(label.toLowerCase()))
     .map(([label, field]) => ({
       id: `derivation:${field}:${label}`,
       severity: "error",

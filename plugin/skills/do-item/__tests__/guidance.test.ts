@@ -139,6 +139,20 @@ describe("implementation guidance", () => {
     ]);
   });
 
+  it("lists an unreached area's guidance apart while the paths are not known", () => {
+    const g = guidance(["area:api"], null, routing([]), CATALOG);
+    expect(g.skills).toEqual(["api-versioning"]);
+    expect(g.by_path).toEqual([
+      {
+        from: "area migrations",
+        paths: ["db/**"],
+        skills: ["migration-safety"],
+        notes: [],
+      },
+    ]);
+    expect(guidance([], ["x"], routing([]), CATALOG).by_path).toEqual([]);
+  });
+
   it("adds a matched area's implementation and its own notes, after the entries", () => {
     const g = guidance(
       ["area:api", "kind:db-migration"],

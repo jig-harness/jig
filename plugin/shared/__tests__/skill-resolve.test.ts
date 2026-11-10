@@ -56,6 +56,31 @@ describe("resolveSkill", () => {
     expect(resolveSkill("jig:migration-safety", search)).toBeNull();
   });
 
+  it("answers only from an enabled install when Claude Code records installs", () => {
+    const base = join(dir, "claude-recorded");
+    const rec = { ...search, claudeDir: base };
+    const old = join(base, "plugins", "cache", "m", "other", "1.0.0");
+    const cur = join(base, "plugins", "cache", "m", "other", "2.0.0");
+    for (const [d, s] of [
+      [old, "lint"],
+      [cur, "fmt"],
+    ] as const) {
+      mkdirSync(join(d, "skills", s), { recursive: true });
+      writeFileSync(join(d, "skills", s, "SKILL.md"), "---\nname: x\n---\n");
+    }
+    writeFileSync(
+      join(base, "plugins", "installed_plugins.json"),
+      JSON.stringify({ plugins: { "other@m": [{ installPath: cur }] } }),
+    );
+    expect(resolveSkill("other:lint", rec)).toBeNull();
+    expect(resolveSkill("other:fmt", rec)).not.toBeNull();
+    writeFileSync(
+      join(base, "settings.json"),
+      JSON.stringify({ enabledPlugins: { "other@m": false } }),
+    );
+    expect(resolveSkill("other:fmt", rec)).toBeNull();
+  });
+
   it("finds another plugin's skill in the plugin cache", () => {
     expect(resolveSkill("other:lint", search)).toBeNull();
     const file = skillAt(
