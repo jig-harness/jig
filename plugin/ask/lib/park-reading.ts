@@ -139,16 +139,33 @@ export function parkAnswerEntries(
       disputed: false,
       partial: true,
     })),
-  ].flatMap((v) =>
-    v.answers.map((a) => ({
-      at: a.at,
-      kind: "answer" as const,
-      from: a.author,
-      to: address,
-      text: `${v.disputed ? "disputed " : v.partial ? "partial " : ""}${v.key}: ${answerText(a)}`,
-      record: { kind: "pull-request-comment", url: a.url },
-    })),
-  );
+  ]
+    .reduce<
+      {
+        key: string;
+        answers: PendingAnswer[];
+        disputed: boolean;
+        partial: boolean;
+      }[]
+    >((entries, value) => {
+      const existing = entries.find((entry) => entry.key === value.key);
+      if (existing === undefined) entries.push(value);
+      else {
+        existing.disputed ||= value.disputed;
+        existing.partial ||= value.partial;
+      }
+      return entries;
+    }, [])
+    .flatMap((v) =>
+      v.answers.map((a) => ({
+        at: a.at,
+        kind: "answer" as const,
+        from: a.author,
+        to: address,
+        text: `${v.disputed ? "disputed " : v.partial ? "partial " : ""}${v.key}: ${answerText(a)}`,
+        record: { kind: "pull-request-comment", url: a.url },
+      })),
+    );
   return [
     ...answers,
     ...found.notes.map((n) => ({

@@ -34,6 +34,7 @@ import { isRecord } from "../../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
 import { ghCall, ghRepoEnv } from "./proc.ts";
 import { ANSWER_TEXT_MAX } from "../../../../shared/decisions/answer-limits.ts";
+import { answerTextFault } from "../../../../shared/decisions/answer-text.ts";
 
 /** The record's kind in the records registry. */
 export const ANSWER_KIND = "drive-answer";
@@ -42,32 +43,7 @@ const ANSWER_MARKER = "jig-send-answer";
 const ANSWER_OPEN = `<!-- ${ANSWER_MARKER}`;
 const ANSWER_CLOSE = "\n-->";
 /** The longest answer, in characters: a sentence or two, which every pass's notice carries whole. */
-export { ANSWER_TEXT_MAX };
-
-/** A control character, a line or paragraph separator, or a mark that reorders text. */
-function isControl(code: number): boolean {
-  return (
-    code < 0x20 ||
-    (code >= 0x7f && code <= 0x9f) ||
-    code === 0x2028 ||
-    code === 0x2029 ||
-    (code >= 0x202a && code <= 0x202e) ||
-    (code >= 0x2066 && code <= 0x2069)
-  );
-}
-
-/** Why `text` cannot be sent as an answer, or `null` when it can. */
-export function answerTextFault(text: string): string | null {
-  if (text.trim() === "") return "the answer is empty";
-  if ([...text].some((c) => isControl(c.codePointAt(0) ?? 0)))
-    return "the answer holds a line break or another control character; send one line";
-  if (text.includes("<!--"))
-    return "the answer holds a hidden marker (<!--), which no person's answer carries";
-  const length = [...text].length;
-  return length > ANSWER_TEXT_MAX
-    ? `the answer is ${length} characters, past the ${ANSWER_TEXT_MAX} an answer may have`
-    : null;
-}
+export { ANSWER_TEXT_MAX, answerTextFault };
 
 /** Why `key` cannot be named in an answer line, or `null` when it can. */
 export function answerKeyFault(key: string): string | null {

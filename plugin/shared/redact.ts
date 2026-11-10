@@ -1,5 +1,5 @@
 /** An email-shaped string anywhere in a text. */
-const EMAIL_CANDIDATE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g;
+const EMAIL_CANDIDATE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
 
 function email(candidate: string): boolean {
   const [local, domain, extra] = candidate.split("@");

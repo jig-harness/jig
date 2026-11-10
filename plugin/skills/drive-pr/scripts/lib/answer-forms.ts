@@ -92,7 +92,7 @@ function addressedLine(raw: string): Line | null {
   const m = /^(answer|note) (.+)$/i.exec(raw.trim());
   if (m === null) return null;
   const rest = m[2] ?? "";
-  const delimiter = rest.lastIndexOf(":");
+  const delimiter = rest.indexOf(":");
   const key = rest.slice(0, delimiter);
   const text = rest.slice(delimiter + 1).trimStart();
   return delimiter < 1 || /\s/.test(key) || !/^\S/.test(text)
@@ -159,7 +159,8 @@ function bareThreadText(
       (note?.kind !== "note" || note.key !== key.toLowerCase())) ||
     indented(first) ||
     addressedLine(first) !== null ||
-    answerTextFault(first.trim()) !== null
+    answerTextFault(first.trim()) !== null ||
+    (note !== null && answerTextFault(note.text) !== null)
   )
     return null;
   return { text: first.trim(), ...(note === null ? {} : { note: note.text }) };

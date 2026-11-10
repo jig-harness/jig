@@ -179,6 +179,9 @@ describe("whole-comment answer forms", () => {
     expect(parse(body, "thread")?.choice).toBeUndefined();
     expect(parse(body, "conversation")?.choice?.option).toBe("Keep");
     expect(
+      parse("answer PRRT_a: choose Keep: safely", "conversation")?.choice,
+    ).toBeUndefined();
+    expect(
       parse("answer PRRT_a: approve\nnote PRRT_a: only\u202eafter")?.choice,
     ).toBeUndefined();
   });

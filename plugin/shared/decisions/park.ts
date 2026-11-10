@@ -4,6 +4,7 @@ import { Checker, type Json, type SourcedClaim } from "./source.ts";
 import { normalizeAnswerText } from "./answer-normalize.ts";
 import { redact } from "../redact.ts";
 import { ANSWER_TEXT_MAX } from "./answer-limits.ts";
+import { answerTextFault } from "./answer-text.ts";
 
 export interface ParkedOption extends Option {
   reversible?: boolean;
@@ -118,6 +119,8 @@ function checkOption(
   if (c.text(option.name, `${p}.name`)) {
     names.push(option.name);
     if (/[\r\n]/.test(option.name)) c.fail(`${p}.name`, "must be one line");
+    if (normalizeAnswerText(option.name) === "")
+      c.fail(`${p}.name`, "must remain nonempty after answer normalization");
     if ([...option.name].length + "choose ".length > ANSWER_TEXT_MAX)
       c.fail(
         `${p}.name`,
@@ -130,6 +133,8 @@ function checkOption(
         `${p}.name`,
         "must not contain the reserved <redacted> placeholder",
       );
+    if (answerTextFault(`choose ${option.name}`) !== null)
+      c.fail(`${p}.name`, "must fit the structured answer grammar");
   }
   c.text(option.summary, `${p}.summary`);
   c.texts(option.pay, `${p}.pay`, 1);

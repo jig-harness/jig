@@ -110,7 +110,13 @@ test("option names cannot change when the ledger redacts them", () => {
 });
 
 test("option names fit structured answers and never reserve the redaction placeholder", () => {
-  for (const name of ["x".repeat(495), "Keep <redacted>"]) {
+  for (const name of [
+    "x".repeat(495),
+    "Keep <redacted>",
+    "**",
+    "Keep\u202e",
+    "Keep <!-- comment -->",
+  ]) {
     const options = decision.call.options.map((option, index) => ({
       ...option,
       name: index === 0 ? name : option.name,
