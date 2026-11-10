@@ -11,6 +11,9 @@ function usesRawBunTest(command: string, shell?: string): boolean {
   let word = "";
   let quote: "'" | '"' | null = null;
   let comment = false;
+  // The escape character belongs to the shell: PowerShell escapes with a
+  // backtick and reads a backslash literally, everything else the reverse.
+  const escapeChar = shell === "pwsh" || shell === "powershell" ? "`" : "\\";
   const finishWord = () => {
     if (word) words.push(word);
     word = "";
@@ -33,23 +36,23 @@ function usesRawBunTest(command: string, shell?: string): boolean {
     }
     if (quote) {
       if (character === quote) quote = null;
-      else if (character === "\\" && quote === '"' && next !== undefined) {
+      else if (
+        character === escapeChar &&
+        quote === '"' &&
+        next !== undefined
+      ) {
         word += next;
         index++;
       } else word += character;
       continue;
     }
-    if (character === "\\") {
+    if (character === escapeChar) {
       if (next === "\n") {
         index++;
         continue;
       }
       const escaped = command[++index];
       if (escaped) word += escaped;
-      continue;
-    }
-    if (character === "`" && shell === "pwsh" && next === "\n") {
-      index++;
       continue;
     }
     if (character === "'" || character === '"') {
@@ -156,7 +159,15 @@ test("the suite-runner contract rejects raw Bun spellings", () => {
     'echo "quoted \\"; bun test ./website/"; echo ok',
   ])
     expect(usesRawBunTest(command)).toBeFalse();
-  expect(
-    usesRawBunTest("bun `\ntest scripts/gates.test.ts", "pwsh"),
-  ).toBeTrue();
+  for (const shell of ["pwsh", "powershell"]) {
+    expect(
+      usesRawBunTest("bun `\ntest scripts/gates.test.ts", shell),
+    ).toBeTrue();
+    expect(
+      usesRawBunTest('Write-Output "C:\\"\nbun test ./website/', shell),
+    ).toBeTrue();
+    expect(
+      usesRawBunTest('Write-Output "a`"; bun test ./website/"', shell),
+    ).toBeFalse();
+  }
 });
