@@ -133,8 +133,8 @@ request and with no path filter. Run them from a pinned Jig checkout, or
 vendor the folder with the Jig files it imports, keeping their paths
 relative to it: `lib/cli.ts` and `lib/files.ts` for the checks, and
 `lib/test-helpers/expect-spawn-exit.ts`, `lib/test-helpers/windows-skip.ts` and
-`plugin/shared/guarded-git-spawn.ts` as well to run their self-tests. All five
-use only Bun's built-ins.
+`plugin/shared/guarded-git-spawn.ts` as well to run their self-tests. These
+files use only Bun's built-ins.
 
 The chain check models Codex's `AGENTS.md` chain. A repository whose
 instructions live only in `CLAUDE.md` files measures them the way Codex
