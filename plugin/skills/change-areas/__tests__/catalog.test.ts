@@ -123,6 +123,35 @@ describe("the areas", () => {
     ]);
   });
 
+  test("implementation gives skills or notes; pr gives labels or reviewers", () => {
+    expect(
+      problems({
+        a: area({
+          implementation: { skills: ["migration-safety"], notes: "Roll back." },
+          pr: {
+            labels: ["needs-dba-review"],
+            reviewers: ["@acme/dba", "alice"],
+          },
+        }),
+      }),
+    ).toEqual([]);
+    expect(
+      problems({
+        a: area({
+          implementation: { skill: "x" },
+          pr: { reviewers: ["not a login"] },
+        }),
+        b: area({ implementation: {}, pr: {} }),
+      }),
+    ).toEqual([
+      "a: unknown field `implementation.skill`",
+      "a: `implementation` must give skills or notes",
+      "a: `pr.reviewers` must be a list of logins or org/team names",
+      "b: `implementation` must give skills or notes",
+      "b: `pr` must give labels or reviewers",
+    ]);
+  });
+
   test("tracker and its older spelling linear are one block: not both", () => {
     expect(problems({ a: area({ linear: { labels: ["x"] } }) })).toEqual([]);
     expect(

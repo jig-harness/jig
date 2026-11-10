@@ -2467,6 +2467,11 @@ make, use the entry's term instead.
   past it as a line, so smooth shapes such as a cylinder's sides get an
   outline that edge lines alone would miss
   ([design/website.md](design/website.md)).
+- **Implementation guidance** — the skills and notes a kind of change brings
+  to whichever agent implements it, chosen by the issue's labels, the paths
+  the change touches and the change areas it reaches, and handed to the
+  agent with the work. It adds to the review gates and never replaces one
+  ([do-item](plugin/skills/do-item/SKILL.md)).
 - **Intent chain** — the short statement of why a piece of work exists: the
   epic's intent, the issue's scope and its acceptance criteria. `do-item`
   writes it to a snapshot file and *Refocus* puts it back in front of an agent

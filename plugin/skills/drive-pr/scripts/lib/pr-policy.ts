@@ -25,6 +25,8 @@ import {
 import { readOptionalOverlay } from "./overlay.ts";
 import { ghCall, git } from "./proc.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { JigError } from "../../../../shared/errors.ts";
+import { REVIEWER, reviewerArg } from "../../../../shared/forge-logins.ts";
 
 export const STACKING_MODES = ["none", "native", "branch"] as const;
 export type Stacking = (typeof STACKING_MODES)[number];
@@ -59,6 +61,10 @@ export interface PrPolicy {
   /** Changed-line budget per pull request; `null` = no budget. */
   sizeBudget: number | null;
   labels: string[];
+  /** Issue label (lowercased) → the label the pull request carries for it. */
+  labelsFromIssue: ReadonlyMap<string, string>;
+  /** Issue label (lowercased) → the reviewers requested for it, without `@`. */
+  reviewersFromIssue: ReadonlyMap<string, string[]>;
   /** `null` = not declared; `detectTitleFormat` derives it. */
   titleFormat: TitleFormat | null;
 }
@@ -73,6 +79,8 @@ export const KNOWN_KEYS = [
   "issue_link",
   "size_budget",
   "labels",
+  "labels_from_issue",
+  "reviewers_from_issue",
   "title_format",
 ] as const;
 
@@ -129,6 +137,61 @@ export function validateBranchPattern(pattern: string): void {
     );
 }
 
+/**
+ * `pull_requests.labels_from_issue` and `reviewers_from_issue`, keyed by the
+ * issue label in lowercase: an issue's labels match them in any case.
+ */
+function parseIssueMaps(section: Record<string, unknown>): {
+  labelsFromIssue: Map<string, string>;
+  reviewersFromIssue: Map<string, string[]>;
+} {
+  return {
+    labelsFromIssue: parseLabelMap(section.labels_from_issue ?? {}),
+    reviewersFromIssue: parseReviewerMap(section.reviewers_from_issue ?? {}),
+  };
+}
+
+function parseLabelMap(raw: unknown): Map<string, string> {
+  if (!isRecord(raw))
+    throw new JigError(
+      "pr-policy-invalid",
+      "pull_requests.labels_from_issue must map an issue label to a pull-request label",
+    );
+  const map = new Map<string, string>();
+  for (const [from, to] of Object.entries(raw)) {
+    if (from.trim() === "" || typeof to !== "string" || to.trim() === "")
+      throw new JigError(
+        "pr-policy-invalid",
+        `pull_requests.labels_from_issue.${from} must be a nonempty label name`,
+      );
+    map.set(from.toLowerCase(), to);
+  }
+  return map;
+}
+
+const isReviewerList = (list: unknown): list is string[] =>
+  Array.isArray(list) &&
+  list.length > 0 &&
+  list.every((r) => typeof r === "string" && REVIEWER.test(r));
+
+function parseReviewerMap(raw: unknown): Map<string, string[]> {
+  if (!isRecord(raw))
+    throw new JigError(
+      "pr-policy-invalid",
+      "pull_requests.reviewers_from_issue must map an issue label to a list of reviewers",
+    );
+  const map = new Map<string, string[]>();
+  for (const [from, list] of Object.entries(raw)) {
+    if (from.trim() === "" || !isReviewerList(list))
+      throw new JigError(
+        "pr-policy-invalid",
+        `pull_requests.reviewers_from_issue.${from} must be a nonempty list of logins or org/team names, with or without @ (got ${JSON.stringify(list)})`,
+      );
+    map.set(from.toLowerCase(), list.map(reviewerArg));
+  }
+  return map;
+}
+
 /** Validate the `pull_requests` section of a parsed overlay. */
 export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
   const raw = overlay.pull_requests;
@@ -155,6 +218,8 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
     throw new Error(
       "pull_requests.labels must be a list of distinct nonempty label names",
     );
+
+  const { labelsFromIssue, reviewersFromIssue } = parseIssueMaps(section);
 
   const stacking = oneOf(section, "stacking", STACKING_MODES) ?? "none";
   const maxStackDepth = positiveInt(section, "max_stack_depth");
@@ -186,6 +251,8 @@ export function parsePrPolicy(overlay: Record<string, unknown>): PrPolicy {
     issueLink: oneOf(section, "issue_link", ISSUE_LINKS) ?? "closes",
     sizeBudget: positiveInt(section, "size_budget"),
     labels: labels as string[],
+    labelsFromIssue,
+    reviewersFromIssue,
     titleFormat: oneOf(section, "title_format", TITLE_FORMATS),
   };
 }
