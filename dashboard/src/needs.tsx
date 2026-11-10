@@ -11,7 +11,7 @@ import { useId, useState } from "react";
 import { needCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
 import { cardAttrs } from "./keys.ts";
-import { DecisionText } from "./decision-text.tsx";
+import { DecisionText, InlineDecisionText } from "./decision-text.tsx";
 import { Evidence, Fold, PanelHelp, StageHint } from "./fold.tsx";
 import { Mark } from "./marks.tsx";
 import { MoreToggle, SHOWN_CLOSED, useShowAll } from "./more.tsx";
@@ -153,7 +153,9 @@ function NeedAsk({ need }: { need: NeedView }) {
         </p>
       )}
       {need.recommendation === null ? null : (
-        <p className="sm mut">{need.recommendation}</p>
+        <p className="sm mut">
+          <InlineDecisionText source={need.recommendation} />
+        </p>
       )}
       {need.people.length === 0 ? null : (
         <p className="sm waitsOn">
