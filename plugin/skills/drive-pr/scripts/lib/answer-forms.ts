@@ -173,6 +173,45 @@ function answerLines(item: ParkedItem, body: string): string[] {
     });
 }
 
+/** Whether a line opens with this item's own answer or note key. */
+function hasKnownKey(raw: string, knownKey: string): boolean {
+  const text = raw.trim().toLowerCase();
+  return (
+    text.startsWith(`answer ${knownKey}:`.toLowerCase()) ||
+    text.startsWith(`note ${knownKey}:`.toLowerCase())
+  );
+}
+
+/** Record another item's companion line once; false when it is malformed or repeated. */
+function recordCompanion(
+  raw: string,
+  answers: Set<string>,
+  notes: Set<string>,
+): boolean {
+  const companion = companionLine(raw);
+  if (companion === null || answerTextFault(companion.text) !== null)
+    return false;
+  const seen = companion.kind === "answer" ? answers : notes;
+  if (seen.has(companion.key)) return false;
+  seen.add(companion.key);
+  return true;
+}
+
+/** Record this item's answer or note once; false when it is malformed or repeated. */
+function recordAddressed(
+  raw: string,
+  knownKey: string,
+  answers: Map<string, string>,
+  notes: Map<string, string>,
+): boolean {
+  const line = addressedLine(raw, knownKey);
+  if (line === null || answerTextFault(line.text) !== null) return false;
+  const map = line.kind === "answer" ? answers : notes;
+  if (map.has(line.key)) return false;
+  map.set(line.key, line.text);
+  return true;
+}
+
 /** Read keyed lines once, rejecting duplicates, prose and orphaned notes. */
 function addressedAnswers(
   lines: string[],
@@ -187,31 +226,14 @@ function addressedAnswers(
   const companionAnswers = new Set<string>();
   const companionNotes = new Set<string>();
   for (const raw of lines) {
-    const isKnownKey =
-      raw
-        .trim()
-        .toLowerCase()
-        .startsWith(`answer ${knownKey}:`.toLowerCase()) ||
-      raw.trim().toLowerCase().startsWith(`note ${knownKey}:`.toLowerCase());
-    if (
-      !isKnownKey &&
+    const otherKey =
       allowOtherKeys &&
-      /^(answer|note) \S+:/i.test(raw.trim())
-    ) {
-      const companion = companionLine(raw);
-      if (companion === null || answerTextFault(companion.text) !== null)
-        return null;
-      const companions =
-        companion.kind === "answer" ? companionAnswers : companionNotes;
-      if (companions.has(companion.key)) return null;
-      companions.add(companion.key);
-      continue;
-    }
-    const line = addressedLine(raw, knownKey);
-    if (line === null || answerTextFault(line.text) !== null) return null;
-    const map = line.kind === "answer" ? answers : notes;
-    if (map.has(line.key)) return null;
-    map.set(line.key, line.text);
+      !hasKnownKey(raw, knownKey) &&
+      /^(answer|note) \S+:/i.test(raw.trim());
+    const ok = otherKey
+      ? recordCompanion(raw, companionAnswers, companionNotes)
+      : recordAddressed(raw, knownKey, answers, notes);
+    if (!ok) return null;
   }
   if ([...notes.keys()].some((k) => !answers.has(k))) return null;
   if ([...companionNotes].some((key) => !companionAnswers.has(key)))

@@ -10,13 +10,16 @@ function topLevelDomain(label: string): boolean {
   return /^[A-Za-z]{2,}$/.test(label);
 }
 
-/** Return the end of an email-shaped address beginning at an at-sign. */
-function emailEnd(text: string, at: number): number | null {
-  let localStart = at;
-  while (localStart > 0 && localPartCharacter(text[localStart - 1] ?? ""))
-    localStart -= 1;
-  if (localStart === at) return null;
+/** Whether an at-sign has local-part characters before it. */
+function hasLocalPart(text: string, at: number): boolean {
+  return at > 0 && localPartCharacter(text[at - 1] ?? "");
+}
 
+/** Read the dot-separated domain labels after an at-sign and where they end. */
+function domainAfter(
+  text: string,
+  at: number,
+): { labels: string[]; end: number } {
   let end = at + 1;
   const labels: string[] = [];
   while (end < text.length) {
@@ -27,7 +30,13 @@ function emailEnd(text: string, at: number): number | null {
     if (text[end] !== "." || !domainCharacter(text[end + 1] ?? "")) break;
     end += 1;
   }
+  return { labels, end };
+}
 
+/** Return the end of an email-shaped address beginning at an at-sign. */
+function emailEnd(text: string, at: number): number | null {
+  if (!hasLocalPart(text, at)) return null;
+  const { labels, end } = domainAfter(text, at);
   return labels.length > 1 && topLevelDomain(labels.at(-1) ?? "") ? end : null;
 }
 

@@ -102,6 +102,23 @@ function checkCall(c: Checker, call: unknown): void {
   }
 }
 
+function checkOptionName(c: Checker, p: string, name: string): void {
+  if (/[\r\n]/.test(name)) c.fail(`${p}.name`, "must be one line");
+  if (normalizeAnswerText(name) === "")
+    c.fail(`${p}.name`, "must remain nonempty after answer normalization");
+  if ([...name].length + "choose ".length > ANSWER_TEXT_MAX)
+    c.fail(
+      `${p}.name`,
+      `is too long to select: choose plus its name must fit the ${ANSWER_TEXT_MAX}-character answer limit`,
+    );
+  if (redact(name) !== name)
+    c.fail(`${p}.name`, "must not contain a value the ledger redacts");
+  if (name.toLowerCase().includes("<redacted>"))
+    c.fail(`${p}.name`, "must not contain the reserved <redacted> placeholder");
+  if (answerTextFault(`choose ${name}`) !== null)
+    c.fail(`${p}.name`, "must fit the structured answer grammar");
+}
+
 function checkOption(
   c: Checker,
   option: unknown,
@@ -120,23 +137,7 @@ function checkOption(
     return;
   if (c.text(option.name, `${p}.name`)) {
     names.push(option.name);
-    if (/[\r\n]/.test(option.name)) c.fail(`${p}.name`, "must be one line");
-    if (normalizeAnswerText(option.name) === "")
-      c.fail(`${p}.name`, "must remain nonempty after answer normalization");
-    if ([...option.name].length + "choose ".length > ANSWER_TEXT_MAX)
-      c.fail(
-        `${p}.name`,
-        `is too long to select: choose plus its name must fit the ${ANSWER_TEXT_MAX}-character answer limit`,
-      );
-    if (redact(option.name) !== option.name)
-      c.fail(`${p}.name`, "must not contain a value the ledger redacts");
-    if (option.name.toLowerCase().includes("<redacted>"))
-      c.fail(
-        `${p}.name`,
-        "must not contain the reserved <redacted> placeholder",
-      );
-    if (answerTextFault(`choose ${option.name}`) !== null)
-      c.fail(`${p}.name`, "must fit the structured answer grammar");
+    checkOptionName(c, p, option.name);
   }
   c.text(option.summary, `${p}.summary`);
   c.texts(option.pay, `${p}.pay`, 1);
