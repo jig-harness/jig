@@ -276,11 +276,25 @@ issue on merge, merged by a human.
 | `pull_requests.issue_link` | `closes`, `refs`, `none` | `closes` | The line linking the pull request to its issue: `Closes ENG-12` (merging closes the issue), `Refs ENG-12` (linked, left open), or none |
 | `pull_requests.size_budget` | whole number ≥ 1 | no budget | Most changed lines (added plus deleted, against the pull request's base) one pull request may carry; the audit record `.config/jig-audit.yaml`, which every audit rewrites whole, is not counted, and `pr-plan.ts` names it beside the size. Over it, `pr-plan.ts` refuses: split the change (into a stack when stacking is allowed), or state why it cannot be split with `--accept-oversize <reason>` and put the reason in the body |
 | `pull_requests.labels` | list of label names | none | Fixed labels added when the pull request opens, such as `agent-authored`. With `drive.change_areas_catalog`, `pr-plan.ts` also adds `tracker.labels` and `tracker.flags` from the areas the diff directly touches (including generated sources), deduplicated with this list; implied areas add none. Each label must already exist in the repository |
+| `pull_requests.labels_from_issue` | map from an issue label to a label name | none | Labels the pull request carries for the issue's own labels, so branch protection, CODEOWNERS or a merge rule can enforce what the issue's kind of change needs, such as `{ "kind:db-migration": needs-dba-review }`. `pr-plan.ts open --issue-json <file>` reads the issue's labels from the issue JSON do-item writes when it picks the item up, matches them ignoring case and adds the mapped labels; a touched change area's `pr.labels` add theirs. Each label must already exist in the repository: `pr-plan.ts` stops naming a missing one, and the audit reports it |
+| `pull_requests.reviewers_from_issue` | map from an issue label to a list of reviewers | none | Reviewers requested for the issue's own labels (`gh pr create --reviewer`), matched as `labels_from_issue` is, beside a touched change area's `pr.reviewers`. A reviewer is a login or `org/team`, with or without `@`. See [reviewers on a draft](#reviewers-on-a-draft) |
 | `pull_requests.title_format` | `conventional`, `free` | Derived (see [above](#what-is-derived-not-declared)) | Whether titles follow Conventional Commits. With squash merges the title becomes the trunk commit, so it matters |
 
 Before opening, `pr-plan.ts` warns when a merge commit brings in commits from
 a parent outside the planned base, naming those commits. Merges of the base
 produce no warning. A failed history or configured catalog read stops planning.
+
+### Reviewers on a draft
+
+GitHub notifies the reviewers requested on a draft pull request only when
+it is marked Ready. Under the default policy a pull request opens as a draft
+and `drive-pr` marks it Ready after the round `pull_requests.mark_ready`
+names, so the reviewers that `reviewers_from_issue` or an area's
+`pr.reviewers` request are notified then; with `mark_ready: never` they are
+notified when a person marks it Ready, and with `open_as: ready` at once.
+`pr-plan.ts` says so in its warnings when it plans reviewers for a draft. A
+label is on the pull request from the start, so a merge rule that reads it
+holds while the pull request is still a draft.
 
 ### Stacking
 
@@ -544,6 +558,7 @@ same), rather than running without the repository's routing and gates.
 | `do_item.agents.title_keywords` | map from keyword to agent | none | do-item | Last-resort routing on a case-insensitive title match |
 | `do_item.scouts` | map from agent to a list of scouts | none | do-item | Scouts that run before each agent. The key is the **agent**, not a label |
 | `do_item.gates` | list of `{labels, paths, skill}` | none | do-item | Review skills that must approve a change before it is pushed, when the issue carries one of the `labels` or the change touches one of the `paths` |
+| `do_item.guidance` | list of `{labels, paths, skills, notes}` | none | do-item | Implementation guidance: skills and notes the implementing agent is given when the issue carries one of the `labels` (ignoring case) or the change touches one of the `paths`, matched as a gate is. Each entry names labels or paths, and skills or notes. `determine_agent.ts` prints the union of the matching entries and of the matched change areas' `implementation` blocks and own `notes`, in entry order and then catalog order, and do-item's delegation prompt lists them under `## Implementation guidance`. An area is matched by a label `do_item.agents.codearea_areas` maps to it, one of its `tracker.labels`, or a path its globs claim among those `--paths` names. Separate from `do_item.gates`, which it never replaces; a label may appear in both. Guidance every item needs belongs in the repository's own agent instructions. A skill that resolves to nothing installed (the repository's `.claude/skills` or `.agents/skills`, the user's skills, this plugin's, or another plugin's as `<plugin>:<skill>`) is named in do-item's status message, and the audit refuses it |
 | `do_item.execution_plan_block` | name | `execution-plan-v1` | do-item | Name of the fenced block in an epic's description that holds its machine-readable execution plan |
 | `do_item.arm_drive` | `auto`, `tab`, `background`, `print` | `auto` | do-item, drive-pr | How `/jig:do-item`'s § Arm the drive and `/jig:drive-pr`'s § Arm start the drive (both through drive-pr's `arm-drive.ts`). `auto`: in a terminal tab of the pull request's workspace where the session can open one (in an [Orca](https://www.onorca.dev) workspace on a macOS or Linux host), and with the session's background execution elsewhere, falling back to the background, and saying why, when Orca refuses the tab or the tab's drive is not listed in time. `tab`: a terminal tab, or a reported failure. `background`: the session's background execution. `print`: the command only, for a person to run. The tab is a fresh login shell of the user's, so `bun`, the agent's command (`claude` or `codex`) and the account or profile come from it, not from the session. The tab closes when the drive ends with nothing for a person, and stays open after a park or a failure until the pull request is armed again. A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the drive's command is quoted for a POSIX shell: `auto` arms in the background, and `tab` fails. The drive's pass command is the one of the agent tool the session runs in: a Codex session arms Codex's pass command in a tab or through its managed background command tool. Without that tool, the caller prints the command and reports the limitation; when the host ends children with the session, keep it alive until the drive ends or use an external terminal. A session of any other tool prints Claude Code's command whatever the setting, and so does a human checkpoint the run has no clearance for |
 | `do_item.work_types` | map from a work type to fields of its row in the depth table below | The table's defaults | do-item | How much each delivery station does for an item of each type. An entry overrides single fields and keeps the rest of the row; a type outside the default list must set every field. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, a field the table does not have, and a value outside a field's set. do-item prints the type and its row when it picks up an item |
@@ -1680,6 +1695,8 @@ pull_requests:
   issue_link: closes                     # closes | refs | none
   size_budget: 600
   labels: [agent-authored]
+  labels_from_issue: { "kind:db-migration": needs-dba-review }
+  reviewers_from_issue: { "kind:db-migration": ["@org/dba"] }
   title_format: conventional             # conventional | free
 drive:
   validation_plan_command: "<your plan command>"   # changed files on stdin, JSON plan on stdout
@@ -1764,6 +1781,8 @@ do_item:
     backend-dev: [schema-scout, api-scout]
   gates:
     - { labels: [db-migration], paths: ["migrations/**"], skill: db-migration-review }
+  guidance:
+    - { labels: [db-migration], paths: ["migrations/**"], skills: [jig:review], notes: "Add a rollback beside every forward migration." }
   execution_plan_block: execution-plan-v1
   arm_drive: auto                        # auto | tab | background | print
   work_types:                            # fields of the depth table to override

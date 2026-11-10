@@ -17,6 +17,7 @@
  */
 import { readFileSync } from "node:fs";
 import { Defect } from "../../../../shared/errors.ts";
+import { REVIEWER } from "../../../../shared/forge-logins.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { load as loadYaml } from "../../../../shared/yaml.ts";
 import { globProblem } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
@@ -110,6 +111,10 @@ export interface Area {
   validation?: ValidationBlock;
   generated?: GeneratedEntry[];
   review?: { skills: string[]; notes?: string };
+  /** Skills and notes the implementing agent is given for a change here. */
+  implementation?: { skills?: string[]; notes?: string };
+  /** Labels and reviewers a pull request touching the area opens with. */
+  pr?: { labels?: string[]; reviewers?: string[] };
   postDeploy?: PostDeployAction[];
   tracker?: TrackerBlock;
   /** The older spelling of `tracker`. */
@@ -214,11 +219,17 @@ const isTextList = (v: unknown): v is string[] =>
 const when = (ok: boolean, problem: string) => (ok ? [] : [problem]);
 
 const anything: Check = () => [];
+const hasItems = (v: unknown): boolean => Array.isArray(v) && v.length > 0;
 const text: Check = (v, f) => when(isText(v), `\`${f}\` is not text`);
 const filled: Check = (v, f) =>
   when(isFilled(v), `\`${f}\` must be non-empty text`);
 const textList: Check = (v, f) =>
   when(isTextList(v), `\`${f}\` must be a list of non-empty text`);
+const reviewers: Check = (v, f) =>
+  when(
+    isTextList(v) && v.every((r) => REVIEWER.test(r)),
+    `\`${f}\` must be a list of logins or org/team names`,
+  );
 const commands: Check = (v, f) =>
   when(isTextList(v), `\`${f}\` must be a list of commands`);
 
@@ -411,6 +422,30 @@ function areaSpec(doc: Record<string, unknown>, fields: FieldExtensions): Spec {
           },
           notes: { check: text },
         }),
+      },
+      implementation: {
+        check: (v, f) => [
+          ...mapping({
+            skills: { check: textList },
+            notes: { check: text },
+          })(v, f),
+          ...when(
+            !isRecord(v) || hasItems(v.skills) || isFilled(v.notes),
+            `\`${f}\` must give skills or notes`,
+          ),
+        ],
+      },
+      pr: {
+        check: (v, f) => [
+          ...mapping({
+            labels: { check: textList },
+            reviewers: { check: reviewers },
+          })(v, f),
+          ...when(
+            !isRecord(v) || hasItems(v.labels) || hasItems(v.reviewers),
+            `\`${f}\` must give labels or reviewers`,
+          ),
+        ],
       },
       postDeploy: {
         check: listOf({

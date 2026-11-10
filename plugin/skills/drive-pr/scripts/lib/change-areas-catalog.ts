@@ -21,7 +21,8 @@
  * The areas a change implies through other areas are the full resolver's
  * business, not this reader's. Every other field stays available as written
  * (`fields`), for the consumer's own tooling and for skills that read one
- * more field, such as `agent`.
+ * more field, such as `agent`, `implementation` (do-item's guidance) or
+ * `pr` (its pull-request planner).
  */
 import { readFileSync } from "node:fs";
 import { load as loadYaml } from "../../../../shared/yaml.ts";

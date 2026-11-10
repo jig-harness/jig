@@ -46,6 +46,8 @@ describe("parsePrPolicy", () => {
       issueLink: "closes",
       sizeBudget: null,
       labels: [],
+      labelsFromIssue: new Map(),
+      reviewersFromIssue: new Map(),
       titleFormat: null,
     });
   });
@@ -61,6 +63,8 @@ describe("parsePrPolicy", () => {
         issue_link: "refs",
         size_budget: 400,
         labels: ["agent-authored"],
+        labels_from_issue: { "Kind:DB-Migration": "needs-dba-review" },
+        reviewers_from_issue: { "kind:db-migration": ["@acme/dba", "alice"] },
         title_format: "free",
       }),
     ).toEqual({
@@ -72,6 +76,10 @@ describe("parsePrPolicy", () => {
       issueLink: "refs",
       sizeBudget: 400,
       labels: ["agent-authored"],
+      labelsFromIssue: new Map([["kind:db-migration", "needs-dba-review"]]),
+      reviewersFromIssue: new Map([
+        ["kind:db-migration", ["acme/dba", "alice"]],
+      ]),
       titleFormat: "free",
     });
   });
@@ -98,6 +106,20 @@ describe("parsePrPolicy", () => {
     [{ labels: "agent" }, /labels must be a list/],
     [{ labels: ["a", "a"] }, /labels must be a list of distinct/],
     [{ labels: [""] }, /labels must be a list of distinct nonempty/],
+    [{ labels_from_issue: ["x"] }, /labels_from_issue must map an issue label/],
+    [
+      { labels_from_issue: { "kind:x": "" } },
+      /labels_from_issue\.kind:x must be a nonempty label/,
+    ],
+    [
+      { reviewers_from_issue: { "kind:x": "alice" } },
+      /reviewers_from_issue\.kind:x must be a nonempty list/,
+    ],
+    [
+      { reviewers_from_issue: { "kind:x": ["a b"] } },
+      /logins or org\/team names/,
+    ],
+    [{ reviewers_from_issue: { "kind:x": [] } }, /must be a nonempty list/],
     [{ branch_name: "" }, /branch_name must be a nonempty string/],
     [{ branch_name: "{slug}" }, /must contain \{key\} or \{key_lower\}/],
     [{ branch_name: "{key}-{title}" }, /unknown placeholder \{title\}/],

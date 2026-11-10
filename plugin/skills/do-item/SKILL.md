@@ -120,6 +120,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `routing` | The model tier and effort the implementer runs on, as rules (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Routes are derived and printed, none applied |
 | `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
+| `do_item.guidance` | Implementation guidance, `[{labels, paths, skills, notes}]`, matched as gates are (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | No guidance |
 | `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
 | `specs.adapters`, `specs.body_section` | Which spec adapters the resolver runs, in order, and the heading of the body section that names the item's spec ([Step 1](#step-1-fetch-the-issue)) | Every adapter whose layout the repository holds, then `body`; the heading `Spec` |
 | `drive.change_areas_catalog` | Path to the repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
@@ -165,11 +166,16 @@ and the facts derived from the repository) and prints what to do:
 The opening plan warns on foreign merges, listing the commits they bring in.
 With a change-area catalog, it adds the directly touched areas' tracker labels
 and flags to the fixed labels; implied areas add none. Unreadable history or
-catalog data stops planning.
+catalog data stops planning. With `--issue-json` (the `issue.json` Step 1
+wrote), it adds the labels `pull_requests.labels_from_issue` maps the
+issue's labels to and requests the reviewers `pull_requests.reviewers_from_issue`
+maps them to (`--reviewer`), ignoring case, beside the touched areas' `pr`
+labels and reviewers; it stops (exit `1`) naming a mapped label the
+repository does not have.
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<issue title>"
-bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" [--stack-on <branch>] [--accept-oversize "<reason>"] [--json]
+bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" --issue-json issue.json [--stack-on <branch>] [--accept-oversize "<reason>"] [--json]
 ```
 
 - `branch` prints the branch name for the issue, for a **new** pull request.
@@ -183,7 +189,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" [--stack-on <b
   drive in a working tree on the pull request's head (Step 4).
 - `open` prints the plan for the current branch, after validation and the
   pre-PR review gate pass: the `base`, the `gh pr create` arguments the policy
-  fixes (`createArgs`: base, `--draft` or not, labels), commands to run after
+  fixes (`createArgs`: base, `--draft` or not, labels, reviewers), commands to run after
   creating it (`afterCreate`, such as linking a native stack, with
   `<PR URL>` replaced by the URL `gh pr create` prints), the title convention, the template(s) to fill
   in, the issue-link line, the size against its budget, how it will be
@@ -623,6 +629,18 @@ implementation. Skip this check for issues about the repository's own code.
      exactly two, the catalog's agent leads, else the first matched.
    - `do_item.scouts` — `{agent: [scouts]}`: the pre-flight scouts for the
      chosen agent.
+   - `do_item.guidance` — `[{labels, paths, skills, notes}]`: implementation
+     guidance. Its `guidance` output holds the union of the entries the
+     issue's labels match (ignoring case) and the `implementation` blocks
+     and own `notes` of the change areas the item reaches (by a
+     `codearea_areas` label, an area's `tracker.labels`, or a planned path),
+     in entry order and then catalog order: `skills`, `notes` and the
+     `sources` they came from. `by_path` lists the entries that match only
+     on paths, for the change that plausibly touches them, as a gate's paths
+     are read; pass `--paths <file>` (one planned path per line) to match
+     them, and the areas, on paths instead. `missing_skills` names each
+     guidance skill nothing installed answers: name each in the status
+     message (`Guidance skill not installed: <name>`), and delegate anyway.
 
    For example, a repository might route `agent:backend` to a "Backend Agent"
    whose scouts are a schema scout and a constraint validator. Unless Step 2
@@ -761,6 +779,22 @@ implementation. Skip this check for issues about the repository's own code.
    attach refuses a tree it would move while they are in it), and hand the item to that pull request's drive with
    `/jig:drive-pr <PR>`. Its placement chooses or creates the working tree
    on the pull request's head, so nothing here is pushed or attached.
+
+   **Implementation guidance — when `determine_agent.ts` printed any.** Put
+   it in the delegation prompt under this fixed heading, `skills` first, then
+   each note with where it came from, then each `by_path` entry with its
+   paths:
+
+   > ## Implementation guidance
+   >
+   > Use these skills while you implement: `<skill>`, `<skill>`.
+   >
+   > - <note> (<from>)
+   >
+   > When the change touches `<paths>`: use `<skills>`; <notes> (<from>).
+
+   Leave out a part that is empty, and the heading when all are. Guidance
+   adds to the review gates below and never replaces one.
 
    **Review gates — MANDATORY when declared.** Each entry of the overlay's
    `do_item.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate
@@ -1006,7 +1040,7 @@ implementation. Skip this check for issues about the repository's own code.
      PR body, then push.
    - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u <remote> "<branch>"`.
 
-   Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` and open the PR exactly as it plans
+   Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue-json issue.json` and open the PR exactly as it plans
    ([Pull-request policy](#pull-request-policy)). An exit `3` is a policy
    refusal: follow its remedy before opening anything.
 
@@ -1421,7 +1455,9 @@ snapshot mapping are **exact**.
    item 2, and on a refusal or a stand-down choose another eligible
    sub-issue or stop.
 
-6. **judgment** — **Delegate** as in Step 4a. When the selected
+6. **judgment** — **Delegate** as in Step 4a, with the guidance
+   `determine_agent.ts` prints for the sub-issue's `issue.json` under the
+   same `## Implementation guidance` heading. When the selected
    sub-issue builds on a sibling whose pull request is still open, the
    pull-request policy decides what happens: with `pull_requests.stacking:
    none` (the default), do not start it on top of that branch; wait for the
