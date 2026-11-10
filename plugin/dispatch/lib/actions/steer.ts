@@ -16,7 +16,10 @@
  *   answer is lost, or a tick that stopped between the two, never leads to
  *   a second one: a pending record a later tick finds is marked not known
  *   to have arrived. A check that failed before any send removes the
- *   pending record, since nothing was typed.
+ *   pending record, since nothing was typed. A send the runtime refused
+ *   is counted in the failure ledger (`failures.ts`) under
+ *   `nudge <record> <episode>`: the nudge backs off, reported refused, until
+ *   its next try, and is notified as failing past `failures.notify_after`.
  * - **Then a person.** A nudge not known to have arrived, or a session
  *   still waiting on the same episode after its nudge, is notified; it is
  *   never nudged again.
@@ -40,6 +43,7 @@ import {
   type SessionsReport,
   WAITING_STATES,
 } from "../runtime/port.ts";
+import type { ActionBook } from "../failures.ts";
 import { inTransaction, stateDb } from "../state.ts";
 import { failureText } from "../text.ts";
 import type { Action, RepoReport, Running, SteerOutcome } from "../types.ts";
@@ -304,16 +308,25 @@ async function steerOnce(
   }
 }
 
+/** A nudge's attempt as the failure ledger counts it: `refusal` the runtime's reason when it typed nothing, `null` when the send went (or its answer is lost, which is notified rather than tried again). */
+type Sent = { outcome: SteerOutcome; refusal?: string | null };
+
+/** The failure ledger's key of a nudge. */
+const ledgerKey = (action: Action): string => {
+  const nudge = action.nudge as NonNullable<Action["nudge"]>;
+  return `nudge ${nudge.record} ${nudge.episode}`;
+};
+
 /** One planned nudge: its pending record, the send, its delivery mark and event row. */
 async function sendOne(
   state: ApplyState,
   repo: string,
   action: Action,
   root: string,
-): Promise<SteerOutcome> {
+): Promise<Sent> {
   const nudge = action.nudge as NonNullable<Action["nudge"]>;
   const late = outOfTime(state);
-  if (late !== null) return outcome(action, "refused", late);
+  if (late !== null) return { outcome: outcome(action, "refused", late) };
   const record: NudgeRecord = {
     repo,
     record: nudge.record,
@@ -340,22 +353,43 @@ async function sendOne(
       record.at,
     );
   if (attempted.changes !== 1)
-    return outcome(
-      action,
-      "refused",
-      "a nudge for this episode was already attempted",
-    );
+    return {
+      outcome: outcome(
+        action,
+        "refused",
+        "a nudge for this episode was already attempted",
+      ),
+    };
   const receipt = await steerOnce(state, nudge.agent);
   if (!receipt.ok && receipt.lost !== true) {
     // Nothing was typed: the episode may be nudged at a later tick.
     db.query(
       "DELETE FROM nudges WHERE record = ? AND episode = ? AND delivery = 'pending'",
     ).run(record.record, record.episode);
-    return outcome(action, "refused", receipt.detail);
+    return {
+      outcome: outcome(action, "refused", receipt.detail),
+      refusal: receipt.detail,
+    };
   }
   const delivery = receipt.ok ? "delivered" : "unknown";
   markDelivery(record, delivery, receipt.detail, root);
-  return outcome(action, receipt.ok ? "sent" : "unknown", receipt.detail);
+  return {
+    outcome: outcome(action, receipt.ok ? "sent" : "unknown", receipt.detail),
+    refusal: null,
+  };
+}
+
+/** The nudge rows no longer planned go, where `steer` is not enabled and nothing is sent. */
+export function retireSteers(
+  report: RepoReport,
+  book: ActionBook | null,
+  observed: boolean,
+): void {
+  if (observed)
+    book?.wanted(
+      "nudge",
+      report.actions.filter((a) => a.stage === "steer").map(ledgerKey),
+    );
 }
 
 /** `--apply` for one repository's nudges, where the machine file enables `steer`. */
@@ -363,10 +397,25 @@ export async function applySteers(
   state: ApplyState,
   repo: string,
   report: RepoReport,
+  book: ActionBook | null = null,
+  observed = true,
 ): Promise<void> {
   const root = state.root ?? stateRoot();
   const steers: SteerOutcome[] = [];
-  for (const action of report.actions.filter((a) => a.stage === "steer"))
-    steers.push(await sendOne(state, repo, action, root));
+  const planned = report.actions.filter((a) => a.stage === "steer");
+  // An unreadable session listing cannot show a waiting agent gone: the rows stay.
+  if (observed) book?.wanted("nudge", planned.map(ledgerKey));
+  for (const action of planned) {
+    const key = ledgerKey(action);
+    const waits = book?.waits(key) ?? null;
+    if (waits !== null) {
+      steers.push(outcome(action, "refused", waits));
+      continue;
+    }
+    const sent = await sendOne(state, repo, action, root);
+    steers.push(sent.outcome);
+    if (sent.refusal !== undefined)
+      book?.ran({ key, kind: "nudge", target: action.target }, sent.refusal);
+  }
   report.steers = steers;
 }

@@ -22,6 +22,7 @@ import {
 } from "./../state/decisions.ts";
 import { join } from "node:path";
 import { driveState } from "./paths.ts";
+import type { ParkedDecision } from "../../../../../shared/decisions/park.ts";
 
 const unresolveThread = join(
   import.meta.dir,
@@ -37,39 +38,42 @@ const unresolveThread = join(
 /** The class a reversed provisional decision is parked under. */
 export const REVERSAL_CLASS = "human-thread";
 
-/** The framed decision record a reversal is parked with (`framed-park.ts`). */
+/** The checked JSON decision a reversal is parked with. */
 export function reversalRecord(d: UnattendedDecision, by: CommentLike): string {
   const what =
     d.class === "provisional-reply"
       ? `the provisional \`${d.outcome ?? "reply"}\` on thread \`${d.key}\``
       : `the provisional ruling \`${d.key}\``;
-  return [
-    "## Question",
-    "",
-    `Should ${what} stand, now that ${by.author || "a collaborator"} has commented on it?`,
-    "",
-    "## Options",
-    "",
-    `- **Follow the comment** Changes: the next round acts on the comment as a person's verdict, and replies with the outcome it leads to. Costs: the work the comment asks for, if it asks for a fix.`,
-    `- **Keep the provisional outcome** Changes: nothing on the branch; the provisional decision stands. Costs: the comment goes unanswered unless a person answers it.`,
-    "",
-    "## Recommended",
-    "",
-    "**Follow the comment**: a person's comment on a provisional decision reverses it, and the drive never decides it again.",
-    "",
-    "## Class",
-    "",
-    REVERSAL_CLASS,
-    "",
-    "## Steps for a person",
-    "",
-    `- Answer on ${d.class === "provisional-reply" ? "the thread" : `the pull request with a line \`answer ${d.key}: …\``} (${by.url}) with what the drive should do, then re-arm the drive.`,
-    "",
-    "## Already done",
-    "",
-    `Decided ${what} at the \`${d.level}\` autonomy level (${d.record || "no record"}), and recorded the comment ${by.url} as its reversal.`,
-    "",
-  ].join("\n");
+  const decision: ParkedDecision = {
+    schema: "parked-decision/v1",
+    class: REVERSAL_CLASS,
+    call: {
+      id: "a",
+      question: `Should ${what} stand, now that ${by.author || "a collaborator"} has commented on it?`,
+      options: [
+        {
+          id: "follow",
+          name: "Follow the comment",
+          summary:
+            "The next round acts on the comment as a person's verdict, and replies with the outcome it leads to.",
+          pay: ["The work the comment asks for, if it asks for a fix."],
+        },
+        {
+          id: "keep",
+          name: "Keep the provisional outcome",
+          summary: "Nothing on the branch; the provisional decision stands.",
+          pay: ["The comment goes unanswered unless a person answers it."],
+        },
+      ],
+      recommended: "follow",
+      why: "A person's comment on a provisional decision reverses it, and the drive never decides it again.",
+    },
+    steps: [
+      `Answer on ${d.class === "provisional-reply" ? "the thread" : `the pull request with a line \`answer ${d.key}: …\``} (${by.url}) with what the drive should do, then re-arm the drive.`,
+    ],
+    alreadyDone: `Decided ${what} at the \`${d.level}\` autonomy level (${d.record || "no record"}), and recorded the comment ${by.url} as its reversal.`,
+  };
+  return JSON.stringify(decision);
 }
 
 async function reverse(

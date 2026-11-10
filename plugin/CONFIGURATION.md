@@ -1390,6 +1390,10 @@ accounts:
     config_dir: /home/me/.claude-work
     identity: me@example.com
     max_per_account: 2
+serve:
+  - name: maintainer
+    forge: [maintainer-login, maintainer-work-login]
+    tracker: { github: maintainer-login, linear: maintainer@example.com }
 interval: 5m
 wall_backoff: 1h
 runtime_timeout: 1m
@@ -1398,6 +1402,10 @@ followup_opens_per_tick: 2          # the follow-ups' own opens, beside opens_pe
 followup_concurrency: 2             # follow-up passes running at once on this host
 receipts_days: 30
 unclaimed_after: 15m                # a started launch no wrapper claimed by then needs a person
+failures:
+  backoff: 2m                       # the wait after an action's second failure in a row, doubled after each one
+  backoff_max: 1h
+  notify_after: 3                   # failures in a row at which a person is told
 dashboard:
   listen: 100.64.0.7:8765           # jig dispatch dashboard; private or loopback only
   # require_token: false            # only with a loopback listen: a front authenticates
@@ -1422,6 +1430,7 @@ load:
 
 | Setting | Default / meaning |
 |---------|-------------------|
+| `serve[]` | Empty; the people this host serves, beside any repository's factory identity. Each entry has a `name`, `forge` logins and a `tracker` map from adapter name (`github`, `linear`, `jira`) to that person's identity. Only this machine file can name served people; repository configuration cannot widen the list. Their forge logins join the adoption authors. With `pickup` enabled, an open, not-started assignment from a repository writer is wanted without a dispatch-state requirement. Unassigned descendants of an assigned epic inherit that person. Holds and open blockers stay visible in the Queue view with their reason |
 | `repositories[].path` | Required; the repository's local checkout. Several hosts may list one repository, each in its own machine file, with one of them its owner (`owner`) |
 | `repositories[].owner` | `true`; whether this host owns the repository's notifications, dispatch labels and outcome-log rows, its board and its reflection findings. Set it `false` on every host but one that lists the repository: such a host launches, re-arms, re-drives and takes over through the shared records (`records.shared`) as the owner does, and never notifies for the repository, never writes its labels, never writes outcome-log rows for stops it did not launch and never records a recurring class as a reflection finding, so each is written once. A session it launched that waits or drifts is reported on that host, not notified. Every run's report names the host that owns the repository, and says so when another host's claims say they own it too |
 | `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives, and a re-drive, once per change, of a converged drive whose pull request now conflicts with its base or whose head moved past the head the drive verified, and of a drive that stopped on a conflict (exit `9`). `pickup` starts a headless `do-item` pass per item the repository's `dispatch` section makes a pickup, bound to an admitted account through its configuration directory as a follow-up's pass is, under `dispatch.pickup_deadline` and with the host's `drive.pass_args` (or, on a Codex account, only where `drive.codex_bypass` is set). The pass keeps the agent's own model and effort, and `do-item` forwards the item's route to the implementer it delegates to. A pass that cannot finish without a person stops on a `Question:` line, which is notified as a need; nothing is started for the item again until it leaves the dispatch states and comes back. `followup` starts a headless pass running `dispatch.followup_command` per merged pull request, bound to an admitted account through its configuration directory as a drive's pass is, under the pass deadline and with the host's `drive.pass_args` (or, on a Codex account, `drive.codex_bypass`). Follow-ups open their workspaces in a lane of their own (`followup_opens_per_tick`, `followup_concurrency`), so they never wait for a drive's launch, nor a drive's launch for them; they still share the accounts' slots. A pass that stops on a routine question (one of the dispatcher's fixed classes, which the pass tags itself: today `local-leftover`, a local branch or worktree it may not delete without asking) is run again once with the class's standing answer (keep it, list it, finish the rest and record done), as is a follow-up that failed before passes tagged their questions, which needs its launch record still on the host only when no retry evidence was kept with its outcome; a pass that stops on any other question, or fails again after that run, is notified with its question. `notify` sends each notification once (with Orca, the workspace's comment, marked unread). `steer` sends the one nudge, `Your usage limit has reset. Continue`, once to an interactive session the runtime reports waiting after its account's wall reset; no other stage implies it |
@@ -1440,6 +1449,9 @@ load:
 | `followup_concurrency` | `2`; positive whole number of follow-up passes that may run on this host at once, counted from the launch records still holding (pending, alive or unknown). A pending record the tick reports stuck (notified to a person, held until `jig dispatch clear`) keeps its account's slot but is not counted while the runtime shows no session running on its target, so a launch that never started does not hold the lane; one whose target has a session running, or whose sessions cannot be read, is counted, since that wrapper may be running its stage without having claimed the record; a record whose state is unknown (claimed on another host, or an unreadable process table) is counted until it resolves or a person clears it. A follow-up past it waits for the next tick, named as waiting on the lane's cap (`waitsOn: lane-cap`). It is the lane's own cap: a follow-up still needs an admitted account with a free slot (`accounts[].max_per_account`), and one that finds none is named as waiting on the accounts (`waitsOn: accounts`). Two matches the lane's per-tick budget, so every follow-up one tick opens a workspace for can start; on a host whose accounts have few slots, lower it to leave slots for drives |
 | `receipts_days` | 30; days receipts and ended launch records are kept. The outcome log is never removed |
 | `unclaimed_after` | `15m`; how long after the session runtime answered a launch as started its launch record may stay pending, with no wrapper's claim, before the tick reports it stuck: notified to a person as needing them (once, then on `dispatch.renotify_after`) and shown on the dashboard as needing a person, holding its stage and slot until `jig dispatch clear <record>`. A record claimed within it is never flagged. The wrapper claims its record as its first act, seconds after its terminal starts, and the workspace is opened before the launch, so fifteen minutes is many times a slow start and three ticks at the default `interval`. While the runtime cannot say which sessions run, the tick waits; a session it joins to the record's target is named in the notice, since that wrapper may have started its stage without claiming the record |
+| `failures.backoff` | `2m`; how long the tick waits before trying again an action that failed twice in a row, doubled with each failure in a row after that, up to `failures.backoff_max`. A first failure is tried again at the next tick. The actions it paces are the ones a tick tries again on its own, with no record of their own that counts attempts: each pull request's dispatch label write, each notification's delivery, each nudge the runtime refused, and the end of this host's launch claim or the follow-up's answer on its marker. Launches are not among them: a launch record counts its own attempts, one lost twice is stuck (`unclaimed_after` and the records it names), and a refusal that did not change is not tried again. While an action waits, the receipt reports it waiting, with its failures in a row and its next try. The count is this host's, kept in its state database (the `failures` table), and only a tick with `--apply` keeps it. Two minutes is one tick at the interval a sweep is meant to run at; doubling reaches the hour after seven failures in a row |
+| `failures.backoff_max` | `1h`; the longest wait between two tries of an action that keeps failing. It may not be shorter than `failures.backoff` |
+| `failures.notify_after` | `3`; positive whole number of failures in a row at which the tick tells a person, once and then on `dispatch.renotify_after`, through the repository's notifications: an action that kept failing (cause `action-failing`); a repository whose turn was refused, stopped by a defect, or found a record that did not read (`repository-failing`); and this host's ticks of one scope that exited 1 (`ticks-failing`; each single-repository tick, such as a wake-up, has its own scope, and every tick of several repositories shares one). The notice names what failed, how many times in a row, since when, and the last reason. An action's notice goes to its own repository; a repository's and the ticks' go to this host's first repository listed here that it owns with `notify` enabled and whose turn is not failing (the first of them when all are failing); a host failure's notice is the same one wherever it is told, so the destination moving does not send it again. Only the host that owns a repository notifies for it. A row is removed, and its notice retires, when the action succeeds, the repository is read whole or a tick of that scope exits 0, or when the action is no longer wanted. Three in a row is past a passing outage and, at the default `interval`, within about a quarter of an hour of a cause that stands |
 | `records.shared` | `forge`, the only value; where this host publishes the records another host dispatching the same repository reads: a claim per drive launch on the pull request it concerns (its launch record, its host and, once it ended, its end), and the follow-up marker with the follow-up's answer. A value this version does not know is refused. The claims coordinate launches and never authorize anything a person does; the forge cannot create a comment only if none exists, so two hosts can each read themselves the holder of one launch, and the stage's own refusal (the drive's lock and ledger claim, `do-item`'s claim) is the backstop |
 | `send` | `true`; whether [`jig send`](README.md#telling-a-station-what-to-do) may write a request from this machine. `false` refuses every send, `--dry-run` included, so a machine whose sessions should only ask the line can say so once. Read by `jig send` alone; the dispatcher ignores it |
 | `change_probe` | `true`; whether the change probe runs: every minute, `jig dispatch probe --apply` (its own timer, which `jig install dispatch` writes beside the tick's) reads the forge once for the pull requests of every repository listed here with a stage, and wakes the tick of each repository where one was updated or its checks changed since the last probe. `false` makes a probe read and wake nothing, and the next `jig install dispatch --yes` removes its timer. Read by `jig dispatch probe` and the dispatcher's install |
@@ -1454,6 +1466,15 @@ load:
 | `dashboard.require_token` | `true`; whether a request needs the token the command prints. `false` serves the page with no token and is accepted only when `dashboard.listen` is a loopback address (`127.0.0.0/8`, `::1`), so the only way in from another machine is a front on the host (Tailscale Serve, a reverse proxy) that authenticates the person first. The page is read-only either way |
 | `dashboard.allowed_hosts` | None; the host names a front forwards requests under (the `Host` header), read only with `require_token: false`. A tokenless dashboard answers `localhost`, `127.0.0.0/8` and `::1` and these names, and refuses any other `Host` with 403, so a page on another origin cannot read it by pointing its own name at this address |
 
+The same dashboard settings apply to the foreground command and to
+`jig dispatch dashboard --install --yes`. The installed reader has its own
+retry timer and requires a fixed listen port. Linux systemd requires user
+[lingering](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), which keeps the account's service manager running without a login; Linux cron is also supported. macOS LaunchAgents tied to a login cannot keep
+a reader through logout, so installation refuses them. No Orca install is
+needed. `--status` reports availability and diagnosis; `--access` alone
+prints the installed reader's private URL; `--uninstall --yes` removes it.
+See [the dashboard's availability and host checks](README.md#the-dispatcher).
+
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
 per run), `walls/` (each account's usage-limit wall, which lifts at its
@@ -1461,9 +1482,11 @@ latest recorded reset), the tick's locks (`tick.lock`, which one tick
 acts under at a time, and `observe/`, one per repository a tick is
 reading), the rotation cursor (`tick-index`),
 `wake/` (each repository's pending wakes and their log), `probe/` (the
-change probe's state, `state.json`, and its timer's launcher copy)
-and the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
-removes. Everything else is one
+change probe's state, `state.json`, and its timer's launcher copy),
+the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
+removes, and `dashboard/` (the installed reader's `enabled` record, its
+`access.json` with the access credentials, its `reader.<digest>.lock`, and
+the scheduler's launcher copy). Everything else is one
 SQLite database, `state.sqlite`: the launch records (one per launch,
 written before it, with a pickup session's own result), since when each
 claimed item has had no running session (for `stalled_after`), each

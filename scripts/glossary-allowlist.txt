@@ -109,7 +109,6 @@ SIGTERM
 MiB
 KiB
 GiB
-GB
 
 # issue size values (extra large), as a size facet spells them
 XL

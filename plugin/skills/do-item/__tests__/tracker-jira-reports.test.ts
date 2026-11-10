@@ -436,6 +436,7 @@ describe("Jira adapter: candidate pools", () => {
       type: null,
       size: null,
       createdAt: "2026-01-01T09:00:00.000Z",
+      updatedAt: "2026-01-02T09:00:00.000Z",
       state: { id: "10000", name: "Todo", type: "unstarted" },
       assignee: { id: MEMBER.accountId, name: "Dana Lee" },
       labels: ["a"],

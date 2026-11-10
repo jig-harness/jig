@@ -605,6 +605,32 @@ export function world(): World {
         },
       };
     }
+    if (op === "TrackerUser")
+      return { user: { id: `U_${String(v.login)}`, login: v.login } };
+    if (op === "TrackerIssue") {
+      const found = issues.find((n) => n.number === v.number);
+      return {
+        repository: {
+          issue:
+            found === undefined
+              ? null
+              : {
+                  ...found,
+                  parent: null,
+                  blockedBy: conn([]),
+                  blocking: conn([]),
+                  duplicateOf: null,
+                  timelineItems: conn([]),
+                },
+        },
+      };
+    }
+    if (op === "TrackerComments")
+      return {
+        repository: {
+          issue: { id: `i-${String(v.number)}`, comments: conn([]) },
+        },
+      };
     if (op === "TrackerAssignedBy") {
       const found = issues.find((n) => n.number === v.number);
       const by = assigners.get(Number(v.number));

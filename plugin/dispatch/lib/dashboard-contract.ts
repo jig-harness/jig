@@ -10,7 +10,12 @@
  */
 import type { LaunchAction, ThreadSample } from "./launches.ts";
 import type { LogRow } from "./log.ts";
-import type { LaunchOutcome, NotifyCause, NotifyOutcome } from "./types.ts";
+import type {
+  FailureCause,
+  LaunchOutcome,
+  NotifyCause,
+  NotifyOutcome,
+} from "./types.ts";
 import type {
   Act,
   Lane,
@@ -20,6 +25,7 @@ import type { NeedAct } from "../../shared/acts.ts";
 
 /** One option of a framed decision, as the drive recorded it. */
 export interface LineOption {
+  details?: import("../../shared/decisions/model.ts").OptionDetail[];
   name: string;
   /** Its `Changes:`; `null` when the record gives none. */
   changes: string | null;
@@ -31,6 +37,7 @@ export interface LineOption {
 
 /** One decision a parked drive waits on, as the drive framed it. */
 export interface LineDecision {
+  decision?: import("../../shared/decisions/park.ts").ParkedDecision;
   /** The named person; absent on older parks. Routing does not restrict answers. */
   person?: string;
   /** The thread or finding the answer goes to: `answer <key>: …`. */
@@ -58,9 +65,14 @@ export interface LineNotified {
   workspace: string | null;
 }
 
-/** Causes that wait on a person and on nothing else: what the tick notifies, and an item assigned by someone who cannot write, which it only reports. */
+/**
+ * Causes that wait on a person and on nothing else: what the tick notifies,
+ * and an item assigned by someone who cannot write, which it only reports.
+ * The failure ledger's causes are about the dispatcher, not a piece of work,
+ * and are on the receipt instead.
+ */
 export type NeedCause =
-  | Exclude<NotifyCause, "waiting" | "drifting" | "ready">
+  | Exclude<NotifyCause, "waiting" | "drifting" | "ready" | FailureCause>
   | "assigner-cannot-write";
 
 /** One thing the line waits on a person for. */

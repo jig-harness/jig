@@ -2,15 +2,15 @@
 
 **What problem this solves.** The [dispatcher](../GLOSSARY.md) keeps the
 execution line moving, but it runs well below what its host can carry and
-asks a person for more than only a person can settle. It admits work by
-account [slots](../GLOSSARY.md) alone, two per account by default, and
-nothing measures the host: memory, the processors, the disk, and the
-machine-wide test lock every `bun run gates` queues on. A host with room to
+asks a person for more than only a person can settle. Each tick measures
+the host (memory, the processors, the disk, and the machine-wide test lock
+every `bun run gates` queues on) and reports what a launch would cost, but
+it still admits work by account [slots](../GLOSSARY.md) alone, two per
+account by default, until a person sets `load.enforce`. A host with room to
 spare idles, and a host near its limit takes one more session and slows
-every drive on it. Pickups currently serve only a repository's
-[factory identity](../GLOSSARY.md). On Orca, account-bound headless passes
-start those pickups without an interactive session; serving people the host
-is configured to serve remains step 7 below. And the stops that reach a
+every drive on it. Pickups serve a repository's [factory identity](../GLOSSARY.md)
+and the people the host serves. On Orca, account-bound headless passes
+start those pickups without an interactive session; served assignments and epic descendants join a ranked queue. And the stops that reach a
 person mix real decisions with stops an agent could have recovered: a second
 stop at the same change, a spent
 [recovery budget](../GLOSSARY.md), an exit no rule re-drives. With this
@@ -24,7 +24,8 @@ person opens with the one act it asks of them.
 This is the design of [plan.md](plan.md) item 44. The dashboard groups needs
 by the person's act, shows the recommended option's changes and costs and
 filters by person; `jig ask` names the same act. Ready to merge, the
-keyboard-driven views, headless pickups and complexity tiers are built.
+keyboard-driven views, headless pickups, served queues, complexity tiers and
+the load factor, reporting only, are built.
 The remaining work is in the build order below.
 It changes the following designs, each of which says in its own text what this one
 changes: [the dispatcher](dark-factory-dispatch.md) (item 33), whose tick
@@ -55,7 +56,7 @@ beside them, never a replacement.
 | Memory       | `MemAvailable` in `/proc/meminfo` on Linux, the free memory the platform reports on Windows; not read on macOS, whose free pages count reclaimable caches as used (the resource lock's reading, `plugin/shared/host-load.ts`) | 15% of the total kept free after the launch's reservation                         |
 | Processors   | the 1-minute load average divided by the cores (`os.loadavg`, `os.availableParallelism`)                                                                                                                                      | `load_per_core`: 0.9; not read on Windows, which has no load average              |
 | Test lock    | the holders of the machine-wide resource lock's slots (`plugin/shared/resource-lock.ts`) and the runs that announce beside it that they wait for one                                                                          | `lock_waiters`: 2 waiters; no new pickup or drive pass                            |
-| Disk         | free space on the filesystems that hold the running workspaces and the repositories, the least of them (`statfs`)                                                                                                             | `disk_free_gb`: 10 GB                                                             |
+| Disk         | free space on the filesystems that hold the running workspaces and the repositories, the least of them (`statfs`)                                                                                                             | `disk_free_gb`: 10 GiB                                                            |
 | Forge budget | the rate limit the tick already reads at its start                                                                                                                                                                            | the tenth of the core limit below which the tick already skips its optional reads |
 | Accounts     | free slots and walls, as today                                                                                                                                                                                                | no free slot                                                                      |
 
@@ -69,7 +70,7 @@ each of its sessions' workspaces (Linux shows a process's working directory
 under `/proc`; elsewhere the defaults stand), and records one sample per
 running workspace per tick and kind. A kind's reservation becomes the 90th percentile
 of its recent samples once it has enough. Until then the defaults hold: a
-pickup 2 GB, a drive pass 1.5 GB, a follow-up or a steward pass 1 GB. The
+pickup 2 GiB, a drive pass 1.5 GiB, a follow-up or a steward pass 1 GiB. The
 samples are the one thing the load factor keeps between ticks, in the
 dispatcher's state database beside its launch records.
 
@@ -81,7 +82,7 @@ one rule: **a new pickup keeps room for a drive or follow-up.** After a
 pickup, the remaining memory above the free-memory floor must fit the
 larger reservation of the drive and follow-up kinds, whether either is
 currently waiting or not. With the initial defaults, that reserve is
-1.5 GB. Other gauges must also permit one launch of either protected kind
+1.5 GiB. Other gauges must also permit one launch of either protected kind
 after the pickup; if a gauge cannot express that reservation, it must at
 least remain below its line. The accounts' gauge expresses it as a slot: a
 pickup leaves one account slot free. New work therefore
@@ -286,7 +287,7 @@ tier.
 | Field                                                                              | Where        | Default                                                            |
 | ---------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------ |
 | `load.enforce`                                                                     | machine file | `false`: the tick reports what it would hold and holds nothing     |
-| `load.memory_free`, `load.load_per_core`, `load.lock_waiters`, `load.disk_free_gb` | machine file | 15%, 0.9, 2, 10 GB                                                 |
+| `load.memory_free`, `load.load_per_core`, `load.lock_waiters`, `load.disk_free_gb` | machine file | 15%, 0.9, 2, 10 GiB                                                |
 | `serve[]`                                                                          | machine file | none: only the factory identity's items are picked up              |
 | `steward.enabled`, `steward.every`                                                 | machine file | off; `20m`                                                         |
 | `dispatch.pickup_deadline`                                                         | repository   | `3h`                                                               |
@@ -297,27 +298,6 @@ tier.
 One pull request per step, each shippable alone, filed under the item 44
 epic with its order recorded as blocking relations. The open steps retain
 their original numbers; each waits on the steps whose files it shares.
-
-```mermaid
-flowchart TD
-  T5[5 Load factor] --> T7[7 Served pickups]
-  T7 --> T8[8 Steward]
-```
-
-#### 5. The load factor
-
-([#636](https://github.com/jig-harness/jig/issues/636)): the gauges, the
-measured reservations, the admission rule and the would-hold report, with the
-gauge at the top of Running. Done when every receipt carries each gauge, the
-load factor and the gauge that binds, and a launch a gauge would refuse still
-starts while `load.enforce` is `false`.
-
-#### 7. Served pickups
-
-([#638](https://github.com/jig-harness/jig/issues/638)): `serve:`, the served
-reads, the ranking, `claim --for` and the Queue view. Done when an item a
-writer assigns to a served person starts within one interval when there is
-headroom, and the served person is still its only assignee after the claim.
 
 #### 8. The steward
 

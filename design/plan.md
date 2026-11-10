@@ -244,56 +244,20 @@ merge now, and the history view filtered to yesterday shows how many
 pull requests became ready, were merged, are still waiting, and were lost
 to waiting.
 
-### 44. The line at capacity: the host's load factor, served pickups and the steward
+### 44. The line at capacity: the steward
 
-The dispatcher admits work by account slots alone, so a host with room to
-spare idles and one near its limit takes one more session; nothing measures
-memory, the processors, the disk or the machine-wide test lock every gate
-run queues on. Pickups currently serve only the factory identity, including
-on Orca through account-bound headless passes; serving people a host is
-configured to serve remains step 7. The stops that reach a person mix real
-decisions with stops an agent could recover.
-[design/line-at-capacity.md](line-at-capacity.md) has how it works: each
-tick reads the host's gauges and computes the **load factor**, the fullest
-gauge's fill, starting a launch only while every gauge stays under its line
-with that launch's measured reservation counted, a new pickup retaining
-room for a drive or follow-up, and the existing alternation between drive
-launches and the other stages unchanged; it ships report-only
-(`load.enforce: false`). Pickups run as headless `do-item` passes through
-the follow-up's wrapper, bound and identity-checked as a drive's pass is,
-with only their implementer delegate on the route's model. A host's machine file names the people it serves
-(`serve:`); an open, not-started item a writer assigned to one of them, and
-each unassigned item under an epic assigned to them, is ranked by rules as
-data, held out with its reason when blocked or flagged for a person, and
-claimed with `claim --for <person>`, which keeps them as the assignee.
 Every 20 minutes, when its input changed, a **steward** pass reads the
-needs, stopped drives, waiting passes and the queue, and writes records
-from a closed list that the next tick carries out under its guards: a
-re-arm once on the recovery budget, an act and ask for each need that stays
-a person's, a missing facet, the queue's order; it never merges, answers a
-registry-class park, re-arms a drive a person stopped or sends a session
-free text. Every need opens with one act (Merge, Decide, Authorize, Reply,
-Do, Investigate) on the dashboard's
-[views](dispatch-board.md#five-views-one-column-of-cards).
-The route's tiers become item 31's complexity tiers. Built in the
-design's order, one pull request per step, under the item 44 epic.
+needs, stopped drives, waiting passes and the served people's queue, and
+writes records from a closed list that the next tick carries out under its
+guards: a re-arm once on the recovery budget, an act and ask for each need
+that stays a person's, a missing facet, the queue's order. It never merges,
+answers a registry-class park, re-arms a drive a person stopped or sends a
+session free text. [line-at-capacity.md](line-at-capacity.md) holds the design;
+[#639](https://github.com/jig-harness/jig/issues/639) is the remaining step.
 
-Done when, on a host running Orca, a converged pull request whose review
-the forge witnesses and that can merge is in merge now with a command
-pinned to its head within one interval; a park under `release` reads Authorize with its recommended
-option's cost, the same act in `jig ask`; every receipt carries each gauge,
-the load factor and the gauge that binds, and with enforcement off a launch
-a gauge would refuse still starts and is reported as would-hold; an item
-assigned to the factory identity gets one headless `do-item` pass on an
-admitted account within one interval, with its implementer on the route's model; an item a
-writer assigns to a served person starts within one interval when there is
-headroom and keeps that person as its only assignee, while a blocked one
-reads "waiting on #N" and a `hitl` one "needs a person to start"; with
-nothing changed no steward pass starts, a stop whose logs show a transient
-cause is re-armed once by the next tick on the recovery budget, and no
-steward record re-arms a drive a person stopped or held; and an S bug routes
-standard, the same bug labelled `has-migration` complex, a Codex account
-running it on Sol with no `routing.models` set.
+Done when nothing changed no steward pass starts, a stop whose logs show a
+transient cause is re-armed once by the next tick on the recovery budget,
+and no steward record re-arms a drive a person stopped or held.
 
 ### 39. Addresses: asking and telling the stations of the line
 
@@ -436,8 +400,10 @@ visibility class, so a shared control plane can later serve the same feed;
 a host's hub read-only on loopback, answering only its own pages, a
 laptop's hub that serves any browser and reads each host over SSH (Secure
 Shell) with a key that runs the feed and nothing else, and Orca, where a
-person uses it, opening the hub in its own browser; an optional
-private-network front, Tailscale Serve first, that gives a phone an HTTPS
+person uses it, opening the hub in its own browser; required read-only phone access, with
+visible copy controls, forge and tracker links, continuous availability and
+phone acceptance budgets; a private-network front, Tailscale Serve first,
+that gives a phone an HTTPS
 name and the viewer's login, scopes what each person sees by the grants of
 the tailnet (Tailscale's private network), trusts that login only on a
 Unix socket only Tailscale's daemon reaches, and refuses Tailscale Funnel,
@@ -460,13 +426,16 @@ item 40 settles how a comment a pass posts under the person's login is
 told from the person's own; each commit then asks for proof that a person
 is present. Nothing of it is built. Built in stages, one pull request per
 step: the per-pull-request status on the dashboard that exists (rounds and
-resolved parks in the drive ledger, item 36's board read, Ready to merge
-and placement with the marks, a line one repository's tick refreshes,
-pickup progress, then one design round for the whole hub and the Running,
-Queue and Work views); then each piece of work across machines (item 39's thread
+resolved parks in the drive ledger, item 36's board read, the phone
+measurement fixture, Ready to merge and placement with the marks, a line one
+repository's tick refreshes, pickup progress, then one design round for the
+whole hub and the Running, Queue and Work views), with phone support part of
+each view's acceptance and the resident dashboard install, URL sharing and
+private-network front guidance filed as items that do not wait on the later
+stages ([hub.md § Phone scope and access](hub.md#phone-scope-and-access)); then each piece of work across machines (item 39's thread
 additions, `jig send --json` with `--expect`, the `jig hub` server, its
-Needs you across every source, Hosts and History views and its install, the private-network front,
-the Orca plugin's "Open the hub" command and its install from a catalog);
+Needs you across every source, Hosts and History views and its install,
+the private-network front, the Orca plugin's "Open the hub" command and its install from a catalog);
 then the chat, and writes once item 40 settles. Stages 2 and 3 are
 planned in detail once stage 1 has been in use for four weeks, and the
 person who asked for the hub decides whether each is built, from the

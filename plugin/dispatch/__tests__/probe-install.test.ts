@@ -126,6 +126,7 @@ describe("jig upgrade's refresh", () => {
       expect(results.map((r) => [r.target, r.outcome])).toEqual([
         ["jig-dispatch", "refreshed"],
         ["jig-dispatch-probe", "refreshed"],
+        ["jig-dispatch-dashboard", "skipped"],
         ["jig command", "skipped"],
       ]);
       expect(rewritten.map(([name]) => name)).toEqual([

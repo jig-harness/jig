@@ -19,8 +19,9 @@
  * A machine file that sets `dashboard.require_token: false` on a loopback
  * address serves without one, for a front on the host (Tailscale Serve, a
  * reverse proxy) that authenticates each person before the request arrives.
- * Nothing installs it or keeps it running: a person starts it from a
- * terminal on the host and stops it with Ctrl-C.
+ * The foreground command prints its URL and stops with Ctrl-C. The optional
+ * retry timer (`dashboard-install.ts`) serves through the same reader, with
+ * its URL in an owner-only access record rather than scheduler output.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";

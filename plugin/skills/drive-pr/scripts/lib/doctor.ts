@@ -176,6 +176,8 @@ export interface DoctorInput {
   parkedCount: number;
   /** Each parked decision's question, so the row names them; absent: the count. */
   parkedQuestions?: string[];
+  /** The persisted recovery of an exhausted cancelled-workflow re-run. */
+  cancelledCiRecovery?: string | undefined;
   /** `missing` confirms absence; `null` means inspection could not answer. */
   leftovers: DoctorLeftovers | "missing" | null;
   stallThresholdMs: number;
@@ -490,9 +492,11 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
       // `--stop` cannot act on a foreign host — `stop()` itself refuses on
       // sight — so naming the command there would be a recovery a human
       // could copy-paste and watch fail.
-      recovery: input.hostIsLocal
-        ? formatStopCommand(input.selfPath, input.pr)
-        : null,
+      recovery:
+        input.cancelledCiRecovery ??
+        (input.hostIsLocal
+          ? formatStopCommand(input.selfPath, input.pr)
+          : null),
     };
   }
 
@@ -507,7 +511,7 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
     return {
       verdict: "NEEDS_HUMAN",
       reason: needsHumanReason(input),
-      recovery: null,
+      recovery: input.cancelledCiRecovery ?? null,
     };
   }
 

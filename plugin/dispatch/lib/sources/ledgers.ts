@@ -702,6 +702,7 @@ async function parkOf(
           key: p.key,
           kind: p.kind,
           lines: framedDecisionLines(p),
+          ...(p.decision === undefined ? {} : { decision: p.decision }),
         })),
       };
 }
@@ -877,11 +878,23 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
         ? snapshotFromListing(listing.value, login)
         : listing.failure.reason;
   if (typeof snapshot === "string")
-    return { ...base, class: "unplaced", why: snapshot, evidence: {} };
+    return {
+      ...base,
+      class: "unplaced",
+      why: snapshot,
+      evidence: {},
+      readFailed: true,
+    };
   const why = unreadable(snapshot);
   if (why === "") return unarmed(pr, base, r);
   if (why !== null || snapshot.canonical?.parsed.kind !== "ledger")
-    return { ...base, class: "unplaced", why: why ?? "", evidence: {} };
+    return {
+      ...base,
+      class: "unplaced",
+      why: why ?? "",
+      evidence: {},
+      readFailed: true,
+    };
   const ledger = snapshot.canonical.parsed.ledger;
   const park = await parkOf(
     pr.number,
@@ -896,6 +909,12 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   return {
     ...base,
     ...classified,
+    ...(classified.class === "unplaced" &&
+    ((ledger.driver.exit === DRIVE_EXIT.HITL_PARKED &&
+      (park === undefined || "unreadable" in park)) ||
+      (forge.base !== undefined && "unreadable" in forge.base))
+      ? { readFailed: true as const }
+      : {}),
     evidence: {
       ...ledgerEvidence(ledger, nowMs, forge),
       ...request.evidence,

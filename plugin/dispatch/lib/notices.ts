@@ -303,3 +303,12 @@ export function unobservedTarget(report: RepoReport, target: string): boolean {
       !report.inScope.some((n) => target === `PR #${n}`))
   );
 }
+
+/** A failure the ledger counted past `failures.notify_after` (`failure-notices.ts`): what failed, how often, since when, the last reason. */
+export function failingNotice(
+  slug: string,
+  key: string,
+  lines: string[],
+): Notice {
+  return notice(`${slug} ${key}`, lines);
+}

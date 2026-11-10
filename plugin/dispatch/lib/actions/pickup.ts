@@ -33,6 +33,7 @@ import type {
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import { batchItemsOf } from "../queue-batch.ts";
 import { admittedVendor } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
@@ -43,6 +44,7 @@ import {
   dispatched,
   type SessionsReport,
 } from "../runtime/port.ts";
+import { freshServedPickup } from "../sources/served.ts";
 import { freshPickup } from "../sources/tracker.ts";
 import { failureText } from "../text.ts";
 import type {
@@ -70,6 +72,7 @@ import { holdingRecords, pickupHold } from "./pickup-hold.ts";
 
 /** What a repository's pickups need beyond the apply state. */
 export interface PickupContext {
+  servedPolicy?: import("../sources/served.ts").ServedPolicy;
   section: DispatchSection;
   tracker: Tracker;
   keys: IssueKeys;
@@ -80,13 +83,23 @@ export interface PickupContext {
 }
 
 /** Why the item must not be started now; `null` when nothing changed. */
-async function changed(
+export async function changed(
   state: ApplyState,
   repo: RepoTarget,
   ctx: PickupContext,
   key: string,
+  served?: { servedPerson?: string; ancestorEpic?: string },
 ): Promise<{ issue: PoolIssue } | { why: string }> {
-  const issue = await freshPickup(ctx.tracker, ctx.section, key);
+  const issue =
+    served?.servedPerson === undefined
+      ? await freshPickup(ctx.tracker, ctx.section, key)
+      : await freshServedPickup(
+          ctx.tracker,
+          key,
+          served.servedPerson,
+          served.ancestorEpic,
+          ctx.servedPolicy,
+        );
   if (typeof issue === "string") return { why: issue };
   // Item keys repeat across repositories: only this repository's records hold it.
   const hold = pickupHold(
@@ -144,7 +157,32 @@ async function launchOne(
 ): Promise<LaunchOutcome> {
   const late = outOfTime(state);
   if (late !== null) return waits(action, late);
-  const before = await changed(state, repo, ctx, action.target);
+  const batchRead = batchItemsOf(action.evidence.batchItems);
+  if (!batchRead.ok) return waits(action, batchRead.failure.reason);
+  const batch = batchRead.value;
+  const checkBatch = async () => {
+    for (const member of batch ?? []) {
+      const fresh = await changed(state, repo, ctx, member.key, {
+        servedPerson: member.person,
+        ...(member.ancestor === undefined
+          ? {}
+          : { ancestorEpic: member.ancestor }),
+      });
+      if ("why" in fresh) return `${member.key}: ${fresh.why}`;
+    }
+    return null;
+  };
+  const beforeBatch = await checkBatch();
+  if (beforeBatch !== null) return waits(action, beforeBatch);
+  const served = {
+    ...(typeof action.evidence.servedPerson === "string"
+      ? { servedPerson: action.evidence.servedPerson }
+      : {}),
+    ...(typeof action.evidence.ancestorEpic === "string"
+      ? { ancestorEpic: action.evidence.ancestorEpic }
+      : {}),
+  };
+  const before = await changed(state, repo, ctx, action.target, served);
   if ("why" in before) return waits(action, before.why);
   const admitted = await admitAccount(
     state,
@@ -164,8 +202,10 @@ async function launchOne(
   );
   if ("outcome" in opened) return opened.outcome;
   const { workspace } = opened;
-  const after = await changed(state, repo, ctx, action.target);
+  const after = await changed(state, repo, ctx, action.target, served);
   if ("why" in after) return waits(action, after.why, slots.account.name);
+  const afterBatch = await checkBatch();
+  if (afterBatch !== null) return waits(action, afterBatch, slots.account.name);
   const beforeRoute = outOfTime(state);
   if (beforeRoute !== null)
     return waits(action, beforeRoute, slots.account.name);
@@ -196,6 +236,8 @@ async function launchOne(
     passTimeoutSec: deadlineSec(ctx),
     codexBypass: state.codexOptIn.on,
     headless: true,
+    ...served,
+    ...(batch === undefined ? {} : { batchItems: batch }),
     replaces: null,
     facts: `state ${after.issue.state.name}, assignee ${after.issue.assignee?.name ?? "nobody"}`,
     createdAt: new Date().toISOString(),
@@ -273,12 +315,25 @@ async function retryPending(
 ): Promise<void> {
   for (const record of replayable(state, repo.slug, ["pickup"])) {
     const item = record.item as string;
-    const fresh = await freshPickup(ctx.tracker, ctx.section, item);
+    const unauthorized = servedAuthorization(state, ctx, record, item);
+    const fresh =
+      record.servedPerson === undefined
+        ? await freshPickup(ctx.tracker, ctx.section, item)
+        : await freshServedPickup(
+            ctx.tracker,
+            item,
+            record.servedPerson,
+            record.ancestorEpic,
+            ctx.servedPolicy,
+          );
+    const batchBlock = await pendingBatchBlock(state, repo, ctx, record);
     const blocked =
-      typeof fresh === "string"
+      unauthorized ??
+      batchBlock ??
+      (typeof fresh === "string"
         ? fresh
         : ((await competing(state, repo, ctx, record)) ??
-          (await accountBlocked(state, record)));
+          (await accountBlocked(state, record))));
     const action = { target: item, stage: "pickup" } as Action;
     report.launches.push(
       headless(await replay(state, record, action, blocked), record),
@@ -295,6 +350,56 @@ export async function applyPickups(
 ): Promise<void> {
   const wanted = report.actions.filter((a) => a.stage === "pickup");
   await retryPending(state, repo, report, ctx);
-  for (const action of rotated(state, wanted, "targets"))
+  for (const action of wanted.some((a) => a.evidence.servedPerson !== undefined)
+    ? wanted
+    : rotated(state, wanted, "targets"))
     report.launches.push(await launchOne(state, repo, action, ctx));
+}
+
+export function servedAuthorization(
+  state: ApplyState,
+  ctx: PickupContext,
+  record: LaunchRecord,
+  item: string,
+): string | null {
+  const members =
+    record.batchItems ??
+    (record.servedPerson === undefined
+      ? []
+      : [{ key: item, person: record.servedPerson }]);
+  const removed = members.find(
+    (m) =>
+      !(state.machine.serve ?? []).some(
+        (p) =>
+          p.tracker[ctx.tracker.adapter as "github" | "linear" | "jira"] ===
+          m.person,
+      ),
+  );
+  return removed === undefined
+    ? null
+    : `${removed.person} is no longer served by this host`;
+}
+
+export async function pendingBatchBlock(
+  state: ApplyState,
+  repo: RepoTarget,
+  ctx: PickupContext,
+  record: LaunchRecord,
+): Promise<string | null> {
+  let batchBlock: string | null = null;
+  for (const member of record.batchItems ?? []) {
+    const check = await freshServedPickup(
+      ctx.tracker,
+      member.key,
+      member.person,
+      member.ancestor,
+      ctx.servedPolicy,
+    );
+    batchBlock =
+      typeof check === "string"
+        ? `${member.key}: ${check}`
+        : await competing(state, repo, ctx, { ...record, item: member.key });
+    if (batchBlock !== null) break;
+  }
+  return batchBlock;
 }

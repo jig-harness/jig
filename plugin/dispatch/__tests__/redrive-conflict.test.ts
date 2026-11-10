@@ -18,6 +18,7 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/schema.ts";
 import { readRecord } from "../lib/launches.ts";
+import { readFailures } from "../lib/failures.ts";
 import { type EndedRow, readRows } from "../lib/log.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -107,9 +108,9 @@ function fixture(
   return w;
 }
 
-async function tick(w: World): Promise<TickReceipt> {
+async function tick(w: World, expectedExit = 0): Promise<TickReceipt> {
   const r = await w.dispatch(["--apply", "--json"]);
-  expectSpawnExit(r, 0);
+  expectSpawnExit(r, expectedExit);
   return JSON.parse(r.stdout) as TickReceipt;
 }
 
@@ -372,11 +373,30 @@ describe("a stop 9 the tick cannot place", () => {
     );
   });
 
-  it("waits when its base branch's head does not read", async () => {
+  it("counts a failed base-head read while leaving the re-drive unplaced", async () => {
     const w = fixture({ mergeable: "CONFLICTING" });
     w.setBaseHead(null);
-    expect(await unplacedOf(w)).toContain(
-      "the head of its base branch does not read",
+    const receipt = await tick(w, 1);
+    expect(readFailures(undefined, dispatchState(w))).toContainEqual(
+      expect.objectContaining({
+        kind: "repository",
+        count: 1,
+        reason: expect.stringContaining(
+          "the head of its base branch does not read",
+        ),
+      }),
+    );
+    expect(receipt.exitStatus).toBe(1);
+    expect(launches(receipt)).toEqual([]);
+    expect(terminalCreates(w)).toEqual([]);
+    expect(receipt.repos[0]?.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "PR #7",
+        readFailed: true,
+        reason: expect.stringContaining(
+          "the head of its base branch does not read",
+        ),
+      }),
     );
   });
 });

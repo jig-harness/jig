@@ -4,9 +4,13 @@
  * labels from its description and author (actions/labels.ts). The labels
  * are the owner's to write, as its board, notifications and history rows
  * are, and only with `--apply` for a repository the machine file lists.
+ * Each write is counted in the failure ledger (failures.ts): one that keeps
+ * failing backs off, and a pull request whose labels no longer need a write
+ * drops its row.
  */
 import { outOfTime } from "./actions/launch.ts";
 import {
+  labelKey,
   planLabels,
   type ProjectionInput,
   writeLabels,
@@ -14,7 +18,8 @@ import {
 import { adoptionOf, ownAuthors } from "./adopt.ts";
 import type { LabelConfig } from "./labels.ts";
 import { manualOpsLabel } from "./owed-steps.ts";
-import type { TickContext } from "./tick-context.ts";
+import { unobservedTarget } from "./notices.ts";
+import { bookOf, type TickContext } from "./tick-context.ts";
 import type { ForgeRead } from "./tick-forge.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { RepoReport } from "./types.ts";
@@ -56,7 +61,13 @@ async function projectLabels(
   },
   { values, section }: Pick<RepoObservation["opened"], "values" | "section">,
 ): Promise<void> {
-  if (labels === null || !forge.ok) return;
+  if (!forge.ok) return;
+  const apply = context.apply;
+  const book = bookOf(context, slug, report);
+  if (labels === null) {
+    book?.wanted("label", []);
+    return;
+  }
   const number = (target: string) => Number(target.replace(/^PR #/, ""));
   const followedUp = new Set(
     report.quiet
@@ -96,11 +107,20 @@ async function projectLabels(
     own: ownAuthors(adoptionOf(section, forge.login), forge.login),
     serialized: forge.serialized,
   });
-  const apply = context.apply;
   planned.report.held = report.labels?.held ?? [];
+  const writing = apply !== null && forge.listed;
+  book?.wanted(
+    "label",
+    writing ? planned.changes.map((c) => labelKey(c.pr)) : [],
+    // A pull request the listings disagree on is read again next tick: its write is not known to be unwanted.
+    (target) =>
+      unobservedTarget(report, target) ||
+      [...forge.disputed].some((n) => target === `PR #${n}`),
+  );
   planned.report.writes = await writeLabels(slug, planned.changes, {
-    apply: apply !== null && forge.listed,
+    apply: writing,
     late: () => (apply === null ? null : outOfTime(apply)),
+    book,
   });
   report.labels = planned.report;
 }

@@ -374,14 +374,25 @@ machine file and never admitted. Each run reports these at its top
 the turn-budget hook counts responses in both runtimes
 ([Codex notes](#codex-notes)).
 
-**Pickups** (the `pickup` stage) start one `do-item` session per item
-assigned to the factory identity in a dispatch state, once: just before
-the launch the item is read again (still assigned, still in a dispatch
-state, no session running for it, no launch record holding it), an account
-with a free slot is admitted and its identity checked, the item gets a
-workspace (a new branch named by `pull_requests.branch_name`, its issue
-linked), and the session starts on `/jig:do-item <key>` with the model and
-effort of the item's route. Its prompt ends by asking the session to record
+**Pickups** (the `pickup` stage) start headless `do-item` passes for
+items assigned to the factory identity in a dispatch state, and for the
+people the host's machine file names under `serve:`. A served person's
+open, not-started assignments need no dispatch state. Unassigned items
+under an epic assigned to them inherit that person, including nested
+epics. Only assignments made by a repository writer qualify.
+
+The Queue view names holds: an open blocker reads "waiting on #N";
+`hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".
+Eligible items are ranked by priority, the work they unblock, epic order,
+size and age. Assignment provenance, relations and children are cached
+until the item's update time changes. Assignment lists refresh with
+headroom and at least every 15 minutes. Served forge logins also join the
+pull-request adoption authors.
+
+Before launching, the tick rechecks the item and admits an account. The
+pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
+it keeps the orchestrator's model and effort and forwards the item's route
+to its implementer. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
@@ -401,23 +412,11 @@ reported as stalled and never relaunched; an item more than one running
 session joins to is reported as a double claim; a session waiting longer
 than `dispatch.blocked_after` is reported.
 
-A pickup starts only where the session runtime binds the session to the
-account it bills, whatever account the host has active. Orca cannot yet:
-`orca agent launch` takes no account and no environment of its own (`orca
-account select` covers OpenCode and Devin only), and starts its agent with
-the configuration directory of the account the host has selected, which a
-person can switch at any moment. So with Orca every pickup is reported,
-with that reason, and nothing is opened or started. The launch path is
-built behind the runtime's answer: a terminal tab running the dispatcher's
-wrapper, which starts the agent of the account's vendor (Claude Code, or
-Codex on the route's `routing.models.codex` model and `routing.efforts.codex`
-effort), binds it through the account's configuration directory as it does
-a drive's pass, and reads the agent's id back as the terminal's tab and
-pane, the id `orca worktree ps` reports agents under. Orca reports a Codex
-session started that way as an agent under that id, but Codex first asks
-whether to trust a folder it has not seen, and nobody answers; that it
-reports a Claude Code session started that way is not shown. It switches on
-once both are settled.
+A pickup starts only where the session runtime binds the pass to the
+account it bills. On Orca it runs through the headless wrapper used by
+follow-ups, with the admitted account's configuration directory and an
+identity check before launch. An interactive launch remains unavailable
+until the runtime can bind it to an account.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
@@ -799,9 +798,59 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 
 It listens on the machine file's `dashboard.listen`, an address in the
 private or loopback ranges (a Tailscale address of the host, say), and
-prints a URL whose token every request needs. Nothing installs or keeps it
-running: start it from a terminal on the host (Orca's phone app reaches one),
-open the URL on the phone, and stop it with Ctrl-C.
+prints a URL whose token every request needs. The foreground command runs
+until Ctrl-C. On Linux, the dashboard can also run under its own retry timer,
+independent of the dispatch and change-probe timers, without Orca:
+
+```sh
+jig dispatch dashboard --install         # preview, using dashboard.listen
+jig dispatch dashboard --install --yes   # install once; repeating is safe
+jig dispatch dashboard --status          # timer, listener health and log locations
+jig dispatch dashboard --access          # explicitly print the private URL
+jig dispatch dashboard --uninstall --yes # remove this reader and its retry timer
+```
+
+Use the installed plugin's `jig` command. An installed reader needs a fixed
+port; stop a foreground reader on that address before installing. Existing
+`dashboard.listen`, `require_token` and `allowed_hosts` settings apply to both
+forms. The URL is a credential when tokens are enabled: only `--access`
+prints the installed reader's URL; service output and installation previews
+never print it. The access record is owner-only and invalidated on renewal.
+The server routes still only read the dispatch records; availability state
+and the private access record live under `~/.local/state/jig/dispatch/dashboard/`.
+
+The supported durable setup is Linux with either a systemd user timer and
+**[lingering](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) enabled** (the account's service manager runs without a login), or cron. With systemd, install refuses until
+`loginctl show-user <user> --property=Linger --value` answers `yes`; ask the
+host administrator to enable lingering for the intended account. Jig does
+not change that host setting. A cron daemon must run at boot. macOS
+LaunchAgents tied to a login stop at logout, so this install refuses them; use the foreground
+command there. Scheduled jobs are unavailable on Windows. Orca is optional
+for all dashboard commands.
+
+The timer starts a reader after install, reboot or failure: allow up to two
+minutes on systemd (including its default timer accuracy window), or a minute
+on cron, plus the installed-copy lookup time. systemd waits a minute after the reader
+exits before retrying; cron checks every minute and the reader lease excludes
+overlaps. A reader notices a new installed plugin copy within a minute and
+exits so the next invocation starts that copy. It stops on the next one-second poll
+when its configuration changes or disappears (after any in-flight bounded
+installed-copy lookup), and renews at the launcher's
+24-hour deadline even without an update. Transient registry failures keep the
+current reader serving and retry the lookup. Each renewal rotates the token;
+run `--access` again for the new URL. The command does not install a private
+network front or open a public listener.
+
+To verify availability on the configured host, first wait for `--status` to
+report a healthy reader and note its pid. End the terminal session, reconnect
+and repeat `--status`; after a host reboot, repeat it again. For crash recovery,
+systemd users can run `systemctl --user kill --signal=SIGKILL
+jig-dispatch-dashboard.service` and wait for the next healthy status with a
+new pid. After updating the installed plugin, check the same recovery and
+obtain a new URL with `--access`. A stopped or disabled timer, failed copy
+lookup, occupied listen address or missing configuration is diagnosed by
+`--status` and the log locations it prints. These checks distinguish host
+logout and reboot verification from the automated process and scheduler tests.
 
 The page reads two things, every minute and when it comes back into focus, and
 writes nothing to the host:

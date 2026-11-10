@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { cancelledRecoveryRecord } from "./lib/state/park-frame.ts";
 import {
   prepareOperatorStop,
   takeExpectStarted,
@@ -448,6 +449,9 @@ async function gatherDoctorInput(
     parkedQuestions: snapshot.ok
       ? snapshot.state.parked.map((p) => p.reason)
       : [],
+    cancelledCiRecovery: snapshot.ok
+      ? cancelledRecoveryRecord(snapshot.state.parked)
+      : undefined,
     leftovers,
     stallThresholdMs: stallThresholdMs(),
     pr: row.key,
