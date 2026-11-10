@@ -391,6 +391,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.189.2] - 2026-11-10
+
+### Fixed
+
+- Review passes disable background tasks in Claude Code and report unfinished held fixes before another round is spent.
+- The standalone review loop waits for the configured reviewer's evidence on the current head before reporting convergence.
+- Accepted findings require a recorded triage-ladder verdict for their round, and thread resolution requires a later reply from the resolving login.
+- Code-scanning severity metrics read the linked alert, support repository-specific mappings and keep unreadable alerts unknown.
+
 ## [0.189.1] - 2026-11-10
 
 ### Fixed
@@ -6600,7 +6609,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.189.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.189.2...HEAD
+[0.189.2]: https://github.com/jig-harness/jig/compare/v0.189.1...v0.189.2
 [0.189.1]: https://github.com/jig-harness/jig/compare/v0.189.0...v0.189.1
 [0.189.0]: https://github.com/jig-harness/jig/compare/v0.188.0...v0.189.0
 [0.188.0]: https://github.com/jig-harness/jig/compare/v0.187.0...v0.188.0

@@ -353,7 +353,7 @@ fields:
     nullable: true
     values_type: string
     read_by: [drive-pr, resolve-review-comments]
-    since: next
+    since: 0.189.2
   review.severity_formats:
     type: list
     nullable: true
