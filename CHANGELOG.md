@@ -181,6 +181,7 @@ changes are marked **Breaking** and say what a consumer changes.
 - [GLOSSARY.md](GLOSSARY.md) defines the test-to-code ratio: the lines of
   tests divided by the lines of code in the code-stats skill's default area,
   the figure its report states beside both counts.
+- M0’s discovery-budget check accepts `--commands <dir>` to include legacy command descriptions in the shared skill listing, with nested names, fallback descriptions, exclusions and skill shadowing.
 
 ### Changed
 
