@@ -88,4 +88,18 @@ describe("the host's default repository for unlabelled served items", () => {
     ])
       expect(read({ repositories, serve_defaults }).ok).toBe(false);
   });
+
+  it("refuses a namespace outside the documented adapter grammar", () => {
+    for (const namespace of [
+      "ENG",
+      "linera:ENG",
+      "linear:",
+      "jira:ENG",
+      "jira::ENG",
+      "jira:site:ENG:extra",
+    ])
+      expect(
+        read({ repositories, serve_defaults: { [namespace]: "/srv/api" } }).ok,
+      ).toBe(false);
+  });
 });

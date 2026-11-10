@@ -495,6 +495,15 @@ function repositories(value: unknown): Checked<MachineRepository[]> {
   return distinct(read.value, (r) => r.path, "a repository");
 }
 
+function isTrackerNamespace(key: string): boolean {
+  const parts = key.split(":");
+  if (parts.some((part) => part === "")) return false;
+  return (
+    (parts.length === 2 && parts[0] === "linear") ||
+    (parts.length === 3 && parts[0] === "jira")
+  );
+}
+
 /**
  * `serve_defaults`: each tracker namespace's default repository, a checkout
  * listed under `repositories`. A namespace is written once, whatever its case.
@@ -515,8 +524,10 @@ function serveDefaults(
         `${where} must be a repository listed under repositories: ${checkout.value}`,
       );
     const key = team.trim().toLowerCase();
-    if (key === "")
-      return invalid("serve_defaults has an empty tracker namespace");
+    if (!isTrackerNamespace(key))
+      return invalid(
+        `${where} must name a tracker namespace as linear:<team> or jira:<site>:<project>`,
+      );
     if (key in out)
       return invalid(`serve_defaults lists a tracker namespace twice: ${team}`);
     out[key] = checkout.value;
