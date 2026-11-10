@@ -382,3 +382,26 @@ test("claim_from refuses a state outside it before any write, inherited claims i
   ).toMatchObject({ outcome: "refused", why: "state" });
   expect(inherited.writes).toEqual([]);
 });
+test("a state that leaves claim_from after the assignment write stands down", async () => {
+  const w = world(true);
+  const names: Record<string, string> = {
+    backlog: "Backlog",
+    todo: "Todo",
+    in_progress: "In Progress",
+  };
+  w.tracker.stateName = ((s: string) => names[s] ?? s) as Tracker["stateName"];
+  const read = w.tracker.getIssue.bind(w.tracker);
+  w.tracker.getIssue = (async (key: string) => {
+    const issue = await read(key);
+    if (key !== "#1" || !issue || !w.writes.includes("assign")) return issue;
+    return { ...issue, state: { name: "Backlog", type: "backlog" } };
+  }) as Tracker["getIssue"];
+  expect(
+    await claimServedIssue(w.tracker, "#1", {
+      person: "dana",
+      ancestor: "#3",
+      claimFrom: ["todo"],
+    }),
+  ).toMatchObject({ outcome: "stood_down", issue: "#1" });
+  expect(w.writes).toEqual(["assign"]);
+});

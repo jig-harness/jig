@@ -208,6 +208,16 @@ async function claimServed(
   // Re-read the entire authorization immediately before changing the child.
   problem = await validateAssignment(tracker, key, user, options);
   if (problem) return refused(problem);
+  if (options.ancestor && assignUnassigned) {
+    // The state is checked again before the assignment write, so a refusal
+    // for it never follows a write.
+    const current = await tracker.getIssue(key);
+    const outsideNow =
+      options.claimFrom && current
+        ? claimFromRefusal(tracker, key, current.state.name, options.claimFrom)
+        : null;
+    if (outsideNow) return outsideNow;
+  }
   if (
     options.ancestor &&
     assignUnassigned &&
@@ -234,7 +244,18 @@ async function claimServed(
   const outside = options.claimFrom
     ? claimFromRefusal(tracker, key, before.state.name, options.claimFrom)
     : null;
-  if (outside) return outside;
+  // The assignment may already be written, so this is a stand-down, never a
+  // refusal that reads as nothing written.
+  if (outside)
+    return {
+      outcome: "stood_down",
+      issue: key,
+      reason: `${key} changed before it could be started: ${
+        outside.outcome === "refused"
+          ? outside.reason
+          : "its state left claim_from"
+      }; queue must refresh`,
+    };
   await tracker.transition(key, "in_progress");
   const after = await tracker.poolIssue(key);
   if (
