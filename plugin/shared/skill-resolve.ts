@@ -120,8 +120,9 @@ function mainCheckout(root: string): string {
     swallow(e, `${dotGit} is no worktree link, so ${root} is its own checkout`);
     return root;
   }
-  const gitdir = /^gitdir:\s*(.+)$/m.exec(text)?.[1]?.trim();
-  if (gitdir === undefined) return root;
+  const line = text.split(/\r?\n/).find((l) => l.startsWith("gitdir:"));
+  const gitdir = line?.slice("gitdir:".length).trim();
+  if (!gitdir) return root;
   // A linked worktree's gitdir is `<main>/.git/worktrees/<name>`: take the
   // pair from the end, since `<name>` may itself be `worktrees`.
   const parts = resolve(root, gitdir).split(sep);
@@ -149,7 +150,7 @@ function managedEnablement(
   const dir = managedSettingsDir(search);
   const dropIns = entries(join(dir, "managed-settings.d"))
     .filter((f) => !f.startsWith(".") && f.endsWith(".json"))
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .map((f) => join(dir, "managed-settings.d", f));
   let result: boolean | undefined;
   for (const file of [join(dir, "managed-settings.json"), ...dropIns])
