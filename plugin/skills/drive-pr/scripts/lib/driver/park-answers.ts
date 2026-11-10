@@ -105,6 +105,7 @@ export interface ParkNote {
 export type ParkAnswersResult =
   | {
       answered: PendingVerdict[];
+      partial: PendingVerdict[];
       waiting: ParkedItem[];
       unread: ParkedItem[];
       disputed: ParkDispute[];
@@ -147,10 +148,20 @@ function classifyPark(
   incomplete: boolean,
 ): void {
   if (answers.length > 0) result.responded.push(item);
+  const decision = answerDecision(item);
   const disputed = disputedAnswers(answers);
   if (disputed) result.disputed.push({ item, answers });
-  if (incomplete) result.unread.push(item);
-  const decision = answerDecision(item);
+  if (incomplete) {
+    result.unread.push(item);
+    if (answers.length > 0)
+      result.partial.push({
+        kind: item.kind,
+        key: item.key,
+        reason: item.reason,
+        answers,
+        ...(decision === undefined ? {} : { decision }),
+      });
+  }
   if (answers.length > 0 && !disputed && !incomplete)
     result.answered.push({
       kind: item.kind,
@@ -178,6 +189,7 @@ export async function parkAnswers(
       : conversationOf(listing);
   const result: ReadParkAnswers = {
     answered: [],
+    partial: [],
     waiting: [],
     unread: [],
     disputed: [],

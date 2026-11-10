@@ -78,6 +78,10 @@ describe("whole-comment answer forms", () => {
     });
     expect(parse("APPROVE.", "thread")?.choice?.option).toBe("Keep");
     expect(
+      parse("approve\nnote PRRT_a: after the migration", "thread")?.choice
+        ?.note,
+    ).toBe("after the migration");
+    expect(
       parse(
         "answer PRRT_a: approve\nnote PRRT_a: after the migration",
         "thread",

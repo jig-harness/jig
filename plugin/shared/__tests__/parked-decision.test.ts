@@ -108,3 +108,18 @@ test("option names cannot change when the ledger redacts them", () => {
     );
   }
 });
+
+test("option names fit structured answers and never reserve the redaction placeholder", () => {
+  for (const name of ["x".repeat(495), "Keep <redacted>"]) {
+    const options = decision.call.options.map((option, index) => ({
+      ...option,
+      name: index === 0 ? name : option.name,
+    }));
+    expect(
+      checkParkedDecision(
+        { ...decision, call: { ...decision.call, options } },
+        "escalated",
+      ).length,
+    ).toBeGreaterThan(0);
+  }
+});

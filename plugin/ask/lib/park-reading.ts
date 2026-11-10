@@ -125,11 +125,19 @@ export function parkAnswerEntries(
       key: v.key,
       answers: v.answers,
       disputed: false,
+      partial: false,
     })),
     ...found.disputed.map((v) => ({
       key: v.item.key,
       answers: v.answers,
       disputed: true,
+      partial: false,
+    })),
+    ...found.partial.map((v) => ({
+      key: v.key,
+      answers: v.answers,
+      disputed: false,
+      partial: true,
     })),
   ].flatMap((v) =>
     v.answers.map((a) => ({
@@ -137,7 +145,7 @@ export function parkAnswerEntries(
       kind: "answer" as const,
       from: a.author,
       to: address,
-      text: `${v.disputed ? "disputed " : ""}${v.key}: ${answerText(a)}`,
+      text: `${v.disputed ? "disputed " : v.partial ? "partial " : ""}${v.key}: ${answerText(a)}`,
       record: { kind: "pull-request-comment", url: a.url },
     })),
   );

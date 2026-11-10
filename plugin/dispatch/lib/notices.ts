@@ -143,7 +143,7 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
           `${p.key}:${a.author}:${a.at}:${a.url}:${a.bodyHash ?? createHash("sha256").update(a.body).digest("hex")}`,
       ),
     )
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
   const disputeKey =
     disputes.length === 0
       ? ""

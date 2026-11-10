@@ -4,6 +4,7 @@ import type { PendingVerdict, PendingAnswer } from "../state/pass-handoff.ts";
 
 const ANSWER_BODY_MAX = 1500;
 const REASON_MAX = 300;
+const CHOICE_MAX = 300;
 export const NOTICE_MAX = 15_000;
 const CUT = "… (cut; read the rest at the url or in the file named above)";
 const clip = (text: string, max: number, why: string) =>
@@ -19,7 +20,7 @@ function answerHeading(a: PendingAnswer): string {
   if (a.choice === undefined) return by;
   return [
     by,
-    `  @${a.author} chose **${a.choice.option}**${a.choice.recommended ? " (the recommended option)" : ""}. Apply this option as the framed decision states it.`,
+    `  @${a.author} chose **${clip(a.choice.option, CHOICE_MAX, "read the complete retained choice in the file named above")}**${a.choice.recommended ? " (the recommended option)" : ""}. Apply this option as the framed decision states it.`,
     ...(a.choice.note === undefined
       ? []
       : [`  Note from @${a.author}: ${a.choice.note}`]),

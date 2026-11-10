@@ -33,6 +33,7 @@ import type { Writer } from "../../../../shared/records/writer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
 import { ghCall, ghRepoEnv } from "./proc.ts";
+import { ANSWER_TEXT_MAX } from "../../../../shared/decisions/answer-limits.ts";
 
 /** The record's kind in the records registry. */
 export const ANSWER_KIND = "drive-answer";
@@ -41,7 +42,7 @@ const ANSWER_MARKER = "jig-send-answer";
 const ANSWER_OPEN = `<!-- ${ANSWER_MARKER}`;
 const ANSWER_CLOSE = "\n-->";
 /** The longest answer, in characters: a sentence or two, which every pass's notice carries whole. */
-export const ANSWER_TEXT_MAX = 500;
+export { ANSWER_TEXT_MAX };
 
 /** A control character, a line or paragraph separator, or a mark that reorders text. */
 function isControl(code: number): boolean {

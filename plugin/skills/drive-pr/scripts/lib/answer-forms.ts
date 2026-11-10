@@ -89,13 +89,18 @@ interface Line {
 }
 function addressedLine(raw: string): Line | null {
   if (indented(raw)) return null;
-  const m = /^(answer|note) (\S+):\s*(\S.*)$/i.exec(raw.trim());
-  return m === null
+  const m = /^(answer|note) (.+)$/i.exec(raw.trim());
+  if (m === null) return null;
+  const rest = m[2] ?? "";
+  const delimiter = rest.lastIndexOf(":");
+  const key = rest.slice(0, delimiter);
+  const text = rest.slice(delimiter + 1).trimStart();
+  return delimiter < 1 || /\s/.test(key) || !/^\S/.test(text)
     ? null
     : {
         kind: m[1]?.toLowerCase() as Line["kind"],
-        key: (m[2] ?? "").toLowerCase(),
-        text: m[3] ?? "",
+        key: key.toLowerCase(),
+        text,
       };
 }
 
@@ -143,20 +148,30 @@ function addressedAnswers(lines: string[]): {
 }
 
 /** Whole-comment grammar, narrowed to this item's single answer on a thread. */
+function bareThreadText(
+  lines: string[],
+  key: string,
+): { text: string; note?: string } | null {
+  const first = lines[0] ?? "";
+  const note = lines.length === 2 ? addressedLine(lines[1] ?? "") : null;
+  if (
+    (lines.length !== 1 &&
+      (note?.kind !== "note" || note.key !== key.toLowerCase())) ||
+    indented(first) ||
+    addressedLine(first) !== null ||
+    answerTextFault(first.trim()) !== null
+  )
+    return null;
+  return { text: first.trim(), ...(note === null ? {} : { note: note.text }) };
+}
+
 function structuredText(
   lines: string[],
   key: string,
   place: "thread" | "conversation",
 ): { text: string; note?: string } | null {
-  const first = lines[0] ?? "";
-  if (
-    place === "thread" &&
-    lines.length === 1 &&
-    !indented(first) &&
-    addressedLine(first) === null &&
-    answerTextFault(first.trim()) === null
-  )
-    return { text: first.trim() };
+  const bare = place === "thread" ? bareThreadText(lines, key) : null;
+  if (bare !== null) return bare;
   const keyed = addressedAnswers(lines);
   if (keyed === null) return null;
   const { answers, notes } = keyed;

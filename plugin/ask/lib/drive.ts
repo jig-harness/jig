@@ -534,7 +534,15 @@ function recordEntries(
       (e) =>
         !ledger?.parked.some((p) =>
           e.text.toLowerCase().startsWith(`answer ${p.key}:`.toLowerCase()),
-        ) && !r.keptAnswers.some((k) => k.record.url === e.record.url),
+        ) &&
+        !r.keptAnswers.some((k) => {
+          const key = /^answer (\S+):/i.exec(e.text)?.[1];
+          return (
+            key !== undefined &&
+            k.record.url === e.record.url &&
+            k.text.toLowerCase().startsWith(`${key.toLowerCase()}:`)
+          );
+        }),
     ),
     ...r.keptAnswers,
     ...parkAnswerEntries(r.parks, name),
