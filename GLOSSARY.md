@@ -2253,8 +2253,7 @@ make, use the entry's term instead.
   merged, taken over, re-armable, stopped by a person); a run that parks or
   fails keeps its tab, and the next run for the same pull request or item
   closes it. A tab a person opened is never closed.
-- **Pull request state labels** (*dispatch labels*, after their setting
-  `dispatch.labels`) — the labels that show where a pull request stands,
+- **Pull request state labels (dispatch labels)** (after their setting `dispatch.labels`) — the labels that show where a pull request stands,
   from any forge client, and through which a person steers its drive and
   the *dispatcher*: off unless a repository turns them on, all under one
   prefix the repository picks (`jig:` by default). Each driven pull request
