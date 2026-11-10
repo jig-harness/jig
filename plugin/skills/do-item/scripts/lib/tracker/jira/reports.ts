@@ -7,6 +7,12 @@
  * by its exact time. A comment search reads every comment of the labelled
  * issues updated in the window and matches the text here: JQL's `comment ~`
  * matches words, and a marker it missed would be a lost finding.
+ *
+ * The candidate pools and the populations (`openIssues`, `assignedIssues`,
+ * `openPopulation`, which the facet census counts, and an `issuesInWindow`
+ * that names no label) are limited to `issue_tracker.jira.pool_issue_types`
+ * where it is set. Reads by key, an issue's children and the reads a label
+ * defines are not: an epic's accounting needs every type its label carries.
  */
 
 import type {
@@ -271,6 +277,12 @@ export function reportOperations(
   const label = async (l: string, signal?: AbortSignal) =>
     hasLabel(l, await client.fieldLabels(signal));
 
+  /** The pool's issue-type clause, as a list to spread; empty when unscoped. */
+  const scope = async (signal?: AbortSignal) => {
+    const clause = await client.poolScope(signal);
+    return clause === null ? [] : [clause];
+  };
+
   return {
     async issuesByKeys(keys) {
       const own = keys.filter((k) => ownKey.test(k));
@@ -285,8 +297,8 @@ export function reportOperations(
         query.createdIn === undefined && query.completedIn === undefined
           ? null
           : await client.timeZone();
-      const clauses: string[] = [];
-      if (query.label !== undefined) clauses.push(await label(query.label));
+      const clauses: string[] =
+        query.label === undefined ? await scope() : [await label(query.label)];
       if (query.createdIn !== undefined && zone !== null)
         clauses.push(widened("created", query.createdIn, zone));
       if (query.completedIn !== undefined && zone !== null)
@@ -436,6 +448,7 @@ export function reportOperations(
         inProject(
           project,
           OPEN,
+          ...(await scope()),
           ...query.withSomeOf.map((l) => someLabel(l, fields)),
           ...(none.length === 0 ? [] : [noLabel(none, fields)]),
         ),
@@ -452,7 +465,7 @@ export function reportOperations(
     async openPopulation(signal) {
       return pools(
         await client.search(
-          inProject(project, OPEN),
+          inProject(project, OPEN, ...(await scope(signal))),
           `open issues of ${project}`,
           signal,
         ),
@@ -482,6 +495,7 @@ export function reportOperations(
           project,
           `assignee = ${quote(accountId)}`,
           `status in ${stringList(names)}`,
+          ...(await scope(signal)),
         ),
         `issues assigned to ${identity}`,
         signal,
