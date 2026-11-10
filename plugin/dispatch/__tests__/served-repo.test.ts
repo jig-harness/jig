@@ -10,29 +10,10 @@ import {
   type RepoScope,
 } from "../lib/sources/served-repo.ts";
 import { freshServedPickup, readServedPickups } from "../lib/sources/served.ts";
+import { issue } from "./served-fixtures.ts";
 
 const scope: RepoScope = { own: "api", others: ["web", "site"] };
 const people = [{ name: "Alex", forge: ["alex"], tracker: { github: "alex" } }];
-
-const issue = (
-  key: string,
-  labels: string[] = [],
-  assignee: string | null = "alex",
-): PoolIssue => ({
-  identifier: key,
-  title: key,
-  url: null,
-  priority: 2,
-  type: "task",
-  size: "small",
-  createdAt: "2026-01-01",
-  updatedAt: "v1",
-  state: { id: "s", name: "Todo", type: "unstarted" },
-  assignee: assignee ? { id: assignee, name: assignee } : null,
-  labels,
-  hasOpenChildren: labels.includes("epic"),
-  truncated: [],
-});
 
 function fake(roots: PoolIssue[], children: Record<string, PoolIssue[]> = {}) {
   const store = new Map<string, unknown>();
