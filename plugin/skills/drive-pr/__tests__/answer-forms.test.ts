@@ -214,6 +214,11 @@ describe("whole-comment answer forms", () => {
         "answer PRRT_a: approve\nanswer other: approve\nnote other: after 10:00",
       )?.choice?.option,
     ).toBe("Keep");
+    expect(
+      parse(
+        "answer PRRT_a: approve\nanswer scope:release:approve\nnote scope:release: after migration",
+      )?.choice?.option,
+    ).toBe("Keep");
   });
 
   it("matches only the public decision when stripping a notification quote", () => {
