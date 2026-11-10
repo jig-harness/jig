@@ -453,7 +453,7 @@ export function automationLabelFindings(
     {
       id: "suggestion:automation-labels",
       severity: "suggestion",
-      message: `these workflow steps open pull requests without an \`automation:\` label: ${unlabelled.join("; ")}. Label each with \`automation:<job>\` (the \`labels\` input of create-pull-request, \`--label\` of \`gh pr create\`) so people and the dispatcher tell them from a person's; the dispatcher then drives one only while it needs work (plugin README, Dispatch labels)`,
+      message: `these workflow steps open pull requests without an \`automation:\` label: ${unlabelled.join("; ")}. Label each with \`automation:<job>\` (the \`labels\` input of create-pull-request, \`--label\` of \`gh pr create\`) so people and the dispatcher tell them from a person's; the dispatcher then drives one only while it needs work (plugin README, Pull request state labels)`,
     },
   ];
 }
