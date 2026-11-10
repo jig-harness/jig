@@ -104,8 +104,8 @@ no item is one, and so is an item with no pull request yet.
 | **History** | What ended and why, filterable, by piece of work too | the outcome log |
 | **Hosts** | Each source's last tick and how overdue, accounts and walls, failed reads, protocol version | each host's line and `hello` |
 
-Merge, Needs you, Running, Queue and History are the views of
-[item 44](line-at-capacity.md), each a tab with its count and each one
+Merge, Needs you, Running, Queue and History are the views in the
+[dispatcher](../plugin/README.md#the-dispatcher), each a tab with its count and each one
 column of full-width cards, with the merge flash above every other view
 while merge now holds a pull request, and the keys and the ⌘K palette
 [dispatch-board.md § Five views](dispatch-board.md#five-views-one-column-of-cards)

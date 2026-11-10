@@ -77,6 +77,11 @@ These are the reasoned parts Jig has:
 - **The audit's judgement**: the scores the audit session gives every
   criterion no [probe](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   settles.
+- **The steward's judgement**: an owner-host pass reads stopped work and the
+  assigned queue and submits closed records through
+  `skills/steward/scripts/steward.ts`. The next tick rechecks them under its
+  launch guards and recovery budget. The model starts no launch and never
+  answers a registry-class park; see [steward](skills/steward/README.md).
 
 The two kinds meet in one pattern almost everywhere: **a model decides, and
 a script writes the record.** A pass chooses a thread's outcome;

@@ -120,6 +120,11 @@ with its question framed, a failed follow-up, an item claimed and then left
 alone. The dispatcher never merges and never answers a parked question. It
 never restarts a drive a person stopped.
 
+An agent inspects work the rules leave waiting, every 20 minutes when its
+input changes. This [steward](GLOSSARY.md) proposes routine recoveries and
+values for missing issue fields. It frames what needs a person. The
+dispatcher checks each proposal before acting.
+
 Every session it started leaves a row in the [outcome log](GLOSSARY.md)
 when it ends: the stage, the account, how long it ran and how it ended. One
 dashboard opens on the pull requests ready to merge, or on what needs a person
@@ -162,6 +167,7 @@ Orca is the first, and another runtime joins by implementing the same
 interface.
 
 - **Skills:** [`do-item`](plugin/skills/do-item/SKILL.md),
+  [`steward`](plugin/skills/steward/README.md),
   [`drive-pr`](plugin/skills/drive-pr/README.md),
   [`operator`](plugin/skills/operator/SKILL.md)
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),

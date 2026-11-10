@@ -51,6 +51,12 @@ import {
 import type { Outcome } from "../../../shared/outcome.ts";
 import { failureText } from "../text.ts";
 import { RECOVERY_FACTS, sameFacts } from "../recovery-facts.ts";
+import { stewardFresh } from "../steward-apply.ts";
+import { markStewardEffect } from "../steward.ts";
+import {
+  recoveryReplayReading,
+  startCheckedRecovery,
+} from "../steward-recovery.ts";
 import { workspaceOfTree } from "../stall-tree.ts";
 import type {
   Action,
@@ -77,7 +83,6 @@ import {
   replay,
   replayable,
   rotated,
-  startRecord,
   waits,
 } from "./launch.ts";
 
@@ -86,7 +91,7 @@ export type { ApplyState } from "./launch.ts";
 /** A fresh read of one pull request's drive, whether a person's `hold` label is on it, and how a launch claims it where another host reads it. */
 export interface FreshDrive {
   /** The drive read again; a failure when the pull request or its ledger does not read. */
-  read: (pr: number) => Promise<Outcome<DrivenPr | null>>;
+  read: (pr: number, steward?: boolean) => Promise<Outcome<DrivenPr | null>>;
   held: (pr: DrivenPr) => boolean;
   /** Whether `dispatch.labels` allows the tick to write a label; `false` leaves every rearm acknowledgment pending. */
   labelWrites?: boolean;
@@ -181,15 +186,23 @@ async function retryBlocked(
 ): Promise<string | null> {
   let again: Outcome<DrivenPr | null>;
   try {
-    again = await fresh.read(record.pr as number);
+    again = await fresh.read(
+      record.pr as number,
+      record.stewardDecision !== undefined,
+    );
   } catch (error) {
     return `its ledger cannot be read again: ${failureText(error)}`;
   }
   if (!again.ok)
     return `its ledger cannot be read again: ${again.failure.reason}`;
-  const read = again.value;
-  if (read === null) return "its ledger cannot be read again";
-  if (fresh.held(read)) return HELD;
+  const verified = recoveryReplayReading(
+    record,
+    again.value,
+    fresh.held,
+    state.root,
+  );
+  if (!verified.ok) return verified.failure.reason;
+  const read = verified.value;
   if (!sameFacts(record.facts, factsOf(read)))
     return `its ledger changed since the launch (now ${factsOf(read)})`;
   const unwanted = classBlocked(record, read);
@@ -203,7 +216,20 @@ async function retryBlocked(
       ? replayedChange(state, record, read)
       : changedStale(record.redrive, read);
   if (blocked !== null) return blocked;
-  if (record.redrive?.uncleanTree === true || record.rearmLabel != null) {
+  const different = await replayOriginalTree(record, read);
+  return different ?? accountBlocked(state, record);
+}
+
+/** Original-tree recoveries retain their actor and clone check on replay. */
+async function replayOriginalTree(
+  record: LaunchRecord,
+  read: DrivenPr,
+): Promise<string | null> {
+  if (
+    record.redrive?.uncleanTree === true ||
+    record.rearmLabel != null ||
+    record.stewardDecision !== undefined
+  ) {
     if (record.workspace === null)
       return "the original workspace is no longer recorded";
     const different = await originalTree(
@@ -213,7 +239,7 @@ async function retryBlocked(
     );
     if (different !== null) return different;
   }
-  return accountBlocked(state, record);
+  return null;
 }
 
 /**
@@ -404,6 +430,9 @@ function driveRecord(
   const kind = isTakeover(action) ? "takeover" : "rearm";
   return {
     version: 1,
+    ...(action.steward === undefined
+      ? {}
+      : { stewardDecision: action.steward.id }),
     id,
     token: newToken(),
     action: kind,
@@ -481,8 +510,9 @@ async function launchOne(
   const pastDeadline = outOfTime(state);
   if (pastDeadline !== null)
     return waits(action, pastDeadline, slots.account.name);
-  const result = await startRecord(
+  const result = await startCheckedRecovery(
     state,
+    action,
     driveRecord(state, repo, action, pr, slots, workspace, id, named),
     slots,
     drive.claimer,
@@ -520,7 +550,7 @@ export async function applyDrives(
     const pr = Number(action.target.replace(/^PR #/, ""));
     let read: Outcome<DrivenPr | null>;
     try {
-      read = await fresh.read(pr);
+      read = await fresh.read(pr, action.steward !== undefined);
     } catch (error) {
       report.launches.push(
         waits(action, `its ledger cannot be read again: ${failureText(error)}`),
@@ -536,9 +566,25 @@ export async function applyDrives(
       );
       continue;
     }
-    report.launches.push(
-      await launchOne(state, repo, action, read.value, sessions, fresh),
+    const result = await launchOne(
+      state,
+      repo,
+      action,
+      stewardFresh(
+        read.value,
+        action,
+        read.value !== null && fresh.held(read.value),
+      ),
+      sessions,
+      fresh,
     );
+    report.launches.push(result);
+    if (
+      action.steward &&
+      result.record !== null &&
+      ["launched", "retried", "lost"].includes(result.outcome)
+    )
+      markStewardEffect(action.steward.id, result.record, state.root);
   }
 }
 

@@ -57,7 +57,8 @@ board reads. The [hub](../GLOSSARY.md), the page the dashboard grows into
 ([hub.md](hub.md), item 42), builds the board as its first stage, adds the
 round, the threads by bot and not a bot and the CI hold to the status row,
 and lets a tick for one repository refresh its part of the line.
-[Item 44](line-at-capacity.md) sets how the page shows it: the five views,
+The [dispatcher reference](../plugin/README.md#the-dispatcher) describes
+how the page shows it: the five views,
 Merge first with its flash on every other view, the act every need opens
 with, and the keys ([§ Five views](#five-views-one-column-of-cards)).
 
@@ -518,8 +519,8 @@ them as the page that explains them:
 | --- | --- | --- |
 | **Merge** | What can I merge now? | Ready to merge's lanes: merge now, approve first, update next |
 | **Needs you** | What waits on me? | the Needs you column, grouped by act, each card naming the person it waits on |
-| **Running** | What is being worked on? | Driven and Picking up, under the host's load gauge ([line-at-capacity.md](line-at-capacity.md#the-hosts-load-factor)) |
-| **Queue** | What starts next, and why not yet? | Coming, with the served people's ranked queue and each held item's reason ([line-at-capacity.md](line-at-capacity.md#serving-named-people)) |
+| **Running** | What is being worked on? | Driven and Picking up, under the host's load gauge ([load factor](../plugin/CONFIGURATION.md#the-machines-dispatch-file)) |
+| **Queue** | What starts next, and why not yet? | Coming, with the served people's ranked queue and each held item's reason ([served pickups](../plugin/README.md#the-dispatcher)) |
 | **History** | What ended, and why? | Merged, the outcome log and the tick strip |
 
 The columns of [§ One card per piece of work](#one-card-per-piece-of-work-in-one-column)
@@ -537,7 +538,7 @@ to carry another's cards.
 
 **A card shows the act first.** A Needs-you card opens with its act from
 the closed list in
-[line-at-capacity.md § What each need asks of a person](line-at-capacity.md#what-each-need-asks-of-a-person)
+[a need's act](../plugin/README.md#the-dispatcher)
 (Merge, Decide, Authorize, Reply, Do, Investigate), then the ask in one
 sentence, then the recommended option with what it changes and what it
 costs. The other options, a park's steps for a person (as a checklist) and
@@ -768,9 +769,9 @@ step 4.
    "1 bot · 1 not a bot"; each reaches a person's phone once; `jig ask`
    on each names the same lane and act as its card; and a board read made
    to fail leaves that tick's launches as they were.
-3. **Ready to merge on the page**, built with item 44's five views
-   ([line-at-capacity.md § Build order](line-at-capacity.md#build-order),
-   its step 3): the Merge view with its lanes, the status rows, `waitsOn`
+3. **Ready to merge on the page**, built with the
+   [dispatcher's five views](../plugin/README.md#the-dispatcher): the Merge
+   view with its lanes, the status rows, `waitsOn`
    and the pinned command; the counts on every tab; the merge flash; the
    keys and the palette; the history view's counts. Done when the
    browser suites open it for a quiet line, a full queue and a morning of

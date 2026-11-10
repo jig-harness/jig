@@ -45,6 +45,7 @@ between loops.
 | `/jig:descar` | a document is about to be promoted, or its history has piled up |
 | `/jig:docs` | the docs tree needs a health check, or a plan for the documents it lacks |
 | `/jig:code-stats` | the repository's size and makeup is needed as evidence |
+| `/jig:steward` | an owner-host dispatcher pass inspects stopped work and the assigned queue and proposes guarded recovery records for the next tick |
 | `/jig:programmatic-execution` | an analysis reads ten or more files, to run as one script |
 | `/website-update` | the site's sources changed since its last check |
 

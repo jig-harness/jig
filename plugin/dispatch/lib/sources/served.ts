@@ -188,6 +188,10 @@ export async function readServedPickups(
     assignedBy: c.by,
     servedPerson: c.identity,
     queueIssue: c.issue,
+    queueRank: {
+      unblocks: c.unblocks,
+      ...(c.epicOrder === undefined ? {} : { epicOrder: c.epicOrder }),
+    },
     ...(c.ancestor === undefined ? {} : { ancestorEpic: c.ancestor }),
   }));
   return out;

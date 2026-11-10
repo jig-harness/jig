@@ -71,15 +71,6 @@ whoever drives it: coming, picking up, driven, needs you, ready to merge,
 or merged. Work moves in any direction, and a pull request
 that was ready and moved back says why. Merging stays a person's.
 
-### 44. The line at capacity: the steward
-
-Every 20 minutes an agent, the [steward](GLOSSARY.md), reads what is stopped
-and waiting, including the served people's queue. It has the dispatcher
-restart a drive that stopped for a passing reason, and fills in a missing
-priority or size. It frames what still needs a person. It never merges,
-settles what only a person may decide, or writes code. Nothing starts while
-its input stays the same.
-
 ### 39. Addresses: asking and telling the stations of the line
 
 Every station on a piece of work has an address, such as

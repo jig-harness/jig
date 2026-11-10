@@ -130,7 +130,7 @@ rather than Codex's own default.
 
 No model is asked for the tier, and no tier or model is written on the
 issue. Where a size or a type is missing, the
-[steward](../GLOSSARY.md) of [item 44](line-at-capacity.md#the-steward-every-20-minutes)
+[steward](../plugin/skills/steward/README.md)
 may fill in the facet, with a comment saying why, and the rules then derive
 the tier from it as from any other.
 
@@ -284,7 +284,7 @@ the agent definition's pin, then the rules.
   own model and effort, and `do-item` forwards the rules' model and effort
   to its implementer explicitly, recording `source: rules` for each, where
   the repository declares `routing`
-  ([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless)).
+  ([headless pickups](../plugin/README.md#the-dispatcher)).
   It is the forwarding [Build order](#build-order) step 5 brings to every
   run, here ahead of it for the dispatched pass, whose session nobody
   chose.

@@ -40,6 +40,7 @@ runs, what it hands over to.
 | [resolve-conflicts](skills/resolve-conflicts/README.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files (those the repository lists in its configuration or declares in its change-area catalog), records every decision in the commit message, checks that no change was silently dropped, verifies staged work belongs to the operation, and applies repository obligations to the whole resolved diff; replays past merges to report where they conflicted, why, and the change that removes each cause | `/jig:resolve-conflicts` | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge |
 | [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running or its CI-repair budget is spent; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow |
 | [operator](skills/operator/SKILL.md) | Answers a person's question about the line (where a pull request, item or follow-up stands, what waits on a person, what was said to a station) from [`jig ask`](#asking-a-station-where-it-stands), a status as one fixed card and anything else in sentences, and sends their command to a station (hold, release, drive, an answer to a parked question, a mailbox directive) with [`jig send`](#telling-a-station-what-to-do), only on their instruction and after showing them the dry run; holds no state of its own | `/jig:operator` | Reads and writes the records [do-item](skills/do-item/SKILL.md), [drive-pr](skills/drive-pr/README.md) and the follow-up leave and act on; hands the work of a station to that station's skill, and a question about how Jig works to [jig](skills/jig/README.md) |
+| [steward](skills/steward/README.md) | Inspects stopped work and the assigned queue, proposes recoveries and missing facets, and frames what still needs a person; the next tick applies its records under existing guards | `/jig:steward` (dispatcher only) | Reads the dispatcher's digest, writes owner-local records, and sends recurring recoveries to [reflect](skills/reflect/README.md) |
 
 **Review a change.** Check work against the repository's own standards before and during review: `change-areas` says what the change owes, `review` and `github-actions` check it.
 
@@ -282,7 +283,7 @@ until the plugin is updated.
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
 enables for each repository: the `rearm` stage, and the `pickup`,
-`followup`, `notify` and `steer` stages below. With `rearm`, each re-arm
+`followup`, `notify`, `steer` and `steward` stages below. With `rearm`, each re-arm
 of a stopped drive, and each takeover of a wedged driver this machine
 started (or another host did: see several hosts, below), or of a silent
 driver no launch started that ran on this host and whose run this host
@@ -421,6 +422,21 @@ until the runtime can bind it to an account.
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 ```
+
+**The steward** (the `steward` stage, with `steward.enabled: true` in the
+machine file) inspects what the rules leave stopped, under the owner host's
+account and load admission. Every 20 minutes, only when the digest changed,
+it can propose a transient-stop retry, a missing issue facet, queue tie order
+and the act and ask for a human need. It can also propose one fixed resume of
+an ended dispatched pass that recommended an option outside the human-decision
+registry. The follow-up lane's own routine retry runs first. The next tick
+applies its closed records under the current holds and recovery budget;
+the steward itself launches nothing. It never answers a registry park or
+re-arms a drive a person stopped. A pass lasts at most 15 minutes, uses the
+admitted vendor's complex-tier model, and runs at most three times an hour.
+Its digest and records stay in the owner's state database. A recovery class
+re-armed three times in a week proposes a reflection rule.
+See [steward](skills/steward/README.md) for setup and record boundaries.
 
 **Follow-ups** (the `followup` stage) start one headless pass per pull
 request merged since the stage was switched on (`followup_since`), running

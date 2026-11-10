@@ -326,6 +326,19 @@ const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: `CREATE TABLE pickup_reads (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
   },
+  {
+    additive: true,
+    sql: `CREATE TABLE steward_runs (
+      id TEXT PRIMARY KEY, repo TEXT NOT NULL, hash TEXT NOT NULL,
+      at_ms INTEGER NOT NULL, digest TEXT NOT NULL, submitted INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX steward_runs_repo ON steward_runs (repo, at_ms);
+    CREATE TABLE steward_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, run TEXT NOT NULL REFERENCES steward_runs(id),
+      repo TEXT NOT NULL, value TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0, effect TEXT, effect_at_ms INTEGER
+    );
+    CREATE INDEX steward_records_repo ON steward_records (repo, applied);`,
+  },
 ];
 
 /** The schema version this plugin writes. */

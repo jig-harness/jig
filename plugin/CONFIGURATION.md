@@ -1333,6 +1333,11 @@ with no label of the set is never read.
 
 ### The machine's dispatch file
 
+The steward's hourly cap is shared across the host's repositories. Missing
+field writes re-read the field immediately before updating it and preserve
+values found nonempty. A simultaneous external edit can still race these
+separate tracker requests; see the [steward's concurrency limit](skills/steward/README.md).
+
 What this machine dispatches, and on whose accounts, lives only in
 `$JIG_HOME/dispatch.yaml` (default `~/.jig/dispatch.yaml`); a repository
 cannot set it, and environment variables cannot override settings inside it.
@@ -1346,7 +1351,7 @@ unknown key anywhere in the file is refused.
 ```yaml
 repositories:
   - path: /home/me/dev/web          # absolute; ~/ is expanded
-    stages: [rearm]                  # rearm, pickup, followup, notify, steer
+    stages: [rearm]                  # rearm, pickup, followup, notify, steer, steward
     followup_since: 2026-10-30T00:00:00Z
     owner: true                      # false on every other host that lists it
 accounts:
@@ -1379,6 +1384,9 @@ records:
   shared: forge                     # where another host reads this host's launches
 send: true                          # false refuses every jig send from this machine
 change_probe: true                  # false turns off the minute-by-minute change probe
+steward:
+  enabled: false                    # true enables the stage on the owner host
+  every: 20m                        # unchanged digests still start no pass
 load:
   enforce: false                    # true holds what a gauge refuses; false only reports it
   memory_free: 0.15                 # share of the host's memory kept free after a launch
@@ -1396,6 +1404,8 @@ load:
 | Setting | Default / meaning |
 |---------|-------------------|
 | `serve[]` | Empty; the people this host serves, beside any repository's factory identity. Each entry has a `name`, `forge` logins and a `tracker` map from adapter name (`github`, `linear`, `jira`) to that person's identity. Only this machine file can name served people; repository configuration cannot widen the list. Their forge logins join the adoption authors. With `pickup` enabled, an open, not-started assignment from a repository writer is wanted without a dispatch-state requirement. Unassigned descendants of an assigned epic inherit that person. Holds and open blockers stay visible in the Queue view with their reason |
+| `steward.enabled` | `false`; enables the owner host's headless [steward](skills/steward/README.md) for repositories whose stages include `steward`. The pass reads a digest and submits closed records for the next tick; it never launches work itself. It shares account slots and load admission, uses the admitted vendor's complex-tier model, has a 15-minute deadline and starts at most three times in a rolling hour. The tick rechecks every effect against current facts and preserves human stops, holds and registry-class parks |
+| `steward.every` | `20m`; the minimum time between steward passes for a repository. An unchanged digest starts no pass regardless of elapsed time. Digests, once-only recovery records and submitted queue ordering remain in the owner host's state database |
 | `repositories[].path` | Required; the repository's local checkout. Several hosts may list one repository, each in its own machine file, with one of them its owner (`owner`) |
 | `repositories[].owner` | `true`; whether this host owns the repository's notifications, dispatch labels and outcome-log rows, its board and its reflection findings. Set it `false` on every host but one that lists the repository: such a host launches, re-arms, re-drives and takes over through the shared records (`records.shared`) as the owner does, and never notifies for the repository, never writes its labels, never writes outcome-log rows for stops it did not launch and never records a recurring class as a reflection finding, so each is written once. A session it launched that waits or drifts is reported on that host, not notified. Every run's report names the host that owns the repository, and says so when another host's claims say they own it too |
 | `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives, and a re-drive, once per change, of a converged drive whose pull request now conflicts with its base or whose head moved past the head the drive verified, and of a drive that stopped on a conflict (exit `9`). `pickup` starts a headless `do-item` pass per item the repository's `dispatch` section makes a pickup, bound to an admitted account through its configuration directory as a follow-up's pass is, under `dispatch.pickup_deadline` and with the host's `drive.pass_args` (or, on a Codex account, only where `drive.codex_bypass` is set). The pass keeps the agent's own model and effort, and `do-item` forwards the item's route to the implementer it delegates to. A pass that cannot finish without a person stops on a `Question:` line, which is notified as a need; nothing is started for the item again until it leaves the dispatch states and comes back. `followup` starts a headless pass running `dispatch.followup_command` per merged pull request, bound to an admitted account through its configuration directory as a drive's pass is, under the pass deadline and with the host's `drive.pass_args` (or, on a Codex account, `drive.codex_bypass`). Follow-ups open their workspaces in a lane of their own (`followup_opens_per_tick`, `followup_concurrency`), so they never wait for a drive's launch, nor a drive's launch for them; they still share the accounts' slots. A pass that stops on a routine question (one of the dispatcher's fixed classes, which the pass tags itself: today `local-leftover`, a local branch or worktree it may not delete without asking) is run again once with the class's standing answer (keep it, list it, finish the rest and record done), as is a follow-up that failed before passes tagged their questions, which needs its launch record still on the host only when no retry evidence was kept with its outcome; a pass that stops on any other question, or fails again after that run, is notified with its question. `notify` sends each notification once (with Orca, the workspace's comment, marked unread). `steer` sends the one nudge, `Your usage limit has reset. Continue`, once to an interactive session the runtime reports waiting after its account's wall reset; no other stage implies it |

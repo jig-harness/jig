@@ -68,6 +68,7 @@ import {
   recurringClasses,
 } from "./recurring.ts";
 import { stateDb } from "./state.ts";
+import { stewardRecurrences } from "./steward-recurring.ts";
 import { failureText } from "./text.ts";
 
 /** One repository as the tick read it, for its route. */
@@ -195,6 +196,13 @@ function findingText(
   timeZone: string,
   week: string,
 ): Pick<FindingEvent, "title" | "description" | "suggested_fix"> {
+  if (r.stage === "steward")
+    return {
+      title: `The steward re-armed ${r.class} ${r.rows} times in a week on ${r.repo}`,
+      description: `The owner host's steward records show ${r.rows} executed recoveries of class ${r.class} in the rolling week ending ${new Date(nowMs).toISOString()}. Each record keeps its evidence and reason in the steward records.`,
+      suggested_fix:
+        "Review these recoveries and propose a guarded dispatcher rule for this transient cause, so the next occurrence needs no steward judgment. Keep the recovery budget and human stop and park guards.",
+    };
   const starts = recurrenceDays(nowMs, timeZone);
   const days = starts
     .filter((_, i) => r.nights[i])
@@ -284,7 +292,10 @@ const failure = (
  */
 function findRecurrences(run: RepoRun): "no-time" | undefined {
   const { db, repo, options, timeZone, report } = run;
-  const recurring = recurringClasses(db, options.nowMs, timeZone, repo.slug);
+  const recurring = [
+    ...recurringClasses(db, options.nowMs, timeZone, repo.slug),
+    ...stewardRecurrences(db, repo.slug, options.nowMs),
+  ];
   if (recurring.length === 0) return undefined;
   // The Git reads below start only with time left to finish them.
   if (options.apply && secondsLeft(run) < 1) return "no-time";
