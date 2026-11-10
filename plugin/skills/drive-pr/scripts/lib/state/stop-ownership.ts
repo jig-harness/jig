@@ -1,7 +1,7 @@
 /** A deliberate stop may terminate only ownership that its recovery can publish. */
 import { readConfig } from "../../../../../shared/consumer.ts";
 import { dispatchSection } from "../../../../../dispatch/lib/section.ts";
-import { commandLabel } from "../../../../../dispatch/lib/labels.ts";
+import { commandLabel } from "../../../../../shared/pr-labels/projection.ts";
 import type { ClaimDiag } from "../claim.ts";
 import { worktreePathKey } from "./actor.ts";
 import { personStopFor } from "./person-stop.ts";

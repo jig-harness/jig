@@ -146,6 +146,26 @@ export const LEDGER_NOT_WRITTEN_EXIT = 75;
 export type MirrorOutcome = "written" | "refused" | "failed";
 
 /**
+ * `drive-state.ts handoff`'s exit when its guards refused the ledger write,
+ * for a caller that set `HANDOFF_TELLS_REFUSED` to `1`: it must not act as
+ * if the ledger were its own (the drive's state label follows only a ledger
+ * it wrote). Any other caller sees `0` for a refusal, as for a write.
+ */
+export const LEDGER_REFUSED_EXIT = 76;
+export const HANDOFF_TELLS_REFUSED = "DRIVE_PR_HANDOFF_TELLS_REFUSED";
+
+/** `handoff`'s exit for what the ledger write did. */
+export function handoffExit(
+  outcome: MirrorOutcome,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  if (outcome === "failed") return LEDGER_NOT_WRITTEN_EXIT;
+  return outcome === "refused" && env[HANDOFF_TELLS_REFUSED] === "1"
+    ? LEDGER_REFUSED_EXIT
+    : 0;
+}
+
+/**
  * Why the driver this process writes for may not write as it now; `''` when
  * it may. A child that outlived its driver keeps the driver's variable: only
  * the acquisition it names, still holding the PR's lock, writes as that

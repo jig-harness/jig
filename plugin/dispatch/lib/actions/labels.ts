@@ -19,7 +19,11 @@
  * forge refuses (a label that does not exist, no permission) is a record of
  * the receipt, not a failed tick, and a later tick tries again: the failure
  * ledger (`failures.ts`) counts the failures in a row and backs the write
- * off, reported as waiting, until its next try.
+ * off, reported as waiting, until its next try. Just before a state write
+ * the open pull request's ledger is re-read, and the write waits for a
+ * later tick when the ledger changed since this tick read it, so a drive's
+ * label for its newer ledger is not replaced from the older one
+ * (`label-freshness.ts`).
  */
 import type { Contention } from "../contention.ts";
 import type { ActionBook } from "../failures.ts";
@@ -252,6 +256,8 @@ export interface WriteMode {
   late: () => string | null;
   /** The failure ledger: a write that keeps failing backs off, and each write's result is counted. */
   book?: ActionBook | null;
+  /** Just before a write, why it is skipped this tick (its pull request's ledger changed since the tick read it, `label-freshness.ts`); `null` to write it. */
+  current?: (change: LabelChange) => Promise<string | null>;
 }
 
 /** The failure ledger's key of a pull request's label write; its markers' write keeps a key of its own. */
@@ -260,6 +266,19 @@ export const labelKey = (pr: number, part?: "markers"): string =>
 
 const describe = (c: LabelChange): string =>
   [...c.add.map((l) => `+${l}`), ...c.remove.map((l) => `-${l}`)].join(" ");
+
+/** Why a write waits for a later tick: the tick's time is spent, the write backs off, or its ledger changed since the tick read it; `null` to write it now. */
+async function waitsFor(
+  change: LabelChange,
+  key: string,
+  mode: WriteMode,
+): Promise<string | null> {
+  const late = mode.late();
+  if (late !== null) return late;
+  const backing = mode.book?.waits(key) ?? null;
+  if (backing !== null) return backing;
+  return (await mode.current?.(change)) ?? null;
+}
 
 /** Write each change in one call, in pull request order; each outcome goes into the receipt. */
 export async function writeLabels(
@@ -279,15 +298,10 @@ export async function writeLabels(
       out.push({ ...base, outcome: "would", detail: describe(change) });
       continue;
     }
-    const late = mode.late();
-    if (late !== null) {
-      out.push({ ...base, outcome: "waits", detail: late });
-      continue;
-    }
     const key = labelKey(change.pr, change.part);
-    const backing = mode.book?.waits(key) ?? null;
-    if (backing !== null) {
-      out.push({ ...base, outcome: "waits", detail: backing });
+    const waits = await waitsFor(change, key, mode);
+    if (waits !== null) {
+      out.push({ ...base, outcome: "waits", detail: waits });
       continue;
     }
     const of = { key, kind: "label" as const, target: base.target };
