@@ -309,7 +309,7 @@ function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
     lines.push("", "Parked, awaiting a person:");
     for (const p of l.parked)
       lines.push(
-        `- \`${p.key}\` (${p.kind}, ${p.class ?? "no class"}, round ${p.round}): ${summaryText(p.reason)}`,
+        `- \`${p.key}\` (${p.kind}, ${p.class ?? "no class"}, round ${p.round}${p.digest === undefined ? "" : `, framing ${p.digest}`}): ${summaryText(p.reason)}`,
       );
   }
   if (l.decisions.length > 0)

@@ -900,6 +900,11 @@ latest answer counts. A disputed item stays parked. The
 [structured answer rules](../SKILL.md#picking-up-a-stopped-drive) define when
 choices and notes agree and when answers stay free. A park records when it
 was made; an older park without that time is never read as answered.
+A digest-bearing answer must also name the park's stored decision digest;
+a stale answer keeps the item parked and prevents provisional work. If local
+state and the readable ledger disagree about the framing, the re-arm waits
+for publication to catch up. Parks and answers without a digest keep their
+time-based binding.
 A conflicting PR may be re-armed for
 conflict repair while unanswered items stay parked; the `wide` autonomy
 exception may also unpark `escalated` items nobody has answered. Any person's

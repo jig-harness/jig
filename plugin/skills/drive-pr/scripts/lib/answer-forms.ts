@@ -1,5 +1,6 @@
 /** One interpretation of a person's answer for every reader of parked work. */
 import { createHash } from "node:crypto";
+import { splitAnswerDigest } from "../../../../shared/decisions/digest.ts";
 import { normalizeAnswerText } from "../../../../shared/decisions/answer-normalize.ts";
 import {
   renderParkedDecision,
@@ -304,7 +305,8 @@ function choiceOf(
     call.options.length
   )
     return undefined;
-  const normalized = normalizeAnswerText(text);
+  const suffix = splitAnswerDigest(text);
+  const normalized = normalizeAnswerText(suffix.text);
   const form =
     normalized === "approve"
       ? "approve"
@@ -325,6 +327,7 @@ function choiceOf(
         option: option.name,
         recommended: option.id === call.recommended,
         form,
+        ...(suffix.digest === undefined ? {} : { digest: suffix.digest }),
         ...(note === undefined ? {} : { note }),
       };
 }
@@ -346,8 +349,25 @@ export function parseAnswerComment(
   )
     return null;
   const structured = structuredText(lines, item.key, place);
+  // Inspect this item's lines before whole-comment grammar or option lookup:
+  // an obsolete option or added prose must never turn a stale answer free.
+  const digests = linesOutsideFences(lines.join("\n")).flatMap((raw) => {
+    if (indented(raw)) return [];
+    const keyed = addressedLine(raw, item.key);
+    const text =
+      keyed?.kind === "answer" && keyed.key === item.key.toLowerCase()
+        ? keyed.text
+        : place === "thread" && keyed === null
+          ? raw.trim()
+          : "";
+    const digest = splitAnswerDigest(text).digest;
+    return digest === undefined ? [] : [digest];
+  });
+  const stale =
+    item.digest !== undefined && digests.some((d) => d !== item.digest);
+  const digest = digests.find((d) => d !== item.digest) ?? digests[0];
   const choice =
-    structured === null
+    stale || structured === null
       ? undefined
       : choiceOf(item, structured.text, structured.note);
   return {
@@ -356,6 +376,8 @@ export function parseAnswerComment(
     url: c.url,
     body: withoutAnswerRecord(c.body),
     bodyHash: createHash("sha256").update(c.body).digest("hex"),
+    ...(digest === undefined ? {} : { digest }),
+    ...(stale ? { stale: true as const } : {}),
     ...(choice === undefined ? {} : { choice }),
   };
 }
