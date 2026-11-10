@@ -167,7 +167,8 @@ function disabled(search: SkillSearch, id: string): boolean {
 
 /** Whether `rel`, a relative path, stays inside its origin. */
 const inside = (rel: string): boolean =>
-  rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+  rel === "" ||
+  (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 
 /**
  * Whether an install record applies to `search.root`: user-wide (`user`, or no
