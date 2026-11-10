@@ -764,8 +764,9 @@ outlives the session that spawned it, so its console is not where you look:
   too): `converged` on `CONVERGED` only while the head is the verified
   head, `parked` for a park, a person's stop, a stop only a person settles
   and a stop the dispatcher re-drives (where it would read `stale`),
-  `driving` for one it re-arms, nothing for `PR_NOT_OPEN`. `drives.ts
-  --stop` labels the same once it marks the ledger stopped. Never `stale`
+  `driving` for one it re-arms, nothing for `PR_NOT_OPEN`. A person's
+  stop through `drives.ts` labels the same once it marks the ledger
+  stopped. Never `stale`
   or `held`, nothing on a pull request carrying `hold` or `held`, and never
   a new label. Best effort: `gh` calls under `ghCall`'s deadline, the edit
   only when the labels disagree; a refusal is one `labels:` line on stderr

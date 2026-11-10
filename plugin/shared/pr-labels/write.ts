@@ -138,7 +138,7 @@ export function ownWriteLine(pr: number, write: OwnWrite): string | null {
 }
 
 /** What fixes a state label a writer could not write. */
-export const REPAIR =
+const REPAIR =
   "a dispatcher's next tick corrects it where one runs; otherwise `jig dispatch labels --yes` creates a missing label, or set it by hand";
 
 /**

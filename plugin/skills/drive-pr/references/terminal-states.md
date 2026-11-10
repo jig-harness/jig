@@ -112,7 +112,7 @@ table of exits, [`exit-classes.ts`](../scripts/lib/status/exit-classes.ts),
 which the dispatcher's ledger classifier reads too: `0` is labelled
 converged while the head is still the verified head; a park, a stop only a
 person settles (`6`, `7`, `22`, `1` and any code this table does not name),
-a person's stop (`18`, `19`, `drives.ts --stop`) and a stop the dispatcher
+a person's stop (`18`, `19`, a stop through `drives.ts`) and a stop the dispatcher
 re-drives (`9`, `12`, `14`, `15`, `21`, `23`) are labelled parked, which a
 dispatcher's tick turns into stale for the re-drives where one runs; `4` and
 `16`, which the dispatcher re-arms, stay driving; `5` leaves the labels.
