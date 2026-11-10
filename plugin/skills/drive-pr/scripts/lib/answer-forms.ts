@@ -341,6 +341,36 @@ function choiceOf(
   return choiceFromText(item, suffix.text, suffix.digest, note);
 }
 
+/**
+ * Return digest-like identity claims from an answer which is not a complete
+ * framing suffix. A chosen option may itself contain a digest-shaped token;
+ * that text is option content, not an identity claim.
+ */
+function embeddedDigests(item: ParkedItem, text: string): string[] {
+  const normalized = normalizeAnswerText(text);
+  const call = answerDecision(item)?.call;
+  const option =
+    normalized.startsWith("choose ") && call !== undefined
+      ? call.options.find((candidate) => {
+          const name = normalizeAnswerText(candidate.name);
+          const rest = normalized.slice(7 + name.length);
+          return (
+            normalized.startsWith(`choose ${name}`) &&
+            (rest.length === 0 || /^\s/.test(rest))
+          );
+        })
+      : undefined;
+  const scan =
+    option === undefined
+      ? normalized
+      : `${normalized.slice(0, 7)}${normalized.slice(
+          7 + normalizeAnswerText(option.name).length,
+        )}`;
+  return [...scan.matchAll(/(?:^|\s)\[([0-9a-f]{12})\](?=\s|$|[.,;:!?])/g)].map(
+    (match) => (match[1] ?? "").toLowerCase(),
+  );
+}
+
 export function parseAnswerComment(
   item: ParkedItem,
   c: CommentLike,
@@ -378,11 +408,7 @@ export function parseAnswerComment(
       choiceFromText(item, suffix.text) !== undefined
     )
       return [suffix.digest];
-    return [
-      ...normalizeAnswerText(text).matchAll(
-        /(?:^|\s)\[([0-9a-f]{12})\](?=\s|$)/g,
-      ),
-    ].map((match) => (match[1] ?? "").toLowerCase());
+    return embeddedDigests(item, text);
   });
   const stale =
     item.digest !== undefined && digests.some((d) => d !== item.digest);

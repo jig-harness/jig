@@ -127,6 +127,8 @@ test("digest is checked before obsolete names or mixed prose can become free ans
     "answer K: choose Removed option [aaaaaaaaaaaa] Thanks",
     "answer K: approve [aaaaaaaaaaaa] [123456abcdef]",
     "answer K: approve [aaaaaaaaaaaa]\nThanks",
+    "answer K: approve [aaaaaaaaaaaa], thanks",
+    "answer K: approve [aaaaaaaaaaaa]. Thanks",
   ]) {
     const answer = parseAnswerComment(item, comment(body), "conversation");
     expect(answer?.stale).toBe(true);
@@ -168,6 +170,13 @@ test("a framing suffix preserves option text and rejects extra identity claims",
       "conversation",
     )?.stale,
   ).toBe(true);
+  expect(
+    parseAnswerComment(
+      withDigestName,
+      comment("answer K: choose Keep [aaaaaaaaaaaa] [123456abcdef] Thanks"),
+      "conversation",
+    )?.stale,
+  ).toBeUndefined();
   expect(
     parseAnswerComment(
       item,
