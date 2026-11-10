@@ -391,6 +391,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.189.3] - 2026-11-10
+
+### Fixed
+
+- `jig dispatch` no longer stops a repository's turn with "issue_tracker.facets.size names a store, but the repository's label taxonomy has no size group" when the repository names a size store. The pickup planner reads the size values from the repository's own label taxonomy, as the tracker already does.
+
 ## [0.189.2] - 2026-11-10
 
 ### Fixed
@@ -6609,7 +6615,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.189.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.189.3...HEAD
+[0.189.3]: https://github.com/jig-harness/jig/compare/v0.189.2...v0.189.3
 [0.189.2]: https://github.com/jig-harness/jig/compare/v0.189.1...v0.189.2
 [0.189.1]: https://github.com/jig-harness/jig/compare/v0.189.0...v0.189.1
 [0.189.0]: https://github.com/jig-harness/jig/compare/v0.188.0...v0.189.0
