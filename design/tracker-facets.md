@@ -132,11 +132,13 @@ repository's own command is [later work](#later-the-command-store).
 ### Value maps
 
 A `native` or `field` store keeps values in the tracker's own vocabulary,
-so it maps each canonical value to one tracker value: an issue type's name,
-a field option's name, or a number. A `label` store maps each value to one
-label. Each map is one to one, ignoring case, so a value read back names
-exactly one canonical value, and a map that gives two canonical values one
-tracker value is refused when the configuration is read.
+so it maps each canonical value to tracker values: an issue type's name,
+a field option's name, or a number. A `label` store maps each value to
+labels. A map may list several names for one canonical value, matched
+ignoring case: every listed name is read as that value and the first is
+written. No name may stand for two canonical values, so a value read back
+names exactly one, and a map that gives two canonical values one tracker
+value is refused when the configuration is read.
 
 A canonical value the map leaves out takes the tracker value of its own
 name, matched ignoring case (`bug` is the issue type Bug, `small` the option
@@ -837,8 +839,9 @@ constraints:
   check when the deferral moves onto the interface (plan item 10).
 - **Records.** `reflect`'s issues are records, not work, carry no facets,
   and are never read by the sweep.
-- **An epic as a Jira issue type.** The epic stays a label on every
-  adapter, as it is today.
+- **An epic as a label only.** An issue of a native type listed in
+  `issue_tracker.labels.epic_types` reads as an epic on every adapter with
+  issue types; the epic label still marks one elsewhere.
 - **A host timer for the sweep.** Jig's repository runs it as a workflow; a
   host job like the dispatcher's joins when a consumer without CI asks for
   one.
