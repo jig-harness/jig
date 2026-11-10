@@ -1,4 +1,13 @@
-import { isMapping } from "../../../shared/config-layers.ts";
+import {
+  environmentLayer,
+  isMapping,
+  mergeLayers,
+  readConfigFile,
+  refuseRepositoryOnly,
+  userConfigPath,
+  userLayerEnabled,
+} from "../../../shared/config-layers.ts";
+import { failureText } from "../text.ts";
 
 /**
  * Whose repository a served item is. A served person's assignments are read
@@ -75,4 +84,30 @@ export function otherRepoLabel(
   if (carried.includes(named(scope.own))) return null;
   const other = scope.others.find((label) => carried.includes(named(label)));
   return other ?? null;
+}
+
+/**
+ * The scope the repository's default-branch values declare under the permitted
+ * layers: the user file below them, the environment above. The pull request's
+ * checkout is never read. A layer that cannot be read leaves the scope
+ * unvalidatable, which refuses served pickups.
+ */
+export function scopeOf(
+  values: Record<string, unknown>,
+): RepoScope | undefined {
+  try {
+    const userPath = userConfigPath();
+    const user = userLayerEnabled() ? readConfigFile(userPath) : null;
+    if (user !== null) refuseRepositoryOnly(user, userPath);
+    const env = environmentLayer();
+    return repoScopeOf(
+      mergeLayers(mergeLayers(user ?? {}, values), env?.values ?? {}),
+    );
+  } catch (error) {
+    return {
+      own: "",
+      others: [],
+      invalid: `a configuration layer could not be read: ${failureText(error)}`,
+    };
+  }
 }

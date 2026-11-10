@@ -77,15 +77,7 @@ import { readPickups } from "./sources/tracker.ts";
 import { facetBound } from "./sources/tracker-facets.ts";
 import { emptyReport, type TickOptions } from "./tick-context.ts";
 import { type ForgeRead, readForge } from "./tick-forge.ts";
-import { type RepoScope, repoScopeOf } from "./sources/served-repo.ts";
-import {
-  environmentLayer,
-  mergeLayers,
-  readConfigFile,
-  refuseRepositoryOnly,
-  userConfigPath,
-  userLayerEnabled,
-} from "../../shared/config-layers.ts";
+import { scopeOf } from "./sources/served-repo.ts";
 import { lowBudget, type TickReads } from "./tick-reads.ts";
 import { openShared, readDriveClaims, type TickShared } from "./tick-shared.ts";
 import { failureText } from "./text.ts";
@@ -162,30 +154,6 @@ export interface RepoObservation {
 }
 
 /** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
-/**
- * The scope the repository's default-branch values declare under the permitted
- * layers: the user file below them, the environment above. The pull request's
- * checkout is never read. A layer that cannot be read leaves the scope
- * unvalidatable, which refuses served pickups.
- */
-function scopeOf(values: Record<string, unknown>): RepoScope | undefined {
-  try {
-    const userPath = userConfigPath();
-    const user = userLayerEnabled() ? readConfigFile(userPath) : null;
-    if (user !== null) refuseRepositoryOnly(user, userPath);
-    const env = environmentLayer();
-    return repoScopeOf(
-      mergeLayers(mergeLayers(user ?? {}, values), env?.values ?? {}),
-    );
-  } catch (error) {
-    return {
-      own: "",
-      others: [],
-      invalid: `a configuration layer could not be read: ${failureText(error)}`,
-    };
-  }
-}
-
 export async function openRepo(
   path: string,
   context: Pick<ObserveContext, "options" | "nowMs" | "reads">,
