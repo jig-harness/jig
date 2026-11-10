@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readPickups } from "../../../dispatch/lib/sources/tracker.ts";
+import type { TrackerConfigError } from "../scripts/lib/tracker/config-error.ts";
 import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
 import { JiraApiError } from "../scripts/lib/tracker/jira/transport.ts";
 import {
@@ -482,6 +483,71 @@ describe("Jira adapter: candidate pools", () => {
     );
     expect((await t.poolIssue("ENG-3"))?.state.type).toBe("completed");
     expect(await t.poolIssue("ENG-4")).toBeNull();
+  });
+});
+
+describe("Jira adapter: pools limited to issue types", () => {
+  const TYPES = {
+    issueTypes: [
+      { id: "10001", name: "Task", subtask: false, hierarchyLevel: 0 },
+      { id: "10002", name: "Bug", subtask: false, hierarchyLevel: 0 },
+      { id: "10000", name: "Epic", subtask: false, hierarchyLevel: 1 },
+    ],
+    startAt: 0,
+    maxResults: 100,
+    total: 3,
+  };
+  const scoped = (pool_issue_types: string[]) =>
+    jira(
+      routes({
+        "GET issue/createmeta/ENG/issuetypes": TYPES,
+        "GET user/search": [
+          { accountId: FACTORY.accountId, emailAddress: "factory@example.com" },
+        ],
+        "POST search/jql": byJql(
+          [/parent in/, page()],
+          [/./, page(issue({ key: "ENG-1" }))],
+        ),
+        "GET issue/ENG-1": issue({ key: "ENG-1" }),
+      }),
+      { issue_tracker: { jira: { pool_issue_types } } },
+    );
+
+  it("limits the pool, the open population and the assigned issues to the configured types, by id", async () => {
+    const { t, calls } = scoped(["task", "Bug"]);
+    await t.openIssues({ withSomeOf: [["a"]] });
+    await t.openPopulation();
+    await t.assignedIssues("factory@example.com", ["todo"]);
+    const reads = calls
+      .map(jqlOf)
+      .filter((q) => q !== "" && !q.startsWith("parent in"));
+    expect(reads).toEqual([
+      'project = ENG AND statusCategory != Done AND issuetype in (10001, 10002) AND labels in ("a") ORDER BY created ASC',
+      "project = ENG AND statusCategory != Done AND issuetype in (10001, 10002) ORDER BY created ASC",
+      `project = ENG AND assignee = "${FACTORY.accountId}" AND status in ("Todo") AND issuetype in (10001, 10002) ORDER BY created ASC`,
+    ]);
+    expect(
+      calls.filter((c) => c.route === "GET issue/createmeta/ENG/issuetypes"),
+    ).toHaveLength(1);
+  });
+
+  it("leaves reads by key and an issue's children unscoped", async () => {
+    const { t, calls } = scoped(["Task"]);
+    await t.poolIssue("ENG-1");
+    await t.openChildren("ENG-1");
+    expect(calls.some((c) => /issuetype/.test(jqlOf(c)))).toBe(false);
+    expect(
+      calls.some((c) => c.route === "GET issue/createmeta/ENG/issuetypes"),
+    ).toBe(false);
+  });
+
+  it("refuses a pool read when a configured type is not the project's", async () => {
+    const { t, calls } = scoped(["Task", "Story"]);
+    const err = await t.openPopulation().catch((e: unknown) => e);
+    expect((err as TrackerConfigError).field).toBe(
+      "issue_tracker.jira.pool_issue_types",
+    );
+    expect(calls.some((c) => c.route === "POST search/jql")).toBe(false);
   });
 });
 

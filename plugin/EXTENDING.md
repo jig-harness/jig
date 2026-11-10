@@ -248,7 +248,14 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     already exist on the site;
   - parent and children are Jira's parent field, for sub-tasks and an
     Epic's issues alike, and relations are issue links of the types
-    `issue_tracker.jira.link_types` names; links of other types are ignored;
+    `issue_tracker.jira.link_types` names, several per relation where it
+    lists them (each edge reported once, a new link written with the first,
+    an `inverted` type read and written the other way round); links of other
+    types are ignored;
+  - every candidate pool and population is limited to the issue types
+    `issue_tracker.jira.pool_issue_types` names, matched to the project's
+    issue types when the site is first read; reads by key and an issue's
+    children are not;
   - a field a team relies on that Jig's interface has no place for (a size,
     a facet, an owning repository) reads as labels through
     `issue_tracker.jira.field_labels`: each value behind the field's
