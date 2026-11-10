@@ -801,7 +801,7 @@ The server routes still only read the dispatch records; availability state
 and the private access record live under `~/.local/state/jig/dispatch/dashboard/`.
 
 The supported durable setup is Linux with either a systemd user timer and
-**[lingering](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#runnable-tooling) enabled** (the account's service manager runs without a login), or cron. With systemd, install refuses until
+**[lingering](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) enabled** (the account's service manager runs without a login), or cron. With systemd, install refuses until
 `loginctl show-user <user> --property=Linger --value` answers `yes`; ask the
 host administrator to enable lingering for the intended account. Jig does
 not change that host setting. A cron daemon must run at boot. macOS
