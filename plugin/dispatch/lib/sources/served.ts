@@ -130,6 +130,14 @@ export async function readServedPickups(
   const out: ServedReading = { wanted: [], unplaced: [], claimed: [] };
   const candidates: Candidate[] = [];
   const seen = new Set<string>();
+  if (options.repoScope?.invalid !== undefined) {
+    out.unplaced.push({
+      target: tracker.adapter,
+      record: "tracker",
+      reason: `served pickups are refused: the repository scope is invalid: ${options.repoScope.invalid}`,
+    });
+    return out;
+  }
   for (const person of people) {
     const identity =
       person.tracker[tracker.adapter as keyof ServedPerson["tracker"]];
@@ -209,6 +217,8 @@ export async function freshServedPickup(
     const issue = await tracker.poolIssue(key);
     if (issue === null || !ready(issue))
       return "the served item is no longer open and not started";
+    if (policy.repoScope?.invalid !== undefined)
+      return `the repository scope is invalid: ${policy.repoScope.invalid}`;
     const elsewhere = otherRepoLabel(issue.labels, policy.repoScope);
     if (elsewhere !== null)
       return `it carries the repository label ${elsewhere}, which is another repository's`;
@@ -357,7 +367,10 @@ async function visitNode(ctx: WalkContext, node: Pending): Promise<void> {
     }
     if (meta.children.length > 0) {
       await enqueueChildren(ctx, issue, ancestor, meta, candidate);
-    } else if (ready(issue)) {
+    } else if (
+      ready(issue) &&
+      otherRepoLabel(issue.labels, options.repoScope) === null
+    ) {
       const parentHold = await servedParentHold(
         tracker,
         issue,

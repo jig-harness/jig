@@ -108,6 +108,25 @@ describe("served pickups across repositories", () => {
     expect(reading.wanted.map((i) => i.key)).toEqual(["#3"]);
   });
 
+  it("does not start a foreign epic whose children have all closed", async () => {
+    const f = fake([issue("#1", ["epic", "web"])]);
+    expect((await read(f, scope)).wanted).toEqual([]);
+  });
+
+  it("starts nothing and says why when the supplied scope is invalid", async () => {
+    const f = fake([issue("#1", ["web"]), issue("#2", ["api"])]);
+    const invalid = repoScopeOf({
+      review: { repo_label: "api", taxonomy: { repos: "web" } },
+    });
+    const reading = await read(f, invalid);
+    expect(reading.wanted).toEqual([]);
+    expect(reading.unplaced[0]?.reason).toContain("scope is invalid");
+    const fresh = await freshServedPickup(f.tracker, "#2", "alex", undefined, {
+      ...(invalid === undefined ? {} : { repoScope: invalid }),
+    });
+    expect(fresh).toContain("scope is invalid");
+  });
+
   it("refuses at launch an item whose label moved to another repository", async () => {
     const f = fake([issue("#1", ["web"])]);
     const fresh = await freshServedPickup(f.tracker, "#1", "alex", undefined, {
@@ -144,6 +163,18 @@ describe("repoScopeOf", () => {
       repoScopeOf(values({ repo_label: "a", taxonomy: { repos: ["a"] } })),
     ).toBe(undefined);
     expect(repoScopeOf({})).toBe(undefined);
+  });
+
+  it("refuses a supplied scope it cannot validate rather than widening it", () => {
+    const bad = (review: unknown) => repoScopeOf(values(review))?.invalid;
+    expect(bad({ repo_label: "api", taxonomy: { repos: "web" } })).toBeString();
+    expect(
+      bad({ repo_label: "api", taxonomy: { repos: ["api", 123] } }),
+    ).toBeString();
+    expect(bad({ repo_label: 7 })).toBeString();
+    expect(
+      bad({ repo_label: "api", taxonomy: { repos: ["web"] } }),
+    ).toBeUndefined();
   });
 
   it("names the other label an item carries", () => {
