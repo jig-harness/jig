@@ -390,6 +390,17 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.187.0] - 2026-11-10
+
+### Added
+
+- Hosts can serve named people through `serve:` in their dispatch machine file. Their trusted assignments and unassigned epic descendants join a ranked queue, with blocked work and human checkpoints shown with a reason; claims preserve the served person as assignee. Served forge logins also join pull-request adoption.
+- The dispatch dashboard can run through its own retry timer on Linux with systemd user lingering or cron, independently of the dispatcher and without Orca. Installation, status, explicit private URL access and uninstall commands keep one read-only reader available across failures, logout, reboot and installed-copy updates; service logs do not print its access token.
+
+### Fixed
+
+- The dispatcher record inventory now accurately describes pickup-read cache writes as independent upserts rather than one tick-wide transaction.
+
 ## [0.186.0] - 2026-11-10
 
 ### Added
@@ -6548,7 +6559,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.186.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.187.0...HEAD
+[0.187.0]: https://github.com/jig-harness/jig/compare/v0.186.0...v0.187.0
 [0.186.0]: https://github.com/jig-harness/jig/compare/v0.185.3...v0.186.0
 [0.185.3]: https://github.com/jig-harness/jig/compare/v0.185.2...v0.185.3
 [0.185.2]: https://github.com/jig-harness/jig/compare/v0.185.1...v0.185.2
