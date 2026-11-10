@@ -52,12 +52,13 @@ export function parkFromSheet(
       "no-recommendation",
       `call '${callId}' has no recommendation to park`,
     );
-  const question = (call.question ?? sheet.question ?? sheet.title)
+  let question = (call.question ?? sheet.question ?? sheet.title)
     .trim()
     .split(/\s/)
     .filter((part) => part !== "")
-    .join(" ")
-    .replace(/[.!]+$/, "");
+    .join(" ");
+  while (question.endsWith(".") || question.endsWith("!"))
+    question = question.slice(0, -1);
   const decision: ParkedDecision = {
     schema: "parked-decision/v1",
     class: context.class ?? "escalated",

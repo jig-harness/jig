@@ -1,10 +1,15 @@
 import { expect, test } from "bun:test";
 import { parkAdmissionProblem } from "../scripts/lib/state/park-admission.ts";
 import { freshState, isUsableState } from "../scripts/lib/state/schema.ts";
-import { redactStrings } from "../scripts/lib/state/ledger.ts";
+import {
+  ledgerFromState,
+  redactStrings,
+  renderLedger,
+} from "../scripts/lib/state/ledger.ts";
 import { ledgerDriverRecord } from "../scripts/lib/state/ledger-render-context.ts";
 import type { ParkedDecision } from "../../../shared/decisions/park.ts";
 import { parkRecord } from "./park-record-fixture.ts";
+import { localWriter } from "../../../shared/records/writer.ts";
 
 test("admission refuses UTF-8 decision bytes and aggregate ledger overflow", () => {
   const decision = JSON.parse(parkRecord("Keep it?")) as ParkedDecision;
@@ -99,7 +104,7 @@ test("foreign effective claims participate in near-limit admission", () => {
   ).toContain("65536");
 });
 
-test("admission reserves the narrative cut marker and final stopped status", () => {
+test("admission projects the narrative and final stopped driver at the capacity boundary", () => {
   const decision = JSON.parse(parkRecord("Keep it?")) as ParkedDecision;
   const state = freshState(999);
   const park = {
@@ -111,26 +116,6 @@ test("admission reserves the narrative cut marker and final stopped status", () 
     round: 0,
   };
   state.parked = [park];
-  const empty = { generation: 0, claims: [], narrative: [] };
-  let fits = 0;
-  let refuses = 65536;
-  while (refuses - fits > 1) {
-    const size = Math.floor((fits + refuses) / 2);
-    park.reason = "x ".repeat(size);
-    if (parkAdmissionProblem(state, decision, empty) === null) fits = size;
-    else refuses = size;
-  }
-  park.reason = "x ".repeat(fits);
-  expect(parkAdmissionProblem(state, decision, empty)).toBeNull();
-  // The same notes the mirror will read are part of the projection. They may
-  // be cut, but their cut marker must be rendered before capacity is accepted.
-  expect(
-    parkAdmissionProblem(state, decision, {
-      ...empty,
-      narrative: ["a note that makes the renderer cut the narrative"],
-    }),
-  ).toBeNull();
-
   const driver = {
     actor: "driver",
     clone: "clone",
@@ -138,7 +123,44 @@ test("admission reserves the narrative cut marker and final stopped status", () 
     floor: null,
     claim: null,
   };
-  expect(
-    ledgerDriverRecord({ ...driver, stopped: 8 }, undefined, "999"),
-  ).toMatchObject({ state: "stopped", exit: 8 });
+  const context = {
+    generation: 0,
+    claims: [],
+    narrative: ["a note that makes the renderer cut the narrative"],
+  };
+  const render = (stopped?: number) =>
+    renderLedger(
+      ledgerFromState(state, {
+        generation: 1,
+        driver: ledgerDriverRecord(
+          stopped === undefined ? driver : { ...driver, stopped },
+          undefined,
+          "999",
+        ),
+        narrative: context.narrative,
+        claims: context.claims,
+      }),
+      undefined,
+      localWriter("forge", driver.login),
+    );
+  let fits = 0;
+  let refuses = 65536;
+  while (refuses - fits > 1) {
+    const size = Math.floor((fits + refuses) / 2);
+    park.reason = "x ".repeat(size);
+    if ("body" in render()) fits = size;
+    else refuses = size;
+  }
+  park.reason = "x ".repeat(fits);
+  expect(render()).toHaveProperty("body");
+  expect(render(8)).toHaveProperty("error");
+
+  const previous = process.env.DRIVE_PR_LEDGER_DRIVER;
+  process.env.DRIVE_PR_LEDGER_DRIVER = JSON.stringify(driver);
+  try {
+    expect(parkAdmissionProblem(state, decision, context)).toContain("65536");
+  } finally {
+    if (previous === undefined) delete process.env.DRIVE_PR_LEDGER_DRIVER;
+    else process.env.DRIVE_PR_LEDGER_DRIVER = previous;
+  }
 });

@@ -107,7 +107,7 @@ describe("parking a sheet call", () => {
 
   it("normalizes a descriptive question and carries interplay in words", () => {
     const input = source();
-    input.question = "Choose the transport.\nKeep delivery durable.";
+    input.question = "Choose the transport.\nKeep delivery durable.!!!";
     input.interplay = [
       { from: "b", to: "external", text: "{call:b,opt:1} needs the receiver." },
     ];
