@@ -1442,9 +1442,11 @@ latest recorded reset), the tick's locks (`tick.lock`, which one tick
 acts under at a time, and `observe/`, one per repository a tick is
 reading), the rotation cursor (`tick-index`),
 `wake/` (each repository's pending wakes and their log), `probe/` (the
-change probe's state, `state.json`, and its timer's launcher copy)
-and the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
-removes. Everything else is one
+change probe's state, `state.json`, and its timer's launcher copy),
+the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
+removes, and `dashboard/` (the installed reader's `enabled` record, its
+`access.json` with the access credentials, its `reader.<digest>.lock`, and
+the scheduler's launcher copy). Everything else is one
 SQLite database, `state.sqlite`: the launch records (one per launch,
 written before it, with a pickup session's own result), since when each
 claimed item has had no running session (for `stalled_after`), each
