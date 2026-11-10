@@ -255,8 +255,9 @@ of reads in flight. Each repository is read in one GraphQL query
 (`forge-batch.ts`), run in its checkout so the forge client names the
 repository as its own view of the checkout does: the repository and its
 default branch, `.config/jig.yaml` on that branch, and its open pull
-requests, 50 to a page (one point of the forge's GraphQL budget each), each
-with its labels, head, mergeability and first 100 comments, in the shapes
+requests, 50 to a page (two points of the forge's GraphQL budget each), each
+with its labels, description, head, mergeability, its head's checks,
+its first 100 review threads and first 100 comments, in the shapes
 the pull request and comment listings give them. A pull request with more
 comments than that is listed on its own, in full. A query that fails or
 reads in part leaves each of these to its own read, as before it. Each pull
@@ -865,8 +866,14 @@ with theirs; with them off, no label is read or written.
   person settles it: a park, a stop only a person
   settles, a person's own stop), `stale`, `held` (an open pull request
   waiting its turn in a serialized area, below, whatever its ledger
-  says), and `followed-up` (a merged pull request whose follow-up is
-  done). The ledger is the truth: after the
+  says), `followed-up` (a merged pull request whose follow-up is
+  done) and `followup-failed` (a merged pull request whose follow-up
+  failed and is not started again, so a person acts; a later follow-up
+  that is done replaces it with `followed-up`). A merged pull request's
+  state comes from its follow-up's end, as the plan reads it from the
+  follow-up's outcome record and markers: a failed follow-up is labelled
+  whether or not the pull request carries a label of the set, a done one
+  only when it does. The ledger is the truth: after the
   plan, each managed pull request's state is derived from its ledger
   again and set as its one state label, in one forge call per pull
   request whose labels disagree and none where they agree. A label a
@@ -901,6 +908,23 @@ with theirs; with them off, no label is read or written.
   the scope again there. With `only_labeled` off, every open pull request
   is still read, so a drive a person armed by hand on an unlabelled pull
   request is found and gets its label.
+- **Markers**, written by the tick on every pull request it reads, with no
+  prefix and outside the set, so neither puts a pull request in scope. The
+  repository's manual-operations label (`issue_tracker.labels.manual_ops`)
+  marks a pull request whose description's `## Out-of-tree follow-ups`
+  section lists a step not yet checked off (a plain item or an unchecked
+  box; the explicit "None", fenced code and comments list none). It is
+  derived from the description as a state is from its ledger, so a hand
+  edit is corrected, and a merged pull request keeps it until every step
+  is checked off or its follow-up is done, which reports each step done or
+  filed; one whose follow-up the tick cannot place keeps it as it is. The
+  listings read each description with its labels, and merged pull
+  requests are listed only where `followup_command` is set. `automation`
+  marks a pull request a bot opened that carries no label of the
+  `automation:` family, which a repository's workflows apply to name their
+  job, unless the bot is one of the host's own authors (the adoption
+  rule's, else the dispatcher's own login); the tick adds it and never
+  removes it or a label of the family.
 
 **Adoption** (optional). A pull request nobody armed is never driven
 otherwise: the drive label asks a person to notice each idle one, which is
@@ -918,7 +942,22 @@ the rule names that bot: driving dependency updates stays a choice the
 repository makes by name. A pull request a person's `hold` label is on is
 never adopted, and one a person stopped carries a ledger that records the
 stop, so adoption, which reads only pull requests with no ledger, never
-reaches it. Everything after adoption is the `drive` command's: the plan
+reaches it. An automation pull request (a bot's that is not one of the
+host's own authors, or one carrying `automation` or an `automation:`
+label) is adopted only while it needs work: a check on its head failed (a
+cancelled run or one waiting for approval did not), it conflicts with its
+base, or a review thread is unresolved. The same holds for the re-drives,
+takeovers and re-arms the plan would start of itself on one with a
+ledger: a healthy one is reported quiet, and only a person's `rearm`
+starts it again. The repository's query reads each open pull request's
+head checks and its review threads with it, and the fresh read before a
+launch counts an automation pull request's threads again, the launch
+waiting when that count does not read, except where trouble is already
+observed (a failed check or a conflict) or a person's `drive` or `rearm`
+asks: those launches need no count. A healthy one is left for a person
+to merge. Whether a failed check failed
+on the infrastructure is not told here: the drive re-runs such a check
+rather than repairing code. Everything after adoption is the `drive` command's: the plan
 arms it as a re-arm, once per head commit (its launch record's facts are
 a labelled arm's), on an admitted account, behind a serialized area's
 hold, and the fresh read before the launch applies the rule again. The
@@ -1615,7 +1654,7 @@ stack, [ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)) and the next
 try:
 
 - **An action**, keyed by what it does and its target, as the plan names
-  it: a pull request's dispatch label write (`label PR #<n>`), a
+  it: a pull request's dispatch label write (`label PR #<n>`, and `label markers PR #<n>` for its markers, which back off apart from its state), a
   notification's delivery (`notice <its key>`), a nudge the runtime refused
   (`nudge <record> <episode>`), and this host's claim end or follow-up
   marker answer (`claim-end` or `marker-answer PR #<n> comment <id>`).

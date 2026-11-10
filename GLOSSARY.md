@@ -2253,8 +2253,11 @@ make, use the entry's term instead.
   repository turns them on, all under one prefix the repository picks
   (`jig:` by default). The dispatcher keeps a state label on each pull
   request it manages (driving, converged, parked, stale, *held*,
-  followed-up), derived from the drive ledger and the *serialized areas* at
-  every *tick* and never read to decide what to start. A person adds the
+  followed-up, followup-failed), derived from the drive ledger, the
+  *serialized areas* and, after the merge, the follow-up's end at every
+  *tick*, and never read to decide what to start. Beside them it keeps
+  marker labels without the prefix: the *owed-steps label* and
+  `automation` (*automation pull request*). A person adds the
   commands: `drive` asks the dispatcher to drive a pull request that has
   no drive yet, and `hold` stands it down from a pull request until the
   person removes the label.
@@ -2262,7 +2265,24 @@ make, use the entry's term instead.
   the *dispatcher* drives its own recent pull requests without anyone
   labelling them: an open pull request with no drive ledger, opened by one
   of the rule's authors and updated within its window, is armed as if a
-  person had put the `drive` label on it.
+  person had put the `drive` label on it. An *automation pull request* is
+  armed only while it needs work.
+- **Automation pull request** — a pull request a bot or a workflow opened
+  (a regeneration, a sync, a dependency update) rather than a person: it
+  carries a label of the `automation:` family, which the workflow applies
+  to name its job (`automation:docs-sync`), or the generic `automation`
+  label, which the *dispatcher* puts on a bot's pull request that has none
+  (a bot the *adoption rule* names is the host's own identity, not
+  automation). The dispatcher drives one, adopted or re-driven, only while
+  it needs work (a failed check, a conflict with its base, an unresolved
+  review thread) and leaves a healthy one for a person to merge.
+- **Owed-steps label** — the repository's manual-operations label
+  (`issue_tracker.labels.manual_ops`, `manual-ops` by default) on a pull
+  request: its description's `## Out-of-tree follow-ups` section lists a
+  step a person still takes outside the code. The *dispatcher* sets it from
+  the description at every *tick*, and a merged pull request keeps it until
+  every step is checked off or its follow-up is done. The same label on an
+  issue marks the issue's own manual steps.
 - **Serialized area** — an area of a *change-area catalog* marked
   `serialize: true`: its pull requests conflict with each other whenever
   two of them move at once (a migrations folder, a schema), so the

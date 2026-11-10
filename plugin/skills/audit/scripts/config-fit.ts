@@ -25,6 +25,7 @@
  *   - configured tracker labels the label taxonomy (`issue_tracker.taxonomy`,
  *     else `label-taxonomy.yaml`) does not define, a `review.taxonomy.types`
  *     that differs from its types, and a tracker kept with no weekly sweep;
+ *   - workflow steps that open pull requests with no `automation:` label;
  *   - settings the repository's shape suggests but does not use;
  *   - the facts a profile suggestion rests on (`lib/profile-facts.ts`):
  *     contributors, deploy signals in CI and in tracked deploy
@@ -83,7 +84,7 @@ import { facetFindings, reachTracker } from "./lib/tracker-fit.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { ghCall } from "../../../shared/proc.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
-import { trackerFileFindings } from "./lib/sweep-fit.ts";
+import { fileFindings } from "./lib/automation-fit.ts";
 import {
   configuredAt,
   trackedNeeds,
@@ -2335,8 +2336,7 @@ export async function configFit(opts: {
   report.findings.push(...machineLayers(config, schema));
   report.findings.push(...staleSession());
   const files = trackedFiles(opts.root);
-  if (report.configured)
-    report.findings.push(...trackerFileFindings(config, opts.root, files));
+  report.findings.push(...fileFindings(config, files, opts, report));
   report.findings.push(...legacyFindings(opts.root, files, report.configured));
   report.findings.push(...contextDirFindings(opts.root));
   report.findings.push(...integrationBranch(config, opts.root, report));

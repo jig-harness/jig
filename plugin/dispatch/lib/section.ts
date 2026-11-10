@@ -11,7 +11,12 @@ import {
   type TrackerConfig,
 } from "../../skills/do-item/scripts/lib/tracker/config.ts";
 import { CANONICAL_STATES } from "../../skills/do-item/scripts/lib/tracker/port.ts";
-import { DEFAULT_LABELS, type LabelConfig } from "./labels.ts";
+import {
+  DEFAULT_LABELS,
+  type LabelConfig,
+  LONGEST_NAME,
+  MAX_LABEL,
+} from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import type { AdoptRule, DispatchSection } from "./types.ts";
 
@@ -52,8 +57,8 @@ const LABEL_KEYS = ["enabled", "prefix", "only_labeled"];
 const ADOPT_KEYS = ["enabled", "authors", "within"];
 /** `adopt.within`'s default: a week. */
 const DEFAULT_ADOPT_WITHIN_MS = 168 * 3_600_000;
-/** A GitHub label is at most 50 characters, and the longest name the prefix goes before is `followed-up`. */
-const MAX_PREFIX = 50 - "followed-up".length;
+/** A GitHub label is at most 50 characters, and the prefix goes before every name of the set. */
+const MAX_PREFIX = MAX_LABEL - LONGEST_NAME;
 
 /** `pull_requests.branch_name`'s default, the branch form of an item. */
 const BRANCH_PATTERN = "{key_lower}-{slug}";
@@ -183,6 +188,11 @@ function prefix(value: unknown): Checked<string> {
   )
     return invalid(
       `dispatch.labels.prefix must be a nonempty string of at most ${MAX_PREFIX} characters, with no comma and no space at either end`,
+    );
+  // The `automation:` family names the jobs that open pull requests, not dispatch state.
+  if (value.startsWith("automation:"))
+    return invalid(
+      "dispatch.labels.prefix must not start with 'automation:', the family workflows label their pull requests with",
     );
   return ok(value);
 }
