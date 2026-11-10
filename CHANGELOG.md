@@ -391,6 +391,20 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.190.2] - 2026-11-10
+
+### Fixed
+
+- Dispatch no longer starts a served person's item in the wrong repository's
+  checkout. Where several repositories share a tracker team, each one's tick
+  read every item assigned to a served person, so an item labelled for one
+  repository could be launched from another's. An item that carries another
+  repository's label (a `review.taxonomy.repos` entry other than the
+  checkout's `review.repo_label`) is now left to that repository, both when
+  the queue is read and again at launch; an item with no repository label, or
+  one that also carries this repository's, is unchanged. A checkout that sets
+  no `review.repo_label` keeps today's behaviour.
+
 ## [0.190.1] - 2026-11-10
 
 ### Fixed
@@ -6654,7 +6668,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.190.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.190.2...HEAD
+[0.190.2]: https://github.com/jig-harness/jig/compare/v0.190.1...v0.190.2
 [0.190.1]: https://github.com/jig-harness/jig/compare/v0.190.0...v0.190.1
 [0.190.0]: https://github.com/jig-harness/jig/compare/v0.189.3...v0.190.0
 [0.189.3]: https://github.com/jig-harness/jig/compare/v0.189.2...v0.189.3
