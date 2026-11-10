@@ -322,6 +322,25 @@ describe("reconcileParentStatus with do_item.post_merge_state", () => {
     ).toBe("ops_pending");
   });
 
+  it("describes the no-close path for extractable tails when post-merge policy stops short of done", () => {
+    const r = reconcileParentStatus(
+      {
+        parentLabels: [],
+        children: [
+          child("In Progress", { type: "started", labels: ["pr-followup"] }),
+        ],
+      },
+      { ...DEFAULT_VOCABULARY, postMergeState: "in_review" },
+    );
+
+    expect(r).toMatchObject({
+      verdict: "extract_and_close_eligible",
+      parentState: null,
+    });
+    expect(r.reason).toContain("sweep-epic.ts --no-close");
+    expect(r.reason).toContain('do_item.post_merge_state "In Review"');
+  });
+
   it("moves it to done under the default", () => {
     expect(
       reconcileParentStatus(

@@ -26,3 +26,7 @@ release: minor
   `done` that `do_item.post_merge_state` forbids, and `tracker.ts post-merge`,
   which prints the policy. A transition to `pr_open` where it is unset prints
   `skipped` and writes nothing.
+- Parent reconciliation and `/jig:work-batch` now describe the policy-dependent
+  no-close path when `do_item.post_merge_state` stops short of `done`, so
+  extractable tails are moved without claiming that their epic or batch rows
+  automatically close.

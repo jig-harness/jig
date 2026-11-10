@@ -265,7 +265,9 @@ export function reconcileParentStatus(
       null,
       parentHasManualOps
         ? `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — but the PARENT itself carries ${labels.manualOps}, so sweep-epic.ts refuses \`--close\` on it. Verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts --no-close to move the tails and leave the epic open (capped at "${states.ops_pending}") until its own operator checklist clears.`
-        : `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts instead of setting a status here.`,
+        : postMergeState !== "done"
+          ? `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts --no-close to move the tails and leave the epic open at do_item.post_merge_state "${states[postMergeState]}".`
+          : `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver, then run sweep-epic.ts instead of setting a status here.`,
     );
   }
 

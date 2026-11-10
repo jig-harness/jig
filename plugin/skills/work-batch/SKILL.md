@@ -361,11 +361,13 @@ bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/arm-drive.ts" <PR>
 ## After the merge
 
 When the batch pull request merges, run `/jig:work-batch after-merge <PR>`.
-The batch's own table is the checklist: every `Closes` row gets the steps a
-single issue gets after its pull request merges, not only the first.
+The batch's own table is the issue inventory: every issue-link row gets the
+steps a single issue gets after its pull request merges, not only the first.
 
 1. **List the rows**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view <PR> --json "body,mergeCommit,mergedAt"`
-   and take every issue key in the table's issue-link cells.
+   and take every issue key in the table's issue-link cells. A row closes its
+   issue automatically only when the configured issue-link policy uses
+   `Closes`; with `refs`, post-merge policy transitions the issue instead.
 2. **For each row**:
    - **Status**: `/jig:do-item`'s post-merge status rule decides: `done`,
      or `ops_pending` when a manual, operational or legal step remains
