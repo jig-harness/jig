@@ -129,6 +129,8 @@ export async function labelDrive(
   pr: string,
   momentOf: DriveMoment | (() => Promise<DriveMoment>),
   source: LabelSource = FORGE_SOURCE,
+  /** Asked just before the write: `false` when the ledger no longer belongs to this acquisition, so the label is left. */
+  stillOurs: () => Promise<boolean> = async () => true,
 ): Promise<void> {
   try {
     // A moment read from the drive's state is read here, inside the boundary, so a throw there is reported, not the drive's.
@@ -150,6 +152,12 @@ export async function labelDrive(
     if (converged && moment.verifiedSha === "") {
       console.error(
         `labels: PR #${pr}'s labels are left as they are: the drive recorded no verified head to label converged`,
+      );
+      return;
+    }
+    if (!(await stillOurs())) {
+      console.error(
+        `labels: PR #${pr}'s labels are left as they are: its drive ledger no longer belongs to this driver`,
       );
       return;
     }

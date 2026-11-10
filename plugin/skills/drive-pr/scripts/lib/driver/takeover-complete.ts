@@ -33,7 +33,7 @@ import {
 
 import { settleTakeover, type TakeoverPlan } from "./takeover.ts";
 
-import { mirrorNow } from "./ledger.ts";
+import { publishRunning } from "./ledger.ts";
 
 async function driveStateRun(
   args: string[],
@@ -276,7 +276,7 @@ export async function pickUpDrive(
       ? ""
       : await completeTakeover(pr, plan, opts.agent, opts.botsOnly);
   // A takeover is written to the drive ledger at once, not at the next boundary.
-  if (plan !== null) await mirrorNow(pr);
+  if (plan !== null) await publishRunning(pr);
   const notices = [takeover, await admitAnsweredParks(state, opts.dryRun)];
   return notices.filter((part) => part !== "").join("\n\n");
 }

@@ -44,6 +44,7 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           PREFIX: "jig:"
+          PUSHED_AT: ${{ github.event.pull_request.updated_at }}
         run: |
           converged="${PREFIX}converged"
           stale="${PREFIX}stale"
@@ -52,6 +53,14 @@ jobs:
           labels="$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')"
           if ! grep -qxF -- "$converged" <<<"$labels"; then
             echo "PR #${PR} does not carry ${converged}: nothing to do."
+            exit 0
+          fi
+          # A converged label put on after this push certifies this push's head
+          # (or a later one): a job that waited for a runner must not undo it.
+          labeled_at="$(gh api "repos/${REPO}/issues/${PR}/events" --paginate \
+            --jq "[.[] | select(.event == \"labeled\" and .label.name == \"${converged}\")] | last | .created_at // empty")"
+          if [ -n "$labeled_at" ] && [[ ! "$labeled_at" < "$PUSHED_AT" ]]; then
+            echo "PR #${PR}: ${converged} was set at ${labeled_at}, after this push (${PUSHED_AT}): left as it is."
             exit 0
           fi
           # One call adds the one and removes the other, so a run cancelled

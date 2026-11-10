@@ -16,6 +16,7 @@
  */
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { readLedgerSnapshot } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
+import type { Outcome } from "../../shared/outcome.ts";
 import { failureFields } from "../../shared/errors.ts";
 import { log } from "../../shared/log.ts";
 import type { LabelChange } from "./labels.ts";
@@ -71,6 +72,34 @@ export function forgeReread(slug: string, login: string | null): LedgerReread {
   };
 }
 
+/** The labels of merged pull requests as the tick read them, and how to read one's now. */
+export interface MergedLabels {
+  read: ReadonlyMap<number, readonly string[]>;
+  reread: (pr: number) => Promise<Outcome<string[], "unreadable">>;
+}
+
+/**
+ * A merged pull request's state labels follow its follow-up markers, whose
+ * labels are written apart from the tick (`marker done`, `marker failed`):
+ * the change was planned from the labels the tick read, so it is written
+ * only while they are still the labels now.
+ */
+async function mergedLabelsUnchanged(
+  pr: number,
+  read: readonly string[],
+  reread: MergedLabels["reread"],
+): Promise<string | null> {
+  const now = await reread(pr);
+  if (!now.ok)
+    return `its labels did not read again before the write (${now.failure.reason}), so a later tick projects it`;
+  const same =
+    now.value.length === read.length &&
+    now.value.every((label) => read.includes(label));
+  return same
+    ? null
+    : "its labels changed since this tick read them, so a later tick projects it";
+}
+
 /**
  * The check `writeLabels` runs before each state write: why the write is
  * skipped this tick, or `null` to write it. Only an open pull request read
@@ -81,10 +110,15 @@ export function ledgerStillCurrent(
   open: ReadonlySet<number>,
   drives: readonly DrivenPr[],
   reread: LedgerReread,
+  merged?: MergedLabels,
 ): (change: LabelChange) => Promise<string | null> {
   const byNumber = new Map(drives.map((d) => [d.number, d]));
   return async (change) => {
-    if (change.part !== undefined || !open.has(change.pr)) return null;
+    if (change.part !== undefined) return null;
+    const read = merged?.read.get(change.pr);
+    if (read !== undefined && !open.has(change.pr))
+      return await mergedLabelsUnchanged(change.pr, read, merged!.reread);
+    if (!open.has(change.pr)) return null;
     const drive = byNumber.get(change.pr);
     if (drive?.class === "unplaced") return null;
     let now: Ledger | null | string;

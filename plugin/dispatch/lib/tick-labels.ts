@@ -21,6 +21,7 @@ import { forgeReread, ledgerStillCurrent } from "./label-freshness.ts";
 import { manualOpsLabel } from "./owed-steps.ts";
 import { unobservedTarget } from "./notices.ts";
 import { bookOf, type TickContext } from "./tick-context.ts";
+import { pullRequestLabels } from "./forge.ts";
 import type { ForgeRead } from "./tick-forge.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { RepoReport } from "./types.ts";
@@ -48,13 +49,21 @@ export async function projectObserved(
 /** The check before each state write: the open pull requests read for a ledger, each ledger read again (`label-freshness.ts`). */
 function freshness(
   slug: string,
-  forge: Pick<ForgeRead, "open" | "read" | "drives" | "login">,
+  forge: Pick<ForgeRead, "open" | "read" | "drives" | "login" | "merged">,
 ): ReturnType<typeof ledgerStillCurrent> {
   const open = forge.open.map((p) => p.number).filter((n) => forge.read.has(n));
   return ledgerStillCurrent(
     new Set(open),
     forge.drives,
     forgeReread(slug, forge.login),
+    {
+      read: new Map(
+        forge.merged.flatMap((p) =>
+          p.labels === undefined ? [] : [[p.number, p.labels] as const],
+        ),
+      ),
+      reread: (pr) => pullRequestLabels(slug, pr),
+    },
   );
 }
 

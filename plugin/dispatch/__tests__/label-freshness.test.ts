@@ -146,3 +146,22 @@ describe("a tick that read a ledger before a drive's label write", () => {
     expect(edits).toEqual([{ add: ["jig:driving"], remove: ["jig:stale"] }]);
   });
 });
+
+describe("a merged pull request's labels are read again before its state write", () => {
+  const change = { pr: 9, add: ["jig:followup-failed"], remove: [] };
+  const check = (now: string[]) =>
+    ledgerStillCurrent(new Set(), [], async () => null, {
+      read: new Map([[9, ["jig:merged"]]]),
+      reread: async () => ok(now),
+    });
+
+  it("writes while the labels are the ones the tick read", async () => {
+    expect(await check(["jig:merged"])(change)).toBeNull();
+  });
+
+  it("waits for a later tick when a marker's label landed meanwhile", async () => {
+    expect(await check(["jig:merged", "jig:followed-up"])(change)).toContain(
+      "labels changed",
+    );
+  });
+});

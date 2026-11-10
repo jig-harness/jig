@@ -82,8 +82,12 @@ describe("the drive's stop label and the dispatcher's classification", () => {
     });
 
   it("agree on an exit the registry does not name: a person settles it", () => {
-    expect(dispatcherState(stopped(2), 2)).toEqual({ state: "parked" });
-    expect(driveState(2)).toEqual({ state: "parked" });
+    const unnamed = 99;
+    expect(Object.values(DRIVE_EXIT)).not.toContain(unnamed);
+    expect(dispatcherState(stopped(unnamed), unnamed)).toEqual({
+      state: "parked",
+    });
+    expect(driveState(unnamed)).toEqual({ state: "parked" });
   });
 
   it("agree on a person's recorded stop that names no exit, as drives.ts --stop writes it", () => {

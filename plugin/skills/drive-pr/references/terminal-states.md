@@ -109,7 +109,9 @@ probe is reported as unknown rather than asserted as lag.
 
 Where the pull request state labels are on, each stop's label follows one
 table of exits, [`exit-classes.ts`](../scripts/lib/status/exit-classes.ts),
-which the dispatcher's ledger classifier reads too:
+which the dispatcher's ledger classifier reads too. A recorded person's
+stop is parked whatever its exit, so it takes precedence over the mapping
+below; for the rest:
 
 - `0` is labelled converged, while the head is still the verified head;
 - parked: the park `8`; a stop only a person settles (`1`, `2`, `6`, `7`,

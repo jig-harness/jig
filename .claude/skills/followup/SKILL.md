@@ -96,8 +96,9 @@ started records its result with the `jig dispatch result` command its
 prompt names instead. A run that stops short leaves its marker as it is,
 and says so with
 `jig dispatch marker failed "$PR" --comment "$MARKER"`, which sets the
-`followup-failed` state label: the dispatcher reports it, and a person
-marks it done or deletes it to have the follow-up run again. Once it is
+`followup-failed` state label: the label is where the failure shows, and the
+dispatcher does not read it as a failed outcome (it treats the marker as
+held). A person marks it done or deletes it to have the follow-up run again. Once it is
 older than `dispatch.followup_stale_after` with no session on the pull
 request, the dispatcher deletes it itself, once, and starts the follow-up
 again; so mark your marker done as soon as the last act succeeds.

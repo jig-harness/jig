@@ -533,8 +533,10 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
   let dueAt = Number.NEGATIVE_INFINITY;
   return async () => {
     if (performance.now() < dueAt) return null;
-    const code = await mirrorNow(pr);
-    const landed = code === 0;
+    const code = await mirrorNow(pr, true);
+    // A write the guards refused is not a failed one: the ledger is another's, and the claims below say whether to stand down.
+    const landed = afterHandoff(code) !== "unwritten";
+    if (afterHandoff(code) === "label") await labelOwnDrive(pr, { armed: true });
     dueAt = performance.now() + (landed ? LEDGER_RENEW_MS : LEDGER_RETRY_MS);
     if (!landed) {
       console.error(
@@ -555,12 +557,50 @@ export async function publishStartup(pr: string): Promise<void> {
   if (ledgerDriverFromEnv() === null) return;
   const publication = await mirrorNow(pr, true);
   const next = afterHandoff(publication);
-  if (next === "label") await labelDrive(pr, { armed: true });
+  if (next === "label") await labelOwnDrive(pr, { armed: true });
   // A write the guards refused leaves a ledger that is not this driver's.
   if (next !== "unwritten") return;
   console.error(
     `ledger: initial running-ledger publication failed (exit ${publication}); stop requests remain refused until this acquisition publishes, and round-boundary writes retry it.`,
   );
+}
+
+/**
+ * Whether the ledger on the pull request still names the acquisition this
+ * call runs in: its tree, its clone and the lock acquisition time. `false`
+ * for a driver that no longer writes the ledger (taken over) or a ledger
+ * that does not read, so a label is only written over a ledger that is ours.
+ */
+async function ledgerIsOurs(pr: string): Promise<boolean> {
+  const driver = ledgerDriverFromEnv();
+  if (driver === null) return false;
+  const snapshot = await readLedgerSnapshot(pr, driver.login);
+  if (typeof snapshot === "string" || snapshot.canonical === null) return false;
+  const parsed = snapshot.canonical.parsed;
+  if (parsed.kind !== "ledger") return false;
+  const written = parsed.ledger.driver;
+  return (
+    written.actor === driver.actor &&
+    written.clone === driver.clone &&
+    (driver.started === undefined || written.started === driver.started)
+  );
+}
+
+/** The state label for a ledger this driver just wrote, written only while that ledger is still its own. */
+async function labelOwnDrive(
+  pr: string,
+  moment: Parameters<typeof labelDrive>[1],
+): Promise<void> {
+  // A drive with no ledger labels nothing.
+  if (ledgerDriverFromEnv() === null) return;
+  await labelDrive(pr, moment, undefined, () => ledgerIsOurs(pr));
+}
+
+/** Write the running ledger now and, once it landed, the state label that follows it; what `handoff` exited with. */
+export async function publishRunning(pr: string): Promise<number> {
+  const code = await mirrorNow(pr, true);
+  if (afterHandoff(code) === "label") await labelOwnDrive(pr, { armed: true });
+  return code;
 }
 
 /**
@@ -592,7 +632,7 @@ async function afterStopWrite(
   if (next === "unwritten") return;
   await dropRecord();
   if (next === "refused") return;
-  await labelDrive(pr, async () => ({
+  await labelOwnDrive(pr, async () => ({
     stopped: code,
     byPerson:
       personStopFor(await resolveStateDir(), pr, started).personStop !==
