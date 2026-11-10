@@ -77,6 +77,7 @@ import { readPickups } from "./sources/tracker.ts";
 import { facetBound } from "./sources/tracker-facets.ts";
 import { emptyReport, type TickOptions } from "./tick-context.ts";
 import { type ForgeRead, readForge } from "./tick-forge.ts";
+import { repoScopeOf } from "./sources/served-repo.ts";
 import { lowBudget, type TickReads } from "./tick-reads.ts";
 import { openShared, readDriveClaims, type TickShared } from "./tick-shared.ts";
 import { failureText } from "./text.ts";
@@ -514,12 +515,14 @@ async function readTracker(
     const item = values.do_item as
       | { execution_plan_block?: unknown }
       | undefined;
+    const scope = repoScopeOf(values);
     tracked.servedPolicy = {
       hitl: config.labels.hitl,
       manualOps: config.labels.manualOps,
       ...(typeof item?.execution_plan_block === "string"
         ? { executionPlanBlock: item.execution_plan_block }
         : {}),
+      ...(scope === undefined ? {} : { repoScope: scope }),
     };
     const reading = await readPickups(
       () => {
