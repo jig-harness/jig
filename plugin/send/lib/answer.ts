@@ -49,6 +49,7 @@ import {
   TICK,
 } from "./answer-parks.ts";
 import { type Planned, refused } from "./plan.ts";
+import { planAnswerAll } from "./answer-all.ts";
 
 type OneAnswer = Extract<AnswerRequest, { all: false }>;
 
@@ -74,36 +75,45 @@ function sendCommand(
   return `jig send ${address} answer ${request.key} ${form}${note} --decision ${digest}`;
 }
 
+type Structured = Extract<OneAnswer["form"], { kind: "approve" | "choose" }>;
+type Row = [string, string];
+
+/** Why a structured answer to `item` is not bound to the framing the person read, or `null` when it is. */
+function bindingFault(
+  item: ParkedItem,
+  decision: string | undefined,
+  dryRun: boolean,
+): string | null {
+  const digest = item.digest;
+  if (digest === undefined)
+    return decision === undefined
+      ? null
+      : `${item.key} was parked before decision digests, so it has none and an answer to it is bound by time alone; leave --decision out`;
+  if (decision !== undefined && decision !== digest)
+    return `--decision ${decision} is not the decision digest of ${item.key}'s framing now: the drive framed it again since you read it, and nothing is sent; run the dry run again, read the decision, and send the command it prints`;
+  if (decision === undefined && !dryRun)
+    return "name the framing you read: run this with --dry-run, read the option it shows, then send the command it prints, which names the decision's digest with --decision";
+  return null;
+}
+
 /** The structured answer `request` makes to `item`, bound to the digest the person read, or why it is not sent. */
 function structured(
   item: ParkedItem,
-  request: OneAnswer,
+  request: OneAnswer & { form: Structured },
   login: string,
   address: string,
   dryRun: boolean,
 ): Planned | Written {
-  if (request.form.kind === "free")
-    return { text: request.form.text, detail: [] };
-  const digest = item.digest;
-  if (digest === undefined && request.decision !== undefined)
-    return refused(
-      `${request.key} was parked before decision digests, so it has none and an answer to it is bound by time alone; leave --decision out`,
-    );
-  if (
-    digest !== undefined &&
-    request.decision !== undefined &&
-    request.decision !== digest
-  )
-    return refused(
-      `--decision ${request.decision} is not the decision digest of ${request.key}'s framing now: the drive framed it again since you read it, and nothing is sent; run the dry run again, read the decision, and send the command it prints`,
-    );
-  if (digest !== undefined && request.decision === undefined && !dryRun)
-    return refused(
-      `name the framing you read: run this with --dry-run, read the option it shows, then send the command it prints, which names the decision's digest with --decision`,
-    );
+  const fault = bindingFault(item, request.decision, dryRun);
+  if (fault !== null) return refused(fault);
   const resolved = resolveChoice(item, request.form, request.note, login);
   if (!resolved.ok) return resolved;
   const { option, recommended, text, parts } = resolved.value;
+  const digest = item.digest;
+  const send: Row[] =
+    digest !== undefined && dryRun
+      ? [["send", sendCommand(address, request, option.name, digest)]]
+      : [];
   return {
     text,
     parts,
@@ -114,20 +124,44 @@ function structured(
           "none: parked before decision digests, so the answer is bound by time alone",
       ],
       ["option", optionInFull(option, recommended)],
-      ...(digest !== undefined && dryRun
-        ? [
-            ["send", sendCommand(address, request, option.name, digest)] as [
-              string,
-              string,
-            ],
-          ]
-        : []),
+      ...send,
     ],
   };
 }
 
+/** What `request` writes to `item`: the person's words as they are, or a structured answer. */
+function writtenFor(
+  item: ParkedItem,
+  request: OneAnswer,
+  login: string,
+  address: string,
+  dryRun: boolean,
+): Planned | Written {
+  const { form } = request;
+  return form.kind === "free"
+    ? { text: form.text, detail: [] }
+    : structured(item, { ...request, form }, login, address, dryRun);
+}
+
+/** The notice of an answer: who can read it, and what it does to earlier answers. */
+function noticeOf(replaces: boolean, beside: boolean): string {
+  return [
+    READABLE_NOTICE,
+    ...(replaces
+      ? [
+          "your latest answer is the one the drive counts, so this one replaces it",
+        ]
+      : []),
+    ...(beside
+      ? [
+          "when this answer and another person's differ (another option, another note, or a free answer beside a structured one), the item is disputed and waits until you agree",
+        ]
+      : []),
+  ].join("; ");
+}
+
 /** The plan of an answer to one parked key, or why the drive cannot take it. */
-export async function planAnswer(
+async function planAnswer(
   ctx: AskContext,
   request: OneAnswer,
   login: string,
@@ -149,7 +183,7 @@ export async function planAnswer(
       }`,
     );
   }
-  const written = structured(item, request, login, ctx.name, dryRun);
+  const written = writtenFor(item, request, login, ctx.name, dryRun);
   if ("ok" in written) return written;
   const answers = answersTo(found, key);
   const mine = answers.filter(
@@ -176,19 +210,7 @@ export async function planAnswer(
     reader: ANSWER_READER,
     tick: TICK,
     undo: "none once the re-arm has read it; until then, delete the comment, or answer again: your latest answer is the one that counts",
-    notice: [
-      READABLE_NOTICE,
-      ...(mine.length > 0
-        ? [
-            "your latest answer is the one the drive counts, so this one replaces it",
-          ]
-        : []),
-      ...(others.length > 0
-        ? [
-            "when this answer and another person's differ (another option, another note, or a free answer beside a structured one), the item is disputed and waits until you agree",
-          ]
-        : []),
-    ].join("; "),
+    notice: noticeOf(mine.length > 0, others.length > 0),
     detail: written.detail,
     write: async () => {
       const body = answerComment(
@@ -203,4 +225,17 @@ export async function planAnswer(
       return posted.ok ? ok(posted.value ?? doc.url) : posted;
     },
   });
+}
+
+/** The plan of `request`: one key's answer, or every eligible item's approval. */
+export function planAnswerRequest(
+  ctx: AskContext,
+  request: AnswerRequest,
+  login: string,
+  writesAs: string,
+  dryRun: boolean,
+): Promise<Planned> {
+  return request.all
+    ? planAnswerAll(ctx, request.decisionSet, login, writesAs, dryRun)
+    : planAnswer(ctx, request, login, writesAs, dryRun);
 }

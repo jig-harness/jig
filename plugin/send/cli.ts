@@ -51,8 +51,7 @@ import {
 import { readLogin } from "../ask/lib/forge.ts";
 import { machineFile } from "../ask/lib/local.ts";
 import { reading } from "../ask/lib/reading.ts";
-import { planAnswer } from "./lib/answer.ts";
-import { planAnswerAll } from "./lib/answer-all.ts";
+import { planAnswerRequest } from "./lib/answer.ts";
 import { planAssign } from "./lib/assign.ts";
 import { planLabel } from "./lib/labels.ts";
 import { planMailbox } from "./lib/mailbox.ts";
@@ -174,9 +173,7 @@ async function planFor(
     case "release":
       return planLabel(ctx, request.verb, writesAs);
     case "answer":
-      return request.all
-        ? planAnswerAll(ctx, request.decisionSet, login.value, writesAs, dryRun)
-        : planAnswer(ctx, request, login.value, writesAs, dryRun);
+      return planAnswerRequest(ctx, request, login.value, writesAs, dryRun);
     default:
       return planMailbox(ctx, request, login.value, writesAs);
   }
