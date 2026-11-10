@@ -469,16 +469,19 @@ export async function pullRequestLabels(
   return labelNames(field(out.value, "labels"), `PR #${pr}`);
 }
 
-/** The head commit of pull request `pr`, read now. */
+/** The head commit of open pull request `pr`, read now; a pull request that is no longer open does not read. */
 export async function pullRequestHead(
   slug: string,
   pr: number,
 ): Promise<Outcome<string, "unreadable">> {
   const out = await ghJson(
-    ["pr", "view", String(pr), "--repo", slug, "--json", "headRefOid"],
+    ["pr", "view", String(pr), "--repo", slug, "--json", "headRefOid,state"],
     "the pull request view",
   );
   if (!out.ok) return out;
+  const state = field(out.value, "state");
+  if (state !== "OPEN")
+    return failed("unreadable", `PR #${pr} reads ${String(state)}`);
   const head = field(out.value, "headRefOid");
   return typeof head === "string" && head !== ""
     ? ok(head)

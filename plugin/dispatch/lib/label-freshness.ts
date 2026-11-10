@@ -115,8 +115,8 @@ async function mergedLabelsUnchanged(
 /**
  * The check `writeLabels` runs before each state write: why the write is
  * skipped this tick, or `null` to write it. Only an open pull request read
- * for a ledger is checked; a marker write and a merged pull request's state
- * are not.
+ * for a ledger is checked, and a merged pull request's labels; a marker write
+ * is not.
  */
 export function ledgerStillCurrent(
   open: ReadonlySet<number>,

@@ -85,9 +85,15 @@ export function driveLabelForge(slug: string): OwnForge {
       const value = parsed.value as { labels?: unknown; headRefOid?: unknown };
       if (!Array.isArray(value.labels))
         return failed("unreadable", "its labels did not read: no label list");
-      const labels = value.labels
-        .map((l) => (l as { name?: unknown }).name)
-        .filter((n): n is string => typeof n === "string");
+      const names = value.labels.map(
+        (l) => (l as { name?: unknown } | null)?.name,
+      );
+      if (!names.every((n): n is string => typeof n === "string"))
+        return failed(
+          "unreadable",
+          "its labels did not read: a label has no name",
+        );
+      const labels = names;
       return ok(
         typeof value.headRefOid === "string"
           ? { labels, head: value.headRefOid }

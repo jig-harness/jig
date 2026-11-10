@@ -205,6 +205,30 @@ describe("ownership asked after the label read", () => {
     expect(edits).toEqual([]);
   });
 
+  it("leaves a converged label when the head moves during the ownership check", async () => {
+    const edits: unknown[] = [];
+    let heads = ["aaa", "bbb"];
+    const f: OwnForge = {
+      labels: async () =>
+        ok({ labels: ["jig:driving"], head: heads.shift() ?? "bbb" }),
+      edit: async (_pr, add, remove) => {
+        edits.push({ add, remove });
+        return ok(undefined);
+      },
+    };
+    const r = await writeOwnState({
+      config: ON,
+      pr: 7,
+      projected: { state: "converged" },
+      writer: "drive",
+      forge: f,
+      head: "aaa",
+      beforeEdit: async () => null,
+    });
+    expect(r.outcome).toBe("moved");
+    expect(edits).toEqual([]);
+  });
+
   it("writes while the writer still owns the pull request", async () => {
     const { f, edits } = forge(["jig:driving"]);
     const r = await writeOwnState({

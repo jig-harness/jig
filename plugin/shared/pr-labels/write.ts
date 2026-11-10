@@ -71,7 +71,7 @@ export interface OwnWriteInput {
   forge: OwnForge;
   /** Write only while the pull request's head is this commit (a converged drive's verified head); otherwise leave the labels. */
   head?: string;
-  /** Asked after the labels are read, just before the edit: a reason to leave them (the writer no longer owns the pull request), or `null` to write. */
+  /** Asked after the labels are read; the labels and head are read again after it, just before the edit: a reason to leave them (the writer no longer owns the pull request), or `null` to write. */
   beforeEdit?: () => Promise<string | null>;
 }
 
@@ -91,22 +91,44 @@ export async function writeOwnState(input: OwnWriteInput): Promise<OwnWrite> {
       outcome: "kept",
       detail: `the ${writer} does not write ${projected === "unknown" || projected.state === null ? "this state" : labelName(config, projected.state)}; the dispatcher's tick does`,
     };
-  const read = await forge.labels(pr);
-  if (!read.ok) return { outcome: "refused", detail: read.failure.reason };
-  const { labels, head } = read.value;
-  if (writer === "drive") {
-    const stood = standsDown(config, labels);
-    if (stood !== null) return { outcome: "held", detail: stood };
+  const decide = async (): Promise<
+    { done: OwnWrite } | { change: NonNullable<ReturnType<typeof labelChange>> }
+  > => {
+    const read = await forge.labels(pr);
+    if (!read.ok)
+      return { done: { outcome: "refused", detail: read.failure.reason } };
+    const { labels, head } = read.value;
+    if (writer === "drive") {
+      const stood = standsDown(config, labels);
+      if (stood !== null) return { done: { outcome: "held", detail: stood } };
+    }
+    if (input.head !== undefined && head !== input.head)
+      return {
+        done: {
+          outcome: "moved",
+          detail: `its head ${head ?? "(unread)"} is not the head ${input.head} the drive verified, so ${labelName(config, "converged")} is not written`,
+        },
+      };
+    const change = labelChange(
+      config,
+      pr,
+      labels,
+      projected,
+      writer === "drive",
+    );
+    return change === null ? { done: { outcome: "agrees" } } : { change };
+  };
+  const first = await decide();
+  if ("done" in first) return first.done;
+  let { change } = first;
+  if (input.beforeEdit !== undefined) {
+    const left = await input.beforeEdit();
+    if (left !== null) return { outcome: "held", detail: left };
+    // The ownership check is a remote read: the head and the labels are read again after it, and the edit is planned from them.
+    const again = await decide();
+    if ("done" in again) return again.done;
+    change = again.change;
   }
-  if (input.head !== undefined && head !== input.head)
-    return {
-      outcome: "moved",
-      detail: `its head ${head ?? "(unread)"} is not the head ${input.head} the drive verified, so ${labelName(config, "converged")} is not written`,
-    };
-  const change = labelChange(config, pr, labels, projected, writer === "drive");
-  if (change === null) return { outcome: "agrees" };
-  const left = (await input.beforeEdit?.()) ?? null;
-  if (left !== null) return { outcome: "held", detail: left };
   const edited = await forge.edit(pr, change.add, change.remove);
   return edited.ok
     ? { outcome: "written", detail: describe(change.add, change.remove) }
