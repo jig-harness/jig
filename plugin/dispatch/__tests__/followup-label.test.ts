@@ -6,12 +6,13 @@
  * (`followup-failed`), and a dispatched pass through its wrapper once the
  * pass's exit is recorded.
  */
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { manualMarker, MARKER, markerRun } from "../lib/followup-marker.ts";
+import { failedRunExit } from "../marker.ts";
 import { mergedPr, SLUG, type World, world } from "./fixtures.ts";
 import { readRecord } from "../lib/launches.ts";
 import {
@@ -174,5 +175,30 @@ describe("a follow-up labels its own end", () => {
     writeFileSync(join(w.dir, "claude-exit"), "1");
     await waitFor("the label", () => labels(w).includes("jig:followup-failed"));
     expect(labels(w)).toEqual(["area:docs", "jig:followup-failed"]);
+  });
+});
+
+describe("marker failed on a defect", () => {
+  it("exits 1 with the defect's line and stack, and no advice about missing labels", () => {
+    const said: string[] = [];
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => {
+      said.push(String(line));
+    });
+    try {
+      const code = failedRunExit(
+        { repo: SLUG, pr: 9 },
+        {
+          write: { outcome: "defect", detail: "boom" },
+          line: "PR #9's state label was not written: a defect (boom)\nError: boom\n    at here",
+        },
+      );
+      expect(code).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+    const out = said.join("\n");
+    expect(out).toContain("a defect (boom)");
+    expect(out).toContain("at here");
+    expect(out).not.toContain("jig dispatch labels --yes");
   });
 });

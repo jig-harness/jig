@@ -1,17 +1,18 @@
 /**
- * How a stopped drive ledger reads by its exit: the one table both the
- * dispatcher's ledger classifier (`dispatch/lib/sources/ledgers.ts`) and the
- * drive's own state label (`lib/driver/state-labels.ts`) read, so the two
- * never disagree on what a stop means.
+ * How a stopped drive ledger reads by its exit: the one table of classes
+ * both the dispatcher's ledger classifier (`dispatch/lib/sources/ledgers.ts`)
+ * and the drive's own state label (`lib/driver/state-labels.ts`) read, so the
+ * two never disagree on what a stop means.
  *
  * Each exit has the class its ledger takes when nothing about the pull
- * request changes it, and whether the dispatcher reads the pull request to
- * decide (`readsPr`): a converged stop is stale once the head moved or the
- * pull request conflicts, a park is re-armable once every item is answered,
- * a stop the dispatcher re-drives is placed by its head. An exit this table
- * does not name is a stop only a person settles (`needs-person`), and a
- * recorded person's stop (`drives.ts --stop`, a mailbox stop) reads as
- * `stopped-by-person` whatever its exit.
+ * request changes it. For some exits the dispatcher's classifier reads the
+ * pull request first, in branches of its own (a converged stop is stale once
+ * the head moved or the pull request conflicts, a park is re-armable once
+ * every item is answered, a stop it re-drives is placed by its head), and
+ * this table's class is what those exits read as when nothing there changes
+ * it. An exit this table does not name is a stop only a person settles
+ * (`needs-person`), and a recorded person's stop (`drives.ts --stop`, a
+ * mailbox stop) reads as `stopped-by-person` whatever its exit.
  *
  * The drive writes its state from the same class, except that it never
  * writes `stale`: where the dispatcher would re-drive a stop, the drive
@@ -21,14 +22,14 @@
 import type { LedgerClass } from "../../../../../shared/pr-labels/projection.ts";
 import { DRIVE_EXIT, type DriveExitName } from "./terminal-states.ts";
 
-/** A stopped ledger's class by its exit, and whether the dispatcher reads the pull request to place it. */
+/** A stopped ledger's class by its exit. */
 export interface ExitClass {
   class: LedgerClass;
-  readsPr: boolean;
 }
 
-const fixed = (c: LedgerClass): ExitClass => ({ class: c, readsPr: false });
-const readsPr = (c: LedgerClass): ExitClass => ({ class: c, readsPr: true });
+const fixed = (c: LedgerClass): ExitClass => ({ class: c });
+/** An exit the dispatcher reads the pull request for first; its class when nothing there changes it. */
+const readsPr = fixed;
 
 /** Every exit `drive.ts` ends with, by its registry name. */
 const BY_NAME: Record<DriveExitName, ExitClass> = {
@@ -64,7 +65,7 @@ const BY_CODE: ReadonlyMap<number, ExitClass> = new Map(
 
 const PERSON: ExitClass = fixed("needs-person");
 
-/** How a ledger that stopped with `exit` reads; an exit the registry does not name is a person's. */
+/** How a ledger that stopped with `exit` reads when nothing about its pull request changes it; an exit the registry does not name is a person's. */
 export function exitClass(exit: number): ExitClass {
   return BY_CODE.get(exit) ?? PERSON;
 }

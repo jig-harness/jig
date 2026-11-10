@@ -592,12 +592,13 @@ async function afterStopWrite(
   if (next === "unwritten") return;
   await dropRecord();
   if (next === "refused") return;
-  const stateDir = await resolveStateDir();
-  await labelDrive(pr, {
+  await labelDrive(pr, async () => ({
     stopped: code,
-    byPerson: personStopFor(stateDir, pr, started).personStop !== undefined,
+    byPerson:
+      personStopFor(await resolveStateDir(), pr, started).personStop !==
+      undefined,
     verifiedSha: (await readDriveState(pr))?.verifiedSha ?? "",
-  });
+  }));
 }
 
 /**

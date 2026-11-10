@@ -1053,6 +1053,7 @@ These are set per machine or per run, not committed:
 | `JIRA_EMAIL`, `JIRA_API_TOKEN` | Credentials for the Jira adapter: an Atlassian account's email address and an API token made for it |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
 | `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
+| `DRIVE_PR_HANDOFF_TELLS_REFUSED` | Set by the driver, never by a person: `1` makes `drive-state.ts handoff` exit `76` (`LEDGER_REFUSED_EXIT`) when its guards refused the ledger write (a lost acquisition, a newer takeover claim, a ledger that is not the stopped driver's) instead of `0`, so the drive labels its pull request's state only after a ledger write of its own; unset, a refused write exits `0` as a landed one does. A write that was attempted and did not land exits `75` (`LEDGER_NOT_WRITTEN_EXIT`) either way |
 | `DRIVE_PR_LEDGER` | `off` makes `drive.ts` drive without the drive ledger on the pull request: no seeding from it, no check for another clone's driver, no writes; `on` or unset uses it ([where its state lives](skills/drive-pr/README.md#where-its-state-lives)) |
 | `DRIVE_PR_POLICY_BASE` | Set by the driver, never by a person: the commit of the pull request's base branch whose `.config/jig.yaml` the driver and its passes read `autonomy.max_level` and `autonomy.park_classes` from ([`autonomy`](#autonomy)); empty when the base cannot be resolved, which fails closed. The driver overwrites any inherited value |
 | `DRIVE_PR_POLICY_BOUND` | Set by the driver, never by a person, only when the pull request's base is not the integration branch (a stacked layer): the integration branch's commit whose policy bounds the base's. Unset otherwise; the driver removes any inherited value |
@@ -1338,16 +1339,19 @@ both the drive and the dispatcher (drive-pr's
   still the head the drive verified; otherwise it leaves the labels, a
   `jig:stale` the workflow below wrote among them;
 - `jig:parked` for a park (`HITL_PARKED`), a stop only a person settles
-  (`MAX_ROUNDS`, `REVIEWER_FAILED`, `REVIEW_SKIPPED`, `INDETERMINATE` and any
-  exit the registry does not name), a person's stop (`MAILBOX_STOPPED`,
+  (`MAX_ROUNDS`, `REVIEWER_FAILED`, `REVIEW_SKIPPED`, `INDETERMINATE`,
+  `UNSUPPORTED_CLI` and any exit the registry does not name), a person's stop (`MAILBOX_STOPPED`,
   `MAILBOX_PAUSE_TIMEOUT`, `drives.ts --stop`), and a stop the dispatcher
   re-drives (`PR_CONFLICTING`, `WORKTREE_UNCLEAN`, `STALLED`,
   `PASS_DEADLINE`, `CI_REPAIR_SPENT`, `CI_INFRA_PERSISTED`): without a
   dispatcher a person acts on those, and where one runs its tick replaces
   `jig:parked` with `jig:stale`;
 - `jig:driving` for a stop the dispatcher re-arms (`NOT_SETTLED`,
-  `QUOTA_PARKED`);
-- nothing for `PR_NOT_OPEN`, a stop on a pull request no longer open.
+  `QUOTA_PARKED`) and a second driver refused while another drives
+  (`SINGLE_INSTANCE_LOCK`, `DRIVE_HELD_BY_OTHER_WORKTREE`);
+- nothing for `PR_NOT_OPEN`, a stop on a pull request no longer open, for
+  `TAKEN_OVER`, whose ledger is the successor's, and for a stop with no exit
+  and no person's stop recorded.
 
 A follow-up writes `jig:followed-up` or `jig:followup-failed` when it ends,
 whoever runs it: the dispatcher's wrapper once the pass's exit is recorded,

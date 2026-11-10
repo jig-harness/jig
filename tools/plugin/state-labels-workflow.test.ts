@@ -19,7 +19,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
-import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  expectSpawnExit,
+  expectSpawnExitNot,
+} from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../lib/test-helpers/fake-program.ts";
 import { load } from "../../plugin/shared/vendor/js-yaml.mjs";
 
@@ -105,8 +108,10 @@ function step(): Step {
 
 /**
  * A `gh` that keeps PR #12's labels in `labels.json` beside it and logs each
- * call: `pr edit 12 --repo <slug>` applies its `--add-label` and
- * `--remove-label` values in one change; anything else is refused.
+ * call: `pr view 12 --repo <slug> --json labels --jq '.labels[].name'` prints
+ * the names one per line (and fails while `view-fails` exists), and
+ * `pr edit 12 --repo <slug>` applies its `--add-label` and `--remove-label`
+ * values in one change; anything else is refused.
  */
 const FAKE_GH = `#!/usr/bin/env bun
 const fs = require("node:fs");
@@ -116,18 +121,26 @@ const args = process.argv.slice(2);
 fs.appendFileSync(path.join(dir, "calls.log"), JSON.stringify(args) + "\\n");
 const file = path.join(dir, "labels.json");
 const labels = JSON.parse(fs.readFileSync(file, "utf8"));
-if (args[0] !== "pr" || args[1] !== "edit" || args[2] !== "12" || args[3] !== "--repo") process.exit(2);
+if (args[0] !== "pr" || args[2] !== "12" || args[3] !== "--repo") process.exit(2);
+if (args[1] === "view") {
+  if (fs.existsSync(path.join(dir, "view-fails"))) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  if (args.slice(5).join(" ") !== "--json labels --jq .labels[].name") process.exit(2);
+  process.stdout.write(labels.map((l) => l + "\\n").join(""));
+  process.exit(0);
+}
+if (args[1] !== "edit") process.exit(2);
 const values = (flag) => args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));
 const remove = values("--remove-label");
 const add = values("--add-label");
 fs.writeFileSync(file, JSON.stringify([...labels.filter((l) => !remove.includes(l)), ...add]));
 `;
 
-/** Run the step for a push to PR #12 carrying `labels`, as GitHub would. */
-function push(labels: string[], prefix?: string) {
+/** Run the step for a push to PR #12 carrying `labels` when the job runs, as GitHub would. */
+function push(labels: string[], prefix?: string, viewFails = false) {
   const dir = mkdtempSync(join(scratch, "push-"));
   writeFakeProgram(join(dir, "gh"), FAKE_GH);
   writeFileSync(join(dir, "labels.json"), JSON.stringify(labels));
+  if (viewFails) writeFileSync(join(dir, "view-fails"), "");
   const s = step();
   const result = Bun.spawnSync(["bash", "-e", "-c", s.run], {
     cwd: dir,
@@ -136,8 +149,8 @@ function push(labels: string[], prefix?: string) {
       GH_TOKEN: "test-token",
       REPO: "example-org/example-repo",
       PR: "12",
-      // What `toJSON(github.event.pull_request.labels.*.name)` renders.
-      LABELS: JSON.stringify(labels, null, 2),
+      // The push's event payload, which the step must not trust: it lists converged.
+      LABELS: JSON.stringify(["jig:converged"]),
       PREFIX: prefix ?? s.env.PREFIX ?? "",
     },
     stdout: "pipe",
@@ -148,7 +161,8 @@ function push(labels: string[], prefix?: string) {
       return readFileSync(join(dir, "calls.log"), "utf8")
         .trim()
         .split("\n")
-        .map((l) => JSON.parse(l) as string[]);
+        .map((l) => JSON.parse(l) as string[])
+        .filter((c) => c[1] === "edit");
     } catch {
       return [];
     }
@@ -177,6 +191,20 @@ describe("on a push to a pull request", () => {
         "jig:converged",
       ],
     ]);
+  });
+
+  test("reads the labels as they are when it runs, leaving a pull request whose converged is already gone", () => {
+    // The event saw converged; by the time the job runs a tick has replaced it.
+    const { result, calls, after } = push(["jig:driving"]);
+    expectSpawnExit(result, 0, "the step");
+    expect(calls).toEqual([]);
+    expect(after).toEqual(["jig:driving"]);
+  });
+
+  test("fails rather than guess when the labels do not read", () => {
+    const { result, calls } = push(["jig:converged"], undefined, true);
+    expectSpawnExitNot(result, 0, "the step");
+    expect(calls).toEqual([]);
   });
 
   test("does nothing on a pull request without converged", () => {

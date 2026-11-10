@@ -44,7 +44,11 @@ import { forgeShared } from "../shared/records/shared-forge.ts";
 import { localWriter } from "../shared/records/writer.ts";
 import { ok, type Outcome } from "../shared/outcome.ts";
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
-import { labelFailed, labelFollowupEnd } from "./lib/followup-label.ts";
+import {
+  type FollowupLabel,
+  labelFailed,
+  labelFollowupEnd,
+} from "./lib/followup-label.ts";
 import { repoTarget } from "./lib/forge.ts";
 import { failureText } from "./lib/text.ts";
 
@@ -212,11 +216,21 @@ async function labelFailedRun(target: SharedTarget): Promise<number> {
     pr: target.pr,
     outcome: "failed",
   });
+  return failedRunExit(target, label);
+}
+
+/** `failed`'s exit for what its label write did, each said on stderr: a defect with its stack, a refusal with what fixes it. */
+export function failedRunExit(
+  target: SharedTarget,
+  label: FollowupLabel,
+): number {
   if (label.write.outcome === "off")
     return stop(
       0,
       `dispatch.labels is off on the default branch, so nothing was recorded: the failed run is known only from its marker, which still claims the follow-up`,
     );
+  if (label.write.outcome === "defect")
+    return stop(1, label.line ?? "the followup-failed label hit a defect");
   if (!labelFailed(label)) {
     if (label.line !== null)
       console.error(`jig dispatch marker: ${label.line}`);

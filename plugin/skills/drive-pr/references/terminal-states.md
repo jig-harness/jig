@@ -109,13 +109,20 @@ probe is reported as unknown rather than asserted as lag.
 
 Where the pull request state labels are on, each stop's label follows one
 table of exits, [`exit-classes.ts`](../scripts/lib/status/exit-classes.ts),
-which the dispatcher's ledger classifier reads too: `0` is labelled
-converged while the head is still the verified head; a park, a stop only a
-person settles (`6`, `7`, `22`, `1` and any code this table does not name),
-a person's stop (`18`, `19`, a stop through `drives.ts`) and a stop the dispatcher
-re-drives (`9`, `12`, `14`, `15`, `21`, `23`) are labelled parked, which a
-dispatcher's tick turns into stale for the re-drives where one runs; `4` and
-`16`, which the dispatcher re-arms, stay driving; `5` leaves the labels.
+which the dispatcher's ledger classifier reads too:
+
+- `0` is labelled converged, while the head is still the verified head;
+- parked: the park `8`; a stop only a person settles (`1`, `2`, `6`, `7`,
+  `22` and any code the registry does not name); a person's stop (`18`,
+  `19`, and a recorded stop through `drives.ts`, which names no exit); and a
+  stop the dispatcher re-drives (`9`, `12`, `14`, `15`, `21`, `23`), which a
+  dispatcher's tick turns into stale where one runs;
+- driving: `4` and `16`, which the dispatcher re-arms, and `11` and `13`, a
+  second driver refused while another drives;
+- nothing: `5`, a pull request no longer open; `20`, whose ledger is the
+  successor's; and a stop with no exit and no person's stop recorded.
+
+
 
 ## Repair rounds
 
@@ -633,7 +640,12 @@ heartbeat, and the handoff narrative's last twenty lines, as JSON inside a
 second HTML comment with every `<` and `>` escaped. A driver publishes itself
 in `$DRIVE_PR_LEDGER_DRIVER` once it holds its locks, and `drive-state.ts`'s `handoff` (every round boundary, after a takeover, and as the driver stops)
 and its `park` write the ledger from the state they hold, so a
-session that is not a drive's child never writes one. Each write is a
+session that is not a drive's child never writes one. `handoff` exits `0`
+when it wrote the ledger or had nothing to write, `75`
+(`LEDGER_NOT_WRITTEN_EXIT`) when a write was attempted and did not land, and,
+for a caller that sets `DRIVE_PR_HANDOFF_TELLS_REFUSED=1`, `76`
+(`LEDGER_REFUSED_EXIT`) when its guards refused the write: the drive then
+labels no state, since the ledger is not its own. Each write is a
 read-modify-write against the canonical comment: the comments are read, the
 body built, and the comments read again just before the `PATCH`; a ledger
 whose `updated_at` or body moved (the stamp has one-second precision, so the

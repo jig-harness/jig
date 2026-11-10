@@ -54,10 +54,12 @@ export type DriveMoment =
   | { armed: true }
   | { stopped: number | null; byPerson: boolean; verifiedSha: string };
 
-/** How the dispatcher will read the ledger this moment writes, as the drive labels it; `null` for a stop with no exit. */
+/** How the dispatcher will read the ledger this moment writes, as the drive labels it; `null` for a stop with no exit and no person's stop. */
 export function ledgerAt(moment: DriveMoment): LedgerReading | null {
   if ("armed" in moment) return { class: "driven" };
-  if (moment.stopped === null) return null;
+  // A stop from outside the drive (`drives.ts --stop`) names no exit; a person's recorded stop still reads as theirs.
+  if (moment.stopped === null)
+    return moment.byPerson ? { class: "stopped-by-person" } : null;
   return driveStopClass(moment.stopped, moment.byPerson);
 }
 
@@ -119,15 +121,18 @@ const FORGE_SOURCE: LabelSource = {
 };
 
 /**
- * Write the label `moment` gives pull request `pr`, and say what happened on
- * stderr. Never throws, and never changes the drive's exit.
+ * Write the label `momentOf` gives pull request `pr` (the moment, or how to
+ * read it), and say what happened on stderr. Never throws, and never
+ * changes the drive's exit.
  */
 export async function labelDrive(
   pr: string,
-  moment: DriveMoment,
+  momentOf: DriveMoment | (() => Promise<DriveMoment>),
   source: LabelSource = FORGE_SOURCE,
 ): Promise<void> {
   try {
+    // A moment read from the drive's state is read here, inside the boundary, so a throw there is reported, not the drive's.
+    const moment = typeof momentOf === "function" ? await momentOf() : momentOf;
     const ledger = ledgerAt(moment);
     if (ledger === null) return;
     const settings = await source.settings();

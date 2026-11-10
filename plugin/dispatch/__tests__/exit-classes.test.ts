@@ -86,6 +86,23 @@ describe("the drive's stop label and the dispatcher's classification", () => {
     expect(driveState(2)).toEqual({ state: "parked" });
   });
 
+  it("agree on a person's recorded stop that names no exit, as drives.ts --stop writes it", () => {
+    const ledger = stopped(DRIVE_EXIT.CONVERGED, true);
+    delete (ledger.driver as { exit?: number }).exit;
+    expect(dispatcherState(ledger, Number.NaN)).toEqual({ state: "parked" });
+    const reading = ledgerAt({
+      stopped: null,
+      byPerson: true,
+      verifiedSha: SHA,
+    });
+    expect(reading === null ? "unknown" : ledgerState(reading, EXITS)).toEqual({
+      state: "parked",
+    });
+    expect(
+      ledgerAt({ stopped: null, byPerson: false, verifiedSha: SHA }),
+    ).toBeNull();
+  });
+
   it("agree on a person's recorded stop, whatever its exit", () => {
     for (const exit of [DRIVE_EXIT.CONVERGED, DRIVE_EXIT.NOT_SETTLED]) {
       expect(dispatcherState(stopped(exit, true), exit)).toEqual({

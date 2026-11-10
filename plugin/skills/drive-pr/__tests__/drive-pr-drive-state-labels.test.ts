@@ -9,10 +9,9 @@
  * label read and edit from a file and passes every other call through.
  */
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import {
   binDir,
   type Fixture,
@@ -22,50 +21,11 @@ import {
   writeFixture,
 } from "./drive-pr-harness.ts";
 import { PASS_NOOP, runDriveIn } from "./drive-loop-harness.ts";
+import { labelForge } from "./state-labels-forge.ts";
 
 useDrivePrSuite();
 
 const LEDGER_ON = { DRIVE_PR_LEDGER: "on" };
-/** The default branch's configuration with the labels on, as the forge serves it. */
-const LABELS_ON = "dispatch:\n  labels:\n    enabled: true\n";
-
-/**
- * A `gh` that serves the repository and its default branch's
- * `.config/jig.yaml` (`jig.yaml` beside it), keeps the pull request's labels
- * in `labels.json` and its head in `head` (the label read's own), logs each
- * label edit to `edits.log`, refuses one while `edit-refused` exists, and
- * runs the stub forge for everything else.
- */
-const LABEL_GH = (stub: string) => `#!/usr/bin/env bun
-const fs = require("node:fs");
-const path = require("node:path");
-const dir = path.dirname(process.argv[1]);
-const args = process.argv.slice(2);
-const file = path.join(dir, "labels.json");
-const read = () => JSON.parse(fs.readFileSync(file, "utf8"));
-const out = (v) => { process.stdout.write(JSON.stringify(v)); process.exit(0); };
-if (args[0] === "repo" && args[1] === "view" && args.at(-1) === "nameWithOwner,defaultBranchRef")
-  out({ nameWithOwner: "example/project", defaultBranchRef: { name: "main" } });
-if (args[0] === "api" && args[1] === "repos/example/project/contents/.config/jig.yaml?ref=main")
-  out({ encoding: "base64", content: fs.readFileSync(path.join(dir, "jig.yaml")).toString("base64") });
-if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "labels,headRefOid")
-  out({ labels: read().map((name) => ({ name })), headRefOid: fs.readFileSync(path.join(dir, "head"), "utf8") });
-const values = (flag) => args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));
-const add = values("--add-label");
-const remove = values("--remove-label");
-if (args[0] === "pr" && args[1] === "edit" && [...add, ...remove].some((l) => l.startsWith("jig:"))) {
-  fs.appendFileSync(path.join(dir, "edits.log"), JSON.stringify({ add, remove }) + "\\n");
-  if (fs.existsSync(path.join(dir, "edit-refused"))) {
-    process.stderr.write("could not add label: 'jig:driving' not found\\n");
-    process.exit(1);
-  }
-  fs.writeFileSync(file, JSON.stringify([...read().filter((l) => !remove.includes(l)), ...add]));
-  process.exit(0);
-}
-const child = require("node:child_process").spawnSync(${JSON.stringify(stub)}, args, { stdio: "inherit" });
-process.exit(child.status ?? 1);
-`;
-
 let seq = 0;
 
 /** A fixture in a tree of its own, its pull request carrying `labels`. */
@@ -75,27 +35,8 @@ function labelled(f: Fixture, labels: string[]) {
     { reviewedSha: tree.head, head: tree.head, ...f },
     tree.dir,
   );
-  const bin = join(dir, "label-bin");
-  mkdirSync(bin, { recursive: true });
-  writeFakeProgram(join(bin, "gh"), LABEL_GH(join(binDir, "gh")));
-  writeFileSync(join(bin, "labels.json"), JSON.stringify(labels));
-  writeFileSync(join(bin, "jig.yaml"), LABELS_ON);
-  writeFileSync(join(bin, "head"), tree.head);
-  return {
-    dir,
-    stateDir,
-    tree: tree.dir,
-    bin,
-    labels: (): string[] =>
-      JSON.parse(readFileSync(join(bin, "labels.json"), "utf8")),
-    edits: (): Array<{ add: string[]; remove: string[] }> =>
-      existsSync(join(bin, "edits.log"))
-        ? readFileSync(join(bin, "edits.log"), "utf8")
-            .trim()
-            .split("\n")
-            .map((l) => JSON.parse(l))
-        : [],
-  };
+  const forge = labelForge(dir, join(binDir, "gh"), labels, tree.head);
+  return { dir, stateDir, tree: tree.dir, ...forge };
 }
 
 async function drive(

@@ -15,8 +15,8 @@
 #
 # Safety: it runs on `pull_request_target` so a pull request from a fork gets
 # a token that may write labels, and for that reason it checks nothing out and
-# runs nothing from the pull request. It reads only the event's label names,
-# through the environment, and changes two labels in one `gh pr edit` call.
+# runs nothing from the pull request. It reads the pull request's current
+# labels through the forge, and changes two labels in one `gh pr edit` call.
 
 name: state-labels
 
@@ -43,12 +43,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
-          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
           PREFIX: "jig:"
         run: |
           converged="${PREFIX}converged"
           stale="${PREFIX}stale"
-          if ! grep -qF "\"${converged}\"" <<<"$LABELS"; then
+          # The labels as they are now, not as the push's event saw them: a
+          # converged label gone since then is not replaced.
+          labels="$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')"
+          if ! grep -qxF -- "$converged" <<<"$labels"; then
             echo "PR #${PR} does not carry ${converged}: nothing to do."
             exit 0
           fi
