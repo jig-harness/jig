@@ -364,7 +364,10 @@ describe("writing a plan's dependency edges to the tracker", () => {
     > = {};
     return {
       getIssue: async () =>
-        ({ description: fixture("linear-issue") }) as { description: string },
+        ({
+          identifier: "ENG-100",
+          description: fixture("linear-issue"),
+        }) as { identifier: string; description: string },
       listRelations: async (key: string) => relations[key] ?? [],
       relate: async (from: string, type: string, to: string) => {
         written.push(`${from} ${type} ${to}`);
@@ -391,9 +394,30 @@ describe("writing a plan's dependency edges to the tracker", () => {
     expect(report.written).toEqual([{ from: "ENG-1", to: "ENG-3" }]);
     expect(written).toEqual([]);
   });
+  it("compares the plan's epic with the issue's canonical identifier, not the argument's spelling", async () => {
+    const written: string[] = [];
+    const report = await syncPlanBlocks(tracker(written) as never, "100");
+    expect(report.written).toEqual([{ from: "ENG-1", to: "ENG-3" }]);
+  });
+  it("refuses a description with an Execution Plan heading and no readable block", async () => {
+    const t = {
+      getIssue: async () => ({
+        identifier: "ENG-100",
+        description: "## Execution Plan\n\nno block here\n",
+      }),
+      listRelations: async () => [],
+      relate: async () => undefined,
+    };
+    await expect(syncPlanBlocks(t as never, "ENG-100")).rejects.toThrow(
+      "lacks a",
+    );
+  });
   it("refuses to write a blocks the tracker already has the other way", async () => {
     const t = {
-      getIssue: async () => ({ description: fixture("linear-issue") }),
+      getIssue: async () => ({
+        identifier: "ENG-100",
+        description: fixture("linear-issue"),
+      }),
       listRelations: async () => [{ type: "blocked_by", issue: "ENG-3" }],
       relate: async () => undefined,
     };

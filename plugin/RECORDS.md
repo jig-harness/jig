@@ -195,8 +195,9 @@ collaborator of the repository, wrote it (`shared/trusted-authors.ts`).
 
 **A relationship between issues is never a record.** An issue's parent, what
 it blocks, what it relates to and what it duplicates are written and read
-only through the tracker's own relationships, by `tracker.ts relate` and its
-adapters. A text marker stands in for one only where a supported tracker has
+only through the tracker's own relationships: `tracker.ts relate` for what
+it blocks, relates to and duplicates, the `parent` field of create and update
+for its parent, and the adapters behind them. A text marker stands in for one only where a supported tracker has
 no native form, and the adapter's documentation names it. No adapter has
 such a marker now: `tracker-related`, below, is the form GitHub's adapter
 wrote before GitHub had a related link, kept only so that links written then

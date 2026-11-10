@@ -10,7 +10,11 @@
  * plan.
  */
 
-import { readExecutionPlan } from "./execution-plan.ts";
+import {
+  DEFAULT_BLOCK,
+  hasExecutionPlanHeading,
+  readExecutionPlan,
+} from "./execution-plan.ts";
 import { type Tracker, TrackerRequestError } from "./tracker/port.ts";
 
 export interface PlanBlocks {
@@ -36,8 +40,15 @@ export async function syncPlanBlocks(
     written: [],
     existing: [],
   };
-  if (plan === null) return report;
-  if (plan.epic !== epic)
+  if (plan === null) {
+    if (hasExecutionPlanHeading(issue.description ?? ""))
+      throw new TrackerRequestError(
+        "invalid",
+        `Execution Plan lacks a ${opts.block ?? DEFAULT_BLOCK} block; re-run the planner that wrote it`,
+      );
+    return report;
+  }
+  if (plan.epic !== issue.identifier)
     throw new TrackerRequestError(
       "invalid",
       "Execution plan belongs to a different epic",

@@ -260,7 +260,7 @@ export async function migrateRelations(
     const native = nativeLinks(issue, key, home);
     for (const c of comments) {
       const done: Array<{ target: string; related: string }> = [];
-      for (const target of legacyTargets(c.body)) {
+      for (const target of new Set(legacyTargets(c.body))) {
         const otherKey = keyOf(client.ref(target), home);
         const why = await link(issue, key, otherKey, native);
         if (why === null) done.push({ target, related: otherKey });

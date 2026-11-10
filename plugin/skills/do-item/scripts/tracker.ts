@@ -494,6 +494,13 @@ const OPERATIONS: Record<string, Operation> = {
         );
       return tracker.migrateRelations({ dryRun: flags.has("--dry-run") });
     },
+    exitOf: (out) => {
+      const report = out as { unresolved?: unknown[]; unmarked?: unknown[] };
+      return (report.unresolved?.length ?? 0) > 0 ||
+        (report.unmarked?.length ?? 0) > 0
+        ? 1
+        : 0;
+    },
   },
   "sync-plan-blocks": {
     arity: 1,

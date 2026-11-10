@@ -21,7 +21,7 @@ tags: [adr, tracker, relationships, execution-plan]
 
 What may start, in what order and next to what is read from the
 relationships between issues: served pickups, the dispatcher's ordering and
-the dashboard all follow them. The tracker port names four
+the dashboard all follow them. The tracker port names the relationships
 (`parent`, and `blocks`, `related` and `duplicate`), and every adapter
 writes them through the tracker's own mechanism except two places that kept
 a relationship as text:
@@ -89,7 +89,7 @@ native equivalent and stay in the plan only.
   relation on a finished issue orders nothing and is not a contradiction.
 - The migration is a one-time step per repository that kept the old form;
   until it has run, `relations` reports native and legacy links alike.
-- A new tracker adapter has to name a native form for each of the four
+- A new tracker adapter has to name a native form for each of the
   relationships, or declare the marker it falls back to.
 
 ## When to reopen
