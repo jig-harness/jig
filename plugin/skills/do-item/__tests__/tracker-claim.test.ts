@@ -373,7 +373,7 @@ describe("tracker.ts claim", () => {
       `do_item:\n  preflight_command: ${JSON.stringify(command)}\n`;
     // The tracker's mock answers the claim's own reads; these run the real script.
     const run = (mode: string, env: Record<string, string> = {}) =>
-      claimWith(preflight(`bun ${FIXTURE} ${mode}`), env);
+      claimWith(preflight(`bun ${JSON.stringify(FIXTURE)} ${mode}`), env);
 
     it("runs it with the issue's JSON on stdin, and claims when it exits 0", async () => {
       const out = await run("save");

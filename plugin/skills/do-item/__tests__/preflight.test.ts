@@ -3,6 +3,8 @@
  * output become a proceed or a refusal.
  */
 import { describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   preflightClaim,
@@ -15,7 +17,7 @@ const ISSUE = JSON.stringify({ found: true, identifier: "#5" });
 const FIXTURE = join(import.meta.dir, "support", "preflight-fixture.ts");
 const RUNNER = join(import.meta.dir, "support", "preflight-runner.ts");
 /** A command that runs the fixture in `mode`, the same under `sh` and `cmd.exe`. */
-const fixture = (mode: string) => `bun ${FIXTURE} ${mode}`;
+const fixture = (mode: string) => `bun ${JSON.stringify(FIXTURE)} ${mode}`;
 
 /** `runPreflight` in a subprocess whose environment is exactly `env` plus the inherited one. */
 async function runIn(command: string, env: Record<string, string>) {
@@ -92,9 +94,16 @@ describe("runPreflight", () => {
 
   it("keeps a long reason to one bounded line", async () => {
     const answer = await runPreflight(ROOT, fixture("refuse-long"), ISSUE);
-    expect(answer.outcome === "refused" && answer.reason.length).toBeLessThan(
-      400,
-    );
+    expect(answer).toEqual({
+      outcome: "refused",
+      kind: "refused",
+      reason: `${"a".repeat(300)}…`,
+    });
+  });
+
+  it("turns control characters in a reason into spaces", async () => {
+    const answer = await runPreflight(ROOT, fixture("refuse-control"), ISSUE);
+    expect(answer).toMatchObject({ outcome: "refused", reason: "a b c" });
   });
 
   it("refuses on any other exit, with the tail of its error output", async () => {
@@ -123,10 +132,14 @@ describe("runPreflight", () => {
 
 describe("preflightClaim", () => {
   it("refuses, without running the command, when the item cannot be read", async () => {
-    const refusal = await preflightClaim(ROOT, "exit 0", "#5", async () => ({
-      found: false,
-      error: "tracker unreachable",
-    }));
+    const marker = join(mkdtempSync(join(tmpdir(), "preflight-")), "ran");
+    const refusal = await preflightClaim(
+      ROOT,
+      fixture(`touch ${JSON.stringify(marker)}`),
+      "#5",
+      async () => ({ found: false, error: "tracker unreachable" }),
+    );
+    expect(existsSync(marker)).toBe(false);
     expect(refusal).toMatchObject({ outcome: "refused", why: "preflight" });
     expect(refusal?.outcome === "refused" && refusal.reason).toContain(
       "tracker unreachable",

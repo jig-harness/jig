@@ -19,6 +19,14 @@ if (mode === "refuse-long") {
   console.log("a".repeat(1000));
   process.exit(3);
 }
+if (mode === "refuse-control") {
+  console.log("a\tb\rc");
+  process.exit(3);
+}
+if (mode === "touch") {
+  writeFileSync(process.argv[3] as string, "");
+  process.exit(0);
+}
 if (mode === "fail") {
   console.error("broke");
   process.exit(2);
