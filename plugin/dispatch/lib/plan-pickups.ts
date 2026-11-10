@@ -300,7 +300,12 @@ function questionAsked(
     )
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
-  if (latest === undefined || latest.result === "done") return null;
+  if (
+    latest === undefined ||
+    latest.result === "done" ||
+    latest.result === "waits"
+  )
+    return null;
   const question = questionOf(latest.state);
   if (question === null) return null;
   const { record } = latest;

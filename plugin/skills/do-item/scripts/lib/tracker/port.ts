@@ -485,6 +485,46 @@ export interface IssueRelation {
   issue: string;
 }
 
+// ── Served queues ──────────────────────────────────────────────────────────
+
+/** A relation as a queue read carries it, with the other issue's state category; `null` when the read did not carry it. */
+export interface QueueRelation extends IssueRelation {
+  state: string | null;
+}
+
+/** An issue's parent as a queue read carries it: its pool form, its description, and its own parent's key. */
+export interface QueueParent {
+  issue: PoolIssue;
+  description: string;
+  parent: string | null;
+}
+
+/**
+ * An assigned issue with what the served walk reads of it, in the same
+ * request: its relations with each other issue's state, and its parent.
+ */
+export interface QueueIssue extends PoolIssue {
+  /** Every relation, both directions; `null` when the read could not take them all (`listRelations` reads them). */
+  relations: QueueRelation[] | null;
+  /** The parent; `null` when it has none. */
+  parent: QueueParent | null;
+}
+
+/** Which issues `changedSince` looks at: those assigned to `identity`, and those named by `keys` or whose parent is. */
+export interface ChangeQuery {
+  /** An ISO 8601 time: issues updated after it count. */
+  since: string;
+  identity: string;
+  keys: ReadonlyArray<string>;
+}
+
+/** What `changedSince` found: the issues that changed, whether that list is all of them, and the latest update among them. */
+export interface ChangeAnswer {
+  keys: string[];
+  complete: boolean;
+  latest: string | null;
+}
+
 /** A label an issue can carry, with the group it belongs to; `null` = none. */
 export interface TrackerLabel {
   name: string;
@@ -583,6 +623,33 @@ export interface Tracker {
   openChildren(key: string): Promise<PoolIssue[]>;
   /** One issue in pool form, whatever its state; `null` when it does not exist. */
   poolIssue(key: string, signal?: AbortSignal): Promise<PoolIssue | null>;
+  /**
+   * Several issues in pool form, in as few requests as the tracker allows;
+   * every key is in the answer, `null` for one that does not exist. Optional:
+   * `poolIssuesOf` reads one at a time where an adapter has none.
+   */
+  poolIssues?(
+    keys: ReadonlyArray<string>,
+    signal?: AbortSignal,
+  ): Promise<Map<string, PoolIssue | null>>;
+  /**
+   * `assignedIssues` with each issue's relations and parent, in one paged
+   * request. Optional: the served walk reads them one by one without it.
+   */
+  queueIssues?(
+    identity: string,
+    states: ReadonlyArray<CanonicalState>,
+    options?: FacetReadOptions,
+  ): Promise<QueueIssue[]>;
+  /**
+   * Whether any issue a served reading depended on changed since a time, in
+   * one request (the tracker change probe). Optional: without it every
+   * reading is a full one.
+   */
+  changedSince?(
+    query: ChangeQuery,
+    signal?: AbortSignal,
+  ): Promise<ChangeAnswer>;
   /**
    * This team's issues assigned to `identity` (a GitHub login; a Linear
    * user's email or display name) in one of `states`. An empty `states`

@@ -710,7 +710,10 @@ implementation. Skip this check for issues about the repository's own code.
    another claim landed first. On `3` or `4`, stop the pickup and report the
    reason it printed; never start the item beside another session. A person
    resuming their own interrupted pickup of an `in_progress` item tells you
-   so, and you go on from here without the claim.
+   so, and you go on from here without the claim. Exit `5` is the tracker's
+   rate limit: stderr names the time it resets
+   (`RATE-LIMITED until <time>`); stop the pickup and report that time, as
+   [Dispatched passes](#dispatched-passes) says for a pass.
 
    (**judgment** — native, Linear: read the issue and stop on the same two
    refusals, then
@@ -1700,6 +1703,13 @@ record how it ended. In such a pass:
   person must decide, with no secret or personal data in it. The
   dispatcher keeps that line and notifies it as a need; it does not start
   the item again until the item leaves the dispatch states and comes back.
+- **A tracker's rate limit is a wait, not a question.** A tracker script
+  that exits `5` (`RATE-LIMITED until <time>` on stderr) before the claim
+  succeeded stops the pass: record `waits` with the time it names, through
+  the command the prompt names, and ask nothing. The dispatcher starts the
+  item again after the reset. After a successful claim the item is this
+  pass's: wait for the reset where the deadline allows, else record
+  `failed` as for any other stop.
 - **Never pick on the person's behalf** to finish unattended: a question
   the pass cannot settle from the repository's rules is the person's.
 - **The pass has a deadline** (`dispatch.pickup_deadline`, 3 hours by

@@ -5,7 +5,7 @@
  *
  * | Table | One row per | Its key carries |
  * | --- | --- | --- |
- * | `launches` | session the dispatcher started | the record's id; its `claim`, `exit` and `result` are each written once, by an update that only fills an empty column |
+ * | `launches` | session the dispatcher started | the record's id; its `claim`, `exit` and `result` are each written once, by an update that only fills an empty column; a pickup that waits on a tracker's rate limit has `result` `failed` and the reset in `result_until` |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
  * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
@@ -338,6 +338,10 @@ const MIGRATIONS: readonly Migration[] = [
       repo TEXT NOT NULL, value TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0, effect TEXT, effect_at_ms INTEGER
     );
     CREATE INDEX steward_records_repo ON steward_records (repo, applied);`,
+  },
+  {
+    additive: true,
+    sql: "ALTER TABLE launches ADD COLUMN result_until TEXT;",
   },
 ];
 

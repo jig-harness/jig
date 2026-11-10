@@ -93,8 +93,12 @@ export function isInteractive(
   return record.action === "pickup" && record.headless !== true;
 }
 
-/** A pickup's session's or a follow-up pass's own answer, recorded through `jig dispatch result`. */
-export type SessionResult = "done" | "failed";
+/**
+ * A pickup's session's or a follow-up pass's own answer, recorded through
+ * `jig dispatch result`: `waits` is a pickup the tracker's rate limit
+ * stopped, to be started again once the limit resets (`waitsUntil`).
+ */
+export type SessionResult = "done" | "failed" | "waits";
 
 /** The runtime's answer to one `launch` call for the record. */
 export interface LaunchAttempt {
@@ -258,6 +262,8 @@ export interface ReadRecord {
   /** A pickup's session's or a follow-up pass's recorded answer; `null` when none. */
   result: SessionResult | null;
   next?: NextOwner | null;
+  /** For a `waits` result, when the pickup may start again (ISO 8601). */
+  waitsUntil?: string;
 }
 
 /** A launch record id: the time it was made, and a random suffix. */
@@ -454,6 +460,8 @@ export interface LaunchRow {
   exit: string | null;
   result: string | null;
   result_next?: string | null;
+  /** A pickup that waits on a tracker's rate limit: when it may start again. */
+  result_until?: string | null;
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
@@ -554,15 +562,31 @@ export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
   return {
     record,
     state: stateOf(row, null, thisHost()),
-    result: asResult(row.result),
+    result: asResult(row.result, row.result_until ?? null),
     next: readNext(row.result_next),
+    ...waitsOf(row),
   };
 }
 
 export { recordResult } from "./launch-result.ts";
 
-function asResult(value: string | null): SessionResult | null {
+/**
+ * A row's answer. A `waits` result is kept as `failed` with the time in
+ * `result_until`, so a copy of the plugin that knows no `waits` reads a
+ * failed pass, which it holds until a person settles it.
+ */
+export function asResult(
+  value: string | null,
+  until: string | null = null,
+): SessionResult | null {
+  if (value === "failed" && until !== null) return "waits";
   return value === "done" || value === "failed" ? value : null;
+}
+
+/** When a `waits` result lets the pickup start again, as the row carries it. */
+function waitsOf(row: LaunchRow): { waitsUntil?: string } {
+  const until = row.result_until ?? null;
+  return row.result === "failed" && until !== null ? { waitsUntil: until } : {};
 }
 
 /** A record's recorded answer; `null` when none. */
@@ -570,7 +594,8 @@ export function readResult(
   id: string,
   root = stateRoot(),
 ): SessionResult | null {
-  return asResult(launchRow(id, root)?.result ?? null);
+  const row = launchRow(id, root);
+  return asResult(row?.result ?? null, row?.result_until ?? null);
 }
 
 /** A row's claim: `undefined` when none, `null` when it does not read. */
@@ -723,8 +748,9 @@ export async function readLaunches(
     records.push({
       record,
       state: stateOf(row, rows, here),
-      result: asResult(row.result),
+      result: asResult(row.result, row.result_until ?? null),
       next: readNext(row.result_next),
+      ...waitsOf(row),
     });
   }
   return { records, unreadable };

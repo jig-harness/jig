@@ -11,7 +11,7 @@ import { Defect } from "../../shared/errors.ts";
 import { readNext } from "./next-owner.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { failureText } from "./text.ts";
-import { isDrive, type ReadRecord, writeRecord } from "./launches.ts";
+import { asResult, isDrive, type ReadRecord, writeRecord } from "./launches.ts";
 import { endedRow, endTime, hasEnded, insertRow } from "./log.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import type { DrivenPr } from "./types.ts";
@@ -54,16 +54,19 @@ export async function logEnded(
       const db = stateDb(ctx.root);
       inTransaction(db, () => {
         const current = db
-          .query("SELECT result, result_next FROM launches WHERE id = ?")
+          .query(
+            "SELECT result, result_next, result_until FROM launches WHERE id = ?",
+          )
           .get(record.id) as {
-          result: ReadRecord["result"];
+          result: string | null;
           result_next: string | null;
+          result_until: string | null;
         } | null;
         if (current === null)
           throw new Defect("the launch record disappeared before logging");
         const fresh = {
           ...r,
-          result: current.result,
+          result: asResult(current.result, current.result_until),
           next: readNext(current.result_next),
         };
         const row = endedRow(

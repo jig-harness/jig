@@ -6,6 +6,10 @@
  * answer), and a record that already has a result, so a session settles
  * its own launch and no other, once.
  *
+ * `waits --until <time>` is a pickup the tracker's rate limit stopped: the
+ * tick starts the item again once `time` (ISO 8601, at most a day ahead)
+ * has passed, and asks no person.
+ *
  * Exit codes: 0 recorded; 2 usage, no such record, a token that is not the
  * record's, or a drive's record; 3 the record already has a result.
  */
@@ -21,7 +25,9 @@ import {
 } from "./lib/launches.ts";
 
 const USAGE =
-  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]";
+  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | waits --until <time>";
+/** The longest a pickup may wait on a rate limit: a tracker's window is an hour or less. */
+const MAX_WAIT_MS = 24 * 60 * 60_000;
 /** The record already has a result, which stands. */
 const ALREADY = 3;
 
@@ -68,33 +74,66 @@ function nextForResult(
   }
 }
 
-export function resultMain(argv: string[], root?: string): number {
+/** The time a `waits` result names, in the column's form; `null` when it is not one. */
+function waitsUntil(flag?: string, value?: string): string | null {
+  if (flag !== "--until" || value === undefined) return null;
+  const at = Date.parse(value);
+  if (!Number.isFinite(at) || at > Date.now() + MAX_WAIT_MS) return null;
+  return new Date(at).toISOString();
+}
+
+/** A command line this command takes: `done|failed` with their options, or `waits --until <time>`. */
+function wellFormed(argv: string[]): boolean {
   const [id, token, result, flag, value] = argv;
-  if (
-    (argv.length !== 3 && argv.length !== 5) ||
-    id === undefined ||
-    token === undefined ||
-    (result !== "done" && result !== "failed")
-  ) {
+  if (argv.length !== 3 && argv.length !== 5) return false;
+  if (id === undefined || token === undefined) return false;
+  if (result === "waits") return waitsUntil(flag, value) !== null;
+  return result === "done" || result === "failed";
+}
+
+/** The record this session may answer for, or why not. */
+function answerable(
+  id: string,
+  token: string,
+  result: string,
+  root?: string,
+): LaunchRecord | string {
+  const record = isRecordId(id) ? readRecord(id, root) : null;
+  if (record === null || !sameToken(record.token, token))
+    return `${id} is not a launch record with that token`;
+  if (record.action !== "pickup" && record.action !== "followup")
+    return `${id} is a drive's record; its exit is its answer`;
+  if (result === "waits" && record.action !== "pickup")
+    return `${id} is a follow-up's record; only a pickup waits for a tracker's rate limit`;
+  return record;
+}
+
+export function resultMain(argv: string[], root?: string): number {
+  if (!wellFormed(argv)) {
     console.error(USAGE);
     return 2;
   }
-  const record = isRecordId(id) ? readRecord(id, root) : null;
-  if (record === null || !sameToken(record.token, token)) {
-    console.error(
-      `jig dispatch result: ${id} is not a launch record with that token`,
-    );
+  const [id, token, result, flag, value] = argv as [
+    string,
+    string,
+    string,
+    string?,
+    string?,
+  ];
+  const record = answerable(id, token, result, root);
+  if (typeof record === "string") {
+    console.error(`jig dispatch result: ${record}`);
     return 2;
   }
-  if (record.action !== "pickup" && record.action !== "followup") {
-    console.error(
-      `jig dispatch result: ${id} is a drive's record; its exit is its answer`,
-    );
-    return 2;
-  }
-  const next = nextForResult(record, result, flag, value);
+  const until = result === "waits" ? waitsUntil(flag, value) : null;
+  const next =
+    until === null
+      ? nextForResult(record, result, flag, value)
+      : { none: `waits for the tracker's rate limit until ${until}` };
   if (next === null) return 2;
-  if (!recordResult(id, result as SessionResult, root, next)) {
+  if (
+    !recordResult(id, result as SessionResult, root, next, until ?? undefined)
+  ) {
     console.error(
       `jig dispatch result: ${id} already has a result (${readResult(id, root) ?? "unreadable"}); it stands`,
     );
@@ -105,6 +144,7 @@ export function resultMain(argv: string[], root?: string): number {
       record: id,
       ...(record.item === null ? { pr: record.pr } : { item: record.item }),
       result,
+      ...(until === null ? {} : { until }),
       next,
     }),
   );

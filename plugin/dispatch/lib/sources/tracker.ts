@@ -12,7 +12,8 @@
  * pickup's launch makes just before it starts.
  */
 import type { ServedPerson } from "../serve-config.ts";
-import { readServedPickups } from "./served.ts";
+import { limitedRow, readServedPickups } from "./served.ts";
+import { isRateLimited } from "../../../shared/tracker-budget.ts";
 import type {
   CanonicalState,
   PoolIssue,
@@ -95,6 +96,10 @@ async function byTrustedAssigner(
     try {
       by = await tracker.assignedBy(issue.identifier, identity);
     } catch (error) {
+      if (isRateLimited(error)) {
+        unplaced.push(limitedRow(tracker, error));
+        return { wanted: [], unplaced };
+      }
       unplaced.push({
         target: issue.identifier,
         record: "tracker",
@@ -214,6 +219,8 @@ async function readFactoryPickups(
       ? undefined
       : await readFacetStores(tracker, reportBound(bound));
   const assigned = await readAssigned(tracker, identity, section, bound);
+  if (!assigned.ok && isRateLimited(assigned.failure.cause))
+    return limitedFactory(tracker, identity, assigned.failure.cause, stores);
   if (!assigned.ok)
     return {
       read: {
@@ -303,6 +310,7 @@ export async function readPickups(
     manualOps?: string;
     executionPlanBlock?: string;
     repoScope?: import("./served-repo.ts").RepoScope;
+    views?: import("./served-reads.ts").ServedViews;
   },
 ): Promise<TrackerReading> {
   let tracker: Tracker | undefined;
@@ -320,6 +328,7 @@ export async function readPickups(
       ? {}
       : { executionPlanBlock: served.executionPlanBlock }),
     ...(served.repoScope === undefined ? {} : { repoScope: served.repoScope }),
+    ...(served.views === undefined ? {} : { views: served.views }),
   });
   const keys = new Set(extra.wanted.map((i) => i.key));
   return {
@@ -331,9 +340,11 @@ export async function readPickups(
       ...extra.wanted,
       ...factory.wanted.filter((i) => !keys.has(i.key)),
     ],
-    unplaced: [...factory.unplaced, ...extra.unplaced],
+    unplaced: onceEach([...factory.unplaced, ...extra.unplaced]),
+    // A queue the rate limit stopped part way was not read whole: its claims
+    // are not known, so no ended pickup is released or judged on it.
     claimed:
-      factory.claimed === null
+      factory.claimed === null || extra.limitedUntil !== undefined
         ? null
         : [
             ...new Map(
@@ -341,4 +352,42 @@ export async function readPickups(
             ).values(),
           ],
   };
+}
+
+/**
+ * The factory's reading when the tracker's rate limit refused it: one
+ * limited row, no record failed (the wall is not the repository's failure),
+ * and no claims, so nothing is released or judged stalled on a reading
+ * that was not taken.
+ */
+function limitedFactory(
+  tracker: Tracker,
+  identity: string,
+  limited: Parameters<typeof limitedRow>[1],
+  stores: FacetRecord | undefined,
+): TrackerReading {
+  return {
+    read: {
+      record: "tracker",
+      source: `${tracker.adapter} ${tracker.team}`,
+      ok: true,
+      detail: `the items assigned to ${identity} wait for the tracker's rate limit to reset`,
+      ...(stores === undefined ? {} : { facets: stores }),
+    },
+    wanted: [],
+    unplaced: [limitedRow(tracker, limited)],
+    claimed: null,
+  };
+}
+
+/** The rows, a tracker's rate-limit row kept once whichever read met the limit first. */
+function onceEach(rows: Unplaced[]): Unplaced[] {
+  const limited = new Set<string>();
+  return rows.filter((row) => {
+    if (!row.reason.startsWith("the tracker is rate limited until"))
+      return true;
+    if (limited.has(row.target)) return false;
+    limited.add(row.target);
+    return true;
+  });
 }

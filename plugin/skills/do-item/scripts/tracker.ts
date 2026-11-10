@@ -56,10 +56,16 @@
  * Output: JSON on stdout. Exit codes: 0 done, 2 usage (input the operation
  * cannot take), 1 the operation failed (the reason on stderr), a label,
  * project or issue that does not resolve to exactly one included; for
- * `claim`, 3 refused and 4 stood down.
+ * `claim`, 3 refused and 4 stood down; 5 the tracker's rate limit for this
+ * credential is spent, with the time it resets on stderr
+ * (`RATE-LIMITED until <time>`): the request it names was not sent or was
+ * refused. A claim refused part way may have written its first step; the
+ * dispatcher's stall check then reports the item as claimed with no
+ * session.
  */
 
 import { readFile } from "node:fs/promises";
+import { isRateLimited } from "../../../shared/tracker-budget.ts";
 import { claimServedIssue } from "./lib/served-claim.ts";
 import { withClaimLock } from "./lib/claim-lock.ts";
 import { claimIssue } from "./lib/claim.ts";
@@ -540,8 +546,17 @@ function operationArguments(op: Operation, name: string, rest: string[]) {
   return { args, flags: new Set(flags) };
 }
 
+/** The exit code of an operation the tracker's rate limit stopped. */
+const RATE_LIMITED_EXIT = 5;
+
 function reportFailure(error: unknown): number {
   if (isUsage(error)) return usage(error.message);
+  if (isRateLimited(error)) {
+    console.error(
+      `RATE-LIMITED until ${new Date(error.resetAt).toISOString()}: ${error.message}`,
+    );
+    return RATE_LIMITED_EXIT;
+  }
   console.error(
     `ERROR: ${error instanceof Error ? error.message : String(error)}`,
   );

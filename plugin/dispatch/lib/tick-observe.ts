@@ -292,7 +292,7 @@ export async function observeRepo(
                   s.wall === null &&
                   !s.wallUnrecorded,
               ),
-            reads.budget,
+            reads,
           ),
         ),
       ),
@@ -501,7 +501,7 @@ async function readTracker(
   people: readonly ServedPerson[],
   nowMs: number,
   headroom: boolean,
-  budget: TickReads["budget"],
+  reads: Pick<TickReads, "budget" | "servedViews">,
 ): Promise<Tracked> {
   const tracked: Tracked = {
     keys: null,
@@ -531,7 +531,15 @@ async function readTracker(
       },
       section,
       { bound: () => facetBound(deadline), epic: config.labels.epic },
-      { people, nowMs, headroom, ...tracked.servedPolicy },
+      {
+        people,
+        nowMs,
+        headroom,
+        ...tracked.servedPolicy,
+        ...(reads.servedViews === undefined
+          ? {}
+          : { views: reads.servedViews }),
+      },
     );
     report.records.push(reading.read);
     report.unplaced.push(...reading.unplaced);
@@ -539,7 +547,7 @@ async function readTracker(
       repo,
       values,
       reading.wanted,
-      !lowBudget(await budget()),
+      !lowBudget(await reads.budget()),
     );
     if (reading.read.ok) tracked.claimed = reading.claimed;
   } catch (error) {

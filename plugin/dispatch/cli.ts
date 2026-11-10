@@ -186,8 +186,8 @@ const result = command(
     token: argument(string({ metavar: "TOKEN" }), {
       description: message`The record's token, named in the session's prompt.`,
     }),
-    outcome: argument(string({ metavar: "done|failed" }), {
-      description: message`How the session ended.`,
+    outcome: argument(string({ metavar: "done|failed|waits" }), {
+      description: message`How the session ended; waits is a pickup the tracker's rate limit stopped.`,
     }),
     pr: optional(
       option("--pr", countValue("PR"), {
@@ -197,6 +197,11 @@ const result = command(
     none: optional(
       option("--none", string({ metavar: "REASON" }), {
         description: message`Why a completed pickup needs no pull request. Mutually exclusive with --pr.`,
+      }),
+    ),
+    until: optional(
+      option("--until", string({ metavar: "TIME" }), {
+        description: message`With waits: when the tracker's rate limit resets (ISO 8601); the item starts again after it.`,
       }),
     ),
   }),
@@ -485,8 +490,12 @@ type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
 function sessionResultMain(
   args: Extract<Subcommand, { action: "result" }>,
 ): number {
-  if (args.pr !== undefined && args.none !== undefined) {
-    console.error("jig dispatch result: pass either --pr or --none, not both");
+  if (
+    [args.pr, args.none, args.until].filter((v) => v !== undefined).length > 1
+  ) {
+    console.error(
+      "jig dispatch result: pass one of --pr, --none and --until, not several",
+    );
     return 2;
   }
   return resultMain([
@@ -495,6 +504,7 @@ function sessionResultMain(
     args.outcome,
     ...(args.pr === undefined ? [] : ["--pr", String(args.pr)]),
     ...(args.none === undefined ? [] : ["--none", args.none]),
+    ...(args.until === undefined ? [] : ["--until", args.until]),
   ]);
 }
 

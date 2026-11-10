@@ -395,9 +395,29 @@ The Queue view names holds: an open blocker reads "waiting on #N";
 `hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".
 Eligible items are ranked by priority, the work they unblock, epic order,
 size and age. Assignment provenance, relations and children are cached
-until the item's update time changes. Assignment lists refresh with
-headroom and at least every 15 minutes. Served forge logins also join the
+until the item's update time changes. Served forge logins also join the
 pull-request adoption authors.
+
+A served queue costs the tracker a handful of requests a tick. On Linear,
+one paged query reads a person's assignments with each one's relations
+(and the related issue's state) and its parent (with its description); the
+issues the walk still needs by key, such as an execution plan's steps,
+leave together in one lookup. The reading is kept between ticks, and a
+tick first asks the tracker, in one request, whether any issue it depended
+on, any child of one, or any issue newly assigned to the person changed
+since: when nothing did, the tick reuses the reading whole, and when
+something did, it reads the queue again and only the issues that changed.
+The reading is taken whole every 15 minutes regardless, and a tick with no
+free slot reuses one younger than that without asking. Every repository of
+the machine file that names the same tracker, team and person shares one
+reading per tick.
+
+Every process on the host shares each tracker credential's request budget
+(`tracker_share` in [the machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file)).
+While the tracker refuses the credential for its rate limit, no request
+leaves the host before the reset it named: a tick reports the tracker once
+as rate limited until then, the queue it shows is the last reading, and
+the pickups it would launch wait.
 
 Before launching, the tick rechecks the item and admits an account. The
 pass runs through the account-bound wrapper under `dispatch.pickup_deadline`;
@@ -406,7 +426,10 @@ to its implementer. Its prompt ends by asking the session to record
 how it ended, `jig dispatch result <record> <token> done|failed`, which
 refuses another record's token and a second answer. A completed pickup adds
 `--pr <number>` for the pull request it opened, or `--none "<reason>"` when
-no pull request was needed. A `done` without either is refused. Every ended
+no pull request was needed. A `done` without either is refused. A pickup the
+tracker's rate limit stopped (a tracker script exits `5`) records
+`waits --until <time>` instead: the item is held until that time, with no
+question for a person, and the first tick after it launches the item again. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older
 outcomes that did not keep it say it was not recorded. A converged drive
@@ -430,6 +453,7 @@ until the runtime can bind it to an account.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time>
 ```
 
 **The steward** (the `steward` stage, with `steward.enabled: true` in the

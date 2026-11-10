@@ -399,7 +399,9 @@ development and shipped as a version.
   That answer is the session's own judgement; the script refuses another
   record's token, a drive pass's record and a second answer. Nothing
   else reasoned writes these records. A completed pickup names its pull
-  request with `--pr <number>`, or `--none "<reason>"` when none was needed.
+  request with `--pr <number>`, or `--none "<reason>"` when none was needed;
+  a pickup the tracker's rate limit stopped records
+  `waits --until <time>`, and the tick starts it again after that time.
   The answer and its next owner are written together. An ended launch's
   outcome keeps that handoff, deriving it where the line fixes it; `jig ask`
   prints it as `last.next`.

@@ -41,7 +41,7 @@ class AssignmentError extends Error {}
  * What a pool reads of each issue: its open children read one deep, as a
  * flag, and `extra` (the estimate, where size is kept in it).
  */
-const poolFields = (extra: string) => `
+export const poolFields = (extra: string) => `
   identifier title url priority${extra} createdAt updatedAt
   state { id name type }
   assignee { id name }
