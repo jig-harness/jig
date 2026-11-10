@@ -121,6 +121,24 @@ function tickLine(
 }
 
 describe("mergeLine", () => {
+  test("a repository the tick reported on without a slug loses its old cards with its old entry", () => {
+    const before = tickLine("2026-11-10T10:00:00.000Z", [
+      { slug: "A", path: "/w/a", n: 0 },
+      { slug: "B", path: "/w/b", n: 0 },
+    ]);
+    const failed = readBy(
+      {
+        ...tickLine("2026-11-10T10:02:00.000Z", []),
+        repos: [{ ...repo("B", "/w/b"), slug: null }],
+      },
+      "2026-11-10T10:02:00.000Z",
+      "2026-11-10T10:02:00.000Z",
+    );
+    const line = mergeLine(before, failed, LISTED, "fresh");
+    expect(line.needs.map((x) => x.repo)).toEqual(["A"]);
+    expect(line.sessions.map((x) => x.repo)).toEqual(["A"]);
+  });
+
   test("keeps the busy repository's part from the tick that last read it while the other stays current", () => {
     const at = (minute: number) =>
       `2026-11-10T10:${String(minute).padStart(2, "0")}:00.000Z`;

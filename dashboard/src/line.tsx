@@ -43,6 +43,9 @@ function Slot({ slot }: { slot: SlotView }) {
         />
       </div>
       <ItemTitle title={slot.title} />
+      {slot.noLink === null ? null : (
+        <span className="noLink">{slot.noLink}</span>
+      )}
       <div className="slotLow">
         <div className="slotFact">{slot.fact}</div>
         <Fold label="Evidence">

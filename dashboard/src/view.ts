@@ -9,6 +9,7 @@ import type {
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { ago, clock, plural, span, until } from "./format.ts";
+import { noLinkText } from "./links.ts";
 import { type Role, roleOf, stageMark } from "./status.ts";
 
 /** The server's clock and the host's zone. */
@@ -135,7 +136,7 @@ export function staleBanners(
       {
         key: repo.path,
         title: `${name} has not been read since ${clock(read, timeZone)}, ${ago(read, nowMs)} ago.`,
-        body: `${why} Its needs, queue and sessions below are as of the ${clock(read, timeZone)} tick; every other repository's are as of the ${clock(Date.parse(line.startedAt), timeZone)} tick.`,
+        body: `${why} Its needs, queue and sessions below are as of the ${clock(read, timeZone)} tick.`,
       },
     ];
   });
@@ -192,6 +193,8 @@ export interface SlotView {
   target: string;
   title: string | null;
   url: string | null;
+  /** What the card says when `url` is null: what is missing and where to look. */
+  noLink: string | null;
   stage: string;
   mark: string;
   role: Role;
@@ -407,6 +410,7 @@ export function slotView(
     target: s.target,
     title: s.title,
     url: s.url,
+    noLink: s.url === null ? noLinkText(s.repo, s.target) : null,
     stage: s.stage,
     mark: stageMark(s.stage),
     role: roleFor(s, kind),

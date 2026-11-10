@@ -18,5 +18,5 @@ release: patch
   sessions and Ready cards) now comes from the newest tick that read it, and
   each tick the timer runs updates the rest, so the page no longer reports
   that the timer has not ticked while it runs. A repository no tick has read
-  for longer than the timer's interval gets a banner naming it, when it was
+  for longer than the timer's interval and its longest recent tick gets a banner naming it, when it was
   last read and why (another tick held it busy).

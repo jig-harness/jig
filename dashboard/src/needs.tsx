@@ -277,6 +277,9 @@ function StuckItem({ slot, rest }: { slot: SlotView; rest: boolean }) {
               : "Open in the tracker"}
           </a>
         )}
+        {slot.noLink === null ? null : (
+          <span className="noLink">{slot.noLink}</span>
+        )}
         <Fold label="Evidence">
           <Evidence rows={slot.evidence} />
         </Fold>

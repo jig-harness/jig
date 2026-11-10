@@ -67,6 +67,17 @@ function factOf(change: Partial<LineSession>): string {
   return slotView({ ...SESSION, ...change }, CLOCK, LINE).fact;
 }
 
+describe("slotView link text", () => {
+  it("says what is missing on a card whose link is not known, and nothing on one that has it", () => {
+    expect(slotView({ ...SESSION, url: null }, CLOCK, LINE).noLink).toContain(
+      SESSION.target,
+    );
+    expect(
+      slotView({ ...SESSION, url: "https://x.test/1" }, CLOCK, LINE).noLink,
+    ).toBeNull();
+  });
+});
+
 function evidenceOf(change: Partial<LineSession>): Record<string, string> {
   return Object.fromEntries(
     slotView({ ...SESSION, ...change }, CLOCK, LINE).evidence.map((row) => [
@@ -317,7 +328,7 @@ describe("staleness", () => {
         key: "/srv/work/mobile",
         title: "example-org/mobile has not been read since 16:05, 42 min ago.",
         body: expect.stringMatching(
-          /^Another tick held it busy on \d+ of the \d+ ticks since, so none of them read it\. Its needs, queue and sessions below are as of the 16:05 tick; every other repository's are as of the 16:45 tick\.$/,
+          /^Another tick held it busy on \d+ of the \d+ ticks since, so none of them read it\. Its needs, queue and sessions below are as of the 16:05 tick\.$/,
         ),
       },
     ]);

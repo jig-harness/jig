@@ -190,8 +190,9 @@ export function recordTickHealth(
  * (`line-merge.ts`); it also writes the machine's part (the accounts, the
  * line's own tick, the receipt beside it) when the timer asked it for every
  * repository and another tick held the rest, and leaves that part as it was
- * when a wake-up asked it for a few. One that read none of them adds itself
- * to the line's recent ticks and leaves the rest. The tick's own work is done
+ * when a wake-up asked it for a few. One that read none of them, and was
+ * not asked for every repository, adds itself to the line's recent ticks and
+ * leaves the rest. The tick's own work is done
  * and depends on none of this, so what throws here, a bug included, becomes
  * the reason on the receipt rather than a stop.
  */
@@ -214,7 +215,8 @@ export function writeTickLine(
   const listed = new Set(machine.repositories.map((r) => r.path));
   const reports = receipt.repos.filter((r) => listed.has(r.path));
   const whole = readsTheMachine(machine, tick.repos);
-  if (!whole && reports.length === 0) {
+  // A timer tick that found every repository held still writes the machine's part: it is the timer's heartbeat.
+  if (!whole && reports.length === 0 && !readsTheMachine(machine, tick.asked)) {
     recordTickHealth(receipt, machine);
     return;
   }

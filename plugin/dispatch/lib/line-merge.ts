@@ -4,7 +4,9 @@
  * few. Each repository's part of the line (its needs, its queue, its
  * sessions, its Ready cards and its own entry) comes from the newest tick
  * that read it, and the entry names that tick and when it started (`runId`,
- * `readAt`), so the page can say which part is old and why. The rest belongs
+ * `readAt`), so the page can say which part is old and why. A repository the
+ * tick reported on replaces its whole part, even a report that found no
+ * slug and so brought no cards. The rest belongs
  * to the whole machine (the accounts, the line's own tick and times, the
  * receipt beside it): a tick the timer asked for every repository writes it,
  * busy ones or not, and a wake-up for a few leaves it as it was, so a timer
@@ -46,7 +48,12 @@ export function mergeLine(
   const keptPaths = new Map(previous.repos.map((r) => [r.path, r]));
   const kept = new Set(
     previous.repos.flatMap((r) =>
-      r.slug === null || !paths.has(r.path) || read.has(r.slug) ? [] : [r.slug],
+      r.slug === null ||
+      !paths.has(r.path) ||
+      freshPaths.has(r.path) ||
+      read.has(r.slug)
+        ? []
+        : [r.slug],
     ),
   );
   const part = <T extends { repo: string }>(

@@ -924,7 +924,7 @@ writes nothing to the host:
   another tick held some of them busy. So the strip says how old that tick
   is, a stopped timer shows as one while wake-ups for one repository still
   run, a repository no tick has read for longer than the timer's interval
-  gets a banner naming it, since when and why (another tick held it busy),
+  and its longest recent tick gets a banner naming it, since when and why (another tick held it busy),
   and a host may serve the page from a copy of that database, with no other
   read. Every card and log row shows its item's title beside its key and
   links the key: to the link the tracker gave, or, for a row that kept none,

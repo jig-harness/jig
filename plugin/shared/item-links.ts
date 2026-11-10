@@ -25,17 +25,21 @@ function escaped(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** The base a link of `key` gives (everything up to the key's segment), or `null` when the link does not name the key. */
+/** The base a link of `key` gives (everything up to the key's segment), or `null` when the link does not name the key exactly once. */
 export function itemBaseOf(
   url: string,
   key: string,
 ): { family: string; base: string } | null {
   const of = keyOf(key);
   if (of === null || !/^https?:\/\//.test(url)) return null;
-  const found = new RegExp(`/${escaped(of.segment)}(?=$|[/?#])`).exec(url);
-  return found === null
+  const found = [
+    ...url.matchAll(new RegExp(`/${escaped(of.segment)}(?=$|[/?#])`, "g")),
+  ];
+  // A key repeated in the path (a namespace named like the item) leaves its segment unestablished.
+  const [only] = found;
+  return found.length !== 1 || only === undefined
     ? null
-    : { family: of.family, base: url.slice(0, found.index + 1) };
+    : { family: of.family, base: url.slice(0, only.index + 1) };
 }
 
 /** The tracker bases known links give, by key family. */

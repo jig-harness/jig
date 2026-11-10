@@ -392,6 +392,23 @@ describe("the line a tick leaves", () => {
     ]);
   });
 
+  it("moves the line's machine part on a timer's tick that finds its only repository held", async () => {
+    const w = fixture();
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    const first = await tick(w);
+    const held = takeObserveLock(w.repo, dispatchState(w));
+    if ("heldBy" in held) throw new Error(`the lock is held: ${held.heldBy}`);
+    try {
+      await w.dispatch(["--json"]);
+    } finally {
+      held.release();
+    }
+    const stored = storedLine(w);
+    expect(stored?.line.runId).not.toBe(first.runId);
+    expect(stored?.line.repos.map((repo) => repo.runId)).toEqual([first.runId]);
+    expect(stored?.line.ticks?.map((t) => t.busy)).toEqual([[], [w.repo]]);
+  });
+
   it("replaces the part of the repository a wake-up read and leaves the machine's part to the timer's ticks", async () => {
     const { w, other } = twoRepositories();
     const first = await tick(w, 1);

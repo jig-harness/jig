@@ -21,6 +21,13 @@ describe("itemBaseOf", () => {
     expect(itemBaseOf("file:///ENG-4", "ENG-4")).toBeNull();
     expect(itemBaseOf("https://github.com/o/r/pull/12", "PR #12")).toBeNull();
   });
+
+  test("a key repeated in the path leaves the item's segment unestablished", () => {
+    expect(itemBaseOf("https://forge.example/12/issues/12", "#12")).toBeNull();
+    expect(
+      itemBaseOf("https://tracker.example/ENG-4/issue/ENG-4", "ENG-4"),
+    ).toBeNull();
+  });
 });
 
 describe("itemLinkFrom", () => {

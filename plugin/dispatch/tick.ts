@@ -521,6 +521,26 @@ function heldReceipt(started: StartedTick, heldBy: string): void {
   });
 }
 
+/** The dashboard's line after a tick that found every repository it was asked for held: its heartbeat and busy history, with each repository's part kept. */
+function lineOfHeldTick(
+  started: StartedTick,
+  observe: ObservedAll,
+  timer: PhaseTimer<TickPhase>,
+): void {
+  const { receipt, context } = started;
+  receipt.busy = [...observe.busy].map(([path, heldBy]) => ({ path, heldBy }));
+  receipt.finishedAt = new Date().toISOString();
+  receipt.phasesMs = { ...timer.ms };
+  writeTickLine(receipt, {
+    machine: context.options.machine ?? null,
+    asked: context.options.repos,
+    repos: [],
+    records: allRecords(context),
+    inputs: context.lineInputs,
+    codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
+  });
+}
+
 /** The act phase and the close under the act lock, and the receipt written. */
 async function actAndClose(
   started: StartedTick,
@@ -575,6 +595,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     ) {
       const heldBy = [...observe.busy.values()].join("; ");
       heldReceipt(started, heldBy);
+      lineOfHeldTick(started, observe, timer);
       return { held: heldBy };
     }
     const act = await timer.time("wait", () =>
