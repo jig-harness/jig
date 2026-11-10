@@ -283,13 +283,17 @@ issue_tracker:
     size:     { store: field, field: customfield_10016, values: { xs: 1, small: 2, medium: 3, large: 5, xl: 8 } }
 ```
 
+A value may list several names, the first written and all read:
+`values: { bug: [Bug, Defect], feature: Story }`.
+
 | Field | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `issue_tracker.facets.<facet>.store` | `native`, `field` or `label` | the adapter's default above | Where the facet is kept |
-| `….values` | map from a canonical value to the tracker's value | each value by its own name | `native` and `field`: the issue type, option or number that holds each value |
+| `….values` | map from a canonical value to a tracker value, or to a list of them | each value by its own name | `native` and `field`: the issue type, option or number that holds each value; a list is read in any of its names and written as its first |
 | `….field` | a field's name or id | none; required by `field` | `field`: the custom field, a GitHub issue field by name, a Jira field by name or id (`customfield_10016`) |
-| `….labels` | map from a canonical value to a label | the value's own name; on GitHub, priority's `priority: <name>` | `label`: the label of each value |
+| `….labels` | map from a canonical value to a label, or to a list of labels | the value's own name; on GitHub, priority's `priority: <name>` | `label`: the label of each value; a list is read in any of its labels and written as its first |
 | `….prefix` | a label prefix | none | `label`: each value's label is the prefix followed by the value (`size:small`); refused beside `labels` |
+| `issue_tracker.labels.epic_types` | list of issue type names | none | An issue of one of these native types reads as an epic on every adapter with issue types, beside the epic label; it is exempt from the size requirement everywhere the epic label is |
 
 Outside GitHub, a priority kept in labels needs `labels` or a `prefix`,
 since a Jira label holds no whitespace and so cannot take GitHub's default.
@@ -448,7 +452,11 @@ seen on the next tick, not at the next sweep.
 
 One function, `facets/complete.ts`, checks a new issue: a type, a priority
 (`1` to `4`) and a size, for each facet that has a store, with no size
-required on an issue carrying the epic label (`issue_tracker.labels.epic`);
+required on an epic: an issue carrying the epic label (`issue_tracker.labels.epic`) or, on an
+adapter with issue types, one of a native type listed in `issue_tracker.labels.epic_types`. That one
+recognition also governs filing completeness, the sweep's eligibility and the
+incomplete-issue census's denominators, so a native-only epic is never sent
+back to triage for a missing size;
 and a label of every required group of the taxonomy, the size group's
 requirement being met by the size facet in whatever store it is kept. It
 reads the taxonomy through `file-issue`'s taxonomy reader and reuses its
@@ -839,9 +847,6 @@ constraints:
   check when the deferral moves onto the interface (plan item 10).
 - **Records.** `reflect`'s issues are records, not work, carry no facets,
   and are never read by the sweep.
-- **An epic as a label only.** An issue of a native type listed in
-  `issue_tracker.labels.epic_types` reads as an epic on every adapter with
-  issue types; the epic label still marks one elsewhere.
 - **A host timer for the sweep.** Jig's repository runs it as a workflow; a
   host job like the dispatcher's joins when a consumer without CI asks for
   one.
