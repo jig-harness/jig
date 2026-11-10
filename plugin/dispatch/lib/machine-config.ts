@@ -495,13 +495,20 @@ function repositories(value: unknown): Checked<MachineRepository[]> {
   return distinct(read.value, (r) => r.path, "a repository");
 }
 
+/** `linear:<team>`, or `jira:<site>:<project>` where the site is the https URL, its own colons kept. */
 function isTrackerNamespace(key: string): boolean {
-  const parts = key.split(":");
-  if (parts.some((part) => part === "")) return false;
-  return (
-    (parts.length === 2 && parts[0] === "linear") ||
-    (parts.length === 3 && parts[0] === "jira")
-  );
+  if (/\s/.test(key)) return false;
+  if (key.startsWith("linear:")) {
+    const team = key.slice("linear:".length);
+    return team !== "" && !team.includes(":");
+  }
+  if (!key.startsWith("jira:")) return false;
+  const rest = key.slice("jira:".length);
+  const split = rest.lastIndexOf(":");
+  if (split < 0) return false;
+  const site = rest.slice(0, split);
+  const project = rest.slice(split + 1);
+  return /^https:\/\/[^/:]+(:\d+)?$/.test(site) && project !== "";
 }
 
 /**

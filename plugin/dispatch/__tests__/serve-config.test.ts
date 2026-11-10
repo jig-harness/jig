@@ -97,9 +97,24 @@ describe("the host's default repository for unlabelled served items", () => {
       "jira:ENG",
       "jira::ENG",
       "jira:site:ENG:extra",
+      "jira:http://example.atlassian.net:ENG",
+      "jira:https://example.atlassian.net:",
     ])
       expect(
         read({ repositories, serve_defaults: { [namespace]: "/srv/api" } }).ok,
       ).toBe(false);
+  });
+
+  it("accepts a Jira namespace whose site keeps its scheme and port", () => {
+    for (const namespace of [
+      "jira:https://example.atlassian.net:eng",
+      "JIRA:https://Example.atlassian.net:8443:ENG",
+    ]) {
+      const result = read({
+        repositories,
+        serve_defaults: { [namespace]: "/srv/api" },
+      });
+      expect(result.ok).toBe(true);
+    }
   });
 });

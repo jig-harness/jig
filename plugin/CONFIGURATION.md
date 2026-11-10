@@ -1528,9 +1528,10 @@ load:
     steward: 1
 ```
 
-For `serve_defaults`, a [tracker namespace](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#tracker-namespace)
-is `linear:<team>` or `jira:<site>:<project>`; the machine file rejects any
-other form.
+For `serve_defaults`, a [tracker namespace](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+is `linear:<team>` or `jira:<site>:<project>`, the site written as its
+`https://` address (`jira:https://example.atlassian.net:ENG`); the machine file
+rejects any other form.
 
 | Setting | Default / meaning |
 |---------|-------------------|
