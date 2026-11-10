@@ -32,6 +32,7 @@ import {
 } from "../../../do-item/scripts/lib/tracker/config.ts";
 import { parseWorkTypes } from "../../../do-item/scripts/lib/work-types.ts";
 import { parsePrPolicy } from "../../../drive-pr/scripts/lib/pr-policy.ts";
+import { parseCodeScanningSeverities } from "../../../resolve-review-comments/scripts/lib/code-scanning-severity.ts";
 import { parseSeverityFormats } from "../../../drive-pr/scripts/lib/severity-formats.ts";
 import { journalPath } from "../../../reflect/scripts/lib/context.ts";
 import { checkLensConfig } from "../../../review/scripts/select-lenses.ts";
@@ -155,6 +156,11 @@ export function skillValidation(
     const review = config.review;
     if (typeof review === "object" && review !== null && !Array.isArray(review))
       parseSeverityFormats((review as Config).severity_formats);
+  });
+  attempt("resolve-review-comments (code-scanning severities)", () => {
+    const review = config.review;
+    if (typeof review === "object" && review !== null && !Array.isArray(review))
+      parseCodeScanningSeverities((review as Config).code_scanning_severities);
   });
   attempt("autonomy (level, ceiling, park classes)", () => {
     const layered = {

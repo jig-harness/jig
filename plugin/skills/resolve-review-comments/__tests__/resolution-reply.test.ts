@@ -46,6 +46,36 @@ describe.skipIf(process.platform === "win32")(
         expectSpawnExit({ ...r, exitCode: r.code }, postedReply ? 0 : 6);
       });
     }
+    it("accepts a reply that shares the reviewer comment's timestamp, by connection order", () => {
+      const fix = writeFixture({});
+      const at = "2026-01-01T00:00:00Z";
+      const evidence = (order: string[]) =>
+        writeFileSync(
+          join(fix.dir, "reply-evidence.json"),
+          JSON.stringify({
+            data: {
+              viewer: { login: "operator" },
+              node: {
+                id: "PRRT_x",
+                comments: {
+                  nodes: order.map((login) => ({
+                    author: { login },
+                    body: "text",
+                    createdAt: at,
+                  })),
+                  pageInfo: { hasNextPage: false },
+                },
+              },
+            },
+          }),
+        );
+      evidence(["reviewer", "operator"]);
+      let r = runScript("resolve-thread.ts", ["PRRT_x"], fix);
+      expectSpawnExit({ ...r, exitCode: r.code }, 0);
+      evidence(["operator", "reviewer"]);
+      r = runScript("resolve-thread.ts", ["PRRT_x"], fix);
+      expectSpawnExit({ ...r, exitCode: r.code }, 6);
+    });
     for (const brokenSibling of [false, true]) {
       it(`keeps standalone strict and refuses a broken sibling: ${brokenSibling}`, () => {
         const fix = writeFixture({});

@@ -166,7 +166,7 @@ for a in "$@"; do
     *'viewer { login }'*'comments(first:100'*)
       tid=""
       for b in "$@"; do case "$b" in threadId=*) tid="\${b#threadId=}" ;; esac; done
-      printf '{"data":{"viewer":{"login":"operator"},"node":{"id":"%s","comments":{"nodes":[{"author":{"login":"reviewer"},"createdAt":"2026-01-01T00:00:00Z"},{"author":{"login":"operator"},"createdAt":"2026-01-01T00:01:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}' "$tid"
+      jq -nc --arg id "$tid" --arg default "operator" 'first(inputs | .data.repository.pullRequest.reviewThreads.nodes[] | select(.id == $id)) as $t | [$t.comments.nodes[] | {author, authorAssociation, body, createdAt}] as $raw | (([$raw[] | select(.authorAssociation as $a | ["OWNER","MEMBER","COLLABORATOR"] | index($a))] | last | .author.login) // $default) as $viewer | (if ([$raw[] | select(.author.login != $viewer)] | length) == 0 then [{author:{login:"reviewer"},authorAssociation:"NONE",body:"finding",createdAt:"2025-12-31T00:00:00Z"}] + $raw else $raw end) as $seen | {data:{viewer:{login:$viewer},node:{id:$id,comments:{nodes:$seen,pageInfo:{hasNextPage:false,endCursor:null}}}}}' "$F"/threads*.json
       exit 0 ;;
     *"pullRequest { number state }"*)
       # The review skill reads the owning PR's liveness immediately before
@@ -289,6 +289,7 @@ function threadsPayload(threads: ThreadFixture[]) {
                   },
                   authorAssociation: c.authorAssociation,
                   body: c.body,
+                  createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
                 })),
               },
             })),

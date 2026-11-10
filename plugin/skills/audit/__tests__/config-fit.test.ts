@@ -546,6 +546,18 @@ other_tool:
     expect(refused(entry("badge", "{ Sev1: high, Sev2: medium }"))).toBe(false);
   });
 
+  test("code-scanning severity validation refuses what the runtime parser refuses", () => {
+    const refused = (map: string) =>
+      ids(
+        fit({
+          ".config/jig.yaml": `review:\n  code_scanning_severities: ${map}\n`,
+        }).report,
+      ).includes("rejected:resolve-review-comments (code-scanning severities)");
+    expect(refused("{ high: unknown }")).toBe(true);
+    expect(refused("{ typo: low }")).toBe(true);
+    expect(refused("{ error: blocker, note: low }")).toBe(false);
+  });
+
   test("the handback landing check's own validation refuses what it would refuse", () => {
     const refused = (handback: string) =>
       ids(

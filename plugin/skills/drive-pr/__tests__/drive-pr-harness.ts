@@ -1883,7 +1883,7 @@ esac
 if [[ "$query" == *"viewer { login }"* ]]; then
   tid=""
   for a in "$@"; do case "$a" in threadId=*) tid="\${a#threadId=}" ;; esac; done
-  printf '{"data":{"viewer":{"login":"example-user-2"},"node":{"id":"%s","comments":{"nodes":[{"author":{"login":"example-review[bot]"},"createdAt":"2026-09-10T10:00:00Z"},{"author":{"login":"example-user-2"},"createdAt":"2026-09-10T10:01:00Z"}],"pageInfo":{"hasNextPage":false}}}}}' "$tid"
+  jq -c --arg id "$tid" --arg default "example-user-2" 'first(.data.repository.pullRequest.reviewThreads.nodes[] | select(.id == $id)) as $t | [$t.comments.nodes[] | {author, authorAssociation, body, createdAt}] as $raw | (([$raw[] | select(.authorAssociation as $a | ["OWNER","MEMBER","COLLABORATOR"] | index($a))] | last | .author.login) // $default) as $viewer | (if ([$raw[] | select(.author.login != $viewer)] | length) == 0 then [{author:{login:"reviewer"},authorAssociation:"NONE",body:"finding",createdAt:"2025-12-31T00:00:00Z"}] + $raw else $raw end) as $seen | {data:{viewer:{login:$viewer},node:{id:$id,comments:{nodes:$seen,pageInfo:{hasNextPage:false,endCursor:null}}}}}' "$F/threads.json"
   exit 0
 fi
 

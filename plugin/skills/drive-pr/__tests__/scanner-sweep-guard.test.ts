@@ -119,7 +119,7 @@ tid=""
 for a in "$@"; do case "$a" in threadId=*) tid="\${a#threadId=}" ;; esac; done
 case "$*" in
   *'viewer { login }'*'comments(first:100'*)
-    out "{\\"data\\":{\\"viewer\\":{\\"login\\":\\"example-user\\"},\\"node\\":{\\"id\\":\\"$tid\\",\\"comments\\":{\\"nodes\\":[{\\"author\\":{\\"login\\":\\"reviewer\\"},\\"createdAt\\":\\"2026-01-01T00:00:00Z\\"},{\\"author\\":{\\"login\\":\\"example-user\\"},\\"createdAt\\":\\"2026-01-01T00:01:00Z\\"}],\\"pageInfo\\":{\\"hasNextPage\\":false,\\"endCursor\\":null}}}}}"; exit 0 ;;
+    out "$(jq -c --arg id "$tid" --arg default "example-user" 'first(.data.repository.pullRequest.reviewThreads.nodes[] | select(.id == $id)) as $t | [$t.comments.nodes[] | {author, authorAssociation, body, createdAt}] as $raw | (([$raw[] | select(.authorAssociation as $a | ["OWNER","MEMBER","COLLABORATOR"] | index($a))] | last | .author.login) // $default) as $viewer | (if ([$raw[] | select(.author.login != $viewer)] | length) == 0 then [{author:{login:"reviewer"},authorAssociation:"NONE",body:"finding",createdAt:"2025-12-31T00:00:00Z"}] + $raw else $raw end) as $seen | {data:{viewer:{login:$viewer},node:{id:$id,comments:{nodes:$seen,pageInfo:{hasNextPage:false,endCursor:null}}}}}' "$F/threads.json")"; exit 0 ;;
   *resolveReviewThread*)
     printf '%s\\n' "$tid" >> "$F/resolved.txt"
     out '{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}'; exit 0 ;;
@@ -187,11 +187,12 @@ function unlinkedComments(id: string, replies: string[]): Comment[] {
 function graphqlComments(comments: Comment[]) {
   return {
     pageInfo: { hasNextPage: false },
-    nodes: comments.map((c) => ({
+    nodes: comments.map((c, i) => ({
       url: c.url,
       author: { login: c.author, __typename: "User" },
       authorAssociation: c.authorAssociation,
       body: c.body,
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
     })),
   };
 }

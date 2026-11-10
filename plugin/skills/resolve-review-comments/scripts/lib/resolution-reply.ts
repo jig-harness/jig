@@ -73,19 +73,40 @@ async function readPage(threadId: string, cursor: string | null) {
   };
 }
 
+interface Latest {
+  at: number;
+  position: number;
+}
+
+interface LatestComments {
+  reply: Latest;
+  other: Latest;
+  next: number;
+}
+
+/** Later by timestamp; equal timestamps fall back to connection order. */
+function isLater(a: Latest, b: Latest): boolean {
+  return a.at > b.at || (a.at === b.at && a.position > b.position);
+}
+
 function latestCommentTimes(
   comments: ResolutionComment[],
   viewer: string,
-  latest: { reply: number; other: number },
+  latest: LatestComments,
   transparent: TransparentResolutionFollowUp,
 ) {
   for (const comment of comments) {
     const { author, at } = comment;
-    if (latest.reply >= 0 && at > latest.reply && transparent(comment))
+    const here = { at, position: latest.next++ };
+    if (
+      latest.reply.position >= 0 &&
+      at > latest.reply.at &&
+      transparent(comment)
+    )
       continue;
     const key =
       author.toLowerCase() === viewer.toLowerCase() ? "reply" : "other";
-    latest[key] = Math.max(latest[key], at);
+    if (isLater(here, latest[key])) latest[key] = here;
   }
   return latest;
 }
@@ -94,7 +115,11 @@ export async function assertResolutionReply(threadId: string): Promise<void> {
   const transparent = await resolutionFollowUp();
   let cursor: string | null = null;
   const seen = new Set<string>();
-  let latest = { reply: -1, other: -1 };
+  let latest: LatestComments = {
+    reply: { at: -1, position: -1 },
+    other: { at: -1, position: -1 },
+    next: 0,
+  };
   let viewer = "";
   for (;;) {
     const page = await readPage(threadId, cursor);
@@ -108,7 +133,7 @@ export async function assertResolutionReply(threadId: string): Promise<void> {
       fail(1, "resolve-thread: repeated comment cursor; refusing resolution");
     seen.add(cursor);
   }
-  if (latest.other < 0 || latest.reply <= latest.other) {
+  if (latest.other.position < 0 || !isLater(latest.reply, latest.other)) {
     fail(
       6,
       "resolve-thread: REPLY_REQUIRED — post a reply from the resolving login after the last reviewer comment before resolving",
