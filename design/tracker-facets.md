@@ -356,7 +356,10 @@ file.
   use up the read; the sweep lists them from a separate read of one page of
   100. It is the weekly sweep's read, and the one read of the interface that
   returns part of a population on purpose, so it says so in its name and its
-  cursor.
+  cursor. Its pages are ordered oldest first by default and, with
+  `order: 'least-recently-updated'`, by last update, which is the order the
+  sweep's comment-only mode reads in
+  ([the weekly sweep](#the-weekly-sweep)).
 - `Tracker` gains `facetStores()`: each facet's effective store and why
   (configured, kept in labels, detected), and on GitHub what detection saw
   (the field, its options, the credential that read them), so the check, the
@@ -541,7 +544,13 @@ session working it. An issue already in triage is not read again, so each
 issue is moved and commented on once. In comment-only mode the issue stays in the queried population, so the
 marker alone keeps the sweep to one comment per issue and set of missing
 facets: a run that finds the marker posts nothing, and posts again only when
-the missing facets change.
+the missing facets change. A capped read would let the same first issues,
+already commented, take every run's pages, so in this mode the read orders
+the population by least recently updated: the sweep's own comment moves an
+issue to the back, issues never commented on come first, and the run needs no
+stored cursor. An issue whose missing facets change after its comment is
+revisited when its turn comes, which is within as many runs as the population
+holds pages.
 
 Its bounds:
 
