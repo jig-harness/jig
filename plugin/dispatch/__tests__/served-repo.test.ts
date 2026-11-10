@@ -127,6 +127,26 @@ describe("served pickups across repositories", () => {
     expect(fresh).toContain("scope is invalid");
   });
 
+  it("keeps reading claimed items while an invalid scope refuses new pickups", async () => {
+    const f = fake([issue("#1", ["web"])]);
+    const claimed = issue("#9", ["api"]);
+    const tracker = {
+      ...f.tracker,
+      assignedIssues: async (_: string, s: string[]) =>
+        s.includes("in_progress") ? [claimed] : [],
+    } as unknown as Tracker;
+    const reading = await readServedPickups(tracker, people, {
+      cache: f.cache,
+      epic: "epic",
+      nowMs: 1,
+      headroom: true,
+      repoScope: { own: "", others: [], invalid: "empty taxonomy list" },
+    });
+    expect(reading.wanted).toEqual([]);
+    expect(reading.claimed.map((c) => c.key)).toEqual(["#9"]);
+    expect(reading.unplaced[0]?.reason).toContain("scope is invalid");
+  });
+
   it("refuses at launch an item whose label moved to another repository", async () => {
     const f = fake([issue("#1", ["web"])]);
     const fresh = await freshServedPickup(f.tracker, "#1", "alex", undefined, {
@@ -172,6 +192,9 @@ describe("repoScopeOf", () => {
       bad({ repo_label: "api", taxonomy: { repos: ["api", 123] } }),
     ).toBeString();
     expect(bad({ repo_label: 7 })).toBeString();
+    expect(bad({ repo_label: "api", taxonomy: { repos: [] } })).toBeString();
+    expect(bad({ repo_label: "api", taxonomy: "web" })).toBeString();
+    expect(bad("api")).toBeString();
     expect(
       bad({ repo_label: "api", taxonomy: { repos: ["web"] } }),
     ).toBeUndefined();

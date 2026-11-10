@@ -130,14 +130,13 @@ export async function readServedPickups(
   const out: ServedReading = { wanted: [], unplaced: [], claimed: [] };
   const candidates: Candidate[] = [];
   const seen = new Set<string>();
-  if (options.repoScope?.invalid !== undefined) {
+  const refused = options.repoScope?.invalid !== undefined;
+  if (refused)
     out.unplaced.push({
       target: tracker.adapter,
       record: "tracker",
-      reason: `served pickups are refused: the repository scope is invalid: ${options.repoScope.invalid}`,
+      reason: `served pickups are refused: the repository scope is invalid: ${options.repoScope?.invalid}`,
     });
-    return out;
-  }
   for (const person of people) {
     const identity =
       person.tracker[tracker.adapter as keyof ServedPerson["tracker"]];
@@ -151,6 +150,8 @@ export async function readServedPickups(
           state: i.state.name,
         })),
       );
+      // Claims are monitored either way; an invalid scope only starts nothing.
+      if (refused) continue;
       const roots = [
         ...(await assignments(tracker, identity, options, cache)),
         ...progress.filter(

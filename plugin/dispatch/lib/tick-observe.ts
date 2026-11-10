@@ -82,6 +82,7 @@ import {
   environmentLayer,
   mergeLayers,
   readConfigFile,
+  refuseRepositoryOnly,
   userConfigPath,
   userLayerEnabled,
 } from "../../shared/config-layers.ts";
@@ -169,7 +170,9 @@ export interface RepoObservation {
  */
 function scopeOf(values: Record<string, unknown>): RepoScope | undefined {
   try {
-    const user = userLayerEnabled() ? readConfigFile(userConfigPath()) : null;
+    const userPath = userConfigPath();
+    const user = userLayerEnabled() ? readConfigFile(userPath) : null;
+    if (user !== null) refuseRepositoryOnly(user, userPath);
     const env = environmentLayer();
     return repoScopeOf(
       mergeLayers(mergeLayers(user ?? {}, values), env?.values ?? {}),

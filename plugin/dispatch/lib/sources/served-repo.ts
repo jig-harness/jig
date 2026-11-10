@@ -1,3 +1,5 @@
+import { isMapping } from "../../../shared/config-layers.ts";
+
 /**
  * Whose repository a served item is. A served person's assignments are read
  * from the tracker team, which every repository of an organization may share,
@@ -33,21 +35,26 @@ function named(label: string): string {
 export function repoScopeOf(
   values: Record<string, unknown>,
 ): RepoScope | undefined {
-  const review = values.review as
-    | { repo_label?: unknown; taxonomy?: { repos?: unknown } }
-    | undefined;
-  const own = review?.repo_label;
+  const review = values.review;
+  if (review === undefined || review === null) return undefined;
+  if (!isMapping(review)) return refusedScope("review is not a mapping");
+  const own = review.repo_label;
   if (own === undefined || own === null) return undefined;
   if (typeof own !== "string" || own.trim() === "")
     return refusedScope("review.repo_label is not a non-empty text");
-  const repos = review?.taxonomy?.repos;
+  const taxonomy = review.taxonomy;
+  if (taxonomy === undefined || taxonomy === null) return undefined;
+  if (!isMapping(taxonomy))
+    return refusedScope("review.taxonomy is not a mapping");
+  const repos = taxonomy.repos;
   if (repos === undefined || repos === null) return undefined;
   if (
     !Array.isArray(repos) ||
+    repos.length === 0 ||
     repos.some((v) => typeof v !== "string" || v.trim() === "")
   )
     return refusedScope(
-      "review.taxonomy.repos is not a list of non-empty text",
+      "review.taxonomy.repos is not a non-empty list of non-empty text",
     );
   const mine = named(own);
   const others = (repos as string[]).filter((label) => named(label) !== mine);
