@@ -104,7 +104,7 @@ export function epicsOfPr(
     const epic = epicOf(issue, epicLabel);
     if (epic !== null) out.add(epic);
   }
-  return [...out].sort();
+  return [...out].sort((a, b) => a.localeCompare(b));
 }
 
 export function computeEpicUnits(input: UnitsInput): Map<string, EpicUnits> {

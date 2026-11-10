@@ -59,6 +59,15 @@ function parseRemote(url: string): RemoteTransport | null {
   };
 }
 
+function repositoryPath(path: string): string {
+  let end = path.length;
+  while (end > 0 && path.charCodeAt(end - 1) === 47) end -= 1;
+  const withoutTrailingSlashes = path.slice(0, end);
+  return withoutTrailingSlashes.endsWith(".git")
+    ? withoutTrailingSlashes.slice(0, -4)
+    : withoutTrailingSlashes;
+}
+
 function existingCwd(cwd: string | undefined): { cwd: string } | object {
   return cwd !== undefined && existsSync(cwd) ? { cwd } : {};
 }
@@ -142,7 +151,7 @@ export async function repoOfUrl(
 ): Promise<string> {
   const remote = parseRemote(url);
   if (!remote) return "";
-  const repo = remote.path.replace(/\/+$/, "").replace(/\.git$/, "");
+  const repo = repositoryPath(remote.path);
   if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repo)) return "";
   const allowedHost =
     forgeUrl && URL.canParse(forgeUrl)

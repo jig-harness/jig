@@ -5,6 +5,9 @@ test("only a supported scheme on the forge host names a repository", async () =>
   expect(
     await repoOfUrl("https://github.com/example-org/example-repo.git"),
   ).toBe("example-org/example-repo");
+  expect(
+    await repoOfUrl("https://github.com/example-org/example-repo.git///"),
+  ).toBe("example-org/example-repo");
   for (const url of [
     "https://elsewhere.invalid/example-org/example-repo.git",
     "/tmp/example-org/example-repo",
