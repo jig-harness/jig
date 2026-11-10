@@ -215,9 +215,8 @@ describe("whole-comment answer forms", () => {
       )?.choice?.option,
     ).toBe("Keep");
     expect(
-      parse(
-        "answer PRRT_a: approve\nanswer scope:release:approve\nnote scope:release: after migration",
-      )?.choice?.option,
+      parse("answer PRRT_a: approve\nanswer scope:release: approve")?.choice
+        ?.option,
     ).toBe("Keep");
     expect(
       parse(
@@ -240,16 +239,33 @@ describe("whole-comment answer forms", () => {
     }
   });
 
-  it("keeps colon-bearing companion keys distinct", () => {
+  it("keeps unambiguous colon-bearing companion keys distinct", () => {
     expect(
       parse(
-        "answer PRRT_a: approve\nanswer scope:one:approve\nanswer scope:two:approve",
+        "answer PRRT_a: approve\nanswer scope:one: approve\nanswer scope:two: approve",
       )?.choice?.option,
     ).toBe("Keep");
     expect(
       parse(
-        "answer PRRT_a: approve\nanswer scope:one:approve\nnote scope:two:wait",
+        "answer PRRT_a: approve\nanswer scope:one: approve\nnote scope:two: wait",
       )?.choice,
+    ).toBeUndefined();
+  });
+
+  it("keeps ambiguous compact companion keys free without quadratic scanning", () => {
+    expect(
+      parse(
+        "answer PRRT_a: approve\nanswer other:approve\nnote other:after10:00",
+      )?.choice,
+    ).toBeUndefined();
+    expect(
+      parse(
+        "answer PRRT_a: approve\nanswer other:approve\nanswer other:choose:Remove",
+      )?.choice,
+    ).toBeUndefined();
+    expect(
+      parse(`answer PRRT_a: approve\nanswer other:${":".repeat(30_000)}x`)
+        ?.choice,
     ).toBeUndefined();
   });
 

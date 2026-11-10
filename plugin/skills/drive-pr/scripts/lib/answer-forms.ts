@@ -88,41 +88,33 @@ interface Line {
   text: string;
 }
 
-/** Every valid split of a companion line; a colon may belong to its key or text. */
-function companionLines(raw: string): Line[] {
-  if (indented(raw)) return [];
-  const m = /^(answer|note) (.+)$/i.exec(raw.trim());
-  if (m === null) return [];
-  const rest = m[2] ?? "";
-  const kind = m[1]?.toLowerCase() as Line["kind"];
-  const out: Line[] = [];
-  for (
-    let delimiter = rest.indexOf(":");
-    delimiter >= 0;
-    delimiter = rest.indexOf(":", delimiter + 1)
-  ) {
-    const key = rest.slice(0, delimiter);
-    const text = rest.slice(delimiter + 1).trimStart();
-    if (key !== "" && !/\s/.test(key) && /^\S/.test(text))
-      out.push({ kind, key: key.toLowerCase(), text });
-  }
-  return out;
-}
-
 /**
- * A separator before whitespace unambiguously ends the key. Without one,
- * preserve the fullest companion identity, so compact colon-bearing keys do
- * not collapse to their shared prefix.
+ * Read one companion line without guessing where a colon-bearing key ends.
+ *
+ * A `: ` separator is unambiguous. Without it, accept only one possible
+ * split: interpreting multiple compact colons independently can associate a
+ * note with the wrong parked item. Scan once so an untrusted long line cannot
+ * turn this admission check into quadratic work.
  */
 function companionLine(raw: string): Line | null {
-  const choices = companionLines(raw);
-  if (choices.length === 0) return null;
-  const rest = raw.trim().replace(/^(answer|note) /i, "");
-  return (
-    choices.find((line) => /^:\s/.test(rest.slice(line.key.length))) ??
-    choices.at(-1) ??
-    null
-  );
+  if (indented(raw)) return null;
+  const m = /^(answer|note) (.+)$/i.exec(raw.trim());
+  if (m === null) return null;
+  const rest = m[2] ?? "";
+  const kind = m[1]?.toLowerCase() as Line["kind"];
+  const spacedDelimiter = rest.search(/:\s/);
+  const delimiter = spacedDelimiter >= 0 ? spacedDelimiter : rest.indexOf(":");
+  if (delimiter < 1 || /\s/.test(rest.slice(0, delimiter))) return null;
+  const textStart = delimiter + 1;
+  if (textStart >= rest.length) return null;
+
+  if (spacedDelimiter < 0 && rest.indexOf(":", textStart) >= 0) return null;
+
+  return {
+    kind,
+    key: rest.slice(0, delimiter).toLowerCase(),
+    text: rest.slice(textStart).trimStart(),
+  };
 }
 
 function addressedLine(raw: string, knownKey?: string): Line | null {
