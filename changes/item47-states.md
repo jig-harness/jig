@@ -12,7 +12,9 @@ release: minor
   refuses an item in it; the dispatcher's stall and double-claim watch counts
   it as claimed where it has a name of its own; and `dispatch.states` may not list it. It may share its name
   with `in_review` on a tracker with one review status, and that name then
-  reads back as `pr_open`. Unset, no item moves there and nothing changes.
+  reads back as `pr_open`: with `do_item.post_merge_state: in_review` too,
+  an epic stays `in_progress` after every child has merged, until a person
+  closes the children. Unset, no item moves there and nothing changes.
 - `do_item.post_merge_state` (`done`, the default, `ops_pending` or
   `in_review`) and `do_item.post_merge_closer`: where the post-merge rule
   stops, for a team whose `done` means merged and verified by someone else,

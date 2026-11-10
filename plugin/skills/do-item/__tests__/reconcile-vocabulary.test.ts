@@ -246,6 +246,37 @@ describe("reconcileParentStatus with pr_open", () => {
     expect(r.parentState).toBeNull();
   });
 
+  it("keeps an epic in progress after every child merged, under one review status with post_merge_state in_review", () => {
+    // Each merged child waits under the name pr_open shares with in_review,
+    // which reads back as pr_open: the roll-up cannot see that it merged.
+    const vocabulary = {
+      ...withPrOpen("In Review"),
+      states: {
+        ...DEFAULT_VOCABULARY.states,
+        pr_open: "In Review",
+        in_review: "In Review",
+      },
+      postMergeState: "in_review" as const,
+    };
+    const merged = [started("In Review"), started("In Review")];
+    expect(
+      reconcileParentStatus({ parentLabels: [], children: merged }, vocabulary),
+    ).toMatchObject({ verdict: "keep_in_progress", parentState: null });
+    // Once a person closes the children, the epic is capped at in_review.
+    expect(
+      reconcileParentStatus(
+        {
+          parentLabels: [],
+          children: [
+            child("Done", { type: "completed" }),
+            child("Done", { type: "completed" }),
+          ],
+        },
+        vocabulary,
+      ),
+    ).toMatchObject({ verdict: "set_status", parentState: "in_review" });
+  });
+
   it("caps at in_review, as before, while pr_open is unset", () => {
     const r = reconcileParentStatus(
       {
