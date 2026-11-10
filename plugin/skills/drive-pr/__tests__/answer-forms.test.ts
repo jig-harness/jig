@@ -272,6 +272,11 @@ describe("whole-comment answer forms", () => {
       parse(`answer PRRT_a: approve\nanswer other:${":".repeat(30_000)}x`)
         ?.choice,
     ).toBeUndefined();
+    expect(
+      parse(
+        "answer PRRT_a: approve\nanswer scope:one:approve at: noon\nnote scope:two:wait until: noon",
+      )?.choice,
+    ).toBeUndefined();
   });
 
   it("matches only the public decision when stripping a notification quote", () => {

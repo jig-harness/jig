@@ -115,9 +115,8 @@ function companionLine(raw: string): Line | null {
   const laterColon = rest.indexOf(":", textStart);
   if (
     laterColon >= 0 &&
-    spacedDelimiter < 0 &&
-    (!/\s\d+$/.test(rest.slice(0, laterColon)) ||
-      !/^:\d/.test(rest.slice(laterColon)))
+    delimiter === compactDelimiter &&
+    !/\s/.test(rest.slice(textStart, laterColon))
   )
     return null;
 
