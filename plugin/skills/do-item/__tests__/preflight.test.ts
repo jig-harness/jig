@@ -3,7 +3,7 @@
  * output become a proceed or a refusal.
  */
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -11,6 +11,7 @@ import {
   preflightCommandOf,
   runPreflight,
 } from "../scripts/lib/preflight.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 const ROOT = process.cwd();
 const ISSUE = JSON.stringify({ found: true, identifier: "#5" });
@@ -32,7 +33,7 @@ async function runIn(command: string, env: Record<string, string>) {
     new Response(child.stderr).text(),
     child.exited,
   ]);
-  expect(exitCode, stderr).toBe(0);
+  expectSpawnExit({ exitCode, stdout, stderr }, 0, "preflight runner");
   return JSON.parse(stdout) as Awaited<ReturnType<typeof runPreflight>>;
 }
 
@@ -132,14 +133,20 @@ describe("runPreflight", () => {
 
 describe("preflightClaim", () => {
   it("refuses, without running the command, when the item cannot be read", async () => {
-    const marker = join(mkdtempSync(join(tmpdir(), "preflight-")), "ran");
-    const refusal = await preflightClaim(
-      ROOT,
-      fixture(`touch ${JSON.stringify(marker)}`),
-      "#5",
-      async () => ({ found: false, error: "tracker unreachable" }),
-    );
-    expect(existsSync(marker)).toBe(false);
+    const dir = mkdtempSync(join(tmpdir(), "preflight-"));
+    const marker = join(dir, "ran");
+    let refusal: Awaited<ReturnType<typeof preflightClaim>>;
+    try {
+      refusal = await preflightClaim(
+        ROOT,
+        fixture(`touch ${JSON.stringify(marker)}`),
+        "#5",
+        async () => ({ found: false, error: "tracker unreachable" }),
+      );
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
     expect(refusal).toMatchObject({ outcome: "refused", why: "preflight" });
     expect(refusal?.outcome === "refused" && refusal.reason).toContain(
       "tracker unreachable",

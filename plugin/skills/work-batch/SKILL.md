@@ -196,8 +196,10 @@ the release in step 4 restores them. Then, for each:
    not perform its guards. Never retry a refusal without those options.
 
    On exit `3` (someone already holds it) or `4` (another claim landed
-   first), stop the batch and report the refused claim. A fixed served batch
-   cannot safely continue after one of its members changes.
+   first), stop the batch, release the issues already claimed in this loop
+   (step 4's release, which preserves concurrent changes) and report the
+   refused claim. A fixed served batch cannot safely continue after one of
+   its members changes.
 
    The exception is a refusal by the repository's start rules, exit `3` with
    `"why": "preflight"` in the JSON on standard output (the reason is on
