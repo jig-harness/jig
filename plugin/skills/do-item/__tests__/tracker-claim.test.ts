@@ -232,6 +232,8 @@ describe("GitHub adapter: claiming", () => {
   });
 });
 
+const FIXTURE = join(import.meta.dir, "support", "preflight-fixture.ts");
+
 describe("tracker.ts claim", () => {
   /** Run `tracker.ts claim #5` against a GraphQL endpoint answering as `world` does. */
   async function cli(
@@ -370,11 +372,11 @@ describe("tracker.ts claim", () => {
     const preflight = (command: string) =>
       `do_item:\n  preflight_command: ${JSON.stringify(command)}\n`;
     // The tracker's mock answers the claim's own reads; these run the real script.
-    const run = (command: string, env: Record<string, string> = {}) =>
-      claimWith(preflight(command), env);
+    const run = (mode: string, env: Record<string, string> = {}) =>
+      claimWith(preflight(`bun ${FIXTURE} ${mode}`), env);
 
     it("runs it with the issue's JSON on stdin, and claims when it exits 0", async () => {
-      const out = await run("cat > seen.json");
+      const out = await run("save");
       expectSpawnExit(out, 0);
       expect(JSON.parse(out.stdout).outcome).toBe("claimed");
       expect(JSON.parse(out.seen as string)).toMatchObject({
@@ -385,26 +387,26 @@ describe("tracker.ts claim", () => {
     });
 
     it("refuses on exit 3 with its first line as the reason, writing nothing", async () => {
-      const out = await run("echo 'names repo other'; echo second; exit 3");
+      const out = await run("refuse");
       expectSpawnExit(out, 3);
       expect(JSON.parse(out.stdout)).toMatchObject({
         outcome: "refused",
         why: "preflight",
       });
-      expect(out.stderr).toContain("names repo other");
-      expect(out.stderr).not.toContain("second");
+      expect(out.stderr).toContain("other repo");
+      expect(out.stderr).not.toContain("more");
       expect(out.writes).toEqual([]);
     });
 
     it("refuses on any other exit, naming it, writing nothing", async () => {
-      const out = await run("echo oops >&2; exit 7");
+      const out = await run("fail");
       expectSpawnExit(out, 3);
-      expect(out.stderr).toContain("failed (exit 7: oops)");
+      expect(out.stderr).toContain("failed (exit 2: broke)");
       expect(out.writes).toEqual([]);
     });
 
     it("refuses a command still running past the deadline, writing nothing", async () => {
-      const out = await run("exec sleep 30", {
+      const out = await run("hang", {
         JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC: "1",
       });
       expectSpawnExit(out, 3);
@@ -413,7 +415,7 @@ describe("tracker.ts claim", () => {
     });
 
     it("refuses a malformed deadline instead of running unbounded", async () => {
-      const out = await run("exit 0", {
+      const out = await run("ok", {
         JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC: "0",
       });
       expectSpawnExit(out, 3);

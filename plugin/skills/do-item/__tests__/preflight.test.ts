@@ -2,15 +2,37 @@
  * The preflight command: its setting, and how its exit code and standard
  * output become a proceed or a refusal.
  */
-import { afterEach, describe, expect, it } from "bun:test";
-import { preflightCommandOf, runPreflight } from "../scripts/lib/preflight.ts";
+import { describe, expect, it } from "bun:test";
+import { join } from "node:path";
+import {
+  preflightClaim,
+  preflightCommandOf,
+  runPreflight,
+} from "../scripts/lib/preflight.ts";
 
 const ROOT = process.cwd();
 const ISSUE = JSON.stringify({ found: true, identifier: "#5" });
+const FIXTURE = join(import.meta.dir, "support", "preflight-fixture.ts");
+const RUNNER = join(import.meta.dir, "support", "preflight-runner.ts");
+/** A command that runs the fixture in `mode`, the same under `sh` and `cmd.exe`. */
+const fixture = (mode: string) => `bun ${FIXTURE} ${mode}`;
 
-afterEach(() => {
-  delete process.env.JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC;
-});
+/** `runPreflight` in a subprocess whose environment is exactly `env` plus the inherited one. */
+async function runIn(command: string, env: Record<string, string>) {
+  const child = Bun.spawn(["bun", RUNNER, command], {
+    cwd: ROOT,
+    env: { ...process.env, ...env },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  expect(exitCode, stderr).toBe(0);
+  return JSON.parse(stdout) as Awaited<ReturnType<typeof runPreflight>>;
+}
 
 describe("preflightCommandOf", () => {
   it("is null when the repository sets none", () => {
@@ -38,28 +60,30 @@ describe("preflightCommandOf", () => {
 
 describe("runPreflight", () => {
   it("proceeds on exit 0", async () => {
-    expect(await runPreflight(ROOT, "exit 0", ISSUE)).toEqual({
+    expect(await runPreflight(ROOT, fixture("ok"), ISSUE)).toEqual({
       outcome: "proceed",
     });
   });
 
   it("gives the command the issue on standard input", async () => {
-    const answer = await runPreflight(
-      ROOT,
-      `grep -q '"identifier":"#5"' || { echo not seen; exit 3; }`,
-      ISSUE,
-    );
-    expect(answer).toEqual({ outcome: "proceed" });
+    expect(await runPreflight(ROOT, fixture("check"), ISSUE)).toEqual({
+      outcome: "proceed",
+    });
+    expect(
+      await runPreflight(ROOT, fixture("check"), '{"identifier":"#6"}'),
+    ).toMatchObject({ outcome: "refused", reason: "not seen" });
   });
 
   it("refuses on exit 3 with the first line of standard output", async () => {
-    expect(
-      await runPreflight(ROOT, "echo 'other repo'; echo more; exit 3", ISSUE),
-    ).toEqual({ outcome: "refused", kind: "refused", reason: "other repo" });
+    expect(await runPreflight(ROOT, fixture("refuse"), ISSUE)).toEqual({
+      outcome: "refused",
+      kind: "refused",
+      reason: "other repo",
+    });
   });
 
   it("refuses on exit 3 without output, saying it gave no reason", async () => {
-    const answer = await runPreflight(ROOT, "exit 3", ISSUE);
+    const answer = await runPreflight(ROOT, fixture("refuse-silent"), ISSUE);
     expect(answer).toMatchObject({ outcome: "refused", kind: "refused" });
     expect(answer.outcome === "refused" && answer.reason).toContain(
       "giving no reason",
@@ -67,18 +91,14 @@ describe("runPreflight", () => {
   });
 
   it("keeps a long reason to one bounded line", async () => {
-    const answer = await runPreflight(
-      ROOT,
-      `printf 'a%.0s' $(seq 1 1000); exit 3`,
-      ISSUE,
-    );
+    const answer = await runPreflight(ROOT, fixture("refuse-long"), ISSUE);
     expect(answer.outcome === "refused" && answer.reason.length).toBeLessThan(
       400,
     );
   });
 
   it("refuses on any other exit, with the tail of its error output", async () => {
-    const answer = await runPreflight(ROOT, "echo broke >&2; exit 2", ISSUE);
+    const answer = await runPreflight(ROOT, fixture("fail"), ISSUE);
     expect(answer).toMatchObject({ outcome: "refused", kind: "failed" });
     expect(answer.outcome === "refused" && answer.reason).toContain(
       "failed (exit 2: broke)",
@@ -86,8 +106,9 @@ describe("runPreflight", () => {
   });
 
   it("refuses a command that is still running at the deadline", async () => {
-    process.env.JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC = "1";
-    const answer = await runPreflight(ROOT, "exec sleep 30", ISSUE);
+    const answer = await runIn(fixture("hang"), {
+      JIG_DO_ITEM_PREFLIGHT_TIMEOUT_SEC: "1",
+    });
     expect(answer).toMatchObject({ outcome: "refused", kind: "failed" });
     expect(answer.outcome === "refused" && answer.reason).toContain(
       "still running after 1s",
@@ -97,5 +118,26 @@ describe("runPreflight", () => {
   it("refuses a command that cannot start", async () => {
     const answer = await runPreflight("/nonexistent-dir-743", "exit 0", ISSUE);
     expect(answer).toMatchObject({ outcome: "refused", kind: "failed" });
+  });
+});
+
+describe("preflightClaim", () => {
+  it("refuses, without running the command, when the item cannot be read", async () => {
+    const refusal = await preflightClaim(ROOT, "exit 0", "#5", async () => ({
+      found: false,
+      error: "tracker unreachable",
+    }));
+    expect(refusal).toMatchObject({ outcome: "refused", why: "preflight" });
+    expect(refusal?.outcome === "refused" && refusal.reason).toContain(
+      "tracker unreachable",
+    );
+  });
+
+  it("lets a found item through when the command proceeds", async () => {
+    expect(
+      await preflightClaim(ROOT, fixture("ok"), "#5", async () =>
+        JSON.parse(ISSUE),
+      ),
+    ).toBeNull();
   });
 });

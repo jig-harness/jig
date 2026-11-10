@@ -700,8 +700,10 @@ implementation. Skip this check for issues about the repository's own code.
    again. A person resuming their own interrupted pickup of an `in_progress` item tells you
    so, and you go on from here without the claim.
 
-   (**judgment** — native, Linear: read the issue and stop on the same two
-   refusals, then
+   (**judgment** — native, Linear: only where `do_item.preflight_command`
+   is not set; with it set, a native write never runs the repository's start
+   rules, so claim through the script above. Read the issue and stop on the
+   same two refusals, then
    `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`,
    then read it again and stop, as on exit `4`, when it shows another
    assignee, or when the issue is gone or no longer in the mapped state.)

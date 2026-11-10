@@ -207,15 +207,18 @@ the release in step 4 restores them. Then, for each:
    and stop. A fixed served batch still stops. A person's word to proceed
    does not clear it: the item or the command changes first.
 
-   (**judgment** — native: read the issue and stop on the same refusals,
-   save its state and assignee through the harness's tracker tool (the
+   (**judgment** — native, only where `do_item.preflight_command` is not
+   set; with it set, a native write never runs the repository's start rules,
+   so claim through the script above. Read the issue and stop on the same
+   refusals, save its state and assignee through the harness's tracker tool (the
    mapped state name, assignee "me"), then read it again and stop the batch
    when it shows another assignee, or is gone or no longer in the mapped
    state.)
 
-2. Comment on it, naming the anchor and every other issue in the batch, so a
-   second agent sees it is spoken for and by which batch
-   (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment "<KEY>" --body-file body.md`).
+2. Once every claim above is settled, comment on each issue you kept
+   claimed, naming the anchor and every other claimed issue in the batch
+   (never one dropped or refused), so a second agent sees it is spoken for
+   and by which batch (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment "<KEY>" --body-file body.md`).
    Once the last issue is commented on, remove the file
    (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- body.md`):
    a file left in the worktree keeps the drive from converging.
@@ -224,7 +227,8 @@ Then write the batch form of the
 [intent chain](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as `/jig:do-item`
 [Step 3.5](../do-item/SKILL.md#step-35-write-the-intent-chain-snapshot-refocus)
 describes, with `"mode":"batch"`, the anchor as `issue` (for an area or path
-anchor, the highest-ranked issue), the anchor's parent as `epic` when it has
+anchor, the highest-ranked issue; when a preflight refusal dropped the
+anchor, the highest-ranked issue still claimed), the anchor's parent as `epic` when it has
 one, and every claimed issue in `items`. Write that JSON to `batch-intent.json`
 with the file-writing tool:
 

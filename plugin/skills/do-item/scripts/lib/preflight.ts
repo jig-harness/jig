@@ -125,8 +125,9 @@ export async function runPreflight(
 /**
  * The refusal a claim of `key` returns when `command` does not let it
  * proceed, `null` when it does. `readIssue` is `get_issue.ts`'s answer for
- * the item; one that is not a found issue is left to the claim, which stops
- * on an issue that does not exist.
+ * the item. One that is not a found issue (a missing item, an unreachable
+ * tracker, an unusable answer) refuses: the command never saw the item, and
+ * a later successful read inside the claim must not stand in for it.
  */
 export async function preflightClaim(
   root: string,
@@ -135,7 +136,13 @@ export async function preflightClaim(
   readIssue: () => Promise<Record<string, unknown>>,
 ): Promise<ClaimResult | null> {
   const issue = await readIssue();
-  if (issue.found !== true) return null;
+  if (issue.found !== true)
+    return {
+      outcome: "refused",
+      issue: key,
+      why: "preflight",
+      reason: `${key} could not be read for the repository's preflight check, so do_item.preflight_command was not run: ${oneLine(String(issue.error ?? "no reason given"))}`,
+    };
   const result = await runPreflight(root, command, JSON.stringify(issue));
   if (result.outcome === "proceed") return null;
   return {
