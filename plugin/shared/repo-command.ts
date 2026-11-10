@@ -85,6 +85,7 @@ export async function runRepoCommand(
     cwd: spec.cwd,
     env: scrubbedEnv(),
     timeoutSec: spec.timeoutSec,
+    maxBufferBytes: MAX_OUTPUT_BYTES,
     ...(spec.stdin === undefined ? {} : { stdin: spec.stdin }),
   });
   if (result.timedOut)

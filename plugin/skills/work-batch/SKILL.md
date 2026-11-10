@@ -211,6 +211,11 @@ the release in step 4 restores them. Then, for each:
    already claimed by the same release. A person's word to proceed
    does not clear it: the item or the repository's rules change first.
 
+   Any other way the loop ends without every claim made (a nonzero exit
+   other than `3` or `4`, a thrown error, a transport or configuration
+   failure) also stops the batch: release the issues already claimed in this
+   loop (step 4's release) and report the failure.
+
    (**judgment** — native, only where none of `do_item.preflight_command`,
    `do_item.claim_from` and `do_item.claim_marker` is set; with one set, a
    native write skips the repository's start rules, so claim through the

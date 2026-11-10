@@ -172,11 +172,17 @@ export async function claimServedIssue(
   const claimFrom = options.claimFrom ?? null;
   if (claimFrom === null) return claimServed(tracker, key, options);
   const start = await tracker.getIssue(key);
-  const outside =
-    start === null
-      ? null
-      : claimFromRefusal(tracker, key, start.state.name, claimFrom);
-  return outside ?? claimServed(tracker, key, options);
+  if (start === null)
+    return {
+      outcome: "refused",
+      issue: key,
+      why: "state",
+      reason: `${key} could not be read, so its state is not known to be in claim_from`,
+    };
+  return (
+    claimFromRefusal(tracker, key, start.state.name, claimFrom) ??
+    claimServed(tracker, key, options)
+  );
 }
 
 /** No cached queue fact authorizes this write. Missing ancestry or provenance refuses it. */
@@ -224,6 +230,11 @@ async function claimServed(
       issue: key,
       reason: `${key} changed before it could be started; queue must refresh`,
     };
+  // The state this write starts from is the one just read, not the first read's.
+  const outside = options.claimFrom
+    ? claimFromRefusal(tracker, key, before.state.name, options.claimFrom)
+    : null;
+  if (outside) return outside;
   await tracker.transition(key, "in_progress");
   const after = await tracker.poolIssue(key);
   if (

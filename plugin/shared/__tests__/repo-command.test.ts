@@ -11,7 +11,10 @@ import { oneLine, SCRUBBED_ENV, scrubbedEnv } from "../repo-command.ts";
 
 const FIXTURES = join(import.meta.dir, "fixtures", "repo-command");
 const RUNNER = join(FIXTURES, "runner.ts");
-const program = (mode: string) => `bun ${join(FIXTURES, "program.ts")} ${mode}`;
+const quoted = (path: string) =>
+  process.platform === "win32" ? `"${path}"` : `'${path.replaceAll("'", "'\\''")}'`;
+const program = (mode: string) =>
+  `bun ${quoted(join(FIXTURES, "program.ts"))} ${mode}`;
 const dirs: string[] = [];
 afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
