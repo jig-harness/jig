@@ -7,6 +7,8 @@
  * repository holds can widen it.
  *
  * ```yaml
+ * serve_defaults:          # a tracker team's repository for items no repository label places
+ *   ENG: /home/me/dev/web
  * repositories:
  *   - path: /home/me/dev/web
  *     stages: [rearm]
@@ -109,6 +111,12 @@ export interface MachineConfig {
   path: string;
   /** People authorized by this host, never by a repository overlay. */
   serve?: ServedPerson[];
+  /**
+   * The repository that starts the served items no repository label places,
+   * by tracker team (lower case) to checkout path: one per team, so two
+   * repositories sharing a team never both start such an item.
+   */
+  serveDefaults?: Record<string, string>;
   repositories: MachineRepository[];
   accounts: MachineAccount[];
   intervalMs: number;
@@ -158,6 +166,7 @@ const DEFAULTS = {
 const TOP_KEYS = [
   "steward",
   "serve",
+  "serve_defaults",
   "repositories",
   "accounts",
   "interval",
@@ -486,6 +495,34 @@ function repositories(value: unknown): Checked<MachineRepository[]> {
   return distinct(read.value, (r) => r.path, "a repository");
 }
 
+/**
+ * `serve_defaults`: each tracker team's default repository, a checkout listed
+ * under `repositories`. A team is written once, whatever its case.
+ */
+function serveDefaults(
+  value: unknown,
+  listed: readonly MachineRepository[],
+): Checked<Record<string, string>> {
+  if (value === undefined || value === null) return ok({});
+  if (!isMapping(value)) return invalid("serve_defaults must be a mapping");
+  const out: Record<string, string> = {};
+  for (const [team, raw] of Object.entries(value)) {
+    const where = `serve_defaults.${team}`;
+    const checkout = path(raw, where);
+    if (!checkout.ok) return checkout;
+    if (!listed.some((r) => r.path === checkout.value))
+      return invalid(
+        `${where} must be a repository listed under repositories: ${checkout.value}`,
+      );
+    const key = team.trim().toLowerCase();
+    if (key === "") return invalid("serve_defaults has an empty team");
+    if (key in out)
+      return invalid(`serve_defaults lists a team twice: ${team}`);
+    out[key] = checkout.value;
+  }
+  return ok(out);
+}
+
 /** The accounts, each name, identity and configuration directory listed once. */
 function accounts(value: unknown): Checked<MachineAccount[]> {
   const raw = list(value, "accounts");
@@ -516,6 +553,8 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!serve.ok) return serve;
   const repos = repositories(top.repositories);
   if (!repos.ok) return repos;
+  const defaults = serveDefaults(top.serve_defaults, repos.value);
+  if (!defaults.ok) return defaults;
   const accountList = accounts(top.accounts);
   if (!accountList.ok) return accountList;
   const timing = limits(top);
@@ -529,6 +568,7 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   return ok({
     path: where,
     serve: serve.value,
+    serveDefaults: defaults.value,
     repositories: repos.value,
     accounts: accountList.value,
     ...timing.value,

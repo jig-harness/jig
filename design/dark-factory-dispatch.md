@@ -609,7 +609,7 @@ tracker identities; a repository's file cannot add to it), and wherever the
 not-started item a person with write access assigned to a
 [served person](../GLOSSARY.md), whatever its state, and each unassigned
 open item under an epic assigned to one, nested epics walked level by
-level, with `jig:hold` and `hitl` keeping an item waiting. Every repository's tick reads the same assigned list from a shared tracker team, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck; an unlabelled item stays startable by any. Their pull
+level, with `jig:hold` and `hitl` keeping an item waiting. Every repository's tick reads the same assigned list from a shared tracker team, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck. An item no repository label places is started only by the repository the machine file's `serve_defaults` names for the tracker's team, and reported once as needing a repository label where none is named, so that several repositories reading one team never start it together. Their pull
 requests are adopted as `dispatch.adopt.authors` adopts a repository's own.
 The tick ranks those items by rules as data, shows each item it holds out
 with its reason, and starts the next within the host's load factor; the

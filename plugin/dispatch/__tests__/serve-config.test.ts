@@ -61,3 +61,28 @@ describe("the host's served people", () => {
       expect(read({ serve }).ok).toBe(false);
   });
 });
+
+describe("the host's default repository for unlabelled served items", () => {
+  const repo = (path: string) => ({ path, stages: ["pickup"] });
+  const repositories = [repo("/srv/web"), repo("/srv/api")];
+
+  it("reads one repository per tracker team, the team's case folded", () => {
+    const config = read({ repositories, serve_defaults: { ENG: "/srv/api" } });
+    expect(config.ok && config.value?.serveDefaults).toEqual({
+      eng: "/srv/api",
+    });
+    const none = read({ repositories });
+    expect(none.ok && none.value?.serveDefaults).toEqual({});
+  });
+
+  it("refuses a default that is not listed, a team written twice and a malformed entry", () => {
+    for (const serve_defaults of [
+      { ENG: "/srv/other" },
+      { ENG: "/srv/api", eng: "/srv/web" },
+      { ENG: "srv/api" },
+      { ENG: 3 },
+      ["/srv/api"],
+    ])
+      expect(read({ repositories, serve_defaults }).ok).toBe(false);
+  });
+});

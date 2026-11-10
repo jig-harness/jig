@@ -387,9 +387,19 @@ repositories may share, so each repository's tick sees the same list. A served
 item that carries another repository's label (one of `review.taxonomy.repos`
 other than this repository's `review.repo_label`) is left to that repository's
 checkout: it is not wanted here and not reported as held, and the launch-time
-recheck refuses it too. An item with no repository label, or one that also
-carries this repository's, stays startable here; without both settings nothing
-is left out.
+recheck refuses it too. An item that also carries this repository's label
+stays startable here; without both settings nothing is left out.
+
+An item that carries none of the taxonomy's repository labels belongs to no
+repository yet. On a tracker several repositories share (Linear, Jira) the
+machine file's `serve_defaults` names one repository per tracker team to start
+such items; every other repository leaves them alone, and the launch-time
+recheck refuses them there. For a team with no default the item is started by
+none and reported once, with its hold reason, as needing a repository label,
+which a person settles by labelling it; the Queue view shows the hold, and no
+notification goes out. A repository whose tracker team no other repository
+shares still needs a default for it once it has the scope. A GitHub repository
+reading its own issues needs no label, since its tracker is already its own.
 
 The Queue view names holds: an open blocker reads "waiting on #N";
 `hitl`, `hitl:*`, `manual-ops` and `jig:hold` read "needs a person to start".

@@ -303,6 +303,7 @@ export async function readPickups(
     manualOps?: string;
     executionPlanBlock?: string;
     repoScope?: import("./served-repo.ts").RepoScope;
+    unlabeled?: import("./served-repo.ts").UnlabeledMode;
   },
 ): Promise<TrackerReading> {
   let tracker: Tracker | undefined;
@@ -320,6 +321,7 @@ export async function readPickups(
       ? {}
       : { executionPlanBlock: served.executionPlanBlock }),
     ...(served.repoScope === undefined ? {} : { repoScope: served.repoScope }),
+    ...(served.unlabeled === undefined ? {} : { unlabeled: served.unlabeled }),
   });
   const keys = new Set(extra.wanted.map((i) => i.key));
   return {
