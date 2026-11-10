@@ -268,7 +268,7 @@ describe("admission", () => {
 const LAUNCHED =
   'orca terminal create: {"terminal":{"handle":"term-1"}}; the tab stays open after its run, since it is not recorded: Orca\'s answer names no terminal handle and shell PID';
 const unopened = (n: number) =>
-  `the workspace could not be opened: git ls-remote failed (exit 128): cannot tell whether feature/${n} exists on origin: fatal: 'origin' does not appear to be a git repository`;
+  `the workspace could not be opened: PR #${n}: cannot read origin's URLs (exit 2): error: No such remote 'origin'`;
 const FULL = "no account has a free slot: a 2/2, b 1/1";
 
 /**

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { argumentValue } from "./lib/argv.ts";
 import {
   reviewConfig,
   reviewerSelection,
@@ -213,6 +214,7 @@ const SUMMARY_ONCE_MIN_TIMEOUT_SEC = 10;
 
 type SummaryOnly =
   | { kind: "absent" }
+  | { kind: "waiting" }
   | { kind: "ok"; unaddressed: string[] }
   | { kind: "error" };
 
@@ -263,6 +265,7 @@ function probeDriveRoot(): DriveRootProbe {
  */
 async function summaryOnlyFindings(
   pr: string,
+  head: string,
   timeoutSec: number,
   rootProbe: DriveRootProbe,
 ): Promise<SummaryOnly> {
@@ -271,8 +274,20 @@ async function summaryOnlyFindings(
       ? { kind: "absent" }
       : { kind: "error" };
   }
+  const started = Date.now();
+  const evidence = await run(
+    tsArgv(join(DRIVE_PR_ROOT, "scripts", "review-head.ts"), [pr, head]),
+    {
+      timeoutSec,
+      stderr: "inherit",
+    },
+  );
+  if (evidence.code === 4) return { kind: "waiting" };
+  if (evidence.code !== 0) return { kind: "error" };
+  const remaining = timeoutSec - (Date.now() - started) / 1000;
+  if (remaining < 1) return { kind: "error" };
   const r = await run(tsArgv(SUMMARY_FINDINGS, [pr, "--json"]), {
-    timeoutSec,
+    timeoutSec: remaining,
     stderr: "inherit",
   });
   if (r.code !== 0) return { kind: "error" };
@@ -494,12 +509,7 @@ async function main(): Promise<number> {
   let onceBudgetRaw: string | null = null;
 
   const argv = process.argv.slice(2);
-  const take = (flag: string, i: number): string => {
-    // A value-taking flag at the end of argv must fail as the usage error it
-    // is, not as an unrelated crash.
-    if (i + 1 >= argv.length) fail(2, `${flag} requires a value`);
-    return argv[i + 1] ?? "";
-  };
+
   let timeoutRaw = "1800";
   let intervalRaw = "30";
   for (let i = 0; i < argv.length; i++) {
@@ -509,13 +519,13 @@ async function main(): Promise<number> {
         botsOnly = true;
         break;
       case "--job-pattern":
-        jobPatternRaw = take(a, i++);
+        jobPatternRaw = argumentValue(argv, a, i++);
         break;
       case "--timeout":
-        timeoutRaw = take(a, i++);
+        timeoutRaw = argumentValue(argv, a, i++);
         break;
       case "--interval":
-        intervalRaw = take(a, i++);
+        intervalRaw = argumentValue(argv, a, i++);
         break;
       case "--once":
         once = true;
@@ -527,7 +537,7 @@ async function main(): Promise<number> {
         noCount = true;
         break;
       case "--once-budget-sec":
-        onceBudgetRaw = take(a, i++);
+        onceBudgetRaw = argumentValue(argv, a, i++);
         break;
       default:
         if (a.startsWith("--")) fail(2, `unknown flag: ${a}`);
@@ -917,7 +927,16 @@ async function main(): Promise<number> {
       }
       summaryTimeoutSec = remainingSec;
     }
-    const so = await summaryOnlyFindings(pr, summaryTimeoutSec, rootProbe);
+    const so = await summaryOnlyFindings(
+      pr,
+      liveHead,
+      summaryTimeoutSec,
+      rootProbe,
+    );
+    if (so.kind === "waiting") {
+      if (!(await waitOrGiveUp())) return 4;
+      continue;
+    }
     if (so.kind === "error") {
       fail(
         1,
@@ -937,6 +956,21 @@ async function main(): Promise<number> {
       console.error(
         `note: no drive-pr skill was found for this repository, so summary-only findings on #${pr} were not checked (the standalone-install residual)`,
       );
+    }
+
+    // Evidence and summaries can take several forge reads. A push or merge
+    // during those reads invalidates this head's otherwise-clean result.
+    const finalLive = await readPrLiveness(pr);
+    if (!finalLive.ok)
+      fail(1, `cannot re-read state of PR #${pr}`, finalLive.reason);
+    if (finalLive.state !== "OPEN")
+      fail(5, `PR #${pr} is ${finalLive.state} — abandoning the loop`);
+    if (finalLive.head !== liveHead) {
+      console.error(
+        `PR #${pr} head changed while checking review evidence; waiting for the new head`,
+      );
+      if (!(await waitOrGiveUp())) return 4;
+      continue;
     }
 
     console.error(

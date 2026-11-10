@@ -399,6 +399,15 @@ reviewer or has an entry of its own below. The bullets of the reviewer's
 summary comment are read in this format, after the formats of the login
 that posted it.
 
+GitHub code-scanning threads carry no severity token in their comment. Their
+same-repository details link identifies an alert: its `rule.security_severity_level`
+(`critical`, `high`, `medium`, `low`) takes precedence over `rule.severity`
+(`error`, `warning`, `note`). The defaults map those to blocker, high, medium,
+low, high, medium and low respectively. A repository can override individual
+levels in `review.code_scanning_severities` ([fields](CONFIGURATION.md#review)).
+Thread triage and loop metrics use the same alert mapping; an alert the token
+cannot read remains `unknown` and keeps the ladder inert where configured.
+
 Any other reviewer is added in `review.severity_formats`
 ([fields](CONFIGURATION.md#review)), one entry per login, without a change to
 Jig:

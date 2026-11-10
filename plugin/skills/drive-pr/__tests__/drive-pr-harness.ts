@@ -1,3 +1,4 @@
+import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import {
   scopedStateDir,
@@ -1877,17 +1878,17 @@ case "\${1:-}" in
   *) echo "gh-stub: unhandled command $*" >&2; exit 1 ;;
 esac
 
-# The resolveReviewThread mutation, discriminated from an ordinary thread-list
-# graphql query by name (it appears in the \`-f query=...\` string). Answered
-# with a REAL success shape rather than falling through to threads.json (whose
-# \`.data.resolveReviewThread...\` path is simply absent) so a probe can assert
-# the wrapper's \`exec\` handoff actually reached the mutation, and WHICH thread
-# id it carried — recorded to \`resolved-threads.jsonl\` for exactly that.
-#
-# $F/resolve-thread-fails models the mutation itself failing (a stalled
-# connection, a transient GraphQL error) AFTER resolve-held-thread.ts has
-# already atomically claimed the held item — the one failure mode that needs a
-# restore, since every check ahead of the claim is read-only.
+# Resolution probes start after a reply was posted by the resolving login.
+# Keep that prerequisite separate from node-read race counters below.
+if [[ "$query" == *"viewer { login }"* ]]; then
+  tid=""
+  for a in "$@"; do case "$a" in threadId=*) tid="\${a#threadId=}" ;; esac; done
+  jq -c --arg id "$tid" --arg default "example-user-2" 'first(.data.repository.pullRequest.reviewThreads.nodes[] | select(.id == $id)) as $t | [$t.comments.nodes[] | {author, authorAssociation, body, createdAt}] as $raw | (([$raw[] | select(.authorAssociation as $a | ["OWNER","MEMBER","COLLABORATOR"] | index($a))] | last | .author.login) // $default) as $viewer | (if ([$raw[] | select(.author.login != $viewer)] | length) == 0 then [{author:{login:"reviewer"},authorAssociation:"NONE",body:"finding",createdAt:"2025-12-31T00:00:00Z"}] + $raw else $raw end) as $seen | {data:{viewer:{login:$viewer},node:{id:$id,comments:{nodes:$seen,pageInfo:{hasNextPage:false,endCursor:null}}}}}' "$F/threads.json"
+  exit 0
+fi
+
+# Record real resolve mutations; resolve-thread-fails models failure after
+# the held item was claimed, when restore is required.
 # The review skill reads the owning PR's liveness immediately before every
 # thread mutation. Answered from the same pr-view.json fixture the PR reads use.
 for a in "$@"; do
@@ -2112,7 +2113,7 @@ function threadCommentNodes(
       __typename: (c.bot ?? t.bot) ? "Bot" : "User",
     },
     authorAssociation: c.authorAssociation ?? "NONE",
-    createdAt: "2026-09-10T10:00:00Z",
+    createdAt: new Date(Date.UTC(2026, 8, 10, 10, 0, i)).toISOString(),
     lastEditedAt: null,
     body: c.body,
     originalCommit: { oid: originalCommitOid },
@@ -2620,10 +2621,8 @@ export async function park(
 }
 
 /**
- * Hold an `accepted`/`moot` item before probing, to model a triaged-but-
- * not-yet-pushed fix-dependent disposition (`triage-thread.ts` step 3 /
- * `drive-state.ts hold`). A `thread` needs `--comment-url`; a `finding` reads
- * its reason from stdin — same asymmetry `hold`'s own CLI enforces.
+ * Model completed ladder triage and an accepted disposition waiting for a
+ * push. Thread holds name their reply; findings read their reason on stdin.
  */
 export async function hold(
   stateDir: string,
@@ -2631,6 +2630,7 @@ export async function hold(
   kind: "thread" | "finding",
   commentUrl = "https://github.com/o/r/pull/999#discussion_r1",
 ) {
+  seedAcceptedLadder(stateDir, key);
   const proc = Bun.spawn(
     scriptArgv(
       join(SCRIPTS, "drive-state.ts"),

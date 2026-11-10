@@ -1,3 +1,4 @@
+import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 import assert from "node:assert/strict";
 /**
  * drive-pr suite: answer-summary-finding.ts, assert-post-allowed.ts, resolve-held-thread.ts, finish-round.ts and list-unresolved-threads.ts.
@@ -158,6 +159,11 @@ export function createFindingsFinishRoundFixtures() {
     args: string[],
     stdin?: string,
   ): Promise<string> {
+    // Holds in finish-round probes model findings whose triage already ran.
+    if (args[0] === "hold" && args.includes("accepted")) {
+      const key = args[args.indexOf("--key") + 1];
+      if (key) seedAcceptedLadder(stateDir, key, args[1] ?? "999");
+    }
     const proc = Bun.spawn(
       scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
       {

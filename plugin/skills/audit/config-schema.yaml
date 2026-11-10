@@ -348,6 +348,12 @@ fields:
     type: string
     read_by: [drive-pr]
     since: 0.169.0
+  review.code_scanning_severities:
+    type: map
+    nullable: true
+    values_type: string
+    read_by: [drive-pr, resolve-review-comments]
+    since: 0.189.2
   review.severity_formats:
     type: list
     nullable: true

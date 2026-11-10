@@ -864,9 +864,13 @@ stops a model. A team that runs passes unattended should know which:
   sends only on the person's instruction, after showing the dry run, is a
   rule of its instructions.
 - **Resolving a thread.**
-  `skills/resolve-review-comments/scripts/resolve-thread.ts` resolves whatever thread it is
-  given; that a thread is resolved only after its fix or reply is posted is
-  a rule of the skill's instructions, not a check in the script.
+  `skills/resolve-review-comments/scripts/resolve-thread.ts` refuses resolution
+  without a reply from the resolving login after the last substantive reviewer
+  comment. The drive's canonical transparent bot follow-up after that reply
+  requires no further answer; standalone installs without the drive stay strict.
+  A pass holding the forge credential can bypass the script with a direct
+  mutation; the credential does not enforce this check. The skill's
+  instructions still govern that boundary and whether the fix was pushed.
 - **The push and the merge.** A pass pushes through
   `skills/drive-pr/scripts/guarded-push.ts` and
   never merges because its instructions say so: the plugin's only hook is

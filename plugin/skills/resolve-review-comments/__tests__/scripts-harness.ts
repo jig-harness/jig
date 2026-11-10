@@ -258,7 +258,10 @@ case "$1 $2" in
     printf 'HTTP/2.0 200 OK\r\nContent-Type: application/json\r\nEtag: %s\r\n\r\n' "$etag"
     printf '%s' "$body" ;;
   "repo view")
-    echo "acme widgets" ;;
+    case "$*" in
+      *'.owner.login + "/" + .name'*) echo "acme/widgets" ;;
+      *) echo "acme widgets" ;;
+    esac ;;
   "api -X")
     # dismiss-alert.ts's PATCH of a code scanning alert: every argument is
     # logged, one per line, so a probe reads off exactly what was sent.
@@ -322,6 +325,10 @@ case "$1 $2" in
     esac ;;
   "api graphql")
     case "$*" in
+      *'viewer { login }'*'comments(first:100'*)
+        if [[ "$*" == *'cursor=next'* ]] && [ -f "$FIX/reply-evidence-next.json" ]; then cat "$FIX/reply-evidence-next.json"
+        elif [ -f "$FIX/reply-evidence.json" ]; then cat "$FIX/reply-evidence.json"
+        else echo '{"data":{"viewer":{"login":"operator"},"node":{"id":"PRRT_x","comments":{"nodes":[{"author":{"login":"review-bot[bot]"},"createdAt":"2026-01-01T00:00:00Z"},{"author":{"login":"operator"},"createdAt":"2026-01-01T00:01:00Z"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}'; fi ;;
       *"query=query("*"threadId:ID!)"*)
         echo liveness >> "$FIX/thread-events.log"
         echo "$*" >> "$FIX/liveness-calls.log"

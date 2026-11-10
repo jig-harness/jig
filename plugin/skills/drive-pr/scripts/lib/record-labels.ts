@@ -70,6 +70,7 @@ export function severityOfRecord(rec: LabelledRecord): string {
     "high",
     "medium",
     "low",
+    "unknown",
   ]);
   if (fromAlert !== null) return fromAlert;
   const f = finding(rec);

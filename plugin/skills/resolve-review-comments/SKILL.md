@@ -277,10 +277,14 @@ accept bar, and one that does not becomes `wont-fix` (or `deferred`, when the
 work is obligatory) with the ladder's own reply. The bar is read mechanically —
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/triage-ladder.ts" --severity <sev> --tier <tier> --category <cat|unknown> --self-inflicted <true|false|unknown> [--pr N] [--obligatory]
+bun "${CLAUDE_SKILL_DIR}/scripts/triage-ladder.ts" --severity <sev> --tier <tier> --category <cat|unknown> --self-inflicted <true|false|unknown> --pr N --key <threadId|fingerprint> [--obligatory]
 ```
 
-— run from the repository root with Bun available.
+— run from the repository root with Bun available. The finding key records
+its verdict for this review round; an accepted hold without a matching
+accepting verdict is refused (exit 2). In a standalone installation without
+`drive-pr`, omit `--key`: the ladder still computes its answer, and no drive
+hold exists to record or release.
 `--tier` is the finding's rank in the rubric's
 [Priorities](references/triage-rubric.md#priorities): 1 CI pipelines and
 quality gates, 2 production code, 3 docs, 4 tests (a vacuous test ranks 1).
@@ -669,6 +673,13 @@ bun "${CLAUDE_SKILL_DIR}/scripts/resolve-thread.ts" <thread-node-id>
 ```
 
 An accepted fix that fails formatting, types, tests, or build is not a fix yet.
+`resolve-thread.ts` exits `6` (`REPLY_REQUIRED`) unless the resolving login
+posted a reply after the last substantive reviewer comment. With `drive-pr`
+installed, the canonical transparent bot confirmation or chat acknowledgement
+after that reply does not require another answer; without it, every later
+reviewer comment requires a fresh reply. Unreadable reply evidence exits
+`1`; neither exit resolves the thread. This checks the script's caller only:
+direct forge mutations remain outside this guard.
 Resolving its thread here closes the one place the finding was tracked, and a
 converged-looking PR can then carry broken code. The same risk applies to a
 `moot` thread whose only reason is an unpushed sibling fix in this round: if
@@ -869,6 +880,11 @@ can be exactly this no-op.
 
 `scripts/await-round.ts` owns the wait/stop decision and exits with the loop
 contract:
+
+When a reviewer is configured, convergence also requires its successful check
+on the current head and its summary's reviewed-commit marker naming that head.
+A stale or missing marker waits (`4` under `--once`); unreadable evidence exits
+`1`. A standalone install without `drive-pr` retains the documented residual.
 
 | Exit | Meaning |
 |------|---------|

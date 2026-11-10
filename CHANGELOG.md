@@ -391,6 +391,35 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.189.3] - 2026-11-10
+
+### Fixed
+
+- `jig dispatch` no longer stops a repository's turn with "issue_tracker.facets.size names a store, but the repository's label taxonomy has no size group" when the repository names a size store. The pickup planner reads the size values from the repository's own label taxonomy, as the tracker already does.
+
+## [0.189.2] - 2026-11-10
+
+### Fixed
+
+- Review passes disable background tasks in Claude Code and report unfinished held fixes before another round is spent.
+- The standalone review loop waits for the configured reviewer's evidence on the current head before reporting convergence.
+- Accepted findings require a recorded triage-ladder verdict for their round, and thread resolution requires a later reply from the resolving login.
+- Code-scanning severity metrics read the linked alert, support repository-specific mappings and keep unreadable alerts unknown.
+
+## [0.189.1] - 2026-11-10
+
+### Fixed
+
+- Dispatcher ticks remove Electron's Node mode and crash reporter environment
+  before starting child programs, so an Electron host does not change how those
+  programs run.
+- Before opening a drive workspace, the dispatcher verifies the pull request's
+  head repository and commit, refusing mismatched remotes and stale checkouts
+  before repository setup hooks run. Merged follow-ups can still recreate a
+  deleted branch from the base.
+- Dispatcher-launched drives preserve the tick's configuration layers across
+  fresh terminal shells, including a custom or relative `JIG_HOME`.
+
 ## [0.189.0] - 2026-11-10
 
 ### Added
@@ -6586,7 +6615,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.189.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.189.3...HEAD
+[0.189.3]: https://github.com/jig-harness/jig/compare/v0.189.2...v0.189.3
+[0.189.2]: https://github.com/jig-harness/jig/compare/v0.189.1...v0.189.2
+[0.189.1]: https://github.com/jig-harness/jig/compare/v0.189.0...v0.189.1
 [0.189.0]: https://github.com/jig-harness/jig/compare/v0.188.0...v0.189.0
 [0.188.0]: https://github.com/jig-harness/jig/compare/v0.187.0...v0.188.0
 [0.187.0]: https://github.com/jig-harness/jig/compare/v0.186.0...v0.187.0

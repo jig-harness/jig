@@ -1256,6 +1256,13 @@ background command, a remote test box above all; run every step the round
 depends on to completion **within the turn**, and do not stop until
 `finish-round.ts` returns.
 
+The driver sets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` for spawned passes.
+Claude Code removes background tool parameters and auto-backgrounding under
+this setting; other runtimes follow the foreground rule below. If a pass
+exits `0` with uncommitted edits and this tree's unverified holds from the
+current round, the driver stops as `WORKTREE_UNCLEAN` (exit `12`), naming the
+unfinished held fixes. This stop does not claim convergence.
+
 Never use the Bash tool's `run_in_background` in a driver pass — not for the
 commit, not for `finish-round.ts` (the one step that pushes), not for
 validation. Run each step in the foreground. The Bash tool's per-call ceiling
@@ -1759,6 +1766,10 @@ it exempt.
 
 ### 2. Enumerate — threads **and** summary-only findings
 
+Before reading code for a fix, classify each finding and run step 3's decline
+ladder with `--pr <PR> --key <threadId|fingerprint>`. An accepted hold requires
+that key's accepting verdict in the current review round.
+
 **exact** — Run both enumerations and preserve enumeration failures and measurement semantics.
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
@@ -1911,8 +1922,14 @@ declines the finding.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts" --severity <blocker|high|medium|low|unknown> --tier <tier> --category <token|unknown> --self-inflicted <true|false|unknown> [--pr <PR>] [--obligatory]
+bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts" --severity <blocker|high|medium|low|unknown> --tier <tier> --category <token|unknown> --self-inflicted <true|false|unknown> --pr <PR> --key <threadId|fingerprint> [--obligatory]
 ```
+
+The command records its verdict in the drive state. The `hold` operation of
+`drive-state.ts` refuses an accepted hold without that key's accepting verdict for the current
+round (exit 2). A `--round` calculation records nothing. Crash recovery may
+record an existing reply with `--unconfirmed` at round -1; it cannot be
+stamped or released until a live re-hold passes the ladder check.
 
 `--tier` is the finding's rank in the rubric's
 [Priorities](../resolve-review-comments/references/triage-rubric.md#priorities):
@@ -3179,6 +3196,12 @@ What is load-bearing about the numbers:
   differently (a new decoration, a new layout) is a new shape, added to
   `scripts/lib/severity-formats.ts` deliberately with fixtures from the reviewer's
   real comments. Or ask the reviewer to keep the old one.
+
+  Code-scanning threads use their linked alert's rule severity instead of a
+  comment token. `review.code_scanning_severities` overrides individual alert
+  levels for both triage and metrics; an unreadable alert stays `unknown`.
+  Their outage warning directs you to alert access and that mapping, since
+  adding a comment format cannot recover a severity the comment never states.
 
   The per-author line itself carries a lifetime figure and a current-round
   one — `1/5 lifetime (20.0%) · 1/1 this round (100.0%)` — because the

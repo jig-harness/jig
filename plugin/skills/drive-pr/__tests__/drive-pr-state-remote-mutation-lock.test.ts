@@ -197,6 +197,18 @@ describe("drive-state.ts durability", () => {
         "drive-state.ts (pr remote mutation)",
         "999",
       );
+      // The hold below is spawned directly, so it bypasses `drive()`'s
+      // ladder seeding: record the finding's accepted verdict first.
+      const bEnv = { ...env, DRIVE_PR_SESSION: String(process.pid) };
+      const round = Number(drive(b, bEnv, ["prospective-round", "999"]).stdout);
+      drive(
+        b,
+        bEnv,
+        ["record-ladder", "999"],
+        JSON.stringify({ key: "PRRT_b", stance: "accepted", round }),
+      );
+      // Seeding claimed B's per-PR lease; the claim below must be B's first.
+      drive(b, bEnv, ["clear-lease", "999"]);
       await holdLock.acquire();
       let released = false;
       // Hoisted above the `try` so the `finally` below can see and clean
