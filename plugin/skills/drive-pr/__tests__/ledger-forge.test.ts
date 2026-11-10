@@ -315,7 +315,9 @@ describe("the ledger written from the drive state", () => {
     expect(body).not.toMatch(/"(?:from|to)?[aA]ccount"/);
     const [posted] = [...ledgersOn(forge).values()];
     expect(posted?.parked[0]?.reason).toBe("Ask <redacted> which schema?");
-    expect(posted?.parked[0]?.record).toContain("Ask <redacted> which schema?");
+    expect(posted?.parked[0]?.decision?.call.question).toBe(
+      "Ask <redacted> which schema?",
+    );
     expect(posted?.narrative).toContain("Asked <redacted> about it.");
     // The local state keeps the account its own re-arm reads.
     const got = await runScript(forge, "drive-state.ts", ["get", "999"]);
