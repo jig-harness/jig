@@ -282,7 +282,7 @@ fields:
   review.repo_label:
     type: string
     pattern: "^[A-Za-z0-9._:@+/-]+$"
-    read_by: [resolve-review-comments, work-batch]
+    read_by: [resolve-review-comments, work-batch, dispatch]
     repository_only: true
   review.repo_slug:
     type: string
@@ -300,7 +300,7 @@ fields:
     items: { type: string, pattern: "^[A-Za-z0-9._:@+/-]+$" }
     distinct: true
     nonempty: true
-    read_by: [resolve-review-comments, drive-pr, work-batch]
+    read_by: [resolve-review-comments, drive-pr, work-batch, dispatch]
   review.taxonomy.sizes:
     type: list
     items: string
