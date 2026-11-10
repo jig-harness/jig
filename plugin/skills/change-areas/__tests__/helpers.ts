@@ -7,7 +7,7 @@
 import { afterAll } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { LEAKY_GIT_ENV, spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import { type Catalog, loadCatalog } from "../scripts/lib/catalog.ts";
 import type { ResolutionContext } from "../scripts/lib/emit.ts";
@@ -123,18 +123,25 @@ export function commit(
   git(root, "commit", "-qm", message);
 }
 
-/** Run one of the skill's scripts with `root` as its working directory. */
+/**
+ * Run one of the skill's scripts, or a composer's script given by absolute
+ * path, with `root` as its working directory.
+ */
 export function run(
   root: string,
-  script: "resolve.ts" | "check.ts",
+  script: "resolve.ts" | "check.ts" | (string & {}),
   args: string[],
   { input, env = {} }: { input?: string; env?: Record<string, string> } = {},
 ) {
-  const result = spawnSync(process.execPath, [join(SCRIPTS, script), ...args], {
-    cwd: root,
-    env: cleanEnv(env),
-    input,
-  });
+  const result = spawnSync(
+    process.execPath,
+    [isAbsolute(script) ? script : join(SCRIPTS, script), ...args],
+    {
+      cwd: root,
+      env: cleanEnv(env),
+      input,
+    },
+  );
   return {
     exitCode: result.status,
     stdout: result.stdout,

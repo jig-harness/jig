@@ -1,19 +1,30 @@
 /**
  * The `docs` section of the repository's configuration, with every value
  * detected from the tree when it is not set: the docs tree's root, the
- * frontmatter schema, the age at which a draft counts as stale, and the
- * statuses the scar lint treats as promoted.
+ * frontmatter schema, the age at which a draft counts as stale, the statuses
+ * the scar lint treats as promoted, and how the generated index is laid out.
  */
 import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, posix, relative, sep } from "node:path";
 import { readConfig, withSource } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { isPlainWritable } from "./docs.ts";
 
 export const FIELDS = [
   "root",
   "schema",
   "stale_after_days",
   "promoted_statuses",
+  "index",
+] as const;
+
+/** The fields of `docs.index`, which shapes the generated `INDEX.md`. */
+export const INDEX_FIELDS = [
+  "preamble",
+  "descriptions",
+  "descriptions_from_readme",
+  "order",
+  "frontmatter",
 ] as const;
 
 /** M4's wiki-lint table: content older than six months is stale. */
@@ -38,12 +49,35 @@ const SKIPPED_DIRS = new Set([".git", "node_modules"]);
 
 export class SettingsError extends Error {}
 
+/** How the generated index is laid out; the defaults are the bare listing. */
+export interface IndexSettings {
+  /** A file, relative to the repository root, kept verbatim above the listing. */
+  preamble: string | null;
+  /** One line per category, by the category's name (`(root)` for loose files). */
+  descriptions: Record<string, string>;
+  /** A category without a description takes its `README.md`'s `description`. */
+  descriptionsFromReadme: boolean;
+  /** `name` (byte order), `count` (most documents first) or categories listed first. */
+  order: "name" | "count" | string[];
+  /** The index's frontmatter fields, `last_updated` stamped; null for none. */
+  frontmatter: Record<string, string | string[]> | null;
+}
+
+export const DEFAULT_INDEX_SETTINGS: IndexSettings = {
+  preamble: null,
+  descriptions: {},
+  descriptionsFromReadme: false,
+  order: "name",
+  frontmatter: null,
+};
+
 export interface DocsSettings {
   /** The docs tree, relative to the repository root; null when there is none. */
   root: string | null;
   /** The frontmatter schema, relative to the repository root; null when there is none. */
   schema: string | null;
   staleAfterDays: number;
+  index: IndexSettings;
   /** The `status` values of documents the scar lint holds to no review scars. */
   promotedStatuses: string[];
   /** Which values were detected rather than configured. */
@@ -147,6 +181,123 @@ export function promotedStatuses(section: unknown): string[] {
   return value;
 }
 
+/** Nonempty text on one line. */
+const oneLine = (value: unknown): value is string =>
+  typeof value === "string" && value.trim() !== "" && !/[\r\n]/.test(value);
+
+/**
+ * One line the index can write: plain when the reader returns it unchanged,
+ * else quoted. The reader never decodes quotes, so quoted text holding an
+ * apostrophe cannot also hold a double quote or a backslash.
+ */
+const writable = (value: unknown): value is string =>
+  oneLine(value) &&
+  (isPlainWritable(value) || !(value.includes("'") && /["\\]/.test(value)));
+
+/** A frontmatter value the index can write as a scalar or a flow list. */
+const frontmatterValue = (value: unknown): value is string | string[] =>
+  Array.isArray(value)
+    ? value.length > 0 &&
+      value.every((item) => writable(item) && !/[,[\]]/.test(item))
+    : writable(value);
+
+function indexFrontmatter(
+  value: unknown,
+): Record<string, string | string[]> | null {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value) || Object.keys(value).length === 0)
+    throw new SettingsError(
+      "docs.index.frontmatter must be a mapping of field to value",
+    );
+  const fields: Record<string, string | string[]> = {};
+  for (const [key, field] of Object.entries(value)) {
+    if (!/^[A-Za-z_][\w-]*$/.test(key) || key === "last_updated")
+      throw new SettingsError(
+        `docs.index.frontmatter has field ${key}, which is not a name it can write (last_updated is stamped)`,
+      );
+    if (!frontmatterValue(field))
+      throw new SettingsError(
+        `docs.index.frontmatter.${key} must be one line of text, or a list of such words without commas or brackets`,
+      );
+    fields[key] = field;
+  }
+  return fields;
+}
+
+function indexOrder(value: unknown): IndexSettings["order"] {
+  if (value === undefined || value === null) return "name";
+  if (value === "name" || value === "count") return value;
+  if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(oneLine) &&
+    new Set(value).size === value.length
+  )
+    return value;
+  throw new SettingsError(
+    "docs.index.order must be name, count, or a list of distinct category names",
+  );
+}
+
+function indexDescriptions(value: unknown): Record<string, string> {
+  if (value === undefined || value === null) return {};
+  if (!isRecord(value) || !Object.values(value).every((text) => oneLine(text)))
+    throw new SettingsError(
+      "docs.index.descriptions must be a mapping of category name to one line of text",
+    );
+  return value as Record<string, string>;
+}
+
+/** `docs.index.preamble`: an existing file inside the repository, as a canonical path. */
+function indexPreamble(value: unknown, repo: string): string | null {
+  if (value === undefined || value === null) return null;
+  if (!oneLine(value))
+    throw new SettingsError(
+      "docs.index.preamble must be a path (nonempty text)",
+    );
+  const path = join(repo, value);
+  if (!existsSync(path))
+    throw new SettingsError(
+      `docs.index.preamble names ${value}, which does not exist`,
+    );
+  if (!isFileOrLinkToFile(path))
+    throw new SettingsError(
+      `docs.index.preamble names ${value}, which is not a file`,
+    );
+  return confined(repo, "index.preamble", canonicalPath(value));
+}
+
+function indexFromReadme(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value !== "boolean")
+    throw new SettingsError(
+      "docs.index.descriptions_from_readme must be true or false",
+    );
+  return value;
+}
+
+/** Check the `docs.index` section and fill in what it leaves out. */
+export function parseIndexSettings(
+  section: unknown,
+  repo: string,
+): IndexSettings {
+  if (section === undefined || section === null) return DEFAULT_INDEX_SETTINGS;
+  if (!isRecord(section))
+    throw new SettingsError("docs.index must be a mapping");
+  for (const key of Object.keys(section))
+    if (!(INDEX_FIELDS as readonly string[]).includes(key))
+      throw new SettingsError(
+        `docs.index has unknown field ${key} (known: ${INDEX_FIELDS.join(", ")})`,
+      );
+  return {
+    preamble: indexPreamble(section.preamble, repo),
+    descriptions: indexDescriptions(section.descriptions),
+    descriptionsFromReadme: indexFromReadme(section.descriptions_from_readme),
+    order: indexOrder(section.order),
+    frontmatter: indexFrontmatter(section.frontmatter),
+  };
+}
+
 /** Byte order of two strings, the same on every machine and locale. */
 export const byteOrder = (a: string, b: string) =>
   Number(a > b) - Number(a < b);
@@ -221,6 +372,7 @@ export function parseDocsSettings(
     root,
     schema,
     staleAfterDays: staleAfter(value),
+    index: parseIndexSettings(value.index, repo),
     promotedStatuses: promotedStatuses(value),
     detected: {
       root: configuredRoot === undefined,
@@ -234,6 +386,21 @@ export function loadDocsSettings(repo: string): DocsSettings {
   const values = readConfig();
   try {
     return parseDocsSettings(values.docs, repo);
+  } catch (error) {
+    throw new SettingsError(withSource(values, "docs", error).message, {
+      cause: error,
+    });
+  }
+}
+
+/** The `docs.index` settings from every configuration layer, an error naming its source. */
+export function loadIndexSettings(repo: string): IndexSettings {
+  const values = readConfig();
+  try {
+    const docs = values.docs;
+    if (docs !== undefined && docs !== null && !isRecord(docs))
+      throw new SettingsError("docs must be a mapping");
+    return parseIndexSettings(isRecord(docs) ? docs.index : undefined, repo);
   } catch (error) {
     throw new SettingsError(withSource(values, "docs", error).message, {
       cause: error,

@@ -47,11 +47,30 @@ The script uses the shared [`../lib/docs.ts`](../lib/docs.ts) reader and
 ships, so both stay where it imports them, and run the script with Bun, by its
 absolute path, from the root of the repository it checks.
 
+## Layout settings
+
+With none of them the index is the bare listing described above. The
+repository's `docs.index` configuration
+([CONFIGURATION.md](../../../../CONFIGURATION.md)) adds, each on its own:
+
+- `preamble`: a file kept verbatim after the title and above the listing.
+- `descriptions`: one line under a category's heading, by folder name
+  (`(root)` for loose files); with `descriptions_from_readme: true` a
+  category without one takes the `description` of its folder's `README.md`.
+- `order`: `name` (byte order, the default), `count` (most documents first),
+  or a list of category names that come first.
+- `frontmatter`: fields written above the marker, with `last_updated`
+  stamped; the checker then holds the index to the schema like any page.
+
+The generator and `--check` read these themselves, so the drift gate and the
+regenerate script agree whichever way they are run.
+
 ## Determinism
 
 The generator is order-stable (byte-order sorting on the row set), so the same
 tree always produces byte-identical output: a freshness gate is only
-meaningful if regeneration is deterministic. `INDEX.md` carries no date. The
+meaningful if regeneration is deterministic. `INDEX.md` carries no date unless `docs.index.frontmatter` is set, and then
+its `last_updated` is stamped the same way. The
 orphan report carries frontmatter, so it fits the docs schema like any other
 document, and its `last_updated` is stamped with the
 [sticky date](../stamp/): it advances only when the report's content changes,

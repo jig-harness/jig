@@ -33,8 +33,11 @@ import {
   type CheckContext,
   checkCatalog,
   graphProblems,
+  INVARIANTS,
+  type InvariantOverrides,
   outputNameProblems,
   repositoryFiles,
+  unknownInvariants,
 } from "./check.ts";
 import {
   type ResolutionContext,
@@ -82,6 +85,12 @@ export interface CheckOptions {
   fields?: FieldExtensions;
   /** More invariants, reported after the generic ones. */
   checks?: (catalog: Catalog, ctx: CheckContext) => string[];
+  /**
+   * Exempt a generic invariant (`false`) or replace it with the composer's
+   * own check, by name: `graph`, `output-names`, `workspace`, `generated`.
+   * A name that is none of them is refused.
+   */
+  invariants?: InvariantOverrides;
 }
 
 const FORMATS = [
@@ -620,7 +629,7 @@ function checkProblems(
   const root = consumerRoot();
   const ctx: CheckContext = { root, trackedFiles: repositoryFiles(root) };
   return [
-    ...checkCatalog(catalog, ctx),
+    ...checkCatalog(catalog, ctx, options.invariants),
     ...(options.checks?.(catalog, ctx) ?? []),
   ];
 }
@@ -651,6 +660,11 @@ export async function runCheck(
       console.log(CHECK_HELP);
       return 0;
     }
+    const unknown = unknownInvariants(options.invariants ?? {});
+    if (unknown.length > 0)
+      throw new UsageError(
+        `unknown invariant ${unknown.join(", ")} (known: ${Object.keys(INVARIANTS).join(", ")})`,
+      );
     path = catalogPath(args.catalog, options.catalogPath);
     doc = readCatalogFile(path);
   } catch (err) {
