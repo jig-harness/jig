@@ -20,6 +20,7 @@ import {
 } from "../../shared/records/launch-claims.ts";
 import { localWriter } from "../../shared/records/writer.ts";
 import { ledgerBody } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
+import type { ParkedDecision } from "../../shared/decisions/park.ts";
 import type { AskAnswer } from "../lib/answer.ts";
 import type { WaitingAnswer } from "../lib/waiting.ts";
 import {
@@ -43,6 +44,36 @@ function world(): AskWorld {
 }
 
 const PARKED_AT = "2026-11-02T09:00:00.000Z";
+
+function typedDecision(): ParkedDecision {
+  return {
+    schema: "parked-decision/v1",
+    class: "scope",
+    call: {
+      id: "a",
+      question: "Extend coverage?",
+      recommended: "a",
+      why: "It catches the failure",
+      options: [
+        {
+          id: "a",
+          name: "Extend",
+          summary: "Add coverage",
+          pay: ["More tests"],
+          obligation: "Review the examples",
+        },
+        {
+          id: "b",
+          name: "Keep",
+          summary: "Keep coverage",
+          pay: ["Less assurance"],
+        },
+      ],
+    },
+    steps: [],
+    alreadyDone: "Read coverage",
+  };
+}
 
 const parked = (pr: number) =>
   stoppedLedger(pr, 8, {
@@ -506,33 +537,7 @@ it("shows typed decision option details in the waiting answer", async () => {
   const need = line.needs[0];
   const park = need?.decisions[0];
   if (park === undefined) throw new Error("fixture has no park");
-  park.decision = {
-    schema: "parked-decision/v1",
-    class: "scope",
-    call: {
-      id: "a",
-      question: "Extend coverage?",
-      recommended: "a",
-      why: "It catches the failure",
-      options: [
-        {
-          id: "a",
-          name: "Extend",
-          summary: "Add coverage",
-          pay: ["More tests"],
-          obligation: "Review the examples",
-        },
-        {
-          id: "b",
-          name: "Keep",
-          summary: "Keep coverage",
-          pay: ["Less assurance"],
-        },
-      ],
-    },
-    steps: [],
-    alreadyDone: "Read coverage",
-  };
+  park.decision = typedDecision();
   park.lines = ["Extend coverage?", "Obligation: Review the examples"];
   writeLine(line, "{}", w.state);
   const result = await w.ask(["--waiting"], w.away);
@@ -545,33 +550,7 @@ it("shows a typed park and its model-driven option details in the thread", async
   const ledger = parked(7);
   const park = ledger.parked[0];
   if (park === undefined) throw new Error("fixture has no park");
-  park.decision = {
-    schema: "parked-decision/v1",
-    class: "scope",
-    call: {
-      id: "a",
-      question: "Extend coverage?",
-      recommended: "a",
-      why: "It catches the failure",
-      options: [
-        {
-          id: "a",
-          name: "Extend",
-          summary: "Add coverage",
-          pay: ["More tests"],
-          obligation: "Review the examples",
-        },
-        {
-          id: "b",
-          name: "Keep",
-          summary: "Keep coverage",
-          pay: ["Less assurance"],
-        },
-      ],
-    },
-    steps: [],
-    alreadyDone: "Read coverage",
-  };
+  park.decision = typedDecision();
   w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
   w.api(`repos/${REPO}/issues/7/comments`, [comment(701, ledgerBody(ledger))]);
   const answer = await thread(w, ["--thread"]);
