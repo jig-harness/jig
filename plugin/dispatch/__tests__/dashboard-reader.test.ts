@@ -20,7 +20,7 @@ import {
   expectSpawnExitNot,
 } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
-import { readAccess } from "../dashboard-reader.ts";
+import { readAccess, reportGeneration } from "../dashboard-reader.ts";
 import { ownIdentity } from "../../shared/liveness.ts";
 
 const reader = resolve(import.meta.dir, "../dashboard-reader.ts");
@@ -351,3 +351,16 @@ runTest(
   },
   90_000,
 );
+
+test("an installation marker that cannot be read is a failure, not an absence", () => {
+  const root = mkdtempSync(join(tmpdir(), "jig-marker-"));
+  try {
+    const absent = reportGeneration(root);
+    expect(absent.ok && absent.value).toBeNull();
+    mkdirSync(join(root, "enabled"));
+    const unreadable = reportGeneration(root);
+    expect(unreadable.ok).toBe(false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

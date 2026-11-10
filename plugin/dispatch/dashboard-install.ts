@@ -29,7 +29,8 @@ import {
   keepDashboard,
   readerRoot,
   readerGeneration,
-  readGeneration,
+  reportGeneration,
+  causeDetail,
   readAccess,
   readerSettings,
 } from "./dashboard-reader.ts";
@@ -154,13 +155,15 @@ async function removeReader(): Promise<boolean> {
   return false;
 }
 
-async function writeDashboardJob(remove: boolean): Promise<number> {
+async function snapshotDashboardJob() {
   const scheduler = detectScheduler();
-  if (!scheduler.ok) {
-    console.error(scheduler.failure.reason);
-    return 1;
-  }
-  const snapshot = await snapshotScheduler(scheduler.value, dashboardJobSpec());
+  return scheduler.ok
+    ? snapshotScheduler(scheduler.value, dashboardJobSpec())
+    : scheduler;
+}
+
+async function writeDashboardJob(remove: boolean): Promise<number> {
+  const snapshot = await snapshotDashboardJob();
   if (!snapshot.ok) {
     console.error(snapshot.failure.reason);
     return 1;
@@ -168,11 +171,8 @@ async function writeDashboardJob(remove: boolean): Promise<number> {
   const root = readerRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
   // The same generation survives repeated installs; no extra reader is started.
-  const marker = readGeneration(root);
-  if (!marker.ok) {
-    console.error(marker.failure.reason);
-    return 1;
-  }
+  const marker = reportGeneration(root);
+  if (!marker.ok) return 1;
   const previous = marker.value;
   if (!remove && previous === null)
     writeFileSync(join(root, "enabled"), randomUUID(), {
@@ -195,6 +195,107 @@ async function writeDashboardJob(remove: boolean): Promise<number> {
   return 0;
 }
 
+function schedulerLogs(scheduler: string | null): string {
+  if (scheduler === "systemd")
+    return "journalctl --user -u jig-dispatch-dashboard.service";
+  if (scheduler === "launchd")
+    return `${readerRoot()}/scheduler.log and scheduler-error.log`;
+  return "the cron service output (or cron mail)";
+}
+
+/** Null when the reader runs the installed copy; otherwise the line saying why not. */
+async function installedCopyState(
+  readerUp: boolean,
+  script: string,
+): Promise<string | null> {
+  const waiting = "waiting for renewal";
+  try {
+    return readerUp &&
+      realpathSync(await installedEntry(pluginPrograms())) ===
+        realpathSync(script)
+      ? null
+      : `installed copy: reader is not running the currently installed plugin copy; ${waiting}`;
+  } catch (cause) {
+    // Never print a registry command's raw output: it can contain credentials.
+    return `installed copy: lookup unavailable${causeDetail(cause) || " (lookup failed)"}; ${waiting}`;
+  }
+}
+
+/** Resolves null when the reader is uninstalled meanwhile, so removal never waits out a slow lookup. */
+async function lookupInstalledEntry(
+  programs: ReturnType<typeof pluginPrograms>,
+): Promise<Outcome<string> | null> {
+  let removalTimer: ReturnType<typeof setInterval> | undefined;
+  try {
+    const lookup = installedEntry(programs).then(
+      (value) => ok(value),
+      (cause) =>
+        failed(
+          "registry-unavailable",
+          "Dashboard installed-copy lookup unavailable",
+          cause,
+        ),
+    );
+    const removed = new Promise<null>((resolve) => {
+      removalTimer = setInterval(() => {
+        if (readerGeneration() === null) resolve(null);
+      }, 100);
+    });
+    return await Promise.race([lookup, removed]);
+  } finally {
+    clearInterval(removalTimer);
+  }
+}
+
+/** The settings and their fingerprint must describe one file snapshot. */
+function readStableConfig(path: string): Outcome<string> {
+  const read = () =>
+    attempt(
+      "configuration-unreadable",
+      "Dashboard configuration cannot be read",
+      () => readFileSync(path, "utf8"),
+    );
+  const first = read();
+  if (!first.ok) return first;
+  const second = read();
+  if (second.ok && second.value !== first.value)
+    return failed(
+      "configuration-changing",
+      "Dashboard configuration changed while it was read; retrying",
+    );
+  return second.ok ? first : second;
+}
+
+function settingsMatch(
+  access: ReturnType<typeof readAccess>,
+  machine: ReturnType<typeof readMachineConfig>,
+): boolean {
+  return (
+    access.ok &&
+    machine.ok &&
+    machine.value?.dashboardListen != null &&
+    access.value.configuration ===
+      readerSettings(
+        machine.value.dashboardListen,
+        machine.value.dashboardRequireToken,
+        machine.value.dashboardAllowedHosts,
+      )
+  );
+}
+
+async function answers(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(url, {
+      redirect: "error",
+      signal: AbortSignal.timeout(3000),
+    });
+    await response.body?.cancel();
+    return response.ok;
+  } catch {
+    return false; // Never print a fetch error: it may carry the private URL.
+  }
+}
+
 export async function dashboardStatus(script: string): Promise<number> {
   const status = await scheduledStatus("dashboard", dashboardJobSpec(), null);
   console.log(formatStatus(status));
@@ -209,42 +310,9 @@ export async function dashboardStatus(script: string): Promise<number> {
     snapshot.value.enabled &&
     snapshot.value.active;
   const access = readAccess();
-  const machine = readMachineConfig();
-  let installedCopy = false;
-  let installedCopyFailure: string | null = null;
-  try {
-    installedCopy =
-      access.ok &&
-      realpathSync(await installedEntry(pluginPrograms())) ===
-        realpathSync(script);
-  } catch (cause) {
-    // Do not print a registry command's raw output: it can contain credentials.
-    installedCopyFailure =
-      cause instanceof Error && cause.name ? cause.name : "lookup failed";
-  }
-  const matches =
-    access.ok &&
-    machine.ok &&
-    machine.value?.dashboardListen != null &&
-    access.value.configuration ===
-      readerSettings(
-        machine.value.dashboardListen,
-        machine.value.dashboardRequireToken,
-        machine.value.dashboardAllowedHosts,
-      );
-  let healthy = false;
-  if (access.ok) {
-    try {
-      const response = await fetch(access.value.url, {
-        redirect: "error",
-        signal: AbortSignal.timeout(3000),
-      });
-      healthy = response.ok;
-      await response.body?.cancel();
-    } catch {
-      /* Never print a fetch error: it may carry the private URL. */
-    }
-  }
+  const copy = await installedCopyState(access.ok, script);
+  const matches = settingsMatch(access, readMachineConfig());
+  const healthy = access.ok && (await answers(access.value.url));
   console.log(
     access.ok
       ? `reader: ${healthy ? "healthy" : "not answering"} (pid ${access.value.identity.pid}); private URL: jig dispatch dashboard --access`
@@ -252,24 +320,13 @@ export async function dashboardStatus(script: string): Promise<number> {
   );
   const refused = await availability();
   if (refused !== null) console.log(`availability: ${refused}`);
-  const schedulerLogs =
-    scheduler.ok && scheduler.value === "systemd"
-      ? "journalctl --user -u jig-dispatch-dashboard.service"
-      : scheduler.ok && scheduler.value === "launchd"
-        ? `${readerRoot()}/scheduler.log and scheduler-error.log`
-        : "the cron service output (or cron mail)";
-  console.log(`logs: ${schedulerLogs}`);
+  console.log(`logs: ${schedulerLogs(scheduler.ok ? scheduler.value : null)}`);
   if (!matches)
     console.log(
       "configuration: reader does not match the current readable dashboard settings; waiting for renewal",
     );
-  if (!installedCopy)
-    console.log(
-      installedCopyFailure === null
-        ? "installed copy: reader is not running the currently installed plugin copy; waiting for renewal"
-        : `installed copy: lookup unavailable (${installedCopyFailure}); waiting for renewal`,
-    );
-  return healthy && viable && matches && installedCopy && refused === null
+  if (copy !== null) console.log(copy);
+  return healthy && viable && matches && copy === null && refused === null
     ? 0
     : 1;
 }
@@ -287,30 +344,17 @@ export function dashboardAccess(): number {
 /** Poll cheap config/generation every second; resolve the installed entry at most once a minute. */
 export async function scheduledDashboard(script: string): Promise<number> {
   const path = machineConfigPath();
-  let config: string;
-  try {
-    config = readFileSync(path, "utf8");
-  } catch {
-    console.error("Dashboard configuration cannot be read");
+  const snapshot = readStableConfig(path);
+  if (!snapshot.ok) {
+    console.error(snapshot.failure.reason);
     return 1;
   }
+  const config = snapshot.value;
   const machine = readMachineConfig(path);
   if (!machine.ok || machine.value?.dashboardListen == null) {
     console.error(
       machine.ok ? "dashboard.listen is missing" : machine.failure.reason,
     );
-    return 1;
-  }
-  // The parsed settings and fingerprint must describe the same file snapshot.
-  try {
-    if (readFileSync(path, "utf8") !== config) {
-      console.error(
-        "Dashboard configuration changed while it was read; retrying",
-      );
-      return 1;
-    }
-  } catch {
-    console.error("Dashboard configuration cannot be read");
     return 1;
   }
   const programs = pluginPrograms();
@@ -335,41 +379,11 @@ export async function scheduledDashboard(script: string): Promise<number> {
       if (currentConfig.value !== config) return false;
       if (Date.now() < nextCheck) return true;
       nextCheck = Date.now() + 60_000;
-      let entry: Outcome<string>;
-      let removalTimer: ReturnType<typeof setInterval> | undefined;
-      try {
-        const lookup = installedEntry(programs).then(
-          (value) => ok(value),
-          (cause) =>
-            failed(
-              "registry-unavailable",
-              "Dashboard installed-copy lookup unavailable",
-              cause,
-            ),
-        );
-        const removed = new Promise<null>((resolve) => {
-          removalTimer = setInterval(() => {
-            if (readerGeneration() === null) resolve(null);
-          }, 100);
-        });
-        const result = await Promise.race([lookup, removed]);
-        if (result === null) return false;
-        entry = result;
-      } catch (cause) {
-        entry = failed(
-          "registry-unavailable",
-          "Dashboard installed-copy lookup unavailable",
-          cause,
-        );
-      } finally {
-        clearInterval(removalTimer);
-      }
+      const entry = await lookupInstalledEntry(programs);
+      if (entry === null) return false;
       if (!entry.ok) {
-        const cause = entry.failure.cause;
-        const detail =
-          cause instanceof Error && cause.name ? ` (${cause.name})` : "";
         console.error(
-          `Dashboard installed-copy check unavailable${detail}; retrying within a minute`,
+          `Dashboard installed-copy check unavailable${causeDetail(entry.failure.cause)}; retrying within a minute`,
         );
         return true;
       }

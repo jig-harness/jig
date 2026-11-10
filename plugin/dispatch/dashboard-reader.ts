@@ -29,24 +29,40 @@ import { stateRoot } from "./receipts.ts";
 export function readerRoot(): string {
   return join(stateRoot(), "dashboard");
 }
+function causeCode(cause: unknown): string | undefined {
+  const code =
+    cause && typeof cause === "object" && "code" in cause
+      ? (cause as { code?: unknown }).code
+      : undefined;
+  return typeof code === "string" ? code : undefined;
+}
+
+/** A safe classification of a failure: its error name, never its text, which can carry a private address. */
+export function causeDetail(cause: unknown): string {
+  return cause instanceof Error && cause.name ? ` (${cause.name})` : "";
+}
+
 /** Absence of the marker is `null`; any other read failure is a failure, never an absence. */
-export function readGeneration(
+function readGeneration(
   root = readerRoot(),
 ): Outcome<string | null, "generation-unreadable"> {
   try {
     return ok(readFileSync(join(root, "enabled"), "utf8"));
   } catch (cause) {
-    const code =
-      cause && typeof cause === "object" && "code" in cause
-        ? (cause as { code?: unknown }).code
-        : undefined;
+    const code = causeCode(cause);
     if (code === "ENOENT") return ok(null);
     return failed(
       "generation-unreadable",
-      `dashboard installation marker cannot be read${typeof code === "string" ? ` (${code})` : ""}`,
+      `dashboard installation marker cannot be read${code ? ` (${code})` : ""}`,
       cause,
     );
   }
+}
+/** Reads the marker, printing why when it cannot be read. */
+export function reportGeneration(root: string) {
+  const read = readGeneration(root);
+  if (!read.ok) console.error(read.failure.reason);
+  return read;
 }
 export function readerGeneration(root = readerRoot()): string | null {
   const read = readGeneration(root);
@@ -117,15 +133,12 @@ export function readAccess(
       );
     return ok({ url: value.url, identity, configuration: value.configuration });
   } catch (cause) {
-    const code =
-      cause && typeof cause === "object" && "code" in cause
-        ? (cause as { code?: unknown }).code
-        : undefined;
+    const code = causeCode(cause);
     return failed(
       "unavailable",
       code === "ENOENT"
         ? "no readable live dashboard access record; inspect --status"
-        : `dashboard access record is unreadable${typeof code === "string" ? ` (${code})` : ""}; inspect --status`,
+        : `dashboard access record is unreadable${code ? ` (${code})` : ""}; inspect --status`,
       cause,
     );
   } finally {
@@ -146,11 +159,8 @@ export async function keepDashboard(options: {
 }): Promise<number> {
   const root = options.root ?? readerRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  const marker = readGeneration(root);
-  if (!marker.ok) {
-    console.error(marker.failure.reason);
-    return 1;
-  }
+  const marker = reportGeneration(root);
+  if (!marker.ok) return 1;
   const generation = marker.value;
   if (generation === null) return 0;
   const result = await withFileLock(
@@ -181,12 +191,9 @@ export async function keepDashboard(options: {
         }
       })();
       if (!started.ok) {
-        const cause = started.failure.cause;
-        const detail =
-          cause instanceof Error && cause.name ? ` (${cause.name})` : "";
-        // The error's text can include the private listen address; retain a
-        // safe classification without copying that text to scheduler output.
-        console.error(`${started.failure.reason}${detail}`);
+        console.error(
+          `${started.failure.reason}${causeDetail(started.failure.cause)}`,
+        );
         return 1;
       }
       const dashboard = started.value;
