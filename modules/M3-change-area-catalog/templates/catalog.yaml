@@ -33,6 +33,12 @@ areas:
     # review:
     #   skills: [<review-skill>]
     #   notes: "when this review applies"
+    # implementation:
+    #   skills: [<implementation-skill>]
+    #   notes: "what an agent changing this area must do"
+    # pr:
+    #   labels: [<pull-request-label>]
+    #   reviewers: [<org/team>]
     # postDeploy:
     #   - action: "<operational step>"
     #     when: "<trigger>"

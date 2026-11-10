@@ -85,6 +85,8 @@ import { swallow } from "../../../shared/errors.ts";
 import { ghCall } from "../../../shared/proc.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { fileFindings } from "./lib/automation-fit.ts";
+import { guidanceFindings } from "./lib/guidance-fit.ts";
+import { labelFindings } from "./lib/label-fit.ts";
 import {
   configuredAt,
   trackedNeeds,
@@ -902,37 +904,6 @@ function stackedWithoutStacking(
   };
   if (declared !== undefined) return [{ ...finding, severity: "warning" }];
   return offer(report, [stackingSuggestion(base, stacked, finding)]);
-}
-
-/** Configured pull-request labels the repository does not have. */
-async function labelFindings(
-  config: Config,
-  root: string,
-  slug: string,
-): Promise<Finding[]> {
-  const labels = texts(at(config, "pull_requests.labels"));
-  if (labels.length === 0) return [];
-  const list = await ghJson(
-    ["label", "list", "--limit", "1000", "--json", "name"],
-    root,
-  );
-  if (!list.ok || !Array.isArray(list.value))
-    return [
-      {
-        id: "unchecked:pull_requests.labels",
-        severity: "info",
-        message:
-          "the repository's labels could not be read: whether pull_requests.labels exist is unchecked",
-      },
-    ];
-  const names = new Set((list.value as { name: string }[]).map((l) => l.name));
-  return labels
-    .filter((label) => !names.has(label))
-    .map((label) => ({
-      id: `derivation:pull_requests.labels:${label}`,
-      severity: "error",
-      message: `pull_requests.labels names ${label}, which does not exist in ${slug}: opening a pull request fails`,
-    }));
 }
 
 /**
@@ -2325,6 +2296,7 @@ export async function configFit(opts: {
     config = readConfigFile(opts.file) ?? {};
     report.findings.push(...legacyFields(checkConfig(config, schema)));
     report.findings.push(...skillValidation(config, opts.file, opts.root));
+    report.findings.push(...guidanceFindings(config, opts.root));
     report.findings.push(...crossFieldRules(config));
     report.findings.push(...derivations(config, schema, opts.root));
   } else

@@ -433,6 +433,15 @@ fields:
     items: string
     distinct: true
     read_by: [do-item]
+  pull_requests.labels_from_issue:
+    type: map
+    since: next
+    read_by: [do-item]
+  pull_requests.reviewers_from_issue:
+    type: map
+    values_type: { type: list, items: string }
+    since: next
+    read_by: [do-item]
   pull_requests.title_format:
     type: enum
     values: [conventional, free]
@@ -697,6 +706,17 @@ fields:
         labels: { type: list, items: string }
         paths: { type: list, items: string }
         skill: string
+    read_by: [do-item]
+  do_item.guidance:
+    type: list
+    items:
+      fields:
+        labels: { type: list, items: string }
+        paths: { type: list, items: string }
+        skills: { type: list, items: string }
+        notes: string
+      optional: [labels, paths, skills, notes]
+    since: next
     read_by: [do-item]
   do_item.execution_plan_block:
     type: string
