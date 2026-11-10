@@ -106,7 +106,9 @@ repository contradicts, tracker labels that the label taxonomy
 not define, a `review.taxonomy.types` that differs from that taxonomy
 (`taxonomy:<field>`), a repository that keeps issue facets on its tracker and
 runs no weekly sweep for issues filed without them
-(`suggestion:issue_tracker.sweep`), and settings its shape suggests. Each finding has an id
+(`suggestion:issue_tracker.sweep`), workflow steps that open pull requests
+(`peter-evans/create-pull-request`, `gh pr create`) without an `automation:`
+label (`suggestion:automation-labels`), and settings its shape suggests. Each finding has an id
 (`config/<id>`). Exit 1 means at least one error; it is a finding, not a reason
 to stop. Without network access or `gh`, add `--offline`; the forge and
 tracker questions are then reported as unchecked, never as passing.

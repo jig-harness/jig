@@ -24,12 +24,18 @@ import { applyPickups } from "./actions/pickup.ts";
 import { applySteward } from "./actions/steward.ts";
 import { applyStewardRecords } from "./steward-apply.ts";
 import { applySteers, retireSteers } from "./actions/steer.ts";
-import { adoptionOf } from "./adopt.ts";
+import { adoptionOf, ownAuthors } from "./adopt.ts";
 import { type LaunchGroup, launchStageOrder } from "./apply-order.ts";
 import { readOutcomes } from "./followup-outcomes.ts";
 import { holderActions } from "./holder-notices.ts";
-import { openPullRequest, pullRequestLabels } from "./forge.ts";
-import { ok, type Outcome } from "../../shared/outcome.ts";
+import { isAutomation } from "./automation.ts";
+import {
+  type ListedPr,
+  openPullRequest,
+  pullRequestLabels,
+  unresolvedThreadCount,
+} from "./forge.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { carriesSet, hasCommand, type LabelConfig } from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
 import type { ReadRecord } from "./launches.ts";
@@ -210,6 +216,42 @@ interface ApplyInputs {
 }
 
 /**
+ * An automation pull request read again, with the unresolved review threads
+ * the adoption rule reads of it and the view does not carry; `unreadable`,
+ * with why, when the count does not read, so the launch is not acted on. A
+ * pull request a person's `drive` or `rearm` label asks for, or one already
+ * failing a check or conflicting, needs no count: the request or the trouble
+ * does not wait on it.
+ */
+async function withThreads(
+  slug: string,
+  pr: ListedPr,
+  own: readonly string[],
+  asked: boolean,
+): Promise<Outcome<ListedPr, "unreadable">> {
+  if (asked || !isAutomation(pr, own)) return ok(pr);
+  // Trouble already observed admits the launch; the thread count is only needed to find trouble.
+  if (pr.failingChecks === true || pr.mergeable === "CONFLICTING")
+    return ok(pr);
+  const threads = await unresolvedThreadCount(slug, pr.number);
+  if (!threads.ok)
+    return failed(
+      "unreadable",
+      `its unresolved review threads do not read: ${threads.failure.reason}`,
+    );
+  return ok({ ...pr, unresolvedThreads: threads.value });
+}
+
+/** Whether a person's `drive` or `rearm` label is on the pull request. */
+function asksForDrive(labels: LabelConfig | null, pr: ListedPr): boolean {
+  return (
+    labels !== null &&
+    (hasCommand(labels, pr.labels, "drive") ||
+      hasCommand(labels, pr.labels, "rearm"))
+  );
+}
+
+/**
  * `--apply` for one repository: the launch stages its machine-file entry
  * enables, in this tick's turn, then its nudges and notifications, which
  * open no session and so share no turn; each inside `guard`.
@@ -334,13 +376,21 @@ async function freshDriveReading(
   const listed = view.value;
   if (labels?.onlyLabeled === true && !carriesSet(labels, listed.labels ?? []))
     return ok(null);
+  const adoption = adoptionOf(section, login);
+  const counted = await withThreads(
+    repo.slug,
+    listed,
+    ownAuthors(adoption, login),
+    asksForDrive(labels, listed),
+  );
+  if (!counted.ok) return counted;
   const [again] = await readDrives(
     repo.slug,
     login,
-    [listed],
+    [counted.value],
     Date.now(),
     labels,
-    adoptionOf(section, login),
+    adoption,
   );
   if (again === undefined) return ok(null);
   if (steward) return ok({ ...again, labels: listed.labels ?? [] });

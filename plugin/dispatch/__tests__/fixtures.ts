@@ -83,8 +83,10 @@ if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headR
   if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }
   out({ ...listed, state: "OPEN" });
 }
-if (args[0] === "pr" && args[1] === "view" && args.includes("labels")) {
-  const listed = ["open", "merged"].flatMap((state) => JSON.parse(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"))).find((p) => p.number === Number(args[2]));
+if (args[0] === "pr" && args[1] === "view" && args[args.length - 1] === "labels") {
+  // One pull request's labels read again, open or merged, as its listing holds them.
+  const all = ["open", "merged"].flatMap((s) => JSON.parse(fs.readFileSync(F + "/prs-" + s + ".json", "utf8")));
+  const listed = all.find((p) => p.number === Number(args[2]));
   if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }
   out({ labels: listed.labels ?? [] });
 }
@@ -430,6 +432,18 @@ export const openPr = (
   labels: [] as Array<{ name: string }>,
   ...extra,
 });
+
+/** A failed check on an open pull request's head, as the listing gives it. */
+export const FAILING = {
+  statusCheckRollup: [
+    {
+      __typename: "CheckRun",
+      name: "ci",
+      status: "COMPLETED",
+      conclusion: "FAILURE",
+    },
+  ],
+};
 
 /** A pull request as the listing returns it, carrying `labels`. */
 export const labeled = <T extends object>(pr: T, ...labels: string[]) => ({

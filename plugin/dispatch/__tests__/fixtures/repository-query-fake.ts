@@ -6,7 +6,9 @@
  * request's comments as its listing holds them, turned into the forge's
  * query shapes. `batch-comments-<pr>.json` stands in for a pull request's
  * comments in the query alone: a write landing between the query and a
- * later listing. The query fails while `prs-open-fail` or
+ * later listing. A pull request's listed checks (`statusCheckRollup`) come
+ * back as its head commit's rollup contexts, and its unresolved review threads as
+ * many as `threads-<pr>` says (none without it). The query fails while `prs-open-fail` or
  * `repository-query-fail` exists. The comments query over named pull
  * requests (`commentsQuery`) answers each from the same files, and fails
  * while `comments-query-fail` exists.
@@ -56,11 +58,36 @@ function queryComment(c: RestComment) {
   };
 }
 
+/** A listed pull request's head commit as the query gives it, its listed checks as the rollup's contexts; no rollup when it lists none. */
+function headRef(p: Listed) {
+  const checks = p.statusCheckRollup;
+  if (!Array.isArray(checks)) return { target: { statusCheckRollup: null } };
+  return {
+    target: {
+      statusCheckRollup: {
+        contexts: { pageInfo: { hasNextPage: false }, nodes: checks },
+      },
+    },
+  };
+}
+
 /** The files the fake forge keeps in `dir`: whether one exists, and one read as JSON. */
 function files(dir: string) {
   const has = (name: string) => existsSync(`${dir}/${name}`);
   const json = (name: string): unknown =>
     JSON.parse(readFileSync(`${dir}/${name}`, "utf8"));
+  /** A pull request's unresolved review threads as the query gives them: as many as `threads-<pr>` says. */
+  const threads = (pr: number) => ({
+    pageInfo: { hasNextPage: false },
+    nodes: Array.from(
+      {
+        length: has(`threads-${pr}`)
+          ? Number(readFileSync(`${dir}/threads-${pr}`, "utf8"))
+          : 0,
+      },
+      () => ({ isResolved: false }),
+    ),
+  });
   /** A pull request's comments as the query gives them: one page, and whether there are more. */
   const comments = (pr: number) => {
     const listed = json(
@@ -75,7 +102,7 @@ function files(dir: string) {
       nodes: listed.slice(0, COMMENTS_PAGE).map(queryComment),
     };
   };
-  return { has, json, comments };
+  return { has, json, comments, threads };
 }
 
 /** The comments query's answer, each pull request it names under its alias; `null` for a query that fails. */
@@ -95,7 +122,7 @@ export function repositoryQuery(
   args: string[],
   cwd: string,
 ): unknown {
-  const { has, json, comments } = files(dir);
+  const { has, json, comments, threads } = files(dir);
   if (has("prs-open-fail") || has("repository-query-fail")) return null;
   const arg = (key: string) =>
     (args.find((a) => a.startsWith(`${key}=`)) ?? "").slice(key.length + 1);
@@ -113,6 +140,8 @@ export function repositoryQuery(
               p.author.is_bot === true,
             ),
       labels: { pageInfo: { hasNextPage: false }, nodes: p.labels },
+      headRef: headRef(p),
+      reviewThreads: threads(p.number),
       comments: comments(p.number),
     };
   });

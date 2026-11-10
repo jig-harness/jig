@@ -515,7 +515,7 @@ it. Until then, opt in only to take part in that measurement.
 | `issue_tracker.jira.field_labels` | map from a field's name or id to a label prefix, such as `{ Size: "size:" }` | No field is read as labels | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: fields whose values the skills read as labels beside the issue's own, each behind its prefix: a select field `Size` holding `M` gives the label `size:M`, and a multi-select gives one label per value. Single-line text, number, select, checkbox and labels fields qualify (a multiline text field, the description and the environment hold rich text and are refused); a field of another type, or a name that matches no field of the site or several (name one by its id, `customfield_10050`), is refused. Values are trimmed. A pool, a population or a ledger selected by such a label is selected by the field in JQL, except a text field's, which JQL matches only by words and is refused; an option whose value carries surrounding spaces is matched in JQL only by its exact value, so trim the option on the site. An entry whose labels are a facet's values, such as a `Size` field behind `size:` where the label taxonomy's sizes are `size:S`, `size:M` and `size:L`, is that facet's field store (where `issue_tracker.facets` names no other store for it): the facet is written to the field when an issue is filed or changed, each value as the field's value behind the prefix, and its values still show as labels. The adapter never writes another entry's field, and filing or patching an issue with a label behind any prefix is refused, pointing at the facet where the field keeps one. A prefix has no whitespace, and no prefix may begin another; choose prefixes no Jira label of the project starts with, since a label behind a prefix is taken for the field's value |
 | `issue_tracker.labels.epic` | label | `review.taxonomy.epic_label`, else `epic` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch, file-issue, reflect, dispatch | Marks an issue whose sub-issues are worked one at a time |
 | `issue_tracker.labels.hitl` | label | `hitl` | do-item, decide, work-batch | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
-| `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch | A step a person performs outside the code; caps an epic at `ops_pending` |
+| `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch, dispatch | A step a person performs outside the code; caps an epic at `ops_pending`. With the dispatch labels on, the dispatcher also puts it on a pull request whose `## Out-of-tree follow-ups` section lists a step not yet checked off; it then must hold no comma and be none of the dispatcher's own labels (under `dispatch.labels.prefix`, `automation` or `automation:…`), or the dispatcher writes no owed-steps label and says so |
 | `issue_tracker.labels.followup` | label | `review.taxonomy.provenance_label`, else `pr-followup` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch | Marks an issue filed from a review finding |
 | `issue_tracker.labels.bug` | list of labels | `[bug, type:bug]` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch, resolve-review-comments | Any of these marks a bug |
 | `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item, reflect, review-reflections | A recurring pattern's label is `<prefix><slug>`; a reflection class's issue is `<prefix><class>` |
@@ -1223,7 +1223,7 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.notices_branch` | branch name, with no space | None: every notification for the repository goes to its notices workspace. A branch names the workspace a person watches instead: every notification goes to the workspace on that branch, never to the one joined to the pull request or item. The dispatcher never opens or removes it, and a notification waits, reported, while no workspace on it is open or its comment is a person's. Naming `jig-dispatch-notices`, the notices workspace's own branch, is the same as naming none | dispatch |
 | `dispatch.renotify_after` | duration, or `0s` | `24h`: a notification whose cause still stands this long after it was last sent is sent again, saying since when it has waited, until the cause goes. `0s` sends each one once | dispatch |
 | `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below) | dispatch |
-| `dispatch.labels.prefix` | string of at most 39 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch |
+| `dispatch.labels.prefix` | string of at most 35 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch |
 | `dispatch.labels.only_labeled` | `true` or `false` | `false`: every open pull request is read for a drive ledger. `true` limits the dispatcher to the pull requests that carry a label of the set: one that carries none is never read, re-armed or followed up. Refused unless `enabled` is `true` | dispatch |
 | `dispatch.adopt.enabled` | `true` or `false` | `false`: a pull request with no drive ledger is driven only when a person labels it `drive`. `true` turns the adoption rule on (below). Refused beside `labels.only_labeled: true` | dispatch |
 | `dispatch.adopt.authors` | nonempty list of forge logins (a GitHub App's as `<name>[bot]`) | The login the dispatcher reads the forge as, the one the host's sessions open pull requests under: the authors whose pull requests the rule adopts | dispatch |
@@ -1275,9 +1275,35 @@ take commands from a person. With the default prefix:
 | `jig:stale` | the dispatcher | the drive's stop no longer settles the pull request: it converged, then conflicted with its base or its head moved, or it stopped on a conflict. The dispatcher re-drives it |
 | `jig:held` | the dispatcher | the pull request waits its turn in a serialized change area (below): the dispatcher drives it once it leads |
 | `jig:followed-up` | the dispatcher | merged, and its follow-up is done |
+| `jig:followup-failed` | the dispatcher | merged, and its follow-up failed: a person acts. A later follow-up that is done replaces it with `jig:followed-up` |
 | `jig:drive` | a person, by hand or with `jig send … drive` | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists. The adoption rule (`dispatch.adopt`, below) does the same for a repository's own recent pull requests without the label |
 | `jig:rearm` | a person, by hand or with `jig send … rearm` | request another attempt for a stopped drive in its existing worktree, through the machine file's `rearm` stage and account admission. Running drives and a person's recorded stops are refused; an accepted launch consumes the label |
 | `jig:hold` | a person, by hand or with `jig send … hold` (and `release`) | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
+
+Beside the set, the dispatcher keeps marker labels that carry no
+prefix, on every pull request it reads. None is a label of the set, so
+none puts a pull request in scope under `only_labeled`:
+
+| Label | Who writes it | Meaning |
+|-------|---------------|---------|
+| `manual-ops` (the repository's `issue_tracker.labels.manual_ops`) | the dispatcher | the pull request owes steps a person takes outside the code: its description's `## Out-of-tree follow-ups` section lists a step not yet checked off. Set from the description at every run, on open pull requests and on the merged ones the run reads (those merged since the follow-up stage's start, read only where `followup_command` is set): one that lists none, or only the explicit "None", loses it, so a label added or removed by hand is corrected. A merged pull request keeps it until every step is checked off or its follow-up is done, which reports each step done or filed; one whose follow-up the run cannot place (its markers do not read) keeps the label exactly as it is |
+| `automation` | the dispatcher | a bot or a workflow opened the pull request. Put on a bot's pull request that carries no label of the `automation:` family, unless the bot is one of the host's own authors (below), which a repository's workflows apply to say which job opened it (`automation:docs-sync`); never put on a person's, and never removed, nor is any `automation:` label |
+
+A pull request that carries `automation` or an `automation:` label, or that
+a bot opened, is an **automation pull request**, except a bot's that is one
+of the host's own authors (`dispatch.adopt.authors` where the adoption rule
+is on, else the login the dispatcher reads the forge as): that bot is the
+identity the host's own sessions work under, and its pull request is an
+automation pull request only when it carries an automation label. The
+dispatcher drives an automation pull request only while it needs work: a
+check on its head failed (`FAILURE`, `ERROR`, `TIMED_OUT` or a run that
+failed to start; a run cancelled on a superseded head or one waiting for a
+person's approval is no failure), it conflicts with its base, or a review
+thread is unresolved. That holds for its adoption (below) and for every
+re-drive, takeover and re-arm the dispatcher would start of itself, a
+converged drive whose head moved among them: a healthy one is reported and
+left for a person to merge. A person's `jig:drive` or `jig:rearm` still
+starts one.
 
 A serialized change area (`serialize: true` on an area of the
 [change-area catalog](#drive) that `drive.change_areas_catalog` names, read
@@ -1300,13 +1326,16 @@ re-arm and no label written, and the next run reads it again.
 
 The ledger is the truth: each `--apply` run sets each managed pull
 request's state label from its ledger again (`jig:held` from the serialized
-areas), one forge call per pull
-request whose labels disagree, so a state label a person changed comes
+areas, a merged pull request's from its follow-up's end) and each marker
+label from the pull request itself, one forge call per pull
+request whose state label disagrees and one whose marker labels do (so a
+marker label the repository lacks never holds a state back), so a state label a person changed comes
 back at the next run, and the dispatcher never reads a state label to
 decide what to start. A run without `--apply`, or for a repository the
 machine file does not list, writes nothing and reports what it would
 write. The labels must exist before a run writes them: `jig install
-dispatch --repo <path> --yes` creates the missing ones where the signed-in
+dispatch --repo <path> --yes` creates the missing ones, the marker labels
+included, where the signed-in
 account may, and lists the rest for a person, as `pull_requests.labels`
 must exist before a pull request opens with them. A write the forge
 refuses is reported and tried again at the next run; it does not fail the
@@ -1321,7 +1350,13 @@ dispatcher reads the forge as, which is the identity the host's sessions
 open pull requests under) and it was updated within `adopt.within`. A
 draft is adopted like any other, since a drive marks its pull request
 ready. A bot's pull request (a dependency update, say) is adopted only
-when `authors` names the bot, and one carrying `jig:hold` never is. From
+when `authors` names the bot, and one carrying `jig:hold` never is. An
+automation pull request (above) is adopted only while it needs work; a
+healthy one is left for a person to merge, and `jig:drive` still drives
+one on a person's word. A bot the rule names is the host's own identity, so
+its pull requests are adopted as any own pull request unless they carry an
+automation label. A check that failed on the CI
+service's infrastructure is re-run by the drive rather than repaired. From
 there the `drive` label's rules apply unchanged: armed once per head
 commit, on an admitted account, behind a serialized area's hold, and a
 drive a person stopped is never re-armed, since its ledger records the

@@ -8,7 +8,7 @@
  *
  * | Kind | One row per | Its key | Backs off |
  * | --- | --- | --- | --- |
- * | `label` | pull request whose dispatch labels the projection writes | `label PR #<n>` | yes |
+ * | `label` | pull request whose dispatch labels the projection writes | `label PR #<n>`, `label markers PR #<n>` for its markers | yes |
  * | `notice` | notification cause | `notice <its key>` | yes |
  * | `failure-notice` | notification of a failure below | `notice <its key>` | yes, and never notified itself |
  * | `nudge` | session and waiting episode | `nudge <record> <episode>` | yes |
