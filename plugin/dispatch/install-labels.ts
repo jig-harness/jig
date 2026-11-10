@@ -1,11 +1,13 @@
 /**
- * `jig install dispatch --repo <path> [--yes]`: the dispatch labels a
- * repository needs before the tick writes them. For each repository whose
- * `dispatch` section (read from its default branch, as the tick reads it)
- * turns the labels on, the labels of the set it does not have yet are
+ * The one-time setup of the pull request state labels: `jig dispatch labels
+ * [--repo <path>]... [--yes]`, which installs no job, and the labels part of
+ * `jig install dispatch --repo <path> [--yes]`. Drives, follow-ups and the
+ * dispatcher write the labels and never create them. For each repository
+ * whose `dispatch` section (read from its default branch, as the tick reads
+ * it) turns the labels on, the labels of the set it does not have yet are
  * listed, with the marker labels the tick keeps beside them (the
  * repository's manual-operations label and `automation`, `pr-markers.ts`);
- * with `--yes` they are created, and those the signed-in account
+ * with `--yes` each one created is named, and those the signed-in account
  * may not create are listed for a person, each with the command that
  * creates it. A repository with the labels off needs none.
  */
