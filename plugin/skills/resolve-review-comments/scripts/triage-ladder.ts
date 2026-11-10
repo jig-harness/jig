@@ -7,7 +7,7 @@
  * Usage:
  *   triage-ladder.ts --severity <sev> --tier <1-4> --category <cat|unknown>
  *                    --self-inflicted true|false|unknown
- *                    [--round N | --pr N] [--obligatory] [--config PATH]
+ *                    [--round N | --pr N [--key KEY]] [--obligatory] [--config PATH]
  *
  *   --severity        `blocker` | `high` | `medium` | `low` | `unknown`, as
  *                     `severityOf` in drive-pr's summary-findings.ts reports
@@ -43,6 +43,9 @@
  *                     `current-round.ts` (never from session memory).
  *   --pr              the PR to read the round for, when `--round` is omitted.
  *                     Defaults to the current branch's PR.
+ *   --key             persist this finding's verdict with --pr, required before
+ *                     a live accepted hold. A --round calculation never records
+ *                     evidence for a drive.
  *   --obligatory      the work must eventually happen, so a decline is
  *                     `deferred` (with a follow-up per deferral-protocol.md)
  *                     rather than `wont-fix`. The obligation boundary is the
@@ -65,7 +68,7 @@
  *
  * Exit codes:
  *   0  a verdict was printed — INCLUDING an inert one. Fail-open is an answer.
- *   2  usage error.
+ *   2  usage error or a verdict whose round changed before it was recorded.
  *
  * The ladder never exits nonzero for a config or round problem: it only ever
  * declines findings, so every uncertainty resolves toward `accepted` and says
@@ -91,6 +94,10 @@ import {
 } from "./lib/ladder.ts";
 import { type RunResult, resolvePr, run } from "../../../shared/proc.ts";
 
+const DRIVE_STATE = join(
+  import.meta.dirname,
+  "../../drive-pr/scripts/drive-state.ts",
+);
 const CURRENT_ROUND = join(import.meta.dirname, "current-round.ts");
 
 /** The exact tokens `severityOf` (drive-pr/scripts/summary-findings.ts) can
@@ -174,6 +181,7 @@ async function main(): Promise<number> {
   let selfInflictedRaw = "";
   let roundRaw = "";
   let pr = "";
+  let key = "";
   let obligatory = false;
   let configPath = "";
 
@@ -200,6 +208,10 @@ async function main(): Promise<number> {
         roundRaw = takeValue(argv, i, a);
         i += 1;
         break;
+      case "--key":
+        key = takeValue(argv, i, a);
+        i += 1;
+        break;
       case "--pr":
         pr = takeValue(argv, i, a);
         i += 1;
@@ -217,7 +229,7 @@ async function main(): Promise<number> {
           `triage-ladder.ts: unknown argument: ${a}`,
           "usage: triage-ladder.ts --severity <sev> --tier <1-4> --category <cat|unknown>",
           "                       --self-inflicted true|false|unknown",
-          "                       [--round N | --pr N] [--obligatory] [--config PATH]",
+          "                       [--round N | --pr N [--key KEY]] [--obligatory] [--config PATH]",
         );
     }
   }
@@ -305,6 +317,12 @@ async function main(): Promise<number> {
     );
   }
 
+  if (key !== "" && (pr === "" || /[\n\r]/.test(key)))
+    fail(
+      2,
+      "triage-ladder.ts: --key requires --pr and a single-line finding key",
+    );
+
   const anomalies: string[] = [];
   let round: number;
   if (roundRaw !== "") {
@@ -354,6 +372,25 @@ async function main(): Promise<number> {
   const verdict = resolveStance(loaded, input, obligatory);
   verdict.anomalies = [...anomalies, ...verdict.anomalies];
   for (const line of verdict.anomalies) console.error(`triage-ladder: ${line}`);
+  if (key !== "") {
+    const saved = await run(
+      [process.execPath, DRIVE_STATE, "record-ladder", pr],
+      {
+        stdin: JSON.stringify({
+          key,
+          stance: verdict.stance,
+          round: verdict.round,
+        }),
+        timeoutSec: 60,
+      },
+    );
+    if (saved.code !== 0)
+      fail(
+        saved.code || 1,
+        "triage-ladder: could not record verdict",
+        saved.stderr,
+      );
+  }
   console.log(JSON.stringify(verdict, null, 2));
   return 0;
 }

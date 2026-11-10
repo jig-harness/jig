@@ -16,7 +16,7 @@ import {
 
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
-export function createStateDurabilityFixtures() {
+export function createStateDurabilityFixtures(seedLadder = true) {
   function stateDirFor(name: string): string {
     const d = mkdtempSync(join(tmpdir(), `drive-state-${name}-`));
     return scopedStateDir(d);
@@ -28,6 +28,28 @@ export function createStateDurabilityFixtures() {
     env: Record<string, string | undefined> = {},
     stdin?: string,
   ) {
+    // These probes test holds after triage. Arrange the ladder prerequisite;
+    // ladder-hold.test.ts disables this fixture setup to test its absence.
+    if (
+      seedLadder &&
+      args[0] === "hold" &&
+      args.includes("accepted") &&
+      !args.includes("--unconfirmed")
+    ) {
+      const key = args[args.indexOf("--key") + 1];
+      if (key && !/[\n\r]/.test(key)) {
+        const round = Number(
+          (await state(dir, ["prospective-round", args[1] ?? "999"], env))
+            .stdout,
+        );
+        await state(
+          dir,
+          ["record-ladder", args[1] ?? "999"],
+          env,
+          JSON.stringify({ key, stance: "accepted", round }),
+        );
+      }
+    }
     // gitCleanEnv(), not process.env: resolveActor() runs `git rev-parse` in
     // this child, so an inherited GIT_DIR/GIT_COMMON_DIR (a suite invoked
     // from a git hook, per this file's own gitCleanEnv doc comment) would
@@ -134,7 +156,27 @@ export function createStateDurabilityFixtures() {
     env: Record<string, string>,
     args: string[],
     stdin?: string,
-  ) {
+  ): { exitCode: number; stdout: string; stderr: string } {
+    // Cross-tree hold probes also start after the finding's ladder triage.
+    if (
+      seedLadder &&
+      args[0] === "hold" &&
+      args.includes("accepted") &&
+      !args.includes("--unconfirmed")
+    ) {
+      const key = args[args.indexOf("--key") + 1];
+      if (key && !/[\n\r]/.test(key)) {
+        const round = Number(
+          drive(cwd, env, ["prospective-round", args[1] ?? "999"]).stdout,
+        );
+        drive(
+          cwd,
+          env,
+          ["record-ladder", args[1] ?? "999"],
+          JSON.stringify({ key, stance: "accepted", round }),
+        );
+      }
+    }
     const p = Bun.spawnSync(
       scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
       {

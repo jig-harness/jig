@@ -71,10 +71,22 @@ if (args[0] === "api" && args[1] === "user") {
 }
 if (joined.includes("pullRequest { number state }"))
   out(JSON.stringify({ data: { node: { __typename: "PullRequestReviewThread", id: value("threadId="), pullRequest: { number: 12, state: "OPEN" } } } }));
+if (joined.includes("viewer { login }")) {
+  const id = value("threadId=");
+  const login = has("login") ? read("login").trim() : "operator";
+  const comments = JSON.parse(read("thread-" + id + ".json"));
+  const replies = has("replies.jsonl") ? read("replies.jsonl").split("\\n").filter(Boolean).map(x => JSON.parse(x)).filter(x => x.threadId === id) : [];
+  for (const r of replies) {
+    comments.push({ author: { login: r.author, __typename: "User" }, authorAssociation: "MEMBER", body: r.body, createdAt: r.createdAt });
+  }
+  out(JSON.stringify({ data: { viewer: { login }, node: { id, comments: { nodes: comments, pageInfo: { hasNextPage: false, endCursor: null } } } } }));
+}
 if (joined.includes("addPullRequestReviewThreadReply")) {
   const req = JSON.parse(fs.readFileSync(0, "utf8"));
   const n = has("replies.jsonl") ? read("replies.jsonl").split("\\n").filter(Boolean).length : 0;
-  fs.appendFileSync(file("replies.jsonl"), JSON.stringify(req.variables) + "\\n");
+  const comments = JSON.parse(read("thread-" + req.variables.threadId + ".json"));
+  const createdAt = new Date(Math.max(0, ...comments.map(c => Date.parse(c.createdAt))) + 60_000).toISOString();
+  fs.appendFileSync(file("replies.jsonl"), JSON.stringify({ ...req.variables, author: has("login") ? read("login").trim() : "operator", createdAt }) + "\\n");
   out("https://example.invalid/reply-" + (n + 1) + "\\n");
 }
 if (joined.includes("unresolveReviewThread")) {

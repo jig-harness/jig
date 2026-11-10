@@ -234,6 +234,10 @@ import { framedPark } from "./lib/state/framed-park.ts";
 import * as decisions from "./lib/state/decisions.ts";
 import { recordEvent } from "./lib/state/events.ts";
 import { recordRuling } from "./lib/state/rulings.ts";
+import {
+  assertLadderAccepted,
+  recordLadderVerdict,
+} from "./lib/state/ladder-verdicts.ts";
 import { setReflected } from "./lib/state/reflected.ts";
 import { deadlineRetries } from "./lib/state/deadline-retries.ts";
 import { unpark } from "./lib/state/unpark.ts";
@@ -725,6 +729,7 @@ const STDIN_COMMANDS = new Map<
   ["reverse-decision", decisions.reverseDecision],
   ["record-event", recordEvent],
   ["rule", recordRuling],
+  ["record-ladder", recordLadderVerdict],
 ]);
 
 async function main(): Promise<number> {
@@ -797,6 +802,7 @@ async function main(): Promise<number> {
     "reverse-decision",
     "record-event",
     "rule",
+    "record-ladder",
     "hold",
     "claim-held",
     "unclaim-held",
@@ -2158,14 +2164,7 @@ async function main(): Promise<number> {
       }
       if (a.kind !== "thread" && a.kind !== "finding")
         fail(2, `hold requires --kind thread|finding (got '${a.kind}')`);
-      // Only the FIX-DEPENDENT outcomes are ever held. `rejected`, `wont-fix`
-      // and `deferred` are claims about the finding's MERIT, which no later
-      // commit changes, so they are replied to AND resolved in the same step
-      // and there is nothing to carry across the push. Recording one here
-      // would leave a thread that is already resolved sitting in a batch a
-      // later round tries to resolve again. The vocabulary is canonical in
-      // /resolve-review-comments § 3; this is the subset of it that has a
-      // waiting period, not a second taxonomy.
+      // Only fix-dependent outcomes wait for a push; merit replies resolve now.
       if (a.outcome !== "accepted" && a.outcome !== "moot") {
         fail(
           2,
@@ -2388,6 +2387,7 @@ async function main(): Promise<number> {
           ...stored,
           rounds: Math.max(stored.rounds, reviewRound(store, pr)),
         };
+        if (outcome === "accepted") assertLadderAccepted(state, a.key);
         const next: DriveState = {
           ...state,
           held: [
