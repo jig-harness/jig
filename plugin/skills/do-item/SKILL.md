@@ -1661,9 +1661,11 @@ data flow, not an executable harness API.
    the tails but do not close the epic (a sweep tool's "no close" mode, if it
    has one). The same holds when `do_item.post_merge_state` is not `done`:
    extract the tails without closing, and move the epic to that state with
-   `--post-merge`. Then explicitly transition the parent to `ops_pending` (or
-   `in_review` without that state) and post the operator-checklist comment
-   above. Leaving the epic at its old status (e.g. still `in_progress`) after
+   `--post-merge`. These are exclusive branches: when `manual-ops` is present,
+   transition the parent to `ops_pending` (or `in_review` without that state)
+   and post the operator-checklist comment above; when it is absent, the
+   configured `do_item.post_merge_state` is the final state, with no
+   `ops_pending` move and no checklist comment. Leaving the epic at its old status (e.g. still `in_progress`) after
    its tails moved would violate the status rule. `decision.reason` states
    this distinction when it applies.
 

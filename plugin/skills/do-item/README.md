@@ -198,7 +198,7 @@ says who closes it (`do_item.post_merge_closer`). That needs
 the item on merge whatever the skill does. Every post-merge move passes
 `--post-merge` to the tracker script, which refuses a move to `done` the
 setting forbids; a person's own move without the flag still works. The
-[configuration reference](../../CONFIGURATION.md#issue_tracker) has both
+[configuration reference](../../CONFIGURATION.md#do_item) has both
 settings.
 
 ## Continuing work
