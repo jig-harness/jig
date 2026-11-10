@@ -12,7 +12,10 @@
  * put on them. These are the run's wants, not labels read back after its
  * writes.
  */
-import { COMMANDS, PROJECTED_STATES } from "../../../../dispatch/lib/labels.ts";
+import {
+  COMMANDS,
+  PROJECTED_STATES,
+} from "../../../../shared/pr-labels/projection.ts";
 import {
   type readReceipt,
   receiptOrWhy,

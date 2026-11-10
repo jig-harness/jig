@@ -752,6 +752,27 @@ outlives the session that spawned it, so its console is not where you look:
   Missing, foreign, surviving or uncertain evidence leaves the ledger running;
   dispatch notifies once and includes it in the waiting list. See
   [terminal states](references/terminal-states.md) for the recovery guards.
+- **The pull request's state label** — where `dispatch.labels.enabled` is
+  on on the default branch (`dispatch/lib/label-config.ts`, as the
+  dispatcher reads it), `drive.ts` labels the pull request through the
+  shared projection (`shared/pr-labels/`, `lib/driver/state-labels.ts`)
+  after each ledger write of its own that lands (`handoff` tells a write
+  its guards refused apart, and none is labelled): `driving` once the arm
+  publishes the running ledger, before round one, removing the `drive`
+  command in the same write; at the stop, the class the exit table gives
+  (`lib/status/exit-classes.ts`, which the dispatcher's classifier reads
+  too): `converged` on `CONVERGED` only while the head is the verified
+  head, `parked` for a park, a person's stop, a stop only a person settles
+  and a stop the dispatcher re-drives (where it would read `stale`),
+  `driving` for one it re-arms or a second driver refused, nothing for
+  `PR_NOT_OPEN` or `TAKEN_OVER` (the full list:
+  [terminal states](references/terminal-states.md#exit-codes)). A person's
+  stop through `drives.ts` names no exit and is labelled `parked` once it
+  marks the ledger stopped. Never `stale`
+  or `held`, nothing on a pull request carrying `hold` or `held`, and never
+  a new label. Best effort: `gh` calls under `ghCall`'s deadline, the edit
+  only when the labels disagree; a refusal is one `labels:` line on stderr
+  and never changes the exit. A pass never writes a state label.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
   root: the database and one `<clone-key>/` directory per clone (the hash of
   its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved

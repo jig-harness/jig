@@ -210,14 +210,14 @@ fields:
   dispatch.labels.enabled:
     type: boolean
     default: false
-    read_by: [dispatch]
+    read_by: [dispatch, drive-pr]
     repository_only: true
     since: 0.122.0
   dispatch.labels.prefix:
     type: string
     default: "jig:"
     pattern: "^(?=.{1,35}$)[^,\\s](?:[^,]*[^,\\s])?$"
-    read_by: [dispatch]
+    read_by: [dispatch, drive-pr]
     repository_only: true
     since: 0.122.0
   dispatch.labels.only_labeled:
@@ -601,6 +601,7 @@ fields:
   issue_tracker.jira.link_types:
     type: map
     keys: [blocks, related, duplicate]
+    values_type: any
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.111.0
   issue_tracker.jira.field_labels:
@@ -608,6 +609,13 @@ fields:
     values_type: string
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.145.0
+  issue_tracker.jira.pool_issue_types:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.192.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch, file-issue, reflect, dispatch]

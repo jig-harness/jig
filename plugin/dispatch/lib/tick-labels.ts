@@ -17,9 +17,11 @@ import {
 } from "./actions/labels.ts";
 import { adoptionOf, ownAuthors } from "./adopt.ts";
 import type { LabelConfig } from "./labels.ts";
+import { forgeReread, ledgerStillCurrent } from "./label-freshness.ts";
 import { manualOpsLabel } from "./owed-steps.ts";
 import { unobservedTarget } from "./notices.ts";
 import { bookOf, type TickContext } from "./tick-context.ts";
+import { pullRequestHead, pullRequestLabels } from "./forge.ts";
 import type { ForgeRead } from "./tick-forge.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { RepoReport } from "./types.ts";
@@ -41,6 +43,35 @@ export async function projectObserved(
       serialized,
     },
     opened,
+  );
+}
+
+/** The check before each state write: the open pull requests read for a ledger, each ledger read again (`label-freshness.ts`). */
+function freshness(
+  slug: string,
+  forge: Pick<ForgeRead, "open" | "read" | "drives" | "login" | "merged">,
+): ReturnType<typeof ledgerStillCurrent> {
+  const open = forge.open.map((p) => p.number).filter((n) => forge.read.has(n));
+  return ledgerStillCurrent(
+    new Set(open),
+    forge.drives,
+    forgeReread(slug, forge.login),
+    {
+      read: new Map(
+        forge.merged.flatMap((p) =>
+          p.labels === undefined ? [] : [[p.number, p.labels] as const],
+        ),
+      ),
+      reread: (pr) => pullRequestLabels(slug, pr),
+    },
+    {
+      read: new Map(
+        forge.open.flatMap((p) =>
+          p.headRefOid === undefined ? [] : [[p.number, p.headRefOid] as const],
+        ),
+      ),
+      reread: (pr) => pullRequestHead(slug, pr),
+    },
   );
 }
 
@@ -121,6 +152,7 @@ async function projectLabels(
     apply: writing,
     late: () => (apply === null ? null : outOfTime(apply)),
     book,
+    current: freshness(slug, forge),
   });
   report.labels = planned.report;
 }
