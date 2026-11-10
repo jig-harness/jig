@@ -116,6 +116,7 @@ import { settleAtExit } from "./lib/shared-launches.ts";
 import {
   followupPassArgv,
   pickupPassArgv,
+  stewardPassArgv,
   QUESTION_PREFIX,
   sessionArgv,
 } from "./lib/session.ts";
@@ -435,6 +436,8 @@ async function tryWriteWall(
  * recorded. Throws when the pass's permission settings do not read.
  */
 function stageArgv(record: LaunchRecord): string[] {
+  if (record.action === "steward")
+    return stewardPassArgv(record, configuredPassArgs().words);
   if (isDrive(record)) return driveCommand(record, driveScript());
   if (record.action === "followup")
     return followupPassArgv(record, configuredPassArgs().words);
@@ -446,6 +449,7 @@ function stageArgv(record: LaunchRecord): string[] {
 /** Whether the wrapper runs a record's stage as a pass of its own: a follow-up's or a pickup's, under its own deadline, its last question kept. */
 function ownPass(record: LaunchRecord): boolean {
   return (
+    record.action === "steward" ||
     record.action === "followup" ||
     (record.action === "pickup" && !isInteractive(record))
   );
@@ -462,10 +466,13 @@ function runOptions(record: LaunchRecord): RunOptions {
 }
 
 /** The end of a follow-up's or a pickup's pass output, kept on its exit when it ended without recording done. */
-function saidOf(record: LaunchRecord, ran: Ran): { said?: string } {
+function saidOf(
+  record: LaunchRecord,
+  ran: Ran,
+): { said?: string; context?: string } {
   const said = ran.said?.trim() ?? "";
   if (said === "" || readResult(record.id) === "done") return {};
-  return { said };
+  return { said, context: (ran.output ?? "").slice(-8000) };
 }
 
 /** Whether a drive that stopped on its account's wall had that wall recorded; true when there was none to record. */

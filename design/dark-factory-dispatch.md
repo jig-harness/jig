@@ -77,8 +77,8 @@ repositories it did not read still owe, copies the outcome log, writes the
 dashboard's line and writes its receipt. Each phase lives in its own module
 under `plugin/dispatch/lib/`.
 
-Item 44 ([line-at-capacity.md](line-at-capacity.md)) adds four parts to
-this tick. The observe phase reads the served people's assigned items
+The [dispatcher](../plugin/README.md#the-dispatcher) owns these parts of
+the tick. The observe phase reads the served people's assigned items
 beside the factory identity's, and makes the board read, a query of its
 own once a repository's ledgers name its converged drives
 ([dispatch-board.md § The board read](dispatch-board.md#the-board-read)).
@@ -617,8 +617,7 @@ session claims it with `claim --for <person>`, which keeps the served person
 as its assignee, so the stalled and double-claim watches read the served
 people's in-progress items as they read the factory identity's. How the
 ranking, the cheap reads and the claim work is in
-[line-at-capacity.md § Serving named people](line-at-capacity.md#serving-named-people)
-(item 44).
+[served pickups](../plugin/README.md#the-dispatcher).
 
 **The forge.** The tick lists the repository's open pull requests and reads
 each one's comments for the ledger's marker, as the drive itself does; it
@@ -1226,7 +1225,7 @@ create` does not do) live in the plugin, in
   that `orca agent launch` can bind its agent to
   an account so is checked when the pickup stage is built, and until it
   does, interactive sessions are not launched. A pickup is launched as a
-  headless pass instead ([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless))
+  headless pass instead ([headless pickups](../plugin/README.md#the-dispatcher))
   and takes the headless form above, with the wrapper running
   `do-item`. The key is kept by the
   record itself for a headless pass: the wrapper claims the record
@@ -1416,7 +1415,7 @@ Orca agent launch can bind its agent to an account is not verified (Orca's
 command line selects accounts only for some agents), so a pickup does not
 start as an interactive session: it runs as a headless pass, as a
 follow-up does
-([line-at-capacity.md § Pickups run headless](line-at-capacity.md#pickups-run-headless)).
+([headless pickups](../plugin/README.md#the-dispatcher)).
 
 A follow-up does not wait for that: it runs as a headless pass, the
 account's vendor's non-interactive command (`claude -p`, `codex exec`) on
@@ -2333,9 +2332,9 @@ One pull request each, in this order; each is usable on its own.
    none), its result recorded through `jig dispatch result` and its slot
    held until its agent ends; the fresh read at launch; stalled
    pickups, double claims and waiting sessions reported. Usable alone:
-   assigning an item is the start button. Item 44's steps 6 and 7
-   ([line-at-capacity.md § Build order](line-at-capacity.md#build-order))
-   start the pickups as headless passes and add the served people's.
+   assigning an item is the start button. The
+   [dispatcher](../plugin/README.md#the-dispatcher) starts headless pickups
+   for the people the host serves.
 5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
    outcome record, and a follow-up pass per merged pull request with the repository's follow-up
    command, which claims the pull request with a manual marker when a

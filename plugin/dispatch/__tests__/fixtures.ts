@@ -77,6 +77,7 @@ if (args[0] === "pr" && args[1] === "list") {
   out(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
 }
 if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headRefOid"))) {
+  if (args.some((a) => a.includes("labels")) && fs.existsSync(F + "/pr-labels-fail")) { process.stderr.write("gh: labels unavailable\\n"); process.exit(1); }
   // One open pull request read again, as prs-open.json lists it.
   const listed = JSON.parse(fs.readFileSync(F + "/prs-open.json", "utf8")).find((p) => p.number === Number(args[2]));
   if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }

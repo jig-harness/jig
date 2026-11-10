@@ -42,20 +42,23 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "noReplay",
       "servedPerson",
       "ancestorEpic",
+      "stewardResume",
+      "stewardContext",
     ].every((k) => optionalText(value[k])) &&
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
     batchShape(value.batchItems) &&
+    (value.stewardDecision === undefined ||
+      Number.isSafeInteger(value.stewardDecision)) &&
     optionalStrings(value.claimedItems) &&
     optionalSeconds(value.passTimeoutSec) &&
-    (value.rearmConsumed === undefined ||
-      typeof value.rearmConsumed === "boolean") &&
-    (value.codexBypass === undefined ||
-      typeof value.codexBypass === "boolean") &&
-    (value.headless === undefined || typeof value.headless === "boolean") &&
-    (value.routineTags === undefined ||
-      typeof value.routineTags === "boolean") &&
+    optionalBooleans(value, [
+      "rearmConsumed",
+      "codexBypass",
+      "headless",
+      "routineTags",
+    ]) &&
     (value.standing === undefined ||
       value.standing === null ||
       isStandingAnswer(value.standing)) &&
@@ -91,5 +94,14 @@ function batchShape(value: unknown): boolean {
           typeof i.person === "string" &&
           optionalText(i.ancestor),
       ))
+  );
+}
+
+function optionalBooleans(
+  value: Record<string, unknown>,
+  keys: string[],
+): boolean {
+  return keys.every(
+    (key) => value[key] === undefined || typeof value[key] === "boolean",
   );
 }

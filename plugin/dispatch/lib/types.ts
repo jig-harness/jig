@@ -17,7 +17,13 @@ import type { StandingAnswer } from "./routine-questions.ts";
 export type RecordName = "tracker" | "forge" | "runtime";
 
 /** The stages a tick can start, as the plan names them. */
-export type Stage = "pickup" | "rearm" | "followup" | "notify" | "steer";
+export type Stage =
+  | "pickup"
+  | "rearm"
+  | "followup"
+  | "notify"
+  | "steer"
+  | "steward";
 
 /** Evidence as the report prints it: field, value. */
 export type Evidence = Record<string, string | number | boolean | null>;
@@ -95,6 +101,7 @@ export interface WantedItem {
   ancestorEpic?: string;
   batchAllowed?: boolean;
   queueIssue?: import("../../skills/do-item/scripts/lib/tracker/port.ts").PoolIssue;
+  queueRank?: { unblocks: number; epicOrder?: number };
 }
 
 /** How a drive ledger reads, per the design's ledger-to-class table. */
@@ -313,6 +320,7 @@ export interface Notice {
 
 /** One action the tick would take: the stage, its target and why. */
 export interface Action {
+  steward?: { id: number; facts: string };
   stage: Stage;
   /** `#12`, `ENG-4`, `PR #7`. */
   target: string;
@@ -368,7 +376,7 @@ export interface BusyHolder {
 /** What `--apply` did with one planned launch. */
 export interface LaunchOutcome {
   target: string;
-  action: "rearm" | "takeover" | "pickup" | "followup";
+  action: "rearm" | "takeover" | "pickup" | "followup" | "steward";
   /**
    * `launched`: the runtime started the wrapper; `retried`: a pending
    * record's launch was called again under its own key; `lost`: no answer
@@ -522,6 +530,7 @@ export type RepoPhase =
  * projects its labels and reports its shared records.
  */
 export type ApplyStage =
+  | "steward"
   | "rearm"
   | "pickup"
   | "followup"
@@ -547,6 +556,7 @@ export interface Defect {
 }
 
 export interface RepoReport {
+  steward?: { status: string; hash?: string; records?: number };
   path: string;
   slug: string | null;
   /** Set when the repository could not be dispatched at all, or a defect stopped its turn. */

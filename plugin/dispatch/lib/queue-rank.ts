@@ -45,20 +45,27 @@ export function queueHold(
     : null;
 }
 export function rankQueue<T extends QueueItem>(items: readonly T[]): T[] {
-  return [...items].sort((a, b) => {
-    const values = {
-      priority: (a.issue.priority || 5) - (b.issue.priority || 5),
-      unblocks: b.unblocks - a.unblocks,
-      epicOrder:
-        (a.epicOrder ?? Number.MAX_SAFE_INTEGER) -
-        (b.epicOrder ?? Number.MAX_SAFE_INTEGER),
-      size:
-        (SIZE[a.issue.size?.toLowerCase() ?? ""] ?? 5) -
-        (SIZE[b.issue.size?.toLowerCase() ?? ""] ?? 5),
-      createdAt: Date.parse(a.issue.createdAt) - Date.parse(b.issue.createdAt),
-    };
-    for (const key of QUEUE_ORDER)
-      if (values[key] && Number.isFinite(values[key])) return values[key];
-    return a.issue.identifier.localeCompare(b.issue.identifier);
-  });
+  return [...items].sort(
+    (a, b) =>
+      compareQueue(a, b) ||
+      a.issue.identifier.localeCompare(b.issue.identifier),
+  );
+}
+
+/** A tie under the queue's rules, before the stable identifier fallback. */
+export function compareQueue(a: QueueItem, b: QueueItem): number {
+  const values = {
+    priority: (a.issue.priority || 5) - (b.issue.priority || 5),
+    unblocks: b.unblocks - a.unblocks,
+    epicOrder:
+      (a.epicOrder ?? Number.MAX_SAFE_INTEGER) -
+      (b.epicOrder ?? Number.MAX_SAFE_INTEGER),
+    size:
+      (SIZE[a.issue.size?.toLowerCase() ?? ""] ?? 5) -
+      (SIZE[b.issue.size?.toLowerCase() ?? ""] ?? 5),
+    createdAt: Date.parse(a.issue.createdAt) - Date.parse(b.issue.createdAt),
+  };
+  for (const key of QUEUE_ORDER)
+    if (values[key] && Number.isFinite(values[key])) return values[key];
+  return 0;
 }

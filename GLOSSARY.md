@@ -2380,13 +2380,13 @@ make, use the entry's term instead.
   gauge stays under its limit with that session counted, and a new pickup
   never takes the last unit of room, so the drives that turn earlier work
   into merges keep running. It reports what it would hold before a person
-  turns the limit on ([design](design/line-at-capacity.md#the-hosts-load-factor)).
+  turns the limit on ([load factor](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
 - **Served person** — a person a *dispatcher*'s host works for, named with
   their forge logins and tracker identities in the host's own dispatch
   file. An open item a person with write access assigned to them, and each
   unassigned item under an epic assigned to them, is ranked and picked up
   beside the *factory identity*'s, and the pickup keeps them as the
-  item's assignee ([design](design/line-at-capacity.md#serving-named-people)).
+  item's assignee ([served pickups](plugin/README.md#the-dispatcher)).
 - **Steward** — the agent pass a *dispatcher*'s host starts every 20
   minutes, when its input changed, to read what is stopped and waiting on
   the line and propose what to do about it: re-arm a drive once when its
@@ -2395,14 +2395,14 @@ make, use the entry's term instead.
   It writes records from a closed list, and the next *tick* carries them
   out under its own guards. It never merges, answers a parked question,
   re-arms a drive a person stopped or held, writes code or sends a session free
-  text ([design](design/line-at-capacity.md#the-steward-every-20-minutes)).
+  text ([steward](plugin/skills/steward/README.md)).
   *Avoid:* orchestrator.
 - **Act (of a need)** — the one thing a person does to settle something
   that waits on them, from a closed list: Merge, Decide, Authorize, Reply,
   Do or Investigate. Each need on the *dispatch board* opens with its act,
   derived from its park's class, then the ask and the recommended option
   with what it changes and costs
-  ([design](design/line-at-capacity.md#what-each-need-asks-of-a-person)).
+  ([a need's act](plugin/README.md#the-dispatcher)).
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of
