@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExited } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   FAILURE_DEFAULTS,
   readFailures,
@@ -132,17 +133,30 @@ describe("why a tick failed", () => {
 
 describe("whether a tick failed", () => {
   it("counts an individually unreadable claim, ledger or marker as a failed tick", async () => {
-    const { settleOutcomes } = await import("../lib/tick-settle.ts");
-    const { context, receipt } = world(["/a"]);
+    const { root, context, receipt } = world(["/a"]);
     Object.assign(context, { launches: [], nowMs: Date.now() });
-    const repo = receipt.repos[0] as unknown as { unplaced: unknown[] };
-    expect(await settleOutcomes(receipt, context, undefined)).toBe(false);
-    repo.unplaced.push({
-      target: "PR #4",
-      record: "forge",
-      reason: "its ledger did not read",
-      readFailed: true,
-    });
-    expect(await settleOutcomes(receipt, context, undefined)).toBe(true);
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--eval",
+        `import { settleOutcomes } from ${JSON.stringify(join(import.meta.dir, "../lib/tick-settle.ts"))};
+const context = ${JSON.stringify(context)};
+const receipt = ${JSON.stringify(receipt)};
+const before = await settleOutcomes(receipt, context, undefined);
+receipt.repos[0].unplaced.push({ target: "PR #4", record: "forge", reason: "its ledger did not read", readFailed: true });
+console.log(JSON.stringify([before, await settleOutcomes(receipt, context, undefined)]));`,
+      ],
+      {
+        env: { ...process.env, HOME: root, USERPROFILE: root },
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 30_000,
+      },
+    );
+    await expectSpawnExited(child, 0);
+    expect(JSON.parse(await new Response(child.stdout).text())).toEqual([
+      false,
+      true,
+    ]);
   });
 });

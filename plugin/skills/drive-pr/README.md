@@ -592,17 +592,35 @@ mechanical state rather than on anyone's judgement:
   collaborator; `jig send drive@<owner>/<name>#<PR> answer <key> "<text>"`
   writes that comment after checking the key is parked and unanswered
   ([the plugin's README](../../README.md#telling-a-station-what-to-do)).
+  Use `approve` to choose the recommendation or `choose <option name>` to
+  choose an option by name. On a thread, either form can be the whole reply.
+  Beside an answer, `note <key>: <text>` adds a condition of at most 500
+  characters. Other prose or code makes the comment a free answer, which
+  the pass interprets. An unknown option also stays free; `jig ask` labels
+  it that way. Phone typography, case and Markdown emphasis do not affect
+  matching. A note alone does not answer the question.
+  Each person's latest answer counts, using the comment's last edit time
+  when edited. If everyone chooses the same option with the same note, it
+  is answered. If everyone's answer is free, the pass interprets them all.
+  Different choices, different notes, or a
+  [structured answer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) beside another
+  person's free answer leave the question disputed and waiting. The
+  dispatcher notifies you of the dispute.
   Once every item is answered, the re-arm unparks them all and
   hands your answers to the drive's passes as your verdicts, keeping them in
   the drive's state directory until a pass completes, so a drive that stops
-  first still hands them on when it is re-armed. With any item unanswered
+  first still hands them on when it is re-armed. A structured verdict keeps
+  the chosen option, its decision and your note. The pass applies the option
+  with the note's conditions; a note cannot grant broader permission. If
+  those conflict, the pass parks the question again and quotes the note.
+  With any item unanswered
   nothing is unparked. If the pull request conflicts with its base, the
   re-arm attempts conflict repair within its budget. Successful repair lets
   the next gate park on unanswered questions; a remaining conflict stops
   `9` (`PR_CONFLICTING`), including when repair fails, is disabled or has
   spent its budget, or the base cannot be read. Otherwise the drive stops `8` again; at the `wide` level,
-  except where every unanswered item has the class `escalated`, which the
-  re-arm hands to the first round to decide provisionally.
+  except where every unanswered item has no person's answer and the class
+  `escalated`, which the re-arm hands to the first round to decide provisionally.
 
 A driver that still holds its locks but is stuck can be **taken over**:
 

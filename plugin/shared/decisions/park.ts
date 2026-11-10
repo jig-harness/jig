@@ -1,6 +1,8 @@
 /** The portable JSON contract for a decision waiting for a person. */
 import { type Call, type Option, optionDetails } from "./model.ts";
 import { Checker, type Json, type SourcedClaim } from "./source.ts";
+import { normalizeAnswerText } from "./answer-normalize.ts";
+import { redact } from "../redact.ts";
 
 export interface ParkedOption extends Option {
   reversible?: boolean;
@@ -94,6 +96,8 @@ function checkCall(c: Checker, call: unknown): void {
       if (c.text(option.name, `${p}.name`)) {
         names.push(option.name);
         if (/[\r\n]/.test(option.name)) c.fail(`${p}.name`, "must be one line");
+        if (redact(option.name) !== option.name)
+          c.fail(`${p}.name`, "must not contain a value the ledger redacts");
       }
       c.text(option.summary, `${p}.summary`);
       c.texts(option.pay, `${p}.pay`, 1);
@@ -105,6 +109,11 @@ function checkCall(c: Checker, call: unknown): void {
     });
     if (new Set(names).size !== names.length)
       c.fail("$.call.options", "two options share a name");
+    else if (new Set(names.map(normalizeAnswerText)).size !== names.length)
+      c.fail(
+        "$.call.options",
+        "two option names are the same after answer normalization",
+      );
     if (
       !c.text(call.recommended, "$.call.recommended") ||
       !ids.includes(call.recommended)

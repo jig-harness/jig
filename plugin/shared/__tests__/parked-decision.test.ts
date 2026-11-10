@@ -73,3 +73,38 @@ test("all option and recommendation invariants survive JSON", () => {
   ])
     expect(problems).toContain(text);
 });
+
+test("option names remain distinct after answer normalization", () => {
+  const options = decision.call.options.map((option, index) => ({
+    ...option,
+    name: index === 0 ? "Don’t release" : "  **DON'T  RELEASE!**  ",
+  }));
+  expect(
+    checkParkedDecision(
+      { ...decision, call: { ...decision.call, options } },
+      "escalated",
+    ).join("\n"),
+  ).toContain("same after answer normalization");
+});
+
+test("option names cannot change when the ledger redacts them", () => {
+  for (const name of [
+    "Notify alice@example.test",
+    "Use acct-0123456789abcdef",
+    "Use token:0123456789ab",
+    "Use api-key:0123456789ab",
+  ]) {
+    const options = decision.call.options.map((option, index) => ({
+      ...option,
+      name: index === 0 ? name : option.name,
+    }));
+    expect(
+      checkParkedDecision(
+        { ...decision, call: { ...decision.call, options } },
+        "escalated",
+      ).join("\n"),
+    ).toContain(
+      "$.call.options[0].name: must not contain a value the ledger redacts",
+    );
+  }
+});

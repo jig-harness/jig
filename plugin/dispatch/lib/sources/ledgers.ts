@@ -129,7 +129,12 @@ import type {
 
 /** What answers a park's items, when the ledger stopped `HITL_PARKED`. */
 export type ParkReading =
-  | { answered: number; waiting: string[]; parks?: WaitingPark[] }
+  | {
+      answered: number;
+      waiting: string[];
+      parks?: WaitingPark[];
+      disputed?: string[];
+    }
   | { unreadable: string };
 
 /** What the head of a pull request's base branch read as. */
@@ -487,7 +492,8 @@ function parkClass(park: ParkReading | undefined, forge: PrFacts): Classified {
       class: "re-armable",
       why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), every parked item answered (${park.answered}): re-arm on any account`,
     };
-  const waiting = `waiting on ${park.waiting.join(", ")}`;
+  const disputes = park.disputed ?? [];
+  const waiting = `waiting on ${park.waiting.join(", ")}${disputes.length === 0 ? "" : `; disputed answers to ${disputes.join(", ")}`}`;
   return (
     parkConflictClass(waiting, forge) ?? {
       class: "parked",
@@ -688,10 +694,15 @@ async function parkOf(
   )
     return undefined;
   const found = await parkAnswers(pr, ledger.parked, slug, listing);
+  if (!("unreadable" in found) && found.unread.length > 0)
+    return {
+      unreadable: found.unread.map((p) => `${p.kind} ${p.key}`).join(", "),
+    };
   return "unreadable" in found
     ? found
     : {
         answered: found.answered.length,
+        disputed: found.disputed.map((d) => `${d.item.kind} ${d.item.key}`),
         waiting: found.waiting.map((p) => `${p.kind} ${p.key}`),
         parks: found.waiting.map((p) => ({
           ...(p.person === undefined ? {} : { person: p.person }),
@@ -699,6 +710,13 @@ async function parkOf(
           kind: p.kind,
           lines: framedDecisionLines(p),
           ...(p.decision === undefined ? {} : { decision: p.decision }),
+          ...(found.disputed.find((d) => d.item.key === p.key) === undefined
+            ? {}
+            : {
+                disputed:
+                  found.disputed.find((d) => d.item.key === p.key)?.answers ??
+                  [],
+              }),
         })),
       };
 }

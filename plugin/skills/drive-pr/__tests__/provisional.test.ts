@@ -525,6 +525,47 @@ async function rearm(forge: Forge) {
 }
 
 describe("re-arming a HITL-parked drive with items unanswered", () => {
+  it("at wide, keeps a disputed escalation parked instead of deciding over people's answers", async () => {
+    const forge = fakeForge(WIDE);
+    forge.write("comments-12.json", []);
+    await park(forge, "PRRT_e1", "escalated");
+    const at = new Date(Date.now() + 60_000).toISOString();
+    forge.thread("PRRT_e1", [
+      FINDING,
+      { author: "alice", association: "OWNER", body: "approve", at },
+      { author: "bob", association: "MEMBER", body: "wait, don't", at },
+    ]);
+    const r = await rearm(forge);
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout.trim())).toBe("");
+    expect(r.stderr).toContain("answers that do not settle it");
+    expect((await decisions(forge)).parked).toHaveLength(1);
+  });
+
+  it("hands a structured approval's chosen option and decision to the next pass", async () => {
+    const forge = fakeForge(WIDE);
+    forge.write("comments-12.json", []);
+    await park(forge, "PRRT_e1", "escalated");
+    forge.thread("PRRT_e1", [
+      FINDING,
+      {
+        author: "alice",
+        association: "OWNER",
+        body: "approve",
+        at: new Date(Date.now() + 60_000).toISOString(),
+      },
+    ]);
+    const r = await rearm(forge);
+    expectSpawnExit(r, 0);
+    const notice = JSON.parse(r.stdout.trim()) as string;
+    expect(notice).toContain(
+      "@alice chose **Keep it** (the recommended option)",
+    );
+    expect(notice).toContain("## Options");
+    expect(notice).not.toContain("RE-ARMED TO DECIDE PROVISIONALLY");
+    expect((await decisions(forge)).parked).toEqual([]);
+  });
+
   it("at wide, unparks escalated items for the first round to decide provisionally", async () => {
     const forge = fakeForge(WIDE);
     forge.write("comments-12.json", []);

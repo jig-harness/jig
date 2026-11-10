@@ -2113,7 +2113,7 @@ function threadCommentNodes(
     },
     authorAssociation: c.authorAssociation ?? "NONE",
     createdAt: "2026-09-10T10:00:00Z",
-    lastEditedAt: "2026-09-10T10:00:00Z",
+    lastEditedAt: null,
     body: c.body,
     originalCommit: { oid: originalCommitOid },
   }));
