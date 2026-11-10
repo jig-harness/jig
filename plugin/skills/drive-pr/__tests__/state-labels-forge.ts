@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 /** The default branch's configuration with the labels on, as the forge serves it. */
-export const LABELS_ON = "dispatch:\n  labels:\n    enabled: true\n";
+const LABELS_ON = "dispatch:\n  labels:\n    enabled: true\n";
 
 /**
  * A `gh` that serves the repository and its default branch's
