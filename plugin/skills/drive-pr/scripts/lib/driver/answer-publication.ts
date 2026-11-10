@@ -60,13 +60,18 @@ export async function laggingAnswerPublication(
     return [];
   }
   const diagnostic = publicationLedgerDiagnostic(snapshot);
-  if (diagnostic !== null) {
+  const parsed = snapshot.canonical?.parsed;
+  if (parsed?.kind !== "ledger") {
     console.error(
       `re-arm: could not compare answer framing with the published ledger: ${diagnostic}; using local framing and park time.`,
     );
     return [];
   }
-  const published = snapshot.canonical.parsed.ledger.parked;
+  if (diagnostic !== null)
+    console.error(
+      `re-arm: ${diagnostic}; comparing the readable canonical published ledger.`,
+    );
+  const published = parsed.ledger.parked;
   return parks
     .filter((p) => answerPublicationLag(p, answers(p.key), published))
     .map((p) => p.key);

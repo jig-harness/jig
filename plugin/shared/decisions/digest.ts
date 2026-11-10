@@ -32,9 +32,9 @@ export function splitAnswerDigest(text: string): {
   digest?: string;
 } {
   const normalized = normalizeAnswerText(text);
-  // A framing digest is an identity claim, not optional prose. Find it before
-  // free-answer fallback even when a commenter appends text after the digest.
-  const match = /(?:^|\s)\[([0-9a-f]{12})\](?=\s|$)/.exec(normalized);
+  // Only a terminal digest frames a structured answer. A digest in an option
+  // name, or prose following a digest, must remain part of the answer text.
+  const match = /(?:^|\s)\[([0-9a-f]{12})\]$/.exec(normalized);
   return match === null
     ? { text }
     : {

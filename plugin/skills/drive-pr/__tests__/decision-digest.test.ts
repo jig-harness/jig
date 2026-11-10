@@ -139,6 +139,46 @@ test("digest is checked before obsolete names or mixed prose can become free ans
   }
 });
 
+test("a framing suffix preserves option text and rejects extra identity claims", () => {
+  const keep = decision.call.options[0];
+  const remove = decision.call.options[1];
+  if (keep === undefined || remove === undefined)
+    throw new Error("missing decision option");
+  const withDigestName = {
+    ...item,
+    decision: {
+      ...decision,
+      call: {
+        ...decision.call,
+        options: [{ ...keep, name: "Keep [aaaaaaaaaaaa]" }, remove],
+      },
+    },
+  };
+  expect(
+    parseAnswerComment(
+      withDigestName,
+      comment("answer K: choose Keep [aaaaaaaaaaaa] [123456abcdef]"),
+      "conversation",
+    )?.choice,
+  ).toMatchObject({ option: "Keep [aaaaaaaaaaaa]", digest: item.digest });
+  expect(
+    parseAnswerComment(
+      item,
+      comment("answer K: approve [123456abcdef] [aaaaaaaaaaaa]"),
+      "conversation",
+    )?.stale,
+  ).toBe(true);
+  expect(
+    parseAnswerComment(
+      item,
+      comment(
+        "answer K: approve [123456abcdef] only after backup verification",
+      ),
+      "conversation",
+    )?.choice,
+  ).toBeUndefined();
+});
+
 test("latest correction supersedes stale and retained verdict names its framing", async () => {
   const read = await parkAnswers(12, [item], "example/repo", [
     listing("answer K: approve [aaaaaaaaaaaa]"),

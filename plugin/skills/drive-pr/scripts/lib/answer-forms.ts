@@ -283,9 +283,10 @@ function structuredText(
     : { text, ...(note === undefined ? {} : { note }) };
 }
 
-function choiceOf(
+function choiceFromText(
   item: ParkedItem,
   text: string,
+  digest?: string,
   note?: string,
 ): AnswerChoice | undefined {
   const call = answerDecision(item)?.call;
@@ -305,8 +306,7 @@ function choiceOf(
     call.options.length
   )
     return undefined;
-  const suffix = splitAnswerDigest(text);
-  const normalized = normalizeAnswerText(suffix.text);
+  const normalized = normalizeAnswerText(text);
   const form =
     normalized === "approve"
       ? "approve"
@@ -327,9 +327,18 @@ function choiceOf(
         option: option.name,
         recommended: option.id === call.recommended,
         form,
-        ...(suffix.digest === undefined ? {} : { digest: suffix.digest }),
+        ...(digest === undefined ? {} : { digest }),
         ...(note === undefined ? {} : { note }),
       };
+}
+
+function choiceOf(
+  item: ParkedItem,
+  text: string,
+  note?: string,
+): AnswerChoice | undefined {
+  const suffix = splitAnswerDigest(text);
+  return choiceFromText(item, suffix.text, suffix.digest, note);
 }
 
 export function parseAnswerComment(
@@ -360,8 +369,20 @@ export function parseAnswerComment(
         : place === "thread" && keyed === null
           ? raw.trim()
           : "";
-    const digest = splitAnswerDigest(text).digest;
-    return digest === undefined ? [] : [digest];
+    const suffix = splitAnswerDigest(text);
+    // A terminal digest belongs to the framing only when what precedes it is
+    // an actual structured choice. Otherwise every digest-looking token is an
+    // identity claim: an obsolete framing must not fall through as free prose.
+    if (
+      suffix.digest !== undefined &&
+      choiceFromText(item, suffix.text) !== undefined
+    )
+      return [suffix.digest];
+    return [
+      ...normalizeAnswerText(text).matchAll(
+        /(?:^|\s)\[([0-9a-f]{12})\](?=\s|$)/g,
+      ),
+    ].map((match) => (match[1] ?? "").toLowerCase());
   });
   const stale =
     item.digest !== undefined && digests.some((d) => d !== item.digest);
