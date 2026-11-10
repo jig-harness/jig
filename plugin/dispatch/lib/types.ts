@@ -116,6 +116,8 @@ export type FollowupClass = "followup-done" | "followup-held";
 
 /** A parked decision still waiting on its answer, as the drive framed it. */
 export interface WaitingPark {
+  digest?: string;
+  stale?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   /** The latest answers that disagree, which keep the item waiting. */
   disputed?: import("../../skills/drive-pr/scripts/lib/state/pass-handoff.ts").PendingAnswer[];
   decision?: import("../../shared/decisions/park.ts").ParkedDecision;

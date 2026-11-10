@@ -20,7 +20,7 @@ function answerHeading(a: PendingAnswer): string {
   if (a.choice === undefined) return by;
   return [
     by,
-    `  @${a.author} chose **${clip(a.choice.option, CHOICE_MAX, "read the complete retained choice in the file named above")}**${a.choice.recommended ? " (the recommended option)" : ""}. Apply this option as the framed decision states it.`,
+    `  @${a.author} chose **${clip(a.choice.option, CHOICE_MAX, "read the complete retained choice in the file named above")}**${a.choice.recommended ? " (the recommended option)" : ""}${a.choice.digest === undefined ? "" : ` from framing ${a.choice.digest}`}. Apply this option as the framed decision states it.`,
     ...(a.choice.note === undefined
       ? []
       : [`  Note from @${a.author}: ${a.choice.note}`]),

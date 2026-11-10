@@ -477,9 +477,11 @@ describe("drive-state.ts durability", () => {
       const below = out.slice(out.indexOf(marker) + marker.length);
       // The machine block stays above the boundary, in one copy.
       expect(below).not.toContain("PRRT_1");
-      // Its table row and its framed decision, both above the boundary.
+      // Its table row, framed decision, and the copyable framed answers all
+      // remain above the boundary. The decision has two options, so its key
+      // appears once in the table, once in the frame, and once per answer.
       expect(out.split("\n").filter((l) => l.includes("PRRT_1")).length).toBe(
-        2,
+        5,
       );
     });
 
