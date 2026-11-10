@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -289,6 +290,54 @@ test("no recorded tool, or a tool that cannot answer, is an error naming why", a
     }),
   ).rejects.toThrow("claude: exited 1: offline");
 });
+
+test.skipIf(skipsOnWindows("powershell", "signals are POSIX"))(
+  "a cancelled lookup ends its tool at once, and an already-cancelled one never starts it",
+  async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    const claude = join(root, "claude");
+    const pidFile = join(root, "pid");
+    writeFakeProgram(
+      claude,
+      `#!/usr/bin/env bun\nrequire("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nsetInterval(() => {}, 1000);\n`,
+    );
+    const cancel = new AbortController();
+    const lookup = listPlugins(
+      claude,
+      60_000,
+      undefined,
+      undefined,
+      cancel.signal,
+    );
+    const settled = lookup.then(
+      () => null,
+      (error: Error) => error,
+    );
+    const deadline = Date.now() + 10_000;
+    while (!existsSync(pidFile) && Date.now() < deadline) await Bun.sleep(20);
+    cancel.abort();
+    expect((await settled)?.message).toContain("received aborted");
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    const gone = Date.now() + 3000;
+    let alive = true;
+    while (alive && Date.now() < gone) {
+      try {
+        process.kill(pid, 0);
+        await Bun.sleep(50);
+      } catch {
+        alive = false;
+      }
+    }
+    expect(alive).toBe(false);
+    rmSync(pidFile);
+    await expect(
+      listPlugins(claude, 60_000, undefined, undefined, cancel.signal),
+    ).rejects.toThrow("received aborted");
+    expect(existsSync(pidFile)).toBe(false);
+    rmSync(root, { recursive: true, force: true });
+  },
+  30_000,
+);
 
 test.skipIf(skipsOnWindows("powershell", "signals are POSIX"))(
   "a tool that ignores SIGTERM and never answers fails the lookup in time",

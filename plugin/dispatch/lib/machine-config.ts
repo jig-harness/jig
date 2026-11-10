@@ -715,6 +715,14 @@ export function readMachineConfig(
       error,
     );
   }
+  return parseMachineConfigText(raw, file);
+}
+
+/** The machine file's text, already read, parsed and validated; `file` names it in reasons. */
+export function parseMachineConfigText(
+  raw: string,
+  file: string,
+): Outcome<MachineConfig, MachineConfigCode> {
   let values: unknown;
   try {
     values = load(raw);

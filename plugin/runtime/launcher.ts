@@ -121,7 +121,7 @@ export type PluginList = (program: string) => unknown;
 const STOP_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
 /** Why the launcher stopped a child: its deadline, its output, or a signal to the launcher. */
-type StopCause = "deadline" | "output" | NodeJS.Signals;
+type StopCause = "deadline" | "output" | "aborted" | NodeJS.Signals;
 
 /** How one supervised child ended. */
 interface Outcome {
@@ -142,6 +142,8 @@ interface Supervision {
   announce?: string;
   /** The child's environment, in place of the launcher's own. */
   env?: NodeJS.ProcessEnv;
+  /** Ends the child's group at once when it aborts; an aborted signal never starts it. */
+  signal?: AbortSignal;
 }
 
 /** The longest delay `setTimeout` takes; a longer one fires at once. */
@@ -177,6 +179,10 @@ function longTimeout(run: () => void, ms: number): { clear(): void } {
  */
 function supervise(command: string[], options: Supervision): Promise<Outcome> {
   return new Promise((settle, fail) => {
+    if (options.signal?.aborted) {
+      settle({ code: null, stopped: "aborted", stdout: "", stderr: "" });
+      return;
+    }
     const capture = options.captureBytes !== undefined;
     const child = spawn(command[0] as string, command.slice(1), {
       stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
@@ -200,6 +206,7 @@ function supervise(command: string[], options: Supervision): Promise<Outcome> {
       deadline.clear();
       clearTimeout(escalation);
       for (const name of STOP_SIGNALS) process.off(name, onSignal);
+      options.signal?.removeEventListener("abort", onAbort);
     };
     const finish = (code: number | null) => {
       if (done) return;
@@ -237,6 +244,8 @@ function supervise(command: string[], options: Supervision): Promise<Outcome> {
       options.deadlineMs,
     );
     const onSignal = (name: NodeJS.Signals) => stop(name, `received ${name}`);
+    const onAbort = () => stop("aborted", "was cancelled", 0);
+    options.signal?.addEventListener("abort", onAbort);
     for (const name of STOP_SIGNALS) process.on(name, onSignal);
     for (const stream of ["stdout", "stderr"] as const) {
       child[stream]?.on("data", (chunk: Buffer) => {
@@ -273,6 +282,7 @@ export async function listPlugins(
   timeoutMs = 30_000,
   maxBytes = 4 * 1024 * 1024,
   env?: NodeJS.ProcessEnv,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   const { code, stopped, stdout, stderr } = await supervise(
     [program, "plugin", "list", "--json"],
@@ -281,6 +291,7 @@ export async function listPlugins(
       graceMs: 0,
       captureBytes: maxBytes,
       ...(env === undefined ? {} : { env }),
+      ...(signal === undefined ? {} : { signal }),
     },
   );
   if (stopped === "deadline")

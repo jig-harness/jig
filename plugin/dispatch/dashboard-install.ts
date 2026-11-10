@@ -1,6 +1,7 @@
 /** Availability through an independent retry timer, using the installed-copy launcher. */
 import { randomUUID } from "node:crypto";
 import {
+  existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -11,7 +12,7 @@ import { join } from "node:path";
 import { createServer } from "node:net";
 import { exclusiveInstallLock } from "../shared/gc-lock.ts";
 import { run } from "../shared/proc.ts";
-import { installedEntry } from "../runtime/launcher.ts";
+import { installedEntry, listPlugins } from "../runtime/launcher.ts";
 import { scheduledStatus, formatStatus } from "../runtime/job-status.ts";
 import type { JobSpec } from "../runtime/job-spec.ts";
 import {
@@ -24,11 +25,15 @@ import {
   snapshotScheduler,
   restoreScheduler,
 } from "../runtime/scheduler.ts";
-import { machineConfigPath, readMachineConfig } from "./lib/machine-config.ts";
+import {
+  machineConfigPath,
+  parseMachineConfigText,
+  readMachineConfig,
+} from "./lib/machine-config.ts";
 import {
   keepDashboard,
   readerRoot,
-  readerGeneration,
+  readGeneration,
   reportGeneration,
   causeDetail,
   readAccess,
@@ -162,6 +167,11 @@ async function snapshotDashboardJob() {
     : scheduler;
 }
 
+/** Only an install needs the previous generation: removal never reads the marker. */
+function generationBefore(root: string, remove: boolean) {
+  return remove ? ok(null) : reportGeneration(root);
+}
+
 async function writeDashboardJob(remove: boolean): Promise<number> {
   const snapshot = await snapshotDashboardJob();
   if (!snapshot.ok) {
@@ -171,7 +181,7 @@ async function writeDashboardJob(remove: boolean): Promise<number> {
   const root = readerRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
   // The same generation survives repeated installs; no extra reader is started.
-  const marker = reportGeneration(root);
+  const marker = generationBefore(root, remove);
   if (!marker.ok) return 1;
   const previous = marker.value;
   if (!remove && previous === null)
@@ -205,14 +215,15 @@ function schedulerLogs(scheduler: string | null): string {
 
 /** Null when the reader runs the installed copy; otherwise the line saying why not. */
 async function installedCopyState(
-  readerUp: boolean,
-  script: string,
+  readerEntry: string | null,
 ): Promise<string | null> {
   const waiting = "waiting for renewal";
   try {
-    return readerUp &&
-      realpathSync(await installedEntry(pluginPrograms())) ===
-        realpathSync(script)
+    const installed = realpathSync(await installedEntry(pluginPrograms()));
+    // A reader whose copy was replaced and removed is not the installed one.
+    return readerEntry !== null &&
+      existsSync(readerEntry) &&
+      installed === realpathSync(readerEntry)
       ? null
       : `installed copy: reader is not running the currently installed plugin copy; ${waiting}`;
   } catch (cause) {
@@ -221,13 +232,20 @@ async function installedCopyState(
   }
 }
 
-/** Resolves null when the reader is uninstalled meanwhile, so removal never waits out a slow lookup. */
+/**
+ * Resolves null when the reader is uninstalled meanwhile, so removal never
+ * waits out a slow lookup; the lookup's registry commands are cancelled then.
+ * An unreadable marker is not a removal: the reader loop reports it.
+ */
 async function lookupInstalledEntry(
   programs: ReturnType<typeof pluginPrograms>,
 ): Promise<Outcome<string> | null> {
   let removalTimer: ReturnType<typeof setInterval> | undefined;
+  const cancel = new AbortController();
   try {
-    const lookup = installedEntry(programs).then(
+    const lookup = installedEntry(programs, (program) =>
+      listPlugins(program, undefined, undefined, undefined, cancel.signal),
+    ).then(
       (value) => ok(value),
       (cause) =>
         failed(
@@ -238,32 +256,19 @@ async function lookupInstalledEntry(
     );
     const removed = new Promise<null>((resolve) => {
       removalTimer = setInterval(() => {
-        if (readerGeneration() === null) resolve(null);
+        const marker = readGeneration(readerRoot());
+        if (marker.ok && marker.value === null) resolve(null);
       }, 100);
     });
-    return await Promise.race([lookup, removed]);
+    const winner = await Promise.race([lookup, removed]);
+    if (winner === null) {
+      cancel.abort();
+      await lookup;
+    }
+    return winner;
   } finally {
     clearInterval(removalTimer);
   }
-}
-
-/** The settings and their fingerprint must describe one file snapshot. */
-function readStableConfig(path: string): Outcome<string> {
-  const read = () =>
-    attempt(
-      "configuration-unreadable",
-      "Dashboard configuration cannot be read",
-      () => readFileSync(path, "utf8"),
-    );
-  const first = read();
-  if (!first.ok) return first;
-  const second = read();
-  if (second.ok && second.value !== first.value)
-    return failed(
-      "configuration-changing",
-      "Dashboard configuration changed while it was read; retrying",
-    );
-  return second.ok ? first : second;
 }
 
 function settingsMatch(
@@ -284,19 +289,21 @@ function settingsMatch(
 }
 
 async function answers(url: string): Promise<boolean> {
-  try {
-    const response = await fetch(url, {
-      redirect: "error",
-      signal: AbortSignal.timeout(3000),
-    });
-    await response.body?.cancel();
-    return response.ok;
-  } catch {
-    return false; // Never print a fetch error: it may carry the private URL.
-  }
+  // Never print a fetch error: it may carry the private URL.
+  const pending = attempt("not-answering", "reader not answering", () =>
+    fetch(url, { redirect: "error", signal: AbortSignal.timeout(3000) }),
+  );
+  if (!pending.ok) return false;
+  const response = await pending.value.then(
+    (value) => ok(value),
+    (cause) => failed("not-answering", "reader not answering", cause),
+  );
+  if (!response.ok) return false;
+  await response.value.body?.cancel();
+  return response.value.ok;
 }
 
-export async function dashboardStatus(script: string): Promise<number> {
+export async function dashboardStatus(): Promise<number> {
   const status = await scheduledStatus("dashboard", dashboardJobSpec(), null);
   console.log(formatStatus(status));
   const scheduler = detectScheduler();
@@ -310,7 +317,10 @@ export async function dashboardStatus(script: string): Promise<number> {
     snapshot.value.enabled &&
     snapshot.value.active;
   const access = readAccess();
-  const copy = await installedCopyState(access.ok, script);
+  // The reader's own recorded entry, never the copy that runs this status.
+  const copy = await installedCopyState(
+    access.ok ? (access.value.entry ?? null) : null,
+  );
   const matches = settingsMatch(access, readMachineConfig());
   const healthy = access.ok && (await answers(access.value.url));
   console.log(
@@ -344,14 +354,19 @@ export function dashboardAccess(): number {
 /** Poll cheap config/generation every second; resolve the installed entry at most once a minute. */
 export async function scheduledDashboard(script: string): Promise<number> {
   const path = machineConfigPath();
-  const snapshot = readStableConfig(path);
+  // One read feeds both the parse and the watched text, so they cannot differ.
+  const snapshot = attempt(
+    "configuration-unreadable",
+    "Dashboard configuration cannot be read",
+    () => readFileSync(path, "utf8"),
+  );
   if (!snapshot.ok) {
     console.error(snapshot.failure.reason);
     return 1;
   }
   const config = snapshot.value;
-  const machine = readMachineConfig(path);
-  if (!machine.ok || machine.value?.dashboardListen == null) {
+  const machine = parseMachineConfigText(config, path);
+  if (!machine.ok || machine.value.dashboardListen == null) {
     console.error(
       machine.ok ? "dashboard.listen is missing" : machine.failure.reason,
     );
@@ -364,6 +379,7 @@ export async function scheduledDashboard(script: string): Promise<number> {
     listen: machine.value.dashboardListen,
     requireToken: machine.value.dashboardRequireToken,
     allowedHosts: machine.value.dashboardAllowedHosts,
+    entry: ownEntry,
     current: async () => {
       const currentConfig = attempt(
         "configuration-unreadable",

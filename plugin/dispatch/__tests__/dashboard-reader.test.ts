@@ -364,3 +364,43 @@ test("an installation marker that cannot be read is a failure, not an absence", 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+runTest(
+  "a marker that becomes unreadable while serving stops the reader with a failure, not as an uninstall",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "jig-reader-marker-"));
+    const enabled = join(root, "enabled");
+    const worker = join(root, "worker.ts");
+    writeFileSync(enabled, "installation");
+    writeFileSync(
+      worker,
+      `import {keepDashboard} from ${JSON.stringify(reader)}; process.exitCode=await keepDashboard({root:${JSON.stringify(root)},dataRoot:${JSON.stringify(join(root, "data"))},listen:{host:"127.0.0.1",port:0},requireToken:true,allowedHosts:[],entry:"/the/entry/jig.ts",pollMs:20,current:async()=>true});`,
+    );
+    const child = Bun.spawn([process.execPath, worker], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    try {
+      const access = await until(
+        () => readAccess(root),
+        (value) => value.ok,
+      );
+      expect(access.ok && access.value.entry).toBe("/the/entry/jig.ts");
+      rmSync(enabled);
+      mkdirSync(enabled);
+      expectSpawnExit(
+        {
+          exitCode: await child.exited,
+          stdout: await new Response(child.stdout).text(),
+          stderr: await new Response(child.stderr).text(),
+        },
+        1,
+      );
+      expect(readAccess(root).ok).toBe(false);
+    } finally {
+      child.kill();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+  20_000,
+);

@@ -517,7 +517,7 @@ function dashboardAction(
   checkDashboardArguments(args);
   if (args.install || args.uninstall)
     return dashboardInstall(args.confirm, args.uninstall, script);
-  if (args.status) return dashboardStatus(script);
+  if (args.status) return dashboardStatus();
   if (args.access) return dashboardAccess();
   if (args.scheduled) return scheduledDashboard(script);
   return dashboardCommand(args.port);

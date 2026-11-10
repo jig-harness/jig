@@ -43,7 +43,7 @@ export function causeDetail(cause: unknown): string {
 }
 
 /** Absence of the marker is `null`; any other read failure is a failure, never an absence. */
-function readGeneration(
+export function readGeneration(
   root = readerRoot(),
 ): Outcome<string | null, "generation-unreadable"> {
   try {
@@ -64,15 +64,13 @@ export function reportGeneration(root: string) {
   if (!read.ok) console.error(read.failure.reason);
   return read;
 }
-export function readerGeneration(root = readerRoot()): string | null {
-  const read = readGeneration(root);
-  return read.ok ? read.value : null;
-}
 
 interface Access {
   url: string;
   identity: ProcessIdentity;
   configuration: string;
+  /** The `jig.ts` the reader started from; absent in a record an earlier release wrote. */
+  entry?: string;
 }
 
 export function readerSettings(
@@ -131,7 +129,12 @@ export function readAccess(
         "unavailable",
         "dashboard reader is not confirmed running; inspect --status and scheduler logs",
       );
-    return ok({ url: value.url, identity, configuration: value.configuration });
+    return ok({
+      url: value.url,
+      identity,
+      configuration: value.configuration,
+      ...(typeof value.entry === "string" ? { entry: value.entry } : {}),
+    });
   } catch (cause) {
     const code = causeCode(cause);
     return failed(
@@ -151,6 +154,8 @@ export async function keepDashboard(options: {
   listen: Listen;
   requireToken: boolean;
   allowedHosts: readonly string[];
+  /** The `jig.ts` this reader runs, recorded so a status can compare it with the installed copy. */
+  entry?: string;
   root?: string;
   dataRoot?: string;
   /** False when configuration or the installed copy changed: the timer starts its replacement. */
@@ -167,7 +172,9 @@ export async function keepDashboard(options: {
     root,
     async () => {
       // An uninstall may have won while this tick waited for the lease.
-      if (readerGeneration(root) !== generation) return 0;
+      const current = reportGeneration(root);
+      if (!current.ok) return 1;
+      if (current.value !== generation) return 0;
       existingStateDb(options.dataRoot);
       const started = (() => {
         try {
@@ -216,6 +223,7 @@ export async function keepDashboard(options: {
             JSON.stringify({
               url: dashboard.url,
               identity: ownIdentity(),
+              ...(options.entry === undefined ? {} : { entry: options.entry }),
               configuration: readerSettings(
                 options.listen,
                 options.requireToken,
@@ -231,13 +239,18 @@ export async function keepDashboard(options: {
         console.log(
           "jig dashboard reader: listening; use jig dispatch dashboard --access for its private URL",
         );
-        while (
-          !stop &&
-          readerGeneration(root) === generation &&
-          (await options.current())
-        )
+        // An unreadable marker is a failure to report, never an uninstall.
+        let code = 0;
+        while (!stop) {
+          const marker = reportGeneration(root);
+          if (!marker.ok) {
+            code = 1;
+            break;
+          }
+          if (marker.value !== generation || !(await options.current())) break;
           await Bun.sleep(options.pollMs ?? 1000);
-        return 0;
+        }
+        return code;
       } finally {
         try {
           dashboard.stop();
