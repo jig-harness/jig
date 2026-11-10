@@ -66,10 +66,13 @@ describe("the host's default repository for unlabelled served items", () => {
   const repo = (path: string) => ({ path, stages: ["pickup"] });
   const repositories = [repo("/srv/web"), repo("/srv/api")];
 
-  it("reads one repository per tracker team, the team's case folded", () => {
-    const config = read({ repositories, serve_defaults: { ENG: "/srv/api" } });
+  it("reads one repository per tracker namespace, case folded", () => {
+    const config = read({
+      repositories,
+      serve_defaults: { "LINEAR:ENG": "/srv/api" },
+    });
     expect(config.ok && config.value?.serveDefaults).toEqual({
-      eng: "/srv/api",
+      "linear:eng": "/srv/api",
     });
     const none = read({ repositories });
     expect(none.ok && none.value?.serveDefaults).toEqual({});

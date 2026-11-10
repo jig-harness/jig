@@ -117,15 +117,32 @@ export function unlabeledModeOf(input: {
   scope: RepoScope | undefined;
   adapter: string;
   team: string;
+  /** The Jira site distinguishes projects with the same team key on different sites. */
+  site?: string | null;
   defaults: Readonly<Record<string, string>> | undefined;
   repoPath: string;
 }): UnlabeledMode {
-  const { scope, adapter, team, defaults, repoPath } = input;
+  const { scope, adapter, team, site, defaults, repoPath } = input;
   if (scope === undefined || scope.invalid !== undefined) return "start";
   if (adapter === "github") return "start";
-  const chosen = defaults?.[team.toLowerCase()];
+  const key = trackerDefaultKey(adapter, team, site);
+  const chosen =
+    defaults !== undefined && Object.hasOwn(defaults, key)
+      ? defaults[key]
+      : undefined;
   if (chosen === undefined) return "hold";
   return chosen === resolve(repoPath) ? "start" : "leave";
+}
+
+/** A served tracker namespace, rather than just an issue-key team. */
+export function trackerDefaultKey(
+  adapter: string,
+  team: string,
+  site?: string | null,
+): string {
+  return adapter === "jira" && site !== null && site !== undefined
+    ? `${adapter}:${site.toLowerCase()}:${team.toLowerCase()}`
+    : `${adapter}:${team.toLowerCase()}`;
 }
 
 /** The mode that applies to an item: only an item no repository label places is held back. */
@@ -180,8 +197,9 @@ export function dropRepeatedLabelNeeds(
   for (const report of reports)
     report.unplaced = report.unplaced.filter((u) => {
       if (u.cause !== "needs-repository-label") return true;
-      if (seen.has(u.target)) return false;
-      seen.add(u.target);
+      const key = `${u.source ?? ""}:${u.target}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     });
 }

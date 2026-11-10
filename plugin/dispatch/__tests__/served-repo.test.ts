@@ -211,7 +211,7 @@ describe("repoScopeOf", () => {
 describe("served items no repository label places", () => {
   const web: RepoScope = { own: "web", others: ["api"] };
   const api: RepoScope = { own: "api", others: ["web"] };
-  const defaults = { eng: "/srv/api" };
+  const defaults = { "linear:eng": "/srv/api" };
   const mode = (scope: RepoScope, repoPath: string, team = "ENG") =>
     unlabeledModeOf({
       scope,
@@ -366,6 +366,34 @@ describe("served items no repository label places", () => {
         team: "ENG",
         defaults: {},
         repoPath: "/srv/web",
+      }),
+    ).toBe("start");
+  });
+
+  it("separates defaults for tracker namespaces with the same team", () => {
+    expect(
+      unlabeledModeOf({
+        scope: web,
+        adapter: "linear",
+        team: "ENG",
+        defaults: {
+          "linear:eng": "/srv/web",
+          "jira:https://one.atlassian.net:eng": "/srv/api",
+        },
+        repoPath: "/srv/web",
+      }),
+    ).toBe("start");
+    expect(
+      unlabeledModeOf({
+        scope: api,
+        adapter: "jira",
+        team: "ENG",
+        site: "https://one.atlassian.net",
+        defaults: {
+          "linear:eng": "/srv/web",
+          "jira:https://one.atlassian.net:eng": "/srv/api",
+        },
+        repoPath: "/srv/api",
       }),
     ).toBe("start");
   });

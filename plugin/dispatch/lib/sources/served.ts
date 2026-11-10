@@ -51,6 +51,8 @@ export interface ServedPolicy {
   repoScope?: RepoScope;
   /** What this checkout does with an item no repository label places; `start` when absent. */
   unlabeled?: UnlabeledMode;
+  /** Identity of the tracker whose unplaced items this reading reports. */
+  trackerNamespace?: string;
 }
 export interface ServedOptions extends ServedPolicy {
   cache?: PickupReads;
@@ -416,6 +418,9 @@ async function placeLeaf(
       record: "tracker",
       reason,
       ...(cause === undefined ? {} : { cause }),
+      ...(options.trackerNamespace === undefined
+        ? {}
+        : { source: options.trackerNamespace }),
     });
   };
   const unlabeled = unlabeledOutcome(
@@ -427,6 +432,7 @@ async function placeLeaf(
     hold(NEEDS_REPOSITORY_LABEL, "needs-repository-label");
     return;
   }
+  if (unlabeled === "leave") return;
   const parentHold = await servedParentHold(
     tracker,
     issue,

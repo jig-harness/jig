@@ -7,8 +7,8 @@
  * repository holds can widen it.
  *
  * ```yaml
- * serve_defaults:          # a tracker team's repository for items no repository label places
- *   ENG: /home/me/dev/web
+ * serve_defaults:          # a tracker namespace's repository for items no repository label places
+ *   linear:ENG: /home/me/dev/web
  * repositories:
  *   - path: /home/me/dev/web
  *     stages: [rearm]
@@ -113,8 +113,8 @@ export interface MachineConfig {
   serve?: ServedPerson[];
   /**
    * The repository that starts the served items no repository label places,
-   * by tracker team (lower case) to checkout path: one per team, so two
-   * repositories sharing a team never both start such an item.
+   * by tracker namespace (lower case) to checkout path: one per namespace,
+   * so two repositories sharing a tracker never both start such an item.
    */
   serveDefaults?: Record<string, string>;
   repositories: MachineRepository[];
@@ -496,8 +496,8 @@ function repositories(value: unknown): Checked<MachineRepository[]> {
 }
 
 /**
- * `serve_defaults`: each tracker team's default repository, a checkout listed
- * under `repositories`. A team is written once, whatever its case.
+ * `serve_defaults`: each tracker namespace's default repository, a checkout
+ * listed under `repositories`. A namespace is written once, whatever its case.
  */
 function serveDefaults(
   value: unknown,
@@ -515,9 +515,10 @@ function serveDefaults(
         `${where} must be a repository listed under repositories: ${checkout.value}`,
       );
     const key = team.trim().toLowerCase();
-    if (key === "") return invalid("serve_defaults has an empty team");
+    if (key === "")
+      return invalid("serve_defaults has an empty tracker namespace");
     if (key in out)
-      return invalid(`serve_defaults lists a team twice: ${team}`);
+      return invalid(`serve_defaults lists a tracker namespace twice: ${team}`);
     out[key] = checkout.value;
   }
   return ok(out);
