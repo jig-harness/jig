@@ -105,7 +105,9 @@ derivation and its depth table stay as [work types](work-types.md)
 describes them, its first step reading the type facet instead of labels.
 `Issue.nativeType` stays, read-only, as the tracker's own type name: the
 derivation's evidence line and the weekly sweep name it when it maps to no
-type, and no caller decides with it.
+type, and no caller decides with it, except that the adapter reads it once,
+with `epic_types`, to set `isEpic`; the filing check and the census read
+`isEpic`, never the native type.
 
 ### Stores
 
@@ -293,6 +295,7 @@ A value may list several names, the first written and all read:
 | `….field` | a field's name or id | none; required by `field` | `field`: the custom field, a GitHub issue field by name, a Jira field by name or id (`customfield_10016`) |
 | `….labels` | map from a canonical value to a label, or to a list of labels | the value's own name; on GitHub, priority's `priority: <name>` | `label`: the label of each value; a list is read in any of its labels and written as its first |
 | `….prefix` | a label prefix | none | `label`: each value's label is the prefix followed by the value (`size:small`); refused beside `labels` |
+| `issue_tracker.facets.sweep` | `move` or `comment` | `move` | The weekly sweep's action on an incomplete issue: comment and move it to triage, or comment only (`check-fields.ts --comment-only` sets it for one run) |
 | `issue_tracker.labels.epic_types` | list of issue type names | none | An issue of one of these native types reads as an epic on every adapter with issue types, beside the epic label; it is exempt from the size requirement everywhere the epic label is |
 
 Outside GitHub, a priority kept in labels needs `labels` or a `prefix`,
@@ -330,7 +333,10 @@ file.
 
 - `Issue` gains `type: string | null`, `priority: number` and
   `size: string | null`. `PoolIssue` gains `type` and `size` beside the
-  `priority` it has. `LedgerIssue` keeps only `priority`, the one facet the
+  `priority` it has, and `isEpic: boolean`, set by the one recognition
+  below (the epic label, or a native type in `epic_types`), since the
+  canonical type cannot recover a native type that a label store or a
+  collapsing value map hides. `Issue` carries `isEpic` too. `LedgerIssue` keeps only `priority`, the one facet the
   ledgers read.
 - `NewIssue` gains `type?` and `size?` beside `priority?`. `IssuePatch`
   gains `type?` and `size?`, where `null` removes the value.
@@ -522,15 +528,20 @@ counts the assigned items that lack one.
 `file-issue/scripts/check-fields.ts` sweeps the open issues through
 `incompleteIssues`, so it works on every adapter. It lists each issue that
 lacks a type, a priority or a size (no size on an epic), or carries a
-retired label (a facet's label where that facet is kept elsewhere), and
-moves each one not yet started back to the `triage` state with a comment
-naming the missing facets, so the move carries its reason in the tracker's
-history. The comment is posted first and carries a marker naming the issue's
+retired label (a facet's label where that facet is kept elsewhere), and, in
+its default mode, moves each one not yet started back to the `triage` state
+with a comment naming the missing facets, so the move carries its reason in
+the tracker's history. With `--comment-only`, or `issue_tracker.facets.sweep:
+comment` in the configuration (default `move`), it posts the comment and moves
+nothing, for a repository whose people triage in place. The comment is posted first and carries a marker naming the issue's
 missing facets; a run that stopped between the comment and the move finds the
 marker on the next run, moves the issue and posts nothing again. An issue
 already started is listed, not moved, since moving it would take it from the
 session working it. An issue already in triage is not read again, so each
-issue is moved and commented on once.
+issue is moved and commented on once. In comment-only mode the issue stays in the queried population, so the
+marker alone keeps the sweep to one comment per issue and set of missing
+facets: a run that finds the marker posts nothing, and posts again only when
+the missing facets change.
 
 Its bounds:
 
