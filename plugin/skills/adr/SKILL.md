@@ -195,11 +195,21 @@ and its interpreter, and create one only if the user agrees.
 
    It checks that the file parses (a duplicated key is an error), that every
    rule has an id and no id appears twice, that every pattern rule has a
-   pattern, that every `severity` is `critical`, `warning` or `info`, that
-   every `pattern`, `follow_check` and `exclude` glob compiles, and that M5's line-by-line
-   interpreter reads every `pattern_rules` entry the same as the YAML does.
-   Exit 1 lists the problems; fix them and run it again. Exit 2 means the file
-   could not be read or parsed.
+   pattern (or an `implementation`, a `detector` or a `pattern_<name>` field,
+   which say it is enforced by something other than one pattern), that every
+   `severity` is `critical`, `warning` or `info`, that every `pattern`,
+   `follow_check`, `pattern_<name>` and `exclude` glob compiles, and, by
+   default, that M5's line-by-line interpreter reads every `pattern_rules`
+   entry the same as the YAML does. Exit 1 lists the problems; fix them and
+   run it again. Exit 2 means the file could not be read or parsed.
+
+   That last check is for the reference interpreter, which does not parse
+   YAML: it rejects a double-quoted pattern with an escape (`"\\s"` as a double-quoted YAML string), a
+   block-list `exclude`, an inline `# comment` and a block scalar. A catalog
+   enforced by an interpreter that parses YAML says so with a top-level
+   `interpreter: yaml` field, or the run does with `--interpreter=yaml` (the
+   flag wins; `lines` is the default). The comparison is then not made and
+   those spellings pass; every other check stays.
 
 ### 3. Report rule coverage
 
